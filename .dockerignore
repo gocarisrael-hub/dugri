@@ -1,0 +1,20 @@
+# Exclude everything by default, then re-include only what the image needs.
+*
+
+# Re-include the build inputs the Dockerfile copies.
+!Caddyfile
+!site/
+!site/**
+
+# Belt-and-suspenders: explicitly drop internal/business docs and VCS/CI cruft.
+# (These are already excluded by the `*` rule above, but listed for clarity so
+# they can never accidentally land in the build context or image.)
+CLAUDE.md
+alias_ishi_plan.html
+resources/
+.git/
+.github/
+.netlify/
+*.md
+.DS_Store
+**/.DS_Store
