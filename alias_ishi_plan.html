@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>דוגרי — מוצר, תמחור ותוכנית</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700;800&family=Frank+Ruhl+Libre:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FBF4F0;
+    --surface:#FFFFFF;
+    --blush:#F7E6EB;
+    --blush-deep:#EFD2DB;
+    --ink:#2C1A29;
+    --muted:#7C6A74;
+    --wine:#9B2D54;
+    --wine-deep:#7A1F40;
+    --gold:#BC9A4C;
+    --line:#E8DAD8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'Assistant',sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    line-height:1.65;
+    font-size:17px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:0 22px}
+  h1,h2,h3{font-family:'Frank Ruhl Libre',serif;line-height:1.2}
+
+  /* HERO */
+  header{
+    background:
+      radial-gradient(120% 90% at 90% -10%, rgba(155,45,84,.10), transparent 60%),
+      linear-gradient(180deg,#fff,var(--bg));
+    border-bottom:1px solid var(--line);
+    padding:54px 0 46px;
+    position:relative;
+    overflow:hidden;
+  }
+  .eyebrow{
+    display:inline-block;font-weight:700;font-size:13px;letter-spacing:.14em;
+    color:var(--wine);background:var(--blush);
+    padding:6px 14px;border-radius:999px;margin-bottom:18px;
+  }
+  header h1{font-size:54px;font-weight:900;color:var(--ink)}
+  header h1 span{color:var(--wine)}
+  .tagline{font-family:'Frank Ruhl Libre',serif;font-size:22px;color:var(--gold);margin-top:6px}
+  header p.lede{max-width:560px;color:var(--muted);margin-top:16px;font-size:18px}
+
+  /* card motif */
+  .deck{position:absolute;left:36px;top:50%;transform:translateY(-50%);display:none}
+  @media(min-width:860px){.deck{display:block}}
+  .pcard{
+    position:absolute;width:118px;height:150px;border-radius:14px;
+    background:var(--surface);border:1px solid var(--blush-deep);
+    box-shadow:0 14px 30px rgba(44,26,41,.12);
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    font-weight:700;font-size:16px;color:var(--ink);padding:10px;
+  }
+  .pcard b{color:var(--wine)}
+  .pcard:nth-child(1){transform:rotate(-13deg) translate(28px,8px);background:var(--blush)}
+  .pcard:nth-child(2){transform:rotate(-2deg) translate(8px,-6px)}
+  .pcard:nth-child(3){transform:rotate(11deg) translate(-14px,6px);background:#fff}
+  .pcard small{display:block;font-weight:400;font-size:11px;color:var(--muted);margin-top:6px}
+
+  /* SECTIONS */
+  section{padding:46px 0;border-bottom:1px solid var(--line)}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:26px}
+  .sec-num{
+    font-family:'Frank Ruhl Libre',serif;font-weight:900;font-size:20px;color:#fff;
+    background:var(--wine);width:40px;height:40px;border-radius:11px;
+    display:flex;align-items:center;justify-content:center;flex:0 0 auto;align-self:center;
+  }
+  .sec-head h2{font-size:30px;font-weight:700}
+  .sec-head p{color:var(--muted);font-size:15px;margin-top:2px}
+
+  /* deliverable list */
+  .items{display:grid;gap:12px}
+  .item{
+    background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:16px 18px;display:flex;gap:14px;align-items:flex-start;
+  }
+  .item .tick{color:var(--wine);font-weight:800;flex:0 0 auto;font-size:18px;line-height:1.5}
+  .item h4{font-size:17px;font-weight:700;margin-bottom:2px}
+  .item p{color:var(--muted);font-size:14.5px}
+  .badge{
+    font-size:11px;font-weight:700;letter-spacing:.04em;padding:3px 9px;border-radius:999px;
+    background:var(--blush);color:var(--wine-deep);margin-inline-start:8px;white-space:nowrap;
+  }
+  .badge.gold{background:#F6EDD6;color:#7d6420}
+
+  /* pricing */
+  .prices{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:640px){.prices{grid-template-columns:1fr}}
+  .plan{
+    background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:26px 24px;position:relative;
+  }
+  .plan.featured{border:2px solid var(--wine);box-shadow:0 18px 40px rgba(155,45,84,.12)}
+  .flag{
+    position:absolute;top:-13px;inset-inline-start:24px;background:var(--wine);color:#fff;
+    font-size:12px;font-weight:700;padding:5px 13px;border-radius:999px;letter-spacing:.03em;
+  }
+  .plan h3{font-size:24px;font-weight:700}
+  .price{font-family:'Frank Ruhl Libre',serif;font-size:46px;font-weight:900;color:var(--wine);margin:6px 0 2px}
+  .price small{font-size:18px;color:var(--muted);font-weight:500}
+  .plan ul{list-style:none;margin-top:16px;display:grid;gap:9px}
+  .plan li{padding-inline-start:24px;position:relative;font-size:15px;color:var(--ink)}
+  .plan li::before{content:"✦";position:absolute;inset-inline-start:0;color:var(--gold)}
+  .addons{
+    margin-top:22px;background:var(--blush);border-radius:14px;padding:18px 20px;
+  }
+  .addons h4{font-family:'Frank Ruhl Libre',serif;font-size:18px;margin-bottom:8px}
+  .addons li{font-size:14.5px;color:var(--wine-deep);margin-bottom:4px;list-style:none;padding-inline-start:18px;position:relative}
+  .addons li::before{content:"+";position:absolute;inset-inline-start:0;font-weight:800;color:var(--wine)}
+  .note{font-size:13.5px;color:var(--muted);margin-top:12px}
+
+  /* checklist */
+  .check{display:grid;gap:10px}
+  .crow{display:flex;gap:13px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:13px 16px}
+  .box{width:20px;height:20px;border:2px solid var(--wine);border-radius:6px;flex:0 0 auto;margin-top:3px}
+  .crow span{font-size:15.5px}
+  .crow span b{font-weight:700}
+
+  /* marketing */
+  .mk{display:grid;gap:14px}
+  .mk-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+  .mk-card h4{font-family:'Frank Ruhl Libre',serif;font-size:19px;color:var(--wine);margin-bottom:6px}
+  .mk-card p{font-size:15px;color:var(--ink)}
+  .mk-card p.s{color:var(--muted);font-size:14px;margin-top:4px}
+  .tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .tag{background:var(--blush);color:var(--wine-deep);font-size:13px;font-weight:600;padding:5px 11px;border-radius:999px}
+
+  footer{padding:34px 0 46px;text-align:center;color:var(--muted);font-size:14px}
+  footer b{color:var(--ink)}
+  .ph{background:#FCEFAE;padding:0 4px;border-radius:3px;color:#6b5512}
+
+  @media print{
+    body{background:#fff;font-size:13px}
+    .deck{display:none}
+    section,header{border-color:#ddd}
+    .plan.featured{box-shadow:none}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="deck" aria-hidden="true">
+      <div class="pcard">מאצ׳ו פיצ׳ו</div>
+      <div class="pcard">קפה <b>הפוך</b><small>היא יודעת למה</small></div>
+      <div class="pcard">״אולי נקפוץ״</div>
+    </div>
+    <span class="eyebrow">מסמך מוצר · תמחור · תוכנית עבודה</span>
+    <h1>דוגרי</h1>
+    <div class="tagline">המשחק שמפוצץ את החדר — בלי פילטרים</div>
+    <p class="lede">כל מה שהלקוחה מקבלת, איך מתמחרים, מה עוד צריך להכין כדי לצאת לדרך, ואיך משווקים את זה באינסטגרם. מסמך אחד לעבוד מולו.</p>
+  </div>
+</header>
+
+<section id="package">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-num">1</div>
+      <div><h2>מה הלקוחה מקבלת</h2><p>חבילה דיגיטלית שלמה, נשלחת במייל או בוואטסאפ. הכל מוכן להדפסה.</p></div>
+    </div>
+    <div class="items">
+      <div class="item"><span class="tick">✦</span><div><h4>חפיסת קלפים מותאמת אישית <span class="badge">בסיס + פרימיום</span></h4><p>רשימת המילים שלה הופכת לקלפי משחק מעוצבים, קובץ PDF מוכן להדפסה.</p></div></div>
+      <div class="item"><span class="tick">✦</span><div><h4>לוח משחק</h4><p>קובץ PDF של לוח האליאס, מותאם לכמות הקלפים.</p></div></div>
+      <div class="item"><span class="tick">✦</span><div><h4>דף חוקים, איך משחקים</h4><p>חוקים ברורים בעברית: קבוצות, טיימר, שימוש בלוח, ניקוד, ווריאציות מיוחדות לכל אירוע.</p></div></div>
+      <div class="item"><span class="tick">✦</span><div><h4>עמוד "מתחילים כאן"</h4><p>סיכום בעמוד אחד: מה יש בקובץ, איך מדפיסים, איפה גוזרים, מה להביא. מוריד שאלות ותמיכה.</p></div></div>
+      <div class="item"><span class="tick">✦</span><div><h4>הוראות הדפסה מדויקות לבית הדפוס</h4><p>סוג ומשקל נייר (300 גרם לקלפים), הדפסה בצבע, והוראה קריטית: להדפיס בגודל מקורי 100%, לא להתאים לעמוד.</p></div></div>
+      <div class="item"><span class="tick">✦</span><div><h4>הוראות וקווי גזירה</h4><p>סימוני חיתוך על הקובץ, והמלצה לבקש מבית הדפוס גזירה במכונה.</p></div></div>
+      <div class="item"><span class="tick">✦</span><div><h4>דף טוקנים + טיימר</h4><p>טוקנים לסימון מיקום על הלוח לגזירה, וקישור או QR לטיימר אונליין של דקה.</p></div></div>
+      <div class="item"><span class="tick">✦</span><div><h4>דף עזר לאיסוף מילים <span class="badge">נשלח עם הטופס</span></h4><p>קטגוריות ודוגמאות שעוזרות ללקוחה להיזכר במילים על הכלה: אנשים, מקומות, בדיחות פנימיות, הרגלים, ביטויים שהיא תמיד אומרת. מוריד את החלק הכי קשה בהזמנה.</p></div></div>
+      <div class="item"><span class="tick">✦</span><div><h4>אייקונים מותאמים אישית + לוח על המידה <span class="badge gold">פרימיום</span></h4><p>אייקונים שמתאימים לכלה ולעולם שלה, לוח מעוצב במיוחד, ותווית או שרוול להדבקה על קופסה.</p></div></div>
+      <div class="item"><span class="tick">✦</span><div><h4>הדמה לאישור + סבב תיקונים אחד <span class="badge gold">פרימיום</span></h4><p>שולחים תצוגה עם סימן מים לאישור לפני הקובץ הסופי, וכלול סבב תיקונים אחד.</p></div></div>
+      <div class="item"><span class="tick">✦</span><div><h4>מיתוג עדין + בקשת תיוג</h4><p>לוגו קטן בגב הקלף או בפינת הלוח, ועמוד "צילמתן? תייגו אותנו". כל סטורי הוא פרסום.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-num">2</div>
+      <div><h2>מחירים</h2><p>הכל דיגיטלי. עלות ההדפסה על הלקוחה, אצלך הגולמי כמעט מלא.</p></div>
+    </div>
+    <div class="prices">
+      <div class="plan">
+        <h3>בסיס</h3>
+        <div class="price">79 <small>ש"ח</small></div>
+        <ul>
+          <li>חפיסת קלפים מהמילים שלה, PDF מוכן להדפסה</li>
+          <li>לוח משחק + דף חוקים</li>
+          <li>תבנית עיצוב לבחירה + החלפת צבעים</li>
+          <li>ללא הגבלת מילים</li>
+          <li>הוראות הדפסה וגזירה + עמוד "מתחילים כאן"</li>
+        </ul>
+      </div>
+      <div class="plan featured">
+        <span class="flag">הכי נמכר</span>
+        <h3>פרימיום</h3>
+        <div class="price">139 <small>ש"ח</small></div>
+        <ul>
+          <li>כל מה שכלול בבסיס</li>
+          <li>אייקונים מותאמים אישית לכלה</li>
+          <li>לוח משחק מעוצב על המידה</li>
+          <li>תווית או שרוול להדבקה על קופסה</li>
+          <li>הדמה לאישור לפני הסופי</li>
+          <li>סבב תיקונים אחד כלול</li>
+        </ul>
+      </div>
+    </div>
+    <div class="addons">
+      <h4>תוספות</h4>
+      <ul>
+        <li>אקספרס בעדיפות, אספקה תוך כמה שעות: תוספת 49 עד 79 ש"ח</li>
+        <li>גרסה פיזית עד הבית (שלב 2): החל מ-390 ש"ח, מודפס, חתוך, ארוז ונשלח</li>
+      </ul>
+    </div>
+    <p class="note">מינימום 100 מילים בכל הזמנה. גרסה פיזית נכנסת רק אחרי שנסגר בית דפוס ודוגמה.</p>
+  </div>
+</section>
+
+<section id="todo">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-num">3</div>
+      <div><h2>מה עוד צריך להכין</h2><p>הרשימה שתביא אותך מ"רעיון" ל"מוכנה לקבל הזמנות".</p></div>
+    </div>
+    <div class="check">
+      <div class="crow"><div class="box"></div><span><b>לנעול 2 עד 3 תבניות עיצוב</b> עם ערכות צבעים להחלפה.</span></div>
+      <div class="crow"><div class="box"></div><span><b>תבנית קבועה לדף החוקים ולעמוד "מתחילים כאן"</b>, שתשתמשי בה בכל הזמנה.</span></div>
+      <div class="crow"><div class="box"></div><span><b>דף מפרט הדפסה אחיד</b> לשליחה ללקוחה ולבית הדפוס.</span></div>
+      <div class="crow"><div class="box"></div><span><b>טופס קליטה (גוגל פורם):</b> רשימת מילים, פרטי הכלה, בחירת תבנית וצבעים, תאריך האירוע.</span></div>
+      <div class="crow"><div class="box"></div><span><b>אמצעי תשלום להשקה:</b> ביט או פייבוקס עכשיו, סליקה מסודרת בהמשך.</span></div>
+      <div class="crow"><div class="box"></div><span><b>תהליך פרימיום:</b> שליחת הדמה לאישור והגדרה מראש של סבב תיקונים אחד.</span></div>
+      <div class="crow"><div class="box"></div><span><b>להגדיר "משחק סטנדרטי":</b> מינימום 100 מילים, ללא הגבלה עליונה. כמות הקלפים גדלה עם כמות המילים.</span></div>
+      <div class="crow"><div class="box"></div><span><b>שלב 2 פיזי:</b> לאתר בית דפוס, להזמין דוגמה אחת, ולתמחר יחידה.</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="instagram">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-num">4</div>
+      <div><h2>שיווק באינסטגרם</h2><p>הקהל יושב כאן. המוצר ויזואלי ומצחיק, וזה בדיוק מה שעובד.</p></div>
+    </div>
+    <div class="mk">
+      <div class="mk-card">
+        <h4>הצתה: הוכחה חברתית קודם כול</h4>
+        <p>5 עד 10 הזמנות ראשונות לחברות או למסיבה אמיתית, בתמורה לתוכן, לחוות דעת ולאישור לפרסם את המשחק שלהן.</p>
+        <p class="s">הבעיה בהתחלה היא לא המחיר, היא שאין עדיין תיק עבודות. ככה בונים אותו מהר.</p>
+      </div>
+      <div class="mk-card">
+        <h4>עמודי תוכן</h4>
+        <p>רגע ה-reveal של קלפים עם בדיחות פנימיות, סרטוני מסיבה אמיתית (UGC), לפני ואחרי, מאחורי הקלעים, והמלצות.</p>
+      </div>
+      <div class="mk-card">
+        <h4>רעיונות לריל</h4>
+        <p>"POV: שלחתן לנו 100 מילים על הכלה" · הפיכת קלפים אחד אחרי השני · צחוקים אמיתיים מהמסיבה כשעולה מילה אישית.</p>
+      </div>
+      <div class="mk-card">
+        <h4>מנגנון תיוג שמייצר לידים</h4>
+        <p>כל לקוחה מתייגת אתכן בסטורי, ואתן עושות repost. מהקלף עד הסטורי, פרסום חינם וזרם פניות קבוע.</p>
+      </div>
+      <div class="mk-card">
+        <h4>קהל, האשטגים ושיתופי פעולה</h4>
+        <p>לכוון לשושבינות ולמארגנות מסיבות. שיתופי פעולה עם מפיקות מסיבות רווקות ומקומות אירוח.</p>
+        <div class="tags">
+          <span class="tag">#מסיבת_רווקות</span><span class="tag">#רווקות</span><span class="tag">#כלה</span><span class="tag">#שושבינה</span><span class="tag">#מתחתנת</span>
+        </div>
+      </div>
+      <div class="mk-card">
+        <h4>מסלול הפעולה של הלקוחה</h4>
+        <p>הודעה ב-DM או לינק בביו, שמוביל לטופס הקליטה או לוואטסאפ. כמה שפחות חיכוך עד ההזמנה.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p><b>דוגרי</b> · מסמך עבודה פנימי</p>
+    <p style="margin-top:6px">למילוי לפני שימוש: שם המותג, האינסטגרם <span class="ph">@המותג_שלך</span>, וערוץ ההזמנות (וואטסאפ או טופס).</p>
+  </div>
+</footer>
+
+</body>
+</html>
