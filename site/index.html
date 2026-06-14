@@ -300,23 +300,21 @@
   .flip-wrap{margin:30px auto 0;max-width:300px;perspective:1200px}
   .flip-hint{font-family:var(--display);font-weight:700;font-size:14px;color:var(--wine);margin-top:14px;text-align:center}
   .flip-hint span{display:inline-flex;align-items:center;gap:6px}
-  .flip{position:relative;width:100%;aspect-ratio:3/4;cursor:pointer;transform-style:preserve-3d;
+  .flip{position:relative;width:100%;aspect-ratio:5/7;cursor:pointer;transform-style:preserve-3d;
     transition:transform .7s cubic-bezier(.4,.2,.2,1);background:transparent;border:0;padding:0;display:block}
   .flip.flipped{transform:rotateY(180deg)}
   .flip-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;
     border-radius:22px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;
     align-items:center;justify-content:center;text-align:center;padding:22px;overflow:hidden}
-  .flip-front{background:
-      radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,.18), transparent 55%),
-      linear-gradient(150deg,var(--hot),var(--wine) 65%,var(--wine-deep));color:#fff;border:1px solid rgba(255,255,255,.25)}
+  .flip-front{background:#EC7BA0;padding:0;border:0}
   .flip-front .fl-logo{font-family:var(--display);font-weight:900;font-size:42px;letter-spacing:-.02em;
     text-shadow:0 4px 16px rgba(0,0,0,.18)}
   .flip-front .fl-sub{margin-top:10px;font-size:14px;opacity:.92;font-weight:700}
   .flip-front .fl-dots{position:absolute;inset:0;opacity:.18;pointer-events:none;
     background-image:radial-gradient(circle, #fff 1.5px, transparent 1.6px);background-size:22px 22px}
-  .flip-back{background:#fff;color:var(--ink);transform:rotateY(180deg);
-    border:1px solid var(--blush-deep);padding:0;justify-content:center;align-items:stretch;gap:0}
-  .fl-img{width:100%;height:100%;object-fit:cover;display:block}
+  .flip-back{background:var(--blush);color:var(--ink);transform:rotateY(180deg);
+    border:0;padding:0;justify-content:center;align-items:stretch;gap:0}
+  .fl-img{width:100%;height:100%;object-fit:contain;display:block}
   .footlinks{margin-top:12px;font-size:13.5px}
   .footlinks a{color:#E8D7DE;text-decoration:underline}
   .flip-back .fl-title{font-family:var(--display);font-weight:900;font-size:17px;color:var(--wine);
@@ -429,12 +427,10 @@
     <div class="flip-wrap reveal">
       <button class="flip" id="flipCard" type="button" aria-pressed="false" aria-label="קלף דוגרי לדוגמה — הקליקו להיפוך">
         <div class="flip-face flip-front">
-          <div class="fl-dots" aria-hidden="true"></div>
-          <div class="fl-logo">דוגרי</div>
-          <div class="fl-sub">קלף לדוגמה · הקליקו להיפוך</div>
+          <img class="fl-img" src="assets/card-back.png" alt="גב הקלף של דוגרי">
         </div>
         <div class="flip-face flip-back">
-          <img class="fl-img" src="assets/card-real.png" alt="קלף דוגרי אמיתי — ארבע מילים אישיות על בעל השמחה">
+          <img class="fl-img" src="assets/card-front.png" alt="קלף דוגרי אמיתי — ארבע מילים אישיות על בעל השמחה">
         </div>
       </button>
       <p class="flip-hint"><span>↻ הקליקו על הקלף כדי להפוך אותו</span></p>

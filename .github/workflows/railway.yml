@@ -1,8 +1,7 @@
 name: Deploy to Railway
 
+# Manual deploy only — runs when you click "Run workflow" in the Actions tab.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
