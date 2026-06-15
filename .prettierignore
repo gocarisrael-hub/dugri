@@ -1,0 +1,13 @@
+node_modules
+coverage
+test-results
+playwright-report
+package-lock.json
+
+# binary / exported assets — not source to format
+resources
+site/assets
+**/*.svg
+**/*.png
+**/*.jpg
+**/*.jpeg

@@ -650,7 +650,7 @@
 
     <script type="module">
       import { DESIGNS, MAIN_COLORS } from './js/designs.js';
-      import { applyPalette, buildOrder } from './js/configurator.js';
+      import { applyPalette, applyOriginal, mainAnchor, buildOrder } from './js/configurator.js';
 
       /* ---- nav toggle (mobile) ---- */
       (function () {
@@ -682,7 +682,7 @@
 
       /* ---- state ---- */
       let designIndex = 0;
-      let colorIndex = 0;
+      let colorIndex = -1; // -1 = the design's original colors (default)
       let activeTab = 'front';
 
       // cache of fetched raw SVG text keyed by path
@@ -727,9 +727,17 @@
       // apply current color palette to every preview panel + page accent
       function recolor() {
         const d = DESIGNS[designIndex];
-        const color = MAIN_COLORS[colorIndex];
-        if (!d || !color) return;
+        if (!d) return;
         const anchors = d.anchors || [];
+        if (colorIndex < 0) {
+          // original colors — apply the design's own anchors as-is
+          Object.values(panels).forEach((el) => applyOriginal(el, anchors));
+          if (anchors.length)
+            document.documentElement.style.setProperty('--accent', mainAnchor(anchors));
+          return;
+        }
+        const color = MAIN_COLORS[colorIndex];
+        if (!color) return;
         Object.values(panels).forEach((el) => applyPalette(el, color.hex, anchors));
         document.documentElement.style.setProperty('--accent', color.hex);
       }
@@ -769,7 +777,7 @@
           loadSvg(frontPath)
             .then((txt) => {
               thumb.innerHTML = txt;
-              applyPalette(thumb, MAIN_COLORS[0] ? MAIN_COLORS[0].hex : '#000', d.anchors || []);
+              applyOriginal(thumb, d.anchors || []);
             })
             .catch(() => {
               thumb.textContent = d.name;
@@ -780,33 +788,64 @@
 
       function selectDesign(i) {
         designIndex = i;
+        colorIndex = -1; // always show a newly picked design in its original colors first
         document
           .querySelectorAll('.design')
           .forEach((el, idx) => el.setAttribute('aria-pressed', idx === i ? 'true' : 'false'));
+        updateOrigChip();
+        setActiveSwatch(-1);
         renderDesign().then(persist);
       }
 
-      /* ---- build color swatches ---- */
+      /* ---- build color swatches (original first, then main colors) ---- */
       const colorList = document.getElementById('colorList');
+
+      // "מקורי" chip — the design's own colors (the default)
+      const origBtn = document.createElement('button');
+      origBtn.type = 'button';
+      origBtn.className = 'swatch swatch-orig';
+      origBtn.dataset.testid = 'color-orig';
+      origBtn.dataset.colorId = 'original';
+      origBtn.dataset.colorIndex = '-1';
+      origBtn.setAttribute('aria-pressed', 'true');
+      origBtn.setAttribute('aria-label', 'מקורי');
+      origBtn.innerHTML = '<span class="cname">מקורי</span>';
+      origBtn.addEventListener('click', () => selectColor(-1));
+      colorList.appendChild(origBtn);
+
       MAIN_COLORS.forEach((c, i) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'swatch';
         btn.dataset.testid = 'color-' + i;
         btn.dataset.colorId = c.id;
+        btn.dataset.colorIndex = String(i);
         btn.style.background = c.hex;
-        btn.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
+        btn.setAttribute('aria-pressed', 'false');
         btn.setAttribute('aria-label', c.name);
         btn.innerHTML = '<span class="cname">' + c.name + '</span>';
         btn.addEventListener('click', () => selectColor(i));
         colorList.appendChild(btn);
       });
 
-      function selectColor(i) {
-        colorIndex = i;
+      function setActiveSwatch(ci) {
         document
           .querySelectorAll('.swatch')
-          .forEach((el, idx) => el.setAttribute('aria-pressed', idx === i ? 'true' : 'false'));
+          .forEach((el) =>
+            el.setAttribute('aria-pressed', el.dataset.colorIndex === String(ci) ? 'true' : 'false')
+          );
+      }
+
+      // the "מקורי" chip reflects the current design's main color
+      function updateOrigChip() {
+        const d = DESIGNS[designIndex];
+        if (!d || !d.anchors || !d.anchors.length) return;
+        origBtn.style.background = mainAnchor(d.anchors);
+      }
+
+      function selectColor(ci) {
+        colorIndex = ci;
+        setActiveSwatch(ci);
         recolor();
         persist();
       }
@@ -814,14 +853,25 @@
       /* ---- selection encoding / persistence ---- */
       function currentSelection() {
         const d = DESIGNS[designIndex] || {};
-        const c = MAIN_COLORS[colorIndex] || {};
+        const anchors = d.anchors || [];
+        let colorId, colorName, mainHex;
+        if (colorIndex < 0) {
+          colorId = 'original';
+          colorName = 'מקורי';
+          mainHex = anchors.length ? mainAnchor(anchors) : '';
+        } else {
+          const c = MAIN_COLORS[colorIndex] || {};
+          colorId = c.id || '';
+          colorName = c.name || '';
+          mainHex = c.hex || '';
+        }
         return {
           plan,
           designId: d.id || '',
           designName: d.name || '',
-          colorId: c.id || '',
-          colorName: c.name || '',
-          mainHex: c.hex || '',
+          colorId,
+          colorName,
+          mainHex,
         };
       }
 
@@ -885,20 +935,19 @@
           const di = DESIGNS.findIndex((d) => d.id === dId);
           if (di >= 0) designIndex = di;
         }
-        if (cId) {
+        if (cId && cId !== 'original') {
           const ci = MAIN_COLORS.findIndex((c) => c.id === cId);
-          if (ci >= 0) colorIndex = ci;
+          colorIndex = ci >= 0 ? ci : -1;
+        } else {
+          colorIndex = -1;
         }
         document
           .querySelectorAll('.design')
           .forEach((el, idx) =>
             el.setAttribute('aria-pressed', idx === designIndex ? 'true' : 'false')
           );
-        document
-          .querySelectorAll('.swatch')
-          .forEach((el, idx) =>
-            el.setAttribute('aria-pressed', idx === colorIndex ? 'true' : 'false')
-          );
+        updateOrigChip();
+        setActiveSwatch(colorIndex);
       })();
 
       selectTab('front');

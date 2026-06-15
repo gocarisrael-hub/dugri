@@ -5,10 +5,14 @@ import { GENERATED } from './designs.generated.js';
 
 /** Selectable "main" colors the user can pick to recolor a design. */
 export const MAIN_COLORS = [
-  { id: 'violet', name: 'סגול', hex: '#7A3FF2' },
   { id: 'pink', name: 'ורוד', hex: '#E5197D' },
+  { id: 'magenta', name: 'מגנטה', hex: '#D6249F' },
+  { id: 'violet', name: 'סגול', hex: '#7A3FF2' },
   { id: 'blue', name: 'כחול', hex: '#2D7FF9' },
+  { id: 'teal', name: 'טורקיז', hex: '#0FB5AE' },
   { id: 'green', name: 'ירוק', hex: '#1FAE72' },
+  { id: 'orange', name: 'כתום', hex: '#F76707' },
+  { id: 'red', name: 'אדום', hex: '#E03131' },
 ];
 
 /** Human-friendly (Hebrew) names per design id. */

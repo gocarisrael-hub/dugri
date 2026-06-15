@@ -187,6 +187,24 @@ export function applyPalette(rootEl, mainHex, anchors) {
   return derived;
 }
 
+/**
+ * Apply the design's ORIGINAL anchor colors directly to --c0..--cN
+ * (no derivation). Used to show a design in its own original colors.
+ * @returns {string[]} the anchors applied.
+ */
+export function applyOriginal(rootEl, anchors) {
+  if (!Array.isArray(anchors) || anchors.length === 0) {
+    throw new Error('anchors must be a non-empty array');
+  }
+  anchors.forEach((c, i) => rootEl.style.setProperty('--c' + i, c));
+  return anchors.slice();
+}
+
+/** The design's "main" original color (its most-saturated anchor). */
+export function mainAnchor(anchors) {
+  return anchors[mostSaturatedIndex(anchors)];
+}
+
 // ---------------------------------------------------------------------------
 // Order building
 // ---------------------------------------------------------------------------

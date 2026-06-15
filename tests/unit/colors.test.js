@@ -6,9 +6,30 @@ import {
   mostSaturatedIndex,
   derivePalette,
   isValidHex,
+  applyOriginal,
+  mainAnchor,
 } from '../../site/js/configurator.js';
 
 const BIRTHDAY = ['#5100ad', '#ff00db', '#cb6ce6', '#f6d5ff'];
+
+describe('applyOriginal / mainAnchor', () => {
+  it('applyOriginal sets --c0..--cN to the literal anchors', () => {
+    const set = {};
+    const el = { style: { setProperty: (k, v) => (set[k] = v) } };
+    const out = applyOriginal(el, BIRTHDAY);
+    expect(out).toEqual(BIRTHDAY);
+    expect(set['--c0']).toBe('#5100ad');
+    expect(set['--c3']).toBe('#f6d5ff');
+  });
+
+  it('mainAnchor returns the most-saturated anchor', () => {
+    expect(mainAnchor(BIRTHDAY)).toBe(BIRTHDAY[mostSaturatedIndex(BIRTHDAY)]);
+  });
+
+  it('applyOriginal throws on empty anchors', () => {
+    expect(() => applyOriginal({ style: { setProperty() {} } }, [])).toThrow();
+  });
+});
 
 describe('hexToHsl / hslToHex round-trip', () => {
   const samples = [
