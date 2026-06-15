@@ -22,12 +22,7 @@ const OUT_JS = resolve(ROOT, 'site/js/designs.generated.js');
 const DESIGNS = [
   {
     id: 'birthday',
-    folder: 'dugri birthday',
-    files: { front: 'פני כרטיסים.svg', back: 'גב כרטיסים.svg', board: 'לוח משחק.svg' },
-  },
-  {
-    id: 'birthday2',
-    folder: 'dugri birthday-2',
+    folder: 'dugri birthday no neon',
     files: { front: 'פני כרטיסים.svg', back: 'גב כרטיסים.svg', board: 'לוח משחק.svg' },
   },
   {
@@ -37,7 +32,7 @@ const DESIGNS = [
   },
   {
     id: 'marriage',
-    folder: 'dugri marriage',
+    folder: 'dugri marriage no affects',
     files: { front: 'פני כרטיסים.svg', back: 'גב כרטיסים.svg', board: 'לוח משחק.svg' },
   },
   // bachelorette: identified by rendering -> 1=front, 2=back, 3=board
