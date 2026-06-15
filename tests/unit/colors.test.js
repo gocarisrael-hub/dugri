@@ -8,6 +8,7 @@ import {
   isValidHex,
   applyOriginal,
   mainAnchor,
+  lightTint,
 } from '../../site/js/configurator.js';
 
 const BIRTHDAY = ['#5100ad', '#ff00db', '#cb6ce6', '#f6d5ff'];
@@ -28,6 +29,13 @@ describe('applyOriginal / mainAnchor', () => {
 
   it('applyOriginal throws on empty anchors', () => {
     expect(() => applyOriginal({ style: { setProperty() {} } }, [])).toThrow();
+  });
+
+  it('lightTint returns a much lighter color with a related hue', () => {
+    const t = lightTint('#1FAE72');
+    expect(isValidHex(t)).toBe(true);
+    expect(hexToHsl(t).l).toBeGreaterThan(85);
+    expect(Math.abs(hexToHsl(t).h - hexToHsl('#1FAE72').h)).toBeLessThan(1);
   });
 });
 

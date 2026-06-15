@@ -47,7 +47,8 @@
       }
       body {
         font-family: var(--font);
-        background: var(--bg);
+        background: var(--cfg-bg, var(--bg));
+        transition: background 0.35s ease;
         color: var(--ink);
         line-height: 1.6;
         font-size: 17px;
@@ -323,7 +324,12 @@
         position: relative;
         border-radius: 16px;
         background:
-          radial-gradient(70% 70% at 50% 0%, rgba(229, 25, 125, 0.06), transparent 70%), var(--bg);
+          radial-gradient(
+            70% 70% at 50% 0%,
+            color-mix(in srgb, var(--accent, #e5197d) 16%, transparent),
+            transparent 70%
+          ),
+          var(--cfg-bg, var(--bg));
         border: 1px dashed var(--blush-deep);
         min-height: 300px;
         display: flex;
@@ -650,7 +656,13 @@
 
     <script type="module">
       import { DESIGNS, MAIN_COLORS } from './js/designs.js';
-      import { applyPalette, applyOriginal, mainAnchor, buildOrder } from './js/configurator.js';
+      import {
+        applyPalette,
+        applyOriginal,
+        mainAnchor,
+        lightTint,
+        buildOrder,
+      } from './js/configurator.js';
 
       /* ---- nav toggle (mobile) ---- */
       (function () {
@@ -729,17 +741,23 @@
         const d = DESIGNS[designIndex];
         if (!d) return;
         const anchors = d.anchors || [];
+        let activeMain = null;
         if (colorIndex < 0) {
           // original colors — apply the design's own anchors as-is
           Object.values(panels).forEach((el) => applyOriginal(el, anchors));
-          if (anchors.length)
-            document.documentElement.style.setProperty('--accent', mainAnchor(anchors));
-          return;
+          activeMain = anchors.length ? mainAnchor(anchors) : null;
+        } else {
+          const color = MAIN_COLORS[colorIndex];
+          if (!color) return;
+          Object.values(panels).forEach((el) => applyPalette(el, color.hex, anchors));
+          activeMain = color.hex;
         }
-        const color = MAIN_COLORS[colorIndex];
-        if (!color) return;
-        Object.values(panels).forEach((el) => applyPalette(el, color.hex, anchors));
-        document.documentElement.style.setProperty('--accent', color.hex);
+        // theme the page + stage background to the active color
+        if (activeMain) {
+          const root = document.documentElement.style;
+          root.setProperty('--accent', activeMain);
+          root.setProperty('--cfg-bg', lightTint(activeMain));
+        }
       }
 
       /* ---- tabs ---- */

@@ -205,6 +205,18 @@ export function mainAnchor(anchors) {
   return anchors[mostSaturatedIndex(anchors)];
 }
 
+/**
+ * A soft, very light tint of a color — for theming a page/stage background
+ * to the chosen color without overpowering it.
+ * @param {string} hex
+ * @param {number} [l=95] target lightness (0..100)
+ * @param {number} [maxS=55] cap on saturation (0..100)
+ */
+export function lightTint(hex, l = 95, maxS = 55) {
+  const { h, s } = hexToHsl(hex);
+  return hslToHex({ h, s: Math.min(s, maxS), l });
+}
+
 // ---------------------------------------------------------------------------
 // Order building
 // ---------------------------------------------------------------------------
