@@ -1,177 +1,505 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="he" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>טיימר 60 שניות — דוגרי</title>
-<link rel="icon" type="image/png" href="assets/logo.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap" rel="stylesheet">
-<style>
-  :root{--bg:#FFF5F8;--surface:#fff;--blush:#FBE8EE;--blush-deep:#F1D2DC;--ink:#2C1A29;--muted:#7C6A74;--wine:#9B2D54;--wine-deep:#7A1F40;--gold:#BC9A4C;--hot:#E5197D;--hot-deep:#C7106A;--line:#F0DEE4;
-    --font:'Calibri','Carlito','Segoe UI','Arial',sans-serif;
-    --display:'Heebo','Calibri','Carlito','Arial',sans-serif}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:var(--font);color:var(--ink);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 20px;text-align:center;
-    background:
-      radial-gradient(60% 40% at 80% 0%, rgba(229,25,125,.10), transparent 60%),
-      radial-gradient(50% 40% at 12% 8%, rgba(188,154,76,.10), transparent 60%),
-      var(--bg)}
-  h1{font-family:var(--display);font-weight:900;font-size:26px;color:var(--wine);letter-spacing:-.01em}
-  .logo{width:120px;height:auto;margin-bottom:14px}
-  .glass-wrap{position:relative;margin:22px 0 6px;transition:transform .6s cubic-bezier(.5,0,.4,1.3)}
-  .glass-wrap.done{transform:rotate(180deg)}
-  svg.hourglass{width:170px;height:auto;display:block;filter:drop-shadow(0 14px 26px rgba(155,45,84,.18))}
-  .count{font-family:var(--display);font-weight:900;font-size:74px;line-height:1;color:var(--ink);margin-top:6px;
-    background:linear-gradient(140deg,var(--hot),var(--wine));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .count.done{-webkit-text-fill-color:initial;color:var(--wine)}
-  .status{color:var(--muted);font-weight:700;font-size:15px;margin-top:6px;min-height:22px}
-  .controls{display:flex;gap:12px;margin-top:24px;flex-wrap:wrap;justify-content:center}
-  .btn{font-family:var(--display);font-weight:800;font-size:18px;border:none;cursor:pointer;padding:15px 30px;border-radius:999px;text-decoration:none;color:#fff;
-    background:linear-gradient(135deg,var(--hot),var(--wine));box-shadow:0 10px 24px rgba(229,25,125,.28);transition:transform .12s ease,box-shadow .2s ease,filter .2s ease}
-  .btn:hover{transform:translateY(-2px);filter:brightness(1.04)}
-  .btn.sec{background:none;color:var(--wine);box-shadow:none;border:2px solid var(--blush-deep)}
-  .btn.sec:hover{background:var(--blush)}
-  .back{margin-top:26px;font-size:14px;color:var(--muted)}
-  .back a{color:var(--wine);font-weight:700}
-  @media(prefers-reduced-motion:reduce){.glass-wrap{transition:none}}
-</style>
-</head>
-<body>
-  <img class="logo" src="assets/logo.png" alt="דוגרי">
-  <h1>טיימר · 60 שניות</h1>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>טיימר 60 שניות — דוגרי</title>
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #fff5f8;
+        --surface: #fff;
+        --blush: #fbe8ee;
+        --blush-deep: #f1d2dc;
+        --ink: #2c1a29;
+        --muted: #7c6a74;
+        --wine: #9b2d54;
+        --wine-deep: #7a1f40;
+        --gold: #bc9a4c;
+        --hot: #e5197d;
+        --hot-deep: #c7106a;
+        --line: #f0dee4;
+        --font: 'Calibri', 'Carlito', 'Segoe UI', 'Arial', sans-serif;
+        --display: 'Heebo', 'Calibri', 'Carlito', 'Arial', sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--font);
+        color: var(--ink);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 80px 20px 28px;
+        text-align: center;
+        background:
+          radial-gradient(60% 40% at 80% 0%, rgba(229, 25, 125, 0.1), transparent 60%),
+          radial-gradient(50% 40% at 12% 8%, rgba(188, 154, 76, 0.1), transparent 60%), var(--bg);
+      }
+      h1 {
+        font-family: var(--display);
+        font-weight: 900;
+        font-size: 26px;
+        color: var(--wine);
+        letter-spacing: -0.01em;
+      }
+      .logo {
+        width: 120px;
+        height: auto;
+        margin-bottom: 14px;
+      }
+      .glass-wrap {
+        position: relative;
+        margin: 22px 0 6px;
+        transition: transform 0.6s cubic-bezier(0.5, 0, 0.4, 1.3);
+      }
+      .glass-wrap.done {
+        transform: rotate(180deg);
+      }
+      svg.hourglass {
+        width: 170px;
+        height: auto;
+        display: block;
+        filter: drop-shadow(0 14px 26px rgba(155, 45, 84, 0.18));
+      }
+      .count {
+        font-family: var(--display);
+        font-weight: 900;
+        font-size: 74px;
+        line-height: 1;
+        color: var(--ink);
+        margin-top: 6px;
+        background: linear-gradient(140deg, var(--hot), var(--wine));
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .count.done {
+        -webkit-text-fill-color: initial;
+        color: var(--wine);
+      }
+      .status {
+        color: var(--muted);
+        font-weight: 700;
+        font-size: 15px;
+        margin-top: 6px;
+        min-height: 22px;
+      }
+      .controls {
+        display: flex;
+        gap: 12px;
+        margin-top: 24px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .btn {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 18px;
+        border: none;
+        cursor: pointer;
+        padding: 15px 30px;
+        border-radius: 999px;
+        text-decoration: none;
+        color: #fff;
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        box-shadow: 0 10px 24px rgba(229, 25, 125, 0.28);
+        transition:
+          transform 0.12s ease,
+          box-shadow 0.2s ease,
+          filter 0.2s ease;
+      }
+      .btn:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.04);
+      }
+      .btn.sec {
+        background: none;
+        color: var(--wine);
+        box-shadow: none;
+        border: 2px solid var(--blush-deep);
+      }
+      .btn.sec:hover {
+        background: var(--blush);
+      }
+      .back {
+        margin-top: 26px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .back a {
+        color: var(--wine);
+        font-weight: 700;
+      }
 
-  <div class="glass-wrap" id="glass">
-    <svg class="hourglass" viewBox="0 0 100 160" aria-hidden="true">
-      <defs>
-        <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#D8B86A"/>
-          <stop offset="1" stop-color="#BC9A4C"/>
-        </linearGradient>
-        <clipPath id="topClip"><polygon points="12,12 88,12 50,80"/></clipPath>
-        <clipPath id="botClip"><polygon points="50,80 12,148 88,148"/></clipPath>
-      </defs>
-      <!-- sand -->
-      <rect id="sandTop" x="12" y="12" width="76" height="68" fill="url(#sand)" clip-path="url(#topClip)"/>
-      <rect id="sandBottom" x="12" y="148" width="76" height="0" fill="url(#sand)" clip-path="url(#botClip)"/>
-      <rect id="stream" x="49" y="80" width="2" height="36" fill="#BC9A4C" opacity="0"/>
-      <!-- glass frame -->
-      <polygon points="12,12 88,12 50,80" fill="none" stroke="#9B2D54" stroke-width="3.2" stroke-linejoin="round"/>
-      <polygon points="50,80 12,148 88,148" fill="none" stroke="#9B2D54" stroke-width="3.2" stroke-linejoin="round"/>
-      <rect x="7" y="5" width="86" height="8" rx="4" fill="#9B2D54"/>
-      <rect x="7" y="147" width="86" height="8" rx="4" fill="#9B2D54"/>
-    </svg>
-  </div>
+      /* ===== SHARED STICKY NAV ===== */
+      .nav {
+        position: fixed;
+        top: 0;
+        inset-inline: 0;
+        z-index: 80;
+        background: rgba(255, 255, 255, 0.94);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--line);
+        box-shadow: 0 6px 20px rgba(44, 26, 41, 0.07);
+        text-align: start;
+      }
+      .nav-inner {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 8px 18px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .nav-logo {
+        display: flex;
+        align-items: center;
+      }
+      .nav-logo img {
+        height: 34px;
+        width: auto;
+        display: block;
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-inline-start: auto;
+      }
+      .nav-links a {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 15.5px;
+        color: var(--wine);
+        padding: 8px 12px;
+        border-radius: 10px;
+        text-decoration: none;
+        transition:
+          background 0.18s ease,
+          color 0.18s ease;
+      }
+      .nav-links a:hover {
+        background: var(--blush);
+        color: var(--wine-deep);
+      }
+      .nav-links a.nav-cta {
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        color: #fff;
+        padding: 9px 20px;
+        box-shadow: 0 6px 16px rgba(229, 25, 125, 0.26);
+      }
+      .nav-links a.nav-cta:hover {
+        filter: brightness(1.05);
+        color: #fff;
+      }
+      .nav-toggle {
+        display: none;
+        margin-inline-start: auto;
+        background: none;
+        border: 1px solid var(--blush-deep);
+        border-radius: 10px;
+        width: 42px;
+        height: 40px;
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+      }
+      .nav-toggle span,
+      .nav-toggle span::before,
+      .nav-toggle span::after {
+        display: block;
+        width: 20px;
+        height: 2px;
+        background: var(--wine);
+        position: relative;
+        transition:
+          transform 0.2s ease,
+          opacity 0.2s ease;
+      }
+      .nav-toggle span::before {
+        content: '';
+        position: absolute;
+        top: -6px;
+      }
+      .nav-toggle span::after {
+        content: '';
+        position: absolute;
+        top: 6px;
+      }
+      @media (max-width: 640px) {
+        .nav-toggle {
+          display: flex;
+        }
+        .nav-links {
+          position: absolute;
+          top: 100%;
+          inset-inline: 0;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0;
+          background: rgba(255, 255, 255, 0.98);
+          border-bottom: 1px solid var(--line);
+          box-shadow: 0 14px 28px rgba(44, 26, 41, 0.12);
+          padding: 8px 14px 14px;
+          margin: 0;
+          display: none;
+        }
+        .nav-links.open {
+          display: flex;
+        }
+        .nav-links a {
+          padding: 13px 10px;
+          border-radius: 10px;
+        }
+        .nav-links a.nav-cta {
+          margin-top: 6px;
+          text-align: center;
+          justify-content: center;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .glass-wrap {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- shared sticky nav -->
+    <nav class="nav" aria-label="ניווט ראשי">
+      <div class="nav-inner">
+        <a class="nav-logo" href="index.html#top" aria-label="דוגרי — לעמוד הבית"
+          ><img src="assets/logo.png" alt="דוגרי"
+        /></a>
+        <button
+          class="nav-toggle"
+          type="button"
+          data-testid="nav-toggle"
+          aria-expanded="false"
+          aria-controls="navLinks"
+          aria-label="תפריט"
+        >
+          <span></span>
+        </button>
+        <div class="nav-links" id="navLinks" data-testid="nav-links">
+          <a href="index.html#examples">דוגמאות</a>
+          <a href="index.html#pricing">מחירים</a>
+          <a href="timer.html">טיימר</a>
+          <a class="nav-cta" href="options.html">הזמנה</a>
+        </div>
+      </div>
+    </nav>
 
-  <div class="count" id="count">60</div>
-  <div class="status" id="status">לחצו התחל</div>
+    <img class="logo" src="assets/logo.png" alt="דוגרי" />
+    <h1>טיימר · 60 שניות</h1>
 
-  <div class="controls">
-    <button class="btn" id="toggle" type="button">התחל</button>
-    <button class="btn sec" id="reset" type="button">איפוס</button>
-  </div>
+    <div class="glass-wrap" id="glass">
+      <svg class="hourglass" viewBox="0 0 100 160" aria-hidden="true">
+        <defs>
+          <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#D8B86A" />
+            <stop offset="1" stop-color="#BC9A4C" />
+          </linearGradient>
+          <clipPath id="topClip"><polygon points="12,12 88,12 50,80" /></clipPath>
+          <clipPath id="botClip"><polygon points="50,80 12,148 88,148" /></clipPath>
+        </defs>
+        <!-- sand -->
+        <rect
+          id="sandTop"
+          x="12"
+          y="12"
+          width="76"
+          height="68"
+          fill="url(#sand)"
+          clip-path="url(#topClip)"
+        />
+        <rect
+          id="sandBottom"
+          x="12"
+          y="148"
+          width="76"
+          height="0"
+          fill="url(#sand)"
+          clip-path="url(#botClip)"
+        />
+        <rect id="stream" x="49" y="80" width="2" height="36" fill="#BC9A4C" opacity="0" />
+        <!-- glass frame -->
+        <polygon
+          points="12,12 88,12 50,80"
+          fill="none"
+          stroke="#9B2D54"
+          stroke-width="3.2"
+          stroke-linejoin="round"
+        />
+        <polygon
+          points="50,80 12,148 88,148"
+          fill="none"
+          stroke="#9B2D54"
+          stroke-width="3.2"
+          stroke-linejoin="round"
+        />
+        <rect x="7" y="5" width="86" height="8" rx="4" fill="#9B2D54" />
+        <rect x="7" y="147" width="86" height="8" rx="4" fill="#9B2D54" />
+      </svg>
+    </div>
 
-  <p class="back"><a href="index.html">חזרה לדוגרי ←</a></p>
+    <div class="count" id="count" data-testid="timer-count">60</div>
+    <div class="status" id="status">לחצו התחל</div>
 
-<script>
-  (function(){
-    var DURATION = 60000; // 60 seconds
-    var elapsed = 0, lastStart = 0, running = false, raf = 0, audio = null;
+    <div class="controls">
+      <button class="btn" id="toggle" type="button" data-testid="timer-toggle">התחל</button>
+      <button class="btn sec" id="reset" type="button" data-testid="timer-reset">איפוס</button>
+    </div>
 
-    var sandTop = document.getElementById('sandTop');
-    var sandBottom = document.getElementById('sandBottom');
-    var stream = document.getElementById('stream');
-    var countEl = document.getElementById('count');
-    var statusEl = document.getElementById('status');
-    var toggle = document.getElementById('toggle');
-    var glass = document.getElementById('glass');
+    <p class="back"><a href="index.html">חזרה לדוגרי ←</a></p>
 
-    function render(p){
-      p = Math.min(1, Math.max(0, p));
-      var topH = 68 * (1 - p);
-      sandTop.setAttribute('y', 12 + 68 * p);
-      sandTop.setAttribute('height', topH);
-      var botH = 68 * p;
-      sandBottom.setAttribute('y', 148 - botH);
-      sandBottom.setAttribute('height', botH);
-      stream.setAttribute('opacity', (running && p < 1) ? 0.85 : 0);
-    }
+    <script type="module">
+      import { tick } from './js/timer.js';
 
-    function setCount(ms){
-      var rem = Math.max(0, Math.ceil((DURATION - ms) / 1000));
-      countEl.textContent = rem;
-    }
+      /* ---- shared nav: mobile toggle ---- */
+      (function () {
+        const navToggle = document.querySelector('.nav-toggle');
+        const navLinks = document.getElementById('navLinks');
+        if (navToggle && navLinks) {
+          navToggle.addEventListener('click', function () {
+            const open = navLinks.classList.toggle('open');
+            navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          });
+        }
+      })();
 
-    function beep(){
-      try{
-        audio = audio || new (window.AudioContext || window.webkitAudioContext)();
-        [0, 0.22, 0.44].forEach(function(t){
-          var o = audio.createOscillator(), g = audio.createGain();
-          o.type = 'sine'; o.frequency.value = 880;
-          o.connect(g); g.connect(audio.destination);
-          var s = audio.currentTime + t;
-          g.gain.setValueAtTime(0.001, s);
-          g.gain.exponentialRampToValueAtTime(0.35, s + 0.02);
-          g.gain.exponentialRampToValueAtTime(0.001, s + 0.18);
-          o.start(s); o.stop(s + 0.2);
+      (function () {
+        var DURATION = 60000; // 60 seconds
+        var elapsed = 0,
+          lastStart = 0,
+          running = false,
+          raf = 0,
+          audio = null;
+
+        var sandTop = document.getElementById('sandTop');
+        var sandBottom = document.getElementById('sandBottom');
+        var stream = document.getElementById('stream');
+        var countEl = document.getElementById('count');
+        var statusEl = document.getElementById('status');
+        var toggle = document.getElementById('toggle');
+        var glass = document.getElementById('glass');
+
+        // Delegate the per-frame countdown maths to the shared module's tick().
+        // Contract assumed: tick(elapsedMs, durationMs) -> { progress, remaining, done }
+        //   progress  = 0..1 fraction of time elapsed
+        //   remaining = whole seconds left (ceil)
+        //   done      = boolean, true once the duration is reached
+        function compute(ms) {
+          return tick(ms, DURATION);
+        }
+
+        function paint(state) {
+          var p = Math.min(1, Math.max(0, state.progress));
+          var topH = 68 * (1 - p);
+          sandTop.setAttribute('y', 12 + 68 * p);
+          sandTop.setAttribute('height', topH);
+          var botH = 68 * p;
+          sandBottom.setAttribute('y', 148 - botH);
+          sandBottom.setAttribute('height', botH);
+          stream.setAttribute('opacity', running && p < 1 ? 0.85 : 0);
+          countEl.textContent = state.remaining;
+        }
+
+        function beep() {
+          try {
+            audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+            [0, 0.22, 0.44].forEach(function (t) {
+              var o = audio.createOscillator(),
+                g = audio.createGain();
+              o.type = 'sine';
+              o.frequency.value = 880;
+              o.connect(g);
+              g.connect(audio.destination);
+              var s = audio.currentTime + t;
+              g.gain.setValueAtTime(0.001, s);
+              g.gain.exponentialRampToValueAtTime(0.35, s + 0.02);
+              g.gain.exponentialRampToValueAtTime(0.001, s + 0.18);
+              o.start(s);
+              o.stop(s + 0.2);
+            });
+          } catch (e) {}
+        }
+
+        function finish() {
+          running = false;
+          elapsed = DURATION;
+          cancelAnimationFrame(raf);
+          paint(compute(DURATION));
+          countEl.classList.add('done');
+          glass.classList.add('done');
+          statusEl.textContent = 'הזמן נגמר!';
+          toggle.textContent = 'שוב';
+          beep();
+        }
+
+        function loop(now) {
+          if (!running) return;
+          var ms = elapsed + (now - lastStart);
+          var state = compute(ms);
+          if (state.done || ms >= DURATION) {
+            finish();
+            return;
+          }
+          paint(state);
+          raf = requestAnimationFrame(loop);
+        }
+
+        function start() {
+          if (running) return;
+          if (elapsed >= DURATION) reset();
+          running = true;
+          countEl.classList.remove('done');
+          glass.classList.remove('done');
+          statusEl.textContent = 'רץ...';
+          toggle.textContent = 'השהה';
+          lastStart = performance.now();
+          raf = requestAnimationFrame(loop);
+        }
+
+        function pause() {
+          if (!running) return;
+          running = false;
+          elapsed += performance.now() - lastStart;
+          cancelAnimationFrame(raf);
+          paint(compute(elapsed));
+          statusEl.textContent = 'מושהה';
+          toggle.textContent = 'המשך';
+        }
+
+        function reset() {
+          running = false;
+          elapsed = 0;
+          cancelAnimationFrame(raf);
+          paint(compute(0));
+          countEl.classList.remove('done');
+          glass.classList.remove('done');
+          statusEl.textContent = 'לחצו התחל';
+          toggle.textContent = 'התחל';
+        }
+
+        toggle.addEventListener('click', function () {
+          running ? pause() : start();
         });
-      }catch(e){}
-    }
-
-    function finish(){
-      running = false; elapsed = DURATION;
-      cancelAnimationFrame(raf);
-      render(1); setCount(DURATION);
-      countEl.classList.add('done');
-      glass.classList.add('done');
-      statusEl.textContent = 'הזמן נגמר!';
-      toggle.textContent = 'שוב';
-      beep();
-    }
-
-    function loop(now){
-      if(!running) return;
-      var ms = elapsed + (now - lastStart);
-      if(ms >= DURATION){ finish(); return; }
-      render(ms / DURATION); setCount(ms);
-      raf = requestAnimationFrame(loop);
-    }
-
-    function start(){
-      if(running) return;
-      if(elapsed >= DURATION) reset();
-      running = true;
-      countEl.classList.remove('done'); glass.classList.remove('done');
-      statusEl.textContent = 'רץ...';
-      toggle.textContent = 'השהה';
-      lastStart = performance.now();
-      raf = requestAnimationFrame(loop);
-    }
-
-    function pause(){
-      if(!running) return;
-      running = false;
-      elapsed += performance.now() - lastStart;
-      cancelAnimationFrame(raf);
-      render(elapsed / DURATION);
-      statusEl.textContent = 'מושהה';
-      toggle.textContent = 'המשך';
-    }
-
-    function reset(){
-      running = false; elapsed = 0;
-      cancelAnimationFrame(raf);
-      render(0); setCount(0);
-      countEl.classList.remove('done'); glass.classList.remove('done');
-      statusEl.textContent = 'לחצו התחל';
-      toggle.textContent = 'התחל';
-    }
-
-    toggle.addEventListener('click', function(){ running ? pause() : start(); });
-    document.getElementById('reset').addEventListener('click', reset);
-    render(0); setCount(0);
-  })();
-</script>
-</body>
+        document.getElementById('reset').addEventListener('click', reset);
+        paint(compute(0));
+      })();
+    </script>
+  </body>
 </html>

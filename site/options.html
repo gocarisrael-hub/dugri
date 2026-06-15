@@ -1,31 +1,908 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="he" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>אפשרויות — דוגרי</title>
-<link rel="icon" type="image/png" href="assets/logo.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap" rel="stylesheet">
-<style>
-  :root{--bg:#FFF5F8;--ink:#2C1A29;--muted:#7C6A74;--wine:#9B2D54;
-    --font:'Calibri','Carlito','Segoe UI','Arial',sans-serif;
-    --display:'Heebo','Calibri','Carlito','Arial',sans-serif}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:var(--font);color:var(--ink);background:var(--bg);min-height:100vh;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 22px;text-align:center}
-  img.logo{width:120px;height:auto;margin-bottom:18px}
-  h1{font-family:var(--display);font-weight:900;font-size:30px;color:var(--wine)}
-  p{color:var(--muted);margin-top:10px;font-size:17px}
-  .back{margin-top:28px;font-size:14px}
-  .back a{color:var(--wine);font-weight:700}
-</style>
-</head>
-<body>
-  <img class="logo" src="assets/logo.png" alt="דוגרי">
-  <h1>אפשרויות</h1>
-  <p>הדף בבנייה.</p>
-  <p class="back"><a href="index.html">חזרה לדוגרי ←</a></p>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>בונים את המשחק — דוגרי</title>
+    <meta
+      name="description"
+      content="בוחרים עיצוב וצבעים למשחק דוגרי, רואים תצוגה חיה וממשיכים להזמנה."
+    />
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #fff5f8;
+        --surface: #ffffff;
+        --blush: #fbe8ee;
+        --blush-deep: #f1d2dc;
+        --ink: #2c1a29;
+        --muted: #7c6a74;
+        --wine: #9b2d54;
+        --wine-deep: #7a1f40;
+        --gold: #bc9a4c;
+        --hot: #e5197d;
+        --hot-deep: #c7106a;
+        --line: #f0dee4;
+        --font: 'Calibri', 'Carlito', 'Segoe UI', 'Arial', 'Helvetica Neue', sans-serif;
+        --display: 'Heebo', 'Calibri', 'Carlito', 'Segoe UI', 'Arial', sans-serif;
+        --shadow-sm: 0 2px 8px rgba(44, 26, 41, 0.06), 0 1px 2px rgba(44, 26, 41, 0.04);
+        --shadow-md: 0 10px 28px rgba(44, 26, 41, 0.1), 0 3px 8px rgba(44, 26, 41, 0.06);
+        --shadow-lg: 0 26px 60px rgba(44, 26, 41, 0.16), 0 8px 18px rgba(44, 26, 41, 0.08);
+        /* live palette tokens (configurator sets --c0..--cN on previews) */
+        --accent: var(--hot);
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--ink);
+        line-height: 1.6;
+        font-size: 17px;
+        -webkit-font-smoothing: antialiased;
+        padding-top: 60px;
+        padding-bottom: 90px;
+      }
+      .wrap {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 0 22px;
+      }
+      h1,
+      h2,
+      h3,
+      h4 {
+        font-family: var(--display);
+        line-height: 1.15;
+        font-weight: 800;
+        letter-spacing: -0.015em;
+      }
+      a {
+        color: inherit;
+      }
+
+      .btn {
+        position: relative;
+        overflow: hidden;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 17.5px;
+        letter-spacing: -0.01em;
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        padding: 16px 32px;
+        border-radius: 999px;
+        text-decoration: none;
+        box-shadow: 0 10px 24px rgba(229, 25, 125, 0.3);
+        transition:
+          transform 0.14s ease,
+          box-shadow 0.25s ease,
+          filter 0.2s ease;
+      }
+      .btn::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        inset-inline-start: -130%;
+        width: 60%;
+        height: 100%;
+        background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+        transform: skewX(-18deg);
+        transition: inset-inline-start 0.55s ease;
+      }
+      .btn:hover::after {
+        inset-inline-start: 130%;
+      }
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 18px 36px rgba(229, 25, 125, 0.4);
+        filter: brightness(1.05);
+      }
+      .btn:active {
+        transform: translateY(0) scale(0.99);
+      }
+      .btn:focus-visible {
+        outline: 3px solid var(--hot);
+        outline-offset: 3px;
+      }
+      a:focus-visible,
+      button:focus-visible {
+        outline: 3px solid var(--hot);
+        outline-offset: 2px;
+        border-radius: 8px;
+      }
+
+      /* ===== SHARED STICKY NAV ===== */
+      .nav {
+        position: fixed;
+        top: 0;
+        inset-inline: 0;
+        z-index: 80;
+        background: rgba(255, 255, 255, 0.94);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--line);
+        box-shadow: 0 6px 20px rgba(44, 26, 41, 0.07);
+      }
+      .nav-inner {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 8px 18px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .nav-logo {
+        display: flex;
+        align-items: center;
+      }
+      .nav-logo img {
+        height: 34px;
+        width: auto;
+        display: block;
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-inline-start: auto;
+      }
+      .nav-links a {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 15.5px;
+        color: var(--wine);
+        padding: 8px 12px;
+        border-radius: 10px;
+        text-decoration: none;
+        transition:
+          background 0.18s ease,
+          color 0.18s ease;
+      }
+      .nav-links a:hover {
+        background: var(--blush);
+        color: var(--wine-deep);
+      }
+      .nav-links a.nav-cta {
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        color: #fff;
+        padding: 9px 20px;
+        box-shadow: 0 6px 16px rgba(229, 25, 125, 0.26);
+      }
+      .nav-links a.nav-cta:hover {
+        filter: brightness(1.05);
+        color: #fff;
+      }
+      .nav-toggle {
+        display: none;
+        margin-inline-start: auto;
+        background: none;
+        border: 1px solid var(--blush-deep);
+        border-radius: 10px;
+        width: 42px;
+        height: 40px;
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+      }
+      .nav-toggle span,
+      .nav-toggle span::before,
+      .nav-toggle span::after {
+        display: block;
+        width: 20px;
+        height: 2px;
+        background: var(--wine);
+        position: relative;
+        transition:
+          transform 0.2s ease,
+          opacity 0.2s ease;
+      }
+      .nav-toggle span::before {
+        content: '';
+        position: absolute;
+        top: -6px;
+      }
+      .nav-toggle span::after {
+        content: '';
+        position: absolute;
+        top: 6px;
+      }
+      @media (max-width: 640px) {
+        .nav-toggle {
+          display: flex;
+        }
+        .nav-links {
+          position: absolute;
+          top: 100%;
+          inset-inline: 0;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0;
+          background: rgba(255, 255, 255, 0.98);
+          border-bottom: 1px solid var(--line);
+          box-shadow: 0 14px 28px rgba(44, 26, 41, 0.12);
+          padding: 8px 14px 14px;
+          margin: 0;
+          display: none;
+        }
+        .nav-links.open {
+          display: flex;
+        }
+        .nav-links a {
+          padding: 13px 10px;
+          border-radius: 10px;
+        }
+        .nav-links a.nav-cta {
+          margin-top: 6px;
+          text-align: center;
+          justify-content: center;
+        }
+      }
+
+      /* ===== CONFIGURATOR ===== */
+      .cfg-head {
+        text-align: center;
+        padding: 26px 0 8px;
+      }
+      .cfg-head h1 {
+        font-size: 32px;
+        color: var(--ink);
+      }
+      .cfg-head p {
+        color: var(--muted);
+        margin-top: 6px;
+        font-size: 16px;
+      }
+      .plan-pill {
+        display: inline-block;
+        margin-top: 12px;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 14px;
+        color: var(--wine);
+        background: var(--blush);
+        padding: 7px 16px;
+        border-radius: 999px;
+      }
+
+      /* preview + tabs */
+      .preview-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        padding: 18px;
+        box-shadow: var(--shadow-md);
+        max-width: 520px;
+        margin: 18px auto 0;
+      }
+      .tabs {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-bottom: 16px;
+      }
+      .tab {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 15.5px;
+        color: var(--wine);
+        background: var(--blush);
+        border: 1px solid var(--blush-deep);
+        border-radius: 999px;
+        padding: 9px 22px;
+        cursor: pointer;
+        transition: all 0.18s ease;
+      }
+      .tab:hover {
+        background: var(--blush-deep);
+      }
+      .tab[aria-selected='true'] {
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        color: #fff;
+        border-color: transparent;
+        box-shadow: 0 8px 18px rgba(229, 25, 125, 0.26);
+      }
+      .preview-stage {
+        position: relative;
+        border-radius: 16px;
+        background:
+          radial-gradient(70% 70% at 50% 0%, rgba(229, 25, 125, 0.06), transparent 70%), var(--bg);
+        border: 1px dashed var(--blush-deep);
+        min-height: 300px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        overflow: hidden;
+      }
+      .preview-panel {
+        display: none;
+        width: 100%;
+      }
+      .preview-panel[data-active='true'] {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .preview-panel svg {
+        width: 100%;
+        height: auto;
+        max-height: 420px;
+        display: block;
+        filter: drop-shadow(0 14px 30px rgba(44, 26, 41, 0.16));
+      }
+      .preview-panel img {
+        width: 100%;
+        height: auto;
+        max-height: 420px;
+        object-fit: contain;
+        display: block;
+      }
+      .preview-empty {
+        color: var(--muted);
+        font-size: 15px;
+        text-align: center;
+      }
+
+      /* pickers */
+      .picker {
+        margin: 26px auto 0;
+        max-width: 760px;
+      }
+      .picker h2 {
+        font-size: 19px;
+        text-align: center;
+        margin-bottom: 14px;
+        color: var(--ink);
+      }
+      .designs {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+        gap: 12px;
+        justify-content: center;
+      }
+      .design {
+        background: var(--surface);
+        border: 2px solid var(--line);
+        border-radius: 16px;
+        padding: 10px;
+        cursor: pointer;
+        transition:
+          transform 0.18s ease,
+          box-shadow 0.2s ease,
+          border-color 0.2s ease;
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+      .design:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--shadow-md);
+      }
+      .design[aria-pressed='true'] {
+        border-color: var(--hot);
+        box-shadow:
+          0 0 0 3px rgba(229, 25, 125, 0.18),
+          var(--shadow-md);
+      }
+      .design .thumb {
+        width: 100%;
+        aspect-ratio: 5/7;
+        border-radius: 10px;
+        overflow: hidden;
+        background: var(--blush);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .design .thumb svg,
+      .design .thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+      .design .dname {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 13.5px;
+        color: var(--wine-deep);
+        text-align: center;
+      }
+
+      .colors {
+        display: flex;
+        gap: 14px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .swatch {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        cursor: pointer;
+        border: 3px solid #fff;
+        box-shadow:
+          0 0 0 1px var(--line),
+          var(--shadow-sm);
+        transition:
+          transform 0.16s ease,
+          box-shadow 0.2s ease;
+        position: relative;
+      }
+      .swatch:hover {
+        transform: scale(1.08);
+      }
+      .swatch[aria-pressed='true'] {
+        box-shadow:
+          0 0 0 3px var(--ink),
+          var(--shadow-md);
+        transform: scale(1.06);
+      }
+      .swatch .cname {
+        position: absolute;
+        inset-inline: 0;
+        top: 54px;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--muted);
+        white-space: nowrap;
+        text-align: center;
+      }
+
+      /* sticky continue bar */
+      .continue-bar {
+        position: fixed;
+        bottom: 0;
+        inset-inline: 0;
+        z-index: 70;
+        background: rgba(255, 255, 255, 0.96);
+        border-top: 1px solid var(--line);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 -8px 24px rgba(44, 26, 41, 0.08);
+        padding: 12px 16px;
+      }
+      .continue-inner {
+        max-width: 1000px;
+        margin: 0 auto;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .continue-summary {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 14.5px;
+        color: var(--wine-deep);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .continue-bar .btn {
+        flex: 0 0 auto;
+      }
+      @media (max-width: 560px) {
+        .continue-summary {
+          display: none;
+        }
+        .continue-bar .btn {
+          flex: 1;
+          width: 100%;
+        }
+      }
+
+      .back {
+        text-align: center;
+        margin: 30px 0 6px;
+        font-size: 14px;
+      }
+      .back a {
+        color: var(--wine);
+        font-weight: 700;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        * {
+          transition-duration: 0.001ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- shared sticky nav -->
+    <nav class="nav" aria-label="ניווט ראשי">
+      <div class="nav-inner">
+        <a class="nav-logo" href="index.html#top" aria-label="דוגרי — לעמוד הבית"
+          ><img src="assets/logo.png" alt="דוגרי"
+        /></a>
+        <button
+          class="nav-toggle"
+          type="button"
+          data-testid="nav-toggle"
+          aria-expanded="false"
+          aria-controls="navLinks"
+          aria-label="תפריט"
+        >
+          <span></span>
+        </button>
+        <div class="nav-links" id="navLinks" data-testid="nav-links">
+          <a href="index.html#examples">דוגמאות</a>
+          <a href="index.html#pricing">מחירים</a>
+          <a href="timer.html">טיימר</a>
+          <a class="nav-cta" href="options.html">הזמנה</a>
+        </div>
+      </div>
+    </nav>
+
+    <main class="wrap" data-testid="configurator">
+      <div class="cfg-head">
+        <h1>בונים את המשחק שלכם</h1>
+        <p>בוחרים עיצוב וצבע — והכל מתעדכן לנגד עיניכם.</p>
+        <div class="plan-pill" data-testid="plan-pill">
+          חבילה: <span id="planName">בסיס</span> ·
+          <span id="planPrice" data-testid="plan-price">79</span>₪
+        </div>
+      </div>
+
+      <!-- LIVE PREVIEW -->
+      <section class="preview-card" data-testid="preview">
+        <div class="tabs" role="tablist" aria-label="תצוגה">
+          <button
+            class="tab"
+            role="tab"
+            data-tab="front"
+            data-testid="tab-front"
+            aria-selected="true"
+          >
+            קלף
+          </button>
+          <button
+            class="tab"
+            role="tab"
+            data-tab="back"
+            data-testid="tab-back"
+            aria-selected="false"
+          >
+            גב
+          </button>
+          <button
+            class="tab"
+            role="tab"
+            data-tab="board"
+            data-testid="tab-board"
+            aria-selected="false"
+          >
+            לוח
+          </button>
+        </div>
+        <div class="preview-stage" id="previewStage" data-testid="preview-stage">
+          <div
+            class="preview-panel"
+            data-panel="front"
+            data-testid="preview-front"
+            data-active="true"
+          ></div>
+          <div class="preview-panel" data-panel="back" data-testid="preview-back"></div>
+          <div class="preview-panel" data-panel="board" data-testid="preview-board"></div>
+          <div class="preview-empty" id="previewEmpty" hidden>טוען תצוגה…</div>
+        </div>
+      </section>
+
+      <!-- DESIGN PICKER -->
+      <section class="picker">
+        <h2>בחרו עיצוב</h2>
+        <div
+          class="designs"
+          id="designList"
+          data-testid="design-list"
+          role="group"
+          aria-label="עיצובים"
+        ></div>
+      </section>
+
+      <!-- COLOR PICKER -->
+      <section class="picker">
+        <h2>בחרו צבע ראשי</h2>
+        <div
+          class="colors"
+          id="colorList"
+          data-testid="color-list"
+          role="group"
+          aria-label="צבעים"
+        ></div>
+      </section>
+
+      <p class="back"><a href="index.html#top">חזרה לעמוד הבית ←</a></p>
+    </main>
+
+    <!-- STICKY CONTINUE -->
+    <div class="continue-bar">
+      <div class="continue-inner">
+        <div class="continue-summary" id="continueSummary" data-testid="continue-summary"></div>
+        <button class="btn" id="continueBtn" type="button" data-testid="continue-btn">
+          המשך להזמנה · <span id="continuePrice">79</span>₪
+        </button>
+      </div>
+    </div>
+
+    <script type="module">
+      import { DESIGNS, MAIN_COLORS } from './js/designs.js';
+      import { applyPalette, buildOrder } from './js/configurator.js';
+
+      /* ---- nav toggle (mobile) ---- */
+      (function () {
+        const toggle = document.querySelector('.nav-toggle');
+        const links = document.getElementById('navLinks');
+        if (toggle && links) {
+          toggle.addEventListener('click', () => {
+            const open = links.classList.toggle('open');
+            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          });
+        }
+      })();
+
+      /* ---- plan from query ---- */
+      const PLANS = {
+        base: { name: 'בסיס', price: 79 },
+        premium: { name: 'פרימיום', price: 139 },
+      };
+      const params = new URLSearchParams(location.search);
+      let plan = params.get('plan') === 'premium' ? 'premium' : 'base';
+
+      function paintPlan() {
+        const p = PLANS[plan];
+        document.getElementById('planName').textContent = p.name;
+        document.getElementById('planPrice').textContent = p.price;
+        document.getElementById('continuePrice').textContent = p.price;
+      }
+      paintPlan();
+
+      /* ---- state ---- */
+      let designIndex = 0;
+      let colorIndex = 0;
+      let activeTab = 'front';
+
+      // cache of fetched raw SVG text keyed by path
+      const svgCache = new Map();
+      async function loadSvg(path) {
+        if (svgCache.has(path)) return svgCache.get(path);
+        const p = fetch(path).then((r) =>
+          r.ok ? r.text() : Promise.reject(new Error('svg ' + r.status))
+        );
+        svgCache.set(path, p);
+        return p;
+      }
+
+      const panels = {
+        front: document.querySelector('[data-panel="front"]'),
+        back: document.querySelector('[data-panel="back"]'),
+        board: document.querySelector('[data-panel="board"]'),
+      };
+
+      // inline all three product SVGs of the currently selected design
+      async function renderDesign() {
+        const d = DESIGNS[designIndex];
+        if (!d) return;
+        await Promise.all(
+          Object.keys(panels).map(async (kind) => {
+            const el = panels[kind];
+            const path = d.products && d.products[kind];
+            if (!path) {
+              el.innerHTML = '';
+              return;
+            }
+            try {
+              el.innerHTML = await loadSvg(path);
+            } catch (e) {
+              el.innerHTML = '<div class="preview-empty">אין תצוגה</div>';
+            }
+          })
+        );
+        recolor();
+      }
+
+      // apply current color palette to every preview panel + page accent
+      function recolor() {
+        const d = DESIGNS[designIndex];
+        const color = MAIN_COLORS[colorIndex];
+        if (!d || !color) return;
+        const anchors = d.anchors || [];
+        Object.values(panels).forEach((el) => applyPalette(el, color.hex, anchors));
+        document.documentElement.style.setProperty('--accent', color.hex);
+      }
+
+      /* ---- tabs ---- */
+      function selectTab(tab) {
+        activeTab = tab;
+        document
+          .querySelectorAll('.tab')
+          .forEach((b) =>
+            b.setAttribute('aria-selected', b.dataset.tab === tab ? 'true' : 'false')
+          );
+        Object.entries(panels).forEach(([k, el]) =>
+          el.setAttribute('data-active', k === tab ? 'true' : 'false')
+        );
+      }
+      document
+        .querySelectorAll('.tab')
+        .forEach((b) => b.addEventListener('click', () => selectTab(b.dataset.tab)));
+
+      /* ---- build design thumbnails ---- */
+      const designList = document.getElementById('designList');
+      DESIGNS.forEach((d, i) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'design';
+        btn.dataset.testid = 'design-' + i;
+        btn.dataset.designId = d.id;
+        btn.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
+        btn.setAttribute('aria-label', d.name);
+        btn.innerHTML = '<div class="thumb"></div><div class="dname">' + d.name + '</div>';
+        designList.appendChild(btn);
+        // inline the front svg as a small thumbnail, palette-applied with the first color
+        const thumb = btn.querySelector('.thumb');
+        const frontPath = d.products && d.products.front;
+        if (frontPath) {
+          loadSvg(frontPath)
+            .then((txt) => {
+              thumb.innerHTML = txt;
+              applyPalette(thumb, MAIN_COLORS[0] ? MAIN_COLORS[0].hex : '#000', d.anchors || []);
+            })
+            .catch(() => {
+              thumb.textContent = d.name;
+            });
+        }
+        btn.addEventListener('click', () => selectDesign(i));
+      });
+
+      function selectDesign(i) {
+        designIndex = i;
+        document
+          .querySelectorAll('.design')
+          .forEach((el, idx) => el.setAttribute('aria-pressed', idx === i ? 'true' : 'false'));
+        renderDesign().then(persist);
+      }
+
+      /* ---- build color swatches ---- */
+      const colorList = document.getElementById('colorList');
+      MAIN_COLORS.forEach((c, i) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'swatch';
+        btn.dataset.testid = 'color-' + i;
+        btn.dataset.colorId = c.id;
+        btn.style.background = c.hex;
+        btn.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
+        btn.setAttribute('aria-label', c.name);
+        btn.innerHTML = '<span class="cname">' + c.name + '</span>';
+        btn.addEventListener('click', () => selectColor(i));
+        colorList.appendChild(btn);
+      });
+
+      function selectColor(i) {
+        colorIndex = i;
+        document
+          .querySelectorAll('.swatch')
+          .forEach((el, idx) => el.setAttribute('aria-pressed', idx === i ? 'true' : 'false'));
+        recolor();
+        persist();
+      }
+
+      /* ---- selection encoding / persistence ---- */
+      function currentSelection() {
+        const d = DESIGNS[designIndex] || {};
+        const c = MAIN_COLORS[colorIndex] || {};
+        return {
+          plan,
+          designId: d.id || '',
+          designName: d.name || '',
+          colorId: c.id || '',
+          colorName: c.name || '',
+          mainHex: c.hex || '',
+        };
+      }
+
+      function buildCurrentOrder() {
+        const s = currentSelection();
+        return buildOrder({
+          plan: s.plan,
+          designId: s.designId,
+          designName: s.designName,
+          colorName: s.colorName,
+          mainHex: s.mainHex,
+        });
+      }
+
+      function persist() {
+        const s = currentSelection();
+        try {
+          localStorage.setItem('dugri_selection', JSON.stringify(s));
+        } catch (e) {}
+        // reflect in the URL so thankyou.html can read it without storage
+        const url = new URL(location.href);
+        url.searchParams.set('plan', s.plan);
+        url.searchParams.set('design', s.designId);
+        url.searchParams.set('color', s.colorId);
+        history.replaceState(null, '', url);
+        // refresh the continue button intent + summary
+        let order;
+        try {
+          order = buildCurrentOrder();
+        } catch (e) {
+          order = null;
+        }
+        const btn = document.getElementById('continueBtn');
+        if (order && order.whatsappUrl) {
+          btn.dataset.waUrl = order.whatsappUrl;
+        }
+        document.getElementById('continueSummary').textContent =
+          order && order.summary ? order.summary : s.designName + ' · ' + s.colorName;
+      }
+
+      /* ---- continue ---- */
+      document.getElementById('continueBtn').addEventListener('click', () => {
+        persist();
+        let order;
+        try {
+          order = buildCurrentOrder();
+        } catch (e) {
+          order = null;
+        }
+        if (order && order.whatsappUrl) {
+          window.open(order.whatsappUrl, '_blank');
+        }
+      });
+
+      /* ---- init ---- */
+      // restore a prior color choice from the URL if present
+      (function restore() {
+        const dId = params.get('design');
+        const cId = params.get('color');
+        if (dId) {
+          const di = DESIGNS.findIndex((d) => d.id === dId);
+          if (di >= 0) designIndex = di;
+        }
+        if (cId) {
+          const ci = MAIN_COLORS.findIndex((c) => c.id === cId);
+          if (ci >= 0) colorIndex = ci;
+        }
+        document
+          .querySelectorAll('.design')
+          .forEach((el, idx) =>
+            el.setAttribute('aria-pressed', idx === designIndex ? 'true' : 'false')
+          );
+        document
+          .querySelectorAll('.swatch')
+          .forEach((el, idx) =>
+            el.setAttribute('aria-pressed', idx === colorIndex ? 'true' : 'false')
+          );
+      })();
+
+      selectTab('front');
+      renderDesign().then(persist);
+    </script>
+  </body>
 </html>

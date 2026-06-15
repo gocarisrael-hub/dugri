@@ -1,82 +1,262 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="he" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>תודה! עכשיו שולחים את המילים — דוגרי</title>
-<meta name="robots" content="noindex">
-<link rel="icon" type="image/png" href="assets/logo.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap" rel="stylesheet">
-<style>
-  :root{--bg:#FFF5F8;--surface:#FFFFFF;--blush:#FBE8EE;--blush-deep:#F1D2DC;--ink:#2C1A29;--muted:#7C6A74;--wine:#9B2D54;--wine-deep:#7A1F40;--gold:#BC9A4C;--hot:#E5197D;--line:#F0DEE4;
-    --font:'Calibri','Carlito','Segoe UI','Arial','Helvetica Neue',sans-serif;
-    --display:'Heebo','Calibri','Carlito','Segoe UI','Arial',sans-serif}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:var(--font);color:var(--ink);line-height:1.6;font-size:17px;
-    background:
-      radial-gradient(60% 40% at 80% 0%, rgba(229,25,125,.10), transparent 60%),
-      radial-gradient(50% 40% at 10% 6%, rgba(188,154,76,.10), transparent 60%),
-      var(--bg)}
-  h1,h2,h3{font-family:var(--display);line-height:1.18;font-weight:800;letter-spacing:-.015em}
-  .wrap{max-width:680px;margin:0 auto;padding:40px 22px 60px}
-  .check{width:68px;height:68px;border-radius:50%;background:linear-gradient(140deg,var(--hot),var(--wine));color:#fff;display:flex;align-items:center;justify-content:center;font-size:34px;margin:0 auto 18px;box-shadow:0 14px 30px rgba(229,25,125,.30);animation:pop .6s cubic-bezier(.18,.89,.32,1.28) both}
-  @keyframes pop{0%{opacity:0;transform:scale(.6)}100%{opacity:1;transform:scale(1)}}
-  @media(prefers-reduced-motion:reduce){.check{animation:none}}
-  .head{text-align:center;margin-bottom:30px}
-  .head h1{font-size:34px}
-  .head p{color:var(--muted);margin-top:8px;font-size:18px}
-  .btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;font-family:var(--display);font-weight:800;font-size:18px;border:none;cursor:pointer;padding:16px 28px;border-radius:999px;text-decoration:none;transition:transform .14s ease, box-shadow .2s ease}
-  .btn.wa{background:#25D366;color:#06310f;box-shadow:0 10px 22px rgba(37,211,102,.28)}
-  .btn.wa:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(37,211,102,.35)}
-  .center{text-align:center;margin:6px 0 30px}
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:22px 24px;margin-bottom:18px;box-shadow:0 10px 28px rgba(44,26,41,.08)}
-  .card h3{font-size:20px;color:var(--wine);margin-bottom:10px}
-  .cats{display:grid;grid-template-columns:1fr;gap:10px}
-  @media(min-width:560px){.cats{grid-template-columns:1fr 1fr}}
-  .cat{background:var(--blush);border-radius:12px;padding:12px 14px}
-  .cat b{display:block;font-size:15px;color:var(--wine-deep)}
-  .cat span{font-size:13.5px;color:var(--muted)}
-  .note{text-align:center;color:var(--muted);font-size:15px;margin-top:10px}
-  .note b{color:var(--ink)}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="head">
-    <div class="check">✓</div>
-    <h1>קיבלנו את ההזמנה, תודה!</h1>
-    <p>נשאר רק שלב אחד: לשלוח לנו את המילים על בעל השמחה.</p>
-  </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>תודה! עכשיו שולחים את המילים — דוגרי</title>
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #fff5f8;
+        --surface: #ffffff;
+        --blush: #fbe8ee;
+        --blush-deep: #f1d2dc;
+        --ink: #2c1a29;
+        --muted: #7c6a74;
+        --wine: #9b2d54;
+        --wine-deep: #7a1f40;
+        --gold: #bc9a4c;
+        --hot: #e5197d;
+        --line: #f0dee4;
+        --font: 'Calibri', 'Carlito', 'Segoe UI', 'Arial', 'Helvetica Neue', sans-serif;
+        --display: 'Heebo', 'Calibri', 'Carlito', 'Segoe UI', 'Arial', sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--font);
+        color: var(--ink);
+        line-height: 1.6;
+        font-size: 17px;
+        background:
+          radial-gradient(60% 40% at 80% 0%, rgba(229, 25, 125, 0.1), transparent 60%),
+          radial-gradient(50% 40% at 10% 6%, rgba(188, 154, 76, 0.1), transparent 60%), var(--bg);
+      }
+      h1,
+      h2,
+      h3 {
+        font-family: var(--display);
+        line-height: 1.18;
+        font-weight: 800;
+        letter-spacing: -0.015em;
+      }
+      .wrap {
+        max-width: 680px;
+        margin: 0 auto;
+        padding: 40px 22px 60px;
+      }
+      .check {
+        width: 68px;
+        height: 68px;
+        border-radius: 50%;
+        background: linear-gradient(140deg, var(--hot), var(--wine));
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 34px;
+        margin: 0 auto 18px;
+        box-shadow: 0 14px 30px rgba(229, 25, 125, 0.3);
+        animation: pop 0.6s cubic-bezier(0.18, 0.89, 0.32, 1.28) both;
+      }
+      @keyframes pop {
+        0% {
+          opacity: 0;
+          transform: scale(0.6);
+        }
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .check {
+          animation: none;
+        }
+      }
+      .head {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .head h1 {
+        font-size: 34px;
+      }
+      .head p {
+        color: var(--muted);
+        margin-top: 8px;
+        font-size: 18px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 18px;
+        border: none;
+        cursor: pointer;
+        padding: 16px 28px;
+        border-radius: 999px;
+        text-decoration: none;
+        transition:
+          transform 0.14s ease,
+          box-shadow 0.2s ease;
+      }
+      .btn.wa {
+        background: #25d366;
+        color: #06310f;
+        box-shadow: 0 10px 22px rgba(37, 211, 102, 0.28);
+      }
+      .btn.wa:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 14px 28px rgba(37, 211, 102, 0.35);
+      }
+      .center {
+        text-align: center;
+        margin: 6px 0 30px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 22px 24px;
+        margin-bottom: 18px;
+        box-shadow: 0 10px 28px rgba(44, 26, 41, 0.08);
+      }
+      .card h3 {
+        font-size: 20px;
+        color: var(--wine);
+        margin-bottom: 10px;
+      }
+      .cats {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+      @media (min-width: 560px) {
+        .cats {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      .cat {
+        background: var(--blush);
+        border-radius: 12px;
+        padding: 12px 14px;
+      }
+      .cat b {
+        display: block;
+        font-size: 15px;
+        color: var(--wine-deep);
+      }
+      .cat span {
+        font-size: 13.5px;
+        color: var(--muted);
+      }
+      .note {
+        text-align: center;
+        color: var(--muted);
+        font-size: 15px;
+        margin-top: 10px;
+      }
+      .note b {
+        color: var(--ink);
+      }
+      .selection {
+        margin-top: 14px;
+        display: inline-block;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 14.5px;
+        color: var(--wine);
+        background: var(--blush);
+        padding: 8px 16px;
+        border-radius: 999px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="head">
+        <div class="check">✓</div>
+        <h1>קיבלנו את ההזמנה, תודה!</h1>
+        <p>נשאר רק שלב אחד: לשלוח לנו את המילים על בעל השמחה.</p>
+        <p class="selection" id="selectionLine" data-testid="selection-line" hidden></p>
+      </div>
 
-  <div class="center">
-    <a class="btn wa" id="waSend" href="#" target="_blank" rel="noopener">לשליחת המילים בוואטסאפ</a>
-  </div>
+      <div class="center">
+        <a class="btn wa" id="waSend" href="#" target="_blank" rel="noopener"
+          >לשליחת המילים בוואטסאפ</a
+        >
+      </div>
 
-  <div class="card">
-    <h3>איך אוספים מילים טובות</h3>
-    <p style="color:var(--muted);margin-bottom:14px">זה החלק הכי כיף — וגם הכי קל כשיש כיוון. עברו על הקטגוריות, כתבו כל מה שעולה. מינימום 100 מילים, וכמה שיותר יותר טוב.</p>
-    <div class="cats">
-      <div class="cat"><b>אנשים</b><span>בן/בת זוג, חברים, משפחה, כינויים</span></div>
-      <div class="cat"><b>מקומות</b><span>חופשות, הבית, מקומות אהובים</span></div>
-      <div class="cat"><b>בדיחות פנימיות</b><span>סיפורים שרק אתם מבינים</span></div>
-      <div class="cat"><b>ביטויים שלו</b><span>מה שהוא תמיד אומר</span></div>
-      <div class="cat"><b>הרגלים</b><span>קפה, נטפליקס, ספורט, אוכל</span></div>
-      <div class="cat"><b>עבודה ותחביבים</b><span>מקצוע, חלומות, תשוקות</span></div>
-      <div class="cat"><b>אירועים מהחיים</b><span>רגעים גדולים, הצלחות, פאדיחות</span></div>
-      <div class="cat"><b>ילדות ועבר</b><span>זיכרונות, סיפורים מצחיקים</span></div>
+      <div class="card">
+        <h3>איך אוספים מילים טובות</h3>
+        <p style="color: var(--muted); margin-bottom: 14px">
+          זה החלק הכי כיף — וגם הכי קל כשיש כיוון. עברו על הקטגוריות, כתבו כל מה שעולה. מינימום 100
+          מילים, וכמה שיותר יותר טוב.
+        </p>
+        <div class="cats">
+          <div class="cat"><b>אנשים</b><span>בן/בת זוג, חברים, משפחה, כינויים</span></div>
+          <div class="cat"><b>מקומות</b><span>חופשות, הבית, מקומות אהובים</span></div>
+          <div class="cat"><b>בדיחות פנימיות</b><span>סיפורים שרק אתם מבינים</span></div>
+          <div class="cat"><b>ביטויים שלו</b><span>מה שהוא תמיד אומר</span></div>
+          <div class="cat"><b>הרגלים</b><span>קפה, נטפליקס, ספורט, אוכל</span></div>
+          <div class="cat"><b>עבודה ותחביבים</b><span>מקצוע, חלומות, תשוקות</span></div>
+          <div class="cat"><b>אירועים מהחיים</b><span>רגעים גדולים, הצלחות, פאדיחות</span></div>
+          <div class="cat"><b>ילדות ועבר</b><span>זיכרונות, סיפורים מצחיקים</span></div>
+        </div>
+      </div>
+
+      <p class="note">
+        אחרי שתשלחו את המילים, <b>הקובץ אצלכם תוך 24 שעות</b>. שלחנו גם מייל אישור.
+      </p>
     </div>
-  </div>
 
-  <p class="note">אחרי שתשלחו את המילים, <b>הקובץ אצלכם תוך 24 שעות</b>. שלחנו גם מייל אישור.</p>
-</div>
+    <script>
+      // Keep in sync with index.html CONFIG.whatsapp
+      const WHATSAPP = '972546577715';
+      const msg = encodeURIComponent('שילמתי על משחק דוגרי. הנה המילים על בעל השמחה:\n\n');
+      document.getElementById('waSend').href = 'https://wa.me/' + WHATSAPP + '?text=' + msg;
 
-<script>
-  // Keep in sync with index.html CONFIG.whatsapp
-  const WHATSAPP = "972546577715";
-  const msg = encodeURIComponent("שילמתי על משחק דוגרי. הנה המילים על בעל השמחה:\n\n");
-  document.getElementById("waSend").href = "https://wa.me/" + WHATSAPP + "?text=" + msg;
-</script>
-</body>
+      /* Echo the configurator selection if present (localStorage saved by options.html,
+     with a URL fallback). Graceful when nothing was chosen. */
+      (function () {
+        const PLAN_NAMES = { base: 'בסיס', premium: 'פרימיום' };
+        let sel = null;
+        try {
+          sel = JSON.parse(localStorage.getItem('dugri_selection') || 'null');
+        } catch (e) {
+          sel = null;
+        }
+        const q = new URLSearchParams(location.search);
+        if (!sel && (q.get('design') || q.get('color') || q.get('plan'))) {
+          sel = {
+            plan: q.get('plan') || '',
+            designName: q.get('design') || '',
+            colorName: q.get('color') || '',
+          };
+        }
+        if (!sel) return;
+        const parts = [];
+        if (sel.designName) parts.push('עיצוב: ' + sel.designName);
+        if (sel.colorName) parts.push('צבע: ' + sel.colorName);
+        if (sel.plan) parts.push('חבילה: ' + (PLAN_NAMES[sel.plan] || sel.plan));
+        if (!parts.length) return;
+        const line = document.getElementById('selectionLine');
+        line.textContent = 'הבחירה שלכם · ' + parts.join(' · ');
+        line.hidden = false;
+      })();
+    </script>
+  </body>
 </html>
