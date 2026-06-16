@@ -809,36 +809,53 @@
         text-align: center;
         margin-bottom: 12px;
       }
-      .ex-faces {
+      /* two portrait cards (front + back) side by side */
+      .ex-cards {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 10px;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
       }
+      .ex-card-slot {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      /* shared face box: centers an inlined SVG and contains it (no overflow) */
       .ex-face {
         border-radius: 12px;
         background: var(--blush);
         border: 1px solid var(--blush-deep);
-        aspect-ratio: 5/7;
         overflow: hidden;
         display: flex;
         align-items: center;
         justify-content: center;
+        padding: 8px;
       }
       .ex-face svg,
       .ex-face img {
         width: 100%;
         height: 100%;
+        max-width: 100%;
+        max-height: 100%;
         object-fit: contain;
         display: block;
       }
-      .ex-face.board {
-        aspect-ratio: 1/1;
+      /* cards are portrait (~5/7); board is landscape (~A-series 1.41/1) */
+      .ex-face.card {
+        aspect-ratio: 5/7;
       }
-      .ex-caption {
-        margin-top: 8px;
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 10px;
+      .ex-board-wrap {
+        margin-top: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .ex-face.board {
+        aspect-ratio: 1.414 / 1;
+        width: 100%;
+      }
+      .ex-card-label,
+      .ex-board-label {
         font-size: 12px;
         color: var(--muted);
         text-align: center;
@@ -1710,9 +1727,6 @@
       <div class="wrap">
         <p>דוגרי · <a id="igLink" href="#" target="_blank" rel="noopener">@INSTAGRAM_HANDLE</a></p>
         <p class="tag">צילמתם? תייגו אותנו</p>
-        <p class="footlinks">
-          <a href="timer.html">טיימר 60 שניות</a> · <a href="options.html">אפשרויות</a>
-        </p>
       </div>
     </footer>
 
@@ -1876,18 +1890,18 @@
      Inlines tokenized SVGs and applies each design's first palette so the
      section is in-brand without further input. Pure enhancement.
      ============================================================ */
-      import { DESIGNS, MAIN_COLORS } from './js/designs.js';
-      import { applyPalette } from './js/configurator.js';
+      import { DESIGNS } from './js/designs.js';
+      import { applyOriginal } from './js/configurator.js';
 
       const grid = document.getElementById('examplesGrid');
       const empty = document.getElementById('examplesEmpty');
       if (grid) {
         if (empty) empty.remove();
-        const baseColor = MAIN_COLORS && MAIN_COLORS[0] ? MAIN_COLORS[0].hex : '#9B2D54';
-        const KINDS = [
-          { key: 'front', label: 'קלף', cls: '' },
-          { key: 'back', label: 'גב', cls: '' },
-          { key: 'board', label: 'לוח', cls: 'board' },
+        // The two cards (front/back) are portrait; the board is landscape.
+        // Lay the cards side-by-side on top and give the board its own full-width row.
+        const CARDS = [
+          { key: 'front', label: 'קלף', cls: 'card' },
+          { key: 'back', label: 'גב', cls: 'card' },
         ];
         DESIGNS.forEach((d) => {
           const card = document.createElement('div');
@@ -1897,28 +1911,40 @@
             '<div class="ex-name">' +
             d.name +
             '</div>' +
-            '<div class="ex-faces"></div>' +
-            '<div class="ex-caption">' +
-            KINDS.map((k) => '<span>' + k.label + '</span>').join('') +
+            '<div class="ex-cards"></div>' +
+            '<div class="ex-board-wrap">' +
+            '<div class="ex-face board" data-kind="board"></div>' +
+            '<div class="ex-board-label">לוח</div>' +
             '</div>';
-          const faces = card.querySelector('.ex-faces');
-          KINDS.forEach((k) => {
+          const cardsRow = card.querySelector('.ex-cards');
+          const renderInto = (face, path) => {
+            if (!path) return;
+            fetch(path)
+              .then((r) => (r.ok ? r.text() : Promise.reject()))
+              .then((txt) => {
+                face.innerHTML = txt;
+                // Show the design in its OWN original colors.
+                applyOriginal(face, d.anchors || []);
+              })
+              .catch(() => {
+                face.textContent = d.name;
+              });
+          };
+          CARDS.forEach((k) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'ex-card-slot';
             const face = document.createElement('div');
             face.className = 'ex-face ' + k.cls;
-            faces.appendChild(face);
-            const path = d.products && d.products[k.key];
-            if (path) {
-              fetch(path)
-                .then((r) => (r.ok ? r.text() : Promise.reject()))
-                .then((txt) => {
-                  face.innerHTML = txt;
-                  applyPalette(face, baseColor, d.anchors || []);
-                })
-                .catch(() => {
-                  face.textContent = d.name;
-                });
-            }
+            wrap.appendChild(face);
+            const cap = document.createElement('div');
+            cap.className = 'ex-card-label';
+            cap.textContent = k.label;
+            wrap.appendChild(cap);
+            cardsRow.appendChild(wrap);
+            renderInto(face, d.products && d.products[k.key]);
           });
+          const boardFace = card.querySelector('.ex-face.board');
+          renderInto(boardFace, d.products && d.products.board);
           grid.appendChild(card);
         });
       }
