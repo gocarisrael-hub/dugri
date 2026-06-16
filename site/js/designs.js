@@ -4,15 +4,18 @@
 import { GENERATED } from './designs.generated.js';
 
 /** Selectable "main" colors the user can pick to recolor a design. */
+// Vivid, electric brights in the spirit of the original designs (magenta /
+// purple / royal-blue / cyan). All high-saturation so the derive keeps the
+// brand's "vivid main over a pastel ground" feel.
 export const MAIN_COLORS = [
-  { id: 'pink', name: 'ורוד', hex: '#E5197D' },
-  { id: 'magenta', name: 'מגנטה', hex: '#D6249F' },
+  { id: 'magenta', name: 'מגנטה', hex: '#ED2A9C' },
+  { id: 'pink', name: 'ורוד', hex: '#FF4FA3' },
   { id: 'violet', name: 'סגול', hex: '#7A3FF2' },
   { id: 'blue', name: 'כחול', hex: '#2D7FF9' },
-  { id: 'teal', name: 'טורקיז', hex: '#0FB5AE' },
+  { id: 'cyan', name: 'תכלת', hex: '#15B8E6' },
+  { id: 'teal', name: 'טורקיז', hex: '#0FBFA8' },
   { id: 'green', name: 'ירוק', hex: '#1FAE72' },
-  { id: 'orange', name: 'כתום', hex: '#F76707' },
-  { id: 'red', name: 'אדום', hex: '#E03131' },
+  { id: 'coral', name: 'אלמוג', hex: '#FF6A3D' },
 ];
 
 /** Human-friendly (Hebrew) names per design id. */
