@@ -173,24 +173,75 @@ function tokenize(src, anchors) {
 }
 
 // ---- crop fronts/backs to one card ----------------------------------------
-// 8-up sheet, viewBox ~ "0 0 841.92 595.5", 4 cols x 2 rows.
-// Top-left cell is roughly the full width/4 x height/2.
+// Each card is defined by a clipPath <path> rectangle (in absolute sheet
+// coords). Detect the most-repeated card-sized clip (the 8 cards) and crop the
+// viewBox to the TOP-LEFT one. Geometry only — no rendering. Falls back to a
+// 4x2 grid cell if no clips are found.
+
+function clipPathBBoxes(src) {
+  const boxes = [];
+  const re = /<clipPath\b[^>]*>\s*<path\b[^>]*\bd="([^"]+)"/g;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const nums = (m[1].match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+    if (nums.length < 4) continue;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      const x = nums[i];
+      const y = nums[i + 1];
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    boxes.push({ x: minX, y: minY, w: maxX - minX, h: maxY - minY });
+  }
+  return boxes;
+}
+
 function cropToCard(src) {
   const vbMatch = src.match(/viewBox\s*=\s*"([^"]+)"/);
   if (!vbMatch) return src;
-  const parts = vbMatch[1]
+  const vb = vbMatch[1]
     .trim()
     .split(/[\s,]+/)
     .map(Number);
-  if (parts.length !== 4) return src;
-  const [minX, minY, w, h] = parts;
-  const cellW = w / 4;
-  const cellH = h / 2;
-  const newVb = `${minX} ${minY} ${cellW.toFixed(4)} ${cellH.toFixed(4)}`;
+  if (vb.length !== 4) return src;
+
+  // card-sized clips only (exclude tiny icon/text clips and full-sheet clips)
+  const cards = clipPathBBoxes(src).filter(
+    (b) => b.w > 80 && b.h > 120 && b.w < vb[2] * 0.9 && b.h < vb[3] * 0.95
+  );
+
+  let box;
+  if (cards.length) {
+    // the real cards are the most-repeated size; quantize and pick that group
+    const groups = new Map();
+    for (const b of cards) {
+      const key = `${Math.round(b.w / 6)}x${Math.round(b.h / 6)}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(b);
+    }
+    const best = [...groups.values()].sort(
+      (a, c) => c.length - a.length || c[0].w * c[0].h - a[0].w * a[0].h
+    )[0];
+    box = best.slice().sort((a, c) => a.y - c.y || a.x - c.x)[0]; // top-left
+  } else {
+    box = { x: vb[0], y: vb[1], w: vb[2] / 4, h: vb[3] / 2 };
+  }
+
+  const M = 1.5; // small margin so the card edge isn't clipped
+  const x = box.x - M;
+  const y = box.y - M;
+  const w = box.w + 2 * M;
+  const h = box.h + 2 * M;
+  const newVb = `${x.toFixed(3)} ${y.toFixed(3)} ${w.toFixed(3)} ${h.toFixed(3)}`;
   let out = src.replace(/viewBox\s*=\s*"[^"]+"/, `viewBox="${newVb}"`);
-  // Reset width/height to the card cell so inline SVG shows one card.
-  out = out.replace(/(<svg[^>]*?)\swidth="[^"]*"/, `$1 width="${cellW.toFixed(2)}"`);
-  out = out.replace(/(<svg[^>]*?)\sheight="[^"]*"/, `$1 height="${cellH.toFixed(2)}"`);
+  out = out.replace(/(<svg[^>]*?)\swidth="[^"]*"/, `$1 width="${w.toFixed(2)}"`);
+  out = out.replace(/(<svg[^>]*?)\sheight="[^"]*"/, `$1 height="${h.toFixed(2)}"`);
   return out;
 }
 
