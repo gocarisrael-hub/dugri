@@ -3,6 +3,7 @@ coverage
 test-results
 playwright-report
 package-lock.json
+.claude
 
 # binary / exported assets — not source to format
 resources
