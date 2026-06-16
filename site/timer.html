@@ -1,177 +1,774 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="he" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>טיימר 60 שניות — דוגרי</title>
-<link rel="icon" type="image/png" href="assets/logo.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap" rel="stylesheet">
-<style>
-  :root{--bg:#FFF5F8;--surface:#fff;--blush:#FBE8EE;--blush-deep:#F1D2DC;--ink:#2C1A29;--muted:#7C6A74;--wine:#9B2D54;--wine-deep:#7A1F40;--gold:#BC9A4C;--hot:#E5197D;--hot-deep:#C7106A;--line:#F0DEE4;
-    --font:'Calibri','Carlito','Segoe UI','Arial',sans-serif;
-    --display:'Heebo','Calibri','Carlito','Arial',sans-serif}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:var(--font);color:var(--ink);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 20px;text-align:center;
-    background:
-      radial-gradient(60% 40% at 80% 0%, rgba(229,25,125,.10), transparent 60%),
-      radial-gradient(50% 40% at 12% 8%, rgba(188,154,76,.10), transparent 60%),
-      var(--bg)}
-  h1{font-family:var(--display);font-weight:900;font-size:26px;color:var(--wine);letter-spacing:-.01em}
-  .logo{width:120px;height:auto;margin-bottom:14px}
-  .glass-wrap{position:relative;margin:22px 0 6px;transition:transform .6s cubic-bezier(.5,0,.4,1.3)}
-  .glass-wrap.done{transform:rotate(180deg)}
-  svg.hourglass{width:170px;height:auto;display:block;filter:drop-shadow(0 14px 26px rgba(155,45,84,.18))}
-  .count{font-family:var(--display);font-weight:900;font-size:74px;line-height:1;color:var(--ink);margin-top:6px;
-    background:linear-gradient(140deg,var(--hot),var(--wine));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .count.done{-webkit-text-fill-color:initial;color:var(--wine)}
-  .status{color:var(--muted);font-weight:700;font-size:15px;margin-top:6px;min-height:22px}
-  .controls{display:flex;gap:12px;margin-top:24px;flex-wrap:wrap;justify-content:center}
-  .btn{font-family:var(--display);font-weight:800;font-size:18px;border:none;cursor:pointer;padding:15px 30px;border-radius:999px;text-decoration:none;color:#fff;
-    background:linear-gradient(135deg,var(--hot),var(--wine));box-shadow:0 10px 24px rgba(229,25,125,.28);transition:transform .12s ease,box-shadow .2s ease,filter .2s ease}
-  .btn:hover{transform:translateY(-2px);filter:brightness(1.04)}
-  .btn.sec{background:none;color:var(--wine);box-shadow:none;border:2px solid var(--blush-deep)}
-  .btn.sec:hover{background:var(--blush)}
-  .back{margin-top:26px;font-size:14px;color:var(--muted)}
-  .back a{color:var(--wine);font-weight:700}
-  @media(prefers-reduced-motion:reduce){.glass-wrap{transition:none}}
-</style>
-</head>
-<body>
-  <img class="logo" src="assets/logo.png" alt="דוגרי">
-  <h1>טיימר · 60 שניות</h1>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>טיימר 60 שניות — דוגרי</title>
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@400;500;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #fff5f8;
+        --surface: #fff;
+        --blush: #fbe8ee;
+        --blush-deep: #f1d2dc;
+        --ink: #2c1a29;
+        --muted: #7c6a74;
+        --wine: #9b2d54;
+        --wine-deep: #7a1f40;
+        --gold: #bc9a4c;
+        --gold-light: #e3c87e;
+        --hot: #e5197d;
+        --hot-deep: #c7106a;
+        --line: #f0dee4;
+        --font: 'Calibri', 'Carlito', 'Segoe UI', 'Arial', sans-serif;
+        --display: 'Heebo', 'Calibri', 'Carlito', 'Arial', sans-serif;
+      }
 
-  <div class="glass-wrap" id="glass">
-    <svg class="hourglass" viewBox="0 0 100 160" aria-hidden="true">
-      <defs>
-        <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#D8B86A"/>
-          <stop offset="1" stop-color="#BC9A4C"/>
-        </linearGradient>
-        <clipPath id="topClip"><polygon points="12,12 88,12 50,80"/></clipPath>
-        <clipPath id="botClip"><polygon points="50,80 12,148 88,148"/></clipPath>
-      </defs>
-      <!-- sand -->
-      <rect id="sandTop" x="12" y="12" width="76" height="68" fill="url(#sand)" clip-path="url(#topClip)"/>
-      <rect id="sandBottom" x="12" y="148" width="76" height="0" fill="url(#sand)" clip-path="url(#botClip)"/>
-      <rect id="stream" x="49" y="80" width="2" height="36" fill="#BC9A4C" opacity="0"/>
-      <!-- glass frame -->
-      <polygon points="12,12 88,12 50,80" fill="none" stroke="#9B2D54" stroke-width="3.2" stroke-linejoin="round"/>
-      <polygon points="50,80 12,148 88,148" fill="none" stroke="#9B2D54" stroke-width="3.2" stroke-linejoin="round"/>
-      <rect x="7" y="5" width="86" height="8" rx="4" fill="#9B2D54"/>
-      <rect x="7" y="147" width="86" height="8" rx="4" fill="#9B2D54"/>
-    </svg>
-  </div>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
 
-  <div class="count" id="count">60</div>
-  <div class="status" id="status">לחצו התחל</div>
+      html,
+      body {
+        height: 100%;
+      }
 
-  <div class="controls">
-    <button class="btn" id="toggle" type="button">התחל</button>
-    <button class="btn sec" id="reset" type="button">איפוס</button>
-  </div>
+      body {
+        font-family: var(--font);
+        color: var(--ink);
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 28px 20px;
+        text-align: center;
+        overflow-x: hidden;
+        background:
+          radial-gradient(60% 40% at 80% -5%, rgba(229, 25, 125, 0.12), transparent 60%),
+          radial-gradient(50% 40% at 12% 6%, rgba(188, 154, 76, 0.12), transparent 60%),
+          radial-gradient(70% 50% at 50% 110%, rgba(155, 45, 84, 0.08), transparent 65%), var(--bg);
+      }
 
-  <p class="back"><a href="index.html">חזרה לדוגרי ←</a></p>
+      .logo {
+        width: 116px;
+        height: auto;
+        margin-bottom: 10px;
+        opacity: 0;
+        transform: translateY(8px);
+        animation: rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) 0.05s forwards;
+      }
 
-<script>
-  (function(){
-    var DURATION = 60000; // 60 seconds
-    var elapsed = 0, lastStart = 0, running = false, raf = 0, audio = null;
+      h1 {
+        font-family: var(--display);
+        font-weight: 900;
+        font-size: 24px;
+        color: var(--wine);
+        letter-spacing: -0.01em;
+        opacity: 0;
+        transform: translateY(8px);
+        animation: rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s forwards;
+      }
 
-    var sandTop = document.getElementById('sandTop');
-    var sandBottom = document.getElementById('sandBottom');
-    var stream = document.getElementById('stream');
-    var countEl = document.getElementById('count');
-    var statusEl = document.getElementById('status');
-    var toggle = document.getElementById('toggle');
-    var glass = document.getElementById('glass');
+      h1 .dot {
+        color: var(--hot);
+      }
 
-    function render(p){
-      p = Math.min(1, Math.max(0, p));
-      var topH = 68 * (1 - p);
-      sandTop.setAttribute('y', 12 + 68 * p);
-      sandTop.setAttribute('height', topH);
-      var botH = 68 * p;
-      sandBottom.setAttribute('y', 148 - botH);
-      sandBottom.setAttribute('height', botH);
-      stream.setAttribute('opacity', (running && p < 1) ? 0.85 : 0);
-    }
+      @keyframes rise {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
 
-    function setCount(ms){
-      var rem = Math.max(0, Math.ceil((DURATION - ms) / 1000));
-      countEl.textContent = rem;
-    }
+      /* ---- The timer stage ---- */
+      .stage {
+        position: relative;
+        margin: 18px 0 2px;
+        opacity: 0;
+        transform: translateY(10px) scale(0.98);
+        animation: rise 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.2s forwards;
+      }
 
-    function beep(){
-      try{
-        audio = audio || new (window.AudioContext || window.webkitAudioContext)();
-        [0, 0.22, 0.44].forEach(function(t){
-          var o = audio.createOscillator(), g = audio.createGain();
-          o.type = 'sine'; o.frequency.value = 880;
-          o.connect(g); g.connect(audio.destination);
-          var s = audio.currentTime + t;
-          g.gain.setValueAtTime(0.001, s);
-          g.gain.exponentialRampToValueAtTime(0.35, s + 0.02);
-          g.gain.exponentialRampToValueAtTime(0.001, s + 0.18);
-          o.start(s); o.stop(s + 0.2);
+      /* soft ambient glow behind the glass */
+      .stage::before {
+        content: '';
+        position: absolute;
+        inset: -22% -18%;
+        z-index: 0;
+        border-radius: 50%;
+        background: radial-gradient(
+          closest-side,
+          rgba(229, 25, 125, 0.18),
+          rgba(188, 154, 76, 0.1) 55%,
+          transparent 72%
+        );
+        filter: blur(6px);
+        opacity: 0.85;
+        transition: opacity 0.6s ease;
+        animation: breathe 5.5s ease-in-out infinite;
+      }
+
+      .stage.idle::before {
+        opacity: 0.55;
+        animation-play-state: paused;
+      }
+
+      .stage.done::before {
+        background: radial-gradient(
+          closest-side,
+          rgba(229, 25, 125, 0.32),
+          rgba(188, 154, 76, 0.2) 55%,
+          transparent 74%
+        );
+        opacity: 1;
+      }
+
+      @keyframes breathe {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 0.8;
+        }
+        50% {
+          transform: scale(1.06);
+          opacity: 1;
+        }
+      }
+
+      .glass-wrap {
+        position: relative;
+        z-index: 1;
+        transition: transform 0.9s cubic-bezier(0.6, 0, 0.25, 1);
+        transform-origin: 50% 50%;
+        will-change: transform;
+      }
+
+      .glass-wrap.flip {
+        transform: rotate(180deg);
+      }
+
+      svg.hourglass {
+        width: 184px;
+        height: auto;
+        display: block;
+        filter: drop-shadow(0 18px 30px rgba(155, 45, 84, 0.22));
+      }
+
+      /* ---- Countdown number ---- */
+      .count-wrap {
+        position: relative;
+        z-index: 2;
+        margin-top: 10px;
+        height: 84px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .count {
+        font-family: var(--display);
+        font-weight: 900;
+        font-size: 76px;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.02em;
+        background: linear-gradient(140deg, var(--hot) 0%, var(--wine) 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        transition: transform 0.18s cubic-bezier(0.3, 1.6, 0.4, 1);
+        will-change: transform;
+      }
+
+      .count.bump {
+        animation: bump 0.4s cubic-bezier(0.3, 1.4, 0.5, 1);
+      }
+
+      @keyframes bump {
+        0% {
+          transform: scale(1);
+        }
+        30% {
+          transform: scale(1.14);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+
+      .count.done {
+        -webkit-text-fill-color: initial;
+        background: none;
+        color: var(--wine);
+        font-size: 40px;
+        animation: pop 0.6s cubic-bezier(0.2, 1.5, 0.3, 1);
+      }
+
+      @keyframes pop {
+        0% {
+          transform: scale(0.6);
+          opacity: 0;
+        }
+        60% {
+          transform: scale(1.12);
+        }
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+
+      .status {
+        color: var(--muted);
+        font-weight: 700;
+        font-size: 15px;
+        margin-top: 4px;
+        min-height: 22px;
+        letter-spacing: 0.01em;
+        transition: color 0.3s ease;
+      }
+
+      .status.done {
+        color: var(--hot);
+      }
+
+      /* ---- Controls ---- */
+      .controls {
+        display: flex;
+        gap: 12px;
+        margin-top: 26px;
+        flex-wrap: wrap;
+        justify-content: center;
+        opacity: 0;
+        transform: translateY(8px);
+        animation: rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) 0.32s forwards;
+      }
+
+      .btn {
+        position: relative;
+        overflow: hidden;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 18px;
+        border: none;
+        cursor: pointer;
+        padding: 15px 34px;
+        border-radius: 999px;
+        text-decoration: none;
+        color: #fff;
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        box-shadow:
+          0 10px 24px rgba(229, 25, 125, 0.3),
+          inset 0 1px 0 rgba(255, 255, 255, 0.25);
+        transition:
+          transform 0.18s cubic-bezier(0.3, 1.3, 0.5, 1),
+          box-shadow 0.25s ease,
+          filter 0.25s ease;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .btn:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.05);
+        box-shadow:
+          0 14px 30px rgba(229, 25, 125, 0.36),
+          inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      }
+
+      .btn:active {
+        transform: translateY(0) scale(0.97);
+      }
+
+      .btn:focus-visible {
+        outline: 3px solid rgba(229, 25, 125, 0.4);
+        outline-offset: 3px;
+      }
+
+      /* sheen sweep on hover */
+      .btn::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -60%;
+        width: 45%;
+        height: 100%;
+        background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+        transform: skewX(-18deg);
+        transition: left 0.6s ease;
+      }
+
+      .btn:hover::after {
+        left: 130%;
+      }
+
+      .btn.sec {
+        background: none;
+        color: var(--wine);
+        box-shadow: none;
+        border: 2px solid var(--blush-deep);
+      }
+
+      .btn.sec::after {
+        display: none;
+      }
+
+      .btn.sec:hover {
+        background: var(--blush);
+        filter: none;
+        box-shadow: 0 8px 18px rgba(155, 45, 84, 0.12);
+      }
+
+      .back {
+        margin-top: 28px;
+        font-size: 14px;
+        color: var(--muted);
+        opacity: 0;
+        animation: rise 0.7s ease 0.42s forwards;
+      }
+
+      .back a {
+        color: var(--wine);
+        font-weight: 700;
+        text-decoration: none;
+        border-bottom: 1px solid transparent;
+        transition: border-color 0.2s ease;
+      }
+
+      .back a:hover {
+        border-color: var(--wine);
+      }
+
+      /* ---- Reduced motion ---- */
+      @media (prefers-reduced-motion: reduce) {
+        .logo,
+        h1,
+        .stage,
+        .controls,
+        .back {
+          animation: none;
+          opacity: 1;
+          transform: none;
+        }
+        .glass-wrap {
+          transition: transform 0.2s ease;
+        }
+        .stage::before {
+          animation: none;
+        }
+        .count,
+        .count.bump,
+        .count.done {
+          animation: none;
+          transition: none;
+        }
+        .btn::after {
+          display: none;
+        }
+      }
+
+      @media (max-width: 380px) {
+        svg.hourglass {
+          width: 156px;
+        }
+        .count {
+          font-size: 64px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <img class="logo" src="assets/logo.png" alt="דוגרי" />
+    <h1>טיימר<span class="dot"> · </span>60 שניות</h1>
+
+    <div class="stage idle" id="stage">
+      <div class="glass-wrap" id="glass">
+        <svg
+          class="hourglass"
+          viewBox="0 0 120 190"
+          aria-hidden="true"
+          shape-rendering="geometricPrecision"
+        >
+          <defs>
+            <!-- glass body sheen -->
+            <linearGradient id="glassSheen" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#ffffff" stop-opacity="0.55" />
+              <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.06" />
+              <stop offset="1" stop-color="#ffffff" stop-opacity="0.32" />
+            </linearGradient>
+            <!-- warm sand gradient -->
+            <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#e8cf8c" />
+              <stop offset="0.5" stop-color="#cbab5e" />
+              <stop offset="1" stop-color="#b08f3f" />
+            </linearGradient>
+            <linearGradient id="sandTopGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#f0db9c" />
+              <stop offset="1" stop-color="#cdad60" />
+            </linearGradient>
+            <!-- frame gradient -->
+            <linearGradient id="frame" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#b23a63" />
+              <stop offset="1" stop-color="#7a1f40" />
+            </linearGradient>
+            <radialGradient id="cap" cx="0.5" cy="0.3" r="0.8">
+              <stop offset="0" stop-color="#c0466f" />
+              <stop offset="1" stop-color="#7a1f40" />
+            </radialGradient>
+            <!-- soft glow for the falling stream -->
+            <filter id="soft" x="-60%" y="-30%" width="220%" height="160%">
+              <feGaussianBlur stdDeviation="0.7" />
+            </filter>
+
+            <!-- bulb silhouettes (used both as glass fill and as clip) -->
+            <path id="topBulb" d="M22 22 H98 C98 50 74 78 60 92 C46 78 22 50 22 22 Z" />
+            <path id="botBulb" d="M60 98 C74 112 98 140 98 168 H22 C22 140 46 112 60 98 Z" />
+            <clipPath id="clipTop"><use href="#topBulb" /></clipPath>
+            <clipPath id="clipBot"><use href="#botBulb" /></clipPath>
+          </defs>
+
+          <!-- glass bulbs (translucent) -->
+          <use href="#topBulb" fill="#ffffff" opacity="0.55" />
+          <use href="#botBulb" fill="#ffffff" opacity="0.55" />
+
+          <!-- TOP sand: a rect clipped to the bulb; we move its top edge down -->
+          <g clip-path="url(#clipTop)">
+            <rect id="sandTop" x="20" y="22" width="80" height="72" fill="url(#sandTopGrad)" />
+            <!-- subtle funnel dip on the sand surface -->
+            <ellipse id="sandTopDip" cx="60" cy="22" rx="40" ry="4" fill="#b08f3f" opacity="0" />
+          </g>
+
+          <!-- BOTTOM sand: a clipped pile that grows upward + a soft mound -->
+          <g clip-path="url(#clipBot)">
+            <rect id="sandBot" x="20" y="168" width="80" height="0" fill="url(#sand)" />
+            <path
+              id="sandMound"
+              d="M22 168 Q60 168 98 168 L98 168 Z"
+              fill="url(#sandTopGrad)"
+              opacity="0"
+            />
+          </g>
+
+          <!-- falling stream -->
+          <g id="streamG" opacity="0" filter="url(#soft)">
+            <rect id="stream" x="59" y="92" width="2" height="6" fill="#d8b86a" rx="1" />
+          </g>
+
+          <!-- glass sheen overlay -->
+          <use href="#topBulb" fill="url(#glassSheen)" opacity="0.5" />
+          <use href="#botBulb" fill="url(#glassSheen)" opacity="0.5" />
+
+          <!-- glass outline -->
+          <use
+            href="#topBulb"
+            fill="none"
+            stroke="url(#frame)"
+            stroke-width="3"
+            stroke-linejoin="round"
+          />
+          <use
+            href="#botBulb"
+            fill="none"
+            stroke="url(#frame)"
+            stroke-width="3"
+            stroke-linejoin="round"
+          />
+
+          <!-- caps -->
+          <rect x="14" y="10" width="92" height="11" rx="5.5" fill="url(#cap)" />
+          <rect x="14" y="169" width="92" height="11" rx="5.5" fill="url(#cap)" />
+          <rect x="14" y="10" width="92" height="4" rx="2" fill="#ffffff" opacity="0.25" />
+        </svg>
+      </div>
+    </div>
+
+    <div class="count-wrap">
+      <div class="count" id="count">60</div>
+    </div>
+    <div class="status" id="status">לחצו התחל</div>
+
+    <div class="controls">
+      <button class="btn" id="toggle" type="button">התחל</button>
+      <button class="btn sec" id="reset" type="button">איפוס</button>
+    </div>
+
+    <p class="back"><a href="index.html">חזרה לדוגרי ←</a></p>
+
+    <script>
+      (function () {
+        'use strict';
+
+        // ---- Pure countdown logic (identical contract to site/js/timer.js tick) ----
+        // tick(elapsedMs, durationMs=60000) -> { remaining, progress, done }
+        function tick(elapsedMs, durationMs) {
+          if (durationMs === undefined) durationMs = 60000;
+          var e = Math.max(0, elapsedMs);
+          var progress = Math.min(1, Math.max(0, e / durationMs));
+          var done = e >= durationMs;
+          var remaining = Math.max(0, Math.ceil((durationMs - e) / 1000));
+          return { remaining: remaining, progress: progress, done: done };
+        }
+
+        var DURATION = 60000;
+        var reduceMotion =
+          window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        // geometry constants matching the SVG bulbs
+        var TOP_Y = 22; // sand top start
+        var TOP_H = 72; // full top sand height
+        var BOT_BASE = 168; // bottom inner floor
+        var BOT_H = 72; // full bottom sand height
+
+        var els = {
+          stage: document.getElementById('stage'),
+          glass: document.getElementById('glass'),
+          sandTop: document.getElementById('sandTop'),
+          sandTopDip: document.getElementById('sandTopDip'),
+          sandBot: document.getElementById('sandBot'),
+          sandMound: document.getElementById('sandMound'),
+          streamG: document.getElementById('streamG'),
+          stream: document.getElementById('stream'),
+          count: document.getElementById('count'),
+          status: document.getElementById('status'),
+          toggle: document.getElementById('toggle'),
+        };
+
+        var elapsed = 0;
+        var lastStart = 0;
+        var running = false;
+        var raf = 0;
+        var audio = null;
+        var lastShown = -1;
+        var streamPhase = 0;
+        var lastFrameTs = 0;
+
+        // gentle ease so the very start and very end of the flow feel natural
+        function easeFlow(p) {
+          // smootherstep — flattens the extremes a touch without changing endpoints
+          return p * p * p * (p * (p * 6 - 15) + 10);
+        }
+
+        function renderSand(progress) {
+          var ep = easeFlow(progress);
+
+          // top sand shrinks from the bottom up: top edge moves down
+          var topH = TOP_H * (1 - ep);
+          els.sandTop.setAttribute('y', (TOP_Y + TOP_H * ep).toFixed(2));
+          els.sandTop.setAttribute('height', Math.max(0, topH).toFixed(2));
+
+          // funnel dip appears as the top sand drains
+          els.sandTopDip.setAttribute('cy', (TOP_Y + TOP_H * ep).toFixed(2));
+          els.sandTopDip.setAttribute(
+            'opacity',
+            (progress > 0.04 && progress < 0.98 ? 0.35 : 0).toFixed(2)
+          );
+
+          // bottom pile grows upward
+          var botH = BOT_H * ep;
+          els.sandBot.setAttribute('y', (BOT_BASE - botH).toFixed(2));
+          els.sandBot.setAttribute('height', botH.toFixed(2));
+
+          // soft mound on top of the pile
+          var moundY = BOT_BASE - botH;
+          var rise = Math.min(7, botH * 0.18 + 2);
+          els.sandMound.setAttribute(
+            'd',
+            'M22 ' +
+              moundY.toFixed(1) +
+              ' Q60 ' +
+              (moundY - rise).toFixed(1) +
+              ' 98 ' +
+              moundY.toFixed(1) +
+              ' Z'
+          );
+          els.sandMound.setAttribute('opacity', (botH > 4 ? 0.9 : 0).toFixed(2));
+        }
+
+        function renderStream(progress, ts) {
+          var active = running && progress > 0 && progress < 1;
+          if (!active) {
+            els.streamG.setAttribute('opacity', '0');
+            return;
+          }
+          els.streamG.setAttribute('opacity', '0.9');
+
+          // length of the stream grows as the gap between piles opens, then
+          // shortens near the very end as the bottom fills toward the neck.
+          var topEdge = TOP_Y + TOP_H * easeFlow(progress); // current top sand floor
+          var botEdge = BOT_BASE - BOT_H * easeFlow(progress); // current bottom sand top
+          var streamTop = Math.max(90, topEdge);
+          var streamBot = Math.min(98, botEdge);
+          // the visible stream lives in the neck region around y=92..98
+          var sy = 90;
+          var sh = Math.max(4, streamBot - sy);
+          els.stream.setAttribute('y', sy.toFixed(1));
+          els.stream.setAttribute('height', sh.toFixed(1));
+
+          // shimmer the stream width slightly for a "flowing" feel
+          if (!reduceMotion) {
+            var w = 1.7 + Math.sin(ts / 60) * 0.5;
+            els.stream.setAttribute('width', w.toFixed(2));
+            els.stream.setAttribute('x', (60 - w / 2).toFixed(2));
+          }
+          void streamTop; // referenced for clarity; bounds kept by max/min
+          void streamPhase;
+        }
+
+        function setCount(state) {
+          if (state.remaining !== lastShown) {
+            lastShown = state.remaining;
+            els.count.textContent = String(state.remaining);
+            if (!reduceMotion && !state.done) {
+              els.count.classList.remove('bump');
+              // force reflow so the animation can restart each second
+              void els.count.offsetWidth;
+              els.count.classList.add('bump');
+            }
+          }
+        }
+
+        function beep() {
+          try {
+            audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+            [0, 0.22, 0.44].forEach(function (t) {
+              var o = audio.createOscillator();
+              var g = audio.createGain();
+              o.type = 'sine';
+              o.frequency.value = 880;
+              o.connect(g);
+              g.connect(audio.destination);
+              var s = audio.currentTime + t;
+              g.gain.setValueAtTime(0.001, s);
+              g.gain.exponentialRampToValueAtTime(0.32, s + 0.02);
+              g.gain.exponentialRampToValueAtTime(0.001, s + 0.18);
+              o.start(s);
+              o.stop(s + 0.2);
+            });
+          } catch (e) {
+            /* audio not available */
+          }
+        }
+
+        function finish() {
+          running = false;
+          elapsed = DURATION;
+          cancelAnimationFrame(raf);
+          renderSand(1);
+          renderStream(1, 0);
+          var state = tick(DURATION, DURATION);
+          lastShown = -1;
+          els.count.classList.add('done');
+          els.count.textContent = 'הזמן נגמר!';
+          els.status.textContent = 'כל הכבוד · סבב חדש?';
+          els.status.classList.add('done');
+          els.stage.classList.add('done');
+          els.stage.classList.remove('idle');
+          els.toggle.textContent = 'שוב';
+          // celebratory flip of the (now empty) glass
+          if (!reduceMotion) els.glass.classList.add('flip');
+          beep();
+          void state;
+        }
+
+        function loop(now) {
+          if (!running) return;
+          var ms = elapsed + (now - lastStart);
+          if (ms >= DURATION) {
+            finish();
+            return;
+          }
+          var state = tick(ms, DURATION);
+          renderSand(state.progress);
+          renderStream(state.progress, now);
+          setCount(state);
+          lastFrameTs = now;
+          raf = requestAnimationFrame(loop);
+        }
+
+        function start() {
+          if (running) return;
+          if (elapsed >= DURATION) {
+            reset();
+          }
+          running = true;
+          els.count.classList.remove('done');
+          els.status.classList.remove('done');
+          els.stage.classList.remove('done', 'idle');
+          els.glass.classList.remove('flip');
+          els.status.textContent = 'רץ...';
+          els.toggle.textContent = 'השהה';
+          lastStart = performance.now();
+          raf = requestAnimationFrame(loop);
+        }
+
+        function pause() {
+          if (!running) return;
+          running = false;
+          elapsed += performance.now() - lastStart;
+          cancelAnimationFrame(raf);
+          var state = tick(elapsed, DURATION);
+          renderSand(state.progress);
+          renderStream(state.progress, 0);
+          els.status.textContent = 'מושהה';
+          els.toggle.textContent = 'המשך';
+          els.stage.classList.add('idle');
+        }
+
+        function reset() {
+          running = false;
+          elapsed = 0;
+          lastShown = -1;
+          cancelAnimationFrame(raf);
+          els.glass.classList.remove('flip');
+          els.count.classList.remove('done');
+          els.status.classList.remove('done');
+          els.stage.classList.remove('done');
+          els.stage.classList.add('idle');
+          renderSand(0);
+          renderStream(0, 0);
+          setCount(tick(0, DURATION));
+          els.status.textContent = 'לחצו התחל';
+          els.toggle.textContent = 'התחל';
+        }
+
+        els.toggle.addEventListener('click', function () {
+          if (running) {
+            pause();
+          } else {
+            start();
+          }
         });
-      }catch(e){}
-    }
+        document.getElementById('reset').addEventListener('click', reset);
 
-    function finish(){
-      running = false; elapsed = DURATION;
-      cancelAnimationFrame(raf);
-      render(1); setCount(DURATION);
-      countEl.classList.add('done');
-      glass.classList.add('done');
-      statusEl.textContent = 'הזמן נגמר!';
-      toggle.textContent = 'שוב';
-      beep();
-    }
+        // keyboard niceties
+        document.addEventListener('keydown', function (e) {
+          if (e.code === 'Space' || e.key === ' ') {
+            e.preventDefault();
+            if (running) {
+              pause();
+            } else {
+              start();
+            }
+          } else if (e.key === 'r' || e.key === 'R') {
+            reset();
+          }
+        });
 
-    function loop(now){
-      if(!running) return;
-      var ms = elapsed + (now - lastStart);
-      if(ms >= DURATION){ finish(); return; }
-      render(ms / DURATION); setCount(ms);
-      raf = requestAnimationFrame(loop);
-    }
-
-    function start(){
-      if(running) return;
-      if(elapsed >= DURATION) reset();
-      running = true;
-      countEl.classList.remove('done'); glass.classList.remove('done');
-      statusEl.textContent = 'רץ...';
-      toggle.textContent = 'השהה';
-      lastStart = performance.now();
-      raf = requestAnimationFrame(loop);
-    }
-
-    function pause(){
-      if(!running) return;
-      running = false;
-      elapsed += performance.now() - lastStart;
-      cancelAnimationFrame(raf);
-      render(elapsed / DURATION);
-      statusEl.textContent = 'מושהה';
-      toggle.textContent = 'המשך';
-    }
-
-    function reset(){
-      running = false; elapsed = 0;
-      cancelAnimationFrame(raf);
-      render(0); setCount(0);
-      countEl.classList.remove('done'); glass.classList.remove('done');
-      statusEl.textContent = 'לחצו התחל';
-      toggle.textContent = 'התחל';
-    }
-
-    toggle.addEventListener('click', function(){ running ? pause() : start(); });
-    document.getElementById('reset').addEventListener('click', reset);
-    render(0); setCount(0);
-  })();
-</script>
-</body>
+        // initial paint
+        renderSand(0);
+        renderStream(0, 0);
+        setCount(tick(0, DURATION));
+        void lastFrameTs;
+      })();
+    </script>
+  </body>
 </html>
