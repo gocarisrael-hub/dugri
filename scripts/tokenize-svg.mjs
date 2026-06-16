@@ -11,6 +11,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { clipPathBBoxes, pickCardBox } from './crop-util.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -173,34 +174,12 @@ function tokenize(src, anchors) {
 }
 
 // ---- crop fronts/backs to one card ----------------------------------------
-// Each card is defined by a clipPath <path> rectangle (in absolute sheet
-// coords). Detect the most-repeated card-sized clip (the 8 cards) and crop the
-// viewBox to the TOP-LEFT one. Geometry only — no rendering. Falls back to a
-// 4x2 grid cell if no clips are found.
-
-function clipPathBBoxes(src) {
-  const boxes = [];
-  const re = /<clipPath\b[^>]*>\s*<path\b[^>]*\bd="([^"]+)"/g;
-  let m;
-  while ((m = re.exec(src)) !== null) {
-    const nums = (m[1].match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
-    if (nums.length < 4) continue;
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-    for (let i = 0; i + 1 < nums.length; i += 2) {
-      const x = nums[i];
-      const y = nums[i + 1];
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
-    }
-    boxes.push({ x: minX, y: minY, w: maxX - minX, h: maxY - minY });
-  }
-  return boxes;
-}
+// Each REAL card is defined by a clipPath <path> that is a PURE RECTANGLE — its
+// coordinates have only ~2 distinct x-values and ~2 distinct y-values (the card
+// frame/border box). Decorations and rounded shapes have many distinct coords,
+// so we exclude them. Detect the most-repeated pure-rectangle card-sized clip
+// (the 8 cards) and crop the viewBox to the TOP-LEFT one. Geometry only — no
+// rendering. Falls back to a 4x2 grid cell if no pure-rect clips are found.
 
 function cropToCard(src) {
   const vbMatch = src.match(/viewBox\s*=\s*"([^"]+)"/);
@@ -211,27 +190,15 @@ function cropToCard(src) {
     .map(Number);
   if (vb.length !== 4) return src;
 
-  // card-sized clips only (exclude tiny icon/text clips and full-sheet clips)
-  const cards = clipPathBBoxes(src).filter(
-    (b) => b.w > 80 && b.h > 120 && b.w < vb[2] * 0.9 && b.h < vb[3] * 0.95
-  );
-
-  let box;
-  if (cards.length) {
-    // the real cards are the most-repeated size; quantize and pick that group
-    const groups = new Map();
-    for (const b of cards) {
-      const key = `${Math.round(b.w / 6)}x${Math.round(b.h / 6)}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(b);
-    }
-    const best = [...groups.values()].sort(
-      (a, c) => c.length - a.length || c[0].w * c[0].h - a[0].w * a[0].h
-    )[0];
-    box = best.slice().sort((a, c) => a.y - c.y || a.x - c.x)[0]; // top-left
-  } else {
-    box = { x: vb[0], y: vb[1], w: vb[2] / 4, h: vb[3] / 2 };
-  }
+  // Pick the top-left pure-rectangle, card-sized clip (the card frame box).
+  // Fall back to a 4x2 grid cell if none are found.
+  const detected = pickCardBox(clipPathBBoxes(src), vb[2], vb[3]);
+  const box = detected || {
+    x: vb[0],
+    y: vb[1],
+    w: vb[2] / 4,
+    h: vb[3] / 2,
+  };
 
   const M = 1.5; // small margin so the card edge isn't clipped
   const x = box.x - M;
@@ -242,6 +209,26 @@ function cropToCard(src) {
   let out = src.replace(/viewBox\s*=\s*"[^"]+"/, `viewBox="${newVb}"`);
   out = out.replace(/(<svg[^>]*?)\swidth="[^"]*"/, `$1 width="${w.toFixed(2)}"`);
   out = out.replace(/(<svg[^>]*?)\sheight="[^"]*"/, `$1 height="${h.toFixed(2)}"`);
+
+  // Hard-clip the whole drawing to the EXACT card-frame rectangle so neighbour
+  // cards and the inter-card background pattern (e.g. the "marriage" design's
+  // blue lattice) cannot bleed into the cropped preview. We wrap the body in a
+  // clipped <g> and add a matching clipPath rect to <defs>. The clip uses the
+  // tight card box (no margin) so nothing outside the card edge survives; the
+  // viewBox keeps its small margin so the card edge isn't visually shaved.
+  // Only applied when we have a real detected card-frame box.
+  const defsClose = out.indexOf('</defs>');
+  const svgClose = out.lastIndexOf('</svg>');
+  if (detected && defsClose !== -1 && svgClose !== -1 && svgClose > defsClose) {
+    const clip =
+      `<clipPath id="__cardcrop">` +
+      `<rect x="${box.x.toFixed(3)}" y="${box.y.toFixed(3)}" ` +
+      `width="${box.w.toFixed(3)}" height="${box.h.toFixed(3)}"/></clipPath>`;
+    const head = out.slice(0, defsClose);
+    const body = out.slice(defsClose + '</defs>'.length, svgClose);
+    const tail = out.slice(svgClose);
+    out = `${head}${clip}</defs><g clip-path="url(#__cardcrop)">${body}</g>${tail}`;
+  }
   return out;
 }
 
