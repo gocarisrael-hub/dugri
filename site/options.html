@@ -379,12 +379,15 @@
         color: var(--ink);
       }
       .designs {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-        gap: 12px;
+        display: flex;
+        flex-wrap: wrap;
         justify-content: center;
+        align-items: stretch;
+        gap: 12px;
       }
       .design {
+        flex: 0 1 130px;
+        max-width: 150px;
         background: var(--surface);
         border: 2px solid var(--line);
         border-radius: 16px;
@@ -437,9 +440,12 @@
 
       .colors {
         display: flex;
-        gap: 14px;
+        column-gap: 14px;
+        row-gap: 30px;
         justify-content: center;
+        align-items: flex-start;
         flex-wrap: wrap;
+        padding-bottom: 22px;
       }
       .swatch {
         width: 46px;
