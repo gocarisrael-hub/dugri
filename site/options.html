@@ -283,6 +283,56 @@
         border-radius: 999px;
       }
 
+      /* layout: preview + controls. Colours sit right by the preview so they're
+         always reachable without scrolling (two columns on wide screens). */
+      .cfg-grid {
+        display: grid;
+        gap: 20px;
+        max-width: 520px;
+        margin: 18px auto 0;
+      }
+      .cfg-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+      }
+      .cfg-grid .preview-card {
+        margin: 0;
+        max-width: none;
+      }
+      .cfg-grid .picker {
+        margin: 0;
+        max-width: none;
+      }
+      @media (min-width: 880px) {
+        .cfg-grid {
+          grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+          align-items: start;
+          max-width: 1040px;
+          gap: 30px;
+        }
+        .cfg-controls {
+          position: sticky;
+          top: 76px;
+        }
+      }
+      /* mobile: keep the preview compact so the colour row stays in view */
+      @media (max-width: 600px) {
+        .cfg-head {
+          padding: 14px 0 4px;
+        }
+        .cfg-head h1 {
+          font-size: 25px;
+        }
+        .cfg-grid .preview-stage {
+          min-height: 200px;
+        }
+        .cfg-grid .preview-panel svg,
+        .cfg-grid .preview-panel img {
+          max-height: 300px;
+        }
+      }
+
       /* preview + tabs */
       .preview-card {
         background: var(--surface);
@@ -579,73 +629,77 @@
         </div>
       </div>
 
-      <!-- LIVE PREVIEW -->
-      <section class="preview-card" data-testid="preview">
-        <div class="tabs" role="tablist" aria-label="תצוגה">
-          <button
-            class="tab"
-            role="tab"
-            data-tab="front"
-            data-testid="tab-front"
-            aria-selected="true"
-          >
-            קלף
-          </button>
-          <button
-            class="tab"
-            role="tab"
-            data-tab="back"
-            data-testid="tab-back"
-            aria-selected="false"
-          >
-            גב
-          </button>
-          <button
-            class="tab"
-            role="tab"
-            data-tab="board"
-            data-testid="tab-board"
-            aria-selected="false"
-          >
-            לוח
-          </button>
-        </div>
-        <div class="preview-stage" id="previewStage" data-testid="preview-stage">
-          <div
-            class="preview-panel"
-            data-panel="front"
-            data-testid="preview-front"
-            data-active="true"
-          ></div>
-          <div class="preview-panel" data-panel="back" data-testid="preview-back"></div>
-          <div class="preview-panel" data-panel="board" data-testid="preview-board"></div>
-          <div class="preview-empty" id="previewEmpty" hidden>טוען תצוגה…</div>
-        </div>
-      </section>
+      <div class="cfg-grid">
+        <!-- LIVE PREVIEW -->
+        <section class="preview-card" data-testid="preview">
+          <div class="tabs" role="tablist" aria-label="תצוגה">
+            <button
+              class="tab"
+              role="tab"
+              data-tab="front"
+              data-testid="tab-front"
+              aria-selected="true"
+            >
+              קלף
+            </button>
+            <button
+              class="tab"
+              role="tab"
+              data-tab="back"
+              data-testid="tab-back"
+              aria-selected="false"
+            >
+              גב
+            </button>
+            <button
+              class="tab"
+              role="tab"
+              data-tab="board"
+              data-testid="tab-board"
+              aria-selected="false"
+            >
+              לוח
+            </button>
+          </div>
+          <div class="preview-stage" id="previewStage" data-testid="preview-stage">
+            <div
+              class="preview-panel"
+              data-panel="front"
+              data-testid="preview-front"
+              data-active="true"
+            ></div>
+            <div class="preview-panel" data-panel="back" data-testid="preview-back"></div>
+            <div class="preview-panel" data-panel="board" data-testid="preview-board"></div>
+            <div class="preview-empty" id="previewEmpty" hidden>טוען תצוגה…</div>
+          </div>
+        </section>
 
-      <!-- DESIGN PICKER -->
-      <section class="picker">
-        <h2>בחרו עיצוב</h2>
-        <div
-          class="designs"
-          id="designList"
-          data-testid="design-list"
-          role="group"
-          aria-label="עיצובים"
-        ></div>
-      </section>
+        <div class="cfg-controls">
+          <!-- COLOR PICKER (right by the preview — change colours without scrolling) -->
+          <section class="picker">
+            <h2>בחרו צבע ראשי</h2>
+            <div
+              class="colors"
+              id="colorList"
+              data-testid="color-list"
+              role="group"
+              aria-label="צבעים"
+            ></div>
+          </section>
 
-      <!-- COLOR PICKER -->
-      <section class="picker">
-        <h2>בחרו צבע ראשי</h2>
-        <div
-          class="colors"
-          id="colorList"
-          data-testid="color-list"
-          role="group"
-          aria-label="צבעים"
-        ></div>
-      </section>
+          <!-- DESIGN PICKER -->
+          <section class="picker">
+            <h2>בחרו עיצוב</h2>
+            <div
+              class="designs"
+              id="designList"
+              data-testid="design-list"
+              role="group"
+              aria-label="עיצובים"
+            ></div>
+          </section>
+        </div>
+      </div>
 
       <p class="back"><a href="index.html#top">חזרה לעמוד הבית ←</a></p>
     </main>
