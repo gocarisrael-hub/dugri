@@ -1,691 +1,1953 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="he" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>דוגרי — המשחק שמפוצץ את החדר</title>
-<meta name="description" content="משחק מסיבה מותאם אישית לכל שמחה: רווקות, יום הולדת עגול, יום נישואין ועוד. שולחים מילים על בעל השמחה ומקבלים חפיסת קלפים ולוח מעוצבים, מוכנים להדפסה. אספקה תוך 24 שעות.">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>דוגרי — המשחק שמפוצץ את החדר</title>
+    <meta
+      name="description"
+      content="משחק מסיבה מותאם אישית לכל שמחה: רווקות, יום הולדת עגול, יום נישואין ועוד. שולחים מילים על בעל השמחה ומקבלים חפיסת קלפים ולוח מעוצבים, מוכנים להדפסה. אספקה תוך 24 שעות."
+    />
 
-<!-- Open Graph (for sharing in WhatsApp / Instagram) -->
-<meta property="og:title" content="דוגרי — המשחק שמפוצץ את החדר">
-<meta property="og:description" content="משחק מסיבה מותאם אישית. שולחים מילים על בעל השמחה, מקבלים משחק מעוצב מוכן להדפסה.">
-<meta property="og:type" content="website">
-<!-- TODO: add og:image once a hero photo is hosted -->
+    <!-- Open Graph (for sharing in WhatsApp / Instagram) -->
+    <meta property="og:title" content="דוגרי — המשחק שמפוצץ את החדר" />
+    <meta
+      property="og:description"
+      content="משחק מסיבה מותאם אישית. שולחים מילים על בעל השמחה, מקבלים משחק מעוצב מוכן להדפסה."
+    />
+    <meta property="og:type" content="website" />
+    <!-- TODO: add og:image once a hero photo is hosted -->
 
-<link rel="icon" type="image/png" href="assets/logo.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- Carlito = free, metric-compatible look-alike of Calibri (fallback for devices without Calibri) -->
-<!-- Heebo = bold Hebrew display face for headings; matches the energetic vivid-pink logo -->
-<link href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --bg:#FFF5F8;          /* very light pink */
-    --surface:#FFFFFF;
-    --blush:#FBE8EE;
-    --blush-deep:#F1D2DC;
-    --ink:#2C1A29;
-    --muted:#7C6A74;
-    --wine:#9B2D54;
-    --wine-deep:#7A1F40;
-    --gold:#BC9A4C;
-    --hot:#E5197D;          /* vivid pink, matches the logo */
-    --hot-deep:#C7106A;
-    --line:#F0DEE4;
-    --font:'Calibri','Carlito','Segoe UI','Arial','Helvetica Neue',sans-serif;
-    --display:'Heebo','Calibri','Carlito','Segoe UI','Arial',sans-serif;
-    /* layered shadow tokens */
-    --shadow-sm:0 2px 8px rgba(44,26,41,.06), 0 1px 2px rgba(44,26,41,.04);
-    --shadow-md:0 10px 28px rgba(44,26,41,.10), 0 3px 8px rgba(44,26,41,.06);
-    --shadow-lg:0 26px 60px rgba(44,26,41,.16), 0 8px 18px rgba(44,26,41,.08);
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  html{scroll-behavior:smooth}
-  body{
-    font-family:var(--font);
-    background:var(--bg);
-    color:var(--ink);
-    line-height:1.6;
-    font-size:17px;
-    -webkit-font-smoothing:antialiased;
-    padding-bottom:78px;
-  }
-  .wrap{max-width:1000px;margin:0 auto;padding:0 22px}
-  h1,h2,h3,h4{font-family:var(--display);line-height:1.15;font-weight:800;letter-spacing:-.015em}
-  a{color:inherit}
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Carlito = free, metric-compatible look-alike of Calibri (fallback for devices without Calibri) -->
+    <!-- Heebo = bold Hebrew display face for headings; matches the energetic vivid-pink logo -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #fff5f8; /* very light pink */
+        --surface: #ffffff;
+        --blush: #fbe8ee;
+        --blush-deep: #f1d2dc;
+        --ink: #2c1a29;
+        --muted: #7c6a74;
+        --wine: #9b2d54;
+        --wine-deep: #7a1f40;
+        --gold: #bc9a4c;
+        --hot: #e5197d; /* vivid pink, matches the logo */
+        --hot-deep: #c7106a;
+        --line: #f0dee4;
+        --font: 'Calibri', 'Carlito', 'Segoe UI', 'Arial', 'Helvetica Neue', sans-serif;
+        --display: 'Heebo', 'Calibri', 'Carlito', 'Segoe UI', 'Arial', sans-serif;
+        /* layered shadow tokens */
+        --shadow-sm: 0 2px 8px rgba(44, 26, 41, 0.06), 0 1px 2px rgba(44, 26, 41, 0.04);
+        --shadow-md: 0 10px 28px rgba(44, 26, 41, 0.1), 0 3px 8px rgba(44, 26, 41, 0.06);
+        --shadow-lg: 0 26px 60px rgba(44, 26, 41, 0.16), 0 8px 18px rgba(44, 26, 41, 0.08);
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--ink);
+        line-height: 1.6;
+        font-size: 17px;
+        -webkit-font-smoothing: antialiased;
+        padding-bottom: 78px;
+      }
+      .wrap {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 0 22px;
+      }
+      h1,
+      h2,
+      h3,
+      h4 {
+        font-family: var(--display);
+        line-height: 1.15;
+        font-weight: 800;
+        letter-spacing: -0.015em;
+      }
+      a {
+        color: inherit;
+      }
 
-  .btn{
-    position:relative;overflow:hidden;
-    display:inline-flex;align-items:center;justify-content:center;gap:9px;
-    font-family:var(--display);font-weight:800;font-size:17.5px;letter-spacing:-.01em;
-    background:linear-gradient(135deg,var(--hot),var(--wine));color:#fff;border:none;cursor:pointer;
-    padding:16px 32px;border-radius:999px;text-decoration:none;
-    box-shadow:0 10px 24px rgba(229,25,125,.30);
-    transition:transform .14s ease, box-shadow .25s ease, filter .2s ease;
-  }
-  /* sweeping shine on hover */
-  .btn::after{content:"";position:absolute;top:0;inset-inline-start:-130%;width:60%;height:100%;
-    background:linear-gradient(100deg,transparent,rgba(255,255,255,.45),transparent);
-    transform:skewX(-18deg);transition:inset-inline-start .55s ease}
-  .btn:hover::after{inset-inline-start:130%}
-  .btn:hover{transform:translateY(-2px);box-shadow:0 18px 36px rgba(229,25,125,.40);filter:brightness(1.05)}
-  .btn:active{transform:translateY(0) scale(.99)}
-  .btn:focus-visible{outline:3px solid var(--hot);outline-offset:3px}
-  a:focus-visible,summary:focus-visible{outline:3px solid var(--hot);outline-offset:2px;border-radius:6px}
-  /* quiet secondary — a text link, not a competing pill */
-  .btn.ghost{background:none;color:var(--wine);box-shadow:none;padding:16px 12px;font-weight:800}
-  .btn.ghost::after{display:none}
-  .btn.ghost:hover{background:none;transform:none;filter:none;color:var(--wine-deep);text-decoration:underline}
-  .btn.wa{background:#25D366;color:#06310f;box-shadow:0 8px 18px rgba(37,211,102,.25)}
-  .btn.wa:hover{background:#1fb959;box-shadow:0 12px 24px rgba(37,211,102,.32)}
+      .btn {
+        position: relative;
+        overflow: hidden;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 17.5px;
+        letter-spacing: -0.01em;
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        padding: 16px 32px;
+        border-radius: 999px;
+        text-decoration: none;
+        box-shadow: 0 10px 24px rgba(229, 25, 125, 0.3);
+        transition:
+          transform 0.14s ease,
+          box-shadow 0.25s ease,
+          filter 0.2s ease;
+      }
+      /* sweeping shine on hover */
+      .btn::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        inset-inline-start: -130%;
+        width: 60%;
+        height: 100%;
+        background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+        transform: skewX(-18deg);
+        transition: inset-inline-start 0.55s ease;
+      }
+      .btn:hover::after {
+        inset-inline-start: 130%;
+      }
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 18px 36px rgba(229, 25, 125, 0.4);
+        filter: brightness(1.05);
+      }
+      .btn:active {
+        transform: translateY(0) scale(0.99);
+      }
+      .btn:focus-visible {
+        outline: 3px solid var(--hot);
+        outline-offset: 3px;
+      }
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 3px solid var(--hot);
+        outline-offset: 2px;
+        border-radius: 6px;
+      }
+      /* quiet secondary — a text link, not a competing pill */
+      .btn.ghost {
+        background: none;
+        color: var(--wine);
+        box-shadow: none;
+        padding: 16px 12px;
+        font-weight: 800;
+      }
+      .btn.ghost::after {
+        display: none;
+      }
+      .btn.ghost:hover {
+        background: none;
+        transform: none;
+        filter: none;
+        color: var(--wine-deep);
+        text-decoration: underline;
+      }
+      .btn.wa {
+        background: #25d366;
+        color: #06310f;
+        box-shadow: 0 8px 18px rgba(37, 211, 102, 0.25);
+      }
+      .btn.wa:hover {
+        background: #1fb959;
+        box-shadow: 0 12px 24px rgba(37, 211, 102, 0.32);
+      }
 
-  /* HERO */
-  header{
-    position:relative;overflow:hidden;
-    background:
-      radial-gradient(60% 50% at 18% 8%, rgba(229,25,125,.12), transparent 60%),
-      radial-gradient(55% 45% at 92% 4%, rgba(188,154,76,.14), transparent 60%),
-      radial-gradient(120% 90% at 88% -10%, rgba(155,45,84,.10), transparent 60%),
-      linear-gradient(180deg,#fff,var(--bg));
-    border-bottom:1px solid var(--line);
-    padding:46px 0 40px;
-    text-align:center;
-  }
-  header .wrap{position:relative;z-index:2}
+      /* HERO */
+      header {
+        position: relative;
+        overflow: hidden;
+        background:
+          radial-gradient(60% 50% at 18% 8%, rgba(229, 25, 125, 0.12), transparent 60%),
+          radial-gradient(55% 45% at 92% 4%, rgba(188, 154, 76, 0.14), transparent 60%),
+          radial-gradient(120% 90% at 88% -10%, rgba(155, 45, 84, 0.1), transparent 60%),
+          linear-gradient(180deg, #fff, var(--bg));
+        border-bottom: 1px solid var(--line);
+        padding: 46px 0 40px;
+        text-align: center;
+      }
+      header .wrap {
+        position: relative;
+        z-index: 2;
+      }
 
-  /* confetti / sparkle burst behind the logo */
-  .confetti{position:absolute;inset:0;top:0;height:340px;pointer-events:none;z-index:1;overflow:hidden}
-  .confetti i{position:absolute;top:-12px;width:9px;height:14px;border-radius:2px;opacity:0;
-    animation:confettiFall 3.2s ease-in forwards}
-  .confetti i:nth-child(odd){border-radius:50%}
-  @keyframes confettiFall{
-    0%{opacity:0;transform:translateY(-20px) rotate(0deg)}
-    12%{opacity:1}
-    100%{opacity:0;transform:translateY(330px) rotate(540deg)}
-  }
-  /* soft floating sparkles that loop gently */
-  .sparkle{position:absolute;border-radius:50%;filter:blur(.3px);
-    background:radial-gradient(circle,#fff 0 30%,rgba(229,25,125,.0) 70%);
-    box-shadow:0 0 10px rgba(229,25,125,.5);opacity:.0;animation:twinkle 4s ease-in-out infinite}
-  @keyframes twinkle{0%,100%{opacity:0;transform:scale(.6)}50%{opacity:.9;transform:scale(1)}}
-  .eyebrow{
-    display:inline-block;font-weight:700;font-size:13px;letter-spacing:.10em;
-    color:var(--wine);background:var(--blush);
-    padding:6px 14px;border-radius:999px;margin-bottom:18px;
-  }
-  header h1{font-size:50px;font-weight:700;color:var(--ink);letter-spacing:-.01em}
-  .brand{margin:0}
-  .brand-logo{display:block;margin:0 auto;width:240px;max-width:72%;height:auto;position:relative;
-    animation:logoPop .7s cubic-bezier(.18,.89,.32,1.28) both;
-    filter:drop-shadow(0 8px 22px rgba(229,25,125,.22))}
-  @keyframes logoPop{0%{opacity:0;transform:scale(.82) translateY(10px)}100%{opacity:1;transform:scale(1) translateY(0)}}
-  .tagline{font-family:var(--display);font-size:24px;color:var(--wine);margin-top:10px;font-weight:900;letter-spacing:-.01em;
-    background:linear-gradient(100deg,var(--wine),var(--hot) 60%,var(--wine-deep));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  header p.lede{max-width:600px;margin:16px auto 0;color:var(--muted);font-size:18px}
-  .hero-cta{margin-top:26px;display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap}
-  .trust{margin-top:14px;color:var(--muted);font-size:13.5px;font-weight:600}
-  .trust span{white-space:nowrap}
-  .occasions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:22px}
-  .occasions .tag{background:var(--surface);border:1px solid var(--line);color:var(--wine-deep);font-size:13.5px;font-weight:700;padding:6px 13px;border-radius:999px}
-  .hero-img{margin-top:30px;position:relative}
-  .hero-img img{width:100%;max-width:640px;border-radius:20px;box-shadow:var(--shadow-lg);
-    transition:transform .35s ease, box-shadow .35s ease}
-  .hero-img img:hover{transform:translateY(-4px) rotate(-.3deg);box-shadow:0 34px 70px rgba(44,26,41,.24)}
+      /* confetti / sparkle burst behind the logo */
+      .confetti {
+        position: absolute;
+        inset: 0;
+        top: 0;
+        height: 340px;
+        pointer-events: none;
+        z-index: 1;
+        overflow: hidden;
+      }
+      .confetti i {
+        position: absolute;
+        top: -12px;
+        width: 9px;
+        height: 14px;
+        border-radius: 2px;
+        opacity: 0;
+        animation: confettiFall 3.2s ease-in forwards;
+      }
+      .confetti i:nth-child(odd) {
+        border-radius: 50%;
+      }
+      @keyframes confettiFall {
+        0% {
+          opacity: 0;
+          transform: translateY(-20px) rotate(0deg);
+        }
+        12% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0;
+          transform: translateY(330px) rotate(540deg);
+        }
+      }
+      /* soft floating sparkles that loop gently */
+      .sparkle {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(0.3px);
+        background: radial-gradient(circle, #fff 0 30%, rgba(229, 25, 125, 0) 70%);
+        box-shadow: 0 0 10px rgba(229, 25, 125, 0.5);
+        opacity: 0;
+        animation: twinkle 4s ease-in-out infinite;
+      }
+      @keyframes twinkle {
+        0%,
+        100% {
+          opacity: 0;
+          transform: scale(0.6);
+        }
+        50% {
+          opacity: 0.9;
+          transform: scale(1);
+        }
+      }
+      .eyebrow {
+        display: inline-block;
+        font-weight: 700;
+        font-size: 13px;
+        letter-spacing: 0.1em;
+        color: var(--wine);
+        background: var(--blush);
+        padding: 6px 14px;
+        border-radius: 999px;
+        margin-bottom: 18px;
+      }
+      header h1 {
+        font-size: 50px;
+        font-weight: 700;
+        color: var(--ink);
+        letter-spacing: -0.01em;
+      }
+      .brand {
+        margin: 0;
+      }
+      .brand-logo {
+        display: block;
+        margin: 0 auto;
+        width: 240px;
+        max-width: 72%;
+        height: auto;
+        position: relative;
+        animation: logoPop 0.7s cubic-bezier(0.18, 0.89, 0.32, 1.28) both;
+        filter: drop-shadow(0 8px 22px rgba(229, 25, 125, 0.22));
+      }
+      @keyframes logoPop {
+        0% {
+          opacity: 0;
+          transform: scale(0.82) translateY(10px);
+        }
+        100% {
+          opacity: 1;
+          transform: scale(1) translateY(0);
+        }
+      }
+      .tagline {
+        font-family: var(--display);
+        font-size: 24px;
+        color: var(--wine);
+        margin-top: 10px;
+        font-weight: 900;
+        letter-spacing: -0.01em;
+        background: linear-gradient(100deg, var(--wine), var(--hot) 60%, var(--wine-deep));
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      header p.lede {
+        max-width: 600px;
+        margin: 16px auto 0;
+        color: var(--muted);
+        font-size: 18px;
+      }
+      .hero-cta {
+        margin-top: 26px;
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .trust {
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+      .trust span {
+        white-space: nowrap;
+      }
+      .occasions {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 22px;
+      }
+      .occasions .tag {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        color: var(--wine-deep);
+        font-size: 13.5px;
+        font-weight: 700;
+        padding: 6px 13px;
+        border-radius: 999px;
+      }
+      .hero-img {
+        margin-top: 30px;
+        position: relative;
+      }
+      .hero-img img {
+        width: 100%;
+        max-width: 640px;
+        border-radius: 20px;
+        box-shadow: var(--shadow-lg);
+        transition:
+          transform 0.35s ease,
+          box-shadow 0.35s ease;
+      }
+      .hero-img img:hover {
+        transform: translateY(-4px) rotate(-0.3deg);
+        box-shadow: 0 34px 70px rgba(44, 26, 41, 0.24);
+      }
 
-  @media(min-width:720px){ header h1{font-size:64px} .brand-logo{width:310px} }
+      @media (min-width: 720px) {
+        header h1 {
+          font-size: 64px;
+        }
+        .brand-logo {
+          width: 310px;
+        }
+      }
 
-  /* SECTIONS */
-  section{padding:48px 0;border-bottom:1px solid var(--line);position:relative}
-  .sec-title{text-align:center;margin-bottom:30px}
-  .sec-title h2{font-size:34px;font-weight:800}
-  .sec-title p{color:var(--muted);margin-top:6px;font-size:16px}
+      /* SECTIONS */
+      section {
+        padding: 48px 0;
+        border-bottom: 1px solid var(--line);
+        position: relative;
+      }
+      .sec-title {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .sec-title h2 {
+        font-size: 34px;
+        font-weight: 800;
+      }
+      .sec-title p {
+        color: var(--muted);
+        margin-top: 6px;
+        font-size: 16px;
+      }
 
-  /* the moment */
-  .moment{background:linear-gradient(180deg,var(--blush),var(--bg));text-align:center}
-  .moment .wrap{max-width:680px}
-  .moment p{font-size:21px;color:var(--ink)}
-  .moment .em{color:var(--wine);font-size:26px;font-weight:700;display:block;margin-top:12px}
+      /* the moment */
+      .moment {
+        background: linear-gradient(180deg, var(--blush), var(--bg));
+        text-align: center;
+      }
+      .moment .wrap {
+        max-width: 680px;
+      }
+      .moment p {
+        font-size: 21px;
+        color: var(--ink);
+      }
+      .moment .em {
+        color: var(--wine);
+        font-size: 26px;
+        font-weight: 700;
+        display: block;
+        margin-top: 12px;
+      }
 
-  /* reassurance line under CTAs */
-  .reassure{margin-top:12px;color:var(--muted);font-size:14px;font-weight:600}
+      /* reassurance line under CTAs */
+      .reassure {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+      }
 
-  /* social proof */
-  .proof{background:var(--surface);text-align:center}
-  .stars{color:var(--gold);font-size:24px;letter-spacing:2px;margin-bottom:22px}
-  .quotes{display:grid;gap:16px;grid-template-columns:1fr}
-  @media(min-width:720px){.quotes{grid-template-columns:repeat(3,1fr)}}
-  .quote{background:var(--blush);border:1px solid var(--blush-deep);border-radius:18px;padding:22px 20px;text-align:start;margin:0;
-    box-shadow:var(--shadow-sm);transition:transform .25s ease, box-shadow .25s ease}
-  .quote:hover{transform:translateY(-4px);box-shadow:var(--shadow-md)}
-  .quote p{font-size:16px;color:var(--ink);margin-bottom:12px}
-  .quote figcaption{font-size:13.5px;font-weight:700;color:var(--wine-deep)}
-  .proof-note{margin-top:18px;font-size:13px;color:var(--muted)}
+      /* social proof */
+      .proof {
+        background: var(--surface);
+        text-align: center;
+      }
+      .stars {
+        color: var(--gold);
+        font-size: 24px;
+        letter-spacing: 2px;
+        margin-bottom: 22px;
+      }
+      .quotes {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: 1fr;
+      }
+      @media (min-width: 720px) {
+        .quotes {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      .quote {
+        background: var(--blush);
+        border: 1px solid var(--blush-deep);
+        border-radius: 18px;
+        padding: 22px 20px;
+        text-align: start;
+        margin: 0;
+        box-shadow: var(--shadow-sm);
+        transition:
+          transform 0.25s ease,
+          box-shadow 0.25s ease;
+      }
+      .quote:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-md);
+      }
+      .quote p {
+        font-size: 16px;
+        color: var(--ink);
+        margin-bottom: 12px;
+      }
+      .quote figcaption {
+        font-size: 13.5px;
+        font-weight: 700;
+        color: var(--wine-deep);
+      }
+      .proof-note {
+        margin-top: 18px;
+        font-size: 13px;
+        color: var(--muted);
+      }
 
-  /* steps */
-  .steps{display:grid;gap:16px;grid-template-columns:1fr}
-  @media(min-width:720px){.steps{grid-template-columns:repeat(3,1fr)}}
-  .step{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:26px 24px;text-align:center;
-    box-shadow:var(--shadow-sm);transition:transform .25s ease, box-shadow .25s ease}
-  .step:hover{transform:translateY(-5px);box-shadow:var(--shadow-md)}
-  .step .n{font-family:var(--display);font-weight:900;font-size:22px;color:#fff;
-    background:linear-gradient(140deg,var(--hot),var(--wine));
-    width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;
-    box-shadow:0 8px 18px rgba(229,25,125,.28)}
-  .step h3{font-size:20px;margin-bottom:6px}
-  .step p{color:var(--muted);font-size:15px}
-  .step .hint{margin-top:8px;font-size:13px;color:var(--wine-deep);background:var(--blush);border-radius:8px;padding:6px 10px;display:inline-block}
+      /* steps */
+      .steps {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: 1fr;
+      }
+      @media (min-width: 720px) {
+        .steps {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      .step {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 26px 24px;
+        text-align: center;
+        box-shadow: var(--shadow-sm);
+        transition:
+          transform 0.25s ease,
+          box-shadow 0.25s ease;
+      }
+      .step:hover {
+        transform: translateY(-5px);
+        box-shadow: var(--shadow-md);
+      }
+      .step .n {
+        font-family: var(--display);
+        font-weight: 900;
+        font-size: 22px;
+        color: #fff;
+        background: linear-gradient(140deg, var(--hot), var(--wine));
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 14px;
+        box-shadow: 0 8px 18px rgba(229, 25, 125, 0.28);
+      }
+      .step h3 {
+        font-size: 20px;
+        margin-bottom: 6px;
+      }
+      .step p {
+        color: var(--muted);
+        font-size: 15px;
+      }
+      .step .hint {
+        margin-top: 8px;
+        font-size: 13px;
+        color: var(--wine-deep);
+        background: var(--blush);
+        border-radius: 8px;
+        padding: 6px 10px;
+        display: inline-block;
+      }
 
-  /* included */
-  .items{display:grid;gap:12px;grid-template-columns:1fr}
-  @media(min-width:720px){.items{grid-template-columns:1fr 1fr}}
-  .item{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px;display:flex;gap:13px;align-items:flex-start;
-    box-shadow:var(--shadow-sm);transition:transform .22s ease, box-shadow .22s ease, border-color .22s ease}
-  .item:hover{transform:translateY(-3px);box-shadow:var(--shadow-md);border-color:var(--blush-deep)}
-  .item .tick{color:var(--wine);font-weight:800;font-size:18px;flex:0 0 auto}
-  .item h4{font-size:16.5px;font-weight:700;margin-bottom:2px}
-  .item p{color:var(--muted);font-size:14px}
+      /* included */
+      .items {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 1fr;
+      }
+      @media (min-width: 720px) {
+        .items {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      .item {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 16px 18px;
+        display: flex;
+        gap: 13px;
+        align-items: flex-start;
+        box-shadow: var(--shadow-sm);
+        transition:
+          transform 0.22s ease,
+          box-shadow 0.22s ease,
+          border-color 0.22s ease;
+      }
+      .item:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--shadow-md);
+        border-color: var(--blush-deep);
+      }
+      .item .tick {
+        color: var(--wine);
+        font-weight: 800;
+        font-size: 18px;
+        flex: 0 0 auto;
+      }
+      .item h4 {
+        font-size: 16.5px;
+        font-weight: 700;
+        margin-bottom: 2px;
+      }
+      .item p {
+        color: var(--muted);
+        font-size: 14px;
+      }
 
-  /* pricing */
-  .prices{display:grid;grid-template-columns:1fr;gap:18px;max-width:780px;margin:0 auto}
-  @media(min-width:680px){.prices{grid-template-columns:1fr 1fr;align-items:center} .plan.featured{transform:scale(1.04)}}
-  .plan{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:26px 24px;position:relative;display:flex;flex-direction:column;
-    box-shadow:var(--shadow-sm);transition:transform .25s ease, box-shadow .25s ease}
-  .plan:hover{transform:translateY(-4px);box-shadow:var(--shadow-md)}
-  .plan.featured{border:2px solid transparent;
-    background:
-      linear-gradient(var(--surface),var(--surface)) padding-box,
-      linear-gradient(140deg,var(--hot),var(--wine) 70%,var(--gold)) border-box;
-    box-shadow:0 24px 54px rgba(155,45,84,.20), 0 0 0 6px rgba(229,25,125,.05)}
-  .plan.featured::before{content:"";position:absolute;inset:-2px;border-radius:20px;z-index:-1;
-    background:radial-gradient(60% 80% at 50% 0%, rgba(229,25,125,.14), transparent 70%)}
-  .flag{position:absolute;top:-14px;inset-inline-start:24px;
-    background:linear-gradient(135deg,var(--hot),var(--wine));color:#fff;font-family:var(--display);font-size:12px;font-weight:800;
-    padding:6px 14px;border-radius:999px;box-shadow:0 8px 18px rgba(229,25,125,.34);letter-spacing:.02em}
-  .plan h3{font-size:24px;font-weight:700}
-  .plan-promise{color:var(--wine-deep);font-size:14.5px;font-weight:700;margin-top:4px}
-  .anchor{color:var(--muted);font-size:15px;text-decoration:line-through;margin-top:8px}
-  .price{font-family:var(--display);font-size:48px;font-weight:900;color:var(--wine);margin:2px 0 2px;letter-spacing:-.02em}
-  .price small{font-size:18px;color:var(--muted);font-weight:500}
-  .btn-reassure{text-align:center;margin-top:10px;font-size:13px;color:var(--muted);font-weight:600}
-  .guarantee{text-align:center;margin-top:20px;font-size:16px;font-weight:700;color:var(--wine)}
-  .urgency{text-align:center;margin-top:8px;font-size:14.5px;color:var(--muted)}
-  .plan ul{list-style:none;margin:14px 0 20px;display:grid;gap:9px}
-  .plan li{padding-inline-start:24px;position:relative;font-size:15px}
-  .plan li::before{content:"✦";position:absolute;inset-inline-start:0;color:var(--gold)}
-  .plan .btn{margin-top:auto;width:100%}
-  .addons{max-width:780px;margin:20px auto 0;background:var(--blush);border-radius:14px;padding:18px 22px}
-  .addons h4{font-size:18px;margin-bottom:8px}
-  .addons li{font-size:14.5px;color:var(--wine-deep);margin-bottom:4px;list-style:none;padding-inline-start:18px;position:relative}
-  .addons li::before{content:"+";position:absolute;inset-inline-start:0;font-weight:800;color:var(--wine)}
-  .delivery-note{text-align:center;margin-top:18px;font-size:15px;color:var(--muted)}
-  .delivery-note b{color:var(--ink)}
+      /* pricing */
+      .prices {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 18px;
+        max-width: 780px;
+        margin: 0 auto;
+      }
+      @media (min-width: 680px) {
+        .prices {
+          grid-template-columns: 1fr 1fr;
+          align-items: center;
+        }
+        .plan.featured {
+          transform: scale(1.04);
+        }
+      }
+      .plan {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 26px 24px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        box-shadow: var(--shadow-sm);
+        transition:
+          transform 0.25s ease,
+          box-shadow 0.25s ease;
+      }
+      .plan:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-md);
+      }
+      .plan.featured {
+        border: 2px solid transparent;
+        background:
+          linear-gradient(var(--surface), var(--surface)) padding-box,
+          linear-gradient(140deg, var(--hot), var(--wine) 70%, var(--gold)) border-box;
+        box-shadow:
+          0 24px 54px rgba(155, 45, 84, 0.2),
+          0 0 0 6px rgba(229, 25, 125, 0.05);
+      }
+      .plan.featured::before {
+        content: '';
+        position: absolute;
+        inset: -2px;
+        border-radius: 20px;
+        z-index: -1;
+        background: radial-gradient(60% 80% at 50% 0%, rgba(229, 25, 125, 0.14), transparent 70%);
+      }
+      .flag {
+        position: absolute;
+        top: -14px;
+        inset-inline-start: 24px;
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        color: #fff;
+        font-family: var(--display);
+        font-size: 12px;
+        font-weight: 800;
+        padding: 6px 14px;
+        border-radius: 999px;
+        box-shadow: 0 8px 18px rgba(229, 25, 125, 0.34);
+        letter-spacing: 0.02em;
+      }
+      .plan h3 {
+        font-size: 24px;
+        font-weight: 700;
+      }
+      .plan-promise {
+        color: var(--wine-deep);
+        font-size: 14.5px;
+        font-weight: 700;
+        margin-top: 4px;
+      }
+      .anchor {
+        color: var(--muted);
+        font-size: 15px;
+        text-decoration: line-through;
+        margin-top: 8px;
+      }
+      .price {
+        font-family: var(--display);
+        font-size: 48px;
+        font-weight: 900;
+        color: var(--wine);
+        margin: 2px 0 2px;
+        letter-spacing: -0.02em;
+      }
+      .price small {
+        font-size: 18px;
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .btn-reassure {
+        text-align: center;
+        margin-top: 10px;
+        font-size: 13px;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .guarantee {
+        text-align: center;
+        margin-top: 20px;
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--wine);
+      }
+      .urgency {
+        text-align: center;
+        margin-top: 8px;
+        font-size: 14.5px;
+        color: var(--muted);
+      }
+      .plan ul {
+        list-style: none;
+        margin: 14px 0 20px;
+        display: grid;
+        gap: 9px;
+      }
+      .plan li {
+        padding-inline-start: 24px;
+        position: relative;
+        font-size: 15px;
+      }
+      .plan li::before {
+        content: '✦';
+        position: absolute;
+        inset-inline-start: 0;
+        color: var(--gold);
+      }
+      .plan .btn {
+        margin-top: auto;
+        width: 100%;
+      }
+      .addons {
+        max-width: 780px;
+        margin: 20px auto 0;
+        background: var(--blush);
+        border-radius: 14px;
+        padding: 18px 22px;
+      }
+      .addons h4 {
+        font-size: 18px;
+        margin-bottom: 8px;
+      }
+      .addons li {
+        font-size: 14.5px;
+        color: var(--wine-deep);
+        margin-bottom: 4px;
+        list-style: none;
+        padding-inline-start: 18px;
+        position: relative;
+      }
+      .addons li::before {
+        content: '+';
+        position: absolute;
+        inset-inline-start: 0;
+        font-weight: 800;
+        color: var(--wine);
+      }
+      .delivery-note {
+        text-align: center;
+        margin-top: 18px;
+        font-size: 15px;
+        color: var(--muted);
+      }
+      .delivery-note b {
+        color: var(--ink);
+      }
 
-  /* gallery */
-  .gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-  @media(min-width:720px){.gallery{grid-template-columns:repeat(4,1fr)}}
-  .gphoto{aspect-ratio:4/5;border-radius:16px;background:var(--blush);border:1px solid var(--blush-deep);
-    display:flex;align-items:center;justify-content:center;overflow:hidden;
-    box-shadow:var(--shadow-sm);transition:transform .3s ease, box-shadow .3s ease}
-  .gphoto:hover{transform:translateY(-5px) scale(1.015);box-shadow:var(--shadow-md)}
-  .gphoto img{width:100%;height:100%;object-fit:cover;transition:transform .5s ease}
-  .gphoto:hover img{transform:scale(1.06)}
+      /* gallery */
+      .gallery {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+      }
+      @media (min-width: 720px) {
+        .gallery {
+          grid-template-columns: repeat(4, 1fr);
+        }
+      }
+      .gphoto {
+        aspect-ratio: 4/5;
+        border-radius: 16px;
+        background: var(--blush);
+        border: 1px solid var(--blush-deep);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        box-shadow: var(--shadow-sm);
+        transition:
+          transform 0.3s ease,
+          box-shadow 0.3s ease;
+      }
+      .gphoto:hover {
+        transform: translateY(-5px) scale(1.015);
+        box-shadow: var(--shadow-md);
+      }
+      .gphoto img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.5s ease;
+      }
+      .gphoto:hover img {
+        transform: scale(1.06);
+      }
 
-  /* FAQ */
-  .faq{max-width:760px;margin:0 auto;display:grid;gap:10px}
-  details{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:4px 18px;
-    box-shadow:var(--shadow-sm);transition:box-shadow .2s ease, border-color .2s ease}
-  details[open]{border-color:var(--blush-deep);box-shadow:var(--shadow-md)}
-  summary{cursor:pointer;font-weight:700;padding:14px 0;list-style:none;font-size:16.5px}
-  summary::-webkit-details-marker{display:none}
-  summary::after{content:"+";float:left;color:var(--wine);font-weight:800}
-  details[open] summary::after{content:"–"}
-  details p{color:var(--muted);font-size:15px;padding:0 0 16px}
+      /* examples (manifest-driven design previews) */
+      .examples-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 18px;
+      }
+      @media (min-width: 640px) {
+        .examples-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      .ex-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 18px;
+        box-shadow: var(--shadow-sm);
+        transition:
+          transform 0.25s ease,
+          box-shadow 0.25s ease;
+      }
+      .ex-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-md);
+      }
+      .ex-name {
+        font-family: var(--display);
+        font-weight: 900;
+        font-size: 18px;
+        color: var(--wine);
+        text-align: center;
+        margin-bottom: 12px;
+      }
+      /* two portrait cards (front + back) side by side */
+      .ex-cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .ex-card-slot {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      /* shared face box: centers an inlined SVG and contains it (no overflow) */
+      .ex-face {
+        border-radius: 12px;
+        background: var(--blush);
+        border: 1px solid var(--blush-deep);
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px;
+      }
+      .ex-face svg,
+      .ex-face img {
+        width: 100%;
+        height: 100%;
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+      /* cards are portrait (~5/7); board is landscape (~A-series 1.41/1) */
+      .ex-face.card {
+        aspect-ratio: 5/7;
+      }
+      .ex-board-wrap {
+        margin-top: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .ex-face.board {
+        aspect-ratio: 1.414 / 1;
+        width: 100%;
+      }
+      .ex-card-label,
+      .ex-board-label {
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+        font-weight: 700;
+      }
+      .ex-cta {
+        text-align: center;
+        margin-top: 24px;
+      }
 
-  /* final cta */
-  .final{text-align:center;background:linear-gradient(180deg,var(--bg),var(--blush))}
-  .final h2{font-size:32px}
-  .final p{color:var(--muted);max-width:520px;margin:10px auto 22px}
+      /* FAQ */
+      .faq {
+        max-width: 760px;
+        margin: 0 auto;
+        display: grid;
+        gap: 10px;
+      }
+      details {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 4px 18px;
+        box-shadow: var(--shadow-sm);
+        transition:
+          box-shadow 0.2s ease,
+          border-color 0.2s ease;
+      }
+      details[open] {
+        border-color: var(--blush-deep);
+        box-shadow: var(--shadow-md);
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 700;
+        padding: 14px 0;
+        list-style: none;
+        font-size: 16.5px;
+      }
+      summary::-webkit-details-marker {
+        display: none;
+      }
+      summary::after {
+        content: '+';
+        float: left;
+        color: var(--wine);
+        font-weight: 800;
+      }
+      details[open] summary::after {
+        content: '–';
+      }
+      details p {
+        color: var(--muted);
+        font-size: 15px;
+        padding: 0 0 16px;
+      }
 
-  footer{padding:30px 0;text-align:center;font-size:14px;background:var(--ink);color:#E8D7DE}
-  footer a{color:#fff;font-weight:700;text-decoration:none}
-  footer .tag{margin-top:8px;font-size:13px;color:#C7A9B5}
+      /* final cta */
+      .final {
+        text-align: center;
+        background: linear-gradient(180deg, var(--bg), var(--blush));
+      }
+      .final h2 {
+        font-size: 32px;
+      }
+      .final p {
+        color: var(--muted);
+        max-width: 520px;
+        margin: 10px auto 22px;
+      }
 
-  /* sticky mobile CTA */
-  .sticky{position:fixed;bottom:0;inset-inline:0;background:rgba(255,255,255,.96);border-top:1px solid var(--line);
-    padding:12px 16px;display:flex;gap:10px;z-index:50;backdrop-filter:blur(6px);box-shadow:0 -8px 24px rgba(44,26,41,.08)}
-  .sticky .btn{flex:1}
-  @media(min-width:720px){.sticky{display:none} body{padding-bottom:0}}
+      footer {
+        padding: 30px 0;
+        text-align: center;
+        font-size: 14px;
+        background: var(--ink);
+        color: #e8d7de;
+      }
+      footer a {
+        color: #fff;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      footer .tag {
+        margin-top: 8px;
+        font-size: 13px;
+        color: #c7a9b5;
+      }
 
-  /* ============ SECTION GLOWS / GRADIENT MESH ============ */
-  .moment{background:
-      radial-gradient(70% 100% at 80% 0%, rgba(229,25,125,.08), transparent 60%),
-      linear-gradient(180deg,var(--blush),var(--bg));text-align:center}
-  .moment .em{font-family:var(--display);font-weight:900}
-  #how::before, #pricing::before, #gallery::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0}
-  #how::before{background:radial-gradient(45% 60% at 12% 8%, rgba(229,25,125,.05), transparent 70%)}
-  #pricing::before{background:radial-gradient(50% 60% at 88% 10%, rgba(188,154,76,.07), transparent 70%)}
-  #gallery::before{background:radial-gradient(50% 60% at 50% 0%, rgba(229,25,125,.05), transparent 70%)}
-  #how .wrap, #pricing .wrap, #gallery .wrap{position:relative;z-index:1}
-  .final{text-align:center;background:
-      radial-gradient(60% 90% at 50% 100%, rgba(229,25,125,.10), transparent 65%),
-      linear-gradient(180deg,var(--bg),var(--blush))}
-  .final h2{font-size:34px}
+      /* sticky mobile CTA */
+      .sticky {
+        position: fixed;
+        bottom: 0;
+        inset-inline: 0;
+        background: rgba(255, 255, 255, 0.96);
+        border-top: 1px solid var(--line);
+        padding: 12px 16px;
+        display: flex;
+        gap: 10px;
+        z-index: 50;
+        backdrop-filter: blur(6px);
+        box-shadow: 0 -8px 24px rgba(44, 26, 41, 0.08);
+      }
+      .sticky .btn {
+        flex: 1;
+      }
+      @media (min-width: 720px) {
+        .sticky {
+          display: none;
+        }
+        body {
+          padding-bottom: 0;
+        }
+      }
 
-  /* ============ SCROLL REVEALS (enhancement only — default visible) ============ */
-  .reveal-on .reveal{opacity:0;transform:translateY(26px);
-    transition:opacity .7s cubic-bezier(.22,.61,.36,1), transform .7s cubic-bezier(.22,.61,.36,1)}
-  .reveal-on .reveal.is-in{opacity:1;transform:none}
-  /* stagger children */
-  .reveal-on .stagger > *{opacity:0;transform:translateY(22px);
-    transition:opacity .6s ease, transform .6s ease}
-  .reveal-on .stagger.is-in > *{opacity:1;transform:none}
-  .reveal-on .stagger.is-in > *:nth-child(2){transition-delay:.08s}
-  .reveal-on .stagger.is-in > *:nth-child(3){transition-delay:.16s}
-  .reveal-on .stagger.is-in > *:nth-child(4){transition-delay:.24s}
-  .reveal-on .stagger.is-in > *:nth-child(5){transition-delay:.32s}
-  .reveal-on .stagger.is-in > *:nth-child(6){transition-delay:.40s}
+      /* ============ SECTION GLOWS / GRADIENT MESH ============ */
+      .moment {
+        background:
+          radial-gradient(70% 100% at 80% 0%, rgba(229, 25, 125, 0.08), transparent 60%),
+          linear-gradient(180deg, var(--blush), var(--bg));
+        text-align: center;
+      }
+      .moment .em {
+        font-family: var(--display);
+        font-weight: 900;
+      }
+      #how::before,
+      #pricing::before,
+      #gallery::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+      }
+      #how::before {
+        background: radial-gradient(45% 60% at 12% 8%, rgba(229, 25, 125, 0.05), transparent 70%);
+      }
+      #pricing::before {
+        background: radial-gradient(50% 60% at 88% 10%, rgba(188, 154, 76, 0.07), transparent 70%);
+      }
+      #gallery::before {
+        background: radial-gradient(50% 60% at 50% 0%, rgba(229, 25, 125, 0.05), transparent 70%);
+      }
+      #how .wrap,
+      #pricing .wrap,
+      #gallery .wrap {
+        position: relative;
+        z-index: 1;
+      }
+      .final {
+        text-align: center;
+        background:
+          radial-gradient(60% 90% at 50% 100%, rgba(229, 25, 125, 0.1), transparent 65%),
+          linear-gradient(180deg, var(--bg), var(--blush));
+      }
+      .final h2 {
+        font-size: 34px;
+      }
 
-  /* ============ SLIM STICKY HEADER ============ */
-  .topbar{position:fixed;top:0;inset-inline:0;z-index:60;
-    background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);
-    box-shadow:0 6px 20px rgba(44,26,41,.08);
-    padding:8px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;
-    transform:translateY(-110%);transition:transform .35s cubic-bezier(.22,.61,.36,1)}
-  .topbar.show{transform:translateY(0)}
-  .topbar img{height:34px;width:auto;display:block}
-  .topbar .btn{padding:9px 20px;font-size:15px;box-shadow:0 6px 16px rgba(229,25,125,.28)}
-  @media(max-width:520px){.topbar img{height:30px}.topbar .btn{padding:8px 16px;font-size:14px}}
+      /* ============ SCROLL REVEALS (enhancement only — default visible) ============ */
+      .reveal-on .reveal {
+        opacity: 0;
+        transform: translateY(26px);
+        transition:
+          opacity 0.7s cubic-bezier(0.22, 0.61, 0.36, 1),
+          transform 0.7s cubic-bezier(0.22, 0.61, 0.36, 1);
+      }
+      .reveal-on .reveal.is-in {
+        opacity: 1;
+        transform: none;
+      }
+      /* stagger children */
+      .reveal-on .stagger > * {
+        opacity: 0;
+        transform: translateY(22px);
+        transition:
+          opacity 0.6s ease,
+          transform 0.6s ease;
+      }
+      .reveal-on .stagger.is-in > * {
+        opacity: 1;
+        transform: none;
+      }
+      .reveal-on .stagger.is-in > *:nth-child(2) {
+        transition-delay: 0.08s;
+      }
+      .reveal-on .stagger.is-in > *:nth-child(3) {
+        transition-delay: 0.16s;
+      }
+      .reveal-on .stagger.is-in > *:nth-child(4) {
+        transition-delay: 0.24s;
+      }
+      .reveal-on .stagger.is-in > *:nth-child(5) {
+        transition-delay: 0.32s;
+      }
+      .reveal-on .stagger.is-in > *:nth-child(6) {
+        transition-delay: 0.4s;
+      }
 
-  /* ============ INTERACTIVE FLIP CARD ============ */
-  .flip-wrap{margin:30px auto 0;max-width:300px;perspective:1200px}
-  .flip-hint{font-family:var(--display);font-weight:700;font-size:14px;color:var(--wine);margin-top:14px;text-align:center}
-  .flip-hint span{display:inline-flex;align-items:center;gap:6px}
-  .flip{position:relative;width:100%;aspect-ratio:5/7;cursor:pointer;transform-style:preserve-3d;
-    transition:transform .7s cubic-bezier(.4,.2,.2,1);background:transparent;border:0;padding:0;display:block}
-  .flip.flipped{transform:rotateY(180deg)}
-  .flip-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;
-    border-radius:22px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;
-    align-items:center;justify-content:center;text-align:center;padding:22px;overflow:hidden}
-  .flip-front{background:#EC7BA0;padding:0;border:0}
-  .flip-front .fl-logo{font-family:var(--display);font-weight:900;font-size:42px;letter-spacing:-.02em;
-    text-shadow:0 4px 16px rgba(0,0,0,.18)}
-  .flip-front .fl-sub{margin-top:10px;font-size:14px;opacity:.92;font-weight:700}
-  .flip-front .fl-dots{position:absolute;inset:0;opacity:.18;pointer-events:none;
-    background-image:radial-gradient(circle, #fff 1.5px, transparent 1.6px);background-size:22px 22px}
-  .flip-back{background:var(--blush);color:var(--ink);transform:rotateY(180deg);
-    border:0;padding:0;justify-content:center;align-items:stretch;gap:0}
-  .fl-img{width:100%;height:100%;object-fit:contain;display:block}
-  .footlinks{margin-top:12px;font-size:13.5px}
-  .footlinks a{color:#E8D7DE;text-decoration:underline}
-  .flip-back .fl-title{font-family:var(--display);font-weight:900;font-size:17px;color:var(--wine);
-    margin:4px 0 12px;text-align:center;width:100%}
-  .fl-words{display:grid;gap:10px;width:100%}
-  .fl-word{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);
-    border-radius:12px;padding:10px 13px;font-size:16px;font-weight:700;text-align:start;box-shadow:var(--shadow-sm)}
-  .fl-word b{font-family:var(--display);font-weight:900;color:#fff;background:linear-gradient(140deg,var(--hot),var(--wine));
-    min-width:26px;height:26px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex:0 0 auto}
+      /* ============ SHARED STICKY NAV ============ */
+      .nav {
+        position: fixed;
+        top: 0;
+        inset-inline: 0;
+        z-index: 80;
+        background: rgba(255, 255, 255, 0.94);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--line);
+        box-shadow: 0 6px 20px rgba(44, 26, 41, 0.07);
+      }
+      .nav-inner {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 8px 18px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .nav-logo {
+        display: flex;
+        align-items: center;
+      }
+      .nav-logo img {
+        height: 34px;
+        width: auto;
+        display: block;
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-inline-start: auto;
+      }
+      .nav-links a {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 15.5px;
+        color: var(--wine);
+        padding: 8px 12px;
+        border-radius: 10px;
+        text-decoration: none;
+        transition:
+          background 0.18s ease,
+          color 0.18s ease;
+      }
+      .nav-links a:hover {
+        background: var(--blush);
+        color: var(--wine-deep);
+      }
+      .nav-links a.nav-cta {
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        color: #fff;
+        padding: 9px 20px;
+        box-shadow: 0 6px 16px rgba(229, 25, 125, 0.26);
+      }
+      .nav-links a.nav-cta:hover {
+        filter: brightness(1.05);
+        color: #fff;
+      }
+      .nav-toggle {
+        display: none;
+        margin-inline-start: auto;
+        background: none;
+        border: 1px solid var(--blush-deep);
+        border-radius: 10px;
+        width: 42px;
+        height: 40px;
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+      }
+      .nav-toggle span,
+      .nav-toggle span::before,
+      .nav-toggle span::after {
+        display: block;
+        width: 20px;
+        height: 2px;
+        background: var(--wine);
+        position: relative;
+        transition:
+          transform 0.2s ease,
+          opacity 0.2s ease;
+      }
+      .nav-toggle span::before {
+        content: '';
+        position: absolute;
+        top: -6px;
+      }
+      .nav-toggle span::after {
+        content: '';
+        position: absolute;
+        top: 6px;
+      }
+      @media (max-width: 640px) {
+        .nav-toggle {
+          display: flex;
+        }
+        .nav-links {
+          position: absolute;
+          top: 100%;
+          inset-inline: 0;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0;
+          background: rgba(255, 255, 255, 0.98);
+          border-bottom: 1px solid var(--line);
+          box-shadow: 0 14px 28px rgba(44, 26, 41, 0.12);
+          padding: 8px 14px 14px;
+          margin: 0;
+          display: none;
+        }
+        .nav-links.open {
+          display: flex;
+        }
+        .nav-links a {
+          padding: 13px 10px;
+          border-radius: 10px;
+        }
+        .nav-links a.nav-cta {
+          margin-top: 6px;
+          text-align: center;
+          justify-content: center;
+        }
+      }
+      /* keep hero clear of the fixed nav */
+      body {
+        padding-top: 54px;
+      }
 
-  /* ============ REDUCED MOTION ============ */
-  @media (prefers-reduced-motion: reduce){
-    html{scroll-behavior:auto}
-    *{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
-    .reveal-on .reveal,.reveal-on .stagger > *{opacity:1 !important;transform:none !important}
-    .confetti,.sparkle{display:none !important}
-    .topbar{transition:none}
-  }
-</style>
-</head>
-<body>
+      /* ============ INTERACTIVE FLIP CARD ============ */
+      .flip-wrap {
+        margin: 30px auto 0;
+        max-width: 300px;
+        perspective: 1200px;
+      }
+      .flip-hint {
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 14px;
+        color: var(--wine);
+        margin-top: 14px;
+        text-align: center;
+      }
+      .flip-hint span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .flip {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 5/7;
+        cursor: pointer;
+        transform-style: preserve-3d;
+        transition: transform 0.7s cubic-bezier(0.4, 0.2, 0.2, 1);
+        background: transparent;
+        border: 0;
+        padding: 0;
+        display: block;
+      }
+      .flip.flipped {
+        transform: rotateY(180deg);
+      }
+      .flip-face {
+        position: absolute;
+        inset: 0;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+        border-radius: 22px;
+        box-shadow: var(--shadow-lg);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 22px;
+        overflow: hidden;
+      }
+      .flip-front {
+        background: #ec7ba0;
+        padding: 0;
+        border: 0;
+      }
+      .flip-front .fl-logo {
+        font-family: var(--display);
+        font-weight: 900;
+        font-size: 42px;
+        letter-spacing: -0.02em;
+        text-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+      }
+      .flip-front .fl-sub {
+        margin-top: 10px;
+        font-size: 14px;
+        opacity: 0.92;
+        font-weight: 700;
+      }
+      .flip-front .fl-dots {
+        position: absolute;
+        inset: 0;
+        opacity: 0.18;
+        pointer-events: none;
+        background-image: radial-gradient(circle, #fff 1.5px, transparent 1.6px);
+        background-size: 22px 22px;
+      }
+      .flip-back {
+        background: var(--blush);
+        color: var(--ink);
+        transform: rotateY(180deg);
+        border: 0;
+        padding: 0;
+        justify-content: center;
+        align-items: stretch;
+        gap: 0;
+      }
+      .fl-img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+      .footlinks {
+        margin-top: 12px;
+        font-size: 13.5px;
+      }
+      .footlinks a {
+        color: #e8d7de;
+        text-decoration: underline;
+      }
+      .flip-back .fl-title {
+        font-family: var(--display);
+        font-weight: 900;
+        font-size: 17px;
+        color: var(--wine);
+        margin: 4px 0 12px;
+        text-align: center;
+        width: 100%;
+      }
+      .fl-words {
+        display: grid;
+        gap: 10px;
+        width: 100%;
+      }
+      .fl-word {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 13px;
+        font-size: 16px;
+        font-weight: 700;
+        text-align: start;
+        box-shadow: var(--shadow-sm);
+      }
+      .fl-word b {
+        font-family: var(--display);
+        font-weight: 900;
+        color: #fff;
+        background: linear-gradient(140deg, var(--hot), var(--wine));
+        min-width: 26px;
+        height: 26px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        flex: 0 0 auto;
+      }
 
-<div class="topbar" id="topbar" aria-hidden="true">
-  <a href="#top" aria-label="דוגרי — לראש העמוד"><img src="assets/logo.png" alt="דוגרי"></a>
-  <a class="btn" href="#pricing">הזמנה</a>
-</div>
-
-<header id="top">
-  <div class="confetti" id="confetti" aria-hidden="true"></div>
-  <div class="wrap">
-    <h1 class="brand"><img class="brand-logo" src="assets/logo.png" alt="דוגרי"></h1>
-    <div class="tagline">המשחק שמפוצץ את החדר — בלי פילטרים</div>
-    <p class="lede"> משחק קלפים שהוא רק שלכם — מלא בבדיחות פנימיות, סיפורים מביכים ורגעים שרק אתם מכירים. ההפתעה שכולם יזכרו מהערב.</p>
-    <div class="hero-cta">
-      <a class="btn" href="#pricing">מזמינים את המשחק</a>
-      <a class="btn ghost" href="#how">איך זה עובד ↓</a>
-    </div>
-    <p class="trust"><span>אספקה תוך 24 שעות</span> · <span>ללא הגבלת מילים</span> · <span>תשלום מאובטח</span></p>
-    <div class="occasions">
-      <span class="tag">מסיבת רווקות</span>
-      <span class="tag">יום הולדת 30 · 40 · 50 · 60</span>
-      <span class="tag">יום נישואין</span>
-      <span class="tag">פרישה</span>
-      <span class="tag">מסיבת פרידה</span>
-    </div>
-    <div class="hero-img">
-      <img src="assets/hero-board.jpg" alt="משחק דוגרי מודפס — לוח וקלפים מעוצבים על שולחן במסיבה">
-    </div>
-  </div>
-</header>
-
-<section class="moment">
-  <div class="wrap reveal">
-    <p>עולה קלף. מישהי מקריאה "הדייט מטבריה". כל החדר מתפוצץ — כי רק אתן יודעות את הסיפור.</p>
-    <span class="em">זה הרגעים שיעשו את המסיבה</span>
-  </div>
-</section>
-
-<!-- PLACEHOLDER testimonials — replace with real customer quotes before launch. No real names / no verified star counts until you have actual reviews. -->
-<section class="proof" id="proof">
-  <div class="wrap">
-    <div class="sec-title reveal">
-      <h2>כבר חוגגים איתנו</h2>
-      <p>ככה זה נראה כשהמשחק מגיע לשולחן</p>
-    </div>
-    <div class="stars reveal" aria-hidden="true">★★★★★</div>
-    <div class="quotes stagger">
-      <figure class="quote">
-        <p>"שלחנו רשימת מילים על הכלה וקיבלנו משחק שפשוט פוצץ את הערב. כולן בכו מצחוק."</p>
-        <figcaption>שם הלקוחה · מסיבת רווקות</figcaption>
-      </figure>
-      <figure class="quote">
-        <p>"הזמנתי הפתעה לאבא ליום הולדת 60. הוא לא הפסיק לצחוק — והמשחק נשאר אצלנו כמזכרת."</p>
-        <figcaption>שם הלקוח · יום הולדת 60</figcaption>
-      </figure>
-      <figure class="quote">
-        <p>"הגיע תוך יום, מעוצב בול בצבעים שביקשתי. הדבר הכי אישי שנתתי במתנה."</p>
-        <figcaption>שם הלקוחה · יום נישואין</figcaption>
-      </figure>
-    </div>
-    <p class="proof-note">ההמלצות כאן הן דוגמאות לעיצוב — נחליף בהמלצות אמיתיות מלקוחות עם ההשקה.</p>
-  </div>
-</section>
-
-<section id="how">
-  <div class="wrap">
-    <div class="sec-title reveal">
-      <h2>איך זה עובד</h2>
-      <p>שלושה צעדים, בלי כאב ראש</p>
-    </div>
-    <div class="steps stagger">
-      <div class="step">
-        <div class="n">1</div>
-        <h3>ממלאים בלי להתאמץ</h3>
-        <p>שולחים מילים, שמות וביטויים שקשורים למי שחוגגים. מינימום 100.</p>
-        <span class="hint">שלחנו לכם דף עזר עם קטגוריות — אף פעם לא נתקעים מול דף ריק</span>
-      </div>
-      <div class="step">
-        <div class="n">2</div>
-        <h3>אנחנו עושים את הקסם</h3>
-        <p>המילים הופכות לחפיסה ולוח אישיים, בעיצוב ובצבעים שבחרתם.</p>
-      </div>
-      <div class="step">
-        <div class="n">3</div>
-        <h3>מדפיסים ומשחקים</h3>
-        <p>PDF מוכן, מתאים לכל בית דפוס, מודפס תוך דקות. עד 24 שעות מרגע שליחת המילים.</p>
-      </div>
-    </div>
-
-    <div class="flip-wrap reveal">
-      <button class="flip" id="flipCard" type="button" aria-pressed="false" aria-label="קלף דוגרי לדוגמה — הקליקו להיפוך">
-        <div class="flip-face flip-front">
-          <img class="fl-img" src="assets/card-back.png" alt="גב הקלף של דוגרי">
+      /* ============ REDUCED MOTION ============ */
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        * {
+          animation-duration: 0.001ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.001ms !important;
+        }
+        .reveal-on .reveal,
+        .reveal-on .stagger > * {
+          opacity: 1 !important;
+          transform: none !important;
+        }
+        .confetti,
+        .sparkle {
+          display: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav" aria-label="ניווט ראשי">
+      <div class="nav-inner">
+        <a class="nav-logo" href="#top" aria-label="דוגרי — לראש העמוד"
+          ><img src="assets/logo.png" alt="דוגרי"
+        /></a>
+        <button
+          class="nav-toggle"
+          type="button"
+          data-testid="nav-toggle"
+          aria-expanded="false"
+          aria-controls="navLinks"
+          aria-label="תפריט"
+        >
+          <span></span>
+        </button>
+        <div class="nav-links" id="navLinks" data-testid="nav-links">
+          <a href="#examples">דוגמאות</a>
+          <a href="#pricing">מחירים</a>
+          <a href="timer.html">טיימר</a>
+          <a class="nav-cta" href="options.html">הזמנה</a>
         </div>
-        <div class="flip-face flip-back">
-          <img class="fl-img" src="assets/card-front.png" alt="קלף דוגרי אמיתי — ארבע מילים אישיות על בעל השמחה">
+      </div>
+    </nav>
+
+    <header id="top">
+      <div class="confetti" id="confetti" aria-hidden="true"></div>
+      <div class="wrap">
+        <h1 class="brand"><img class="brand-logo" src="assets/logo.png" alt="דוגרי" /></h1>
+        <div class="tagline">המשחק שמפוצץ את החדר — בלי פילטרים</div>
+        <p class="lede">
+          משחק קלפים שהוא רק שלכם — מלא בבדיחות פנימיות, סיפורים מביכים ורגעים שרק אתם מכירים.
+          ההפתעה שכולם יזכרו מהערב.
+        </p>
+        <div class="hero-cta">
+          <a class="btn" href="options.html?plan=base">מזמינים את המשחק</a>
+          <a class="btn ghost" href="#how">איך זה עובד ↓</a>
         </div>
-      </button>
-      <p class="flip-hint"><span>↻ הקליקו על הקלף כדי להפוך אותו</span></p>
-    </div>
-  </div>
-</section>
-
-<section id="included">
-  <div class="wrap">
-    <div class="sec-title reveal">
-      <h2>מה מקבלים</h2>
-      <p>חבילה שלמה, נשלחת במייל או בוואטסאפ</p>
-    </div>
-    <div class="items stagger">
-      <div class="item"><span class="tick">✦</span><div><h4>חפיסת קלפים מותאמת</h4><p>המילים שלכם הופכות לקלפים מעוצבים — כל קלף הוא בדיחה פנימית שמחכה להיקרא.</p></div></div>
-      <div class="item"><span class="tick">✦</span><div><h4>לוח משחק שמכניס את כולם לאווירה</h4><p>לוח מעוצב ומותאם לכמות הקלפים — מוציאים, פורסים, ומתחילים לצחוק.</p></div></div>
-      <div class="item"><span class="tick">✦</span><div><h4>חוקים ברורים מהרגע הראשון</h4><p>קבוצות, טיימר, ניקוד וווריאציות לכל אירוע — בלי ויכוחים על הכללים.</p></div></div>
-      <div class="item"><span class="tick">✦</span><div><h4>שלא תישארו עם דף ריק</h4><p>דף עזר עם קטגוריות ודוגמאות שמזכירות לכם הכל — החלק הכי קשה נהיה הכי קל.</p></div></div>
-      <div class="item"><span class="tick">✦</span><div><h4>הדפסה בלי כאב ראש</h4><p>בדיוק איזה נייר, איך מדפיסים בגודל מקורי ואיפה גוזרים — כל בית דפוס שכונתי יסתדר.</p></div></div>
-      <div class="item"><span class="tick">✦</span><div><h4>מוכנים לשחק על המקום</h4><p>חיילי משחק וטיימר אונליין — לא חסר לכם כלום כדי להתחיל.</p></div></div>
-    </div>
-  </div>
-</section>
-
-<section id="pricing">
-  <div class="wrap">
-    <div class="sec-title reveal">
-      <h2>מחירים</h2>
-      <p> אספקה מהירה</p>
-    </div>
-    <div class="prices stagger">
-      <div class="plan">
-        <h3>בסיס</h3>
-        <p class="plan-promise">מושלם להפתעה מהירה</p>
-        <div class="price">79 <small>ש"ח</small></div>
-        <ul>
-          <li>חפיסת קלפים מהמילים שלכם</li>
-          <li>לוח משחק + דף חוקים</li>
-          <li>תבנית עיצוב לבחירה + צבעים</li>
-          <li>ללא הגבלת מילים</li>
-          <li>הוראות הדפסה וגזירה</li>
-        </ul>
-        <button class="btn" onclick="pay('base')">מזמינים בסיס · 79 ₪</button>
-        <p class="btn-reassure">אספקה תוך 24 שעות · תשלום מאובטח</p>
+        <p class="trust">
+          <span>אספקה תוך 24 שעות</span> · <span>ללא הגבלת מילים</span> · <span>תשלום מאובטח</span>
+        </p>
+        <div class="occasions">
+          <span class="tag">מסיבת רווקות</span>
+          <span class="tag">יום הולדת 30 · 40 · 50 · 60</span>
+          <span class="tag">יום נישואין</span>
+          <span class="tag">פרישה</span>
+          <span class="tag">מסיבת פרידה</span>
+        </div>
+        <div class="hero-img">
+          <img
+            src="assets/hero-board.jpg"
+            alt="משחק דוגרי מודפס — לוח וקלפים מעוצבים על שולחן במסיבה"
+          />
+        </div>
       </div>
-      <div class="plan featured">
-        <span class="flag">הכי נמכר</span>
-        <h3>פרימיום</h3>
-        <p class="plan-promise">החוויה המלאה — הכי נמכר</p>
-        <div class="anchor">שווי 250 ₪</div>
-        <div class="price">139 <small>ש"ח</small></div>
-        <ul>
-          <li>כל מה שבבסיס</li>
-          <li>אייקונים מותאמים אישית לחוגג</li>
-          <li>לוח משחק יצירתי ומעוצב לפי בקשתכם</li>
-          <li>חיילי משחק בהשראת החוגג מעוצבים</li>
-          <li>שליחה לאישור + סבבי תיקונים עד שמרוצים</li>
-        </ul>
-        <button class="btn" onclick="pay('premium')">מזמינים פרימיום · 139 ₪</button>
-        <p class="btn-reassure">אספקה תוך 24 שעות · עד שתאשרו את העיצוב</p>
+    </header>
+
+    <section class="moment">
+      <div class="wrap reveal">
+        <p>עולה קלף. מישהי מקריאה "הדייט מטבריה". כל החדר מתפוצץ — כי רק אתן יודעות את הסיפור.</p>
+        <span class="em">זה הרגעים שיעשו את המסיבה</span>
       </div>
-    </div>
-    <p class="guarantee">לא מרוצים? מתקנים עד שתהיו.</p>
-    <div class="addons">
-      <h4>תוספות</h4>
-      <ul>
-        <li>אקספרס בעדיפות, אספקה תוך כמה שעות (תוספת 49 ₪)</li>
-        <li>גרסה פיזית עד הבית — בקרוב</li>
-      </ul>
-    </div>
-    <p class="delivery-note">מינימום 100 מילים. <b>הקובץ אצלכם תוך 24 שעות</b> מרגע שליחת המילים · תשלום מאובטח.</p>
-    <p class="urgency">יש לכם תאריך אירוע? ספרו לנו ונוודא שתספיקו.</p>
-  </div>
-</section>
+    </section>
 
-<section id="gallery">
-  <div class="wrap">
-    <div class="sec-title reveal">
-      <h2>הצצה</h2>
-      <p>קלפים ולוחות אמיתיים מאירועים</p>
-    </div>
-    <div class="gallery stagger">
-      <div class="gphoto"><img src="assets/gallery-1.jpg" alt="קלף דוגרי עם אייקונים מותאמים וארבע מילים"></div>
-      <div class="gphoto"><img src="assets/gallery-2.jpg" alt="חפיסת קלפים מותאמת אישית ביד"></div>
-      <div class="gphoto"><img src="assets/gallery-3.jpg" alt="לוח משחק דוגרי עם טוקנים"></div>
-      <div class="gphoto"><img src="assets/gallery-4.jpg" alt="לוח וקלפים מותאמים אישית על שולחן"></div>
-    </div>
-  </div>
-</section>
+    <!-- PLACEHOLDER testimonials — replace with real customer quotes before launch. No real names / no verified star counts until you have actual reviews. -->
+    <section class="proof" id="proof">
+      <div class="wrap">
+        <div class="sec-title reveal">
+          <h2>כבר חוגגים איתנו</h2>
+          <p>ככה זה נראה כשהמשחק מגיע לשולחן</p>
+        </div>
+        <div class="stars reveal" aria-hidden="true">★★★★★</div>
+        <div class="quotes stagger">
+          <figure class="quote">
+            <p>"שלחנו רשימת מילים על הכלה וקיבלנו משחק שפשוט פוצץ את הערב. כולן בכו מצחוק."</p>
+            <figcaption>שם הלקוחה · מסיבת רווקות</figcaption>
+          </figure>
+          <figure class="quote">
+            <p>"הזמנתי הפתעה לאבא ליום הולדת 60. הוא לא הפסיק לצחוק — והמשחק נשאר אצלנו כמזכרת."</p>
+            <figcaption>שם הלקוח · יום הולדת 60</figcaption>
+          </figure>
+          <figure class="quote">
+            <p>"הגיע תוך יום, מעוצב בול בצבעים שביקשתי. הדבר הכי אישי שנתתי במתנה."</p>
+            <figcaption>שם הלקוחה · יום נישואין</figcaption>
+          </figure>
+        </div>
+        <p class="proof-note">
+          ההמלצות כאן הן דוגמאות לעיצוב — נחליף בהמלצות אמיתיות מלקוחות עם ההשקה.
+        </p>
+      </div>
+    </section>
 
-<section id="faq">
-  <div class="wrap">
-    <div class="sec-title reveal">
-      <h2>שאלות נפוצות</h2>
+    <section id="how">
+      <div class="wrap">
+        <div class="sec-title reveal">
+          <h2>איך זה עובד</h2>
+          <p>שלושה צעדים, בלי כאב ראש</p>
+        </div>
+        <div class="steps stagger">
+          <div class="step">
+            <div class="n">1</div>
+            <h3>ממלאים בלי להתאמץ</h3>
+            <p>שולחים מילים, שמות וביטויים שקשורים למי שחוגגים. מינימום 100.</p>
+            <span class="hint">שלחנו לכם דף עזר עם קטגוריות — אף פעם לא נתקעים מול דף ריק</span>
+          </div>
+          <div class="step">
+            <div class="n">2</div>
+            <h3>אנחנו עושים את הקסם</h3>
+            <p>המילים הופכות לחפיסה ולוח אישיים, בעיצוב ובצבעים שבחרתם.</p>
+          </div>
+          <div class="step">
+            <div class="n">3</div>
+            <h3>מדפיסים ומשחקים</h3>
+            <p>PDF מוכן, מתאים לכל בית דפוס, מודפס תוך דקות. עד 24 שעות מרגע שליחת המילים.</p>
+          </div>
+        </div>
+
+        <div class="flip-wrap reveal">
+          <button
+            class="flip"
+            id="flipCard"
+            type="button"
+            aria-pressed="false"
+            aria-label="קלף דוגרי לדוגמה — הקליקו להיפוך"
+          >
+            <div class="flip-face flip-front">
+              <img class="fl-img" src="assets/card-back.png" alt="גב הקלף של דוגרי" />
+            </div>
+            <div class="flip-face flip-back">
+              <img
+                class="fl-img"
+                src="assets/card-front.png"
+                alt="קלף דוגרי אמיתי — ארבע מילים אישיות על בעל השמחה"
+              />
+            </div>
+          </button>
+          <p class="flip-hint"><span>↻ הקליקו על הקלף כדי להפוך אותו</span></p>
+        </div>
+      </div>
+    </section>
+
+    <section id="included">
+      <div class="wrap">
+        <div class="sec-title reveal">
+          <h2>מה מקבלים</h2>
+          <p>חבילה שלמה, נשלחת במייל או בוואטסאפ</p>
+        </div>
+        <div class="items stagger">
+          <div class="item">
+            <span class="tick">✦</span>
+            <div>
+              <h4>חפיסת קלפים מותאמת</h4>
+              <p>המילים שלכם הופכות לקלפים מעוצבים — כל קלף הוא בדיחה פנימית שמחכה להיקרא.</p>
+            </div>
+          </div>
+          <div class="item">
+            <span class="tick">✦</span>
+            <div>
+              <h4>לוח משחק שמכניס את כולם לאווירה</h4>
+              <p>לוח מעוצב ומותאם לכמות הקלפים — מוציאים, פורסים, ומתחילים לצחוק.</p>
+            </div>
+          </div>
+          <div class="item">
+            <span class="tick">✦</span>
+            <div>
+              <h4>חוקים ברורים מהרגע הראשון</h4>
+              <p>קבוצות, טיימר, ניקוד וווריאציות לכל אירוע — בלי ויכוחים על הכללים.</p>
+            </div>
+          </div>
+          <div class="item">
+            <span class="tick">✦</span>
+            <div>
+              <h4>שלא תישארו עם דף ריק</h4>
+              <p>דף עזר עם קטגוריות ודוגמאות שמזכירות לכם הכל — החלק הכי קשה נהיה הכי קל.</p>
+            </div>
+          </div>
+          <div class="item">
+            <span class="tick">✦</span>
+            <div>
+              <h4>הדפסה בלי כאב ראש</h4>
+              <p>
+                בדיוק איזה נייר, איך מדפיסים בגודל מקורי ואיפה גוזרים — כל בית דפוס שכונתי יסתדר.
+              </p>
+            </div>
+          </div>
+          <div class="item">
+            <span class="tick">✦</span>
+            <div>
+              <h4>מוכנים לשחק על המקום</h4>
+              <p>חיילי משחק וטיימר אונליין — לא חסר לכם כלום כדי להתחיל.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="pricing">
+      <div class="wrap">
+        <div class="sec-title reveal">
+          <h2>מחירים</h2>
+          <p>אספקה מהירה</p>
+        </div>
+        <div class="prices stagger">
+          <div class="plan">
+            <h3>בסיס</h3>
+            <p class="plan-promise">מושלם להפתעה מהירה</p>
+            <div class="price">79 <small>ש"ח</small></div>
+            <ul>
+              <li>חפיסת קלפים מהמילים שלכם</li>
+              <li>לוח משחק + דף חוקים</li>
+              <li>תבנית עיצוב לבחירה + צבעים</li>
+              <li>ללא הגבלת מילים</li>
+              <li>הוראות הדפסה וגזירה</li>
+            </ul>
+            <a class="btn" href="options.html?plan=base">מזמינים בסיס · 79 ₪</a>
+            <p class="btn-reassure">אספקה תוך 24 שעות · תשלום מאובטח</p>
+          </div>
+          <div class="plan featured">
+            <span class="flag">הכי נמכר</span>
+            <h3>פרימיום</h3>
+            <p class="plan-promise">החוויה המלאה — הכי נמכר</p>
+            <div class="anchor">שווי 250 ₪</div>
+            <div class="price">139 <small>ש"ח</small></div>
+            <ul>
+              <li>כל מה שבבסיס</li>
+              <li>אייקונים מותאמים אישית לחוגג</li>
+              <li>לוח משחק יצירתי ומעוצב לפי בקשתכם</li>
+              <li>חיילי משחק בהשראת החוגג מעוצבים</li>
+              <li>שליחה לאישור + סבבי תיקונים עד שמרוצים</li>
+            </ul>
+            <a class="btn" href="options.html?plan=premium">מזמינים פרימיום · 139 ₪</a>
+            <p class="btn-reassure">אספקה תוך 24 שעות · עד שתאשרו את העיצוב</p>
+          </div>
+        </div>
+        <p class="guarantee">לא מרוצים? מתקנים עד שתהיו.</p>
+        <div class="addons">
+          <h4>תוספות</h4>
+          <ul>
+            <li>אקספרס בעדיפות, אספקה תוך כמה שעות (תוספת 49 ₪)</li>
+            <li>גרסה פיזית עד הבית — בקרוב</li>
+          </ul>
+        </div>
+        <p class="delivery-note">
+          מינימום 100 מילים. <b>הקובץ אצלכם תוך 24 שעות</b> מרגע שליחת המילים · תשלום מאובטח.
+        </p>
+        <p class="urgency">יש לכם תאריך אירוע? ספרו לנו ונוודא שתספיקו.</p>
+      </div>
+    </section>
+
+    <section id="gallery">
+      <div class="wrap">
+        <div class="sec-title reveal">
+          <h2>הצצה</h2>
+          <p>קלפים ולוחות אמיתיים מאירועים</p>
+        </div>
+        <div class="gallery stagger">
+          <div class="gphoto">
+            <img src="assets/gallery-1.jpg" alt="קלף דוגרי עם אייקונים מותאמים וארבע מילים" />
+          </div>
+          <div class="gphoto">
+            <img src="assets/gallery-2.jpg" alt="חפיסת קלפים מותאמת אישית ביד" />
+          </div>
+          <div class="gphoto">
+            <img src="assets/gallery-3.jpg" alt="לוח משחק דוגרי עם טוקנים" />
+          </div>
+          <div class="gphoto">
+            <img src="assets/gallery-4.jpg" alt="לוח וקלפים מותאמים אישית על שולחן" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="examples">
+      <div class="wrap">
+        <div class="sec-title reveal">
+          <h2>דוגמאות עיצוב</h2>
+          <p>בחרו עיצוב, התאימו צבעים — וזה מוכן להזמנה</p>
+        </div>
+        <div class="examples-grid stagger" id="examplesGrid" data-testid="examples-grid">
+          <p
+            class="preview-empty"
+            id="examplesEmpty"
+            style="grid-column: 1/-1; text-align: center; color: var(--muted)"
+          >
+            טוען דוגמאות…
+          </p>
+        </div>
+        <div class="ex-cta">
+          <a class="btn" href="options.html?plan=base">בונים את שלכם ←</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq">
+      <div class="wrap">
+        <div class="sec-title reveal">
+          <h2>שאלות נפוצות</h2>
+        </div>
+        <div class="faq stagger">
+          <details>
+            <summary>לאילו אירועים זה מתאים?</summary>
+            <p>
+              לכל שמחה : מסיבת רווקות, יום הולדת עגול (30, 40, 50, 60), יום נישואין, מסיבת פרישה או
+              פרידה. בכל פעם המשחק כולו על מי שחוגגים.
+            </p>
+          </details>
+          <details>
+            <summary>כמה מילים צריך לשלוח?</summary>
+            <p>
+              מינימום 100, ואין הגבלה עליונה. אנחנו שולחים דף עזר עם קטגוריות ודוגמאות שמקל מאוד
+              להיזכר — אנשים, מקומות, בדיחות פנימיות, ביטויים שהוא תמיד אומר.
+            </p>
+          </details>
+          <details>
+            <summary>מה אם לא מצליחה לחשוב על מספיק מילים?</summary>
+            <p>
+              זה קורה לכולם בהתחלה — ובדיוק בשביל זה יש את דף העזר. הוא מחלק את כל החיים של בעל
+              השמחה לקטגוריות עם דוגמאות (אנשים, מקומות, בדיחות פנימיות, ביטויים, פאדיחות), וברגע
+              שמתחילים — המילים פשוט זורמות. רוב האנשים מגיעים הרבה מעבר ל-100 בלי לשים לב.
+            </p>
+          </details>
+          <details>
+            <summary>אפשר לראות דוגמה?</summary>
+            <p>
+              בטח. בגלריה למעלה יש קלפים ולוחות אמיתיים, ואם בא לכם לראות עוד לפני שמזמינים — שלחו
+              לנו הודעה בוואטסאפ ונשמח להראות עוד דוגמאות ולענות על כל שאלה.
+            </p>
+          </details>
+          <details>
+            <summary>מתי בדיוק מקבלים?</summary>
+            <p>
+              הספירה מתחילה מרגע שאתם שולחים את רשימת המילים — לא מרגע התשלום. תוך 24 שעות מאותו רגע
+              הקובץ אצלכם במייל ובוואטסאפ. יש לכם תאריך אירוע קרוב? יש גם אקספרס בעדיפות שמקצר את זה
+              לכמה שעות.
+            </p>
+          </details>
+          <details>
+            <summary>איך מדפיסים?</summary>
+            <p>
+              הקובץ מגיע מוכן להדפסה עם הוראות מדויקות לבית הדפוס: סוג נייר, הדפסה בגודל מקורי,
+              וקווי גזירה. כל בית דפוס שכונתי יודע לעשות את זה.
+            </p>
+          </details>
+          <details>
+            <summary>זה דיגיטלי או פיזי?</summary>
+            <p>
+              כרגע דיגיטלי — קובץ PDF מוכן להדפסה, שמגיע מיד וחוסך משלוח והמתנה. גרסה פיזית עד הבית
+              בקרוב.
+            </p>
+          </details>
+          <details>
+            <summary>איך מזמינים ומשלמים?</summary>
+            <p>
+              בוחרים חבילה ומשלמים באתר בתשלום מאובטח. מיד אחרי התשלום מקבלים הודעה בוואטסאפ ובמייל
+              לשליחת המילים, ומשם אנחנו מתחילים.
+            </p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="final" id="order">
+      <div class="wrap reveal">
+        <h2>מוכנים להפתיע אותו?</h2>
+        <p>כמה מילים מכם — וכל החדר יצחק עליו. או עליה. בדרך הכי אישית שיש.</p>
+        <div class="hero-cta">
+          <a class="btn" href="options.html?plan=base">מזמינים את המשחק · 79 ₪</a>
+          <a class="btn wa" id="waLink" href="#" target="_blank" rel="noopener"
+            >יש שאלה? דברו איתנו בוואטסאפ</a
+          >
+        </div>
+        <p class="reassure">אספקה תוך 24 שעות · לא מרוצים? מתקנים עד שתהיו</p>
+      </div>
+    </section>
+
+    <footer>
+      <div class="wrap">
+        <p>דוגרי · <a id="igLink" href="#" target="_blank" rel="noopener">@INSTAGRAM_HANDLE</a></p>
+        <p class="tag">צילמתם? תייגו אותנו</p>
+      </div>
+    </footer>
+
+    <div class="sticky">
+      <a class="btn" href="options.html?plan=base">מזמינים · 79 ₪</a>
+      <a class="btn wa" id="waSticky" href="#" target="_blank" rel="noopener">וואטסאפ</a>
     </div>
-    <div class="faq stagger">
-      <details><summary>לאילו אירועים זה מתאים?</summary><p>לכל שמחה : מסיבת רווקות, יום הולדת עגול (30, 40, 50, 60), יום נישואין, מסיבת פרישה או פרידה. בכל פעם המשחק כולו על מי שחוגגים.</p></details>
-      <details><summary>כמה מילים צריך לשלוח?</summary><p>מינימום 100, ואין הגבלה עליונה. אנחנו שולחים דף עזר עם קטגוריות ודוגמאות שמקל מאוד להיזכר — אנשים, מקומות, בדיחות פנימיות, ביטויים שהוא תמיד אומר.</p></details>
-      <details><summary>מה אם לא מצליחה לחשוב על מספיק מילים?</summary><p>זה קורה לכולם בהתחלה — ובדיוק בשביל זה יש את דף העזר. הוא מחלק את כל החיים של בעל השמחה לקטגוריות עם דוגמאות (אנשים, מקומות, בדיחות פנימיות, ביטויים, פאדיחות), וברגע שמתחילים — המילים פשוט זורמות. רוב האנשים מגיעים הרבה מעבר ל-100 בלי לשים לב.</p></details>
-      <details><summary>אפשר לראות דוגמה?</summary><p>בטח. בגלריה למעלה יש קלפים ולוחות אמיתיים, ואם בא לכם לראות עוד לפני שמזמינים — שלחו לנו הודעה בוואטסאפ ונשמח להראות עוד דוגמאות ולענות על כל שאלה.</p></details>
-      <details><summary>מתי בדיוק מקבלים?</summary><p>הספירה מתחילה מרגע שאתם שולחים את רשימת המילים — לא מרגע התשלום. תוך 24 שעות מאותו רגע הקובץ אצלכם במייל ובוואטסאפ. יש לכם תאריך אירוע קרוב? יש גם אקספרס בעדיפות שמקצר את זה לכמה שעות.</p></details>
-      <details><summary>איך מדפיסים?</summary><p>הקובץ מגיע מוכן להדפסה עם הוראות מדויקות לבית הדפוס: סוג נייר, הדפסה בגודל מקורי, וקווי גזירה. כל בית דפוס שכונתי יודע לעשות את זה.</p></details>
-      <details><summary>זה דיגיטלי או פיזי?</summary><p>כרגע דיגיטלי — קובץ PDF מוכן להדפסה, שמגיע מיד וחוסך משלוח והמתנה. גרסה פיזית עד הבית בקרוב.</p></details>
-      <details><summary>איך מזמינים ומשלמים?</summary><p>בוחרים חבילה ומשלמים באתר בתשלום מאובטח. מיד אחרי התשלום מקבלים הודעה בוואטסאפ ובמייל לשליחת המילים, ומשם אנחנו מתחילים.</p></details>
-    </div>
-  </div>
-</section>
 
-<section class="final" id="order">
-  <div class="wrap reveal">
-    <h2>מוכנים להפתיע אותו?</h2>
-    <p>כמה מילים מכם — וכל החדר יצחק עליו. או עליה. בדרך הכי אישית שיש.</p>
-    <div class="hero-cta">
-      <button class="btn" onclick="pay('base')">מזמינים את המשחק · 79 ₪</button>
-      <a class="btn wa" id="waLink" href="#" target="_blank" rel="noopener">יש שאלה? דברו איתנו בוואטסאפ</a>
-    </div>
-    <p class="reassure">אספקה תוך 24 שעות · לא מרוצים? מתקנים עד שתהיו</p>
-  </div>
-</section>
-
-<footer>
-  <div class="wrap">
-    <p>דוגרי · <a id="igLink" href="#" target="_blank" rel="noopener">@INSTAGRAM_HANDLE</a></p>
-    <p class="tag">צילמתם? תייגו אותנו</p>
-    <p class="footlinks"><a href="timer.html">טיימר 60 שניות</a> · <a href="options.html">אפשרויות</a></p>
-  </div>
-</footer>
-
-<div class="sticky">
-  <button class="btn" onclick="pay('base')">מזמינים · 79 ₪</button>
-  <a class="btn wa" id="waSticky" href="#" target="_blank" rel="noopener">וואטסאפ</a>
-</div>
-
-<script>
-  /* ============================================================
+    <script>
+      /* ============================================================
      ROUND B — visual & interaction enhancement layer.
      Pure progressive enhancement: content is visible without JS.
      ============================================================ */
-  (function(){
-    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      (function () {
+        var reduce =
+          window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    /* ---- Scroll reveals (only arm if motion is allowed) ---- */
-    if(!reduce && 'IntersectionObserver' in window){
-      document.documentElement.classList.add('reveal-on');
-      var io = new IntersectionObserver(function(entries){
-        entries.forEach(function(e){
-          if(e.isIntersecting){ e.target.classList.add('is-in'); io.unobserve(e.target); }
-        });
-      }, { threshold:0.12, rootMargin:'0px 0px -8% 0px' });
-      document.querySelectorAll('.reveal, .stagger').forEach(function(el){ io.observe(el); });
-      /* safety net: if anything is still hidden after 2.5s, force it visible */
-      setTimeout(function(){
-        document.querySelectorAll('.reveal:not(.is-in), .stagger:not(.is-in)').forEach(function(el){
-          var r = el.getBoundingClientRect();
-          if(r.top < window.innerHeight) el.classList.add('is-in');
-        });
-      }, 2500);
-    }
-
-    /* ---- Confetti burst behind the logo (one-shot, on load) ---- */
-    if(!reduce){
-      var c = document.getElementById('confetti');
-      if(c){
-        var colors = ['#E5197D','#C7106A','#9B2D54','#BC9A4C','#F1D2DC'];
-        for(var i=0;i<26;i++){
-          var p = document.createElement('i');
-          p.style.left = (5 + Math.random()*90) + '%';
-          p.style.background = colors[i % colors.length];
-          p.style.animationDelay = (Math.random()*0.9) + 's';
-          p.style.animationDuration = (2.6 + Math.random()*1.4) + 's';
-          p.style.transform = 'scale(' + (0.7 + Math.random()*0.9) + ')';
-          c.appendChild(p);
+        /* ---- Scroll reveals (only arm if motion is allowed) ---- */
+        if (!reduce && 'IntersectionObserver' in window) {
+          document.documentElement.classList.add('reveal-on');
+          var io = new IntersectionObserver(
+            function (entries) {
+              entries.forEach(function (e) {
+                if (e.isIntersecting) {
+                  e.target.classList.add('is-in');
+                  io.unobserve(e.target);
+                }
+              });
+            },
+            { threshold: 0.12, rootMargin: '0px 0px -8% 0px' }
+          );
+          document.querySelectorAll('.reveal, .stagger').forEach(function (el) {
+            io.observe(el);
+          });
+          /* safety net: if anything is still hidden after 2.5s, force it visible */
+          setTimeout(function () {
+            document
+              .querySelectorAll('.reveal:not(.is-in), .stagger:not(.is-in)')
+              .forEach(function (el) {
+                var r = el.getBoundingClientRect();
+                if (r.top < window.innerHeight) el.classList.add('is-in');
+              });
+          }, 2500);
         }
-        /* a few looping twinkle sparkles */
-        for(var s=0;s<6;s++){
-          var sp = document.createElement('span');
-          sp.className = 'sparkle';
-          var size = 6 + Math.random()*10;
-          sp.style.width = size+'px'; sp.style.height = size+'px';
-          sp.style.left = (10 + Math.random()*80) + '%';
-          sp.style.top = (10 + Math.random()*60) + '%';
-          sp.style.animationDelay = (Math.random()*3) + 's';
-          c.appendChild(sp);
+
+        /* ---- Confetti burst behind the logo (one-shot, on load) ---- */
+        if (!reduce) {
+          var c = document.getElementById('confetti');
+          if (c) {
+            var colors = ['#E5197D', '#C7106A', '#9B2D54', '#BC9A4C', '#F1D2DC'];
+            for (var i = 0; i < 26; i++) {
+              var p = document.createElement('i');
+              p.style.left = 5 + Math.random() * 90 + '%';
+              p.style.background = colors[i % colors.length];
+              p.style.animationDelay = Math.random() * 0.9 + 's';
+              p.style.animationDuration = 2.6 + Math.random() * 1.4 + 's';
+              p.style.transform = 'scale(' + (0.7 + Math.random() * 0.9) + ')';
+              c.appendChild(p);
+            }
+            /* a few looping twinkle sparkles */
+            for (var s = 0; s < 6; s++) {
+              var sp = document.createElement('span');
+              sp.className = 'sparkle';
+              var size = 6 + Math.random() * 10;
+              sp.style.width = size + 'px';
+              sp.style.height = size + 'px';
+              sp.style.left = 10 + Math.random() * 80 + '%';
+              sp.style.top = 10 + Math.random() * 60 + '%';
+              sp.style.animationDelay = Math.random() * 3 + 's';
+              c.appendChild(sp);
+            }
+          }
         }
-      }
-    }
 
-    /* ---- Slim sticky header: show after scrolling past hero ---- */
-    var topbar = document.getElementById('topbar');
-    var hero = document.getElementById('top');
-    if(topbar && hero){
-      var onScroll = function(){
-        var past = (window.scrollY || window.pageYOffset) > (hero.offsetHeight - 80);
-        topbar.classList.toggle('show', past);
-        topbar.setAttribute('aria-hidden', past ? 'false' : 'true');
-      };
-      window.addEventListener('scroll', onScroll, { passive:true });
-      onScroll();
-    }
+        /* ---- Shared nav: mobile toggle menu ---- */
+        var navToggle = document.querySelector('.nav-toggle');
+        var navLinks = document.getElementById('navLinks');
+        if (navToggle && navLinks) {
+          navToggle.addEventListener('click', function () {
+            var open = navLinks.classList.toggle('open');
+            navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          });
+          /* close the menu after tapping a link */
+          navLinks.querySelectorAll('a').forEach(function (a) {
+            a.addEventListener('click', function () {
+              navLinks.classList.remove('open');
+              navToggle.setAttribute('aria-expanded', 'false');
+            });
+          });
+        }
 
-    /* ---- Interactive flip card ---- */
-    var flip = document.getElementById('flipCard');
-    if(flip){
-      flip.addEventListener('click', function(){
-        var on = flip.classList.toggle('flipped');
-        flip.setAttribute('aria-pressed', on ? 'true' : 'false');
-      });
-    }
-  })();
-</script>
+        /* ---- Interactive flip card ---- */
+        var flip = document.getElementById('flipCard');
+        if (flip) {
+          flip.addEventListener('click', function () {
+            var on = flip.classList.toggle('flipped');
+            flip.setAttribute('aria-pressed', on ? 'true' : 'false');
+          });
+        }
+      })();
+    </script>
 
-<script>
-  /* ============================================================
+    <script>
+      /* ============================================================
      CONFIG — fill these in once and the whole site updates.
      ============================================================ */
-  const CONFIG = {
-    // WhatsApp number in international format, digits only (e.g. Israel: 9725XXXXXXXX)
-    whatsapp: "972546577715",
-    // Instagram handle without the @
-    instagram: "INSTAGRAM_HANDLE",
-    // Tranzila terminal (supplier) name. Leave "" until you have it — buttons fall back to WhatsApp.
-    tranzilaTerminal: "",
-    // Where Tranzila returns the customer after a successful payment:
-    successUrl: "https://YOUR-DOMAIN/thankyou.html",
-    plans: {
-      base:    { sum: 79,  desc: "דוגרי — חבילת בסיס" },
-      premium: { sum: 139, desc: "דוגרי — חבילת פרימיום" }
-    }
-  };
+      const CONFIG = {
+        // WhatsApp number in international format, digits only (e.g. Israel: 9725XXXXXXXX)
+        whatsapp: '972546577715',
+        // Instagram handle without the @
+        instagram: 'INSTAGRAM_HANDLE',
+        // Tranzila terminal (supplier) name. Leave "" until you have it — buttons fall back to WhatsApp.
+        tranzilaTerminal: '',
+        // Where Tranzila returns the customer after a successful payment:
+        successUrl: 'https://YOUR-DOMAIN/thankyou.html',
+        plans: {
+          base: { sum: 79, desc: 'דוגרי — חבילת בסיס' },
+          premium: { sum: 139, desc: 'דוגרי — חבילת פרימיום' },
+        },
+      };
 
-  const waBase = "https://wa.me/" + CONFIG.whatsapp;
-  const waMsg  = encodeURIComponent("היי! אני רוצה להזמין משחק דוגרי");
-  ["waLink","waSticky"].forEach(id=>{
-    const el=document.getElementById(id); if(el) el.href = waBase + "?text=" + waMsg;
-  });
-  const ig=document.getElementById("igLink");
-  if(ig){ ig.href="https://instagram.com/"+CONFIG.instagram; ig.textContent="@"+CONFIG.instagram; }
-
-  function pay(planKey){
-    const plan = CONFIG.plans[planKey];
-    if(CONFIG.tranzilaTerminal){
-      const params = new URLSearchParams({
-        sum: plan.sum,
-        currency: 1,            // 1 = ILS
-        cred_type: 1,
-        pdesc: plan.desc,
-        success_url_address: CONFIG.successUrl
+      const waBase = 'https://wa.me/' + CONFIG.whatsapp;
+      const waMsg = encodeURIComponent('היי! אני רוצה להזמין משחק דוגרי');
+      ['waLink', 'waSticky'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.href = waBase + '?text=' + waMsg;
       });
-      window.location.href = "https://direct.tranzila.com/" + CONFIG.tranzilaTerminal + "/iframenew.php?" + params.toString();
-    } else {
-      const msg = encodeURIComponent("היי! אני רוצה להזמין " + plan.desc + " (" + plan.sum + " ₪)");
-      window.open(waBase + "?text=" + msg, "_blank");
-    }
-  }
-</script>
+      const ig = document.getElementById('igLink');
+      if (ig) {
+        ig.href = 'https://instagram.com/' + CONFIG.instagram;
+        ig.textContent = '@' + CONFIG.instagram;
+      }
 
-</body>
+      function pay(planKey) {
+        const plan = CONFIG.plans[planKey];
+        if (CONFIG.tranzilaTerminal) {
+          const params = new URLSearchParams({
+            sum: plan.sum,
+            currency: 1, // 1 = ILS
+            cred_type: 1,
+            pdesc: plan.desc,
+            success_url_address: CONFIG.successUrl,
+          });
+          window.location.href =
+            'https://direct.tranzila.com/' +
+            CONFIG.tranzilaTerminal +
+            '/iframenew.php?' +
+            params.toString();
+        } else {
+          const msg = encodeURIComponent(
+            'היי! אני רוצה להזמין ' + plan.desc + ' (' + plan.sum + ' ₪)'
+          );
+          window.open(waBase + '?text=' + msg, '_blank');
+        }
+      }
+    </script>
+
+    <script type="module">
+      /* ============================================================
+     EXAMPLES — manifest-driven preview of every design (front/back/board).
+     Inlines tokenized SVGs and applies each design's first palette so the
+     section is in-brand without further input. Pure enhancement.
+     ============================================================ */
+      import { DESIGNS } from './js/designs.js';
+      import { applyOriginal } from './js/configurator.js';
+
+      const grid = document.getElementById('examplesGrid');
+      const empty = document.getElementById('examplesEmpty');
+      if (grid) {
+        if (empty) empty.remove();
+        // The two cards (front/back) are portrait; the board is landscape.
+        // Lay the cards side-by-side on top and give the board its own full-width row.
+        const CARDS = [
+          { key: 'front', label: 'קלף', cls: 'card' },
+          { key: 'back', label: 'גב', cls: 'card' },
+        ];
+        DESIGNS.forEach((d) => {
+          const card = document.createElement('div');
+          card.className = 'ex-card';
+          card.dataset.testid = 'example-' + d.id;
+          card.innerHTML =
+            '<div class="ex-name">' +
+            d.name +
+            '</div>' +
+            '<div class="ex-cards"></div>' +
+            '<div class="ex-board-wrap">' +
+            '<div class="ex-face board" data-kind="board"></div>' +
+            '<div class="ex-board-label">לוח</div>' +
+            '</div>';
+          const cardsRow = card.querySelector('.ex-cards');
+          const renderInto = (face, path) => {
+            if (!path) return;
+            fetch(path)
+              .then((r) => (r.ok ? r.text() : Promise.reject()))
+              .then((txt) => {
+                face.innerHTML = txt;
+                // Show the design in its OWN original colors.
+                applyOriginal(face, d.anchors || []);
+              })
+              .catch(() => {
+                face.textContent = d.name;
+              });
+          };
+          CARDS.forEach((k) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'ex-card-slot';
+            const face = document.createElement('div');
+            face.className = 'ex-face ' + k.cls;
+            wrap.appendChild(face);
+            const cap = document.createElement('div');
+            cap.className = 'ex-card-label';
+            cap.textContent = k.label;
+            wrap.appendChild(cap);
+            cardsRow.appendChild(wrap);
+            renderInto(face, d.products && d.products[k.key]);
+          });
+          const boardFace = card.querySelector('.ex-face.board');
+          renderInto(boardFace, d.products && d.products.board);
+          grid.appendChild(card);
+        });
+      }
+    </script>
+  </body>
 </html>

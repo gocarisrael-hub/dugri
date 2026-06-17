@@ -3,3 +3,13 @@
 
 # Local Netlify folder
 .netlify
+
+# Node / tests
+node_modules/
+coverage/
+test-results/
+playwright-report/
+.vitest/
+
+# Claude local (worktrees, plans, etc.)
+.claude/
