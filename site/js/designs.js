@@ -32,5 +32,6 @@ export const DESIGNS = Object.entries(GENERATED).map(([id, g]) => ({
   id,
   name: (META[id] || {}).name || id,
   anchors: g.anchors,
+  hasRaster: !!g.hasRaster,
   products: g.products,
 }));

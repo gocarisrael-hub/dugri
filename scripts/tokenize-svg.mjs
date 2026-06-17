@@ -113,7 +113,7 @@ function isThemeColor(hex) {
 // (Bare hex strings also appear inside clip-path ids / antialias edges, which
 // we must NOT treat as theme colours.)
 const PAINT_RE =
-  /(?:fill|stop-color)\s*=\s*"(#[0-9a-fA-F]{6})"|style\s*=\s*"[^"]*?fill\s*:\s*(#[0-9a-fA-F]{6})/g;
+  /(?:fill|stroke|stop-color)\s*=\s*"(#[0-9a-fA-F]{6})"|style\s*=\s*"[^"]*?(?:fill|stroke)\s*:\s*(#[0-9a-fA-F]{6})/g;
 
 function collectThemeColors(svgFiles) {
   // Count occurrences across all 3 product svgs of a design so we pick
@@ -148,7 +148,10 @@ function collectThemeColors(svgFiles) {
   // Keep only colours that appear enough to be a real theme colour, not a
   // one-off antialias artifact. Threshold relative to the dominant colour.
   const maxCount = kept.length ? Math.max(...kept.map((k) => k.count)) : 0;
-  const filtered = kept.filter((k) => k.count >= Math.max(3, maxCount * 0.01));
+  // Floor of 2 (was 3): a genuine accent painted only 1-2x would otherwise be
+  // dropped. isThemeColor already screened out white/black/neutral noise above,
+  // so low-count survivors here are real vivid theme colors.
+  const filtered = kept.filter((k) => k.count >= Math.max(2, maxCount * 0.01));
   // Sort darkest -> lightest by HSL lightness.
   filtered.sort((a, b) => {
     const la = rgbToHsl(...hexToRgb(a.hex))[2];
@@ -292,7 +295,7 @@ for (const d of DESIGNS) {
     products[kind] = `assets/designs/${d.id}/${kind}.svg`;
   }
 
-  report.push({ id: d.id, anchors, products, rasterKinds });
+  report.push({ id: d.id, anchors, products, rasterKinds, hasRaster: rasterKinds.length > 0 });
 }
 
 // ---- emit designs.generated.js --------------------------------------------
@@ -302,7 +305,7 @@ for (const r of report) {
   const anchorsStr = r.anchors.map((a) => `'${a}'`).join(',');
   const p = r.products;
   const key = `${r.id}:`.padEnd(14);
-  js += `  ${key}{ anchors:[${anchorsStr}], products:{ front:'${p.front}', back:'${p.back}', board:'${p.board}' } },\n`;
+  js += `  ${key}{ anchors:[${anchorsStr}], hasRaster:${r.hasRaster}, products:{ front:'${p.front}', back:'${p.back}', board:'${p.board}' } },\n`;
 }
 js += '};\n';
 mkdirSync(dirname(OUT_JS), { recursive: true });

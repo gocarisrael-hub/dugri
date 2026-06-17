@@ -241,7 +241,7 @@ export function lightTint(hex, l = 95, maxS = 55) {
 // Order building
 // ---------------------------------------------------------------------------
 
-const PLAN_LABELS = {
+export const PLAN_LABELS = {
   base: 'בסיס',
   premium: 'פרימיום',
 };
@@ -287,6 +287,41 @@ export function buildOrder({
   const whatsappUrl = `https://wa.me/${whatsapp}?text=${encodeURIComponent(msg)}`;
 
   return { summary, whatsappUrl, price, planLabel, designId };
+}
+
+/**
+ * Translate the raw English ids that options.html writes into the URL
+ * (design=<id>, color=<id>|original, plan=<id>) into Hebrew display names.
+ *
+ * Pure: takes the lookups explicitly so it's testable without DOM/imports.
+ * Unknown ids fall back to the raw value rather than throwing.
+ *
+ * @param {{design?:string,color?:string,plan?:string}} ids
+ * @param {Array<{id:string,name:string}>} designs   DESIGNS catalog
+ * @param {Array<{id:string,name:string}>} mainColors MAIN_COLORS catalog
+ * @param {Record<string,string>} planLabels         plan id -> Hebrew label
+ * @returns {{designName:string, colorName:string, plan:string, planLabel:string}}
+ */
+export function selectionNamesFromIds(ids, designs, mainColors, planLabels) {
+  const { design = '', color = '', plan = '' } = ids || {};
+
+  let designName = design;
+  if (design) {
+    const d = (designs || []).find((x) => x && x.id === design);
+    if (d && d.name) designName = d.name;
+  }
+
+  let colorName = color;
+  if (color === 'original') {
+    colorName = 'מקורי';
+  } else if (color) {
+    const c = (mainColors || []).find((x) => x && x.id === color);
+    if (c && c.name) colorName = c.name;
+  }
+
+  const planLabel = (planLabels && planLabels[plan]) || plan;
+
+  return { designName, colorName, plan, planLabel };
 }
 
 // ---------------------------------------------------------------------------

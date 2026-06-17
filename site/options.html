@@ -532,6 +532,13 @@
         white-space: nowrap;
         text-align: center;
       }
+      .raster-note {
+        margin-top: 6px;
+        font-size: 12.5px;
+        line-height: 1.4;
+        color: var(--muted);
+        text-align: center;
+      }
 
       /* sticky continue bar */
       .continue-bar {
@@ -687,6 +694,9 @@
               role="group"
               aria-label="צבעים"
             ></div>
+            <p class="raster-note" id="rasterNote" data-testid="raster-note" hidden>
+              הרקע בעיצוב זה קבוע ולא משתנה עם הצבע
+            </p>
           </section>
 
           <!-- DESIGN PICKER -->
@@ -724,7 +734,19 @@
         mainAnchor,
         lightTint,
         buildOrder,
+        validateManifest,
       } from './js/configurator.js';
+
+      // Validate the manifest once at load. Don't hard-crash the page on a bad
+      // manifest — just surface a clear console error so it's caught in dev/CI.
+      try {
+        const manifestErrors = validateManifest(DESIGNS, MAIN_COLORS);
+        if (manifestErrors.length) {
+          console.error('Invalid designs manifest:\n' + manifestErrors.join('\n'));
+        }
+      } catch (e) {
+        console.error('Manifest validation failed to run:', e);
+      }
 
       /* ---- nav toggle (mobile) ---- */
       (function () {
@@ -877,6 +899,7 @@
           .querySelectorAll('.design')
           .forEach((el, idx) => el.setAttribute('aria-pressed', idx === i ? 'true' : 'false'));
         updateOrigChip();
+        updateRasterNote();
         setActiveSwatch(-1);
         renderDesign().then(persist);
       }
@@ -925,6 +948,14 @@
         const d = DESIGNS[designIndex];
         if (!d || !d.anchors || !d.anchors.length) return;
         origBtn.style.background = mainAnchor(d.anchors);
+      }
+
+      // designs with a raster <image> background can't recolor that part — keep
+      // recolor on for the vector parts but surface a subtle caption explaining it.
+      const rasterNote = document.getElementById('rasterNote');
+      function updateRasterNote() {
+        const d = DESIGNS[designIndex];
+        if (rasterNote) rasterNote.hidden = !(d && d.hasRaster);
       }
 
       function selectColor(ci) {
@@ -1031,6 +1062,7 @@
             el.setAttribute('aria-pressed', idx === designIndex ? 'true' : 'false')
           );
         updateOrigChip();
+        updateRasterNote();
         setActiveSwatch(colorIndex);
       })();
 

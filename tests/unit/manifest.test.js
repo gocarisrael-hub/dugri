@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateManifest, assertManifest } from '../../site/js/configurator.js';
+import { DESIGNS, MAIN_COLORS } from '../../site/js/designs.js';
 
 const goodDesigns = [
   {
@@ -74,5 +75,20 @@ describe('validateManifest', () => {
     const bad = JSON.parse(JSON.stringify(goodDesigns));
     delete bad[0].products.front;
     expect(() => assertManifest(bad, goodColors)).toThrow(/Invalid manifest/);
+  });
+});
+
+describe('generated manifest (real DESIGNS)', () => {
+  it('the committed manifest is valid', () => {
+    expect(validateManifest(DESIGNS, MAIN_COLORS)).toEqual([]);
+    expect(assertManifest(DESIGNS, MAIN_COLORS)).toBe(true);
+  });
+
+  it('only the kids design has a raster background (hasRaster)', () => {
+    const byId = Object.fromEntries(DESIGNS.map((d) => [d.id, d]));
+    expect(byId.kids.hasRaster).toBe(true);
+    expect(byId.birthday.hasRaster).toBe(false);
+    expect(byId.marriage.hasRaster).toBe(false);
+    expect(byId.bachelorette.hasRaster).toBe(false);
   });
 });

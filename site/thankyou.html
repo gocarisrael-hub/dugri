@@ -223,7 +223,10 @@
       </p>
     </div>
 
-    <script>
+    <script type="module">
+      import { DESIGNS, MAIN_COLORS } from './js/designs.js';
+      import { PLAN_LABELS, selectionNamesFromIds } from './js/configurator.js';
+
       // Keep in sync with index.html CONFIG.whatsapp
       const WHATSAPP = '972546577715';
       const msg = encodeURIComponent('שילמתי על משחק דוגרי. הנה המילים על בעל השמחה:\n\n');
@@ -232,7 +235,6 @@
       /* Echo the configurator selection if present (localStorage saved by options.html,
      with a URL fallback). Graceful when nothing was chosen. */
       (function () {
-        const PLAN_NAMES = { base: 'בסיס', premium: 'פרימיום' };
         let sel = null;
         try {
           sel = JSON.parse(localStorage.getItem('dugri_selection') || 'null');
@@ -241,17 +243,26 @@
         }
         const q = new URLSearchParams(location.search);
         if (!sel && (q.get('design') || q.get('color') || q.get('plan'))) {
+          // URL fallback: params are raw English ids (design=<id>, color=<id>|
+          // original, plan=<id>). Translate ids -> Hebrew names so the page never
+          // leaks e.g. "birthday" / "violet" / "original".
+          const names = selectionNamesFromIds(
+            { design: q.get('design'), color: q.get('color'), plan: q.get('plan') },
+            DESIGNS,
+            MAIN_COLORS,
+            PLAN_LABELS
+          );
           sel = {
-            plan: q.get('plan') || '',
-            designName: q.get('design') || '',
-            colorName: q.get('color') || '',
+            plan: names.plan,
+            designName: names.designName,
+            colorName: names.colorName,
           };
         }
         if (!sel) return;
         const parts = [];
         if (sel.designName) parts.push('עיצוב: ' + sel.designName);
         if (sel.colorName) parts.push('צבע: ' + sel.colorName);
-        if (sel.plan) parts.push('חבילה: ' + (PLAN_NAMES[sel.plan] || sel.plan));
+        if (sel.plan) parts.push('חבילה: ' + (PLAN_LABELS[sel.plan] || sel.plan));
         if (!parts.length) return;
         const line = document.getElementById('selectionLine');
         line.textContent = 'הבחירה שלכם · ' + parts.join(' · ');

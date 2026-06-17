@@ -2,6 +2,7 @@
 export const GENERATED = {
   birthday: {
     anchors: ['#5100ad', '#ff00db', '#ff00ff', '#cb6ce6', '#f6d5ff'],
+    hasRaster: false,
     products: {
       front: 'assets/designs/birthday/front.svg',
       back: 'assets/designs/birthday/back.svg',
@@ -10,6 +11,7 @@ export const GENERATED = {
   },
   kids: {
     anchors: ['#004aad', '#1f80ff', '#4093ff', '#9fe8eb', '#b0eef0'],
+    hasRaster: true,
     products: {
       front: 'assets/designs/kids/front.svg',
       back: 'assets/designs/kids/back.svg',
@@ -18,6 +20,7 @@ export const GENERATED = {
   },
   marriage: {
     anchors: ['#004aad', '#4e8bdd', '#f4f1eb'],
+    hasRaster: false,
     products: {
       front: 'assets/designs/marriage/front.svg',
       back: 'assets/designs/marriage/back.svg',
@@ -26,6 +29,7 @@ export const GENERATED = {
   },
   bachelorette: {
     anchors: ['#6b4d56', '#b28c97', '#ff78a0', '#ffc6d7'],
+    hasRaster: false,
     products: {
       front: 'assets/designs/bachelorette/front.svg',
       back: 'assets/designs/bachelorette/back.svg',

@@ -76,4 +76,24 @@ test.describe('configurator', () => {
     const designName = await page.getByTestId('design-1').locator('.dname').innerText();
     expect(decoded.includes(designName) || decoded.includes(chosenDesign)).toBeTruthy();
   });
+
+  test('raster-background note shows only for the kids design', async ({ page }) => {
+    await page.goto('/options.html');
+
+    const note = page.getByTestId('raster-note');
+
+    // Find the design tile whose id is "kids" and the one whose id is "birthday".
+    const kidsTile = page.locator('.design[data-design-id="kids"]');
+    const birthdayTile = page.locator('.design[data-design-id="birthday"]');
+    await expect(kidsTile).toBeVisible();
+
+    // Selecting kids reveals the fixed-background caption.
+    await kidsTile.click();
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('הרקע בעיצוב זה קבוע');
+
+    // Selecting a vector-only design hides it again.
+    await birthdayTile.click();
+    await expect(note).toBeHidden();
+  });
 });
