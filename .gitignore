@@ -10,3 +10,6 @@ coverage/
 test-results/
 playwright-report/
 .vitest/
+
+# Claude local (worktrees, plans, etc.)
+.claude/
