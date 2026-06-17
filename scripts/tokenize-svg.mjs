@@ -8,10 +8,10 @@
 //
 // Usage: node scripts/tokenize-svg.mjs
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { clipPathBBoxes, pickCardBox } from './crop-util.mjs';
+import { execSync } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -20,27 +20,41 @@ const OUT_ASSETS = resolve(ROOT, 'site/assets/designs');
 const OUT_JS = resolve(ROOT, 'site/js/designs.generated.js');
 
 // ---- design manifest -------------------------------------------------------
+// Sources are single-card transparent SVG exports: a front, a back ("-2"), and
+// the board. Each card sits inside the full artboard, so we fit the viewBox to
+// the card via getBBox() (below).
 const DESIGNS = [
   {
     id: 'birthday',
     folder: 'dugri birthday no neon',
-    files: { front: 'פני כרטיסים.svg', back: 'גב כרטיסים.svg', board: 'לוח משחק.svg' },
+    files: {
+      front: 'dugri birthday no neon.svg',
+      back: 'back card.svg',
+      board: 'לוח משחק.svg',
+    },
   },
   {
     id: 'kids',
     folder: 'dugri birthday kids',
-    files: { front: 'פני כרטיסים.svg', back: 'גב כרטיסים.svg', board: 'לוח משחק.svg' },
+    files: {
+      front: 'dugri birthday kids.svg',
+      back: 'back card.svg',
+      board: 'לוח משחק.svg',
+    },
   },
   {
     id: 'marriage',
     folder: 'dugri marriage no affects',
-    files: { front: 'פני כרטיסים.svg', back: 'גב כרטיסים.svg', board: 'לוח משחק.svg' },
+    files: {
+      front: 'dugri marriage no affects.svg',
+      back: 'back card.svg',
+      board: 'לוח משחק.svg',
+    },
   },
-  // bachelorette: identified by rendering -> 1=front, 2=back, 3=board
   {
     id: 'bachelorette',
     folder: 'dugri bachelorette',
-    files: { front: '1.svg', back: '2.svg', board: '3.svg' },
+    files: { front: 'dugri bachelorette.svg', back: 'back card.svg', board: '3.svg' },
   },
 ];
 
@@ -173,62 +187,44 @@ function tokenize(src, anchors) {
   return out;
 }
 
-// ---- crop fronts/backs to one card ----------------------------------------
-// Each REAL card is defined by a clipPath <path> that is a PURE RECTANGLE — its
-// coordinates have only ~2 distinct x-values and ~2 distinct y-values (the card
-// frame/border box). Decorations and rounded shapes have many distinct coords,
-// so we exclude them. Detect the most-repeated pure-rectangle card-sized clip
-// (the 8 cards) and crop the viewBox to the TOP-LEFT one. Geometry only — no
-// rendering. Falls back to a 4x2 grid cell if no pure-rect clips are found.
+// ---- fit each card's viewBox to its real content --------------------------
+// The single-card exports place the card inside the full artboard with empty
+// space around it. We crop the viewBox to the card's true rendered bounds using
+// the browser's getBBox() (transform-aware, reliable for any positioning).
+// Geometry only — colours don't affect the bbox.
+const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
-function cropToCard(src) {
-  const vbMatch = src.match(/viewBox\s*=\s*"([^"]+)"/);
-  if (!vbMatch) return src;
-  const vb = vbMatch[1]
-    .trim()
-    .split(/[\s,]+/)
-    .map(Number);
-  if (vb.length !== 4) return src;
-
-  // Pick the top-left pure-rectangle, card-sized clip (the card frame box).
-  // Fall back to a 4x2 grid cell if none are found.
-  const detected = pickCardBox(clipPathBBoxes(src), vb[2], vb[3]);
-  const box = detected || {
-    x: vb[0],
-    y: vb[1],
-    w: vb[2] / 4,
-    h: vb[3] / 2,
-  };
-
-  const M = 1.5; // small margin so the card edge isn't clipped
-  const x = box.x - M;
-  const y = box.y - M;
-  const w = box.w + 2 * M;
-  const h = box.h + 2 * M;
+function fitViewBox(src, anchors, label) {
+  const vars = anchors.map((c, i) => `--c${i}:${c}`).join(';');
+  const tmp = `/tmp/fit_${label}.html`;
+  writeFileSync(
+    tmp,
+    `<!doctype html><meta charset="utf8"><body><div style="${vars}">${src}</div>` +
+      `<script>const s=document.querySelector('svg');const b=s.getBBox();` +
+      `document.title='BB '+[b.x,b.y,b.width,b.height].map((n)=>n.toFixed(3)).join(' ');</script>`
+  );
+  let title = '';
+  try {
+    title = execSync(
+      `"${CHROME}" --headless --disable-gpu --virtual-time-budget=4000 --dump-dom "file://${tmp}" 2>/dev/null | grep -oE '<title>BB[^<]*</title>'`,
+      { encoding: 'utf8' }
+    ).trim();
+  } catch {
+    title = '';
+  }
+  rmSync(tmp, { force: true });
+  const m = title.match(/BB\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)/);
+  if (!m) return src; // fallback: leave the viewBox untouched
+  const M = 3; // small breathing margin around the card
+  const x = parseFloat(m[1]) - M;
+  const y = parseFloat(m[2]) - M;
+  const w = parseFloat(m[3]) + 2 * M;
+  const h = parseFloat(m[4]) + 2 * M;
   const newVb = `${x.toFixed(3)} ${y.toFixed(3)} ${w.toFixed(3)} ${h.toFixed(3)}`;
   let out = src.replace(/viewBox\s*=\s*"[^"]+"/, `viewBox="${newVb}"`);
-  out = out.replace(/(<svg[^>]*?)\swidth="[^"]*"/, `$1 width="${w.toFixed(2)}"`);
-  out = out.replace(/(<svg[^>]*?)\sheight="[^"]*"/, `$1 height="${h.toFixed(2)}"`);
-
-  // Hard-clip the whole drawing to the EXACT card-frame rectangle so neighbour
-  // cards and the inter-card background pattern (e.g. the "marriage" design's
-  // blue lattice) cannot bleed into the cropped preview. We wrap the body in a
-  // clipped <g> and add a matching clipPath rect to <defs>. The clip uses the
-  // tight card box (no margin) so nothing outside the card edge survives; the
-  // viewBox keeps its small margin so the card edge isn't visually shaved.
-  // Only applied when we have a real detected card-frame box.
-  const defsClose = out.indexOf('</defs>');
-  const svgClose = out.lastIndexOf('</svg>');
-  if (detected && defsClose !== -1 && svgClose !== -1 && svgClose > defsClose) {
-    const clip =
-      `<clipPath id="__cardcrop">` +
-      `<rect x="${box.x.toFixed(3)}" y="${box.y.toFixed(3)}" ` +
-      `width="${box.w.toFixed(3)}" height="${box.h.toFixed(3)}"/></clipPath>`;
-    const head = out.slice(0, defsClose);
-    const body = out.slice(defsClose + '</defs>'.length, svgClose);
-    const tail = out.slice(svgClose);
-    out = `${head}${clip}</defs><g clip-path="url(#__cardcrop)">${body}</g>${tail}`;
-  }
+  // drop fixed width/height so the inline SVG scales to its container
+  out = out.replace(/(<svg[^>]*?)\swidth="[^"]*"/, '$1');
+  out = out.replace(/(<svg[^>]*?)\sheight="[^"]*"/, '$1');
   return out;
 }
 
@@ -253,7 +249,7 @@ for (const d of DESIGNS) {
     let svg = srcs[kind];
     if ((svg.match(/<image\b/g) || []).length > 0) rasterKinds.push(kind);
     svg = tokenize(svg, anchors);
-    if (kind === 'front' || kind === 'back') svg = cropToCard(svg);
+    svg = fitViewBox(svg, anchors, `${d.id}-${kind}`);
     const outPath = resolve(outDir, `${kind}.svg`);
     writeFileSync(outPath, svg);
     products[kind] = `assets/designs/${d.id}/${kind}.svg`;
