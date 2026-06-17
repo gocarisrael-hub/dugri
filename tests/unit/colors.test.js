@@ -108,13 +108,22 @@ describe('clamp', () => {
 });
 
 describe('mostSaturatedIndex', () => {
-  it('finds the most saturated anchor of birthday', () => {
-    // '#5100ad' (idx 0) and '#ff00db' (idx 1) are both s=100; ties -> lowest index.
-    expect(mostSaturatedIndex(BIRTHDAY)).toBe(0);
+  it('prefers the vivid mid-lightness anchor of birthday (not the darkest)', () => {
+    // '#5100ad' (idx 0, l~34), '#ff00db' (idx 1, l=50) and '#f6d5ff' (idx 3,
+    // l~92) are all s=100. Tie-break to lightness closest to ~50 -> '#ff00db'
+    // (idx 1), the brand magenta, instead of the dark purple at idx 0.
+    expect(mostSaturatedIndex(BIRTHDAY)).toBe(1);
+    expect(mainAnchor(BIRTHDAY)).toBe('#ff00db');
   });
 
-  it('resolves ties to the lowest index', () => {
-    // two equally (fully) saturated colors -> first wins
+  it('breaks saturation ties toward mid-lightness (~50)', () => {
+    // pure red (l=50) and pure green (l=50) are both s=100, equidistant from
+    // 50 -> the first wins; the dark blue (l=25) is further from 50.
+    expect(mostSaturatedIndex(['#000080', '#ff0000', '#00ff00'])).toBe(1);
+  });
+
+  it('resolves exact ties to the lowest index', () => {
+    // red and green are both s=100, l=50 -> equal distance, first wins.
     expect(mostSaturatedIndex(['#ff0000', '#00ff00', '#777777'])).toBe(0);
   });
   it('throws on empty', () => {

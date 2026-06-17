@@ -316,23 +316,6 @@
           top: 76px;
         }
       }
-      /* mobile: keep the preview compact so the colour row stays in view */
-      @media (max-width: 600px) {
-        .cfg-head {
-          padding: 14px 0 4px;
-        }
-        .cfg-head h1 {
-          font-size: 25px;
-        }
-        .cfg-grid .preview-stage {
-          min-height: 200px;
-        }
-        .cfg-grid .preview-panel svg,
-        .cfg-grid .preview-panel img {
-          max-height: 300px;
-        }
-      }
-
       /* preview + tabs */
       .preview-card {
         background: var(--surface);
@@ -415,6 +398,25 @@
         color: var(--muted);
         font-size: 15px;
         text-align: center;
+      }
+
+      /* mobile: keep the preview compact so the colour row stays in view.
+         Placed AFTER the base preview rules so plain cascade order wins —
+         no .cfg-grid qualifier needed to out-specify them. */
+      @media (max-width: 600px) {
+        .cfg-head {
+          padding: 14px 0 4px;
+        }
+        .cfg-head h1 {
+          font-size: 25px;
+        }
+        .preview-stage {
+          min-height: 200px;
+        }
+        .preview-panel svg,
+        .preview-panel img {
+          max-height: 300px;
+        }
       }
 
       /* pickers */
@@ -801,11 +803,14 @@
         const d = DESIGNS[designIndex];
         if (!d) return;
         const anchors = d.anchors || [];
+        // guard: applyOriginal/applyPalette throw on empty anchors — nothing to
+        // recolor, so leave the previews as-is.
+        if (!anchors.length) return;
         let activeMain = null;
         if (colorIndex < 0) {
           // original colors — apply the design's own anchors as-is
           Object.values(panels).forEach((el) => applyOriginal(el, anchors));
-          activeMain = anchors.length ? mainAnchor(anchors) : null;
+          activeMain = mainAnchor(anchors);
         } else {
           const color = MAIN_COLORS[colorIndex];
           if (!color) return;
@@ -855,7 +860,8 @@
           loadSvg(frontPath)
             .then((txt) => {
               thumb.innerHTML = txt;
-              applyOriginal(thumb, d.anchors || []);
+              // guard: applyOriginal throws on empty anchors — skip recolor
+              if (d.anchors && d.anchors.length) applyOriginal(thumb, d.anchors);
             })
             .catch(() => {
               thumb.textContent = d.name;

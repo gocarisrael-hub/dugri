@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Dependency-free tokenizer for Canva SVG card designs.
 // - Detects vivid theme colors (skips white/black/neutral greys)
-// - Replaces them with CSS vars var(--c0)..var(--cN) (c0 = darkest)
-// - Crops fronts & backs to one representative card (top-left cell of 8-up sheet)
+// - Replaces them with CSS vars var(--c0)..var(--cN) (c0 = darkest), but ONLY
+//   where the hex is real paint (fill / stop-color / style:fill) — never inside
+//   url(#id) refs or id="…" attributes.
+// - Fits each single-card SVG's viewBox to its rendered bounds via getBBox()
 // - Writes tokenized SVGs to site/assets/designs/<id>/{front,back,board}.svg
 // - Emits site/js/designs.generated.js
 //
@@ -20,9 +22,9 @@ const OUT_ASSETS = resolve(ROOT, 'site/assets/designs');
 const OUT_JS = resolve(ROOT, 'site/js/designs.generated.js');
 
 // ---- design manifest -------------------------------------------------------
-// Sources are single-card transparent SVG exports: a front, a back ("-2"), and
-// the board. Each card sits inside the full artboard, so we fit the viewBox to
-// the card via getBBox() (below).
+// Sources are single-card transparent SVG exports: a front, a back, and the
+// board. Each card sits inside the full artboard, so we fit the viewBox to the
+// card via getBBox() (below).
 const DESIGNS = [
   {
     id: 'birthday',
@@ -107,7 +109,6 @@ function isThemeColor(hex) {
 }
 
 // ---- collect & detect ------------------------------------------------------
-const HEX_RE = /#[0-9a-fA-F]{6}/g;
 // Only colours declared in real paint attributes count toward the palette.
 // (Bare hex strings also appear inside clip-path ids / antialias edges, which
 // we must NOT treat as theme colours.)
@@ -158,31 +159,49 @@ function collectThemeColors(svgFiles) {
 }
 
 // ---- tokenization ----------------------------------------------------------
+// Map a single hex literal to its CSS var, or return the original hex unchanged.
+// Maps near-duplicate vivid colours to the nearest anchor.
+function hexToVar(hex, anchors) {
+  const low = hex.toLowerCase();
+  let idx = anchors.indexOf(low);
+  if (idx === -1) {
+    // map near-duplicate vivid colours to nearest anchor
+    if (!isThemeColor(low)) return hex; // leave white/neutral literal
+    const [r, g, b] = hexToRgb(low);
+    let best = -1,
+      bestDist = Infinity;
+    anchors.forEach((a, i) => {
+      const [ar, ag, ab] = hexToRgb(a);
+      const d = Math.abs(r - ar) + Math.abs(g - ag) + Math.abs(b - ab);
+      if (d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    });
+    if (best !== -1 && bestDist <= 40) idx = best;
+  }
+  if (idx === -1) return hex; // not a theme colour (vivid but unmatched) -> leave
+  return `var(--c${idx})`;
+}
+
 function tokenize(src, anchors) {
-  // Build map hex -> var index. Also map near-duplicate hexes to nearest anchor.
+  // Only rewrite hex literals that are REAL PAINT — i.e. inside fill="#…",
+  // stroke="#…", stop-color="#…", or style="…fill/stroke:#…". This mirrors
+  // PAINT_RE so we never touch hex inside url(#id) refs or id="…" attributes
+  // (a value like stroke="url(#id)" doesn't start with #rrggbb, so it's safe).
   let out = src;
-  // Replace every 6-digit hex literal occurrence that maps to a theme anchor.
-  out = out.replace(HEX_RE, (hex) => {
-    const low = hex.toLowerCase();
-    let idx = anchors.indexOf(low);
-    if (idx === -1) {
-      // map near-duplicate vivid colours to nearest anchor
-      if (!isThemeColor(low)) return hex; // leave white/neutral literal
-      const [r, g, b] = hexToRgb(low);
-      let best = -1,
-        bestDist = Infinity;
-      anchors.forEach((a, i) => {
-        const [ar, ag, ab] = hexToRgb(a);
-        const d = Math.abs(r - ar) + Math.abs(g - ag) + Math.abs(b - ab);
-        if (d < bestDist) {
-          bestDist = d;
-          best = i;
-        }
-      });
-      if (best !== -1 && bestDist <= 40) idx = best;
-    }
-    if (idx === -1) return hex; // not a theme colour (vivid but unmatched) -> leave
-    return `var(--c${idx})`;
+  // fill="#…" / stroke="#…" / stop-color="#…"
+  out = out.replace(
+    /(\b(?:fill|stroke|stop-color)\s*=\s*")(#[0-9a-fA-F]{6})(")/g,
+    (_, pre, hex, post) => pre + hexToVar(hex, anchors) + post
+  );
+  // style="… fill:#… / stroke:#… …" (every paint hex within the style value)
+  out = out.replace(/\bstyle\s*=\s*"([^"]*)"/g, (whole, body) => {
+    const newBody = body.replace(
+      /((?:fill|stroke)\s*:\s*)(#[0-9a-fA-F]{6})/g,
+      (_, pre, hex) => pre + hexToVar(hex, anchors)
+    );
+    return newBody === body ? whole : `style="${newBody}"`;
   });
   return out;
 }
@@ -214,14 +233,32 @@ function fitViewBox(src, anchors, label) {
   }
   rmSync(tmp, { force: true });
   const m = title.match(/BB\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)/);
-  if (!m) return src; // fallback: leave the viewBox untouched
+  if (!m) {
+    console.warn(`  [fitViewBox] ${label}: Chrome/getBBox returned no bbox — viewBox left unfit.`);
+    return src; // fallback: leave the viewBox untouched
+  }
+  const bw = parseFloat(m[3]);
+  const bh = parseFloat(m[4]);
+  if (bw <= 0 || bh <= 0) {
+    console.warn(
+      `  [fitViewBox] ${label}: empty bbox (BB ${m[1]} ${m[2]} ${m[3]} ${m[4]}) — viewBox left unfit.`
+    );
+    return src; // fallback: leave the viewBox untouched
+  }
   const M = 3; // small breathing margin around the card
   const x = parseFloat(m[1]) - M;
   const y = parseFloat(m[2]) - M;
-  const w = parseFloat(m[3]) + 2 * M;
-  const h = parseFloat(m[4]) + 2 * M;
+  const w = bw + 2 * M;
+  const h = bh + 2 * M;
   const newVb = `${x.toFixed(3)} ${y.toFixed(3)} ${w.toFixed(3)} ${h.toFixed(3)}`;
-  let out = src.replace(/viewBox\s*=\s*"[^"]+"/, `viewBox="${newVb}"`);
+  let out;
+  if (/viewBox\s*=\s*"[^"]+"/.test(src)) {
+    out = src.replace(/viewBox\s*=\s*"[^"]+"/, `viewBox="${newVb}"`);
+  } else {
+    // source <svg> had no viewBox: insert the computed one so dropping
+    // width/height below still leaves the SVG with a coordinate system.
+    out = src.replace(/<svg\b/, `<svg viewBox="${newVb}"`);
+  }
   // drop fixed width/height so the inline SVG scales to its container
   out = out.replace(/(<svg[^>]*?)\swidth="[^"]*"/, '$1');
   out = out.replace(/(<svg[^>]*?)\sheight="[^"]*"/, '$1');

@@ -503,20 +503,11 @@
 
     <p class="back"><a href="index.html">חזרה לדוגרי ←</a></p>
 
-    <script>
+    <script type="module">
+      import { tick } from './js/timer.js';
+
       (function () {
         'use strict';
-
-        // ---- Pure countdown logic (identical contract to site/js/timer.js tick) ----
-        // tick(elapsedMs, durationMs=60000) -> { remaining, progress, done }
-        function tick(elapsedMs, durationMs) {
-          if (durationMs === undefined) durationMs = 60000;
-          var e = Math.max(0, elapsedMs);
-          var progress = Math.min(1, Math.max(0, e / durationMs));
-          var done = e >= durationMs;
-          var remaining = Math.max(0, Math.ceil((durationMs - e) / 1000));
-          return { remaining: remaining, progress: progress, done: done };
-        }
 
         var DURATION = 60000;
         var reduceMotion =

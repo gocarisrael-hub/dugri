@@ -126,19 +126,39 @@ export function hslToHex({ h, s, l }) {
 // ---------------------------------------------------------------------------
 
 /**
- * Index of the most-saturated anchor — the design's "main" slot.
- * Ties resolve to the first (lowest index).
+ * Index of the design's "main" slot: the most vivid anchor that also reads as
+ * a true brand colour rather than a near-black or near-white tint.
+ *
+ * We take the highest-saturation anchors, then break ties toward mid-lightness
+ * (closest to ~50). Picking max-saturation alone broke ties to the lowest
+ * index, landing "main" on the darkest slot (e.g. birthday -> dark purple
+ * instead of brand magenta). Closest-to-50 lightness keeps the vivid, readable
+ * colour as the main.
+ *
+ * @returns {number} index into `anchors`.
  */
 export function mostSaturatedIndex(anchors) {
   if (!Array.isArray(anchors) || anchors.length === 0) {
     throw new Error('anchors must be a non-empty array');
   }
-  let bestIdx = 0;
+  // Highest saturation first.
   let bestS = -Infinity;
   for (let i = 0; i < anchors.length; i++) {
     const { s } = hexToHsl(anchors[i]);
-    if (s > bestS) {
-      bestS = s;
+    if (s > bestS) bestS = s;
+  }
+  // Among the (near-)highest-saturation anchors, pick the one with lightness
+  // closest to 50 (most vivid AND mid-lightness). A small epsilon treats
+  // rounding-equal saturations as ties.
+  const EPS = 0.5;
+  let bestIdx = 0;
+  let bestLDist = Infinity;
+  for (let i = 0; i < anchors.length; i++) {
+    const { s, l } = hexToHsl(anchors[i]);
+    if (s < bestS - EPS) continue;
+    const lDist = Math.abs(l - 50);
+    if (lDist < bestLDist) {
+      bestLDist = lDist;
       bestIdx = i;
     }
   }
