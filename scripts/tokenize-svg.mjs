@@ -186,18 +186,19 @@ function hexToVar(hex, anchors) {
 
 function tokenize(src, anchors) {
   // Only rewrite hex literals that are REAL PAINT — i.e. inside fill="#…",
-  // stop-color="#…", or style="…fill:#…". This mirrors PAINT_RE so we never
-  // touch hex that appears inside url(#id) refs or id="…" attributes.
+  // stroke="#…", stop-color="#…", or style="…fill/stroke:#…". This mirrors
+  // PAINT_RE so we never touch hex inside url(#id) refs or id="…" attributes
+  // (a value like stroke="url(#id)" doesn't start with #rrggbb, so it's safe).
   let out = src;
-  // fill="#…" / stop-color="#…"
+  // fill="#…" / stroke="#…" / stop-color="#…"
   out = out.replace(
-    /(\b(?:fill|stop-color)\s*=\s*")(#[0-9a-fA-F]{6})(")/g,
+    /(\b(?:fill|stroke|stop-color)\s*=\s*")(#[0-9a-fA-F]{6})(")/g,
     (_, pre, hex, post) => pre + hexToVar(hex, anchors) + post
   );
-  // style="… fill:#… …" (and any further fill:#… within the same style value)
+  // style="… fill:#… / stroke:#… …" (every paint hex within the style value)
   out = out.replace(/\bstyle\s*=\s*"([^"]*)"/g, (whole, body) => {
     const newBody = body.replace(
-      /(fill\s*:\s*)(#[0-9a-fA-F]{6})/g,
+      /((?:fill|stroke)\s*:\s*)(#[0-9a-fA-F]{6})/g,
       (_, pre, hex) => pre + hexToVar(hex, anchors)
     );
     return newBody === body ? whole : `style="${newBody}"`;
