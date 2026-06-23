@@ -13,3 +13,8 @@ playwright-report/
 
 # Claude local (worktrees, plans, etc.)
 .claude/
+
+# Large local media / working files (keep out of git — GitHub caps files at 100MB)
+resources/clips/
+*.mov
+*.mp4
