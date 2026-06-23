@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>בונים את המשחק — דוגרי</title>
+    <title>בונים את המשחק - דוגרי</title>
     <meta
       name="description"
       content="בוחרים עיצוב וצבעים למשחק דוגרי, רואים תצוגה חיה וממשיכים להזמנה."
@@ -306,7 +306,9 @@
       }
       @media (min-width: 880px) {
         .cfg-grid {
-          grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+          /* RTL: the first column track sits on the right. Put the controls
+             there (natural for a Hebrew page) and the preview on the left. */
+          grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
           align-items: start;
           max-width: 1040px;
           gap: 30px;
@@ -314,6 +316,10 @@
         .cfg-controls {
           position: sticky;
           top: 76px;
+          grid-column: 1;
+        }
+        .cfg-grid .preview-card {
+          grid-column: 2;
         }
       }
       /* preview + tabs */
@@ -401,7 +407,7 @@
       }
 
       /* mobile: keep the preview compact so the colour row stays in view.
-         Placed AFTER the base preview rules so plain cascade order wins —
+         Placed AFTER the base preview rules so plain cascade order wins -
          no .cfg-grid qualifier needed to out-specify them. */
       @media (max-width: 600px) {
         .cfg-head {
@@ -606,7 +612,7 @@
     <!-- shared sticky nav -->
     <nav class="nav" aria-label="ניווט ראשי">
       <div class="nav-inner">
-        <a class="nav-logo" href="index.html#top" aria-label="דוגרי — לעמוד הבית"
+        <a class="nav-logo" href="index.html#top" aria-label="דוגרי - לעמוד הבית"
           ><img src="assets/logo.png" alt="דוגרי"
         /></a>
         <button
@@ -631,7 +637,7 @@
     <main class="wrap" data-testid="configurator">
       <div class="cfg-head">
         <h1>בונים את המשחק שלכם</h1>
-        <p>בוחרים עיצוב וצבע — והכל מתעדכן לנגד עיניכם.</p>
+        <p>בוחרים עיצוב וצבע - והכל מתעדכן לנגד עיניכם.</p>
         <div class="plan-pill" data-testid="plan-pill">
           חבילה: <span id="planName">בסיס</span> ·
           <span id="planPrice" data-testid="plan-price">79</span>₪
@@ -684,7 +690,7 @@
         </section>
 
         <div class="cfg-controls">
-          <!-- COLOR PICKER (right by the preview — change colours without scrolling) -->
+          <!-- COLOR PICKER (right by the preview - change colours without scrolling) -->
           <section class="picker">
             <h2>בחרו צבע ראשי</h2>
             <div
@@ -738,7 +744,7 @@
       } from './js/configurator.js';
 
       // Validate the manifest once at load. Don't hard-crash the page on a bad
-      // manifest — just surface a clear console error so it's caught in dev/CI.
+      // manifest - just surface a clear console error so it's caught in dev/CI.
       try {
         const manifestErrors = validateManifest(DESIGNS, MAIN_COLORS);
         if (manifestErrors.length) {
@@ -825,12 +831,12 @@
         const d = DESIGNS[designIndex];
         if (!d) return;
         const anchors = d.anchors || [];
-        // guard: applyOriginal/applyPalette throw on empty anchors — nothing to
+        // guard: applyOriginal/applyPalette throw on empty anchors - nothing to
         // recolor, so leave the previews as-is.
         if (!anchors.length) return;
         let activeMain = null;
         if (colorIndex < 0) {
-          // original colors — apply the design's own anchors as-is
+          // original colors - apply the design's own anchors as-is
           Object.values(panels).forEach((el) => applyOriginal(el, anchors));
           activeMain = mainAnchor(anchors);
         } else {
@@ -882,7 +888,7 @@
           loadSvg(frontPath)
             .then((txt) => {
               thumb.innerHTML = txt;
-              // guard: applyOriginal throws on empty anchors — skip recolor
+              // guard: applyOriginal throws on empty anchors - skip recolor
               if (d.anchors && d.anchors.length) applyOriginal(thumb, d.anchors);
             })
             .catch(() => {
@@ -907,7 +913,7 @@
       /* ---- build color swatches (original first, then main colors) ---- */
       const colorList = document.getElementById('colorList');
 
-      // "מקורי" chip — the design's own colors (the default)
+      // "מקורי" chip - the design's own colors (the default)
       const origBtn = document.createElement('button');
       origBtn.type = 'button';
       origBtn.className = 'swatch swatch-orig';
@@ -950,7 +956,7 @@
         origBtn.style.background = mainAnchor(d.anchors);
       }
 
-      // designs with a raster <image> background can't recolor that part — keep
+      // designs with a raster <image> background can't recolor that part - keep
       // recolor on for the vector parts but surface a subtle caption explaining it.
       const rasterNote = document.getElementById('rasterNote');
       function updateRasterNote() {
