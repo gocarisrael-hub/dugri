@@ -64,3 +64,52 @@ test.describe('price CTA wrapping', () => {
     expect(metrics.scrollHeight).toBeLessThan(metrics.lineHeight * 2 + 36);
   });
 });
+
+test.describe('audience "who is this game for" section', () => {
+  const LABELS = [
+    'מסיבת רווקות',
+    'יום הולדת 30',
+    'יום הולדת 40',
+    'יום הולדת 50',
+    'יום הולדת 60',
+    'יום נישואין',
+    'פרישה',
+    'מסיבת פרידה',
+  ];
+
+  test('is present with all event labels', async ({ page }) => {
+    await page.goto('/index.html');
+    const section = page.locator('[data-testid="audience"]');
+    await expect(section).toBeVisible();
+    const grid = page.locator('[data-testid="audience-grid"]');
+    // At least the 8 event cards.
+    await expect(grid.locator('.aud-card')).toHaveCount(LABELS.length);
+    const text = await grid.innerText();
+    for (const label of LABELS) {
+      expect(text).toContain(label);
+    }
+  });
+});
+
+test.describe('real contact info', () => {
+  test('Instagram link resolves to dugri_israel with no placeholder', async ({ page }) => {
+    await page.goto('/index.html');
+    const ig = page.locator('#igLink');
+    await expect(ig).toHaveAttribute('href', 'https://instagram.com/dugri_israel');
+    await expect(ig).toHaveText('@dugri_israel');
+    // No placeholder must remain anywhere on the page.
+    const html = await page.content();
+    expect(html).not.toContain('INSTAGRAM_HANDLE');
+  });
+
+  test('email and phone are visible in the footer', async ({ page }) => {
+    await page.goto('/index.html');
+    const footer = page.locator('footer');
+    const footerText = await footer.innerText();
+    expect(footerText).toContain('dugri.israel@gmail.com');
+    expect(footerText).toContain('0546577715');
+
+    await expect(footer.locator('a[href="mailto:dugri.israel@gmail.com"]')).toHaveCount(1);
+    await expect(footer.locator('a[href="tel:+972546577715"]')).toHaveCount(1);
+  });
+});
