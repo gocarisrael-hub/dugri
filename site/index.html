@@ -101,6 +101,7 @@
         padding: 16px 32px;
         border-radius: 999px;
         text-decoration: none;
+        white-space: nowrap;
         box-shadow: 0 10px 24px rgba(229, 25, 125, 0.3);
         transition:
           transform 0.14s ease,
@@ -289,10 +290,53 @@
         margin-top: 10px;
         font-weight: 900;
         letter-spacing: -0.01em;
+        line-height: 1.25;
         background: linear-gradient(100deg, var(--wine), var(--hot) 60%, var(--wine-deep));
         -webkit-background-clip: text;
         background-clip: text;
         -webkit-text-fill-color: transparent;
+      }
+      .tagline .tagline-1,
+      .tagline .tagline-2 {
+        display: block;
+      }
+      .tagline .tagline-1 {
+        font-size: 0.78em;
+        font-weight: 800;
+        opacity: 0.92;
+      }
+
+      /* launch / FOMO offer banner under the tagline */
+      .launch-offer {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-top: 16px;
+        padding: 7px 16px 7px 7px;
+        background: var(--surface);
+        border: 1px solid var(--blush-deep);
+        border-radius: 999px;
+        box-shadow: var(--shadow-sm);
+        color: var(--wine-deep);
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .launch-offer .launch-badge {
+        display: inline-block;
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        color: #fff;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 13px;
+        letter-spacing: 0.01em;
+        padding: 5px 13px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+      .launch-offer .launch-text {
+        color: var(--muted);
       }
       header p.lede {
         max-width: 600px;
@@ -334,7 +378,7 @@
         border-radius: 999px;
       }
       .hero-img {
-        margin-top: 30px;
+        margin-top: 26px;
         position: relative;
       }
       .hero-img img {
@@ -1179,6 +1223,27 @@
           text-align: center;
           justify-content: center;
         }
+        /* Tighten the hero on phones so the real product visual reaches
+           into the first viewport (above the fold), not below it. */
+        header {
+          padding: 26px 0 32px;
+        }
+        .brand-logo {
+          width: 190px;
+        }
+        .tagline {
+          font-size: 21px;
+          margin-top: 8px;
+        }
+        .launch-offer {
+          margin-top: 12px;
+        }
+        .hero-cta {
+          margin-top: 18px;
+        }
+        .hero-img {
+          margin-top: 18px;
+        }
       }
       /* keep hero clear of the fixed nav */
       body {
@@ -1377,15 +1442,33 @@
       <div class="confetti" id="confetti" aria-hidden="true"></div>
       <div class="wrap">
         <h1 class="brand"><img class="brand-logo" src="assets/logo.png" alt="דוגרי" /></h1>
-        <div class="tagline">המשחק שמפוצץ את החדר - בלי פילטרים</div>
+        <div class="tagline">
+          <span class="tagline-1">שלחו לנו את הסיפורים המביכים.</span>
+          <span class="tagline-2">אנחנו נהפוך אותם למשחק שיפוצץ את הערב</span>
+        </div>
+        <p class="launch-offer">
+          <span class="launch-badge">מבצע השקה</span>
+          <span class="launch-text"
+            >מספר הזמנות מוגבל בכל שבוע · אספקה תוך
+            <span style="white-space: nowrap">24 שעות</span></span
+          >
+        </p>
+        <div class="hero-cta">
+          <a class="btn" href="options.html?plan=base"
+            >מזמינים את המשחק · <span style="white-space: nowrap">79 ₪</span></a
+          >
+          <a class="btn ghost" href="#how">איך זה עובד? ↓</a>
+        </div>
+        <div class="hero-img">
+          <img
+            src="assets/hero-board.jpg"
+            alt="משחק דוגרי מודפס - לוח וקלפים מעוצבים על שולחן במסיבה"
+          />
+        </div>
         <p class="lede">
           משחק קלפים שהוא רק שלכם - מלא בבדיחות פנימיות, סיפורים מביכים ורגעים שרק אתם מכירים.
           ההפתעה שכולם יזכרו מהערב.
         </p>
-        <div class="hero-cta">
-          <a class="btn" href="options.html?plan=base">מזמינים את המשחק</a>
-          <a class="btn ghost" href="#how">איך זה עובד? ↓</a>
-        </div>
         <p class="trust">
           <span>אספקה תוך 24 שעות</span> · <span>ללא הגבלת מילים</span> · <span>תשלום מאובטח</span>
         </p>
@@ -1396,12 +1479,6 @@
           <span class="tag">פרישה</span>
           <span class="tag">מסיבת פרידה</span>
         </div>
-        <div class="hero-img">
-          <img
-            src="assets/hero-board.jpg"
-            alt="משחק דוגרי מודפס - לוח וקלפים מעוצבים על שולחן במסיבה"
-          />
-        </div>
       </div>
     </header>
 
@@ -1409,6 +1486,29 @@
       <div class="wrap reveal">
         <p>עולה קלף. מישהי מקריאה "הדייט מטבריה". כל החדר מתפוצץ - כי רק אתן יודעות את הסיפור.</p>
         <span class="em">זה הרגעים שיעשו את המסיבה</span>
+      </div>
+    </section>
+
+    <section id="gallery">
+      <div class="wrap">
+        <div class="sec-title reveal">
+          <h2>הצצה</h2>
+          <p>קלפים ולוחות אמיתיים מאירועים</p>
+        </div>
+        <div class="gallery stagger">
+          <div class="gphoto">
+            <img src="assets/gallery-1.jpg" alt="קלף דוגרי עם אייקונים מותאמים וארבע מילים" />
+          </div>
+          <div class="gphoto">
+            <img src="assets/gallery-2.jpg" alt="חפיסת קלפים מותאמת אישית ביד" />
+          </div>
+          <div class="gphoto">
+            <img src="assets/gallery-3.jpg" alt="לוח משחק דוגרי עם טוקנים" />
+          </div>
+          <div class="gphoto">
+            <img src="assets/gallery-4.jpg" alt="לוח וקלפים מותאמים אישית על שולחן" />
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1562,7 +1662,9 @@
               <li>ללא הגבלת מילים</li>
               <li>הוראות הדפסה וגזירה</li>
             </ul>
-            <a class="btn" href="options.html?plan=base">מזמינים בסיס · 79 ₪</a>
+            <a class="btn" href="options.html?plan=base"
+              >מזמינים בסיס · <span style="white-space: nowrap">79 ₪</span></a
+            >
             <p class="btn-reassure">אספקה תוך 24 שעות · תשלום מאובטח</p>
           </div>
           <div class="plan featured">
@@ -1578,7 +1680,9 @@
               <li>חיילי משחק בהשראת החוגג מעוצבים</li>
               <li>שליחה לאישור + סבבי תיקונים עד שמרוצים</li>
             </ul>
-            <a class="btn" href="options.html?plan=premium">מזמינים פרימיום · 139 ₪</a>
+            <a class="btn" href="options.html?plan=premium"
+              >מזמינים פרימיום · <span style="white-space: nowrap">139 ₪</span></a
+            >
             <p class="btn-reassure">אספקה תוך 24 שעות · עד שתאשרו את העיצוב</p>
           </div>
         </div>
@@ -1594,29 +1698,6 @@
           מינימום 100 מילים. <b>הקובץ אצלכם תוך 24 שעות</b> מרגע שליחת המילים · תשלום מאובטח.
         </p>
         <p class="urgency">יש לכם תאריך אירוע? ספרו לנו ונוודא שתספיקו.</p>
-      </div>
-    </section>
-
-    <section id="gallery">
-      <div class="wrap">
-        <div class="sec-title reveal">
-          <h2>הצצה</h2>
-          <p>קלפים ולוחות אמיתיים מאירועים</p>
-        </div>
-        <div class="gallery stagger">
-          <div class="gphoto">
-            <img src="assets/gallery-1.jpg" alt="קלף דוגרי עם אייקונים מותאמים וארבע מילים" />
-          </div>
-          <div class="gphoto">
-            <img src="assets/gallery-2.jpg" alt="חפיסת קלפים מותאמת אישית ביד" />
-          </div>
-          <div class="gphoto">
-            <img src="assets/gallery-3.jpg" alt="לוח משחק דוגרי עם טוקנים" />
-          </div>
-          <div class="gphoto">
-            <img src="assets/gallery-4.jpg" alt="לוח וקלפים מותאמים אישית על שולחן" />
-          </div>
-        </div>
       </div>
     </section>
 
@@ -1714,7 +1795,9 @@
         <h2>מוכנים להפתיע אותו?</h2>
         <p>כמה מילים מכם - וכל החדר יצחק עליו. או עליה. בדרך הכי אישית שיש.</p>
         <div class="hero-cta">
-          <a class="btn" href="options.html?plan=base">מזמינים את המשחק · 79 ₪</a>
+          <a class="btn" href="options.html?plan=base"
+            >מזמינים את המשחק · <span style="white-space: nowrap">79 ₪</span></a
+          >
           <a class="btn wa" id="waLink" href="#" target="_blank" rel="noopener"
             >יש שאלה? דברו איתנו בוואטסאפ</a
           >
@@ -1731,7 +1814,9 @@
     </footer>
 
     <div class="sticky">
-      <a class="btn" href="options.html?plan=base">מזמינים · 79 ₪</a>
+      <a class="btn" id="stickyOrder" href="options.html?plan=base"
+        >מזמינים · <span style="white-space: nowrap">79 ₪</span></a
+      >
       <a class="btn wa" id="waSticky" href="#" target="_blank" rel="noopener">וואטסאפ</a>
     </div>
 
