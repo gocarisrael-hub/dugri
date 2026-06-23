@@ -564,6 +564,97 @@
         display: inline-block;
       }
 
+      /* audience - "who is this game for" */
+      .audience {
+        background:
+          radial-gradient(60% 80% at 12% 0%, rgba(229, 25, 125, 0.08), transparent 65%),
+          radial-gradient(55% 70% at 90% 100%, rgba(188, 154, 76, 0.1), transparent 65%),
+          linear-gradient(180deg, var(--surface), var(--bg));
+      }
+      .audience .sec-title h2 {
+        font-size: 40px;
+      }
+      .audience-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+        max-width: 880px;
+        margin: 0 auto;
+      }
+      @media (min-width: 560px) {
+        .audience-grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      @media (min-width: 820px) {
+        .audience-grid {
+          grid-template-columns: repeat(4, 1fr);
+        }
+      }
+      .aud-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        text-align: center;
+        background: var(--surface);
+        border: 1.5px solid var(--blush-deep);
+        border-radius: 20px;
+        padding: 26px 16px;
+        box-shadow: var(--shadow-sm);
+        transition:
+          transform 0.22s ease,
+          box-shadow 0.22s ease,
+          border-color 0.22s ease;
+      }
+      .aud-card:hover {
+        transform: translateY(-5px);
+        box-shadow: var(--shadow-md);
+        border-color: var(--hot);
+      }
+      .aud-emoji {
+        font-size: 40px;
+        line-height: 1;
+      }
+      .aud-label {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 19px;
+        letter-spacing: -0.01em;
+        color: var(--wine-deep);
+      }
+      @media (min-width: 720px) {
+        .aud-label {
+          font-size: 21px;
+        }
+        .aud-emoji {
+          font-size: 46px;
+        }
+      }
+
+      /* footer contact details */
+      .foot-contact {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 22px;
+        justify-content: center;
+        margin-top: 14px;
+        font-size: 14.5px;
+      }
+      .foot-contact a {
+        color: #fff;
+        text-decoration: none;
+        font-weight: 700;
+      }
+      .foot-contact a:hover {
+        text-decoration: underline;
+      }
+      .foot-contact .fc-label {
+        color: #c7a9b5;
+        font-weight: 600;
+      }
+
       /* included */
       .items {
         display: grid;
@@ -1472,13 +1563,6 @@
         <p class="trust">
           <span>אספקה תוך 24 שעות</span> · <span>ללא הגבלת מילים</span> · <span>תשלום מאובטח</span>
         </p>
-        <div class="occasions">
-          <span class="tag">מסיבת רווקות</span>
-          <span class="tag">יום הולדת 30 · 40 · 50 · 60</span>
-          <span class="tag">יום נישואין</span>
-          <span class="tag">פרישה</span>
-          <span class="tag">מסיבת פרידה</span>
-        </div>
       </div>
     </header>
 
@@ -1486,6 +1570,49 @@
       <div class="wrap reveal">
         <p>עולה קלף. מישהי מקריאה "הדייט מטבריה". כל החדר מתפוצץ - כי רק אתן יודעות את הסיפור.</p>
         <span class="em">זה הרגעים שיעשו את המסיבה</span>
+      </div>
+    </section>
+
+    <section class="audience" id="audience" data-testid="audience">
+      <div class="wrap">
+        <div class="sec-title reveal">
+          <h2>לאיזה אירועים זה מתאים?</h2>
+          <p>כל שמחה שמסתובבת סביב אדם אחד - המשחק כולו עליו</p>
+        </div>
+        <div class="audience-grid stagger" data-testid="audience-grid">
+          <div class="aud-card">
+            <span class="aud-emoji" aria-hidden="true">👰</span>
+            <span class="aud-label">מסיבת רווקות</span>
+          </div>
+          <div class="aud-card">
+            <span class="aud-emoji" aria-hidden="true">🎂</span>
+            <span class="aud-label">יום הולדת 30</span>
+          </div>
+          <div class="aud-card">
+            <span class="aud-emoji" aria-hidden="true">🎂</span>
+            <span class="aud-label">יום הולדת 40</span>
+          </div>
+          <div class="aud-card">
+            <span class="aud-emoji" aria-hidden="true">🎂</span>
+            <span class="aud-label">יום הולדת 50</span>
+          </div>
+          <div class="aud-card">
+            <span class="aud-emoji" aria-hidden="true">👴</span>
+            <span class="aud-label">יום הולדת 60</span>
+          </div>
+          <div class="aud-card">
+            <span class="aud-emoji" aria-hidden="true">💍</span>
+            <span class="aud-label">יום נישואין</span>
+          </div>
+          <div class="aud-card">
+            <span class="aud-emoji" aria-hidden="true">🎖</span>
+            <span class="aud-label">פרישה</span>
+          </div>
+          <div class="aud-card">
+            <span class="aud-emoji" aria-hidden="true">👋</span>
+            <span class="aud-label">מסיבת פרידה</span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1808,7 +1935,22 @@
 
     <footer>
       <div class="wrap">
-        <p>דוגרי · <a id="igLink" href="#" target="_blank" rel="noopener">@INSTAGRAM_HANDLE</a></p>
+        <p>
+          דוגרי ·
+          <a id="igLink" href="https://instagram.com/dugri_israel" target="_blank" rel="noopener"
+            >@dugri_israel</a
+          >
+        </p>
+        <div class="foot-contact">
+          <span
+            ><span class="fc-label">וואטסאפ / טלפון:</span>
+            <a href="tel:+972546577715">0546577715</a></span
+          >
+          <span
+            ><span class="fc-label">מייל:</span>
+            <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
+          >
+        </div>
         <p class="tag">צילמתם? תייגו אותנו</p>
       </div>
     </footer>
@@ -1922,7 +2064,7 @@
         // WhatsApp number in international format, digits only (e.g. Israel: 9725XXXXXXXX)
         whatsapp: '972546577715',
         // Instagram handle without the @
-        instagram: 'INSTAGRAM_HANDLE',
+        instagram: 'dugri_israel',
         // Tranzila terminal (supplier) name. Leave "" until you have it - buttons fall back to WhatsApp.
         tranzilaTerminal: '',
         // Where Tranzila returns the customer after a successful payment:
