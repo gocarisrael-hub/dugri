@@ -18,6 +18,9 @@ test('options → demo checkout → thankyou (bit notice + owner WhatsApp)', asy
   const [popup] = await Promise.all([page.waitForEvent('popup'), page.click('#payBtn')]);
   // wa.me redirects to api.whatsapp.com; the owner phone number is the invariant.
   expect(popup.url()).toContain('972546577715');
+  // Close the external popup immediately — left open it keeps loading wa.me over
+  // the network and starves the other CI workers (causing unrelated page.goto timeouts).
+  await popup.close();
   await page.waitForURL(/thankyou\.html/);
   await expect(page.locator('#createBtn')).toBeVisible();
 });
