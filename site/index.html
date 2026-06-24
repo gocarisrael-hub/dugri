@@ -719,17 +719,8 @@
         display: grid;
         grid-template-columns: 1fr;
         gap: 18px;
-        max-width: 780px;
+        max-width: 420px;
         margin: 0 auto;
-      }
-      @media (min-width: 680px) {
-        .prices {
-          grid-template-columns: 1fr 1fr;
-          align-items: center;
-        }
-        .plan.featured {
-          transform: scale(1.04);
-        }
       }
       .plan {
         background: var(--surface);
@@ -1895,24 +1886,6 @@
             >
             <p class="btn-reassure">אספקה תוך 24 שעות · תשלום מאובטח</p>
           </div>
-          <div class="plan featured">
-            <span class="flag">הכי נמכר</span>
-            <h3>פרימיום</h3>
-            <p class="plan-promise">החוויה המלאה - הכי נמכר</p>
-            <div class="anchor">שווי 250 ₪</div>
-            <div class="price">139 <small>ש"ח</small></div>
-            <ul>
-              <li>כל מה שבבסיס</li>
-              <li>אייקונים מותאמים אישית לחוגג</li>
-              <li>לוח משחק יצירתי ומעוצב לפי בקשתכם</li>
-              <li>חיילי משחק בהשראת החוגג מעוצבים</li>
-              <li>שליחה לאישור + סבבי תיקונים עד שמרוצים</li>
-            </ul>
-            <a class="btn" href="options.html?plan=premium"
-              >מזמינים פרימיום · <span style="white-space: nowrap">139 ₪</span></a
-            >
-            <p class="btn-reassure">אספקה תוך 24 שעות · עד שתאשרו את העיצוב</p>
-          </div>
         </div>
         <p class="guarantee">לא מרוצים? מתקנים עד שתהיו.</p>
         <div class="addons">
@@ -2172,7 +2145,6 @@
         successUrl: 'https://YOUR-DOMAIN/thankyou.html',
         plans: {
           base: { sum: 79, desc: 'דוגרי - חבילת בסיס' },
-          premium: { sum: 139, desc: 'דוגרי - חבילת פרימיום' },
         },
       };
 

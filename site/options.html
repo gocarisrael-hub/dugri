@@ -778,10 +778,9 @@
       /* ---- plan from query ---- */
       const PLANS = {
         base: { name: 'בסיס', price: 79 },
-        premium: { name: 'פרימיום', price: 139 },
       };
       const params = new URLSearchParams(location.search);
-      let plan = params.get('plan') === 'premium' ? 'premium' : 'base';
+      let plan = 'base';
 
       function paintPlan() {
         const p = PLANS[plan];
