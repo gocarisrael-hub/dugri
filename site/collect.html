@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>דוגרי · אוספים מילים</title>
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      />
+    </noscript>
+    <style>
+      :root {
+        --bg: #fff5f8;
+        --surface: #fff;
+        --ink: #2c1a29;
+        --muted: #7c6a74;
+        --hot: #e5197d;
+        --hot-deep: #c7106a;
+        --line: #f0dee4;
+        --ok: #1f9d6b;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Heebo', Arial, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        line-height: 1.55;
+        padding: 0 0 60px;
+      }
+      .wrap {
+        max-width: 680px;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      header {
+        text-align: center;
+        padding: 22px 0 14px;
+      }
+      header .brand {
+        font-weight: 900;
+        color: var(--hot);
+        font-size: 20px;
+        letter-spacing: 0.02em;
+      }
+      header h1 {
+        font-size: 30px;
+        font-weight: 900;
+        margin-top: 4px;
+        line-height: 1.15;
+      }
+      header .sub {
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 16px;
+        margin: 14px 0;
+        box-shadow: 0 6px 20px rgba(44, 26, 41, 0.05);
+      }
+      .bar {
+        height: 8px;
+        background: var(--line);
+        border-radius: 99px;
+        margin-top: 10px;
+        overflow: hidden;
+      }
+      .bar > i {
+        display: block;
+        height: 100%;
+        background: linear-gradient(90deg, var(--hot), var(--hot-deep));
+        width: 0;
+        transition: width 0.4s ease;
+      }
+      label.fld {
+        display: block;
+        font-weight: 700;
+        font-size: 14px;
+        margin: 0 0 6px;
+      }
+      input[type='text'],
+      textarea {
+        width: 100%;
+        font: inherit;
+        padding: 12px 14px;
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+      }
+      input[type='text']:focus,
+      textarea:focus {
+        outline: 2px solid var(--hot);
+        border-color: var(--hot);
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+      }
+      .row input {
+        flex: 1;
+      }
+      button {
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+        border: none;
+        border-radius: 12px;
+        padding: 12px 18px;
+        background: var(--hot);
+        color: #fff;
+        transition:
+          transform 0.1s ease,
+          filter 0.15s ease;
+      }
+      button:hover {
+        filter: brightness(1.05);
+      }
+      button:active {
+        transform: scale(0.98);
+      }
+      button.ghost {
+        background: #fff;
+        color: var(--hot);
+        border: 1.5px solid var(--hot);
+      }
+      button.soft {
+        background: var(--hot-soft, #fde3ee);
+        color: var(--hot-deep);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .nameRow {
+        margin-bottom: 12px;
+      }
+      .idea {
+        background: #fde3ee;
+        border-radius: 12px;
+        padding: 12px 14px;
+        font-weight: 700;
+        margin-bottom: 10px;
+        display: none;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 6px;
+      }
+      .chip {
+        background: #fff;
+        border: 1.5px solid var(--line);
+        border-radius: 99px;
+        padding: 7px 13px;
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--ink);
+      }
+      .chip.active {
+        background: var(--hot);
+        color: #fff;
+        border-color: var(--hot);
+      }
+      .qlist {
+        margin-top: 10px;
+        display: none;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .qlist button {
+        background: #fff;
+        color: var(--ink);
+        border: 1px solid var(--line);
+        text-align: right;
+        font-weight: 600;
+        padding: 10px 12px;
+      }
+      .words {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .word {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 99px;
+        padding: 7px 12px 7px 12px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .word .by {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .word .del {
+        background: none;
+        color: #c2415f;
+        border: none;
+        padding: 0 2px;
+        font-size: 16px;
+        line-height: 1;
+      }
+      .banner {
+        background: #fff4e6;
+        border: 1px solid #f3d9ad;
+        color: #92600b;
+        border-radius: 12px;
+        padding: 12px 14px;
+        text-align: center;
+        font-weight: 700;
+        margin: 12px 0;
+        display: none;
+      }
+      .share input {
+        direction: ltr;
+        text-align: left;
+        font-size: 13px;
+      }
+      .hidden {
+        display: none !important;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .sec-h {
+        font-weight: 800;
+        margin-bottom: 8px;
+      }
+      .tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 12px;
+      }
+      .tab {
+        flex: 1;
+        background: #fff;
+        color: var(--ink);
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 8px;
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .tab.active {
+        background: var(--hot);
+        color: #fff;
+        border-color: var(--hot);
+      }
+      .panel {
+        margin-top: 4px;
+      }
+      .words-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .count-pill {
+        background: #fde3ee;
+        color: var(--hot-deep);
+        font-weight: 800;
+        border-radius: 99px;
+        padding: 4px 12px;
+        font-size: 14px;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="brand">דוגרי</div>
+        <h1 id="title">אוספים מילים…</h1>
+        <div class="sub" id="subtitle">כל מילה, ביטוי, בדיחה פנימית או זיכרון נחשב</div>
+      </header>
+
+      <div class="banner" id="banner"></div>
+
+      <!-- OWNER: share links -->
+      <div class="card share hidden" id="sharePanel">
+        <div class="sec-h">📨 שתפו עם החברות</div>
+        <p class="muted">שלחו את הקישור הזה לכל מי שמכיר/ה את בעלת השמחה:</p>
+        <div class="row" style="margin-top: 8px">
+          <input type="text" id="friendsLink" readonly />
+          <button class="ghost" id="copyFriends" type="button">העתק</button>
+        </div>
+        <p class="muted" style="margin-top: 12px">
+          🔑 הקישור הפרטי שלך לניהול (שמרו אותו לעצמכם — דרכו סוגרים את האיסוף):
+        </p>
+        <div class="row" style="margin-top: 8px">
+          <input type="text" id="ownerLink" readonly />
+          <button class="ghost" id="copyOwner" type="button">העתק</button>
+        </div>
+      </div>
+
+      <!-- add area -->
+      <div class="card" id="addCard">
+        <div class="nameRow">
+          <label class="fld" for="byName">מי מוסיף? (לא חובה)</label>
+          <input type="text" id="byName" placeholder="השם שלך" maxlength="40" />
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab active" id="tab-single" type="button">✏️ מילה</button>
+          <button class="tab" id="tab-list" type="button">📋 רשימה</button>
+          <button class="tab" id="tab-file" type="button">📄 קובץ</button>
+        </div>
+
+        <div class="panel" id="panel-single">
+          <div class="idea" id="ideaBox"></div>
+          <div class="row">
+            <input
+              type="text"
+              id="wordInput"
+              placeholder="לדוגמה: הדייט מטבריה"
+              autocomplete="off"
+            />
+            <button id="addBtn" type="button">הוסף</button>
+          </div>
+          <div class="actions">
+            <button class="soft" id="ideaBtn" type="button">תני לי רעיון 💡</button>
+          </div>
+        </div>
+
+        <div class="panel hidden" id="panel-list">
+          <textarea
+            id="pasteBox"
+            rows="5"
+            placeholder="מילה בכל שורה, או מופרדות בפסיקים"
+          ></textarea>
+          <div class="actions">
+            <button id="pasteAdd" type="button">הוסיפו את כל הרשימה</button>
+          </div>
+        </div>
+
+        <div class="panel hidden" id="panel-file">
+          <input type="file" id="fileInput" accept=".txt,.csv,text/plain,text/csv" />
+          <p class="muted">קובץ טקסט או CSV — מילה בכל שורה.</p>
+        </div>
+      </div>
+
+      <!-- word-finding helpers -->
+      <div class="card" id="helpCard">
+        <div class="sec-h">תקועים? קבלו השראה 👇</div>
+        <div class="chips" id="catChips"></div>
+        <div class="qlist" id="qList"></div>
+      </div>
+
+      <!-- the words (with the live counter) -->
+      <div class="card">
+        <div class="words-head">
+          <span class="sec-h">המילים שכבר נאספו</span>
+          <span class="count-pill"><b id="count">0</b> מילים</span>
+        </div>
+        <div class="bar"><i id="barFill"></i></div>
+        <small class="muted" id="countHint">היעד: לפחות 100 מילים</small>
+        <div class="words" id="wordsWrap" style="margin-top: 12px">
+          <span class="muted" id="emptyWords">עוד אין מילים — היו הראשונים!</span>
+        </div>
+      </div>
+
+      <!-- owner / closing controls -->
+      <div class="card owner-only hidden" id="ownerControls">
+        <div class="sec-h">ניהול האיסוף</div>
+        <p class="muted">סיימתם לאסוף? סגרו את האיסוף ושלחו לדוגרי.</p>
+        <div class="actions">
+          <button id="closeBtn" type="button">מספיק! סיימנו לאסוף ✅</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { CATEGORIES, fillName, nextPrompt } from './js/word-prompts.js';
+      import { parseWordText } from './js/collect.js';
+
+      const params = new URLSearchParams(location.search);
+      const id = params.get('c');
+      const ownerToken = params.get('k') || null;
+      const isOwner = !!ownerToken;
+
+      const $ = (s) => document.querySelector(s);
+      let state = null; // last fetched collection
+      const seenPrompts = [];
+
+      function api(path, opts) {
+        return fetch('/api/collections/' + id + path, opts).then(async (r) => {
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) throw Object.assign(new Error(body.error || r.status), { status: r.status });
+          return body;
+        });
+      }
+
+      function honoree() {
+        return (state && state.honoree_name) || 'בעלת השמחה';
+      }
+
+      function setOpenState(open) {
+        $('#addCard').classList.toggle('hidden', !open);
+        $('#helpCard').classList.toggle('hidden', !open);
+        const banner = $('#banner');
+        if (open) {
+          banner.style.display = 'none';
+        } else {
+          banner.style.display = 'block';
+          banner.textContent =
+            state && state.status === 'expired'
+              ? 'האיסוף הסתיים (עברו שבעה ימים). אפשר עדיין לראות את המילים.'
+              : 'האיסוף נסגר על ידי המארגנ/ת. תודה לכולם! 🎉';
+        }
+      }
+
+      function render() {
+        if (!state) return;
+        document.title = 'דוגרי · מילים על ' + honoree();
+        $('#title').textContent = 'אוספים מילים על ' + honoree();
+        const n = state.count;
+        $('#count').textContent = n;
+        $('#countHint').textContent =
+          n >= 100 ? '🎉 יש לכם 100+ מילים! אפשר להמשיך או לסגור' : 'עוד ' + (100 - n) + ' עד היעד';
+        $('#barFill').style.width = Math.min(100, n) + '%';
+
+        // words
+        const wrap = $('#wordsWrap');
+        if (!state.words.length) {
+          wrap.innerHTML = '<span class="muted">עוד אין מילים — היו הראשונים!</span>';
+        } else {
+          wrap.innerHTML = '';
+          for (const w of state.words) {
+            const el = document.createElement('span');
+            el.className = 'word';
+            const txt = document.createElement('span');
+            txt.textContent = w.text;
+            el.appendChild(txt);
+            if (w.added_by) {
+              const by = document.createElement('span');
+              by.className = 'by';
+              by.textContent = '· ' + w.added_by;
+              el.appendChild(by);
+            }
+            if (isOwner) {
+              const del = document.createElement('button');
+              del.className = 'del';
+              del.type = 'button';
+              del.textContent = '×';
+              del.title = 'מחק';
+              del.onclick = () => removeWord(w.id);
+              el.appendChild(del);
+            }
+            wrap.appendChild(el);
+          }
+        }
+
+        const open = state.status === 'open';
+        setOpenState(open);
+        $('#ownerControls').classList.toggle('hidden', !(isOwner && open));
+      }
+
+      async function refresh() {
+        try {
+          state = await api('');
+          render();
+        } catch (e) {
+          if (e.status === 404) {
+            $('#title').textContent = 'הקישור לא נמצא';
+            $('#subtitle').textContent = 'ייתכן שהקישור שגוי. בקשו מהמארגנ/ת קישור חדש.';
+          }
+        }
+      }
+
+      async function addWords(words) {
+        const clean = parseWordText(Array.isArray(words) ? words.join('\n') : words);
+        if (!clean.length) return;
+        const added_by = $('#byName').value.trim() || null;
+        try {
+          await api('/words', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ words: clean, added_by }),
+          });
+          await refresh();
+        } catch (e) {
+          if (e.status === 409) {
+            alert('האיסוף נסגר — אי אפשר להוסיף עוד מילים.');
+            await refresh();
+          }
+        }
+      }
+
+      async function removeWord(wordId) {
+        // token in the body (not the URL) so it isn't logged; surface failures.
+        try {
+          await api('/words/' + wordId, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ owner_token: ownerToken }),
+          });
+        } catch (e) {
+          alert('מחיקת המילה נכשלה. נסו שוב.');
+        }
+        await refresh();
+      }
+
+      // ---- add interactions ----
+      $('#addBtn').onclick = () => {
+        const v = $('#wordInput').value;
+        if (v.trim()) {
+          addWords(v);
+          $('#wordInput').value = '';
+          $('#wordInput').focus();
+        }
+      };
+      $('#wordInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') $('#addBtn').click();
+      });
+      // single-choice input tabs (exactly one panel visible at a time)
+      const TABS = [
+        ['tab-single', 'panel-single'],
+        ['tab-list', 'panel-list'],
+        ['tab-file', 'panel-file'],
+      ];
+      for (const [tabId, panelId] of TABS) {
+        $('#' + tabId).onclick = () => {
+          for (const [t, p] of TABS) {
+            $('#' + t).classList.toggle('active', t === tabId);
+            $('#' + p).classList.toggle('hidden', p !== panelId);
+          }
+        };
+      }
+      $('#pasteAdd').onclick = () => {
+        addWords($('#pasteBox').value);
+        $('#pasteBox').value = '';
+      };
+      $('#fileInput').addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = () => addWords(String(reader.result));
+        reader.readAsText(f);
+        e.target.value = '';
+      });
+
+      // remember contributor name
+      $('#byName').value = localStorage.getItem('dugri_contributor_name') || '';
+      $('#byName').addEventListener('change', () =>
+        localStorage.setItem('dugri_contributor_name', $('#byName').value.trim())
+      );
+
+      // ---- idea generator ----
+      $('#ideaBtn').onclick = () => {
+        const p = nextPrompt(seenPrompts);
+        seenPrompts.push(p.id);
+        if (seenPrompts.length > 8) seenPrompts.shift();
+        const box = $('#ideaBox');
+        box.style.display = 'block';
+        box.textContent = '💡 ' + fillName(p.text, honoree());
+        $('#wordInput').focus();
+      };
+
+      // ---- category chips ----
+      function buildCats() {
+        const chips = $('#catChips');
+        for (const cat of CATEGORIES) {
+          const b = document.createElement('button');
+          b.className = 'chip';
+          b.type = 'button';
+          b.textContent = cat.emoji + ' ' + cat.label;
+          b.onclick = () => showCat(cat, b);
+          chips.appendChild(b);
+        }
+      }
+      function showCat(cat, btn) {
+        document.querySelectorAll('.chip').forEach((c) => c.classList.remove('active'));
+        btn.classList.add('active');
+        const list = $('#qList');
+        list.innerHTML = '';
+        list.style.display = 'flex';
+        for (const q of cat.questions) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = fillName(q, honoree());
+          b.onclick = () => {
+            $('#wordInput').focus();
+            $('#wordInput').placeholder = fillName(q, honoree());
+          };
+          list.appendChild(b);
+        }
+      }
+
+      // ---- owner: close + share + deliver ----
+      function friendsUrl() {
+        return location.origin + '/collect.html?c=' + id;
+      }
+      function setupOwner() {
+        $('#sharePanel').classList.remove('hidden');
+        $('#friendsLink').value = friendsUrl();
+        $('#ownerLink').value = location.href;
+        $('#copyFriends').onclick = () => copy($('#friendsLink').value, $('#copyFriends'));
+        $('#copyOwner').onclick = () => copy($('#ownerLink').value, $('#copyOwner'));
+        $('#closeBtn').onclick = async () => {
+          if (!confirm('לסגור את האיסוף? אחרי הסגירה לא ניתן להוסיף עוד מילים.')) return;
+          await api('/close', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ owner_token: ownerToken }),
+          }).catch(() => {});
+          await refresh();
+        };
+      }
+      function copy(text, btn) {
+        navigator.clipboard.writeText(text).then(() => {
+          const old = btn.textContent;
+          btn.textContent = 'הועתק ✓';
+          setTimeout(() => (btn.textContent = old), 1500);
+        });
+      }
+      // ---- init ----
+      if (!id) {
+        $('#title').textContent = 'חסר קישור';
+        $('#subtitle').textContent = 'פתחו את הקישור שקיבלתם מהמארגנ/ת.';
+      } else {
+        buildCats();
+        if (isOwner) setupOwner();
+        refresh();
+        setInterval(refresh, 5000);
+      }
+    </script>
+  </body>
+</html>

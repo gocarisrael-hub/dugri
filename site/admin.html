@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>דוגרי · ניהול הזמנות</title>
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      />
+    </noscript>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Heebo', Arial, sans-serif;
+        background: #fff5f8;
+        color: #2c1a29;
+        padding: 22px 16px 60px;
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 24px;
+        font-weight: 900;
+        margin-bottom: 4px;
+      }
+      .sub {
+        color: #7c6a74;
+        margin-bottom: 18px;
+      }
+      .msg {
+        background: #fff;
+        border: 1px solid #f0dee4;
+        border-radius: 14px;
+        padding: 20px;
+        text-align: center;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+        border: 1px solid #f0dee4;
+        border-radius: 14px;
+        overflow: hidden;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: right;
+        padding: 10px 12px;
+        border-bottom: 1px solid #f4e7ec;
+        vertical-align: top;
+      }
+      th {
+        background: #fde3ee;
+        color: #8a2b53;
+        font-size: 12.5px;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      .pill {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 99px;
+        font-weight: 700;
+        font-size: 12.5px;
+      }
+      .open {
+        background: #e6f6ee;
+        color: #1f7a4d;
+      }
+      .closed {
+        background: #fde3ee;
+        color: #c7106a;
+      }
+      .expired {
+        background: #f1eef0;
+        color: #7c6a74;
+      }
+      button {
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        border: 1px solid #e5197d;
+        background: #fff;
+        color: #e5197d;
+        border-radius: 9px;
+        padding: 6px 10px;
+        margin: 2px 0;
+      }
+      .muted {
+        color: #7c6a74;
+        font-size: 12.5px;
+      }
+      .contact {
+        direction: ltr;
+        text-align: right;
+        unicode-bidi: plaintext;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>ניהול הזמנות · דוגרי</h1>
+      <div class="sub" id="sub">טוען…</div>
+      <div id="content"></div>
+    </div>
+
+    <script type="module">
+      import { buildBulkCsv } from './js/collect.js';
+
+      const key = new URLSearchParams(location.search).get('key') || '';
+      const sub = document.getElementById('sub');
+      const content = document.getElementById('content');
+
+      function fmtDate(iso) {
+        try {
+          return new Date(iso).toLocaleString('he-IL', {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+        } catch {
+          return iso;
+        }
+      }
+      const statusLabel = { open: 'פתוח', closed: 'נסגר ✅', expired: 'הסתיים' };
+
+      function ownerUrl(c) {
+        return location.origin + '/collect.html?c=' + c.id + '&k=' + c.owner_token;
+      }
+
+      async function downloadCsv(c) {
+        const r = await fetch('/api/collections/' + c.id);
+        const data = await r.json();
+        const csv = buildBulkCsv((data.words || []).map((w) => w.text));
+        const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'dugri-' + (c.honoree_name || 'order') + '.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+
+      function render(cols) {
+        if (!cols.length) {
+          content.innerHTML = '<div class="msg">עדיין אין הזמנות.</div>';
+          return;
+        }
+        const table = document.createElement('table');
+        table.innerHTML =
+          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>נוצר</th><th>ניהול</th></tr></thead>';
+        const tb = document.createElement('tbody');
+        for (const c of cols) {
+          const tr = document.createElement('tr');
+          const contact = [c.owner_email, c.owner_phone].filter(Boolean).join(' · ') || '—';
+
+          // Build cells with textContent — never innerHTML — since honoree_name /
+          // email / phone are unsanitized user input (stored-XSS otherwise).
+          const tdName = document.createElement('td');
+          const strong = document.createElement('strong');
+          strong.textContent = c.honoree_name || '—';
+          tdName.appendChild(strong);
+
+          const tdContact = document.createElement('td');
+          tdContact.className = 'contact';
+          tdContact.textContent = contact;
+
+          const tdCount = document.createElement('td');
+          tdCount.textContent = c.word_count;
+
+          const tdStatus = document.createElement('td');
+          const pill = document.createElement('span');
+          pill.className = 'pill ' + (c.status || '');
+          pill.textContent = statusLabel[c.status] || c.status;
+          tdStatus.appendChild(pill);
+
+          const tdDate = document.createElement('td');
+          tdDate.className = 'muted';
+          tdDate.textContent = fmtDate(c.created_at);
+
+          tr.appendChild(tdName);
+          tr.appendChild(tdContact);
+          tr.appendChild(tdCount);
+          tr.appendChild(tdStatus);
+          tr.appendChild(tdDate);
+          const td = document.createElement('td');
+          const copyBtn = document.createElement('button');
+          copyBtn.textContent = 'העתק קישור ניהול';
+          copyBtn.onclick = () =>
+            navigator.clipboard.writeText(ownerUrl(c)).then(() => {
+              copyBtn.textContent = 'הועתק ✓';
+              setTimeout(() => (copyBtn.textContent = 'העתק קישור ניהול'), 1500);
+            });
+          const csvBtn = document.createElement('button');
+          csvBtn.textContent = 'CSV';
+          csvBtn.onclick = () => downloadCsv(c);
+          td.appendChild(copyBtn);
+          td.appendChild(document.createTextNode(' '));
+          td.appendChild(csvBtn);
+          tr.appendChild(td);
+          tb.appendChild(tr);
+        }
+        table.appendChild(tb);
+        content.innerHTML = '';
+        content.appendChild(table);
+      }
+
+      async function load() {
+        if (!key) {
+          sub.textContent = '';
+          content.innerHTML =
+            '<div class="msg">חסר מפתח גישה. פתחו עם <code>?key=…</code> בכתובת.</div>';
+          return;
+        }
+        try {
+          const r = await fetch('/api/admin/collections?key=' + encodeURIComponent(key));
+          if (r.status === 403) {
+            content.innerHTML = '<div class="msg">מפתח גישה שגוי.</div>';
+            sub.textContent = '';
+            return;
+          }
+          const data = await r.json();
+          const cols = data.collections || [];
+          sub.textContent = cols.length + ' הזמנות';
+          render(cols);
+        } catch (e) {
+          content.innerHTML = '<div class="msg">שגיאה בטעינה.</div>';
+        }
+      }
+      load();
+      setInterval(load, 15000);
+    </script>
+  </body>
+</html>

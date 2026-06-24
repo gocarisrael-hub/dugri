@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>תשלום (הדגמה) - דוגרי</title>
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      />
+    </noscript>
+    <style>
+      :root {
+        --bg: #fff5f8;
+        --surface: #fff;
+        --ink: #2c1a29;
+        --muted: #7c6a74;
+        --hot: #e5197d;
+        --wine: #9b2d54;
+        --line: #f0dee4;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Heebo', Arial, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        line-height: 1.55;
+      }
+      .wrap {
+        max-width: 540px;
+        margin: 0 auto;
+        padding: 28px 18px 60px;
+      }
+      .head {
+        text-align: center;
+        margin-bottom: 18px;
+      }
+      .head h1 {
+        font-size: 28px;
+        font-weight: 900;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 16px;
+        box-shadow: 0 8px 24px rgba(44, 26, 41, 0.06);
+      }
+      .summary-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 7px 0;
+        border-bottom: 1px dashed var(--line);
+      }
+      .summary-row:last-child {
+        border-bottom: none;
+      }
+      .total {
+        font-weight: 900;
+        font-size: 20px;
+        padding-top: 12px;
+      }
+      label {
+        display: block;
+        font-weight: 700;
+        font-size: 14px;
+        margin: 12px 0 6px;
+      }
+      input {
+        width: 100%;
+        font: inherit;
+        padding: 12px 14px;
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        background: #faf6f8;
+        color: var(--muted);
+      }
+      .pay {
+        width: 100%;
+        font: inherit;
+        font-weight: 900;
+        font-size: 18px;
+        cursor: pointer;
+        border: none;
+        border-radius: 14px;
+        padding: 16px;
+        color: #fff;
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        box-shadow: 0 12px 26px rgba(229, 25, 125, 0.3);
+        margin-top: 8px;
+      }
+      .pay:active {
+        transform: scale(0.99);
+      }
+      .note {
+        text-align: center;
+        color: var(--muted);
+        font-size: 13.5px;
+        margin-top: 12px;
+      }
+      .back {
+        display: inline-block;
+        margin-top: 16px;
+        color: var(--wine);
+        text-decoration: none;
+        font-weight: 700;
+      }
+    </style>
+    <script src="js/demo-banner.js" defer></script>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="head">
+        <h1>תשלום</h1>
+      </div>
+
+      <div class="card">
+        <div class="summary-row"><span>חבילה</span><strong id="planName">—</strong></div>
+        <div class="summary-row"><span>עיצוב</span><strong id="designName">—</strong></div>
+        <div class="summary-row"><span>צבע</span><strong id="colorName">—</strong></div>
+        <div class="summary-row total"><span>סה״כ</span><strong id="total">—</strong></div>
+      </div>
+
+      <div class="card">
+        <label>מספר כרטיס</label>
+        <input type="text" value="•••• •••• •••• 4242" disabled />
+        <label>תוקף / CVV</label>
+        <input type="text" value="12/29   •••" disabled />
+        <button class="pay" id="payBtn" type="button">שלם והמשך לאיסוף המילים</button>
+        <p class="note">לא יחויב כרטיס אשראי — שלב התשלום עדיין בהדגמה.</p>
+        <div style="text-align: center">
+          <a class="back" href="options.html">← חזרה לבחירת עיצוב</a>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { DESIGNS, MAIN_COLORS } from './js/designs.js';
+      import { PLAN_LABELS, PLAN_PRICES, selectionNamesFromIds } from './js/configurator.js';
+
+      const q = new URLSearchParams(location.search);
+
+      let sel = null;
+      try {
+        sel = JSON.parse(localStorage.getItem('dugri_selection') || 'null');
+      } catch (e) {
+        sel = null;
+      }
+      if (!sel) {
+        const names = selectionNamesFromIds(
+          { design: q.get('design'), color: q.get('color'), plan: q.get('plan') },
+          DESIGNS,
+          MAIN_COLORS,
+          PLAN_LABELS
+        );
+        sel = { plan: names.plan, designName: names.designName, colorName: names.colorName };
+      }
+      const plan = sel.plan || q.get('plan') || 'base';
+      document.getElementById('planName').textContent = PLAN_LABELS[plan] || plan;
+      document.getElementById('designName').textContent = sel.designName || '—';
+      document.getElementById('colorName').textContent = sel.colorName || '—';
+      document.getElementById('total').textContent = (PLAN_PRICES[plan] || PLAN_PRICES.base) + ' ₪';
+
+      // Fake payment: just continue the flow to the thank-you / word-collection step.
+      document.getElementById('payBtn').addEventListener('click', () => {
+        window.location.href = 'thankyou.html' + location.search;
+      });
+    </script>
+  </body>
+</html>

@@ -24,9 +24,17 @@
     <!-- Carlito = free, metric-compatible look-alike of Calibri (fallback for devices without Calibri) -->
     <!-- Heebo = bold Hebrew display face for headings; matches the energetic vivid-pink logo -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap"
       rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap"
+      media="print"
+      onload="this.media = 'all'"
     />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap"
+      />
+    </noscript>
     <style>
       :root {
         --bg: #fff5f8; /* very light pink */
@@ -2199,7 +2207,8 @@
           const msg = encodeURIComponent(
             'היי! אני רוצה להזמין ' + plan.desc + ' (' + plan.sum + ' ₪)'
           );
-          window.open(waBase + '?text=' + msg, '_blank');
+          // Same-tab navigation: Instagram's in-app browser blocks window.open pop-ups.
+          window.location.href = waBase + '?text=' + msg;
         }
       }
     </script>

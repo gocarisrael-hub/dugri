@@ -1,10 +1,15 @@
 # Exclude everything by default, then re-include only what the image needs.
 *
 
-# Re-include the build inputs the Dockerfile copies.
-!Caddyfile
+# Re-include the build inputs the Dockerfile copies (Node server + static site).
+!server/
+!server/**
 !site/
 !site/**
+
+# Never ship installed deps into the build context — the image runs `npm ci`.
+node_modules/
+**/node_modules/
 
 # Belt-and-suspenders: explicitly drop internal/business docs and VCS/CI cruft.
 # (These are already excluded by the `*` rule above, but listed for clarity so
