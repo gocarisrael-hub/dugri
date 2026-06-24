@@ -21,6 +21,20 @@ test.describe('landing page hero', () => {
     expect(body).not.toContain('אליאס');
   });
 
+  test('both tagline lines paint their gradient (line 1 is not invisible)', async ({ page }) => {
+    await page.goto('/index.html');
+    // The gradient-clip must live on each line, and neither line may have a
+    // partial-opacity layer — otherwise line 1 paints transparent over the bg.
+    for (const sel of ['.tagline-1', '.tagline-2']) {
+      const s = await page.locator(sel).evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { bg: cs.backgroundImage, opacity: cs.opacity };
+      });
+      expect(s.bg).toContain('gradient');
+      expect(parseFloat(s.opacity)).toBe(1);
+    }
+  });
+
   test('a real product image appears above the fold in the hero', async ({ page }) => {
     await page.goto('/index.html');
     const heroImg = page.locator('.hero-img img');
