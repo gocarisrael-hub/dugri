@@ -1,6 +1,7 @@
 // Dugri server: serves the static site/ and a tiny JSON API for the
 // collaborative word-collection feature.
 const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
 const db = require('./db');
 
@@ -36,9 +37,18 @@ app.post('/api/collections', (req, res) => {
 });
 
 // Admin (orders) — protected by a shared secret key (ADMIN_KEY env).
-const ADMIN_KEY = process.env.ADMIN_KEY || 'dugri-admin';
+// In production ADMIN_KEY must be set; in dev it falls back to a local default.
+const ADMIN_KEY =
+  process.env.ADMIN_KEY || (process.env.NODE_ENV === 'production' ? null : 'dugri-admin');
+function adminKeyOk(provided) {
+  if (!ADMIN_KEY) return false;
+  const a = Buffer.from(String(provided || ''));
+  const b = Buffer.from(ADMIN_KEY);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 app.get('/api/admin/collections', (req, res) => {
-  if ((req.query.key || '') !== ADMIN_KEY) return res.status(403).json({ error: 'forbidden' });
+  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
+  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
   res.json({ collections: db.listAllCollections() });
 });
 
@@ -72,7 +82,7 @@ app.post('/api/collections/:id/close', (req, res) => {
 
 // Owner-only: delete a word (moderation).
 app.delete('/api/collections/:id/words/:wordId', (req, res) => {
-  const token = (req.body && req.body.owner_token) || req.query.owner_token;
+  const token = req.body && req.body.owner_token;
   if (!db.deleteWord(req.params.id, req.params.wordId, token)) {
     return res.status(403).json({ error: 'forbidden' });
   }

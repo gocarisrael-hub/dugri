@@ -53,6 +53,9 @@ describe('buildBulkCsv', () => {
   it('csv-escapes cells with commas', () => {
     expect(buildBulkCsv(['a,b']).split('\n')[1]).toContain('"a,b"');
   });
+  it('neutralizes spreadsheet formula-injection cells', () => {
+    expect(buildBulkCsv(['=1+1']).split('\n')[1]).toContain("'=1+1");
+  });
 });
 
 describe('word prompts', () => {

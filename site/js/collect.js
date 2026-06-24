@@ -43,7 +43,9 @@ export function parseWordText(text) {
 }
 
 function csvEscape(cell) {
-  const s = String(cell == null ? '' : cell);
+  let s = String(cell == null ? '' : cell);
+  // Neutralize spreadsheet formula injection (leading =, +, -, @, tab, CR).
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 

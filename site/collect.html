@@ -525,9 +525,16 @@
       }
 
       async function removeWord(wordId) {
-        await api('/words/' + wordId + '?owner_token=' + encodeURIComponent(ownerToken), {
-          method: 'DELETE',
-        }).catch(() => {});
+        // token in the body (not the URL) so it isn't logged; surface failures.
+        try {
+          await api('/words/' + wordId, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ owner_token: ownerToken }),
+          });
+        } catch (e) {
+          alert('מחיקת המילה נכשלה. נסו שוב.');
+        }
         await refresh();
       }
 

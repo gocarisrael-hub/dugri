@@ -164,24 +164,36 @@
         for (const c of cols) {
           const tr = document.createElement('tr');
           const contact = [c.owner_email, c.owner_phone].filter(Boolean).join(' · ') || '—';
-          tr.innerHTML =
-            '<td><strong>' +
-            (c.honoree_name || '—') +
-            '</strong></td>' +
-            '<td class="contact">' +
-            contact +
-            '</td>' +
-            '<td>' +
-            c.word_count +
-            '</td>' +
-            '<td><span class="pill ' +
-            c.status +
-            '">' +
-            (statusLabel[c.status] || c.status) +
-            '</span></td>' +
-            '<td class="muted">' +
-            fmtDate(c.created_at) +
-            '</td>';
+
+          // Build cells with textContent — never innerHTML — since honoree_name /
+          // email / phone are unsanitized user input (stored-XSS otherwise).
+          const tdName = document.createElement('td');
+          const strong = document.createElement('strong');
+          strong.textContent = c.honoree_name || '—';
+          tdName.appendChild(strong);
+
+          const tdContact = document.createElement('td');
+          tdContact.className = 'contact';
+          tdContact.textContent = contact;
+
+          const tdCount = document.createElement('td');
+          tdCount.textContent = c.word_count;
+
+          const tdStatus = document.createElement('td');
+          const pill = document.createElement('span');
+          pill.className = 'pill ' + (c.status || '');
+          pill.textContent = statusLabel[c.status] || c.status;
+          tdStatus.appendChild(pill);
+
+          const tdDate = document.createElement('td');
+          tdDate.className = 'muted';
+          tdDate.textContent = fmtDate(c.created_at);
+
+          tr.appendChild(tdName);
+          tr.appendChild(tdContact);
+          tr.appendChild(tdCount);
+          tr.appendChild(tdStatus);
+          tr.appendChild(tdDate);
           const td = document.createElement('td');
           const copyBtn = document.createElement('button');
           copyBtn.textContent = 'העתק קישור ניהול';

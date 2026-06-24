@@ -26,7 +26,7 @@ export default defineConfig({
   // Start the Node server (static site + /api). Data goes to a throwaway dir.
   webServer: {
     command: `node server/index.js`,
-    env: { PORT: String(PORT), DATA_DIR: '.e2e-data' },
+    env: { PORT: String(PORT), DATA_DIR: '.e2e-data', ADMIN_KEY: 'dugri-admin' },
     port: PORT,
     reuseExistingServer: !process.env.CI,
   },

@@ -52,7 +52,9 @@ const db = {
     const c = {
       id: uid(),
       owner_token: uid(),
-      honoree_name: String(honoreeName || '').trim(),
+      honoree_name: String(honoreeName || '')
+        .trim()
+        .slice(0, 80),
       owner_email: contact.email ? String(contact.email).trim().slice(0, 120) : null,
       owner_phone: contact.phone ? String(contact.phone).trim().slice(0, 40) : null,
       status: 'open',
@@ -99,7 +101,7 @@ const db = {
     let added = 0;
     let skipped = 0;
     for (const raw of Array.isArray(words) ? words : []) {
-      const text = String(raw).trim().replace(/\s+/g, ' ');
+      const text = String(raw).trim().replace(/\s+/g, ' ').slice(0, 80);
       if (!text) continue;
       const n = norm(text);
       if (existing.has(n)) {
