@@ -380,28 +380,10 @@
         padding: 6px 13px;
         border-radius: 999px;
       }
-      .hero-img {
-        margin-top: 26px;
-        position: relative;
-      }
-      .hero-img img {
-        width: 100%;
-        max-width: 640px;
-        border-radius: 20px;
-        box-shadow: var(--shadow-lg);
-        transition:
-          transform 0.35s ease,
-          box-shadow 0.35s ease;
-      }
-      .hero-img img:hover {
-        transform: translateY(-4px) rotate(-0.3deg);
-        box-shadow: 0 34px 70px rgba(44, 26, 41, 0.24);
-      }
-
-      /* hero video loop - real party footage */
+      /* hero video loop - real party footage (vertical phone clip) */
       .hero-video {
         margin: 26px auto 0;
-        max-width: 640px;
+        max-width: 320px;
         position: relative;
       }
       .hero-video video {
@@ -493,12 +475,14 @@
         display: grid;
         gap: 18px;
         grid-template-columns: 1fr;
-        max-width: 760px;
+        max-width: 480px;
         margin: 0 auto;
       }
       @media (min-width: 720px) {
         .reviews {
-          grid-template-columns: repeat(2, 1fr);
+          grid-template-columns: repeat(3, 1fr);
+          max-width: 1040px;
+          align-items: start;
         }
       }
       .review {
@@ -1422,9 +1406,6 @@
         .hero-cta {
           margin-top: 18px;
         }
-        .hero-img {
-          margin-top: 18px;
-        }
       }
       /* keep hero clear of the fixed nav */
       body {
@@ -1640,12 +1621,6 @@
           >
           <a class="btn ghost" href="#how">איך זה עובד? ↓</a>
         </div>
-        <div class="hero-img">
-          <img
-            src="assets/hero-board.jpg"
-            alt="משחק דוגרי מודפס - לוח וקלפים מעוצבים על שולחן במסיבה"
-          />
-        </div>
         <div class="hero-video" data-testid="hero-video">
           <video
             autoplay
@@ -1653,12 +1628,12 @@
             loop
             playsinline
             preload="metadata"
-            poster="assets/video/board-closeup-poster.jpg"
-            aria-label="לוח המשחק דוגרי על השולחן במסיבה אמיתית"
+            poster="assets/video/dugri-hero-loop-poster.jpg"
+            aria-label="סרטון ממסיבה אמיתית עם משחק דוגרי"
           >
-            <source src="assets/video/board-closeup.mp4" type="video/mp4" />
+            <source src="assets/video/dugri-hero-loop.mp4" type="video/mp4" />
           </video>
-          <p class="vcap"><strong>אירוע אמיתי</strong> · ככה המשחק נראה כשהוא מגיע לשולחן</p>
+          <p class="vcap"><strong>אירוע אמיתי</strong> · ככה זה נראה כשמשחקים דוגרי במסיבה</p>
         </div>
         <p class="lede">
           משחק קלפים שהוא רק שלכם - מלא בבדיחות פנימיות, סיפורים מביכים ורגעים שרק אתם מכירים.
@@ -1786,7 +1761,7 @@
               alt="המלצה אמיתית בוואטסאפ ממסיבת רווקות - לא הפסקנו לצחוק שעה וחצי"
               loading="lazy"
             />
-            <figcaption>וואטסאפ · לקוחה אמיתית</figcaption>
+            <figcaption>וואטסאפ</figcaption>
           </figure>
           <figure class="review">
             <img
@@ -1794,7 +1769,15 @@
               alt="המלצה אמיתית בוואטסאפ - היה מושלם, החלק הכי אהוב במסיבה"
               loading="lazy"
             />
-            <figcaption>וואטסאפ · לקוחה אמיתית</figcaption>
+            <figcaption>וואטסאפ</figcaption>
+          </figure>
+          <figure class="review">
+            <img
+              src="assets/testimonials/review-3.jpg"
+              alt="המלצה אמיתית בוואטסאפ - שעה וחצי של צחוק רצוף, אישי ומצחיק ומרגש"
+              loading="lazy"
+            />
+            <figcaption>וואטסאפ</figcaption>
           </figure>
         </div>
       </div>

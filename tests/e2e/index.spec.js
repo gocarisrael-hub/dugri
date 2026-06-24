@@ -35,11 +35,13 @@ test.describe('landing page hero', () => {
     }
   });
 
-  test('a real product image appears above the fold in the hero', async ({ page }) => {
+  test('a real product visual (hero video) appears above the fold in the hero', async ({
+    page,
+  }) => {
     await page.goto('/index.html');
-    const heroImg = page.locator('.hero-img img');
-    await expect(heroImg).toBeVisible();
-    const box = await heroImg.boundingBox();
+    const heroVideo = page.locator('[data-testid="hero-video"] video');
+    await expect(heroVideo).toBeVisible();
+    const box = await heroVideo.boundingBox();
     const viewport = page.viewportSize();
     expect(box).not.toBeNull();
     // The product visual must start within the first viewport (above the fold).
@@ -129,17 +131,17 @@ test.describe('real contact info', () => {
 });
 
 test.describe('real customer testimonials', () => {
-  test('proof section shows exactly 2 real review images that load (200) and no placeholders', async ({
+  test('proof section shows exactly 3 real review images that load (200) and no placeholders', async ({
     page,
     request,
   }) => {
     await page.goto('/index.html');
 
     const reviews = page.locator('[data-testid="proof-reviews"] img');
-    await expect(reviews).toHaveCount(2);
+    await expect(reviews).toHaveCount(3);
 
     const srcs = await reviews.evaluateAll((els) => els.map((img) => img.getAttribute('src')));
-    expect(srcs.length).toBe(2);
+    expect(srcs.length).toBe(3);
     for (const src of srcs) {
       // Every testimonial image must live under assets/testimonials/...
       expect(src).toMatch(/^assets\/testimonials\//);
