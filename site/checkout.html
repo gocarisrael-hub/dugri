@@ -33,14 +33,6 @@
         color: var(--ink);
         line-height: 1.55;
       }
-      .demo {
-        background: #2c1a29;
-        color: #fff;
-        text-align: center;
-        font-size: 14px;
-        font-weight: 600;
-        padding: 8px 12px;
-      }
       .wrap {
         max-width: 540px;
         margin: 0 auto;
@@ -122,9 +114,9 @@
         font-weight: 700;
       }
     </style>
+    <script src="js/demo-banner.js" defer></script>
   </head>
   <body>
-    <div class="demo">🛠️ אתר בהרצה · התשלום עדיין לא פעיל — זו הדגמה, לא יחויב תשלום אמיתי</div>
     <div class="wrap">
       <div class="head">
         <h1>תשלום</h1>
@@ -152,9 +144,8 @@
 
     <script type="module">
       import { DESIGNS, MAIN_COLORS } from './js/designs.js';
-      import { PLAN_LABELS, selectionNamesFromIds } from './js/configurator.js';
+      import { PLAN_LABELS, PLAN_PRICES, selectionNamesFromIds } from './js/configurator.js';
 
-      const PRICES = { base: 79, premium: 139 };
       const q = new URLSearchParams(location.search);
 
       let sel = null;
@@ -176,7 +167,7 @@
       document.getElementById('planName').textContent = PLAN_LABELS[plan] || plan;
       document.getElementById('designName').textContent = sel.designName || '—';
       document.getElementById('colorName').textContent = sel.colorName || '—';
-      document.getElementById('total').textContent = (PRICES[plan] || PRICES.base) + ' ₪';
+      document.getElementById('total').textContent = (PLAN_PRICES[plan] || PLAN_PRICES.base) + ' ₪';
 
       // Fake payment: just continue the flow to the thank-you / word-collection step.
       document.getElementById('payBtn').addEventListener('click', () => {
