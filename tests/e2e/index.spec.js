@@ -128,6 +128,35 @@ test.describe('real contact info', () => {
   });
 });
 
+test.describe('real customer testimonials', () => {
+  test('proof section shows exactly 2 real review images that load (200) and no placeholders', async ({
+    page,
+    request,
+  }) => {
+    await page.goto('/index.html');
+
+    const reviews = page.locator('[data-testid="proof-reviews"] img');
+    await expect(reviews).toHaveCount(2);
+
+    const srcs = await reviews.evaluateAll((els) => els.map((img) => img.getAttribute('src')));
+    expect(srcs.length).toBe(2);
+    for (const src of srcs) {
+      // Every testimonial image must live under assets/testimonials/...
+      expect(src).toMatch(/^assets\/testimonials\//);
+      // ...and actually be served (catches a missing/untracked file).
+      const res = await request.get('/' + src);
+      expect(res.status(), `${src} should load`).toBe(200);
+    }
+
+    // No fake placeholder captions may remain anywhere on the page.
+    const body = await page.locator('body').innerText();
+    expect(body).not.toContain('שם הלקוחה');
+    expect(body).not.toContain('שם הלקוח');
+    // Brand rule: never the trademarked word.
+    expect(body).not.toContain('אליאס');
+  });
+});
+
 test.describe('real party video clips', () => {
   test('hero + proof clips are muted-loop-autoplay and their files load (200)', async ({
     page,

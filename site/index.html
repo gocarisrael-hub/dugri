@@ -489,41 +489,56 @@
         letter-spacing: 2px;
         margin-bottom: 22px;
       }
-      .quotes {
+      .reviews {
         display: grid;
-        gap: 16px;
+        gap: 18px;
         grid-template-columns: 1fr;
+        max-width: 760px;
+        margin: 0 auto;
       }
       @media (min-width: 720px) {
-        .quotes {
-          grid-template-columns: repeat(3, 1fr);
+        .reviews {
+          grid-template-columns: repeat(2, 1fr);
         }
       }
-      .quote {
-        background: var(--blush);
+      .review {
+        background: #fff;
         border: 1px solid var(--blush-deep);
         border-radius: 18px;
-        padding: 22px 20px;
-        text-align: start;
+        padding: 12px;
         margin: 0;
         box-shadow: var(--shadow-sm);
+        overflow: hidden;
         transition:
           transform 0.25s ease,
           box-shadow 0.25s ease;
       }
-      .quote:hover {
+      .review:hover {
         transform: translateY(-4px);
         box-shadow: var(--shadow-md);
       }
-      .quote p {
-        font-size: 16px;
-        color: var(--ink);
-        margin-bottom: 12px;
+      .review img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 12px;
       }
-      .quote figcaption {
-        font-size: 13.5px;
+      .review figcaption {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 10px;
+        font-size: 13px;
         font-weight: 700;
-        color: var(--wine-deep);
+        color: #25d366;
+      }
+      .review figcaption::before {
+        content: '';
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #25d366;
+        flex: none;
       }
       .proof-note {
         margin-top: 18px;
@@ -1728,7 +1743,6 @@
       </div>
     </section>
 
-    <!-- PLACEHOLDER testimonials - replace with real customer quotes before launch. No real names / no verified star counts until you have actual reviews. -->
     <section class="proof" id="proof">
       <div class="wrap">
         <div class="sec-title reveal">
@@ -1764,23 +1778,25 @@
           </div>
         </div>
         <div class="stars reveal" aria-hidden="true">★★★★★</div>
-        <div class="quotes stagger">
-          <figure class="quote">
-            <p>"שלחנו רשימת מילים על הכלה וקיבלנו משחק שפשוט פוצץ את הערב. כולן בכו מצחוק."</p>
-            <figcaption>שם הלקוחה · מסיבת רווקות</figcaption>
+        <p class="proof-note" style="margin-top: 0; margin-bottom: 18px">מה אומרים אחרי המסיבה</p>
+        <div class="reviews stagger" data-testid="proof-reviews">
+          <figure class="review">
+            <img
+              src="assets/testimonials/review-1.jpg"
+              alt="המלצה אמיתית בוואטסאפ ממסיבת רווקות - לא הפסקנו לצחוק שעה וחצי"
+              loading="lazy"
+            />
+            <figcaption>וואטסאפ · לקוחה אמיתית</figcaption>
           </figure>
-          <figure class="quote">
-            <p>"הזמנתי הפתעה לאבא ליום הולדת 60. הוא לא הפסיק לצחוק - והמשחק נשאר אצלנו כמזכרת."</p>
-            <figcaption>שם הלקוח · יום הולדת 60</figcaption>
-          </figure>
-          <figure class="quote">
-            <p>"הגיע תוך יום, מעוצב בול בצבעים שביקשתי. הדבר הכי אישי שנתתי במתנה."</p>
-            <figcaption>שם הלקוחה · יום נישואין</figcaption>
+          <figure class="review">
+            <img
+              src="assets/testimonials/review-2.jpg"
+              alt="המלצה אמיתית בוואטסאפ - היה מושלם, החלק הכי אהוב במסיבה"
+              loading="lazy"
+            />
+            <figcaption>וואטסאפ · לקוחה אמיתית</figcaption>
           </figure>
         </div>
-        <p class="proof-note">
-          ההמלצות כאן הן דוגמאות לעיצוב - נחליף בהמלצות אמיתיות מלקוחות עם ההשקה.
-        </p>
       </div>
     </section>
 
