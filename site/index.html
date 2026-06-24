@@ -486,43 +486,23 @@
         }
       }
       .review {
-        background: #fff;
-        border: 1px solid var(--blush-deep);
-        border-radius: 18px;
-        padding: 12px;
         margin: 0;
-        box-shadow: var(--shadow-sm);
-        overflow: hidden;
         transition:
           transform 0.25s ease,
           box-shadow 0.25s ease;
       }
       .review:hover {
         transform: translateY(-4px);
-        box-shadow: var(--shadow-md);
       }
       .review img {
         display: block;
         width: 100%;
         height: auto;
-        border-radius: 12px;
+        border-radius: 16px;
+        box-shadow: var(--shadow-sm);
       }
-      .review figcaption {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-top: 10px;
-        font-size: 13px;
-        font-weight: 700;
-        color: #25d366;
-      }
-      .review figcaption::before {
-        content: '';
-        width: 9px;
-        height: 9px;
-        border-radius: 50%;
-        background: #25d366;
-        flex: none;
+      .review:hover img {
+        box-shadow: var(--shadow-md);
       }
       .proof-note {
         margin-top: 18px;
@@ -1668,15 +1648,15 @@
             <span class="aud-label">יום הולדת 30</span>
           </div>
           <div class="aud-card">
-            <span class="aud-emoji" aria-hidden="true">🎂</span>
+            <span class="aud-emoji" aria-hidden="true">🥳</span>
             <span class="aud-label">יום הולדת 40</span>
           </div>
           <div class="aud-card">
-            <span class="aud-emoji" aria-hidden="true">🎂</span>
+            <span class="aud-emoji" aria-hidden="true">🎉</span>
             <span class="aud-label">יום הולדת 50</span>
           </div>
           <div class="aud-card">
-            <span class="aud-emoji" aria-hidden="true">👴</span>
+            <span class="aud-emoji" aria-hidden="true">🎈</span>
             <span class="aud-label">יום הולדת 60</span>
           </div>
           <div class="aud-card">
@@ -1761,7 +1741,6 @@
               alt="המלצה אמיתית בוואטסאפ ממסיבת רווקות - לא הפסקנו לצחוק שעה וחצי"
               loading="lazy"
             />
-            <figcaption>וואטסאפ</figcaption>
           </figure>
           <figure class="review">
             <img
@@ -1769,7 +1748,6 @@
               alt="המלצה אמיתית בוואטסאפ - היה מושלם, החלק הכי אהוב במסיבה"
               loading="lazy"
             />
-            <figcaption>וואטסאפ</figcaption>
           </figure>
           <figure class="review">
             <img
@@ -1777,7 +1755,6 @@
               alt="המלצה אמיתית בוואטסאפ - שעה וחצי של צחוק רצוף, אישי ומצחיק ומרגש"
               loading="lazy"
             />
-            <figcaption>וואטסאפ</figcaption>
           </figure>
         </div>
       </div>
