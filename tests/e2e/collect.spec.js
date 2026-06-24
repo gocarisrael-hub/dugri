@@ -19,6 +19,8 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
   await page.click('#addBtn');
   await expect(page.locator('#wordsWrap')).toContainText('הדייט מטבריה');
   await expect(page.locator('#count')).toHaveText('1');
+  // a "word added" toast pops up
+  await expect(page.locator('#toast')).toContainText('נוספה מילה');
 
   // idea generator (single tab) shows a personalized prompt
   await page.click('#ideaBtn');
@@ -30,6 +32,8 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
   await page.fill('#pasteBox', 'סוכר באמא\nאולי נקסט\nהדייט מטבריה');
   await page.click('#pasteAdd');
   await expect(page.locator('#count')).toHaveText('3');
+  // toast reflects the 2 newly-added (1 duplicate skipped)
+  await expect(page.locator('#toast')).toContainText('2 מילים');
 
   // owner closes the collection
   page.once('dialog', (d) => d.accept());

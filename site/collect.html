@@ -293,6 +293,34 @@
         font-size: 14px;
         white-space: nowrap;
       }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 22px;
+        transform: translateX(-50%) translateY(10px);
+        background: #2c1a29;
+        color: #fff;
+        font-weight: 700;
+        font-size: 14.5px;
+        padding: 10px 18px;
+        border-radius: 999px;
+        box-shadow: 0 10px 28px rgba(44, 26, 41, 0.28);
+        opacity: 0;
+        transition:
+          opacity 0.2s ease,
+          transform 0.2s ease;
+        z-index: 200;
+        pointer-events: none;
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .toast {
+          transition: none;
+        }
+      }
     </style>
   </head>
   <body>
@@ -368,13 +396,6 @@
         </div>
       </div>
 
-      <!-- word-finding helpers -->
-      <div class="card" id="helpCard">
-        <div class="sec-h">תקועים? קבלו השראה 👇</div>
-        <div class="chips" id="catChips"></div>
-        <div class="qlist" id="qList"></div>
-      </div>
-
       <!-- the words (with the live counter) -->
       <div class="card">
         <div class="words-head">
@@ -386,6 +407,13 @@
         <div class="words" id="wordsWrap" style="margin-top: 12px">
           <span class="muted" id="emptyWords">עוד אין מילים — היו הראשונים!</span>
         </div>
+      </div>
+
+      <!-- word-finding helpers -->
+      <div class="card" id="helpCard">
+        <div class="sec-h">תקועים? קבלו השראה 👇</div>
+        <div class="chips" id="catChips"></div>
+        <div class="qlist" id="qList"></div>
       </div>
 
       <!-- owner / closing controls -->
@@ -410,6 +438,24 @@
       const $ = (s) => document.querySelector(s);
       let state = null; // last fetched collection
       const seenPrompts = [];
+
+      // small transient confirmation pop-up ("word added")
+      let toastTimer = null;
+      function toast(msg) {
+        let el = document.getElementById('toast');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'toast';
+          el.className = 'toast';
+          el.setAttribute('role', 'status');
+          el.setAttribute('aria-live', 'polite');
+          document.body.appendChild(el);
+        }
+        el.textContent = msg;
+        requestAnimationFrame(() => el.classList.add('show'));
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+      }
 
       function api(path, opts) {
         return fetch('/api/collections/' + id + path, opts).then(async (r) => {
@@ -501,12 +547,17 @@
         if (!clean.length) return;
         const added_by = $('#byName').value.trim() || null;
         try {
-          await api('/words', {
+          const res = await api('/words', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ words: clean, added_by }),
           });
           await refresh();
+          const added = res && typeof res.added === 'number' ? res.added : clean.length;
+          const skipped = (res && res.skipped) || 0;
+          if (added === 1) toast('נוספה מילה ✓');
+          else if (added > 1) toast('נוספו ' + added + ' מילים ✓');
+          else if (skipped) toast(skipped === 1 ? 'המילה כבר ברשימה' : 'המילים כבר ברשימה');
         } catch (e) {
           if (e.status === 409) {
             alert('האיסוף נסגר — אי אפשר להוסיף עוד מילים.');
