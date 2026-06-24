@@ -264,6 +264,44 @@
         font-weight: 800;
         margin-bottom: 8px;
       }
+      .tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 12px;
+      }
+      .tab {
+        flex: 1;
+        background: #fff;
+        color: var(--ink);
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 8px;
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .tab.active {
+        background: var(--hot);
+        color: #fff;
+        border-color: var(--hot);
+      }
+      .panel {
+        margin-top: 4px;
+      }
+      .words-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .count-pill {
+        background: #fde3ee;
+        color: var(--hot-deep);
+        font-weight: 800;
+        border-radius: 99px;
+        padding: 4px 12px;
+        font-size: 14px;
+        white-space: nowrap;
+      }
     </style>
   </head>
   <body>
@@ -293,15 +331,6 @@
         </div>
       </div>
 
-      <!-- counter -->
-      <div class="card">
-        <div class="counter">
-          <span id="count">0</span> מילים
-          <small id="countHint">היעד: לפחות 100 מילים</small>
-        </div>
-        <div class="bar"><i id="barFill"></i></div>
-      </div>
-
       <!-- add area -->
       <div class="card" id="addCard">
         <div class="nameRow">
@@ -309,20 +338,29 @@
           <input type="text" id="byName" placeholder="השם שלך" maxlength="40" />
         </div>
 
-        <div class="idea" id="ideaBox"></div>
-
-        <label class="fld" for="wordInput">הוסיפו מילה</label>
-        <div class="row">
-          <input type="text" id="wordInput" placeholder="לדוגמה: הדייט מטבריה" autocomplete="off" />
-          <button id="addBtn" type="button">הוסף</button>
-        </div>
-        <div class="actions">
-          <button class="soft" id="ideaBtn" type="button">תני לי רעיון 💡</button>
-          <button class="toggle" id="pasteToggle" type="button">📋 הדבקת רשימה</button>
-          <button class="toggle" id="fileToggle" type="button">📄 העלאת קובץ</button>
+        <div class="tabs" role="tablist">
+          <button class="tab active" id="tab-single" type="button">✏️ מילה</button>
+          <button class="tab" id="tab-list" type="button">📋 רשימה</button>
+          <button class="tab" id="tab-file" type="button">📄 קובץ</button>
         </div>
 
-        <div class="hidden" id="pasteArea" style="margin-top: 10px">
+        <div class="panel" id="panel-single">
+          <div class="idea" id="ideaBox"></div>
+          <div class="row">
+            <input
+              type="text"
+              id="wordInput"
+              placeholder="לדוגמה: הדייט מטבריה"
+              autocomplete="off"
+            />
+            <button id="addBtn" type="button">הוסף</button>
+          </div>
+          <div class="actions">
+            <button class="soft" id="ideaBtn" type="button">תני לי רעיון 💡</button>
+          </div>
+        </div>
+
+        <div class="panel hidden" id="panel-list">
           <textarea
             id="pasteBox"
             rows="5"
@@ -333,7 +371,7 @@
           </div>
         </div>
 
-        <div class="hidden" id="fileArea" style="margin-top: 10px">
+        <div class="panel hidden" id="panel-file">
           <input type="file" id="fileInput" accept=".txt,.csv,text/plain,text/csv" />
           <p class="muted">קובץ טקסט או CSV — מילה בכל שורה.</p>
         </div>
@@ -346,10 +384,15 @@
         <div class="qlist" id="qList"></div>
       </div>
 
-      <!-- the words -->
+      <!-- the words (with the live counter) -->
       <div class="card">
-        <div class="sec-h">המילים שכבר נאספו</div>
-        <div class="words" id="wordsWrap">
+        <div class="words-head">
+          <span class="sec-h">המילים שכבר נאספו</span>
+          <span class="count-pill"><b id="count">0</b> מילים</span>
+        </div>
+        <div class="bar"><i id="barFill"></i></div>
+        <small class="muted" id="countHint">היעד: לפחות 100 מילים</small>
+        <div class="words" id="wordsWrap" style="margin-top: 12px">
           <span class="muted" id="emptyWords">עוד אין מילים — היו הראשונים!</span>
         </div>
       </div>
@@ -362,23 +405,12 @@
           <button id="closeBtn" type="button">מספיק! סיימנו לאסוף ✅</button>
         </div>
       </div>
-
-      <!-- after close / always-available export + send -->
-      <div class="card hidden" id="deliverCard">
-        <div class="sec-h">🎉 האיסוף נסגר</div>
-        <p class="muted">אפשר להוריד את הרשימה ולשלוח לדוגרי כדי שנכין את המשחק.</p>
-        <div class="actions">
-          <button class="ghost" id="csvBtn" type="button">הורד CSV</button>
-          <button id="sendBtn" type="button">שלחו לדוגרי בוואטסאפ 💬</button>
-        </div>
-      </div>
     </div>
 
     <script type="module">
       import { CATEGORIES, fillName, nextPrompt } from './js/word-prompts.js';
-      import { parseWordText, buildBulkCsv } from './js/collect.js';
+      import { parseWordText } from './js/collect.js';
 
-      const DUGRI_WA = '972546577715';
       const params = new URLSearchParams(location.search);
       const id = params.get('c');
       const ownerToken = params.get('k') || null;
@@ -459,7 +491,6 @@
         const open = state.status === 'open';
         setOpenState(open);
         $('#ownerControls').classList.toggle('hidden', !(isOwner && open));
-        $('#deliverCard').classList.toggle('hidden', !(isOwner || !open));
       }
 
       async function refresh() {
@@ -512,8 +543,20 @@
       $('#wordInput').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') $('#addBtn').click();
       });
-      $('#pasteToggle').onclick = () => $('#pasteArea').classList.toggle('hidden');
-      $('#fileToggle').onclick = () => $('#fileArea').classList.toggle('hidden');
+      // single-choice input tabs (exactly one panel visible at a time)
+      const TABS = [
+        ['tab-single', 'panel-single'],
+        ['tab-list', 'panel-list'],
+        ['tab-file', 'panel-file'],
+      ];
+      for (const [tabId, panelId] of TABS) {
+        $('#' + tabId).onclick = () => {
+          for (const [t, p] of TABS) {
+            $('#' + t).classList.toggle('active', t === tabId);
+            $('#' + p).classList.toggle('hidden', p !== panelId);
+          }
+        };
+      }
       $('#pasteAdd').onclick = () => {
         addWords($('#pasteBox').value);
         $('#pasteBox').value = '';
@@ -601,26 +644,6 @@
           setTimeout(() => (btn.textContent = old), 1500);
         });
       }
-      $('#csvBtn').onclick = () => {
-        const csv = buildBulkCsv((state.words || []).map((w) => w.text));
-        const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'dugri-' + honoree() + '.csv';
-        a.click();
-        URL.revokeObjectURL(a.href);
-      };
-      $('#sendBtn').onclick = () => {
-        const msg =
-          'היי דוגרי! סיימנו לאסוף מילים על ' +
-          honoree() +
-          ' (' +
-          state.count +
-          ' מילים).\nהקישור: ' +
-          friendsUrl();
-        window.open('https://wa.me/' + DUGRI_WA + '?text=' + encodeURIComponent(msg), '_blank');
-      };
-
       // ---- init ----
       if (!id) {
         $('#title').textContent = 'חסר קישור';

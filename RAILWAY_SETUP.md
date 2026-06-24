@@ -64,3 +64,9 @@ container. After connecting the repo:
    persists across redeploys. (`$PORT` is provided by Railway automatically.)
 
 Without the volume + `DATA_DIR`, collected words are lost on every redeploy.
+
+## Admin orders page
+
+The private orders page is at `/admin.html?key=YOUR_ADMIN_KEY`. Set a strong
+**`ADMIN_KEY`** env var on the Railway service; only that key can open the page
+or call `/api/admin/collections`. (Locally it defaults to `dugri-admin`.)

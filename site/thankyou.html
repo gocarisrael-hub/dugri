@@ -237,6 +237,17 @@
         </p>
         <div class="row">
           <input type="text" id="honoreeInput" placeholder="שם בעל/ת השמחה" maxlength="60" />
+        </div>
+        <div class="row">
+          <input
+            type="email"
+            id="ownerEmail"
+            placeholder="המייל שלך (לשליחת קישור הניהול)"
+            maxlength="120"
+          />
+          <input type="tel" id="ownerPhone" placeholder="טלפון (לא חובה)" maxlength="40" />
+        </div>
+        <div class="row">
           <button class="btn go" id="createBtn" type="button">צרו קישור איסוף</button>
         </div>
         <p class="note" id="createErr" style="display: none; color: #c2415f"></p>
@@ -310,10 +321,18 @@
       const createBtn = document.getElementById('createBtn');
       createBtn.addEventListener('click', async () => {
         const name = document.getElementById('honoreeInput').value.trim();
+        const email = document.getElementById('ownerEmail').value.trim();
+        const phone = document.getElementById('ownerPhone').value.trim();
         const err = document.getElementById('createErr');
         err.style.display = 'none';
         if (!name) {
           document.getElementById('honoreeInput').focus();
+          return;
+        }
+        if (!email && !phone) {
+          err.textContent = 'נשמח למייל או טלפון כדי שנוכל לשלוח לך את קישור הניהול.';
+          err.style.display = 'block';
+          document.getElementById('ownerEmail').focus();
           return;
         }
         createBtn.disabled = true;
@@ -322,7 +341,7 @@
           const r = await fetch('/api/collections', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ honoree_name: name }),
+            body: JSON.stringify({ honoree_name: name, email, phone }),
           });
           const data = await r.json();
           if (!r.ok) throw new Error(data.error || 'failed');

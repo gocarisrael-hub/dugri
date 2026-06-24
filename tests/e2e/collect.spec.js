@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 async function createCollection(page, name) {
   await page.goto('/thankyou.html');
   await page.fill('#honoreeInput', name);
+  await page.fill('#ownerEmail', 'test@example.com'); // contact now required
   await page.click('#createBtn');
   await page.waitForURL(/collect\.html\?c=.+&k=.+/);
 }
@@ -19,16 +20,16 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
   await expect(page.locator('#wordsWrap')).toContainText('הדייט מטבריה');
   await expect(page.locator('#count')).toHaveText('1');
 
-  // paste list (third item is a duplicate → only 2 new, total 3)
-  await page.click('#pasteToggle');
-  await page.fill('#pasteBox', 'סוכר באמא\nאולי נקסט\nהדייט מטבריה');
-  await page.click('#pasteAdd');
-  await expect(page.locator('#count')).toHaveText('3');
-
-  // idea generator shows a personalized prompt
+  // idea generator (single tab) shows a personalized prompt
   await page.click('#ideaBtn');
   await expect(page.locator('#ideaBox')).toBeVisible();
   await expect(page.locator('#ideaBox')).toContainText('שירה');
+
+  // switch to the list tab; third item is a duplicate → only 2 new, total 3
+  await page.click('#tab-list');
+  await page.fill('#pasteBox', 'סוכר באמא\nאולי נקסט\nהדייט מטבריה');
+  await page.click('#pasteAdd');
+  await expect(page.locator('#count')).toHaveText('3');
 
   // owner closes the collection
   page.once('dialog', (d) => d.accept());
