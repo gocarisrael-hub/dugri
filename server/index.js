@@ -92,11 +92,26 @@ app.delete('/api/collections/:id/words/:wordId', (req, res) => {
 // Unknown API routes -> JSON 404 (must come before static/catch-all).
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
 
-// Static site (so /collect resolves to collect.html, etc.).
-app.use(express.static(SITE_DIR, { extensions: ['html'] }));
+// Static site (so /collect resolves to collect.html, etc.). HTML is served
+// with no-cache so visitors always get the latest page (and the iPhone/Instagram
+// browsers stop showing a stale copy); other assets keep their default validators.
+app.use(
+  express.static(SITE_DIR, {
+    extensions: ['html'],
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+    },
+  })
+);
 
-// Fallback to the landing page for any other GET.
-app.get('*', (req, res) => res.sendFile(path.join(SITE_DIR, 'index.html')));
+// Navigation fallback: serve the landing page only for extension-less routes.
+// A request for a missing asset (it has a file extension) gets a real 404
+// instead of the HTML homepage, which in-app browsers (Instagram) mishandle.
+app.get('*', (req, res) => {
+  if (path.extname(req.path)) return res.status(404).type('txt').send('Not found');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(SITE_DIR, 'index.html'));
+});
 
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
