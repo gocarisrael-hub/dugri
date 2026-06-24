@@ -18,3 +18,7 @@ playwright-report/
 resources/clips/
 *.mov
 *.mp4
+
+# but DO track the small web-optimized clips
+!site/assets/video/
+!site/assets/video/*.mp4

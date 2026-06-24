@@ -113,3 +113,38 @@ test.describe('real contact info', () => {
     await expect(footer.locator('a[href="tel:+972546577715"]')).toHaveCount(1);
   });
 });
+
+test.describe('real party video clips', () => {
+  test('hero + proof clips are muted-loop-autoplay and their files load (200)', async ({
+    page,
+    request,
+  }) => {
+    await page.goto('/index.html');
+
+    // One eye-catching loop in the hero, two in the social-proof row.
+    await expect(page.locator('[data-testid="hero-video"] video')).toHaveCount(1);
+    await expect(page.locator('[data-testid="proof-clips"] video')).toHaveCount(2);
+
+    // Every clip must be muted/loop/playsinline (so inline autoplay works) and
+    // sourced from assets/video.
+    const clips = await page.locator('video source').evaluateAll((els) =>
+      els
+        .map((s) => ({
+          src: s.getAttribute('src'),
+          muted: s.closest('video').hasAttribute('muted'),
+          loop: s.closest('video').hasAttribute('loop'),
+          playsinline: s.closest('video').hasAttribute('playsinline'),
+        }))
+        .filter((c) => c.src && c.src.includes('assets/video/'))
+    );
+    expect(clips.length).toBe(3);
+    for (const c of clips) {
+      expect(c.muted && c.loop && c.playsinline, `${c.src} must be muted/loop/playsinline`).toBe(
+        true
+      );
+      // The committed file must actually be served (catches a broken/typo'd src).
+      const res = await request.get('/' + c.src);
+      expect(res.status(), `${c.src} should load`).toBe(200);
+    }
+  });
+});
