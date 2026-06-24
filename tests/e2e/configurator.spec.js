@@ -6,12 +6,12 @@ import { test, expect } from '@playwright/test';
 
 test.describe('configurator', () => {
   test('preview, recolor, tab swap and order intent', async ({ page }) => {
-    await page.goto('/options.html?plan=premium');
+    await page.goto('/options.html?plan=base');
 
-    // Preview card visible and plan price reflects premium.
+    // Preview card visible and plan price reflects the base plan.
     await expect(page.getByTestId('preview')).toBeVisible();
-    await expect(page.getByTestId('plan-price')).toHaveText('139');
-    await expect(page.getByTestId('continue-btn')).toContainText('139');
+    await expect(page.getByTestId('plan-price')).toHaveText('79');
+    await expect(page.getByTestId('continue-btn')).toContainText('79');
 
     // Wait for the modules to populate the design + color pickers.
     const designs = page.getByTestId('design-list').locator('.design');
@@ -70,7 +70,7 @@ test.describe('configurator', () => {
     const chosenColorName = await page.getByTestId('color-' + colorIdx).getAttribute('aria-label');
 
     // plan is persisted to the URL; design + color identity appear in the order text.
-    expect(page.url()).toContain('plan=premium');
+    expect(page.url()).toContain('plan=base');
     expect(decoded).toContain(chosenColorName);
     // design identity: either id or human name should be present in the intent.
     const designName = await page.getByTestId('design-1').locator('.dname').innerText();

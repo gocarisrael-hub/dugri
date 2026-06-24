@@ -15,12 +15,6 @@ describe('buildOrder', () => {
     expect(o.summary).toContain('79');
   });
 
-  it('prices the premium plan at 139', () => {
-    const o = buildOrder({ plan: 'premium', ...common });
-    expect(o.price).toBe(139);
-    expect(o.summary).toContain('139');
-  });
-
   it('throws on an unknown plan', () => {
     expect(() => buildOrder({ plan: 'gold', ...common })).toThrow();
   });
@@ -36,15 +30,15 @@ describe('buildOrder', () => {
   });
 
   it('encodes design name, color name/hex and plan into the message', () => {
-    const o = buildOrder({ plan: 'premium', ...common });
+    const o = buildOrder({ plan: 'base', ...common });
     const text = o.whatsappUrl.split('?text=')[1];
     const decoded = decodeURIComponent(text);
     expect(decoded).toContain('יום הולדת');
     expect(decoded).toContain('ירוק');
     expect(decoded).toContain('#1FAE72');
-    expect(decoded).toContain('139');
-    // plan label (Hebrew "premium")
-    expect(decoded).toContain('פרימיום');
+    expect(decoded).toContain('79');
+    // plan label (Hebrew "base")
+    expect(decoded).toContain('בסיס');
   });
 
   it('properly URL-encodes the message (no raw spaces or newlines)', () => {

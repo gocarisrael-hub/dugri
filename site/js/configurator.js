@@ -243,18 +243,16 @@ export function lightTint(hex, l = 95, maxS = 55) {
 
 export const PLAN_LABELS = {
   base: 'בסיס',
-  premium: 'פרימיום',
 };
 
 export const PLAN_PRICES = {
   base: 79,
-  premium: 139,
 };
 
 /**
  * Build a WhatsApp order message + deep link.
  * @param {object} opts
- * @param {'base'|'premium'} opts.plan
+ * @param {'base'} opts.plan
  * @param {string} opts.designId
  * @param {string} opts.designName
  * @param {string} opts.colorName
