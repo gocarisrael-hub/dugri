@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// E2E specs live in tests/e2e/*.spec.js and run against the static site,
-// which is served from the `site/` folder on localhost:4321.
+// E2E specs live in tests/e2e/*.spec.js and run against the Node server
+// (Express serving site/ + the word-collection /api) on localhost:4321.
 const PORT = 4321;
 const baseURL = `http://localhost:${PORT}`;
 
@@ -23,10 +23,11 @@ export default defineConfig({
     { name: 'Pixel 7', use: { ...devices['Pixel 7'] } },
   ],
 
-  // Serve the static site/ folder. Reuse an already-running server if present.
+  // Start the Node server (static site + /api). Data goes to a throwaway dir.
   webServer: {
-    command: `npx serve site -l ${PORT}`,
+    command: `node server/index.js`,
+    env: { PORT: String(PORT), DATA_DIR: '.e2e-data' },
     port: PORT,
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
   },
 });

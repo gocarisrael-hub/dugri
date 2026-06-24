@@ -14,6 +14,10 @@ playwright-report/
 # Claude local (worktrees, plans, etc.)
 .claude/
 
+# Word-collection local data (server JSON store + e2e throwaway dir)
+.e2e-data/
+dugri-data.json
+
 # Large local media / working files (keep out of git — GitHub caps files at 100MB)
 resources/clips/
 *.mov

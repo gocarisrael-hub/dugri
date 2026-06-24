@@ -51,3 +51,16 @@ It will **fail until you complete the steps below** — that is expected.
 Instead of this workflow, you can connect the GitHub repo directly in the
 Railway dashboard for automatic deploys on every push (no Actions, no token
 needed) — but the GitHub Actions workflow above is the configured primary path.
+
+## Word-collection backend (Node service + volume)
+
+The site is now a small **Node/Express** service (it serves `site/` AND the
+`/api` for the collaborative word-collection feature) instead of a static Caddy
+container. After connecting the repo:
+
+1. Railway builds the `Dockerfile` (node:20-alpine) and runs `node server/index.js`.
+2. Add a **Volume** to the service, mounted at `/data`.
+3. Add an env var **`DATA_DIR=/data`** so the JSON store (`dugri-data.json`)
+   persists across redeploys. (`$PORT` is provided by Railway automatically.)
+
+Without the volume + `DATA_DIR`, collected words are lost on every redeploy.

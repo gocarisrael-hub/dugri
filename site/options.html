@@ -609,6 +609,18 @@
     </style>
   </head>
   <body>
+    <div
+      style="
+        background: #2c1a29;
+        color: #fff;
+        text-align: center;
+        font-size: 14px;
+        font-weight: 600;
+        padding: 8px 12px;
+      "
+    >
+      🛠️ אתר בהרצה · התשלום עדיין לא פעיל (הדגמה) — אפשר להתנסות בכל התהליך
+    </div>
     <!-- shared sticky nav -->
     <nav class="nav" aria-label="ניווט ראשי">
       <div class="nav-inner">
@@ -1033,18 +1045,12 @@
           order && order.summary ? order.summary : s.designName + ' · ' + s.colorName;
       }
 
-      /* ---- continue ---- */
+      /* ---- continue to (demo) checkout ---- */
       document.getElementById('continueBtn').addEventListener('click', () => {
         persist();
-        let order;
-        try {
-          order = buildCurrentOrder();
-        } catch (e) {
-          order = null;
-        }
-        if (order && order.whatsappUrl) {
-          window.open(order.whatsappUrl, '_blank');
-        }
+        // Payment is not live yet — go to the demo checkout, then word collection.
+        // (WhatsApp ordering removed for now; buildOrder kept for the summary.)
+        window.location.href = 'checkout.html' + location.search;
       });
 
       /* ---- init ---- */

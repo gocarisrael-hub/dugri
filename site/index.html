@@ -179,7 +179,8 @@
           radial-gradient(120% 90% at 88% -10%, rgba(155, 45, 84, 0.1), transparent 60%),
           linear-gradient(180deg, #fff, var(--bg));
         border-bottom: 1px solid var(--line);
-        padding: 46px 0 40px;
+        /* trimmed top padding to offset the demo banner so the hero stays above the fold */
+        padding: 14px 0 40px;
         text-align: center;
       }
       header .wrap {
@@ -1556,6 +1557,18 @@
     </style>
   </head>
   <body>
+    <div
+      style="
+        background: #2c1a29;
+        color: #fff;
+        text-align: center;
+        font-size: 14px;
+        font-weight: 600;
+        padding: 8px 12px;
+      "
+    >
+      🛠️ אתר בהרצה · התשלום עדיין לא פעיל (הדגמה) — אפשר להתנסות בכל התהליך
+    </div>
     <nav class="nav" aria-label="ניווט ראשי">
       <div class="nav-inner">
         <a class="nav-logo" href="#top" aria-label="דוגרי - לראש העמוד"
