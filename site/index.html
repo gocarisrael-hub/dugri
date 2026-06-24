@@ -286,24 +286,27 @@
       .tagline {
         font-family: var(--display);
         font-size: 24px;
-        color: var(--wine);
         margin-top: 10px;
         font-weight: 900;
         letter-spacing: -0.01em;
         line-height: 1.25;
+      }
+      /* Gradient text must live on the element that holds the text, not an
+         ancestor: when the gradient was on .tagline and .tagline-1 had its own
+         opacity layer, line 1 painted transparent (invisible over the bg).
+         Apply the clip per line and drop the opacity. */
+      .tagline .tagline-1,
+      .tagline .tagline-2 {
+        display: block;
+        color: var(--wine); /* fallback if background-clip: text is unsupported */
         background: linear-gradient(100deg, var(--wine), var(--hot) 60%, var(--wine-deep));
         -webkit-background-clip: text;
         background-clip: text;
         -webkit-text-fill-color: transparent;
       }
-      .tagline .tagline-1,
-      .tagline .tagline-2 {
-        display: block;
-      }
       .tagline .tagline-1 {
         font-size: 0.78em;
         font-weight: 800;
-        opacity: 0.92;
       }
 
       /* launch / FOMO offer banner under the tagline */
