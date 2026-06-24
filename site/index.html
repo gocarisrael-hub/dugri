@@ -395,6 +395,29 @@
         box-shadow: 0 34px 70px rgba(44, 26, 41, 0.24);
       }
 
+      /* hero video loop - real party footage */
+      .hero-video {
+        margin: 26px auto 0;
+        max-width: 640px;
+        position: relative;
+      }
+      .hero-video video {
+        width: 100%;
+        display: block;
+        border-radius: 20px;
+        box-shadow: var(--shadow-lg);
+        background: var(--blush);
+      }
+      .hero-video .vcap {
+        margin-top: 12px;
+        font-size: 14px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .hero-video .vcap strong {
+        color: var(--wine);
+      }
+
       @media (min-width: 720px) {
         header h1 {
           font-size: 64px;
@@ -909,6 +932,55 @@
       }
       .gphoto:hover img {
         transform: scale(1.06);
+      }
+
+      /* proof video row - looping real clips */
+      .vclips {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        margin-top: 22px;
+      }
+      @media (min-width: 720px) {
+        .vclips {
+          grid-template-columns: repeat(2, 1fr);
+          max-width: 760px;
+          margin-left: auto;
+          margin-right: auto;
+        }
+      }
+      .vclip {
+        border-radius: 16px;
+        overflow: hidden;
+        background: var(--blush);
+        border: 1px solid var(--blush-deep);
+        box-shadow: var(--shadow-sm);
+        transition:
+          transform 0.3s ease,
+          box-shadow 0.3s ease;
+      }
+      .vclip:hover {
+        transform: translateY(-5px) scale(1.015);
+        box-shadow: var(--shadow-md);
+      }
+      .vclip video {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+        aspect-ratio: 16/9;
+      }
+      .vclips {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+        max-width: 760px;
+        margin: 22px auto 4px;
+      }
+      @media (min-width: 620px) {
+        .vclips {
+          grid-template-columns: 1fr 1fr;
+        }
       }
 
       /* examples (manifest-driven design previews) */
@@ -1556,6 +1628,20 @@
             alt="משחק דוגרי מודפס - לוח וקלפים מעוצבים על שולחן במסיבה"
           />
         </div>
+        <div class="hero-video" data-testid="hero-video">
+          <video
+            autoplay
+            muted
+            loop
+            playsinline
+            preload="metadata"
+            poster="assets/video/board-closeup-poster.jpg"
+            aria-label="לוח המשחק דוגרי על השולחן במסיבה אמיתית"
+          >
+            <source src="assets/video/board-closeup.mp4" type="video/mp4" />
+          </video>
+          <p class="vcap"><strong>אירוע אמיתי</strong> · ככה המשחק נראה כשהוא מגיע לשולחן</p>
+        </div>
         <p class="lede">
           משחק קלפים שהוא רק שלכם - מלא בבדיחות פנימיות, סיפורים מביכים ורגעים שרק אתם מכירים.
           ההפתעה שכולם יזכרו מהערב.
@@ -1645,6 +1731,34 @@
         <div class="sec-title reveal">
           <h2>כבר חוגגים איתנו</h2>
           <p>ככה זה נראה כשהמשחק מגיע לשולחן</p>
+        </div>
+        <div class="vclips reveal" data-testid="proof-clips">
+          <div class="vclip">
+            <video
+              autoplay
+              muted
+              loop
+              playsinline
+              preload="metadata"
+              poster="assets/video/party-poster.jpg"
+              aria-label="רגעים ממסיבה אמיתית עם משחק דוגרי"
+            >
+              <source src="assets/video/party.mp4" type="video/mp4" />
+            </video>
+          </div>
+          <div class="vclip">
+            <video
+              autoplay
+              muted
+              loop
+              playsinline
+              preload="metadata"
+              poster="assets/video/toast-poster.jpg"
+              aria-label="הרמת כוסית וצחוקים סביב משחק דוגרי"
+            >
+              <source src="assets/video/toast.mp4" type="video/mp4" />
+            </video>
+          </div>
         </div>
         <div class="stars reveal" aria-hidden="true">★★★★★</div>
         <div class="quotes stagger">
