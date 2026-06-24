@@ -246,7 +246,7 @@ export const PLAN_LABELS = {
   premium: 'פרימיום',
 };
 
-const PLAN_PRICES = {
+export const PLAN_PRICES = {
   base: 79,
   premium: 139,
 };

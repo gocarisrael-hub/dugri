@@ -183,21 +183,63 @@
         padding: 8px 16px;
         border-radius: 999px;
       }
+      .collab .row {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+        flex-wrap: wrap;
+      }
+      .collab input {
+        flex: 1;
+        min-width: 180px;
+        font: inherit;
+        padding: 13px 14px;
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+      }
+      .collab input:focus {
+        outline: 2px solid var(--hot);
+        border-color: var(--hot);
+      }
+      .btn.go {
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        color: #fff;
+        box-shadow: 0 10px 22px rgba(229, 25, 125, 0.28);
+      }
     </style>
+    <script src="js/demo-banner.js" defer></script>
   </head>
   <body>
     <div class="wrap">
       <div class="head">
         <div class="check">✓</div>
         <h1>קיבלנו את ההזמנה, תודה!</h1>
-        <p>נשאר רק שלב אחד: לשלוח לנו את המילים על בעל השמחה.</p>
+        <p>נשאר רק לאסוף את המילים על בעל/ת השמחה — והכי כיף לעשות את זה ביחד.</p>
         <p class="selection" id="selectionLine" data-testid="selection-line" hidden></p>
       </div>
 
-      <div class="center">
-        <a class="btn wa" id="waSend" href="#" target="_blank" rel="noopener"
-          >לשליחת המילים בוואטסאפ</a
-        >
+      <div class="card collab">
+        <h3>אספו מילים יחד עם כולם 🎉</h3>
+        <p style="color: var(--muted)">
+          במקום לאסוף לבד — צרו קישור משותף, שלחו לחברים של בעל/ת השמחה, וכולם מוסיפים מילים במשך
+          שבוע. ככה מגיעים ל-100 מילים בלי מאמץ.
+        </p>
+        <div class="row">
+          <input type="text" id="honoreeInput" placeholder="שם בעל/ת השמחה" maxlength="60" />
+        </div>
+        <div class="row">
+          <input
+            type="email"
+            id="ownerEmail"
+            placeholder="המייל שלך (לשליחת קישור הניהול)"
+            maxlength="120"
+          />
+          <input type="tel" id="ownerPhone" placeholder="טלפון (לא חובה)" maxlength="40" />
+        </div>
+        <div class="row">
+          <button class="btn go" id="createBtn" type="button">צרו קישור איסוף</button>
+        </div>
+        <p class="note" id="createErr" style="display: none; color: #c2415f"></p>
       </div>
 
       <div class="card">
@@ -226,11 +268,6 @@
     <script type="module">
       import { DESIGNS, MAIN_COLORS } from './js/designs.js';
       import { PLAN_LABELS, selectionNamesFromIds } from './js/configurator.js';
-
-      // Keep in sync with index.html CONFIG.whatsapp
-      const WHATSAPP = '972546577715';
-      const msg = encodeURIComponent('שילמתי על משחק דוגרי. הנה המילים על בעל השמחה:\n\n');
-      document.getElementById('waSend').href = 'https://wa.me/' + WHATSAPP + '?text=' + msg;
 
       /* Echo the configurator selection if present (localStorage saved by options.html,
      with a URL fallback). Graceful when nothing was chosen. */
@@ -268,6 +305,43 @@
         line.textContent = 'הבחירה שלכם · ' + parts.join(' · ');
         line.hidden = false;
       })();
+
+      // Collaborative word-collection: create a shared link, go to the owner view.
+      const createBtn = document.getElementById('createBtn');
+      createBtn.addEventListener('click', async () => {
+        const name = document.getElementById('honoreeInput').value.trim();
+        const email = document.getElementById('ownerEmail').value.trim();
+        const phone = document.getElementById('ownerPhone').value.trim();
+        const err = document.getElementById('createErr');
+        err.style.display = 'none';
+        if (!name) {
+          document.getElementById('honoreeInput').focus();
+          return;
+        }
+        if (!email && !phone) {
+          err.textContent = 'נשמח למייל או טלפון כדי שנוכל לשלוח לך את קישור הניהול.';
+          err.style.display = 'block';
+          document.getElementById('ownerEmail').focus();
+          return;
+        }
+        createBtn.disabled = true;
+        createBtn.textContent = 'יוצר…';
+        try {
+          const r = await fetch('/api/collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ honoree_name: name, email, phone }),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error || 'failed');
+          location.href = 'collect.html?c=' + data.id + '&k=' + data.owner_token;
+        } catch (e) {
+          err.textContent = 'משהו השתבש ביצירת הקישור. נסו שוב.';
+          err.style.display = 'block';
+          createBtn.disabled = false;
+          createBtn.textContent = 'צרו קישור איסוף';
+        }
+      });
     </script>
   </body>
 </html>
