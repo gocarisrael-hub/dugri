@@ -1010,6 +1010,7 @@
       }
       /* shared face box: centers an inlined SVG and contains it (no overflow) */
       .ex-face {
+        position: relative;
         border-radius: 12px;
         background: var(--blush);
         border: 1px solid var(--blush-deep);
@@ -1018,6 +1019,15 @@
         align-items: center;
         justify-content: center;
         padding: 8px;
+      }
+      /* subtle centered brand watermark over every preview face */
+      .ex-face::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: url('assets/logo.png') center / 42% no-repeat;
+        opacity: 0.16;
+        pointer-events: none;
       }
       .ex-face svg,
       .ex-face img {
