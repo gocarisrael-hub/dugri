@@ -12,7 +12,7 @@ test.describe('landing page hero', () => {
     const tagline = page.locator('.tagline');
     await expect(tagline).toBeVisible();
     const text = (await tagline.innerText()).replace(/\s+/g, ' ').trim();
-    expect(text).toContain('שלחו לנו את הסיפורים המביכים.');
+    expect(text).toContain('שלחו לנו את הסיפורים שרק אתם מכירים.');
     expect(text).toContain('אנחנו נהפוך אותם למשחק שיפוצץ את הערב');
     // The old tagline must be gone.
     expect(text).not.toContain('בלי פילטרים');

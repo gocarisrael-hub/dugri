@@ -38,7 +38,7 @@ describe('buildOrder', () => {
     expect(decoded).toContain('#1FAE72');
     expect(decoded).toContain('79');
     // plan label (Hebrew "base")
-    expect(decoded).toContain('בסיס');
+    expect(decoded).toContain('החבילה המלאה');
   });
 
   it('properly URL-encodes the message (no raw spaces or newlines)', () => {
@@ -50,7 +50,7 @@ describe('buildOrder', () => {
 
   it('summary mentions the plan label, design, color and hex', () => {
     const o = buildOrder({ plan: 'base', ...common });
-    expect(o.summary).toContain('בסיס');
+    expect(o.summary).toContain('החבילה המלאה');
     expect(o.summary).toContain('יום הולדת');
     expect(o.summary).toContain('ירוק');
     expect(o.summary).toContain('#1FAE72');

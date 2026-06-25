@@ -17,7 +17,7 @@ test.describe('thankyou selection echo', () => {
     // Hebrew names appear.
     expect(text).toContain('יום הולדת'); // birthday
     expect(text).toContain('סגול'); // violet
-    expect(text).toContain('בסיס'); // base
+    expect(text).toContain('החבילה המלאה'); // base
     // Raw English ids must NOT leak.
     expect(text).not.toContain('birthday');
     expect(text).not.toContain('violet');
@@ -31,7 +31,7 @@ test.describe('thankyou selection echo', () => {
     const text = await line.innerText();
     expect(text).toContain('יום הולדת לילדים'); // kids
     expect(text).toContain('מקורי'); // original
-    expect(text).toContain('בסיס'); // base
+    expect(text).toContain('החבילה המלאה'); // base
     expect(text).not.toContain('original');
   });
 });
