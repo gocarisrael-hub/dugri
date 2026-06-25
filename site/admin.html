@@ -171,13 +171,13 @@
         const tb = document.createElement('tbody');
         for (const c of cols) {
           const tr = document.createElement('tr');
-          const contact = [c.owner_email, c.owner_phone].filter(Boolean).join(' · ') || '—';
+          const contact = [c.owner_email, c.owner_phone].filter(Boolean).join(' · ') || '-';
 
-          // Build cells with textContent — never innerHTML — since honoree_name /
+          // Build cells with textContent - never innerHTML - since honoree_name /
           // email / phone are unsanitized user input (stored-XSS otherwise).
           const tdName = document.createElement('td');
           const strong = document.createElement('strong');
-          strong.textContent = c.honoree_name || '—';
+          strong.textContent = c.honoree_name || '-';
           tdName.appendChild(strong);
 
           const tdContact = document.createElement('td');
