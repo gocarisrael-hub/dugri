@@ -301,12 +301,17 @@
 
       track('reached_checkout');
 
-      // The Bit link both pays AND advances: it opens Bit in a new tab (its
-      // target="_blank" is preserved — we do NOT preventDefault) while the
-      // current tab moves on to the word-collection step.
+      // The Bit link both pays AND advances. Its target="_blank" opens Bit (and
+      // deep-links to the Bit app on mobile); we do NOT preventDefault so that
+      // native open fires. CRITICAL: defer the current-tab navigation — changing
+      // location synchronously unloads this page and ABORTS the new tab/app
+      // opening (that was the bug: Bit never opened). A short delay lets Bit
+      // open first, then this tab moves on to the word-collection step.
       document.getElementById('bitPayLink').addEventListener('click', () => {
         track('continue_to_collection');
-        window.location.href = 'thankyou.html' + location.search;
+        setTimeout(() => {
+          window.location.href = 'thankyou.html' + location.search;
+        }, 700);
       });
     </script>
   </body>
