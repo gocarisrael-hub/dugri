@@ -3,16 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Google Analytics (GA4) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-H1W3PQGNYF"></script>
+    <!-- Google Analytics (GA4) — loads after consent (js/consent.js) -->
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag() {
         dataLayer.push(arguments);
       }
       gtag('js', new Date());
-      gtag('config', 'G-H1W3PQGNYF');
+      gtag('consent', 'default', { analytics_storage: 'denied' });
     </script>
+    <script src="js/consent.js" defer></script>
+    <script type="module" src="js/analytics.js"></script>
     <title>תודה! עכשיו שולחים את המילים - דוגרי</title>
     <meta name="robots" content="noindex" />
     <link rel="icon" type="image/png" href="assets/logo.png" />
@@ -287,6 +288,7 @@
     <script type="module">
       import { DESIGNS, MAIN_COLORS } from './js/designs.js';
       import { PLAN_LABELS, selectionNamesFromIds } from './js/configurator.js';
+      import { track } from './js/analytics.js';
 
       /* Echo the configurator selection if present (localStorage saved by options.html,
      with a URL fallback). Graceful when nothing was chosen. */
@@ -353,6 +355,7 @@
           });
           const data = await r.json();
           if (!r.ok) throw new Error(data.error || 'failed');
+          track('collection_created', { has_email: !!email, has_phone: !!phone });
           location.href = 'collect.html?c=' + data.id + '&k=' + data.owner_token;
         } catch (e) {
           err.textContent = 'משהו השתבש ביצירת הקישור. נסו שוב.';

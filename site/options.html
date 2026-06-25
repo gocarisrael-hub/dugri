@@ -3,16 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Google Analytics (GA4) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-H1W3PQGNYF"></script>
+    <!-- Google Analytics (GA4) — loads after consent (js/consent.js) -->
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag() {
         dataLayer.push(arguments);
       }
       gtag('js', new Date());
-      gtag('config', 'G-H1W3PQGNYF');
+      gtag('consent', 'default', { analytics_storage: 'denied' });
     </script>
+    <script src="js/consent.js" defer></script>
+    <script type="module" src="js/analytics.js"></script>
     <title>בונים את המשחק - דוגרי</title>
     <meta
       name="description"
@@ -771,6 +772,7 @@
         buildOrder,
         validateManifest,
       } from './js/configurator.js';
+      import { track } from './js/analytics.js';
 
       // Validate the manifest once at load. Don't hard-crash the page on a bad
       // manifest - just surface a clear console error so it's caught in dev/CI.
@@ -935,6 +937,8 @@
         updateOrigChip();
         updateRasterNote();
         setActiveSwatch(-1);
+        const d = DESIGNS[i] || {};
+        track('select_design', { design: d.name || d.id || i });
         renderDesign().then(persist);
       }
 
@@ -995,6 +999,8 @@
       function selectColor(ci) {
         colorIndex = ci;
         setActiveSwatch(ci);
+        const c = ci < 0 ? { name: 'מקורי' } : MAIN_COLORS[ci] || {};
+        track('select_color', { color: c.name || c.id || ci });
         recolor();
         persist();
       }
@@ -1064,6 +1070,7 @@
       /* ---- continue to (demo) checkout ---- */
       document.getElementById('continueBtn').addEventListener('click', () => {
         persist();
+        track('begin_checkout');
         // Payment is not live yet — go to the demo checkout, then word collection.
         // (WhatsApp ordering removed for now; buildOrder kept for the summary.)
         window.location.href = 'checkout.html' + location.search;
