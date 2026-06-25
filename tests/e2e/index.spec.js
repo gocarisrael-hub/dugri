@@ -78,6 +78,10 @@ test.describe('price CTA wrapping', () => {
     });
     // Allow padding; one line of content => scrollHeight under two line-heights.
     expect(metrics.scrollHeight).toBeLessThan(metrics.lineHeight * 2 + 36);
+
+    // And it must fit horizontally — no clipped/overflowing label or numbers.
+    const overflowX = await cta.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(overflowX).toBeLessThanOrEqual(1);
   });
 });
 
