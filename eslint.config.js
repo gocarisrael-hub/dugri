@@ -24,6 +24,11 @@ const browserGlobals = {
   CustomEvent: 'readonly',
   Event: 'readonly',
   getComputedStyle: 'readonly',
+  gtag: 'readonly',
+  dataLayer: 'readonly',
+  FileReader: 'readonly',
+  // vitest/jsdom unit tests run with Node's `global` available too.
+  global: 'writable',
 };
 
 const nodeGlobals = {

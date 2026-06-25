@@ -3,16 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Google Analytics (GA4) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-H1W3PQGNYF"></script>
+    <!-- Google Analytics (GA4) — loads after consent (js/consent.js) -->
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag() {
         dataLayer.push(arguments);
       }
       gtag('js', new Date());
-      gtag('config', 'G-H1W3PQGNYF');
+      gtag('consent', 'default', { analytics_storage: 'denied' });
     </script>
+    <script src="js/consent.js" defer></script>
+    <script type="module" src="js/analytics.js"></script>
     <meta name="robots" content="noindex" />
     <title>דוגרי · אוספים מילים</title>
     <link rel="icon" type="image/png" href="assets/logo.png" />
@@ -439,6 +440,7 @@
     <script type="module">
       import { CATEGORIES, fillName, nextPrompt } from './js/word-prompts.js';
       import { parseWordText } from './js/collect.js';
+      import { track } from './js/analytics.js';
 
       const params = new URLSearchParams(location.search);
       const id = params.get('c');
@@ -556,7 +558,7 @@
         }
       }
 
-      async function addWords(words) {
+      async function addWords(words, method) {
         const clean = parseWordText(Array.isArray(words) ? words.join('\n') : words);
         if (!clean.length) return;
         const added_by = $('#byName').value.trim() || null;
@@ -569,6 +571,7 @@
           await refresh();
           const added = res && typeof res.added === 'number' ? res.added : clean.length;
           const skipped = (res && res.skipped) || 0;
+          track('word_added', { method: method || 'single', count: added, skipped });
           if (added === 1) toast('נוספה מילה ✓');
           else if (added > 1) toast('נוספו ' + added + ' מילים ✓');
           else if (skipped) toast(skipped === 1 ? 'המילה כבר ברשימה' : 'המילים כבר ברשימה');
@@ -598,7 +601,7 @@
       $('#addBtn').onclick = () => {
         const v = $('#wordInput').value;
         if (v.trim()) {
-          addWords(v);
+          addWords(v, 'single');
           $('#wordInput').value = '';
           $('#wordInput').focus();
         }
@@ -621,14 +624,14 @@
         };
       }
       $('#pasteAdd').onclick = () => {
-        addWords($('#pasteBox').value);
+        addWords($('#pasteBox').value, 'paste');
         $('#pasteBox').value = '';
       };
       $('#fileInput').addEventListener('change', (e) => {
         const f = e.target.files && e.target.files[0];
         if (!f) return;
         const reader = new FileReader();
-        reader.onload = () => addWords(String(reader.result));
+        reader.onload = () => addWords(String(reader.result), 'file');
         reader.readAsText(f);
         e.target.value = '';
       });
@@ -688,20 +691,28 @@
         $('#sharePanel').classList.remove('hidden');
         $('#friendsLink').value = friendsUrl();
         $('#ownerLink').value = location.href;
-        $('#copyFriends').onclick = () => copy($('#friendsLink').value, $('#copyFriends'));
-        $('#copyOwner').onclick = () => copy($('#ownerLink').value, $('#copyOwner'));
+        $('#copyFriends').onclick = () =>
+          copy($('#friendsLink').value, $('#copyFriends'), 'friends');
+        $('#copyOwner').onclick = () => copy($('#ownerLink').value, $('#copyOwner'), 'owner');
         $('#closeBtn').onclick = async () => {
           if (!confirm('לסגור את האיסוף? אחרי הסגירה לא ניתן להוסיף עוד מילים.')) return;
+          let closed = false;
           await api('/close', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ owner_token: ownerToken }),
-          }).catch(() => {});
+          })
+            .then(() => {
+              closed = true;
+            })
+            .catch(() => {});
+          if (closed) track('collection_closed');
           await refresh();
         };
       }
-      function copy(text, btn) {
+      function copy(text, btn, linkType) {
         navigator.clipboard.writeText(text).then(() => {
+          track('share_link_copied', { link_type: linkType });
           const old = btn.textContent;
           btn.textContent = 'הועתק ✓';
           setTimeout(() => (btn.textContent = old), 1500);
