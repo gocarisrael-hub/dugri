@@ -9,11 +9,10 @@ test('options → checkout (bit payment details, no popup) → thankyou', async 
   await page.waitForURL(/checkout\.html/);
   await expect(page.locator('#total')).toContainText('79');
 
-  // Bit payment details: amount + number + copy button.
+  // Bit payment details: amount + number shown.
   await expect(page.locator('#payNotice')).toContainText('ביט');
   await expect(page.locator('#bitAmount')).toHaveText('79');
   await expect(page.locator('#bitNumber')).toContainText('054-657-7715');
-  await expect(page.locator('#copyBit')).toBeVisible();
 
   // Continue goes straight to the word-collection step — NO WhatsApp popup.
   let popped = false;

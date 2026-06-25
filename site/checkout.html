@@ -168,6 +168,12 @@
         letter-spacing: 0.5px;
         direction: ltr;
       }
+      .bit-soon {
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--muted);
+      }
       .copy-btn {
         font: inherit;
         font-size: 13px;
@@ -195,7 +201,7 @@
   <body>
     <div class="wrap">
       <div class="head">
-        <h1>תשלום</h1>
+        <h1>סיום הזמנה</h1>
       </div>
 
       <div class="card">
@@ -206,23 +212,15 @@
       </div>
 
       <div class="card">
-        <div class="cc-fields">
-          <div class="cc-cross" aria-hidden="true">✕</div>
-          <label>מספר כרטיס</label>
-          <input type="text" value="•••• •••• •••• 4242" disabled />
-          <label>תוקף / CVV</label>
-          <input type="text" value="12/29   •••" disabled />
-        </div>
         <div id="payNotice" class="pay-notice">
-          <div class="pay-notice-title">תשלום בכרטיס אשראי עדיין לא זמין · בקרוב!</div>
-          <div>בינתיים משלמים בקלות בביט 💜</div>
+          <div class="pay-notice-title">כמעט שם! משלמים בביט 💜</div>
           <div class="bit-box">
             <div class="bit-row">סכום לתשלום: <b id="bitAmount">79</b> ₪</div>
             <div class="bit-row">
-              למספר: <b id="bitNumber" class="bit-num">054-657-7715</b>
-              <button type="button" id="copyBit" class="copy-btn">העתק מספר</button>
+              בביט למספר: <b id="bitNumber" class="bit-num">054-657-7715</b>
             </div>
           </div>
+          <div class="bit-soon">בקרוב — תשלום בביט בלחיצה אחת ✨</div>
         </div>
         <button class="pay" id="payBtn" type="button">המשך לאיסוף המילים →</button>
         <div style="text-align: center">
@@ -259,18 +257,6 @@
       const price = PLAN_PRICES[plan] || PLAN_PRICES.base;
       document.getElementById('total').textContent = price + ' ₪';
       document.getElementById('bitAmount').textContent = price;
-
-      // Copy the Bit phone number so the customer can paste it into the Bit app.
-      document.getElementById('copyBit').addEventListener('click', async () => {
-        const btn = document.getElementById('copyBit');
-        try {
-          await navigator.clipboard.writeText('0546577715');
-          btn.textContent = 'הועתק ✓';
-        } catch (e) {
-          btn.textContent = 'העתק ידנית: 0546577715';
-        }
-        setTimeout(() => (btn.textContent = 'העתק מספר'), 1800);
-      });
 
       // Continue to the word-collection step. Payment is handled in Bit; the order
       // already appears on the admin orders page, so no WhatsApp ping is needed.
