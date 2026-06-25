@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Google Analytics (GA4) — loads after consent (js/consent.js) -->
+    <!-- Google Analytics (GA4) - loads after consent (js/consent.js) -->
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag() {
@@ -225,11 +225,11 @@
       </div>
 
       <div class="card">
-        <div class="summary-row"><span>חבילה</span><strong id="planName">—</strong></div>
-        <div class="summary-row"><span>עיצוב</span><strong id="designName">—</strong></div>
-        <div class="summary-row"><span>צבע</span><strong id="colorName">—</strong></div>
+        <div class="summary-row"><span>חבילה</span><strong id="planName">-</strong></div>
+        <div class="summary-row"><span>עיצוב</span><strong id="designName">-</strong></div>
+        <div class="summary-row"><span>צבע</span><strong id="colorName">-</strong></div>
         <div class="summary-row total">
-          <span>סה״כ</span><span><s class="was">129</s><strong id="total">—</strong></span>
+          <span>סה״כ</span><span><s class="was">129</s><strong id="total">-</strong></span>
         </div>
       </div>
 
@@ -293,8 +293,8 @@
       }
       const plan = sel.plan || q.get('plan') || 'base';
       document.getElementById('planName').textContent = PLAN_LABELS[plan] || plan;
-      document.getElementById('designName').textContent = sel.designName || '—';
-      document.getElementById('colorName').textContent = sel.colorName || '—';
+      document.getElementById('designName').textContent = sel.designName || '-';
+      document.getElementById('colorName').textContent = sel.colorName || '-';
       const price = PLAN_PRICES[plan] || PLAN_PRICES.base;
       document.getElementById('total').textContent = price + ' ₪';
       document.getElementById('bitAmount').textContent = price;
@@ -303,7 +303,7 @@
 
       // The Bit link both pays AND advances. Its target="_blank" opens Bit (and
       // deep-links to the Bit app on mobile); we do NOT preventDefault so that
-      // native open fires. CRITICAL: defer the current-tab navigation — changing
+      // native open fires. CRITICAL: defer the current-tab navigation - changing
       // location synchronously unloads this page and ABORTS the new tab/app
       // opening (that was the bug: Bit never opened). A short delay lets Bit
       // open first, then this tab moves on to the word-collection step.

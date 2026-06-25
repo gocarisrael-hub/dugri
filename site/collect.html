@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Google Analytics (GA4) — loads after consent (js/consent.js) -->
+    <!-- Google Analytics (GA4) - loads after consent (js/consent.js) -->
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag() {
@@ -353,7 +353,7 @@
         <div class="bar"><i id="barFill"></i></div>
         <small class="muted" id="countHint">היעד: לפחות 100 מילים</small>
         <div class="words" id="wordsWrap" style="margin-top: 12px">
-          <span class="muted" id="emptyWords">עוד אין מילים — היו הראשונים!</span>
+          <span class="muted" id="emptyWords">עוד אין מילים - היו הראשונים!</span>
         </div>
       </div>
 
@@ -399,7 +399,7 @@
 
         <div class="panel hidden" id="panel-file">
           <input type="file" id="fileInput" accept=".txt,.csv,text/plain,text/csv" />
-          <p class="muted">קובץ טקסט או CSV — מילה בכל שורה.</p>
+          <p class="muted">קובץ טקסט או CSV - מילה בכל שורה.</p>
         </div>
       </div>
 
@@ -419,7 +419,7 @@
           <button class="ghost" id="copyFriends" type="button">העתק</button>
         </div>
         <p class="muted" style="margin-top: 12px">
-          🔑 הקישור הפרטי שלך לניהול (שמרו אותו לעצמכם — דרכו סוגרים את האיסוף):
+          🔑 הקישור הפרטי שלך לניהול (שמרו אותו לעצמכם - דרכו סוגרים את האיסוף):
         </p>
         <div class="row" style="margin-top: 8px">
           <input type="text" id="ownerLink" readonly />
@@ -513,7 +513,7 @@
         // words
         const wrap = $('#wordsWrap');
         if (!state.words.length) {
-          wrap.innerHTML = '<span class="muted">עוד אין מילים — היו הראשונים!</span>';
+          wrap.innerHTML = '<span class="muted">עוד אין מילים - היו הראשונים!</span>';
         } else {
           wrap.innerHTML = '';
           for (const w of state.words) {
@@ -577,7 +577,7 @@
           else if (skipped) toast(skipped === 1 ? 'המילה כבר ברשימה' : 'המילים כבר ברשימה');
         } catch (e) {
           if (e.status === 409) {
-            alert('האיסוף נסגר — אי אפשר להוסיף עוד מילים.');
+            alert('האיסוף נסגר - אי אפשר להוסיף עוד מילים.');
             await refresh();
           }
         }
