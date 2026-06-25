@@ -21,40 +21,35 @@
   gtag('consent', 'update', { analytics_storage: 'granted' });
   loadGA();
 
-  // Passive, dismissible cookie notice (informational only — never blocks analytics).
-  var dismissed = null;
+  // Passive cookie notice (informational only — never blocks analytics).
+  // Shows ONCE EVER: the moment it renders we mark it 'shown', so it never
+  // pops up again on any page. Auto-fades after a few seconds.
+  var seen = null;
   try {
-    dismissed = localStorage.getItem(NOTICE_KEY);
+    seen = localStorage.getItem(NOTICE_KEY);
   } catch {}
-  if (dismissed === 'dismissed') return;
+  if (seen) return;
 
-  // A transparent, click-through wrapper pins the visible pill without
-  // intercepting clicks on the rest of the page (page CTAs stay reachable).
+  // A transparent, click-through wrapper pins the visible pill in the
+  // bottom-left corner without intercepting clicks on the rest of the page.
   var wrap = document.createElement('div');
   wrap.setAttribute(
     'style',
-    'position:fixed;left:0;right:0;bottom:0;z-index:9999;pointer-events:none;' +
-      'display:flex;justify-content:center;padding:10px 12px;box-sizing:border-box;font-family:inherit'
+    'position:fixed;left:0;bottom:0;z-index:9999;pointer-events:none;font-family:inherit'
   );
-  // On narrow phones a full-width bottom CTA sits where a bottom bar would —
-  // dock the pill to the top there so it never covers page CTAs.
-  if (window.innerWidth < 720) {
-    wrap.style.bottom = '';
-    wrap.style.top = '0';
-  }
 
   var bar = document.createElement('div');
   bar.id = 'cookieNotice';
   bar.setAttribute(
     'style',
-    'pointer-events:auto;display:flex;align-items:center;gap:10px;background:#2c1a29;' +
-      'color:#fff;font-size:13px;line-height:1.4;padding:8px 12px;border-radius:12px;' +
-      'box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:420px'
+    'pointer-events:auto;position:fixed;left:12px;bottom:12px;display:flex;align-items:center;' +
+      'gap:6px;font-size:11px;line-height:1.4;padding:4px 9px;border-radius:999px;' +
+      'background:rgba(44,26,41,.9);color:#fff;box-shadow:0 4px 12px rgba(0,0,0,.2);' +
+      'transition:opacity .4s ease'
   );
 
   var text = document.createElement('span');
-  text.textContent = '🍪 האתר משתמש בעוגיות לשיפור החוויה';
-  text.setAttribute('style', 'flex:1 1 auto');
+  text.textContent = '🍪 עוגיות';
 
   var close = document.createElement('button');
   close.type = 'button';
@@ -62,12 +57,9 @@
   close.textContent = '×';
   close.setAttribute(
     'style',
-    'border:0;cursor:pointer;background:transparent;color:#fff;font-size:20px;line-height:1;padding:0 4px'
+    'border:0;cursor:pointer;background:transparent;color:#fff;font-size:14px;line-height:1;padding:0 2px'
   );
   close.addEventListener('click', function () {
-    try {
-      localStorage.setItem(NOTICE_KEY, 'dismissed');
-    } catch {}
     wrap.remove();
   });
 
@@ -75,4 +67,17 @@
   bar.appendChild(close);
   wrap.appendChild(bar);
   document.body.appendChild(wrap);
+
+  // Mark as shown the moment it renders, so it never appears again anywhere.
+  try {
+    localStorage.setItem(NOTICE_KEY, 'shown');
+  } catch {}
+
+  // Auto-fade and remove after ~6s so it never lingers.
+  setTimeout(function () {
+    bar.style.opacity = '0';
+    setTimeout(function () {
+      wrap.remove();
+    }, 450);
+  }, 6000);
 })();
