@@ -1230,7 +1230,21 @@
         box-shadow: 0 -8px 24px rgba(44, 26, 41, 0.08);
       }
       .sticky .btn {
-        flex: 1;
+        flex: 1 1 auto;
+        min-width: 0;
+        font-size: 14px;
+        padding: 13px 8px;
+        white-space: nowrap;
+        letter-spacing: -0.01em;
+      }
+      /* The WhatsApp button only needs room for its short label; give the rest
+         of the bar to the order CTA so its text always fits. */
+      .sticky #waSticky {
+        flex: 0 0 auto;
+        padding: 13px 16px;
+      }
+      .sticky #stickyOrder .was {
+        font-size: 0.78em;
       }
       @media (min-width: 720px) {
         .sticky {
@@ -2190,7 +2204,7 @@
         href="options.html?plan=base"
         data-ga="order_started"
         data-ga-cta="sticky"
-        >בונים את המשחק · <s class="was">129</s><span style="white-space: nowrap">79 ₪</span></a
+        >מזמינים · <s class="was">129</s><span style="white-space: nowrap">79 ₪</span></a
       >
       <a
         class="btn wa"
