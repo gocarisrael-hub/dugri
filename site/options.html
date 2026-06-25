@@ -390,9 +390,19 @@
         width: 100%;
       }
       .preview-panel[data-active='true'] {
+        position: relative;
         display: flex;
         align-items: center;
         justify-content: center;
+      }
+      /* subtle centered brand watermark over the live card/board preview */
+      .preview-panel[data-active='true']::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: url('assets/logo.png') center / 42% no-repeat;
+        opacity: 0.16;
+        pointer-events: none;
       }
       .preview-panel svg {
         width: 100%;
