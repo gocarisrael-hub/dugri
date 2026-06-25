@@ -4,7 +4,7 @@
 (function () {
   var bar = document.createElement('div');
   bar.className = 'dugri-demo-banner';
-  bar.textContent = '🛠️ אתר בהרצה · התשלום עדיין לא פעיל (הדגמה) — אפשר להתנסות בכל התהליך';
+  bar.textContent = '🚀 אתר בהרצה · כרגע תשלום בביט';
   bar.setAttribute(
     'style',
     'background:#2c1a29;color:#fff;text-align:center;font-size:12px;font-weight:600;padding:2px 12px'

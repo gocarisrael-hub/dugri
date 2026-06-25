@@ -43,16 +43,18 @@ test.describe('cookie notice (track-everyone, no gate)', () => {
     );
     expect(consentGranted).toBe(true);
 
-    // A passive notice shows and can be dismissed.
+    // A passive notice shows once, and dismissing it removes it.
     const notice = page.locator('#cookieNotice');
     await expect(notice).toBeVisible();
+
+    // It's stored as 'shown' the moment it renders, so it never appears again.
+    const stored = await page.evaluate(() => localStorage.getItem('dugri_cookie_notice'));
+    expect(stored).toBe('shown');
+
     await notice.locator('button').click();
     await expect(page.locator('#cookieNotice')).toHaveCount(0);
 
-    const stored = await page.evaluate(() => localStorage.getItem('dugri_cookie_notice'));
-    expect(stored).toBe('dismissed');
-
-    // Reload: dismissal is remembered, so no notice this time.
+    // Reload: it's remembered as shown, so no notice this time.
     await page.reload();
     await expect(page.locator('#cookieNotice')).toHaveCount(0);
   });

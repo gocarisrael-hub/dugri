@@ -290,6 +290,13 @@
         margin-top: 6px;
         font-size: 16px;
       }
+      .was {
+        text-decoration: line-through;
+        opacity: 0.55;
+        font-weight: 700;
+        margin-inline-end: 5px;
+        font-size: 0.85em;
+      }
       .plan-pill {
         display: inline-block;
         margin-top: 12px;
@@ -669,8 +676,8 @@
         <h1>בונים את המשחק שלכם</h1>
         <p>בוחרים עיצוב וצבע - והכל מתעדכן לנגד עיניכם.</p>
         <div class="plan-pill" data-testid="plan-pill">
-          חבילה: <span id="planName">בסיס</span> ·
-          <span id="planPrice" data-testid="plan-price">79</span>₪
+          חבילה: <span id="planName">בסיס</span> · <s class="was">129</s
+          ><span id="planPrice" data-testid="plan-price">79</span>₪
         </div>
       </div>
 
@@ -757,7 +764,7 @@
       <div class="continue-inner">
         <div class="continue-summary" id="continueSummary" data-testid="continue-summary"></div>
         <button class="btn" id="continueBtn" type="button" data-testid="continue-btn">
-          להזמנה ולתשלום · <span id="continuePrice">79</span>₪
+          להזמנה ולתשלום · <s class="was">129</s><span id="continuePrice">79</span>₪
         </button>
       </div>
     </div>
