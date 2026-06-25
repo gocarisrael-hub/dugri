@@ -1380,7 +1380,12 @@
         /* Tighten the hero on phones so the real product visual reaches
            into the first viewport (above the fold), not below it. */
         header {
-          padding: 26px 0 32px;
+          padding: 8px 0 28px;
+        }
+        .eyebrow {
+          margin-bottom: 6px;
+          padding: 4px 11px;
+          font-size: 12px;
         }
         .brand-logo {
           width: 190px;
@@ -1393,7 +1398,7 @@
           margin-top: 12px;
         }
         .hero-cta {
-          margin-top: 18px;
+          margin-top: 12px;
         }
       }
       /* keep hero clear of the fixed nav */
@@ -1592,9 +1597,10 @@
     <header id="top">
       <div class="confetti" id="confetti" aria-hidden="true"></div>
       <div class="wrap">
+        <span class="eyebrow">משחק מסיבה מותאם אישית</span>
         <h1 class="brand"><img class="brand-logo" src="assets/logo.png" alt="דוגרי" /></h1>
         <div class="tagline">
-          <span class="tagline-1">שלחו לנו את הסיפורים המביכים.</span>
+          <span class="tagline-1">שלחו לנו את הסיפורים שרק אתם מכירים.</span>
           <span class="tagline-2">אנחנו נהפוך אותם למשחק שיפוצץ את הערב</span>
         </div>
         <p class="launch-offer">
@@ -1606,7 +1612,7 @@
         </p>
         <div class="hero-cta">
           <a class="btn" href="options.html?plan=base"
-            >מזמינים את המשחק · <span style="white-space: nowrap">79 ₪</span></a
+            >בונים את המשחק · <span style="white-space: nowrap">79 ₪</span></a
           >
           <a class="btn ghost" href="#how">איך זה עובד? ↓</a>
         </div>
@@ -1644,7 +1650,7 @@
     <section class="audience" id="audience" data-testid="audience">
       <div class="wrap">
         <div class="sec-title reveal">
-          <h2>לאיזה אירועים זה מתאים?</h2>
+          <h2>לכל אירוע שמסתובב סביב בנאדם אחד</h2>
           <p>כל שמחה שמסתובבת סביב אדם אחד - המשחק כולו עליו</p>
         </div>
         <div class="audience-grid stagger" data-testid="audience-grid">
@@ -1870,6 +1876,7 @@
             </div>
           </div>
         </div>
+        <p class="delivery-note">שש מתנות בקובץ אחד — הכל כלול ב-79 ₪.</p>
       </div>
     </section>
 
@@ -1877,13 +1884,15 @@
       <div class="wrap">
         <div class="sec-title reveal">
           <h2>מחירים</h2>
-          <p>אספקה מהירה</p>
+          <p>הכל כלול. בלי כוכביות.</p>
         </div>
         <div class="prices stagger">
           <div class="plan">
-            <h3>בסיס</h3>
-            <p class="plan-promise">מושלם להפתעה מהירה</p>
+            <h3>החבילה המלאה</h3>
+            <p class="plan-promise">כל החדר צוחק — עליו, באהבה</p>
+            <div class="anchor">129 ₪</div>
             <div class="price">79 <small>ש"ח</small></div>
+            <p class="btn-reassure">מחיר השקה · לזמן מוגבל</p>
             <ul>
               <li>חפיסת קלפים מהמילים שלכם</li>
               <li>לוח משחק + דף חוקים</li>
@@ -1892,12 +1901,12 @@
               <li>הוראות הדפסה וגזירה</li>
             </ul>
             <a class="btn" href="options.html?plan=base"
-              >מזמינים בסיס · <span style="white-space: nowrap">79 ₪</span></a
+              >בונים את המשחק · <span style="white-space: nowrap">79 ₪</span></a
             >
             <p class="btn-reassure">אספקה תוך 24 שעות · תשלום מאובטח</p>
           </div>
         </div>
-        <p class="guarantee">לא מרוצים? מתקנים עד שתהיו.</p>
+        <p class="guarantee">מובטח שתאהבו — אנחנו מתקנים עד שזה מושלם.</p>
         <div class="addons">
           <h4>תוספות</h4>
           <ul>
@@ -1962,6 +1971,10 @@
             </p>
           </details>
           <details>
+            <summary>כמה זמן לוקח לי למלא את המילים?</summary>
+            <p>רוב האנשים מסיימים ב-15 דקות, ועם הקישור השיתופי החברים עושים את זה בשבילכם.</p>
+          </details>
+          <details>
             <summary>אפשר לראות דוגמה?</summary>
             <p>
               בטח. בגלריה למעלה יש קלפים ולוחות אמיתיים, ואם בא לכם לראות עוד לפני שמזמינים - שלחו
@@ -2007,13 +2020,13 @@
         <p>כמה מילים מכם - וכל החדר יצחק עליו. או עליה. בדרך הכי אישית שיש.</p>
         <div class="hero-cta">
           <a class="btn" href="options.html?plan=base"
-            >מזמינים את המשחק · <span style="white-space: nowrap">79 ₪</span></a
+            >בונים את המשחק · <span style="white-space: nowrap">79 ₪</span></a
           >
           <a class="btn wa" id="waLink" href="#" target="_blank" rel="noopener"
             >יש שאלה? דברו איתנו בוואטסאפ</a
           >
         </div>
-        <p class="reassure">אספקה תוך 24 שעות · לא מרוצים? מתקנים עד שתהיו</p>
+        <p class="reassure">אספקה תוך 24 שעות · מובטח שתאהבו — אנחנו מתקנים עד שזה מושלם</p>
       </div>
     </section>
 
@@ -2041,7 +2054,7 @@
 
     <div class="sticky">
       <a class="btn" id="stickyOrder" href="options.html?plan=base"
-        >מזמינים · <span style="white-space: nowrap">79 ₪</span></a
+        >בונים את המשחק · <span style="white-space: nowrap">79 ₪</span></a
       >
       <a class="btn wa" id="waSticky" href="#" target="_blank" rel="noopener">וואטסאפ</a>
     </div>

@@ -242,7 +242,7 @@ export function lightTint(hex, l = 95, maxS = 55) {
 // ---------------------------------------------------------------------------
 
 export const PLAN_LABELS = {
-  base: 'בסיס',
+  base: 'החבילה המלאה',
 };
 
 export const PLAN_PRICES = {

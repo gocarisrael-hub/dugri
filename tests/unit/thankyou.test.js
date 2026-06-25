@@ -12,7 +12,7 @@ describe('selectionNamesFromIds (thankyou.html URL fallback)', () => {
     );
     expect(out.designName).toBe('יום הולדת');
     expect(out.colorName).toBe('סגול');
-    expect(out.planLabel).toBe('בסיס');
+    expect(out.planLabel).toBe('החבילה המלאה');
     expect(out.plan).toBe('base');
   });
 
@@ -25,7 +25,7 @@ describe('selectionNamesFromIds (thankyou.html URL fallback)', () => {
     );
     expect(out.designName).toBe('יום הולדת לילדים');
     expect(out.colorName).toBe('מקורי');
-    expect(out.planLabel).toBe('בסיס');
+    expect(out.planLabel).toBe('החבילה המלאה');
   });
 
   it('never leaks the raw English ids for known values', () => {
