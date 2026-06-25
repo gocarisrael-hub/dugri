@@ -143,6 +143,51 @@
         font-weight: 800;
         margin-bottom: 4px;
       }
+      .bit-box {
+        margin-top: 12px;
+        background: #fff;
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        color: var(--ink);
+        font-weight: 700;
+      }
+      .bit-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .bit-num {
+        font-size: 19px;
+        font-weight: 900;
+        letter-spacing: 0.5px;
+        direction: ltr;
+      }
+      .bit-soon {
+        margin-top: 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--muted);
+      }
+      .copy-btn {
+        font: inherit;
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+        border: 1.5px solid var(--hot);
+        background: #fff;
+        color: var(--hot);
+        border-radius: 9px;
+        padding: 6px 12px;
+      }
+      .copy-btn:active {
+        transform: scale(0.97);
+      }
       .back {
         display: inline-block;
         margin-top: 16px;
@@ -156,7 +201,7 @@
   <body>
     <div class="wrap">
       <div class="head">
-        <h1>תשלום</h1>
+        <h1>סיום הזמנה</h1>
       </div>
 
       <div class="card">
@@ -167,18 +212,17 @@
       </div>
 
       <div class="card">
-        <div class="cc-fields">
-          <div class="cc-cross" aria-hidden="true">✕</div>
-          <label>מספר כרטיס</label>
-          <input type="text" value="•••• •••• •••• 4242" disabled />
-          <label>תוקף / CVV</label>
-          <input type="text" value="12/29   •••" disabled />
-        </div>
         <div id="payNotice" class="pay-notice">
-          <div class="pay-notice-title">תשלום בכרטיס אשראי עדיין לא זמין · בקרוב!</div>
-          <div>בינתיים אפשר לשלם בביט 💜</div>
+          <div class="pay-notice-title">כמעט שם! משלמים בביט 💜</div>
+          <div class="bit-box">
+            <div class="bit-row">סכום לתשלום: <b id="bitAmount">79</b> ₪</div>
+            <div class="bit-row">
+              בביט למספר: <b id="bitNumber" class="bit-num">054-657-7715</b>
+            </div>
+          </div>
+          <div class="bit-soon">בקרוב — תשלום בביט בלחיצה אחת ✨</div>
         </div>
-        <button class="pay" id="payBtn" type="button">שלם והמשך לאיסוף המילים</button>
+        <button class="pay" id="payBtn" type="button">המשך לאיסוף המילים →</button>
         <div style="text-align: center">
           <a class="back" href="options.html">← חזרה לבחירת עיצוב</a>
         </div>
@@ -210,31 +254,13 @@
       document.getElementById('planName').textContent = PLAN_LABELS[plan] || plan;
       document.getElementById('designName').textContent = sel.designName || '—';
       document.getElementById('colorName').textContent = sel.colorName || '—';
-      document.getElementById('total').textContent = (PLAN_PRICES[plan] || PLAN_PRICES.base) + ' ₪';
+      const price = PLAN_PRICES[plan] || PLAN_PRICES.base;
+      document.getElementById('total').textContent = price + ' ₪';
+      document.getElementById('bitAmount').textContent = price;
 
-      // On continue: notify the owner via WhatsApp (new tab) and move this tab to
-      // the thank-you / word-collection step.
+      // Continue to the word-collection step. Payment is handled in Bit; the order
+      // already appears on the admin orders page, so no WhatsApp ping is needed.
       document.getElementById('payBtn').addEventListener('click', () => {
-        const price = PLAN_PRICES[plan] || PLAN_PRICES.base;
-        const msg =
-          'היי! הזמנתי משחק דוגרי 🎉\n' +
-          'חבילה: ' +
-          (PLAN_LABELS[plan] || plan) +
-          ' (' +
-          price +
-          ' ₪)\n' +
-          'עיצוב: ' +
-          (sel.designName || '—') +
-          '\n' +
-          'צבע: ' +
-          (sel.colorName || '—') +
-          '\n' +
-          'אשמח להשלים תשלום בביט 💜';
-        const waUrl = 'https://wa.me/972546577715?text=' + encodeURIComponent(msg);
-        // Open the popup SYNCHRONOUSLY (before any await/navigation) so the browser
-        // treats it as user-initiated and allows it. Note: Instagram's in-app
-        // browser may still block the popup; the thank-you navigation proceeds either way.
-        window.open(waUrl, '_blank');
         window.location.href = 'thankyou.html' + location.search;
       });
     </script>
