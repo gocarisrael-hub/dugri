@@ -429,6 +429,34 @@
         display: block;
         filter: drop-shadow(0 14px 30px rgba(44, 26, 41, 0.16));
       }
+      /* live honoree-name overlay - only on the FRONT face, sits near the top
+         centre of the card, above the design but it coexists with the watermark. */
+      .name-overlay {
+        position: absolute;
+        top: 30%;
+        inset-inline: 0;
+        z-index: 3;
+        display: none;
+        justify-content: center;
+        pointer-events: none;
+      }
+      .name-overlay > span {
+        max-width: 78%;
+        padding: 5px 16px;
+        border-radius: 999px;
+        background: rgba(20, 8, 16, 0.55);
+        font-family: var(--display);
+        font-weight: 900;
+        font-size: clamp(17px, 4.6vw, 30px);
+        line-height: 1.15;
+        color: #fff;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+        word-break: break-word;
+        text-align: center;
+      }
+      .preview-panel[data-panel='front'][data-active='true'] .name-overlay.has-name {
+        display: flex;
+      }
       .preview-panel img {
         width: 100%;
         height: auto;
@@ -471,6 +499,29 @@
         text-align: center;
         margin-bottom: 14px;
         color: var(--ink);
+      }
+      .name-picker #honoreeName {
+        display: block;
+        width: 100%;
+        font: inherit;
+        font-weight: 700;
+        text-align: center;
+        padding: 12px 14px;
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        color: var(--ink);
+      }
+      .name-picker #honoreeName:focus {
+        outline: 2px solid var(--hot);
+        border-color: var(--hot);
+      }
+      .name-picker .name-hint {
+        margin-top: 8px;
+        font-size: 13px;
+        line-height: 1.4;
+        color: var(--muted);
+        text-align: center;
       }
       .designs {
         display: flex;
@@ -719,7 +770,9 @@
               data-panel="front"
               data-testid="preview-front"
               data-active="true"
-            ></div>
+            >
+              <div class="name-overlay" id="nameOverlay" data-testid="name-overlay"></div>
+            </div>
             <div class="preview-panel" data-panel="back" data-testid="preview-back"></div>
             <div class="preview-panel" data-panel="board" data-testid="preview-board"></div>
             <div class="preview-empty" id="previewEmpty" hidden>טוען תצוגה…</div>
@@ -727,6 +780,21 @@
         </section>
 
         <div class="cfg-controls">
+          <!-- HONOREE NAME (shown live on the front card preview) -->
+          <section class="picker name-picker">
+            <h2>שם בעל/ת השמחה</h2>
+            <input
+              type="text"
+              id="honoreeName"
+              data-testid="honoree-name"
+              maxlength="40"
+              placeholder="לדוגמה: נועה"
+              autocomplete="off"
+              aria-describedby="honoreeHint"
+            />
+            <p class="name-hint" id="honoreeHint">כתבו את השם בדיוק כפי שתרצו שיופיע על הקלף</p>
+          </section>
+
           <!-- COLOR PICKER (right by the preview - change colours without scrolling) -->
           <section class="picker">
             <h2>בחרו צבע ראשי</h2>
@@ -823,6 +891,7 @@
       let designIndex = 0;
       let colorIndex = -1; // -1 = the design's original colors (default)
       let activeTab = 'front';
+      let honoreeName = '';
 
       // cache of fetched raw SVG text keyed by path
       const svgCache = new Map();
@@ -840,6 +909,16 @@
         back: document.querySelector('[data-panel="back"]'),
         board: document.querySelector('[data-panel="board"]'),
       };
+      const nameOverlay = document.getElementById('nameOverlay');
+
+      // keep the live name overlay in sync with the typed value
+      function renderName() {
+        if (!nameOverlay) return;
+        const name = honoreeName.trim();
+        nameOverlay.innerHTML = name ? '<span></span>' : '';
+        if (name) nameOverlay.firstChild.textContent = name;
+        nameOverlay.classList.toggle('has-name', !!name);
+      }
 
       // inline all three product SVGs of the currently selected design
       async function renderDesign() {
@@ -860,6 +939,12 @@
             }
           })
         );
+        // the front panel's innerHTML was just replaced - restore the name overlay
+        // so it keeps living above the freshly-inlined SVG.
+        if (nameOverlay && panels.front && !panels.front.contains(nameOverlay)) {
+          panels.front.appendChild(nameOverlay);
+          renderName();
+        }
         recolor();
       }
 
@@ -905,6 +990,16 @@
       document
         .querySelectorAll('.tab')
         .forEach((b) => b.addEventListener('click', () => selectTab(b.dataset.tab)));
+
+      /* ---- honoree name (live overlay on the front card) ---- */
+      const honoreeInput = document.getElementById('honoreeName');
+      if (honoreeInput) {
+        honoreeInput.addEventListener('input', () => {
+          honoreeName = honoreeInput.value;
+          renderName();
+          persist();
+        });
+      }
 
       /* ---- build design thumbnails ---- */
       const designList = document.getElementById('designList');
@@ -1034,6 +1129,7 @@
           colorId,
           colorName,
           mainHex,
+          honoreeName: honoreeName.trim(),
         };
       }
 
@@ -1058,6 +1154,8 @@
         url.searchParams.set('plan', s.plan);
         url.searchParams.set('design', s.designId);
         url.searchParams.set('color', s.colorId);
+        if (s.honoreeName) url.searchParams.set('name', s.honoreeName);
+        else url.searchParams.delete('name');
         history.replaceState(null, '', url);
         // refresh the continue button intent + summary
         let order;
@@ -1088,6 +1186,19 @@
       (function restore() {
         const dId = params.get('design');
         const cId = params.get('color');
+        // carried name: URL param wins, else a prior localStorage selection
+        let carriedName = params.get('name') || '';
+        if (!carriedName) {
+          try {
+            const saved = JSON.parse(localStorage.getItem('dugri_selection') || 'null');
+            if (saved && saved.honoreeName) carriedName = saved.honoreeName;
+          } catch (e) {}
+        }
+        if (carriedName) {
+          honoreeName = carriedName;
+          if (honoreeInput) honoreeInput.value = carriedName;
+          renderName();
+        }
         if (dId) {
           const di = DESIGNS.findIndex((d) => d.id === dId);
           if (di >= 0) designIndex = di;

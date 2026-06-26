@@ -24,6 +24,17 @@ test.describe('thankyou selection echo', () => {
     expect(text).not.toContain('base');
   });
 
+  test('honoree name from the URL prefills the input (cross-device fallback)', async ({ page }) => {
+    await page.goto(
+      '/thankyou.html?design=birthday&color=violet&plan=base&name=' + encodeURIComponent('נועה')
+    );
+    const input = page.locator('#honoreeInput');
+    await expect(input).toHaveValue('נועה');
+    // still editable
+    await input.fill('דנה');
+    await expect(input).toHaveValue('דנה');
+  });
+
   test('color=original is shown as מקורי', async ({ page }) => {
     await page.goto('/thankyou.html?design=kids&color=original&plan=base');
     const line = page.getByTestId('selection-line');

@@ -317,8 +317,24 @@
             colorName: names.colorName,
           };
         }
+        // carry the honoree name typed in the configurator: storage first, then
+        // the URL ?name= fallback (other device / private window).
+        if (sel && !sel.honoreeName) {
+          const nameParam = q.get('name');
+          if (nameParam) sel.honoreeName = nameParam;
+        }
         return sel;
       }
+
+      /* Prefill the honoree input with the name carried from the configurator so
+         the customer doesn't retype it. Field stays editable. */
+      (function prefillHonoree() {
+        const sel = resolveSelection();
+        const input = document.getElementById('honoreeInput');
+        if (input && sel && sel.honoreeName && !input.value) {
+          input.value = sel.honoreeName;
+        }
+      })();
 
       /* Echo the configurator selection if present. Graceful when nothing chosen. */
       (function () {

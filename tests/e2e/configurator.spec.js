@@ -87,6 +87,46 @@ test.describe('configurator', () => {
     await expect(page.locator('#createBtn')).toBeVisible();
   });
 
+  test('typed honoree name shows live on the front preview only', async ({ page }) => {
+    await page.goto('/options.html?plan=base');
+
+    const overlay = page.getByTestId('name-overlay');
+    const input = page.getByTestId('honoree-name');
+
+    // Empty input -> overlay hidden.
+    await expect(overlay).toBeHidden();
+
+    // Typing a name shows it over the front preview.
+    await input.fill('נועה');
+    await expect(overlay).toBeVisible();
+    await expect(overlay).toContainText('נועה');
+
+    // Switching to back/board hides the name overlay (front-only).
+    await page.getByTestId('tab-back').click();
+    await expect(overlay).toBeHidden();
+    await page.getByTestId('tab-board').click();
+    await expect(overlay).toBeHidden();
+
+    // Back to front -> visible again with the same name.
+    await page.getByTestId('tab-front').click();
+    await expect(overlay).toBeVisible();
+    await expect(overlay).toContainText('נועה');
+
+    // Clearing the name hides the overlay again.
+    await input.fill('');
+    await expect(overlay).toBeHidden();
+  });
+
+  test('the typed name is carried to thankyou and prefills the honoree input', async ({ page }) => {
+    await page.goto('/options.html?plan=base');
+    await page.getByTestId('honoree-name').fill('נועה');
+
+    await page.getByTestId('continue-btn').click();
+    await page.waitForURL(/thankyou\.html/);
+
+    await expect(page.locator('#honoreeInput')).toHaveValue('נועה');
+  });
+
   test('raster-background note shows only for the kids design', async ({ page }) => {
     await page.goto('/options.html');
 
