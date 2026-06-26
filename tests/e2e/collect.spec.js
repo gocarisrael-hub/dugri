@@ -3,7 +3,8 @@ import { test, expect } from '@playwright/test';
 async function createCollection(page, name) {
   await page.goto('/thankyou.html');
   await page.fill('#honoreeInput', name);
-  await page.fill('#ownerEmail', 'test@example.com'); // contact now required
+  await page.fill('#ownerEmail', 'test@example.com'); // email now required
+  await page.fill('#ownerPhone', '0521234567'); // valid IL mobile, now required
   await page.click('#createBtn');
   await page.waitForURL(/collect\.html\?c=.+&k=.+/);
 }
@@ -42,7 +43,7 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
   await expect(page.locator('#addCard')).toBeHidden();
 });
 
-test('owner pay panel: select delivery → address + total 197 → Bit opens, stays on collect', async ({
+test('owner pay panel: select delivery → address + total 199 → Bit opens, stays on collect', async ({
   page,
 }) => {
   await createCollection(page, 'דנה');
@@ -52,10 +53,10 @@ test('owner pay panel: select delivery → address + total 197 → Bit opens, st
   await expect(page.locator('#payTotal')).toHaveText('79');
   await expect(page.locator('#addressForm')).toBeHidden();
 
-  // Select delivery → address fields appear, total becomes 197.
+  // Select delivery → address fields appear, total becomes 199.
   await page.check('input[name="payVersion"][value="delivery"]');
   await expect(page.locator('#addressForm')).toBeVisible();
-  await expect(page.locator('#payTotal')).toHaveText('197');
+  await expect(page.locator('#payTotal')).toHaveText('199');
 
   // Missing address blocks Bit and shows an inline error.
   await page.locator('#bitPayLink').click();
@@ -78,7 +79,39 @@ test('owner pay panel: select delivery → address + total 197 → Bit opens, st
   await popup.close();
   expect(page.url()).toBe(collectUrl);
   expect(page.url()).toContain('collect.html');
-  await expect(page.locator('#payConfirm')).toContainText('197');
+  await expect(page.locator('#payConfirm')).toContainText('199');
+});
+
+test('pay panel shows the new version names and prices', async ({ page }) => {
+  await createCollection(page, 'יעל');
+  const panel = page.locator('#payPanel');
+  await expect(panel).toContainText('דיגיטלי (PDF)');
+  await expect(panel).toContainText('מורידים, מדפיסים לבד');
+  await expect(panel).toContainText('מודפס · איסוף מבית דפוס גלאור, ת״א');
+  await expect(panel).toContainText('₪149');
+  await expect(panel).toContainText('המפונקת 👑');
+  await expect(panel).toContainText('₪199');
+  await expect(panel).toContainText('אזורים מרוחקים בתיאום ובתוספת תשלום');
+  // pay-anytime / unlock messaging
+  await expect(panel).toContainText('אפשר לשלם מתי שרוצים');
+});
+
+test('how-to guidance is a collapsed details on collect that can be opened', async ({ page }) => {
+  await createCollection(page, 'רוני');
+  const details = page.locator('details.howto');
+  await expect(details).toBeAttached();
+  // Collapsed by default: the category content is hidden.
+  await expect(page.locator('.howto .cat').first()).toBeHidden();
+  await page.locator('.howto summary').click();
+  await expect(page.locator('.howto .cat').first()).toBeVisible();
+  await expect(details).toContainText('אנשים');
+});
+
+test('unpaid owner sees the locked teaser, not the unlock badge', async ({ page }) => {
+  await createCollection(page, 'טל');
+  await expect(page.locator('#lockTeaser')).toBeVisible();
+  await expect(page.locator('#lockTeaser')).toContainText('שלמו כדי לפתוח');
+  await expect(page.locator('#premiumBadge')).toBeHidden();
 });
 
 test('contributor (no owner key) does NOT see the pay panel', async ({ page, context }) => {

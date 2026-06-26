@@ -26,7 +26,7 @@ function freshCollection() {
 
 describe('setOrder', () => {
   it('exports ORDER_PRICES with the agreed totals', () => {
-    expect(ORDER_PRICES).toEqual({ pdf: 79, pickup: 148, delivery: 197 });
+    expect(ORDER_PRICES).toEqual({ pdf: 79, pickup: 149, delivery: 199 });
   });
 
   it('prices pdf/pickup/delivery from ORDER_PRICES', () => {
@@ -34,14 +34,14 @@ describe('setOrder', () => {
     expect(db.setOrder(c1.id, c1.owner_token, { version: 'pdf' }).total).toBe(79);
 
     const c2 = freshCollection();
-    expect(db.setOrder(c2.id, c2.owner_token, { version: 'pickup' }).total).toBe(148);
+    expect(db.setOrder(c2.id, c2.owner_token, { version: 'pickup' }).total).toBe(149);
 
     const c3 = freshCollection();
     const o3 = db.setOrder(c3.id, c3.owner_token, {
       version: 'delivery',
       address: { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' },
     });
-    expect(o3.total).toBe(197);
+    expect(o3.total).toBe(199);
   });
 
   it('stores design/color on the collection and the order is unpaid by default', () => {

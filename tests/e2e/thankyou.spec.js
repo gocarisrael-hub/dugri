@@ -35,3 +35,43 @@ test.describe('thankyou selection echo', () => {
     expect(text).not.toContain('original');
   });
 });
+
+// Pay-first flow: email AND a valid Israeli mobile are both required, and are
+// validated before a collection is created.
+test.describe('thankyou create-collection validation', () => {
+  test('email + phone are both required and validated; valid input creates the collection', async ({
+    page,
+  }) => {
+    await page.goto('/thankyou.html');
+    await page.fill('#honoreeInput', 'שירה');
+
+    // No contact at all → blocked with an email error.
+    await page.click('#createBtn');
+    await expect(page.locator('#createErr')).toBeVisible();
+    await expect(page.locator('#createErr')).toContainText('מייל');
+
+    // Valid email but no phone → blocked with a phone error.
+    await page.fill('#ownerEmail', 'owner@example.com');
+    await page.click('#createBtn');
+    await expect(page.locator('#createErr')).toBeVisible();
+    await expect(page.locator('#createErr')).toContainText('טלפון');
+
+    // Invalid phone → still blocked.
+    await page.fill('#ownerPhone', '12345');
+    await page.click('#createBtn');
+    await expect(page.locator('#createErr')).toBeVisible();
+    await expect(page.locator('#createErr')).toContainText('טלפון');
+
+    // Valid email + valid IL mobile → creates the collection and redirects.
+    await page.fill('#ownerPhone', '0521234567');
+    await page.click('#createBtn');
+    await page.waitForURL(/collect\.html\?c=.+&k=.+/);
+  });
+
+  test('name hint about the cards is shown; old how-to category card is gone', async ({ page }) => {
+    await page.goto('/thankyou.html');
+    await expect(page.locator('.collab')).toContainText('יופיע על הקלפים');
+    // The big always-open how-to card moved to collect.html.
+    await expect(page.locator('body')).not.toContainText('איך אוספים מילים טובות');
+  });
+});

@@ -7,6 +7,7 @@ test('admin orders page lists created collections (with key) and rejects wrong k
   await page.goto('/thankyou.html');
   await page.fill('#honoreeInput', 'אדמין-בדיקה');
   await page.fill('#ownerEmail', 'admin-test@example.com');
+  await page.fill('#ownerPhone', '0521234567'); // phone now required
   await page.click('#createBtn');
   await page.waitForURL(/collect\.html/);
 

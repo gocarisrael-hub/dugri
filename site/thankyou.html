@@ -158,30 +158,6 @@
         color: var(--wine);
         margin-bottom: 10px;
       }
-      .cats {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 10px;
-      }
-      @media (min-width: 560px) {
-        .cats {
-          grid-template-columns: 1fr 1fr;
-        }
-      }
-      .cat {
-        background: var(--blush);
-        border-radius: 12px;
-        padding: 12px 14px;
-      }
-      .cat b {
-        display: block;
-        font-size: 15px;
-        color: var(--wine-deep);
-      }
-      .cat span {
-        font-size: 13.5px;
-        color: var(--muted);
-      }
       .note {
         text-align: center;
         color: var(--muted);
@@ -232,20 +208,27 @@
     <div class="wrap">
       <div class="head">
         <div class="check">✓</div>
-        <h1>יש! ההזמנה שלכם בדרך 🎉</h1>
-        <p>נשאר רק לאסוף את המילים על בעל/ת השמחה - והכי כיף לעשות את זה ביחד.</p>
+        <h1>מעולה! עכשיו פותחים קישור איסוף מילים 🎉</h1>
+        <p>
+          צרו קישור משותף, אספו מילים על בעל/ת השמחה יחד עם כולם — וכדי לקבל את המשחק
+          <b>קודם משלמים, ואז המשחק בדרך</b>. אפשר לשלם ולהמשיך לאסוף מילים תוך כדי.
+        </p>
         <p class="selection" id="selectionLine" data-testid="selection-line" hidden></p>
       </div>
 
       <div class="card collab">
         <h3>אספו מילים יחד עם כולם 🎉</h3>
         <p style="color: var(--muted)">
-          במקום לאסוף לבד - צרו קישור משותף, שלחו לחברים של בעל/ת השמחה, וכולם מוסיפים מילים במשך
-          שבוע. ככה מגיעים ל-100 מילים בלי מאמץ.
+          במקום לאסוף לבד - צרו קישור משותף, שלחו לחברים של בעל/ת השמחה, וכולם מוסיפים מילים. כשבא
+          לכם — לוחצים על כפתור <b>"מספיק/סיימנו"</b> וזהו.
+          <b>תשלום פותח עוד עוזרי רעיונות</b> שיעזרו לחשוב על עוד מילים.
         </p>
         <div class="row">
           <input type="text" id="honoreeInput" placeholder="שם בעל/ת השמחה" maxlength="60" />
         </div>
+        <p class="note" style="text-align: right; margin: 6px 2px 0">
+          השם הזה יופיע על הקלפים — כתבו אותו בדיוק כפי שתרצו שיופיע.
+        </p>
         <div class="row">
           <input
             type="email"
@@ -253,7 +236,7 @@
             placeholder="המייל שלך (לשליחת קישור הניהול)"
             maxlength="120"
           />
-          <input type="tel" id="ownerPhone" placeholder="טלפון (לא חובה)" maxlength="40" />
+          <input type="tel" id="ownerPhone" placeholder="טלפון" maxlength="40" />
         </div>
         <div class="row">
           <button class="btn go" id="createBtn" type="button">צרו קישור איסוף</button>
@@ -262,26 +245,9 @@
         <p class="note" id="createErr" style="display: none; color: #c2415f"></p>
       </div>
 
-      <div class="card">
-        <h3>איך אוספים מילים טובות</h3>
-        <p style="color: var(--muted); margin-bottom: 14px">
-          זה החלק הכי כיף - וגם הכי קל כשיש כיוון. עברו על הקטגוריות, כתבו כל מה שעולה. מינימום 100
-          מילים, וכמה שיותר יותר טוב.
-        </p>
-        <div class="cats">
-          <div class="cat"><b>אנשים</b><span>בן/בת זוג, חברים, משפחה, כינויים</span></div>
-          <div class="cat"><b>מקומות</b><span>חופשות, הבית, מקומות אהובים</span></div>
-          <div class="cat"><b>בדיחות פנימיות</b><span>סיפורים שרק אתם מבינים</span></div>
-          <div class="cat"><b>ביטויים שלו</b><span>מה שהוא תמיד אומר</span></div>
-          <div class="cat"><b>הרגלים</b><span>קפה, נטפליקס, ספורט, אוכל</span></div>
-          <div class="cat"><b>עבודה ותחביבים</b><span>מקצוע, חלומות, תשוקות</span></div>
-          <div class="cat"><b>אירועים מהחיים</b><span>רגעים גדולים, הצלחות, פאדיחות</span></div>
-          <div class="cat"><b>ילדות ועבר</b><span>זיכרונות, סיפורים מצחיקים</span></div>
-        </div>
-      </div>
-
       <p class="note">
-        אחרי שתשלחו את המילים, <b>הקובץ אצלכם תוך 24 שעות</b>. שלחנו גם מייל אישור.
+        אוספים מילים בקישור, משלמים בביט, ו<b>הקובץ אצלכם תוך 24 שעות</b> מרגע שסיימתם. שלחנו גם
+        מייל אישור.
       </p>
     </div>
 
@@ -334,6 +300,18 @@
         line.hidden = false;
       })();
 
+      // Validation: email + Israeli mobile are both REQUIRED so we can always
+      // reach the owner with the management link.
+      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      function isValidEmail(v) {
+        return EMAIL_RE.test(v);
+      }
+      function isValidIlMobile(v) {
+        const digits = String(v).replace(/[\s-]/g, '');
+        // digits only, 9–10 long, starting with 0 (e.g. 0521234567).
+        return /^0\d{8,9}$/.test(digits);
+      }
+
       // Collaborative word-collection: create a shared link, go to the owner view.
       const createBtn = document.getElementById('createBtn');
       createBtn.addEventListener('click', async () => {
@@ -346,10 +324,16 @@
           document.getElementById('honoreeInput').focus();
           return;
         }
-        if (!email && !phone) {
-          err.textContent = 'נשמח למייל או טלפון כדי שנוכל לשלוח לך את קישור הניהול.';
+        if (!isValidEmail(email)) {
+          err.textContent = 'נא להזין כתובת מייל תקינה כדי שנשלח לך את קישור הניהול.';
           err.style.display = 'block';
           document.getElementById('ownerEmail').focus();
+          return;
+        }
+        if (!isValidIlMobile(phone)) {
+          err.textContent = 'נא להזין מספר טלפון נייד תקין (לדוגמה 0521234567).';
+          err.style.display = 'block';
+          document.getElementById('ownerPhone').focus();
           return;
         }
         createBtn.disabled = true;
