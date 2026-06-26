@@ -290,9 +290,10 @@
       import { PLAN_LABELS, selectionNamesFromIds } from './js/configurator.js';
       import { track } from './js/analytics.js';
 
-      /* Echo the configurator selection if present (localStorage saved by options.html,
-     with a URL fallback). Graceful when nothing was chosen. */
-      (function () {
+      /* Resolve the configurator selection (localStorage saved by options.html,
+     with a URL fallback). Returns Hebrew display names. Shared between the echo
+     line below and the create-collection POST. */
+      function resolveSelection() {
         let sel = null;
         try {
           sel = JSON.parse(localStorage.getItem('dugri_selection') || 'null');
@@ -302,8 +303,8 @@
         const q = new URLSearchParams(location.search);
         if (!sel && (q.get('design') || q.get('color') || q.get('plan'))) {
           // URL fallback: params are raw English ids (design=<id>, color=<id>|
-          // original, plan=<id>). Translate ids -> Hebrew names so the page never
-          // leaks e.g. "birthday" / "violet" / "original".
+          // original, plan=<id>). Translate ids -> Hebrew names so we never
+          // leak e.g. "birthday" / "violet" / "original".
           const names = selectionNamesFromIds(
             { design: q.get('design'), color: q.get('color'), plan: q.get('plan') },
             DESIGNS,
@@ -316,6 +317,12 @@
             colorName: names.colorName,
           };
         }
+        return sel;
+      }
+
+      /* Echo the configurator selection if present. Graceful when nothing chosen. */
+      (function () {
+        const sel = resolveSelection();
         if (!sel) return;
         const parts = [];
         if (sel.designName) parts.push('עיצוב: ' + sel.designName);
@@ -347,11 +354,20 @@
         }
         createBtn.disabled = true;
         createBtn.textContent = 'יוצר…';
+        // Pass along the configurator selection (Hebrew display names) so the
+        // order carries the chosen design + color.
+        const sel = resolveSelection() || {};
         try {
           const r = await fetch('/api/collections', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ honoree_name: name, email, phone }),
+            body: JSON.stringify({
+              honoree_name: name,
+              email,
+              phone,
+              design: sel.designName || null,
+              color: sel.colorName || null,
+            }),
           });
           const data = await r.json();
           if (!r.ok) throw new Error(data.error || 'failed');

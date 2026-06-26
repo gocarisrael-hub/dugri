@@ -42,6 +42,53 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
   await expect(page.locator('#addCard')).toBeHidden();
 });
 
+test('owner pay panel: select delivery → address + total 197 → Bit opens, stays on collect', async ({
+  page,
+}) => {
+  await createCollection(page, 'דנה');
+
+  // Owner sees the pay panel; PDF default total is 79.
+  await expect(page.locator('#payPanel')).toBeVisible();
+  await expect(page.locator('#payTotal')).toHaveText('79');
+  await expect(page.locator('#addressForm')).toBeHidden();
+
+  // Select delivery → address fields appear, total becomes 197.
+  await page.check('input[name="payVersion"][value="delivery"]');
+  await expect(page.locator('#addressForm')).toBeVisible();
+  await expect(page.locator('#payTotal')).toHaveText('197');
+
+  // Missing address blocks Bit and shows an inline error.
+  await page.locator('#bitPayLink').click();
+  await expect(page.locator('#payErr')).toBeVisible();
+
+  // Fill the required address fields.
+  await page.fill('#addrStreet', 'הרצל 10');
+  await page.fill('#addrCity', 'תל אביב');
+  await page.fill('#addrPostal', '6100000');
+
+  // Clicking שלם בביט opens Bit in a new tab; the page stays on collect.html.
+  const collectUrl = page.url();
+  const [popup] = await Promise.all([
+    page.waitForEvent('popup'),
+    page.locator('#bitPayLink').click(),
+  ]);
+  await expect(popup).toHaveURL(
+    /bitpay\.co\.il\/app\/me\/4BE8AF50-DD1F-8868-1FF0-2DE96FEB9B6A4F38/
+  );
+  await popup.close();
+  expect(page.url()).toBe(collectUrl);
+  expect(page.url()).toContain('collect.html');
+  await expect(page.locator('#payConfirm')).toContainText('197');
+});
+
+test('contributor (no owner key) does NOT see the pay panel', async ({ page, context }) => {
+  await createCollection(page, 'מאיה');
+  const friendsUrl = page.url().replace(/&k=.*/, '');
+  const friend = await context.newPage();
+  await friend.goto(friendsUrl);
+  await expect(friend.locator('#payPanel')).toBeHidden();
+});
+
 test('contributor (no owner key) sees words but cannot add after close', async ({
   page,
   context,

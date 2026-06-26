@@ -77,6 +77,16 @@ test.describe('configurator', () => {
     expect(decoded.includes(designName) || decoded.includes(chosenDesign)).toBeTruthy();
   });
 
+  test('continue goes to thankyou (payment now lives on the collect page)', async ({ page }) => {
+    await page.goto('/options.html?plan=base');
+    await expect(page.getByTestId('plan-price')).toHaveText('79');
+    await expect(page.locator('#continuePrice')).toHaveText('79');
+
+    await page.getByTestId('continue-btn').click();
+    await page.waitForURL(/thankyou\.html/);
+    await expect(page.locator('#createBtn')).toBeVisible();
+  });
+
   test('raster-background note shows only for the kids design', async ({ page }) => {
     await page.goto('/options.html');
 

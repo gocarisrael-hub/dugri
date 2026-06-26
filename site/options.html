@@ -1078,9 +1078,9 @@
       document.getElementById('continueBtn').addEventListener('click', () => {
         persist();
         track('begin_checkout');
-        // Payment is not live yet — go to the demo checkout, then word collection.
-        // (WhatsApp ordering removed for now; buildOrder kept for the summary.)
-        window.location.href = 'checkout.html' + location.search;
+        // Payment now lives on the collect page. Go straight to thankyou (create a
+        // shared collection), then the owner pays from the collect page any time.
+        window.location.href = 'thankyou.html' + location.search;
       });
 
       /* ---- init ---- */
