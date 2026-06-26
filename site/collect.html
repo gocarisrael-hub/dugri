@@ -332,6 +332,160 @@
           transition: none;
         }
       }
+      /* ===== PAY PANEL (owner-only) ===== */
+      .pay-opts {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin: 12px 0;
+      }
+      .pay-opt {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        border: 1.5px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+        cursor: pointer;
+        transition:
+          border-color 0.15s ease,
+          background 0.15s ease;
+      }
+      .pay-opt:hover {
+        border-color: var(--hot);
+      }
+      .pay-opt input {
+        margin-top: 3px;
+        accent-color: var(--hot);
+      }
+      .pay-opt.active {
+        border-color: var(--hot);
+        background: #fff5fa;
+      }
+      .pay-opt .opt-body {
+        flex: 1;
+      }
+      .pay-opt .opt-title {
+        font-weight: 800;
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .pay-opt .opt-price {
+        color: var(--hot-deep);
+        font-weight: 900;
+        white-space: nowrap;
+      }
+      .pay-opt .opt-note {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 4px;
+      }
+      .was {
+        text-decoration: line-through;
+        opacity: 0.55;
+        font-weight: 700;
+        margin-inline-end: 5px;
+        font-size: 0.85em;
+      }
+      #addressForm {
+        margin: 4px 0 12px;
+      }
+      #addressForm .fld {
+        margin-top: 10px;
+      }
+      .pay-total {
+        font-weight: 900;
+        font-size: 19px;
+        text-align: center;
+        margin: 14px 0;
+      }
+      .pay-err {
+        color: #c2415f;
+        font-weight: 700;
+        font-size: 14px;
+        text-align: center;
+        margin-bottom: 8px;
+        display: none;
+      }
+      .pay-confirm {
+        background: #eafaf2;
+        border: 1px solid #bfe8d3;
+        color: #119a6e;
+        border-radius: 12px;
+        padding: 12px 14px;
+        font-weight: 700;
+        text-align: center;
+        margin-top: 12px;
+        display: none;
+      }
+      /* Bit brand: dark navy surface + bright Bit cyan (reused from checkout) */
+      .bit-pay {
+        text-align: center;
+        padding: 4px 0 2px;
+      }
+      .bit-btn {
+        --bit-cyan: #00e3d8;
+        --bit-ink: #0c0e1a;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        width: 100%;
+        max-width: 360px;
+        text-decoration: none;
+        font: inherit;
+        font-weight: 900;
+        font-size: 19px;
+        color: var(--bit-ink);
+        background: linear-gradient(135deg, #4df2e9, var(--bit-cyan));
+        border-radius: 16px;
+        padding: 17px 22px;
+        box-shadow:
+          0 12px 28px rgba(0, 227, 216, 0.4),
+          0 2px 0 rgba(255, 255, 255, 0.5) inset;
+        transition:
+          transform 0.12s ease,
+          box-shadow 0.12s ease,
+          filter 0.12s ease;
+      }
+      .bit-btn:hover {
+        filter: brightness(1.04);
+        box-shadow:
+          0 16px 34px rgba(0, 227, 216, 0.5),
+          0 2px 0 rgba(255, 255, 255, 0.5) inset;
+        transform: translateY(-1px);
+      }
+      .bit-btn:active {
+        transform: scale(0.985);
+      }
+      .bit-btn .bit-mark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 26px;
+        background: var(--bit-ink);
+        color: var(--bit-cyan);
+        border-radius: 7px;
+        padding: 4px 7px;
+      }
+      .bit-btn .bit-mark svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .bit-confirm {
+        margin-top: 12px;
+        font-size: 13px;
+        font-weight: 800;
+        color: #119a6e;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+      }
     </style>
   </head>
   <body>
@@ -355,6 +509,85 @@
         <div class="words" id="wordsWrap" style="margin-top: 12px">
           <span class="muted" id="emptyWords">עוד אין מילים - היו הראשונים!</span>
         </div>
+      </div>
+
+      <!-- OWNER: pay panel (always available) -->
+      <div class="card owner-only hidden" id="payPanel">
+        <div class="sec-h">💜 שלמו וקבלו את המשחק</div>
+        <div class="pay-opts" id="payOpts" role="radiogroup" aria-label="בחירת גרסה">
+          <label class="pay-opt active">
+            <input type="radio" name="payVersion" value="pdf" checked />
+            <span class="opt-body">
+              <span class="opt-title"
+                ><span>דיגיטלי (PDF)</span
+                ><span class="opt-price"><s class="was">129</s>₪79</span></span
+              >
+            </span>
+          </label>
+          <label class="pay-opt">
+            <input type="radio" name="payVersion" value="pickup" />
+            <span class="opt-body">
+              <span class="opt-title"
+                ><span>הדפסה + איסוף מבית דפוס גלאור, ת״א</span
+                ><span class="opt-price">₪148</span></span
+              >
+            </span>
+          </label>
+          <label class="pay-opt">
+            <input type="radio" name="payVersion" value="delivery" />
+            <span class="opt-body">
+              <span class="opt-title"
+                ><span>משלוח עד הבית</span><span class="opt-price">₪197</span></span
+              >
+              <span class="opt-note">אזורים מרוחקים בתיאום ובתוספת תשלום</span>
+            </span>
+          </label>
+        </div>
+
+        <div id="addressForm" class="hidden">
+          <label class="fld" for="addrStreet">רחוב ומספר</label>
+          <input type="text" id="addrStreet" autocomplete="street-address" />
+          <label class="fld" for="addrCity">עיר</label>
+          <input type="text" id="addrCity" autocomplete="address-level2" />
+          <label class="fld" for="addrPostal">מיקוד</label>
+          <input type="text" id="addrPostal" autocomplete="postal-code" inputmode="numeric" />
+          <label class="fld" for="addrApt">דירה (לא חובה)</label>
+          <input type="text" id="addrApt" />
+          <label class="fld" for="addrFloor">קומה (לא חובה)</label>
+          <input type="text" id="addrFloor" />
+        </div>
+
+        <div class="pay-total">לתשלום: ₪<span id="payTotal">79</span></div>
+        <div class="pay-err" id="payErr"></div>
+
+        <div class="bit-pay">
+          <a
+            id="bitPayLink"
+            class="bit-btn"
+            href="https://www.bitpay.co.il/app/me/4BE8AF50-DD1F-8868-1FF0-2DE96FEB9B6A4F38"
+            target="_blank"
+            rel="noopener"
+          >
+            <span class="bit-mark" aria-hidden="true">
+              <svg viewBox="0 0 120 56" role="img" aria-label="bit">
+                <g fill="currentColor">
+                  <path
+                    d="M8 4h9v15.2a13.5 13.5 0 0 1 8.4-2.9c8.7 0 15.3 6.9 15.3 16.2S34.1 49 25.4 49a13.4 13.4 0 0 1-8.9-3.2V48H8V4Zm16 36.6c4.4 0 7.6-3.4 7.6-8.1s-3.2-8.1-7.6-8.1-7.6 3.4-7.6 8.1 3.2 8.1 7.6 8.1Z"
+                  />
+                  <path
+                    d="M52 4.2a5.4 5.4 0 1 1 0 10.8 5.4 5.4 0 0 1 0-10.8ZM47.5 17.2h9V48h-9V17.2Z"
+                  />
+                  <path
+                    d="M66 8h9v9.2h7.7v7.7H75v11.7c0 2.8 1.3 4 3.9 4 1.4 0 2.6-.2 3.8-.6V48c-1.7.6-3.7.9-6 .9-7.2 0-10.7-3.7-10.7-11V24.9h-5.3v-7.7H66V8Z"
+                  />
+                </g>
+              </svg>
+            </span>
+            <span>שלם בביט</span>
+          </a>
+          <div class="bit-confirm"><span aria-hidden="true">✓</span><span>אישור מיידי</span></div>
+        </div>
+        <div class="pay-confirm" id="payConfirm"></div>
       </div>
 
       <!-- add area -->
@@ -710,6 +943,72 @@
           await refresh();
         };
       }
+      // ---- owner: pay panel ----
+      const PAY_PRICES = { pdf: 79, pickup: 148, delivery: 197 };
+      function selectedVersion() {
+        const checked = document.querySelector('input[name="payVersion"]:checked');
+        return (checked && checked.value) || 'pdf';
+      }
+      function setupPayPanel() {
+        $('#payPanel').classList.remove('hidden');
+        const opts = Array.from(document.querySelectorAll('.pay-opt'));
+        const addressForm = $('#addressForm');
+        const payErr = $('#payErr');
+
+        function refreshPay() {
+          const v = selectedVersion();
+          opts.forEach((o) => o.classList.toggle('active', o.querySelector('input').value === v));
+          addressForm.classList.toggle('hidden', v !== 'delivery');
+          $('#payTotal').textContent = PAY_PRICES[v];
+          payErr.style.display = 'none';
+        }
+        document
+          .querySelectorAll('input[name="payVersion"]')
+          .forEach((r) => r.addEventListener('change', refreshPay));
+        refreshPay();
+
+        function collectAddress() {
+          return {
+            street: $('#addrStreet').value.trim(),
+            city: $('#addrCity').value.trim(),
+            postal: $('#addrPostal').value.trim(),
+            apartment: $('#addrApt').value.trim(),
+            floor: $('#addrFloor').value.trim(),
+          };
+        }
+
+        $('#bitPayLink').addEventListener('click', async (e) => {
+          const version = selectedVersion();
+          let address = null;
+          if (version === 'delivery') {
+            address = collectAddress();
+            if (!address.street || !address.city || !address.postal) {
+              e.preventDefault(); // do NOT open Bit on a bad address
+              payErr.textContent = 'נא למלא רחוב, עיר ומיקוד למשלוח.';
+              payErr.style.display = 'block';
+              return;
+            }
+          }
+          // Bit must open (do NOT preventDefault on success). Record the order in
+          // the background; the owner stays on this page.
+          const total = PAY_PRICES[version];
+          try {
+            const res = await api('/order', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ owner_token: ownerToken, version, address }),
+            });
+            track('order_placed', { version: res.version || version, total: res.total || total });
+          } catch (err) {
+            // non-blocking: Bit already opened, we just couldn't persist the order
+          }
+          const confirm = $('#payConfirm');
+          confirm.textContent =
+            'פתחנו לכם את ביט — שלמו ₪' + total + '. נשלח לכם את המשחק מיד אחרי התשלום 💜';
+          confirm.style.display = 'block';
+        });
+      }
+
       function copy(text, btn, linkType) {
         navigator.clipboard.writeText(text).then(() => {
           track('share_link_copied', { link_type: linkType });
@@ -724,7 +1023,10 @@
         $('#subtitle').textContent = 'פתחו את הקישור שקיבלתם מהמארגנ/ת.';
       } else {
         buildCats();
-        if (isOwner) setupOwner();
+        if (isOwner) {
+          setupOwner();
+          setupPayPanel();
+        }
         refresh();
         setInterval(refresh, 5000);
       }
