@@ -676,8 +676,7 @@
         <h1>בונים את המשחק שלכם</h1>
         <p>בוחרים עיצוב וצבע - והכל מתעדכן לנגד עיניכם.</p>
         <div class="plan-pill" data-testid="plan-pill">
-          חבילה: <span id="planName">בסיס</span> · <s class="was">129</s
-          ><span id="planPrice" data-testid="plan-price">79</span>₪
+          החל מ- <s class="was">129</s><span id="planPrice" data-testid="plan-price">79</span> ₪
         </div>
       </div>
 
@@ -813,7 +812,6 @@
 
       function paintPlan() {
         const p = PLANS[plan];
-        document.getElementById('planName').textContent = p.name;
         document.getElementById('planPrice').textContent = p.price;
         document.getElementById('continuePrice').textContent = p.price;
       }
