@@ -256,6 +256,63 @@
       .hidden {
         display: none !important;
       }
+      .howto {
+        margin-top: 14px;
+        border-top: 1px solid var(--line);
+        padding-top: 12px;
+      }
+      .howto summary {
+        cursor: pointer;
+        font-weight: 800;
+        color: var(--hot-deep);
+        list-style: none;
+      }
+      .howto summary::-webkit-details-marker {
+        display: none;
+      }
+      .cats {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+      @media (min-width: 560px) {
+        .cats {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      .cat {
+        background: #fdf0f5;
+        border-radius: 12px;
+        padding: 12px 14px;
+      }
+      .cat b {
+        display: block;
+        font-size: 15px;
+        color: var(--hot-deep);
+      }
+      .cat span {
+        font-size: 13.5px;
+        color: var(--muted);
+      }
+      .premium-badge {
+        background: #eafaf2;
+        color: #119a6e;
+        border-radius: 99px;
+        padding: 7px 13px;
+        font-size: 14px;
+        font-weight: 800;
+        align-self: center;
+      }
+      .lock-teaser {
+        margin-top: 10px;
+        background: #fff4e6;
+        border: 1px solid #f3d9ad;
+        color: #92600b;
+        border-radius: 12px;
+        padding: 10px 13px;
+        font-size: 14px;
+        font-weight: 700;
+      }
       .actions {
         display: flex;
         flex-wrap: wrap;
@@ -514,6 +571,11 @@
       <!-- OWNER: pay panel (always available) -->
       <div class="card owner-only hidden" id="payPanel">
         <div class="sec-h">💜 שלמו וקבלו את המשחק</div>
+        <p class="muted" style="margin-bottom: 10px">
+          אפשר לשלם מתי שרוצים ולהמשיך להוסיף מילים תוך כדי — ועד שתלחצו על
+          <b>"מספיק! סיימנו"</b> האיסוף נשאר פתוח. בונוס: <b>תשלום פותח עוד עשרות שאלות</b> שיעזרו
+          לכם לחשוב על עוד מילים ✨
+        </p>
         <div class="pay-opts" id="payOpts" role="radiogroup" aria-label="בחירת גרסה">
           <label class="pay-opt active">
             <input type="radio" name="payVersion" value="pdf" checked />
@@ -522,14 +584,15 @@
                 ><span>דיגיטלי (PDF)</span
                 ><span class="opt-price"><s class="was">129</s>₪79</span></span
               >
+              <span class="opt-note">מורידים, מדפיסים לבד, ומתפוצצים מצחוק 🎉</span>
             </span>
           </label>
           <label class="pay-opt">
             <input type="radio" name="payVersion" value="pickup" />
             <span class="opt-body">
               <span class="opt-title"
-                ><span>הדפסה + איסוף מבית דפוס גלאור, ת״א</span
-                ><span class="opt-price">₪148</span></span
+                ><span>מודפס · איסוף מבית דפוס גלאור, ת״א</span
+                ><span class="opt-price">₪149</span></span
               >
             </span>
           </label>
@@ -537,7 +600,8 @@
             <input type="radio" name="payVersion" value="delivery" />
             <span class="opt-body">
               <span class="opt-title"
-                ><span>משלוח עד הבית</span><span class="opt-price">₪197</span></span
+                ><span>המפונקת 👑 · הדפסה + משלוח עד הבית</span
+                ><span class="opt-price">₪199</span></span
               >
               <span class="opt-note">אזורים מרוחקים בתיאום ובתוספת תשלום</span>
             </span>
@@ -616,7 +680,11 @@
           </div>
           <div class="actions">
             <button class="soft" id="ideaBtn" type="button">תני לי רעיון 💡</button>
+            <span class="premium-badge hidden" id="premiumBadge">נפתחו עוד רעיונות ✨</span>
           </div>
+          <p class="lock-teaser hidden" id="lockTeaser">
+            🔓 שלמו כדי לפתוח עוד עשרות שאלות שיעזרו לכם לחשוב על עוד מילים
+          </p>
         </div>
 
         <div class="panel hidden" id="panel-list">
@@ -641,6 +709,24 @@
         <div class="sec-h">תקועים? קבלו השראה 👇</div>
         <div class="chips" id="catChips"></div>
         <div class="qlist" id="qList"></div>
+
+        <details class="howto">
+          <summary>איך אוספים מילים טובות 👇</summary>
+          <p class="muted" style="margin: 10px 0">
+            זה החלק הכי כיף - וגם הכי קל כשיש כיוון. עברו על הקטגוריות, כתבו כל מה שעולה. מינימום
+            100 מילים, וכמה שיותר יותר טוב.
+          </p>
+          <div class="cats">
+            <div class="cat"><b>אנשים</b><span>בן/בת זוג, חברים, משפחה, כינויים</span></div>
+            <div class="cat"><b>מקומות</b><span>חופשות, הבית, מקומות אהובים</span></div>
+            <div class="cat"><b>בדיחות פנימיות</b><span>סיפורים שרק אתם מבינים</span></div>
+            <div class="cat"><b>ביטויים שלו</b><span>מה שהוא תמיד אומר</span></div>
+            <div class="cat"><b>הרגלים</b><span>קפה, נטפליקס, ספורט, אוכל</span></div>
+            <div class="cat"><b>עבודה ותחביבים</b><span>מקצוע, חלומות, תשוקות</span></div>
+            <div class="cat"><b>אירועים מהחיים</b><span>רגעים גדולים, הצלחות, פאדיחות</span></div>
+            <div class="cat"><b>ילדות ועבר</b><span>זיכרונות, סיפורים מצחיקים</span></div>
+          </div>
+        </details>
       </div>
 
       <!-- OWNER: share links -->
@@ -671,7 +757,7 @@
     </div>
 
     <script type="module">
-      import { CATEGORIES, fillName, nextPrompt } from './js/word-prompts.js';
+      import { CATEGORIES, PROMPTS, PREMIUM_PROMPTS, fillName } from './js/word-prompts.js';
       import { parseWordText } from './js/collect.js';
       import { track } from './js/analytics.js';
 
@@ -777,6 +863,7 @@
         const open = state.status === 'open';
         setOpenState(open);
         $('#ownerControls').classList.toggle('hidden', !(isOwner && open));
+        if (isOwner) applyPaidState();
       }
 
       async function refresh() {
@@ -876,8 +963,20 @@
       );
 
       // ---- idea generator ----
+      // When the order is marked paid (manually, in admin) the public view sets
+      // state.paid; we then draw from PROMPTS + PREMIUM_PROMPTS for more variety.
+      function isPaid() {
+        return !!(state && state.paid);
+      }
+      function pickPrompt() {
+        const pool = isPaid() ? PROMPTS.concat(PREMIUM_PROMPTS) : PROMPTS;
+        const seen = new Set(seenPrompts);
+        let avail = pool.filter((p) => !seen.has(p.id));
+        if (!avail.length) avail = pool;
+        return avail[Math.floor(Math.random() * avail.length)];
+      }
       $('#ideaBtn').onclick = () => {
-        const p = nextPrompt(seenPrompts);
+        const p = pickPrompt();
         seenPrompts.push(p.id);
         if (seenPrompts.length > 8) seenPrompts.shift();
         const box = $('#ideaBox');
@@ -885,6 +984,16 @@
         box.textContent = '💡 ' + fillName(p.text, honoree());
         $('#wordInput').focus();
       };
+
+      // Reflect paid/locked state on the idea helper: paid shows an "unlocked"
+      // badge, unpaid shows a teaser nudging toward payment.
+      function applyPaidState() {
+        const paid = isPaid();
+        const badge = $('#premiumBadge');
+        const teaser = $('#lockTeaser');
+        if (badge) badge.classList.toggle('hidden', !paid);
+        if (teaser) teaser.classList.toggle('hidden', paid);
+      }
 
       // ---- category chips ----
       function buildCats() {
@@ -944,7 +1053,7 @@
         };
       }
       // ---- owner: pay panel ----
-      const PAY_PRICES = { pdf: 79, pickup: 148, delivery: 197 };
+      const PAY_PRICES = { pdf: 79, pickup: 149, delivery: 199 };
       function selectedVersion() {
         const checked = document.querySelector('input[name="payVersion"]:checked');
         return (checked && checked.value) || 'pdf';

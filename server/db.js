@@ -15,7 +15,7 @@ const DEFAULTS = { collections: [], words: [] };
 
 // Single source of truth for order pricing (NIS).
 // pdf = digital PDF; pickup = printed + pickup at גלאור; delivery = door-to-door.
-const ORDER_PRICES = { pdf: 79, pickup: 148, delivery: 197 };
+const ORDER_PRICES = { pdf: 79, pickup: 149, delivery: 199 };
 
 function loadDb() {
   try {

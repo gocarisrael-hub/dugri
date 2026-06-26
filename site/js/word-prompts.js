@@ -118,6 +118,30 @@ export const PROMPTS = CATEGORIES.flatMap((cat) =>
   cat.questions.map((text, i) => ({ id: `${cat.id}-${i}`, cat: cat.id, text }))
 );
 
+// Extra, higher-depth memory-joggers unlocked AFTER payment. Same shape as
+// PROMPTS ({id, cat, text} with {name} interpolation). Drawn alongside PROMPTS
+// to give paying owners much more variety so they can reach 100+ words.
+export const PREMIUM_PROMPTS = [
+  { id: 'premium-0', cat: 'people', text: 'מי האדם ש{name} מתקשרת אליו ראשון כשקורה משהו?' },
+  { id: 'premium-1', cat: 'people', text: 'הכינוי ש{name} נותנת לאנשים שהיא אוהבת' },
+  { id: 'premium-2', cat: 'jokes', text: 'הפאדיחה של {name} שכולם עדיין מזכירים' },
+  { id: 'premium-3', cat: 'jokes', text: 'מם או סרטון שמזכיר לכם מיד את {name}' },
+  { id: 'premium-4', cat: 'habits', text: 'מה {name} עושה ראשון כשהיא נכנסת הביתה?' },
+  { id: 'premium-5', cat: 'habits', text: 'האפליקציה ש{name} פותחת הכי הרבה בטלפון' },
+  { id: 'premium-6', cat: 'habits', text: 'הדבר ש{name} מתעקשת עליו שמשגע את כולם' },
+  { id: 'premium-7', cat: 'food', text: 'המשקה הקבוע של {name} ביציאה' },
+  { id: 'premium-8', cat: 'food', text: 'מה {name} מזמינה כשמגיעים אליה משלוח בלילה?' },
+  { id: 'premium-9', cat: 'work', text: 'הבוס או הקולגה ש{name} הכי מספרת עליו' },
+  { id: 'premium-10', cat: 'culture', text: 'הסרט ש{name} ראתה מיליון פעם' },
+  { id: 'premium-11', cat: 'culture', text: 'הזמר/ת ש{name} תמיד שמה ברכב' },
+  { id: 'premium-12', cat: 'loves', text: 'הקנייה המיותרת ש{name} הכי גאה בה' },
+  { id: 'premium-13', cat: 'loves', text: 'התחביב ש{name} התחילה ולא המשיכה' },
+  { id: 'premium-14', cat: 'places', text: 'המקום שבו {name} מרגישה הכי בבית' },
+  { id: 'premium-15', cat: 'vacations', text: 'הסיפור מהטיול שתמיד עולה כש{name} מספרת' },
+  { id: 'premium-16', cat: 'sayings', text: 'המשפט ש{name} שולחת בוואטסאפ כל הזמן' },
+  { id: 'premium-17', cat: 'childhood', text: 'הזיכרון מבית הספר ש{name} הכי אוהבת לספר' },
+];
+
 const FALLBACK_NAME = 'בעלת השמחה';
 
 /** Replace {name} in a prompt with the honoree name (or a gentle fallback). */

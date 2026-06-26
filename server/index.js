@@ -17,6 +17,9 @@ function publicView(c) {
     honoree_name: c.honoree_name,
     status: db.effectiveStatus(c),
     expires_at: c.expires_at,
+    // Whether the order has been marked paid (manually, in admin). Drives the
+    // pay-to-unlock prompts on collect.html. The address is NOT exposed.
+    paid: !!(c.order && c.order.paid),
     count: words.length,
     words: words.map((w) => ({
       id: w.id,
