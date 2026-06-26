@@ -293,7 +293,6 @@
         const parts = [];
         if (sel.designName) parts.push('עיצוב: ' + sel.designName);
         if (sel.colorName) parts.push('צבע: ' + sel.colorName);
-        if (sel.plan) parts.push('חבילה: ' + (PLAN_LABELS[sel.plan] || sel.plan));
         if (!parts.length) return;
         const line = document.getElementById('selectionLine');
         line.textContent = 'הבחירה שלכם · ' + parts.join(' · ');
