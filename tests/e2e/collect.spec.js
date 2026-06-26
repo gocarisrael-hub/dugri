@@ -87,7 +87,7 @@ test('pay panel shows the new version names and prices', async ({ page }) => {
   const panel = page.locator('#payPanel');
   await expect(panel).toContainText('דיגיטלי (PDF)');
   await expect(panel).toContainText('מורידים, מדפיסים לבד');
-  await expect(panel).toContainText('מודפס · איסוף מבית דפוס גלאור, ת״א');
+  await expect(panel).toContainText('משחק מוכן · איסוף מבית דפוס גלאור, ת״א');
   await expect(panel).toContainText('₪149');
   await expect(panel).toContainText('המפונקת 👑');
   await expect(panel).toContainText('₪199');
