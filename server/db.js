@@ -13,6 +13,10 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 const DEFAULTS = { collections: [], words: [] };
 
+// Single source of truth for order pricing (NIS).
+// pdf = digital PDF; pickup = printed + pickup at גלאור; delivery = door-to-door.
+const ORDER_PRICES = { pdf: 79, pickup: 148, delivery: 197 };
+
 function loadDb() {
   try {
     if (!fs.existsSync(DB_FILE)) return { ...DEFAULTS };
@@ -57,10 +61,14 @@ const db = {
         .slice(0, 80),
       owner_email: contact.email ? String(contact.email).trim().slice(0, 120) : null,
       owner_phone: contact.phone ? String(contact.phone).trim().slice(0, 40) : null,
+      // Hebrew display names chosen in the order flow (optional).
+      design: contact.design ? String(contact.design).trim().slice(0, 80) : null,
+      color: contact.color ? String(contact.color).trim().slice(0, 80) : null,
       status: 'open',
       created_at: nowIso(),
       expires_at: new Date(Date.now() + WEEK_MS).toISOString(),
       closed_at: null,
+      order: null,
     };
     _db.collections.push(c);
     saveDb();
@@ -141,6 +149,52 @@ const db = {
     saveDb();
     return true;
   },
+
+  // Owner-only: attach/replace the order on a collection.
+  // Returns the stored order, or an {error} object on bad input/auth.
+  setOrder(id, ownerToken, { version, address } = {}) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return { error: 'forbidden' };
+    if (!Object.prototype.hasOwnProperty.call(ORDER_PRICES, version)) {
+      return { error: 'bad version' };
+    }
+    let addr = null;
+    if (version === 'delivery') {
+      const a = address || {};
+      const street = String(a.street || '').trim();
+      const city = String(a.city || '').trim();
+      const postal = String(a.postal || '').trim();
+      if (!street || !city || !postal) return { error: 'address required' };
+      addr = {
+        street: street.slice(0, 120),
+        city: city.slice(0, 120),
+        postal: postal.slice(0, 120),
+        apartment: a.apartment ? String(a.apartment).trim().slice(0, 120) : null,
+        floor: a.floor ? String(a.floor).trim().slice(0, 120) : null,
+      };
+    }
+    c.order = {
+      version,
+      total: ORDER_PRICES[version],
+      address: addr,
+      ordered_at: nowIso(),
+      paid: false,
+      paid_at: null,
+    };
+    saveDb();
+    return c.order;
+  },
+
+  // Admin-only (gated at the route): mark an existing order as paid.
+  markPaid(id) {
+    const c = this.getCollection(id);
+    if (!c || !c.order) return false;
+    c.order.paid = true;
+    c.order.paid_at = nowIso();
+    saveDb();
+    return true;
+  },
 };
 
 module.exports = db;
+module.exports.ORDER_PRICES = ORDER_PRICES;

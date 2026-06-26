@@ -32,7 +32,12 @@ app.post('/api/collections', (req, res) => {
   const b = req.body || {};
   const name = (b.honoree_name || '').trim();
   if (!name) return res.status(400).json({ error: 'honoree_name required' });
-  const c = db.createCollection(name, { email: b.email, phone: b.phone });
+  const c = db.createCollection(name, {
+    email: b.email,
+    phone: b.phone,
+    design: b.design,
+    color: b.color,
+  });
   res.status(201).json({ id: c.id, owner_token: c.owner_token, expires_at: c.expires_at });
 });
 
@@ -50,6 +55,14 @@ app.get('/api/admin/collections', (req, res) => {
   if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
   if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
   res.json({ collections: db.listAllCollections() });
+});
+
+// Admin: mark an order as paid.
+app.post('/api/admin/collections/:id/paid', (req, res) => {
+  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
+  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!db.markPaid(req.params.id)) return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true });
 });
 
 // Public read: anyone with the link can see the words.
@@ -78,6 +91,18 @@ app.post('/api/collections/:id/close', (req, res) => {
     return res.status(403).json({ error: 'forbidden' });
   }
   res.json({ status: 'closed' });
+});
+
+// Owner-only: set the order (version + price + optional delivery address).
+app.post('/api/collections/:id/order', (req, res) => {
+  const b = req.body || {};
+  const r = db.setOrder(req.params.id, b.owner_token, {
+    version: b.version,
+    address: b.address,
+  });
+  if (r && r.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
+  if (r && r.error) return res.status(400).json({ error: r.error });
+  res.json({ version: r.version, total: r.total });
 });
 
 // Owner-only: delete a word (moderation).

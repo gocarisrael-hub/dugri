@@ -143,6 +143,15 @@
         }
       }
       const statusLabel = { open: 'פתוח', closed: 'נסגר ✅', expired: 'הסתיים' };
+      const versionLabel = { pdf: 'דיגיטלי', pickup: 'הדפסה+איסוף', delivery: 'משלוח' };
+
+      function formatAddress(a) {
+        if (!a) return '';
+        const parts = [a.street, a.city, a.postal];
+        if (a.apartment) parts.push('דירה ' + a.apartment);
+        if (a.floor) parts.push('קומה ' + a.floor);
+        return parts.filter(Boolean).join(', ');
+      }
 
       function ownerUrl(c) {
         return location.origin + '/collect.html?c=' + c.id + '&k=' + c.owner_token;
@@ -167,7 +176,7 @@
         }
         const table = document.createElement('table');
         table.innerHTML =
-          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>נוצר</th><th>ניהול</th></tr></thead>';
+          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>נוצר</th><th>ניהול</th></tr></thead>';
         const tb = document.createElement('tbody');
         for (const c of cols) {
           const tr = document.createElement('tr');
@@ -197,10 +206,69 @@
           tdDate.className = 'muted';
           tdDate.textContent = fmtDate(c.created_at);
 
+          const order = c.order || null;
+
+          const tdDesign = document.createElement('td');
+          tdDesign.textContent = c.design || '—';
+
+          const tdColor = document.createElement('td');
+          tdColor.textContent = c.color || '—';
+
+          const tdVersion = document.createElement('td');
+          tdVersion.textContent = order ? versionLabel[order.version] || order.version : '—';
+
+          const tdTotal = document.createElement('td');
+          tdTotal.textContent = order ? order.total + ' ₪' : '—';
+
+          const tdAddress = document.createElement('td');
+          tdAddress.textContent =
+            order && order.version === 'delivery' ? formatAddress(order.address) : '—';
+
+          const tdPaid = document.createElement('td');
+          if (!order) {
+            tdPaid.className = 'muted';
+            tdPaid.textContent = 'טרם הוזמן';
+          } else if (order.paid) {
+            const badge = document.createElement('span');
+            badge.className = 'pill open';
+            badge.textContent = 'שולם ✅';
+            tdPaid.appendChild(badge);
+          } else {
+            const payBtn = document.createElement('button');
+            payBtn.textContent = 'סמן כשולם';
+            payBtn.onclick = async () => {
+              payBtn.disabled = true;
+              try {
+                const r = await fetch(
+                  '/api/admin/collections/' + c.id + '/paid?key=' + encodeURIComponent(key),
+                  { method: 'POST' }
+                );
+                if (r.ok) {
+                  tdPaid.textContent = '';
+                  const badge = document.createElement('span');
+                  badge.className = 'pill open';
+                  badge.textContent = 'שולם ✅';
+                  tdPaid.appendChild(badge);
+                } else {
+                  payBtn.disabled = false;
+                }
+              } catch {
+                payBtn.disabled = false;
+              }
+            };
+            tdPaid.appendChild(payBtn);
+          }
+
           tr.appendChild(tdName);
           tr.appendChild(tdContact);
           tr.appendChild(tdCount);
           tr.appendChild(tdStatus);
+          tr.appendChild(tdDesign);
+          tr.appendChild(tdColor);
+          tr.appendChild(tdVersion);
+          tr.appendChild(tdTotal);
+          tr.appendChild(tdAddress);
+          tr.appendChild(tdPaid);
           tr.appendChild(tdDate);
           const td = document.createElement('td');
           const copyBtn = document.createElement('button');
