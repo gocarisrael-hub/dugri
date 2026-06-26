@@ -27,8 +27,9 @@ const browserGlobals = {
   gtag: 'readonly',
   dataLayer: 'readonly',
   FileReader: 'readonly',
-  // vitest/jsdom unit tests run with Node's `global` available too.
+  // vitest/jsdom unit tests run with Node's `global`/`process` available too.
   global: 'writable',
+  process: 'readonly',
 };
 
 const nodeGlobals = {
