@@ -481,8 +481,9 @@
       }
       .reviews {
         display: grid;
-        gap: 18px;
-        grid-template-columns: 1fr;
+        gap: 12px;
+        /* On mobile show the WhatsApp reviews 2-up so the page is shorter on phones. */
+        grid-template-columns: 1fr 1fr;
         max-width: 480px;
         margin: 0 auto;
       }
@@ -1026,14 +1027,16 @@
       }
       .vclips {
         display: grid;
-        grid-template-columns: 1fr;
-        gap: 16px;
+        /* On mobile show the party clips 2-up (side by side) so the page is shorter on phones. */
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
         max-width: 760px;
         margin: 22px auto 4px;
       }
       @media (min-width: 620px) {
         .vclips {
           grid-template-columns: 1fr 1fr;
+          gap: 16px;
         }
       }
 
@@ -2040,6 +2043,15 @@
           <h2>שאלות נפוצות</h2>
         </div>
         <div class="faq stagger">
+          <details>
+            <summary>מה זה בעצם המשחק?</summary>
+            <p>
+              משחק מסיבה אישי בסגנון ניחוש מילים בקבוצות: אתם שולחים לנו 100+ מילים וביטויים על בעל
+              או בעלת השמחה - בדיחות פנימיות, הרגלים, אנשים ומקומות - ואנחנו הופכים אותם לחפיסת
+              קלפים מעוצבת ולוח משחק מוכנים להדפסה. מתחלקים לקבוצות, מתחרים מי יגרום לחברים לנחש מהר
+              יותר, וכל החדר צוחק על האדם שחוגגים - כי כל מילה היא רק עליו.
+            </p>
+          </details>
           <details>
             <summary>לאילו אירועים זה מתאים?</summary>
             <p>
