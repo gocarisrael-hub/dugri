@@ -180,7 +180,7 @@
         }
         const table = document.createElement('table');
         table.innerHTML =
-          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>נוצר</th><th>ניהול</th></tr></thead>';
+          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>נוצר</th><th>ניהול</th></tr></thead>';
         const tb = document.createElement('tbody');
         for (const c of cols) {
           const tr = document.createElement('tr');
@@ -217,6 +217,18 @@
 
           const tdColor = document.createElement('td');
           tdColor.textContent = c.color || '—';
+
+          // Optional drinking-game add-on: show a small badge when chosen.
+          const tdChasers = document.createElement('td');
+          if (c.chasers) {
+            const badge = document.createElement('span');
+            badge.className = 'pill closed';
+            badge.textContent = '🥃 צ׳ייסרים';
+            tdChasers.appendChild(badge);
+          } else {
+            tdChasers.className = 'muted';
+            tdChasers.textContent = '—';
+          }
 
           const tdVersion = document.createElement('td');
           tdVersion.textContent = order ? versionLabel[order.version] || order.version : '—';
@@ -269,6 +281,7 @@
           tr.appendChild(tdStatus);
           tr.appendChild(tdDesign);
           tr.appendChild(tdColor);
+          tr.appendChild(tdChasers);
           tr.appendChild(tdVersion);
           tr.appendChild(tdTotal);
           tr.appendChild(tdAddress);
