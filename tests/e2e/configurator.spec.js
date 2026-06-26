@@ -87,6 +87,34 @@ test.describe('configurator', () => {
     await expect(page.locator('#createBtn')).toBeVisible();
   });
 
+  test('chasers add-on toggles, persists to the URL and survives reload', async ({ page }) => {
+    await page.goto('/options.html?plan=base');
+
+    const toggle = page.getByTestId('chasers-toggle');
+    const card = page.getByTestId('chasers-card');
+    await expect(card).toBeVisible();
+    await expect(card).toContainText("הוסיפו צ'ייסרים למשחק");
+    await expect(card).toContainText('נכלל בחינם');
+
+    // default OFF
+    await expect(toggle).not.toBeChecked();
+    expect(page.url()).not.toContain('chasers=');
+
+    // turn it on -> &chasers=1 lands in the URL and the card highlights
+    await toggle.check();
+    await expect(toggle).toBeChecked();
+    await expect.poll(() => page.url()).toContain('chasers=1');
+    await expect(card).toHaveClass(/is-on/);
+
+    // survives a reload (restored from the URL)
+    await page.reload();
+    await expect(page.getByTestId('chasers-toggle')).toBeChecked();
+
+    // turning it off removes the param again
+    await page.getByTestId('chasers-toggle').uncheck();
+    await expect.poll(() => page.url()).not.toContain('chasers=1');
+  });
+
   test('raster-background note shows only for the kids design', async ({ page }) => {
     await page.goto('/options.html');
 

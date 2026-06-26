@@ -340,6 +340,10 @@
         // Pass along the configurator selection (Hebrew display names) so the
         // order carries the chosen design + color.
         const sel = resolveSelection() || {};
+        // The chasers add-on rides along from the saved selection, with a URL
+        // fallback (?chasers=1) so it survives even without localStorage.
+        const q = new URLSearchParams(location.search);
+        const chasers = sel.chasers === true || q.get('chasers') === '1';
         try {
           const r = await fetch('/api/collections', {
             method: 'POST',
@@ -350,6 +354,7 @@
               phone,
               design: sel.designName || null,
               color: sel.colorName || null,
+              chasers,
             }),
           });
           const data = await r.json();

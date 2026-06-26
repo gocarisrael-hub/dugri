@@ -582,6 +582,116 @@
         text-align: center;
       }
 
+      /* ===== CHASERS ADD-ON CARD ===== */
+      .addon {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        background: linear-gradient(
+          135deg,
+          color-mix(in srgb, var(--hot) 8%, var(--surface)),
+          var(--surface)
+        );
+        border: 1.5px solid var(--blush-deep);
+        border-radius: 18px;
+        padding: 16px 18px;
+        box-shadow: var(--shadow-sm);
+        cursor: pointer;
+        transition:
+          border-color 0.2s ease,
+          box-shadow 0.2s ease,
+          transform 0.16s ease;
+      }
+      .addon:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+      }
+      .addon.is-on {
+        border-color: var(--hot);
+        box-shadow:
+          0 0 0 3px rgba(229, 25, 125, 0.16),
+          var(--shadow-md);
+      }
+      .addon-emoji {
+        font-size: 30px;
+        line-height: 1;
+        flex: 0 0 auto;
+      }
+      .addon-body {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .addon-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 16px;
+        color: var(--ink);
+      }
+      .addon-free {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 11.5px;
+        color: #1f7a4d;
+        background: #e6f6ee;
+        padding: 3px 9px;
+        border-radius: 999px;
+      }
+      .addon-desc {
+        margin-top: 4px;
+        font-size: 13.5px;
+        line-height: 1.4;
+        color: var(--muted);
+      }
+      /* the switch itself - a styled checkbox */
+      .switch {
+        position: relative;
+        flex: 0 0 auto;
+        width: 52px;
+        height: 30px;
+      }
+      .switch input {
+        position: absolute;
+        opacity: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        cursor: pointer;
+        z-index: 2;
+      }
+      .switch .track {
+        position: absolute;
+        inset: 0;
+        background: var(--blush-deep);
+        border-radius: 999px;
+        transition: background 0.2s ease;
+      }
+      .switch .track::before {
+        content: '';
+        position: absolute;
+        top: 3px;
+        inset-inline-start: 3px;
+        width: 24px;
+        height: 24px;
+        background: #fff;
+        border-radius: 50%;
+        box-shadow: var(--shadow-sm);
+        transition: transform 0.2s ease;
+      }
+      .switch input:checked + .track {
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+      }
+      .switch input:checked + .track::before {
+        transform: translateX(-22px);
+      }
+      .switch input:focus-visible + .track {
+        outline: 3px solid var(--hot);
+        outline-offset: 2px;
+      }
+
       /* sticky continue bar */
       .continue-bar {
         position: fixed;
@@ -741,6 +851,29 @@
             </p>
           </section>
 
+          <!-- CHASERS DRINKING-GAME ADD-ON -->
+          <label class="addon" id="chasersCard" data-testid="chasers-card">
+            <span class="addon-emoji" aria-hidden="true">🥃</span>
+            <span class="addon-body">
+              <span class="addon-title">
+                הוסיפו צ'ייסרים למשחק
+                <span class="addon-free">נכלל בחינם</span>
+              </span>
+              <span class="addon-desc">
+                מוסיפים ללוח תאים מיוחדים של משחק שתייה - מי שנוחת עליהם, מרים כוסית! 🍻
+              </span>
+            </span>
+            <span class="switch">
+              <input
+                type="checkbox"
+                id="chasersToggle"
+                data-testid="chasers-toggle"
+                aria-label="הוסיפו צ'ייסרים למשחק"
+              />
+              <span class="track" aria-hidden="true"></span>
+            </span>
+          </label>
+
           <!-- DESIGN PICKER -->
           <section class="picker">
             <h2>בחרו עיצוב</h2>
@@ -821,6 +954,7 @@
       let designIndex = 0;
       let colorIndex = -1; // -1 = the design's original colors (default)
       let activeTab = 'front';
+      let chasers = false; // optional drinking-game add-on (default OFF)
 
       // cache of fetched raw SVG text keyed by path
       const svgCache = new Map();
@@ -1032,6 +1166,7 @@
           colorId,
           colorName,
           mainHex,
+          chasers,
         };
       }
 
@@ -1056,6 +1191,9 @@
         url.searchParams.set('plan', s.plan);
         url.searchParams.set('design', s.designId);
         url.searchParams.set('color', s.colorId);
+        // only carry the chasers flag in the URL when it's on (&chasers=1)
+        if (s.chasers) url.searchParams.set('chasers', '1');
+        else url.searchParams.delete('chasers');
         history.replaceState(null, '', url);
         // refresh the continue button intent + summary
         let order;
@@ -1071,6 +1209,20 @@
         document.getElementById('continueSummary').textContent =
           order && order.summary ? order.summary : s.designName + ' · ' + s.colorName;
       }
+
+      /* ---- chasers add-on toggle ---- */
+      const chasersToggle = document.getElementById('chasersToggle');
+      const chasersCard = document.getElementById('chasersCard');
+      function paintChasers() {
+        chasersToggle.checked = chasers;
+        chasersCard.classList.toggle('is-on', chasers);
+      }
+      chasersToggle.addEventListener('change', () => {
+        chasers = chasersToggle.checked;
+        chasersCard.classList.toggle('is-on', chasers);
+        track('toggle_chasers', { chasers });
+        persist();
+      });
 
       /* ---- continue to (demo) checkout ---- */
       document.getElementById('continueBtn').addEventListener('click', () => {
@@ -1096,6 +1248,16 @@
         } else {
           colorIndex = -1;
         }
+        // restore the chasers add-on from the URL (?chasers=1), falling back to
+        // the saved selection so the choice survives navigation either way.
+        if (params.has('chasers')) {
+          chasers = params.get('chasers') === '1';
+        } else {
+          try {
+            const saved = JSON.parse(localStorage.getItem('dugri_selection') || 'null');
+            if (saved && typeof saved.chasers === 'boolean') chasers = saved.chasers;
+          } catch (e) {}
+        }
         document
           .querySelectorAll('.design')
           .forEach((el, idx) =>
@@ -1104,6 +1266,7 @@
         updateOrigChip();
         updateRasterNote();
         setActiveSwatch(colorIndex);
+        paintChasers();
       })();
 
       selectTab('front');

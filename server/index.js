@@ -40,6 +40,7 @@ app.post('/api/collections', (req, res) => {
     phone: b.phone,
     design: b.design,
     color: b.color,
+    chasers: b.chasers,
   });
   res.status(201).json({ id: c.id, owner_token: c.owner_token, expires_at: c.expires_at });
 });

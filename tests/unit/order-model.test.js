@@ -91,6 +91,25 @@ describe('setOrder', () => {
   });
 });
 
+describe('chasers add-on', () => {
+  it('stores chasers as a boolean when requested', () => {
+    const c = db.createCollection('בדיקה', { design: 'יום הולדת', chasers: true });
+    expect(c.chasers).toBe(true);
+    // surfaced by listAllCollections (which spreads the collection)
+    const listed = db.listAllCollections().find((x) => x.id === c.id);
+    expect(listed.chasers).toBe(true);
+  });
+
+  it('defaults chasers to false and coerces truthy/falsy input', () => {
+    const off = db.createCollection('בדיקה');
+    expect(off.chasers).toBe(false);
+    const coerced = db.createCollection('בדיקה', { chasers: 'yes' });
+    expect(coerced.chasers).toBe(true);
+    const zero = db.createCollection('בדיקה', { chasers: 0 });
+    expect(zero.chasers).toBe(false);
+  });
+});
+
 describe('markPaid', () => {
   it('flips paid and sets paid_at', () => {
     const c = freshCollection();

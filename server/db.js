@@ -64,6 +64,9 @@ const db = {
       // Hebrew display names chosen in the order flow (optional).
       design: contact.design ? String(contact.design).trim().slice(0, 80) : null,
       color: contact.color ? String(contact.color).trim().slice(0, 80) : null,
+      // Optional drinking-game add-on ("צ'ייסרים") - free; the owner builds the
+      // board with special "drink" tiles when this is on.
+      chasers: !!contact.chasers,
       status: 'open',
       created_at: nowIso(),
       expires_at: new Date(Date.now() + WEEK_MS).toISOString(),
