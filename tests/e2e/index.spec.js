@@ -86,23 +86,14 @@ test.describe('price CTA wrapping', () => {
 });
 
 test.describe('audience "who is this game for" section', () => {
-  const LABELS = [
-    'מסיבת רווקות',
-    'יום הולדת 30',
-    'יום הולדת 40',
-    'יום הולדת 50',
-    'יום הולדת 60',
-    'יום נישואין',
-    'פרישה',
-    'מסיבת פרידה',
-  ];
+  const LABELS = ['מסיבת רווקות', 'יום הולדת עגול', 'יום נישואין', 'פרישה', 'מסיבת פרידה'];
 
   test('is present with all event labels', async ({ page }) => {
     await page.goto('/index.html');
     const section = page.locator('[data-testid="audience"]');
     await expect(section).toBeVisible();
     const grid = page.locator('[data-testid="audience-grid"]');
-    // At least the 8 event cards.
+    // The 5 event cards (round-birthday merged into one).
     await expect(grid.locator('.aud-card')).toHaveCount(LABELS.length);
     const text = await grid.innerText();
     for (const label of LABELS) {
