@@ -1,38 +1,43 @@
-# אליאס אישי — אתר
+# דוגרי — אתר
 
-Static landing page (Hebrew, RTL, mobile-first). No build step, no dependencies.
+Hebrew, RTL, mobile-first. Served by a small Node/Express app (`server/`) that
+serves this `site/` folder plus a tiny `/api` (word-collection + orders), with a
+JSON-file store under `DATA_DIR`.
 
-## Files
+## The flow
 
-- `index.html` — the landing page.
-- `thankyou.html` — where customers land after paying; collects the words.
-- `assets/` — put real photos here.
+Landing (`index.html`) → **order wizard** (`options.html`, 5 steps: design → color →
+add-ons → celebrant name → contact) → creates a collection → **`collect.html`**
+(collect 100+ words with friends, and pay any time). Payment is via **Bit** (the
+owner reconciles manually and marks paid on the admin page). `admin.html?key=…`
+lists every order (design/color/version/total/address/🥃-chasers) with a "סמן כשולם" button.
 
-## Fill these in before launch
+## Pages
 
-All in the `CONFIG` block at the bottom of `index.html`:
+- `index.html` — landing page.
+- `options.html` — the step-by-step order wizard.
+- `collect.html` — collaborative word collection + the owner pay panel (Bit).
+- `admin.html` — owner orders page (needs `?key=<ADMIN_KEY>`).
+- `timer.html` — in-game timer.
+- `js/` — `configurator.js`, `collect.js`, `word-prompts.js`, `analytics.js`, `consent.js`, etc.
+- `assets/` — logo, designs (`assets/designs/*`), photos, videos.
 
-- `whatsapp` — number in international format, digits only (e.g. `9725XXXXXXXX`).
-- `instagram` — handle without the `@`.
-- `tranzilaTerminal` — your Tranzila terminal name. **While empty, the order buttons fall back to WhatsApp** so the site already works.
-- `successUrl` — your domain + `/thankyou.html`.
+## Config
 
-Also update `WHATSAPP` at the bottom of `thankyou.html` (same number).
+- Google Analytics id lives in `js/consent.js` (`GA_ID`).
+- The Bit "pay me" link is in `collect.html`'s pay panel.
+- Server env: `ADMIN_KEY` (required in production for the admin page), `DATA_DIR`
+  (the JSON store path; a Railway volume in prod, e.g. `/data`).
 
-Replace the 4 placeholder boxes in the gallery section with real images:
-`<img src="assets/your-photo.jpg" alt="">`
+## Run locally
 
-## Preview locally
+```
+cd server && npm i
+DATA_DIR=/tmp/dugri ADMIN_KEY=dev node index.js   # then open http://localhost:$PORT
+```
 
-Open `index.html` in a browser, or run:
-`python3 -m http.server 8000` then visit `http://localhost:8000`
+## Deploy
 
-## Deploy (free)
-
-Drag the `site` folder onto https://app.netlify.com/drop — you get a live URL in seconds.
-Later connect a custom domain.
-
-## Payment flow
-
-Pay (Tranzila hosted page) → redirect to `thankyou.html` → customer taps WhatsApp to send words → file within 24h.
-Automating the _outbound_ WhatsApp (Make/Zapier + Tranzila webhook) is a fast-follow, not needed for launch.
+Railway, via the `Dockerfile` (node:20-alpine). Set a volume at `/data`,
+`DATA_DIR=/data`, and `ADMIN_KEY`. Deploy is triggered manually from the GitHub
+Actions "Deploy to Railway" workflow.
