@@ -692,8 +692,135 @@
         outline-offset: 2px;
       }
 
-      /* sticky continue bar */
-      .continue-bar {
+      /* ===== WIZARD CHROME ===== */
+      .wiz-progress {
+        max-width: 520px;
+        margin: 14px auto 0;
+      }
+      .wiz-steplabel {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 14px;
+        color: var(--wine);
+        text-align: center;
+        margin-bottom: 7px;
+      }
+      .bar {
+        height: 8px;
+        background: var(--line);
+        border-radius: 99px;
+        overflow: hidden;
+      }
+      .bar > i {
+        display: block;
+        height: 100%;
+        width: 20%;
+        background: linear-gradient(90deg, var(--hot), var(--wine));
+        transition: width 0.4s ease;
+      }
+
+      /* collapsed preview on the name/contact steps */
+      .preview-card.is-collapsed .tabs {
+        display: none;
+      }
+      .preview-card.is-collapsed .preview-stage {
+        min-height: 0;
+        padding: 10px;
+      }
+      .preview-card.is-collapsed .preview-panel svg,
+      .preview-card.is-collapsed .preview-panel img {
+        max-height: 150px;
+      }
+      .preview-chip {
+        margin-top: 12px;
+        text-align: center;
+      }
+      .preview-chip .continue-summary {
+        display: inline-block;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 14px;
+        color: var(--wine-deep);
+        background: var(--blush);
+        padding: 8px 16px;
+        border-radius: 999px;
+      }
+
+      /* the steps themselves - one visible at a time */
+      .wiz-step {
+        display: none;
+        max-width: 760px;
+        margin: 24px auto 0;
+      }
+      .wiz-step.is-active {
+        display: block;
+        animation: wizfade 0.26s ease both;
+      }
+      @keyframes wizfade {
+        from {
+          opacity: 0;
+          transform: translateY(7px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .wiz-title {
+        font-size: 23px;
+        text-align: center;
+        color: var(--ink);
+      }
+      .wiz-sub {
+        text-align: center;
+        color: var(--muted);
+        margin: 6px 0 18px;
+        font-size: 15px;
+      }
+
+      .wiz-field {
+        display: block;
+        max-width: 440px;
+        margin: 0 auto 16px;
+      }
+      .wiz-lbl {
+        display: block;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 14px;
+        color: var(--wine-deep);
+        margin-bottom: 6px;
+      }
+      .wiz-input {
+        width: 100%;
+        max-width: 440px;
+        margin: 0 auto;
+        display: block;
+        font: inherit;
+        padding: 14px 15px;
+        border: 1.5px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        color: var(--ink);
+      }
+      .wiz-input:focus {
+        outline: 2px solid var(--hot);
+        border-color: var(--hot);
+      }
+      .wiz-err {
+        display: block;
+        color: #c2415f;
+        font-size: 13.5px;
+        font-weight: 700;
+        margin-top: 7px;
+        text-align: center;
+      }
+      .wiz-err[hidden] {
+        display: none;
+      }
+
+      /* sticky Back / Next bar */
+      .wiz-bar {
         position: fixed;
         bottom: 0;
         inset-inline: 0;
@@ -704,7 +831,7 @@
         box-shadow: 0 -8px 24px rgba(44, 26, 41, 0.08);
         padding: 12px 16px;
       }
-      .continue-inner {
+      .wiz-bar-inner {
         max-width: 1000px;
         margin: 0 auto;
         display: flex;
@@ -712,36 +839,38 @@
         align-items: center;
         justify-content: space-between;
       }
-      .continue-summary {
+      .wiz-back {
+        flex: 0 0 auto;
         font-family: var(--display);
         font-weight: 800;
-        font-size: 14.5px;
-        color: var(--wine-deep);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .continue-bar .btn {
-        flex: 0 0 auto;
-      }
-      @media (max-width: 560px) {
-        .continue-summary {
-          display: none;
-        }
-        .continue-bar .btn {
-          flex: 1;
-          width: 100%;
-        }
-      }
-
-      .back {
-        text-align: center;
-        margin: 30px 0 6px;
-        font-size: 14px;
-      }
-      .back a {
+        font-size: 16px;
         color: var(--wine);
-        font-weight: 700;
+        background: var(--blush);
+        border: 1.5px solid var(--blush-deep);
+        border-radius: 999px;
+        padding: 14px 22px;
+        cursor: pointer;
+        transition: background 0.18s ease;
+      }
+      .wiz-back:hover {
+        background: var(--blush-deep);
+      }
+      .wiz-back.is-hidden {
+        visibility: hidden;
+      }
+      .wiz-bar .btn {
+        flex: 1;
+        max-width: 360px;
+        padding: 15px 28px;
+      }
+      .wiz-bar .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        box-shadow: none;
+        filter: grayscale(0.15);
+      }
+      .wiz-bar .btn:disabled::after {
+        display: none;
       }
 
       @media (prefers-reduced-motion: reduce) {
@@ -783,121 +912,182 @@
 
     <main class="wrap" data-testid="configurator">
       <div class="cfg-head">
-        <h1>בונים את המשחק שלכם</h1>
-        <p>בוחרים עיצוב וצבע - והכל מתעדכן לנגד עיניכם.</p>
         <div class="plan-pill" data-testid="plan-pill">
           החל מ- <s class="was">129</s><span id="planPrice" data-testid="plan-price">79</span> ₪
         </div>
-      </div>
-
-      <div class="cfg-grid">
-        <!-- LIVE PREVIEW -->
-        <section class="preview-card" data-testid="preview">
-          <div class="tabs" role="tablist" aria-label="תצוגה">
-            <button
-              class="tab"
-              role="tab"
-              data-tab="front"
-              data-testid="tab-front"
-              aria-selected="true"
-            >
-              קלף
-            </button>
-            <button
-              class="tab"
-              role="tab"
-              data-tab="back"
-              data-testid="tab-back"
-              aria-selected="false"
-            >
-              גב
-            </button>
-            <button
-              class="tab"
-              role="tab"
-              data-tab="board"
-              data-testid="tab-board"
-              aria-selected="false"
-            >
-              לוח
-            </button>
+        <div class="wiz-progress">
+          <div class="wiz-steplabel">
+            שלב <span id="stepNow" data-testid="step-now">1</span> מתוך 5
           </div>
-          <div class="preview-stage" id="previewStage" data-testid="preview-stage">
-            <div
-              class="preview-panel"
-              data-panel="front"
-              data-testid="preview-front"
-              data-active="true"
-            ></div>
-            <div class="preview-panel" data-panel="back" data-testid="preview-back"></div>
-            <div class="preview-panel" data-panel="board" data-testid="preview-board"></div>
-            <div class="preview-empty" id="previewEmpty" hidden>טוען תצוגה…</div>
-          </div>
-        </section>
-
-        <div class="cfg-controls">
-          <!-- COLOR PICKER (right by the preview - change colours without scrolling) -->
-          <section class="picker">
-            <h2>בחרו צבע ראשי</h2>
-            <div
-              class="colors"
-              id="colorList"
-              data-testid="color-list"
-              role="group"
-              aria-label="צבעים"
-            ></div>
-            <p class="raster-note" id="rasterNote" data-testid="raster-note" hidden>
-              הרקע בעיצוב זה קבוע ולא משתנה עם הצבע
-            </p>
-          </section>
-
-          <!-- CHASERS DRINKING-GAME ADD-ON -->
-          <label class="addon" id="chasersCard" data-testid="chasers-card">
-            <span class="addon-emoji" aria-hidden="true">🥃</span>
-            <span class="addon-body">
-              <span class="addon-title">
-                הוסיפו צ'ייסרים למשחק
-                <span class="addon-free">נכלל בחינם</span>
-              </span>
-              <span class="addon-desc">
-                מוסיפים ללוח תאים מיוחדים של משחק שתייה - מי שנוחת עליהם, מרים כוסית! 🍻
-              </span>
-            </span>
-            <span class="switch">
-              <input
-                type="checkbox"
-                id="chasersToggle"
-                data-testid="chasers-toggle"
-                aria-label="הוסיפו צ'ייסרים למשחק"
-              />
-              <span class="track" aria-hidden="true"></span>
-            </span>
-          </label>
-
-          <!-- DESIGN PICKER -->
-          <section class="picker">
-            <h2>בחרו עיצוב</h2>
-            <div
-              class="designs"
-              id="designList"
-              data-testid="design-list"
-              role="group"
-              aria-label="עיצובים"
-            ></div>
-          </section>
+          <div class="bar"><i id="barFill"></i></div>
         </div>
       </div>
 
-      <p class="back"><a href="index.html#top">חזרה לעמוד הבית ←</a></p>
+      <!-- LIVE PREVIEW (collapses to a thumbnail + summary on steps 4-5) -->
+      <section class="preview-card" id="previewCard" data-testid="preview">
+        <div class="tabs" role="tablist" aria-label="תצוגה">
+          <button
+            class="tab"
+            role="tab"
+            data-tab="front"
+            data-testid="tab-front"
+            aria-selected="true"
+          >
+            קלף
+          </button>
+          <button
+            class="tab"
+            role="tab"
+            data-tab="back"
+            data-testid="tab-back"
+            aria-selected="false"
+          >
+            גב
+          </button>
+          <button
+            class="tab"
+            role="tab"
+            data-tab="board"
+            data-testid="tab-board"
+            aria-selected="false"
+          >
+            לוח
+          </button>
+        </div>
+        <div class="preview-stage" id="previewStage" data-testid="preview-stage">
+          <div
+            class="preview-panel"
+            data-panel="front"
+            data-testid="preview-front"
+            data-active="true"
+          ></div>
+          <div class="preview-panel" data-panel="back" data-testid="preview-back"></div>
+          <div class="preview-panel" data-panel="board" data-testid="preview-board"></div>
+          <div class="preview-empty" id="previewEmpty" hidden>טוען תצוגה…</div>
+        </div>
+        <div class="preview-chip" id="previewChip" hidden>
+          <span class="continue-summary" id="continueSummary" data-testid="continue-summary"></span>
+        </div>
+      </section>
+
+      <!-- STEP 1 — design -->
+      <section class="wiz-step" data-step="1" data-testid="step-1">
+        <h2 class="wiz-title">בחרו עיצוב</h2>
+        <p class="wiz-sub">זה הסגנון של הקלפים והלוח. אפשר להחליף בכל רגע.</p>
+        <div
+          class="designs"
+          id="designList"
+          data-testid="design-list"
+          role="group"
+          aria-label="עיצובים"
+        ></div>
+      </section>
+
+      <!-- STEP 2 — color -->
+      <section class="wiz-step" data-step="2" data-testid="step-2">
+        <h2 class="wiz-title">בחרו צבע ראשי</h2>
+        <p class="wiz-sub">התצוגה מתעדכנת מיד. אפשר להישאר עם "מקורי".</p>
+        <div
+          class="colors"
+          id="colorList"
+          data-testid="color-list"
+          role="group"
+          aria-label="צבעים"
+        ></div>
+        <p class="raster-note" id="rasterNote" data-testid="raster-note" hidden>
+          הרקע בעיצוב זה קבוע ולא משתנה עם הצבע
+        </p>
+      </section>
+
+      <!-- STEP 3 — add-ons -->
+      <section class="wiz-step" data-step="3" data-testid="step-3">
+        <h2 class="wiz-title">תוספות</h2>
+        <p class="wiz-sub">לא חובה — אפשר פשוט להמשיך.</p>
+        <label class="addon" id="chasersCard" data-testid="chasers-card">
+          <span class="addon-emoji" aria-hidden="true">🥃</span>
+          <span class="addon-body">
+            <span class="addon-title">
+              הוסיפו צ'ייסרים למשחק
+              <span class="addon-free">נכלל בחינם</span>
+            </span>
+            <span class="addon-desc">
+              מוסיפים ללוח תאים מיוחדים של משחק שתייה - מי שנוחת עליהם, מרים כוסית! 🍻
+            </span>
+          </span>
+          <span class="switch">
+            <input
+              type="checkbox"
+              id="chasersToggle"
+              data-testid="chasers-toggle"
+              aria-label="הוסיפו צ'ייסרים למשחק"
+            />
+            <span class="track" aria-hidden="true"></span>
+          </span>
+        </label>
+      </section>
+
+      <!-- STEP 4 — honoree name -->
+      <section class="wiz-step" data-step="4" data-testid="step-4">
+        <h2 class="wiz-title">שם בעל/ת השמחה</h2>
+        <p class="wiz-sub">השם הזה יופיע על הקלפים — כתבו אותו בדיוק כפי שתרצו שיופיע.</p>
+        <input
+          class="wiz-input"
+          type="text"
+          id="honoreeInput"
+          data-testid="honoree-input"
+          maxlength="60"
+          placeholder="למשל: שירה"
+          autocomplete="name"
+        />
+      </section>
+
+      <!-- STEP 5 — your details -->
+      <section class="wiz-step" data-step="5" data-testid="step-5">
+        <h2 class="wiz-title">הפרטים שלכם</h2>
+        <p class="wiz-sub">לשליחת קישור הניהול והקובץ המוכן.</p>
+        <label class="wiz-field">
+          <span class="wiz-lbl">מייל</span>
+          <input
+            class="wiz-input"
+            type="email"
+            id="ownerEmail"
+            data-testid="owner-email"
+            maxlength="120"
+            placeholder="name@example.com"
+            autocomplete="email"
+            inputmode="email"
+          />
+          <span class="wiz-err" id="emailErr" data-testid="email-err" hidden
+            >נא להזין כתובת מייל תקינה.</span
+          >
+        </label>
+        <label class="wiz-field">
+          <span class="wiz-lbl">טלפון נייד</span>
+          <input
+            class="wiz-input"
+            type="tel"
+            id="ownerPhone"
+            data-testid="owner-phone"
+            maxlength="40"
+            placeholder="0521234567"
+            autocomplete="tel"
+            inputmode="tel"
+          />
+          <span class="wiz-err" id="phoneErr" data-testid="phone-err" hidden
+            >נא להזין מספר נייד תקין (לדוגמה 0521234567).</span
+          >
+        </label>
+        <p class="wiz-err" id="createErr" data-testid="create-err" hidden></p>
+      </section>
     </main>
 
-    <!-- STICKY CONTINUE -->
-    <div class="continue-bar">
-      <div class="continue-inner">
-        <div class="continue-summary" id="continueSummary" data-testid="continue-summary"></div>
-        <button class="btn" id="continueBtn" type="button" data-testid="continue-btn">
-          להזמנה ולתשלום · <s class="was">129</s><span id="continuePrice">79</span>₪
+    <!-- STICKY BACK / NEXT -->
+    <div class="wiz-bar">
+      <div class="wiz-bar-inner">
+        <button class="wiz-back is-hidden" id="backBtn" type="button" data-testid="back-btn">
+          הקודם
         </button>
+        <button class="btn" id="nextBtn" type="button" data-testid="next-btn">הבא</button>
       </div>
     </div>
 
@@ -908,7 +1098,6 @@
         applyOriginal,
         mainAnchor,
         lightTint,
-        buildOrder,
         validateManifest,
       } from './js/configurator.js';
       import { track } from './js/analytics.js';
@@ -944,9 +1133,7 @@
       let plan = 'base';
 
       function paintPlan() {
-        const p = PLANS[plan];
-        document.getElementById('planPrice').textContent = p.price;
-        document.getElementById('continuePrice').textContent = p.price;
+        document.getElementById('planPrice').textContent = PLANS[plan].price;
       }
       paintPlan();
 
@@ -955,6 +1142,7 @@
       let colorIndex = -1; // -1 = the design's original colors (default)
       let activeTab = 'front';
       let chasers = false; // optional drinking-game add-on (default OFF)
+      let currentStep = 1; // wizard position (1..5); read by persist() for the URL
 
       // cache of fetched raw SVG text keyed by path
       const svgCache = new Map();
@@ -1170,23 +1358,13 @@
         };
       }
 
-      function buildCurrentOrder() {
-        const s = currentSelection();
-        return buildOrder({
-          plan: s.plan,
-          designId: s.designId,
-          designName: s.designName,
-          colorName: s.colorName,
-          mainHex: s.mainHex,
-        });
-      }
-
       function persist() {
         const s = currentSelection();
         try {
           localStorage.setItem('dugri_selection', JSON.stringify(s));
         } catch (e) {}
-        // reflect in the URL so thankyou.html can read it without storage
+        // reflect the selection + wizard position in the URL so a refresh or the
+        // browser Back button restores both the choices and the current step.
         const url = new URL(location.href);
         url.searchParams.set('plan', s.plan);
         url.searchParams.set('design', s.designId);
@@ -1194,20 +1372,15 @@
         // only carry the chasers flag in the URL when it's on (&chasers=1)
         if (s.chasers) url.searchParams.set('chasers', '1');
         else url.searchParams.delete('chasers');
+        url.searchParams.set('step', String(currentStep));
         history.replaceState(null, '', url);
-        // refresh the continue button intent + summary
-        let order;
-        try {
-          order = buildCurrentOrder();
-        } catch (e) {
-          order = null;
+        // refresh the collapsed-preview summary chip
+        const chip = document.getElementById('continueSummary');
+        if (chip) {
+          let txt = 'עיצוב ' + s.designName + ' · צבע ' + s.colorName;
+          if (s.chasers) txt += ' · 🥃';
+          chip.textContent = txt;
         }
-        const btn = document.getElementById('continueBtn');
-        if (order && order.whatsappUrl) {
-          btn.dataset.waUrl = order.whatsappUrl;
-        }
-        document.getElementById('continueSummary').textContent =
-          order && order.summary ? order.summary : s.designName + ' · ' + s.colorName;
       }
 
       /* ---- chasers add-on toggle ---- */
@@ -1224,14 +1397,163 @@
         persist();
       });
 
-      /* ---- continue to (demo) checkout ---- */
-      document.getElementById('continueBtn').addEventListener('click', () => {
-        persist();
-        track('begin_checkout');
-        // Payment now lives on the collect page. Go straight to thankyou (create a
-        // shared collection), then the owner pays from the collect page any time.
-        window.location.href = 'thankyou.html' + location.search;
+      /* ====================================================================
+         WIZARD CONTROLLER — one step visible at a time, Back/Next + validation.
+         The design/color/preview/chasers machinery above is reused as-is; this
+         only governs which step is shown and whether Next is enabled.
+         ==================================================================== */
+      const TOTAL_STEPS = 5;
+      const stepSections = Array.from(document.querySelectorAll('.wiz-step'));
+      const previewCard = document.getElementById('previewCard');
+      const previewChip = document.getElementById('previewChip');
+      const barFill = document.getElementById('barFill');
+      const stepNow = document.getElementById('stepNow');
+      const backBtn = document.getElementById('backBtn');
+      const nextBtn = document.getElementById('nextBtn');
+
+      const nameInput = document.getElementById('honoreeInput');
+      const emailInput = document.getElementById('ownerEmail');
+      const phoneInput = document.getElementById('ownerPhone');
+      const emailErr = document.getElementById('emailErr');
+      const phoneErr = document.getElementById('phoneErr');
+      const createErr = document.getElementById('createErr');
+
+      // Both contact fields are required so we can always reach the owner with
+      // the management link (same rules the retired thankyou page used).
+      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const isValidEmail = (v) => EMAIL_RE.test(v);
+      const isValidIlMobile = (v) => /^0\d{8,9}$/.test(String(v).replace(/[\s-]/g, ''));
+
+      function validateStep(n) {
+        if (n <= 3) return true; // design / color / add-ons all have safe defaults
+        if (n === 4) return nameInput.value.trim().length > 0;
+        if (n === 5)
+          return isValidEmail(emailInput.value.trim()) && isValidIlMobile(phoneInput.value.trim());
+        return true;
+      }
+
+      // Inline field errors on step 5 (only once the user has typed something).
+      function refreshStep5Errors() {
+        const e = emailInput.value.trim();
+        const p = phoneInput.value.trim();
+        emailErr.hidden = !(e.length && !isValidEmail(e));
+        phoneErr.hidden = !(p.length && !isValidIlMobile(p));
+      }
+
+      function refreshControls() {
+        backBtn.classList.toggle('is-hidden', currentStep === 1);
+        nextBtn.textContent = currentStep === TOTAL_STEPS ? 'צרו את המשחק' : 'הבא';
+        nextBtn.disabled = !validateStep(currentStep);
+        if (currentStep === 5) refreshStep5Errors();
+      }
+
+      let checkoutTracked = false;
+      function goStep(n, opts = {}) {
+        currentStep = Math.min(TOTAL_STEPS, Math.max(1, n | 0));
+        stepSections.forEach((s) =>
+          s.classList.toggle('is-active', Number(s.dataset.step) === currentStep)
+        );
+        const collapsed = currentStep >= 4; // name/contact steps shrink the preview
+        previewCard.classList.toggle('is-collapsed', collapsed);
+        previewChip.hidden = !collapsed;
+        stepNow.textContent = String(currentStep);
+        barFill.style.width = Math.round((currentStep / TOTAL_STEPS) * 100) + '%';
+        refreshControls();
+        // history: push a new entry for forward/back nav; popstate restores w/o push
+        if (!opts.fromPop) {
+          const url = new URL(location.href);
+          url.searchParams.set('step', String(currentStep));
+          history.pushState({ step: currentStep }, '', url);
+        }
+        persist(); // keeps step + selection on the current URL entry
+        if (currentStep === 5 && !checkoutTracked) {
+          checkoutTracked = true;
+          track('begin_checkout');
+        }
+        if (currentStep === 4) nameInput.focus();
+        if (currentStep === 5) emailInput.focus();
+        window.scrollTo({ top: 0, behavior: 'auto' });
+      }
+
+      function next() {
+        if (!validateStep(currentStep)) return;
+        if (currentStep === TOTAL_STEPS) {
+          createCollection();
+          return;
+        }
+        goStep(currentStep + 1);
+      }
+      function back() {
+        if (currentStep > 1) goStep(currentStep - 1);
+      }
+      backBtn.addEventListener('click', back);
+      nextBtn.addEventListener('click', next);
+
+      // Live-validate so Next / "צרו את המשחק" enables as the user types.
+      nameInput.addEventListener('input', () => {
+        if (currentStep === 4) refreshControls();
       });
+      [emailInput, phoneInput].forEach((el) =>
+        el.addEventListener('input', () => {
+          if (currentStep === 5) refreshControls();
+        })
+      );
+
+      // Browser Back/Forward and refresh walk the wizard via ?step=N.
+      window.addEventListener('popstate', () => {
+        const sp = new URLSearchParams(location.search);
+        const n = parseInt(sp.get('step') || '1', 10);
+        goStep(Number.isNaN(n) ? 1 : n, { fromPop: true });
+      });
+
+      // Final step: create the shared collection, then go collect words + pay.
+      async function createCollection() {
+        const name = nameInput.value.trim();
+        const email = emailInput.value.trim();
+        const phone = phoneInput.value.trim();
+        createErr.hidden = true;
+        if (!name) {
+          goStep(4);
+          return;
+        }
+        if (!isValidEmail(email)) {
+          emailErr.hidden = false;
+          emailInput.focus();
+          return;
+        }
+        if (!isValidIlMobile(phone)) {
+          phoneErr.hidden = false;
+          phoneInput.focus();
+          return;
+        }
+        const prevLabel = nextBtn.textContent;
+        nextBtn.disabled = true;
+        nextBtn.textContent = 'יוצר…';
+        const s = currentSelection();
+        try {
+          const r = await fetch('/api/collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              honoree_name: name,
+              email,
+              phone,
+              design: s.designName || null,
+              color: s.colorName || null,
+              chasers: s.chasers,
+            }),
+          });
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error || 'failed');
+          track('collection_created', { has_email: !!email, has_phone: !!phone });
+          location.href = 'collect.html?c=' + data.id + '&k=' + data.owner_token;
+        } catch (e) {
+          createErr.textContent = 'משהו השתבש ביצירת הקישור. נסו שוב.';
+          createErr.hidden = false;
+          nextBtn.disabled = false;
+          nextBtn.textContent = prevLabel;
+        }
+      }
 
       /* ---- init ---- */
       // restore a prior color choice from the URL if present
@@ -1269,8 +1591,14 @@
         paintChasers();
       })();
 
+      // restore the wizard position from ?step=N (defaults to the first step)
+      const stepParam = parseInt(params.get('step') || '1', 10);
+      const initialStep = Number.isNaN(stepParam)
+        ? 1
+        : Math.min(TOTAL_STEPS, Math.max(1, stepParam));
+
       selectTab('front');
-      renderDesign().then(persist);
+      renderDesign().then(() => goStep(initialStep, { fromPop: true }));
     </script>
   </body>
 </html>
