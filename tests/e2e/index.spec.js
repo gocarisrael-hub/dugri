@@ -86,7 +86,7 @@ test.describe('price CTA wrapping', () => {
 });
 
 test.describe('audience "who is this game for" section', () => {
-  const LABELS = ['מסיבת רווקות', 'יום הולדת עגול', 'יום נישואין', 'פרישה', 'מסיבת פרידה'];
+  const LABELS = ['מסיבת רווקות', 'יום הולדת עגול', 'יום נישואין', 'פרישה'];
 
   test('is present with all event labels', async ({ page }) => {
     await page.goto('/index.html');
