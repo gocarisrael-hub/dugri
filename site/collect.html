@@ -390,6 +390,50 @@
         }
       }
       /* ===== PAY PANEL (owner-only) ===== */
+      /* collapsed pay panel = one inviting button at the bottom */
+      .pay-collapse {
+        padding: 0;
+        overflow: hidden;
+      }
+      .pay-summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        font-weight: 900;
+        font-size: 18px;
+        color: #fff;
+        background: linear-gradient(135deg, var(--hot), var(--hot-deep));
+        padding: 16px 18px;
+        text-align: center;
+      }
+      .pay-summary::-webkit-details-marker {
+        display: none;
+      }
+      .pay-summary::after {
+        content: '▾';
+        font-size: 14px;
+        transition: transform 0.2s ease;
+      }
+      .pay-collapse[open] .pay-summary::after {
+        transform: rotate(180deg);
+      }
+      .pay-collapse > :not(.pay-summary) {
+        margin-inline: 16px;
+      }
+      .pay-collapse > .pay-opts:first-of-type {
+        margin-top: 14px;
+      }
+      .pay-collapse > .pay-confirm:last-child {
+        margin-bottom: 16px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .pay-summary::after {
+          transition: none;
+        }
+      }
       .pay-opts {
         display: flex;
         flex-direction: column;
@@ -568,92 +612,6 @@
         </div>
       </div>
 
-      <!-- OWNER: pay panel (always available) -->
-      <div class="card owner-only hidden" id="payPanel">
-        <div class="sec-h">💜 שלמו וקבלו את המשחק</div>
-        <p class="muted" style="margin-bottom: 10px">
-          אפשר לשלם מתי שרוצים ולהמשיך להוסיף מילים תוך כדי — ועד שתלחצו על
-          <b>"מספיק! סיימנו"</b> האיסוף נשאר פתוח. בונוס: <b>תשלום פותח עוד עשרות שאלות</b> שיעזרו
-          לכם לחשוב על עוד מילים ✨
-        </p>
-        <div class="pay-opts" id="payOpts" role="radiogroup" aria-label="בחירת גרסה">
-          <label class="pay-opt active">
-            <input type="radio" name="payVersion" value="pdf" checked />
-            <span class="opt-body">
-              <span class="opt-title"
-                ><span>דיגיטלי (PDF)</span
-                ><span class="opt-price"><s class="was">129</s>₪79</span></span
-              >
-              <span class="opt-note">מורידים, מדפיסים לבד, ומתפוצצים מצחוק 🎉</span>
-            </span>
-          </label>
-          <label class="pay-opt">
-            <input type="radio" name="payVersion" value="pickup" />
-            <span class="opt-body">
-              <span class="opt-title"
-                ><span>משחק מוכן · איסוף מבית דפוס גלאור, ת״א</span
-                ><span class="opt-price">₪149</span></span
-              >
-            </span>
-          </label>
-          <label class="pay-opt">
-            <input type="radio" name="payVersion" value="delivery" />
-            <span class="opt-body">
-              <span class="opt-title"
-                ><span>המפונקת 👑 · משלוח עד הבית של המשחק המוכן</span
-                ><span class="opt-price">₪199</span></span
-              >
-              <span class="opt-note">אזורים מרוחקים בתיאום ובתוספת תשלום</span>
-            </span>
-          </label>
-        </div>
-
-        <div id="addressForm" class="hidden">
-          <label class="fld" for="addrStreet">רחוב ומספר</label>
-          <input type="text" id="addrStreet" autocomplete="street-address" />
-          <label class="fld" for="addrCity">עיר</label>
-          <input type="text" id="addrCity" autocomplete="address-level2" />
-          <label class="fld" for="addrPostal">מיקוד</label>
-          <input type="text" id="addrPostal" autocomplete="postal-code" inputmode="numeric" />
-          <label class="fld" for="addrApt">דירה (לא חובה)</label>
-          <input type="text" id="addrApt" />
-          <label class="fld" for="addrFloor">קומה (לא חובה)</label>
-          <input type="text" id="addrFloor" />
-        </div>
-
-        <div class="pay-total">לתשלום: ₪<span id="payTotal">79</span></div>
-        <div class="pay-err" id="payErr"></div>
-
-        <div class="bit-pay">
-          <a
-            id="bitPayLink"
-            class="bit-btn"
-            href="https://www.bitpay.co.il/app/me/4BE8AF50-DD1F-8868-1FF0-2DE96FEB9B6A4F38"
-            target="_blank"
-            rel="noopener"
-          >
-            <span class="bit-mark" aria-hidden="true">
-              <svg viewBox="0 0 120 56" role="img" aria-label="bit">
-                <g fill="currentColor">
-                  <path
-                    d="M8 4h9v15.2a13.5 13.5 0 0 1 8.4-2.9c8.7 0 15.3 6.9 15.3 16.2S34.1 49 25.4 49a13.4 13.4 0 0 1-8.9-3.2V48H8V4Zm16 36.6c4.4 0 7.6-3.4 7.6-8.1s-3.2-8.1-7.6-8.1-7.6 3.4-7.6 8.1 3.2 8.1 7.6 8.1Z"
-                  />
-                  <path
-                    d="M52 4.2a5.4 5.4 0 1 1 0 10.8 5.4 5.4 0 0 1 0-10.8ZM47.5 17.2h9V48h-9V17.2Z"
-                  />
-                  <path
-                    d="M66 8h9v9.2h7.7v7.7H75v11.7c0 2.8 1.3 4 3.9 4 1.4 0 2.6-.2 3.8-.6V48c-1.7.6-3.7.9-6 .9-7.2 0-10.7-3.7-10.7-11V24.9h-5.3v-7.7H66V8Z"
-                  />
-                </g>
-              </svg>
-            </span>
-            <span>שלם בביט</span>
-          </a>
-          <div class="bit-confirm"><span aria-hidden="true">✓</span><span>אישור מיידי</span></div>
-        </div>
-        <div class="pay-confirm" id="payConfirm"></div>
-      </div>
-
       <!-- add area -->
       <div class="card" id="addCard">
         <div class="nameRow">
@@ -754,6 +712,92 @@
           <button id="closeBtn" type="button">מספיק! סיימנו לאסוף ✅</button>
         </div>
       </div>
+
+      <!-- OWNER: pay panel (collapsible, one button at the bottom) -->
+      <details class="card owner-only hidden pay-collapse" id="payPanel">
+        <summary class="pay-summary">💜 שלמו וקבלו את המשחק</summary>
+        <p class="muted" style="margin-bottom: 10px">
+          אפשר לשלם מתי שרוצים ולהמשיך להוסיף מילים תוך כדי - ועד שתלחצו על
+          <b>"מספיק! סיימנו"</b> האיסוף נשאר פתוח. בונוס: <b>תשלום פותח עוד עשרות שאלות</b> שיעזרו
+          לכם לחשוב על עוד מילים ✨
+        </p>
+        <div class="pay-opts" id="payOpts" role="radiogroup" aria-label="בחירת גרסה">
+          <label class="pay-opt active">
+            <input type="radio" name="payVersion" value="pdf" checked />
+            <span class="opt-body">
+              <span class="opt-title"
+                ><span>דיגיטלי (PDF)</span
+                ><span class="opt-price"><s class="was">129</s>₪79</span></span
+              >
+              <span class="opt-note">מורידים, מדפיסים לבד, ומתפוצצים מצחוק 🎉</span>
+            </span>
+          </label>
+          <label class="pay-opt">
+            <input type="radio" name="payVersion" value="pickup" />
+            <span class="opt-body">
+              <span class="opt-title"
+                ><span>משחק מוכן · איסוף מבית דפוס גלאור, ת״א</span
+                ><span class="opt-price">₪149</span></span
+              >
+            </span>
+          </label>
+          <label class="pay-opt">
+            <input type="radio" name="payVersion" value="delivery" />
+            <span class="opt-body">
+              <span class="opt-title"
+                ><span>המפונקת 👑 · משלוח עד הבית של המשחק המוכן</span
+                ><span class="opt-price">₪199</span></span
+              >
+              <span class="opt-note">אזורים מרוחקים בתיאום ובתוספת תשלום</span>
+            </span>
+          </label>
+        </div>
+
+        <div id="addressForm" class="hidden">
+          <label class="fld" for="addrStreet">רחוב ומספר</label>
+          <input type="text" id="addrStreet" autocomplete="street-address" />
+          <label class="fld" for="addrCity">עיר</label>
+          <input type="text" id="addrCity" autocomplete="address-level2" />
+          <label class="fld" for="addrPostal">מיקוד</label>
+          <input type="text" id="addrPostal" autocomplete="postal-code" inputmode="numeric" />
+          <label class="fld" for="addrApt">דירה (לא חובה)</label>
+          <input type="text" id="addrApt" />
+          <label class="fld" for="addrFloor">קומה (לא חובה)</label>
+          <input type="text" id="addrFloor" />
+        </div>
+
+        <div class="pay-total">לתשלום: ₪<span id="payTotal">79</span></div>
+        <div class="pay-err" id="payErr"></div>
+
+        <div class="bit-pay">
+          <a
+            id="bitPayLink"
+            class="bit-btn"
+            href="https://www.bitpay.co.il/app/me/4BE8AF50-DD1F-8868-1FF0-2DE96FEB9B6A4F38"
+            target="_blank"
+            rel="noopener"
+          >
+            <span class="bit-mark" aria-hidden="true">
+              <svg viewBox="0 0 120 56" role="img" aria-label="bit">
+                <g fill="currentColor">
+                  <path
+                    d="M8 4h9v15.2a13.5 13.5 0 0 1 8.4-2.9c8.7 0 15.3 6.9 15.3 16.2S34.1 49 25.4 49a13.4 13.4 0 0 1-8.9-3.2V48H8V4Zm16 36.6c4.4 0 7.6-3.4 7.6-8.1s-3.2-8.1-7.6-8.1-7.6 3.4-7.6 8.1 3.2 8.1 7.6 8.1Z"
+                  />
+                  <path
+                    d="M52 4.2a5.4 5.4 0 1 1 0 10.8 5.4 5.4 0 0 1 0-10.8ZM47.5 17.2h9V48h-9V17.2Z"
+                  />
+                  <path
+                    d="M66 8h9v9.2h7.7v7.7H75v11.7c0 2.8 1.3 4 3.9 4 1.4 0 2.6-.2 3.8-.6V48c-1.7.6-3.7.9-6 .9-7.2 0-10.7-3.7-10.7-11V24.9h-5.3v-7.7H66V8Z"
+                  />
+                </g>
+              </svg>
+            </span>
+            <span>שלם בביט</span>
+          </a>
+          <div class="bit-confirm"><span aria-hidden="true">✓</span><span>אישור מיידי</span></div>
+        </div>
+        <div class="pay-confirm" id="payConfirm"></div>
+      </details>
     </div>
 
     <script type="module">
