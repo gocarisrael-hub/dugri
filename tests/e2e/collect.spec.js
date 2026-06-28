@@ -1,11 +1,16 @@
 import { test, expect } from '@playwright/test';
 
 async function createCollection(page, name) {
-  await page.goto('/thankyou.html');
+  // Collections are now created at the end of the order wizard (options.html).
+  await page.goto('/options.html');
+  await page.getByTestId('next-btn').click(); // design -> color
+  await page.getByTestId('next-btn').click(); // color -> add-ons
+  await page.getByTestId('next-btn').click(); // add-ons -> name
   await page.fill('#honoreeInput', name);
-  await page.fill('#ownerEmail', 'test@example.com'); // email now required
-  await page.fill('#ownerPhone', '0521234567'); // valid IL mobile, now required
-  await page.click('#createBtn');
+  await page.getByTestId('next-btn').click(); // name -> contact
+  await page.fill('#ownerEmail', 'test@example.com'); // email required
+  await page.fill('#ownerPhone', '0521234567'); // valid IL mobile, required
+  await page.getByTestId('next-btn').click(); // "צרו את המשחק"
   await page.waitForURL(/collect\.html\?c=.+&k=.+/);
 }
 
