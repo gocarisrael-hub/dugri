@@ -53,8 +53,10 @@ test('owner pay panel: select delivery → address + total 199 → Bit opens, st
 }) => {
   await createCollection(page, 'דנה');
 
-  // Owner sees the pay panel; PDF default total is 79.
+  // Owner sees the pay panel; it's collapsed by default — open it first.
   await expect(page.locator('#payPanel')).toBeVisible();
+  await expect(page.locator('#payTotal')).toBeHidden();
+  await page.locator('#payPanel summary').click();
   await expect(page.locator('#payTotal')).toHaveText('79');
   await expect(page.locator('#addressForm')).toBeHidden();
 
@@ -85,6 +87,24 @@ test('owner pay panel: select delivery → address + total 199 → Bit opens, st
   expect(page.url()).toBe(collectUrl);
   expect(page.url()).toContain('collect.html');
   await expect(page.locator('#payConfirm')).toContainText('199');
+});
+
+test('owner pay panel is collapsed by default and opens on the summary button', async ({
+  page,
+}) => {
+  await createCollection(page, 'אורי');
+  const panel = page.locator('#payPanel');
+  await expect(panel).toBeVisible();
+  // Collapsed by default: the inner options/Bit are hidden behind one button.
+  await expect(page.locator('#payOpts')).toBeHidden();
+  await expect(page.locator('#bitPayLink')).toBeHidden();
+  await expect(page.locator('#payPanel summary')).toContainText('שלמו וקבלו את המשחק');
+  // Click the summary → options reveal; click again → collapse.
+  await page.locator('#payPanel summary').click();
+  await expect(page.locator('#payOpts')).toBeVisible();
+  await expect(page.locator('#bitPayLink')).toBeVisible();
+  await page.locator('#payPanel summary').click();
+  await expect(page.locator('#payOpts')).toBeHidden();
 });
 
 test('pay panel shows the new version names and prices', async ({ page }) => {
