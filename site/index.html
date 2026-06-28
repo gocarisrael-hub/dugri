@@ -441,26 +441,6 @@
         font-size: 16px;
       }
 
-      /* the moment */
-      .moment {
-        background: linear-gradient(180deg, var(--blush), var(--bg));
-        text-align: center;
-      }
-      .moment .wrap {
-        max-width: 680px;
-      }
-      .moment p {
-        font-size: 21px;
-        color: var(--ink);
-      }
-      .moment .em {
-        color: var(--wine);
-        font-size: 26px;
-        font-weight: 700;
-        display: block;
-        margin-top: 12px;
-      }
-
       /* reassurance line under CTAs */
       .reassure {
         margin-top: 12px;
@@ -956,11 +936,8 @@
         display: grid;
         grid-template-columns: repeat(2, 1fr);
         gap: 12px;
-      }
-      @media (min-width: 720px) {
-        .gallery {
-          grid-template-columns: repeat(4, 1fr);
-        }
+        max-width: 560px;
+        margin: 0 auto;
       }
       .gphoto {
         aspect-ratio: 4/5;
@@ -1039,106 +1016,6 @@
           grid-template-columns: 1fr 1fr;
           gap: 16px;
         }
-      }
-
-      /* examples (manifest-driven design previews) */
-      .examples-grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 18px;
-      }
-      @media (min-width: 640px) {
-        .examples-grid {
-          grid-template-columns: 1fr 1fr;
-        }
-      }
-      .ex-card {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 18px;
-        padding: 18px;
-        box-shadow: var(--shadow-sm);
-        transition:
-          transform 0.25s ease,
-          box-shadow 0.25s ease;
-      }
-      .ex-card:hover {
-        transform: translateY(-4px);
-        box-shadow: var(--shadow-md);
-      }
-      .ex-name {
-        font-family: var(--display);
-        font-weight: 900;
-        font-size: 18px;
-        color: var(--wine);
-        text-align: center;
-        margin-bottom: 12px;
-      }
-      /* two portrait cards (front + back) side by side */
-      .ex-cards {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-      }
-      .ex-card-slot {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-      /* shared face box: centers an inlined SVG and contains it (no overflow) */
-      .ex-face {
-        position: relative;
-        border-radius: 12px;
-        background: var(--blush);
-        border: 1px solid var(--blush-deep);
-        overflow: hidden;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 8px;
-      }
-      /* subtle centered brand watermark over every preview face */
-      .ex-face::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: url('assets/logo.png') center / 42% no-repeat;
-        opacity: 0.16;
-        pointer-events: none;
-      }
-      .ex-face svg,
-      .ex-face img {
-        width: 100%;
-        height: 100%;
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-        display: block;
-      }
-      /* cards are portrait (~5/7); board is landscape (~A-series 1.41/1) */
-      .ex-face.card {
-        aspect-ratio: 5/7;
-      }
-      .ex-board-wrap {
-        margin-top: 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-      .ex-face.board {
-        aspect-ratio: 1.414 / 1;
-        width: 100%;
-      }
-      .ex-card-label,
-      .ex-board-label {
-        font-size: 12px;
-        color: var(--muted);
-        text-align: center;
-        font-weight: 700;
-      }
-      .ex-cta {
-        text-align: center;
-        margin-top: 24px;
       }
 
       /* FAQ */
@@ -1260,16 +1137,6 @@
       }
 
       /* ============ SECTION GLOWS / GRADIENT MESH ============ */
-      .moment {
-        background:
-          radial-gradient(70% 100% at 80% 0%, rgba(229, 25, 125, 0.08), transparent 60%),
-          linear-gradient(180deg, var(--blush), var(--bg));
-        text-align: center;
-      }
-      .moment .em {
-        font-family: var(--display);
-        font-weight: 900;
-      }
       #how::before,
       #pricing::before,
       #gallery::before {
@@ -1492,147 +1359,6 @@
         padding-top: 54px;
       }
 
-      /* ============ INTERACTIVE FLIP CARD ============ */
-      .flip-wrap {
-        margin: 30px auto 0;
-        max-width: 300px;
-        perspective: 1200px;
-      }
-      .flip-hint {
-        font-family: var(--display);
-        font-weight: 700;
-        font-size: 14px;
-        color: var(--wine);
-        margin-top: 14px;
-        text-align: center;
-      }
-      .flip-hint span {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .flip {
-        position: relative;
-        width: 100%;
-        aspect-ratio: 5/7;
-        cursor: pointer;
-        transform-style: preserve-3d;
-        transition: transform 0.7s cubic-bezier(0.4, 0.2, 0.2, 1);
-        background: transparent;
-        border: 0;
-        padding: 0;
-        display: block;
-      }
-      .flip.flipped {
-        transform: rotateY(180deg);
-      }
-      .flip-face {
-        position: absolute;
-        inset: 0;
-        backface-visibility: hidden;
-        -webkit-backface-visibility: hidden;
-        border-radius: 22px;
-        box-shadow: var(--shadow-lg);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        padding: 22px;
-        overflow: hidden;
-      }
-      .flip-front {
-        background: #ec7ba0;
-        padding: 0;
-        border: 0;
-      }
-      .flip-front .fl-logo {
-        font-family: var(--display);
-        font-weight: 900;
-        font-size: 42px;
-        letter-spacing: -0.02em;
-        text-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-      }
-      .flip-front .fl-sub {
-        margin-top: 10px;
-        font-size: 14px;
-        opacity: 0.92;
-        font-weight: 700;
-      }
-      .flip-front .fl-dots {
-        position: absolute;
-        inset: 0;
-        opacity: 0.18;
-        pointer-events: none;
-        background-image: radial-gradient(circle, #fff 1.5px, transparent 1.6px);
-        background-size: 22px 22px;
-      }
-      .flip-back {
-        background: var(--blush);
-        color: var(--ink);
-        transform: rotateY(180deg);
-        border: 0;
-        padding: 0;
-        justify-content: center;
-        align-items: stretch;
-        gap: 0;
-      }
-      .fl-img {
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-        display: block;
-      }
-      .footlinks {
-        margin-top: 12px;
-        font-size: 13.5px;
-      }
-      .footlinks a {
-        color: #e8d7de;
-        text-decoration: underline;
-      }
-      .flip-back .fl-title {
-        font-family: var(--display);
-        font-weight: 900;
-        font-size: 17px;
-        color: var(--wine);
-        margin: 4px 0 12px;
-        text-align: center;
-        width: 100%;
-      }
-      .fl-words {
-        display: grid;
-        gap: 10px;
-        width: 100%;
-      }
-      .fl-word {
-        display: flex;
-        align-items: center;
-        gap: 11px;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        padding: 10px 13px;
-        font-size: 16px;
-        font-weight: 700;
-        text-align: start;
-        box-shadow: var(--shadow-sm);
-      }
-      .fl-word b {
-        font-family: var(--display);
-        font-weight: 900;
-        color: #fff;
-        background: linear-gradient(140deg, var(--hot), var(--wine));
-        min-width: 26px;
-        height: 26px;
-        border-radius: 8px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 14px;
-        flex: 0 0 auto;
-      }
-
       /* ============ REDUCED MOTION ============ */
       @media (prefers-reduced-motion: reduce) {
         html {
@@ -1672,7 +1398,7 @@
           <span></span>
         </button>
         <div class="nav-links" id="navLinks" data-testid="nav-links">
-          <a href="#examples">דוגמאות</a>
+          <a href="#gallery">דוגמאות</a>
           <a href="#pricing">מחירים</a>
           <a href="timer.html">טיימר</a>
           <a class="nav-cta" href="options.html" data-ga="order_started" data-ga-cta="nav">הזמנה</a>
@@ -1725,13 +1451,6 @@
       </div>
     </header>
 
-    <section class="moment">
-      <div class="wrap reveal">
-        <p>עולה קלף. מישהי מקריאה "הדייט מטבריה". כל החדר מתפוצץ - כי רק אתן יודעות את הסיפור.</p>
-        <span class="em">זה הרגעים שיעשו את המסיבה</span>
-      </div>
-    </section>
-
     <section class="audience" id="audience" data-testid="audience">
       <div class="wrap">
         <div class="sec-title reveal">
@@ -1745,19 +1464,7 @@
           </div>
           <div class="aud-card">
             <span class="aud-emoji" aria-hidden="true">🎂</span>
-            <span class="aud-label">יום הולדת 30</span>
-          </div>
-          <div class="aud-card">
-            <span class="aud-emoji" aria-hidden="true">🥳</span>
-            <span class="aud-label">יום הולדת 40</span>
-          </div>
-          <div class="aud-card">
-            <span class="aud-emoji" aria-hidden="true">🎉</span>
-            <span class="aud-label">יום הולדת 50</span>
-          </div>
-          <div class="aud-card">
-            <span class="aud-emoji" aria-hidden="true">🎈</span>
-            <span class="aud-label">יום הולדת 60</span>
+            <span class="aud-label">יום הולדת עגול</span>
           </div>
           <div class="aud-card">
             <span class="aud-emoji" aria-hidden="true">💍</span>
@@ -1786,13 +1493,7 @@
             <img src="assets/gallery-1.jpg" alt="קלף דוגרי עם אייקונים מותאמים וארבע מילים" />
           </div>
           <div class="gphoto">
-            <img src="assets/gallery-2.jpg" alt="חפיסת קלפים מותאמת אישית ביד" />
-          </div>
-          <div class="gphoto">
             <img src="assets/gallery-3.jpg" alt="לוח משחק דוגרי עם טוקנים" />
-          </div>
-          <div class="gphoto">
-            <img src="assets/gallery-4.jpg" alt="לוח וקלפים מותאמים אישית על שולחן" />
           </div>
         </div>
       </div>
@@ -1884,28 +1585,6 @@
             <p>PDF מוכן, מתאים לכל בית דפוס, מודפס תוך דקות. עד 24 שעות מרגע שליחת המילים.</p>
           </div>
         </div>
-
-        <div class="flip-wrap reveal">
-          <button
-            class="flip"
-            id="flipCard"
-            type="button"
-            aria-pressed="false"
-            aria-label="קלף דוגרי לדוגמה - הקליקו להיפוך"
-          >
-            <div class="flip-face flip-front">
-              <img class="fl-img" src="assets/card-back.png" alt="גב הקלף של דוגרי" />
-            </div>
-            <div class="flip-face flip-back">
-              <img
-                class="fl-img"
-                src="assets/card-front.png"
-                alt="קלף דוגרי אמיתי - ארבע מילים אישיות על בעל השמחה"
-              />
-            </div>
-          </button>
-          <p class="flip-hint"><span>↻ הקליקו על הקלף כדי להפוך אותו</span></p>
-        </div>
       </div>
     </section>
 
@@ -1940,28 +1619,14 @@
           <div class="item">
             <span class="tick">✦</span>
             <div>
-              <h4>לא נשאיר אתכם לבד</h4>
-              <p>דף עזר עם קטגוריות ודוגמאות שמזכירות לכם הכל - החלק הכי קשה נהיה הכי קל.</p>
-            </div>
-          </div>
-          <div class="item">
-            <span class="tick">✦</span>
-            <div>
               <h4>הדפסה בלי כאב ראש</h4>
               <p>
                 בדיוק איזה נייר, איך מדפיסים בגודל מקורי ואיפה גוזרים - כל בית דפוס שכונתי יסתדר.
               </p>
             </div>
           </div>
-          <div class="item">
-            <span class="tick">✦</span>
-            <div>
-              <h4>מוכנים לשחק על המקום</h4>
-              <p>חיילי משחק וטיימר אונליין - לא חסר לכם כלום כדי להתחיל.</p>
-            </div>
-          </div>
         </div>
-        <p class="delivery-note">שש מתנות בקובץ אחד - הכל כלול ב-79 ₪.</p>
+        <p class="delivery-note">הכל כלול בקובץ אחד - ב-79 ₪.</p>
       </div>
     </section>
 
@@ -2011,33 +1676,6 @@
       </div>
     </section>
 
-    <section id="examples">
-      <div class="wrap">
-        <div class="sec-title reveal">
-          <h2>דוגמאות עיצוב</h2>
-          <p>בחרו עיצוב, התאימו צבעים - וזה מוכן להזמנה</p>
-        </div>
-        <div class="examples-grid stagger" id="examplesGrid" data-testid="examples-grid">
-          <p
-            class="preview-empty"
-            id="examplesEmpty"
-            style="grid-column: 1/-1; text-align: center; color: var(--muted)"
-          >
-            טוען דוגמאות…
-          </p>
-        </div>
-        <div class="ex-cta">
-          <a
-            class="btn"
-            href="options.html?plan=base"
-            data-ga="order_started"
-            data-ga-cta="examples"
-            >בונים את שלכם ←</a
-          >
-        </div>
-      </div>
-    </section>
-
     <section id="faq">
       <div class="wrap">
         <div class="sec-title reveal">
@@ -2051,13 +1689,6 @@
               או בעלת השמחה - בדיחות פנימיות, הרגלים, אנשים ומקומות - ואנחנו הופכים אותם לחפיסת
               קלפים מעוצבת ולוח משחק מוכנים להדפסה. מתחלקים לקבוצות, מתחרים מי יגרום לחברים לנחש מהר
               יותר, וכל החדר צוחק על האדם שחוגגים - כי כל מילה היא רק עליו.
-            </p>
-          </details>
-          <details>
-            <summary>לאילו אירועים זה מתאים?</summary>
-            <p>
-              לכל שמחה : מסיבת רווקות, יום הולדת עגול (30, 40, 50, 60), יום נישואין, מסיבת פרישה או
-              פרידה. בכל פעם המשחק כולו על מי שחוגגים.
             </p>
           </details>
           <details>
@@ -2076,36 +1707,11 @@
             </p>
           </details>
           <details>
-            <summary>כמה זמן לוקח לי למלא את המילים?</summary>
-            <p>רוב האנשים מסיימים ב-15 דקות, ועם הקישור השיתופי החברים עושים את זה בשבילכם.</p>
-          </details>
-          <details>
-            <summary>אפשר לראות דוגמה?</summary>
-            <p>
-              בטח. בגלריה למעלה יש קלפים ולוחות אמיתיים, ואם בא לכם לראות עוד לפני שמזמינים - שלחו
-              לנו הודעה בוואטסאפ ונשמח להראות עוד דוגמאות ולענות על כל שאלה.
-            </p>
-          </details>
-          <details>
             <summary>מתי בדיוק מקבלים?</summary>
             <p>
               הספירה מתחילה מרגע שאתם שולחים את רשימת המילים - לא מרגע התשלום. תוך 24 שעות מאותו רגע
               הקובץ אצלכם במייל ובוואטסאפ. יש לכם תאריך אירוע קרוב? יש גם אקספרס בעדיפות שמקצר את זה
               לכמה שעות.
-            </p>
-          </details>
-          <details>
-            <summary>איך מדפיסים?</summary>
-            <p>
-              הקובץ מגיע מוכן להדפסה עם הוראות מדויקות לבית הדפוס: סוג נייר, הדפסה בגודל מקורי,
-              וקווי גזירה. כל בית דפוס שכונתי יודע לעשות את זה.
-            </p>
-          </details>
-          <details>
-            <summary>זה דיגיטלי או פיזי?</summary>
-            <p>
-              כרגע דיגיטלי - קובץ PDF מוכן להדפסה, שמגיע מיד וחוסך משלוח והמתנה. גרסה פיזית עד הבית
-              בקרוב.
             </p>
           </details>
           <details>
@@ -2314,15 +1920,6 @@
             });
           });
         }
-
-        /* ---- Interactive flip card ---- */
-        var flip = document.getElementById('flipCard');
-        if (flip) {
-          flip.addEventListener('click', function () {
-            var on = flip.classList.toggle('flipped');
-            flip.setAttribute('aria-pressed', on ? 'true' : 'false');
-          });
-        }
       })();
     </script>
 
@@ -2381,72 +1978,6 @@
           // Same-tab navigation: Instagram's in-app browser blocks window.open pop-ups.
           window.location.href = waBase + '?text=' + msg;
         }
-      }
-    </script>
-
-    <script type="module">
-      /* ============================================================
-     EXAMPLES - manifest-driven preview of every design (front/back/board).
-     Inlines tokenized SVGs and applies each design's first palette so the
-     section is in-brand without further input. Pure enhancement.
-     ============================================================ */
-      import { DESIGNS } from './js/designs.js';
-      import { applyOriginal } from './js/configurator.js';
-
-      const grid = document.getElementById('examplesGrid');
-      const empty = document.getElementById('examplesEmpty');
-      if (grid) {
-        if (empty) empty.remove();
-        // The two cards (front/back) are portrait; the board is landscape.
-        // Lay the cards side-by-side on top and give the board its own full-width row.
-        const CARDS = [
-          { key: 'front', label: 'קלף', cls: 'card' },
-          { key: 'back', label: 'גב', cls: 'card' },
-        ];
-        DESIGNS.forEach((d) => {
-          const card = document.createElement('div');
-          card.className = 'ex-card';
-          card.dataset.testid = 'example-' + d.id;
-          card.innerHTML =
-            '<div class="ex-name">' +
-            d.name +
-            '</div>' +
-            '<div class="ex-cards"></div>' +
-            '<div class="ex-board-wrap">' +
-            '<div class="ex-face board" data-kind="board"></div>' +
-            '<div class="ex-board-label">לוח</div>' +
-            '</div>';
-          const cardsRow = card.querySelector('.ex-cards');
-          const renderInto = (face, path) => {
-            if (!path) return;
-            fetch(path)
-              .then((r) => (r.ok ? r.text() : Promise.reject()))
-              .then((txt) => {
-                face.innerHTML = txt;
-                // Show the design in its OWN original colors.
-                applyOriginal(face, d.anchors || []);
-              })
-              .catch(() => {
-                face.textContent = d.name;
-              });
-          };
-          CARDS.forEach((k) => {
-            const wrap = document.createElement('div');
-            wrap.className = 'ex-card-slot';
-            const face = document.createElement('div');
-            face.className = 'ex-face ' + k.cls;
-            wrap.appendChild(face);
-            const cap = document.createElement('div');
-            cap.className = 'ex-card-label';
-            cap.textContent = k.label;
-            wrap.appendChild(cap);
-            cardsRow.appendChild(wrap);
-            renderInto(face, d.products && d.products[k.key]);
-          });
-          const boardFace = card.querySelector('.ex-face.board');
-          renderInto(boardFace, d.products && d.products.board);
-          grid.appendChild(card);
-        });
       }
     </script>
   </body>
