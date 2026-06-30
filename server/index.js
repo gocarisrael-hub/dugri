@@ -173,6 +173,13 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
 // sent at init), verify status + ConfirmationKey + amount, and only then mark
 // it paid. Always answer 200 so PeleCard doesn't retry a handled callback.
 app.post('/api/payment/callback', (req, res) => {
+  // Temporary diagnostics for the first real charge: PeleCard's callback field
+  // names can vary by account, and parseCallback() guesses common ones. With
+  // PELECARD_DEBUG=1 we log the raw body once so we can confirm/fix the mapping.
+  // Off by default (no payment data in logs unless explicitly enabled).
+  if (process.env.PELECARD_DEBUG === '1') {
+    console.log('[pelecard callback] raw body:', JSON.stringify(req.body || {}));
+  }
   const parsed = pelecard.parseCallback(req.body || {});
   const id = parsed.paramX;
   const c = id && db.getCollection(id);
