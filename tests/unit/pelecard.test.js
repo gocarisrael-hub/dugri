@@ -86,6 +86,37 @@ describe('init', () => {
     expect(body.ServerSideGoodFeedbackURL).toBe('https://dugri.example/api/payment/callback');
   });
 
+  it('logs init response field names (not values) when PELECARD_DEBUG=1', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          URL: 'https://gateway20.pelecard.biz/PaymentGW?transactionId=dbg',
+          ConfirmationKey: 'CK-SECRET',
+          Error: { ErrCode: 0 },
+        }),
+      })
+    );
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    process.env.PELECARD_DEBUG = '1';
+    try {
+      const out = await loadFresh().init({ amountNis: 79, paramX: 'col-1', urls: {} });
+      expect(out.url).toContain('transactionId=dbg');
+      expect(out.confirmationKey).toBe('CK-SECRET');
+
+      const logged = logSpy.mock.calls.find((c) => String(c[0]).includes('[pelecard init]'));
+      expect(logged).toBeTruthy();
+      // The secret ConfirmationKey value must never be logged.
+      const flat = JSON.stringify(logged);
+      expect(flat).not.toContain('CK-SECRET');
+    } finally {
+      delete process.env.PELECARD_DEBUG;
+      logSpy.mockRestore();
+    }
+  });
+
   it('throws when PeleCard returns an error code', async () => {
     vi.stubGlobal(
       'fetch',

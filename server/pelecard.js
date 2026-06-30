@@ -69,6 +69,21 @@ async function init({ amountNis, paramX, urls, language = 'HE' } = {}) {
   if (!res.ok) throw new Error('pelecard init http ' + res.status);
   const data = await res.json().catch(() => ({}));
 
+  // The init response shape is account-dependent (like the callback). With
+  // PELECARD_DEBUG=1 we log the field NAMES only — never the values — so one
+  // real test charge confirms/fixes the URL + ConfirmationKey mapping without
+  // leaking the anti-forgery secret.
+  if (process.env.PELECARD_DEBUG === '1') {
+    console.log(
+      '[pelecard init] response keys:',
+      Object.keys(data),
+      'hasURL:',
+      !!data.URL,
+      'hasConfirmationKey:',
+      !!data.ConfirmationKey
+    );
+  }
+
   const errCode = data && data.Error && data.Error.ErrCode;
   if (errCode && String(errCode) !== '0') {
     const msg = (data.Error && data.Error.ErrMsg) || 'unknown error';
