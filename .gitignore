@@ -26,6 +26,10 @@ resources/clips/
 *.mov
 *.mp4
 
+# Private/reference material kept locally only (payment QR codes, IG screenshots)
+resources/payment/
+resources/instagram/screenshots/
+
 # but DO track the small web-optimized clips
 !site/assets/video/
 !site/assets/video/*.mp4
