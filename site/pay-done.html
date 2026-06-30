@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>דוגרי · תשלום</title>
+    <style>
+      body {
+        margin: 0;
+        font-family:
+          'Heebo',
+          system-ui,
+          -apple-system,
+          sans-serif;
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+        background: #faf7f2;
+        color: #1d1d1f;
+        text-align: center;
+        padding: 24px;
+      }
+      .msg {
+        font-size: 18px;
+        font-weight: 600;
+      }
+      .sub {
+        margin-top: 8px;
+        color: #6b6b70;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <div class="msg" id="msg">מעבדים את התשלום…</div>
+      <div class="sub" id="sub">רגע אחד</div>
+    </div>
+    <script>
+      // This page is loaded inside the PeleCard payment iframe after the
+      // transaction completes (PeleCard's GoodURL/ErrorURL). Tell the parent
+      // collect.html page how it went so it can close the modal and refresh.
+      (function () {
+        var params = new URLSearchParams(location.search);
+        var ok = !params.has('error');
+        document.getElementById('msg').textContent = ok ? 'התשלום התקבל ✓' : 'התשלום לא הושלם';
+        document.getElementById('sub').textContent = ok ? 'מעבירים אתכם בחזרה…' : 'אפשר לנסות שוב';
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: 'dugri-pay', ok: ok }, location.origin);
+          }
+        } catch (e) {
+          /* no-op */
+        }
+      })();
+    </script>
+  </body>
+</html>

@@ -1,5 +1,8 @@
 .DS_Store
 **/.DS_Store
+# macOS drag/clipboard turds
+.com.apple.*
+**/.com.apple.*
 
 # Local Netlify folder
 .netlify

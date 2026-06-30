@@ -70,3 +70,20 @@ Without the volume + `DATA_DIR`, collected words are lost on every redeploy.
 The private orders page is at `/admin.html?key=YOUR_ADMIN_KEY`. Set a strong
 **`ADMIN_KEY`** env var on the Railway service; only that key can open the page
 or call `/api/admin/collections`. (Locally it defaults to `dugri-admin`.)
+
+## Card payment (PeleCard)
+
+Online credit-card payment via the PeleCard Iframe is **off until you set the
+credentials** — without them the pay panel shows Bit only. To turn it on, add
+these env vars on the Railway service (see `server/PELECARD.md` for the full
+checklist and how to get them from PeleCard):
+
+- **`PELECARD_TERMINAL`** — your internet/CNP terminal number.
+- **`PELECARD_USER`** — API user.
+- **`PELECARD_PASSWORD`** — API password.
+- **`PUBLIC_BASE_URL`** — the site's public origin, e.g. `https://dugri.co.il`
+  (used to build the payment return + server-callback URLs PeleCard calls).
+
+Optional: `PELECARD_BASE_URL` overrides the gateway host (defaults to
+`https://gateway20.pelecard.biz`); set this only if PeleCard gives you a
+different test/production gateway.

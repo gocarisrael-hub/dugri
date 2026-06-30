@@ -183,17 +183,38 @@ const db = {
       ordered_at: nowIso(),
       paid: false,
       paid_at: null,
+      // Pending card-payment handshake (PeleCard); null until pay/init runs.
+      pelecard: null,
     };
     saveDb();
     return c.order;
   },
 
-  // Admin-only (gated at the route): mark an existing order as paid.
-  markPaid(id) {
+  // Record the PeleCard init handshake on an existing order so the later
+  // server-side callback can be verified against the ConfirmationKey we were
+  // handed. Returns false when there is no order to attach it to.
+  recordPaymentInit(id, { confirmationKey, transactionId } = {}) {
+    const c = this.getCollection(id);
+    if (!c || !c.order) return false;
+    c.order.pelecard = {
+      confirmation_key: confirmationKey || null,
+      transaction_id: transactionId || null,
+      initiated_at: nowIso(),
+    };
+    saveDb();
+    return true;
+  },
+
+  // Mark an existing order as paid. Used by the admin route (manual) and by the
+  // PeleCard callback (meta carries the method + transaction details).
+  markPaid(id, meta = {}) {
     const c = this.getCollection(id);
     if (!c || !c.order) return false;
     c.order.paid = true;
     c.order.paid_at = nowIso();
+    if (meta.method) c.order.paid_method = meta.method;
+    if (meta.transactionId) c.order.paid_transaction_id = meta.transactionId;
+    if (meta.approvalNo) c.order.paid_approval_no = meta.approvalNo;
     saveDb();
     return true;
   },
