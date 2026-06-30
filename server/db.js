@@ -190,17 +190,25 @@ const db = {
     return c.order;
   },
 
-  // Record the PeleCard init handshake on an existing order so the later
-  // server-side callback can be verified against the ConfirmationKey we were
-  // handed. Returns false when there is no order to attach it to.
+  // Record a PeleCard init handshake on an existing order so the later
+  // server-side callback can be verified against a ConfirmationKey we were
+  // handed. Keys ACCUMULATE (capped): an owner may open the pay modal more than
+  // once, and the callback for any of those sessions must still verify. Returns
+  // false when there is no order to attach it to.
   recordPaymentInit(id, { confirmationKey, transactionId } = {}) {
     const c = this.getCollection(id);
     if (!c || !c.order) return false;
-    c.order.pelecard = {
-      confirmation_key: confirmationKey || null,
-      transaction_id: transactionId || null,
-      initiated_at: nowIso(),
-    };
+    const p = c.order.pelecard || { confirmation_keys: [] };
+    if (!Array.isArray(p.confirmation_keys)) p.confirmation_keys = [];
+    if (confirmationKey && !p.confirmation_keys.includes(confirmationKey)) {
+      p.confirmation_keys.push(confirmationKey);
+      if (p.confirmation_keys.length > 5) {
+        p.confirmation_keys = p.confirmation_keys.slice(-5);
+      }
+    }
+    p.last_transaction_id = transactionId || p.last_transaction_id || null;
+    p.initiated_at = nowIso();
+    c.order.pelecard = p;
     saveDb();
     return true;
   },

@@ -26,6 +26,7 @@ beforeAll(async () => {
   process.env.PELECARD_TERMINAL = '0962475';
   process.env.PELECARD_USER = 'webuser';
   process.env.PELECARD_PASSWORD = 'secret';
+  process.env.PUBLIC_BASE_URL = 'https://test.dugri.example';
   // Make sure freshly-evaluated copies pick up the env above.
   for (const f of ['db.js', 'pelecard.js', 'index.js']) {
     delete require.cache[require.resolve(path.join(serverDir, f))];
@@ -79,7 +80,42 @@ describe('POST /api/collections/:id/pay/init', () => {
     expect(r.status).toBe(200);
     expect(r.body.url).toContain('transactionId=tx-1');
     expect(r.body.total).toBe(79);
-    expect(db.getCollection(c.id).order.pelecard.confirmation_key).toBe('CK-AAA');
+    expect(db.getCollection(c.id).order.pelecard.confirmation_keys).toContain('CK-AAA');
+  });
+
+  it('does not re-open (or wipe) an order that is already paid', async () => {
+    const c = db.createCollection('כבר שולם');
+    stubInit({ URL: 'u', ConfirmationKey: 'CK-PAID', Error: { ErrCode: 0 } });
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    db.markPaid(c.id, { method: 'pelecard', transactionId: 'tx-paid' });
+
+    const r = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    expect(r.status).toBe(409);
+    const order = db.getCollection(c.id).order;
+    expect(order.paid).toBe(true); // not wiped
+    expect(order.paid_transaction_id).toBe('tx-paid');
+  });
+
+  it('accumulates confirmation keys across repeated inits (same version)', async () => {
+    const c = db.createCollection('שתי פתיחות');
+    stubInit({ URL: 'u', ConfirmationKey: 'CK-FIRST', Error: { ErrCode: 0 } });
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    stubInit({ URL: 'u', ConfirmationKey: 'CK-SECOND', Error: { ErrCode: 0 } });
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    const keys = db.getCollection(c.id).order.pelecard.confirmation_keys;
+    expect(keys).toEqual(['CK-FIRST', 'CK-SECOND']);
   });
 
   it('rejects a wrong owner token', async () => {
@@ -134,5 +170,48 @@ describe('POST /api/payment/callback', () => {
 
     expect(r.status).toBe(200); // always 200 so PeleCard stops retrying
     expect(db.getCollection(c.id).order.paid).toBe(false);
+  });
+
+  it('does NOT mark paid when no init handshake was recorded (forged from a public id)', async () => {
+    // Attacker knows only the public collection id; there is an order but no
+    // recorded ConfirmationKey, so a forged success callback must be rejected.
+    const c = db.createCollection('זיוף ללא מפתח');
+    db.setOrder(c.id, c.owner_token, {
+      version: 'delivery',
+      address: { street: 'a', city: 'b', postal: '1' },
+    });
+
+    const r = await post('/api/payment/callback', {
+      PelecardStatusCode: '000',
+      ParamX: c.id,
+      TotalX100: 19900,
+    });
+
+    expect(r.status).toBe(200);
+    expect(db.getCollection(c.id).order.paid).toBe(false);
+  });
+
+  it('honors the FIRST session key when the owner opened the modal twice', async () => {
+    const c = db.createCollection('שתי פתיחות קולבק');
+    stubInit({ URL: 'u', ConfirmationKey: 'CK-A', Error: { ErrCode: 0 } });
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    stubInit({ URL: 'u', ConfirmationKey: 'CK-B', Error: { ErrCode: 0 } });
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+
+    // PeleCard's callback carries the FIRST session's key — still valid.
+    const r = await post('/api/payment/callback', {
+      PelecardStatusCode: '000',
+      ParamX: c.id,
+      ConfirmationKey: 'CK-A',
+      TotalX100: 7900,
+    });
+    expect(r.status).toBe(200);
+    expect(db.getCollection(c.id).order.paid).toBe(true);
   });
 });

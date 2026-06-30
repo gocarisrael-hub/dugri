@@ -987,10 +987,11 @@
         $('#ownerControls').classList.toggle('hidden', !(isOwner && open));
         if (isOwner) {
           applyPaidState();
-          // Show the credit-card button only when the server reports card
-          // payment is configured (PeleCard credentials present).
+          // Show the credit-card button only when card payment is configured
+          // (PeleCard credentials present) AND the order isn't already paid.
           const cardBtn = document.getElementById('cardPayBtn');
-          if (cardBtn) cardBtn.classList.toggle('hidden', !(state && state.card_enabled));
+          if (cardBtn)
+            cardBtn.classList.toggle('hidden', !(state && state.card_enabled && !state.paid));
         }
       }
 

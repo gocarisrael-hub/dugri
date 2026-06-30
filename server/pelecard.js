@@ -102,19 +102,36 @@ function parseCallback(body = {}) {
   };
 }
 
+// Accepted ConfirmationKeys for an order: a single `confirmationKey` or a list
+// `confirmationKeys` (the order may have several in-flight init sessions).
+function expectedKeys(expected) {
+  if (Array.isArray(expected.confirmationKeys)) return expected.confirmationKeys.filter(Boolean);
+  return expected.confirmationKey ? [expected.confirmationKey] : [];
+}
+
 // Decide whether a parsed callback represents a genuine, paid transaction for a
-// given order. We require: success status, a matching ConfirmationKey (the
-// anti-forgery guarantee — only PeleCard could know the key it handed us at
-// init), and the charged amount to equal the order total.
-//   expected: { confirmationKey, amountNis }
+// given order. FAIL-CLOSED: every check must affirmatively pass, because the
+// callback endpoint is public and the collection id is guessable, so a forged
+// POST must never mark an order paid.
+//   expected: { confirmationKey | confirmationKeys, amountNis }
+// We require:
+//   1. success status (000),
+//   2. a ConfirmationKey that matches one we were handed at init — the key is
+//      never exposed to the browser, so only PeleCard (or our server) knows it;
+//      a missing/unknown key is rejected, NOT skipped,
+//   3. the charged amount to equal the order total. PeleCard's callback amount
+//      unit is account-dependent, so we accept either agorot (×100) or NIS.
 function verifyCallback(parsed, expected = {}) {
   if (!parsed || String(parsed.statusCode) !== SUCCESS_STATUS) return false;
-  if (expected.confirmationKey) {
-    if (!parsed.confirmationKey || parsed.confirmationKey !== expected.confirmationKey)
-      return false;
-  }
-  if (expected.amountNis != null && parsed.totalX100 != null) {
-    if (parsed.totalX100 !== Math.round(Number(expected.amountNis) * 100)) return false;
+
+  const keys = expectedKeys(expected);
+  if (!keys.length) return false; // nothing to match against -> cannot trust it
+  if (!parsed.confirmationKey || !keys.includes(parsed.confirmationKey)) return false;
+
+  if (expected.amountNis == null || parsed.totalX100 == null) return false;
+  const nis = Number(expected.amountNis);
+  if (parsed.totalX100 !== Math.round(nis * 100) && parsed.totalX100 !== Math.round(nis)) {
+    return false;
   }
   return true;
 }

@@ -11,12 +11,26 @@ app.use(express.json({ limit: '1mb' }));
 // PeleCard posts its server-side callback as a urlencoded form; accept both.
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
-// Absolute base URL for building the PeleCard return/callback URLs. Prefer an
-// explicit env (correct behind Railway's proxy); fall back to the request host.
-function publicBaseUrl(req) {
-  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/+$/, '');
-  const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
-  return proto + '://' + req.get('host');
+// Absolute base URL for the PeleCard return/callback URLs. We require an
+// explicit PUBLIC_BASE_URL and never derive it from request headers: a spoofed
+// Host header would otherwise redirect the payment callback to an attacker, so
+// a real charge would never reach us. Returns null when unconfigured.
+function paymentBaseUrl() {
+  return process.env.PUBLIC_BASE_URL ? process.env.PUBLIC_BASE_URL.replace(/\/+$/, '') : null;
+}
+
+// Shallow+nested redaction of secret-ish fields for debug logging (the
+// ConfirmationKey is the anti-forgery secret; card/cvv/token must never be
+// logged either).
+function redactSecrets(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const out = Array.isArray(obj) ? [] : {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (/confirm|cvv|card|token|password/i.test(k)) out[k] = '[redacted]';
+    else if (v && typeof v === 'object') out[k] = redactSecrets(v);
+    else out[k] = v;
+  }
+  return out;
 }
 
 const SITE_DIR = path.join(__dirname, '..', 'site');
@@ -141,15 +155,27 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   if (!pelecard.isConfigured()) {
     return res.status(503).json({ error: 'card payment not configured' });
   }
-  const b = req.body || {};
-  const order = db.setOrder(req.params.id, b.owner_token, {
-    version: b.version,
-    address: b.address,
-  });
-  if (order && order.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
-  if (order && order.error) return res.status(400).json({ error: order.error });
+  const base = paymentBaseUrl();
+  if (!base) return res.status(503).json({ error: 'payment base url not configured' });
 
-  const base = publicBaseUrl(req);
+  const b = req.body || {};
+  const c = db.getCollection(req.params.id);
+  if (!c || c.owner_token !== b.owner_token) return res.status(403).json({ error: 'forbidden' });
+  // Never re-open payment on an order that is already paid (re-clicking the card
+  // button must not rebuild the order and discard the recorded payment).
+  if (c.order && c.order.paid) return res.status(409).json({ error: 'already paid' });
+
+  // Reuse an existing unpaid order of the same non-delivery version so its
+  // in-flight ConfirmationKeys survive a second init; otherwise (re)create it
+  // (delivery always re-set to capture the latest address).
+  let order = c.order;
+  const reuse = order && !order.paid && order.version === b.version && b.version !== 'delivery';
+  if (!reuse) {
+    order = db.setOrder(req.params.id, b.owner_token, { version: b.version, address: b.address });
+    if (order && order.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
+    if (order && order.error) return res.status(400).json({ error: order.error });
+  }
+
   try {
     const { url, confirmationKey } = await pelecard.init({
       amountNis: order.total,
@@ -178,14 +204,14 @@ app.post('/api/payment/callback', (req, res) => {
   // PELECARD_DEBUG=1 we log the raw body once so we can confirm/fix the mapping.
   // Off by default (no payment data in logs unless explicitly enabled).
   if (process.env.PELECARD_DEBUG === '1') {
-    console.log('[pelecard callback] raw body:', JSON.stringify(req.body || {}));
+    console.log('[pelecard callback] raw body:', JSON.stringify(redactSecrets(req.body || {})));
   }
   const parsed = pelecard.parseCallback(req.body || {});
   const id = parsed.paramX;
   const c = id && db.getCollection(id);
   if (c && c.order) {
     const expected = {
-      confirmationKey: c.order.pelecard && c.order.pelecard.confirmation_key,
+      confirmationKeys: (c.order.pelecard && c.order.pelecard.confirmation_keys) || [],
       amountNis: c.order.total,
     };
     if (!c.order.paid && pelecard.verifyCallback(parsed, expected)) {

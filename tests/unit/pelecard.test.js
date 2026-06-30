@@ -132,7 +132,7 @@ describe('parseCallback', () => {
   });
 });
 
-describe('verifyCallback', () => {
+describe('verifyCallback (fail-closed)', () => {
   let pelecard;
   beforeEach(() => {
     pelecard = loadFresh();
@@ -140,18 +140,50 @@ describe('verifyCallback', () => {
 
   const good = { statusCode: '000', confirmationKey: 'CK-1', totalX100: 7900 };
 
-  it('accepts a matching success callback', () => {
+  it('accepts a matching success callback (single key, agorot amount)', () => {
     expect(pelecard.verifyCallback(good, { confirmationKey: 'CK-1', amountNis: 79 })).toBe(true);
+  });
+
+  it('accepts when the key is one of several recorded keys', () => {
+    expect(
+      pelecard.verifyCallback(good, { confirmationKeys: ['CK-0', 'CK-1'], amountNis: 79 })
+    ).toBe(true);
+  });
+
+  it('accepts the amount whether the callback reports agorot or NIS', () => {
+    expect(
+      pelecard.verifyCallback(
+        { statusCode: '000', confirmationKey: 'CK-1', totalX100: 79 },
+        { confirmationKey: 'CK-1', amountNis: 79 }
+      )
+    ).toBe(true);
   });
 
   it('rejects a non-success status', () => {
     expect(
-      pelecard.verifyCallback({ ...good, statusCode: '004' }, { confirmationKey: 'CK-1' })
+      pelecard.verifyCallback(
+        { ...good, statusCode: '004' },
+        { confirmationKey: 'CK-1', amountNis: 79 }
+      )
     ).toBe(false);
+  });
+
+  it('rejects when NO key was recorded (no skip — anti-forgery)', () => {
+    expect(pelecard.verifyCallback(good, { amountNis: 79 })).toBe(false);
+    expect(pelecard.verifyCallback(good, { confirmationKeys: [], amountNis: 79 })).toBe(false);
   });
 
   it('rejects a forged/mismatched confirmation key', () => {
     expect(pelecard.verifyCallback(good, { confirmationKey: 'OTHER', amountNis: 79 })).toBe(false);
+  });
+
+  it('rejects when the callback omits the amount (no skip)', () => {
+    expect(
+      pelecard.verifyCallback(
+        { statusCode: '000', confirmationKey: 'CK-1' },
+        { confirmationKey: 'CK-1', amountNis: 79 }
+      )
+    ).toBe(false);
   });
 
   it('rejects a tampered amount', () => {
