@@ -183,17 +183,46 @@ const db = {
       ordered_at: nowIso(),
       paid: false,
       paid_at: null,
+      // Pending card-payment handshake (PeleCard); null until pay/init runs.
+      pelecard: null,
     };
     saveDb();
     return c.order;
   },
 
-  // Admin-only (gated at the route): mark an existing order as paid.
-  markPaid(id) {
+  // Record a PeleCard init handshake on an existing order so the later
+  // server-side callback can be verified against a ConfirmationKey we were
+  // handed. Keys ACCUMULATE (capped): an owner may open the pay modal more than
+  // once, and the callback for any of those sessions must still verify. Returns
+  // false when there is no order to attach it to.
+  recordPaymentInit(id, { confirmationKey, transactionId } = {}) {
+    const c = this.getCollection(id);
+    if (!c || !c.order) return false;
+    const p = c.order.pelecard || { confirmation_keys: [] };
+    if (!Array.isArray(p.confirmation_keys)) p.confirmation_keys = [];
+    if (confirmationKey && !p.confirmation_keys.includes(confirmationKey)) {
+      p.confirmation_keys.push(confirmationKey);
+      if (p.confirmation_keys.length > 5) {
+        p.confirmation_keys = p.confirmation_keys.slice(-5);
+      }
+    }
+    p.last_transaction_id = transactionId || p.last_transaction_id || null;
+    p.initiated_at = nowIso();
+    c.order.pelecard = p;
+    saveDb();
+    return true;
+  },
+
+  // Mark an existing order as paid. Used by the admin route (manual) and by the
+  // PeleCard callback (meta carries the method + transaction details).
+  markPaid(id, meta = {}) {
     const c = this.getCollection(id);
     if (!c || !c.order) return false;
     c.order.paid = true;
     c.order.paid_at = nowIso();
+    if (meta.method) c.order.paid_method = meta.method;
+    if (meta.transactionId) c.order.paid_transaction_id = meta.transactionId;
+    if (meta.approvalNo) c.order.paid_approval_no = meta.approvalNo;
     saveDb();
     return true;
   },

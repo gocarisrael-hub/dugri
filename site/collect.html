@@ -587,6 +587,67 @@
         justify-content: center;
         gap: 6px;
       }
+      /* credit-card pay (PeleCard iframe) — shown only when card payment is on */
+      .card-pay-sep {
+        margin: 14px 0 10px;
+        text-align: center;
+        font-size: 13px;
+        color: #9a9aa0;
+      }
+      .card-pay-btn {
+        width: 100%;
+        padding: 14px;
+        border: none;
+        border-radius: 12px;
+        background: #1d1d1f;
+        color: #fff;
+        font: inherit;
+        font-weight: 700;
+        font-size: 16px;
+        cursor: pointer;
+      }
+      .card-pay-btn:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .pay-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        z-index: 50;
+      }
+      .pay-modal-card {
+        position: relative;
+        background: #fff;
+        border-radius: 16px;
+        width: min(440px, 100%);
+        height: min(640px, 90vh);
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      }
+      .pay-modal-x {
+        position: absolute;
+        top: 8px;
+        inset-inline-end: 8px;
+        width: 32px;
+        height: 32px;
+        border: none;
+        border-radius: 99px;
+        background: #f0eee9;
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+        z-index: 2;
+      }
+      #payFrame {
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
     </style>
   </head>
   <body>
@@ -796,8 +857,25 @@
           </a>
           <div class="bit-confirm"><span aria-hidden="true">✓</span><span>אישור מיידי</span></div>
         </div>
+        <button type="button" id="cardPayBtn" class="card-pay-btn hidden">
+          💳 תשלום בכרטיס אשראי
+        </button>
         <div class="pay-confirm" id="payConfirm"></div>
       </details>
+    </div>
+
+    <!-- credit-card payment modal (PeleCard iframe) -->
+    <div
+      id="payModal"
+      class="pay-modal hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label="תשלום בכרטיס אשראי"
+    >
+      <div class="pay-modal-card">
+        <button type="button" class="pay-modal-x" id="payModalClose" aria-label="סגירה">×</button>
+        <iframe id="payFrame" title="תשלום מאובטח" src="about:blank"></iframe>
+      </div>
     </div>
 
     <script type="module">
@@ -907,7 +985,14 @@
         const open = state.status === 'open';
         setOpenState(open);
         $('#ownerControls').classList.toggle('hidden', !(isOwner && open));
-        if (isOwner) applyPaidState();
+        if (isOwner) {
+          applyPaidState();
+          // Show the credit-card button only when card payment is configured
+          // (PeleCard credentials present) AND the order isn't already paid.
+          const cardBtn = document.getElementById('cardPayBtn');
+          if (cardBtn)
+            cardBtn.classList.toggle('hidden', !(state && state.card_enabled && !state.paid));
+        }
       }
 
       async function refresh() {
@@ -1159,6 +1244,74 @@
           confirm.textContent =
             'פתחנו לכם את ביט — שלמו ₪' + total + '. נשלח לכם את המשחק מיד אחרי התשלום 💜';
           confirm.style.display = 'block';
+        });
+
+        // ---- credit-card payment (PeleCard iframe in a modal) ----
+        const cardBtn = $('#cardPayBtn');
+        const modal = $('#payModal');
+        const frame = $('#payFrame');
+        function closeModal() {
+          modal.classList.add('hidden');
+          frame.src = 'about:blank';
+        }
+        $('#payModalClose').onclick = closeModal;
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) closeModal();
+        });
+
+        // After PeleCard confirms, our server callback flips the order to paid.
+        // That can lag the browser by a moment, so poll a few times.
+        function pollPaid(tries = 0) {
+          refresh().then(() => {
+            if (isPaid()) {
+              const confirm = $('#payConfirm');
+              confirm.textContent = 'התשלום התקבל ✓ פתחנו לכם עוד עשרות שאלות — והמשחק בדרך 💜';
+              confirm.style.display = 'block';
+            } else if (tries < 8) {
+              setTimeout(() => pollPaid(tries + 1), 1500);
+            }
+          });
+        }
+
+        cardBtn.addEventListener('click', async () => {
+          const version = selectedVersion();
+          let address = null;
+          if (version === 'delivery') {
+            address = collectAddress();
+            if (!address.street || !address.city || !address.postal) {
+              payErr.textContent = 'נא למלא רחוב, עיר ומיקוד למשלוח.';
+              payErr.style.display = 'block';
+              return;
+            }
+          }
+          cardBtn.disabled = true;
+          try {
+            const res = await api('/pay/init', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ owner_token: ownerToken, version, address }),
+            });
+            track('card_pay_started', { version });
+            frame.src = res.url;
+            modal.classList.remove('hidden');
+          } catch (err) {
+            payErr.textContent = 'פתיחת התשלום נכשלה. נסו שוב או שלמו בביט.';
+            payErr.style.display = 'block';
+          } finally {
+            cardBtn.disabled = false;
+          }
+        });
+
+        // pay-done.html (loaded inside the iframe) tells us how it went.
+        window.addEventListener('message', (e) => {
+          if (e.origin !== location.origin) return;
+          const d = e.data || {};
+          if (d.type !== 'dugri-pay') return;
+          closeModal();
+          if (d.ok) {
+            track('card_pay_done');
+            pollPaid();
+          }
         });
       }
 

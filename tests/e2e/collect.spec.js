@@ -107,6 +107,15 @@ test('owner pay panel is collapsed by default and opens on the summary button', 
   await expect(page.locator('#payOpts')).toBeHidden();
 });
 
+test('credit-card button stays hidden when card payment is not configured', async ({ page }) => {
+  // The E2E server runs without PELECARD_* credentials, so card_enabled is
+  // false: the credit-card button must not show, and Bit remains the path.
+  await createCollection(page, 'נועה');
+  await page.locator('#payPanel summary').click();
+  await expect(page.locator('#bitPayLink')).toBeVisible();
+  await expect(page.locator('#cardPayBtn')).toBeHidden();
+});
+
 test('pay panel shows the new version names and prices', async ({ page }) => {
   await createCollection(page, 'יעל');
   const panel = page.locator('#payPanel');
