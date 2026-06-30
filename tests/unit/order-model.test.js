@@ -125,3 +125,57 @@ describe('markPaid', () => {
     expect(db.markPaid(c.id)).toBe(false);
   });
 });
+
+describe('cancelCollection / effectiveStatus', () => {
+  it('initializes cancelled fields to false/null on create', () => {
+    const c = freshCollection();
+    expect(c.cancelled).toBe(false);
+    expect(c.cancelled_at).toBe(null);
+  });
+
+  it('sets cancelled + cancelled_at, then clears them on undo', () => {
+    const c = freshCollection();
+    expect(db.cancelCollection(c.id)).toBe(true);
+    const cancelled = db.getCollection(c.id);
+    expect(cancelled.cancelled).toBe(true);
+    expect(typeof cancelled.cancelled_at).toBe('string');
+
+    expect(db.cancelCollection(c.id, true)).toBe(true);
+    const restored = db.getCollection(c.id);
+    expect(restored.cancelled).toBe(false);
+    expect(restored.cancelled_at).toBe(null);
+  });
+
+  it('returns false for an unknown id', () => {
+    expect(db.cancelCollection('nope')).toBe(false);
+  });
+
+  it("effectiveStatus returns 'cancelled' when cancelled, ahead of closed/expired", () => {
+    const c = freshCollection();
+    expect(db.effectiveStatus(db.getCollection(c.id))).toBe('open');
+    db.closeCollection(c.id, c.owner_token);
+    db.cancelCollection(c.id);
+    expect(db.effectiveStatus(db.getCollection(c.id))).toBe('cancelled');
+    // listAllCollections spreads the collection, so the cancelled flag surfaces.
+    const listed = db.listAllCollections().find((x) => x.id === c.id);
+    expect(listed.cancelled).toBe(true);
+    expect(listed.status).toBe('cancelled');
+  });
+});
+
+describe('deleteCollection', () => {
+  it('removes the collection and all of its words', () => {
+    const c = freshCollection();
+    db.addWords(c.id, ['אלף', 'בית', 'גימל'], 'tester');
+    expect(db.listWords(c.id).length).toBe(3);
+
+    expect(db.deleteCollection(c.id)).toBe(true);
+    expect(db.getCollection(c.id)).toBe(null);
+    expect(db.listWords(c.id).length).toBe(0);
+    expect(db.listAllCollections().find((x) => x.id === c.id)).toBeUndefined();
+  });
+
+  it('returns false for an unknown id', () => {
+    expect(db.deleteCollection('nope')).toBe(false);
+  });
+});

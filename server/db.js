@@ -41,9 +41,11 @@ function norm(s) {
   return String(s).trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-// open while not closed and not past expiry; otherwise 'closed' / 'expired'.
+// 'cancelled' (admin soft-cancel) takes precedence; otherwise open while not
+// closed and not past expiry; otherwise 'closed' / 'expired'.
 function effectiveStatus(c) {
   if (!c) return null;
+  if (c.cancelled) return 'cancelled';
   if (c.status === 'closed') return 'closed';
   if (Date.parse(c.expires_at) < Date.now()) return 'expired';
   return 'open';
@@ -71,6 +73,9 @@ const db = {
       created_at: nowIso(),
       expires_at: new Date(Date.now() + WEEK_MS).toISOString(),
       closed_at: null,
+      // Admin soft-cancel (reversible); a hard delete removes the row entirely.
+      cancelled: false,
+      cancelled_at: null,
       order: null,
     };
     _db.collections.push(c);
@@ -149,6 +154,28 @@ const db = {
     if (!c || c.owner_token !== ownerToken) return false;
     c.status = 'closed';
     c.closed_at = nowIso();
+    saveDb();
+    return true;
+  },
+
+  // Admin: soft-cancel a collection (reversible). With undo=true it restores
+  // the collection. Returns false when the collection doesn't exist.
+  cancelCollection(id, undo = false) {
+    const c = this.getCollection(id);
+    if (!c) return false;
+    c.cancelled = !undo;
+    c.cancelled_at = undo ? null : nowIso();
+    saveDb();
+    return true;
+  },
+
+  // Admin: hard-delete a collection and all of its words. Returns false when
+  // the collection doesn't exist.
+  deleteCollection(id) {
+    const before = _db.collections.length;
+    _db.collections = _db.collections.filter((c) => c.id !== id);
+    if (_db.collections.length === before) return false;
+    _db.words = _db.words.filter((w) => w.collection_id !== id);
     saveDb();
     return true;
   },

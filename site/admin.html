@@ -50,6 +50,11 @@
         padding: 20px;
         text-align: center;
       }
+      /* Keep the wide table inside its own scroll area so it never widens the
+         page (which would push the controls/tabs off a narrow mobile viewport). */
+      #content {
+        overflow-x: auto;
+      }
       table {
         width: 100%;
         border-collapse: collapse;
@@ -114,12 +119,120 @@
         text-align: right;
         unicode-bidi: plaintext;
       }
+      .stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+      .stat {
+        background: #fff;
+        border: 1px solid #f0dee4;
+        border-radius: 12px;
+        padding: 10px 16px;
+        min-width: 110px;
+      }
+      .stat .val {
+        font-size: 22px;
+        font-weight: 900;
+        color: #8a2b53;
+      }
+      .stat .lab {
+        font-size: 12.5px;
+        color: #7c6a74;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+      }
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .tab {
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        border: 1px solid #f0c9da;
+        background: #fff;
+        color: #8a2b53;
+        border-radius: 99px;
+        padding: 6px 12px;
+        margin: 0;
+      }
+      .tab.active {
+        background: #e5197d;
+        border-color: #e5197d;
+        color: #fff;
+      }
+      .sortwrap {
+        font-size: 13px;
+        color: #7c6a74;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .sortwrap select {
+        font: inherit;
+        font-size: 13px;
+        border: 1px solid #f0c9da;
+        border-radius: 9px;
+        padding: 5px 8px;
+        background: #fff;
+        color: #2c1a29;
+      }
+      .followup {
+        display: inline-flex;
+        gap: 4px;
+        flex-wrap: wrap;
+      }
+      a.act {
+        display: inline-block;
+        font-size: 12.5px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid #d7c4ce;
+        color: #5a4651;
+        border-radius: 8px;
+        padding: 4px 8px;
+        white-space: nowrap;
+      }
+      a.act.wa {
+        border-color: #25d366;
+        color: #128c3e;
+      }
+      button.danger {
+        border-color: #c0143c;
+        color: #c0143c;
+      }
+      .cancelled {
+        background: #f1eef0;
+        color: #7c6a74;
+      }
     </style>
   </head>
   <body>
     <div class="wrap">
       <h1>ניהול הזמנות · דוגרי</h1>
       <div class="sub" id="sub">טוען…</div>
+      <div class="stats" id="stats"></div>
+      <div class="controls" id="controls" hidden>
+        <div class="tabs" id="tabs"></div>
+        <label class="sortwrap"
+          >מיון:
+          <select id="sort">
+            <option value="created">נוצר</option>
+            <option value="words">מס׳ מילים</option>
+            <option value="total">סכום</option>
+          </select>
+        </label>
+      </div>
       <div id="content"></div>
     </div>
 
@@ -129,6 +242,15 @@
       const key = new URLSearchParams(location.search).get('key') || '';
       const sub = document.getElementById('sub');
       const content = document.getElementById('content');
+      const statsEl = document.getElementById('stats');
+      const controlsEl = document.getElementById('controls');
+      const tabsEl = document.getElementById('tabs');
+      const sortSelect = document.getElementById('sort');
+
+      // Last fetched list + current view state (client-side filter/sort).
+      let allCols = [];
+      let activeFilter = 'all';
+      let sortBy = 'created';
 
       function fmtDate(iso) {
         try {
@@ -142,7 +264,44 @@
           return iso;
         }
       }
-      const statusLabel = { open: 'פתוח', closed: 'נסגר ✅', expired: 'הסתיים' };
+      const statusLabel = {
+        open: 'פתוח',
+        closed: 'נסגר ✅',
+        expired: 'הסתיים',
+        cancelled: 'מבוטלת',
+      };
+
+      // Israeli phone -> international digits for wa.me: strip non-digits, and a
+      // leading 0 (local trunk prefix) becomes the 972 country code.
+      function intlPhone(phone) {
+        const digits = String(phone || '').replace(/\D/g, '');
+        if (!digits) return '';
+        return digits.startsWith('0') ? '972' + digits.slice(1) : digits;
+      }
+
+      const isPaid = (c) => !!(c.order && c.order.paid);
+
+      // Filter tabs: id, Hebrew label, and the predicate over a collection.
+      const FILTERS = [
+        { id: 'all', label: 'הכל', match: () => true },
+        { id: 'leads', label: 'לידים', match: (c) => !c.cancelled && !isPaid(c) },
+        { id: 'paid', label: 'שולמו', match: (c) => isPaid(c) },
+        {
+          id: 'closed',
+          label: 'סגורות',
+          match: (c) => c.status === 'closed' || c.status === 'expired',
+        },
+        { id: 'cancelled', label: 'מבוטלות', match: (c) => !!c.cancelled },
+      ];
+
+      function sortCols(cols) {
+        const arr = [...cols];
+        if (sortBy === 'words') arr.sort((a, b) => (b.word_count || 0) - (a.word_count || 0));
+        else if (sortBy === 'total')
+          arr.sort((a, b) => ((b.order && b.order.total) || 0) - ((a.order && a.order.total) || 0));
+        else arr.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+        return arr;
+      }
       const versionLabel = {
         pdf: 'דיגיטלי',
         pickup: 'משחק מוכן (איסוף)',
@@ -173,14 +332,78 @@
         URL.revokeObjectURL(a.href);
       }
 
+      // Key-gated admin write (cancel/restore/delete). Returns true on success.
+      async function adminAction(method, pathFor, body) {
+        try {
+          const r = await fetch(
+            pathFor + (pathFor.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key),
+            {
+              method,
+              headers: body ? { 'Content-Type': 'application/json' } : undefined,
+              body: body ? JSON.stringify(body) : undefined,
+            }
+          );
+          return r.ok;
+        } catch {
+          return false;
+        }
+      }
+
+      function renderStats(cols) {
+        const leads = cols.filter((c) => !c.cancelled).length;
+        const orders = cols.filter((c) => c.order).length;
+        const paid = cols.filter((c) => isPaid(c)).length;
+        const revenue = cols.reduce((s, c) => s + (isPaid(c) ? c.order.total || 0 : 0), 0);
+        const pending = cols.filter(
+          (c) => (c.order || c.word_count > 0) && !isPaid(c) && !c.cancelled
+        ).length;
+        const items = [
+          ['לידים', leads],
+          ['הזמנות', orders],
+          ['שולמו', paid],
+          ['הכנסות', revenue + ' ₪'],
+          ['ממתינות לתשלום', pending],
+        ];
+        statsEl.textContent = '';
+        for (const [lab, val] of items) {
+          const box = document.createElement('div');
+          box.className = 'stat';
+          const v = document.createElement('div');
+          v.className = 'val';
+          v.textContent = val;
+          const l = document.createElement('div');
+          l.className = 'lab';
+          l.textContent = lab;
+          box.appendChild(v);
+          box.appendChild(l);
+          statsEl.appendChild(box);
+        }
+      }
+
+      function renderTabs(cols) {
+        tabsEl.textContent = '';
+        for (const f of FILTERS) {
+          const count = cols.filter(f.match).length;
+          const btn = document.createElement('button');
+          btn.className = 'tab' + (activeFilter === f.id ? ' active' : '');
+          btn.textContent = f.label + ' (' + count + ')';
+          btn.dataset.filter = f.id;
+          btn.onclick = () => {
+            activeFilter = f.id;
+            renderAll();
+          };
+          tabsEl.appendChild(btn);
+        }
+      }
+
       function render(cols) {
         if (!cols.length) {
-          content.innerHTML = '<div class="msg">עדיין אין הזמנות.</div>';
+          content.innerHTML = '<div class="msg">אין רשומות להצגה.</div>';
           return;
         }
         const table = document.createElement('table');
         table.innerHTML =
-          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>נוצר</th><th>ניהול</th></tr></thead>';
+          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>נוצר</th><th>מעקב</th><th>ניהול</th></tr></thead>';
         const tb = document.createElement('tbody');
         for (const c of cols) {
           const tr = document.createElement('tr');
@@ -287,6 +510,44 @@
           tr.appendChild(tdAddress);
           tr.appendChild(tdPaid);
           tr.appendChild(tdDate);
+
+          // Follow-up: WhatsApp / Call / Email. Each link is shown only when the
+          // underlying contact field exists.
+          const tdFollow = document.createElement('td');
+          const follow = document.createElement('div');
+          follow.className = 'followup';
+          const intl = intlPhone(c.owner_phone);
+          if (intl) {
+            const wa = document.createElement('a');
+            wa.className = 'act wa';
+            wa.textContent = 'וואטסאפ';
+            wa.href = 'https://wa.me/' + intl;
+            wa.target = '_blank';
+            wa.rel = 'noopener';
+            follow.appendChild(wa);
+          }
+          if (c.owner_phone) {
+            const call = document.createElement('a');
+            call.className = 'act';
+            call.textContent = 'חיוג';
+            call.href = 'tel:' + String(c.owner_phone).replace(/\s/g, '');
+            follow.appendChild(call);
+          }
+          if (c.owner_email) {
+            const mail = document.createElement('a');
+            mail.className = 'act';
+            mail.textContent = 'מייל';
+            mail.href = 'mailto:' + c.owner_email;
+            follow.appendChild(mail);
+          }
+          if (!follow.children.length) {
+            tdFollow.className = 'muted';
+            tdFollow.textContent = '—';
+          } else {
+            tdFollow.appendChild(follow);
+          }
+          tr.appendChild(tdFollow);
+
           const td = document.createElement('td');
           const copyBtn = document.createElement('button');
           copyBtn.textContent = 'העתק קישור ניהול';
@@ -301,6 +562,61 @@
           td.appendChild(copyBtn);
           td.appendChild(document.createTextNode(' '));
           td.appendChild(csvBtn);
+
+          // Cancel / restore (soft) + hard delete.
+          if (c.cancelled) {
+            const badge = document.createElement('span');
+            badge.className = 'pill cancelled';
+            badge.textContent = 'מבוטלת';
+            const restoreBtn = document.createElement('button');
+            restoreBtn.textContent = 'שחזר';
+            restoreBtn.onclick = async () => {
+              restoreBtn.disabled = true;
+              const ok = await adminAction('POST', '/api/admin/collections/' + c.id + '/cancel', {
+                undo: true,
+              });
+              if (ok) load();
+              else restoreBtn.disabled = false;
+            };
+            td.appendChild(document.createTextNode(' '));
+            td.appendChild(badge);
+            td.appendChild(document.createTextNode(' '));
+            td.appendChild(restoreBtn);
+          } else {
+            const cancelBtn = document.createElement('button');
+            cancelBtn.textContent = 'בטל';
+            cancelBtn.onclick = async () => {
+              if (!confirm('לבטל את ההזמנה של ' + (c.honoree_name || '') + '?')) return;
+              cancelBtn.disabled = true;
+              const ok = await adminAction(
+                'POST',
+                '/api/admin/collections/' + c.id + '/cancel',
+                {}
+              );
+              if (ok) load();
+              else cancelBtn.disabled = false;
+            };
+            td.appendChild(document.createTextNode(' '));
+            td.appendChild(cancelBtn);
+          }
+
+          const delBtn = document.createElement('button');
+          delBtn.className = 'danger';
+          delBtn.textContent = 'מחק';
+          delBtn.onclick = async () => {
+            if (
+              !confirm('למחוק לצמיתות את ' + (c.honoree_name || '') + ' וכל המילים? אין דרך חזרה.')
+            )
+              return;
+            if (!confirm('בטוחים? המחיקה סופית.')) return;
+            delBtn.disabled = true;
+            const ok = await adminAction('DELETE', '/api/admin/collections/' + c.id, null);
+            if (ok) load();
+            else delBtn.disabled = false;
+          };
+          td.appendChild(document.createTextNode(' '));
+          td.appendChild(delBtn);
+
           tr.appendChild(td);
           tb.appendChild(tr);
         }
@@ -309,9 +625,28 @@
         content.appendChild(table);
       }
 
+      // Re-render stats, tabs and the filtered+sorted table from allCols.
+      function renderAll() {
+        renderStats(allCols);
+        renderTabs(allCols);
+        const f = FILTERS.find((x) => x.id === activeFilter) || FILTERS[0];
+        render(sortCols(allCols.filter(f.match)));
+      }
+
+      function hideControls() {
+        statsEl.textContent = '';
+        controlsEl.hidden = true;
+      }
+
+      sortSelect.onchange = () => {
+        sortBy = sortSelect.value;
+        renderAll();
+      };
+
       async function load() {
         if (!key) {
           sub.textContent = '';
+          hideControls();
           content.innerHTML =
             '<div class="msg">חסר מפתח גישה. פתחו עם <code>?key=…</code> בכתובת.</div>';
           return;
@@ -319,15 +654,18 @@
         try {
           const r = await fetch('/api/admin/collections?key=' + encodeURIComponent(key));
           if (r.status === 403) {
+            hideControls();
             content.innerHTML = '<div class="msg">מפתח גישה שגוי.</div>';
             sub.textContent = '';
             return;
           }
           const data = await r.json();
-          const cols = data.collections || [];
-          sub.textContent = cols.length + ' הזמנות';
-          render(cols);
+          allCols = data.collections || [];
+          sub.textContent = allCols.length + ' הזמנות';
+          controlsEl.hidden = false;
+          renderAll();
         } catch (e) {
+          hideControls();
           content.innerHTML = '<div class="msg">שגיאה בטעינה.</div>';
         }
       }

@@ -98,6 +98,24 @@ app.post('/api/admin/collections/:id/paid', (req, res) => {
   res.json({ ok: true });
 });
 
+// Admin: soft-cancel a collection (body {undo:true} to restore).
+app.post('/api/admin/collections/:id/cancel', (req, res) => {
+  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
+  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  const undo = !!(req.body && req.body.undo);
+  if (!db.cancelCollection(req.params.id, undo))
+    return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true });
+});
+
+// Admin: hard-delete a collection and its words.
+app.delete('/api/admin/collections/:id', (req, res) => {
+  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
+  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!db.deleteCollection(req.params.id)) return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true });
+});
+
 // Public read: anyone with the link can see the words.
 app.get('/api/collections/:id', (req, res) => {
   const c = db.getCollection(req.params.id);
