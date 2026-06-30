@@ -117,6 +117,30 @@ describe('init', () => {
     }
   });
 
+  it('does NOT log anything when PELECARD_DEBUG is unset (off by default)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          URL: 'https://x/PaymentGW?transactionId=q',
+          ConfirmationKey: 'CK',
+          Error: { ErrCode: 0 },
+        }),
+      })
+    );
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    delete process.env.PELECARD_DEBUG;
+    try {
+      await loadFresh().init({ amountNis: 79, paramX: 'col-1', urls: {} });
+      const logged = logSpy.mock.calls.find((c) => String(c[0]).includes('[pelecard init]'));
+      expect(logged).toBeUndefined();
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
   it('throws when PeleCard returns an error code', async () => {
     vi.stubGlobal(
       'fetch',
