@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 // Covers two order-wizard additions:
-//  1. a gender choice on the honoree-name step, sent as `gender` in the
-//     POST /api/collections payload (exactly 'female' | 'male', default female);
+//  1. a REQUIRED gender choice on the honoree-name step, sent as `gender` in the
+//     POST /api/collections payload (exactly 'female' | 'male' — no default:
+//     nothing is pre-selected and a choice is required to advance);
 //  2. the card preview showing a real printed-background "bleed" around the card.
 
 async function toNameStep(page) {
@@ -32,17 +33,38 @@ function captureCollectionPost(page) {
 }
 
 test.describe('honoree gender', () => {
-  test('gender control exists and defaults to female', async ({ page }) => {
+  test('gender control exists with nothing pre-selected', async ({ page }) => {
     await toNameStep(page);
     await expect(page.getByTestId('gender-group')).toBeVisible();
-    await expect(page.getByTestId('gender-female')).toBeChecked();
+    // no default: neither option is checked until the user actively picks one
+    await expect(page.getByTestId('gender-female')).not.toBeChecked();
     await expect(page.getByTestId('gender-male')).not.toBeChecked();
   });
 
-  test('default female is sent in the create payload', async ({ page }) => {
+  test('advancing without a gender is blocked and prompts a choice', async ({ page }) => {
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('שירה');
+    // name is set but no gender picked -> Next must not advance...
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    await expect(page.getByTestId('step-5')).not.toBeVisible();
+    // ...and a prompt tells the user to choose.
+    await expect(page.getByTestId('gender-modal')).toBeVisible();
+
+    // dismissing then picking a gender lets the wizard advance.
+    await page.getByTestId('gender-modal-ok').click();
+    await expect(page.getByTestId('gender-modal')).toBeHidden();
+    await page.getByTestId('gender-female').check();
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('step-5')).toBeVisible();
+  });
+
+  test('choosing female is sent in the create payload', async ({ page }) => {
     const captured = await captureCollectionPost(page);
     await toNameStep(page);
     await page.getByTestId('honoree-input').fill('שירה');
+    await page.getByTestId('gender-female').check();
+    await expect(page.getByTestId('gender-female')).toBeChecked();
     await page.getByTestId('next-btn').click(); // -> step 5 (contact)
     await page.getByTestId('owner-email').fill('a@b.com');
     await page.getByTestId('owner-phone').fill('0521234567');

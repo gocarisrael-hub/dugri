@@ -867,6 +867,42 @@
         display: none;
       }
 
+      /* gender-required prompt — a small styled dialog over a dimmed backdrop */
+      .wiz-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 90;
+        background: rgba(44, 26, 41, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        animation: wizfade 0.18s ease both;
+      }
+      .wiz-modal[hidden] {
+        display: none;
+      }
+      .wiz-modal-card {
+        background: var(--surface);
+        border-radius: 20px;
+        box-shadow: var(--shadow-lg);
+        max-width: 380px;
+        width: 100%;
+        padding: 26px 24px 22px;
+        text-align: center;
+      }
+      .wiz-modal-msg {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 18px;
+        line-height: 1.4;
+        color: var(--ink);
+        margin-bottom: 20px;
+      }
+      .wiz-modal-card .btn {
+        width: 100%;
+      }
+
       /* sticky Back / Next bar */
       .wiz-bar {
         position: fixed;
@@ -1093,7 +1129,7 @@
           data-testid="gender-group"
         >
           <label class="gender-opt">
-            <input type="radio" name="gender" value="female" data-testid="gender-female" checked />
+            <input type="radio" name="gender" value="female" data-testid="gender-female" />
             <span>נקבה</span>
           </label>
           <label class="gender-opt">
@@ -1150,6 +1186,23 @@
           הקודם
         </button>
         <button class="btn" id="nextBtn" type="button" data-testid="next-btn">הבא</button>
+      </div>
+    </div>
+
+    <!-- gender-required prompt (shown when advancing without a gender choice) -->
+    <div class="wiz-modal" id="genderModal" data-testid="gender-modal" hidden>
+      <div
+        class="wiz-modal-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="genderModalMsg"
+      >
+        <p class="wiz-modal-msg" id="genderModalMsg" data-testid="gender-modal-msg">
+          רגע! צריך לבחור אם חוגגים לבעל השמחה או לבעלת השמחה 💜
+        </p>
+        <button class="btn" type="button" id="genderModalOk" data-testid="gender-modal-ok">
+          הבנתי
+        </button>
       </div>
     </div>
 
@@ -1486,13 +1539,16 @@
       const emailErr = document.getElementById('emailErr');
       const phoneErr = document.getElementById('phoneErr');
       const createErr = document.getElementById('createErr');
+      const genderModal = document.getElementById('genderModal');
+      const genderModalOk = document.getElementById('genderModalOk');
 
-      // Honoree gender captured on the name step. Exactly 'female' | 'male',
-      // default 'female'. Sent with the collection so the collect page + server
-      // can gender the copy correctly.
+      // Honoree gender captured on the name step. No default: exactly
+      // 'female' | 'male' once the user actively picks, otherwise null. A choice
+      // is required to advance past the name step, so the value sent with the
+      // collection is always the user's real pick (never a defaulted one).
       function selectedGender() {
         const el = document.querySelector('input[name="gender"]:checked');
-        return el && el.value === 'male' ? 'male' : 'female';
+        return el ? el.value : null;
       }
 
       // Both contact fields are required so we can always reach the owner with
@@ -1552,8 +1608,32 @@
         window.scrollTo({ top: 0, behavior: 'auto' });
       }
 
+      // Gender is required to leave the name step. Unlike the name (which just
+      // disables Next), a missing gender pops a small prompt so the user knows a
+      // choice is needed — the pick is what the collection is gendered by.
+      function openGenderModal() {
+        genderModal.hidden = false;
+        genderModalOk.focus();
+      }
+      function closeGenderModal() {
+        genderModal.hidden = true;
+      }
+      genderModalOk.addEventListener('click', closeGenderModal);
+      genderModal.addEventListener('click', (e) => {
+        if (e.target === genderModal) closeGenderModal();
+      });
+      // picking a gender clears the prompt if it's up
+      document
+        .querySelectorAll('input[name="gender"]')
+        .forEach((el) => el.addEventListener('change', closeGenderModal));
+
       function next() {
         if (!validateStep(currentStep)) return;
+        // name step: block advancing until a gender is actively chosen
+        if (currentStep === 4 && !selectedGender()) {
+          openGenderModal();
+          return;
+        }
         if (currentStep === TOTAL_STEPS) {
           createCollection();
           return;
@@ -1591,6 +1671,11 @@
         createErr.hidden = true;
         if (!name) {
           goStep(4);
+          return;
+        }
+        if (!selectedGender()) {
+          goStep(4);
+          openGenderModal();
           return;
         }
         if (!isValidEmail(email)) {
