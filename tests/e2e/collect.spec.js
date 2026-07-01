@@ -84,21 +84,17 @@ test('owner pay panel is collapsed by default and opens on the summary button', 
   await expect(page.locator('#payOpts')).toBeHidden();
 });
 
-test('credit-card button stays hidden when card payment is not configured', async ({ page }) => {
+test('card disabled: no dead pay CTA, neutral note instead, and no top nag', async ({ page }) => {
   // The E2E server runs without PELECARD_* credentials, so card_enabled is
-  // false: the credit-card button must not show. Card is the only path.
+  // false. There must be NO clickable pay button, a neutral "coming soon" note
+  // in the panel instead, and the top reminder must NOT nag toward a dead panel.
   await createCollection(page, 'נועה');
+  await expect(page.locator('#payReminder')).toBeHidden();
   await page.locator('#payPanel summary').click();
   await expect(page.locator('#cardPayBtn')).toBeHidden();
   await expect(page.locator('#bitPayLink')).toHaveCount(0);
-});
-
-test('top pay reminder shows for the unpaid owner and points to the pay panel', async ({
-  page,
-}) => {
-  await createCollection(page, 'שני');
-  await expect(page.locator('#payReminder')).toBeVisible();
-  await expect(page.locator('#payReminder')).toContainText('עדיין לא שילמתם');
+  await expect(page.locator('#cardSoonNote')).toBeVisible();
+  await expect(page.locator('#cardSoonNote')).toContainText('ייפתח בקרוב');
 });
 
 test('word counter shows the 416 max and the bar fills toward it', async ({ page }) => {
@@ -107,11 +103,33 @@ test('word counter shows the 416 max and the bar fills toward it', async ({ page
   await page.fill('#wordInput', 'מילה אחת');
   await page.click('#addBtn');
   await expect(page.locator('#count')).toHaveText('1');
+  await expect(page.locator('#countMax')).toContainText('/ 416');
   await expect(page.locator('#countHint')).toContainText('416');
   // one word ≈ 0.24% of a 416-word bar
   const width = await page.locator('#barFill').evaluate((el) => el.style.width);
   expect(parseFloat(width)).toBeGreaterThan(0);
   expect(parseFloat(width)).toBeLessThan(1);
+});
+
+test('over the 416 cap: counter shows 416 max (no fraction over cap), bar full', async ({
+  page,
+}) => {
+  await createCollection(page, 'אגם');
+  const url = new URL(page.url());
+  const c = url.searchParams.get('c');
+  // Push the count past the cap in one API call (417 unique words).
+  const words = Array.from({ length: 417 }, (_, i) => 'w' + i);
+  const res = await page.request.post(`/api/collections/${c}/words`, { data: { words } });
+  expect(res.ok()).toBeTruthy();
+
+  await page.reload();
+  await expect(page.locator('#count')).toHaveText('416'); // capped display
+  await expect(page.locator('#countMax')).toContainText('מקסימום');
+  await expect(page.locator('.count-pill')).not.toContainText('417');
+  await expect(page.locator('.count-pill')).not.toContainText('/ 416'); // no fraction over cap
+  await expect(page.locator('#countHint')).toContainText('מקסימום');
+  const width = await page.locator('#barFill').evaluate((el) => el.style.width);
+  expect(parseFloat(width)).toBe(100); // bar full
 });
 
 test('struck old price carries the ₪ sign alongside the new price', async ({ page }) => {

@@ -170,7 +170,9 @@ const FALLBACK_NAME_MALE = 'בעל השמחה';
 /** Replace {name} in a prompt with the honoree name (or a gentle fallback). */
 export function fillName(text, name) {
   const n = (name == null ? '' : String(name)).trim() || FALLBACK_NAME;
-  return String(text == null ? '' : text).replace(/\{name\}/g, n);
+  // Function replacement so the name is inserted LITERALLY — a name containing
+  // $&, $`, $', or $$ must not be treated as a special replacement pattern.
+  return String(text == null ? '' : text).replace(/\{name\}/g, () => n);
 }
 
 /**
@@ -188,9 +190,13 @@ export function renderQuestion(text, name, gender) {
   const male = gender === 'male';
   const fallback = male ? FALLBACK_NAME_MALE : FALLBACK_NAME;
   const n = (name == null ? '' : String(name)).trim() || fallback;
-  return String(text == null ? '' : text)
-    .replace(/\{([^{}|]*)\|([^{}]*)\}/g, (_, f, m) => (male ? m : f))
-    .replace(/\{name\}/g, n);
+  return (
+    String(text == null ? '' : text)
+      .replace(/\{([^{}|]*)\|([^{}]*)\}/g, (_, f, m) => (male ? m : f))
+      // Function replacement so the name is inserted LITERALLY — a name containing
+      // $&, $`, $', or $$ must not be treated as a special replacement pattern.
+      .replace(/\{name\}/g, () => n)
+  );
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderQuestion, CATEGORIES, PROMPTS } from '../../site/js/word-prompts.js';
+import { renderQuestion, fillName, CATEGORIES, PROMPTS } from '../../site/js/word-prompts.js';
 
 describe('renderQuestion', () => {
   it('interpolates {name}', () => {
@@ -37,6 +37,15 @@ describe('renderQuestion', () => {
 
   it('is a no-op for plain text with no tokens', () => {
     expect(renderQuestion('סתם טקסט', 'שירה', 'male')).toBe('סתם טקסט');
+  });
+
+  it('inserts a name with $-replacement patterns LITERALLY (no special $& / $$ handling)', () => {
+    const tricky = 'A$&B';
+    const out = renderQuestion('הרגל של {name}', tricky, 'female');
+    expect(out).toBe('הרגל של A$&B');
+    expect(out).not.toContain('{name}');
+    // fillName shares the same interpolation and must be safe too.
+    expect(fillName('הרגל של {name}', "C$`$'$$D")).toBe("הרגל של C$`$'$$D");
   });
 
   it('renders every CATEGORIES/PROMPTS question without leaving raw tokens', () => {

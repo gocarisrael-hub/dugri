@@ -459,7 +459,7 @@
       .pay-collapse > .pay-opts:first-of-type {
         margin-top: 14px;
       }
-      .pay-collapse > .pay-confirm:last-child {
+      .pay-collapse > .pay-soon-note:last-child {
         margin-bottom: 16px;
       }
       @media (prefers-reduced-motion: reduce) {
@@ -543,16 +543,15 @@
         margin-bottom: 8px;
         display: none;
       }
-      .pay-confirm {
-        background: #eafaf2;
-        border: 1px solid #bfe8d3;
-        color: #119a6e;
+      .pay-soon-note {
+        background: #f6f2ee;
+        border: 1px solid #e6ddd2;
+        color: #7c6a74;
         border-radius: 12px;
         padding: 12px 14px;
         font-weight: 700;
         text-align: center;
         margin-top: 12px;
-        display: none;
       }
       /* credit-card pay (PeleCard iframe) — the only payment path */
       .card-pay-btn {
@@ -632,10 +631,10 @@
       <div class="card">
         <div class="words-head">
           <span class="sec-h">המילים שכבר נאספו</span>
-          <span class="count-pill"><b id="count">0</b> / 416 מילים</span>
+          <span class="count-pill"><b id="count">0</b><span id="countMax"> מילים</span></span>
         </div>
         <div class="bar"><i id="barFill"></i></div>
-        <small class="muted" id="countHint">היעד: לפחות 100 מילים (אפשר עד 416)</small>
+        <small class="muted" id="countHint">היעד: לפחות 100 מילים</small>
         <div class="words" id="wordsWrap" style="margin-top: 12px">
           <span class="muted" id="emptyWords">עוד אין מילים - היו הראשונים!</span>
         </div>
@@ -811,7 +810,8 @@
         <button type="button" id="cardPayBtn" class="card-pay-btn hidden">
           💳 תשלום בכרטיס אשראי
         </button>
-        <div class="pay-confirm" id="payConfirm"></div>
+        <!-- Shown instead of the button when card payment isn't configured yet -->
+        <p class="pay-soon-note hidden" id="cardSoonNote">התשלום בכרטיס אשראי ייפתח בקרוב 💜</p>
       </details>
     </div>
 
@@ -842,6 +842,11 @@
       const $ = (s) => document.querySelector(s);
       let state = null; // last fetched collection
       const seenPrompts = [];
+
+      // The real product word cap (owner's decision). Single source of truth for
+      // the counter pill, the hint copy, and the progress-bar math.
+      const MAX_WORDS = 416;
+      const WORD_GOAL = 100; // the "meaningful minimum" milestone
 
       // small transient confirmation pop-up ("word added")
       let toastTimer = null;
@@ -903,17 +908,30 @@
         document.title = 'דוגרי · מילים על ' + honoree();
         $('#title').textContent = 'אוספים מילים על ' + honoree();
         const n = state.count;
-        const MAX_WORDS = 416;
-        $('#count').textContent = n;
-        $('#countHint').textContent =
-          n >= 100
+        const atMax = n >= MAX_WORDS;
+        // Never display a fraction over the cap: show the count capped at the max.
+        $('#count').textContent = Math.min(n, MAX_WORDS);
+        $('#countMax').textContent = atMax ? ' מילים · מקסימום 🎉' : ' / ' + MAX_WORDS + ' מילים';
+        $('#countHint').textContent = atMax
+          ? 'הגעתם למקסימום של ' +
+            MAX_WORDS +
+            ' מילים — יש לכם משחק מפוצץ! אפשר לסגור ולהתחיל להפיק.'
+          : n >= WORD_GOAL
             ? 'יש כבר ' +
               n +
-              ' מילים — מעולה! מכאן מתחיל הכיף האמיתי: ככל שיש יותר מילים, המשחק יותר מצחיק ומפתיע. אפשר עד 416, ומה שלא תשלימו — נשלים לכם לפי סוג האירוע.'
+              ' מילים — מעולה! מכאן מתחיל הכיף האמיתי: ככל שיש יותר מילים, המשחק יותר מצחיק ומפתיע. אפשר עד ' +
+              MAX_WORDS +
+              ', ומה שלא תשלימו — נשלים לכם לפי סוג האירוע.'
             : n >= 50
-              ? 'חצי דרך! ✨ עוד ' + (100 - n) + ' עד היעד (אפשר עד 416)'
-              : 'עוד ' + (100 - n) + ' עד היעד של 100 (אפשר עד 416)';
-        // Bar fills toward 416, so 100 words ≈ a quarter of the bar.
+              ? 'חצי דרך! ✨ עוד ' + (WORD_GOAL - n) + ' עד היעד (אפשר עד ' + MAX_WORDS + ')'
+              : 'עוד ' +
+                (WORD_GOAL - n) +
+                ' עד היעד של ' +
+                WORD_GOAL +
+                ' (אפשר עד ' +
+                MAX_WORDS +
+                ')';
+        // Bar fills toward MAX_WORDS, so 100 words ≈ a quarter; caps full at max.
         $('#barFill').style.width = Math.min(100, (n / MAX_WORDS) * 100) + '%';
 
         // words
@@ -952,11 +970,14 @@
         if (isOwner) {
           applyPaidState();
           const paid = isPaid();
+          const cardEnabled = !!state.card_enabled;
           // Paid: drop the pay panel + top reminder, and put a prominent
           // "keep adding, then סיום" card in their place. סיום = closeCollection,
           // which is what actually starts production.
           $('#payPanel').classList.toggle('hidden', paid);
-          $('#payReminder').classList.toggle('hidden', !(open && !paid));
+          // Only nag them to pay when there's actually a working pay button
+          // (card configured). Otherwise the reminder would point at a dead panel.
+          $('#payReminder').classList.toggle('hidden', !(open && !paid && cardEnabled));
           $('#paidCard').classList.toggle('hidden', !(open && paid));
           // The generic close card only shows before payment (paidCard carries
           // the close CTA afterwards) — never two close buttons at once.
@@ -964,7 +985,11 @@
           // Show the credit-card button only when card payment is configured
           // (PeleCard credentials present) AND the order isn't already paid.
           const cardBtn = document.getElementById('cardPayBtn');
-          if (cardBtn) cardBtn.classList.toggle('hidden', !(state.card_enabled && !paid));
+          if (cardBtn) cardBtn.classList.toggle('hidden', !(cardEnabled && !paid));
+          // When card isn't configured yet, show a neutral note instead of a
+          // dead CTA so the owner isn't stuck with no way to pay.
+          const soon = $('#cardSoonNote');
+          if (soon) soon.classList.toggle('hidden', !(!cardEnabled && !paid));
         } else {
           $('#ownerControls').classList.add('hidden');
         }
@@ -1214,14 +1239,12 @@
         });
 
         // After PeleCard confirms, our server callback flips the order to paid.
-        // That can lag the browser by a moment, so poll a few times.
+        // That can lag the browser by a moment, so poll a few times. Once paid,
+        // render() hides this whole panel and shows #paidCard, so there is no
+        // confirmation to write here.
         function pollPaid(tries = 0) {
           refresh().then(() => {
-            if (isPaid()) {
-              const confirm = $('#payConfirm');
-              confirm.textContent = 'התשלום התקבל ✓ פתחנו לכם עוד עשרות שאלות — והמשחק בדרך 💜';
-              confirm.style.display = 'block';
-            } else if (tries < 8) {
+            if (!isPaid() && tries < 8) {
               setTimeout(() => pollPaid(tries + 1), 1500);
             }
           });
