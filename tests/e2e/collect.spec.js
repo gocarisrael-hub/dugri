@@ -74,6 +74,40 @@ test('submitting a word that already exists pops a duplicate dialog and does not
   // Dismissing the popup ("הבנתי") closes it and leaves the page usable.
   await page.click('#dupModalOk');
   await expect(page.locator('#dupModal')).toBeHidden();
+
+  // Escape also closes the dialog (shared modal-dismiss behavior).
+  await page.fill('#wordInput', 'הדייט מטבריה');
+  await page.click('#addBtn');
+  await expect(page.locator('#dupModal')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#dupModal')).toBeHidden();
+});
+
+test('add-word failure surfaces an error and keeps the typed word', async ({ page }) => {
+  await createCollection(page, 'שקד');
+
+  // Force the save request to fail (HTTP 500) — a dropped/errored add. Only the
+  // POST /words call is intercepted; GET refreshes still hit the real server.
+  await page.route('**/api/collections/*/words', (route) => {
+    if (route.request().method() === 'POST') {
+      return route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: '{"error":"boom"}',
+      });
+    }
+    return route.continue();
+  });
+
+  await page.fill('#wordInput', 'מילה שנכשלת');
+  await page.click('#addBtn');
+
+  // A clear error is shown (not swallowed like the old 409-only handling).
+  await expect(page.locator('#toast')).toContainText('לא הצלחנו לשמור');
+  // The typed word is NOT lost — the user can retry.
+  await expect(page.locator('#wordInput')).toHaveValue('מילה שנכשלת');
+  // Nothing was added.
+  await expect(page.locator('#count')).toHaveText('0');
 });
 
 test('owner pay panel: select delivery → address fields appear + total 199', async ({ page }) => {

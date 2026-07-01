@@ -908,6 +908,20 @@
         toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
       }
 
+      // Wire a modal overlay so clicking the backdrop (the overlay itself, not
+      // its card) or pressing Escape closes it. `onClose` performs the close
+      // (defaults to just hiding the overlay); shared by every modal so they all
+      // dismiss the same way.
+      function wireModalDismiss(modal, onClose) {
+        const close = onClose || (() => modal.classList.add('hidden'));
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) close();
+        });
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && !modal.classList.contains('hidden')) close();
+        });
+      }
+
       // Dismissible popup for messages that deserve more than a fleeting toast,
       // e.g. telling a contributor their word is already in the list.
       function showDialog(msg) {
@@ -918,14 +932,8 @@
       }
       (function wireDialog() {
         const modal = $('#dupModal');
-        const close = () => modal.classList.add('hidden');
-        $('#dupModalOk').onclick = close;
-        modal.addEventListener('click', (e) => {
-          if (e.target === modal) close();
-        });
-        document.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape' && !modal.classList.contains('hidden')) close();
-        });
+        $('#dupModalOk').onclick = () => modal.classList.add('hidden');
+        wireModalDismiss(modal);
       })();
 
       function api(path, opts) {
@@ -1069,9 +1077,12 @@
         }
       }
 
+      // Returns true when the submission was handled by the server (word saved,
+      // or skipped as a duplicate), false on any failure so callers can keep the
+      // typed word for a retry instead of clearing it.
       async function addWords(words, method) {
         const clean = parseWordText(Array.isArray(words) ? words.join('\n') : words);
-        if (!clean.length) return;
+        if (!clean.length) return true; // nothing to submit — not a failure
         const added_by = $('#byName').value.trim() || null;
         try {
           const res = await api('/words', {
@@ -1085,25 +1096,45 @@
           track('word_added', { method: method || 'single', count: added, skipped });
           if (added >= 1) {
             // Something was added → confirm with a non-blocking toast. If part of
-            // a batch was skipped as duplicates, note it inline (no popup, so we
-            // don't interrupt an otherwise successful multi-word add).
+            // a batch was skipped, note it inline (no popup, so we don't interrupt
+            // an otherwise successful multi-word add). `skipped` mixes pre-existing
+            // words with within-batch duplicates and the client can't tell them
+            // apart, so the wording stays neutral ("duplicates"), never claiming
+            // they were already in the list.
             const base = added === 1 ? 'נוספה מילה ✓' : 'נוספו ' + added + ' מילים ✓';
-            toast(skipped ? base + ' · ' + skipped + ' כבר היו ברשימה' : base);
-          } else if (skipped) {
-            // Nothing added — every submitted word was already in the list.
-            // The common case is a single word from the input box: pop a clear,
-            // dismissible dialog so the contributor gets real feedback.
-            if (skipped === 1 && clean.length === 1) {
-              showDialog('המילה "' + clean[0] + '" כבר קיימת ברשימה 🙂');
+            if (skipped) {
+              const dup =
+                skipped === 1
+                  ? 'מילה אחת לא נוספה (כפילות)'
+                  : skipped + ' מילים לא נוספו (כפילויות)';
+              toast(base + ' · ' + dup);
             } else {
-              showDialog('כל המילים כבר היו ברשימה ולא נוספו שוב 🙂');
+              toast(base);
+            }
+          } else if (skipped) {
+            // Nothing was added. For a single word from the input box this can
+            // only mean it already exists, so name it (normalized to match the
+            // list form — collapse internal whitespace runs). For a batch the
+            // count mixes causes, so use neutral wording.
+            if (skipped === 1 && clean.length === 1) {
+              const shown = clean[0].replace(/\s+/g, ' ');
+              showDialog('המילה "' + shown + '" כבר קיימת ברשימה');
+            } else {
+              showDialog('המילים כבר קיימות ולא נוספו שוב');
             }
           }
+          return true;
         } catch (e) {
           if (e.status === 409) {
             alert('האיסוף נסגר - אי אפשר להוסיף עוד מילים.');
             await refresh();
+          } else {
+            // Network drop, HTTP 500, or the server's 400 (too many words):
+            // never swallow it — the word was NOT saved, so tell the user and
+            // let the caller keep their text for a retry.
+            toast('לא הצלחנו לשמור את המילה, נסו שוב');
           }
+          return false;
         }
       }
 
@@ -1122,13 +1153,13 @@
       }
 
       // ---- add interactions ----
-      $('#addBtn').onclick = () => {
+      $('#addBtn').onclick = async () => {
         const v = $('#wordInput').value;
-        if (v.trim()) {
-          addWords(v, 'single');
-          $('#wordInput').value = '';
-          $('#wordInput').focus();
-        }
+        if (!v.trim()) return;
+        const ok = await addWords(v, 'single');
+        // Keep the typed word on failure so the user can retry; clear on success.
+        if (ok) $('#wordInput').value = '';
+        $('#wordInput').focus();
       };
       $('#wordInput').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') $('#addBtn').click();
@@ -1147,9 +1178,10 @@
           }
         };
       }
-      $('#pasteAdd').onclick = () => {
-        addWords($('#pasteBox').value, 'paste');
-        $('#pasteBox').value = '';
+      $('#pasteAdd').onclick = async () => {
+        const ok = await addWords($('#pasteBox').value, 'paste');
+        // Keep the pasted text on failure so it isn't lost before a retry.
+        if (ok) $('#pasteBox').value = '';
       };
       $('#fileInput').addEventListener('change', (e) => {
         const f = e.target.files && e.target.files[0];
@@ -1309,9 +1341,8 @@
           frame.src = 'about:blank';
         }
         $('#payModalClose').onclick = closeModal;
-        modal.addEventListener('click', (e) => {
-          if (e.target === modal) closeModal();
-        });
+        // Backdrop-click + Escape close, shared with the message dialog.
+        wireModalDismiss(modal, closeModal);
 
         // After PeleCard confirms, our server callback flips the order to paid.
         // That can lag the browser by a moment, so poll a few times. Once paid,
