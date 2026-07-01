@@ -59,6 +59,18 @@ test.describe('honoree gender', () => {
     await expect(page.getByTestId('step-5')).toBeVisible();
   });
 
+  test('the gender prompt does not linger after navigating away', async ({ page }) => {
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('שירה');
+    await page.getByTestId('next-btn').click(); // no gender -> prompt opens
+    await expect(page.getByTestId('gender-modal')).toBeVisible();
+    // navigating away (browser Back -> popstate) must dismiss the full-screen
+    // overlay so it never lingers on top of an unrelated step.
+    await page.goBack(); // -> step 3
+    await expect(page.getByTestId('step-3')).toBeVisible();
+    await expect(page.getByTestId('gender-modal')).toBeHidden();
+  });
+
   test('choosing female is sent in the create payload', async ({ page }) => {
     const captured = await captureCollectionPost(page);
     await toNameStep(page);

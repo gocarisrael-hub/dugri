@@ -1582,6 +1582,9 @@
 
       let checkoutTracked = false;
       function goStep(n, opts = {}) {
+        // any step change dismisses the gender prompt so its full-screen overlay
+        // never lingers on top of an unrelated step (e.g. after navigating back).
+        closeGenderModal();
         currentStep = Math.min(TOTAL_STEPS, Math.max(1, n | 0));
         stepSections.forEach((s) =>
           s.classList.toggle('is-active', Number(s.dataset.step) === currentStep)
