@@ -449,25 +449,6 @@
         text-align: center;
       }
 
-      /* mobile: keep the preview compact so the colour row stays in view.
-         Placed AFTER the base preview rules so plain cascade order wins -
-         no .cfg-grid qualifier needed to out-specify them. */
-      @media (max-width: 600px) {
-        .cfg-head {
-          padding: 14px 0 4px;
-        }
-        .cfg-head h1 {
-          font-size: 25px;
-        }
-        .preview-stage {
-          min-height: 200px;
-        }
-        .preview-panel svg,
-        .preview-panel img {
-          max-height: 300px;
-        }
-      }
-
       /* pickers */
       .picker {
         margin: 26px auto 0;
@@ -955,6 +936,103 @@
       }
       .wiz-bar .btn:disabled::after {
         display: none;
+      }
+
+      /* ===== MOBILE COMPACTION =====
+         Placed AFTER every base rule so plain source order wins the cascade
+         (a media query adds no specificity). Goal: on a phone, each step's
+         pickers AND the sticky Back/Next bar are reachable without scrolling.
+         We tighten the header, shrink the live preview, and lay the design
+         tiles + colour swatches out as compact wrapping grids. */
+      @media (max-width: 600px) {
+        .cfg-head {
+          padding: 8px 0 2px;
+        }
+        .cfg-head h1 {
+          font-size: 25px;
+        }
+        .plan-pill {
+          margin-top: 6px;
+          padding: 4px 12px;
+          font-size: 12.5px;
+        }
+        .wiz-progress {
+          margin-top: 6px;
+        }
+        .wiz-steplabel {
+          margin-bottom: 4px;
+          font-size: 12.5px;
+        }
+        /* compact live preview so the step's controls stay above the fold */
+        .preview-card {
+          padding: 10px;
+          margin-top: 8px;
+          border-radius: 16px;
+        }
+        .tabs {
+          gap: 6px;
+          margin-bottom: 8px;
+        }
+        .tab {
+          padding: 6px 15px;
+          font-size: 13.5px;
+        }
+        .preview-stage {
+          min-height: 90px;
+          padding: 8px;
+        }
+        .preview-panel svg,
+        .preview-panel img {
+          max-height: 104px;
+        }
+        .preview-panel[data-active='true'] {
+          padding: clamp(11px, 4%, 16px);
+        }
+        /* steps sit right under the preview with a tighter rhythm */
+        .wiz-step {
+          margin-top: 12px;
+        }
+        .wiz-title {
+          font-size: 19px;
+        }
+        .wiz-sub {
+          margin: 3px 0 10px;
+          font-size: 13.5px;
+        }
+        /* design tiles: compact wrapping grid instead of a tall stack */
+        .designs {
+          gap: 8px;
+        }
+        .design {
+          flex: 0 1 78px;
+          max-width: 92px;
+          padding: 6px;
+          gap: 4px;
+          border-radius: 12px;
+        }
+        .design .dname {
+          font-size: 11.5px;
+        }
+        /* colour swatches: tighter grid so all fit in view */
+        .colors {
+          column-gap: 10px;
+          row-gap: 24px;
+          padding-bottom: 12px;
+        }
+        .swatch {
+          width: 42px;
+          height: 42px;
+        }
+        .swatch .cname {
+          top: 50px;
+        }
+        /* name/contact fields sit closer together */
+        .wiz-field {
+          margin-bottom: 12px;
+        }
+        .gender-group {
+          margin-top: 12px;
+        }
       }
 
       @media (prefers-reduced-motion: reduce) {
