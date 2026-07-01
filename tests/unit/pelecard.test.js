@@ -147,8 +147,10 @@ describe('getTransaction', () => {
         ErrorMessage: 'operation success',
         ResultData: {
           TransactionId: 'tx-77',
+          ShvaResult: '000',
           AdditionalDetailsParamX: 'token123',
           DebitTotal: '7900',
+          DebitApproveNumber: '86-001-006',
         },
       })
     );
@@ -156,8 +158,10 @@ describe('getTransaction', () => {
 
     const tx = await loadFresh().getTransaction('tx-77');
     expect(tx.statusCode).toBe('000');
+    expect(tx.shvaResult).toBe('000');
     expect(tx.paramX).toBe('token123');
     expect(tx.debitTotalAgorot).toBe(7900);
+    expect(tx.approvalNo).toBe('86-001-006');
     expect(tx.transactionId).toBe('tx-77');
 
     const [url, opts] = fetchMock.mock.calls[0];
@@ -194,28 +198,27 @@ describe('verifyTransaction (fail-closed)', () => {
     p = loadFresh();
   });
 
-  it('accepts success status + matching amount', () => {
-    expect(
-      p.verifyTransaction({ statusCode: '000', debitTotalAgorot: 7900 }, { amountNis: 79 })
-    ).toBe(true);
+  const ok = { statusCode: '000', shvaResult: '000', debitTotalAgorot: 7900 };
+
+  it('accepts success status + SHVA approval + matching amount', () => {
+    expect(p.verifyTransaction(ok, { amountNis: 79 })).toBe(true);
   });
 
-  it('rejects a non-success status', () => {
-    expect(
-      p.verifyTransaction({ statusCode: '004', debitTotalAgorot: 7900 }, { amountNis: 79 })
-    ).toBe(false);
+  it('rejects a non-success retrieval status', () => {
+    expect(p.verifyTransaction({ ...ok, statusCode: '004' }, { amountNis: 79 })).toBe(false);
+  });
+
+  it('rejects when the charge was not approved by SHVA (ShvaResult != 000)', () => {
+    expect(p.verifyTransaction({ ...ok, shvaResult: '004' }, { amountNis: 79 })).toBe(false);
+    expect(p.verifyTransaction({ ...ok, shvaResult: null }, { amountNis: 79 })).toBe(false);
   });
 
   it('rejects a mismatched amount', () => {
-    expect(
-      p.verifyTransaction({ statusCode: '000', debitTotalAgorot: 100 }, { amountNis: 79 })
-    ).toBe(false);
+    expect(p.verifyTransaction({ ...ok, debitTotalAgorot: 100 }, { amountNis: 79 })).toBe(false);
   });
 
   it('rejects when amount is missing', () => {
-    expect(
-      p.verifyTransaction({ statusCode: '000', debitTotalAgorot: null }, { amountNis: 79 })
-    ).toBe(false);
-    expect(p.verifyTransaction({ statusCode: '000', debitTotalAgorot: 7900 }, {})).toBe(false);
+    expect(p.verifyTransaction({ ...ok, debitTotalAgorot: null }, { amountNis: 79 })).toBe(false);
+    expect(p.verifyTransaction(ok, {})).toBe(false);
   });
 });

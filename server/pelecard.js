@@ -127,10 +127,17 @@ async function getTransaction(transactionId) {
 
   const rd = (data && data.ResultData) || {};
   const debit = rd.DebitTotal != null && rd.DebitTotal !== '' ? Number(rd.DebitTotal) : null;
+  // The echoed token PeleCard returns for our ParamX; primary field is
+  // AdditionalDetailsParamX, with lenient fallbacks in case of account variance.
+  const echoed = rd.AdditionalDetailsParamX != null ? rd.AdditionalDetailsParamX : rd.ParamX;
   return {
+    // Top-level StatusCode = did the *retrieval* succeed. ShvaResult (in
+    // ResultData) = did the *charge* get approved by SHVA. We check both.
     statusCode: data && data.StatusCode != null ? String(data.StatusCode) : null,
-    paramX: rd.AdditionalDetailsParamX != null ? String(rd.AdditionalDetailsParamX) : null,
+    shvaResult: rd.ShvaResult != null ? String(rd.ShvaResult) : null,
+    paramX: echoed != null ? String(echoed) : null,
     debitTotalAgorot: Number.isFinite(debit) ? debit : null,
+    approvalNo: rd.DebitApproveNumber || rd.VoucherId || null,
     transactionId: rd.TransactionId || transactionId,
     raw: data,
   };
@@ -156,10 +163,12 @@ function parseCallback(body = {}) {
 }
 
 // Whether an authoritative getTransaction() result represents a genuine paid
-// transaction for an order of `amountNis`. FAIL-CLOSED: success status required,
-// and the charged amount (agorot) must equal the order total.
+// transaction for an order of `amountNis`. FAIL-CLOSED: the retrieval must
+// succeed (StatusCode 000), the charge must be approved by SHVA (ShvaResult
+// 000), and the charged amount (agorot) must equal the order total.
 function verifyTransaction(tx, expected = {}) {
   if (!tx || String(tx.statusCode) !== SUCCESS_STATUS) return false;
+  if (String(tx.shvaResult) !== SUCCESS_STATUS) return false;
   if (expected.amountNis == null || tx.debitTotalAgorot == null) return false;
   return tx.debitTotalAgorot === Math.round(Number(expected.amountNis) * 100);
 }

@@ -203,6 +203,10 @@ const db = {
         floor: a.floor ? String(a.floor).trim().slice(0, 120) : null,
       };
     }
+    // Preserve the pending PeleCard handshake (ParamX tokens) when an existing
+    // UNPAID order is re-set — an in-flight pay session must still be matchable
+    // even if the owner tweaks the version/address before completing payment.
+    const prevPelecard = c.order && !c.order.paid ? c.order.pelecard || null : null;
     c.order = {
       version,
       total: ORDER_PRICES[version],
@@ -211,7 +215,7 @@ const db = {
       paid: false,
       paid_at: null,
       // Pending card-payment handshake (PeleCard); null until pay/init runs.
-      pelecard: null,
+      pelecard: prevPelecard,
     };
     saveDb();
     return c.order;
@@ -228,8 +232,10 @@ const db = {
     if (!Array.isArray(p.param_tokens)) p.param_tokens = [];
     if (paramToken && !p.param_tokens.includes(paramToken)) {
       p.param_tokens.push(paramToken);
-      if (p.param_tokens.length > 5) {
-        p.param_tokens = p.param_tokens.slice(-5);
+      // Bound growth against abuse, but keep enough that a payment completed on
+      // an earlier-opened modal can still be correlated back to the order.
+      if (p.param_tokens.length > 25) {
+        p.param_tokens = p.param_tokens.slice(-25);
       }
     }
     p.last_transaction_id = transactionId || p.last_transaction_id || null;

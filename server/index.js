@@ -189,16 +189,15 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   // button must not rebuild the order and discard the recorded payment).
   if (c.order && c.order.paid) return res.status(409).json({ error: 'already paid' });
 
-  // Reuse an existing unpaid order of the same non-delivery version so its
-  // in-flight ParamX tokens survive a second init; otherwise (re)create it
-  // (delivery always re-set to capture the latest address).
-  let order = c.order;
-  const reuse = order && !order.paid && order.version === b.version && b.version !== 'delivery';
-  if (!reuse) {
-    order = db.setOrder(req.params.id, b.owner_token, { version: b.version, address: b.address });
-    if (order && order.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
-    if (order && order.error) return res.status(400).json({ error: order.error });
-  }
+  // (Re)set the order for this payment. setOrder preserves the pending PeleCard
+  // handshake on an unpaid order, so in-flight ParamX tokens from an earlier
+  // still-open pay modal survive (any version, incl. delivery).
+  const order = db.setOrder(req.params.id, b.owner_token, {
+    version: b.version,
+    address: b.address,
+  });
+  if (order && order.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
+  if (order && order.error) return res.status(400).json({ error: order.error });
 
   const paramToken = newPayToken();
   try {
@@ -229,11 +228,22 @@ app.post('/api/payment/callback', async (req, res) => {
     console.log('[pelecard callback] raw body:', JSON.stringify(redactSecrets(req.body || {})));
   }
   const parsed = pelecard.parseCallback(req.body || {});
-  if (!parsed.transactionId) return res.json({ ok: true });
+  // We need a TransactionId to re-fetch the transaction. Prefer the one in the
+  // callback; if it's absent, fall back to the id we stored at init (located via
+  // the echoed ParamX token).
+  let transactionId = parsed.transactionId;
+  if (!transactionId && parsed.paramX) {
+    const byToken = db.getCollectionByPayToken(parsed.paramX);
+    transactionId =
+      byToken && byToken.order && byToken.order.pelecard
+        ? byToken.order.pelecard.last_transaction_id
+        : null;
+  }
+  if (!transactionId) return res.json({ ok: true });
 
   let tx;
   try {
-    tx = await pelecard.getTransaction(parsed.transactionId);
+    tx = await pelecard.getTransaction(transactionId);
   } catch (e) {
     // Transient error verifying with PeleCard: return non-200 so PeleCard
     // retries the callback once (markPaid is idempotent).
@@ -249,7 +259,11 @@ app.post('/api/payment/callback', async (req, res) => {
     !c.order.paid &&
     pelecard.verifyTransaction(tx, { amountNis: c.order.total })
   ) {
-    db.markPaid(c.id, { method: 'pelecard', transactionId: tx.transactionId });
+    db.markPaid(c.id, {
+      method: 'pelecard',
+      transactionId: tx.transactionId,
+      approvalNo: tx.approvalNo,
+    });
   }
   res.json({ ok: true });
 });

@@ -153,7 +153,13 @@ describe('POST /api/payment/callback', () => {
     const token = tokenOf(c.id);
     nextGetTx = {
       StatusCode: '000',
-      ResultData: { TransactionId: 'tx-1', AdditionalDetailsParamX: token, DebitTotal: 7900 },
+      ResultData: {
+        TransactionId: 'tx-1',
+        ShvaResult: '000',
+        AdditionalDetailsParamX: token,
+        DebitTotal: 7900,
+        DebitApproveNumber: '86-001-006',
+      },
     };
 
     const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-1' } });
@@ -162,6 +168,61 @@ describe('POST /api/payment/callback', () => {
     expect(order.paid).toBe(true);
     expect(order.paid_method).toBe('pelecard');
     expect(order.paid_transaction_id).toBe('tx-1');
+    expect(order.paid_approval_no).toBe('86-001-006');
+  });
+
+  it('does NOT mark paid when SHVA did not approve the charge (ShvaResult != 000)', async () => {
+    const c = db.createCollection('לא אושר');
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    const token = tokenOf(c.id);
+    nextGetTx = {
+      StatusCode: '000',
+      ResultData: {
+        TransactionId: 'tx-1',
+        ShvaResult: '004',
+        AdditionalDetailsParamX: token,
+        DebitTotal: 7900,
+      },
+    };
+    const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-1' } });
+    expect(r.status).toBe(200);
+    expect(db.getCollection(c.id).order.paid).toBe(false);
+  });
+
+  it('still correlates a delivery payment after the order is re-set (token preserved)', async () => {
+    const c = db.createCollection('משלוח');
+    const addr = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
+    // First init (delivery), then a second init that re-sets the same order.
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'delivery',
+      address: addr,
+    });
+    const firstToken = db.getCollection(c.id).order.pelecard.param_tokens[0];
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'delivery',
+      address: addr,
+    });
+    // The first session's token must have survived the re-set.
+    expect(db.getCollection(c.id).order.pelecard.param_tokens).toContain(firstToken);
+
+    // Completing payment on the FIRST session still marks the order paid.
+    nextGetTx = {
+      StatusCode: '000',
+      ResultData: {
+        TransactionId: 'tx-d',
+        ShvaResult: '000',
+        AdditionalDetailsParamX: firstToken,
+        DebitTotal: 19900,
+      },
+    };
+    const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-d' } });
+    expect(r.status).toBe(200);
+    expect(db.getCollection(c.id).order.paid).toBe(true);
   });
 
   it('does NOT mark paid when GetTransaction reports a foreign/unknown token (forgery)', async () => {
@@ -174,6 +235,7 @@ describe('POST /api/payment/callback', () => {
       StatusCode: '000',
       ResultData: {
         TransactionId: 'tx-x',
+        ShvaResult: '000',
         AdditionalDetailsParamX: 'someoneelsetoken',
         DebitTotal: 7900,
       },
@@ -192,7 +254,12 @@ describe('POST /api/payment/callback', () => {
     const token = tokenOf(c.id);
     nextGetTx = {
       StatusCode: '000',
-      ResultData: { TransactionId: 'tx-1', AdditionalDetailsParamX: token, DebitTotal: 100 },
+      ResultData: {
+        TransactionId: 'tx-1',
+        ShvaResult: '000',
+        AdditionalDetailsParamX: token,
+        DebitTotal: 100,
+      },
     };
     const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-1' } });
     expect(r.status).toBe(200);
