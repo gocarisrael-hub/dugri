@@ -217,20 +217,19 @@ const db = {
     return c.order;
   },
 
-  // Record a PeleCard init handshake on an existing order so the later
-  // server-side callback can be verified against a ConfirmationKey we were
-  // handed. Keys ACCUMULATE (capped): an owner may open the pay modal more than
-  // once, and the callback for any of those sessions must still verify. Returns
-  // false when there is no order to attach it to.
-  recordPaymentInit(id, { confirmationKey, transactionId } = {}) {
+  // Record a PeleCard init handshake on an existing order. The per-payment
+  // ParamX tokens ACCUMULATE (capped): an owner may open the pay modal more than
+  // once, and PeleCard's callback for any of those sessions must still match.
+  // Returns false when there is no order to attach it to.
+  recordPaymentInit(id, { paramToken, transactionId } = {}) {
     const c = this.getCollection(id);
     if (!c || !c.order) return false;
-    const p = c.order.pelecard || { confirmation_keys: [] };
-    if (!Array.isArray(p.confirmation_keys)) p.confirmation_keys = [];
-    if (confirmationKey && !p.confirmation_keys.includes(confirmationKey)) {
-      p.confirmation_keys.push(confirmationKey);
-      if (p.confirmation_keys.length > 5) {
-        p.confirmation_keys = p.confirmation_keys.slice(-5);
+    const p = c.order.pelecard || { param_tokens: [] };
+    if (!Array.isArray(p.param_tokens)) p.param_tokens = [];
+    if (paramToken && !p.param_tokens.includes(paramToken)) {
+      p.param_tokens.push(paramToken);
+      if (p.param_tokens.length > 5) {
+        p.param_tokens = p.param_tokens.slice(-5);
       }
     }
     p.last_transaction_id = transactionId || p.last_transaction_id || null;
@@ -238,6 +237,22 @@ const db = {
     c.order.pelecard = p;
     saveDb();
     return true;
+  },
+
+  // Find the collection whose order was initialized with this PeleCard ParamX
+  // token (the AdditionalDetailsParamX PeleCard echoes back). Returns null if
+  // no order matches.
+  getCollectionByPayToken(token) {
+    if (!token) return null;
+    return (
+      _db.collections.find(
+        (c) =>
+          c.order &&
+          c.order.pelecard &&
+          Array.isArray(c.order.pelecard.param_tokens) &&
+          c.order.pelecard.param_tokens.includes(token)
+      ) || null
+    );
   },
 
   // Mark an existing order as paid. Used by the admin route (manual) and by the

@@ -85,5 +85,6 @@ checklist and how to get them from PeleCard):
   (used to build the payment return + server-callback URLs PeleCard calls).
 
 Optional: `PELECARD_BASE_URL` overrides the gateway host (defaults to
-`https://gateway20.pelecard.biz`); set this only if PeleCard gives you a
-different test/production gateway.
+`https://gateway21.pelecard.biz`); set this only if PeleCard gives you a
+different test/production gateway. `PELECARD_DEBUG=1` logs the init/GetTransaction
+shapes for the first test charge (turn off after).
