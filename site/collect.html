@@ -579,6 +579,38 @@
         text-align: center;
         margin: 14px 0;
       }
+      /* coupon code field (owner) — sits just above the total */
+      .coupon-box {
+        margin-top: 12px;
+      }
+      .coupon-box .row {
+        margin-top: 6px;
+      }
+      .coupon-msg {
+        font-size: 14px;
+        font-weight: 700;
+        margin-top: 8px;
+        min-height: 1px;
+      }
+      .coupon-msg.ok {
+        color: var(--ok);
+      }
+      .coupon-msg.err {
+        color: #c2415f;
+      }
+      .coupon-remove {
+        background: none;
+        color: var(--muted);
+        border: none;
+        padding: 6px 2px 0;
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: underline;
+      }
+      .coupon-remove:hover {
+        filter: none;
+        color: var(--ink);
+      }
       .pay-err {
         color: #c2415f;
         font-weight: 700;
@@ -859,7 +891,21 @@
           <input type="text" id="addrFloor" />
         </div>
 
-        <div class="pay-total">לתשלום: ₪<span id="payTotal">79</span></div>
+        <div class="coupon-box">
+          <label class="fld" for="couponInput">קוד קופון</label>
+          <div class="row">
+            <input type="text" id="couponInput" placeholder="הזינו קוד קופון" autocomplete="off" />
+            <button type="button" class="ghost" id="couponApplyBtn">החל קופון</button>
+          </div>
+          <div class="coupon-msg" id="couponMsg" role="status" aria-live="polite"></div>
+          <button type="button" class="coupon-remove hidden" id="couponRemoveBtn">
+            הסירו קופון
+          </button>
+        </div>
+
+        <div class="pay-total">
+          לתשלום: <span class="was hidden" id="payWas"></span>₪<span id="payTotal">79</span>
+        </div>
         <div class="pay-err" id="payErr"></div>
 
         <button type="button" id="cardPayBtn" class="card-pay-btn hidden">
@@ -1356,17 +1402,103 @@
         const addressForm = $('#addressForm');
         const payErr = $('#payErr');
 
+        // Applied coupon (owner previewed + accepted). null = no coupon. Kept in
+        // state so the discounted price is re-derived when the version changes and
+        // so `coupon` is included when the card button POSTs pay/init.
+        let appliedCoupon = null; // { code, discount_pct }
+
+        // Render the total for the selected version, applying the coupon discount
+        // when one is active: the full price shows struck-through (₪ on both) next
+        // to the discounted price, matching the site's existing struck-price style.
+        function renderTotal() {
+          const base = PAY_PRICES[selectedVersion()];
+          const was = $('#payWas');
+          if (appliedCoupon) {
+            const discounted = Math.round(base * (1 - appliedCoupon.discount_pct / 100));
+            was.textContent = '₪' + base;
+            was.classList.remove('hidden');
+            $('#payTotal').textContent = discounted;
+          } else {
+            was.textContent = '';
+            was.classList.add('hidden');
+            $('#payTotal').textContent = base;
+          }
+        }
+
         function refreshPay() {
           const v = selectedVersion();
           opts.forEach((o) => o.classList.toggle('active', o.querySelector('input').value === v));
           addressForm.classList.toggle('hidden', v !== 'delivery');
-          $('#payTotal').textContent = PAY_PRICES[v];
+          renderTotal();
           payErr.style.display = 'none';
         }
         document
           .querySelectorAll('input[name="payVersion"]')
           .forEach((r) => r.addEventListener('change', refreshPay));
         refreshPay();
+
+        // ---- coupon: preview + apply/remove ----
+        const couponInput = $('#couponInput');
+        const couponApply = $('#couponApplyBtn');
+        const couponRemove = $('#couponRemoveBtn');
+        const couponMsg = $('#couponMsg');
+        // Reason → Hebrew copy for a rejected coupon (server sends valid:false).
+        const COUPON_REASONS = {
+          not_found: 'קוד לא קיים',
+          inactive: 'הקופון אינו פעיל',
+          expired: 'תוקף הקופון פג',
+        };
+        function setCouponMsg(text, kind) {
+          couponMsg.textContent = text || '';
+          couponMsg.className = 'coupon-msg' + (kind ? ' ' + kind : '');
+        }
+        // Revert to the no-coupon state: clears the applied discount, re-enables
+        // the input, and restores the full total.
+        function clearCoupon() {
+          appliedCoupon = null;
+          couponInput.disabled = false;
+          couponInput.value = '';
+          couponApply.classList.remove('hidden');
+          couponRemove.classList.add('hidden');
+          setCouponMsg('', '');
+          renderTotal();
+        }
+        couponRemove.onclick = clearCoupon;
+        couponApply.onclick = async () => {
+          const code = couponInput.value.trim();
+          if (!code) return;
+          couponApply.disabled = true;
+          try {
+            const r = await api('/coupon/validate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ owner_token: ownerToken, code }),
+            });
+            if (r.valid) {
+              appliedCoupon = { code, discount_pct: r.discount_pct };
+              couponInput.disabled = true;
+              couponApply.classList.add('hidden');
+              couponRemove.classList.remove('hidden');
+              setCouponMsg('קופון הופעל: ' + r.discount_pct + '% הנחה', 'ok');
+              renderTotal();
+              track('coupon_applied', { discount_pct: r.discount_pct });
+            } else {
+              setCouponMsg(COUPON_REASONS[r.reason] || 'קוד לא קיים', 'err');
+            }
+          } catch (e) {
+            if (e.status === 429) setCouponMsg('יותר מדי ניסיונות, נסו עוד רגע', 'err');
+            else if (e.status === 403) setCouponMsg('לא ניתן להחיל קופון', 'err');
+            else setCouponMsg('שגיאה בבדיקת הקופון, נסו שוב', 'err');
+          } finally {
+            couponApply.disabled = false;
+          }
+        };
+        couponInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            couponApply.click();
+          }
+        });
 
         function collectAddress() {
           return {
@@ -1414,17 +1546,41 @@
             }
           }
           cardBtn.disabled = true;
+          const payload = { owner_token: ownerToken, version, address };
+          if (appliedCoupon) payload.coupon = appliedCoupon.code;
           try {
             const res = await api('/pay/init', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ owner_token: ownerToken, version, address }),
+              body: JSON.stringify(payload),
             });
+            // 100%/free coupon: the order is already paid server-side, no iframe.
+            // Refresh (via pollPaid) so the paid UI + #paidCard take over.
+            if (res.free || res.paid) {
+              track('card_pay_done');
+              pollPaid();
+              return;
+            }
             track('card_pay_started', { version });
             frame.src = res.url;
             modal.classList.remove('hidden');
           } catch (err) {
-            payErr.textContent = 'פתיחת התשלום נכשלה. נסו שוב מאוחר יותר.';
+            if (err.status === 400) {
+              // The coupon was re-validated server-side and is no longer valid.
+              // Drop it (reverting the total) and let the owner re-enter one.
+              payErr.textContent = 'הקופון אינו תקף יותר';
+              clearCoupon();
+            } else if (err.status === 409) {
+              // already paid / an open payment window — the server sends a Hebrew
+              // note for the in-flight case; show it, else a Hebrew fallback.
+              payErr.textContent = /[֐-׿]/.test(err.message)
+                ? err.message
+                : 'כבר בוצע תשלום עבור הזמנה זו';
+            } else if (err.status === 429) {
+              payErr.textContent = 'יותר מדי ניסיונות, נסו עוד רגע';
+            } else {
+              payErr.textContent = 'פתיחת התשלום נכשלה. נסו שוב מאוחר יותר.';
+            }
             payErr.style.display = 'block';
           } finally {
             cardBtn.disabled = false;

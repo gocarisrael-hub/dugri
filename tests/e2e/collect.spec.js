@@ -276,6 +276,68 @@ test('pay panel shows the new version names and prices', async ({ page }) => {
   await expect(panel).toContainText('אפשר לשלם מתי שרוצים');
 });
 
+// Seed a discount coupon via the admin API (dev/E2E key falls back to
+// dugri-admin). Coupons are global, so a duplicate from a prior run/project is
+// fine — the coupon just needs to exist and be active.
+async function seedCoupon(page, code, discount_pct) {
+  const res = await page.request.post(`/api/admin/coupons?key=dugri-admin`, {
+    data: { code, discount_pct, valid_until: null },
+  });
+  // 201 = created, 400 = already exists from an earlier test/project — both OK.
+  expect([201, 400]).toContain(res.status());
+}
+
+test('owner applies a valid coupon → discounted total with the struck full price', async ({
+  page,
+}) => {
+  await seedCoupon(page, 'TEST25', 25);
+  await createCollection(page, 'רבקה');
+
+  // Open the (collapsed) pay panel — a pdf order starts at ₪79.
+  await page.locator('#payPanel summary').click();
+  await expect(page.locator('#payTotal')).toHaveText('79');
+  await expect(page.locator('#payWas')).toBeHidden();
+
+  // Apply the coupon.
+  await page.fill('#couponInput', 'TEST25');
+  await page.click('#couponApplyBtn');
+
+  // Discount is confirmed and the total drops 79 → 59 (round(79 * 0.75)).
+  await expect(page.locator('#couponMsg')).toContainText('25% הנחה');
+  await expect(page.locator('#payTotal')).toHaveText('59');
+  // The full price shows struck-through with the ₪ sign, like other prices.
+  const was = page.locator('#payWas');
+  await expect(was).toBeVisible();
+  await expect(was).toHaveText('₪79');
+  // Apply is swapped for a remove control; the input is locked while applied.
+  await expect(page.locator('#couponApplyBtn')).toBeHidden();
+  await expect(page.locator('#couponRemoveBtn')).toBeVisible();
+  await expect(page.locator('#couponInput')).toBeDisabled();
+
+  // Removing the coupon reverts to the full price.
+  await page.click('#couponRemoveBtn');
+  await expect(page.locator('#payTotal')).toHaveText('79');
+  await expect(page.locator('#payWas')).toBeHidden();
+  await expect(page.locator('#couponApplyBtn')).toBeVisible();
+});
+
+test('unknown coupon code shows a not-found message and leaves the total full', async ({
+  page,
+}) => {
+  await createCollection(page, 'נטע');
+  await page.locator('#payPanel summary').click();
+  await expect(page.locator('#payTotal')).toHaveText('79');
+
+  await page.fill('#couponInput', 'NOPE999');
+  await page.click('#couponApplyBtn');
+
+  await expect(page.locator('#couponMsg')).toHaveText('קוד לא קיים');
+  // No discount applied — total stays full and no struck price appears.
+  await expect(page.locator('#payTotal')).toHaveText('79');
+  await expect(page.locator('#payWas')).toBeHidden();
+  await expect(page.locator('#couponRemoveBtn')).toBeHidden();
+});
+
 test('how-to guidance is a collapsed details on collect that can be opened', async ({ page }) => {
   await createCollection(page, 'רוני');
   const details = page.locator('details.howto');
