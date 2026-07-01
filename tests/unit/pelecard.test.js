@@ -16,8 +16,8 @@ function loadFresh() {
 }
 
 const CREDS = {
-  PELECARD_TERMINAL: '0962475',
-  PELECARD_USER: 'webuser',
+  PELECARD_TERMINAL: '0962210',
+  PELECARD_USER: 'peletest',
   PELECARD_PASSWORD: 'secret',
 };
 
@@ -28,9 +28,14 @@ function setCreds(on) {
   }
 }
 
+function jsonRes(obj) {
+  return { ok: true, status: 200, json: async () => obj };
+}
+
 afterEach(() => {
   setCreds(false);
   delete process.env.PELECARD_BASE_URL;
+  delete process.env.PELECARD_DEBUG;
   vi.unstubAllGlobals();
 });
 
@@ -46,25 +51,32 @@ describe('isConfigured', () => {
   });
 });
 
+describe('transactionIdFromUrl', () => {
+  it('extracts the transactionId query param', () => {
+    const p = loadFresh();
+    expect(
+      p.transactionIdFromUrl('https://gateway21.pelecard.biz/PaymentGW?transactionId=abc-123')
+    ).toBe('abc-123');
+    expect(p.transactionIdFromUrl('https://x/y?foo=1&transactionId=zzz&bar=2')).toBe('zzz');
+    expect(p.transactionIdFromUrl('https://x/y')).toBe(null);
+  });
+});
+
 describe('init', () => {
   beforeEach(() => setCreds(true));
 
-  it('posts agorot + credentials and returns the iframe url and confirmation key', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        URL: 'https://gateway20.pelecard.biz/PaymentGW?transactionId=abc',
-        ConfirmationKey: 'CK-123',
+  it('posts to gateway21 with agorot + a truncated ParamX and returns url + transactionId', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonRes({
+        URL: 'https://gateway21.pelecard.biz/PaymentGW?transactionId=tx-9',
         Error: { ErrCode: 0 },
-      }),
-    });
+      })
+    );
     vi.stubGlobal('fetch', fetchMock);
 
-    const pelecard = loadFresh();
-    const out = await pelecard.init({
+    const out = await loadFresh().init({
       amountNis: 79,
-      paramX: 'col-1',
+      paramToken: 'abcdef0123456789extra', // longer than 19
       urls: {
         goodUrl: 'https://dugri.example/pay-done.html',
         errorUrl: 'https://dugri.example/pay-done.html?error=1',
@@ -73,175 +85,140 @@ describe('init', () => {
       },
     });
 
-    expect(out.url).toContain('transactionId=abc');
-    expect(out.confirmationKey).toBe('CK-123');
+    expect(out.url).toContain('transactionId=tx-9');
+    expect(out.transactionId).toBe('tx-9');
 
     const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://gateway20.pelecard.biz/PaymentGW/init');
+    expect(url).toBe('https://gateway21.pelecard.biz/PaymentGW/init');
     const body = JSON.parse(opts.body);
-    expect(body.Total).toBe(7900); // 79 NIS in agorot
+    expect(body.Total).toBe(7900);
     expect(body.Currency).toBe(1);
+    expect(body.ActionType).toBe('J4');
     expect(body.terminal).toBe(CREDS.PELECARD_TERMINAL);
-    expect(body.ParamX).toBe('col-1');
-    expect(body.ServerSideGoodFeedbackURL).toBe('https://dugri.example/api/payment/callback');
-  });
-
-  it('logs init response field names (not values) when PELECARD_DEBUG=1', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          URL: 'https://gateway20.pelecard.biz/PaymentGW?transactionId=dbg',
-          ConfirmationKey: 'CK-SECRET',
-          Error: { ErrCode: 0 },
-        }),
-      })
-    );
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    process.env.PELECARD_DEBUG = '1';
-    try {
-      const out = await loadFresh().init({ amountNis: 79, paramX: 'col-1', urls: {} });
-      expect(out.url).toContain('transactionId=dbg');
-      expect(out.confirmationKey).toBe('CK-SECRET');
-
-      const logged = logSpy.mock.calls.find((c) => String(c[0]).includes('[pelecard init]'));
-      expect(logged).toBeTruthy();
-      // The secret ConfirmationKey value must never be logged.
-      const flat = JSON.stringify(logged);
-      expect(flat).not.toContain('CK-SECRET');
-    } finally {
-      delete process.env.PELECARD_DEBUG;
-      logSpy.mockRestore();
-    }
-  });
-
-  it('does NOT log anything when PELECARD_DEBUG is unset (off by default)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          URL: 'https://x/PaymentGW?transactionId=q',
-          ConfirmationKey: 'CK',
-          Error: { ErrCode: 0 },
-        }),
-      })
-    );
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    delete process.env.PELECARD_DEBUG;
-    try {
-      await loadFresh().init({ amountNis: 79, paramX: 'col-1', urls: {} });
-      const logged = logSpy.mock.calls.find((c) => String(c[0]).includes('[pelecard init]'));
-      expect(logged).toBeUndefined();
-    } finally {
-      logSpy.mockRestore();
-    }
+    expect(body.ServerSideFeedbackContentType).toBe('application/json');
+    expect(body.ParamX.length).toBeLessThanOrEqual(19); // truncated to PeleCard's limit
+    expect('abcdef0123456789extra'.startsWith(body.ParamX)).toBe(true);
   });
 
   it('throws when PeleCard returns an error code', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({ Error: { ErrCode: 101, ErrMsg: 'bad terminal' } }),
-      })
+      vi.fn().mockResolvedValue(jsonRes({ Error: { ErrCode: 101, ErrMsg: 'bad terminal' } }))
     );
-    await expect(loadFresh().init({ amountNis: 79, paramX: 'x', urls: {} })).rejects.toThrow(/101/);
+    await expect(loadFresh().init({ amountNis: 79, paramToken: 'x', urls: {} })).rejects.toThrow(
+      /101/
+    );
   });
 
   it('rejects a non-positive amount before calling the gateway', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    await expect(loadFresh().init({ amountNis: 0, paramX: 'x', urls: {} })).rejects.toThrow();
+    await expect(loadFresh().init({ amountNis: 0, paramToken: 'x', urls: {} })).rejects.toThrow();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('logs response keys only when PELECARD_DEBUG=1, and never when unset', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(jsonRes({ URL: 'https://x?transactionId=q', Error: { ErrCode: 0 } }))
+    );
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    // off
+    delete process.env.PELECARD_DEBUG;
+    await loadFresh().init({ amountNis: 79, paramToken: 'x', urls: {} });
+    expect(logSpy.mock.calls.find((c) => String(c[0]).includes('[pelecard init]'))).toBeUndefined();
+    // on
+    process.env.PELECARD_DEBUG = '1';
+    await loadFresh().init({ amountNis: 79, paramToken: 'x', urls: {} });
+    expect(logSpy.mock.calls.find((c) => String(c[0]).includes('[pelecard init]'))).toBeTruthy();
+    logSpy.mockRestore();
+  });
+});
+
+describe('getTransaction', () => {
+  beforeEach(() => setCreds(true));
+
+  it('posts terminal creds + TransactionId and normalizes the result', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonRes({
+        StatusCode: '000',
+        ErrorMessage: 'operation success',
+        ResultData: {
+          TransactionId: 'tx-77',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: 'token123',
+          DebitTotal: '7900',
+          DebitApproveNumber: '86-001-006',
+        },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const tx = await loadFresh().getTransaction('tx-77');
+    expect(tx.statusCode).toBe('000');
+    expect(tx.shvaResult).toBe('000');
+    expect(tx.paramX).toBe('token123');
+    expect(tx.debitTotalAgorot).toBe(7900);
+    expect(tx.approvalNo).toBe('86-001-006');
+    expect(tx.transactionId).toBe('tx-77');
+
+    const [url, opts] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://gateway21.pelecard.biz/PaymentGW/GetTransaction');
+    const body = JSON.parse(opts.body);
+    expect(body.terminal).toBe(CREDS.PELECARD_TERMINAL);
+    expect(body.TransactionId).toBe('tx-77');
+  });
+
+  it('throws when no transactionId is given', async () => {
+    await expect(loadFresh().getTransaction('')).rejects.toThrow();
   });
 });
 
 describe('parseCallback', () => {
-  it('reads top-level fields', () => {
+  it('reads the TransactionId from nested ResultData', () => {
     const p = loadFresh().parseCallback({
-      PelecardStatusCode: '000',
-      PelecardTransactionId: 'tx9',
-      ParamX: 'col-7',
-      ConfirmationKey: 'CK-9',
-      TotalX100: '7900',
+      StatusCode: '000',
+      ResultData: { TransactionId: 'tx-5', AdditionalDetailsParamX: 'tok' },
     });
-    expect(p.statusCode).toBe('000');
-    expect(p.transactionId).toBe('tx9');
-    expect(p.paramX).toBe('col-7');
-    expect(p.confirmationKey).toBe('CK-9');
-    expect(p.totalX100).toBe(7900);
+    expect(p.transactionId).toBe('tx-5');
+    expect(p.paramX).toBe('tok');
   });
 
-  it('reads fields nested under ResultData', () => {
-    const p = loadFresh().parseCallback({
-      ResultData: { PelecardStatusCode: '000', ParamX: 'col-8', ConfirmationKey: 'CK-8' },
-    });
-    expect(p.statusCode).toBe('000');
-    expect(p.paramX).toBe('col-8');
-    expect(p.confirmationKey).toBe('CK-8');
+  it('reads a top-level PelecardTransactionId too', () => {
+    const p = loadFresh().parseCallback({ PelecardTransactionId: 'tx-6' });
+    expect(p.transactionId).toBe('tx-6');
   });
 });
 
-describe('verifyCallback (fail-closed)', () => {
-  let pelecard;
+describe('verifyTransaction (fail-closed)', () => {
+  let p;
   beforeEach(() => {
-    pelecard = loadFresh();
+    p = loadFresh();
   });
 
-  const good = { statusCode: '000', confirmationKey: 'CK-1', totalX100: 7900 };
+  const ok = { statusCode: '000', shvaResult: '000', debitTotalAgorot: 7900 };
 
-  it('accepts a matching success callback (single key, agorot amount)', () => {
-    expect(pelecard.verifyCallback(good, { confirmationKey: 'CK-1', amountNis: 79 })).toBe(true);
+  it('accepts success status + SHVA approval + matching amount', () => {
+    expect(p.verifyTransaction(ok, { amountNis: 79 })).toBe(true);
   });
 
-  it('accepts when the key is one of several recorded keys', () => {
-    expect(
-      pelecard.verifyCallback(good, { confirmationKeys: ['CK-0', 'CK-1'], amountNis: 79 })
-    ).toBe(true);
+  it('rejects a non-success retrieval status', () => {
+    expect(p.verifyTransaction({ ...ok, statusCode: '004' }, { amountNis: 79 })).toBe(false);
   });
 
-  it('accepts the amount whether the callback reports agorot or NIS', () => {
-    expect(
-      pelecard.verifyCallback(
-        { statusCode: '000', confirmationKey: 'CK-1', totalX100: 79 },
-        { confirmationKey: 'CK-1', amountNis: 79 }
-      )
-    ).toBe(true);
+  it('rejects when the charge was not approved by SHVA (ShvaResult != 000)', () => {
+    expect(p.verifyTransaction({ ...ok, shvaResult: '004' }, { amountNis: 79 })).toBe(false);
+    expect(p.verifyTransaction({ ...ok, shvaResult: null }, { amountNis: 79 })).toBe(false);
   });
 
-  it('rejects a non-success status', () => {
-    expect(
-      pelecard.verifyCallback(
-        { ...good, statusCode: '004' },
-        { confirmationKey: 'CK-1', amountNis: 79 }
-      )
-    ).toBe(false);
+  it('rejects a mismatched amount', () => {
+    expect(p.verifyTransaction({ ...ok, debitTotalAgorot: 100 }, { amountNis: 79 })).toBe(false);
   });
 
-  it('rejects when NO key was recorded (no skip — anti-forgery)', () => {
-    expect(pelecard.verifyCallback(good, { amountNis: 79 })).toBe(false);
-    expect(pelecard.verifyCallback(good, { confirmationKeys: [], amountNis: 79 })).toBe(false);
-  });
-
-  it('rejects a forged/mismatched confirmation key', () => {
-    expect(pelecard.verifyCallback(good, { confirmationKey: 'OTHER', amountNis: 79 })).toBe(false);
-  });
-
-  it('rejects when the callback omits the amount (no skip)', () => {
-    expect(
-      pelecard.verifyCallback(
-        { statusCode: '000', confirmationKey: 'CK-1' },
-        { confirmationKey: 'CK-1', amountNis: 79 }
-      )
-    ).toBe(false);
-  });
-
-  it('rejects a tampered amount', () => {
-    expect(pelecard.verifyCallback(good, { confirmationKey: 'CK-1', amountNis: 149 })).toBe(false);
+  it('rejects when amount is missing', () => {
+    expect(p.verifyTransaction({ ...ok, debitTotalAgorot: null }, { amountNis: 79 })).toBe(false);
+    expect(p.verifyTransaction(ok, {})).toBe(false);
   });
 });

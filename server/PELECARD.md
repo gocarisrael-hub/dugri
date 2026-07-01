@@ -22,37 +22,48 @@ Call PeleCard and ask for:
 
 Set these env vars on the Railway service (see `RAILWAY_SETUP.md`):
 
-| Variable            | Value                                           |
-| ------------------- | ----------------------------------------------- |
-| `PELECARD_TERMINAL` | internet/CNP terminal number                    |
-| `PELECARD_USER`     | API user                                        |
-| `PELECARD_PASSWORD` | API password                                    |
-| `PUBLIC_BASE_URL`   | public origin, e.g. `https://dugri.co.il`       |
-| `PELECARD_BASE_URL` | _optional_ gateway override (default gateway20) |
+| Variable            | Value                                             |
+| ------------------- | ------------------------------------------------- |
+| `PELECARD_TERMINAL` | internet/CNP terminal number                      |
+| `PELECARD_USER`     | API user                                          |
+| `PELECARD_PASSWORD` | API password                                      |
+| `PUBLIC_BASE_URL`   | public origin, e.g. `https://dugri.co.il`         |
+| `PELECARD_BASE_URL` | _optional_ gateway override (default gateway21)   |
+| `PELECARD_DEBUG`    | _optional_ `1` to log init/callback shapes (test) |
 
 Once set, `collect.html` shows a **תשלום בכרטיס אשראי** button next to Bit.
 
 ## How the flow works (in this codebase)
 
+Implemented against PeleCard's official **Iframe/Redirect** (11/2024) and
+**Services ReST API** (01/2025) manuals — gateway `gateway21.pelecard.biz`.
+
 1. Owner clicks the card button → `POST /api/collections/:id/pay/init`
-   (`server/index.js`). The server validates the order, then `server/pelecard.js`
-   `init()` POSTs to `PaymentGW/init` and gets back an **iframe URL** +
-   **ConfirmationKey** (stored on the order).
+   (`server/index.js`). The server validates the order and `server/pelecard.js`
+   `init()` POSTs to `/PaymentGW/init`, which returns a **payment URL** (with a
+   `TransactionId` embedded). Init does **not** return a ConfirmationKey. We send
+   a short per-payment **ParamX token** (≤19 chars) and store it on the order.
 2. The browser loads that URL in a modal iframe; the customer pays on PeleCard.
-3. PeleCard POSTs the result to **`/api/payment/callback`**. The server verifies
-   status `000` + the ConfirmationKey matches + the amount matches, then marks
-   the order paid (the same `paid` flag the admin page sets manually). Words /
-   premium prompts unlock automatically.
+3. PeleCard POSTs the result to **`/api/payment/callback`**. The body is
+   **untrusted** — we take only the `TransactionId` from it and call
+   `GetTransaction` (server-to-server, with our secret terminal credentials) to
+   get the authoritative status + amount + token. We locate the order by the
+   token PeleCard echoes back (`AdditionalDetailsParamX`), confirm status `000`
+   and that the charged amount equals the order total, then mark it paid.
 4. The in-iframe `pay-done.html` tells the page to close the modal and refresh.
 
-## ⚠️ One thing to verify against a real test terminal
+Because verification re-fetches the transaction from PeleCard with our secret
+credentials, a **forged callback cannot mark an order paid** — the only field we
+take from the callback is the `TransactionId`, and an unknown/foreign one either
+fails the `GetTransaction` lookup or maps to a different order's token.
 
-The exact field names PeleCard posts to the **server-side callback** can vary by
-account/version. `pelecard.js` `parseCallback()` is intentionally lenient (it
-checks several common names and a nested `ResultData`), but before launch, do
-one real test charge on the PeleCard **test terminal** and confirm the callback
-actually marks the order paid. If it doesn't, log the raw callback body once and
-adjust the field names in `parseCallback()` — that's the only field-mapping risk.
+## Testing with PELECARD_DEBUG
 
-The anti-forgery guarantee is the **ConfirmationKey**: only PeleCard knows the
-key it handed us at init, so a forged callback can't mark an order paid.
+Set `PELECARD_DEBUG=1` for the first test charge. It logs (field NAMES only, no
+secret values) the `[pelecard init]` response keys and the
+`[pelecard gettransaction]` status + result keys — enough to confirm the mapping
+against your terminal. Turn it off (`0`) once verified.
+
+Test with PeleCard's **test terminal** (their test card numbers); `QAResultStatus`
+can simulate a success/error on test terminals. The sandbox lives at
+`https://gateway21.pelecard.biz/sandbox`.

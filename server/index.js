@@ -165,10 +165,16 @@ app.delete('/api/collections/:id/words/:wordId', (req, res) => {
   res.json({ ok: true });
 });
 
+// A short per-payment ParamX token: <=19 chars, digits + lowercase letters
+// (PeleCard's ParamX limit). PeleCard echoes it back as AdditionalDetailsParamX.
+function newPayToken() {
+  return crypto.randomUUID().replace(/-/g, '').slice(0, 18);
+}
+
 // Owner-only: start a PeleCard card payment for this collection's order.
 // Persists/refreshes the order first (same validation as /order), then asks
-// PeleCard for an iframe URL and stashes the ConfirmationKey for later
-// verification. Returns { url } for the browser to load in an <iframe>.
+// PeleCard for an iframe URL. Returns { url } for the browser to load in an
+// <iframe>. The ParamX token stored here lets the later callback find the order.
 app.post('/api/collections/:id/pay/init', async (req, res) => {
   if (!pelecard.isConfigured()) {
     return res.status(503).json({ error: 'card payment not configured' });
@@ -183,21 +189,21 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   // button must not rebuild the order and discard the recorded payment).
   if (c.order && c.order.paid) return res.status(409).json({ error: 'already paid' });
 
-  // Reuse an existing unpaid order of the same non-delivery version so its
-  // in-flight ConfirmationKeys survive a second init; otherwise (re)create it
-  // (delivery always re-set to capture the latest address).
-  let order = c.order;
-  const reuse = order && !order.paid && order.version === b.version && b.version !== 'delivery';
-  if (!reuse) {
-    order = db.setOrder(req.params.id, b.owner_token, { version: b.version, address: b.address });
-    if (order && order.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
-    if (order && order.error) return res.status(400).json({ error: order.error });
-  }
+  // (Re)set the order for this payment. setOrder preserves the pending PeleCard
+  // handshake on an unpaid order, so in-flight ParamX tokens from an earlier
+  // still-open pay modal survive (any version, incl. delivery).
+  const order = db.setOrder(req.params.id, b.owner_token, {
+    version: b.version,
+    address: b.address,
+  });
+  if (order && order.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
+  if (order && order.error) return res.status(400).json({ error: order.error });
 
+  const paramToken = newPayToken();
   try {
-    const { url, confirmationKey } = await pelecard.init({
+    const { url, transactionId } = await pelecard.init({
       amountNis: order.total,
-      paramX: req.params.id,
+      paramToken,
       urls: {
         goodUrl: base + '/pay-done.html',
         errorUrl: base + '/pay-done.html?error=1',
@@ -205,40 +211,59 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
         serverErrorUrl: base + '/api/payment/callback?error=1',
       },
     });
-    db.recordPaymentInit(req.params.id, { confirmationKey });
+    db.recordPaymentInit(req.params.id, { paramToken, transactionId });
     res.json({ url, total: order.total });
   } catch (e) {
     res.status(502).json({ error: 'payment init failed' });
   }
 });
 
-// PeleCard server-side callback (ServerSideGoodFeedbackURL). PeleCard POSTs the
-// transaction result here. We locate the order by ParamX (the collection id we
-// sent at init), verify status + ConfirmationKey + amount, and only then mark
-// it paid. Always answer 200 so PeleCard doesn't retry a handled callback.
-app.post('/api/payment/callback', (req, res) => {
-  // Temporary diagnostics for the first real charge: PeleCard's callback field
-  // names can vary by account, and parseCallback() guesses common ones. With
-  // PELECARD_DEBUG=1 we log the raw body once so we can confirm/fix the mapping.
-  // Off by default (no payment data in logs unless explicitly enabled).
+// PeleCard server-side callback (ServerSideGoodFeedbackURL). The body is
+// UNTRUSTED — we take only the TransactionId from it, then re-fetch the
+// transaction from PeleCard with our secret credentials (getTransaction) and
+// decide off that. A forged callback cannot survive: an unknown/foreign
+// TransactionId either fails the lookup or maps to a different order's token.
+app.post('/api/payment/callback', async (req, res) => {
   if (process.env.PELECARD_DEBUG === '1') {
     console.log('[pelecard callback] raw body:', JSON.stringify(redactSecrets(req.body || {})));
   }
   const parsed = pelecard.parseCallback(req.body || {});
-  const id = parsed.paramX;
-  const c = id && db.getCollection(id);
-  if (c && c.order) {
-    const expected = {
-      confirmationKeys: (c.order.pelecard && c.order.pelecard.confirmation_keys) || [],
-      amountNis: c.order.total,
-    };
-    if (!c.order.paid && pelecard.verifyCallback(parsed, expected)) {
-      db.markPaid(id, {
-        method: 'pelecard',
-        transactionId: parsed.transactionId,
-        approvalNo: parsed.approvalNo,
-      });
-    }
+  // We need a TransactionId to re-fetch the transaction. Prefer the one in the
+  // callback; if it's absent, fall back to the id we stored at init (located via
+  // the echoed ParamX token).
+  let transactionId = parsed.transactionId;
+  if (!transactionId && parsed.paramX) {
+    const byToken = db.getCollectionByPayToken(parsed.paramX);
+    transactionId =
+      byToken && byToken.order && byToken.order.pelecard
+        ? byToken.order.pelecard.last_transaction_id
+        : null;
+  }
+  if (!transactionId) return res.json({ ok: true });
+
+  let tx;
+  try {
+    tx = await pelecard.getTransaction(transactionId);
+  } catch (e) {
+    // Transient error verifying with PeleCard: return non-200 so PeleCard
+    // retries the callback once (markPaid is idempotent).
+    return res.status(502).json({ error: 'verification failed' });
+  }
+
+  // Locate the order by the AUTHORITATIVE token PeleCard returned, then confirm
+  // success + amount before marking paid.
+  const c = db.getCollectionByPayToken(tx.paramX);
+  if (
+    c &&
+    c.order &&
+    !c.order.paid &&
+    pelecard.verifyTransaction(tx, { amountNis: c.order.total })
+  ) {
+    db.markPaid(c.id, {
+      method: 'pelecard',
+      transactionId: tx.transactionId,
+      approvalNo: tx.approvalNo,
+    });
   }
   res.json({ ok: true });
 });
