@@ -269,6 +269,9 @@ test('pay panel shows the new version names and prices', async ({ page }) => {
   await expect(panel).toContainText('המפונקת 👑');
   await expect(panel).toContainText('₪199');
   await expect(panel).toContainText('אזורים מרוחקים בתיאום ובתוספת תשלום');
+  // ready / delivery timing on the physical options
+  await expect(panel).toContainText('מוכן לאיסוף תוך כ-48 שעות');
+  await expect(panel).toContainText('משלוח עד הבית תוך כ-5 ימים');
   // pay-anytime / unlock messaging
   await expect(panel).toContainText('אפשר לשלם מתי שרוצים');
 });
