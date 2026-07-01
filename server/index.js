@@ -8,6 +8,9 @@ const pelecard = require('./pelecard');
 const notify = require('./notify');
 
 const app = express();
+// Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
+// address (used to rate-limit coupon validation per client, not per proxy).
+app.set('trust proxy', true);
 app.use(express.json({ limit: '1mb' }));
 // PeleCard posts its server-side callback as a urlencoded form; accept both.
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
@@ -88,13 +91,15 @@ function requireAdmin(req, res) {
   return true;
 }
 
-// Tiny in-memory sliding-window rate limiter. Coupon validation + coupon
-// attempts at pay/init are the only unauthenticated-ish coupon oracle, so we
-// cap attempts per key (here: per collection) to blunt brute-force enumeration
-// of short [A-Z0-9] codes. State is per-process (fine for a single Railway
-// instance); it resets on redeploy, which is acceptable for this defense.
+// Tiny in-memory sliding-window rate limiter. The coupon-preview (validate)
+// endpoint is a brute-force oracle for short [A-Z0-9] codes, so we cap attempts
+// per CLIENT IP (keying per collection alone is bypassable — collection creation
+// is unauthenticated, so an attacker rotates fresh ids). State is per-process
+// (fine for a single Railway instance); it resets on redeploy.
 const COUPON_RATE_LIMIT = Number(process.env.COUPON_RATE_LIMIT || 20);
 const COUPON_RATE_WINDOW_MS = 60 * 1000;
+// Bound the bucket map so a flood of distinct IPs can't OOM the instance.
+const MAX_RATE_KEYS = Number(process.env.COUPON_RATE_MAX_KEYS || 10000);
 const _rateBuckets = new Map();
 function couponRateOk(key) {
   const now = Date.now();
@@ -104,27 +109,35 @@ function couponRateOk(key) {
     return false;
   }
   hits.push(now);
-  _rateBuckets.set(key, hits);
+  // Prune buckets that have aged out entirely; otherwise keep the pruned list.
+  if (hits.length === 0) _rateBuckets.delete(key);
+  else _rateBuckets.set(key, hits);
+  // Cap the map: Map preserves insertion order, so the first key is the oldest —
+  // evict it (idle/stale) when over the limit.
+  if (_rateBuckets.size > MAX_RATE_KEYS) {
+    _rateBuckets.delete(_rateBuckets.keys().next().value);
+  }
   return true;
 }
+// The client key for coupon-oracle rate limiting: the real client IP.
+function clientKey(req) {
+  return req.ip || req.socket?.remoteAddress || 'unknown';
+}
 app.get('/api/admin/collections', (req, res) => {
-  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
-  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!requireAdmin(req, res)) return;
   res.json({ collections: db.listAllCollections() });
 });
 
 // Admin: mark an order as paid.
 app.post('/api/admin/collections/:id/paid', (req, res) => {
-  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
-  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!requireAdmin(req, res)) return;
   if (!db.markPaid(req.params.id)) return res.status(404).json({ error: 'not found' });
   res.json({ ok: true });
 });
 
 // Admin: soft-cancel a collection (body {undo:true} to restore).
 app.post('/api/admin/collections/:id/cancel', (req, res) => {
-  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
-  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!requireAdmin(req, res)) return;
   const undo = !!(req.body && req.body.undo);
   if (!db.cancelCollection(req.params.id, undo))
     return res.status(404).json({ error: 'not found' });
@@ -133,8 +146,7 @@ app.post('/api/admin/collections/:id/cancel', (req, res) => {
 
 // Admin: hard-delete a collection and its words.
 app.delete('/api/admin/collections/:id', (req, res) => {
-  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
-  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!requireAdmin(req, res)) return;
   if (!db.deleteCollection(req.params.id)) return res.status(404).json({ error: 'not found' });
   res.json({ ok: true });
 });
@@ -182,7 +194,10 @@ app.post('/api/collections/:id/coupon/validate', (req, res) => {
   const c = db.getCollection(req.params.id);
   const token = req.body && req.body.owner_token;
   if (!c || c.owner_token !== token) return res.status(403).json({ error: 'forbidden' });
-  if (!couponRateOk('validate:' + c.id)) {
+  // Rate-limit by CLIENT IP (not collection — fresh collections are free to make)
+  // to blunt code enumeration. This is the tight oracle budget; pay/init has its
+  // own separate path so an owner's previews can't block their real payment.
+  if (!couponRateOk('validate:' + clientKey(req))) {
     return res.status(429).json({ error: 'too many attempts' });
   }
   const r = db.validateCoupon(req.body && req.body.code);
@@ -289,11 +304,9 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   let discountPct = 0;
   let couponCode = null;
   if (b.coupon) {
-    // Rate-limit coupon attempts here too (per collection) — pay/init is another
-    // coupon oracle. Applies only when a coupon is actually attempted.
-    if (!couponRateOk('validate:' + c.id)) {
-      return res.status(429).json({ error: 'too many attempts' });
-    }
+    // NOT rate-limited here: pay/init is owner_token-gated and performs a real
+    // charge, so it must never be blocked by the preview endpoint's oracle budget
+    // (an owner previewing a code repeatedly must still be able to pay).
     const v = db.validateCoupon(b.coupon);
     if (!v.valid) return res.status(400).json({ error: 'invalid coupon' });
     discountPct = v.coupon.discount_pct;

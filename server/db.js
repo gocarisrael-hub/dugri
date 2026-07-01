@@ -11,6 +11,16 @@ const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DB_FILE = path.join(DATA_DIR, 'dugri-data.json');
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
+// A PeleCard pay session only counts as "in flight" (and thus blocks the free
+// coupon path) for a short window — a hosted-iframe session that isn't completed
+// is abandoned/declined, and its callback never arrives to resolve it. Without a
+// TTL a single closed modal would block every future free coupon forever.
+const SESSION_TTL_MS = Number(process.env.PELECARD_SESSION_TTL_MS || 20 * 60 * 1000);
+// Cap stored pay sessions, but ONLY ever evict RESOLVED ones — dropping an
+// unresolved session would lose the amount a later completing callback needs to
+// verify against, leaving a charged customer's order stuck unpaid.
+const MAX_SESSIONS = Number(process.env.PELECARD_MAX_SESSIONS || 50);
+
 const DEFAULTS = { collections: [], words: [], coupons: [] };
 
 // Single source of truth for order pricing (NIS).
@@ -264,10 +274,23 @@ const db = {
         discount_pct: discount_pct != null ? discount_pct : null,
         transaction_id: transactionId || null,
         resolved: false,
+        // Per-session timestamp: bounds the in-flight window (see TTL) and is the
+        // basis for evicting only OLD, RESOLVED sessions when over the cap.
+        initiated_at: nowIso(),
       });
-      // Bound growth against abuse, but keep enough that a payment completed on
-      // an earlier-opened modal can still be correlated back to its session.
-      if (p.sessions.length > 25) p.sessions = p.sessions.slice(-25);
+      // Bound growth, but NEVER evict an unresolved session — a payment completed
+      // on any still-open modal must always find its own amount to verify. Drop
+      // oldest RESOLVED sessions only; if all are unresolved, keep them all.
+      if (p.sessions.length > MAX_SESSIONS) {
+        let toDrop = p.sessions.length - MAX_SESSIONS;
+        p.sessions = p.sessions.filter((s) => {
+          if (toDrop > 0 && s.resolved) {
+            toDrop -= 1;
+            return false;
+          }
+          return true;
+        });
+      }
     }
     p.last_transaction_id = transactionId || p.last_transaction_id || null;
     p.initiated_at = nowIso();
@@ -276,14 +299,22 @@ const db = {
     return true;
   },
 
-  // Whether an order has an in-flight REAL (non-free) pay session: one with a
-  // gateway transaction_id and a positive charge that hasn't been resolved yet.
-  // A free/coupon path must refuse to mark the order paid while such a session
-  // exists, or the customer could be charged for a "free" order.
+  // Whether an order has a RECENT in-flight REAL (non-free) pay session: one with
+  // a gateway transaction_id and a positive charge, not yet resolved, AND started
+  // within SESSION_TTL_MS. A free/coupon path must refuse while such a session
+  // exists (else the customer could be charged for a "free" order) — but an
+  // abandoned session past the TTL must NOT block the free path forever.
   hasInFlightRealSession(order) {
     if (!order || !order.pelecard || !Array.isArray(order.pelecard.sessions)) return false;
+    const now = Date.now();
     return order.pelecard.sessions.some(
-      (s) => s && !s.resolved && s.transaction_id && Number(s.charged_total) > 0
+      (s) =>
+        s &&
+        !s.resolved &&
+        s.transaction_id &&
+        Number(s.charged_total) > 0 &&
+        s.initiated_at &&
+        now - Date.parse(s.initiated_at) < SESSION_TTL_MS
     );
   },
 

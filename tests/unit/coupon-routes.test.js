@@ -37,6 +37,8 @@ beforeAll(async () => {
   process.env.PELECARD_PASSWORD = 'secret';
   process.env.PUBLIC_BASE_URL = 'https://test.dugri.example';
   process.env.ADMIN_KEY = ADMIN_KEY;
+  // Small session cap so the "never evict an unresolved session" test is cheap.
+  process.env.PELECARD_MAX_SESSIONS = '3';
   for (const f of ['db.js', 'pelecard.js', 'index.js']) {
     delete require.cache[require.resolve(path.join(serverDir, f))];
   }
@@ -188,12 +190,13 @@ describe('POST /api/collections/:id/coupon/validate (owner-scoped)', () => {
     expect(r.status).toBe(403);
   });
 
-  it('rate-limits repeated attempts (429 past the cap)', async () => {
+  it('rate-limits by client IP — rotating fresh collection ids does NOT reset the budget', async () => {
     await post(key('/api/admin/coupons'), { code: 'RL', discount_pct: 10 });
-    const c = db.createCollection('הגבלת קצב');
     let saw429 = false;
-    // The cap is 20/min per collection; 25 attempts must trip it.
-    for (let i = 0; i < 25; i++) {
+    // Each attempt uses a BRAND NEW collection; if the limiter were keyed per
+    // collection this would never trip. Keyed per IP (shared 127.0.0.1), it must.
+    for (let i = 0; i < 30; i++) {
+      const c = db.createCollection('הגבלת קצב ' + i);
       const r = await post('/api/collections/' + c.id + '/coupon/validate', {
         owner_token: c.owner_token,
         code: 'RL',
@@ -379,5 +382,89 @@ describe('pay/init with a coupon', () => {
     expect(r.status).toBe(409);
     expect(db.getCollection(c.id).order.paid).toBe(false);
     expect(db.getCouponByCode('FREERACE').uses).toBe(0);
+  });
+
+  it('an ABANDONED real session stops blocking the free path after its TTL window', async () => {
+    await post(key('/api/admin/coupons'), { code: 'FREETTL', discount_pct: 100 });
+    const c = db.createCollection('נטישה');
+
+    // Open a real card session, then never complete it (owner closed the modal).
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    // Backdate that session past the in-flight TTL to simulate abandonment.
+    const s = db.getCollection(c.id).order.pelecard.sessions[0];
+    s.initiated_at = new Date(Date.now() - 21 * 60 * 1000).toISOString();
+
+    // A 100% coupon now goes through instead of being blocked forever by 409.
+    const r = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+      coupon: 'FREETTL',
+    });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ free: true, paid: true, total: 0 });
+    expect(db.getCollection(c.id).order.paid).toBe(true);
+    expect(db.getCouponByCode('FREETTL').uses).toBe(1);
+  });
+
+  it('a completing callback on a would-be-EVICTED unresolved session still marks paid', async () => {
+    // PELECARD_MAX_SESSIONS is 3 in this suite. Open 5 unresolved sessions: the
+    // earliest would be evicted under a naive slice cap. It must be KEPT so its
+    // completing callback can still find and verify its amount.
+    const c = db.createCollection('ללא פינוי');
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    const firstToken = db.getCollection(c.id).order.pelecard.sessions[0].token;
+    for (let i = 0; i < 4; i++) {
+      await post('/api/collections/' + c.id + '/pay/init', {
+        owner_token: c.owner_token,
+        version: 'pdf',
+      });
+    }
+    // 5 unresolved sessions kept despite the cap of 3 (never evict unresolved).
+    const sessions = db.getCollection(c.id).order.pelecard.sessions;
+    expect(sessions.length).toBe(5);
+    expect(sessions.map((x) => x.token)).toContain(firstToken);
+
+    // Completing the FIRST (oldest) session still verifies + marks paid.
+    nextGetTx = {
+      StatusCode: '000',
+      ResultData: {
+        TransactionId: 'tx-1',
+        ShvaResult: '000',
+        AdditionalDetailsParamX: firstToken,
+        DebitTotal: 7900,
+      },
+    };
+    const cb = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-1' } });
+    expect(cb.status).toBe(200);
+    expect(db.getCollection(c.id).order.paid).toBe(true);
+  });
+
+  it('a real discounted pay/init is NOT blocked by an exhausted coupon-preview budget', async () => {
+    await post(key('/api/admin/coupons'), { code: 'SEP', discount_pct: 50 }); // 79 -> 40
+    // Exhaust the preview (validate) budget for this IP.
+    for (let i = 0; i < 30; i++) {
+      const cc = db.createCollection('preview ' + i);
+      await post('/api/collections/' + cc.id + '/coupon/validate', {
+        owner_token: cc.owner_token,
+        code: 'SEP',
+      });
+    }
+    // The real, owner-gated discounted payment must still go through (separate
+    // budget) — pay/init is not throttled by the preview oracle.
+    const c = db.createCollection('תשלום אמיתי');
+    const r = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+      coupon: 'SEP',
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.charged).toBe(40);
+    expect(lastInitTotal).toBe(4000);
   });
 });
