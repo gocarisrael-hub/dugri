@@ -71,13 +71,20 @@
         padding: 20px;
         text-align: center;
       }
-      /* Keep the wide table inside its own scroll area so it never widens the
-         page (which would push the controls/tabs off a narrow mobile viewport). */
+      /* Safety net: if the table ever can't shrink far enough, scroll inside
+         this box rather than widening the page (which would push the
+         controls/tabs off a narrow mobile viewport). With the fixed layout +
+         wrapping below the table already fits, so this rarely engages. */
       #content {
+        max-width: 100%;
         overflow-x: auto;
       }
       table {
         width: 100%;
+        max-width: 100%;
+        /* Fixed layout: columns share the width evenly and never grow past the
+           container, so long values wrap instead of forcing a side-scroll. */
+        table-layout: fixed;
         border-collapse: collapse;
         background: #fff;
         border: 1px solid #f0dee4;
@@ -88,9 +95,14 @@
       th,
       td {
         text-align: right;
-        padding: 10px 12px;
+        padding: 8px 8px;
         border-bottom: 1px solid #f4e7ec;
         vertical-align: top;
+        /* Let long emails / word-lists / collect links wrap anywhere instead of
+           blowing the column (and the table) wide. */
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: anywhere;
       }
       th {
         background: #fde3ee;
@@ -235,6 +247,64 @@
       .cancelled {
         background: #f1eef0;
         color: #7c6a74;
+      }
+      /* Narrow phones: 14 columns can't fit as a grid, so stack each row into a
+         label:value card. The label comes from each cell's data-label (set in
+         JS). This keeps every value on-screen with zero horizontal scroll. */
+      @media (max-width: 600px) {
+        #content {
+          overflow-x: visible;
+        }
+        table {
+          border: none;
+          background: transparent;
+        }
+        thead {
+          /* Off-screen but accessible; the per-cell labels replace it visually. */
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          overflow: hidden;
+          clip: rect(0 0 0 0);
+        }
+        table,
+        tbody,
+        tr,
+        td {
+          display: block;
+          width: 100%;
+        }
+        tr {
+          background: #fff;
+          border: 1px solid #f0dee4;
+          border-radius: 14px;
+          margin-bottom: 12px;
+          padding: 4px 12px;
+          overflow: hidden;
+        }
+        tr:last-child td {
+          border-bottom: 1px solid #f4e7ec;
+        }
+        td {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 8px 0;
+        }
+        td:last-child {
+          border-bottom: none;
+        }
+        td::before {
+          content: attr(data-label);
+          font-weight: 700;
+          color: #8a2b53;
+          font-size: 12.5px;
+          flex: 0 0 auto;
+        }
+        /* Cells with no label (e.g. empty ones) shouldn't reserve label space. */
+        td:not([data-label])::before {
+          content: none;
+        }
       }
     </style>
   </head>
@@ -648,6 +718,29 @@
           td.appendChild(delBtn);
 
           tr.appendChild(td);
+
+          // Label each cell so the narrow-screen stacked-card layout (CSS
+          // td::before) shows "label: value". Order matches the <thead> above.
+          const cellLabels = [
+            'בעל/ת השמחה',
+            'לקוח',
+            'מילים',
+            'סטטוס',
+            'עיצוב',
+            'צבע',
+            'צ׳ייסרים',
+            'גרסה',
+            'סכום',
+            'כתובת',
+            'תשלום',
+            'נוצר',
+            'מעקב',
+            'ניהול',
+          ];
+          tr.querySelectorAll('td').forEach((cell, i) => {
+            if (cellLabels[i]) cell.dataset.label = cellLabels[i];
+          });
+
           tb.appendChild(tr);
         }
         table.appendChild(tb);
