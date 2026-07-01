@@ -48,6 +48,34 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
   await expect(page.locator('#addCard')).toBeHidden();
 });
 
+test('submitting a word that already exists pops a duplicate dialog and does not add a row', async ({
+  page,
+}) => {
+  await createCollection(page, 'שירה');
+
+  // Add a word once — succeeds.
+  await page.fill('#wordInput', 'הדייט מטבריה');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('1');
+  // The duplicate popup is not shown for a fresh add.
+  await expect(page.locator('#dupModal')).toBeHidden();
+
+  // Submit the SAME word again (case/space-insensitive dupe on the server).
+  await page.fill('#wordInput', '  הדייט   מטבריה ');
+  await page.click('#addBtn');
+
+  // A clear duplicate popup appears, naming the word.
+  await expect(page.locator('#dupModal')).toBeVisible();
+  await expect(page.locator('#dupModalText')).toContainText('כבר קיימת ברשימה');
+  await expect(page.locator('#dupModalText')).toContainText('הדייט מטבריה');
+  // No new row was added — still exactly one word.
+  await expect(page.locator('#count')).toHaveText('1');
+
+  // Dismissing the popup ("הבנתי") closes it and leaves the page usable.
+  await page.click('#dupModalOk');
+  await expect(page.locator('#dupModal')).toBeHidden();
+});
+
 test('owner pay panel: select delivery → address fields appear + total 199', async ({ page }) => {
   await createCollection(page, 'דנה');
 

@@ -389,6 +389,34 @@
           transition: none;
         }
       }
+      /* small message dialog (e.g. "word already in the list") */
+      .msg-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        z-index: 100;
+      }
+      .msg-modal-card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 24px 22px;
+        width: min(360px, 100%);
+        text-align: center;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      }
+      .msg-modal-text {
+        font-weight: 800;
+        font-size: 18px;
+        margin-bottom: 18px;
+        word-break: break-word;
+      }
+      .msg-modal-ok {
+        width: 100%;
+      }
       /* top pay reminder (owner, unpaid only) — nudges toward the pay panel */
       .pay-reminder {
         background: #fff4e6;
@@ -829,6 +857,20 @@
       </div>
     </div>
 
+    <!-- duplicate-word popup ("this word is already in the list") -->
+    <div
+      id="dupModal"
+      class="msg-modal hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="dupModalText"
+    >
+      <div class="msg-modal-card">
+        <p class="msg-modal-text" id="dupModalText"></p>
+        <button type="button" class="msg-modal-ok" id="dupModalOk">הבנתי</button>
+      </div>
+    </div>
+
     <script type="module">
       import { CATEGORIES, PROMPTS, PREMIUM_PROMPTS, renderQuestion } from './js/word-prompts.js';
       import { parseWordText } from './js/collect.js';
@@ -865,6 +907,26 @@
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
       }
+
+      // Dismissible popup for messages that deserve more than a fleeting toast,
+      // e.g. telling a contributor their word is already in the list.
+      function showDialog(msg) {
+        const modal = $('#dupModal');
+        $('#dupModalText').textContent = msg;
+        modal.classList.remove('hidden');
+        $('#dupModalOk').focus();
+      }
+      (function wireDialog() {
+        const modal = $('#dupModal');
+        const close = () => modal.classList.add('hidden');
+        $('#dupModalOk').onclick = close;
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) close();
+        });
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && !modal.classList.contains('hidden')) close();
+        });
+      })();
 
       function api(path, opts) {
         return fetch('/api/collections/' + id + path, opts).then(async (r) => {
@@ -1021,9 +1083,22 @@
           const added = res && typeof res.added === 'number' ? res.added : clean.length;
           const skipped = (res && res.skipped) || 0;
           track('word_added', { method: method || 'single', count: added, skipped });
-          if (added === 1) toast('נוספה מילה ✓');
-          else if (added > 1) toast('נוספו ' + added + ' מילים ✓');
-          else if (skipped) toast(skipped === 1 ? 'המילה כבר ברשימה' : 'המילים כבר ברשימה');
+          if (added >= 1) {
+            // Something was added → confirm with a non-blocking toast. If part of
+            // a batch was skipped as duplicates, note it inline (no popup, so we
+            // don't interrupt an otherwise successful multi-word add).
+            const base = added === 1 ? 'נוספה מילה ✓' : 'נוספו ' + added + ' מילים ✓';
+            toast(skipped ? base + ' · ' + skipped + ' כבר היו ברשימה' : base);
+          } else if (skipped) {
+            // Nothing added — every submitted word was already in the list.
+            // The common case is a single word from the input box: pop a clear,
+            // dismissible dialog so the contributor gets real feedback.
+            if (skipped === 1 && clean.length === 1) {
+              showDialog('המילה "' + clean[0] + '" כבר קיימת ברשימה 🙂');
+            } else {
+              showDialog('כל המילים כבר היו ברשימה ולא נוספו שוב 🙂');
+            }
+          }
         } catch (e) {
           if (e.status === 409) {
             alert('האיסוף נסגר - אי אפשר להוסיף עוד מילים.');
