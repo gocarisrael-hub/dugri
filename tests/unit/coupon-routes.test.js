@@ -105,7 +105,7 @@ async function get(urlPath) {
 }
 
 function tokenOf(id) {
-  return db.getCollection(id).order.pelecard.param_tokens[0];
+  return db.getCollection(id).order.pelecard.sessions[0].token;
 }
 
 const key = (p) => `${p}?key=${ADMIN_KEY}`;
@@ -158,17 +158,52 @@ describe('admin coupon CRUD auth', () => {
   });
 });
 
-describe('POST /api/coupons/validate', () => {
+describe('POST /api/collections/:id/coupon/validate (owner-scoped)', () => {
   it('returns valid + discount_pct and never leaks other fields', async () => {
     await post(key('/api/admin/coupons'), { code: 'PUB25', discount_pct: 25 });
-    const r = await post('/api/coupons/validate', { code: 'pub25' });
+    const c = db.createCollection('אימות בעלים');
+    const r = await post('/api/collections/' + c.id + '/coupon/validate', {
+      owner_token: c.owner_token,
+      code: 'pub25',
+    });
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ valid: true, discount_pct: 25 });
   });
 
   it('returns valid:false + reason for unknown/inactive', async () => {
-    const nf = await post('/api/coupons/validate', { code: 'GHOST' });
+    const c = db.createCollection('אימות לא קיים');
+    const nf = await post('/api/collections/' + c.id + '/coupon/validate', {
+      owner_token: c.owner_token,
+      code: 'GHOST',
+    });
     expect(nf.body).toEqual({ valid: false, reason: 'not_found' });
+  });
+
+  it('requires the owner token (403 without it) — not an open oracle', async () => {
+    const c = db.createCollection('לא בעלים');
+    const r = await post('/api/collections/' + c.id + '/coupon/validate', {
+      owner_token: 'nope',
+      code: 'PUB25',
+    });
+    expect(r.status).toBe(403);
+  });
+
+  it('rate-limits repeated attempts (429 past the cap)', async () => {
+    await post(key('/api/admin/coupons'), { code: 'RL', discount_pct: 10 });
+    const c = db.createCollection('הגבלת קצב');
+    let saw429 = false;
+    // The cap is 20/min per collection; 25 attempts must trip it.
+    for (let i = 0; i < 25; i++) {
+      const r = await post('/api/collections/' + c.id + '/coupon/validate', {
+        owner_token: c.owner_token,
+        code: 'RL',
+      });
+      if (r.status === 429) {
+        saw429 = true;
+        break;
+      }
+    }
+    expect(saw429).toBe(true);
   });
 });
 
@@ -187,9 +222,10 @@ describe('pay/init with a coupon', () => {
     expect(r.body.charged).toBe(40);
     // The gateway was asked for the discounted amount, in agorot.
     expect(lastInitTotal).toBe(4000);
-    // Order stored the effective charge for the callback to verify against.
-    expect(db.getCollection(c.id).order.charged_total).toBe(40);
-    expect(db.getCollection(c.id).order.coupon).toBe('HALF');
+    // The pay SESSION stored its own effective charge + coupon for the callback.
+    const s0 = db.getCollection(c.id).order.pelecard.sessions[0];
+    expect(s0.charged_total).toBe(40);
+    expect(s0.coupon).toBe('HALF');
 
     // Callback verifying against the DISCOUNTED amount marks it paid.
     const token = tokenOf(c.id);
@@ -263,7 +299,7 @@ describe('pay/init with a coupon', () => {
     expect(db.getCouponByCode('FREE100').uses).toBe(1);
   });
 
-  it('an order without a coupon still stores charged_total = total', async () => {
+  it('an order without a coupon still stores a numeric charged_total = total', async () => {
     const c = db.createCollection('בלי קופון');
     const r = await post('/api/collections/' + c.id + '/pay/init', {
       owner_token: c.owner_token,
@@ -271,7 +307,77 @@ describe('pay/init with a coupon', () => {
     });
     expect(r.status).toBe(200);
     expect(r.body.charged).toBe(79);
-    expect(db.getCollection(c.id).order.charged_total).toBe(79);
-    expect(db.getCollection(c.id).order.coupon).toBe(null);
+    const s0 = db.getCollection(c.id).order.pelecard.sessions[0];
+    expect(s0.charged_total).toBe(79); // never undefined
+    expect(s0.coupon).toBe(null);
+  });
+
+  it('two sessions with different coupons: completing the EARLIER one verifies at ITS amount + credits ITS coupon', async () => {
+    await post(key('/api/admin/coupons'), { code: 'SESS1', discount_pct: 50 }); // 79 -> 40
+    await post(key('/api/admin/coupons'), { code: 'SESS2', discount_pct: 10 }); // 79 -> 71
+    const c = db.createCollection('שתי סשנים');
+
+    // First pay session with SESS1 (charged 40).
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+      coupon: 'SESS1',
+    });
+    const firstToken = db.getCollection(c.id).order.pelecard.sessions[0].token;
+
+    // A later pay session with a DIFFERENT coupon SESS2 (charged 71). Under the
+    // old single-order-field design this would have overwritten the amount and
+    // broken verification of the first session.
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+      coupon: 'SESS2',
+    });
+    expect(db.getCollection(c.id).order.pelecard.sessions.length).toBe(2);
+
+    // Complete the EARLIER (SESS1) session at its own amount, 40 (4000 agorot).
+    nextGetTx = {
+      StatusCode: '000',
+      ResultData: {
+        TransactionId: 'tx-1',
+        ShvaResult: '000',
+        AdditionalDetailsParamX: firstToken,
+        DebitTotal: 4000,
+        DebitApproveNumber: '86-777-000',
+      },
+    };
+    const cb = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-1' } });
+    expect(cb.status).toBe(200);
+
+    const order = db.getCollection(c.id).order;
+    expect(order.paid).toBe(true);
+    // The order records the coupon the customer ACTUALLY redeemed (SESS1)...
+    expect(order.coupon).toBe('SESS1');
+    expect(order.charged_total).toBe(40);
+    // ...and only SESS1's uses is credited, not the later SESS2.
+    expect(db.getCouponByCode('SESS1').uses).toBe(1);
+    expect(db.getCouponByCode('SESS2').uses).toBe(0);
+  });
+
+  it('refuses the free/coupon path while a real card session is in flight (no double charge)', async () => {
+    await post(key('/api/admin/coupons'), { code: 'FREERACE', discount_pct: 100 });
+    const c = db.createCollection('מרוץ חינם');
+
+    // A real (non-free) card session is initiated and still in flight.
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+
+    // Applying a 100% coupon now must NOT mark the order free/paid — the
+    // in-flight real session could still complete and charge the customer.
+    const r = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+      coupon: 'FREERACE',
+    });
+    expect(r.status).toBe(409);
+    expect(db.getCollection(c.id).order.paid).toBe(false);
+    expect(db.getCouponByCode('FREERACE').uses).toBe(0);
   });
 });

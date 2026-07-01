@@ -35,13 +35,13 @@ function saveDb() {
 
 const uid = () => crypto.randomUUID();
 const nowIso = () => new Date().toISOString();
-// Today as 'YYYY-MM-DD' (local date). Used for coupon expiry comparison; ISO
-// date strings sort lexicographically, so a plain string compare is correct.
-const todayStr = () => {
-  const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-};
+// Today as 'YYYY-MM-DD' in Israel time. Coupon expiry is inclusive through the
+// end of that Israel day, so the comparison must use the Asia/Jerusalem calendar
+// date — not the server's local/UTC date (Railway runs UTC, where a coupon set
+// to expire 2026-07-01 would otherwise keep working ~3h into July 2 Israel time).
+// ISO date strings sort lexicographically, so a plain string compare is correct.
+const todayStrIsrael = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(new Date());
 
 // Normalize a coupon code: trim + uppercase. Callers validate the [A-Z0-9] shape.
 const normCode = (s) =>
@@ -244,22 +244,30 @@ const db = {
     return c.order;
   },
 
-  // Record a PeleCard init handshake on an existing order. The per-payment
-  // ParamX tokens ACCUMULATE (capped): an owner may open the pay modal more than
-  // once, and PeleCard's callback for any of those sessions must still match.
-  // Returns false when there is no order to attach it to.
-  recordPaymentInit(id, { paramToken, transactionId } = {}) {
+  // Record a PeleCard init handshake as a SESSION on the order. Each pay/init is
+  // its OWN session record { token, charged_total, coupon, discount_pct,
+  // transaction_id, resolved } — an owner may open the pay modal more than once
+  // (with different coupons), and PeleCard's callback for ANY of those sessions
+  // must verify against THAT session's own amount, not a shared order value.
+  // Sessions ACCUMULATE (capped). Returns false when there is no order.
+  recordPaymentInit(id, { paramToken, transactionId, charged_total, coupon, discount_pct } = {}) {
     const c = this.getCollection(id);
     if (!c || !c.order) return false;
-    const p = c.order.pelecard || { param_tokens: [] };
-    if (!Array.isArray(p.param_tokens)) p.param_tokens = [];
-    if (paramToken && !p.param_tokens.includes(paramToken)) {
-      p.param_tokens.push(paramToken);
+    const p = c.order.pelecard || { sessions: [] };
+    if (!Array.isArray(p.sessions)) p.sessions = [];
+    if (paramToken && !p.sessions.some((s) => s.token === paramToken)) {
+      p.sessions.push({
+        token: paramToken,
+        // Always a real number so the callback never verifies against undefined.
+        charged_total: Number(charged_total),
+        coupon: coupon ? normCode(coupon) : null,
+        discount_pct: discount_pct != null ? discount_pct : null,
+        transaction_id: transactionId || null,
+        resolved: false,
+      });
       // Bound growth against abuse, but keep enough that a payment completed on
-      // an earlier-opened modal can still be correlated back to the order.
-      if (p.param_tokens.length > 25) {
-        p.param_tokens = p.param_tokens.slice(-25);
-      }
+      // an earlier-opened modal can still be correlated back to its session.
+      if (p.sessions.length > 25) p.sessions = p.sessions.slice(-25);
     }
     p.last_transaction_id = transactionId || p.last_transaction_id || null;
     p.initiated_at = nowIso();
@@ -268,9 +276,19 @@ const db = {
     return true;
   },
 
-  // Find the collection whose order was initialized with this PeleCard ParamX
-  // token (the AdditionalDetailsParamX PeleCard echoes back). Returns null if
-  // no order matches.
+  // Whether an order has an in-flight REAL (non-free) pay session: one with a
+  // gateway transaction_id and a positive charge that hasn't been resolved yet.
+  // A free/coupon path must refuse to mark the order paid while such a session
+  // exists, or the customer could be charged for a "free" order.
+  hasInFlightRealSession(order) {
+    if (!order || !order.pelecard || !Array.isArray(order.pelecard.sessions)) return false;
+    return order.pelecard.sessions.some(
+      (s) => s && !s.resolved && s.transaction_id && Number(s.charged_total) > 0
+    );
+  },
+
+  // Find the collection whose order has a pay SESSION with this ParamX token
+  // (the AdditionalDetailsParamX PeleCard echoes back). Returns null if none.
   getCollectionByPayToken(token) {
     if (!token) return null;
     return (
@@ -278,14 +296,25 @@ const db = {
         (c) =>
           c.order &&
           c.order.pelecard &&
-          Array.isArray(c.order.pelecard.param_tokens) &&
-          c.order.pelecard.param_tokens.includes(token)
+          Array.isArray(c.order.pelecard.sessions) &&
+          c.order.pelecard.sessions.some((s) => s.token === token)
       ) || null
     );
   },
 
-  // Mark an existing order as paid. Used by the admin route (manual) and by the
-  // PeleCard callback (meta carries the method + transaction details).
+  // Resolve a ParamX token to its { collection, session } pair, or null. The
+  // callback uses this to verify against the SESSION's own charged_total.
+  getPaymentSessionByToken(token) {
+    const c = this.getCollectionByPayToken(token);
+    if (!c) return null;
+    const session = c.order.pelecard.sessions.find((s) => s.token === token) || null;
+    return session ? { collection: c, session } : null;
+  },
+
+  // Mark an existing order as paid. Used by the admin route (manual), the
+  // PeleCard callback, and the free-coupon path. meta carries the method +
+  // transaction details, the applied coupon/charge (for the order record), and
+  // optionally the session `token` to mark that session resolved.
   markPaid(id, meta = {}) {
     const c = this.getCollection(id);
     if (!c || !c.order) return false;
@@ -294,6 +323,15 @@ const db = {
     if (meta.method) c.order.paid_method = meta.method;
     if (meta.transactionId) c.order.paid_transaction_id = meta.transactionId;
     if (meta.approvalNo) c.order.paid_approval_no = meta.approvalNo;
+    // Record what was actually charged + which coupon on the order for display.
+    if (meta.charged_total != null) c.order.charged_total = Number(meta.charged_total);
+    if (meta.coupon !== undefined) c.order.coupon = meta.coupon ? normCode(meta.coupon) : null;
+    if (meta.discount_pct !== undefined) c.order.discount_pct = meta.discount_pct;
+    // Mark the matched pay session resolved so it's no longer "in flight".
+    if (meta.token && c.order.pelecard && Array.isArray(c.order.pelecard.sessions)) {
+      const s = c.order.pelecard.sessions.find((x) => x.token === meta.token);
+      if (s) s.resolved = true;
+    }
     saveDb();
     return true;
   },
@@ -372,24 +410,11 @@ const db = {
     const c = this.getCouponByCode(code);
     if (!c) return { valid: false, reason: 'not_found' };
     if (!c.active) return { valid: false, reason: 'inactive' };
-    // valid_until is inclusive: expired only once today is strictly after it.
-    if (c.valid_until && todayStr() > c.valid_until) {
+    // valid_until is inclusive: expired only once today (Israel) is after it.
+    if (c.valid_until && todayStrIsrael() > c.valid_until) {
       return { valid: false, reason: 'expired' };
     }
     return { valid: true, coupon: c };
-  },
-
-  // Record the applied coupon + effective charge on an existing order (set at
-  // pay/init). Kept separate from setOrder so a re-set doesn't wipe pricing.
-  // Returns the order, or false when there is no order.
-  applyCouponToOrder(id, { code, discount_pct, charged_total } = {}) {
-    const c = this.getCollection(id);
-    if (!c || !c.order) return false;
-    c.order.coupon = code ? normCode(code) : null;
-    c.order.discount_pct = discount_pct != null ? discount_pct : null;
-    c.order.charged_total = charged_total;
-    saveDb();
-    return c.order;
   },
 
   // Increment a coupon's use counter (called when an order that used it is

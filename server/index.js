@@ -74,6 +74,39 @@ function adminKeyOk(provided) {
   const b = Buffer.from(ADMIN_KEY);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+// Shared admin guard: sends the 503/403 response and returns false when the
+// request is not an authorized admin; returns true to proceed.
+function requireAdmin(req, res) {
+  if (!ADMIN_KEY) {
+    res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
+    return false;
+  }
+  if (!adminKeyOk(req.query.key)) {
+    res.status(403).json({ error: 'forbidden' });
+    return false;
+  }
+  return true;
+}
+
+// Tiny in-memory sliding-window rate limiter. Coupon validation + coupon
+// attempts at pay/init are the only unauthenticated-ish coupon oracle, so we
+// cap attempts per key (here: per collection) to blunt brute-force enumeration
+// of short [A-Z0-9] codes. State is per-process (fine for a single Railway
+// instance); it resets on redeploy, which is acceptable for this defense.
+const COUPON_RATE_LIMIT = Number(process.env.COUPON_RATE_LIMIT || 20);
+const COUPON_RATE_WINDOW_MS = 60 * 1000;
+const _rateBuckets = new Map();
+function couponRateOk(key) {
+  const now = Date.now();
+  const hits = (_rateBuckets.get(key) || []).filter((t) => now - t < COUPON_RATE_WINDOW_MS);
+  if (hits.length >= COUPON_RATE_LIMIT) {
+    _rateBuckets.set(key, hits);
+    return false;
+  }
+  hits.push(now);
+  _rateBuckets.set(key, hits);
+  return true;
+}
 app.get('/api/admin/collections', (req, res) => {
   if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
   if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
@@ -108,15 +141,13 @@ app.delete('/api/admin/collections/:id', (req, res) => {
 
 // Admin: list all discount coupons.
 app.get('/api/admin/coupons', (req, res) => {
-  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
-  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!requireAdmin(req, res)) return;
   res.json({ coupons: db.listCoupons() });
 });
 
 // Admin: create a coupon. 400 on invalid input or a duplicate code.
 app.post('/api/admin/coupons', (req, res) => {
-  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
-  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!requireAdmin(req, res)) return;
   const b = req.body || {};
   const coupon = db.createCoupon({
     code: b.code,
@@ -129,8 +160,7 @@ app.post('/api/admin/coupons', (req, res) => {
 
 // Admin: toggle a coupon's active flag. 404 when the id is unknown.
 app.post('/api/admin/coupons/:id', (req, res) => {
-  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
-  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!requireAdmin(req, res)) return;
   const active = !!(req.body && req.body.active);
   const coupon = db.setCouponActive(req.params.id, active);
   if (!coupon) return res.status(404).json({ error: 'not found' });
@@ -139,17 +169,23 @@ app.post('/api/admin/coupons/:id', (req, res) => {
 
 // Admin: delete a coupon. 404 when the id is unknown.
 app.delete('/api/admin/coupons/:id', (req, res) => {
-  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
-  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!requireAdmin(req, res)) return;
   if (!db.deleteCoupon(req.params.id)) return res.status(404).json({ error: 'not found' });
   res.json({ ok: true });
 });
 
-// Public: validate a coupon code so checkout can preview the discount. Only the
-// discount percentage is ever leaked — never the coupon list or other fields.
-app.post('/api/coupons/validate', (req, res) => {
-  const code = req.body && req.body.code;
-  const r = db.validateCoupon(code);
+// OWNER-SCOPED coupon validation so checkout can preview the discount. Requires
+// the collection id + owner_token (so it is NOT a fully-open enumeration oracle)
+// and is rate-limited per collection. Only the discount percentage is ever
+// leaked — never the coupon list or other fields.
+app.post('/api/collections/:id/coupon/validate', (req, res) => {
+  const c = db.getCollection(req.params.id);
+  const token = req.body && req.body.owner_token;
+  if (!c || c.owner_token !== token) return res.status(403).json({ error: 'forbidden' });
+  if (!couponRateOk('validate:' + c.id)) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
+  const r = db.validateCoupon(req.body && req.body.code);
   if (!r.valid) return res.json({ valid: false, reason: r.reason });
   res.json({ valid: true, discount_pct: r.coupon.discount_pct });
 });
@@ -253,25 +289,33 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   let discountPct = 0;
   let couponCode = null;
   if (b.coupon) {
+    // Rate-limit coupon attempts here too (per collection) — pay/init is another
+    // coupon oracle. Applies only when a coupon is actually attempted.
+    if (!couponRateOk('validate:' + c.id)) {
+      return res.status(429).json({ error: 'too many attempts' });
+    }
     const v = db.validateCoupon(b.coupon);
     if (!v.valid) return res.status(400).json({ error: 'invalid coupon' });
     discountPct = v.coupon.discount_pct;
     couponCode = v.coupon.code;
   }
+  // charged_total is ALWAYS a real number — the full total when no coupon.
   const charged = Math.round(order.total * (1 - discountPct / 100));
-
-  // Persist the effective charge + applied coupon so the callback verifies
-  // against `charged_total` (not order.total) and can bump the coupon on paid.
-  db.applyCouponToOrder(req.params.id, {
-    code: couponCode,
-    discount_pct: couponCode ? discountPct : null,
-    charged_total: charged,
-  });
 
   // Free order (100%-off, or the charge rounds to <= 0): skip PeleCard entirely,
   // mark it paid now, count the coupon use, and tell the client it's paid.
+  // BUT NOT while a real (non-free) card session is still in flight — otherwise
+  // the customer could complete that charge and be billed for a "free" order.
   if (charged <= 0) {
-    db.markPaid(req.params.id, { method: 'coupon' });
+    if (db.hasInFlightRealSession(order)) {
+      return res.status(409).json({ error: 'יש תשלום פתוח — סגרו את חלון התשלום לפני החלת קופון' });
+    }
+    db.markPaid(req.params.id, {
+      method: 'coupon',
+      charged_total: 0,
+      coupon: couponCode,
+      discount_pct: couponCode ? discountPct : null,
+    });
     if (couponCode) db.incrementCouponUses(couponCode);
     return res.json({ free: true, paid: true, total: 0 });
   }
@@ -288,7 +332,16 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
         serverErrorUrl: base + '/api/payment/callback?error=1',
       },
     });
-    db.recordPaymentInit(req.params.id, { paramToken, transactionId });
+    // Record THIS session's own charged amount + coupon so the callback for it
+    // verifies against the right price (sessions with different coupons stay
+    // independent).
+    db.recordPaymentInit(req.params.id, {
+      paramToken,
+      transactionId,
+      charged_total: charged,
+      coupon: couponCode,
+      discount_pct: couponCode ? discountPct : null,
+    });
     res.json({ url, total: order.total, charged });
   } catch (e) {
     res.status(502).json({ error: 'payment init failed' });
@@ -307,11 +360,15 @@ app.post('/api/payment/callback', async (req, res) => {
   // the echoed ParamX token).
   let transactionId = parsed.transactionId;
   if (!transactionId && parsed.paramX) {
-    const byToken = db.getCollectionByPayToken(parsed.paramX);
+    // Fall back to the id we stored for that session (located via the echoed
+    // ParamX token), then the per-order last_transaction_id as a last resort.
+    const match = db.getPaymentSessionByToken(parsed.paramX);
     transactionId =
-      byToken && byToken.order && byToken.order.pelecard
-        ? byToken.order.pelecard.last_transaction_id
-        : null;
+      (match && match.session && match.session.transaction_id) ||
+      (match &&
+        match.collection.order.pelecard &&
+        match.collection.order.pelecard.last_transaction_id) ||
+      null;
   }
   if (!transactionId) return res.json({ ok: true });
 
@@ -324,25 +381,30 @@ app.post('/api/payment/callback', async (req, res) => {
     return res.status(502).json({ error: 'verification failed' });
   }
 
-  // Locate the order by the AUTHORITATIVE token PeleCard returned, then confirm
-  // success + amount before marking paid.
-  const c = db.getCollectionByPayToken(tx.paramX);
-  // Verify against the amount we actually CHARGED (order.total minus any coupon
-  // discount), stored at pay/init. Falls back to order.total for legacy orders
-  // that predate charged_total. Using order.total here would fail every
-  // discounted charge, so the two paths must agree on charged_total.
-  const expectedNis =
-    c && c.order && c.order.charged_total != null
-      ? c.order.charged_total
-      : c && c.order && c.order.total;
-  if (c && c.order && !c.order.paid && pelecard.verifyTransaction(tx, { amountNis: expectedNis })) {
+  // Locate the specific pay SESSION by the AUTHORITATIVE token PeleCard returned.
+  // Verify tx against THAT session's own charged_total (sessions opened with
+  // different coupons must each verify against their own price) — never a shared
+  // order-level amount. On success mark paid + credit THAT session's coupon.
+  const match = db.getPaymentSessionByToken(tx.paramX);
+  const c = match && match.collection;
+  const session = match && match.session;
+  if (
+    c &&
+    session &&
+    !c.order.paid &&
+    pelecard.verifyTransaction(tx, { amountNis: session.charged_total })
+  ) {
     db.markPaid(c.id, {
       method: 'pelecard',
       transactionId: tx.transactionId,
       approvalNo: tx.approvalNo,
+      token: session.token,
+      charged_total: session.charged_total,
+      coupon: session.coupon,
+      discount_pct: session.discount_pct,
     });
     // Count the coupon use once, on the real unpaid->paid transition.
-    if (c.order.coupon) db.incrementCouponUses(c.order.coupon);
+    if (session.coupon) db.incrementCouponUses(session.coupon);
     // Notify the owner a payment came in. Fire-and-forget: the payment must
     // succeed even if the send fails. Skip the word-count work entirely when
     // email is unconfigured (the dormant default).

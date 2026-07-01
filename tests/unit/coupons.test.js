@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -18,12 +18,16 @@ beforeAll(() => {
   db = require(serverDbPath);
 });
 
-// A YYYY-MM-DD string offset from today (for expiry cases).
+// A YYYY-MM-DD string offset (in days) from TODAY IN ISRAEL — matching the
+// timezone validateCoupon compares against, so these cases are stable no matter
+// what timezone the test runner is in. Anchors at noon UTC to dodge DST edges.
 function dateOffset(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  const todayIsrael = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(
+    new Date()
+  );
+  const d = new Date(todayIsrael + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC' }).format(d);
 }
 
 describe('createCoupon validation', () => {
@@ -95,6 +99,22 @@ describe('validateCoupon', () => {
   it('returns expired when today is after valid_until', () => {
     db.createCoupon({ code: 'PAST', discount_pct: 10, valid_until: dateOffset(-1) });
     expect(db.validateCoupon('PAST')).toEqual({ valid: false, reason: 'expired' });
+  });
+});
+
+describe('validateCoupon expiry uses the Israel calendar date', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('expires by Asia/Jerusalem date, not the server/UTC date', () => {
+    // 2026-07-01T22:30:00Z is still July 1 in UTC, but already 01:30 on July 2
+    // in Israel (IDT, UTC+3). A coupon valid through 2026-07-01 must therefore
+    // read as EXPIRED, while one through 2026-07-02 is still valid (inclusive).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-01T22:30:00Z'));
+    db.createCoupon({ code: 'TZJUL1', discount_pct: 10, valid_until: '2026-07-01' });
+    db.createCoupon({ code: 'TZJUL2', discount_pct: 10, valid_until: '2026-07-02' });
+    expect(db.validateCoupon('TZJUL1')).toEqual({ valid: false, reason: 'expired' });
+    expect(db.validateCoupon('TZJUL2').valid).toBe(true);
   });
 });
 
