@@ -106,6 +106,54 @@ app.delete('/api/admin/collections/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// Admin: list all discount coupons.
+app.get('/api/admin/coupons', (req, res) => {
+  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
+  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  res.json({ coupons: db.listCoupons() });
+});
+
+// Admin: create a coupon. 400 on invalid input or a duplicate code.
+app.post('/api/admin/coupons', (req, res) => {
+  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
+  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  const b = req.body || {};
+  const coupon = db.createCoupon({
+    code: b.code,
+    discount_pct: b.discount_pct,
+    valid_until: b.valid_until,
+  });
+  if (coupon && coupon.error) return res.status(400).json({ error: coupon.error });
+  res.status(201).json({ coupon });
+});
+
+// Admin: toggle a coupon's active flag. 404 when the id is unknown.
+app.post('/api/admin/coupons/:id', (req, res) => {
+  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
+  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  const active = !!(req.body && req.body.active);
+  const coupon = db.setCouponActive(req.params.id, active);
+  if (!coupon) return res.status(404).json({ error: 'not found' });
+  res.json({ coupon });
+});
+
+// Admin: delete a coupon. 404 when the id is unknown.
+app.delete('/api/admin/coupons/:id', (req, res) => {
+  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
+  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!db.deleteCoupon(req.params.id)) return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true });
+});
+
+// Public: validate a coupon code so checkout can preview the discount. Only the
+// discount percentage is ever leaked — never the coupon list or other fields.
+app.post('/api/coupons/validate', (req, res) => {
+  const code = req.body && req.body.code;
+  const r = db.validateCoupon(code);
+  if (!r.valid) return res.json({ valid: false, reason: r.reason });
+  res.json({ valid: true, discount_pct: r.coupon.discount_pct });
+});
+
 // Public read: anyone with the link can see the words.
 app.get('/api/collections/:id', (req, res) => {
   const c = db.getCollection(req.params.id);
@@ -200,10 +248,38 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   if (order && order.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
   if (order && order.error) return res.status(400).json({ error: order.error });
 
+  // Optional discount coupon. Re-validate SERVER-SIDE (never trust a client
+  // price). The effective charge is what we bill AND what the callback verifies.
+  let discountPct = 0;
+  let couponCode = null;
+  if (b.coupon) {
+    const v = db.validateCoupon(b.coupon);
+    if (!v.valid) return res.status(400).json({ error: 'invalid coupon' });
+    discountPct = v.coupon.discount_pct;
+    couponCode = v.coupon.code;
+  }
+  const charged = Math.round(order.total * (1 - discountPct / 100));
+
+  // Persist the effective charge + applied coupon so the callback verifies
+  // against `charged_total` (not order.total) and can bump the coupon on paid.
+  db.applyCouponToOrder(req.params.id, {
+    code: couponCode,
+    discount_pct: couponCode ? discountPct : null,
+    charged_total: charged,
+  });
+
+  // Free order (100%-off, or the charge rounds to <= 0): skip PeleCard entirely,
+  // mark it paid now, count the coupon use, and tell the client it's paid.
+  if (charged <= 0) {
+    db.markPaid(req.params.id, { method: 'coupon' });
+    if (couponCode) db.incrementCouponUses(couponCode);
+    return res.json({ free: true, paid: true, total: 0 });
+  }
+
   const paramToken = newPayToken();
   try {
     const { url, transactionId } = await pelecard.init({
-      amountNis: order.total,
+      amountNis: charged,
       paramToken,
       urls: {
         goodUrl: base + '/pay-done.html',
@@ -213,7 +289,7 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       },
     });
     db.recordPaymentInit(req.params.id, { paramToken, transactionId });
-    res.json({ url, total: order.total });
+    res.json({ url, total: order.total, charged });
   } catch (e) {
     res.status(502).json({ error: 'payment init failed' });
   }
@@ -251,17 +327,22 @@ app.post('/api/payment/callback', async (req, res) => {
   // Locate the order by the AUTHORITATIVE token PeleCard returned, then confirm
   // success + amount before marking paid.
   const c = db.getCollectionByPayToken(tx.paramX);
-  if (
-    c &&
-    c.order &&
-    !c.order.paid &&
-    pelecard.verifyTransaction(tx, { amountNis: c.order.total })
-  ) {
+  // Verify against the amount we actually CHARGED (order.total minus any coupon
+  // discount), stored at pay/init. Falls back to order.total for legacy orders
+  // that predate charged_total. Using order.total here would fail every
+  // discounted charge, so the two paths must agree on charged_total.
+  const expectedNis =
+    c && c.order && c.order.charged_total != null
+      ? c.order.charged_total
+      : c && c.order && c.order.total;
+  if (c && c.order && !c.order.paid && pelecard.verifyTransaction(tx, { amountNis: expectedNis })) {
     db.markPaid(c.id, {
       method: 'pelecard',
       transactionId: tx.transactionId,
       approvalNo: tx.approvalNo,
     });
+    // Count the coupon use once, on the real unpaid->paid transition.
+    if (c.order.coupon) db.incrementCouponUses(c.order.coupon);
     // Notify the owner a payment came in. Fire-and-forget: the payment must
     // succeed even if the send fails. Skip the word-count work entirely when
     // email is unconfigured (the dormant default).

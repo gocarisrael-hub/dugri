@@ -11,7 +11,7 @@ const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DB_FILE = path.join(DATA_DIR, 'dugri-data.json');
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-const DEFAULTS = { collections: [], words: [] };
+const DEFAULTS = { collections: [], words: [], coupons: [] };
 
 // Single source of truth for order pricing (NIS).
 // pdf = digital PDF; pickup = printed + pickup at גלאור; delivery = door-to-door.
@@ -35,6 +35,19 @@ function saveDb() {
 
 const uid = () => crypto.randomUUID();
 const nowIso = () => new Date().toISOString();
+// Today as 'YYYY-MM-DD' (local date). Used for coupon expiry comparison; ISO
+// date strings sort lexicographically, so a plain string compare is correct.
+const todayStr = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
+// Normalize a coupon code: trim + uppercase. Callers validate the [A-Z0-9] shape.
+const normCode = (s) =>
+  String(s == null ? '' : s)
+    .trim()
+    .toUpperCase();
 
 // Normalize a word for dedupe: trim, collapse inner whitespace, lowercase.
 function norm(s) {
@@ -281,6 +294,110 @@ const db = {
     if (meta.method) c.order.paid_method = meta.method;
     if (meta.transactionId) c.order.paid_transaction_id = meta.transactionId;
     if (meta.approvalNo) c.order.paid_approval_no = meta.approvalNo;
+    saveDb();
+    return true;
+  },
+
+  // --- Discount coupons ---------------------------------------------------
+  // A coupon is a percentage-off code the admin creates and the checkout
+  // applies. Shape: { id, code, discount_pct, valid_until, active, created_at,
+  // uses }. `valid_until` is a 'YYYY-MM-DD' string (inclusive) or null = never
+  // expires. `uses` counts orders that used the coupon and became paid.
+
+  // Create a coupon. Validates the code shape/uniqueness and the percentage,
+  // then persists it. Returns the stored coupon, or { error } on bad input or a
+  // duplicate code.
+  createCoupon({ code, discount_pct, valid_until } = {}) {
+    const c = normCode(code);
+    if (!/^[A-Z0-9]{3,20}$/.test(c)) return { error: 'bad code' };
+    if (!Number.isInteger(discount_pct) || discount_pct < 1 || discount_pct > 100) {
+      return { error: 'bad discount_pct' };
+    }
+    let until = null;
+    if (valid_until != null && valid_until !== '') {
+      const s = String(valid_until).trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || Number.isNaN(Date.parse(s))) {
+        return { error: 'bad valid_until' };
+      }
+      until = s;
+    }
+    if (_db.coupons.some((x) => x.code === c)) return { error: 'duplicate' };
+    const coupon = {
+      id: uid(),
+      code: c,
+      discount_pct,
+      valid_until: until,
+      active: true,
+      created_at: nowIso(),
+      uses: 0,
+    };
+    _db.coupons.push(coupon);
+    saveDb();
+    return coupon;
+  },
+
+  // All coupons, newest first.
+  listCoupons() {
+    return [..._db.coupons].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+
+  getCouponByCode(code) {
+    const c = normCode(code);
+    return _db.coupons.find((x) => x.code === c) || null;
+  },
+
+  getCouponById(id) {
+    return _db.coupons.find((x) => x.id === id) || null;
+  },
+
+  setCouponActive(id, active) {
+    const c = this.getCouponById(id);
+    if (!c) return null;
+    c.active = !!active;
+    saveDb();
+    return c;
+  },
+
+  deleteCoupon(id) {
+    const before = _db.coupons.length;
+    _db.coupons = _db.coupons.filter((x) => x.id !== id);
+    if (_db.coupons.length === before) return false;
+    saveDb();
+    return true;
+  },
+
+  // Validate a code for use at checkout. Returns { valid:true, coupon } or
+  // { valid:false, reason } with reason in 'not_found'|'inactive'|'expired'.
+  validateCoupon(code) {
+    const c = this.getCouponByCode(code);
+    if (!c) return { valid: false, reason: 'not_found' };
+    if (!c.active) return { valid: false, reason: 'inactive' };
+    // valid_until is inclusive: expired only once today is strictly after it.
+    if (c.valid_until && todayStr() > c.valid_until) {
+      return { valid: false, reason: 'expired' };
+    }
+    return { valid: true, coupon: c };
+  },
+
+  // Record the applied coupon + effective charge on an existing order (set at
+  // pay/init). Kept separate from setOrder so a re-set doesn't wipe pricing.
+  // Returns the order, or false when there is no order.
+  applyCouponToOrder(id, { code, discount_pct, charged_total } = {}) {
+    const c = this.getCollection(id);
+    if (!c || !c.order) return false;
+    c.order.coupon = code ? normCode(code) : null;
+    c.order.discount_pct = discount_pct != null ? discount_pct : null;
+    c.order.charged_total = charged_total;
+    saveDb();
+    return c.order;
+  },
+
+  // Increment a coupon's use counter (called when an order that used it is
+  // marked paid). No-op/false when the code is unknown.
+  incrementCouponUses(code) {
+    const c = this.getCouponByCode(code);
+    if (!c) return false;
+    c.uses = (c.uses || 0) + 1;
     saveDb();
     return true;
   },
