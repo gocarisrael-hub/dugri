@@ -19,6 +19,7 @@ const realFetch = globalThis.fetch;
 
 let app;
 let db;
+let notify;
 let server;
 let base;
 
@@ -41,6 +42,7 @@ beforeAll(async () => {
   }
   db = require(path.join(serverDir, 'db.js'));
   app = require(path.join(serverDir, 'index.js'));
+  notify = require(path.join(serverDir, 'notify.js'));
 
   vi.stubGlobal(
     'fetch',
@@ -82,6 +84,11 @@ async function post(urlPath, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+async function get(urlPath) {
+  const res = await realFetch(base + urlPath);
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
@@ -297,5 +304,79 @@ describe('POST /api/payment/callback', () => {
   it('ignores a callback with no TransactionId', async () => {
     const r = await post('/api/payment/callback', { ResultData: {} });
     expect(r.status).toBe(200);
+  });
+
+  it('still marks paid + returns success even when the notify send rejects', async () => {
+    const c = db.createCollection('כשל מייל');
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    const token = tokenOf(c.id);
+    nextGetTx = {
+      StatusCode: '000',
+      ResultData: {
+        TransactionId: 'tx-mail',
+        ShvaResult: '000',
+        AdditionalDetailsParamX: token,
+        DebitTotal: 7900,
+      },
+    };
+    // Email is configured (so the route attempts a send) but the send rejects —
+    // the payment must succeed regardless.
+    const cfg = vi.spyOn(notify, 'isConfigured').mockReturnValue(true);
+    const spy = vi.spyOn(notify, 'sendOrderPaid').mockRejectedValue(new Error('smtp down'));
+    const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-mail' } });
+    expect(r.status).toBe(200);
+    expect(db.getCollection(c.id).order.paid).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+    cfg.mockRestore();
+  });
+});
+
+describe('POST /api/collections/:id/close (idempotent, single notify)', () => {
+  it('rejects a wrong/absent owner token with 403', async () => {
+    const c = db.createCollection('סגירה');
+    const r = await post('/api/collections/' + c.id + '/close', { owner_token: 'nope' });
+    expect(r.status).toBe(403);
+    expect(db.getCollection(c.id).status).toBe('open');
+  });
+
+  it('a repeated close returns 200 but fires sendOrderFinished only on the real transition', async () => {
+    const c = db.createCollection('סגירה כפולה');
+    // Email configured so the route attempts a send; count sends across closes.
+    const cfg = vi.spyOn(notify, 'isConfigured').mockReturnValue(true);
+    const spy = vi.spyOn(notify, 'sendOrderFinished').mockResolvedValue(true);
+
+    const first = await post('/api/collections/' + c.id + '/close', {
+      owner_token: c.owner_token,
+    });
+    expect(first.status).toBe(200);
+    expect(db.getCollection(c.id).status).toBe('closed');
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // Second close (double-click/retry): still 200, but NO second email.
+    const second = await post('/api/collections/' + c.id + '/close', {
+      owner_token: c.owner_token,
+    });
+    expect(second.status).toBe(200);
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    spy.mockRestore();
+    cfg.mockRestore();
+  });
+});
+
+describe('publicView gender', () => {
+  it("exposes the honoree gender from createCollection ('male'/'female'/null)", async () => {
+    const c = db.createCollection('שירה', { gender: 'female' });
+    const r = await get('/api/collections/' + c.id);
+    expect(r.status).toBe(200);
+    expect(r.body.gender).toBe('female');
+
+    const c2 = db.createCollection('בלי מגדר');
+    const r2 = await get('/api/collections/' + c2.id);
+    expect(r2.body.gender).toBe(null);
   });
 });

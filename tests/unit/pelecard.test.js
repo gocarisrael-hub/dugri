@@ -35,7 +35,6 @@ function jsonRes(obj) {
 afterEach(() => {
   setCreds(false);
   delete process.env.PELECARD_BASE_URL;
-  delete process.env.PELECARD_DEBUG;
   vi.unstubAllGlobals();
 });
 
@@ -115,25 +114,6 @@ describe('init', () => {
     vi.stubGlobal('fetch', fetchMock);
     await expect(loadFresh().init({ amountNis: 0, paramToken: 'x', urls: {} })).rejects.toThrow();
     expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('logs response keys only when PELECARD_DEBUG=1, and never when unset', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(jsonRes({ URL: 'https://x?transactionId=q', Error: { ErrCode: 0 } }))
-    );
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    // off
-    delete process.env.PELECARD_DEBUG;
-    await loadFresh().init({ amountNis: 79, paramToken: 'x', urls: {} });
-    expect(logSpy.mock.calls.find((c) => String(c[0]).includes('[pelecard init]'))).toBeUndefined();
-    // on
-    process.env.PELECARD_DEBUG = '1';
-    await loadFresh().init({ amountNis: 79, paramToken: 'x', urls: {} });
-    expect(logSpy.mock.calls.find((c) => String(c[0]).includes('[pelecard init]'))).toBeTruthy();
-    logSpy.mockRestore();
   });
 });
 

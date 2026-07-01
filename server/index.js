@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const express = require('express');
 const db = require('./db');
 const pelecard = require('./pelecard');
+const notify = require('./notify');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -19,20 +20,6 @@ function paymentBaseUrl() {
   return process.env.PUBLIC_BASE_URL ? process.env.PUBLIC_BASE_URL.replace(/\/+$/, '') : null;
 }
 
-// Shallow+nested redaction of secret-ish fields for debug logging (the
-// ConfirmationKey is the anti-forgery secret; card/cvv/token must never be
-// logged either).
-function redactSecrets(obj) {
-  if (!obj || typeof obj !== 'object') return obj;
-  const out = Array.isArray(obj) ? [] : {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (/confirm|cvv|card|token|password/i.test(k)) out[k] = '[redacted]';
-    else if (v && typeof v === 'object') out[k] = redactSecrets(v);
-    else out[k] = v;
-  }
-  return out;
-}
-
 const SITE_DIR = path.join(__dirname, '..', 'site');
 
 function publicView(c) {
@@ -40,6 +27,8 @@ function publicView(c) {
   return {
     id: c.id,
     honoree_name: c.honoree_name,
+    // Honoree gender ('male' | 'female' | null) for gendered question phrasing.
+    gender: c.gender || null,
     status: db.effectiveStatus(c),
     expires_at: c.expires_at,
     // Whether the order has been marked paid (manually in admin, or by the
@@ -70,6 +59,7 @@ app.post('/api/collections', (req, res) => {
     design: b.design,
     color: b.color,
     chasers: b.chasers,
+    gender: b.gender,
   });
   res.status(201).json({ id: c.id, owner_token: c.owner_token, expires_at: c.expires_at });
 });
@@ -138,8 +128,19 @@ app.post('/api/collections/:id/words', (req, res) => {
 // Owner-only: close collection.
 app.post('/api/collections/:id/close', (req, res) => {
   const token = req.body && req.body.owner_token;
-  if (!db.closeCollection(req.params.id, token)) {
-    return res.status(403).json({ error: 'forbidden' });
+  const result = db.closeCollection(req.params.id, token);
+  if (!result) return res.status(403).json({ error: 'forbidden' });
+  // Notify the owner the list is finished and ready to produce — but ONLY on the
+  // real open->closed transition (a repeated close must not re-send) and only
+  // when email is configured (skip the word-count work entirely otherwise).
+  // Fire-and-forget: a failed email must never affect the response.
+  if (result.changed && notify.isConfigured()) {
+    const c = db.getCollection(req.params.id);
+    if (c) {
+      notify
+        .sendOrderFinished({ ...c, count: db.listWords(c.id).length }, paymentBaseUrl())
+        .catch(() => {});
+    }
   }
   res.json({ status: 'closed' });
 });
@@ -224,9 +225,6 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
 // decide off that. A forged callback cannot survive: an unknown/foreign
 // TransactionId either fails the lookup or maps to a different order's token.
 app.post('/api/payment/callback', async (req, res) => {
-  if (process.env.PELECARD_DEBUG === '1') {
-    console.log('[pelecard callback] raw body:', JSON.stringify(redactSecrets(req.body || {})));
-  }
   const parsed = pelecard.parseCallback(req.body || {});
   // We need a TransactionId to re-fetch the transaction. Prefer the one in the
   // callback; if it's absent, fall back to the id we stored at init (located via
@@ -264,6 +262,14 @@ app.post('/api/payment/callback', async (req, res) => {
       transactionId: tx.transactionId,
       approvalNo: tx.approvalNo,
     });
+    // Notify the owner a payment came in. Fire-and-forget: the payment must
+    // succeed even if the send fails. Skip the word-count work entirely when
+    // email is unconfigured (the dormant default).
+    if (notify.isConfigured()) {
+      notify
+        .sendOrderPaid({ ...c, count: db.listWords(c.id).length }, paymentBaseUrl())
+        .catch(() => {});
+    }
   }
   res.json({ ok: true });
 });

@@ -66,6 +66,9 @@ const db = {
       // Hebrew display names chosen in the order flow (optional).
       design: contact.design ? String(contact.design).trim().slice(0, 80) : null,
       color: contact.color ? String(contact.color).trim().slice(0, 80) : null,
+      // Honoree gender for the site's gendered question phrasing. Only 'male' or
+      // 'female' are accepted; anything else stores null.
+      gender: contact.gender === 'male' || contact.gender === 'female' ? contact.gender : null,
       // Optional drinking-game add-on ("צ'ייסרים") - free; the owner builds the
       // board with special "drink" tiles when this is on.
       chasers: !!contact.chasers,
@@ -149,13 +152,20 @@ const db = {
     return true;
   },
 
+  // Owner-only close. Idempotent: a repeated close on an already-closed
+  // collection still succeeds but reports no change, so the caller can fire the
+  // "ready to produce" side effects (e.g. the owner email) only on the real
+  // open->closed transition. Returns null on bad/absent owner token.
   closeCollection(id, ownerToken) {
     const c = this.getCollection(id);
-    if (!c || c.owner_token !== ownerToken) return false;
-    c.status = 'closed';
-    c.closed_at = nowIso();
-    saveDb();
-    return true;
+    if (!c || c.owner_token !== ownerToken) return null;
+    const alreadyClosed = c.status === 'closed';
+    if (!alreadyClosed) {
+      c.status = 'closed';
+      c.closed_at = nowIso();
+      saveDb();
+    }
+    return { changed: !alreadyClosed };
   },
 
   // Admin: soft-cancel a collection (reversible). With undo=true it restores

@@ -14,7 +14,7 @@
 // ParamX carries a short per-payment token (<=19 chars, [0-9a-z]); PeleCard
 // echoes it back as AdditionalDetailsParamX, which we use to locate the order.
 //
-// Dormant until the three PELECARD_* env vars are set (site keeps Bit only).
+// Dormant until the three PELECARD_* env vars are set (card payment only).
 
 const TERMINAL = process.env.PELECARD_TERMINAL || '';
 const USER = process.env.PELECARD_USER || '';
@@ -88,9 +88,6 @@ async function init({ amountNis, paramToken, urls, language = 'HE' } = {}) {
   };
 
   const data = await postJson(INIT_PATH, payload);
-  if (process.env.PELECARD_DEBUG === '1') {
-    console.log('[pelecard init] response keys:', Object.keys(data), 'hasURL:', !!data.URL);
-  }
 
   const errCode = data && data.Error && data.Error.ErrCode;
   if (errCode && String(errCode) !== '0') {
@@ -116,14 +113,6 @@ async function getTransaction(transactionId) {
     password: PASSWORD,
     TransactionId: transactionId,
   });
-  if (process.env.PELECARD_DEBUG === '1') {
-    console.log(
-      '[pelecard gettransaction] StatusCode:',
-      data && data.StatusCode,
-      'resultKeys:',
-      data && data.ResultData ? Object.keys(data.ResultData) : []
-    );
-  }
 
   const rd = (data && data.ResultData) || {};
   const debit = rd.DebitTotal != null && rd.DebitTotal !== '' ? Number(rd.DebitTotal) : null;
