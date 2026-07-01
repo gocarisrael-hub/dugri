@@ -110,21 +110,6 @@ describe('init', () => {
     );
   });
 
-  it('logs the PeleCard ErrCode + ErrMsg on rejection only when PELECARD_DEBUG=1', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(jsonRes({ Error: { ErrCode: 101, ErrMsg: 'bad terminal' } }))
-    );
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    process.env.PELECARD_DEBUG = '1';
-    await expect(loadFresh().init({ amountNis: 79, paramToken: 'x', urls: {} })).rejects.toThrow();
-    const line = logSpy.mock.calls.find((c) => String(c[0]).includes('[pelecard init] rejected'));
-    expect(line).toBeTruthy();
-    expect(line.join(' ')).toContain('101');
-    expect(line.join(' ')).toContain('bad terminal');
-    logSpy.mockRestore();
-  });
-
   it('rejects a non-positive amount before calling the gateway', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);

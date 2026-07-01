@@ -141,6 +141,35 @@ describe('POST /api/collections/:id/pay/init', () => {
     });
     expect(db.getCollection(c.id).order.pelecard.param_tokens.length).toBe(2);
   });
+
+  it("logs PeleCard's init failure reason on a 502 only when PELECARD_DEBUG=1", async () => {
+    const c = db.createCollection('כשל init');
+    // PeleCard rejects the init: empty URL + an Error object (ErrCode != 0).
+    nextInit = { URL: '', ConfirmationKey: '', Error: { ErrCode: 101, ErrMsg: 'bad terminal' } };
+    const body = { owner_token: c.owner_token, version: 'pdf' };
+
+    // debug OFF: the 502 is returned but nothing is logged.
+    const off = vi.spyOn(console, 'log').mockImplementation(() => {});
+    delete process.env.PELECARD_DEBUG;
+    let r = await post('/api/collections/' + c.id + '/pay/init', body);
+    expect(r.status).toBe(502);
+    expect(
+      off.mock.calls.find((l) => String(l[0]).includes('[pelecard init] failed'))
+    ).toBeUndefined();
+    off.mockRestore();
+
+    // debug ON: PeleCard's own ErrCode + ErrMsg are surfaced to the logs.
+    const on = vi.spyOn(console, 'log').mockImplementation(() => {});
+    process.env.PELECARD_DEBUG = '1';
+    r = await post('/api/collections/' + c.id + '/pay/init', body);
+    expect(r.status).toBe(502);
+    const line = on.mock.calls.find((l) => String(l[0]).includes('[pelecard init] failed'));
+    expect(line).toBeTruthy();
+    expect(line.join(' ')).toContain('101');
+    expect(line.join(' ')).toContain('bad terminal');
+    on.mockRestore();
+    delete process.env.PELECARD_DEBUG;
+  });
 });
 
 describe('POST /api/payment/callback', () => {
