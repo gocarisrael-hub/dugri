@@ -287,6 +287,25 @@ async function seedCoupon(page, code, discount_pct) {
   expect([201, 400]).toContain(res.status());
 }
 
+// The E2E server runs with card payment DISABLED (no PeleCard creds), so
+// #cardPayBtn is hidden. Inject card_enabled into the base collection GET so the
+// pay button shows and the pay/init branches can be exercised. Returns a control
+// object; set ctl.paid=true to make the paid UI transition on the next poll.
+// (The `**/api/collections/*` glob's `*` never spans `/`, so this matches only
+// the base GET — never /words, /coupon/validate, /pay/init, etc.)
+async function enableCardButton(page) {
+  const ctl = { paid: false };
+  await page.route('**/api/collections/*', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const resp = await route.fetch();
+    const body = await resp.json();
+    body.card_enabled = true;
+    if (ctl.paid) body.paid = true;
+    return route.fulfill({ json: body });
+  });
+  return ctl;
+}
+
 test('owner applies a valid coupon → discounted total with the struck full price', async ({
   page,
 }) => {
@@ -336,6 +355,96 @@ test('unknown coupon code shows a not-found message and leaves the total full', 
   await expect(page.locator('#payTotal')).toHaveText('79');
   await expect(page.locator('#payWas')).toBeHidden();
   await expect(page.locator('#couponRemoveBtn')).toBeHidden();
+});
+
+test('free coupon: pay/init free:true skips the iframe, shows paid UI, clears the stale error', async ({
+  page,
+}) => {
+  const ctl = await enableCardButton(page);
+  // First pay attempt is rate-limited (leaves a red error); the second returns a
+  // free/paid order (100%-off coupon) — no iframe, order already paid.
+  let payMode = 'error';
+  await page.route('**/api/collections/*/pay/init', (route) => {
+    if (payMode === 'error') {
+      return route.fulfill({
+        status: 429,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'too many attempts' }),
+      });
+    }
+    ctl.paid = true; // the free order is now paid server-side
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ free: true, paid: true, total: 0 }),
+    });
+  });
+
+  await createCollection(page, 'לירון');
+  await page.locator('#payPanel summary').click();
+  await expect(page.locator('#cardPayBtn')).toBeVisible();
+
+  // Attempt 1 → 429 → a stale red error is shown in the pay panel.
+  await page.click('#cardPayBtn');
+  await expect(page.locator('#payErr')).toBeVisible();
+  await expect(page.locator('#payErr')).toContainText('יותר מדי ניסיונות');
+
+  // Attempt 2 → the free path succeeds.
+  payMode = 'free';
+  await page.click('#cardPayBtn');
+
+  // No iframe modal opens; the paid state takes over the panel...
+  await expect(page.locator('#paidCard')).toBeVisible();
+  await expect(page.locator('#payPanel')).toBeHidden();
+  await expect(page.locator('#payModal')).toBeHidden();
+  // ...and the stale error from attempt 1 is cleared (finding 1).
+  await expect(page.locator('#payErr')).toBeHidden();
+});
+
+test('pay/init coupon errors: 400 clears the coupon, 409 and 429 show their messages', async ({
+  page,
+}) => {
+  await seedCoupon(page, 'TEST25', 25);
+  await enableCardButton(page);
+  let payMode = '400';
+  await page.route('**/api/collections/*/pay/init', (route) => {
+    const map = {
+      400: { status: 400, body: { error: 'invalid coupon' } },
+      409: { status: 409, body: { error: 'יש תשלום פתוח — סגרו את חלון התשלום לפני החלת קופון' } },
+      429: { status: 429, body: { error: 'too many attempts' } },
+    };
+    const m = map[payMode];
+    return route.fulfill({
+      status: m.status,
+      contentType: 'application/json',
+      body: JSON.stringify(m.body),
+    });
+  });
+
+  await createCollection(page, 'שני');
+  await page.locator('#payPanel summary').click();
+
+  // Apply a real coupon (79 → 59), then pay/init rejects it → the coupon-invalid
+  // message shows AND the coupon is cleared (total back to full, input freed).
+  await page.fill('#couponInput', 'TEST25');
+  await page.click('#couponApplyBtn');
+  await expect(page.locator('#payTotal')).toHaveText('59');
+  await page.click('#cardPayBtn');
+  await expect(page.locator('#payErr')).toContainText('הקופון אינו תקף יותר');
+  await expect(page.locator('#payTotal')).toHaveText('79');
+  await expect(page.locator('#couponRemoveBtn')).toBeHidden();
+  await expect(page.locator('#couponApplyBtn')).toBeVisible();
+  await expect(page.locator('#couponInput')).toBeEnabled();
+
+  // 409 (in-flight / already paid) → the server's Hebrew message is shown as-is.
+  payMode = '409';
+  await page.click('#cardPayBtn');
+  await expect(page.locator('#payErr')).toContainText('יש תשלום פתוח');
+
+  // 429 → a friendly retry message.
+  payMode = '429';
+  await page.click('#cardPayBtn');
+  await expect(page.locator('#payErr')).toContainText('יותר מדי ניסיונות');
 });
 
 test('how-to guidance is a collapsed details on collect that can be opened', async ({ page }) => {

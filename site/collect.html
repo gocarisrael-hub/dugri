@@ -1545,7 +1545,14 @@
               return;
             }
           }
+          // Clear any stale error from an earlier attempt (e.g. a prior 429)
+          // before starting a fresh one — otherwise the free-coupon path, which
+          // returns without touching payErr, would keep showing it while polling.
+          payErr.style.display = 'none';
           cardBtn.disabled = true;
+          // Record the start for BOTH paths (iframe + free coupon) so the
+          // analytics funnel pairs started→done correctly.
+          track('card_pay_started', { version });
           const payload = { owner_token: ownerToken, version, address };
           if (appliedCoupon) payload.coupon = appliedCoupon.code;
           try {
@@ -1561,13 +1568,13 @@
               pollPaid();
               return;
             }
-            track('card_pay_started', { version });
             frame.src = res.url;
             modal.classList.remove('hidden');
           } catch (err) {
-            if (err.status === 400) {
-              // The coupon was re-validated server-side and is no longer valid.
-              // Drop it (reverting the total) and let the owner re-enter one.
+            if (err.status === 400 && appliedCoupon) {
+              // A coupon was sent and re-validated server-side as no longer valid.
+              // Drop it (reverting the total) and let the owner re-enter one. A
+              // 400 with no coupon applied is a different failure → generic copy.
               payErr.textContent = 'הקופון אינו תקף יותר';
               clearCoupon();
             } else if (err.status === 409) {
