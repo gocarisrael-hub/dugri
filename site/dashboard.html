@@ -71,6 +71,12 @@
         padding: 20px;
         text-align: center;
       }
+      /* The display:grid/flex below would otherwise beat the [hidden] UA rule,
+         leaving cards/links on screen after a 403 or error. Restore hiding. */
+      #cards[hidden],
+      #links[hidden] {
+        display: none;
+      }
       .cards {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -147,36 +153,44 @@
       const linksEl = document.getElementById('links');
       const content = document.getElementById('content');
 
+      const hasOrder = (c) => !!c.order;
       const isPaid = (c) => !!(c.order && c.order.paid);
+      // An "open" order is a real order that hasn't been paid yet (a pending sale),
+      // not merely a collection whose status is 'open'.
+      const isOpenOrder = (c) => !!(c.order && !c.order.paid);
 
       // Today in Israel-local terms as 'YYYY-MM-DD', to bucket "paid today".
       function israelToday() {
         return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
       }
-      function isPaidToday(c) {
+      // Was this order paid today? `today` is passed in so the check isn't
+      // recomputed for every collection on every poll.
+      function isPaidToday(c, today) {
         const at = c.order && c.order.paid_at;
         if (!at) return false;
         try {
-          const d = new Date(at).toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
-          return d === israelToday();
+          return new Date(at).toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' }) === today;
         } catch {
           return false;
         }
       }
 
       function renderCards(cols, coupons) {
-        const total = cols.length;
-        const open = cols.filter((c) => c.status === 'open').length;
+        const today = israelToday();
+        // Count real ORDERS only (a collection with c.order) — not leads that
+        // never ordered or cancelled collections. total = open (unpaid) + paid.
+        const totalOrders = cols.filter(hasOrder).length;
+        const open = cols.filter(isOpenOrder).length;
         const paid = cols.filter(isPaid).length;
-        const paidToday = cols.filter(isPaidToday).length;
+        const paidToday = cols.filter((c) => isPaidToday(c, today)).length;
         const revenue = cols.reduce(
           (s, c) => s + (isPaid(c) ? (c.order.charged_total ?? c.order.total ?? 0) : 0),
           0
         );
         const activeCoupons = coupons.filter((x) => x.active).length;
         const items = [
-          ['כל ההזמנות', total],
-          ['פתוחות', open],
+          ['כל ההזמנות', totalOrders],
+          ['פתוחות (טרם שולמו)', open],
           ['שולמו', paid],
           ['שולמו היום', paidToday],
           ['הכנסות ששולמו', revenue + ' ₪'],
@@ -200,9 +214,27 @@
         linksEl.hidden = false;
       }
 
+      // Hide the stat cards + CTA links so a 403/error state never leaves stale
+      // numbers on screen.
+      function hideCards() {
+        cardsEl.textContent = '';
+        cardsEl.hidden = true;
+        linksEl.hidden = true;
+      }
+
+      let pollTimer = null;
+      let keyRejected = false;
+      function stopPolling() {
+        if (pollTimer !== null) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      }
+
       async function load() {
         if (!key) {
           sub.textContent = '';
+          hideCards();
           content.innerHTML =
             '<div class="msg">חסר מפתח גישה. פתחו עם <code>?key=…</code> בכתובת.</div>';
           return;
@@ -213,21 +245,31 @@
             fetch('/api/admin/coupons?key=' + encodeURIComponent(key)),
           ]);
           if (colRes.status === 403 || coupRes.status === 403) {
+            // Wrong key: stop hammering the API and clear any stale cards.
+            keyRejected = true;
+            stopPolling();
             sub.textContent = '';
+            hideCards();
             content.innerHTML = '<div class="msg">מפתח גישה שגוי.</div>';
             return;
           }
           const cols = (await colRes.json()).collections || [];
           const coupons = (await coupRes.json()).coupons || [];
+          content.innerHTML = '';
           sub.textContent = 'סקירה מהירה';
           renderCards(cols, coupons);
         } catch {
+          // Transient error: drop stale cards, keep polling (may recover).
           sub.textContent = '';
+          hideCards();
           content.innerHTML = '<div class="msg">שגיאה בטעינה.</div>';
         }
       }
-      load();
-      setInterval(load, 15000);
+      // Only start the 15s poll once a first load has run; a rejected key never
+      // schedules it (and any later 403 clears it).
+      load().then(() => {
+        if (key && !keyRejected && pollTimer === null) pollTimer = setInterval(load, 15000);
+      });
     </script>
   </body>
 </html>

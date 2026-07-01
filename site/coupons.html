@@ -252,27 +252,32 @@
       const submitBtn = document.getElementById('submitBtn');
       const errEl = document.getElementById('err');
 
-      // Human-readable Hebrew for the server's terse 400 error codes.
+      // Human-readable Hebrew for the server's terse error codes (400 validation
+      // plus the 403 wrong-key / 503 admin-disabled cases).
       const ERR_HE = {
         'bad code': 'קוד לא תקין (3–20 תווים, אותיות וספרות בלבד).',
         'bad discount_pct': 'אחוז הנחה חייב להיות מספר שלם בין 1 ל-100.',
         'bad valid_until': 'תאריך תפוגה לא תקין.',
         duplicate: 'קוד כזה כבר קיים.',
+        forbidden: 'מפתח גישה שגוי.',
+        'admin disabled: set ADMIN_KEY': 'ניהול מושבת בשרת (חסר ADMIN_KEY).',
       };
 
       const withKey = (path) =>
         path + (path.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key);
 
-      function fmtDate(iso) {
-        try {
-          return new Date(iso).toLocaleDateString('he-IL', {
-            day: '2-digit',
-            month: '2-digit',
-            year: '2-digit',
-          });
-        } catch {
-          return iso;
-        }
+      // valid_until is a plain 'YYYY-MM-DD' calendar date. Parse the parts as a
+      // LOCAL date (new Date('YYYY-MM-DD') is UTC midnight, which renders one day
+      // early in negative-UTC timezones). Fall back to the raw string if malformed.
+      function fmtDate(ymd) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd));
+        if (!m) return ymd;
+        const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        return d.toLocaleDateString('he-IL', {
+          day: '2-digit',
+          month: '2-digit',
+          year: '2-digit',
+        });
       }
 
       function render(coupons) {
@@ -317,9 +322,10 @@
           toggleBtn.textContent = c.active ? 'כבה' : 'הפעל';
           toggleBtn.onclick = async () => {
             toggleBtn.disabled = true;
-            const ok = await apiToggle(c.id, !c.active);
-            if (ok) load();
-            else toggleBtn.disabled = false;
+            // Reload regardless of outcome: on a 404 (coupon changed/removed in
+            // another tab) this reconciles the ghost row with server state.
+            await apiToggle(c.id, !c.active);
+            load();
           };
           const delBtn = document.createElement('button');
           delBtn.className = 'danger';
@@ -327,9 +333,8 @@
           delBtn.onclick = async () => {
             if (!confirm('למחוק את הקופון ' + c.code + '?')) return;
             delBtn.disabled = true;
-            const ok = await apiDelete(c.id);
-            if (ok) load();
-            else delBtn.disabled = false;
+            await apiDelete(c.id);
+            load();
           };
           tdManage.appendChild(toggleBtn);
           tdManage.appendChild(document.createTextNode(' '));
