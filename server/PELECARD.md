@@ -22,14 +22,13 @@ Call PeleCard and ask for:
 
 Set these env vars on the Railway service (see `RAILWAY_SETUP.md`):
 
-| Variable            | Value                                             |
-| ------------------- | ------------------------------------------------- |
-| `PELECARD_TERMINAL` | internet/CNP terminal number                      |
-| `PELECARD_USER`     | API user                                          |
-| `PELECARD_PASSWORD` | API password                                      |
-| `PUBLIC_BASE_URL`   | public origin, e.g. `https://dugri.co.il`         |
-| `PELECARD_BASE_URL` | _optional_ gateway override (default gateway21)   |
-| `PELECARD_DEBUG`    | _optional_ `1` to log init/callback shapes (test) |
+| Variable            | Value                                           |
+| ------------------- | ----------------------------------------------- |
+| `PELECARD_TERMINAL` | internet/CNP terminal number                    |
+| `PELECARD_USER`     | API user                                        |
+| `PELECARD_PASSWORD` | API password                                    |
+| `PUBLIC_BASE_URL`   | public origin, e.g. `https://dugri.co.il`       |
+| `PELECARD_BASE_URL` | _optional_ gateway override (default gateway21) |
 
 Once set, `collect.html` shows a **תשלום בכרטיס אשראי** button next to Bit.
 
@@ -57,12 +56,7 @@ credentials, a **forged callback cannot mark an order paid** — the only field 
 take from the callback is the `TransactionId`, and an unknown/foreign one either
 fails the `GetTransaction` lookup or maps to a different order's token.
 
-## Testing with PELECARD_DEBUG
-
-Set `PELECARD_DEBUG=1` for the first test charge. It logs (field NAMES only, no
-secret values) the `[pelecard init]` response keys and the
-`[pelecard gettransaction]` status + result keys — enough to confirm the mapping
-against your terminal. Turn it off (`0`) once verified.
+## Testing
 
 Test with PeleCard's **test terminal** (their test card numbers); `QAResultStatus`
 can simulate a success/error on test terminals. The sandbox lives at

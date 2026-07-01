@@ -86,5 +86,26 @@ checklist and how to get them from PeleCard):
 
 Optional: `PELECARD_BASE_URL` overrides the gateway host (defaults to
 `https://gateway21.pelecard.biz`); set this only if PeleCard gives you a
-different test/production gateway. `PELECARD_DEBUG=1` logs the init/GetTransaction
-shapes for the first test charge (turn off after).
+different test/production gateway.
+
+## Email notifications (optional)
+
+The server can email the owner on two events: a payment comes in, and a
+collection is closed (the word list is finished and ready to produce). This is
+**off until the SMTP vars are set** — with no config the sends are silent no-ops
+and the site works exactly the same.
+
+Set these env vars on the Railway service to turn it on:
+
+- **`SMTP_HOST`** — SMTP server host (e.g. `smtp.gmail.com`).
+- **`SMTP_USER`** — SMTP username (the sending mailbox).
+- **`SMTP_PASS`** — SMTP password. For Gmail this must be an **app-password**
+  (Google Account → Security → 2-Step Verification → App passwords), not your
+  normal login password.
+- **`NOTIFY_TO`** — where notifications are sent (your inbox).
+
+Optional: `SMTP_PORT` (defaults to `465`; the connection is TLS/secure when the
+port is `465`) and `NOTIFY_FROM` (the From address; defaults to `SMTP_USER`).
+
+Gmail example: `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_USER` your
+Gmail address, `SMTP_PASS` a 16-char app-password, `NOTIFY_TO` your inbox.
