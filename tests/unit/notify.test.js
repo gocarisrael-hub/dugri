@@ -36,6 +36,9 @@ const collection = {
   id: 'col-1',
   honoree_name: 'שירה',
   owner_token: 'tok-abc',
+  owner_email: 'buyer@example.com',
+  design: 'קלאסי',
+  color: 'ורוד',
   order: { version: 'delivery', total: 199 },
   count: 142,
 };
@@ -85,6 +88,67 @@ describe('buildPaidMessage', () => {
     });
     expect(subject).toBe('דוגרי · התקבל תשלום — ללא שם');
     expect(text).not.toContain('collect.html');
+  });
+});
+
+describe('buildBuyerConfirmation', () => {
+  it('has a subject and a Hebrew body with the price, order details and collect link', () => {
+    const { subject, text } = loadFresh().buildBuyerConfirmation(
+      collection,
+      'https://dugri.example'
+    );
+    expect(subject).toBe('דוגרי · ההזמנה שלכם התקבלה — שירה');
+    expect(text).toContain('תודה');
+    expect(text).toContain('שירה');
+    // Order details: package label + price + chosen design/colour.
+    expect(text).toContain('משלוח עד הבית');
+    expect(text).toContain('199 ₪');
+    expect(text).toContain('קלאסי');
+    expect(text).toContain('ורוד');
+    // Collect link (collect.html with id + owner token) plus the words prompt.
+    expect(text).toContain('הוסיפו את 100+ המילים');
+    expect(text).toContain('https://dugri.example/collect.html?c=col-1&k=tok-abc');
+  });
+
+  it('falls back to a placeholder name and omits the link without a baseUrl', () => {
+    const { subject, text } = loadFresh().buildBuyerConfirmation({
+      order: { version: 'pdf', total: 79 },
+    });
+    expect(subject).toBe('דוגרי · ההזמנה שלכם התקבלה — ללא שם');
+    expect(text).toContain('79 ₪');
+    expect(text).not.toContain('collect.html');
+  });
+});
+
+describe('sendBuyerConfirmation', () => {
+  it('returns false (no-op) when SMTP is unconfigured', async () => {
+    setSmtp(false);
+    await expect(loadFresh().sendBuyerConfirmation(collection)).resolves.toBe(false);
+  });
+
+  it('skips gracefully (returns false) when the buyer has no email', async () => {
+    setSmtp(true);
+    const notify = loadFresh();
+    const nodemailer = serverRequire('nodemailer');
+    const sendMail = vi.fn(() => Promise.resolve());
+    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail });
+    await expect(notify.sendBuyerConfirmation({ ...collection, owner_email: '' })).resolves.toBe(
+      false
+    );
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it('sends to the buyer address (not NOTIFY_TO) when configured', async () => {
+    setSmtp(true);
+    const notify = loadFresh();
+    const nodemailer = serverRequire('nodemailer');
+    const sendMail = vi.fn(() => Promise.resolve());
+    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail });
+    await expect(notify.sendBuyerConfirmation(collection, 'https://dugri.example')).resolves.toBe(
+      true
+    );
+    expect(sendMail).toHaveBeenCalledTimes(1);
+    expect(sendMail.mock.calls[0][0].to).toBe('buyer@example.com');
   });
 });
 
