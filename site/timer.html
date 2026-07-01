@@ -477,9 +477,20 @@
             />
           </g>
 
-          <!-- falling stream -->
+          <!-- falling stream: a soft continuous ribbon + moving grains -->
           <g id="streamG" opacity="0" filter="url(#soft)">
-            <rect id="stream" x="59" y="92" width="2" height="6" fill="#d8b86a" rx="1" />
+            <rect id="stream" x="59" y="90" width="2" height="8" fill="#d8b86a" rx="1" />
+            <line
+              id="streamFlow"
+              x1="60"
+              y1="90"
+              x2="60"
+              y2="98"
+              stroke="#f0db9c"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-dasharray="1.4 3.2"
+            />
           </g>
 
           <!-- glass sheen overlay -->
@@ -547,6 +558,7 @@
           sandMound: document.getElementById('sandMound'),
           streamG: document.getElementById('streamG'),
           stream: document.getElementById('stream'),
+          streamFlow: document.getElementById('streamFlow'),
           count: document.getElementById('count'),
           status: document.getElementById('status'),
           toggle: document.getElementById('toggle'),
@@ -561,10 +573,13 @@
         var streamPhase = 0;
         var lastFrameTs = 0;
 
-        // gentle ease so the very start and very end of the flow feel natural
+        // Sand drains at a steady rate, like a real hourglass, so the levels
+        // move continuously every frame. The previous smootherstep easing
+        // flattened the first and last ~15s (near-zero slope at the extremes),
+        // which made the sand look frozen and then lurch through the middle.
+        // A constant-rate (linear) flow keeps the motion fluid end to end.
         function easeFlow(p) {
-          // smootherstep - flattens the extremes a touch without changing endpoints
-          return p * p * p * (p * (p * 6 - 15) + 10);
+          return Math.min(1, Math.max(0, p));
         }
 
         function renderSand(progress) {
@@ -609,28 +624,32 @@
             els.streamG.setAttribute('opacity', '0');
             return;
           }
-          els.streamG.setAttribute('opacity', '0.9');
+          // Fade the ribbon in/out at the very start/end so it appears and
+          // disappears softly instead of popping.
+          var edge = Math.min(progress, 1 - progress);
+          els.streamG.setAttribute('opacity', Math.min(0.92, edge * 40 + 0.3).toFixed(2));
 
-          // length of the stream grows as the gap between piles opens, then
-          // shortens near the very end as the bottom fills toward the neck.
-          var topEdge = TOP_Y + TOP_H * easeFlow(progress); // current top sand floor
+          // The stream lives in the neck. Its foot rests on the growing bottom
+          // pile so it visibly connects the two chambers all the way through.
           var botEdge = BOT_BASE - BOT_H * easeFlow(progress); // current bottom sand top
-          var streamTop = Math.max(90, topEdge);
-          var streamBot = Math.min(98, botEdge);
-          // the visible stream lives in the neck region around y=92..98
           var sy = 90;
-          var sh = Math.max(4, streamBot - sy);
+          var streamBot = Math.max(sy + 4, Math.min(98, botEdge));
+          var sh = streamBot - sy;
           els.stream.setAttribute('y', sy.toFixed(1));
           els.stream.setAttribute('height', sh.toFixed(1));
+          els.streamFlow.setAttribute('y1', sy.toFixed(1));
+          els.streamFlow.setAttribute('y2', streamBot.toFixed(1));
 
-          // shimmer the stream width slightly for a "flowing" feel
           if (!reduceMotion) {
-            var w = 1.7 + Math.sin(ts / 60) * 0.5;
+            // Grains fall: slide the dash pattern downward every frame so the
+            // stream reads as continuously flowing sand.
+            streamPhase = (ts / 1000) * 26; // px/sec, wraps naturally via dashoffset
+            els.streamFlow.setAttribute('stroke-dashoffset', (-streamPhase).toFixed(2));
+            // Gentle width shimmer for a shimmering, fluid ribbon.
+            var w = 1.7 + Math.sin(ts / 90) * 0.45;
             els.stream.setAttribute('width', w.toFixed(2));
             els.stream.setAttribute('x', (60 - w / 2).toFixed(2));
           }
-          void streamTop; // referenced for clarity; bounds kept by max/min
-          void streamPhase;
         }
 
         function setCount(state) {
