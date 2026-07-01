@@ -68,19 +68,18 @@ describe('isConfigured', () => {
 
 describe('buildPaidMessage', () => {
   it('includes the honoree name, version, total ₪ and word count in Hebrew', () => {
-    process.env.PUBLIC_BASE_URL = 'https://dugri.example';
-    const { subject, text } = loadFresh().buildPaidMessage(collection);
+    const { subject, text } = loadFresh().buildPaidMessage(collection, 'https://dugri.example');
     expect(subject).toBe('דוגרי · התקבל תשלום — שירה');
     expect(text).toContain('התקבל תשלום');
     expect(text).toContain('שירה');
     expect(text).toContain('199 ₪');
     expect(text).toContain('משלוח עד הבית');
     expect(text).toContain('142');
-    // Owner link (collect.html with id + owner token) when PUBLIC_BASE_URL is set.
+    // Owner link (collect.html with id + owner token) when a baseUrl is passed.
     expect(text).toContain('https://dugri.example/collect.html?c=col-1&k=tok-abc');
   });
 
-  it('falls back to a placeholder name and omits the link without PUBLIC_BASE_URL', () => {
+  it('falls back to a placeholder name and omits the link without a baseUrl', () => {
     const { subject, text } = loadFresh().buildPaidMessage({
       order: { version: 'pdf', total: 79 },
     });

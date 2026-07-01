@@ -322,13 +322,49 @@ describe('POST /api/payment/callback', () => {
         DebitTotal: 7900,
       },
     };
-    // The email send rejects — the payment must succeed regardless.
+    // Email is configured (so the route attempts a send) but the send rejects —
+    // the payment must succeed regardless.
+    const cfg = vi.spyOn(notify, 'isConfigured').mockReturnValue(true);
     const spy = vi.spyOn(notify, 'sendOrderPaid').mockRejectedValue(new Error('smtp down'));
     const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-mail' } });
     expect(r.status).toBe(200);
     expect(db.getCollection(c.id).order.paid).toBe(true);
     expect(spy).toHaveBeenCalledTimes(1);
     spy.mockRestore();
+    cfg.mockRestore();
+  });
+});
+
+describe('POST /api/collections/:id/close (idempotent, single notify)', () => {
+  it('rejects a wrong/absent owner token with 403', async () => {
+    const c = db.createCollection('סגירה');
+    const r = await post('/api/collections/' + c.id + '/close', { owner_token: 'nope' });
+    expect(r.status).toBe(403);
+    expect(db.getCollection(c.id).status).toBe('open');
+  });
+
+  it('a repeated close returns 200 but fires sendOrderFinished only on the real transition', async () => {
+    const c = db.createCollection('סגירה כפולה');
+    // Email configured so the route attempts a send; count sends across closes.
+    const cfg = vi.spyOn(notify, 'isConfigured').mockReturnValue(true);
+    const spy = vi.spyOn(notify, 'sendOrderFinished').mockResolvedValue(true);
+
+    const first = await post('/api/collections/' + c.id + '/close', {
+      owner_token: c.owner_token,
+    });
+    expect(first.status).toBe(200);
+    expect(db.getCollection(c.id).status).toBe('closed');
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // Second close (double-click/retry): still 200, but NO second email.
+    const second = await post('/api/collections/' + c.id + '/close', {
+      owner_token: c.owner_token,
+    });
+    expect(second.status).toBe(200);
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    spy.mockRestore();
+    cfg.mockRestore();
   });
 });
 

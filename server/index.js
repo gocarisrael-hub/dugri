@@ -128,13 +128,20 @@ app.post('/api/collections/:id/words', (req, res) => {
 // Owner-only: close collection.
 app.post('/api/collections/:id/close', (req, res) => {
   const token = req.body && req.body.owner_token;
-  if (!db.closeCollection(req.params.id, token)) {
-    return res.status(403).json({ error: 'forbidden' });
+  const result = db.closeCollection(req.params.id, token);
+  if (!result) return res.status(403).json({ error: 'forbidden' });
+  // Notify the owner the list is finished and ready to produce — but ONLY on the
+  // real open->closed transition (a repeated close must not re-send) and only
+  // when email is configured (skip the word-count work entirely otherwise).
+  // Fire-and-forget: a failed email must never affect the response.
+  if (result.changed && notify.isConfigured()) {
+    const c = db.getCollection(req.params.id);
+    if (c) {
+      notify
+        .sendOrderFinished({ ...c, count: db.listWords(c.id).length }, paymentBaseUrl())
+        .catch(() => {});
+    }
   }
-  // Notify the owner the list is finished and ready to produce. Fire-and-forget:
-  // a failed/unconfigured email must never affect the response.
-  const c = db.getCollection(req.params.id);
-  if (c) notify.sendOrderFinished({ ...c, count: db.listWords(c.id).length }).catch(() => {});
   res.json({ status: 'closed' });
 });
 
@@ -256,8 +263,13 @@ app.post('/api/payment/callback', async (req, res) => {
       approvalNo: tx.approvalNo,
     });
     // Notify the owner a payment came in. Fire-and-forget: the payment must
-    // succeed even if email is unconfigured or the send fails.
-    notify.sendOrderPaid({ ...c, count: db.listWords(c.id).length }).catch(() => {});
+    // succeed even if the send fails. Skip the word-count work entirely when
+    // email is unconfigured (the dormant default).
+    if (notify.isConfigured()) {
+      notify
+        .sendOrderPaid({ ...c, count: db.listWords(c.id).length }, paymentBaseUrl())
+        .catch(() => {});
+    }
   }
   res.json({ ok: true });
 });

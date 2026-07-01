@@ -152,13 +152,20 @@ const db = {
     return true;
   },
 
+  // Owner-only close. Idempotent: a repeated close on an already-closed
+  // collection still succeeds but reports no change, so the caller can fire the
+  // "ready to produce" side effects (e.g. the owner email) only on the real
+  // open->closed transition. Returns null on bad/absent owner token.
   closeCollection(id, ownerToken) {
     const c = this.getCollection(id);
-    if (!c || c.owner_token !== ownerToken) return false;
-    c.status = 'closed';
-    c.closed_at = nowIso();
-    saveDb();
-    return true;
+    if (!c || c.owner_token !== ownerToken) return null;
+    const alreadyClosed = c.status === 'closed';
+    if (!alreadyClosed) {
+      c.status = 'closed';
+      c.closed_at = nowIso();
+      saveDb();
+    }
+    return { changed: !alreadyClosed };
   },
 
   // Admin: soft-cancel a collection (reversible). With undo=true it restores
