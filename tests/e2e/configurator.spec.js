@@ -91,6 +91,7 @@ test.describe('order wizard', () => {
   test('step 5 validates email + phone, then creates the collection', async ({ page }) => {
     await page.goto('/options.html?step=4');
     await page.fill('#honoreeInput', 'שירה');
+    await page.getByTestId('gender-female').check(); // gender is required to advance
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-5')).toBeVisible();
 

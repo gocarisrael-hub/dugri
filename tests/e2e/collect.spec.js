@@ -7,6 +7,7 @@ async function createCollection(page, name) {
   await page.getByTestId('next-btn').click(); // color -> add-ons
   await page.getByTestId('next-btn').click(); // add-ons -> name
   await page.fill('#honoreeInput', name);
+  await page.getByTestId('gender-female').check(); // gender is required to advance
   await page.getByTestId('next-btn').click(); // name -> contact
   await page.fill('#ownerEmail', 'test@example.com'); // email required
   await page.fill('#ownerPhone', '0521234567'); // valid IL mobile, required
