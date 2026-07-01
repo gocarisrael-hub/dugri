@@ -34,6 +34,27 @@
         max-width: 1100px;
         margin: 0 auto;
       }
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 16px;
+      }
+      .nav a {
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid #f0c9da;
+        background: #fff;
+        color: #8a2b53;
+        border-radius: 99px;
+        padding: 6px 14px;
+      }
+      .nav a.active {
+        background: #e5197d;
+        border-color: #e5197d;
+        color: #fff;
+      }
       h1 {
         font-size: 24px;
         font-weight: 900;
@@ -219,6 +240,11 @@
   </head>
   <body>
     <div class="wrap">
+      <nav class="nav" id="nav">
+        <a data-page="dashboard.html">לוח בקרה</a>
+        <a data-page="admin.html" class="active">ניהול הזמנות</a>
+        <a data-page="coupons.html">ניהול קופונים</a>
+      </nav>
       <h1>ניהול הזמנות · דוגרי</h1>
       <div class="sub" id="sub">טוען…</div>
       <div class="stats" id="stats"></div>
@@ -240,6 +266,10 @@
       import { buildBulkCsv } from './js/collect.js';
 
       const key = new URLSearchParams(location.search).get('key') || '';
+      // Carry the admin key across the three linked admin pages.
+      for (const a of document.querySelectorAll('#nav a')) {
+        a.href = a.dataset.page + (key ? '?key=' + encodeURIComponent(key) : '');
+      }
       const sub = document.getElementById('sub');
       const content = document.getElementById('content');
       const statsEl = document.getElementById('stats');
