@@ -111,3 +111,29 @@ test('בטל marks cancelled + שחזר restores; מחק removes the row', async
   await row.getByRole('button', { name: 'מחק' }).click();
   await expect(page.locator('tbody tr').filter({ hasText: name })).toHaveCount(0);
 });
+
+test('order table fits the viewport width — no horizontal scroll', async ({ page, request }) => {
+  // Seed a row with deliberately long values (email + word list) that would
+  // otherwise force the wide table to overflow sideways.
+  await seed(request, {
+    name: uniq('רחב'),
+    email: 'a-really-long-admin-address-that-could-overflow@some-long-domain-name.example.com',
+    phone: '0521234567',
+    words: ['מילהארוכהמאודמאודמאודללארווחים', 'עוד', 'מילים', 'רבות'],
+    version: 'pdf',
+  });
+
+  const noOverflow = () =>
+    page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+
+  // Narrow phone (~375px): the table stacks into cards and must not side-scroll.
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto(`/admin.html?key=${KEY}`);
+  await expect(page.locator('tbody tr').first()).toBeVisible();
+  expect(await noOverflow()).toBe(true);
+
+  // Desktop (1280px): same guarantee.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(page.locator('tbody tr').first()).toBeVisible();
+  expect(await noOverflow()).toBe(true);
+});
