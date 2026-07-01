@@ -389,6 +389,39 @@
           transition: none;
         }
       }
+      /* top pay reminder (owner, unpaid only) — nudges toward the pay panel */
+      .pay-reminder {
+        background: #fff4e6;
+        border: 1px solid #f3d9ad;
+        color: #92600b;
+        border-radius: 12px;
+        padding: 12px 14px;
+        text-align: center;
+        font-weight: 800;
+        margin: 12px 0;
+        cursor: pointer;
+      }
+      /* paid state — replaces the pay panel with a "keep adding, then סיום" card */
+      .paid-card {
+        background: linear-gradient(135deg, #eafaf2, #f5fff9);
+        border: 1px solid #bfe8d3;
+      }
+      .paid-card .paid-title {
+        font-weight: 900;
+        font-size: 19px;
+        color: #119a6e;
+        margin-bottom: 6px;
+      }
+      .paid-card .paid-body {
+        color: #2c1a29;
+        margin-bottom: 14px;
+      }
+      .paid-card .paid-cta {
+        width: 100%;
+        font-size: 18px;
+        font-weight: 900;
+        padding: 15px 18px;
+      }
       /* ===== PAY PANEL (owner-only) ===== */
       /* collapsed pay panel = one inviting button at the bottom */
       .pay-collapse {
@@ -521,89 +554,19 @@
         margin-top: 12px;
         display: none;
       }
-      /* Bit brand: dark navy surface + bright Bit cyan (reused from checkout) */
-      .bit-pay {
-        text-align: center;
-        padding: 4px 0 2px;
-      }
-      .bit-btn {
-        --bit-cyan: #00e3d8;
-        --bit-ink: #0c0e1a;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
-        width: 100%;
-        max-width: 360px;
-        text-decoration: none;
-        font: inherit;
-        font-weight: 900;
-        font-size: 19px;
-        color: var(--bit-ink);
-        background: linear-gradient(135deg, #4df2e9, var(--bit-cyan));
-        border-radius: 16px;
-        padding: 17px 22px;
-        box-shadow:
-          0 12px 28px rgba(0, 227, 216, 0.4),
-          0 2px 0 rgba(255, 255, 255, 0.5) inset;
-        transition:
-          transform 0.12s ease,
-          box-shadow 0.12s ease,
-          filter 0.12s ease;
-      }
-      .bit-btn:hover {
-        filter: brightness(1.04);
-        box-shadow:
-          0 16px 34px rgba(0, 227, 216, 0.5),
-          0 2px 0 rgba(255, 255, 255, 0.5) inset;
-        transform: translateY(-1px);
-      }
-      .bit-btn:active {
-        transform: scale(0.985);
-      }
-      .bit-btn .bit-mark {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 44px;
-        height: 26px;
-        background: var(--bit-ink);
-        color: var(--bit-cyan);
-        border-radius: 7px;
-        padding: 4px 7px;
-      }
-      .bit-btn .bit-mark svg {
-        width: 100%;
-        height: 100%;
-        display: block;
-      }
-      .bit-confirm {
-        margin-top: 12px;
-        font-size: 13px;
-        font-weight: 800;
-        color: #119a6e;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-      }
-      /* credit-card pay (PeleCard iframe) — shown only when card payment is on */
-      .card-pay-sep {
-        margin: 14px 0 10px;
-        text-align: center;
-        font-size: 13px;
-        color: #9a9aa0;
-      }
+      /* credit-card pay (PeleCard iframe) — the only payment path */
       .card-pay-btn {
         width: 100%;
-        padding: 14px;
+        /* breathing room so the button doesn't crowd the copy above it */
+        margin-top: 16px;
+        padding: 15px;
         border: none;
         border-radius: 12px;
         background: #1d1d1f;
         color: #fff;
         font: inherit;
-        font-weight: 700;
-        font-size: 16px;
+        font-weight: 800;
+        font-size: 17px;
         cursor: pointer;
       }
       .card-pay-btn:disabled {
@@ -658,16 +621,21 @@
         <div class="sub" id="subtitle">כל מילה, ביטוי, בדיחה פנימית או זיכרון נחשב</div>
       </header>
 
+      <!-- OWNER, unpaid only: reminder pointing to the pay panel below -->
+      <div class="pay-reminder owner-only hidden" id="payReminder">
+        עדיין לא שילמתם — התשלום ממתין למטה ⬇
+      </div>
+
       <div class="banner" id="banner"></div>
 
       <!-- the words (with the live counter) -->
       <div class="card">
         <div class="words-head">
           <span class="sec-h">המילים שכבר נאספו</span>
-          <span class="count-pill"><b id="count">0</b> מילים</span>
+          <span class="count-pill"><b id="count">0</b> / 416 מילים</span>
         </div>
         <div class="bar"><i id="barFill"></i></div>
-        <small class="muted" id="countHint">היעד: לפחות 100 מילים</small>
+        <small class="muted" id="countHint">היעד: לפחות 100 מילים (אפשר עד 416)</small>
         <div class="words" id="wordsWrap" style="margin-top: 12px">
           <span class="muted" id="emptyWords">עוד אין מילים - היו הראשונים!</span>
         </div>
@@ -765,6 +733,16 @@
         </div>
       </div>
 
+      <!-- OWNER, paid only: replaces the pay panel — keep adding, then סיום -->
+      <div class="card paid-card owner-only hidden" id="paidCard">
+        <div class="paid-title">התשלום התקבל ✓</div>
+        <p class="paid-body">
+          עכשיו הכי חשוב: הוסיפו כמה שיותר מילים. כשתסיימו — לחצו על ‘סיום’, וזהו: אנחנו מתחילים
+          להפיק את המשחק 💜
+        </p>
+        <button class="paid-cta" id="paidCloseBtn" type="button">סיום — התחילו להפיק ✅</button>
+      </div>
+
       <!-- owner / closing controls -->
       <div class="card owner-only hidden" id="ownerControls">
         <div class="sec-h">ניהול האיסוף</div>
@@ -788,7 +766,7 @@
             <span class="opt-body">
               <span class="opt-title"
                 ><span>דיגיטלי (PDF)</span
-                ><span class="opt-price"><s class="was">129</s>₪79</span></span
+                ><span class="opt-price"><s class="was">₪129</s>₪79</span></span
               >
               <span class="opt-note">מורידים, מדפיסים לבד, ומתפוצצים מצחוק 🎉</span>
             </span>
@@ -830,33 +808,6 @@
         <div class="pay-total">לתשלום: ₪<span id="payTotal">79</span></div>
         <div class="pay-err" id="payErr"></div>
 
-        <div class="bit-pay">
-          <a
-            id="bitPayLink"
-            class="bit-btn"
-            href="https://www.bitpay.co.il/app/me/4BE8AF50-DD1F-8868-1FF0-2DE96FEB9B6A4F38"
-            target="_blank"
-            rel="noopener"
-          >
-            <span class="bit-mark" aria-hidden="true">
-              <svg viewBox="0 0 120 56" role="img" aria-label="bit">
-                <g fill="currentColor">
-                  <path
-                    d="M8 4h9v15.2a13.5 13.5 0 0 1 8.4-2.9c8.7 0 15.3 6.9 15.3 16.2S34.1 49 25.4 49a13.4 13.4 0 0 1-8.9-3.2V48H8V4Zm16 36.6c4.4 0 7.6-3.4 7.6-8.1s-3.2-8.1-7.6-8.1-7.6 3.4-7.6 8.1 3.2 8.1 7.6 8.1Z"
-                  />
-                  <path
-                    d="M52 4.2a5.4 5.4 0 1 1 0 10.8 5.4 5.4 0 0 1 0-10.8ZM47.5 17.2h9V48h-9V17.2Z"
-                  />
-                  <path
-                    d="M66 8h9v9.2h7.7v7.7H75v11.7c0 2.8 1.3 4 3.9 4 1.4 0 2.6-.2 3.8-.6V48c-1.7.6-3.7.9-6 .9-7.2 0-10.7-3.7-10.7-11V24.9h-5.3v-7.7H66V8Z"
-                  />
-                </g>
-              </svg>
-            </span>
-            <span>שלם בביט</span>
-          </a>
-          <div class="bit-confirm"><span aria-hidden="true">✓</span><span>אישור מיידי</span></div>
-        </div>
         <button type="button" id="cardPayBtn" class="card-pay-btn hidden">
           💳 תשלום בכרטיס אשראי
         </button>
@@ -879,7 +830,7 @@
     </div>
 
     <script type="module">
-      import { CATEGORIES, PROMPTS, PREMIUM_PROMPTS, fillName } from './js/word-prompts.js';
+      import { CATEGORIES, PROMPTS, PREMIUM_PROMPTS, renderQuestion } from './js/word-prompts.js';
       import { parseWordText } from './js/collect.js';
       import { track } from './js/analytics.js';
 
@@ -918,8 +869,18 @@
         });
       }
 
+      // Honoree gender drives phrasing on the prompts. The public view may not
+      // expose it yet (feature landing separately); default to feminine wording.
+      function gender() {
+        return (state && state.gender) || 'female';
+      }
       function honoree() {
-        return (state && state.honoree_name) || 'בעלת השמחה';
+        if (state && state.honoree_name) return state.honoree_name;
+        return gender() === 'male' ? 'בעל השמחה' : 'בעלת השמחה';
+      }
+      // Render a category/idea question with the honoree name + gender phrasing.
+      function renderQ(text) {
+        return renderQuestion(text, honoree(), gender());
       }
 
       function setOpenState(open) {
@@ -942,14 +903,18 @@
         document.title = 'דוגרי · מילים על ' + honoree();
         $('#title').textContent = 'אוספים מילים על ' + honoree();
         const n = state.count;
+        const MAX_WORDS = 416;
         $('#count').textContent = n;
         $('#countHint').textContent =
           n >= 100
-            ? '🎉 יש לכם 100+ מילים! אפשר להמשיך או לסגור'
+            ? 'יש כבר ' +
+              n +
+              ' מילים — מעולה! מכאן מתחיל הכיף האמיתי: ככל שיש יותר מילים, המשחק יותר מצחיק ומפתיע. אפשר עד 416, ומה שלא תשלימו — נשלים לכם לפי סוג האירוע.'
             : n >= 50
-              ? 'חצי דרך! ✨ עוד ' + (100 - n) + ' עד היעד'
-              : 'עוד ' + (100 - n) + ' עד היעד';
-        $('#barFill').style.width = Math.min(100, n) + '%';
+              ? 'חצי דרך! ✨ עוד ' + (100 - n) + ' עד היעד (אפשר עד 416)'
+              : 'עוד ' + (100 - n) + ' עד היעד של 100 (אפשר עד 416)';
+        // Bar fills toward 416, so 100 words ≈ a quarter of the bar.
+        $('#barFill').style.width = Math.min(100, (n / MAX_WORDS) * 100) + '%';
 
         // words
         const wrap = $('#wordsWrap');
@@ -984,14 +949,24 @@
 
         const open = state.status === 'open';
         setOpenState(open);
-        $('#ownerControls').classList.toggle('hidden', !(isOwner && open));
         if (isOwner) {
           applyPaidState();
+          const paid = isPaid();
+          // Paid: drop the pay panel + top reminder, and put a prominent
+          // "keep adding, then סיום" card in their place. סיום = closeCollection,
+          // which is what actually starts production.
+          $('#payPanel').classList.toggle('hidden', paid);
+          $('#payReminder').classList.toggle('hidden', !(open && !paid));
+          $('#paidCard').classList.toggle('hidden', !(open && paid));
+          // The generic close card only shows before payment (paidCard carries
+          // the close CTA afterwards) — never two close buttons at once.
+          $('#ownerControls').classList.toggle('hidden', !(open && !paid));
           // Show the credit-card button only when card payment is configured
           // (PeleCard credentials present) AND the order isn't already paid.
           const cardBtn = document.getElementById('cardPayBtn');
-          if (cardBtn)
-            cardBtn.classList.toggle('hidden', !(state && state.card_enabled && !state.paid));
+          if (cardBtn) cardBtn.classList.toggle('hidden', !(state.card_enabled && !paid));
+        } else {
+          $('#ownerControls').classList.add('hidden');
         }
       }
 
@@ -1110,7 +1085,7 @@
         if (seenPrompts.length > 8) seenPrompts.shift();
         const box = $('#ideaBox');
         box.style.display = 'block';
-        box.textContent = '💡 ' + fillName(p.text, honoree());
+        box.textContent = '💡 ' + renderQ(p.text);
         $('#wordInput').focus();
       };
 
@@ -1142,13 +1117,13 @@
         const list = $('#qList');
         list.innerHTML = '';
         list.style.display = 'flex';
-        for (const q of cat.questions) {
+        for (const question of cat.questions) {
           const b = document.createElement('button');
           b.type = 'button';
-          b.textContent = fillName(q, honoree());
+          b.textContent = renderQ(question);
           b.onclick = () => {
             $('#wordInput').focus();
-            $('#wordInput').placeholder = fillName(q, honoree());
+            $('#wordInput').placeholder = renderQ(question);
           };
           list.appendChild(b);
         }
@@ -1165,7 +1140,9 @@
         $('#copyFriends').onclick = () =>
           copy($('#friendsLink').value, $('#copyFriends'), 'friends');
         $('#copyOwner').onclick = () => copy($('#ownerLink').value, $('#copyOwner'), 'owner');
-        $('#closeBtn').onclick = async () => {
+        // סיום: closes the collection. Shared by the pre-pay close card and the
+        // post-payment "start production" CTA — closing is what starts production.
+        async function closeCollection() {
           if (!confirm('לסגור את האיסוף? אחרי הסגירה לא ניתן להוסיף עוד מילים.')) return;
           let closed = false;
           await api('/close', {
@@ -1179,7 +1156,10 @@
             .catch(() => {});
           if (closed) track('collection_closed');
           await refresh();
-        };
+        }
+        $('#closeBtn').onclick = closeCollection;
+        const paidCloseBtn = $('#paidCloseBtn');
+        if (paidCloseBtn) paidCloseBtn.onclick = closeCollection;
       }
       // ---- owner: pay panel ----
       const PAY_PRICES = { pdf: 79, pickup: 149, delivery: 199 };
@@ -1188,7 +1168,12 @@
         return (checked && checked.value) || 'pdf';
       }
       function setupPayPanel() {
-        $('#payPanel').classList.remove('hidden');
+        const payPanel = $('#payPanel');
+        // Top reminder opens the pay panel and scrolls to it.
+        $('#payReminder').addEventListener('click', () => {
+          payPanel.open = true;
+          payPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
         const opts = Array.from(document.querySelectorAll('.pay-opt'));
         const addressForm = $('#addressForm');
         const payErr = $('#payErr');
@@ -1214,37 +1199,6 @@
             floor: $('#addrFloor').value.trim(),
           };
         }
-
-        $('#bitPayLink').addEventListener('click', async (e) => {
-          const version = selectedVersion();
-          let address = null;
-          if (version === 'delivery') {
-            address = collectAddress();
-            if (!address.street || !address.city || !address.postal) {
-              e.preventDefault(); // do NOT open Bit on a bad address
-              payErr.textContent = 'נא למלא רחוב, עיר ומיקוד למשלוח.';
-              payErr.style.display = 'block';
-              return;
-            }
-          }
-          // Bit must open (do NOT preventDefault on success). Record the order in
-          // the background; the owner stays on this page.
-          const total = PAY_PRICES[version];
-          try {
-            const res = await api('/order', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ owner_token: ownerToken, version, address }),
-            });
-            track('order_placed', { version: res.version || version, total: res.total || total });
-          } catch (err) {
-            // non-blocking: Bit already opened, we just couldn't persist the order
-          }
-          const confirm = $('#payConfirm');
-          confirm.textContent =
-            'פתחנו לכם את ביט — שלמו ₪' + total + '. נשלח לכם את המשחק מיד אחרי התשלום 💜';
-          confirm.style.display = 'block';
-        });
 
         // ---- credit-card payment (PeleCard iframe in a modal) ----
         const cardBtn = $('#cardPayBtn');
@@ -1295,7 +1249,7 @@
             frame.src = res.url;
             modal.classList.remove('hidden');
           } catch (err) {
-            payErr.textContent = 'פתיחת התשלום נכשלה. נסו שוב או שלמו בביט.';
+            payErr.textContent = 'פתיחת התשלום נכשלה. נסו שוב מאוחר יותר.';
             payErr.style.display = 'block';
           } finally {
             cardBtn.disabled = false;
