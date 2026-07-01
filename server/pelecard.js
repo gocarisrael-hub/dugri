@@ -95,6 +95,11 @@ async function init({ amountNis, paramToken, urls, language = 'HE' } = {}) {
   const errCode = data && data.Error && data.Error.ErrCode;
   if (errCode && String(errCode) !== '0') {
     const msg = (data.Error && data.Error.ErrMsg) || 'unknown error';
+    // The code + message are PeleCard's own (no card/secret data); surface them
+    // under debug so a rejected init can be diagnosed from the Railway logs.
+    if (process.env.PELECARD_DEBUG === '1') {
+      console.log('[pelecard init] rejected — ErrCode:', errCode, 'ErrMsg:', msg);
+    }
     throw new Error('pelecard init error ' + errCode + ': ' + msg);
   }
   if (!data.URL) throw new Error('pelecard init returned no URL');

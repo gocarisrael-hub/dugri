@@ -214,6 +214,12 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     db.recordPaymentInit(req.params.id, { paramToken, transactionId });
     res.json({ url, total: order.total });
   } catch (e) {
+    // Surface the underlying reason (PeleCard error code/message or a transport
+    // error) under debug so a 502 can be diagnosed from the Railway logs. The
+    // message carries no card/secret data.
+    if (process.env.PELECARD_DEBUG === '1') {
+      console.log('[pelecard init] failed:', e && e.message);
+    }
     res.status(502).json({ error: 'payment init failed' });
   }
 });
