@@ -422,9 +422,12 @@ app.post('/api/payment/callback', async (req, res) => {
     // succeed even if the send fails. Skip the word-count work entirely when
     // email is unconfigured (the dormant default).
     if (notify.isConfigured()) {
-      notify
-        .sendOrderPaid({ ...c, count: db.listWords(c.id).length }, paymentBaseUrl())
-        .catch(() => {});
+      const enriched = { ...c, count: db.listWords(c.id).length };
+      const base = paymentBaseUrl();
+      notify.sendOrderPaid(enriched, base).catch(() => {});
+      // Also confirm to the BUYER (their own email), with the collect link so
+      // they can keep adding their words. Skips gracefully if no buyer email.
+      notify.sendBuyerConfirmation(enriched, base).catch(() => {});
     }
   }
   res.json({ ok: true });

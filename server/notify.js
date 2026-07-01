@@ -87,6 +87,41 @@ function buildPaidMessage(collection, baseUrl) {
   return { subject, text };
 }
 
+// Pure builder: the BUYER's confirmation email — sent to the customer (not the
+// owner) when their order is paid. Warm, on-brand, RTL-friendly. Includes a
+// thank-you, the order details (package + price, and design/colour when set) and
+// the collect link so they can keep adding their words. `baseUrl` is the
+// normalized public origin (optional; the link is omitted without it).
+// Returns {subject, text} — same shape as the other builders.
+function buildBuyerConfirmation(collection, baseUrl) {
+  const name = honoreeName(collection);
+  const subject = 'דוגרי · ההזמנה שלכם התקבלה — ' + name;
+  const lines = [
+    'תודה רבה על ההזמנה!',
+    'קיבלנו את התשלום עבור המשחק של ' + name + '.',
+    '',
+    'פרטי ההזמנה:',
+  ];
+  const order = (collection && collection.order) || null;
+  if (order) {
+    const label = VERSION_LABELS[order.version] || order.version || '-';
+    lines.push('· חבילה: ' + label);
+    if (order.total != null) lines.push('· מחיר: ' + order.total + ' ₪');
+  }
+  if (collection && collection.design) lines.push('· עיצוב: ' + collection.design);
+  if (collection && collection.color) lines.push('· צבע: ' + collection.color);
+  const link = ownerLink(collection, baseUrl);
+  if (link) {
+    lines.push('');
+    lines.push('נשאר רק שלב אחד: הוסיפו את 100+ המילים על בעל/ת השמחה כאן:');
+    lines.push(link);
+  }
+  lines.push('');
+  lines.push('נתראה על הלוח,');
+  lines.push('צוות דוגרי');
+  return { subject, text: lines.join('\n') };
+}
+
 // Pure builder: the "order finished / ready to produce" email.
 function buildFinishedMessage(collection, baseUrl) {
   const name = honoreeName(collection);
@@ -112,12 +147,16 @@ function transporter() {
   return _transporter;
 }
 
-// Send one message. Fully wrapped: a failure (or being unconfigured) NEVER
+// Send one message. `to` overrides the recipient (defaults to the owner's
+// NOTIFY_TO — e.g. the buyer confirmation is sent to the customer's address).
+// Fully wrapped: a failure (or being unconfigured, or an empty recipient) NEVER
 // throws into the caller — it logs a warning and returns false.
-async function send({ subject, text }) {
+async function send({ subject, text, to }) {
   if (!isConfigured()) return false;
+  const recipient = to || NOTIFY_TO;
+  if (!recipient) return false;
   try {
-    await transporter().sendMail({ from: NOTIFY_FROM, to: NOTIFY_TO, subject, text });
+    await transporter().sendMail({ from: NOTIFY_FROM, to: recipient, subject, text });
     return true;
   } catch (e) {
     console.warn('[notify] send failed:', e && e.message ? e.message : e);
@@ -136,6 +175,21 @@ async function sendOrderPaid(collection, baseUrl) {
   }
 }
 
+// Fire the BUYER confirmation to the customer's own email. Sent to the
+// collection's owner_email (captured at checkout), NOT to NOTIFY_TO. Skips
+// gracefully (returns false) when that address is missing/empty, and stays
+// dormant like the others when SMTP is unconfigured. Never throws.
+async function sendBuyerConfirmation(collection, baseUrl) {
+  try {
+    const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
+    if (!to) return false;
+    return await send({ ...buildBuyerConfirmation(collection, baseUrl), to });
+  } catch (e) {
+    console.warn('[notify] sendBuyerConfirmation failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
 // Fire the "order finished" notification. `baseUrl` is the normalized public
 // origin (optional). Never throws.
 async function sendOrderFinished(collection, baseUrl) {
@@ -150,7 +204,9 @@ async function sendOrderFinished(collection, baseUrl) {
 module.exports = {
   isConfigured,
   buildPaidMessage,
+  buildBuyerConfirmation,
   buildFinishedMessage,
   sendOrderPaid,
+  sendBuyerConfirmation,
   sendOrderFinished,
 };
