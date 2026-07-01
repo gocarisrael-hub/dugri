@@ -160,18 +160,45 @@ test('card disabled: no dead pay CTA, neutral note instead, and no top nag', asy
   await expect(page.locator('#cardSoonNote')).toContainText('ייפתח בקרוב');
 });
 
-test('word counter shows the 416 max and the bar fills toward it', async ({ page }) => {
+test('below 100 words: Stage-1 bar is scaled to the 100-word minimum', async ({ page }) => {
   await createCollection(page, 'ליהיא');
-  await expect(page.locator('.count-pill')).toContainText('416');
+  // Stage 1 frames the 100-word minimum (not the 416 max) below the goal.
+  await expect(page.locator('.count-pill')).toContainText('/ 100');
+  await expect(page.locator('.count-pill')).toContainText('מינימום');
+  await expect(page.locator('#stage1')).toBeVisible();
+  await expect(page.locator('#stage2')).toBeHidden();
   await page.fill('#wordInput', 'מילה אחת');
   await page.click('#addBtn');
   await expect(page.locator('#count')).toHaveText('1');
+  await expect(page.locator('#countMax')).toContainText('/ 100');
+  await expect(page.locator('#countHint')).toContainText('100');
+  // one word = 1% of a 100-word Stage-1 bar
+  const width = await page.locator('#barFill1').evaluate((el) => el.style.width);
+  expect(parseFloat(width)).toBe(1);
+});
+
+test('at 100+ words: Stage-2 bar replaces Stage-1 and is scaled to the 416 max', async ({
+  page,
+}) => {
+  await createCollection(page, 'רוני');
+  const url = new URL(page.url());
+  const c = url.searchParams.get('c');
+  // Reach exactly the 100-word minimum in one API call.
+  const words = Array.from({ length: 100 }, (_, i) => 'w' + i);
+  const res = await page.request.post(`/api/collections/${c}/words`, { data: { words } });
+  expect(res.ok()).toBeTruthy();
+
+  await page.reload();
+  await expect(page.locator('#count')).toHaveText('100');
+  // The swap: Stage-1 gone, the new Stage-2 bar takes over and frames the max.
+  await expect(page.locator('#stage1')).toBeHidden();
+  await expect(page.locator('#stage2')).toBeVisible();
   await expect(page.locator('#countMax')).toContainText('/ 416');
-  await expect(page.locator('#countHint')).toContainText('416');
-  // one word ≈ 0.24% of a 416-word bar
-  const width = await page.locator('#barFill').evaluate((el) => el.style.width);
-  expect(parseFloat(width)).toBeGreaterThan(0);
-  expect(parseFloat(width)).toBeLessThan(1);
+  await expect(page.locator('#countMax')).not.toContainText('מינימום');
+  // 100 / 416 ≈ 24% — the second bar starts already ~¼ filled.
+  const width = await page.locator('#barFill2').evaluate((el) => el.style.width);
+  expect(parseFloat(width)).toBeGreaterThan(20);
+  expect(parseFloat(width)).toBeLessThan(30);
 });
 
 test('over the 416 cap: counter shows 416 max (no fraction over cap), bar full', async ({
@@ -191,7 +218,8 @@ test('over the 416 cap: counter shows 416 max (no fraction over cap), bar full',
   await expect(page.locator('.count-pill')).not.toContainText('417');
   await expect(page.locator('.count-pill')).not.toContainText('/ 416'); // no fraction over cap
   await expect(page.locator('#countHint')).toContainText('מקסימום');
-  const width = await page.locator('#barFill').evaluate((el) => el.style.width);
+  // Past 100 words the Stage-2 bar is in play; over the cap it's full.
+  const width = await page.locator('#barFill2').evaluate((el) => el.style.width);
   expect(parseFloat(width)).toBe(100); // bar full
 });
 

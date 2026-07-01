@@ -101,6 +101,22 @@
         width: 0;
         transition: width 0.4s ease;
       }
+      /* Stage 2 bar: a fresh, distinct track that replaces the stage-1 bar once
+         the 100-word minimum is passed. Taller with a soft accent tint so it
+         reads as a new milestone, not the same bar continuing. */
+      .stage2-label {
+        font-size: 13px;
+        font-weight: 800;
+        color: var(--hot-deep);
+        margin-top: 10px;
+      }
+      .bar-stage2 {
+        height: 10px;
+        background: #fde3ee;
+      }
+      .bar-stage2 > i {
+        background: linear-gradient(90deg, #f5559f, var(--hot-deep));
+      }
       label.fld {
         display: block;
         font-weight: 700;
@@ -661,7 +677,16 @@
           <span class="sec-h">המילים שכבר נאספו</span>
           <span class="count-pill"><b id="count">0</b><span id="countMax"> מילים</span></span>
         </div>
-        <div class="bar"><i id="barFill"></i></div>
+        <!-- Two-stage progress. Stage 1 measures toward the 100-word minimum;
+             once reached it is replaced by Stage 2, a new bar scaled to the max
+             (so it starts ~¼ full) that grows toward MAX_WORDS. -->
+        <div id="stage1">
+          <div class="bar"><i id="barFill1"></i></div>
+        </div>
+        <div id="stage2" class="hidden">
+          <div class="stage2-label" id="stage2Label"></div>
+          <div class="bar bar-stage2"><i id="barFill2"></i></div>
+        </div>
         <small class="muted" id="countHint">היעד: לפחות 100 מילים</small>
         <div class="words" id="wordsWrap" style="margin-top: 12px">
           <span class="muted" id="emptyWords">עוד אין מילים - היו הראשונים!</span>
@@ -979,30 +1004,49 @@
         $('#title').textContent = 'אוספים מילים על ' + honoree();
         const n = state.count;
         const atMax = n >= MAX_WORDS;
+        // Stage 2 kicks in once the 100-word minimum is met: the pill/hint reframe
+        // around the max and the bar swaps to one scaled to MAX_WORDS.
+        const stage2 = n >= WORD_GOAL;
         // Never display a fraction over the cap: show the count capped at the max.
         $('#count').textContent = Math.min(n, MAX_WORDS);
-        $('#countMax').textContent = atMax ? ' מילים · מקסימום 🎉' : ' / ' + MAX_WORDS + ' מילים';
+        $('#countMax').textContent = atMax
+          ? ' מילים · מקסימום'
+          : stage2
+            ? ' / ' + MAX_WORDS + ' מילים'
+            : ' / ' + WORD_GOAL + ' מילים · מינימום';
         $('#countHint').textContent = atMax
           ? 'הגעתם למקסימום של ' +
             MAX_WORDS +
             ' מילים — יש לכם משחק מפוצץ! אפשר לסגור ולהתחיל להפיק.'
-          : n >= WORD_GOAL
+          : stage2
             ? 'יש כבר ' +
               n +
               ' מילים — מעולה! מכאן מתחיל הכיף האמיתי: ככל שיש יותר מילים, המשחק יותר מצחיק ומפתיע. אפשר עד ' +
               MAX_WORDS +
               ', ומה שלא תשלימו — נשלים לכם לפי סוג האירוע.'
             : n >= 50
-              ? 'חצי דרך! ✨ עוד ' + (WORD_GOAL - n) + ' עד היעד (אפשר עד ' + MAX_WORDS + ')'
+              ? 'חצי דרך! עוד ' + (WORD_GOAL - n) + ' עד המינימום (אפשר עד ' + MAX_WORDS + ')'
               : 'עוד ' +
                 (WORD_GOAL - n) +
-                ' עד היעד של ' +
+                ' עד המינימום של ' +
                 WORD_GOAL +
                 ' (אפשר עד ' +
                 MAX_WORDS +
                 ')';
-        // Bar fills toward MAX_WORDS, so 100 words ≈ a quarter; caps full at max.
-        $('#barFill').style.width = Math.min(100, (n / MAX_WORDS) * 100) + '%';
+        // Two-stage bar. Stage 1 (n < WORD_GOAL) fills toward the 100-word
+        // minimum. At 100 it's replaced by Stage 2 — a new bar scaled to
+        // MAX_WORDS, so 100/416 ≈ ¼ already filled — that grows toward the cap.
+        $('#stage1').classList.toggle('hidden', stage2);
+        $('#stage2').classList.toggle('hidden', !stage2);
+        $('#barFill1').style.width = Math.min(100, (n / WORD_GOAL) * 100) + '%';
+        $('#barFill2').style.width = Math.min(100, (n / MAX_WORDS) * 100) + '%';
+        // Render-driven Stage-2 label: a message that stays true across the whole
+        // 100→416 range (never claims the "first quarter" is still just full at
+        // 400 words), and flips to a max-reached framing at/over the cap so it
+        // doesn't contradict the "reached maximum" hint.
+        $('#stage2Label').textContent = atMax
+          ? 'הגעתם למקסימום — יש לכם משחק מפוצץ!'
+          : 'המינימום מאחוריכם — ממשיכים למקסימום (' + MAX_WORDS + ')';
 
         // words
         const wrap = $('#wordsWrap');
