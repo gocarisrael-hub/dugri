@@ -412,6 +412,13 @@
         display: flex;
         align-items: center;
         justify-content: center;
+        /* printed-background bleed: the real card background colour extends
+           ~20-30mm (scaled to the preview) around the card, so the customer
+           sees that we print with some of the surrounding background. */
+        background: var(--bleed, var(--cfg-bg));
+        padding: clamp(18px, 9%, 34px);
+        border-radius: 16px;
+        box-shadow: inset 0 0 0 1px rgba(44, 26, 41, 0.06);
       }
       /* subtle centered brand watermark over the live card/board preview */
       .preview-panel[data-active='true']::after {
@@ -807,6 +814,47 @@
         outline: 2px solid var(--hot);
         border-color: var(--hot);
       }
+      /* gender choice on the name step - a two-option segmented control */
+      .gender-group {
+        display: flex;
+        gap: 10px;
+        max-width: 440px;
+        margin: 16px auto 0;
+      }
+      .gender-opt {
+        position: relative;
+        flex: 1 1 0;
+      }
+      .gender-opt input {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        margin: 0;
+        cursor: pointer;
+      }
+      .gender-opt span {
+        display: block;
+        text-align: center;
+        padding: 12px 10px;
+        border: 1.5px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        color: var(--ink);
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 15px;
+        transition: all 0.15s ease;
+      }
+      .gender-opt input:checked + span {
+        border-color: transparent;
+        color: #fff;
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        box-shadow: 0 8px 18px rgba(229, 25, 125, 0.24);
+      }
+      .gender-opt input:focus-visible + span {
+        outline: 3px solid var(--hot);
+        outline-offset: 2px;
+      }
       .wiz-err {
         display: block;
         color: #c2415f;
@@ -882,7 +930,6 @@
         }
       }
     </style>
-    <script src="js/demo-banner.js" defer></script>
   </head>
   <body>
     <!-- shared sticky nav -->
@@ -1039,6 +1086,21 @@
           placeholder="למשל: שירה"
           autocomplete="name"
         />
+        <div
+          class="gender-group"
+          role="radiogroup"
+          aria-label="מין בעל/ת השמחה"
+          data-testid="gender-group"
+        >
+          <label class="gender-opt">
+            <input type="radio" name="gender" value="female" data-testid="gender-female" checked />
+            <span>נקבה</span>
+          </label>
+          <label class="gender-opt">
+            <input type="radio" name="gender" value="male" data-testid="gender-male" />
+            <span>זכר</span>
+          </label>
+        </div>
       </section>
 
       <!-- STEP 5 — your details -->
@@ -1098,6 +1160,7 @@
         applyOriginal,
         mainAnchor,
         lightTint,
+        bleedColor,
         validateManifest,
       } from './js/configurator.js';
       import { track } from './js/analytics.js';
@@ -1192,21 +1255,27 @@
         // recolor, so leave the previews as-is.
         if (!anchors.length) return;
         let activeMain = null;
+        let bleed = null;
         if (colorIndex < 0) {
           // original colors - apply the design's own anchors as-is
           Object.values(panels).forEach((el) => applyOriginal(el, anchors));
           activeMain = mainAnchor(anchors);
+          bleed = bleedColor(null, anchors);
         } else {
           const color = MAIN_COLORS[colorIndex];
           if (!color) return;
           Object.values(panels).forEach((el) => applyPalette(el, color.hex, anchors));
           activeMain = color.hex;
+          bleed = bleedColor(color.hex, anchors);
         }
-        // theme the page + stage background to the active color
+        // theme the page + stage background to the active color, and expose the
+        // card's printed background as --bleed so the preview shows a real bleed
+        // margin (the same colour that prints around the card) around the card.
         if (activeMain) {
           const root = document.documentElement.style;
           root.setProperty('--accent', activeMain);
           root.setProperty('--cfg-bg', lightTint(activeMain));
+          if (bleed) root.setProperty('--bleed', bleed);
         }
       }
 
@@ -1418,6 +1487,14 @@
       const phoneErr = document.getElementById('phoneErr');
       const createErr = document.getElementById('createErr');
 
+      // Honoree gender captured on the name step. Exactly 'female' | 'male',
+      // default 'female'. Sent with the collection so the collect page + server
+      // can gender the copy correctly.
+      function selectedGender() {
+        const el = document.querySelector('input[name="gender"]:checked');
+        return el && el.value === 'male' ? 'male' : 'female';
+      }
+
       // Both contact fields are required so we can always reach the owner with
       // the management link (same rules the retired thankyou page used).
       const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -1536,6 +1613,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               honoree_name: name,
+              gender: selectedGender(),
               email,
               phone,
               design: s.designName || null,
