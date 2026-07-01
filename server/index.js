@@ -8,6 +8,9 @@ const pelecard = require('./pelecard');
 const notify = require('./notify');
 
 const app = express();
+// Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
+// address (used to rate-limit coupon validation per client, not per proxy).
+app.set('trust proxy', true);
 app.use(express.json({ limit: '1mb' }));
 // PeleCard posts its server-side callback as a urlencoded form; accept both.
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
@@ -74,24 +77,67 @@ function adminKeyOk(provided) {
   const b = Buffer.from(ADMIN_KEY);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+// Shared admin guard: sends the 503/403 response and returns false when the
+// request is not an authorized admin; returns true to proceed.
+function requireAdmin(req, res) {
+  if (!ADMIN_KEY) {
+    res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
+    return false;
+  }
+  if (!adminKeyOk(req.query.key)) {
+    res.status(403).json({ error: 'forbidden' });
+    return false;
+  }
+  return true;
+}
+
+// Tiny in-memory sliding-window rate limiter. The coupon-preview (validate)
+// endpoint is a brute-force oracle for short [A-Z0-9] codes, so we cap attempts
+// per CLIENT IP (keying per collection alone is bypassable — collection creation
+// is unauthenticated, so an attacker rotates fresh ids). State is per-process
+// (fine for a single Railway instance); it resets on redeploy.
+const COUPON_RATE_LIMIT = Number(process.env.COUPON_RATE_LIMIT || 20);
+const COUPON_RATE_WINDOW_MS = 60 * 1000;
+// Bound the bucket map so a flood of distinct IPs can't OOM the instance.
+const MAX_RATE_KEYS = Number(process.env.COUPON_RATE_MAX_KEYS || 10000);
+const _rateBuckets = new Map();
+function couponRateOk(key) {
+  const now = Date.now();
+  const hits = (_rateBuckets.get(key) || []).filter((t) => now - t < COUPON_RATE_WINDOW_MS);
+  if (hits.length >= COUPON_RATE_LIMIT) {
+    _rateBuckets.set(key, hits);
+    return false;
+  }
+  hits.push(now);
+  // Prune buckets that have aged out entirely; otherwise keep the pruned list.
+  if (hits.length === 0) _rateBuckets.delete(key);
+  else _rateBuckets.set(key, hits);
+  // Cap the map: Map preserves insertion order, so the first key is the oldest —
+  // evict it (idle/stale) when over the limit.
+  if (_rateBuckets.size > MAX_RATE_KEYS) {
+    _rateBuckets.delete(_rateBuckets.keys().next().value);
+  }
+  return true;
+}
+// The client key for coupon-oracle rate limiting: the real client IP.
+function clientKey(req) {
+  return req.ip || req.socket?.remoteAddress || 'unknown';
+}
 app.get('/api/admin/collections', (req, res) => {
-  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
-  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!requireAdmin(req, res)) return;
   res.json({ collections: db.listAllCollections() });
 });
 
 // Admin: mark an order as paid.
 app.post('/api/admin/collections/:id/paid', (req, res) => {
-  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
-  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!requireAdmin(req, res)) return;
   if (!db.markPaid(req.params.id)) return res.status(404).json({ error: 'not found' });
   res.json({ ok: true });
 });
 
 // Admin: soft-cancel a collection (body {undo:true} to restore).
 app.post('/api/admin/collections/:id/cancel', (req, res) => {
-  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
-  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!requireAdmin(req, res)) return;
   const undo = !!(req.body && req.body.undo);
   if (!db.cancelCollection(req.params.id, undo))
     return res.status(404).json({ error: 'not found' });
@@ -100,10 +146,63 @@ app.post('/api/admin/collections/:id/cancel', (req, res) => {
 
 // Admin: hard-delete a collection and its words.
 app.delete('/api/admin/collections/:id', (req, res) => {
-  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
-  if (!adminKeyOk(req.query.key)) return res.status(403).json({ error: 'forbidden' });
+  if (!requireAdmin(req, res)) return;
   if (!db.deleteCollection(req.params.id)) return res.status(404).json({ error: 'not found' });
   res.json({ ok: true });
+});
+
+// Admin: list all discount coupons.
+app.get('/api/admin/coupons', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ coupons: db.listCoupons() });
+});
+
+// Admin: create a coupon. 400 on invalid input or a duplicate code.
+app.post('/api/admin/coupons', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const b = req.body || {};
+  const coupon = db.createCoupon({
+    code: b.code,
+    discount_pct: b.discount_pct,
+    valid_until: b.valid_until,
+  });
+  if (coupon && coupon.error) return res.status(400).json({ error: coupon.error });
+  res.status(201).json({ coupon });
+});
+
+// Admin: toggle a coupon's active flag. 404 when the id is unknown.
+app.post('/api/admin/coupons/:id', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const active = !!(req.body && req.body.active);
+  const coupon = db.setCouponActive(req.params.id, active);
+  if (!coupon) return res.status(404).json({ error: 'not found' });
+  res.json({ coupon });
+});
+
+// Admin: delete a coupon. 404 when the id is unknown.
+app.delete('/api/admin/coupons/:id', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (!db.deleteCoupon(req.params.id)) return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true });
+});
+
+// OWNER-SCOPED coupon validation so checkout can preview the discount. Requires
+// the collection id + owner_token (so it is NOT a fully-open enumeration oracle)
+// and is rate-limited per collection. Only the discount percentage is ever
+// leaked — never the coupon list or other fields.
+app.post('/api/collections/:id/coupon/validate', (req, res) => {
+  const c = db.getCollection(req.params.id);
+  const token = req.body && req.body.owner_token;
+  if (!c || c.owner_token !== token) return res.status(403).json({ error: 'forbidden' });
+  // Rate-limit by CLIENT IP (not collection — fresh collections are free to make)
+  // to blunt code enumeration. This is the tight oracle budget; pay/init has its
+  // own separate path so an owner's previews can't block their real payment.
+  if (!couponRateOk('validate:' + clientKey(req))) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
+  const r = db.validateCoupon(req.body && req.body.code);
+  if (!r.valid) return res.json({ valid: false, reason: r.reason });
+  res.json({ valid: true, discount_pct: r.coupon.discount_pct });
 });
 
 // Public read: anyone with the link can see the words.
@@ -200,10 +299,44 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   if (order && order.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
   if (order && order.error) return res.status(400).json({ error: order.error });
 
+  // Optional discount coupon. Re-validate SERVER-SIDE (never trust a client
+  // price). The effective charge is what we bill AND what the callback verifies.
+  let discountPct = 0;
+  let couponCode = null;
+  if (b.coupon) {
+    // NOT rate-limited here: pay/init is owner_token-gated and performs a real
+    // charge, so it must never be blocked by the preview endpoint's oracle budget
+    // (an owner previewing a code repeatedly must still be able to pay).
+    const v = db.validateCoupon(b.coupon);
+    if (!v.valid) return res.status(400).json({ error: 'invalid coupon' });
+    discountPct = v.coupon.discount_pct;
+    couponCode = v.coupon.code;
+  }
+  // charged_total is ALWAYS a real number — the full total when no coupon.
+  const charged = Math.round(order.total * (1 - discountPct / 100));
+
+  // Free order (100%-off, or the charge rounds to <= 0): skip PeleCard entirely,
+  // mark it paid now, count the coupon use, and tell the client it's paid.
+  // BUT NOT while a real (non-free) card session is still in flight — otherwise
+  // the customer could complete that charge and be billed for a "free" order.
+  if (charged <= 0) {
+    if (db.hasInFlightRealSession(order)) {
+      return res.status(409).json({ error: 'יש תשלום פתוח — סגרו את חלון התשלום לפני החלת קופון' });
+    }
+    db.markPaid(req.params.id, {
+      method: 'coupon',
+      charged_total: 0,
+      coupon: couponCode,
+      discount_pct: couponCode ? discountPct : null,
+    });
+    if (couponCode) db.incrementCouponUses(couponCode);
+    return res.json({ free: true, paid: true, total: 0 });
+  }
+
   const paramToken = newPayToken();
   try {
     const { url, transactionId } = await pelecard.init({
-      amountNis: order.total,
+      amountNis: charged,
       paramToken,
       urls: {
         goodUrl: base + '/pay-done.html',
@@ -212,8 +345,17 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
         serverErrorUrl: base + '/api/payment/callback?error=1',
       },
     });
-    db.recordPaymentInit(req.params.id, { paramToken, transactionId });
-    res.json({ url, total: order.total });
+    // Record THIS session's own charged amount + coupon so the callback for it
+    // verifies against the right price (sessions with different coupons stay
+    // independent).
+    db.recordPaymentInit(req.params.id, {
+      paramToken,
+      transactionId,
+      charged_total: charged,
+      coupon: couponCode,
+      discount_pct: couponCode ? discountPct : null,
+    });
+    res.json({ url, total: order.total, charged });
   } catch (e) {
     res.status(502).json({ error: 'payment init failed' });
   }
@@ -231,11 +373,15 @@ app.post('/api/payment/callback', async (req, res) => {
   // the echoed ParamX token).
   let transactionId = parsed.transactionId;
   if (!transactionId && parsed.paramX) {
-    const byToken = db.getCollectionByPayToken(parsed.paramX);
+    // Fall back to the id we stored for that session (located via the echoed
+    // ParamX token), then the per-order last_transaction_id as a last resort.
+    const match = db.getPaymentSessionByToken(parsed.paramX);
     transactionId =
-      byToken && byToken.order && byToken.order.pelecard
-        ? byToken.order.pelecard.last_transaction_id
-        : null;
+      (match && match.session && match.session.transaction_id) ||
+      (match &&
+        match.collection.order.pelecard &&
+        match.collection.order.pelecard.last_transaction_id) ||
+      null;
   }
   if (!transactionId) return res.json({ ok: true });
 
@@ -248,20 +394,30 @@ app.post('/api/payment/callback', async (req, res) => {
     return res.status(502).json({ error: 'verification failed' });
   }
 
-  // Locate the order by the AUTHORITATIVE token PeleCard returned, then confirm
-  // success + amount before marking paid.
-  const c = db.getCollectionByPayToken(tx.paramX);
+  // Locate the specific pay SESSION by the AUTHORITATIVE token PeleCard returned.
+  // Verify tx against THAT session's own charged_total (sessions opened with
+  // different coupons must each verify against their own price) — never a shared
+  // order-level amount. On success mark paid + credit THAT session's coupon.
+  const match = db.getPaymentSessionByToken(tx.paramX);
+  const c = match && match.collection;
+  const session = match && match.session;
   if (
     c &&
-    c.order &&
+    session &&
     !c.order.paid &&
-    pelecard.verifyTransaction(tx, { amountNis: c.order.total })
+    pelecard.verifyTransaction(tx, { amountNis: session.charged_total })
   ) {
     db.markPaid(c.id, {
       method: 'pelecard',
       transactionId: tx.transactionId,
       approvalNo: tx.approvalNo,
+      token: session.token,
+      charged_total: session.charged_total,
+      coupon: session.coupon,
+      discount_pct: session.discount_pct,
     });
+    // Count the coupon use once, on the real unpaid->paid transition.
+    if (session.coupon) db.incrementCouponUses(session.coupon);
     // Notify the owner a payment came in. Fire-and-forget: the payment must
     // succeed even if the send fails. Skip the word-count work entirely when
     // email is unconfigured (the dormant default).

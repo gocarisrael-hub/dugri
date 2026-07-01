@@ -93,7 +93,7 @@ async function get(urlPath) {
 }
 
 function tokenOf(id) {
-  return db.getCollection(id).order.pelecard.param_tokens[0];
+  return db.getCollection(id).order.pelecard.sessions[0].token;
 }
 
 describe('POST /api/collections/:id/pay/init', () => {
@@ -106,9 +106,9 @@ describe('POST /api/collections/:id/pay/init', () => {
     expect(r.status).toBe(200);
     expect(r.body.url).toContain('transactionId=tx-1');
     expect(r.body.total).toBe(79);
-    const tokens = db.getCollection(c.id).order.pelecard.param_tokens;
-    expect(tokens.length).toBe(1);
-    expect(tokens[0].length).toBeLessThanOrEqual(19);
+    const sessions = db.getCollection(c.id).order.pelecard.sessions;
+    expect(sessions.length).toBe(1);
+    expect(sessions[0].token.length).toBeLessThanOrEqual(19);
   });
 
   it('rejects a wrong owner token', async () => {
@@ -146,7 +146,7 @@ describe('POST /api/collections/:id/pay/init', () => {
       owner_token: c.owner_token,
       version: 'pdf',
     });
-    expect(db.getCollection(c.id).order.pelecard.param_tokens.length).toBe(2);
+    expect(db.getCollection(c.id).order.pelecard.sessions.length).toBe(2);
   });
 });
 
@@ -208,14 +208,16 @@ describe('POST /api/payment/callback', () => {
       version: 'delivery',
       address: addr,
     });
-    const firstToken = db.getCollection(c.id).order.pelecard.param_tokens[0];
+    const firstToken = db.getCollection(c.id).order.pelecard.sessions[0].token;
     await post('/api/collections/' + c.id + '/pay/init', {
       owner_token: c.owner_token,
       version: 'delivery',
       address: addr,
     });
     // The first session's token must have survived the re-set.
-    expect(db.getCollection(c.id).order.pelecard.param_tokens).toContain(firstToken);
+    expect(db.getCollection(c.id).order.pelecard.sessions.map((s) => s.token)).toContain(
+      firstToken
+    );
 
     // Completing payment on the FIRST session still marks the order paid.
     nextGetTx = {
