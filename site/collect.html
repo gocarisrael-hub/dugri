@@ -1010,7 +1010,7 @@
         // Never display a fraction over the cap: show the count capped at the max.
         $('#count').textContent = Math.min(n, MAX_WORDS);
         $('#countMax').textContent = atMax
-          ? ' מילים · מקסימום 🎉'
+          ? ' מילים · מקסימום'
           : stage2
             ? ' / ' + MAX_WORDS + ' מילים'
             : ' / ' + WORD_GOAL + ' מילים · מינימום';
@@ -1025,7 +1025,7 @@
               MAX_WORDS +
               ', ומה שלא תשלימו — נשלים לכם לפי סוג האירוע.'
             : n >= 50
-              ? 'חצי דרך! ✨ עוד ' + (WORD_GOAL - n) + ' עד המינימום (אפשר עד ' + MAX_WORDS + ')'
+              ? 'חצי דרך! עוד ' + (WORD_GOAL - n) + ' עד המינימום (אפשר עד ' + MAX_WORDS + ')'
               : 'עוד ' +
                 (WORD_GOAL - n) +
                 ' עד המינימום של ' +
