@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>דוגרי · ניהול קופונים</title>
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      />
+    </noscript>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Heebo', Arial, sans-serif;
+        background: #fff5f8;
+        color: #2c1a29;
+        padding: 22px 16px 60px;
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 16px;
+      }
+      .nav a {
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid #f0c9da;
+        background: #fff;
+        color: #8a2b53;
+        border-radius: 99px;
+        padding: 6px 14px;
+      }
+      .nav a.active {
+        background: #e5197d;
+        border-color: #e5197d;
+        color: #fff;
+      }
+      h1 {
+        font-size: 24px;
+        font-weight: 900;
+        margin-bottom: 4px;
+      }
+      .sub {
+        color: #7c6a74;
+        margin-bottom: 18px;
+      }
+      .msg {
+        background: #fff;
+        border: 1px solid #f0dee4;
+        border-radius: 14px;
+        padding: 20px;
+        text-align: center;
+      }
+      .panel {
+        background: #fff;
+        border: 1px solid #f0dee4;
+        border-radius: 14px;
+        padding: 16px 18px;
+        margin-bottom: 18px;
+      }
+      .panel h2 {
+        font-size: 16px;
+        font-weight: 800;
+        color: #8a2b53;
+        margin-bottom: 12px;
+      }
+      .form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: flex-end;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .field label {
+        font-size: 12.5px;
+        color: #7c6a74;
+        font-weight: 700;
+      }
+      .field input {
+        font: inherit;
+        font-size: 14px;
+        border: 1px solid #f0c9da;
+        border-radius: 9px;
+        padding: 8px 10px;
+        background: #fff;
+        color: #2c1a29;
+      }
+      #code {
+        text-transform: uppercase;
+        width: 160px;
+      }
+      #pct {
+        width: 110px;
+      }
+      button {
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        border: 1px solid #e5197d;
+        background: #e5197d;
+        color: #fff;
+        border-radius: 9px;
+        padding: 9px 16px;
+        margin: 0;
+      }
+      button.ghost {
+        background: #fff;
+        color: #e5197d;
+        padding: 6px 10px;
+      }
+      button.danger {
+        border-color: #c0143c;
+        color: #c0143c;
+        background: #fff;
+        padding: 6px 10px;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .err {
+        color: #c0143c;
+        font-size: 13px;
+        font-weight: 700;
+        margin-top: 10px;
+        min-height: 18px;
+      }
+      #content {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+        border: 1px solid #f0dee4;
+        border-radius: 14px;
+        overflow: hidden;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: right;
+        padding: 10px 12px;
+        border-bottom: 1px solid #f4e7ec;
+        vertical-align: middle;
+      }
+      th {
+        background: #fde3ee;
+        color: #8a2b53;
+        font-size: 12.5px;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      .code {
+        font-weight: 800;
+        letter-spacing: 0.5px;
+      }
+      .pill {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 99px;
+        font-weight: 700;
+        font-size: 12.5px;
+      }
+      .on {
+        background: #e6f6ee;
+        color: #1f7a4d;
+      }
+      .off {
+        background: #f1eef0;
+        color: #7c6a74;
+      }
+      .muted {
+        color: #7c6a74;
+        font-size: 12.5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="nav" id="nav">
+        <a data-page="dashboard.html">לוח בקרה</a>
+        <a data-page="admin.html">ניהול הזמנות</a>
+        <a data-page="coupons.html" class="active">ניהול קופונים</a>
+      </nav>
+      <h1>ניהול קופונים · דוגרי</h1>
+      <div class="sub" id="sub">טוען…</div>
+
+      <div class="panel" id="createPanel" hidden>
+        <h2>קופון חדש</h2>
+        <form class="form" id="form">
+          <div class="field">
+            <label for="code">קוד</label>
+            <input id="code" type="text" autocomplete="off" placeholder="SUMMER10" />
+          </div>
+          <div class="field">
+            <label for="pct">אחוז הנחה</label>
+            <input id="pct" type="number" min="1" max="100" step="1" placeholder="10" />
+          </div>
+          <div class="field">
+            <label for="until">בתוקף עד (ריק = ללא תפוגה)</label>
+            <input id="until" type="date" />
+          </div>
+          <button type="submit" id="submitBtn">צור קופון</button>
+        </form>
+        <div class="err" id="err"></div>
+      </div>
+
+      <div id="content"></div>
+    </div>
+
+    <script type="module">
+      const key = new URLSearchParams(location.search).get('key') || '';
+      // Carry the admin key across the three linked admin pages.
+      for (const a of document.querySelectorAll('#nav a')) {
+        a.href = a.dataset.page + (key ? '?key=' + encodeURIComponent(key) : '');
+      }
+
+      const sub = document.getElementById('sub');
+      const content = document.getElementById('content');
+      const createPanel = document.getElementById('createPanel');
+      const form = document.getElementById('form');
+      const codeEl = document.getElementById('code');
+      const pctEl = document.getElementById('pct');
+      const untilEl = document.getElementById('until');
+      const submitBtn = document.getElementById('submitBtn');
+      const errEl = document.getElementById('err');
+
+      // Human-readable Hebrew for the server's terse 400 error codes.
+      const ERR_HE = {
+        'bad code': 'קוד לא תקין (3–20 תווים, אותיות וספרות בלבד).',
+        'bad discount_pct': 'אחוז הנחה חייב להיות מספר שלם בין 1 ל-100.',
+        'bad valid_until': 'תאריך תפוגה לא תקין.',
+        duplicate: 'קוד כזה כבר קיים.',
+      };
+
+      const withKey = (path) =>
+        path + (path.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key);
+
+      function fmtDate(iso) {
+        try {
+          return new Date(iso).toLocaleDateString('he-IL', {
+            day: '2-digit',
+            month: '2-digit',
+            year: '2-digit',
+          });
+        } catch {
+          return iso;
+        }
+      }
+
+      function render(coupons) {
+        if (!coupons.length) {
+          content.innerHTML = '<div class="msg">אין קופונים עדיין.</div>';
+          return;
+        }
+        const table = document.createElement('table');
+        table.innerHTML =
+          '<thead><tr><th>קוד</th><th>הנחה</th><th>בתוקף עד</th><th>סטטוס</th><th>שימושים</th><th>ניהול</th></tr></thead>';
+        const tb = document.createElement('tbody');
+        for (const c of coupons) {
+          const tr = document.createElement('tr');
+
+          const tdCode = document.createElement('td');
+          tdCode.className = 'code';
+          tdCode.textContent = c.code;
+
+          const tdPct = document.createElement('td');
+          tdPct.textContent = c.discount_pct + '%';
+
+          const tdUntil = document.createElement('td');
+          if (c.valid_until) {
+            tdUntil.textContent = fmtDate(c.valid_until);
+          } else {
+            tdUntil.className = 'muted';
+            tdUntil.textContent = 'ללא תפוגה';
+          }
+
+          const tdStatus = document.createElement('td');
+          const pill = document.createElement('span');
+          pill.className = 'pill ' + (c.active ? 'on' : 'off');
+          pill.textContent = c.active ? 'פעיל' : 'כבוי';
+          tdStatus.appendChild(pill);
+
+          const tdUses = document.createElement('td');
+          tdUses.textContent = c.uses || 0;
+
+          const tdManage = document.createElement('td');
+          const toggleBtn = document.createElement('button');
+          toggleBtn.className = 'ghost';
+          toggleBtn.textContent = c.active ? 'כבה' : 'הפעל';
+          toggleBtn.onclick = async () => {
+            toggleBtn.disabled = true;
+            const ok = await apiToggle(c.id, !c.active);
+            if (ok) load();
+            else toggleBtn.disabled = false;
+          };
+          const delBtn = document.createElement('button');
+          delBtn.className = 'danger';
+          delBtn.textContent = 'מחק';
+          delBtn.onclick = async () => {
+            if (!confirm('למחוק את הקופון ' + c.code + '?')) return;
+            delBtn.disabled = true;
+            const ok = await apiDelete(c.id);
+            if (ok) load();
+            else delBtn.disabled = false;
+          };
+          tdManage.appendChild(toggleBtn);
+          tdManage.appendChild(document.createTextNode(' '));
+          tdManage.appendChild(delBtn);
+
+          tr.appendChild(tdCode);
+          tr.appendChild(tdPct);
+          tr.appendChild(tdUntil);
+          tr.appendChild(tdStatus);
+          tr.appendChild(tdUses);
+          tr.appendChild(tdManage);
+          tb.appendChild(tr);
+        }
+        table.appendChild(tb);
+        content.innerHTML = '';
+        content.appendChild(table);
+      }
+
+      async function apiToggle(id, active) {
+        try {
+          const r = await fetch(withKey('/api/admin/coupons/' + id), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ active }),
+          });
+          return r.ok;
+        } catch {
+          return false;
+        }
+      }
+
+      async function apiDelete(id) {
+        try {
+          const r = await fetch(withKey('/api/admin/coupons/' + id), { method: 'DELETE' });
+          return r.ok;
+        } catch {
+          return false;
+        }
+      }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errEl.textContent = '';
+        const code = codeEl.value.trim();
+        const pct = Number(pctEl.value);
+        const until = untilEl.value; // '' or 'YYYY-MM-DD'
+        submitBtn.disabled = true;
+        try {
+          const r = await fetch(withKey('/api/admin/coupons'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, discount_pct: pct, valid_until: until || null }),
+          });
+          if (r.ok) {
+            form.reset();
+            load();
+          } else {
+            let msg = 'לא ניתן ליצור את הקופון.';
+            try {
+              const data = await r.json();
+              if (data && data.error) msg = ERR_HE[data.error] || data.error;
+            } catch {
+              /* keep default */
+            }
+            errEl.textContent = msg;
+          }
+        } catch {
+          errEl.textContent = 'שגיאה בשליחה.';
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+
+      async function load() {
+        if (!key) {
+          sub.textContent = '';
+          createPanel.hidden = true;
+          content.innerHTML =
+            '<div class="msg">חסר מפתח גישה. פתחו עם <code>?key=…</code> בכתובת.</div>';
+          return;
+        }
+        try {
+          const r = await fetch('/api/admin/coupons?key=' + encodeURIComponent(key));
+          if (r.status === 403) {
+            sub.textContent = '';
+            createPanel.hidden = true;
+            content.innerHTML = '<div class="msg">מפתח גישה שגוי.</div>';
+            return;
+          }
+          const coupons = (await r.json()).coupons || [];
+          sub.textContent = coupons.length + ' קופונים';
+          createPanel.hidden = false;
+          render(coupons);
+        } catch {
+          sub.textContent = '';
+          content.innerHTML = '<div class="msg">שגיאה בטעינה.</div>';
+        }
+      }
+      load();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>דוגרי · לוח בקרה</title>
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      />
+    </noscript>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Heebo', Arial, sans-serif;
+        background: #fff5f8;
+        color: #2c1a29;
+        padding: 22px 16px 60px;
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 16px;
+      }
+      .nav a {
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid #f0c9da;
+        background: #fff;
+        color: #8a2b53;
+        border-radius: 99px;
+        padding: 6px 14px;
+      }
+      .nav a.active {
+        background: #e5197d;
+        border-color: #e5197d;
+        color: #fff;
+      }
+      h1 {
+        font-size: 24px;
+        font-weight: 900;
+        margin-bottom: 4px;
+      }
+      .sub {
+        color: #7c6a74;
+        margin-bottom: 18px;
+      }
+      .msg {
+        background: #fff;
+        border: 1px solid #f0dee4;
+        border-radius: 14px;
+        padding: 20px;
+        text-align: center;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 12px;
+        margin-bottom: 24px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #f0dee4;
+        border-radius: 14px;
+        padding: 16px 18px;
+      }
+      .card .val {
+        font-size: 30px;
+        font-weight: 900;
+        color: #8a2b53;
+        line-height: 1.1;
+      }
+      .card .lab {
+        font-size: 13px;
+        color: #7c6a74;
+        margin-top: 4px;
+      }
+      .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .links a {
+        flex: 1 1 200px;
+        text-decoration: none;
+        background: #e5197d;
+        color: #fff;
+        border-radius: 14px;
+        padding: 18px 20px;
+        font-weight: 800;
+        font-size: 16px;
+        text-align: center;
+      }
+      .links a.alt {
+        background: #fff;
+        color: #8a2b53;
+        border: 1px solid #f0c9da;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="nav" id="nav">
+        <a data-page="dashboard.html" class="active">לוח בקרה</a>
+        <a data-page="admin.html">ניהול הזמנות</a>
+        <a data-page="coupons.html">ניהול קופונים</a>
+      </nav>
+      <h1>לוח בקרה · דוגרי</h1>
+      <div class="sub" id="sub">טוען…</div>
+      <div class="cards" id="cards" hidden></div>
+      <div class="links" id="links" hidden>
+        <a data-page="admin.html">ניהול הזמנות ←</a>
+        <a data-page="coupons.html" class="alt">ניהול קופונים ←</a>
+      </div>
+      <div id="content"></div>
+    </div>
+
+    <script type="module">
+      const key = new URLSearchParams(location.search).get('key') || '';
+      // Carry the admin key across the three linked admin pages.
+      const withKey = (page) => page + (key ? '?key=' + encodeURIComponent(key) : '');
+      for (const a of document.querySelectorAll('[data-page]')) {
+        a.href = withKey(a.dataset.page);
+      }
+
+      const sub = document.getElementById('sub');
+      const cardsEl = document.getElementById('cards');
+      const linksEl = document.getElementById('links');
+      const content = document.getElementById('content');
+
+      const isPaid = (c) => !!(c.order && c.order.paid);
+
+      // Today in Israel-local terms as 'YYYY-MM-DD', to bucket "paid today".
+      function israelToday() {
+        return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+      }
+      function isPaidToday(c) {
+        const at = c.order && c.order.paid_at;
+        if (!at) return false;
+        try {
+          const d = new Date(at).toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+          return d === israelToday();
+        } catch {
+          return false;
+        }
+      }
+
+      function renderCards(cols, coupons) {
+        const total = cols.length;
+        const open = cols.filter((c) => c.status === 'open').length;
+        const paid = cols.filter(isPaid).length;
+        const paidToday = cols.filter(isPaidToday).length;
+        const revenue = cols.reduce(
+          (s, c) => s + (isPaid(c) ? (c.order.charged_total ?? c.order.total ?? 0) : 0),
+          0
+        );
+        const activeCoupons = coupons.filter((x) => x.active).length;
+        const items = [
+          ['כל ההזמנות', total],
+          ['פתוחות', open],
+          ['שולמו', paid],
+          ['שולמו היום', paidToday],
+          ['הכנסות ששולמו', revenue + ' ₪'],
+          ['קופונים פעילים', activeCoupons + ' / ' + coupons.length],
+        ];
+        cardsEl.textContent = '';
+        for (const [lab, val] of items) {
+          const box = document.createElement('div');
+          box.className = 'card';
+          const v = document.createElement('div');
+          v.className = 'val';
+          v.textContent = val;
+          const l = document.createElement('div');
+          l.className = 'lab';
+          l.textContent = lab;
+          box.appendChild(v);
+          box.appendChild(l);
+          cardsEl.appendChild(box);
+        }
+        cardsEl.hidden = false;
+        linksEl.hidden = false;
+      }
+
+      async function load() {
+        if (!key) {
+          sub.textContent = '';
+          content.innerHTML =
+            '<div class="msg">חסר מפתח גישה. פתחו עם <code>?key=…</code> בכתובת.</div>';
+          return;
+        }
+        try {
+          const [colRes, coupRes] = await Promise.all([
+            fetch('/api/admin/collections?key=' + encodeURIComponent(key)),
+            fetch('/api/admin/coupons?key=' + encodeURIComponent(key)),
+          ]);
+          if (colRes.status === 403 || coupRes.status === 403) {
+            sub.textContent = '';
+            content.innerHTML = '<div class="msg">מפתח גישה שגוי.</div>';
+            return;
+          }
+          const cols = (await colRes.json()).collections || [];
+          const coupons = (await coupRes.json()).coupons || [];
+          sub.textContent = 'סקירה מהירה';
+          renderCards(cols, coupons);
+        } catch {
+          sub.textContent = '';
+          content.innerHTML = '<div class="msg">שגיאה בטעינה.</div>';
+        }
+      }
+      load();
+      setInterval(load, 15000);
+    </script>
+  </body>
+</html>
