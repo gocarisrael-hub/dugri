@@ -1354,6 +1354,30 @@
         return p;
       }
 
+      // The tokenized SVGs paint their designed background/artwork through
+      // fill="var(--cN)" *presentation attributes*. CSS var() substitution is NOT
+      // resolved inside presentation attributes on some engines (older iOS Safari,
+      // the Instagram in-app browser), so on those the card renders WITHOUT its
+      // designed background. Inject a scoped <style> that re-drives the fill via
+      // the CSS `fill` *property* (where var() is universally supported) and
+      // carries the design's ORIGINAL anchor colour as the var() fallback — so the
+      // background always paints (never transparent), even before the live palette
+      // is applied or where the variable can't be resolved. Recolor keeps working
+      // because the live --cN still wins over the fallback when it is set.
+      let svgUid = 0;
+      function paintSvg(svgText, anchors) {
+        if (!anchors || !anchors.length) return svgText;
+        const id = 'cfg-svg-' + ++svgUid;
+        const rules = anchors
+          .map(
+            (hex, i) =>
+              `#${id} [fill="var(--c${i})"]{fill:var(--c${i},${hex})}` +
+              `#${id} [stroke="var(--c${i})"]{stroke:var(--c${i},${hex})}`
+          )
+          .join('');
+        return svgText.replace(/<svg\b([^>]*)>/i, `<svg id="${id}"$1><style>${rules}</style>`);
+      }
+
       const panels = {
         front: document.querySelector('[data-panel="front"]'),
         back: document.querySelector('[data-panel="back"]'),
@@ -1373,7 +1397,7 @@
               return;
             }
             try {
-              el.innerHTML = await loadSvg(path);
+              el.innerHTML = paintSvg(await loadSvg(path), d.anchors);
             } catch (e) {
               el.innerHTML = '<div class="preview-empty">אין תצוגה</div>';
             }
@@ -1449,7 +1473,7 @@
         if (frontPath) {
           loadSvg(frontPath)
             .then((txt) => {
-              thumb.innerHTML = txt;
+              thumb.innerHTML = paintSvg(txt, d.anchors);
               // guard: applyOriginal throws on empty anchors - skip recolor
               if (d.anchors && d.anchors.length) applyOriginal(thumb, d.anchors);
             })
