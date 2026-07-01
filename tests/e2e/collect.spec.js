@@ -48,9 +48,7 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
   await expect(page.locator('#addCard')).toBeHidden();
 });
 
-test('owner pay panel: select delivery → address + total 199 → Bit opens, stays on collect', async ({
-  page,
-}) => {
+test('owner pay panel: select delivery → address fields appear + total 199', async ({ page }) => {
   await createCollection(page, 'דנה');
 
   // Owner sees the pay panel; it's collapsed by default — open it first.
@@ -65,28 +63,9 @@ test('owner pay panel: select delivery → address + total 199 → Bit opens, st
   await expect(page.locator('#addressForm')).toBeVisible();
   await expect(page.locator('#payTotal')).toHaveText('199');
 
-  // Missing address blocks Bit and shows an inline error.
-  await page.locator('#bitPayLink').click();
-  await expect(page.locator('#payErr')).toBeVisible();
-
-  // Fill the required address fields.
-  await page.fill('#addrStreet', 'הרצל 10');
-  await page.fill('#addrCity', 'תל אביב');
-  await page.fill('#addrPostal', '6100000');
-
-  // Clicking שלם בביט opens Bit in a new tab; the page stays on collect.html.
-  const collectUrl = page.url();
-  const [popup] = await Promise.all([
-    page.waitForEvent('popup'),
-    page.locator('#bitPayLink').click(),
-  ]);
-  await expect(popup).toHaveURL(
-    /bitpay\.co\.il\/app\/me\/4BE8AF50-DD1F-8868-1FF0-2DE96FEB9B6A4F38/
-  );
-  await popup.close();
-  expect(page.url()).toBe(collectUrl);
-  expect(page.url()).toContain('collect.html');
-  await expect(page.locator('#payConfirm')).toContainText('199');
+  // Card-only: there is no Bit link anywhere.
+  await expect(page.locator('#bitPayLink')).toHaveCount(0);
+  await expect(page.locator('#payPanel')).not.toContainText('ביט');
 });
 
 test('owner pay panel is collapsed by default and opens on the summary button', async ({
@@ -95,25 +74,98 @@ test('owner pay panel is collapsed by default and opens on the summary button', 
   await createCollection(page, 'אורי');
   const panel = page.locator('#payPanel');
   await expect(panel).toBeVisible();
-  // Collapsed by default: the inner options/Bit are hidden behind one button.
+  // Collapsed by default: the inner options are hidden behind one button.
   await expect(page.locator('#payOpts')).toBeHidden();
-  await expect(page.locator('#bitPayLink')).toBeHidden();
   await expect(page.locator('#payPanel summary')).toContainText('שלמו וקבלו את המשחק');
   // Click the summary → options reveal; click again → collapse.
   await page.locator('#payPanel summary').click();
   await expect(page.locator('#payOpts')).toBeVisible();
-  await expect(page.locator('#bitPayLink')).toBeVisible();
   await page.locator('#payPanel summary').click();
   await expect(page.locator('#payOpts')).toBeHidden();
 });
 
-test('credit-card button stays hidden when card payment is not configured', async ({ page }) => {
+test('card disabled: no dead pay CTA, neutral note instead, and no top nag', async ({ page }) => {
   // The E2E server runs without PELECARD_* credentials, so card_enabled is
-  // false: the credit-card button must not show, and Bit remains the path.
+  // false. There must be NO clickable pay button, a neutral "coming soon" note
+  // in the panel instead, and the top reminder must NOT nag toward a dead panel.
   await createCollection(page, 'נועה');
+  await expect(page.locator('#payReminder')).toBeHidden();
   await page.locator('#payPanel summary').click();
-  await expect(page.locator('#bitPayLink')).toBeVisible();
   await expect(page.locator('#cardPayBtn')).toBeHidden();
+  await expect(page.locator('#bitPayLink')).toHaveCount(0);
+  await expect(page.locator('#cardSoonNote')).toBeVisible();
+  await expect(page.locator('#cardSoonNote')).toContainText('ייפתח בקרוב');
+});
+
+test('word counter shows the 416 max and the bar fills toward it', async ({ page }) => {
+  await createCollection(page, 'ליהיא');
+  await expect(page.locator('.count-pill')).toContainText('416');
+  await page.fill('#wordInput', 'מילה אחת');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('1');
+  await expect(page.locator('#countMax')).toContainText('/ 416');
+  await expect(page.locator('#countHint')).toContainText('416');
+  // one word ≈ 0.24% of a 416-word bar
+  const width = await page.locator('#barFill').evaluate((el) => el.style.width);
+  expect(parseFloat(width)).toBeGreaterThan(0);
+  expect(parseFloat(width)).toBeLessThan(1);
+});
+
+test('over the 416 cap: counter shows 416 max (no fraction over cap), bar full', async ({
+  page,
+}) => {
+  await createCollection(page, 'אגם');
+  const url = new URL(page.url());
+  const c = url.searchParams.get('c');
+  // Push the count past the cap in one API call (417 unique words).
+  const words = Array.from({ length: 417 }, (_, i) => 'w' + i);
+  const res = await page.request.post(`/api/collections/${c}/words`, { data: { words } });
+  expect(res.ok()).toBeTruthy();
+
+  await page.reload();
+  await expect(page.locator('#count')).toHaveText('416'); // capped display
+  await expect(page.locator('#countMax')).toContainText('מקסימום');
+  await expect(page.locator('.count-pill')).not.toContainText('417');
+  await expect(page.locator('.count-pill')).not.toContainText('/ 416'); // no fraction over cap
+  await expect(page.locator('#countHint')).toContainText('מקסימום');
+  const width = await page.locator('#barFill').evaluate((el) => el.style.width);
+  expect(parseFloat(width)).toBe(100); // bar full
+});
+
+test('struck old price carries the ₪ sign alongside the new price', async ({ page }) => {
+  await createCollection(page, 'מור');
+  await page.locator('#payPanel summary').click();
+  const was = page.locator('#payPanel s.was');
+  await expect(was).toHaveText('₪129');
+  await expect(page.locator('#payPanel .opt-price').first()).toContainText('₪79');
+});
+
+test('after payment: pay panel + reminder disappear, סיום card takes over', async ({ page }) => {
+  await createCollection(page, 'רותם');
+  const url = new URL(page.url());
+  const c = url.searchParams.get('c');
+  const k = url.searchParams.get('k');
+
+  // Place an order, then mark it paid via the admin endpoint (E2E ADMIN_KEY).
+  await page.request.post(`/api/collections/${c}/order`, {
+    data: { owner_token: k, version: 'pdf' },
+  });
+  const paidRes = await page.request.post(`/api/admin/collections/${c}/paid?key=dugri-admin`);
+  expect(paidRes.ok()).toBeTruthy();
+
+  await page.reload();
+  // Pay panel + top reminder gone; the "keep adding, then סיום" card is shown.
+  await expect(page.locator('#payPanel')).toBeHidden();
+  await expect(page.locator('#payReminder')).toBeHidden();
+  await expect(page.locator('#paidCard')).toBeVisible();
+  await expect(page.locator('#paidCard')).toContainText('התשלום התקבל');
+  await expect(page.locator('#paidCloseBtn')).toBeVisible();
+
+  // The primary CTA closes the collection (= starts production).
+  page.once('dialog', (d) => d.accept());
+  await page.locator('#paidCloseBtn').click();
+  await expect(page.locator('#banner')).toBeVisible();
+  await expect(page.locator('#addCard')).toBeHidden();
 });
 
 test('pay panel shows the new version names and prices', async ({ page }) => {
