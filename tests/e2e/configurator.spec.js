@@ -67,6 +67,96 @@ test.describe('order wizard', () => {
     expect(page.url()).toContain('step=2');
   });
 
+  test('front and back previews paint their original background (never transparent/black)', async ({
+    page,
+  }) => {
+    await page.goto('/options.html');
+
+    // Computed fill of the largest painted element in a panel's SVG — the card's
+    // designed background. (Elements inside <defs>/<clipPath> are not rendered.)
+    const bgFill = async (panel) =>
+      page
+        .getByTestId('preview-' + panel)
+        .locator('svg')
+        .first()
+        .evaluate((svg) => {
+          let best = null;
+          let bestArea = -1;
+          for (const el of svg.querySelectorAll('path,rect,circle,polygon')) {
+            if (el.closest('defs') || el.closest('clipPath') || el.closest('mask')) continue;
+            const cs = getComputedStyle(el);
+            if (cs.fill === 'none') continue;
+            let area = 0;
+            try {
+              const b = el.getBBox();
+              area = b.width * b.height;
+            } catch {
+              /* not measurable */
+            }
+            if (area > bestArea) {
+              bestArea = area;
+              best = cs.fill;
+            }
+          }
+          return best;
+        });
+
+    // A real, visible paint: not missing, not fully transparent, and not the
+    // black/unpainted state you get when a var() background fails to resolve.
+    const isPainted = (fill) =>
+      typeof fill === 'string' &&
+      fill !== '' &&
+      fill !== 'none' &&
+      !/rgba\([^)]*,\s*0\s*\)/.test(fill) &&
+      fill !== 'rgb(0, 0, 0)' &&
+      fill !== 'transparent';
+
+    await expect(page.getByTestId('preview-front').locator('svg')).toBeVisible();
+    const frontOrig = await bgFill('front');
+    expect(isPainted(frontOrig), `front original background fill: ${frontOrig}`).toBe(true);
+
+    await page.getByTestId('tab-back').click();
+    await expect(page.getByTestId('preview-back')).toHaveAttribute('data-active', 'true');
+    const backOrig = await bgFill('back');
+    expect(isPainted(backOrig), `back original background fill: ${backOrig}`).toBe(true);
+
+    // Regression guard for the fix: the background is driven via a CSS `fill`
+    // rule whose var() carries the design's ORIGINAL anchor as a fallback, so
+    // even if the live --cN palette is missing (e.g. an engine that can't resolve
+    // var() in SVG presentation attributes) the original background still paints.
+    await page.getByTestId('tab-front').click();
+    const frontFallback = await page
+      .getByTestId('preview-front')
+      .locator('svg')
+      .first()
+      .evaluate((svg) => {
+        // Strip the live palette vars from every ancestor -> var(--cN) is unset.
+        for (let n = svg; n; n = n.parentElement) {
+          if (n.style) for (let i = 0; i < 8; i++) n.style.removeProperty('--c' + i);
+        }
+        let best = null;
+        let bestArea = -1;
+        for (const el of svg.querySelectorAll('path,rect,circle,polygon')) {
+          if (el.closest('defs') || el.closest('clipPath') || el.closest('mask')) continue;
+          const cs = getComputedStyle(el);
+          if (cs.fill === 'none') continue;
+          let area = 0;
+          try {
+            const b = el.getBBox();
+            area = b.width * b.height;
+          } catch {
+            /* not measurable */
+          }
+          if (area > bestArea) {
+            bestArea = area;
+            best = cs.fill;
+          }
+        }
+        return best;
+      });
+    expect(isPainted(frontFallback), `front fallback background fill: ${frontFallback}`).toBe(true);
+  });
+
   test('defaults advance through design, color and add-ons', async ({ page }) => {
     await page.goto('/options.html');
     for (const s of [1, 2, 3]) {
