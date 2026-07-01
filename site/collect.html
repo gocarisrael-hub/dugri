@@ -684,7 +684,7 @@
           <div class="bar"><i id="barFill1"></i></div>
         </div>
         <div id="stage2" class="hidden">
-          <div class="stage2-label">המינימום מאחוריכם — הרבע הראשון מלא. ממשיכים!</div>
+          <div class="stage2-label" id="stage2Label"></div>
           <div class="bar bar-stage2"><i id="barFill2"></i></div>
         </div>
         <small class="muted" id="countHint">היעד: לפחות 100 מילים</small>
@@ -1040,6 +1040,13 @@
         $('#stage2').classList.toggle('hidden', !stage2);
         $('#barFill1').style.width = Math.min(100, (n / WORD_GOAL) * 100) + '%';
         $('#barFill2').style.width = Math.min(100, (n / MAX_WORDS) * 100) + '%';
+        // Render-driven Stage-2 label: a message that stays true across the whole
+        // 100→416 range (never claims the "first quarter" is still just full at
+        // 400 words), and flips to a max-reached framing at/over the cap so it
+        // doesn't contradict the "reached maximum" hint.
+        $('#stage2Label').textContent = atMax
+          ? 'הגעתם למקסימום — יש לכם משחק מפוצץ!'
+          : 'המינימום מאחוריכם — ממשיכים למקסימום (' + MAX_WORDS + ')';
 
         // words
         const wrap = $('#wordsWrap');

@@ -59,7 +59,9 @@ test('crossing to exactly 100 words: stage-2 bar replaces stage-1, ~¼ full', as
   // The swap happened: stage-1 gone, the new stage-2 bar is shown.
   await expect(page.locator('#stage1')).toBeHidden();
   await expect(page.locator('#stage2')).toBeVisible();
-  await expect(page.locator('#stage2')).toContainText('הרבע הראשון מלא');
+  // Label is render-driven and true across the whole 100→416 range.
+  await expect(page.locator('#stage2Label')).toContainText('ממשיכים למקסימום');
+  await expect(page.locator('#stage2Label')).toContainText(String(MAX_WORDS));
   // Pill now frames the max.
   await expect(page.locator('#countMax')).toContainText('/ ' + MAX_WORDS);
   await expect(page.locator('#countMax')).not.toContainText('מינימום');
@@ -99,4 +101,8 @@ test('past the 416 cap: capped count, מקסימום note, stage-2 bar full, no 
   // Stage-2 bar is full.
   await expect(page.locator('#stage2')).toBeVisible();
   expect(await barWidth(page.locator('#barFill2'))).toBe(100);
+  // At the cap the label flips to a max-reached framing — it must NOT still
+  // claim progress toward the max nor that a quarter is "just full".
+  await expect(page.locator('#stage2Label')).toContainText('הגעתם למקסימום');
+  await expect(page.locator('#stage2Label')).not.toContainText('ממשיכים');
 });
