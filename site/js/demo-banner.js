@@ -1,13 +1,4 @@
-// Single source for the "site in beta / payment not live" demo banner.
-// Included on the flow pages; remove this one file + the <script> tags when
-// real payment goes live.
-(function () {
-  var bar = document.createElement('div');
-  bar.className = 'dugri-demo-banner';
-  bar.textContent = '🚀 אתר בהרצה · כרגע תשלום בביט';
-  bar.setAttribute(
-    'style',
-    'background:#2c1a29;color:#fff;text-align:center;font-size:12px;font-weight:600;padding:2px 12px'
-  );
-  document.body.insertBefore(bar, document.body.firstChild);
-})();
+// The site is out of beta and payment is live (credit card), so there is no
+// longer a "site in beta / pay via Bit" banner. This file is intentionally a
+// no-op; the <script> reference has been removed from the flow pages. Kept as a
+// harmless no-op so any lingering include does nothing.
