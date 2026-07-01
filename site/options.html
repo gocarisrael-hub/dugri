@@ -982,7 +982,9 @@
           padding: 8px;
         }
         .preview-panel svg,
-        .preview-panel img {
+        .preview-panel img,
+        .preview-card.is-collapsed .preview-panel svg,
+        .preview-card.is-collapsed .preview-panel img {
           max-height: 104px;
         }
         .preview-panel[data-active='true'] {
@@ -1013,18 +1015,21 @@
         .design .dname {
           font-size: 11.5px;
         }
-        /* colour swatches: tighter grid so all fit in view */
+        /* colour swatches: tighter grid, but keep enough vertical clearance for
+           the absolutely-positioned name label (it overhangs below each swatch)
+           so labels never overlap the next row or the following content. */
         .colors {
           column-gap: 10px;
-          row-gap: 24px;
-          padding-bottom: 12px;
+          row-gap: 30px;
+          padding-bottom: 22px;
         }
         .swatch {
           width: 42px;
           height: 42px;
         }
         .swatch .cname {
-          top: 50px;
+          top: 47px;
+          font-size: 11px;
         }
         /* name/contact fields sit closer together */
         .wiz-field {
