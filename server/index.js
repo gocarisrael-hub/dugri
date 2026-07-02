@@ -3,6 +3,7 @@
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
+const compression = require('compression');
 const db = require('./db');
 const pelecard = require('./pelecard');
 const notify = require('./notify');
@@ -11,6 +12,13 @@ const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
 // address (used to rate-limit coupon validation per client, not per proxy).
 app.set('trust proxy', true);
+// Compress responses (gzip) FIRST, before the body parsers, static middleware
+// and routes, so every downstream text payload — HTML/CSS/JS, the ~600–800KB
+// design-board SVGs, and the JSON API — is compressed on the wire. This is the
+// single biggest transfer win (SVG boards shrink ~5x). compression() only
+// touches compressible content types and is safe with express.json/urlencoded
+// and the PeleCard callback (it acts on the response, not the request body).
+app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 // PeleCard posts its server-side callback as a urlencoded form; accept both.
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
@@ -436,14 +444,32 @@ app.post('/api/payment/callback', async (req, res) => {
 // Unknown API routes -> JSON 404 (must come before static/catch-all).
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
 
-// Static site (so /collect resolves to collect.html, etc.). HTML is served
-// with no-cache so visitors always get the latest page (and the iPhone/Instagram
-// browsers stop showing a stale copy); other assets keep their default validators.
+// Rarely-changing static media (images/videos/fonts). These aren't
+// content-hashed, so we cache them for a MODERATE window (1 day) rather than
+// forever — long enough to skip the revalidation round-trip on repeat loads,
+// short enough that a deploy which swaps an image still propagates within a day.
+const MEDIA_EXTENSIONS = /\.(?:jpe?g|png|webp|gif|mp4|woff2?|svg)$/i;
+const MEDIA_MAX_AGE = 86400; // 1 day, in seconds
+
+// Static site (so /collect resolves to collect.html, etc.).
+// Cache policy by asset type:
+//   - HTML: no-cache so visitors always get the latest page (and the
+//     iPhone/Instagram in-app browsers stop showing a stale copy).
+//   - Media (images/videos/fonts): public, max-age=1d — skips the revalidation
+//     round-trip on repeat loads without pinning stale assets across deploys.
+//   - JS/CSS (and anything else): keep the default ETag validators so code
+//     updates propagate immediately after a deploy (revalidate, don't long-cache).
 app.use(
   express.static(SITE_DIR, {
     extensions: ['html'],
     setHeaders(res, filePath) {
-      if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+      } else if (MEDIA_EXTENSIONS.test(filePath)) {
+        res.setHeader('Cache-Control', `public, max-age=${MEDIA_MAX_AGE}`);
+      }
+      // JS/CSS/other: leave express.static's default (ETag/Last-Modified
+      // validators) untouched so a deploy's changes are seen immediately.
     },
   })
 );
