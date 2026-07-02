@@ -87,57 +87,96 @@ function loadDb() {
 let _db = loadDb();
 rebuildWordIndex();
 
-// --- Deferred, coalesced, atomic persistence -----------------------------
+// --- Coalesced + atomic persistence --------------------------------------
 // The old code did a synchronous pretty-printed writeFileSync of the WHOLE db
 // on every mutation. With a ~150MB file that blocked the single event-loop
 // thread for seconds per request, freezing all concurrent traffic (even static
-// files) until Railway's 15s proxy timeout returned 502s. Instead we mark the
-// state dirty and flush asynchronously, at most once per FLUSH_INTERVAL_MS, to
-// a temp file that is atomically renamed over DB_FILE.
-let _dirty = false;
+// files) until Railway's 15s proxy timeout returned 502s.
+//
+// Now most mutations mark the state dirty and flush asynchronously, coalesced
+// to at most once per FLUSH_INTERVAL_MS, to a temp file that is atomically
+// renamed over DB_FILE. Payment-critical mutations (see saveDb({immediate}))
+// instead flush SYNCHRONOUSLY so a charged customer's paid state / ParamX token
+// is durable the instant the HTTP handler returns — durability beats latency
+// for money, and those writes are rare.
+//
+// HONEST CAVEAT: the async flush still runs JSON.stringify(_db) over the whole
+// ~150MB in one synchronous call on the event-loop thread; only the disk I/O
+// (writeFile) is async. Coalescing cuts how OFTEN that serialize stall happens,
+// but it does not remove the per-flush freeze.
+// TODO(datastore): the real long-term fix is an incremental store (e.g. SQLite)
+// so a change writes only its own rows instead of re-serializing the whole DB.
 let _flushScheduled = false;
+let _flushTimer = null;
 let _flushing = false;
 let _lastFlushAt = 0;
 let _tmpSeq = 0;
+// Monotonic version counters. _seq bumps on every mutation; _writtenSeq is the
+// highest _seq known to be durably on disk. dirty === (_seq > _writtenSeq).
+// Comparing them (instead of a boolean) lets a synchronous flush and an
+// in-flight async flush coordinate: an async flush that finishes AFTER a newer
+// sync flush already persisted a higher _seq must NOT rename its now-stale temp
+// over the fresher file.
+let _seq = 0;
+let _writtenSeq = 0;
 
-// Public API — callers keep calling saveDb() exactly as before. It no longer
-// blocks: it just marks the state dirty and (re)schedules an async flush.
-function saveDb() {
-  _dirty = true;
+function isDirty() {
+  return _seq > _writtenSeq;
+}
+
+const tmpPath = (tag) => `${DB_FILE}.tmp-${tag || process.pid}-${_tmpSeq++}`;
+
+// Public API — callers keep calling saveDb() exactly as before. Without options
+// it defers; saveDb({ immediate: true }) forces a synchronous durable write for
+// payment-critical mutations.
+function saveDb(options) {
+  _seq += 1;
+  if (options && options.immediate) {
+    flushSync();
+    return;
+  }
   scheduleFlush();
 }
 
 function scheduleFlush() {
-  if (_flushScheduled || _flushing) return;
+  if (_flushScheduled || _flushing || !isDirty()) return;
   _flushScheduled = true;
   const elapsed = Date.now() - _lastFlushAt;
   const delay = Math.max(0, FLUSH_INTERVAL_MS - elapsed);
-  const timer = setTimeout(() => {
+  _flushTimer = setTimeout(() => {
+    _flushTimer = null;
     _flushScheduled = false;
     flushAsync();
   }, delay);
   // Don't let a pending flush timer keep the process alive on shutdown; the
   // SIGTERM/SIGINT/exit handlers do a final synchronous flush instead.
-  if (timer && typeof timer.unref === 'function') timer.unref();
+  if (_flushTimer && typeof _flushTimer.unref === 'function') _flushTimer.unref();
 }
 
 async function flushAsync() {
-  if (_flushing || !_dirty) return;
+  if (_flushing || !isDirty()) return;
   _flushing = true;
-  _dirty = false;
-  // Snapshot the serialized state NOW (synchronously) so a mutation during the
-  // async write can't produce a torn file; any such mutation re-sets _dirty and
-  // schedules a follow-up flush below.
+  // Advance the attempt timestamp NOW (not only on success) so a persistently
+  // failing write backs off to ~FLUSH_INTERVAL_MS between tries instead of
+  // busy-looping with delay 0 and hammering the disk on the event-loop thread.
+  _lastFlushAt = Date.now();
+  const seq = _seq;
   const data = JSON.stringify(_db);
-  const tmp = `${DB_FILE}.tmp-${process.pid}-${_tmpSeq++}`;
+  const tmp = tmpPath();
   try {
     await fs.promises.mkdir(DATA_DIR, { recursive: true });
     await fs.promises.writeFile(tmp, data, 'utf8');
-    await fs.promises.rename(tmp, DB_FILE);
-    _lastFlushAt = Date.now();
-  } catch {
-    // Write failed — keep the data dirty so a later flush retries it.
-    _dirty = true;
+    if (seq <= _writtenSeq) {
+      // A synchronous flush persisted a newer (or equal) state while we were
+      // writing — our temp is stale, so discard it rather than clobber.
+      await fs.promises.unlink(tmp);
+    } else {
+      await fs.promises.rename(tmp, DB_FILE);
+      _writtenSeq = seq;
+    }
+  } catch (err) {
+    console.error('[db] persistence failed', err);
+    // Leave the state dirty (_writtenSeq unadvanced) so a later flush retries.
     try {
       await fs.promises.unlink(tmp);
     } catch {
@@ -146,43 +185,75 @@ async function flushAsync() {
   } finally {
     _flushing = false;
     // Dirtied again while we were writing (or the write failed): flush again.
-    if (_dirty) scheduleFlush();
+    if (isDirty()) scheduleFlush();
   }
 }
 
-// Final, blocking flush for graceful shutdown / process exit. Must be
-// synchronous (Node ignores async work in 'exit' handlers). Atomic temp+rename
-// with compact JSON, best-effort.
+// Synchronous, durable, atomic write of the CURRENT in-memory state. Used both
+// for payment-critical mutations and for graceful shutdown. Always writes the
+// latest _db regardless of the dirty flag or any in-flight async flush — that
+// is idempotent (persisting current state is always safe) and guarantees a
+// SIGTERM redeploy never skips the write just because an async flush had
+// already cleared the dirty state without finishing its rename.
 function flushSync() {
-  if (!_dirty) return;
-  const tmp = `${DB_FILE}.tmp-sync-${process.pid}`;
+  const seq = _seq;
+  const tmp = tmpPath('sync');
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(tmp, JSON.stringify(_db), 'utf8');
     fs.renameSync(tmp, DB_FILE);
-    _dirty = false;
+    if (seq > _writtenSeq) _writtenSeq = seq;
     _lastFlushAt = Date.now();
+  } catch (err) {
+    console.error('[db] persistence failed', err);
+    // Clean up our own temp so a failed sync write leaves no orphan.
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// Remove any leftover *.tmp-* files (e.g. from an async flush interrupted by
+// SIGTERM before its rename). Called on shutdown after the final sync write.
+function cleanupTempFiles() {
+  try {
+    const prefix = `${path.basename(DB_FILE)}.tmp-`;
+    for (const name of fs.readdirSync(DATA_DIR)) {
+      if (name.startsWith(prefix)) {
+        try {
+          fs.rmSync(path.join(DATA_DIR, name), { force: true });
+        } catch {
+          /* best effort */
+        }
+      }
+    }
   } catch {
-    // Best effort — nothing more we can do during shutdown.
+    /* dir may not exist */
   }
 }
 
 // Register shutdown handlers once. On SIGTERM/SIGINT (Railway redeploy) flush
-// synchronously, then re-raise the signal with default behavior so the process
-// still terminates normally (adding a listener otherwise suppresses the default
-// exit). 'exit' is a last-resort synchronous flush.
+// synchronously and sweep temp files, then re-raise the signal with default
+// behavior so the process still terminates normally (adding a listener
+// otherwise suppresses the default exit). 'exit' is a last-resort sync flush.
 let _handlersRegistered = false;
 function registerShutdownHandlers() {
   if (_handlersRegistered) return;
   _handlersRegistered = true;
   const onSignal = (sig) => {
     flushSync();
+    cleanupTempFiles();
     process.removeListener(sig, onSignal);
     process.kill(process.pid, sig);
   };
   process.on('SIGTERM', onSignal);
   process.on('SIGINT', onSignal);
-  process.on('exit', flushSync);
+  process.on('exit', () => {
+    flushSync();
+    cleanupTempFiles();
+  });
 }
 registerShutdownHandlers();
 
@@ -443,7 +514,10 @@ const db = {
     p.last_transaction_id = transactionId || p.last_transaction_id || null;
     p.initiated_at = nowIso();
     c.order.pelecard = p;
-    saveDb();
+    // Payment-critical: the ParamX token MUST be durable before we answer the
+    // HTTP request, else a restart in the ~1s async window loses the token the
+    // PeleCard callback needs to verify the charge. Flush synchronously.
+    saveDb({ immediate: true });
     return true;
   },
 
@@ -511,7 +585,9 @@ const db = {
       const s = c.order.pelecard.sessions.find((x) => x.token === meta.token);
       if (s) s.resolved = true;
     }
-    saveDb();
+    // Payment-critical: a charged customer's paid state must survive an
+    // immediate restart, so persist synchronously before the handler returns.
+    saveDb({ immediate: true });
     return true;
   },
 
@@ -615,15 +691,29 @@ module.exports.ORDER_PRICES = ORDER_PRICES;
 // the in-memory word index deterministically.
 module.exports.__test = {
   DB_FILE,
+  DATA_DIR,
   flushNow: () => flushAsync(),
   flushSync,
-  isDirty: () => _dirty,
+  isDirty,
   isFlushing: () => _flushing,
   wordIndexFor: (id) => wordsFor(id),
   wordIndexSize: () => _wordsByCollection.size,
   reload: () => {
     _db = loadDb();
     rebuildWordIndex();
+    // The reloaded state matches disk, so mark it clean.
+    _writtenSeq = _seq;
     return _db;
+  },
+  // Cancel any pending scheduled flush and clear transient flags, so scheduling
+  // state can't leak between tests (a fake timer discarded by useRealTimers
+  // would otherwise leave _flushScheduled stuck true).
+  reset: () => {
+    if (_flushTimer) {
+      clearTimeout(_flushTimer);
+      _flushTimer = null;
+    }
+    _flushScheduled = false;
+    _flushing = false;
   },
 };
