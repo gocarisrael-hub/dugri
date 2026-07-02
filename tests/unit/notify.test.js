@@ -279,6 +279,25 @@ describe('non-prod test marker (RAILWAY_ENVIRONMENT_NAME)', () => {
     expect(sent.subject).toBe('דוגרי · התקבל תשלום — שירה');
     expect(sent.text).not.toContain('הזמנת בדיקה');
   });
+
+  it('staging free order: carries BOTH the test marker AND the 0 ₪ charged amount', async () => {
+    // The two features are orthogonal — send() wraps subject/body with the
+    // test marker while the amountCharged content lives in the body. A free
+    // order in a non-prod env must show both at once.
+    process.env.RAILWAY_ENVIRONMENT_NAME = 'staging';
+    const { ok, sendMail } = await captureSend((n) =>
+      n.sendOrderPaid(collection, 'https://d.example', { amountCharged: 0 })
+    );
+    expect(ok).toBe(true);
+    const sent = sendMail.mock.calls[0][0];
+    // #84 test marker present...
+    expect(sent.subject.startsWith('הזמנת בדיקה (staging) — ')).toBe(true);
+    expect(sent.text.startsWith('זו הזמנת בדיקה מסביבת staging — לא הזמנה אמיתית.\n\n')).toBe(true);
+    // ...and the charged-amount content reads as free, not the 199 ₪ package.
+    expect(sent.text).toContain('0 ₪');
+    expect(sent.text).toContain('קופון 100%');
+    expect(sent.text).not.toContain('199 ₪');
+  });
 });
 
 describe('send* never throw', () => {
