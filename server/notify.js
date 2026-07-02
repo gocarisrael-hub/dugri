@@ -1,27 +1,49 @@
 // Owner email notifications — fires on two events: an order is paid, and the
 // owner closes a collection (i.e. the word list is finished and ready to
-// produce). Modeled on pelecard.js: DORMANT until configured. With no SMTP env
+// produce). Modeled on pelecard.js: DORMANT until configured. With no Resend env
 // vars the sends are no-ops (return false) and the site works with zero email
 // setup.
 //
-// Config (all from env):
-//   SMTP_HOST   SMTP server host (e.g. smtp.gmail.com)
-//   SMTP_PORT   port (default 465; secure/TLS when 465, STARTTLS otherwise)
-//   SMTP_USER   SMTP username (the sending mailbox)
-//   SMTP_PASS   SMTP password (a Gmail app-password works with smtp.gmail.com)
-//   NOTIFY_TO   where notifications are sent (the owner's inbox)
-//   NOTIFY_FROM From address (defaults to SMTP_USER)
+// Transport: the Resend HTTPS API (POST https://api.resend.com/emails). We use
+// HTTPS on purpose — Railway blocks outbound SMTP (ports 25/465/587 to
+// smtp.gmail.com time out from inside the container), so nodemailer→Gmail could
+// never connect. Resend sends over port 443, which works. Uses the global fetch
+// (Node 20), so there is no mail dependency to install.
 //
-// Works with Gmail: host smtp.gmail.com, port 465, an app-password as SMTP_PASS.
+// Config (all from env):
+//   RESEND_API_KEY  Resend API key — the Bearer token for the API call.
+//   NOTIFY_TO       where notifications are sent (the owner's inbox).
+//   NOTIFY_FROM     From address — must be a Resend-VERIFIED sender/domain,
+//                   e.g. "Dugri <orders@yourdomain>". For quick testing Resend
+//                   allows "onboarding@resend.dev" (delivers only to your own
+//                   account email).
 
-const nodemailer = require('nodemailer');
+const RESEND_API_URL = 'https://api.resend.com/emails';
+// Abort a stalled Resend request instead of hanging the (fire-and-forget) send
+// forever — on timeout the fetch rejects and the send logs + returns false.
+const SEND_TIMEOUT_MS = 10000;
 
-const SMTP_HOST = process.env.SMTP_HOST || '';
-const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
-const SMTP_USER = process.env.SMTP_USER || '';
-const SMTP_PASS = process.env.SMTP_PASS || '';
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const NOTIFY_TO = process.env.NOTIFY_TO || '';
-const NOTIFY_FROM = process.env.NOTIFY_FROM || SMTP_USER;
+const NOTIFY_FROM = process.env.NOTIFY_FROM || '';
+
+// Warn (once) at startup if the owner set SOME but not all of the three Resend
+// vars — a likely misconfiguration (e.g. they set the key + recipient and forgot
+// NOTIFY_FROM) that would otherwise silently disable ALL email with no clue why.
+// None set = dormant by design (stay silent); all set = configured (no warning).
+let _partialConfigWarned = false;
+function warnIfPartiallyConfigured() {
+  if (_partialConfigWarned) return;
+  const vars = { RESEND_API_KEY, NOTIFY_TO, NOTIFY_FROM };
+  const present = Object.values(vars).filter(Boolean).length;
+  if (present === 0 || present === 3) return;
+  _partialConfigWarned = true;
+  const missing = Object.keys(vars).filter((k) => !vars[k]);
+  console.warn(
+    '[notify] email partially configured — sends disabled. Missing: ' + missing.join(', ')
+  );
+}
+warnIfPartiallyConfigured();
 
 // Railway injects RAILWAY_ENVIRONMENT_NAME per environment (values seen live:
 // 'production', 'staging'). Any non-empty value that isn't 'production' (matched
@@ -50,7 +72,7 @@ function markTestEnv(message) {
 
 // True only when the essentials are present. Sends are no-ops otherwise.
 function isConfigured() {
-  return Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS && NOTIFY_TO);
+  return Boolean(RESEND_API_KEY && NOTIFY_TO && NOTIFY_FROM);
 }
 
 // Hebrew display name for each order version.
@@ -180,38 +202,51 @@ function buildFinishedMessage(collection, baseUrl) {
   return { subject, text };
 }
 
-let _transporter = null;
-function transporter() {
-  if (!_transporter) {
-    _transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-    });
-  }
-  return _transporter;
-}
-
-// Send one message. `to` overrides the recipient (defaults to the owner's
-// NOTIFY_TO — e.g. the buyer confirmation is sent to the customer's address).
-// Fully wrapped: a failure (or being unconfigured, or an empty recipient) NEVER
-// throws into the caller — it logs a warning and returns false.
+// Send one message via the Resend HTTPS API. `to` overrides the recipient
+// (defaults to the owner's NOTIFY_TO — e.g. the buyer confirmation is sent to
+// the customer's address). Fully wrapped: a failure (a non-2xx response, a
+// thrown/network error, being unconfigured, or an empty recipient) NEVER throws
+// into the caller — it logs a warning and returns false.
 async function send({ subject, text, html, to }) {
   if (!isConfigured()) return false;
   const recipient = to || NOTIFY_TO;
   if (!recipient) return false;
+  // Abort the request if Resend stalls, so a fire-and-forget send can never hang
+  // forever. The timer is always cleared in finally so it can't leak.
+  const controller = new AbortController();
+  let timer;
   try {
     // Non-prod (e.g. staging) sends are stamped as test emails; production and
     // local/unset stay untouched.
     const marked = markTestEnv({ subject, text, html });
-    const mail = { from: NOTIFY_FROM, to: recipient, subject: marked.subject, text: marked.text };
-    if (marked.html != null) mail.html = marked.html;
-    await transporter().sendMail(mail);
+    const body = {
+      from: NOTIFY_FROM,
+      to: [recipient],
+      subject: marked.subject,
+      text: marked.text,
+    };
+    if (marked.html != null) body.html = marked.html;
+    timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
+    const res = await fetch(RESEND_API_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + RESEND_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      console.warn('[notify] send failed:', 'HTTP ' + res.status + (detail ? ' ' + detail : ''));
+      return false;
+    }
     return true;
   } catch (e) {
     console.warn('[notify] send failed:', e && e.message ? e.message : e);
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -230,7 +265,7 @@ async function sendOrderPaid(collection, baseUrl, options) {
 // Fire the BUYER confirmation to the customer's own email. Sent to the
 // collection's owner_email (captured at checkout), NOT to NOTIFY_TO. Skips
 // gracefully (returns false) when that address is missing/empty, and stays
-// dormant like the others when SMTP is unconfigured. `options` may carry
+// dormant like the others when Resend is unconfigured. `options` may carry
 // `amountCharged` (the amount actually paid). Never throws.
 async function sendBuyerConfirmation(collection, baseUrl, options) {
   try {

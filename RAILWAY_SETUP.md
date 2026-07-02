@@ -104,9 +104,9 @@ with production. Set these on the staging environment specifically:
   **test/sandbox** terminal, or leave them **unset**. Unset means the card button
   is disabled and no real charge can happen (`card_enabled` is `false`); the
   smoke test still passes because it only asserts the flag is a boolean.
-- **`SMTP_HOST` / `SMTP_USER` / `SMTP_PASS` / `NOTIFY_TO`** — leave **unset** (email
-  sends become silent no-ops) or point them at a **test inbox**. Do not send
-  staging notifications to the real business inbox.
+- **`RESEND_API_KEY` / `NOTIFY_TO` / `NOTIFY_FROM`** — leave **unset** (email
+  sends become silent no-ops) or point `NOTIFY_TO` at a **test inbox**. Do not
+  send staging notifications to the real business inbox.
 - **`ADMIN_KEY`** — a distinct **staging admin key** (not the production one).
   Mirror this same value into the GitHub secret `STAGING_ADMIN_KEY` (step 5) so
   the smoke step can clean up after itself.
@@ -180,22 +180,31 @@ different test/production gateway.
 
 ## Email notifications (optional)
 
-The server can email the owner on two events: a payment comes in, and a
-collection is closed (the word list is finished and ready to produce). This is
-**off until the SMTP vars are set** — with no config the sends are silent no-ops
-and the site works exactly the same.
+The server can email on two events: a payment comes in (the owner gets an alert
+and the buyer gets a confirmation), and a collection is closed (the word list is
+finished and ready to produce). This is **off until the Resend vars are set** —
+with no config the sends are silent no-ops and the site works exactly the same.
+
+Email goes over the **Resend HTTPS API**, not SMTP. This is deliberate: Railway
+**blocks all outbound SMTP** (ports 25/465/587 time out from inside the
+container), so the old `nodemailer` → Gmail path could never connect. Resend
+sends over HTTPS (port 443), which Railway allows.
 
 Set these env vars on the Railway service to turn it on:
 
-- **`SMTP_HOST`** — SMTP server host (e.g. `smtp.gmail.com`).
-- **`SMTP_USER`** — SMTP username (the sending mailbox).
-- **`SMTP_PASS`** — SMTP password. For Gmail this must be an **app-password**
-  (Google Account → Security → 2-Step Verification → App passwords), not your
-  normal login password.
-- **`NOTIFY_TO`** — where notifications are sent (your inbox).
+- **`RESEND_API_KEY`** — your Resend API key. Create one at
+  [resend.com](https://resend.com) → **API Keys**.
+- **`NOTIFY_TO`** — where owner notifications are sent (your inbox).
+- **`NOTIFY_FROM`** — the From address, e.g. `Dugri <orders@yourdomain>`. The
+  address/domain **must be verified in Resend** (resend.com → **Domains** → add
+  and verify your sending domain via the DNS records it gives you). For quick
+  testing without a domain, Resend allows `onboarding@resend.dev`, but it can
+  only deliver to your own Resend account email — use a real verified domain for
+  production.
 
-Optional: `SMTP_PORT` (defaults to `465`; the connection is TLS/secure when the
-port is `465`) and `NOTIFY_FROM` (the From address; defaults to `SMTP_USER`).
+Set all three on **both the production and staging environments** (staging
+should point `NOTIFY_TO` at a test inbox, or leave the Resend vars unset there so
+staging sends nothing — see the staging section above).
 
-Gmail example: `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_USER` your
-Gmail address, `SMTP_PASS` a 16-char app-password, `NOTIFY_TO` your inbox.
+All three (`RESEND_API_KEY`, `NOTIFY_TO`, `NOTIFY_FROM`) must be present for
+email to fire; if any is missing the sends stay dormant no-ops.
