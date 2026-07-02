@@ -39,7 +39,6 @@ resources/instagram/screenshots/
 # / `git stash -u` can't sweep your working docs (comparison PDF/DOCX, screenshots…).
 /resources/*
 !/resources/canva/
-!/resources/canva/**
 
 # Agent screenshot / scratch output
 /output/
