@@ -47,6 +47,7 @@ afterEach(() => {
   setSmtp(false);
   delete process.env.PUBLIC_BASE_URL;
   delete process.env.NOTIFY_FROM;
+  delete process.env.RAILWAY_ENVIRONMENT_NAME;
   vi.restoreAllMocks();
 });
 
@@ -158,6 +159,78 @@ describe('buildFinishedMessage', () => {
     expect(subject).toBe('דוגרי · הזמנה מוכנה להפקה — שירה');
     expect(text).toContain('מוכנה להפקה');
     expect(text).toContain('שירה');
+  });
+});
+
+describe('non-prod test marker (RAILWAY_ENVIRONMENT_NAME)', () => {
+  // Load notify with SMTP configured + a mocked transporter, then capture the
+  // message actually handed to sendMail (after any env marking is applied).
+  async function captureSend(fn) {
+    setSmtp(true);
+    const notify = loadFresh();
+    const nodemailer = serverRequire('nodemailer');
+    const sendMail = vi.fn(() => Promise.resolve());
+    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail });
+    const ok = await fn(notify);
+    return { ok, sendMail };
+  }
+
+  it('staging: prepends the plain-text subject marker and banners the body', async () => {
+    process.env.RAILWAY_ENVIRONMENT_NAME = 'staging';
+    const { ok, sendMail } = await captureSend((n) =>
+      n.sendOrderPaid(collection, 'https://d.example')
+    );
+    expect(ok).toBe(true);
+    const sent = sendMail.mock.calls[0][0];
+    expect(sent.subject.startsWith('הזמנת בדיקה (staging) — ')).toBe(true);
+    // The original subject is still present after the marker.
+    expect(sent.subject).toContain('דוגרי · התקבל תשלום — שירה');
+    // Banner is the first line of the body, followed by the normal content.
+    expect(sent.text.startsWith('זו הזמנת בדיקה מסביבת staging — לא הזמנה אמיתית.\n\n')).toBe(true);
+    expect(sent.text).toContain('התקבל תשלום');
+    // Plain text only — no HTML body is introduced.
+    expect(sent.html).toBeUndefined();
+  });
+
+  it('staging: marks every send path (buyer + finished too)', async () => {
+    process.env.RAILWAY_ENVIRONMENT_NAME = 'staging';
+    const buyer = await captureSend((n) =>
+      n.sendBuyerConfirmation(collection, 'https://d.example')
+    );
+    expect(buyer.sendMail.mock.calls[0][0].subject).toContain('הזמנת בדיקה (staging) — ');
+    expect(buyer.sendMail.mock.calls[0][0].text).toContain('זו הזמנת בדיקה מסביבת staging');
+
+    const finished = await captureSend((n) => n.sendOrderFinished(collection));
+    expect(finished.sendMail.mock.calls[0][0].subject).toContain('הזמנת בדיקה (staging) — ');
+    expect(finished.sendMail.mock.calls[0][0].text).toContain('זו הזמנת בדיקה מסביבת staging');
+  });
+
+  it('production: no marker — subject and body are unchanged', async () => {
+    process.env.RAILWAY_ENVIRONMENT_NAME = 'production';
+    const { sendMail } = await captureSend((n) => n.sendOrderPaid(collection, 'https://d.example'));
+    const sent = sendMail.mock.calls[0][0];
+    expect(sent.subject).toBe('דוגרי · התקבל תשלום — שירה');
+    expect(sent.subject).not.toContain('הזמנת בדיקה');
+    expect(sent.text).not.toContain('הזמנת בדיקה');
+    expect(sent.text.startsWith('התקבל תשלום')).toBe(true);
+    // No HTML body is introduced for the plain-text emails.
+    expect(sent.html).toBeUndefined();
+  });
+
+  it('Production (any casing): treated as prod — no marker', async () => {
+    process.env.RAILWAY_ENVIRONMENT_NAME = 'Production';
+    const { sendMail } = await captureSend((n) => n.sendOrderPaid(collection, 'https://d.example'));
+    const sent = sendMail.mock.calls[0][0];
+    expect(sent.subject).toBe('דוגרי · התקבל תשלום — שירה');
+    expect(sent.text).not.toContain('הזמנת בדיקה');
+  });
+
+  it('unset: no marker (local/tests behave like production)', async () => {
+    delete process.env.RAILWAY_ENVIRONMENT_NAME;
+    const { sendMail } = await captureSend((n) => n.sendOrderPaid(collection, 'https://d.example'));
+    const sent = sendMail.mock.calls[0][0];
+    expect(sent.subject).toBe('דוגרי · התקבל תשלום — שירה');
+    expect(sent.text).not.toContain('הזמנת בדיקה');
   });
 });
 
