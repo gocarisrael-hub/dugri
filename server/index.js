@@ -7,6 +7,26 @@ const db = require('./db');
 const pelecard = require('./pelecard');
 const notify = require('./notify');
 
+// Last-resort crash guards. During the current stability incident we want any
+// unexpected error or rejected promise to be LOGGED with its stack to stderr
+// rather than silently taking the process down (or leaving it half-alive).
+//   - uncaughtException: Node is in an undefined state afterwards, so we log and
+//     exit(1) to let Railway restart the container cleanly. The exit is skipped
+//     under test (NODE_ENV==='test') so a synthetic emit can't kill the runner.
+//   - unhandledRejection: log it for visibility but do NOT exit, so we can see
+//     what is rejecting without churning the process.
+// Registered once, at module-load time, before any routes or app.listen.
+function registerCrashGuards() {
+  process.on('uncaughtException', (err) => {
+    console.error('[uncaughtException]', err);
+    if (process.env.NODE_ENV !== 'test') process.exit(1);
+  });
+  process.on('unhandledRejection', (reason) => {
+    console.error('[unhandledRejection]', reason);
+  });
+}
+registerCrashGuards();
+
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
 // address (used to rate-limit coupon validation per client, not per proxy).
