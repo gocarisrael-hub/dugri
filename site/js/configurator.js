@@ -395,7 +395,9 @@ export function validateManifest(designs, mainColors) {
       if (!p || typeof p !== 'object') {
         errors.push(`design ${id}: missing products`);
       } else {
-        ['front', 'back', 'board'].forEach((slot) => {
+        // front + back are required; board is OPTIONAL (a design may ship without
+        // one — e.g. kids, whose board template is still pending).
+        ['front', 'back'].forEach((slot) => {
           if (!p[slot]) errors.push(`design ${id}: missing product "${slot}"`);
         });
       }

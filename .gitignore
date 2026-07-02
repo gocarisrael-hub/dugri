@@ -40,5 +40,10 @@ resources/instagram/screenshots/
 /resources/*
 !/resources/canva/
 
+# Raw Canva "full deck" exports (Hebrew, typo-prone folder names, ~53MB). The
+# build reads from the ASCII-named resources/canva/staging/ copies instead, so the
+# bulky originals stay local-only.
+/resources/canva/full deck/
+
 # Agent screenshot / scratch output
 /output/

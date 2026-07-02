@@ -278,26 +278,41 @@ test.describe('order wizard', () => {
     await expect.poll(() => page.url()).not.toContain('chasers=1');
   });
 
-  test('raster-background note shows only for the kids design (on the color step)', async ({
+  test('a slider theme keeps the colour picker and notes that photos stay fixed', async ({
     page,
   }) => {
     await page.goto('/options.html');
+    // the default design (bachelorette) is a slider whose board embeds a photo.
+    await page.getByTestId('next-btn').click(); // -> colour step
+    await expect(page.getByTestId('step-2')).toBeVisible();
+    await expect(page.getByTestId('color-list')).toBeVisible();
     const note = page.getByTestId('raster-note');
-    const kidsTile = page.locator('.design[data-design-id="kids"]');
-    const birthdayTile = page.locator('.design[data-design-id="birthday"]');
-    await expect(kidsTile).toBeVisible();
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('קבוע');
+  });
 
-    // Selecting kids on step 1 then advancing reveals the fixed-background note.
-    await kidsTile.click();
+  test('neon is FIXED: the colour picker is hidden and its colours never change', async ({
+    page,
+  }) => {
+    await page.goto('/options.html');
+    const neonTile = page.locator('.design[data-design-id="neon"]');
+    await expect(neonTile).toBeVisible();
+    await neonTile.click();
+
+    const frontSvg = page.getByTestId('preview-front').locator('svg').first();
+    await expect(frontSvg).toBeVisible();
+    const readC0 = () =>
+      frontSvg.evaluate((svg) => getComputedStyle(svg).getPropertyValue('--c0').trim());
+    const before = await readC0();
+
+    // On the colour step the swatch picker is hidden and a fixed-colour note shows.
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-2')).toBeVisible();
-    await expect(note).toBeVisible();
-    await expect(note).toContainText('הרקע בעיצוב זה קבוע');
+    await expect(page.getByTestId('color-list')).toBeHidden();
+    await expect(page.getByTestId('raster-note')).toBeVisible();
+    await expect(page.getByTestId('raster-note')).toContainText('קבוע');
 
-    // A vector-only design hides it again.
-    await page.getByTestId('back-btn').click();
-    await birthdayTile.click();
-    await page.getByTestId('next-btn').click();
-    await expect(note).toBeHidden();
+    // There is no picker to change the colours, so they stay put.
+    expect(await readC0()).toBe(before);
   });
 });

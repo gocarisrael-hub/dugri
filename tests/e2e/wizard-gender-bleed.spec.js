@@ -99,23 +99,23 @@ test.describe('honoree gender', () => {
   });
 });
 
-test.describe('card preview bleed', () => {
-  test('active preview shows a background bleed margin around the card', async ({ page }) => {
+test.describe('full-page preview has no fake bleed frame', () => {
+  test('the active preview renders edge-to-edge (no inset bleed padding)', async ({ page }) => {
     await page.goto('/options.html?plan=base');
     const front = page.getByTestId('preview-front');
     await expect(front.locator('svg')).toBeVisible();
-    const style = await front.evaluate((el) => {
+    const pad = await front.evaluate((el) => {
       const cs = getComputedStyle(el);
       return {
-        bleed: cs.getPropertyValue('--bleed').trim(),
-        padTop: parseFloat(cs.paddingTop),
-        bg: cs.backgroundColor,
+        padTop: parseFloat(cs.paddingTop) || 0,
+        padLeft: parseFloat(cs.paddingLeft) || 0,
+        padBottom: parseFloat(cs.paddingBottom) || 0,
       };
     });
-    // a real colour is exposed as the printed bleed...
-    expect(style.bleed).toMatch(/^#[0-9a-f]{6}$/i);
-    // ...and it paints a visible margin around the card.
-    expect(style.padTop).toBeGreaterThan(10);
-    expect(style.bg).not.toBe('rgba(0, 0, 0, 0)');
+    // The full-page design already prints its background to the edge, so the old
+    // fake print-bleed frame is gone — the page shows edge-to-edge with no inset.
+    expect(pad.padTop).toBeLessThanOrEqual(2);
+    expect(pad.padLeft).toBeLessThanOrEqual(2);
+    expect(pad.padBottom).toBeLessThanOrEqual(2);
   });
 });

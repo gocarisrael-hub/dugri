@@ -1,62 +1,107 @@
 #!/usr/bin/env node
-// Dependency-free tokenizer for Canva SVG card designs.
-// - Detects vivid theme colors (skips white/black/neutral greys)
-// - Replaces them with CSS vars var(--c0)..var(--cN) (c0 = darkest), but ONLY
-//   where the hex is real paint (fill / stop-color / style:fill) — never inside
-//   url(#id) refs or id="…" attributes.
-// - Fits each single-card SVG's viewBox to its rendered bounds via getBBox()
-// - Writes tokenized SVGs to site/assets/designs/<id>/{front,back,board}.svg
-// - Emits site/js/designs.generated.js
+// Dependency-light tokenizer for the Canva full-deck SVG designs.
+//
+// Each source page is a FULL A4-landscape artboard exported from Canva:
+//   front = a sheet of 8 word-cards, back = 8 card-backs, board = the game board.
+// (The old single-card exports are gone — every product is now a full page.)
+//
+// What this does, per design:
+//   1. Detect the design's vivid theme colours (skips white/black/neutral greys).
+//   2. Rewrite those hexes to CSS vars var(--c0)..var(--cN) (c0 = darkest) — but
+//      ONLY where the hex is real paint (fill / stroke / stop-color / style:fill),
+//      never inside url(#id) refs or id="…" attributes. This is what lets the live
+//      colour slider recolor the design in the browser.
+//   3. Strip the fixed width/height from the <svg> (keep the native viewBox) so the
+//      inline SVG scales to its container. Full-page landscape art needs no
+//      per-card viewBox cropping, so there is NO headless-Chrome/getBBox step
+//      anymore (that fragile dependency is gone).
+//   4. Optimise each tokenized page through svgo (outlined-text pages shrink
+//      ~60%). svgo is optional: if it can't be loaded the raw tokenized SVG is
+//      written and a follow-up is flagged.
+//   5. Write site/assets/designs/<id>/{front,back[,board]}.svg and emit
+//      site/js/designs.generated.js.
+//
+// The `board` product is OPTIONAL — a design may ship without one (kids, whose
+// board template is still pending). Such a design simply omits board everywhere.
 //
 // Usage: node scripts/tokenize-svg.mjs
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execSync } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
-const CANVA = resolve(ROOT, 'resources/canva');
+// ASCII staging copies of the Canva "full deck" exports (originals: the Hebrew,
+// typo-prone `resources/canva/full deck/…` tree — gitignored, local-only). Staging
+// gives the build stable, robust paths. Each staging/<id>/ holds front.svg /
+// back.svg / board.svg, copied from:
+//   bachelorette <- full deck/with backgrounf/דוגרי רווקות חדש/{1,2,3}.svg
+//   marriage     <- full deck/with backgrounf/דוגרי יום נישואין חדש/{1,2,3}.svg
+//   birthday     <- full deck/with backgrounf/דוגרי יום הולדת בנות חדש/{1,2,3}.svg
+//   japanese     <- full deck/with backgrounf/דוגרי יפני חדש/{1,2,3}.svg
+//   posttrip     <- full deck/with backgrounf/דוגרי מסיבת חזרה מטיול/{1,2,3}.svg
+//   neon         <- full deck/with backgrounf/דוגרי יום הולדת בנות ניאון חדש/{1,2,3}.svg
+//   kids         <- full deck/dugri birthday kids/{פני כרטיסים,גב כרטיסים}.svg (no board)
+const CANVA = resolve(ROOT, 'resources/canva/staging');
 const OUT_ASSETS = resolve(ROOT, 'site/assets/designs');
 const OUT_JS = resolve(ROOT, 'site/js/designs.generated.js');
 
 // ---- design manifest -------------------------------------------------------
-// Sources are single-card transparent SVG exports: a front, a back, and the
-// board. Each card sits inside the full artboard, so we fit the viewBox to the
-// card via getBBox() (below).
+// Every source is a full-page landscape export (fullPage:true → no viewBox crop).
+// recolor: 'slider' → the live colour slider recolors it; 'fixed' → locked to its
+// original colours (neon's baked-in raster glow can't be recoloured). board is
+// optional (kids has none yet).
 const DESIGNS = [
   {
-    id: 'birthday',
-    folder: 'dugri birthday no neon',
-    files: {
-      front: 'dugri birthday no neon.svg',
-      back: 'back card.svg',
-      board: 'לוח משחק.svg',
-    },
-  },
-  {
-    id: 'kids',
-    folder: 'dugri birthday kids',
-    files: {
-      front: 'dugri birthday kids.svg',
-      back: 'back card.svg',
-      board: 'לוח משחק.svg',
-    },
+    id: 'bachelorette',
+    folder: 'bachelorette',
+    files: { front: 'front.svg', back: 'back.svg', board: 'board.svg' },
+    fullPage: true,
+    recolor: 'slider',
   },
   {
     id: 'marriage',
-    folder: 'dugri marriage no affects',
-    files: {
-      front: 'dugri marriage no affects.svg',
-      back: 'back card.svg',
-      board: 'לוח משחק.svg',
-    },
+    folder: 'marriage',
+    files: { front: 'front.svg', back: 'back.svg', board: 'board.svg' },
+    fullPage: true,
+    recolor: 'slider',
   },
   {
-    id: 'bachelorette',
-    folder: 'dugri bachelorette',
-    files: { front: 'dugri bachelorette.svg', back: 'back card.svg', board: '3.svg' },
+    id: 'birthday',
+    folder: 'birthday',
+    files: { front: 'front.svg', back: 'back.svg', board: 'board.svg' },
+    fullPage: true,
+    recolor: 'slider',
+  },
+  {
+    id: 'japanese',
+    folder: 'japanese',
+    files: { front: 'front.svg', back: 'back.svg', board: 'board.svg' },
+    fullPage: true,
+    recolor: 'slider',
+  },
+  {
+    id: 'posttrip',
+    folder: 'posttrip',
+    files: { front: 'front.svg', back: 'back.svg', board: 'board.svg' },
+    fullPage: true,
+    recolor: 'slider',
+  },
+  {
+    id: 'neon',
+    folder: 'neon',
+    files: { front: 'front.svg', back: 'back.svg', board: 'board.svg' },
+    fullPage: true,
+    recolor: 'fixed',
+  },
+  {
+    // kids: no board template yet — front + back only.
+    id: 'kids',
+    folder: 'kids',
+    files: { front: 'front.svg', back: 'back.svg' },
+    fullPage: true,
+    recolor: 'slider',
   },
 ];
 
@@ -116,7 +161,7 @@ const PAINT_RE =
   /(?:fill|stroke|stop-color)\s*=\s*"(#[0-9a-fA-F]{6})"|style\s*=\s*"[^"]*?(?:fill|stroke)\s*:\s*(#[0-9a-fA-F]{6})/g;
 
 function collectThemeColors(svgFiles) {
-  // Count occurrences across all 3 product svgs of a design so we pick
+  // Count occurrences across all product svgs of a design so we pick
   // a single consistent palette for the whole design.
   const counts = new Map();
   for (const src of svgFiles) {
@@ -192,6 +237,7 @@ function tokenize(src, anchors) {
   // stroke="#…", stop-color="#…", or style="…fill/stroke:#…". This mirrors
   // PAINT_RE so we never touch hex inside url(#id) refs or id="…" attributes
   // (a value like stroke="url(#id)" doesn't start with #rrggbb, so it's safe).
+  if (!anchors.length) return src;
   let out = src;
   // fill="#…" / stroke="#…" / stop-color="#…"
   out = out.replace(
@@ -209,67 +255,56 @@ function tokenize(src, anchors) {
   return out;
 }
 
-// ---- fit each card's viewBox to its real content --------------------------
-// The single-card exports place the card inside the full artboard with empty
-// space around it. We crop the viewBox to the card's true rendered bounds using
-// the browser's getBBox() (transform-aware, reliable for any positioning).
-// Geometry only — colours don't affect the bbox.
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-
-function fitViewBox(src, anchors, label) {
-  const vars = anchors.map((c, i) => `--c${i}:${c}`).join(';');
-  const tmp = `/tmp/fit_${label}.html`;
-  writeFileSync(
-    tmp,
-    `<!doctype html><meta charset="utf8"><body><div style="${vars}">${src}</div>` +
-      `<script>const s=document.querySelector('svg');const b=s.getBBox();` +
-      `document.title='BB '+[b.x,b.y,b.width,b.height].map((n)=>n.toFixed(3)).join(' ');</script>`
+// ---- full-page prep --------------------------------------------------------
+// Drop the fixed width/height on the root <svg> so the inline SVG scales to its
+// container; the native viewBox is kept, giving a stable coordinate system and
+// the true page aspect ratio (~1.414, A4 landscape). No cropping needed.
+function stripSize(src) {
+  return src.replace(/<svg\b[^>]*>/i, (tag) =>
+    tag.replace(/\s(?:width|height)\s*=\s*"[^"]*"/gi, '')
   );
-  let title = '';
+}
+
+// ---- svgo (optional) -------------------------------------------------------
+// Optimise outlined-text pages. Loaded lazily so the build still runs (raw) if
+// svgo isn't installed. removeHiddenElems/cleanupIds are off to avoid dropping
+// anything the design relies on or churning clip-path ids referenced via url(#id).
+let svgo = null;
+try {
+  svgo = await import('svgo');
+} catch {
+  svgo = null;
+}
+const SVGO_CONFIG = {
+  multipass: true,
+  plugins: [
+    {
+      name: 'preset-default',
+      params: { overrides: { removeHiddenElems: false, cleanupIds: false } },
+    },
+  ],
+};
+function optimize(src, label) {
+  if (!svgo) return { data: src, optimized: false };
   try {
-    title = execSync(
-      `"${CHROME}" --headless --disable-gpu --virtual-time-budget=4000 --dump-dom "file://${tmp}" 2>/dev/null | grep -oE '<title>BB[^<]*</title>'`,
-      { encoding: 'utf8' }
-    ).trim();
-  } catch {
-    title = '';
+    const { data } = svgo.optimize(src, { ...SVGO_CONFIG, path: label });
+    // Never let optimisation strip the tokens the live recolor depends on.
+    if (/fill="var\(--c/.test(src) && !/fill="var\(--c/.test(data)) {
+      console.warn(`  [svgo] ${label}: dropped var() tokens — keeping raw.`);
+      return { data: src, optimized: false };
+    }
+    return { data, optimized: true };
+  } catch (e) {
+    console.warn(`  [svgo] ${label}: optimise failed (${e.message}) — keeping raw.`);
+    return { data: src, optimized: false };
   }
-  rmSync(tmp, { force: true });
-  const m = title.match(/BB\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)/);
-  if (!m) {
-    console.warn(`  [fitViewBox] ${label}: Chrome/getBBox returned no bbox — viewBox left unfit.`);
-    return src; // fallback: leave the viewBox untouched
-  }
-  const bw = parseFloat(m[3]);
-  const bh = parseFloat(m[4]);
-  if (bw <= 0 || bh <= 0) {
-    console.warn(
-      `  [fitViewBox] ${label}: empty bbox (BB ${m[1]} ${m[2]} ${m[3]} ${m[4]}) — viewBox left unfit.`
-    );
-    return src; // fallback: leave the viewBox untouched
-  }
-  const M = 3; // small breathing margin around the card
-  const x = parseFloat(m[1]) - M;
-  const y = parseFloat(m[2]) - M;
-  const w = bw + 2 * M;
-  const h = bh + 2 * M;
-  const newVb = `${x.toFixed(3)} ${y.toFixed(3)} ${w.toFixed(3)} ${h.toFixed(3)}`;
-  let out;
-  if (/viewBox\s*=\s*"[^"]+"/.test(src)) {
-    out = src.replace(/viewBox\s*=\s*"[^"]+"/, `viewBox="${newVb}"`);
-  } else {
-    // source <svg> had no viewBox: insert the computed one so dropping
-    // width/height below still leaves the SVG with a coordinate system.
-    out = src.replace(/<svg\b/, `<svg viewBox="${newVb}"`);
-  }
-  // drop fixed width/height so the inline SVG scales to its container
-  out = out.replace(/(<svg[^>]*?)\swidth="[^"]*"/, '$1');
-  out = out.replace(/(<svg[^>]*?)\sheight="[^"]*"/, '$1');
-  return out;
 }
 
 // ---- main ------------------------------------------------------------------
+rmSync(OUT_ASSETS, { recursive: true, force: true });
 const report = [];
+let rawTotal = 0;
+let outTotal = 0;
 
 for (const d of DESIGNS) {
   const folder = resolve(CANVA, d.folder);
@@ -285,17 +320,32 @@ for (const d of DESIGNS) {
 
   const products = {};
   const rasterKinds = [];
-  for (const kind of ['front', 'back', 'board']) {
+  const sizes = {};
+  for (const kind of Object.keys(d.files)) {
     let svg = srcs[kind];
     if ((svg.match(/<image\b/g) || []).length > 0) rasterKinds.push(kind);
+    const rawBytes = Buffer.byteLength(svg);
     svg = tokenize(svg, anchors);
-    svg = fitViewBox(svg, anchors, `${d.id}-${kind}`);
+    if (d.fullPage) svg = stripSize(svg);
+    const { data } = optimize(svg, `${d.id}-${kind}`);
+    const outBytes = Buffer.byteLength(data);
+    rawTotal += rawBytes;
+    outTotal += outBytes;
+    sizes[kind] = { raw: rawBytes, out: outBytes };
     const outPath = resolve(outDir, `${kind}.svg`);
-    writeFileSync(outPath, svg);
+    writeFileSync(outPath, data);
     products[kind] = `assets/designs/${d.id}/${kind}.svg`;
   }
 
-  report.push({ id: d.id, anchors, products, rasterKinds, hasRaster: rasterKinds.length > 0 });
+  report.push({
+    id: d.id,
+    anchors,
+    products,
+    rasterKinds,
+    hasRaster: rasterKinds.length > 0,
+    recolor: d.recolor,
+    sizes,
+  });
 }
 
 // ---- emit designs.generated.js --------------------------------------------
@@ -304,23 +354,36 @@ js += 'export const GENERATED = {\n';
 for (const r of report) {
   const anchorsStr = r.anchors.map((a) => `'${a}'`).join(',');
   const p = r.products;
+  const prodParts = [`front:'${p.front}'`, `back:'${p.back}'`];
+  if (p.board) prodParts.push(`board:'${p.board}'`); // board optional
   const key = `${r.id}:`.padEnd(14);
-  js += `  ${key}{ anchors:[${anchorsStr}], hasRaster:${r.hasRaster}, products:{ front:'${p.front}', back:'${p.back}', board:'${p.board}' } },\n`;
+  js +=
+    `  ${key}{ anchors:[${anchorsStr}], hasRaster:${r.hasRaster}, ` +
+    `recolor:'${r.recolor}', products:{ ${prodParts.join(', ')} } },\n`;
 }
 js += '};\n';
 mkdirSync(dirname(OUT_JS), { recursive: true });
 writeFileSync(OUT_JS, js);
 
 // ---- console report --------------------------------------------------------
-console.log('Tokenized designs:\n');
+const kb = (b) => (b / 1024).toFixed(0) + 'KB';
+console.log(
+  `Tokenized designs (svgo: ${svgo ? 'on' : 'OFF — raw output, optimise as follow-up'}):\n`
+);
 for (const r of report) {
-  console.log(`  ${r.id}`);
+  console.log(`  ${r.id}  [recolor:${r.recolor}]`);
   console.log(`    anchors (c0..): ${r.anchors.join(', ')}`);
-  console.log(`    front: ${r.products.front}`);
-  console.log(`    back:  ${r.products.back}`);
-  console.log(`    board: ${r.products.board}`);
+  for (const kind of Object.keys(r.sizes)) {
+    const s = r.sizes[kind];
+    console.log(`    ${kind.padEnd(6)} ${kb(s.raw)} -> ${kb(s.out)}  (${r.products[kind]})`);
+  }
+  if (!r.products.board) console.log('    board  (none — deferred)');
   console.log(
     `    raster <image> in: ${r.rasterKinds.length ? r.rasterKinds.join(', ') : '(none)'}`
   );
 }
-console.log(`\nWrote ${OUT_JS}`);
+console.log(
+  `\nTotal: ${(rawTotal / 1024 / 1024).toFixed(1)}MB raw -> ${(outTotal / 1024 / 1024).toFixed(1)}MB written` +
+    (svgo ? ` (${Math.round(100 - (outTotal / rawTotal) * 100)}% smaller)` : '')
+);
+console.log(`Wrote ${OUT_JS}`);

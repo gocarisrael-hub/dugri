@@ -57,9 +57,10 @@
            so the preview-fills-the-column math can't go stale if either changes. */
         --nav-h: 60px;
         --wizbar-h: 90px;
-        /* true printed-card ratio (portrait), from the card SVGs' viewBox
-           (196.855 x 282.098) — used so the bleed frame hugs the card exactly. */
-        --card-ratio: 196.855 / 282.098;
+        /* true printed-page ratio (LANDSCAPE A4), from the full-deck SVGs' viewBox
+           (841.92 x 595.5 ≈ 1.414) — every product (front/back/board) is now a full
+           page, so all three previews use this one ratio. */
+        --page-ratio: 841.92 / 595.5;
         /* live palette tokens (configurator sets --c0..--cN on previews) */
         --accent: var(--hot);
       }
@@ -95,6 +96,12 @@
       main.wrap {
         display: flex;
         flex-direction: column;
+        /* DEFINITE height (not just min-height) so the flex column has a bounded
+           main size: the live preview (flex:1, min-height:0) then SHRINKS to fit
+           instead of the wrap growing with the taller full-page landscape preview
+           and pushing the page into a scroll. */
+        height: calc(100vh - var(--nav-h) - var(--wizbar-h));
+        height: calc(100dvh - var(--nav-h) - var(--wizbar-h));
         min-height: calc(100vh - var(--nav-h) - var(--wizbar-h));
         min-height: calc(100dvh - var(--nav-h) - var(--wizbar-h));
       }
@@ -442,55 +449,41 @@
         display: flex;
         align-items: center;
         justify-content: center;
+        /* fill the stage and center the page inside it; the page itself is
+           CONTAINed (max-width/height + its own ratio), never overflowing. */
+        width: 100%;
+        height: 100%;
         max-width: 100%;
         max-height: 100%;
-        /* printed-background bleed: the real card background colour extends
-           ~20-30mm (scaled to the preview) around the card, so the customer
-           sees that we print with some of the surrounding background. The
-           padding is a percentage of the preview (its containing block) so the
-           bleed stays proportional to the card, not tied to the viewport. */
-        background: var(--bleed, var(--cfg-bg));
-        padding: clamp(14px, 6%, 30px);
-        border-radius: 16px;
-        box-shadow: inset 0 0 0 1px rgba(44, 26, 41, 0.06);
+        /* Full-page designs print their background all the way to the edge, so
+           there is NO fake print-bleed frame — the page is shown edge-to-edge. */
       }
-      /* subtle centered brand watermark over the live card/board preview */
+      /* subtle brand watermark: a SMALL corner mark, not a big centered stamp
+         (a centered stamp would cover the middle cards of the 8-card page). */
       .preview-panel[data-active='true']::after {
         content: '';
         position: absolute;
         inset: 0;
-        background: url('assets/logo.png') center / 42% no-repeat;
-        opacity: 0.16;
+        background: url('assets/logo.png') right 5% bottom 6% / 13% no-repeat;
+        opacity: 0.14;
         pointer-events: none;
       }
-      /* CARD previews (front/back): PORTRAIT. Fill the stage height and derive
-         the width from the card's true viewBox ratio, so the bleed frame hugs
-         the card exactly (no empty letterbox gaps) and the box shrink-wraps. */
-      .preview-panel[data-panel='front'],
-      .preview-panel[data-panel='back'] {
-        height: 100%;
-        width: auto;
-      }
+      /* ALL previews (front/back/board) are full-page LANDSCAPE artboards
+         (~1.414:1, A4 landscape). The page is CONTAINed within the stage — sized
+         to the largest box of its own ratio that fits both the stage width AND
+         height — so the whole 8-card page stays visible and never forces a scroll
+         (a landscape page sized to width alone would overflow a short stage). */
       .preview-panel[data-panel='front'] svg,
       .preview-panel[data-panel='back'] svg,
-      .preview-panel[data-panel='front'] img,
-      .preview-panel[data-panel='back'] img {
-        height: 100%;
-        width: auto;
-        aspect-ratio: var(--card-ratio);
-        max-height: 100%;
-      }
-      /* BOARD preview: LANDSCAPE (~1.4:1). Show it full width at its natural
-         ratio so it stays readable — never squeezed into the portrait card box. */
-      .preview-panel[data-panel='board'] {
-        width: 100%;
-        height: auto;
-      }
       .preview-panel[data-panel='board'] svg,
+      .preview-panel[data-panel='front'] img,
+      .preview-panel[data-panel='back'] img,
       .preview-panel[data-panel='board'] img {
-        width: 100%;
+        width: auto;
         height: auto;
+        max-width: 100%;
         max-height: 100%;
+        aspect-ratio: var(--page-ratio);
       }
       .preview-panel svg,
       .preview-panel img {
@@ -576,6 +569,11 @@
         text-align: center;
       }
 
+      /* fixed-colour designs (neon) hide the whole swatch picker. The id+attr
+         selector outranks the .colors display rule so `hidden` actually hides it. */
+      #colorList[hidden] {
+        display: none;
+      }
       .colors {
         display: flex;
         column-gap: 14px;
@@ -776,36 +774,29 @@
         min-height: 0;
         padding: 8px;
       }
-      /* small reminder card: fixed, compact height with a slim bleed frame so the
-         name/contact fields (and the sticky bar) always fit above the fold. */
+      /* small reminder card on the name/contact steps: a compact LANDSCAPE
+         thumbnail capped by height so the fields (and the sticky bar) always fit
+         above the fold. */
       .preview-card.is-collapsed .preview-panel[data-active='true'] {
         height: auto;
         width: auto;
         max-width: 100%;
-        padding: 6px;
       }
       .preview-card.is-collapsed .preview-panel[data-panel='front'],
-      .preview-card.is-collapsed .preview-panel[data-panel='back'] {
-        height: clamp(72px, 10vh, 112px);
-        aspect-ratio: var(--card-ratio);
-      }
+      .preview-card.is-collapsed .preview-panel[data-panel='back'],
       .preview-card.is-collapsed .preview-panel[data-panel='board'] {
-        width: 100%;
+        width: auto;
         height: auto;
       }
       .preview-card.is-collapsed .preview-panel[data-panel='front'] svg,
       .preview-card.is-collapsed .preview-panel[data-panel='back'] svg,
-      .preview-card.is-collapsed .preview-panel[data-panel='front'] img,
-      .preview-card.is-collapsed .preview-panel[data-panel='back'] img {
-        width: 100%;
-        height: 100%;
-        aspect-ratio: auto;
-        max-height: none;
-      }
       .preview-card.is-collapsed .preview-panel[data-panel='board'] svg,
+      .preview-card.is-collapsed .preview-panel[data-panel='front'] img,
+      .preview-card.is-collapsed .preview-panel[data-panel='back'] img,
       .preview-card.is-collapsed .preview-panel[data-panel='board'] img {
-        width: 100%;
+        width: auto;
         height: auto;
+        max-width: 100%;
         max-height: clamp(84px, 12vh, 128px);
       }
       .preview-chip {
@@ -1081,9 +1072,6 @@
         .preview-card.is-collapsed .preview-panel svg,
         .preview-card.is-collapsed .preview-panel img {
           max-height: 104px;
-        }
-        .preview-panel[data-active='true'] {
-          padding: clamp(11px, 4.5%, 18px);
         }
         /* steps sit right under the preview with a tighter rhythm */
         .wiz-step {
@@ -1598,27 +1586,54 @@
         back: document.querySelector('[data-panel="back"]'),
         board: document.querySelector('[data-panel="board"]'),
       };
+      const boardTab = document.querySelector('.tab[data-tab="board"]');
 
-      // inline all three product SVGs of the currently selected design
+      // Which panels have had their (heavy) full-page SVG inlined for the current
+      // design. We inline a panel LAZILY — only when its tab is first shown — so we
+      // never parse all three multi-MB DOMs up front.
+      let rendered = new Set();
+
+      // Inline one product SVG into its panel on demand. The palette (--cN) is
+      // already set on the panel element by recolor(), so the inlined svg inherits
+      // the current colours immediately.
+      async function ensurePanel(kind) {
+        const d = DESIGNS[designIndex];
+        if (!d) return;
+        const el = panels[kind];
+        if (!el || rendered.has(kind)) return;
+        const path = d.products && d.products[kind];
+        if (!path) {
+          el.innerHTML = '';
+          return;
+        }
+        rendered.add(kind);
+        try {
+          el.innerHTML = paintSvg(await loadSvg(path), d.anchors);
+        } catch (e) {
+          rendered.delete(kind);
+          el.innerHTML = '<div class="preview-empty">אין תצוגה</div>';
+        }
+      }
+
+      // A design without a board product (e.g. kids) hides the board tab entirely;
+      // if that tab was active, fall back to the front so a real panel stays shown.
+      function updateBoardTab() {
+        const d = DESIGNS[designIndex] || {};
+        const hasBoard = !!(d.products && d.products.board);
+        if (boardTab) boardTab.hidden = !hasBoard;
+        if (!hasBoard && activeTab === 'board') selectTab('front');
+      }
+
+      // Switch designs: reset the lazy cache, clear panels, fix up the board tab,
+      // apply the palette (to every panel element), then inline just the active tab.
       async function renderDesign() {
         const d = DESIGNS[designIndex];
         if (!d) return;
-        await Promise.all(
-          Object.keys(panels).map(async (kind) => {
-            const el = panels[kind];
-            const path = d.products && d.products[kind];
-            if (!path) {
-              el.innerHTML = '';
-              return;
-            }
-            try {
-              el.innerHTML = paintSvg(await loadSvg(path), d.anchors);
-            } catch (e) {
-              el.innerHTML = '<div class="preview-empty">אין תצוגה</div>';
-            }
-          })
-        );
+        rendered = new Set();
+        Object.values(panels).forEach((el) => (el.innerHTML = ''));
+        updateBoardTab();
         recolor();
+        await ensurePanel(activeTab);
       }
 
       // apply current color palette to every preview panel + page accent
@@ -1631,13 +1646,16 @@
         if (!anchors.length) return;
         let activeMain = null;
         let bleed = null;
-        if (colorIndex < 0) {
+        // fixed designs (neon) are locked to their original colours regardless of
+        // any stale colour index.
+        const ci = isFixedDesign() ? -1 : colorIndex;
+        if (ci < 0) {
           // original colors - apply the design's own anchors as-is
           Object.values(panels).forEach((el) => applyOriginal(el, anchors));
           activeMain = mainAnchor(anchors);
           bleed = bleedColor(null, anchors);
         } else {
-          const color = MAIN_COLORS[colorIndex];
+          const color = MAIN_COLORS[ci];
           if (!color) return;
           Object.values(panels).forEach((el) => applyPalette(el, color.hex, anchors));
           activeMain = color.hex;
@@ -1665,6 +1683,8 @@
         Object.entries(panels).forEach(([k, el]) =>
           el.setAttribute('data-active', k === tab ? 'true' : 'false')
         );
+        // inline this tab's SVG the first time it's shown (lazy per-tab).
+        ensurePanel(tab);
       }
       document
         .querySelectorAll('.tab')
@@ -1706,7 +1726,7 @@
           .querySelectorAll('.design')
           .forEach((el, idx) => el.setAttribute('aria-pressed', idx === i ? 'true' : 'false'));
         updateOrigChip();
-        updateRasterNote();
+        updateColorControls();
         setActiveSwatch(-1);
         const d = DESIGNS[i] || {};
         track('select_design', { design: d.name || d.id || i });
@@ -1759,12 +1779,31 @@
         origBtn.style.background = mainAnchor(d.anchors);
       }
 
-      // designs with a raster <image> background can't recolor that part - keep
-      // recolor on for the vector parts but surface a subtle caption explaining it.
+      // Colour controls per design:
+      //  - recolor:'fixed' (neon) — the picker is HIDDEN and the design stays in
+      //    its original colours (baked-in raster glow can't be recoloured).
+      //  - recolor:'slider' with a raster <image> part — the picker stays, but a
+      //    subtle caption explains the photographic background stays fixed.
       const rasterNote = document.getElementById('rasterNote');
-      function updateRasterNote() {
+      function isFixedDesign() {
         const d = DESIGNS[designIndex];
-        if (rasterNote) rasterNote.hidden = !(d && d.hasRaster);
+        return !!(d && d.recolor === 'fixed');
+      }
+      function updateColorControls() {
+        const d = DESIGNS[designIndex];
+        const fixed = isFixedDesign();
+        // fixed designs can't be recoloured -> hide the whole swatch picker.
+        if (colorList) colorList.hidden = fixed;
+        if (!rasterNote) return;
+        if (fixed) {
+          rasterNote.textContent = 'בעיצוב הזה הצבעים קבועים — הוא מגיע במראה המקורי';
+          rasterNote.hidden = false;
+        } else if (d && d.hasRaster) {
+          rasterNote.textContent = 'חלק מהרקע בעיצוב זה קבוע ולא משתנה עם הצבע';
+          rasterNote.hidden = false;
+        } else {
+          rasterNote.hidden = true;
+        }
       }
 
       function selectColor(ci) {
@@ -2068,13 +2107,15 @@
             if (saved && typeof saved.chasers === 'boolean') chasers = saved.chasers;
           } catch (e) {}
         }
+        // a fixed-colour design ignores any restored colour choice.
+        if (isFixedDesign()) colorIndex = -1;
         document
           .querySelectorAll('.design')
           .forEach((el, idx) =>
             el.setAttribute('aria-pressed', idx === designIndex ? 'true' : 'false')
           );
         updateOrigChip();
-        updateRasterNote();
+        updateColorControls();
         setActiveSwatch(colorIndex);
         paintChasers();
       })();

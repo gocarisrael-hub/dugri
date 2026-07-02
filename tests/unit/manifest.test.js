@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateManifest, assertManifest } from '../../site/js/configurator.js';
+import { validateManifest, assertManifest, isValidHex } from '../../site/js/configurator.js';
 import { DESIGNS, MAIN_COLORS } from '../../site/js/designs.js';
 
 const goodDesigns = [
@@ -31,12 +31,24 @@ describe('validateManifest', () => {
     expect(assertManifest(goodDesigns, goodColors)).toBe(true);
   });
 
-  it('fails when a product is missing', () => {
+  it('board is OPTIONAL: a design without a board is still valid', () => {
+    const noBoard = JSON.parse(JSON.stringify(goodDesigns));
+    delete noBoard[0].products.board;
+    expect(validateManifest(noBoard, goodColors)).toEqual([]);
+  });
+
+  it('fails when a required product (front) is missing', () => {
     const bad = JSON.parse(JSON.stringify(goodDesigns));
-    delete bad[0].products.board;
+    delete bad[0].products.front;
     const errors = validateManifest(bad, goodColors);
     expect(errors.length).toBeGreaterThan(0);
-    expect(errors.join('\n')).toContain('board');
+    expect(errors.join('\n')).toContain('front');
+  });
+
+  it('fails when a required product (back) is missing', () => {
+    const bad = JSON.parse(JSON.stringify(goodDesigns));
+    delete bad[1].products.back;
+    expect(validateManifest(bad, goodColors).join('\n')).toContain('back');
   });
 
   it('fails when products object is missing entirely', () => {
@@ -79,16 +91,68 @@ describe('validateManifest', () => {
 });
 
 describe('generated manifest (real DESIGNS)', () => {
+  const byId = Object.fromEntries(DESIGNS.map((d) => [d.id, d]));
+
   it('the committed manifest is valid', () => {
     expect(validateManifest(DESIGNS, MAIN_COLORS)).toEqual([]);
     expect(assertManifest(DESIGNS, MAIN_COLORS)).toBe(true);
   });
 
-  it('only the kids design has a raster background (hasRaster)', () => {
-    const byId = Object.fromEntries(DESIGNS.map((d) => [d.id, d]));
-    expect(byId.kids.hasRaster).toBe(true);
-    expect(byId.birthday.hasRaster).toBe(false);
-    expect(byId.marriage.hasRaster).toBe(false);
-    expect(byId.bachelorette.hasRaster).toBe(false);
+  it('ships every owner-confirmed theme id (incl. the new japanese/posttrip/neon)', () => {
+    for (const id of [
+      'bachelorette',
+      'marriage',
+      'birthday',
+      'japanese',
+      'posttrip',
+      'neon',
+      'kids',
+    ]) {
+      expect(byId[id], `missing design ${id}`).toBeTruthy();
+    }
+  });
+
+  it('every design has a front + back; only board is optional', () => {
+    for (const d of DESIGNS) {
+      expect(d.products.front, `${d.id} front`).toBeTruthy();
+      expect(d.products.back, `${d.id} back`).toBeTruthy();
+    }
+  });
+
+  it('kids has NO board (deferred) and that is allowed', () => {
+    expect(byId.kids.products.board).toBeUndefined();
+    // a manifest with a board-less design still validates cleanly.
+    expect(validateManifest(DESIGNS, MAIN_COLORS)).toEqual([]);
+  });
+
+  it('every other design DOES have a board', () => {
+    for (const id of ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'neon']) {
+      expect(byId[id].products.board, `${id} board`).toBeTruthy();
+    }
+  });
+
+  it('every anchor is a valid #rrggbb', () => {
+    for (const d of DESIGNS) {
+      expect(d.anchors.length).toBeGreaterThan(0);
+      for (const a of d.anchors) expect(isValidHex(a), `${d.id}: ${a}`).toBe(true);
+    }
+  });
+
+  it("recolor is 'slider' for all themes except neon, which is 'fixed'", () => {
+    for (const d of DESIGNS) {
+      expect(['slider', 'fixed']).toContain(d.recolor);
+    }
+    expect(byId.neon.recolor).toBe('fixed');
+    for (const id of ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'kids']) {
+      expect(byId[id].recolor, id).toBe('slider');
+    }
+  });
+
+  it('full-page designs carry embedded photos, so hasRaster is true across the board', () => {
+    // the with-background full-deck pages all embed at least one <image> (a photo
+    // background on a card or the board), so every shipped design reports raster.
+    for (const d of DESIGNS) {
+      expect(d.hasRaster, `${d.id} hasRaster`).toBe(true);
+    }
   });
 });

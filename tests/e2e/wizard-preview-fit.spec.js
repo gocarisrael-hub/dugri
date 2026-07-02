@@ -1,14 +1,15 @@
 import { test, expect } from '@playwright/test';
 
-// Regression cover for the enlarged order-wizard preview (PR #87 follow-up):
-//  1. the "every step fits, no page scroll, sticky bar reachable" invariant must
+// Regression cover for the FULL 8-card deck preview (supersedes the single-card
+// preview). Two invariants:
+//  1. the "every step fits, no page scroll, sticky bar reachable" behaviour must
 //     hold beyond portrait mobile — on a laptop viewport AND a landscape one
-//     (wider than the 600px mobile breakpoint), where the preview must yield so
-//     the step's controls still fit;
-//  2. the board tab must render its LANDSCAPE board svg at a readable size (a
-//     large fraction of the stage width) — not squeezed into the portrait card
-//     box — while the card (front/back) stays portrait with its bleed frame
-//     hugging it (no big empty letterbox gaps).
+//     (wider than the 600px mobile breakpoint), even though the previews are now
+//     heavier full-page SVGs;
+//  2. EVERY present product tab (front / back / board) renders a LANDSCAPE A4
+//     page (~1.414:1) at a readable size — a large fraction of the stage — since
+//     all three products are now full pages, not single portrait cards; and a
+//     board-less theme (kids) simply has no board tab.
 //
 // These are viewport-specific layout checks, so they run ONCE (on a single
 // project) rather than across all three device profiles. Assertions are kept
@@ -57,50 +58,56 @@ for (const [label, viewport] of [
   });
 }
 
-test.describe('preview keeps each product at its own aspect ratio', () => {
-  test('board tab shows a landscape board svg at a readable size (not crushed)', async ({
+test.describe('every product tab is a readable landscape page', () => {
+  // measure the active panel's svg against its stage.
+  async function measureActive(page, panel) {
+    return page.evaluate((p) => {
+      const stage = document.querySelector('.preview-stage').getBoundingClientRect();
+      const svg = document.querySelector(`[data-panel="${p}"] svg`).getBoundingClientRect();
+      return {
+        ratio: svg.width / svg.height,
+        widthFraction: svg.width / stage.width,
+        heightFits: svg.height <= stage.height + 2,
+      };
+    }, panel);
+  }
+
+  for (const tab of ['front', 'back', 'board']) {
+    test(`the ${tab} tab shows a landscape svg filling most of the stage`, async ({ page }) => {
+      await page.setViewportSize(LAPTOP);
+      await page.goto('/options.html?step=1');
+      await expect(page.getByTestId('preview-front').locator('svg')).toBeVisible();
+
+      await page.getByTestId('tab-' + tab).click();
+      const p = page.getByTestId('preview-' + tab);
+      await expect(p).toHaveAttribute('data-active', 'true');
+      await expect(p.locator('svg')).toBeVisible();
+
+      const m = await measureActive(page, tab);
+      // landscape (clearly wider than tall) — a crushed/portrait page would be < 1.
+      expect(m.ratio).toBeGreaterThan(1.15);
+      // fills most of the stage width, so the 8 cards stay readable...
+      expect(m.widthFraction).toBeGreaterThan(0.6);
+      // ...and is contained within the stage height (not clipped/overflowing).
+      expect(m.heightFits).toBe(true);
+    });
+  }
+
+  test('a board-less theme (kids) has no board tab, but front/back still work', async ({
     page,
   }) => {
     await page.setViewportSize(LAPTOP);
     await page.goto('/options.html?step=1');
+    await page.locator('.design[data-design-id="kids"]').click();
+
+    // board tab is hidden; front/back remain.
+    await expect(page.getByTestId('tab-board')).toBeHidden();
+    await expect(page.getByTestId('tab-front')).toBeVisible();
+    await expect(page.getByTestId('tab-back')).toBeVisible();
+
     await expect(page.getByTestId('preview-front').locator('svg')).toBeVisible();
-
-    await page.getByTestId('tab-board').click();
-    const board = page.getByTestId('preview-board');
-    await expect(board).toHaveAttribute('data-active', 'true');
-    await expect(board.locator('svg')).toBeVisible();
-
-    const m = await page.evaluate(() => {
-      const stage = document.querySelector('.preview-stage').getBoundingClientRect();
-      const svg = document.querySelector('[data-panel="board"] svg').getBoundingClientRect();
-      return { widthFraction: svg.width / stage.width, ratio: svg.width / svg.height };
-    });
-    // landscape (clearly wider than tall) — a crushed board would be < 1 here...
-    expect(m.ratio).toBeGreaterThan(1.15);
-    // ...and it fills most of the stage width, so it stays readable.
-    expect(m.widthFraction).toBeGreaterThan(0.6);
-  });
-
-  test('card front stays portrait with the bleed frame hugging it', async ({ page }) => {
-    await page.setViewportSize(LAPTOP);
-    await page.goto('/options.html?step=1');
-    const svg = page.getByTestId('preview-front').locator('svg');
-    await expect(svg).toBeVisible();
-
-    const m = await page.evaluate(() => {
-      const panel = document.querySelector('[data-panel="front"]').getBoundingClientRect();
-      const s = document.querySelector('[data-panel="front"] svg').getBoundingClientRect();
-      return {
-        ratio: s.width / s.height,
-        vGap: panel.height - s.height,
-        hGap: panel.width - s.width,
-      };
-    });
-    // portrait card (taller than wide)...
-    expect(m.ratio).toBeLessThan(0.85);
-    // ...and the bleed frame hugs it: only the (modest) bleed padding sits around
-    // the card, never a large empty letterbox band.
-    expect(m.vGap).toBeLessThan(90);
-    expect(m.hGap).toBeLessThan(90);
+    await page.getByTestId('tab-back').click();
+    await expect(page.getByTestId('preview-back')).toHaveAttribute('data-active', 'true');
+    await expect(page.getByTestId('preview-back').locator('svg')).toBeVisible();
   });
 });
