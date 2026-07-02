@@ -60,8 +60,39 @@
         padding: 0 16px;
       }
       header {
+        position: relative;
         text-align: center;
         padding: 22px 0 14px;
+      }
+      /* Small home affordance in the top corner (RTL: inline-start = right).
+         Standard nav back to the main site — subtle, doesn't pull focus from
+         the word-filling task. */
+      .home-link {
+        position: absolute;
+        top: 16px;
+        inset-inline-start: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        text-decoration: none;
+        color: var(--muted);
+        font-weight: 700;
+        font-size: 13px;
+        line-height: 1;
+      }
+      .home-link:hover {
+        color: var(--hot);
+      }
+      .home-link:focus-visible {
+        outline: 2px solid var(--hot);
+        outline-offset: 3px;
+        border-radius: 6px;
+      }
+      .home-logo {
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+        display: block;
       }
       header .brand {
         font-weight: 900;
@@ -271,6 +302,36 @@
       }
       .hidden {
         display: none !important;
+      }
+      /* Tailored order CTA at the bottom of the content. On-brand pink, subtle
+         (outlined card, not a modal), and given generous spacing so it never
+         overlaps the fixed WhatsApp help button (bottom-left) or the toast
+         (bottom-center). */
+      .order-cta {
+        display: block;
+        text-align: center;
+        margin: 26px 0 72px;
+        padding: 15px 18px;
+        border: 1.5px solid var(--hot);
+        border-radius: 14px;
+        background: #fff5fa;
+        color: var(--hot-deep);
+        font-weight: 800;
+        font-size: 16px;
+        text-decoration: none;
+        transition:
+          background 0.15s ease,
+          transform 0.1s ease;
+      }
+      .order-cta:hover {
+        background: #fde3ee;
+      }
+      .order-cta:active {
+        transform: scale(0.99);
+      }
+      .order-cta:focus-visible {
+        outline: 2px solid var(--hot);
+        outline-offset: 3px;
       }
       .howto {
         margin-top: 14px;
@@ -691,6 +752,14 @@
   <body>
     <div class="wrap">
       <header>
+        <a
+          class="home-link"
+          href="index.html"
+          aria-label="דוגרי · חזרה לדף הבית"
+          data-testid="home-link"
+        >
+          <img class="home-logo" src="assets/logo.png" alt="" />
+        </a>
         <div class="brand">דוגרי</div>
         <h1 id="title">אוספים מילים…</h1>
         <div class="sub" id="subtitle">כל מילה, ביטוי, בדיחה פנימית או זיכרון נחשב</div>
@@ -914,6 +983,12 @@
         <!-- Shown instead of the button when card payment isn't configured yet -->
         <p class="pay-soon-note hidden" id="cardSoonNote">התשלום בכרטיס אשראי ייפתח בקרוב 💜</p>
       </details>
+
+      <!-- Tailored order CTA at the bottom of the content. Wording is set in JS
+           by viewer role: the owner/manager is nudged to order ANOTHER game,
+           while a contributor (warm lead) is invited to order their OWN. Both
+           link to the order flow. -->
+      <a class="order-cta" id="orderCta" href="options.html" data-testid="order-cta"></a>
     </div>
 
     <!-- credit-card payment modal (PeleCard iframe) -->
@@ -957,6 +1032,17 @@
       const $ = (s) => document.querySelector(s);
       let state = null; // last fetched collection
       const seenPrompts = [];
+
+      // Tailor the bottom order CTA by who's viewing: the owner/manager (arrived
+      // with the owner token) is a happy customer → nudge them to order ANOTHER
+      // game; a plain contributor is a warm lead → invite them to order their
+      // OWN. Both link to the order flow (options.html).
+      const orderCta = $('#orderCta');
+      if (orderCta) {
+        orderCta.textContent = isOwner
+          ? 'רוצים עוד משחק? הזמינו כאן 🎉'
+          : 'רוצים משחק כזה לאירוע שלכם? →';
+      }
 
       // The real product word cap (owner's decision). Single source of truth for
       // the counter pill, the hint copy, and the progress-bar math.
