@@ -80,6 +80,17 @@
         margin: 0 auto;
         padding: 0 22px;
       }
+      /* The wizard fills the area between the fixed nav (body padding-top) and the
+         fixed Back/Next bar (body padding-bottom) as one flex column, so the live
+         preview can grow to use the whole available height on any screen. When a
+         step's controls need more room the preview flex-shrinks instead of the
+         page scrolling — preserving the "everything fits, no scroll" behaviour. */
+      main.wrap {
+        display: flex;
+        flex-direction: column;
+        min-height: calc(100vh - 150px);
+        min-height: calc(100dvh - 150px);
+      }
       h1,
       h2,
       h3,
@@ -357,6 +368,13 @@
         box-shadow: var(--shadow-md);
         max-width: 520px;
         margin: 18px auto 0;
+        /* fill the leftover column height (steps 1-3) but shrink if a step's
+           controls need the room, so the page never has to scroll */
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
       }
       .tabs {
         display: flex;
@@ -396,10 +414,15 @@
           ),
           var(--cfg-bg, var(--bg));
         border: 1px dashed var(--blush-deep);
-        min-height: 300px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        /* Grow to consume the card's leftover height; the card box centers here
+           and fits by height. A grid (not flex) so the card sizes to the stage's
+           definite height rather than filling its width and growing too tall.
+           A viewport-based floor keeps the preview large on roomy screens; on a
+           phone the mobile block lowers it so the step's controls always fit. */
+        flex: 1 1 auto;
+        min-height: min(64vh, 560px);
+        display: grid;
+        place-items: center;
         padding: 18px;
         overflow: hidden;
       }
@@ -412,11 +435,18 @@
         display: flex;
         align-items: center;
         justify-content: center;
+        /* The bleed box shrink-wraps the card SVG (which fills the stage height
+           and derives its width from the 5/7 ratio), so the bleed hugs the card
+           rather than becoming a big rectangle. Caps keep it inside the viewport. */
+        height: 100%;
+        width: auto;
+        max-width: 100%;
+        max-height: 100%;
         /* printed-background bleed: the real card background colour extends
            ~20-30mm (scaled to the preview) around the card, so the customer
            sees that we print with some of the surrounding background. */
         background: var(--bleed, var(--cfg-bg));
-        padding: clamp(18px, 9%, 34px);
+        padding: clamp(16px, 2.6vh, 32px);
         border-radius: 16px;
         box-shadow: inset 0 0 0 1px rgba(44, 26, 41, 0.06);
       }
@@ -429,17 +459,25 @@
         opacity: 0.16;
         pointer-events: none;
       }
+      /* the card scales to the stage: sized by height (the binding dimension for
+         the portrait 5/7 card), width follows the aspect ratio and is capped so
+         it never overflows a short/wide viewport. object-fit keeps it uncropped. */
       .preview-panel svg {
-        width: 100%;
-        height: auto;
-        max-height: 420px;
+        height: 100%;
+        width: auto;
+        aspect-ratio: 5 / 7;
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
         display: block;
         filter: drop-shadow(0 14px 30px rgba(44, 26, 41, 0.16));
       }
       .preview-panel img {
-        width: 100%;
-        height: auto;
-        max-height: 420px;
+        height: 100%;
+        width: auto;
+        aspect-ratio: 5 / 7;
+        max-width: 100%;
+        max-height: 100%;
         object-fit: contain;
         display: block;
       }
@@ -707,16 +745,29 @@
         transition: width 0.4s ease;
       }
 
-      /* collapsed preview on the name/contact steps */
+      /* collapsed preview on the name/contact steps: it stops filling the column
+         (natural, small height) so the name/contact fields sit naturally below. */
+      .preview-card.is-collapsed {
+        flex: 0 0 auto;
+      }
       .preview-card.is-collapsed .tabs {
         display: none;
       }
       .preview-card.is-collapsed .preview-stage {
+        flex: 0 0 auto;
         min-height: 0;
         padding: 10px;
       }
+      .preview-card.is-collapsed .preview-panel[data-active='true'] {
+        align-self: center;
+        aspect-ratio: auto;
+        height: auto;
+        width: 100%;
+      }
       .preview-card.is-collapsed .preview-panel svg,
       .preview-card.is-collapsed .preview-panel img {
+        width: 100%;
+        height: auto;
         max-height: 150px;
       }
       .preview-chip {
@@ -978,17 +1029,18 @@
           font-size: 13.5px;
         }
         .preview-stage {
-          min-height: 90px;
+          /* small floor so the preview can shrink and the controls always fit */
+          min-height: 72px;
           padding: 8px;
         }
-        .preview-panel svg,
-        .preview-panel img,
+        /* uncollapsed (steps 1-3) fills the stage via height:100% (base rule);
+           only the collapsed name/contact preview keeps a small fixed cap. */
         .preview-card.is-collapsed .preview-panel svg,
         .preview-card.is-collapsed .preview-panel img {
           max-height: 104px;
         }
         .preview-panel[data-active='true'] {
-          padding: clamp(11px, 4%, 16px);
+          padding: clamp(11px, 1.8vh, 16px);
         }
         /* steps sit right under the preview with a tighter rhythm */
         .wiz-step {
