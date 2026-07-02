@@ -271,6 +271,25 @@ function newPayToken() {
   return crypto.randomUUID().replace(/-/g, '').slice(0, 18);
 }
 
+// Fire the owner + buyer "order paid" emails for a collection that just
+// transitioned to paid. Shared by BOTH paid transitions — the PeleCard callback
+// and the free (100%-coupon) path — so they send identical, consistent
+// notifications. `amountCharged` is what the customer ACTUALLY paid (0 for a
+// fully-free order, the discounted amount for a partial coupon); the emails show
+// that rather than the pre-coupon package price. Fire-and-forget: the payment
+// must succeed even if a send fails. The caller guards this with
+// notify.isConfigured() so the word-count work is skipped when email is dormant.
+function sendPaidNotifications(collectionId, base, amountCharged) {
+  const c = db.getCollection(collectionId);
+  if (!c) return;
+  const enriched = { ...c, count: db.listWords(collectionId).length };
+  const options = { amountCharged };
+  notify.sendOrderPaid(enriched, base, options).catch(() => {});
+  // Also confirm to the BUYER (their own email), with the collect link so they
+  // can keep adding their words. Skips gracefully if no buyer email.
+  notify.sendBuyerConfirmation(enriched, base, options).catch(() => {});
+}
+
 // Owner-only: start a PeleCard card payment for this collection's order.
 // Persists/refreshes the order first (same validation as /order), then asks
 // PeleCard for an iframe URL. Returns { url } for the browser to load in an
@@ -331,15 +350,8 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     });
     if (couponCode) db.incrementCouponUses(couponCode);
     // A free (100%-coupon) order is now paid — fire the same owner + buyer
-    // emails as the PeleCard callback. Fire-and-forget; dormant without SMTP.
-    if (notify.isConfigured()) {
-      const enriched = {
-        ...db.getCollection(req.params.id),
-        count: db.listWords(req.params.id).length,
-      };
-      notify.sendOrderPaid(enriched, base).catch(() => {});
-      notify.sendBuyerConfirmation(enriched, base).catch(() => {});
-    }
+    // emails as the PeleCard callback, showing the real charged amount (0).
+    if (notify.isConfigured()) sendPaidNotifications(req.params.id, base, 0);
     return res.json({ free: true, paid: true, total: 0 });
   }
 
@@ -428,16 +440,11 @@ app.post('/api/payment/callback', async (req, res) => {
     });
     // Count the coupon use once, on the real unpaid->paid transition.
     if (session.coupon) db.incrementCouponUses(session.coupon);
-    // Notify the owner a payment came in. Fire-and-forget: the payment must
-    // succeed even if the send fails. Skip the word-count work entirely when
-    // email is unconfigured (the dormant default).
+    // Notify owner + buyer a payment came in, showing the amount ACTUALLY
+    // charged for THIS session (never the pre-coupon order.total). Skip the
+    // word-count work entirely when email is unconfigured (the dormant default).
     if (notify.isConfigured()) {
-      const enriched = { ...c, count: db.listWords(c.id).length };
-      const base = paymentBaseUrl();
-      notify.sendOrderPaid(enriched, base).catch(() => {});
-      // Also confirm to the BUYER (their own email), with the collect link so
-      // they can keep adding their words. Skips gracefully if no buyer email.
-      notify.sendBuyerConfirmation(enriched, base).catch(() => {});
+      sendPaidNotifications(c.id, paymentBaseUrl(), session.charged_total);
     }
   }
   res.json({ ok: true });

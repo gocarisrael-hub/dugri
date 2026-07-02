@@ -89,6 +89,42 @@ describe('buildPaidMessage', () => {
     expect(subject).toBe('דוגרי · התקבל תשלום — ללא שם');
     expect(text).not.toContain('collect.html');
   });
+
+  it('shows the REAL charged amount (0 = free), not the pre-coupon total, when amountCharged is passed', () => {
+    // A 100%-coupon order: package price is 79 but the customer paid 0.
+    const { text } = loadFresh().buildPaidMessage(
+      { order: { version: 'pdf', total: 79 } },
+      undefined,
+      { amountCharged: 0 }
+    );
+    expect(text).toContain('0 ₪');
+    expect(text).toContain('קופון 100%');
+    expect(text).not.toContain('79 ₪');
+  });
+
+  it('shows the discounted charge for a partial coupon (not the full total)', () => {
+    const { text } = loadFresh().buildPaidMessage(
+      { order: { version: 'pdf', total: 79 } },
+      undefined,
+      {
+        amountCharged: 40,
+      }
+    );
+    expect(text).toContain('40 ₪');
+    expect(text).not.toContain('79 ₪');
+  });
+
+  it('shows the full total (no regression) for a no-coupon order when amountCharged equals it', () => {
+    const { text } = loadFresh().buildPaidMessage(
+      { order: { version: 'pdf', total: 79 } },
+      undefined,
+      {
+        amountCharged: 79,
+      }
+    );
+    expect(text).toContain('79 ₪');
+    expect(text).not.toContain('קופון 100%');
+  });
 });
 
 describe('buildBuyerConfirmation', () => {
@@ -117,6 +153,17 @@ describe('buildBuyerConfirmation', () => {
     expect(subject).toBe('דוגרי · ההזמנה שלכם התקבלה — ללא שם');
     expect(text).toContain('79 ₪');
     expect(text).not.toContain('collect.html');
+  });
+
+  it('reads clearly as free (0 ₪, קופון 100%) for a fully-free order, not the package price', () => {
+    const { text } = loadFresh().buildBuyerConfirmation(
+      { order: { version: 'pdf', total: 79 } },
+      undefined,
+      { amountCharged: 0 }
+    );
+    expect(text).toContain('0 ₪');
+    expect(text).toContain('קופון 100%');
+    expect(text).not.toContain('79 ₪');
   });
 });
 
