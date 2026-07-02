@@ -19,10 +19,31 @@
 //                   account email).
 
 const RESEND_API_URL = 'https://api.resend.com/emails';
+// Abort a stalled Resend request instead of hanging the (fire-and-forget) send
+// forever — on timeout the fetch rejects and the send logs + returns false.
+const SEND_TIMEOUT_MS = 10000;
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const NOTIFY_TO = process.env.NOTIFY_TO || '';
 const NOTIFY_FROM = process.env.NOTIFY_FROM || '';
+
+// Warn (once) at startup if the owner set SOME but not all of the three Resend
+// vars — a likely misconfiguration (e.g. they set the key + recipient and forgot
+// NOTIFY_FROM) that would otherwise silently disable ALL email with no clue why.
+// None set = dormant by design (stay silent); all set = configured (no warning).
+let _partialConfigWarned = false;
+function warnIfPartiallyConfigured() {
+  if (_partialConfigWarned) return;
+  const vars = { RESEND_API_KEY, NOTIFY_TO, NOTIFY_FROM };
+  const present = Object.values(vars).filter(Boolean).length;
+  if (present === 0 || present === 3) return;
+  _partialConfigWarned = true;
+  const missing = Object.keys(vars).filter((k) => !vars[k]);
+  console.warn(
+    '[notify] email partially configured — sends disabled. Missing: ' + missing.join(', ')
+  );
+}
+warnIfPartiallyConfigured();
 
 // Railway injects RAILWAY_ENVIRONMENT_NAME per environment (values seen live:
 // 'production', 'staging'). Any non-empty value that isn't 'production' (matched
@@ -190,6 +211,10 @@ async function send({ subject, text, html, to }) {
   if (!isConfigured()) return false;
   const recipient = to || NOTIFY_TO;
   if (!recipient) return false;
+  // Abort the request if Resend stalls, so a fire-and-forget send can never hang
+  // forever. The timer is always cleared in finally so it can't leak.
+  const controller = new AbortController();
+  let timer;
   try {
     // Non-prod (e.g. staging) sends are stamped as test emails; production and
     // local/unset stay untouched.
@@ -201,6 +226,7 @@ async function send({ subject, text, html, to }) {
       text: marked.text,
     };
     if (marked.html != null) body.html = marked.html;
+    timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
     const res = await fetch(RESEND_API_URL, {
       method: 'POST',
       headers: {
@@ -208,6 +234,7 @@ async function send({ subject, text, html, to }) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
@@ -218,6 +245,8 @@ async function send({ subject, text, html, to }) {
   } catch (e) {
     console.warn('[notify] send failed:', e && e.message ? e.message : e);
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

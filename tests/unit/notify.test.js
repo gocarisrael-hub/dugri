@@ -73,6 +73,7 @@ afterEach(() => {
   delete process.env.RAILWAY_ENVIRONMENT_NAME;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('isConfigured', () => {
@@ -92,6 +93,50 @@ describe('isConfigured', () => {
   it('is true when RESEND_API_KEY, NOTIFY_TO and NOTIFY_FROM are all set', () => {
     setResend(true);
     expect(loadFresh().isConfigured()).toBe(true);
+  });
+});
+
+describe('partial-config warning', () => {
+  it('warns once (and stays a no-op) when some — but not all — Resend vars are set', async () => {
+    setResend(false);
+    // Key + recipient set, NOTIFY_FROM forgotten — the likely misconfiguration.
+    process.env.RESEND_API_KEY = 're_test_key';
+    process.env.NOTIFY_TO = 'owner@dugri.example';
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const notify = loadFresh(); // startup warning fires here
+    const { fn } = stubFetch();
+
+    // Warned exactly once, naming the missing var.
+    const partialWarnings = warn.mock.calls
+      .map((c) => c.join(' '))
+      .filter((m) => m.includes('email partially configured'));
+    expect(partialWarnings.length).toBe(1);
+    expect(partialWarnings[0]).toContain('NOTIFY_FROM');
+
+    // Still fully dormant: not configured, sends are no-ops, fetch never called.
+    expect(notify.isConfigured()).toBe(false);
+    await expect(notify.sendOrderPaid(collection, 'https://d.example')).resolves.toBe(false);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('does not warn when all three vars are set (fully configured)', () => {
+    setResend(true);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    loadFresh();
+    const partialWarnings = warn.mock.calls
+      .map((c) => c.join(' '))
+      .filter((m) => m.includes('email partially configured'));
+    expect(partialWarnings.length).toBe(0);
+  });
+
+  it('does not warn when no vars are set (dormant by design)', () => {
+    setResend(false);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    loadFresh();
+    const partialWarnings = warn.mock.calls
+      .map((c) => c.join(' '))
+      .filter((m) => m.includes('email partially configured'));
+    expect(partialWarnings.length).toBe(0);
   });
 });
 
@@ -383,5 +428,35 @@ describe('send* never throw', () => {
     );
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     await expect(notify.sendOrderFinished(collection)).resolves.toBe(false);
+  });
+
+  it('aborts a hung request after the timeout — returns false + logs, never hangs', async () => {
+    setResend(true);
+    const notify = loadFresh();
+    vi.useFakeTimers();
+    // A fetch that never resolves on its own — it only settles when send()'s
+    // AbortController fires, so this proves the timeout actually aborts it.
+    const fetchMock = vi.fn(
+      (url, opts) =>
+        new Promise((_, reject) => {
+          opts.signal.addEventListener('abort', () => {
+            const err = new Error('The operation was aborted');
+            err.name = 'AbortError';
+            reject(err);
+          });
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const p = notify.sendOrderPaid(collection, 'https://d.example');
+    // Advance past the 10s timeout so the abort fires.
+    await vi.advanceTimersByTimeAsync(10000);
+    await expect(p).resolves.toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // The request carried an abort signal, and it ended up aborted by the timer.
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+    const logged = warn.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(logged).toContain('[notify] send failed:');
   });
 });
