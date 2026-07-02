@@ -40,7 +40,12 @@ let _db = loadDb();
 
 function saveDb() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(DB_FILE, JSON.stringify(_db, null, 2), 'utf8');
+  // Write to a temp file then rename over the real one. rename() on the same
+  // filesystem is atomic, so a crash mid-write can never leave a truncated or
+  // corrupt data file — readers always see either the old file or the new one.
+  const tmp = `${DB_FILE}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(_db, null, 2), 'utf8');
+  fs.renameSync(tmp, DB_FILE);
 }
 
 const uid = () => crypto.randomUUID();
