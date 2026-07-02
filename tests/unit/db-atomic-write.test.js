@@ -30,9 +30,9 @@ describe('saveDb writes atomically (temp file + rename)', () => {
     expect(parsed.collections.some((x) => x.id === c.id)).toBe(true);
   });
 
-  it('leaves no leftover *.tmp-* file after a successful write', () => {
+  it('leaves no leftover temp file after a successful write', () => {
     db.createCollection('דני', {}); // another saveDb()
-    const leftovers = fs.readdirSync(dataDir).filter((n) => n.includes('.tmp-'));
+    const leftovers = fs.readdirSync(dataDir).filter((n) => n.includes('.tmp'));
     expect(leftovers).toEqual([]);
   });
 });

@@ -43,7 +43,10 @@ function saveDb() {
   // Write to a temp file then rename over the real one. rename() on the same
   // filesystem is atomic, so a crash mid-write can never leave a truncated or
   // corrupt data file — readers always see either the old file or the new one.
-  const tmp = `${DB_FILE}.tmp-${process.pid}`;
+  // A fixed temp name (not per-pid) means the next save overwrites any leftover
+  // from a crash in the write→rename window, so orphan temps can't accumulate.
+  // Safe because saveDb is synchronous and the service runs a single process.
+  const tmp = `${DB_FILE}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(_db, null, 2), 'utf8');
   fs.renameSync(tmp, DB_FILE);
 }
