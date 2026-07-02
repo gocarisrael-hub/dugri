@@ -166,6 +166,17 @@ describe('generated manifest (real DESIGNS)', () => {
     }
   });
 
+  it('every design has a valid #rrggbb page accent (incl. the fixed theme)', () => {
+    // the page tint must be able to switch for EVERY design, even neon (fixed,
+    // no anchors) — so a representative accent is emitted for all of them.
+    for (const d of DESIGNS) {
+      expect(isValidHex(d.accent), `${d.id} accent: ${d.accent}`).toBe(true);
+    }
+    // neon has no anchors but still carries its own accent.
+    expect(byId.neon.anchors).toEqual([]);
+    expect(isValidHex(byId.neon.accent)).toBe(true);
+  });
+
   it('full-page designs carry embedded photos, so hasRaster is true across the board', () => {
     // the with-background full-deck pages all embed at least one <image> (a photo
     // background on a card or the board), so every shipped design reports raster.

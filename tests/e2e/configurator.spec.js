@@ -320,6 +320,38 @@ test.describe('order wizard', () => {
     expect(await readC0()).toBe(before);
   });
 
+  test('selecting neon after a slider switches the page accent to neon (not stale)', async ({
+    page,
+  }) => {
+    await page.goto('/options.html');
+    const accent = () =>
+      page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
+      );
+    const bg = () =>
+      page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue('--cfg-bg').trim()
+      );
+
+    // Pick a slider design + a vivid main colour so the page turns that colour.
+    await page.locator('.design[data-design-id="bachelorette"]').click();
+    await page.getByTestId('next-btn').click(); // colour step
+    await page.getByTestId('color-1').click(); // some slider colour
+    const sliderAccent = await accent();
+    const sliderBg = await bg();
+    expect(sliderAccent).toMatch(/^#|rgb/);
+
+    // Now switch to neon (fixed). Its OWN accent/bg must take over — not the stale
+    // slider tint (the regression: empty anchors made recolor() bail before the
+    // page theme was set).
+    await page.getByTestId('back-btn').click();
+    await page.locator('.design[data-design-id="neon"]').click();
+    await expect.poll(accent).not.toBe(sliderAccent);
+    await expect.poll(bg).not.toBe(sliderBg);
+    // and it matches neon's manifest accent (#ff00db)
+    expect((await accent()).toLowerCase()).toBe('#ff00db');
+  });
+
   test('design tiles use lightweight <img> thumbnails, not inlined full-page SVGs', async ({
     page,
   }) => {

@@ -1658,28 +1658,33 @@
         const d = DESIGNS[designIndex];
         if (!d) return;
         const anchors = d.anchors || [];
-        // guard: applyOriginal/applyPalette throw on empty anchors - nothing to
-        // recolor, so leave the previews as-is.
-        if (!anchors.length) return;
-        let activeMain = null;
         // fixed designs (neon) are locked to their original colours regardless of
         // any stale colour index.
         const ci = isFixedDesign() ? -1 : colorIndex;
-        if (ci < 0) {
-          // original colors - apply the design's own anchors as-is
-          Object.values(panels).forEach((el) => applyOriginal(el, anchors));
-          activeMain = mainAnchor(anchors);
-        } else {
-          const color = MAIN_COLORS[ci];
-          if (!color) return;
-          Object.values(panels).forEach((el) => applyPalette(el, color.hex, anchors));
-          activeMain = color.hex;
-        }
-        // theme the page + stage background to the active colour.
+
+        // 1) PAGE THEME (accent + background). Do this FIRST and for EVERY design,
+        // including fixed/empty-anchor ones — the design's own representative accent
+        // (d.accent) drives the page tint even when the SVG itself can't recolor.
+        // A chosen slider colour overrides it.
+        let activeMain;
+        if (ci < 0) activeMain = d.accent || (anchors.length ? mainAnchor(anchors) : null);
+        else activeMain = (MAIN_COLORS[ci] || {}).hex || d.accent || null;
         if (activeMain) {
           const root = document.documentElement.style;
           root.setProperty('--accent', activeMain);
           root.setProperty('--cfg-bg', lightTint(activeMain));
+        }
+
+        // 2) SVG TOKEN RECOLOR. Only designs with anchors carry var(--cN) tokens;
+        // fixed/empty-anchor designs skip this (their SVGs are baked at their own
+        // colours). applyOriginal/applyPalette throw on empty anchors, so guard.
+        if (!anchors.length) return;
+        if (ci < 0) {
+          Object.values(panels).forEach((el) => applyOriginal(el, anchors));
+        } else {
+          const color = MAIN_COLORS[ci];
+          if (!color) return;
+          Object.values(panels).forEach((el) => applyPalette(el, color.hex, anchors));
         }
       }
 

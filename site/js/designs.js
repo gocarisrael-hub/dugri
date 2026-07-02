@@ -41,6 +41,9 @@ export const DESIGNS = Object.entries(GENERATED).map(([id, g]) => ({
   anchors: g.anchors,
   hasRaster: !!g.hasRaster,
   recolor: g.recolor === 'fixed' ? 'fixed' : 'slider',
+  // representative page-accent colour (present for EVERY design, incl. fixed ones
+  // that have no anchors) so the page tint can switch even when the SVG can't.
+  accent: g.accent || null,
   thumb: g.thumb || null,
   products: g.products,
 }));

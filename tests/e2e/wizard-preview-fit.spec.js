@@ -21,6 +21,10 @@ test.beforeEach(({}, testInfo) => {
 
 const LAPTOP = { width: 1366, height: 768 };
 const LANDSCAPE = { width: 960, height: 480 };
+// A mid-height desktop that gets the FULL (non-compacted) layout under the 820px
+// breakpoint — regression cover that the definite-height wrap still absorbs the
+// taller full-page preview here without the page scrolling.
+const DESKTOP_MID = { width: 1440, height: 900 };
 
 // A step "fits" when the document does not overflow the viewport (no scroll) and
 // the fixed Back/Next bar sits fully within the viewport. We wait for the late
@@ -45,6 +49,7 @@ async function assertStepFits(page) {
 for (const [label, viewport] of [
   ['laptop', LAPTOP],
   ['landscape', LANDSCAPE],
+  ['mid-height desktop', DESKTOP_MID],
 ]) {
   test.describe(`order wizard fits a ${label} screen without scrolling`, () => {
     for (const step of [1, 2, 3, 4, 5]) {

@@ -26,7 +26,7 @@
 //
 // Usage: node scripts/tokenize-svg.mjs
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
@@ -207,6 +207,29 @@ function collectThemeColors(svgFiles) {
   return filtered.map((k) => k.hex);
 }
 
+// Pick a design's representative "accent" colour — the most saturated, breaking
+// ties toward mid-lightness (mirrors configurator.js mostSaturatedIndex). Used to
+// theme the page accent/background for EVERY design, including 'fixed' ones (neon)
+// which have no anchors but still need their own page tint.
+function representativeColor(hexes) {
+  if (!hexes.length) return null;
+  let bestS = -Infinity;
+  for (const h of hexes) bestS = Math.max(bestS, rgbToHsl(...hexToRgb(h))[1]);
+  const EPS = 0.005; // s is 0..1 here (matches the 0.5-on-0..100 tolerance)
+  let best = hexes[0];
+  let bestLDist = Infinity;
+  for (const h of hexes) {
+    const [, s, l] = rgbToHsl(...hexToRgb(h));
+    if (s < bestS - EPS) continue;
+    const lDist = Math.abs(l - 0.5);
+    if (lDist < bestLDist) {
+      bestLDist = lDist;
+      best = h;
+    }
+  }
+  return best;
+}
+
 // ---- tokenization ----------------------------------------------------------
 // Map a single hex literal to its CSS var, or return the original hex unchanged.
 // Maps near-duplicate vivid colours to the nearest anchor.
@@ -315,12 +338,25 @@ function optimize(src, label) {
   }
 }
 
-// ---- thumbnails ------------------------------------------------------------
-// Rasterise a small (~240px) webp preview of each design's FRONT page for the
-// picker tiles. Tiles used to inline the full-page 8-card SVG (multi-MB each,
-// ~15MB across seven designs, seven huge DOMs parsed at once) which white-screens
-// the Instagram in-app browser. A ~5KB raster is shown instead. We render from the
-// ORIGINAL source SVG (real colours), so a tile shows the design's default look.
+// ---- thumbnails (separate, explicit step) ---------------------------------
+// Picker tiles show a small webp raster instead of inlining the multi-MB full-page
+// SVG (seven of which white-screen the Instagram in-app browser). Rendering is
+// FAITHFUL via headless Chromium — ImageMagick's internal SVG renderer degrades
+// some Canva pages (e.g. birthday's card backgrounds vanish); ImageMagick is used
+// only to convert the PNG to a downscaled webp.
+//
+// This is a LOCAL, one-time build step. The committed thumb.webp files (alongside
+// designs.generated.js + the SVGs) are the source of truth for CI, which does NOT
+// run this script. So:
+//   - `node scripts/tokenize-svg.mjs --thumbs`  (re)renders every thumbnail.
+//   - a normal run PRESERVES the committed thumbs and never nulls/deletes them; it
+//     only renders a thumb that is genuinely MISSING, and then FAILS LOUDLY if the
+//     renderer (Chromium/ImageMagick) isn't available — rather than shipping a
+//     text-only picker. A green, reproducible state never depends on these binaries.
+const REGEN_THUMBS = process.argv.includes('--thumbs');
+const THUMB_W = 240; // final webp width (px)
+const THUMB_MIN_BYTES = 3000; // near-blank guard: real full-page thumbs are 4–12KB
+
 let magick = null;
 try {
   execSync('magick --version', { stdio: 'ignore' });
@@ -328,24 +364,93 @@ try {
 } catch {
   magick = null;
 }
-function makeThumb(srcPath, outPath) {
-  if (!magick) return false;
-  try {
-    execSync(
-      `${magick} -background none -density 96 ${JSON.stringify(srcPath)} ` +
-        `-resize 240x -quality 78 ${JSON.stringify(outPath)}`,
-      { stdio: 'ignore' }
+
+// Reject a thumbnail that came out near-blank (a bad renderer can silently produce
+// an almost-empty tile — e.g. ImageMagick dropped birthday's cards). Throw so a
+// blank thumbnail can NEVER be committed/shipped.
+function assertThumbNotBlank(id, outPath) {
+  if (!existsSync(outPath)) throw new Error(`thumb ${id}: not written`);
+  const bytes = statSync(outPath).size;
+  if (bytes < THUMB_MIN_BYTES) {
+    throw new Error(
+      `thumb ${id}: looks near-blank (${bytes} bytes < ${THUMB_MIN_BYTES}) — refusing to ship. ` +
+        `The renderer likely dropped the artwork; check the source/render.`
     );
-    return existsSync(outPath);
-  } catch (e) {
-    console.warn(`  [thumb] ${outPath}: render failed (${e.message}).`);
-    return false;
+  }
+}
+
+// Render the given jobs [{id, srcPath, outPath}] with headless Chromium -> PNG,
+// then ImageMagick -> downscaled webp. Throws (fails loudly) if a renderer is
+// missing or a result is near-blank.
+async function renderThumbnails(jobs) {
+  if (!jobs.length) return;
+  let chromium;
+  try {
+    ({ chromium } = await import('playwright'));
+  } catch {
+    try {
+      ({ chromium } = await import('@playwright/test'));
+    } catch {
+      throw new Error(
+        'thumbnail rendering needs Playwright (chromium). Run `npm install` (and ' +
+          '`npx playwright install chromium`), or run WITHOUT --thumbs to keep the committed thumbs.'
+      );
+    }
+  }
+  if (!magick) {
+    throw new Error('thumbnail rendering needs ImageMagick `magick` for PNG→webp conversion.');
+  }
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ deviceScaleFactor: 2 });
+    for (const { id, srcPath, outPath } of jobs) {
+      const svg = readFileSync(srcPath, 'utf8');
+      await page.setViewportSize({ width: THUMB_W * 2, height: THUMB_W * 2 });
+      await page.setContent(
+        `<!doctype html><body style="margin:0;background:#fff">` +
+          `<div id="w" style="width:${THUMB_W * 2}px">${svg}</div></body>`,
+        { waitUntil: 'networkidle' }
+      );
+      await page.evaluate((w) => {
+        const s = document.querySelector('#w svg');
+        if (s) {
+          s.style.width = w + 'px';
+          s.style.height = 'auto';
+          s.style.display = 'block';
+        }
+      }, THUMB_W * 2);
+      const el = await page.$('#w svg');
+      if (!el) throw new Error(`thumb ${id}: no <svg> element found in source`);
+      const tmpPng = resolve(dirname(outPath), `.thumb-${id}.png`);
+      await el.screenshot({ path: tmpPng, type: 'png' });
+      execSync(
+        `${magick} ${JSON.stringify(tmpPng)} -resize ${THUMB_W}x ` +
+          `-background white -flatten -quality 82 ${JSON.stringify(outPath)}`,
+        { stdio: 'ignore' }
+      );
+      rmSync(tmpPng, { force: true });
+      assertThumbNotBlank(id, outPath);
+    }
+  } finally {
+    await browser.close();
   }
 }
 
 // ---- main ------------------------------------------------------------------
+// Preserve committed thumbnails across the rmSync unless we're regenerating them,
+// so a normal run never destroys them (the picker depends on them and CI can't
+// rebuild them). Snapshot the bytes now, restore them after rewriting the SVGs.
+const preservedThumbs = {};
+if (!REGEN_THUMBS) {
+  for (const d of DESIGNS) {
+    const tp = resolve(OUT_ASSETS, d.id, 'thumb.webp');
+    if (existsSync(tp)) preservedThumbs[d.id] = readFileSync(tp);
+  }
+}
+
 rmSync(OUT_ASSETS, { recursive: true, force: true });
 const report = [];
+const thumbJobs = [];
 let rawTotal = 0;
 let outTotal = 0;
 
@@ -356,10 +461,13 @@ for (const d of DESIGNS) {
     srcs[kind] = readFileSync(resolve(folder, fname), 'utf8');
   }
 
+  // Theme colours drive both the SVG token recolor AND the design's page accent.
   // 'fixed' designs (neon) are never recoloured, so they get NO var(--cN) tokens
-  // and an EMPTY anchor list — their SVGs are written with their original colours.
+  // and an EMPTY anchor list — but they still keep their own page accent.
   const isFixed = d.recolor === 'fixed';
-  const anchors = isFixed ? [] : collectThemeColors(Object.values(srcs));
+  const themeColors = collectThemeColors(Object.values(srcs));
+  const anchors = isFixed ? [] : themeColors;
+  const accent = representativeColor(themeColors);
 
   const outDir = resolve(OUT_ASSETS, d.id);
   mkdirSync(outDir, { recursive: true });
@@ -383,26 +491,37 @@ for (const d of DESIGNS) {
     products[kind] = `assets/designs/${d.id}/${kind}.svg`;
   }
 
-  // small raster thumbnail for the picker tile (rendered from the ORIGINAL front)
+  // Thumbnail: stable committed path. Restore the preserved copy, or queue a
+  // (re)render. `thumb` is ALWAYS the path — never null — so the picker never
+  // silently falls back to text; a missing thumb + no renderer fails loudly below.
   const thumbPath = resolve(outDir, 'thumb.webp');
-  const thumbOk = makeThumb(resolve(folder, d.files.front), thumbPath);
-  const thumb = thumbOk ? `assets/designs/${d.id}/thumb.webp` : null;
-  if (thumbOk) {
-    const tb = Buffer.byteLength(readFileSync(thumbPath));
-    outTotal += tb;
-    sizes.thumb = { raw: 0, out: tb };
+  if (!REGEN_THUMBS && preservedThumbs[d.id]) {
+    writeFileSync(thumbPath, preservedThumbs[d.id]);
+  } else {
+    thumbJobs.push({ id: d.id, srcPath: resolve(folder, d.files.front), outPath: thumbPath });
   }
 
   report.push({
     id: d.id,
     anchors,
+    accent,
     products,
-    thumb,
+    thumb: `assets/designs/${d.id}/thumb.webp`,
+    thumbPath,
     rasterKinds,
     hasRaster: rasterKinds.length > 0,
     recolor: d.recolor,
     sizes,
   });
+}
+
+// Render any thumbnails that were regenerated or missing (fails loudly if a
+// renderer is unavailable or a result comes out near-blank).
+await renderThumbnails(thumbJobs);
+for (const r of report) {
+  const tb = statSync(r.thumbPath).size;
+  outTotal += tb;
+  r.sizes.thumb = { raw: 0, out: tb };
 }
 
 // ---- emit designs.generated.js --------------------------------------------
@@ -414,10 +533,11 @@ for (const r of report) {
   const prodParts = [`front:'${p.front}'`, `back:'${p.back}'`];
   if (p.board) prodParts.push(`board:'${p.board}'`); // board optional
   const key = `${r.id}:`.padEnd(14);
-  const thumbPart = r.thumb ? `thumb:'${r.thumb}', ` : '';
+  const accentPart = r.accent ? `accent:'${r.accent}', ` : '';
   js +=
     `  ${key}{ anchors:[${anchorsStr}], hasRaster:${r.hasRaster}, ` +
-    `recolor:'${r.recolor}', ${thumbPart}products:{ ${prodParts.join(', ')} } },\n`;
+    `recolor:'${r.recolor}', ${accentPart}thumb:'${r.thumb}', ` +
+    `products:{ ${prodParts.join(', ')} } },\n`;
 }
 js += '};\n';
 mkdirSync(dirname(OUT_JS), { recursive: true });
@@ -429,11 +549,12 @@ console.log(
   `Tokenized designs (svgo: ${svgo ? 'on' : 'OFF — raw output, optimise as follow-up'}):\n`
 );
 for (const r of report) {
-  console.log(`  ${r.id}  [recolor:${r.recolor}]`);
+  console.log(`  ${r.id}  [recolor:${r.recolor}]  accent:${r.accent}`);
   console.log(`    anchors (c0..): ${r.anchors.join(', ')}`);
   for (const kind of Object.keys(r.sizes)) {
     const s = r.sizes[kind];
-    console.log(`    ${kind.padEnd(6)} ${kb(s.raw)} -> ${kb(s.out)}  (${r.products[kind]})`);
+    const where = r.products[kind] || r.thumb;
+    console.log(`    ${kind.padEnd(6)} ${kb(s.raw)} -> ${kb(s.out)}  (${where})`);
   }
   if (!r.products.board) console.log('    board  (none — deferred)');
   console.log(
