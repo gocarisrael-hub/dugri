@@ -4,6 +4,7 @@ export const GENERATED = {
     anchors: ['#1e263b', '#6b4d56', '#b28c97', '#f26d9b', '#ff78a0', '#ffc6d7'],
     hasRaster: true,
     recolor: 'slider',
+    thumb: 'assets/designs/bachelorette/thumb.webp',
     products: {
       front: 'assets/designs/bachelorette/front.svg',
       back: 'assets/designs/bachelorette/back.svg',
@@ -14,6 +15,7 @@ export const GENERATED = {
     anchors: ['#004aad', '#4e8bdd', '#f4f1eb'],
     hasRaster: true,
     recolor: 'slider',
+    thumb: 'assets/designs/marriage/thumb.webp',
     products: {
       front: 'assets/designs/marriage/front.svg',
       back: 'assets/designs/marriage/back.svg',
@@ -24,6 +26,7 @@ export const GENERATED = {
     anchors: ['#5e194d', '#ff7aa9', '#ffd37b', '#a4e9ff', '#fff1de'],
     hasRaster: true,
     recolor: 'slider',
+    thumb: 'assets/designs/birthday/thumb.webp',
     products: {
       front: 'assets/designs/birthday/front.svg',
       back: 'assets/designs/birthday/back.svg',
@@ -34,6 +37,7 @@ export const GENERATED = {
     anchors: ['#d42a2a'],
     hasRaster: true,
     recolor: 'slider',
+    thumb: 'assets/designs/japanese/thumb.webp',
     products: {
       front: 'assets/designs/japanese/front.svg',
       back: 'assets/designs/japanese/back.svg',
@@ -59,6 +63,7 @@ export const GENERATED = {
     ],
     hasRaster: true,
     recolor: 'slider',
+    thumb: 'assets/designs/posttrip/thumb.webp',
     products: {
       front: 'assets/designs/posttrip/front.svg',
       back: 'assets/designs/posttrip/back.svg',
@@ -66,9 +71,10 @@ export const GENERATED = {
     },
   },
   neon: {
-    anchors: ['#5100ad', '#ff00db', '#cb22ea', '#4e8bdd', '#cb6ce6', '#f6d5ff'],
+    anchors: [],
     hasRaster: true,
     recolor: 'fixed',
+    thumb: 'assets/designs/neon/thumb.webp',
     products: {
       front: 'assets/designs/neon/front.svg',
       back: 'assets/designs/neon/back.svg',
@@ -79,6 +85,7 @@ export const GENERATED = {
     anchors: ['#004aad', '#1f80ff', '#b0eef0'],
     hasRaster: true,
     recolor: 'slider',
+    thumb: 'assets/designs/kids/thumb.webp',
     products: { front: 'assets/designs/kids/front.svg', back: 'assets/designs/kids/back.svg' },
   },
 };

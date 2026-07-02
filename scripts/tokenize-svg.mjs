@@ -26,9 +26,10 @@
 //
 // Usage: node scripts/tokenize-svg.mjs
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -259,10 +260,19 @@ function tokenize(src, anchors) {
 // Drop the fixed width/height on the root <svg> so the inline SVG scales to its
 // container; the native viewBox is kept, giving a stable coordinate system and
 // the true page aspect ratio (~1.414, A4 landscape). No cropping needed.
+// If a source ever lacks a viewBox, synthesise one from its width/height FIRST —
+// otherwise stripping width/height would leave the SVG with no coordinate system
+// and it would render blank.
 function stripSize(src) {
-  return src.replace(/<svg\b[^>]*>/i, (tag) =>
-    tag.replace(/\s(?:width|height)\s*=\s*"[^"]*"/gi, '')
-  );
+  return src.replace(/<svg\b[^>]*>/i, (tag) => {
+    let out = tag;
+    if (!/\bviewBox\s*=/i.test(out)) {
+      const w = (out.match(/\bwidth\s*=\s*"([\d.]+)/i) || [])[1];
+      const h = (out.match(/\bheight\s*=\s*"([\d.]+)/i) || [])[1];
+      if (w && h) out = out.replace(/<svg\b/i, `<svg viewBox="0 0 ${w} ${h}"`);
+    }
+    return out.replace(/\s(?:width|height)\s*=\s*"[^"]*"/gi, '');
+  });
 }
 
 // ---- svgo (optional) -------------------------------------------------------
@@ -288,15 +298,48 @@ function optimize(src, label) {
   if (!svgo) return { data: src, optimized: false };
   try {
     const { data } = svgo.optimize(src, { ...SVGO_CONFIG, path: label });
-    // Never let optimisation strip the tokens the live recolor depends on.
-    if (/fill="var\(--c/.test(src) && !/fill="var\(--c/.test(data)) {
-      console.warn(`  [svgo] ${label}: dropped var() tokens — keeping raw.`);
-      return { data: src, optimized: false };
+    // Never let optimisation strip the tokens the live recolor depends on — check
+    // BOTH fill and stroke var() tokens (a stroke-painted design would silently
+    // stop recolouring if svgo dropped its stroke="var(--cN)" tokens).
+    for (const paint of ['fill', 'stroke']) {
+      const re = new RegExp(`${paint}="var\\(--c`);
+      if (re.test(src) && !re.test(data)) {
+        console.warn(`  [svgo] ${label}: dropped ${paint} var() tokens — keeping raw.`);
+        return { data: src, optimized: false };
+      }
     }
     return { data, optimized: true };
   } catch (e) {
     console.warn(`  [svgo] ${label}: optimise failed (${e.message}) — keeping raw.`);
     return { data: src, optimized: false };
+  }
+}
+
+// ---- thumbnails ------------------------------------------------------------
+// Rasterise a small (~240px) webp preview of each design's FRONT page for the
+// picker tiles. Tiles used to inline the full-page 8-card SVG (multi-MB each,
+// ~15MB across seven designs, seven huge DOMs parsed at once) which white-screens
+// the Instagram in-app browser. A ~5KB raster is shown instead. We render from the
+// ORIGINAL source SVG (real colours), so a tile shows the design's default look.
+let magick = null;
+try {
+  execSync('magick --version', { stdio: 'ignore' });
+  magick = 'magick';
+} catch {
+  magick = null;
+}
+function makeThumb(srcPath, outPath) {
+  if (!magick) return false;
+  try {
+    execSync(
+      `${magick} -background none -density 96 ${JSON.stringify(srcPath)} ` +
+        `-resize 240x -quality 78 ${JSON.stringify(outPath)}`,
+      { stdio: 'ignore' }
+    );
+    return existsSync(outPath);
+  } catch (e) {
+    console.warn(`  [thumb] ${outPath}: render failed (${e.message}).`);
+    return false;
   }
 }
 
@@ -313,7 +356,10 @@ for (const d of DESIGNS) {
     srcs[kind] = readFileSync(resolve(folder, fname), 'utf8');
   }
 
-  const anchors = collectThemeColors(Object.values(srcs));
+  // 'fixed' designs (neon) are never recoloured, so they get NO var(--cN) tokens
+  // and an EMPTY anchor list — their SVGs are written with their original colours.
+  const isFixed = d.recolor === 'fixed';
+  const anchors = isFixed ? [] : collectThemeColors(Object.values(srcs));
 
   const outDir = resolve(OUT_ASSETS, d.id);
   mkdirSync(outDir, { recursive: true });
@@ -325,7 +371,7 @@ for (const d of DESIGNS) {
     let svg = srcs[kind];
     if ((svg.match(/<image\b/g) || []).length > 0) rasterKinds.push(kind);
     const rawBytes = Buffer.byteLength(svg);
-    svg = tokenize(svg, anchors);
+    svg = tokenize(svg, anchors); // no-op for fixed (empty anchors)
     if (d.fullPage) svg = stripSize(svg);
     const { data } = optimize(svg, `${d.id}-${kind}`);
     const outBytes = Buffer.byteLength(data);
@@ -337,10 +383,21 @@ for (const d of DESIGNS) {
     products[kind] = `assets/designs/${d.id}/${kind}.svg`;
   }
 
+  // small raster thumbnail for the picker tile (rendered from the ORIGINAL front)
+  const thumbPath = resolve(outDir, 'thumb.webp');
+  const thumbOk = makeThumb(resolve(folder, d.files.front), thumbPath);
+  const thumb = thumbOk ? `assets/designs/${d.id}/thumb.webp` : null;
+  if (thumbOk) {
+    const tb = Buffer.byteLength(readFileSync(thumbPath));
+    outTotal += tb;
+    sizes.thumb = { raw: 0, out: tb };
+  }
+
   report.push({
     id: d.id,
     anchors,
     products,
+    thumb,
     rasterKinds,
     hasRaster: rasterKinds.length > 0,
     recolor: d.recolor,
@@ -357,9 +414,10 @@ for (const r of report) {
   const prodParts = [`front:'${p.front}'`, `back:'${p.back}'`];
   if (p.board) prodParts.push(`board:'${p.board}'`); // board optional
   const key = `${r.id}:`.padEnd(14);
+  const thumbPart = r.thumb ? `thumb:'${r.thumb}', ` : '';
   js +=
     `  ${key}{ anchors:[${anchorsStr}], hasRaster:${r.hasRaster}, ` +
-    `recolor:'${r.recolor}', products:{ ${prodParts.join(', ')} } },\n`;
+    `recolor:'${r.recolor}', ${thumbPart}products:{ ${prodParts.join(', ')} } },\n`;
 }
 js += '};\n';
 mkdirSync(dirname(OUT_JS), { recursive: true });

@@ -546,7 +546,8 @@
       }
       .design .thumb {
         width: 100%;
-        aspect-ratio: 5/7;
+        /* landscape, matching the full-page A4 thumbnails (was portrait 5/7). */
+        aspect-ratio: 841.92 / 595.5;
         border-radius: 10px;
         overflow: hidden;
         background: var(--blush);
@@ -1026,10 +1027,14 @@
          which the desktop layout's tall header + tile row would overflow).
          We tighten the header, shrink the live preview, and lay the design
          tiles + colour swatches out as compact wrapping grids.
-         The height branch also catches laptops too short to fit the full-size
-         layout (tall header + big tiles) — there the compact tiles free up room
-         so the preview stays a usable size AND the page never scrolls. */
-      @media (max-width: 600px), (max-height: 1000px) {
+         The height branch now catches only SHORT viewports (≤820px): short
+         laptops (~768–800px, where the full-size header + big tile row would crowd
+         the full-page preview down to a sliver) and landscape phones. Larger
+         desktops — including 1080p (~937px viewport) — keep the full-size layout
+         (previously they wrongly got the compact phone layout at ≤1000px).
+         No-scroll is guaranteed independently by the definite-height main.wrap;
+         this branch just keeps the preview usable on short screens. */
+      @media (max-width: 600px), (max-height: 820px) {
         .cfg-head {
           padding: 8px 0 2px;
         }
@@ -1499,7 +1504,6 @@
         applyOriginal,
         mainAnchor,
         lightTint,
-        bleedColor,
         validateManifest,
       } from './js/configurator.js';
       import { track } from './js/analytics.js';
@@ -1592,6 +1596,11 @@
       // design. We inline a panel LAZILY — only when its tab is first shown — so we
       // never parse all three multi-MB DOMs up front.
       let rendered = new Set();
+      // Bumped on every design switch. A panel's SVG fetch is async and can be
+      // multi-MB; if the user switches design mid-fetch, the stale resolve must be
+      // DISCARDED (otherwise design A's late artwork lands in the panel while B is
+      // selected, in B's colours, and `rendered` would wrongly mark it done).
+      let renderEpoch = 0;
 
       // Inline one product SVG into its panel on demand. The palette (--cN) is
       // already set on the panel element by recolor(), so the inlined svg inherits
@@ -1607,10 +1616,17 @@
           return;
         }
         rendered.add(kind);
+        const epoch = renderEpoch; // capture: the design in effect for THIS fetch
         try {
-          el.innerHTML = paintSvg(await loadSvg(path), d.anchors);
+          const svg = paintSvg(await loadSvg(path), d.anchors);
+          // A newer design switch happened while we were fetching → a different
+          // design now owns this panel (and the shared `rendered` set). Discard
+          // this stale result silently; don't touch the panel or the new set.
+          if (epoch !== renderEpoch) return;
+          el.innerHTML = svg;
         } catch (e) {
-          rendered.delete(kind);
+          if (epoch !== renderEpoch) return; // stale failure — panel isn't ours now
+          rendered.delete(kind); // let the current design retry this tab later
           el.innerHTML = '<div class="preview-empty">אין תצוגה</div>';
         }
       }
@@ -1629,6 +1645,7 @@
       async function renderDesign() {
         const d = DESIGNS[designIndex];
         if (!d) return;
+        renderEpoch++; // new design switch — invalidate any in-flight panel fetch
         rendered = new Set();
         Object.values(panels).forEach((el) => (el.innerHTML = ''));
         updateBoardTab();
@@ -1645,7 +1662,6 @@
         // recolor, so leave the previews as-is.
         if (!anchors.length) return;
         let activeMain = null;
-        let bleed = null;
         // fixed designs (neon) are locked to their original colours regardless of
         // any stale colour index.
         const ci = isFixedDesign() ? -1 : colorIndex;
@@ -1653,22 +1669,17 @@
           // original colors - apply the design's own anchors as-is
           Object.values(panels).forEach((el) => applyOriginal(el, anchors));
           activeMain = mainAnchor(anchors);
-          bleed = bleedColor(null, anchors);
         } else {
           const color = MAIN_COLORS[ci];
           if (!color) return;
           Object.values(panels).forEach((el) => applyPalette(el, color.hex, anchors));
           activeMain = color.hex;
-          bleed = bleedColor(color.hex, anchors);
         }
-        // theme the page + stage background to the active color, and expose the
-        // card's printed background as --bleed so the preview shows a real bleed
-        // margin (the same colour that prints around the card) around the card.
+        // theme the page + stage background to the active colour.
         if (activeMain) {
           const root = document.documentElement.style;
           root.setProperty('--accent', activeMain);
           root.setProperty('--cfg-bg', lightTint(activeMain));
-          if (bleed) root.setProperty('--bleed', bleed);
         }
       }
 
@@ -1702,19 +1713,24 @@
         btn.setAttribute('aria-label', d.name);
         btn.innerHTML = '<div class="thumb"></div><div class="dname">' + d.name + '</div>';
         designList.appendChild(btn);
-        // inline the front svg as a small thumbnail, palette-applied with the first color
+        // Lightweight RASTER thumbnail (built at build time, ~5KB webp) — NOT the
+        // multi-MB full-page SVG. Inlining seven full-page SVGs (~15MB, seven huge
+        // DOMs) white-screens the Instagram in-app browser (our main audience). The
+        // tile shows the design's default look; the live colour slider only drives
+        // the main preview.
         const thumb = btn.querySelector('.thumb');
-        const frontPath = d.products && d.products.front;
-        if (frontPath) {
-          loadSvg(frontPath)
-            .then((txt) => {
-              thumb.innerHTML = paintSvg(txt, d.anchors);
-              // guard: applyOriginal throws on empty anchors - skip recolor
-              if (d.anchors && d.anchors.length) applyOriginal(thumb, d.anchors);
-            })
-            .catch(() => {
-              thumb.textContent = d.name;
-            });
+        if (d.thumb) {
+          const img = document.createElement('img');
+          img.src = d.thumb;
+          img.alt = d.name;
+          img.loading = 'lazy';
+          img.decoding = 'async';
+          img.addEventListener('error', () => {
+            thumb.textContent = d.name;
+          });
+          thumb.appendChild(img);
+        } else {
+          thumb.textContent = d.name;
         }
         btn.addEventListener('click', () => selectDesign(i));
       });

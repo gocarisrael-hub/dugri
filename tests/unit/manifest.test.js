@@ -58,10 +58,17 @@ describe('validateManifest', () => {
     expect(errors.join('\n')).toContain('products');
   });
 
-  it('fails when anchors are missing or empty', () => {
+  it('fails when a SLIDER design has empty anchors', () => {
     const bad = JSON.parse(JSON.stringify(goodDesigns));
     bad[0].anchors = [];
     expect(validateManifest(bad, goodColors).join('\n')).toContain('anchors');
+  });
+
+  it('allows an empty anchor list for a FIXED design (never recoloured)', () => {
+    const fixed = JSON.parse(JSON.stringify(goodDesigns));
+    fixed[0].anchors = [];
+    fixed[0].recolor = 'fixed';
+    expect(validateManifest(fixed, goodColors)).toEqual([]);
   });
 
   it('fails on an anchor that is not a valid hex', () => {
@@ -131,10 +138,15 @@ describe('generated manifest (real DESIGNS)', () => {
     }
   });
 
-  it('every anchor is a valid #rrggbb', () => {
+  it('every anchor is a valid #rrggbb; sliders have anchors, the fixed theme has none', () => {
     for (const d of DESIGNS) {
-      expect(d.anchors.length).toBeGreaterThan(0);
       for (const a of d.anchors) expect(isValidHex(a), `${d.id}: ${a}`).toBe(true);
+      if (d.recolor === 'fixed') {
+        // a fixed theme is never recoloured -> no var(--cN) tokens, no anchors.
+        expect(d.anchors, `${d.id} (fixed) should have no anchors`).toEqual([]);
+      } else {
+        expect(d.anchors.length, `${d.id} (slider) needs anchors`).toBeGreaterThan(0);
+      }
     }
   });
 
@@ -145,6 +157,12 @@ describe('generated manifest (real DESIGNS)', () => {
     expect(byId.neon.recolor).toBe('fixed');
     for (const id of ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'kids']) {
       expect(byId[id].recolor, id).toBe('slider');
+    }
+  });
+
+  it('every design has a raster thumbnail for the picker tile (not the full SVG)', () => {
+    for (const d of DESIGNS) {
+      expect(d.thumb, `${d.id} thumb`).toMatch(/assets\/designs\/.+\/thumb\.webp$/);
     }
   });
 

@@ -40,10 +40,14 @@ resources/instagram/screenshots/
 /resources/*
 !/resources/canva/
 
-# Raw Canva "full deck" exports (Hebrew, typo-prone folder names, ~53MB). The
-# build reads from the ASCII-named resources/canva/staging/ copies instead, so the
-# bulky originals stay local-only.
+# Canva source SVGs — LOCAL-ONLY build input (~58MB each), never served. The
+# committed site/assets/designs/ outputs are what actually run the site. To
+# rebuild: place these sources locally, then `node scripts/tokenize-svg.mjs`.
+#  - "full deck": the raw Hebrew, typo-prone Canva exports.
+#  - staging: the ASCII-named copies the tokenizer reads (see the script header
+#    for the full-deck → staging file mapping).
 /resources/canva/full deck/
+/resources/canva/staging/
 
 # Agent screenshot / scratch output
 /output/

@@ -382,9 +382,14 @@ export function validateManifest(designs, mainColors) {
         errors.push(`design ${id}: not an object`);
         return;
       }
-      if (!Array.isArray(d.anchors) || d.anchors.length === 0) {
+      if (!Array.isArray(d.anchors)) {
         errors.push(`design ${id}: missing anchors`);
       } else {
+        // A 'fixed' design (never recoloured) legitimately has NO anchors; a
+        // slider design needs at least one anchor to recolour.
+        if (d.anchors.length === 0 && d.recolor !== 'fixed') {
+          errors.push(`design ${id}: missing anchors`);
+        }
         d.anchors.forEach((a, ai) => {
           if (!isValidHex(a)) {
             errors.push(`design ${id}: anchor[${ai}] is not a valid #rrggbb: ${a}`);

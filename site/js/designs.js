@@ -41,5 +41,6 @@ export const DESIGNS = Object.entries(GENERATED).map(([id, g]) => ({
   anchors: g.anchors,
   hasRaster: !!g.hasRaster,
   recolor: g.recolor === 'fixed' ? 'fixed' : 'slider',
+  thumb: g.thumb || null,
   products: g.products,
 }));
