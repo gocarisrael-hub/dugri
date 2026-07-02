@@ -278,26 +278,129 @@ test.describe('order wizard', () => {
     await expect.poll(() => page.url()).not.toContain('chasers=1');
   });
 
-  test('raster-background note shows only for the kids design (on the color step)', async ({
+  test('a slider theme keeps the colour picker and notes that photos stay fixed', async ({
     page,
   }) => {
     await page.goto('/options.html');
+    // the default design (bachelorette) is a slider whose board embeds a photo.
+    await page.getByTestId('next-btn').click(); // -> colour step
+    await expect(page.getByTestId('step-2')).toBeVisible();
+    await expect(page.getByTestId('color-list')).toBeVisible();
     const note = page.getByTestId('raster-note');
-    const kidsTile = page.locator('.design[data-design-id="kids"]');
-    const birthdayTile = page.locator('.design[data-design-id="birthday"]');
-    await expect(kidsTile).toBeVisible();
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('קבוע');
+  });
 
-    // Selecting kids on step 1 then advancing reveals the fixed-background note.
-    await kidsTile.click();
+  test('neon is FIXED: the colour picker is hidden and its colours never change', async ({
+    page,
+  }) => {
+    await page.goto('/options.html');
+    const neonTile = page.locator('.design[data-design-id="neon"]');
+    await expect(neonTile).toBeVisible();
+    await neonTile.click();
+
+    const frontSvg = page.getByTestId('preview-front').locator('svg').first();
+    await expect(frontSvg).toBeVisible();
+    const readC0 = () =>
+      frontSvg.evaluate((svg) => getComputedStyle(svg).getPropertyValue('--c0').trim());
+    const before = await readC0();
+
+    // Its SVG carries NO var(--cN) recolor tokens — it's baked at original colours.
+    const hasTokens = await frontSvg.evaluate((svg) => svg.outerHTML.includes('var(--c'));
+    expect(hasTokens).toBe(false);
+
+    // On the colour step the swatch picker is hidden and a fixed-colour note shows.
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-2')).toBeVisible();
-    await expect(note).toBeVisible();
-    await expect(note).toContainText('הרקע בעיצוב זה קבוע');
+    await expect(page.getByTestId('color-list')).toBeHidden();
+    await expect(page.getByTestId('raster-note')).toBeVisible();
+    await expect(page.getByTestId('raster-note')).toContainText('קבוע');
 
-    // A vector-only design hides it again.
+    // There is no picker to change the colours, so they stay put.
+    expect(await readC0()).toBe(before);
+  });
+
+  test('selecting neon after a slider switches the page accent to neon (not stale)', async ({
+    page,
+  }) => {
+    await page.goto('/options.html');
+    const accent = () =>
+      page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
+      );
+    const bg = () =>
+      page.evaluate(() =>
+        getComputedStyle(document.documentElement).getPropertyValue('--cfg-bg').trim()
+      );
+
+    // Pick a slider design + a vivid main colour so the page turns that colour.
+    await page.locator('.design[data-design-id="bachelorette"]').click();
+    await page.getByTestId('next-btn').click(); // colour step
+    await page.getByTestId('color-1').click(); // some slider colour
+    const sliderAccent = await accent();
+    const sliderBg = await bg();
+    expect(sliderAccent).toMatch(/^#|rgb/);
+
+    // Now switch to neon (fixed). Its OWN accent/bg must take over — not the stale
+    // slider tint (the regression: empty anchors made recolor() bail before the
+    // page theme was set).
     await page.getByTestId('back-btn').click();
-    await birthdayTile.click();
-    await page.getByTestId('next-btn').click();
-    await expect(note).toBeHidden();
+    await page.locator('.design[data-design-id="neon"]').click();
+    await expect.poll(accent).not.toBe(sliderAccent);
+    await expect.poll(bg).not.toBe(sliderBg);
+    // and it matches neon's manifest accent (#ff00db)
+    expect((await accent()).toLowerCase()).toBe('#ff00db');
+  });
+
+  test('design tiles use lightweight <img> thumbnails, not inlined full-page SVGs', async ({
+    page,
+  }) => {
+    await page.goto('/options.html?step=1');
+    await expect(page.locator('.design').first()).toBeVisible();
+    const c = await page.evaluate(() => ({
+      tiles: document.querySelectorAll('.design').length,
+      imgs: document.querySelectorAll('.design .thumb img').length,
+      svgs: document.querySelectorAll('.design .thumb svg').length,
+    }));
+    expect(c.tiles).toBeGreaterThan(0);
+    // every tile is a small raster thumbnail; none inline a heavy full-page SVG.
+    expect(c.imgs).toBe(c.tiles);
+    expect(c.svgs).toBe(0);
+    await expect(page.locator('.design .thumb img').first()).toHaveAttribute('src', /thumb\.webp$/);
+  });
+
+  test('a fast design A→B switch never lets A stale-write into the shared preview', async ({
+    page,
+  }) => {
+    // Serve sentinel front SVGs so we can tell designs apart, and DELAY design A
+    // (marriage) so its multi-MB-style fetch resolves AFTER we've switched to B.
+    await page.route('**/assets/designs/*/front.svg', async (route) => {
+      const id = route
+        .request()
+        .url()
+        .match(/designs\/([^/]+)\/front/)[1];
+      if (id === 'marriage') await new Promise((r) => setTimeout(r, 700));
+      await route.fulfill({
+        contentType: 'image/svg+xml',
+        body: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 841.92 595.5" data-design="${id}"><rect width="100%" height="100%" fill="#eee"/></svg>`,
+      });
+    });
+    await page.goto('/options.html?step=1');
+    await expect(page.getByTestId('preview-front').locator('svg')).toBeVisible();
+
+    // Click A (marriage, slow) then immediately B (birthday, fast).
+    await page.locator('.design[data-design-id="marriage"]').click();
+    await page.locator('.design[data-design-id="birthday"]').click();
+
+    // Wait well past A's delay so its late resolve has fired.
+    await page.waitForTimeout(1100);
+
+    // The panel must show B (birthday), NOT A's late artwork.
+    const shown = await page.locator('[data-panel="front"] svg').getAttribute('data-design');
+    expect(shown).toBe('birthday');
+    await expect(page.locator('.design[data-design-id="birthday"]')).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
   });
 });

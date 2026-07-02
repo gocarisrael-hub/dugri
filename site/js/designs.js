@@ -20,18 +20,30 @@ export const MAIN_COLORS = [
 
 /** Human-friendly (Hebrew) names per design id. */
 const META = {
-  birthday: { name: 'יום הולדת' },
-  birthday2: { name: 'יום הולדת קלאסי' },
-  kids: { name: 'יום הולדת לילדים' },
-  marriage: { name: 'חתונה / נישואין' },
   bachelorette: { name: 'מסיבת רווקות' },
+  marriage: { name: 'יום נישואין' },
+  birthday: { name: 'יום הולדת' },
+  japanese: { name: 'יפני' },
+  posttrip: { name: 'חזרה מטיול' },
+  neon: { name: 'ניאון' },
+  kids: { name: 'יום הולדת לילדים' },
 };
 
-/** Full design list: id, display name, anchors, product SVGs. */
+/**
+ * Full design list: id, display name, anchors, recolor mode, product SVGs.
+ * `recolor` is 'slider' (the colour slider recolors it) or 'fixed' (locked to its
+ * original colours — a baked-in raster glow can't be recoloured). `products.board`
+ * is optional: a design may ship without a board (its board tab is omitted).
+ */
 export const DESIGNS = Object.entries(GENERATED).map(([id, g]) => ({
   id,
   name: (META[id] || {}).name || id,
   anchors: g.anchors,
   hasRaster: !!g.hasRaster,
+  recolor: g.recolor === 'fixed' ? 'fixed' : 'slider',
+  // representative page-accent colour (present for EVERY design, incl. fixed ones
+  // that have no anchors) so the page tint can switch even when the SVG can't.
+  accent: g.accent || null,
+  thumb: g.thumb || null,
   products: g.products,
 }));

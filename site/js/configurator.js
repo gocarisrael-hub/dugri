@@ -226,43 +226,6 @@ export function mainAnchor(anchors) {
 }
 
 /**
- * Index of the design's background anchor: the lightest slot. Across every
- * design the card's outer/background layer (the sheet we print with a bleed)
- * is the lightest anchor, so this reliably picks the colour to show as the
- * printed background "bleed" around the card in the preview.
- * @returns {number} index into `anchors`.
- */
-export function lightestIndex(anchors) {
-  if (!Array.isArray(anchors) || anchors.length === 0) {
-    throw new Error('anchors must be a non-empty array');
-  }
-  let bestIdx = 0;
-  let bestL = -Infinity;
-  for (let i = 0; i < anchors.length; i++) {
-    const { l } = hexToHsl(anchors[i]);
-    if (l > bestL) {
-      bestL = l;
-      bestIdx = i;
-    }
-  }
-  return bestIdx;
-}
-
-/**
- * The card-background "bleed" colour for a chosen main colour: the derived
- * palette's lightest slot. With `mainHex` omitted/null it returns the design's
- * own (original) background anchor.
- * @param {string|null} mainHex chosen main colour, or null for original colours
- * @param {string[]} anchors design anchors
- * @returns {string} #rrggbb bleed colour
- */
-export function bleedColor(mainHex, anchors) {
-  const idx = lightestIndex(anchors);
-  if (!mainHex) return anchors[idx];
-  return derivePalette(mainHex, anchors)[idx];
-}
-
-/**
  * A soft, very light tint of a color — for theming a page/stage background
  * to the chosen color without overpowering it.
  * @param {string} hex
@@ -382,9 +345,14 @@ export function validateManifest(designs, mainColors) {
         errors.push(`design ${id}: not an object`);
         return;
       }
-      if (!Array.isArray(d.anchors) || d.anchors.length === 0) {
+      if (!Array.isArray(d.anchors)) {
         errors.push(`design ${id}: missing anchors`);
       } else {
+        // A 'fixed' design (never recoloured) legitimately has NO anchors; a
+        // slider design needs at least one anchor to recolour.
+        if (d.anchors.length === 0 && d.recolor !== 'fixed') {
+          errors.push(`design ${id}: missing anchors`);
+        }
         d.anchors.forEach((a, ai) => {
           if (!isValidHex(a)) {
             errors.push(`design ${id}: anchor[${ai}] is not a valid #rrggbb: ${a}`);
@@ -395,7 +363,9 @@ export function validateManifest(designs, mainColors) {
       if (!p || typeof p !== 'object') {
         errors.push(`design ${id}: missing products`);
       } else {
-        ['front', 'back', 'board'].forEach((slot) => {
+        // front + back are required; board is OPTIONAL (a design may ship without
+        // one — e.g. kids, whose board template is still pending).
+        ['front', 'back'].forEach((slot) => {
           if (!p[slot]) errors.push(`design ${id}: missing product "${slot}"`);
         });
       }
