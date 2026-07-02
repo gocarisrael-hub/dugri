@@ -27,8 +27,56 @@ const DEFAULTS = { collections: [], words: [], coupons: [] };
 // pdf = digital PDF; pickup = printed + pickup at גלאור; delivery = door-to-door.
 const ORDER_PRICES = { pdf: 79, pickup: 149, delivery: 199 };
 
+// How often, at most, the dirty in-memory state is flushed to disk. A burst of
+// mutations (e.g. many word-adds arriving together) collapses to roughly one
+// write per interval instead of one blocking write per mutation.
+const FLUSH_INTERVAL_MS = Number(process.env.DB_FLUSH_INTERVAL_MS || 1000);
+
+// In-memory index: collection_id -> array of that collection's word objects.
+// A DERIVED view of _db.words (the persisted source of truth), NOT persisted.
+// Lets hot read paths (listWords poll, addWords dedupe, admin word_count) cost
+// O(words-in-collection) instead of scanning the whole words array every time.
+let _wordsByCollection = new Map();
+
+function rebuildWordIndex() {
+  _wordsByCollection = new Map();
+  for (const w of _db.words) {
+    let arr = _wordsByCollection.get(w.collection_id);
+    if (!arr) {
+      arr = [];
+      _wordsByCollection.set(w.collection_id, arr);
+    }
+    arr.push(w);
+  }
+}
+
+// Words of a single collection (never mutate the returned array in place).
+function wordsFor(id) {
+  return _wordsByCollection.get(id) || [];
+}
+
+// Add a word object to the index (mirrors an _db.words.push).
+function indexWord(w) {
+  let arr = _wordsByCollection.get(w.collection_id);
+  if (!arr) {
+    arr = [];
+    _wordsByCollection.set(w.collection_id, arr);
+  }
+  arr.push(w);
+}
+
+// Remove a single word (by id) from a collection's index array.
+function unindexWord(collectionId, wordId) {
+  const arr = _wordsByCollection.get(collectionId);
+  if (!arr) return;
+  const i = arr.findIndex((w) => w.id === wordId);
+  if (i !== -1) arr.splice(i, 1);
+  if (arr.length === 0) _wordsByCollection.delete(collectionId);
+}
+
 function loadDb() {
   try {
+    // JSON.parse handles both compact and legacy pretty-printed files.
     if (!fs.existsSync(DB_FILE)) return { ...DEFAULTS };
     return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) };
   } catch {
@@ -37,11 +85,106 @@ function loadDb() {
 }
 
 let _db = loadDb();
+rebuildWordIndex();
 
+// --- Deferred, coalesced, atomic persistence -----------------------------
+// The old code did a synchronous pretty-printed writeFileSync of the WHOLE db
+// on every mutation. With a ~150MB file that blocked the single event-loop
+// thread for seconds per request, freezing all concurrent traffic (even static
+// files) until Railway's 15s proxy timeout returned 502s. Instead we mark the
+// state dirty and flush asynchronously, at most once per FLUSH_INTERVAL_MS, to
+// a temp file that is atomically renamed over DB_FILE.
+let _dirty = false;
+let _flushScheduled = false;
+let _flushing = false;
+let _lastFlushAt = 0;
+let _tmpSeq = 0;
+
+// Public API — callers keep calling saveDb() exactly as before. It no longer
+// blocks: it just marks the state dirty and (re)schedules an async flush.
 function saveDb() {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(DB_FILE, JSON.stringify(_db, null, 2), 'utf8');
+  _dirty = true;
+  scheduleFlush();
 }
+
+function scheduleFlush() {
+  if (_flushScheduled || _flushing) return;
+  _flushScheduled = true;
+  const elapsed = Date.now() - _lastFlushAt;
+  const delay = Math.max(0, FLUSH_INTERVAL_MS - elapsed);
+  const timer = setTimeout(() => {
+    _flushScheduled = false;
+    flushAsync();
+  }, delay);
+  // Don't let a pending flush timer keep the process alive on shutdown; the
+  // SIGTERM/SIGINT/exit handlers do a final synchronous flush instead.
+  if (timer && typeof timer.unref === 'function') timer.unref();
+}
+
+async function flushAsync() {
+  if (_flushing || !_dirty) return;
+  _flushing = true;
+  _dirty = false;
+  // Snapshot the serialized state NOW (synchronously) so a mutation during the
+  // async write can't produce a torn file; any such mutation re-sets _dirty and
+  // schedules a follow-up flush below.
+  const data = JSON.stringify(_db);
+  const tmp = `${DB_FILE}.tmp-${process.pid}-${_tmpSeq++}`;
+  try {
+    await fs.promises.mkdir(DATA_DIR, { recursive: true });
+    await fs.promises.writeFile(tmp, data, 'utf8');
+    await fs.promises.rename(tmp, DB_FILE);
+    _lastFlushAt = Date.now();
+  } catch {
+    // Write failed — keep the data dirty so a later flush retries it.
+    _dirty = true;
+    try {
+      await fs.promises.unlink(tmp);
+    } catch {
+      /* temp may not exist */
+    }
+  } finally {
+    _flushing = false;
+    // Dirtied again while we were writing (or the write failed): flush again.
+    if (_dirty) scheduleFlush();
+  }
+}
+
+// Final, blocking flush for graceful shutdown / process exit. Must be
+// synchronous (Node ignores async work in 'exit' handlers). Atomic temp+rename
+// with compact JSON, best-effort.
+function flushSync() {
+  if (!_dirty) return;
+  const tmp = `${DB_FILE}.tmp-sync-${process.pid}`;
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify(_db), 'utf8');
+    fs.renameSync(tmp, DB_FILE);
+    _dirty = false;
+    _lastFlushAt = Date.now();
+  } catch {
+    // Best effort — nothing more we can do during shutdown.
+  }
+}
+
+// Register shutdown handlers once. On SIGTERM/SIGINT (Railway redeploy) flush
+// synchronously, then re-raise the signal with default behavior so the process
+// still terminates normally (adding a listener otherwise suppresses the default
+// exit). 'exit' is a last-resort synchronous flush.
+let _handlersRegistered = false;
+function registerShutdownHandlers() {
+  if (_handlersRegistered) return;
+  _handlersRegistered = true;
+  const onSignal = (sig) => {
+    flushSync();
+    process.removeListener(sig, onSignal);
+    process.kill(process.pid, sig);
+  };
+  process.on('SIGTERM', onSignal);
+  process.on('SIGINT', onSignal);
+  process.on('exit', flushSync);
+}
+registerShutdownHandlers();
 
 const uid = () => crypto.randomUUID();
 const nowIso = () => new Date().toISOString();
@@ -121,14 +264,14 @@ const db = {
       .map((c) => ({
         ...c,
         status: effectiveStatus(c),
-        word_count: _db.words.filter((w) => w.collection_id === c.id).length,
+        word_count: wordsFor(c.id).length,
       }));
   },
 
   listWords(id) {
-    return _db.words
-      .filter((w) => w.collection_id === id)
-      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    // Copy the per-collection index array before sorting so we never reorder
+    // the index itself.
+    return [...wordsFor(id)].sort((a, b) => a.created_at.localeCompare(b.created_at));
   },
 
   // Add a batch of words. Dedupes (case/space-insensitive) within the
@@ -138,7 +281,8 @@ const db = {
     if (!c) return null;
     if (effectiveStatus(c) !== 'open') return { closed: true, added: 0, skipped: 0 };
 
-    const existing = new Set(_db.words.filter((w) => w.collection_id === id).map((w) => w.norm));
+    const indexArr = wordsFor(id);
+    const existing = new Set(indexArr.map((w) => w.norm));
     const by = addedBy ? String(addedBy).trim().slice(0, 40) : null;
     let added = 0;
     let skipped = 0;
@@ -151,14 +295,16 @@ const db = {
         continue;
       }
       existing.add(n);
-      _db.words.push({
+      const w = {
         id: uid(),
         collection_id: id,
         text,
         norm: n,
         added_by: by,
         created_at: nowIso(),
-      });
+      };
+      _db.words.push(w);
+      indexWord(w);
       added += 1;
     }
     if (added) saveDb();
@@ -171,6 +317,7 @@ const db = {
     const before = _db.words.length;
     _db.words = _db.words.filter((w) => !(w.id === wordId && w.collection_id === id));
     if (_db.words.length === before) return false;
+    unindexWord(id, wordId);
     saveDb();
     return true;
   },
@@ -209,6 +356,7 @@ const db = {
     _db.collections = _db.collections.filter((c) => c.id !== id);
     if (_db.collections.length === before) return false;
     _db.words = _db.words.filter((w) => w.collection_id !== id);
+    _wordsByCollection.delete(id);
     saveDb();
     return true;
   },
@@ -461,3 +609,21 @@ const db = {
 
 module.exports = db;
 module.exports.ORDER_PRICES = ORDER_PRICES;
+
+// Internal hooks for unit tests only — NOT part of the public API used by
+// server/index.js. Lets tests drive the deferred-flush machinery and inspect
+// the in-memory word index deterministically.
+module.exports.__test = {
+  DB_FILE,
+  flushNow: () => flushAsync(),
+  flushSync,
+  isDirty: () => _dirty,
+  isFlushing: () => _flushing,
+  wordIndexFor: (id) => wordsFor(id),
+  wordIndexSize: () => _wordsByCollection.size,
+  reload: () => {
+    _db = loadDb();
+    rebuildWordIndex();
+    return _db;
+  },
+};
