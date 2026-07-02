@@ -53,6 +53,13 @@
         --shadow-sm: 0 2px 8px rgba(44, 26, 41, 0.06), 0 1px 2px rgba(44, 26, 41, 0.04);
         --shadow-md: 0 10px 28px rgba(44, 26, 41, 0.1), 0 3px 8px rgba(44, 26, 41, 0.06);
         --shadow-lg: 0 26px 60px rgba(44, 26, 41, 0.16), 0 8px 18px rgba(44, 26, 41, 0.08);
+        /* fixed chrome heights, reused by the body padding and the wizard column
+           so the preview-fills-the-column math can't go stale if either changes. */
+        --nav-h: 60px;
+        --wizbar-h: 90px;
+        /* true printed-card ratio (portrait), from the card SVGs' viewBox
+           (196.855 x 282.098) — used so the bleed frame hugs the card exactly. */
+        --card-ratio: 196.855 / 282.098;
         /* live palette tokens (configurator sets --c0..--cN on previews) */
         --accent: var(--hot);
       }
@@ -72,8 +79,8 @@
         line-height: 1.6;
         font-size: 17px;
         -webkit-font-smoothing: antialiased;
-        padding-top: 60px;
-        padding-bottom: 90px;
+        padding-top: var(--nav-h);
+        padding-bottom: var(--wizbar-h);
       }
       .wrap {
         max-width: 1000px;
@@ -88,8 +95,8 @@
       main.wrap {
         display: flex;
         flex-direction: column;
-        min-height: calc(100vh - 150px);
-        min-height: calc(100dvh - 150px);
+        min-height: calc(100vh - var(--nav-h) - var(--wizbar-h));
+        min-height: calc(100dvh - var(--nav-h) - var(--wizbar-h));
       }
       h1,
       h2,
@@ -290,7 +297,7 @@
       /* ===== CONFIGURATOR ===== */
       .cfg-head {
         text-align: center;
-        padding: 26px 0 8px;
+        padding: 14px 0 6px;
       }
       .cfg-head h1 {
         font-size: 32px;
@@ -367,7 +374,7 @@
         padding: 18px;
         box-shadow: var(--shadow-md);
         max-width: 520px;
-        margin: 18px auto 0;
+        margin: 12px auto 0;
         /* fill the leftover column height (steps 1-3) but shrink if a step's
            controls need the room, so the page never has to scroll */
         display: flex;
@@ -414,13 +421,12 @@
           ),
           var(--cfg-bg, var(--bg));
         border: 1px dashed var(--blush-deep);
-        /* Grow to consume the card's leftover height; the card box centers here
-           and fits by height. A grid (not flex) so the card sizes to the stage's
-           definite height rather than filling its width and growing too tall.
-           A viewport-based floor keeps the preview large on roomy screens; on a
-           phone the mobile block lowers it so the step's controls always fit. */
+        /* Grow to consume the card's leftover height; the active preview centers
+           here (grid, not flex, so a portrait card fits by height instead of
+           filling the width and growing too tall). The floor stays small so the
+           preview yields to a step's controls and the page never scrolls. */
         flex: 1 1 auto;
-        min-height: min(64vh, 560px);
+        min-height: 60px;
         display: grid;
         place-items: center;
         padding: 18px;
@@ -428,25 +434,23 @@
       }
       .preview-panel {
         display: none;
-        width: 100%;
+        min-width: 0;
+        min-height: 0;
       }
       .preview-panel[data-active='true'] {
         position: relative;
         display: flex;
         align-items: center;
         justify-content: center;
-        /* The bleed box shrink-wraps the card SVG (which fills the stage height
-           and derives its width from the 5/7 ratio), so the bleed hugs the card
-           rather than becoming a big rectangle. Caps keep it inside the viewport. */
-        height: 100%;
-        width: auto;
         max-width: 100%;
         max-height: 100%;
         /* printed-background bleed: the real card background colour extends
            ~20-30mm (scaled to the preview) around the card, so the customer
-           sees that we print with some of the surrounding background. */
+           sees that we print with some of the surrounding background. The
+           padding is a percentage of the preview (its containing block) so the
+           bleed stays proportional to the card, not tied to the viewport. */
         background: var(--bleed, var(--cfg-bg));
-        padding: clamp(16px, 2.6vh, 32px);
+        padding: clamp(14px, 6%, 30px);
         border-radius: 16px;
         box-shadow: inset 0 0 0 1px rgba(44, 26, 41, 0.06);
       }
@@ -459,27 +463,41 @@
         opacity: 0.16;
         pointer-events: none;
       }
-      /* the card scales to the stage: sized by height (the binding dimension for
-         the portrait 5/7 card), width follows the aspect ratio and is capped so
-         it never overflows a short/wide viewport. object-fit keeps it uncropped. */
-      .preview-panel svg {
+      /* CARD previews (front/back): PORTRAIT. Fill the stage height and derive
+         the width from the card's true viewBox ratio, so the bleed frame hugs
+         the card exactly (no empty letterbox gaps) and the box shrink-wraps. */
+      .preview-panel[data-panel='front'],
+      .preview-panel[data-panel='back'] {
         height: 100%;
         width: auto;
-        aspect-ratio: 5 / 7;
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-        display: block;
-        filter: drop-shadow(0 14px 30px rgba(44, 26, 41, 0.16));
       }
-      .preview-panel img {
+      .preview-panel[data-panel='front'] svg,
+      .preview-panel[data-panel='back'] svg,
+      .preview-panel[data-panel='front'] img,
+      .preview-panel[data-panel='back'] img {
         height: 100%;
         width: auto;
-        aspect-ratio: 5 / 7;
-        max-width: 100%;
+        aspect-ratio: var(--card-ratio);
         max-height: 100%;
-        object-fit: contain;
+      }
+      /* BOARD preview: LANDSCAPE (~1.4:1). Show it full width at its natural
+         ratio so it stays readable — never squeezed into the portrait card box. */
+      .preview-panel[data-panel='board'] {
+        width: 100%;
+        height: auto;
+      }
+      .preview-panel[data-panel='board'] svg,
+      .preview-panel[data-panel='board'] img {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+      }
+      .preview-panel svg,
+      .preview-panel img {
         display: block;
+      }
+      .preview-panel svg {
+        filter: drop-shadow(0 14px 30px rgba(44, 26, 41, 0.16));
       }
       .preview-empty {
         color: var(--muted);
@@ -756,19 +774,39 @@
       .preview-card.is-collapsed .preview-stage {
         flex: 0 0 auto;
         min-height: 0;
-        padding: 10px;
+        padding: 8px;
       }
+      /* small reminder card: fixed, compact height with a slim bleed frame so the
+         name/contact fields (and the sticky bar) always fit above the fold. */
       .preview-card.is-collapsed .preview-panel[data-active='true'] {
-        align-self: center;
-        aspect-ratio: auto;
         height: auto;
-        width: 100%;
+        width: auto;
+        max-width: 100%;
+        padding: 6px;
       }
-      .preview-card.is-collapsed .preview-panel svg,
-      .preview-card.is-collapsed .preview-panel img {
+      .preview-card.is-collapsed .preview-panel[data-panel='front'],
+      .preview-card.is-collapsed .preview-panel[data-panel='back'] {
+        height: clamp(72px, 10vh, 112px);
+        aspect-ratio: var(--card-ratio);
+      }
+      .preview-card.is-collapsed .preview-panel[data-panel='board'] {
         width: 100%;
         height: auto;
-        max-height: 150px;
+      }
+      .preview-card.is-collapsed .preview-panel[data-panel='front'] svg,
+      .preview-card.is-collapsed .preview-panel[data-panel='back'] svg,
+      .preview-card.is-collapsed .preview-panel[data-panel='front'] img,
+      .preview-card.is-collapsed .preview-panel[data-panel='back'] img {
+        width: 100%;
+        height: 100%;
+        aspect-ratio: auto;
+        max-height: none;
+      }
+      .preview-card.is-collapsed .preview-panel[data-panel='board'] svg,
+      .preview-card.is-collapsed .preview-panel[data-panel='board'] img {
+        width: 100%;
+        height: auto;
+        max-height: clamp(84px, 12vh, 128px);
       }
       .preview-chip {
         margin-top: 12px;
@@ -789,7 +827,7 @@
       .wiz-step {
         display: none;
         max-width: 760px;
-        margin: 24px auto 0;
+        margin: 14px auto 0;
       }
       .wiz-step.is-active {
         display: block;
@@ -989,13 +1027,18 @@
         display: none;
       }
 
-      /* ===== MOBILE COMPACTION =====
+      /* ===== COMPACTION (narrow OR short viewports) =====
          Placed AFTER every base rule so plain source order wins the cascade
-         (a media query adds no specificity). Goal: on a phone, each step's
-         pickers AND the sticky Back/Next bar are reachable without scrolling.
+         (a media query adds no specificity). Goal: each step's pickers AND the
+         sticky Back/Next bar are reachable without scrolling — on a portrait
+         phone (narrow) AND on a landscape phone / short window (short height,
+         which the desktop layout's tall header + tile row would overflow).
          We tighten the header, shrink the live preview, and lay the design
-         tiles + colour swatches out as compact wrapping grids. */
-      @media (max-width: 600px) {
+         tiles + colour swatches out as compact wrapping grids.
+         The height branch also catches laptops too short to fit the full-size
+         layout (tall header + big tiles) — there the compact tiles free up room
+         so the preview stays a usable size AND the page never scrolls. */
+      @media (max-width: 600px), (max-height: 1000px) {
         .cfg-head {
           padding: 8px 0 2px;
         }
@@ -1030,17 +1073,17 @@
         }
         .preview-stage {
           /* small floor so the preview can shrink and the controls always fit */
-          min-height: 72px;
+          min-height: 48px;
           padding: 8px;
         }
-        /* uncollapsed (steps 1-3) fills the stage via height:100% (base rule);
+        /* uncollapsed (steps 1-3) fills the stage via the base rules;
            only the collapsed name/contact preview keeps a small fixed cap. */
         .preview-card.is-collapsed .preview-panel svg,
         .preview-card.is-collapsed .preview-panel img {
           max-height: 104px;
         }
         .preview-panel[data-active='true'] {
-          padding: clamp(11px, 1.8vh, 16px);
+          padding: clamp(11px, 4.5%, 18px);
         }
         /* steps sit right under the preview with a tighter rhythm */
         .wiz-step {
@@ -1089,6 +1132,126 @@
         }
         .gender-group {
           margin-top: 12px;
+        }
+      }
+
+      /* ===== EXTRA-SHORT VIEWPORTS (landscape phones) =====
+         On a very short screen (a phone held sideways) the fixed nav + bar, the
+         design-tile row and the contact form are the tall parts. We reclaim the
+         fixed-chrome height, shrink the tiles/form/header hard, drop the preview
+         floor to zero, and hide the small image reminder on the name/contact
+         steps (the text summary chip still shows the choice) — so every step
+         plus the sticky bar fit without scrolling. */
+      @media (max-height: 520px) {
+        :root {
+          --nav-h: 42px;
+          --wizbar-h: 64px;
+        }
+        .nav-inner {
+          padding: 4px 18px;
+        }
+        .nav-logo img {
+          height: 26px;
+        }
+        .wiz-bar {
+          padding: 8px 16px;
+        }
+        .wiz-bar .btn {
+          padding: 10px 24px;
+        }
+        .wiz-back {
+          padding: 10px 18px;
+        }
+        .cfg-head {
+          padding: 3px 0 2px;
+        }
+        .cfg-head h1 {
+          font-size: 21px;
+        }
+        .plan-pill {
+          margin-top: 3px;
+        }
+        .wiz-progress {
+          margin-top: 3px;
+        }
+        .preview-card {
+          margin-top: 4px;
+          padding: 8px;
+        }
+        .tabs {
+          margin-bottom: 4px;
+        }
+        .preview-stage {
+          min-height: 0;
+        }
+        /* the name/contact steps drop the small image reminder (the summary chip
+           still names the choice) so the form + sticky bar clear the fold. */
+        .preview-card.is-collapsed .preview-stage {
+          display: none;
+        }
+        .wiz-step {
+          margin-top: 6px;
+        }
+        .wiz-title {
+          font-size: 16px;
+        }
+        .wiz-sub {
+          margin: 2px 0 5px;
+          font-size: 12px;
+        }
+        /* tiny design thumbnails so the whole row is short */
+        .designs {
+          gap: 6px;
+        }
+        .design {
+          flex: 0 1 42px;
+          max-width: 52px;
+          padding: 4px;
+          gap: 2px;
+        }
+        .design .dname {
+          font-size: 10px;
+        }
+        /* compact the add-ons card so step 3 clears the fold */
+        .addon {
+          padding: 9px 12px;
+          gap: 10px;
+        }
+        .addon-emoji {
+          font-size: 22px;
+        }
+        .addon-desc {
+          font-size: 12px;
+          margin-top: 2px;
+        }
+        .colors {
+          row-gap: 24px;
+          padding-bottom: 18px;
+        }
+        .swatch {
+          width: 36px;
+          height: 36px;
+        }
+        .swatch .cname {
+          top: 40px;
+          font-size: 10px;
+        }
+        /* tighter contact form */
+        .wiz-field {
+          margin-bottom: 5px;
+        }
+        .wiz-lbl {
+          margin-bottom: 2px;
+        }
+        .wiz-input {
+          padding: 7px 12px;
+          border-radius: 12px;
+        }
+        .gender-group {
+          margin-top: 7px;
+        }
+        .gender-opt span {
+          padding: 6px 10px;
         }
       }
 
