@@ -24,29 +24,26 @@ const NOTIFY_TO = process.env.NOTIFY_TO || '';
 const NOTIFY_FROM = process.env.NOTIFY_FROM || SMTP_USER;
 
 // Railway injects RAILWAY_ENVIRONMENT_NAME per environment (values seen live:
-// 'production', 'staging'). Any non-empty value other than 'production' is a
-// non-prod (test) environment, so its order emails get a loud TEST marker and
-// staging sends are never mistaken for real orders. Empty/unset (local, tests)
-// is treated as prod-like — NO marker — so local behavior is unchanged unless a
-// test opts in. Production stays byte-identical to before.
+// 'production', 'staging'). Any non-empty value that isn't 'production' (matched
+// case-insensitively, so a 'Production' rename never taints real orders) is a
+// non-prod (test) environment, so its order emails get a TEST marker and staging
+// sends are never mistaken for real orders. Empty/unset (local, tests) is treated
+// as prod-like — NO marker — so local behavior is unchanged unless a test opts
+// in. Production stays byte-identical to before.
 const ENV_NAME = process.env.RAILWAY_ENVIRONMENT_NAME || '';
-const IS_NONPROD = ENV_NAME !== '' && ENV_NAME !== 'production';
+const IS_NONPROD = ENV_NAME !== '' && ENV_NAME.toLowerCase() !== 'production';
 
-// In a non-prod environment, mark every outgoing order email as a test: a loud
-// Hebrew prefix on the subject and a banner line at the top of the body (both
-// the plain-text and, if present, the HTML body). Returns the message unchanged
-// in production / when unset. Central so every send path is covered at once.
+// In a non-prod environment, mark an outgoing order email as a test: a plain
+// Hebrew prefix on the subject and a banner line at the top of the text body.
+// Returns the message unchanged in production / when unset. Central so every
+// send path is covered at once.
 function markTestEnv(message) {
   if (!IS_NONPROD) return message;
   const marked = { ...message };
-  const subjectPrefix = '🧪 הזמנת בדיקה (' + ENV_NAME + ') — ';
-  marked.subject = subjectPrefix + (message.subject || '');
+  marked.subject = 'הזמנת בדיקה (' + ENV_NAME + ') — ' + (message.subject || '');
   const banner = 'זו הזמנת בדיקה מסביבת ' + ENV_NAME + ' — לא הזמנה אמיתית.';
   if (message.text != null) {
     marked.text = banner + '\n\n' + message.text;
-  }
-  if (message.html != null) {
-    marked.html = '<p><strong>' + banner + '</strong></p><hr>' + message.html;
   }
   return marked;
 }
