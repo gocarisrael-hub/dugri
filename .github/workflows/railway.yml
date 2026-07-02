@@ -3,17 +3,23 @@ name: Deploy to Railway
 # Manual deploy only — runs when you click "Run workflow" in the Actions tab.
 # Pick the target environment; staging runs a smoke test after the deploy and
 # fails the run if it doesn't pass. Production deploys without smoke (it stays an
-# explicit, separate click).
+# explicit, separate click). To PROMOTE a staged commit to production, run this
+# again with environment=production and `ref` set to the EXACT commit SHA that
+# passed staging — never the moving branch head.
 on:
   workflow_dispatch:
     inputs:
       environment:
-        description: Target Railway environment
+        description: 'Target Railway environment (default staging — production must be chosen deliberately)'
         type: choice
         options:
           - staging
           - production
         default: staging
+      ref:
+        description: 'Git ref to deploy — a branch, tag, or (for promotion) the exact commit SHA that passed staging'
+        type: string
+        default: main
 
 permissions:
   contents: read
@@ -26,7 +32,17 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      # Loud, unmissable banner so the operator can see exactly what ships where
+      # (guards against silently deploying the wrong ref or the wrong env).
+      - name: Banner
+        run: echo "::notice title=Railway deploy::Deploying ${{ inputs.ref }} to ${{ inputs.environment }}"
+
+      # Check out the EXACT ref requested, so the deploy ships that commit and not
+      # whatever the branch head happens to be at click time. This is what pins a
+      # promotion to the commit that actually passed staging.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -41,13 +57,23 @@ jobs:
           RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'dugri' }}
         run: railway up --ci --service "$RAILWAY_SERVICE" --environment "${{ inputs.environment }}"
 
-      # Smoke gate — staging only. Waits briefly for the new deploy to become
-      # live, then hits it with scripts/smoke.mjs. A non-zero exit here fails the
-      # whole job, so a broken staging deploy blocks promotion to production.
+      # Fail early with a clear message if the staging URL variable was never set,
+      # instead of the smoke script's cryptic "Usage:" error on an empty URL.
+      - name: Check STAGING_BASE_URL is set
+        if: ${{ inputs.environment == 'staging' }}
+        run: |
+          if [ -z "${{ vars.STAGING_BASE_URL }}" ]; then
+            echo "STAGING_BASE_URL repo variable is not set — finish the one-time staging setup in RAILWAY_SETUP.md" >&2
+            exit 1
+          fi
+
+      # Smoke gate — staging only. runSmoke polls the URL until it's live (no
+      # fixed sleep), then runs the checks. A non-zero exit fails the whole job,
+      # so a broken staging deploy blocks promotion to production. SMOKE_ADMIN_KEY
+      # (the staging ADMIN_KEY) lets it clean up the collection it creates.
       - name: Smoke test (staging)
         if: ${{ inputs.environment == 'staging' }}
         env:
           SMOKE_BASE_URL: ${{ vars.STAGING_BASE_URL }}
-        run: |
-          sleep 20
-          node scripts/smoke.mjs
+          SMOKE_ADMIN_KEY: ${{ secrets.STAGING_ADMIN_KEY }}
+        run: node scripts/smoke.mjs

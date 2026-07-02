@@ -52,15 +52,25 @@ A separate **staging** Railway environment lets every merge deploy to a
 throwaway copy, run an automated smoke test against it, and only then be
 promoted to production by an explicit second click.
 
+> **The workflow now defaults to `staging`.** Accepting the defaults deploys to
+> **staging, not production**. Production is never the default — you must pick
+> `environment = production` deliberately, or a hotfix will land on staging while
+> you think prod is live. The Banner step at the start of each run prints
+> `Deploying <ref> to <environment>` loudly so you can confirm the target.
+
 ### Promotion flow
 
 1. Merge a PR to `main`.
 2. Run the **Deploy to Railway** workflow with `environment = staging` (the
-   default). It deploys to the staging environment.
+   default) and `ref = main`. It deploys `main` to the staging environment.
 3. The workflow then **auto-runs the smoke test** (`node scripts/smoke.mjs`)
    against the staging domain. If it's red, the run fails and you stop here.
-4. If staging is green, run the same workflow again with
-   `environment = production` to deploy the same commit to production.
+4. If staging is green, **promote by pinning the exact commit**: run the same
+   workflow again with `environment = production` and set `ref` to the **exact
+   commit SHA that passed staging** (copy it from the staging run), _not_ the
+   moving `main` head. Both deploy runs are independent `workflow_dispatch`
+   dispatches against a branch that may have moved on, so pinning the SHA is the
+   only way to guarantee production ships the commit staging actually verified.
    (Production does **not** run smoke — it's the deliberate, separate click.)
 
 ### One-time Railway dashboard setup (must be done by you)
@@ -76,6 +86,14 @@ promoted to production by an explicit second click.
 4. Add a repo **variable** **`STAGING_BASE_URL`** = that staging domain
    (e.g. `https://dugri-staging.up.railway.app`). The smoke step reads it:
    `gh variable set STAGING_BASE_URL --body "https://dugri-staging.up.railway.app"`
+   (If it's missing, the workflow fails early with a clear message rather than a
+   cryptic smoke error.)
+5. Add a repo **secret** **`STAGING_ADMIN_KEY`** = the **same value** as the
+   staging `ADMIN_KEY` (below). The smoke step passes it as **`SMOKE_ADMIN_KEY`**
+   so it can hard-delete the throwaway `SMOKE TEST` collection it creates each
+   run. It's optional (best-effort cleanup — a missing key or a failed delete
+   never fails the run), but set it so staging data doesn't accumulate:
+   `gh secret set STAGING_ADMIN_KEY`
 
 ### Variables that MUST differ in staging
 
@@ -90,8 +108,18 @@ with production. Set these on the staging environment specifically:
   sends become silent no-ops) or point them at a **test inbox**. Do not send
   staging notifications to the real business inbox.
 - **`ADMIN_KEY`** — a distinct **staging admin key** (not the production one).
+  Mirror this same value into the GitHub secret `STAGING_ADMIN_KEY` (step 5) so
+  the smoke step can clean up after itself.
 - **`PUBLIC_BASE_URL`** — the **staging domain** (so any payment return/callback
   URLs, if a sandbox terminal is used, point back at staging — never production).
+
+### Keeping staging data clean
+
+The **separate volume** (step 2) is the primary defense: staging writes to its
+own `dugri-data.json`, so the `SMOKE TEST` collections the smoke test creates can
+never touch production data. On top of that, the smoke step **hard-deletes the
+collection it created** at the end of each run (via `SMOKE_ADMIN_KEY`) — defense
+in depth so staging's own store doesn't slowly fill with test rows.
 
 ### Token
 
