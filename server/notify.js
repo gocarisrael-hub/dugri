@@ -17,6 +17,11 @@
 //                   e.g. "Dugri <orders@yourdomain>". For quick testing Resend
 //                   allows "onboarding@resend.dev" (delivers only to your own
 //                   account email).
+//   REPLY_TO        Optional. The address replies are routed to (Reply-To
+//                   header); defaults to NOTIFY_TO when unset. Need NOT be a
+//                   verified domain, so From can stay on the branded verified
+//                   domain while replies land in the business inbox (e.g. a
+//                   Gmail).
 
 const RESEND_API_URL = 'https://api.resend.com/emails';
 // Abort a stalled Resend request instead of hanging the (fire-and-forget) send
@@ -26,6 +31,11 @@ const SEND_TIMEOUT_MS = 10000;
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const NOTIFY_TO = process.env.NOTIFY_TO || '';
 const NOTIFY_FROM = process.env.NOTIFY_FROM || '';
+// Reply-To: replies to any outgoing email are routed here. Defaults to NOTIFY_TO
+// (the business inbox that receives owner alerts) so a customer replying to their
+// confirmation reaches us, even though From stays on the branded verified domain.
+// Need not be a verified domain; set REPLY_TO to override (e.g. a Gmail).
+const REPLY_TO = process.env.REPLY_TO || NOTIFY_TO;
 
 // Warn (once) at startup if the owner set SOME but not all of the three Resend
 // vars — a likely misconfiguration (e.g. they set the key + recipient and forgot
@@ -226,6 +236,9 @@ async function send({ subject, text, html, to }) {
       text: marked.text,
     };
     if (marked.html != null) body.html = marked.html;
+    // Route replies to the business inbox (Reply-To). Only sent when non-empty so
+    // an unset/blank REPLY_TO never adds an empty header to the Resend payload.
+    if (REPLY_TO) body.reply_to = REPLY_TO;
     timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
     const res = await fetch(RESEND_API_URL, {
       method: 'POST',

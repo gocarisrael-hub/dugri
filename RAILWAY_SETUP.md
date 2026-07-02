@@ -201,6 +201,10 @@ Set these env vars on the Railway service to turn it on:
   testing without a domain, Resend allows `onboarding@resend.dev`, but it can
   only deliver to your own Resend account email — use a real verified domain for
   production.
+- **`REPLY_TO`** — _optional_. The Reply-To address; **defaults to `NOTIFY_TO`**
+  when unset. `NOTIFY_FROM` must stay on the verified domain, but replies route
+  here — set this to the address you actually read replies at (typically the
+  business Gmail). Need not be a verified domain.
 
 Set all three on **both the production and staging environments** (staging
 should point `NOTIFY_TO` at a test inbox, or leave the Resend vars unset there so
