@@ -121,11 +121,20 @@ never touch production data. On top of that, the smoke step **hard-deletes the
 collection it created** at the end of each run (via `SMOKE_ADMIN_KEY`) — defense
 in depth so staging's own store doesn't slowly fill with test rows.
 
-### Token
+### Deploy tokens (one per environment)
 
-Confirm **`RAILWAY_TOKEN`** is a **project token** (not scoped to a single
-environment) so the workflow can deploy both `staging` and `production` with the
-same secret.
+Railway **project tokens are scoped to a single environment**, so each
+environment needs its own token, and the deploy workflow picks the matching one:
+
+- **`RAILWAY_TOKEN`** — a project token for the **production** environment (used
+  by the "Deploy to production" step).
+- **`RAILWAY_TOKEN_STAGING`** — a project token for the **staging** environment
+  (used by the "Deploy to staging" step). Create it in
+  Project → **Settings → Tokens → New Token**, Environment = **`staging`**, then:
+  `gh secret set RAILWAY_TOKEN_STAGING`
+
+Without `RAILWAY_TOKEN_STAGING`, a staging deploy fails with
+`Invalid project token for environment`.
 
 ## Simpler native alternative
 

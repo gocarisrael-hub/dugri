@@ -51,11 +51,24 @@ jobs:
       - name: Install Railway CLI
         run: npm i -g @railway/cli
 
-      - name: Deploy to Railway
+      # Railway project tokens are scoped to a single environment, so each
+      # environment has its own token and its own explicit step. Explicit steps
+      # (rather than a `&& ||` token ternary) avoid silently falling through to
+      # the wrong token if a secret is ever empty — a prod deploy must never run
+      # with the staging token.
+      - name: Deploy to production
+        if: ${{ inputs.environment == 'production' }}
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'dugri' }}
-        run: railway up --ci --service "$RAILWAY_SERVICE" --environment "${{ inputs.environment }}"
+        run: railway up --ci --service "$RAILWAY_SERVICE" --environment production
+
+      - name: Deploy to staging
+        if: ${{ inputs.environment == 'staging' }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
+          RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'dugri' }}
+        run: railway up --ci --service "$RAILWAY_SERVICE" --environment staging
 
       # Fail early with a clear message if the staging URL variable was never set,
       # instead of the smoke script's cryptic "Usage:" error on an empty URL.
