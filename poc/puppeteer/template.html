@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Web fonts: brush script for the honoree title, casual Hebrew hand for the words. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Kaushan+Script&family=Amatic+SC:wght@400;700&family=Fredoka:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        /* Bachelorette design anchor palette (maps to the SVG's --c0..--c3). */
+        --c0: #6b4d56; /* dark mauve – line art + words */
+        --c1: #b28c97; /* medium mauve – decoration shading */
+        --c2: #ff78a0; /* hot pink (unused here) */
+        --c3: #ffc6d7; /* light pink – card background */
+        --title-color: #ad9199; /* the soft grey-mauve of the script title */
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        background: #fff;
+      }
+      /* The card. Aspect matches the source SVG viewBox (196.855 x 282.098). */
+      .card {
+        position: relative;
+        width: 750px;
+        height: 1075px;
+        overflow: hidden;
+        /* colours flow into the inlined background SVG via these vars */
+      }
+      .card .bg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .card .bg svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      /* ---- Title (top-right script) ---- */
+      .title {
+        position: absolute;
+        top: 7.2%;
+        right: 6%;
+        width: 52%;
+        text-align: center;
+        font-family: 'Kaushan Script', cursive;
+        color: var(--title-color);
+        line-height: 0.98;
+        transform: rotate(-4deg);
+      }
+      .title .l1 {
+        display: block;
+        font-size: 62px;
+      }
+      .title .l2 {
+        display: block;
+        font-size: 62px;
+      }
+
+      /* ---- The four numbered words ---- */
+      .words {
+        position: absolute;
+        top: 29.5%;
+        left: 0;
+        right: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 5.1%;
+        /* Amatic SC = closest freely-loadable hand-drawn Hebrew face to the
+           card's (Canva) handwriting. Fredoka kept as a cleaner-rounded fallback. */
+        font-family: 'Amatic SC', 'Fredoka', cursive;
+        font-weight: 700;
+        color: var(--c0);
+      }
+      .words .line {
+        display: flex;
+        flex-direction: row;
+        justify-content: flex-start; /* rtl -> right-aligned; numbers form a column */
+        align-items: baseline;
+        gap: 14px;
+        font-size: 86px;
+        line-height: 1;
+        white-space: nowrap;
+        padding-right: 24%; /* right edge of the number column at ~76% width */
+      }
+      .words .num {
+        font-size: 80px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="bg"><!--BACKGROUND_SVG--></div>
+
+      <div class="title">
+        <span class="l1">{{TITLE_L1}}</span>
+        <span class="l2">{{TITLE_L2}}</span>
+      </div>
+
+      <div class="words">
+        <div class="line"><span class="num">1.</span><span class="word">{{WORD_1}}</span></div>
+        <div class="line"><span class="num">2.</span><span class="word">{{WORD_2}}</span></div>
+        <div class="line"><span class="num">3.</span><span class="word">{{WORD_3}}</span></div>
+        <div class="line"><span class="num">4.</span><span class="word">{{WORD_4}}</span></div>
+      </div>
+    </div>
+  </body>
+</html>
