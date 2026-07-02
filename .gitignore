@@ -33,3 +33,12 @@ resources/instagram/screenshots/
 # but DO track the small web-optimized clips
 !site/assets/video/
 !site/assets/video/*.mp4
+
+# All local working materials under resources/ are untracked — only resources/canva/
+# (the tokenizer's SVG sources) is tracked. Ignore the rest so agents' `git add -A`
+# / `git stash -u` can't sweep your working docs (comparison PDF/DOCX, screenshots…).
+/resources/*
+!/resources/canva/
+
+# Agent screenshot / scratch output
+/output/
