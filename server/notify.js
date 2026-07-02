@@ -23,6 +23,34 @@ const SMTP_PASS = process.env.SMTP_PASS || '';
 const NOTIFY_TO = process.env.NOTIFY_TO || '';
 const NOTIFY_FROM = process.env.NOTIFY_FROM || SMTP_USER;
 
+// Railway injects RAILWAY_ENVIRONMENT_NAME per environment (values seen live:
+// 'production', 'staging'). Any non-empty value other than 'production' is a
+// non-prod (test) environment, so its order emails get a loud TEST marker and
+// staging sends are never mistaken for real orders. Empty/unset (local, tests)
+// is treated as prod-like — NO marker — so local behavior is unchanged unless a
+// test opts in. Production stays byte-identical to before.
+const ENV_NAME = process.env.RAILWAY_ENVIRONMENT_NAME || '';
+const IS_NONPROD = ENV_NAME !== '' && ENV_NAME !== 'production';
+
+// In a non-prod environment, mark every outgoing order email as a test: a loud
+// Hebrew prefix on the subject and a banner line at the top of the body (both
+// the plain-text and, if present, the HTML body). Returns the message unchanged
+// in production / when unset. Central so every send path is covered at once.
+function markTestEnv(message) {
+  if (!IS_NONPROD) return message;
+  const marked = { ...message };
+  const subjectPrefix = '🧪 הזמנת בדיקה (' + ENV_NAME + ') — ';
+  marked.subject = subjectPrefix + (message.subject || '');
+  const banner = 'זו הזמנת בדיקה מסביבת ' + ENV_NAME + ' — לא הזמנה אמיתית.';
+  if (message.text != null) {
+    marked.text = banner + '\n\n' + message.text;
+  }
+  if (message.html != null) {
+    marked.html = '<p><strong>' + banner + '</strong></p><hr>' + message.html;
+  }
+  return marked;
+}
+
 // True only when the essentials are present. Sends are no-ops otherwise.
 function isConfigured() {
   return Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS && NOTIFY_TO);
@@ -151,12 +179,17 @@ function transporter() {
 // NOTIFY_TO — e.g. the buyer confirmation is sent to the customer's address).
 // Fully wrapped: a failure (or being unconfigured, or an empty recipient) NEVER
 // throws into the caller — it logs a warning and returns false.
-async function send({ subject, text, to }) {
+async function send({ subject, text, html, to }) {
   if (!isConfigured()) return false;
   const recipient = to || NOTIFY_TO;
   if (!recipient) return false;
   try {
-    await transporter().sendMail({ from: NOTIFY_FROM, to: recipient, subject, text });
+    // Non-prod (e.g. staging) sends are stamped as test emails; production and
+    // local/unset stay untouched.
+    const marked = markTestEnv({ subject, text, html });
+    const mail = { from: NOTIFY_FROM, to: recipient, subject: marked.subject, text: marked.text };
+    if (marked.html != null) mail.html = marked.html;
+    await transporter().sendMail(mail);
     return true;
   } catch (e) {
     console.warn('[notify] send failed:', e && e.message ? e.message : e);
