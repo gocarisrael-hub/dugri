@@ -465,6 +465,35 @@ test('unpaid owner sees the locked teaser, not the unlock badge', async ({ page 
   await expect(page.locator('#premiumBadge')).toBeHidden();
 });
 
+test('home link (→ index.html) and a tailored order CTA (→ options.html) are present', async ({
+  page,
+  context,
+}) => {
+  await createCollection(page, 'הדר');
+
+  // Home affordance at the top links back to the main site.
+  const home = page.getByTestId('home-link');
+  await expect(home).toBeVisible();
+  await expect(home).toHaveAttribute('href', /index\.html$/);
+
+  // Bottom order CTA links to the order flow. The MANAGER (owner token) is
+  // nudged to order ANOTHER game.
+  const cta = page.getByTestId('order-cta');
+  await expect(cta).toBeVisible();
+  await expect(cta).toHaveAttribute('href', /options\.html$/);
+  await expect(cta).toContainText('רוצים עוד משחק');
+
+  // A plain CONTRIBUTOR (no owner key) is a warm lead → invited to order their OWN.
+  const friendsUrl = page.url().replace(/&k=.*/, '');
+  const friend = await context.newPage();
+  await friend.goto(friendsUrl);
+  await expect(friend.getByTestId('home-link')).toBeVisible();
+  const friendCta = friend.getByTestId('order-cta');
+  await expect(friendCta).toBeVisible();
+  await expect(friendCta).toHaveAttribute('href', /options\.html$/);
+  await expect(friendCta).toContainText('לאירוע שלכם');
+});
+
 test('contributor (no owner key) does NOT see the pay panel', async ({ page, context }) => {
   await createCollection(page, 'מאיה');
   const friendsUrl = page.url().replace(/&k=.*/, '');
