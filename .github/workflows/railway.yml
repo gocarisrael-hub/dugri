@@ -53,7 +53,10 @@ jobs:
 
       - name: Deploy to Railway
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          # Railway project tokens are scoped to a single environment, so each
+          # environment needs its own token. Pick production's for production,
+          # staging's for anything else.
+          RAILWAY_TOKEN: ${{ inputs.environment == 'production' && secrets.RAILWAY_TOKEN || secrets.RAILWAY_TOKEN_STAGING }}
           RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'dugri' }}
         run: railway up --ci --service "$RAILWAY_SERVICE" --environment "${{ inputs.environment }}"
 
