@@ -26,7 +26,7 @@ test('chasers add-on flows from the wizard into the order and admin', async ({ p
 
   // The owner's admin view shows a ✓ in the chasers column for this order.
   await page.goto('/admin.html?key=dugri-admin');
-  const row = page.locator('tr', { hasText: honoree });
+  const row = page.locator('tr', { hasText: honoree }).first();
   await expect(row).toBeVisible();
   await expect(row).toContainText('✓');
 });
