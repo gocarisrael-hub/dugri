@@ -83,14 +83,31 @@ function ownerLink(collection, baseUrl) {
   return baseUrl + '/collect.html?c=' + collection.id + '&k=' + collection.owner_token;
 }
 
-// Shared body lines (order details) used by both messages.
-function orderLines(collection, baseUrl) {
+// The amount line(s) for a paid order email. `options.amountCharged`, when a
+// finite number, is what the customer ACTUALLY paid (0 for a fully-free
+// 100%-coupon order, the discounted amount for a partial coupon); we show that
+// rather than the full package price. Without it we fall back to the order's
+// pre-coupon total (used by the non-paid "finished" email). A zero charge reads
+// clearly as free with a 100%-coupon note. `label` is the field name (e.g.
+// 'סכום' for the owner, '· מחיר' for the buyer).
+function amountLines(order, options, label) {
+  if (!order) return [];
+  const charged = options && Number.isFinite(options.amountCharged) ? options.amountCharged : null;
+  const amount = charged != null ? charged : order.total != null ? order.total : null;
+  if (amount == null) return [];
+  if (amount <= 0) return [label + ': 0 ₪ (קופון 100%)'];
+  return [label + ': ' + amount + ' ₪'];
+}
+
+// Shared body lines (order details) used by both messages. `options` may carry
+// `amountCharged` (the real charged amount) — see amountLines.
+function orderLines(collection, baseUrl, options) {
   const lines = [];
   const order = (collection && collection.order) || null;
   if (order) {
     const label = VERSION_LABELS[order.version] || order.version || '-';
     lines.push('גרסה: ' + label);
-    if (order.total != null) lines.push('סכום: ' + order.total + ' ₪');
+    lines.push(...amountLines(order, options, 'סכום'));
   }
   const wc = wordCount(collection);
   if (wc != null) lines.push('מספר מילים: ' + wc);
@@ -100,14 +117,16 @@ function orderLines(collection, baseUrl) {
 }
 
 // Pure builder: the "order paid" email. `baseUrl` is the normalized public
-// origin (optional; the owner link is omitted without it). Returns {subject,text}.
-function buildPaidMessage(collection, baseUrl) {
+// origin (optional; the owner link is omitted without it). `options` may carry
+// `amountCharged` — the amount actually paid (0 for a free 100%-coupon order).
+// Returns {subject,text}.
+function buildPaidMessage(collection, baseUrl, options) {
   const name = honoreeName(collection);
   const subject = 'דוגרי · התקבל תשלום — ' + name;
   const text = [
     'התקבל תשלום עבור ההזמנה של ' + name + '.',
     '',
-    ...orderLines(collection, baseUrl),
+    ...orderLines(collection, baseUrl, options),
   ].join('\n');
   return { subject, text };
 }
@@ -117,8 +136,10 @@ function buildPaidMessage(collection, baseUrl) {
 // thank-you, the order details (package + price, and design/colour when set) and
 // the collect link so they can keep adding their words. `baseUrl` is the
 // normalized public origin (optional; the link is omitted without it).
-// Returns {subject, text} — same shape as the other builders.
-function buildBuyerConfirmation(collection, baseUrl) {
+// Returns {subject, text} — same shape as the other builders. `options` may
+// carry `amountCharged` — the amount actually paid (0 for a free 100%-coupon
+// order, the discounted amount for a partial coupon).
+function buildBuyerConfirmation(collection, baseUrl, options) {
   const name = honoreeName(collection);
   const subject = 'דוגרי · ההזמנה שלכם התקבלה — ' + name;
   const lines = [
@@ -131,7 +152,7 @@ function buildBuyerConfirmation(collection, baseUrl) {
   if (order) {
     const label = VERSION_LABELS[order.version] || order.version || '-';
     lines.push('· חבילה: ' + label);
-    if (order.total != null) lines.push('· מחיר: ' + order.total + ' ₪');
+    lines.push(...amountLines(order, options, '· מחיר'));
   }
   if (collection && collection.design) lines.push('· עיצוב: ' + collection.design);
   if (collection && collection.color) lines.push('· צבע: ' + collection.color);
@@ -195,10 +216,11 @@ async function send({ subject, text, html, to }) {
 }
 
 // Fire the "order paid" notification. `baseUrl` is the normalized public origin
-// (optional). Never throws.
-async function sendOrderPaid(collection, baseUrl) {
+// (optional). `options` may carry `amountCharged` (the amount actually paid).
+// Never throws.
+async function sendOrderPaid(collection, baseUrl, options) {
   try {
-    return await send(buildPaidMessage(collection, baseUrl));
+    return await send(buildPaidMessage(collection, baseUrl, options));
   } catch (e) {
     console.warn('[notify] sendOrderPaid failed:', e && e.message ? e.message : e);
     return false;
@@ -208,12 +230,13 @@ async function sendOrderPaid(collection, baseUrl) {
 // Fire the BUYER confirmation to the customer's own email. Sent to the
 // collection's owner_email (captured at checkout), NOT to NOTIFY_TO. Skips
 // gracefully (returns false) when that address is missing/empty, and stays
-// dormant like the others when SMTP is unconfigured. Never throws.
-async function sendBuyerConfirmation(collection, baseUrl) {
+// dormant like the others when SMTP is unconfigured. `options` may carry
+// `amountCharged` (the amount actually paid). Never throws.
+async function sendBuyerConfirmation(collection, baseUrl, options) {
   try {
     const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
     if (!to) return false;
-    return await send({ ...buildBuyerConfirmation(collection, baseUrl), to });
+    return await send({ ...buildBuyerConfirmation(collection, baseUrl, options), to });
   } catch (e) {
     console.warn('[notify] sendBuyerConfirmation failed:', e && e.message ? e.message : e);
     return false;
