@@ -9,7 +9,8 @@
     "test:e2e": "playwright test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",

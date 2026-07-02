@@ -46,6 +46,59 @@ It will **fail until you complete the steps below** — that is expected.
      tab. Railway will build the Dockerfile and serve `site/` on the domain it
      assigns (Settings → Networking → Generate Domain if you don't have one).
 
+## Staging environment
+
+A separate **staging** Railway environment lets every merge deploy to a
+throwaway copy, run an automated smoke test against it, and only then be
+promoted to production by an explicit second click.
+
+### Promotion flow
+
+1. Merge a PR to `main`.
+2. Run the **Deploy to Railway** workflow with `environment = staging` (the
+   default). It deploys to the staging environment.
+3. The workflow then **auto-runs the smoke test** (`node scripts/smoke.mjs`)
+   against the staging domain. If it's red, the run fails and you stop here.
+4. If staging is green, run the same workflow again with
+   `environment = production` to deploy the same commit to production.
+   (Production does **not** run smoke — it's the deliberate, separate click.)
+
+### One-time Railway dashboard setup (must be done by you)
+
+1. In the Railway project, create a new environment named **`staging`**, forked
+   from production (Project → Environments → New → fork from production) so it
+   inherits the service and its variables.
+2. Attach a **separate Volume** to the staging service, mounted at `/data`, and
+   set **`DATA_DIR=/data`** on staging. This MUST be its own volume — staging and
+   production must never share a data file (`dugri-data.json`).
+3. Set the staging-only variables (see below), then generate a **staging domain**
+   (Settings → Networking → Generate Domain).
+4. Add a repo **variable** **`STAGING_BASE_URL`** = that staging domain
+   (e.g. `https://dugri-staging.up.railway.app`). The smoke step reads it:
+   `gh variable set STAGING_BASE_URL --body "https://dugri-staging.up.railway.app"`
+
+### Variables that MUST differ in staging
+
+Staging must never take a real charge, send real email, or share admin access
+with production. Set these on the staging environment specifically:
+
+- **`PELECARD_TERMINAL` / `PELECARD_USER` / `PELECARD_PASSWORD`** — use a
+  **test/sandbox** terminal, or leave them **unset**. Unset means the card button
+  is disabled and no real charge can happen (`card_enabled` is `false`); the
+  smoke test still passes because it only asserts the flag is a boolean.
+- **`SMTP_HOST` / `SMTP_USER` / `SMTP_PASS` / `NOTIFY_TO`** — leave **unset** (email
+  sends become silent no-ops) or point them at a **test inbox**. Do not send
+  staging notifications to the real business inbox.
+- **`ADMIN_KEY`** — a distinct **staging admin key** (not the production one).
+- **`PUBLIC_BASE_URL`** — the **staging domain** (so any payment return/callback
+  URLs, if a sandbox terminal is used, point back at staging — never production).
+
+### Token
+
+Confirm **`RAILWAY_TOKEN`** is a **project token** (not scoped to a single
+environment) so the workflow can deploy both `staging` and `production` with the
+same secret.
+
 ## Simpler native alternative
 
 Instead of this workflow, you can connect the GitHub repo directly in the

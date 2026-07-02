@@ -1,8 +1,19 @@
 name: Deploy to Railway
 
 # Manual deploy only — runs when you click "Run workflow" in the Actions tab.
+# Pick the target environment; staging runs a smoke test after the deploy and
+# fails the run if it doesn't pass. Production deploys without smoke (it stays an
+# explicit, separate click).
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Target Railway environment
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
 
 permissions:
   contents: read
@@ -28,4 +39,15 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE || 'dugri' }}
-        run: railway up --ci --service "$RAILWAY_SERVICE"
+        run: railway up --ci --service "$RAILWAY_SERVICE" --environment "${{ inputs.environment }}"
+
+      # Smoke gate — staging only. Waits briefly for the new deploy to become
+      # live, then hits it with scripts/smoke.mjs. A non-zero exit here fails the
+      # whole job, so a broken staging deploy blocks promotion to production.
+      - name: Smoke test (staging)
+        if: ${{ inputs.environment == 'staging' }}
+        env:
+          SMOKE_BASE_URL: ${{ vars.STAGING_BASE_URL }}
+        run: |
+          sleep 20
+          node scripts/smoke.mjs
