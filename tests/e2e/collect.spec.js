@@ -49,6 +49,47 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
   await expect(page.locator('#addCard')).toBeHidden();
 });
 
+test('owner deleting a word asks for confirmation: cancel keeps it, confirm removes it', async ({
+  page,
+}) => {
+  await createCollection(page, 'שירה');
+
+  // Seed one word as the owner.
+  await page.fill('#wordInput', 'הדייט מטבריה');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('1');
+  await expect(page.locator('#wordsWrap')).toContainText('הדייט מטבריה');
+
+  // Clicking delete does NOT remove immediately — a confirmation popup appears,
+  // naming the word, and the word is still present at that point.
+  await page.getByTestId('word-del').click();
+  await expect(page.getByTestId('confirm-del-modal')).toBeVisible();
+  await expect(page.locator('#confirmDelText')).toContainText('הדייט מטבריה');
+  await expect(page.locator('#count')).toHaveText('1');
+  await expect(page.locator('#wordsWrap')).toContainText('הדייט מטבריה');
+
+  // Cancel → popup closes, the word stays.
+  await page.getByTestId('confirm-del-cancel').click();
+  await expect(page.getByTestId('confirm-del-modal')).toBeHidden();
+  await expect(page.locator('#count')).toHaveText('1');
+  await expect(page.locator('#wordsWrap')).toContainText('הדייט מטבריה');
+
+  // Esc also dismisses without deleting (shared modal-dismiss behavior).
+  await page.getByTestId('word-del').click();
+  await expect(page.getByTestId('confirm-del-modal')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('confirm-del-modal')).toBeHidden();
+  await expect(page.locator('#count')).toHaveText('1');
+
+  // Delete again → confirm → the word is removed and the count drops to 0.
+  await page.getByTestId('word-del').click();
+  await expect(page.getByTestId('confirm-del-modal')).toBeVisible();
+  await page.getByTestId('confirm-del-ok').click();
+  await expect(page.getByTestId('confirm-del-modal')).toBeHidden();
+  await expect(page.locator('#count')).toHaveText('0');
+  await expect(page.locator('#wordsWrap')).not.toContainText('הדייט מטבריה');
+});
+
 test('submitting a word that already exists pops a duplicate dialog and does not add a row', async ({
   page,
 }) => {

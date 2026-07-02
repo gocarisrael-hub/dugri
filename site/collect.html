@@ -494,6 +494,14 @@
       .msg-modal-ok {
         width: 100%;
       }
+      /* two-button footer for confirm dialogs (e.g. delete confirmation) */
+      .msg-modal-actions {
+        display: flex;
+        gap: 10px;
+      }
+      .msg-modal-actions button {
+        flex: 1;
+      }
       /* top pay reminder (owner, unpaid only) — nudges toward the pay panel */
       .pay-reminder {
         background: #fff4e6;
@@ -1019,6 +1027,31 @@
       </div>
     </div>
 
+    <!-- delete-word confirmation popup ("are you sure?") -->
+    <div
+      id="confirmDelModal"
+      class="msg-modal hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirmDelText"
+      data-testid="confirm-del-modal"
+    >
+      <div class="msg-modal-card">
+        <p class="msg-modal-text" id="confirmDelText"></p>
+        <div class="msg-modal-actions">
+          <button
+            type="button"
+            class="ghost"
+            id="confirmDelCancel"
+            data-testid="confirm-del-cancel"
+          >
+            ביטול
+          </button>
+          <button type="button" id="confirmDelOk" data-testid="confirm-del-ok">מחיקה</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module">
       import { CATEGORIES, PROMPTS, PREMIUM_PROMPTS, renderQuestion } from './js/word-prompts.js';
       import { parseWordText } from './js/collect.js';
@@ -1092,6 +1125,25 @@
       (function wireDialog() {
         const modal = $('#dupModal');
         $('#dupModalOk').onclick = () => modal.classList.add('hidden');
+        wireModalDismiss(modal);
+      })();
+
+      // "Are you sure?" confirmation before a destructive action (deleting a
+      // word). Reuses the shared msg-modal styling + close-behavior (backdrop /
+      // Esc / cancel) like the duplicate dialog above; only confirm runs `fn`.
+      function confirmDialog(msg, fn) {
+        const modal = $('#confirmDelModal');
+        $('#confirmDelText').textContent = msg;
+        $('#confirmDelOk').onclick = () => {
+          modal.classList.add('hidden');
+          fn();
+        };
+        modal.classList.remove('hidden');
+        $('#confirmDelOk').focus();
+      }
+      (function wireConfirmDialog() {
+        const modal = $('#confirmDelModal');
+        $('#confirmDelCancel').onclick = () => modal.classList.add('hidden');
         wireModalDismiss(modal);
       })();
 
@@ -1206,7 +1258,10 @@
               del.type = 'button';
               del.textContent = '×';
               del.title = 'מחק';
-              del.onclick = () => removeWord(w.id);
+              del.setAttribute('data-testid', 'word-del');
+              // Confirm before deleting — no immediate destructive action.
+              del.onclick = () =>
+                confirmDialog('למחוק את המילה "' + w.text + '"?', () => removeWord(w.id));
               el.appendChild(del);
             }
             wrap.appendChild(el);
