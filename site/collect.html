@@ -466,7 +466,8 @@
           transition: none;
         }
       }
-      /* small message dialog (e.g. "word already in the list") */
+      /* shared message dialog: an info notice ("word already in the list") or a
+         confirm ("are you sure?"). See openDialog(). */
       .msg-modal {
         position: fixed;
         inset: 0;
@@ -491,8 +492,14 @@
         margin-bottom: 18px;
         word-break: break-word;
       }
-      .msg-modal-ok {
-        width: 100%;
+      /* Action row. One button (info notice) stretches full width; two buttons
+         (confirm dialog) share the row evenly. */
+      .msg-modal-actions {
+        display: flex;
+        gap: 10px;
+      }
+      .msg-modal-actions button {
+        flex: 1;
       }
       /* top pay reminder (owner, unpaid only) — nudges toward the pay panel */
       .pay-reminder {
@@ -1005,17 +1012,30 @@
       </div>
     </div>
 
-    <!-- duplicate-word popup ("this word is already in the list") -->
+    <!-- Shared dialog. Serves both a simple info notice ("word already in the
+         list", OK only) and an "are you sure?" confirm (cancel + confirm). The
+         cancel button is hidden in info mode. Driven by openDialog(). -->
     <div
-      id="dupModal"
+      id="msgModal"
       class="msg-modal hidden"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="dupModalText"
+      aria-labelledby="msgModalText"
+      data-testid="msg-modal"
     >
       <div class="msg-modal-card">
-        <p class="msg-modal-text" id="dupModalText"></p>
-        <button type="button" class="msg-modal-ok" id="dupModalOk">הבנתי</button>
+        <p class="msg-modal-text" id="msgModalText"></p>
+        <div class="msg-modal-actions">
+          <button
+            type="button"
+            class="ghost hidden"
+            id="msgModalCancel"
+            data-testid="msg-modal-cancel"
+          >
+            ביטול
+          </button>
+          <button type="button" id="msgModalOk" data-testid="msg-modal-ok">הבנתי</button>
+        </div>
       </div>
     </div>
 
@@ -1081,17 +1101,32 @@
         });
       }
 
-      // Dismissible popup for messages that deserve more than a fleeting toast,
-      // e.g. telling a contributor their word is already in the list.
-      function showDialog(msg) {
-        const modal = $('#dupModal');
-        $('#dupModalText').textContent = msg;
+      // Single dismissible dialog for both jobs. With no `onOk` it's an info
+      // notice (OK button only), e.g. telling a contributor their word is
+      // already in the list. With an `onOk` it's an "are you sure?" confirm: a
+      // cancel button appears and `onOk` runs ONLY on confirm — backdrop / Esc /
+      // cancel dismiss without running it. In confirm mode focus lands on cancel
+      // (the safe, non-destructive default) so an accidental Enter/Space right
+      // after opening can't trigger the action.
+      function openDialog(msg, opts) {
+        const o = opts || {};
+        const confirmMode = typeof o.onOk === 'function';
+        const modal = $('#msgModal');
+        const ok = $('#msgModalOk');
+        const cancel = $('#msgModalCancel');
+        $('#msgModalText').textContent = msg;
+        ok.textContent = o.okLabel || (confirmMode ? 'מחיקה' : 'הבנתי');
+        cancel.classList.toggle('hidden', !confirmMode);
+        ok.onclick = () => {
+          modal.classList.add('hidden');
+          if (confirmMode) o.onOk();
+        };
         modal.classList.remove('hidden');
-        $('#dupModalOk').focus();
+        (confirmMode ? cancel : ok).focus();
       }
       (function wireDialog() {
-        const modal = $('#dupModal');
-        $('#dupModalOk').onclick = () => modal.classList.add('hidden');
+        const modal = $('#msgModal');
+        $('#msgModalCancel').onclick = () => modal.classList.add('hidden');
         wireModalDismiss(modal);
       })();
 
@@ -1206,7 +1241,13 @@
               del.type = 'button';
               del.textContent = '×';
               del.title = 'מחק';
-              del.onclick = () => removeWord(w.id);
+              del.setAttribute('data-testid', 'word-del');
+              // Per-word id so each delete control is uniquely selectable (the
+              // shared testid alone collides once there are 2+ words).
+              del.setAttribute('data-word-id', w.id);
+              // Confirm before deleting — no immediate destructive action.
+              del.onclick = () =>
+                openDialog('למחוק את המילה "' + w.text + '"?', { onOk: () => removeWord(w.id) });
               el.appendChild(del);
             }
             wrap.appendChild(el);
@@ -1296,9 +1337,9 @@
             // count mixes causes, so use neutral wording.
             if (skipped === 1 && clean.length === 1) {
               const shown = clean[0].replace(/\s+/g, ' ');
-              showDialog('המילה "' + shown + '" כבר קיימת ברשימה');
+              openDialog('המילה "' + shown + '" כבר קיימת ברשימה');
             } else {
-              showDialog('המילים כבר קיימות ולא נוספו שוב');
+              openDialog('המילים כבר קיימות ולא נוספו שוב');
             }
           }
           return true;

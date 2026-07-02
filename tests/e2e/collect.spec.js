@@ -49,6 +49,60 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
   await expect(page.locator('#addCard')).toBeHidden();
 });
 
+test('owner deleting a word asks for confirmation: cancel/Esc keep it, confirm removes just that one', async ({
+  page,
+}) => {
+  await createCollection(page, 'שירה');
+
+  // Seed TWO words as the owner, so each row's delete control must be uniquely
+  // selectable (a shared testid alone would collide under Playwright strict mode).
+  await page.fill('#wordInput', 'הדייט מטבריה');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('1'); // let the first add settle
+  await page.fill('#wordInput', 'סוכר באמא');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('2');
+
+  // The delete control for a specific word, scoped to its row (no collision).
+  const delFor = (word) => page.locator('.word', { hasText: word }).getByTestId('word-del');
+
+  // Clicking delete does NOT remove immediately — a confirmation popup appears,
+  // naming the word, and both words are still present at that point.
+  await delFor('הדייט מטבריה').click();
+  await expect(page.getByTestId('msg-modal')).toBeVisible();
+  await expect(page.locator('#msgModalText')).toContainText('הדייט מטבריה');
+  await expect(page.locator('#count')).toHaveText('2');
+
+  // Safety: focus is on cancel (not the destructive confirm), so pressing Enter
+  // right after opening dismisses without deleting.
+  await expect(page.getByTestId('msg-modal-cancel')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('msg-modal')).toBeHidden();
+  await expect(page.locator('#count')).toHaveText('2');
+  await expect(page.locator('#wordsWrap')).toContainText('הדייט מטבריה');
+
+  // Cancel button → popup closes, the word stays.
+  await delFor('הדייט מטבריה').click();
+  await page.getByTestId('msg-modal-cancel').click();
+  await expect(page.getByTestId('msg-modal')).toBeHidden();
+  await expect(page.locator('#count')).toHaveText('2');
+
+  // Esc also dismisses without deleting (shared modal-dismiss behavior).
+  await delFor('הדייט מטבריה').click();
+  await expect(page.getByTestId('msg-modal')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('msg-modal')).toBeHidden();
+  await expect(page.locator('#count')).toHaveText('2');
+
+  // Confirm → only that word is removed; the other stays.
+  await delFor('הדייט מטבריה').click();
+  await page.getByTestId('msg-modal-ok').click();
+  await expect(page.getByTestId('msg-modal')).toBeHidden();
+  await expect(page.locator('#count')).toHaveText('1');
+  await expect(page.locator('#wordsWrap')).not.toContainText('הדייט מטבריה');
+  await expect(page.locator('#wordsWrap')).toContainText('סוכר באמא');
+});
+
 test('submitting a word that already exists pops a duplicate dialog and does not add a row', async ({
   page,
 }) => {
@@ -59,29 +113,31 @@ test('submitting a word that already exists pops a duplicate dialog and does not
   await page.click('#addBtn');
   await expect(page.locator('#count')).toHaveText('1');
   // The duplicate popup is not shown for a fresh add.
-  await expect(page.locator('#dupModal')).toBeHidden();
+  await expect(page.getByTestId('msg-modal')).toBeHidden();
 
   // Submit the SAME word again (case/space-insensitive dupe on the server).
   await page.fill('#wordInput', '  הדייט   מטבריה ');
   await page.click('#addBtn');
 
-  // A clear duplicate popup appears, naming the word.
-  await expect(page.locator('#dupModal')).toBeVisible();
-  await expect(page.locator('#dupModalText')).toContainText('כבר קיימת ברשימה');
-  await expect(page.locator('#dupModalText')).toContainText('הדייט מטבריה');
+  // A clear duplicate popup appears, naming the word. In info mode there is no
+  // cancel button — just the OK acknowledgement.
+  await expect(page.getByTestId('msg-modal')).toBeVisible();
+  await expect(page.locator('#msgModalText')).toContainText('כבר קיימת ברשימה');
+  await expect(page.locator('#msgModalText')).toContainText('הדייט מטבריה');
+  await expect(page.getByTestId('msg-modal-cancel')).toBeHidden();
   // No new row was added — still exactly one word.
   await expect(page.locator('#count')).toHaveText('1');
 
   // Dismissing the popup ("הבנתי") closes it and leaves the page usable.
-  await page.click('#dupModalOk');
-  await expect(page.locator('#dupModal')).toBeHidden();
+  await page.getByTestId('msg-modal-ok').click();
+  await expect(page.getByTestId('msg-modal')).toBeHidden();
 
   // Escape also closes the dialog (shared modal-dismiss behavior).
   await page.fill('#wordInput', 'הדייט מטבריה');
   await page.click('#addBtn');
-  await expect(page.locator('#dupModal')).toBeVisible();
+  await expect(page.getByTestId('msg-modal')).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.locator('#dupModal')).toBeHidden();
+  await expect(page.getByTestId('msg-modal')).toBeHidden();
 });
 
 test('add-word failure surfaces an error and keeps the typed word', async ({ page }) => {
