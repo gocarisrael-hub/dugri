@@ -69,6 +69,7 @@ const collection = {
 
 afterEach(() => {
   setResend(false);
+  delete process.env.REPLY_TO;
   delete process.env.PUBLIC_BASE_URL;
   delete process.env.RAILWAY_ENVIRONMENT_NAME;
   vi.restoreAllMocks();
@@ -327,6 +328,37 @@ describe('Resend transport (send)', () => {
     expect(notify.isConfigured()).toBe(false);
     await expect(notify.sendOrderPaid(collection, 'https://d.example')).resolves.toBe(false);
     expect(fn).not.toHaveBeenCalled();
+  });
+});
+
+describe('Reply-To routing (REPLY_TO)', () => {
+  it('defaults reply_to to NOTIFY_TO when REPLY_TO is unset', async () => {
+    setResend(true);
+    delete process.env.REPLY_TO;
+    const notify = loadFresh();
+    const { fn, calls } = stubFetch();
+    await expect(notify.sendOrderPaid(collection, 'https://d.example')).resolves.toBe(true);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(calls[0].body.reply_to).toBe('owner@dugri.example');
+  });
+
+  it('uses the REPLY_TO value when it is set (overrides NOTIFY_TO)', async () => {
+    setResend(true);
+    process.env.REPLY_TO = 'business.inbox@gmail.example';
+    const notify = loadFresh();
+    const { fn, calls } = stubFetch();
+    await expect(notify.sendOrderPaid(collection, 'https://d.example')).resolves.toBe(true);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(calls[0].body.reply_to).toBe('business.inbox@gmail.example');
+  });
+
+  it('sets reply_to on the buyer confirmation too (customer replies reach us)', async () => {
+    setResend(true);
+    process.env.REPLY_TO = 'business.inbox@gmail.example';
+    const notify = loadFresh();
+    const { calls } = stubFetch();
+    await expect(notify.sendBuyerConfirmation(collection, 'https://d.example')).resolves.toBe(true);
+    expect(calls[0].body.reply_to).toBe('business.inbox@gmail.example');
   });
 });
 
