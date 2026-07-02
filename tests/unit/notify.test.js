@@ -4,30 +4,54 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-// server/notify.js captures the SMTP_*/NOTIFY_* env vars at require time, so
-// each test loads a fresh copy after setting (or clearing) the environment.
+// server/notify.js captures the RESEND_API_KEY/NOTIFY_* env vars at require
+// time, so each test loads a fresh copy after setting (or clearing) the
+// environment.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const modPath = path.join(__dirname, '..', '..', 'server', 'notify.js');
-// nodemailer is a server dependency (server/node_modules), so resolve it with a
-// require scoped to the server dir — the same cached instance notify.js uses.
-const serverRequire = createRequire(modPath);
 
 function loadFresh() {
   delete require.cache[require.resolve(modPath)];
   return require(modPath);
 }
 
-const SMTP = {
-  SMTP_HOST: 'smtp.gmail.com',
-  SMTP_USER: 'owner@dugri.example',
-  SMTP_PASS: 'app-password',
+// The Resend transport is an HTTPS POST via the global fetch. Stub it so nothing
+// leaves the machine and every request is captured (URL, headers, parsed JSON
+// body) so tests can assert what was sent. `ok`/`status`/`textBody` model the
+// Resend response.
+function stubFetch({ ok = true, status = 200, textBody = '' } = {}) {
+  const calls = [];
+  const fn = vi.fn(async (url, opts) => {
+    const parsed = opts && opts.body ? JSON.parse(opts.body) : null;
+    calls.push({ url, opts, body: parsed });
+    return { ok, status, text: async () => textBody };
+  });
+  vi.stubGlobal('fetch', fn);
+  return { fn, calls };
+}
+
+// Map a captured Resend request body back to the message shape the tests assert
+// on (single recipient, subject, text, html).
+function sentMessage(call) {
+  return {
+    to: Array.isArray(call.body.to) ? call.body.to[0] : call.body.to,
+    from: call.body.from,
+    subject: call.body.subject,
+    text: call.body.text,
+    html: call.body.html,
+  };
+}
+
+const RESEND = {
+  RESEND_API_KEY: 're_test_key',
   NOTIFY_TO: 'owner@dugri.example',
+  NOTIFY_FROM: 'Dugri <orders@dugri.example>',
 };
 
-function setSmtp(on) {
-  for (const k of Object.keys(SMTP)) {
-    if (on) process.env[k] = SMTP[k];
+function setResend(on) {
+  for (const k of Object.keys(RESEND)) {
+    if (on) process.env[k] = RESEND[k];
     else delete process.env[k];
   }
 }
@@ -44,28 +68,29 @@ const collection = {
 };
 
 afterEach(() => {
-  setSmtp(false);
+  setResend(false);
   delete process.env.PUBLIC_BASE_URL;
-  delete process.env.NOTIFY_FROM;
   delete process.env.RAILWAY_ENVIRONMENT_NAME;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('isConfigured', () => {
-  it('is false when SMTP env vars are missing', () => {
-    setSmtp(false);
+  it('is false when the Resend env vars are missing', () => {
+    setResend(false);
     expect(loadFresh().isConfigured()).toBe(false);
   });
 
-  it('is false when only some SMTP vars are set', () => {
-    setSmtp(false);
-    process.env.SMTP_HOST = 'smtp.gmail.com';
-    process.env.SMTP_USER = 'u';
+  it('is false when only some Resend vars are set', () => {
+    setResend(false);
+    process.env.RESEND_API_KEY = 're_test_key';
+    process.env.NOTIFY_TO = 'owner@dugri.example';
+    // NOTIFY_FROM still missing.
     expect(loadFresh().isConfigured()).toBe(false);
   });
 
-  it('is true when host, user, pass and NOTIFY_TO are all set', () => {
-    setSmtp(true);
+  it('is true when RESEND_API_KEY, NOTIFY_TO and NOTIFY_FROM are all set', () => {
+    setResend(true);
     expect(loadFresh().isConfigured()).toBe(true);
   });
 });
@@ -169,34 +194,32 @@ describe('buildBuyerConfirmation', () => {
 });
 
 describe('sendBuyerConfirmation', () => {
-  it('returns false (no-op) when SMTP is unconfigured', async () => {
-    setSmtp(false);
+  it('returns false (no-op) when Resend is unconfigured', async () => {
+    setResend(false);
+    const { fn } = stubFetch();
     await expect(loadFresh().sendBuyerConfirmation(collection)).resolves.toBe(false);
+    expect(fn).not.toHaveBeenCalled();
   });
 
   it('skips gracefully (returns false) when the buyer has no email', async () => {
-    setSmtp(true);
+    setResend(true);
     const notify = loadFresh();
-    const nodemailer = serverRequire('nodemailer');
-    const sendMail = vi.fn(() => Promise.resolve());
-    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail });
+    const { fn } = stubFetch();
     await expect(notify.sendBuyerConfirmation({ ...collection, owner_email: '' })).resolves.toBe(
       false
     );
-    expect(sendMail).not.toHaveBeenCalled();
+    expect(fn).not.toHaveBeenCalled();
   });
 
   it('sends to the buyer address (not NOTIFY_TO) when configured', async () => {
-    setSmtp(true);
+    setResend(true);
     const notify = loadFresh();
-    const nodemailer = serverRequire('nodemailer');
-    const sendMail = vi.fn(() => Promise.resolve());
-    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail });
+    const { fn, calls } = stubFetch();
     await expect(notify.sendBuyerConfirmation(collection, 'https://dugri.example')).resolves.toBe(
       true
     );
-    expect(sendMail).toHaveBeenCalledTimes(1);
-    expect(sendMail.mock.calls[0][0].to).toBe('buyer@example.com');
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(sentMessage(calls[0]).to).toBe('buyer@example.com');
   });
 });
 
@@ -209,26 +232,74 @@ describe('buildFinishedMessage', () => {
   });
 });
 
-describe('non-prod test marker (RAILWAY_ENVIRONMENT_NAME)', () => {
-  // Load notify with SMTP configured + a mocked transporter, then capture the
-  // message actually handed to sendMail (after any env marking is applied).
-  async function captureSend(fn) {
-    setSmtp(true);
+describe('Resend transport (send)', () => {
+  it('POSTs to the Resend URL with the Bearer auth header and the right from/to/subject', async () => {
+    setResend(true);
     const notify = loadFresh();
-    const nodemailer = serverRequire('nodemailer');
-    const sendMail = vi.fn(() => Promise.resolve());
-    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail });
+    const { fn, calls } = stubFetch();
+    await expect(notify.sendOrderPaid(collection, 'https://d.example')).resolves.toBe(true);
+    expect(fn).toHaveBeenCalledTimes(1);
+    const [url, opts] = fn.mock.calls[0];
+    expect(url).toBe('https://api.resend.com/emails');
+    expect(opts.method).toBe('POST');
+    expect(opts.headers.Authorization).toBe('Bearer re_test_key');
+    expect(opts.headers['Content-Type']).toBe('application/json');
+    const msg = sentMessage(calls[0]);
+    expect(msg.from).toBe('Dugri <orders@dugri.example>');
+    // Recipient is sent as an array in the JSON body.
+    expect(calls[0].body.to).toEqual(['owner@dugri.example']);
+    expect(msg.subject).toBe('דוגרי · התקבל תשלום — שירה');
+    expect(msg.text).toContain('התקבל תשלום');
+  });
+
+  it('returns false and logs a warning (no throw) on a non-2xx response', async () => {
+    setResend(true);
+    const notify = loadFresh();
+    stubFetch({ ok: false, status: 422, textBody: '{"message":"domain not verified"}' });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(notify.sendOrderPaid(collection, 'https://d.example')).resolves.toBe(false);
+    expect(warn).toHaveBeenCalled();
+    const logged = warn.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(logged).toContain('422');
+    expect(logged).toContain('domain not verified');
+  });
+
+  it('is a no-op (no fetch) when RESEND_API_KEY is unset', async () => {
+    setResend(true);
+    delete process.env.RESEND_API_KEY;
+    const notify = loadFresh();
+    const { fn } = stubFetch();
+    expect(notify.isConfigured()).toBe(false);
+    await expect(notify.sendOrderPaid(collection, 'https://d.example')).resolves.toBe(false);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op (no fetch) when NOTIFY_FROM is unset', async () => {
+    setResend(true);
+    delete process.env.NOTIFY_FROM;
+    const notify = loadFresh();
+    const { fn } = stubFetch();
+    expect(notify.isConfigured()).toBe(false);
+    await expect(notify.sendOrderPaid(collection, 'https://d.example')).resolves.toBe(false);
+    expect(fn).not.toHaveBeenCalled();
+  });
+});
+
+describe('non-prod test marker (RAILWAY_ENVIRONMENT_NAME)', () => {
+  // Load notify with Resend configured + a stubbed fetch, then capture the
+  // message actually POSTed (after any env marking is applied).
+  async function captureSend(fn) {
+    setResend(true);
+    const notify = loadFresh();
+    const { calls } = stubFetch();
     const ok = await fn(notify);
-    return { ok, sendMail };
+    return { ok, sent: calls.length ? sentMessage(calls[0]) : null };
   }
 
   it('staging: prepends the plain-text subject marker and banners the body', async () => {
     process.env.RAILWAY_ENVIRONMENT_NAME = 'staging';
-    const { ok, sendMail } = await captureSend((n) =>
-      n.sendOrderPaid(collection, 'https://d.example')
-    );
+    const { ok, sent } = await captureSend((n) => n.sendOrderPaid(collection, 'https://d.example'));
     expect(ok).toBe(true);
-    const sent = sendMail.mock.calls[0][0];
     expect(sent.subject.startsWith('הזמנת בדיקה (staging) — ')).toBe(true);
     // The original subject is still present after the marker.
     expect(sent.subject).toContain('דוגרי · התקבל תשלום — שירה');
@@ -244,18 +315,17 @@ describe('non-prod test marker (RAILWAY_ENVIRONMENT_NAME)', () => {
     const buyer = await captureSend((n) =>
       n.sendBuyerConfirmation(collection, 'https://d.example')
     );
-    expect(buyer.sendMail.mock.calls[0][0].subject).toContain('הזמנת בדיקה (staging) — ');
-    expect(buyer.sendMail.mock.calls[0][0].text).toContain('זו הזמנת בדיקה מסביבת staging');
+    expect(buyer.sent.subject).toContain('הזמנת בדיקה (staging) — ');
+    expect(buyer.sent.text).toContain('זו הזמנת בדיקה מסביבת staging');
 
     const finished = await captureSend((n) => n.sendOrderFinished(collection));
-    expect(finished.sendMail.mock.calls[0][0].subject).toContain('הזמנת בדיקה (staging) — ');
-    expect(finished.sendMail.mock.calls[0][0].text).toContain('זו הזמנת בדיקה מסביבת staging');
+    expect(finished.sent.subject).toContain('הזמנת בדיקה (staging) — ');
+    expect(finished.sent.text).toContain('זו הזמנת בדיקה מסביבת staging');
   });
 
   it('production: no marker — subject and body are unchanged', async () => {
     process.env.RAILWAY_ENVIRONMENT_NAME = 'production';
-    const { sendMail } = await captureSend((n) => n.sendOrderPaid(collection, 'https://d.example'));
-    const sent = sendMail.mock.calls[0][0];
+    const { sent } = await captureSend((n) => n.sendOrderPaid(collection, 'https://d.example'));
     expect(sent.subject).toBe('דוגרי · התקבל תשלום — שירה');
     expect(sent.subject).not.toContain('הזמנת בדיקה');
     expect(sent.text).not.toContain('הזמנת בדיקה');
@@ -266,16 +336,14 @@ describe('non-prod test marker (RAILWAY_ENVIRONMENT_NAME)', () => {
 
   it('Production (any casing): treated as prod — no marker', async () => {
     process.env.RAILWAY_ENVIRONMENT_NAME = 'Production';
-    const { sendMail } = await captureSend((n) => n.sendOrderPaid(collection, 'https://d.example'));
-    const sent = sendMail.mock.calls[0][0];
+    const { sent } = await captureSend((n) => n.sendOrderPaid(collection, 'https://d.example'));
     expect(sent.subject).toBe('דוגרי · התקבל תשלום — שירה');
     expect(sent.text).not.toContain('הזמנת בדיקה');
   });
 
   it('unset: no marker (local/tests behave like production)', async () => {
     delete process.env.RAILWAY_ENVIRONMENT_NAME;
-    const { sendMail } = await captureSend((n) => n.sendOrderPaid(collection, 'https://d.example'));
-    const sent = sendMail.mock.calls[0][0];
+    const { sent } = await captureSend((n) => n.sendOrderPaid(collection, 'https://d.example'));
     expect(sent.subject).toBe('דוגרי · התקבל תשלום — שירה');
     expect(sent.text).not.toContain('הזמנת בדיקה');
   });
@@ -285,11 +353,10 @@ describe('non-prod test marker (RAILWAY_ENVIRONMENT_NAME)', () => {
     // test marker while the amountCharged content lives in the body. A free
     // order in a non-prod env must show both at once.
     process.env.RAILWAY_ENVIRONMENT_NAME = 'staging';
-    const { ok, sendMail } = await captureSend((n) =>
+    const { ok, sent } = await captureSend((n) =>
       n.sendOrderPaid(collection, 'https://d.example', { amountCharged: 0 })
     );
     expect(ok).toBe(true);
-    const sent = sendMail.mock.calls[0][0];
     // #84 test marker present...
     expect(sent.subject.startsWith('הזמנת בדיקה (staging) — ')).toBe(true);
     expect(sent.text.startsWith('זו הזמנת בדיקה מסביבת staging — לא הזמנה אמיתית.\n\n')).toBe(true);
@@ -302,18 +369,18 @@ describe('non-prod test marker (RAILWAY_ENVIRONMENT_NAME)', () => {
 
 describe('send* never throw', () => {
   it('sendOrderPaid returns false (no-op) when unconfigured', async () => {
-    setSmtp(false);
+    setResend(false);
     await expect(loadFresh().sendOrderPaid(collection)).resolves.toBe(false);
   });
 
   it('sendOrderFinished returns false and never throws when the transport fails', async () => {
-    setSmtp(true);
+    setResend(true);
     const notify = loadFresh();
-    // Force the nodemailer transport to reject; the wrapper must swallow it.
-    const nodemailer = serverRequire('nodemailer');
-    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({
-      sendMail: () => Promise.reject(new Error('smtp down')),
-    });
+    // Force fetch to reject; the wrapper must swallow it.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new Error('network down')))
+    );
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     await expect(notify.sendOrderFinished(collection)).resolves.toBe(false);
   });

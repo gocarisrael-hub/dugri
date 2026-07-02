@@ -6,16 +6,16 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 
-// Boots the real Express app with PeleCard creds, ADMIN_KEY, AND SMTP config so
-// notify.isConfigured() is true and the paid-transition emails actually fire.
-// nodemailer's transport is stubbed so nothing leaves the machine; every sent
-// message is captured so we can assert who it went to and the amount it shows.
-// This covers the "free (100%-coupon) order sends emails showing 0, not the
-// full package price" behavior and guards the no-coupon path against regression.
+// Boots the real Express app with PeleCard creds, ADMIN_KEY, AND Resend config
+// so notify.isConfigured() is true and the paid-transition emails actually fire.
+// notify sends over the Resend HTTPS API (global fetch), which is stubbed so
+// nothing leaves the machine; every sent message is captured so we can assert
+// who it went to and the amount it shows. This covers the "free (100%-coupon)
+// order sends emails showing 0, not the full package price" behavior and guards
+// the no-coupon path against regression.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
-const serverRequire = createRequire(path.join(serverDir, 'notify.js'));
 
 const ADMIN_KEY = 'test-admin-key';
 const realFetch = globalThis.fetch;
@@ -27,7 +27,7 @@ let base;
 
 let nextInit = null;
 let nextGetTx = null;
-const sent = []; // { to, subject, text } for every stubbed sendMail
+const sent = []; // { to, subject, text } for every Resend email the app sent
 
 function jsonRes(obj) {
   return { ok: true, status: 200, json: async () => obj };
@@ -40,11 +40,10 @@ beforeAll(async () => {
   process.env.PELECARD_PASSWORD = 'secret';
   process.env.PUBLIC_BASE_URL = 'https://test.dugri.example';
   process.env.ADMIN_KEY = ADMIN_KEY;
-  // SMTP config so notify goes live (dormant otherwise).
-  process.env.SMTP_HOST = 'smtp.gmail.com';
-  process.env.SMTP_USER = 'owner@dugri.example';
-  process.env.SMTP_PASS = 'app-password';
+  // Resend config so notify goes live (dormant otherwise).
+  process.env.RESEND_API_KEY = 're_test_key';
   process.env.NOTIFY_TO = 'owner@dugri.example';
+  process.env.NOTIFY_FROM = 'Dugri <orders@dugri.example>';
 
   for (const f of ['db.js', 'pelecard.js', 'notify.js', 'index.js']) {
     delete require.cache[require.resolve(path.join(serverDir, f))];
@@ -52,21 +51,24 @@ beforeAll(async () => {
   db = require(path.join(serverDir, 'db.js'));
   app = require(path.join(serverDir, 'index.js'));
 
-  // Capture every email instead of sending it.
-  const nodemailer = serverRequire('nodemailer');
-  vi.spyOn(nodemailer, 'createTransport').mockReturnValue({
-    sendMail: vi.fn(async (msg) => {
-      sent.push({ to: msg.to, subject: msg.subject, text: msg.text });
-      return { messageId: 'stub' };
-    }),
-  });
-
+  // Stub the global fetch used for BOTH PeleCard calls and the Resend email
+  // API. Resend requests are captured (never actually sent) so we can assert
+  // recipient + amount for each email.
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (url) => {
+    vi.fn(async (url, opts) => {
       const u = String(url);
       if (u.includes('/PaymentGW/init')) return jsonRes(nextInit);
       if (u.includes('/PaymentGW/GetTransaction')) return jsonRes(nextGetTx);
+      if (u.includes('api.resend.com')) {
+        const msg = opts && opts.body ? JSON.parse(opts.body) : {};
+        sent.push({
+          to: Array.isArray(msg.to) ? msg.to[0] : msg.to,
+          subject: msg.subject,
+          text: msg.text,
+        });
+        return { ok: true, status: 200, text: async () => '{"id":"stub"}' };
+      }
       throw new Error('unexpected fetch ' + u);
     })
   );
