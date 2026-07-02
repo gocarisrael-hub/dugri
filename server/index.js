@@ -330,6 +330,16 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       discount_pct: couponCode ? discountPct : null,
     });
     if (couponCode) db.incrementCouponUses(couponCode);
+    // A free (100%-coupon) order is now paid — fire the same owner + buyer
+    // emails as the PeleCard callback. Fire-and-forget; dormant without SMTP.
+    if (notify.isConfigured()) {
+      const enriched = {
+        ...db.getCollection(req.params.id),
+        count: db.listWords(req.params.id).length,
+      };
+      notify.sendOrderPaid(enriched, base).catch(() => {});
+      notify.sendBuyerConfirmation(enriched, base).catch(() => {});
+    }
     return res.json({ free: true, paid: true, total: 0 });
   }
 
