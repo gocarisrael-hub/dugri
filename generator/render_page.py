@@ -57,7 +57,12 @@ def _title_metrics(font_path, ref=200):
     return ImageFont.truetype(font_path, ref), ref
 
 
+_TITLE_UID = [0]
+
+
 def title_block(box, lines, fill, outline, font_path=None):
+    _TITLE_UID[0] += 1
+    uid = _TITLE_UID[0]
     """Graffiti title (Sprite Graffiti): sized so the WIDEST line fills the box
     width, tight line spacing, a drop shadow + thick dark outline behind a light
     fill — matching the real card's 3D bubble look."""
@@ -75,18 +80,27 @@ def title_block(box, lines, fill, outline, font_path=None):
     top = (y0 + y1) / 2 - total / 2
     sw = size * 0.065                                     # outline (matches original)
     dx, dy = size * 0.035, size * 0.05                    # subtle drop shadow
-    out = []
+    bulge = size * 0.11                                   # graffiti upward arch
+    defs, out = [], []
     for k, line in enumerate(lines):
         by = top + gap * k + size * 0.33
-        out.append(f'<text x="{cx+dx:.2f}" y="{by+dy:.2f}" font-family="TitleFont" '
-                   f'font-size="{size:.2f}" fill="{outline}" text-anchor="middle" '
-                   f'xml:space="preserve">{escape(line)}</text>')
-        out.append(f'<text x="{cx:.2f}" y="{by:.2f}" font-family="TitleFont" '
-                   f'font-size="{size:.2f}" fill="{fill}" stroke="{outline}" '
-                   f'stroke-width="{sw:.2f}" paint-order="stroke" '
-                   f'stroke-linejoin="round" text-anchor="middle" '
-                   f'xml:space="preserve">{escape(line)}</text>')
-    return "".join(out)
+        wln = ratios[k] * size
+        xl, xr = cx - wln / 2 - size * 0.15, cx + wln / 2 + size * 0.15
+
+        def arc(pid, ox, oy):
+            defs.append(f'<path id="{pid}" fill="none" d="M {xl+ox:.1f} {by+oy:.1f} '
+                        f'Q {cx+ox:.1f} {by+oy-2*bulge:.1f} {xr+ox:.1f} {by+oy:.1f}"/>')
+
+        arc(f"t{uid}s{k}", dx, dy)                              # shadow path
+        arc(f"t{uid}m{k}", 0, 0)                                # main path
+        out.append(f'<text font-family="TitleFont" font-size="{size:.2f}" '
+                   f'fill="{outline}"><textPath href="#t{uid}s{k}" startOffset="50%" '
+                   f'text-anchor="middle">{escape(line)}</textPath></text>')
+        out.append(f'<text font-family="TitleFont" font-size="{size:.2f}" fill="{fill}" '
+                   f'stroke="{outline}" stroke-width="{sw:.2f}" paint-order="stroke" '
+                   f'stroke-linejoin="round"><textPath href="#t{uid}m{k}" startOffset="50%" '
+                   f'text-anchor="middle">{escape(line)}</textPath></text>')
+    return "<defs>" + "".join(defs) + "</defs>" + "".join(out)
 
 
 def build_page(theme, clean_svg, words_by_card, title_lines):
