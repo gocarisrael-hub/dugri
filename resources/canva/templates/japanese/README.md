@@ -4,8 +4,11 @@ Human-supplied fields. Slot positions, colors, grid, sizes and number format
 are auto-detected from the clean+filled pair — not listed here.
 
 ## fonts
-- title_font: MISSING — need the title font file
-- word_font:  MISSING — need the Hebrew word font file
+- title_font: Quick.ttf
+- word_font:  Fredoka-Medium.ttf
+
+> ⚠️ **Word font is a stand-in** — real design uses **Egul**.
+> #todo — replace word_font with Egul. (title_font Quick is correct.)
 
 ## title
 - title_text: "{NAME}'S {AGE}S"
@@ -24,4 +27,4 @@ are auto-detected from the clean+filled pair — not listed here.
 ## status
 - filled (with text): present
 - clean (no text):    present
-- fonts:              MISSING — need title + word font files
+- fonts:              present (title correct; words stand-in — see #todo)
