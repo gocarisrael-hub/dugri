@@ -7,6 +7,10 @@ are auto-detected from the clean+filled pair — not listed here.
 - title_font: Sprite Graffiti.otf
 - word_font:  almoni-neue-aaa-bold-OFFICE.ttf
 
+> ⚠️ **Fonts not matching the real design.** The word font is a **stand-in** —
+> the real design uses **FB Bloomfield**, not almoni-neue. Swap it in when sourced.
+> #todo — replace word_font with FB Bloomfield and re-verify the words match.
+
 ## title
 - title_text: "{NAME}'S WELCOME PARTY"
 - lines: 3  ({NAME}'S / WELCOME / PARTY)
