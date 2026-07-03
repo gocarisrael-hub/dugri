@@ -103,4 +103,54 @@ test.describe('fullscreen zoom overlay', () => {
     // the cloned artwork is present (from the board panel, the active tab)
     await expect(page.locator('#zoomContent svg')).toBeVisible();
   });
+
+  test('tapping the COLLAPSED mini-preview (step 5) does NOT open the overlay', async ({
+    page,
+  }) => {
+    await page.goto('/options.html?step=5');
+    await expect(page.getByTestId('preview')).toHaveClass(/is-collapsed/);
+    // the ⤢ affordance is hidden here, and a stray tap on the reminder thumbnail
+    // must be a no-op — not a jarring fullscreen zoom.
+    const stage = page.getByTestId('preview-stage');
+    await expect(stage).toBeVisible();
+    await stage.click({ position: { x: 8, y: 8 } });
+    await expect(page.getByTestId('zoom-overlay')).toBeHidden();
+  });
+
+  test('a drag/pan is not misread as a double-tap', async ({ page }) => {
+    await page.goto('/options.html');
+    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await page.getByTestId('zoom-open').click();
+    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
+
+    const zoomVar = () =>
+      page
+        .getByTestId('zoom-content')
+        .evaluate((el) => parseFloat(getComputedStyle(el).getPropertyValue('--zoom') || '1'));
+    expect(await zoomVar()).toBe(1);
+
+    // first a real tap (sets the double-tap timer)…
+    const vp = page.getByTestId('zoom-viewport');
+    await vp.dispatchEvent('pointerdown', { clientX: 120, clientY: 200 });
+    await vp.dispatchEvent('pointerup', { clientX: 120, clientY: 200 });
+    // …then, within the double-tap window, a DRAG (moved far). It must NOT toggle.
+    await page.waitForTimeout(80);
+    await vp.dispatchEvent('pointerdown', { clientX: 120, clientY: 200 });
+    await vp.dispatchEvent('pointermove', { clientX: 260, clientY: 200 });
+    await vp.dispatchEvent('pointerup', { clientX: 260, clientY: 200 });
+    expect(await zoomVar()).toBe(1);
+  });
+});
+
+// The rotate-device hint is only meaningful on a touch device held in portrait.
+test.describe('zoom rotate hint', () => {
+  test('is not shown on desktop', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'Desktop Chrome', 'desktop-only check');
+    await page.goto('/options.html');
+    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await page.getByTestId('zoom-open').click();
+    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
+    // fine-pointer / landscape desktop → no nonsense "rotate your device" hint
+    await expect(page.getByTestId('zoom-hint')).toBeHidden();
+  });
 });

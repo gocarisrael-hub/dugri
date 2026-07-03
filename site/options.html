@@ -450,7 +450,13 @@
         width: 100%;
         height: auto;
         max-width: 100%;
-        max-height: none;
+        /* RESERVE the sheet's box from first paint — before the lazy SVG
+           resolves — at exactly the size the sheet will be (width-driven height
+           by the page ratio, same viewport cap as the svg). This keeps the slot
+           at its final height while empty, so the tiles/heading below never
+           reflow when the SVG lands. */
+        aspect-ratio: var(--page-ratio);
+        max-height: min(56vh, 460px);
         /* Full-page designs print their background all the way to the edge, so
            there is NO fake print-bleed frame — the page is shown edge-to-edge. */
       }
@@ -1114,12 +1120,11 @@
           min-height: 48px;
           padding: 8px;
         }
-        /* uncollapsed (steps 1-3) fills the stage via the base rules;
-           only the collapsed name/contact preview keeps a small fixed cap. */
-        .preview-card.is-collapsed .preview-panel svg,
-        .preview-card.is-collapsed .preview-panel img {
-          max-height: 104px;
-        }
+        /* uncollapsed (steps 1-3) fills the stage via the base rules; the
+           collapsed name/contact mini-preview keeps its small cap from the base
+           enumerated rule (clamp(84px, 12vh, 128px)). No override here — a lower-
+           specificity `.is-collapsed .preview-panel svg` rule would be dead (the
+           per-panel base selector outranks it), so we don't add one. */
         /* steps sit right under the preview with a tighter rhythm */
         .wiz-step {
           margin-top: 12px;
@@ -1308,7 +1313,9 @@
           padding: 4px;
           overflow: visible;
         }
-        /* let the sheet use more of a phone's tall viewport than the 56vh base */
+        /* let the sheet use more of a phone's tall viewport than the 56vh base;
+           the reserved active-panel box uses the same cap so it can't reflow. */
+        .preview-card:not(.is-collapsed) .preview-panel[data-active='true'],
         .preview-card:not(.is-collapsed) .preview-panel[data-panel='front'] svg,
         .preview-card:not(.is-collapsed) .preview-panel[data-panel='back'] svg,
         .preview-card:not(.is-collapsed) .preview-panel[data-panel='board'] svg,
@@ -1724,6 +1731,7 @@
         applyOriginal,
         mainAnchor,
         lightTint,
+        pageTint,
         validateManifest,
       } from './js/configurator.js';
       import { track } from './js/analytics.js';
@@ -1873,6 +1881,11 @@
         await ensurePanel(activeTab);
       }
 
+      // brand fallback tint (matches :root --hot) so the page theme NEVER keeps a
+      // previous design's stale tint — even for a fixed design shipped without an
+      // accent and without anchors.
+      const DEFAULT_TINT = '#e5197d';
+
       // apply current color palette to every preview panel + page accent
       function recolor() {
         const d = DESIGNS[designIndex];
@@ -1883,13 +1896,12 @@
         const ci = isFixedDesign() ? -1 : colorIndex;
 
         // 1) PAGE THEME (accent + background). Do this FIRST and for EVERY design,
-        // including fixed/empty-anchor ones — the design's own representative accent
-        // (d.accent) drives the page tint even when the SVG itself can't recolor.
-        // A chosen slider colour overrides it.
-        let activeMain;
-        if (ci < 0) activeMain = d.accent || (anchors.length ? mainAnchor(anchors) : null);
-        else activeMain = (MAIN_COLORS[ci] || {}).hex || d.accent || null;
-        if (activeMain) {
+        // including fixed/empty-anchor ones — a chosen slider colour wins, else the
+        // design's accent, else its anchor, else the brand tint (never null), so we
+        // never keep a previous design's stale tint.
+        const colorHex = ci < 0 ? null : (MAIN_COLORS[ci] || {}).hex;
+        const activeMain = pageTint(colorHex, d.accent, anchors, DEFAULT_TINT);
+        {
           const root = document.documentElement.style;
           root.setProperty('--accent', activeMain);
           root.setProperty('--cfg-bg', lightTint(activeMain));
@@ -2375,6 +2387,14 @@
       }
 
       function maybeShowHint() {
+        // Only useful on a touch device held in PORTRAIT — that's when rotating
+        // to landscape actually makes the landscape sheet fill the screen. On a
+        // desktop, or a device already in landscape, the hint is nonsense.
+        const useful =
+          typeof matchMedia === 'function' &&
+          matchMedia('(pointer: coarse)').matches &&
+          matchMedia('(orientation: portrait)').matches;
+        if (!useful) return;
         let seen = false;
         try {
           seen = localStorage.getItem('dugri_zoom_hint') === '1';
@@ -2396,6 +2416,10 @@
 
       function openZoom() {
         if (zoomOpen) return;
+        // Not from the collapsed name/contact mini-preview (steps 4-5): there the
+        // ⤢ affordance is hidden and the thumbnail is just a reminder, so a stray
+        // tap must not throw up a fullscreen zoom with no way it was signalled.
+        if (previewCard.classList.contains('is-collapsed')) return;
         fillZoom();
         if (!zoomContent.querySelector('svg, img')) return; // nothing rendered yet
         zoomOpener = document.activeElement;
@@ -2463,9 +2487,29 @@
         if (e.target === zoomViewport) closeZoom();
       });
 
-      // double-tap / double-click toggles zoom (reliable in the IG in-app browser)
+      // double-tap / double-click toggles zoom (reliable in the IG in-app browser).
+      // A pointerup only counts as a TAP if the pointer barely moved since its
+      // pointerdown — otherwise dragging to pan a zoomed sheet would be misread as
+      // a tap and snap the zoom mid-read.
+      const TAP_MOVE_MAX = 10; // px
       let lastTap = 0;
-      zoomViewport.addEventListener('pointerup', () => {
+      let downX = 0;
+      let downY = 0;
+      let downMoved = false;
+      zoomViewport.addEventListener('pointerdown', (e) => {
+        downX = e.clientX;
+        downY = e.clientY;
+        downMoved = false;
+      });
+      zoomViewport.addEventListener('pointermove', (e) => {
+        if (Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_MOVE_MAX) downMoved = true;
+      });
+      zoomViewport.addEventListener('pointerup', (e) => {
+        // a drag/pan (moved past the threshold) is never a tap
+        if (downMoved || Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_MOVE_MAX) {
+          lastTap = 0;
+          return;
+        }
         const now = Date.now();
         if (now - lastTap < 320) {
           setZoom(zoomScale > ZOOM_MIN ? ZOOM_MIN : 2.5);

@@ -226,6 +226,23 @@ export function mainAnchor(anchors) {
 }
 
 /**
+ * Resolve the page-theme tint (accent + light background) for the configurator.
+ * Priority: an explicitly chosen slider colour, then the design's representative
+ * accent, then its most-saturated anchor, then a guaranteed fallback — so the
+ * page theme NEVER keeps a previous design's stale tint, even for a fixed design
+ * shipped without an accent and without anchors.
+ * @param {?string} colorHex chosen slider colour, or null/'' for the original
+ * @param {?string} accent   the design's representative accent (d.accent)
+ * @param {string[]} [anchors=[]] the design's anchor colours
+ * @param {string} fallback  brand default tint (never falls through to null)
+ * @returns {string}
+ */
+export function pageTint(colorHex, accent, anchors = [], fallback) {
+  const anch = anchors && anchors.length ? mainAnchor(anchors) : null;
+  return colorHex || accent || anch || fallback;
+}
+
+/**
  * A soft, very light tint of a color — for theming a page/stage background
  * to the chosen color without overpowering it.
  * @param {string} hex

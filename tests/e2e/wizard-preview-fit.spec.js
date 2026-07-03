@@ -16,21 +16,31 @@ const LAPTOP = { width: 1366, height: 768 };
 const LANDSCAPE = { width: 960, height: 480 };
 const DESKTOP_MID = { width: 1440, height: 900 };
 
-// The invariant that must always hold, even now that a step may scroll: the
-// fixed Back/Next bar sits fully within the viewport and Next is visible/usable.
-// (Previously this also asserted zero page scroll; that is intentionally relaxed
-// because the preview box is prioritised over fitting every step on one screen.)
-async function assertBarReachable(page) {
+// The box is prioritised over strict no-scroll, so these wide/short viewports MAY
+// scroll now. The invariant that must actually hold — and that a real regression
+// (content overflowing and covering Next) would break — is that the Next button
+// is HITTABLE: within the viewport AND the topmost element at its centre (not
+// covered by overflowing content or a stray overlay). This is a meaningful check,
+// unlike asserting a position:fixed bar's own rect is on-screen (always true).
+async function assertNextHittable(page) {
   await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
-  const barInView = await page.evaluate(() => {
-    const b = document.querySelector('.wiz-bar').getBoundingClientRect();
-    return b.bottom <= window.innerHeight + 1 && b.top >= 0;
+  const hit = await page.evaluate(() => {
+    const btn = document.getElementById('nextBtn');
+    const r = btn.getBoundingClientRect();
+    const el = document.elementFromPoint(
+      Math.round(r.left + r.width / 2),
+      Math.round(r.top + r.height / 2)
+    );
+    return {
+      inViewport: r.top >= 0 && r.bottom <= window.innerHeight + 1,
+      hitsButton: !!(el && (el === btn || btn.contains(el))),
+    };
   });
-  expect(barInView).toBe(true);
-  await expect(page.getByTestId('next-btn')).toBeVisible();
+  expect(hit.inViewport).toBe(true);
+  expect(hit.hitsButton).toBe(true);
 }
 
-test.describe('order wizard keeps the sticky bar reachable on wide/short screens', () => {
+test.describe('order wizard keeps Next hittable on wide/short screens', () => {
   // viewport-specific layout checks — run once, on a single project.
   test.beforeEach(({}, testInfo) => {
     test.skip(
@@ -46,13 +56,27 @@ test.describe('order wizard keeps the sticky bar reachable on wide/short screens
   ]) {
     test.describe(`on a ${label} screen`, () => {
       for (const step of [1, 2, 3, 4, 5]) {
-        test(`step ${step}: the sticky bar stays reachable`, async ({ page }) => {
+        test(`step ${step}: Next is not covered and stays clickable`, async ({ page }) => {
           await page.setViewportSize(viewport);
           await page.goto('/options.html?step=' + step);
           await expect(page.getByTestId('step-' + step)).toBeVisible();
-          await assertBarReachable(page);
+          await assertNextHittable(page);
         });
       }
+    });
+
+    test(`on a ${label} screen: clicking Next actually advances the wizard`, async ({ page }) => {
+      // The real behavioural check — Next isn't just present/uncovered, it works
+      // and moves the wizard forward through the preview-heavy steps.
+      await page.setViewportSize(viewport);
+      await page.goto('/options.html?step=1');
+      await expect(page.getByTestId('step-1')).toBeVisible();
+      await page.getByTestId('next-btn').click();
+      await expect(page.getByTestId('step-2')).toBeVisible();
+      await page.getByTestId('next-btn').click();
+      await expect(page.getByTestId('step-3')).toBeVisible();
+      await page.getByTestId('next-btn').click();
+      await expect(page.getByTestId('step-4')).toBeVisible();
     });
   }
 });
@@ -150,5 +174,35 @@ test.describe('the live sheet fills the card width on a phone', () => {
     await expect(page.getByTestId('tab-board')).toBeHidden();
     const m = await sheetMetrics(page);
     expect(m.ratio).toBeGreaterThanOrEqual(0.9);
+  });
+
+  // Regression: the preview must RESERVE its box up-front so it doesn't reflow the
+  // heading/tiles below when the (lazy, multi-MB) SVG lands. We block the SVG so
+  // the panel stays empty, read its reserved height, then compare it to the final
+  // rendered height — they must match (no jump).
+  test('the preview reserves its box (no reflow when the SVG loads)', async ({ page }) => {
+    await page.goto('/options.html');
+    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
+    const loaded = await page.evaluate(() =>
+      Math.round(
+        document.querySelector('.preview-panel[data-active="true"]').getBoundingClientRect().height
+      )
+    );
+
+    // now block the deck SVGs so the active panel stays empty on a fresh load…
+    await page.route('**/designs/**/*.svg', (r) => r.abort());
+    await page.goto('/options.html');
+    await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
+    const reserved = await page.evaluate(() =>
+      Math.round(
+        document.querySelector('.preview-panel[data-active="true"]').getBoundingClientRect().height
+      )
+    );
+
+    // …the empty slot already occupies a real landscape box (not ~0)…
+    expect(reserved).toBeGreaterThan(120);
+    // …and it matches the final height, so nothing shifts when the SVG lands.
+    expect(Math.abs(reserved - loaded)).toBeLessThanOrEqual(24);
   });
 });
