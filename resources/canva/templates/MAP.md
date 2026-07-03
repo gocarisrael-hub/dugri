@@ -6,7 +6,7 @@
 |---|:---:|:---:|:---:|---|
 | `bachelorette` | ✅ | ✅ | ✅ | {NAME}'S BACHELORETTE |
 | `trip comeback` | ✅ | ✅ | ✅† | {NAME}'S WELCOME PARTY |
-| `birthday-girls` | ✅ | ✅ | ❌ | {NAME}'S B-DAY |
+| `birthday-girls` | ✅ | ✅ | ✅ | {NAME}'S B-DAY |
 | `birthday-girls-neon` | ✅ | ✅ | ✅ | XOXO {NAME}'S BIRTHDAY |
 | `birthday-boys-basketball` | ✅ | ✅ | ❌ | {NAME} בן {AGE} |
 | `anniversary` | ✅ | ✅ | ✅† | {YEARS} שנה נישואין / {NAME1} ו{NAME2} |
@@ -14,7 +14,7 @@
 | `football-boys` | ✅ | ✅ | ✅† | {NAME}'S B-DAY |
 
 ## still missing fonts
-- `birthday-girls`, `birthday-boys-basketball` — need title + Hebrew word font.
+- `birthday-boys-basketball` — need title + Hebrew word font (last one).
 
 ## stand-in fonts († — real not free / TBD, see README #todo)
 - `trip comeback` words → **FB Bloomfield**

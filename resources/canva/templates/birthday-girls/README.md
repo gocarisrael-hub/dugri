@@ -4,8 +4,8 @@ Human-supplied fields. Slot positions, colors, grid, sizes and number format
 are auto-detected from the clean+filled pair — not listed here.
 
 ## fonts
-- title_font: MISSING — need the title font file
-- word_font:  MISSING — need the Hebrew word font file
+- title_font: CooperLtBTBold.ttf
+- word_font:  Stigma Display Typeface.ttf
 
 ## title
 - title_text: "{NAME}'S B-DAY"
@@ -23,4 +23,4 @@ are auto-detected from the clean+filled pair — not listed here.
 ## status
 - filled (with text): present
 - clean (no text):    present
-- fonts:              MISSING — need title + word font files
+- fonts:              present
