@@ -4,8 +4,12 @@ Human-supplied fields. Slot positions, colors, grid, sizes and number format
 are auto-detected from the clean+filled pair — not listed here.
 
 ## fonts
-- title_font: MISSING — need the title font file
-- word_font:  MISSING — need the Hebrew word font file
+- title_font: Assistant-Bold.ttf
+- word_font:  PlaypenSansHebrew-Medium.ttf
+
+> ⚠️ **Fonts not matching the real design — both are stand-ins.**
+> #todo — title_font real is **Alphon**; swap when sourced.
+> #todo — word_font real is **FB Bloomfield**; swap when sourced.
 
 ## title
 - title_text: "{NAME} בן {AGE}"
@@ -24,4 +28,4 @@ are auto-detected from the clean+filled pair — not listed here.
 ## status
 - filled (with text): present
 - clean (no text):    present
-- fonts:              MISSING — need title + word font files
+- fonts:              present (both stand-ins — see #todo)
