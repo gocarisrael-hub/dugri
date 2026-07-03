@@ -88,20 +88,16 @@
         margin: 0 auto;
         padding: 0 22px;
       }
-      /* The wizard fills the area between the fixed nav (body padding-top) and the
-         fixed Back/Next bar (body padding-bottom) as one flex column, so the live
-         preview can grow to use the whole available height on any screen. When a
-         step's controls need more room the preview flex-shrinks instead of the
-         page scrolling — preserving the "everything fits, no scroll" behaviour. */
+      /* The wizard is one flex column between the fixed nav (body padding-top) and
+         the fixed Back/Next bar (body padding-bottom). It fills at LEAST the space
+         between them, but is free to GROW: the live preview is the dominant focal
+         element and is sized to fill the card WIDTH (see the width-driven sheet
+         rules below), so on a step where the preview + controls exceed one screen
+         the page scrolls rather than shrinking the preview back to a sliver. The
+         sticky bar is fixed, so it stays reachable regardless. */
       main.wrap {
         display: flex;
         flex-direction: column;
-        /* DEFINITE height (not just min-height) so the flex column has a bounded
-           main size: the live preview (flex:1, min-height:0) then SHRINKS to fit
-           instead of the wrap growing with the taller full-page landscape preview
-           and pushing the page into a scroll. */
-        height: calc(100vh - var(--nav-h) - var(--wizbar-h));
-        height: calc(100dvh - var(--nav-h) - var(--wizbar-h));
         min-height: calc(100vh - var(--nav-h) - var(--wizbar-h));
         min-height: calc(100dvh - var(--nav-h) - var(--wizbar-h));
       }
@@ -380,13 +376,14 @@
         border-radius: 22px;
         padding: 18px;
         box-shadow: var(--shadow-md);
-        max-width: 520px;
+        /* the live preview is the dominant focal element — give it a wide column */
+        max-width: 620px;
         margin: 12px auto 0;
-        /* fill the leftover column height (steps 1-3) but shrink if a step's
-           controls need the room, so the page never has to scroll */
+        /* size to the (width-driven) preview rather than stretching to fill the
+           column; the page scrolls if a step needs more than one screen. */
         display: flex;
         flex-direction: column;
-        flex: 1 1 auto;
+        flex: 0 0 auto;
         min-height: 0;
         width: 100%;
       }
@@ -428,11 +425,10 @@
           ),
           var(--cfg-bg, var(--bg));
         border: 1px dashed var(--blush-deep);
-        /* Grow to consume the card's leftover height; the active preview centers
-           here (grid, not flex, so a portrait card fits by height instead of
-           filling the width and growing too tall). The floor stays small so the
-           preview yields to a step's controls and the page never scrolls. */
-        flex: 1 1 auto;
+        /* Size to the sheet it holds (the sheet fills the card width, height by
+           its A4-landscape ratio). Grid-centers the page; overflow hidden keeps
+           the rounded corners clean. */
+        flex: 0 0 auto;
         min-height: 60px;
         display: grid;
         place-items: center;
@@ -449,12 +445,12 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        /* fill the stage and center the page inside it; the page itself is
-           CONTAINed (max-width/height + its own ratio), never overflowing. */
+        /* fill the stage width and let the sheet drive the height (see the
+           width-driven svg rule below); the page is shown edge-to-edge. */
         width: 100%;
-        height: 100%;
+        height: auto;
         max-width: 100%;
-        max-height: 100%;
+        max-height: none;
         /* Full-page designs print their background all the way to the edge, so
            there is NO fake print-bleed frame — the page is shown edge-to-edge. */
       }
@@ -469,20 +465,21 @@
         pointer-events: none;
       }
       /* ALL previews (front/back/board) are full-page LANDSCAPE artboards
-         (~1.414:1, A4 landscape). The page is CONTAINed within the stage — sized
-         to the largest box of its own ratio that fits both the stage width AND
-         height — so the whole 8-card page stays visible and never forces a scroll
-         (a landscape page sized to width alone would overflow a short stage). */
+         (~1.414:1, A4 landscape). The sheet FILLS the card width (so it reads as
+         the dominant focal element instead of a height-shrunk sliver); its height
+         follows the page ratio, capped by a share of the viewport so it never
+         grows absurdly tall on a big/short screen. The collapsed name/contact
+         mini-preview overrides this with its own small height cap. */
       .preview-panel[data-panel='front'] svg,
       .preview-panel[data-panel='back'] svg,
       .preview-panel[data-panel='board'] svg,
       .preview-panel[data-panel='front'] img,
       .preview-panel[data-panel='back'] img,
       .preview-panel[data-panel='board'] img {
-        width: auto;
+        width: 100%;
         height: auto;
         max-width: 100%;
-        max-height: 100%;
+        max-height: min(56vh, 460px);
         aspect-ratio: var(--page-ratio);
       }
       .preview-panel svg,
@@ -496,6 +493,51 @@
         color: var(--muted);
         font-size: 15px;
         text-align: center;
+      }
+
+      /* the whole live sheet is a tap/click target that opens the zoom overlay */
+      .preview-stage {
+        cursor: zoom-in;
+      }
+      /* explicit "enlarge" affordance pinned over the sheet */
+      .preview-zoom-btn {
+        position: absolute;
+        z-index: 3;
+        inset-block-end: 8px;
+        inset-inline-start: 8px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 13px;
+        line-height: 1;
+        color: #fff;
+        background: rgba(44, 26, 41, 0.62);
+        backdrop-filter: blur(4px);
+        border: none;
+        border-radius: 999px;
+        padding: 8px 13px;
+        cursor: zoom-in;
+        box-shadow: 0 4px 14px rgba(44, 26, 41, 0.28);
+        transition:
+          background 0.18s ease,
+          transform 0.15s ease;
+      }
+      .preview-zoom-btn:hover {
+        background: rgba(44, 26, 41, 0.8);
+        transform: translateY(-1px);
+      }
+      .preview-zoom-btn:focus-visible {
+        outline: 3px solid var(--hot);
+        outline-offset: 2px;
+      }
+      .preview-zoom-btn .zi {
+        font-size: 15px;
+      }
+      /* on the collapsed mini-preview (name/contact steps) it would crowd the chip */
+      .preview-card.is-collapsed .preview-zoom-btn {
+        display: none;
       }
 
       /* pickers */
@@ -1248,6 +1290,141 @@
         }
       }
 
+      /* ===== BIGGER LIVE PREVIEW ON PHONES =====
+         The width-driven sheet is the base behaviour (above); on a portrait phone
+         we only trim the gutters/padding so the sheet reaches nearly edge-to-edge
+         (~350px on a 390px screen) and reads as the dominant focal element. The
+         page may scroll on a dense step — the sticky Back/Next bar is fixed and
+         always reachable. Steps 4-5 keep the small collapsed mini-preview. */
+      @media (max-width: 600px) {
+        .wrap {
+          padding: 0 8px;
+        }
+        .preview-card:not(.is-collapsed) {
+          padding: 6px;
+        }
+        .preview-card:not(.is-collapsed) .preview-stage {
+          min-height: 0;
+          padding: 4px;
+          overflow: visible;
+        }
+        /* let the sheet use more of a phone's tall viewport than the 56vh base */
+        .preview-card:not(.is-collapsed) .preview-panel[data-panel='front'] svg,
+        .preview-card:not(.is-collapsed) .preview-panel[data-panel='back'] svg,
+        .preview-card:not(.is-collapsed) .preview-panel[data-panel='board'] svg,
+        .preview-card:not(.is-collapsed) .preview-panel[data-panel='front'] img,
+        .preview-card:not(.is-collapsed) .preview-panel[data-panel='back'] img,
+        .preview-card:not(.is-collapsed) .preview-panel[data-panel='board'] img {
+          max-height: 48vh;
+        }
+      }
+
+      /* ===== FULLSCREEN ZOOM OVERLAY =====
+         Shows the CURRENTLY selected tab (front/back/board) in the CURRENT
+         colours by cloning the already-rendered live panel — no new assets, and
+         the palette always matches. IG-webview-safe: +/- buttons and double-tap
+         drive the zoom; pinch is a progressive enhancement, never the only way. */
+      .zoom {
+        position: fixed;
+        inset: 0;
+        z-index: 120; /* above nav (80), wiz-bar (70) and the gender modal (90) */
+        background: rgba(28, 14, 25, 0.95);
+      }
+      .zoom[hidden] {
+        display: none;
+      }
+      .zoom-viewport {
+        position: absolute;
+        inset: 0;
+        overflow: auto;
+        display: grid;
+        place-content: safe center;
+        padding: 14px;
+        /* allow single-finger pan (native scroll) while our JS owns two-finger
+           pinch and double-tap; disables the browser's own double-tap zoom. */
+        touch-action: pan-x pan-y;
+        -webkit-overflow-scrolling: touch;
+      }
+      .zoom-content {
+        /* zoom level 1 fits the sheet to BOTH screen dimensions (so rotating to
+           landscape fills the screen); +/- multiply it up to 4x. */
+        width: calc(var(--zoom, 1) * min(94vw, 94dvh * 1.414));
+        margin: auto;
+        transition: width 0.16s ease;
+      }
+      .zoom-content svg,
+      .zoom-content img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 6px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      }
+      .zoom-toolbar {
+        position: absolute;
+        z-index: 2;
+        inset-block-start: calc(env(safe-area-inset-top, 0px) + 12px);
+        inset-inline-end: 12px;
+        display: flex;
+        gap: 8px;
+      }
+      .zoom-btn {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        border: none;
+        background: rgba(255, 255, 255, 0.16);
+        color: #fff;
+        font-size: 24px;
+        font-weight: 800;
+        line-height: 1;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(6px);
+        transition: background 0.16s ease;
+      }
+      .zoom-btn:hover {
+        background: rgba(255, 255, 255, 0.3);
+      }
+      .zoom-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .zoom-btn:focus-visible {
+        outline: 3px solid var(--hot);
+        outline-offset: 2px;
+      }
+      .zoom-close {
+        background: rgba(255, 255, 255, 0.26);
+      }
+      .zoom-hint {
+        position: absolute;
+        z-index: 2;
+        inset-block-end: calc(env(safe-area-inset-bottom, 0px) + 18px);
+        inset-inline: 0;
+        margin: 0 auto;
+        width: max-content;
+        max-width: 90vw;
+        background: rgba(0, 0, 0, 0.58);
+        color: #fff;
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 14px;
+        padding: 9px 16px;
+        border-radius: 999px;
+        opacity: 0;
+        transition: opacity 0.4s ease;
+        pointer-events: none;
+      }
+      .zoom-hint.is-shown {
+        opacity: 1;
+      }
+      .zoom-hint[hidden] {
+        display: none;
+      }
+
       @media (prefers-reduced-motion: reduce) {
         html {
           scroll-behavior: auto;
@@ -1338,6 +1515,15 @@
           <div class="preview-panel" data-panel="back" data-testid="preview-back"></div>
           <div class="preview-panel" data-panel="board" data-testid="preview-board"></div>
           <div class="preview-empty" id="previewEmpty" hidden>טוען תצוגה…</div>
+          <button
+            class="preview-zoom-btn"
+            type="button"
+            id="zoomOpen"
+            data-testid="zoom-open"
+            aria-label="הגדלת התצוגה למסך מלא"
+          >
+            <span class="zi" aria-hidden="true">⤢</span> הגדלה
+          </button>
         </div>
         <div class="preview-chip" id="previewChip" hidden>
           <span class="continue-summary" id="continueSummary" data-testid="continue-summary"></span>
@@ -1494,6 +1680,40 @@
         <button class="btn" type="button" id="genderModalOk" data-testid="gender-modal-ok">
           הבנתי
         </button>
+      </div>
+    </div>
+
+    <!-- FULLSCREEN ZOOM OVERLAY — opened by the ⤢ button or by tapping the live
+         preview; shows the current tab at the current colours (see zoom JS). -->
+    <div class="zoom" id="zoomOverlay" data-testid="zoom-overlay" hidden>
+      <div class="zoom-viewport" id="zoomViewport" data-testid="zoom-viewport">
+        <div class="zoom-content" id="zoomContent" data-testid="zoom-content"></div>
+      </div>
+      <div class="zoom-toolbar" role="group" aria-label="שליטה בהגדלה">
+        <button
+          class="zoom-btn"
+          type="button"
+          id="zoomOut"
+          data-testid="zoom-out"
+          aria-label="הקטנה"
+        >
+          −
+        </button>
+        <button class="zoom-btn" type="button" id="zoomIn" data-testid="zoom-in" aria-label="הגדלה">
+          ＋
+        </button>
+        <button
+          class="zoom-btn zoom-close"
+          type="button"
+          id="zoomClose"
+          data-testid="zoom-close"
+          aria-label="סגירה"
+        >
+          ×
+        </button>
+      </div>
+      <div class="zoom-hint" id="zoomHint" data-testid="zoom-hint" hidden>
+        סובבו את המכשיר לתצוגה מלאה
       </div>
     </div>
 
@@ -2043,6 +2263,13 @@
 
       // Browser Back/Forward and refresh walk the wizard via ?step=N.
       window.addEventListener('popstate', () => {
+        // A back press while the zoom overlay is open just closes it (the entry
+        // we pushed on open is being popped) — don't also change the step.
+        if (zoomOpen) {
+          zoomPushed = false;
+          hideZoom();
+          return;
+        }
         const sp = new URLSearchParams(location.search);
         const n = parseInt(sp.get('step') || '1', 10);
         goStep(Number.isNaN(n) ? 1 : n, { fromPop: true });
@@ -2102,6 +2329,178 @@
           nextBtn.textContent = prevLabel;
         }
       }
+
+      /* ====================================================================
+         FULLSCREEN ZOOM OVERLAY — legibility for reading the 8-card sheet.
+         Clones the already-rendered ACTIVE panel (its live SVG + the inline
+         --cN palette set by recolor()) into a fixed overlay, so the zoomed view
+         always matches the selected tab and colours without loading new assets.
+         IG-webview-safe: +/- buttons and double-tap drive zoom; scroll/drag
+         pans; pinch is a progressive enhancement; ×/ESC/Android-back all close.
+         ==================================================================== */
+      const zoomOverlay = document.getElementById('zoomOverlay');
+      const zoomViewport = document.getElementById('zoomViewport');
+      const zoomContent = document.getElementById('zoomContent');
+      const zoomHint = document.getElementById('zoomHint');
+      const zoomOpenBtn = document.getElementById('zoomOpen');
+      const zoomInBtn = document.getElementById('zoomIn');
+      const zoomOutBtn = document.getElementById('zoomOut');
+      const zoomCloseBtn = document.getElementById('zoomClose');
+      const previewStage = document.getElementById('previewStage');
+
+      const ZOOM_MIN = 1;
+      const ZOOM_MAX = 4;
+      let zoomScale = 1;
+      let zoomOpen = false;
+      let zoomPushed = false; // did we push a history entry to pop on close?
+      let zoomOpener = null; // element focus returns to on close
+
+      function setZoom(z) {
+        zoomScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100));
+        zoomContent.style.setProperty('--zoom', String(zoomScale));
+        zoomOutBtn.disabled = zoomScale <= ZOOM_MIN;
+        zoomInBtn.disabled = zoomScale >= ZOOM_MAX;
+      }
+
+      // Clone the active panel's live SVG (carrying its current palette) in.
+      function fillZoom() {
+        const panel = panels[activeTab];
+        if (!panel) return;
+        // carry the live --cN palette vars (set inline on the panel by recolor)…
+        zoomContent.setAttribute('style', panel.getAttribute('style') || '');
+        // …then clone the artwork, renaming the scoped-style id so the id (and
+        // its `#id [fill]` rules) stay unique while both copies are in the DOM.
+        zoomContent.innerHTML = (panel.innerHTML || '').replace(/cfg-svg-(\d+)/g, 'zoom-svg-$1');
+        setZoom(1);
+      }
+
+      function maybeShowHint() {
+        let seen = false;
+        try {
+          seen = localStorage.getItem('dugri_zoom_hint') === '1';
+        } catch (e) {}
+        if (seen) return;
+        zoomHint.hidden = false;
+        // next frame so the opacity transition runs (fade in)
+        requestAnimationFrame(() => zoomHint.classList.add('is-shown'));
+        setTimeout(() => {
+          zoomHint.classList.remove('is-shown');
+          setTimeout(() => {
+            zoomHint.hidden = true;
+          }, 450);
+        }, 3400);
+        try {
+          localStorage.setItem('dugri_zoom_hint', '1');
+        } catch (e) {}
+      }
+
+      function openZoom() {
+        if (zoomOpen) return;
+        fillZoom();
+        if (!zoomContent.querySelector('svg, img')) return; // nothing rendered yet
+        zoomOpener = document.activeElement;
+        zoomOverlay.hidden = false;
+        zoomOpen = true;
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+        document.addEventListener('keydown', onZoomKey);
+        // Android hardware back / browser back closes the overlay via popstate.
+        try {
+          history.pushState({ zoom: true }, '');
+          zoomPushed = true;
+        } catch (e) {
+          zoomPushed = false;
+        }
+        zoomCloseBtn.focus();
+        maybeShowHint();
+        track('open_zoom', { tab: activeTab });
+      }
+
+      function hideZoom() {
+        zoomOpen = false;
+        zoomOverlay.hidden = true;
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+        document.removeEventListener('keydown', onZoomKey);
+        zoomContent.innerHTML = '';
+        if (zoomOpener && typeof zoomOpener.focus === 'function') zoomOpener.focus();
+      }
+
+      // User-initiated close: pop the history entry we pushed (so the URL/back
+      // stack stay clean); popstate then runs hideZoom(). Falls back to a direct
+      // hide if we never managed to push.
+      function closeZoom() {
+        if (!zoomOpen) return;
+        if (zoomPushed) {
+          zoomPushed = false;
+          history.back();
+        } else {
+          hideZoom();
+        }
+      }
+
+      function onZoomKey(e) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          closeZoom();
+        } else if (e.key === '+' || e.key === '=') {
+          setZoom(zoomScale + 0.5);
+        } else if (e.key === '-') {
+          setZoom(zoomScale - 0.5);
+        }
+      }
+
+      zoomOpenBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); // it lives inside the stage; don't double-fire
+        openZoom();
+      });
+      previewStage.addEventListener('click', () => openZoom());
+      zoomInBtn.addEventListener('click', () => setZoom(zoomScale + 0.5));
+      zoomOutBtn.addEventListener('click', () => setZoom(zoomScale - 0.5));
+      zoomCloseBtn.addEventListener('click', closeZoom);
+      // tapping the dim backdrop (not the sheet) closes
+      zoomViewport.addEventListener('click', (e) => {
+        if (e.target === zoomViewport) closeZoom();
+      });
+
+      // double-tap / double-click toggles zoom (reliable in the IG in-app browser)
+      let lastTap = 0;
+      zoomViewport.addEventListener('pointerup', () => {
+        const now = Date.now();
+        if (now - lastTap < 320) {
+          setZoom(zoomScale > ZOOM_MIN ? ZOOM_MIN : 2.5);
+          lastTap = 0;
+        } else {
+          lastTap = now;
+        }
+      });
+
+      // pinch-to-zoom — progressive enhancement on top of the buttons.
+      let pinchDist = 0;
+      let pinchBase = 1;
+      function touchDist(t) {
+        return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+      }
+      zoomViewport.addEventListener(
+        'touchstart',
+        (e) => {
+          if (e.touches.length === 2) {
+            pinchDist = touchDist(e.touches);
+            pinchBase = zoomScale;
+          }
+        },
+        { passive: true }
+      );
+      zoomViewport.addEventListener(
+        'touchmove',
+        (e) => {
+          if (e.touches.length === 2 && pinchDist > 0) {
+            e.preventDefault();
+            setZoom(pinchBase * (touchDist(e.touches) / pinchDist));
+          }
+        },
+        { passive: false }
+      );
 
       /* ---- init ---- */
       // restore a prior color choice from the URL if present
