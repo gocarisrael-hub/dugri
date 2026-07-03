@@ -74,14 +74,27 @@ def title_block(box, lines, fill, outline, font_path=None):
     ratios = [f.getlength(ln) / ref for ln in lines]      # width per unit size
     n = len(lines)
     # size to fill the width; cap so the stacked lines still fit the box height
-    size = min(bw * 0.94 / max(ratios), bh / (0.80 * n) * 1.02)
+    size = min(bw * 0.89 / max(ratios), bh / (0.80 * n) * 1.02)
     gap = size * 0.78
     total = gap * (n - 1)
     top = (y0 + y1) / 2 - total / 2
-    sw = size * 0.065                                     # outline (matches original)
-    dx, dy = size * 0.035, size * 0.05                    # subtle drop shadow
+    dx, dy = size * 0.035, size * 0.06                    # drop-shadow offset
     bulge = size * 0.11                                   # graffiti upward arch
+    # Boldness = a heavy dark OUTLINE ring (not fattened fill). Three stacked
+    # layers per line on the arched path: shadow, dark dilated body (outline),
+    # light fill on top -> the visible dark ring thickness equals T. (Agent B.)
+    w_fat = size * 0.005                                  # minimal body fatten
+    t_ring = size * 0.098                                 # dark outline ring
+    outer = w_fat + 2 * t_ring
     defs, out = [], []
+
+    def on_path(pid, fill_c, stroke_c, swv, line):
+        return (f'<text font-family="TitleFont" font-size="{size:.2f}" fill="{fill_c}" '
+                f'stroke="{stroke_c}" stroke-width="{swv:.2f}" paint-order="stroke" '
+                f'stroke-linejoin="round" stroke-linecap="round">'
+                f'<textPath href="#{pid}" startOffset="50%" text-anchor="middle">'
+                f'{escape(line)}</textPath></text>')
+
     for k, line in enumerate(lines):
         by = top + gap * k + size * 0.33
         wln = ratios[k] * size
@@ -91,15 +104,11 @@ def title_block(box, lines, fill, outline, font_path=None):
             defs.append(f'<path id="{pid}" fill="none" d="M {xl+ox:.1f} {by+oy:.1f} '
                         f'Q {cx+ox:.1f} {by+oy-2*bulge:.1f} {xr+ox:.1f} {by+oy:.1f}"/>')
 
-        arc(f"t{uid}s{k}", dx, dy)                              # shadow path
-        arc(f"t{uid}m{k}", 0, 0)                                # main path
-        out.append(f'<text font-family="TitleFont" font-size="{size:.2f}" '
-                   f'fill="{outline}"><textPath href="#t{uid}s{k}" startOffset="50%" '
-                   f'text-anchor="middle">{escape(line)}</textPath></text>')
-        out.append(f'<text font-family="TitleFont" font-size="{size:.2f}" fill="{fill}" '
-                   f'stroke="{outline}" stroke-width="{sw:.2f}" paint-order="stroke" '
-                   f'stroke-linejoin="round"><textPath href="#t{uid}m{k}" startOffset="50%" '
-                   f'text-anchor="middle">{escape(line)}</textPath></text>')
+        arc(f"t{uid}s{k}", dx, dy)                        # shadow path
+        arc(f"t{uid}m{k}", 0, 0)                          # main path
+        out.append(on_path(f"t{uid}s{k}", outline, outline, outer, line))   # shadow
+        out.append(on_path(f"t{uid}m{k}", outline, outline, outer, line))   # outline
+        out.append(on_path(f"t{uid}m{k}", fill, fill, w_fat, line))         # fill body
     return "<defs>" + "".join(defs) + "</defs>" + "".join(out)
 
 
