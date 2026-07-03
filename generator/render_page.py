@@ -14,8 +14,9 @@ import csv as csvmod
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 HERE = os.path.dirname(os.path.abspath(__file__))
-# placeholder Hebrew word font until the theme's real font (FB Bloomfield) is sourced
-HEB = os.path.join(HERE, "..", "poc", "svglue", "fonts", "VarelaRound.ttf")
+# Hebrew word font. Real theme font is FB Bloomfield (not yet sourced); using
+# nrkis as the stand-in per request.
+HEB = os.path.join(HERE, "..", "resources", "canva", "fonts", "nrkis.ttf")
 # title display font for the trip theme (the "WELCOME PARTY" bubble font)
 TITLE_FONT = os.path.join(HERE, "..", "resources", "canva", "fonts",
                           "sprite-graffiti", "Sprite Graffiti.otf")
