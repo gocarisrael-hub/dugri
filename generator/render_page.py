@@ -15,8 +15,9 @@ import csv as csvmod
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Hebrew word font. Real theme font is FB Bloomfield (not yet sourced); using
-# nrkis as the stand-in per request.
-HEB = os.path.join(HERE, "..", "resources", "canva", "fonts", "nrkis.ttf")
+# almoni-neue as the stand-in per request.
+HEB = os.path.join(HERE, "..", "resources", "canva", "fonts",
+                   "almoni-neue-aaa-bold-OFFICE.ttf")
 # title display font for the trip theme (the "WELCOME PARTY" bubble font)
 TITLE_FONT = os.path.join(HERE, "..", "resources", "canva", "fonts",
                           "sprite-graffiti", "Sprite Graffiti.otf")
@@ -68,12 +69,12 @@ def title_block(box, lines, fill, outline, font_path=None):
     ratios = [f.getlength(ln) / ref for ln in lines]      # width per unit size
     n = len(lines)
     # size to fill the width; cap so the stacked lines still fit the box height
-    size = min(bw * 0.99 / max(ratios), bh / (0.80 * n) * 1.02)
-    gap = size * 0.80
+    size = min(bw * 0.94 / max(ratios), bh / (0.80 * n) * 1.02)
+    gap = size * 0.78
     total = gap * (n - 1)
     top = (y0 + y1) / 2 - total / 2
-    sw = size * 0.12                                      # thick outline
-    dx, dy = size * 0.05, size * 0.07                     # drop-shadow offset
+    sw = size * 0.065                                     # outline (matches original)
+    dx, dy = size * 0.035, size * 0.05                    # subtle drop shadow
     out = []
     for k, line in enumerate(lines):
         by = top + gap * k + size * 0.33
