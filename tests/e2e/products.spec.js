@@ -43,12 +43,29 @@ test.describe('templates gallery (products.html)', () => {
     await expect(neon.locator('.dots-more')).toHaveText('צבע קבוע');
   });
 
-  test('each tile links to the wizard colour step for its own design id', async ({ page }) => {
+  test('each tile links to the right wizard step for its own design id (fixed skips colour)', async ({
+    page,
+  }) => {
     await page.goto('/products.html');
     for (const id of DESIGN_IDS) {
       const tile = page.locator(`.tile[data-design-id="${id}"]`);
-      await expect(tile).toHaveAttribute('href', `options.html?design=${id}&step=2`);
+      // Fixed-colour designs (neon) skip the colour step → step 3; sliders → step 2.
+      const step = id === 'neon' ? 3 : 2;
+      await expect(tile).toHaveAttribute('href', `options.html?design=${id}&step=${step}`);
     }
+  });
+
+  test('the footer WhatsApp link resolves to a real wa.me URL (not "#")', async ({ page }) => {
+    await page.goto('/products.html');
+    const wa = page.locator('footer #waLink');
+    await expect(wa).toHaveAttribute('href', /^https:\/\/wa\.me\/\d+$/);
+    // The other footer contact links are correct too.
+    await expect(page.locator('footer a[href="tel:+972546577715"]')).toHaveCount(1);
+    await expect(page.locator('footer a[href="mailto:dugri.israel@gmail.com"]')).toHaveCount(1);
+    await expect(page.locator('footer #igLink')).toHaveAttribute(
+      'href',
+      'https://instagram.com/dugri_israel'
+    );
   });
 
   test('clicking a tile lands on the wizard STEP 2 (colour) with that design selected', async ({
@@ -70,21 +87,25 @@ test.describe('templates gallery (products.html)', () => {
     );
   });
 
-  test('clicking the neon tile lands on step 2 with neon selected and the colour picker hidden', async ({
+  test('clicking the neon (fixed) tile skips the empty colour step and lands on step 3 (add-ons)', async ({
     page,
   }) => {
     await page.goto('/products.html');
     await page.locator('.tile[data-design-id="neon"]').click();
 
-    await page.waitForURL(/options\.html\?design=neon&step=2/);
-    await expect(page.getByTestId('step-2')).toBeVisible();
+    // Fixed design → deep-links past the colour step straight to add-ons.
+    await page.waitForURL(/options\.html\?design=neon&step=3/);
+    await expect(page.getByTestId('step-3')).toBeVisible();
+    await expect(page.getByTestId('step-now')).toHaveText('3');
+    // The colour step (which has nothing to pick for neon) is NOT the active screen.
+    await expect(page.getByTestId('step-2')).toBeHidden();
+    await expect(page.getByTestId('color-list')).toBeHidden();
+    // The chosen design carried through and the add-ons step renders normally.
     await expect(page.locator('.design[data-design-id="neon"]')).toHaveAttribute(
       'aria-pressed',
       'true'
     );
-    // Fixed design => swatch picker hidden, fixed-colour note shown.
-    await expect(page.getByTestId('color-list')).toBeHidden();
-    await expect(page.getByTestId('raster-note')).toContainText('קבוע');
+    await expect(page.getByTestId('chasers-card')).toBeVisible();
   });
 });
 

@@ -540,7 +540,7 @@
           <a
             class="foot-icon fi-wa"
             id="waLink"
-            href="#"
+            href="https://wa.me/972546577715"
             target="_blank"
             rel="noopener"
             aria-label="וואטסאפ"
@@ -632,7 +632,10 @@
       function tile(d) {
         const a = document.createElement('a');
         a.className = 'tile';
-        a.href = `options.html?design=${encodeURIComponent(d.id)}&step=2`;
+        // Fixed-colour designs (neon) have nothing to pick on the colour step, so
+        // skip it and deep-link to the add-ons step instead. Sliders start on colour.
+        const step = d.recolor === 'fixed' ? 3 : 2;
+        a.href = `options.html?design=${encodeURIComponent(d.id)}&step=${step}`;
         a.setAttribute('data-testid', 'tile');
         a.setAttribute('data-design-id', d.id);
         a.setAttribute('aria-label', `בחרו עיצוב ${d.name}`);
