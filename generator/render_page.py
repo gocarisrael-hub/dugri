@@ -47,20 +47,42 @@ def escape(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def title_block(box, lines, fill, outline):
-    """Stack the title lines centered in the title box (Sprite Graffiti), as a
-    light fill with a dark outline (paint-order:stroke -> outline behind fill)."""
+import functools
+
+
+@functools.lru_cache(maxsize=8)
+def _title_metrics(font_path, ref=200):
+    from PIL import ImageFont
+    return ImageFont.truetype(font_path, ref), ref
+
+
+def title_block(box, lines, fill, outline, font_path=None):
+    """Graffiti title (Sprite Graffiti): sized so the WIDEST line fills the box
+    width, tight line spacing, a drop shadow + thick dark outline behind a light
+    fill — matching the real card's 3D bubble look."""
+    font_path = font_path or TITLE_FONT
     x0, y0, x1, y1 = box["x0"], box["y0"], box["x1"], box["y1"]
     cx = (x0 + x1) / 2
+    bw, bh = x1 - x0, y1 - y0
+    f, ref = _title_metrics(font_path)
+    ratios = [f.getlength(ln) / ref for ln in lines]      # width per unit size
     n = len(lines)
-    line_h = (y1 - y0) / n
-    size = line_h * 1.02
+    # size to fill the width; cap so the stacked lines still fit the box height
+    size = min(bw * 0.99 / max(ratios), bh / (0.80 * n) * 1.02)
+    gap = size * 0.80
+    total = gap * (n - 1)
+    top = (y0 + y1) / 2 - total / 2
+    sw = size * 0.12                                      # thick outline
+    dx, dy = size * 0.05, size * 0.07                     # drop-shadow offset
     out = []
     for k, line in enumerate(lines):
-        baseline = y0 + line_h * k + size * 0.82
-        out.append(f'<text x="{cx:.2f}" y="{baseline:.2f}" font-family="TitleFont" '
+        by = top + gap * k + size * 0.33
+        out.append(f'<text x="{cx+dx:.2f}" y="{by+dy:.2f}" font-family="TitleFont" '
+                   f'font-size="{size:.2f}" fill="{outline}" text-anchor="middle" '
+                   f'xml:space="preserve">{escape(line)}</text>')
+        out.append(f'<text x="{cx:.2f}" y="{by:.2f}" font-family="TitleFont" '
                    f'font-size="{size:.2f}" fill="{fill}" stroke="{outline}" '
-                   f'stroke-width="{size*0.06:.2f}" paint-order="stroke" '
+                   f'stroke-width="{sw:.2f}" paint-order="stroke" '
                    f'stroke-linejoin="round" text-anchor="middle" '
                    f'xml:space="preserve">{escape(line)}</text>')
     return "".join(out)
