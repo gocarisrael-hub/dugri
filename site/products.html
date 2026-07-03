@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>דוגרי · בחרו את העיצוב</title>
+    <meta
+      name="description"
+      content="גלריית העיצובים של דוגרי - כל תבנית זמינה במגוון צבעים. בוחרים עיצוב וממשיכים להזמנה."
+    />
+
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link rel="preload" as="image" href="assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap"
+      />
+    </noscript>
+    <style>
+      :root {
+        --bg: #fff5f8; /* very light pink */
+        --surface: #ffffff;
+        --blush: #fbe8ee;
+        --blush-deep: #f1d2dc;
+        --ink: #2c1a29;
+        --muted: #7c6a74;
+        --wine: #9b2d54;
+        --wine-deep: #7a1f40;
+        --gold: #bc9a4c;
+        --hot: #e5197d; /* vivid pink, matches the logo */
+        --hot-deep: #c7106a;
+        --line: #f0dee4;
+        --font: 'Calibri', 'Carlito', 'Segoe UI', 'Arial', 'Helvetica Neue', sans-serif;
+        --display: 'Heebo', 'Calibri', 'Carlito', 'Segoe UI', 'Arial', sans-serif;
+        --shadow-sm: 0 2px 8px rgba(44, 26, 41, 0.06), 0 1px 2px rgba(44, 26, 41, 0.04);
+        --shadow-md: 0 10px 28px rgba(44, 26, 41, 0.1), 0 3px 8px rgba(44, 26, 41, 0.06);
+        --shadow-lg: 0 26px 60px rgba(44, 26, 41, 0.16), 0 8px 18px rgba(44, 26, 41, 0.08);
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--ink);
+        line-height: 1.6;
+        font-size: 17px;
+        -webkit-font-smoothing: antialiased;
+        /* clear the fixed nav */
+        padding-top: 58px;
+      }
+      .wrap {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 0 22px;
+      }
+      h1,
+      h2,
+      h3,
+      h4 {
+        font-family: var(--display);
+        line-height: 1.15;
+        font-weight: 800;
+        letter-spacing: -0.015em;
+      }
+      a {
+        color: inherit;
+      }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      /* ---- shared button ---- */
+      .btn {
+        position: relative;
+        overflow: hidden;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 17.5px;
+        letter-spacing: -0.01em;
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        padding: 16px 32px;
+        border-radius: 999px;
+        text-decoration: none;
+        white-space: nowrap;
+        box-shadow: 0 10px 24px rgba(229, 25, 125, 0.3);
+        transition:
+          transform 0.14s ease,
+          box-shadow 0.25s ease,
+          filter 0.2s ease;
+      }
+      .btn:focus-visible {
+        outline: 3px solid var(--hot);
+        outline-offset: 3px;
+      }
+      a:focus-visible {
+        outline: 3px solid var(--hot);
+        outline-offset: 3px;
+        border-radius: 8px;
+      }
+
+      /* ---- shared nav (copied from index.html) ---- */
+      .nav {
+        position: fixed;
+        top: 0;
+        inset-inline: 0;
+        z-index: 80;
+        background: rgba(255, 255, 255, 0.94);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--line);
+        box-shadow: 0 6px 20px rgba(44, 26, 41, 0.07);
+      }
+      .nav-inner {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 8px 18px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .nav-logo {
+        display: flex;
+        align-items: center;
+      }
+      .nav-logo img {
+        height: 34px;
+        width: auto;
+        display: block;
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-inline-start: auto;
+      }
+      .nav-links a {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 15.5px;
+        color: var(--wine);
+        padding: 8px 12px;
+        border-radius: 10px;
+        text-decoration: none;
+        transition:
+          background 0.18s ease,
+          color 0.18s ease;
+      }
+      .nav-links a:hover {
+        background: var(--blush);
+        color: var(--wine-deep);
+      }
+      .nav-links a.nav-cta {
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        color: #fff;
+        padding: 9px 20px;
+        box-shadow: 0 6px 16px rgba(229, 25, 125, 0.26);
+      }
+      .nav-links a.nav-cta:hover {
+        filter: brightness(1.05);
+        color: #fff;
+      }
+      .nav-toggle {
+        display: none;
+        margin-inline-start: auto;
+        background: none;
+        border: 1px solid var(--blush-deep);
+        border-radius: 10px;
+        width: 42px;
+        height: 40px;
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+      }
+      .nav-toggle span,
+      .nav-toggle span::before,
+      .nav-toggle span::after {
+        display: block;
+        width: 20px;
+        height: 2px;
+        background: var(--wine);
+        position: relative;
+        transition:
+          transform 0.2s ease,
+          opacity 0.2s ease;
+      }
+      .nav-toggle span::before {
+        content: '';
+        position: absolute;
+        top: -6px;
+      }
+      .nav-toggle span::after {
+        content: '';
+        position: absolute;
+        top: 6px;
+      }
+      @media (max-width: 640px) {
+        .nav-toggle {
+          display: flex;
+        }
+        .nav-links {
+          position: absolute;
+          top: 100%;
+          inset-inline: 0;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0;
+          background: rgba(255, 255, 255, 0.98);
+          border-bottom: 1px solid var(--line);
+          box-shadow: 0 14px 28px rgba(44, 26, 41, 0.12);
+          padding: 8px 14px 14px;
+          margin: 0;
+          display: none;
+        }
+        .nav-links.open {
+          display: flex;
+        }
+        .nav-links a {
+          padding: 13px 10px;
+          border-radius: 10px;
+        }
+        .nav-links a.nav-cta {
+          margin-top: 6px;
+          text-align: center;
+          justify-content: center;
+        }
+      }
+
+      /* ---- page intro ---- */
+      .products {
+        padding: 40px 0 56px;
+      }
+      .sec-title {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .sec-title h2 {
+        font-size: 34px;
+        font-weight: 800;
+      }
+      .sec-title p {
+        color: var(--muted);
+        margin-top: 6px;
+        font-size: 16px;
+      }
+
+      /* ---- tile grid ---- */
+      .tile-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+      @media (min-width: 560px) {
+        .tile-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (min-width: 820px) {
+        .tile-grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+
+      /* ---- one tile (link wrapping the whole card) ---- */
+      .tile {
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border: 1.5px solid var(--blush-deep);
+        border-radius: 20px;
+        padding: 14px 14px 16px;
+        box-shadow: var(--shadow-sm);
+        text-decoration: none;
+        color: inherit;
+        transition:
+          transform 0.22s ease,
+          box-shadow 0.22s ease,
+          border-color 0.22s ease;
+      }
+      .tile:hover {
+        transform: translateY(-5px);
+        box-shadow: var(--shadow-md);
+        border-color: var(--hot);
+      }
+      .tile:focus-visible {
+        outline: 3px solid var(--hot);
+        outline-offset: 3px;
+      }
+      .tile .thumb {
+        aspect-ratio: 841.92 / 595.5;
+        width: 100%;
+        border-radius: 14px;
+        background: var(--blush);
+        border: 1px solid var(--blush-deep);
+        overflow: hidden;
+      }
+      .tile .thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .tile .tname {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 20px;
+        color: var(--wine-deep);
+        margin-top: 12px;
+      }
+      .tile .dots {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .tile .dot {
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        border: 1.5px solid rgba(44, 26, 41, 0.12);
+        flex: 0 0 auto;
+      }
+      .tile .dots-more {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--muted);
+      }
+      .tile .price {
+        margin-top: 10px;
+        font-weight: 700;
+        color: var(--ink);
+        font-size: 15.5px;
+      }
+      .tile .price s {
+        color: var(--muted);
+        font-weight: 600;
+        margin-inline-end: 4px;
+      }
+      /* button-styled affordance inside the link */
+      .tile .tile-cta {
+        margin-top: 14px;
+        align-self: stretch;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 16px;
+        letter-spacing: -0.01em;
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+        color: #fff;
+        padding: 12px 22px;
+        border-radius: 999px;
+        box-shadow: 0 8px 18px rgba(229, 25, 125, 0.26);
+        transition: filter 0.2s ease;
+      }
+      .tile:hover .tile-cta {
+        filter: brightness(1.05);
+      }
+
+      /* graceful fallback if the catalog module can't load */
+      .tile-fallback {
+        text-align: center;
+        padding: 30px 0;
+      }
+      .tile-fallback .btn {
+        margin-top: 14px;
+      }
+
+      /* ---- footer (copied from index.html) ---- */
+      footer {
+        padding: 30px 0;
+        text-align: center;
+        font-size: 14px;
+        background: var(--ink);
+        color: #e8d7de;
+      }
+      footer a {
+        color: #fff;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      footer .tag {
+        margin-top: 8px;
+        font-size: 13px;
+        color: #c7a9b5;
+      }
+      .foot-icons {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 16px;
+        margin-top: 18px;
+      }
+      .foot-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        color: #fff;
+        text-decoration: none;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+        transition:
+          transform 0.16s ease,
+          box-shadow 0.2s ease,
+          filter 0.2s ease;
+      }
+      .foot-icon:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.06);
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.34);
+      }
+      .foot-icon:focus-visible {
+        outline: 3px solid #fff;
+        outline-offset: 3px;
+      }
+      .foot-icon svg {
+        width: 24px;
+        height: 24px;
+        display: block;
+      }
+      .foot-icon.fi-wa {
+        background: #25d366;
+      }
+      .foot-icon.fi-call {
+        background: linear-gradient(140deg, var(--hot), var(--wine));
+      }
+      .foot-icon.fi-ig {
+        background: radial-gradient(
+          circle at 30% 107%,
+          #fdf497 0%,
+          #fdf497 5%,
+          #fd5949 45%,
+          #d6249f 60%,
+          #285aeb 90%
+        );
+      }
+      .foot-contact {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 22px;
+        justify-content: center;
+        margin-top: 14px;
+        font-size: 14.5px;
+      }
+      .foot-contact a {
+        color: #fff;
+        text-decoration: none;
+        font-weight: 700;
+      }
+      .foot-contact a:hover {
+        text-decoration: underline;
+      }
+      .foot-contact .fc-label {
+        color: #c7a9b5;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav" aria-label="ניווט ראשי">
+      <div class="nav-inner">
+        <a class="nav-logo" href="index.html#top" aria-label="דוגרי - לדף הבית"
+          ><img src="assets/logo.png" alt="דוגרי"
+        /></a>
+        <button
+          class="nav-toggle"
+          type="button"
+          data-testid="nav-toggle"
+          aria-expanded="false"
+          aria-controls="navLinks"
+          aria-label="תפריט"
+        >
+          <span></span>
+        </button>
+        <div class="nav-links" id="navLinks" data-testid="nav-links">
+          <a href="index.html#gallery">דוגמאות</a>
+          <a href="index.html#pricing">מחירים</a>
+          <a href="timer.html">טיימר</a>
+          <a
+            class="nav-cta"
+            href="products.html"
+            aria-current="page"
+            data-ga="order_started"
+            data-ga-cta="nav"
+            >הזמנה</a
+          >
+        </div>
+      </div>
+    </nav>
+
+    <main class="products">
+      <div class="wrap">
+        <div class="sec-title">
+          <h2>בחרו את העיצוב</h2>
+          <p>כל תבנית זמינה במגוון צבעים · אתם בוחרים</p>
+        </div>
+        <div class="tile-grid" id="tileGrid" data-testid="tile-grid">
+          <!-- tiles rendered from js/designs.js -->
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <p>דוגרי</p>
+        <div class="foot-icons">
+          <a
+            class="foot-icon fi-wa"
+            id="waLink"
+            href="https://wa.me/972546577715"
+            target="_blank"
+            rel="noopener"
+            aria-label="וואטסאפ"
+            data-ga="contact_click"
+            data-ga-channel="whatsapp"
+            data-ga-where="footer"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path
+                d="M19.05 4.91A9.82 9.82 0 0 0 12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.91-7.02ZM12.05 20.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23a8.2 8.2 0 0 1 8.23 8.24c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.51.11-.11.25-.29.37-.43.13-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01a.92.92 0 0 0-.66.31c-.23.25-.87.85-.87 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z"
+              />
+            </svg>
+            <span class="visually-hidden">וואטסאפ</span>
+          </a>
+          <a
+            class="foot-icon fi-call"
+            href="tel:+972546577715"
+            aria-label="התקשרו"
+            data-ga="contact_click"
+            data-ga-channel="call"
+            data-ga-where="footer"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path
+                d="M6.62 10.79a15.53 15.53 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.24.2 2.45.57 3.57a1 1 0 0 1-.24 1.02l-2.21 2.2Z"
+              />
+            </svg>
+            <span class="visually-hidden">התקשרו</span>
+          </a>
+          <a
+            class="foot-icon fi-ig"
+            id="igLink"
+            href="https://instagram.com/dugri_israel"
+            target="_blank"
+            rel="noopener"
+            aria-label="אינסטגרם"
+            data-ga="contact_click"
+            data-ga-channel="instagram"
+            data-ga-where="footer"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path
+                d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41a3.72 3.72 0 0 1-1.38-.9 3.72 3.72 0 0 1-.9-1.38c-.16-.42-.36-1.06-.41-2.23C2.17 15.58 2.16 15.2 2.16 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16Zm0 1.62c-3.15 0-3.52.01-4.76.07-1.15.05-1.77.24-2.19.41-.55.21-.94.47-1.35.88-.41.41-.67.8-.88 1.35-.16.42-.36 1.04-.41 2.19-.06 1.24-.07 1.61-.07 4.76s.01 3.52.07 4.76c.05 1.15.24 1.77.41 2.19.21.55.47.94.88 1.35.41.41.8.67 1.35.88.42.16 1.04.36 2.19.41 1.24.06 1.61.07 4.76.07s3.52-.01 4.76-.07c1.15-.05 1.77-.24 2.19-.41.55-.21.94-.47 1.35-.88.41-.41.67-.8.88-1.35.16-.42.36-1.04.41-2.19.06-1.24.07-1.61.07-4.76s-.01-3.52-.07-4.76c-.05-1.15-.24-1.77-.41-2.19a3.63 3.63 0 0 0-.88-1.35 3.63 3.63 0 0 0-1.35-.88c-.42-.16-1.04-.36-2.19-.41-1.24-.06-1.61-.07-4.76-.07Zm0 4.18a5.04 5.04 0 1 0 0 10.08 5.04 5.04 0 0 0 0-10.08Zm0 8.31a3.27 3.27 0 1 1 0-6.54 3.27 3.27 0 0 1 0 6.54Zm6.41-8.51a1.18 1.18 0 1 1-2.36 0 1.18 1.18 0 0 1 2.36 0Z"
+              />
+            </svg>
+            <span class="visually-hidden" id="igLabel">@dugri_israel</span>
+          </a>
+        </div>
+        <div class="foot-contact">
+          <span><span class="fc-label">וואטסאפ / טלפון:</span> 0546577715</span>
+          <span
+            ><span class="fc-label">מייל:</span>
+            <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
+          >
+        </div>
+        <p class="tag">צילמתם? תייגו אותנו</p>
+      </div>
+    </footer>
+
+    <!-- Shared nav: mobile toggle menu (progressive enhancement). -->
+    <script>
+      (function () {
+        var navToggle = document.querySelector('.nav-toggle');
+        var navLinks = document.getElementById('navLinks');
+        if (navToggle && navLinks) {
+          navToggle.addEventListener('click', function () {
+            var open = navLinks.classList.toggle('open');
+            navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          });
+          navLinks.querySelectorAll('a').forEach(function (a) {
+            a.addEventListener('click', function () {
+              navLinks.classList.remove('open');
+              navToggle.setAttribute('aria-expanded', 'false');
+            });
+          });
+        }
+      })();
+    </script>
+
+    <!-- Templates gallery: one tile per design, single source of truth = js/designs.js.
+         Each tile deep-links into the wizard already on the colour step
+         (options.html?design=<id>&step=2). -->
+    <script type="module">
+      import { DESIGNS, MAIN_COLORS } from './js/designs.js';
+
+      const PRICE = 79;
+      const grid = document.getElementById('tileGrid');
+
+      function tile(d) {
+        const a = document.createElement('a');
+        a.className = 'tile';
+        // Fixed-colour designs (neon) have nothing to pick on the colour step, so
+        // skip it and deep-link to the add-ons step instead. Sliders start on colour.
+        const step = d.recolor === 'fixed' ? 3 : 2;
+        a.href = `options.html?design=${encodeURIComponent(d.id)}&step=${step}`;
+        a.setAttribute('data-testid', 'tile');
+        a.setAttribute('data-design-id', d.id);
+        a.setAttribute('aria-label', `בחרו עיצוב ${d.name}`);
+
+        // thumbnail (landscape page frame, lazy)
+        const thumb = document.createElement('div');
+        thumb.className = 'thumb';
+        if (d.thumb) {
+          const img = document.createElement('img');
+          img.loading = 'lazy';
+          img.src = d.thumb;
+          img.alt = d.name;
+          thumb.appendChild(img);
+        }
+        a.appendChild(thumb);
+
+        // name
+        const name = document.createElement('div');
+        name.className = 'tname';
+        name.textContent = d.name;
+        a.appendChild(name);
+
+        // colour note
+        const dots = document.createElement('div');
+        dots.className = 'dots';
+        if (d.recolor === 'fixed') {
+          dots.setAttribute('aria-label', 'צבע קבוע');
+          const dot = document.createElement('span');
+          dot.className = 'dot';
+          dot.setAttribute('aria-hidden', 'true');
+          if (d.accent) dot.style.background = d.accent;
+          dots.appendChild(dot);
+          const more = document.createElement('span');
+          more.className = 'dots-more';
+          more.setAttribute('aria-hidden', 'true');
+          more.textContent = 'צבע קבוע';
+          dots.appendChild(more);
+        } else {
+          dots.setAttribute('aria-label', `זמין ב-${MAIN_COLORS.length} צבעים`);
+          for (const c of MAIN_COLORS) {
+            const dot = document.createElement('span');
+            dot.className = 'dot';
+            dot.setAttribute('aria-hidden', 'true');
+            dot.style.background = c.hex;
+            dot.title = c.name;
+            dots.appendChild(dot);
+          }
+          const more = document.createElement('span');
+          more.className = 'dots-more';
+          more.setAttribute('aria-hidden', 'true');
+          more.textContent = 'ועוד';
+          dots.appendChild(more);
+        }
+        a.appendChild(dots);
+
+        // price
+        const price = document.createElement('div');
+        price.className = 'price';
+        price.textContent = `החל מ-${PRICE} ₪`;
+        a.appendChild(price);
+
+        // button-styled affordance (whole tile is the link)
+        const cta = document.createElement('span');
+        cta.className = 'tile-cta';
+        cta.setAttribute('aria-hidden', 'true');
+        cta.textContent = 'בחרו עיצוב ›';
+        a.appendChild(cta);
+
+        return a;
+      }
+
+      try {
+        if (!Array.isArray(DESIGNS) || !DESIGNS.length) throw new Error('empty catalog');
+        const frag = document.createDocumentFragment();
+        for (const d of DESIGNS) frag.appendChild(tile(d));
+        grid.replaceChildren(frag);
+      } catch (err) {
+        // Graceful degradation: never leave a blank page — offer the wizard directly.
+        grid.classList.add('tile-fallback');
+        grid.innerHTML =
+          '<div class="tile-fallback"><p>לא הצלחנו לטעון את גלריית העיצובים כרגע.</p>' +
+          '<a class="btn" href="options.html">להזמנה ובחירת עיצוב ›</a></div>';
+        console.error('products gallery failed to render:', err);
+      }
+    </script>
+  </body>
+</html>
