@@ -14,8 +14,11 @@ import csv as csvmod
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 HERE = os.path.dirname(os.path.abspath(__file__))
-# placeholder Hebrew word font until the theme's real font is provided
+# placeholder Hebrew word font until the theme's real font (FB Bloomfield) is sourced
 HEB = os.path.join(HERE, "..", "poc", "svglue", "fonts", "VarelaRound.ttf")
+# title display font for the trip theme (the "WELCOME PARTY" bubble font)
+TITLE_FONT = os.path.join(HERE, "..", "resources", "canva", "fonts",
+                          "sprite-graffiti", "Sprite Graffiti.otf")
 
 
 def dims(svg):
@@ -43,14 +46,39 @@ def escape(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def title_block(box, lines, fill, outline):
+    """Stack the title lines centered in the title box (Sprite Graffiti), as a
+    light fill with a dark outline (paint-order:stroke -> outline behind fill)."""
+    x0, y0, x1, y1 = box["x0"], box["y0"], box["x1"], box["y1"]
+    cx = (x0 + x1) / 2
+    n = len(lines)
+    line_h = (y1 - y0) / n
+    size = line_h * 1.02
+    out = []
+    for k, line in enumerate(lines):
+        baseline = y0 + line_h * k + size * 0.82
+        out.append(f'<text x="{cx:.2f}" y="{baseline:.2f}" font-family="TitleFont" '
+                   f'font-size="{size:.2f}" fill="{fill}" stroke="{outline}" '
+                   f'stroke-width="{size*0.06:.2f}" paint-order="stroke" '
+                   f'stroke-linejoin="round" text-anchor="middle" '
+                   f'xml:space="preserve">{escape(line)}</text>')
+    return "".join(out)
+
+
 def build_page(theme, clean_svg, words_by_card, title_lines):
     recipe = json.load(open(os.path.join(HERE, "recipes", f"{theme}.json")))
     svg = open(clean_svg, encoding="utf-8").read()
-    style = "<style>" + font_face("HebWord", HEB) + "</style>"
+    style = ("<style>" + font_face("HebWord", HEB)
+             + font_face("TitleFont", TITLE_FONT) + "</style>")
     overlay = [style]
     for ci, card in enumerate(recipe["cards"]):
         if not card:
             continue
+        if card.get("title") and title_lines:
+            # trip title style: light-cyan fill + dark outline (sampled off the
+            # real card). TODO: store fill/outline per theme in the recipe.
+            overlay.append(title_block(card["title"][0], title_lines,
+                                       "#97d8e6", "#0d3e43"))
         words = words_by_card[ci] if ci < len(words_by_card) else []
         # ONE uniform word size per card (like the real card); per-word ink
         # heights vary by letters, so fit from the median, not each slot.
@@ -88,5 +116,5 @@ def load_csv_row(path, row):
 if __name__ == "__main__":
     theme, clean, csvp, row, title, out = sys.argv[1:7]
     wbc = load_csv_row(csvp, int(row))
-    render(theme, clean, wbc, [title], out)
+    render(theme, clean, wbc, title.split("|"), out)   # "OZ'S|WELCOME|PARTY"
     print("wrote", out)
