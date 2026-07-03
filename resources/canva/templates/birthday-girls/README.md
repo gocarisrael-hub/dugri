@@ -22,5 +22,5 @@ are auto-detected from the clean+filled pair — not listed here.
 
 ## status
 - filled (with text): present
-- clean (no text):    MISSING — need the no-text export (fronts+backs+board)
+- clean (no text):    present
 - fonts:              MISSING — need title + word font files
