@@ -272,33 +272,29 @@
         font-size: 16px;
       }
 
-      /* ---- tile grid ---- */
+      /* ---- tile grid: 2-up primary (big, prominent cards). 1-up only on very
+             narrow phones. ---- */
       .tile-grid {
         display: grid;
-        grid-template-columns: 1fr;
-        gap: 16px;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 20px;
       }
-      @media (min-width: 560px) {
+      @media (max-width: 379px) {
         .tile-grid {
-          grid-template-columns: repeat(2, 1fr);
-        }
-      }
-      @media (min-width: 820px) {
-        .tile-grid {
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: 1fr;
         }
       }
 
-      /* ---- one tile (link wrapping the whole card) ---- */
+      /* ---- one tile (a card; NOT a single link, so the carousel arrows and the
+             enlarge button are their own controls and don't trigger navigation) ---- */
       .tile {
         display: flex;
         flex-direction: column;
         background: var(--surface);
         border: 1.5px solid var(--blush-deep);
-        border-radius: 20px;
-        padding: 14px 14px 16px;
+        border-radius: 22px;
+        padding: 16px 16px 18px;
         box-shadow: var(--shadow-sm);
-        text-decoration: none;
         color: inherit;
         transition:
           transform 0.22s ease,
@@ -310,9 +306,10 @@
         box-shadow: var(--shadow-md);
         border-color: var(--hot);
       }
-      .tile:focus-visible {
-        outline: 3px solid var(--hot);
-        outline-offset: 3px;
+
+      /* image carousel (front → back → board) */
+      .carousel {
+        position: relative;
       }
       .tile .thumb {
         aspect-ratio: 841.92 / 595.5;
@@ -321,6 +318,7 @@
         background: var(--blush);
         border: 1px solid var(--blush-deep);
         overflow: hidden;
+        cursor: zoom-in;
       }
       .tile .thumb img {
         width: 100%;
@@ -328,12 +326,117 @@
         object-fit: cover;
         display: block;
       }
+      /* carousel arrows — RTL aware: "previous" sits on the right, "next" on the
+         left (matching the reading direction). */
+      .car-arrow {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 2;
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        border: none;
+        background: rgba(255, 255, 255, 0.9);
+        color: var(--wine-deep);
+        font-family: var(--display);
+        font-size: 24px;
+        font-weight: 800;
+        line-height: 1;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 12px rgba(44, 26, 41, 0.2);
+        transition:
+          background 0.16s ease,
+          transform 0.16s ease;
+      }
+      .car-arrow:hover {
+        background: #fff;
+        transform: translateY(-50%) scale(1.08);
+      }
+      .car-arrow:focus-visible {
+        outline: 3px solid var(--hot);
+        outline-offset: 2px;
+      }
+      .car-arrow.prev {
+        inset-inline-end: 8px;
+      }
+      .car-arrow.next {
+        inset-inline-start: 8px;
+      }
+      /* enlarge (fullscreen) affordance */
+      .enlarge {
+        position: absolute;
+        top: 8px;
+        inset-inline-end: 8px;
+        z-index: 2;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        border: none;
+        background: rgba(44, 26, 41, 0.55);
+        color: #fff;
+        font-size: 19px;
+        line-height: 1;
+        cursor: zoom-in;
+        box-shadow: 0 4px 12px rgba(44, 26, 41, 0.24);
+        transition: background 0.16s ease;
+      }
+      .enlarge:hover {
+        background: rgba(44, 26, 41, 0.78);
+      }
+      .enlarge:focus-visible {
+        outline: 3px solid #fff;
+        outline-offset: 2px;
+      }
+      /* per-product indicator dots */
+      .car-dots {
+        position: absolute;
+        inset-block-end: 8px;
+        inset-inline: 0;
+        display: flex;
+        justify-content: center;
+        gap: 6px;
+        z-index: 2;
+      }
+      .car-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        background: rgba(255, 255, 255, 0.65);
+        box-shadow: 0 1px 3px rgba(44, 26, 41, 0.3);
+        transition:
+          background 0.16s ease,
+          transform 0.16s ease;
+      }
+      .car-dot.is-active {
+        background: var(--hot);
+        transform: scale(1.25);
+      }
+      .car-dot:focus-visible {
+        outline: 2px solid var(--hot);
+        outline-offset: 2px;
+      }
+
       .tile .tname {
+        display: inline-block;
         font-family: var(--display);
         font-weight: 800;
-        font-size: 20px;
+        font-size: 22px;
         color: var(--wine-deep);
-        margin-top: 12px;
+        margin-top: 14px;
+        text-decoration: none;
+      }
+      a.tname:hover {
+        text-decoration: underline;
       }
       .tile .dots {
         display: flex;
@@ -365,7 +468,7 @@
         font-weight: 600;
         margin-inline-end: 4px;
       }
-      /* button-styled affordance inside the link */
+      /* deep-link CTA (the only navigating control in the card besides the name) */
       .tile .tile-cta {
         margin-top: 14px;
         align-self: stretch;
@@ -381,11 +484,16 @@
         color: #fff;
         padding: 12px 22px;
         border-radius: 999px;
+        text-decoration: none;
         box-shadow: 0 8px 18px rgba(229, 25, 125, 0.26);
         transition: filter 0.2s ease;
       }
-      .tile:hover .tile-cta {
+      .tile .tile-cta:hover {
         filter: brightness(1.05);
+      }
+      .tile .tile-cta:focus-visible {
+        outline: 3px solid var(--hot);
+        outline-offset: 3px;
       }
 
       /* graceful fallback if the catalog module can't load */
@@ -395,6 +503,192 @@
       }
       .tile-fallback .btn {
         margin-top: 14px;
+      }
+
+      /* ===== FULLSCREEN ZOOM OVERLAY =====
+         Self-contained (does NOT reuse options.html). Opening from a tile shows
+         that design's CURRENT product LARGE by fetching the full SVG on demand and
+         applying the design's ORIGINAL colours (no colour picker on this page).
+         IG-webview-safe: +/- buttons and double-tap drive zoom; scroll/drag pans;
+         pinch is a progressive enhancement; ×/ESC/Android-back all close. ‹ ›
+         (and the segmented control) switch front/back/board. */
+      .zoom {
+        position: fixed;
+        inset: 0;
+        z-index: 120;
+        background: rgba(28, 14, 25, 0.95);
+      }
+      .zoom[hidden] {
+        display: none;
+      }
+      .zoom-viewport {
+        position: absolute;
+        inset: 0;
+        overflow: auto;
+        display: grid;
+        place-content: safe center;
+        padding: 14px;
+        touch-action: pan-x pan-y;
+        -webkit-overflow-scrolling: touch;
+      }
+      .zoom-content {
+        /* zoom level 1 fits the sheet to BOTH screen dimensions; +/- multiply up to 4x. */
+        width: calc(var(--zoom, 1) * min(94vw, 94dvh * 1.414));
+        margin: auto;
+        transition: width 0.16s ease;
+      }
+      .zoom-content svg,
+      .zoom-content img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 6px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      }
+      .zoom-loading {
+        color: #fff;
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 16px;
+        text-align: center;
+        padding: 40px;
+      }
+      .zoom-toolbar {
+        position: absolute;
+        z-index: 2;
+        inset-block-start: calc(env(safe-area-inset-top, 0px) + 12px);
+        inset-inline-end: 12px;
+        display: flex;
+        gap: 8px;
+      }
+      .zoom-btn {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        border: none;
+        background: rgba(255, 255, 255, 0.16);
+        color: #fff;
+        font-size: 24px;
+        font-weight: 800;
+        line-height: 1;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(6px);
+        transition: background 0.16s ease;
+      }
+      .zoom-btn:hover {
+        background: rgba(255, 255, 255, 0.3);
+      }
+      .zoom-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .zoom-btn:focus-visible {
+        outline: 3px solid var(--hot);
+        outline-offset: 2px;
+      }
+      .zoom-close {
+        background: rgba(255, 255, 255, 0.26);
+      }
+      /* product-switch arrows in fullscreen (mid-height, RTL aware) */
+      .zoom-nav {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 2;
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        border: none;
+        background: rgba(255, 255, 255, 0.16);
+        color: #fff;
+        font-size: 30px;
+        font-weight: 800;
+        line-height: 1;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(6px);
+        transition: background 0.16s ease;
+      }
+      .zoom-nav:hover {
+        background: rgba(255, 255, 255, 0.32);
+      }
+      .zoom-nav:focus-visible {
+        outline: 3px solid var(--hot);
+        outline-offset: 2px;
+      }
+      .zoom-nav.prev {
+        inset-inline-end: 12px;
+      }
+      .zoom-nav.next {
+        inset-inline-start: 12px;
+      }
+      /* segmented control: front / back / board */
+      .zoom-seg {
+        position: absolute;
+        z-index: 2;
+        inset-block-start: calc(env(safe-area-inset-top, 0px) + 12px);
+        inset-inline: 0;
+        margin: 0 auto;
+        width: max-content;
+        max-width: 90vw;
+        display: flex;
+        gap: 4px;
+        background: rgba(255, 255, 255, 0.14);
+        border-radius: 999px;
+        padding: 4px;
+        backdrop-filter: blur(6px);
+      }
+      .zoom-seg[hidden] {
+        display: none;
+      }
+      .zoom-seg button {
+        border: none;
+        background: transparent;
+        color: #fff;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 14.5px;
+        padding: 7px 15px;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 0.16s ease;
+      }
+      .zoom-seg button[aria-pressed='true'] {
+        background: linear-gradient(135deg, var(--hot), var(--wine));
+      }
+      .zoom-seg button:focus-visible {
+        outline: 2px solid #fff;
+        outline-offset: 1px;
+      }
+      .zoom-hint {
+        position: absolute;
+        z-index: 2;
+        inset-block-end: calc(env(safe-area-inset-bottom, 0px) + 18px);
+        inset-inline: 0;
+        margin: 0 auto;
+        width: max-content;
+        max-width: 90vw;
+        background: rgba(0, 0, 0, 0.58);
+        color: #fff;
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 14px;
+        padding: 9px 16px;
+        border-radius: 999px;
+        opacity: 0;
+        transition: opacity 0.4s ease;
+        pointer-events: none;
+      }
+      .zoom-hint.is-shown {
+        opacity: 1;
+      }
+      .zoom-hint[hidden] {
+        display: none;
       }
 
       /* ---- footer (copied from index.html) ---- */
@@ -487,6 +781,15 @@
         color: #c7a9b5;
         font-weight: 600;
       }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        * {
+          transition-duration: 0.001ms !important;
+        }
+      }
     </style>
   </head>
   <body>
@@ -532,6 +835,60 @@
         </div>
       </div>
     </main>
+
+    <!-- FULLSCREEN ZOOM OVERLAY — opened by a tile's ⤢ button or by tapping the
+         image; loads the current product's full SVG on demand at its original
+         colours. ‹ › and the segmented control switch front/back/board. -->
+    <div class="zoom" id="zoomOverlay" data-testid="zoom-overlay" hidden>
+      <div class="zoom-viewport" id="zoomViewport" data-testid="zoom-viewport">
+        <div class="zoom-content" id="zoomContent" data-testid="zoom-content"></div>
+      </div>
+      <div class="zoom-seg" id="zoomSeg" role="group" aria-label="בחירת מוצר"></div>
+      <button
+        class="zoom-nav prev"
+        type="button"
+        id="zoomPrev"
+        data-testid="zoom-prev"
+        aria-label="המוצר הקודם"
+      >
+        ›
+      </button>
+      <button
+        class="zoom-nav next"
+        type="button"
+        id="zoomNext"
+        data-testid="zoom-next"
+        aria-label="המוצר הבא"
+      >
+        ‹
+      </button>
+      <div class="zoom-toolbar" role="group" aria-label="שליטה בהגדלה">
+        <button
+          class="zoom-btn"
+          type="button"
+          id="zoomOut"
+          data-testid="zoom-out"
+          aria-label="הקטנה"
+        >
+          −
+        </button>
+        <button class="zoom-btn" type="button" id="zoomIn" data-testid="zoom-in" aria-label="הגדלה">
+          ＋
+        </button>
+        <button
+          class="zoom-btn zoom-close"
+          type="button"
+          id="zoomClose"
+          data-testid="zoom-close"
+          aria-label="סגירה"
+        >
+          ×
+        </button>
+      </div>
+      <div class="zoom-hint" id="zoomHint" data-testid="zoom-hint" hidden>
+        סובבו את המכשיר לתצוגה מלאה
+      </div>
+    </div>
 
     <footer>
       <div class="wrap">
@@ -621,44 +978,146 @@
     </script>
 
     <!-- Templates gallery: one tile per design, single source of truth = js/designs.js.
-         Each tile deep-links into the wizard already on the colour step
-         (options.html?design=<id>&step=2). -->
+         Each tile: a front→back→board carousel (lightweight raster thumbs), an
+         enlarge button that opens a fullscreen zoom of the full SVG, and a deep-link
+         CTA into the wizard (options.html?design=<id>&step=<2 slider|3 fixed>). -->
     <script type="module">
       import { DESIGNS, MAIN_COLORS } from './js/designs.js';
 
       const PRICE = 79;
       const grid = document.getElementById('tileGrid');
 
+      // Hebrew label per product kind (used by the fullscreen segmented control).
+      const KIND_LABEL = { front: 'קלף', back: 'גב', board: 'לוח' };
+
+      // Which products a design ships (board is optional — kids has none).
+      function productKinds(d) {
+        const t = d.thumbs || {};
+        return ['front', 'back', 'board'].filter((k) => t[k]);
+      }
+
+      // ---- one tile -----------------------------------------------------------
       function tile(d) {
-        const a = document.createElement('a');
-        a.className = 'tile';
+        const kinds = productKinds(d);
         // Fixed-colour designs (neon) have nothing to pick on the colour step, so
         // skip it and deep-link to the add-ons step instead. Sliders start on colour.
         const step = d.recolor === 'fixed' ? 3 : 2;
-        a.href = `options.html?design=${encodeURIComponent(d.id)}&step=${step}`;
-        a.setAttribute('data-testid', 'tile');
-        a.setAttribute('data-design-id', d.id);
-        a.setAttribute('aria-label', `בחרו עיצוב ${d.name}`);
+        const href = `options.html?design=${encodeURIComponent(d.id)}&step=${step}`;
 
-        // thumbnail (landscape page frame, lazy)
+        const card = document.createElement('article');
+        card.className = 'tile';
+        card.setAttribute('data-testid', 'tile');
+        card.setAttribute('data-design-id', d.id);
+
+        // ---- carousel (image + arrows + enlarge + dots) ----
+        const carousel = document.createElement('div');
+        carousel.className = 'carousel';
+
         const thumb = document.createElement('div');
         thumb.className = 'thumb';
-        if (d.thumb) {
-          const img = document.createElement('img');
-          img.loading = 'lazy';
-          img.src = d.thumb;
-          img.alt = d.name;
-          thumb.appendChild(img);
+        thumb.setAttribute('data-testid', 'tile-image');
+        thumb.setAttribute('role', 'button');
+        thumb.setAttribute('tabindex', '0');
+        thumb.setAttribute('aria-label', `הגדלת ${d.name}`);
+        const img = document.createElement('img');
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.src = d.thumbs[kinds[0]];
+        img.alt = d.name;
+        img.setAttribute('data-testid', 'tile-thumb');
+        thumb.appendChild(img);
+        carousel.appendChild(thumb);
+
+        // carousel state lives on the card
+        let idx = 0;
+        function show(i) {
+          idx = (i + kinds.length) % kinds.length;
+          const kind = kinds[idx];
+          img.src = d.thumbs[kind];
+          img.alt = `${d.name} · ${KIND_LABEL[kind] || kind}`;
+          carousel.querySelectorAll('.car-dot').forEach((dot, di) => {
+            dot.classList.toggle('is-active', di === idx);
+            dot.setAttribute('aria-pressed', di === idx ? 'true' : 'false');
+          });
         }
-        a.appendChild(thumb);
 
-        // name
-        const name = document.createElement('div');
+        // arrows only when there's more than one product to flip through
+        if (kinds.length > 1) {
+          const prev = document.createElement('button');
+          prev.type = 'button';
+          prev.className = 'car-arrow prev';
+          prev.setAttribute('data-testid', 'tile-prev');
+          prev.setAttribute('aria-label', 'הקודם');
+          prev.textContent = '›';
+          prev.addEventListener('click', (e) => {
+            e.stopPropagation();
+            show(idx - 1);
+          });
+
+          const next = document.createElement('button');
+          next.type = 'button';
+          next.className = 'car-arrow next';
+          next.setAttribute('data-testid', 'tile-next');
+          next.setAttribute('aria-label', 'הבא');
+          next.textContent = '‹';
+          next.addEventListener('click', (e) => {
+            e.stopPropagation();
+            show(idx + 1);
+          });
+
+          carousel.appendChild(prev);
+          carousel.appendChild(next);
+
+          const dots = document.createElement('div');
+          dots.className = 'car-dots';
+          kinds.forEach((kind, di) => {
+            const dot = document.createElement('button');
+            dot.type = 'button';
+            dot.className = 'car-dot' + (di === 0 ? ' is-active' : '');
+            dot.setAttribute('data-testid', 'car-dot');
+            dot.setAttribute('aria-label', KIND_LABEL[kind] || kind);
+            dot.setAttribute('aria-pressed', di === 0 ? 'true' : 'false');
+            dot.addEventListener('click', (e) => {
+              e.stopPropagation();
+              show(di);
+            });
+            dots.appendChild(dot);
+          });
+          carousel.appendChild(dots);
+        }
+
+        // enlarge affordance (⤢) — opens fullscreen on the CURRENT product
+        const enlarge = document.createElement('button');
+        enlarge.type = 'button';
+        enlarge.className = 'enlarge';
+        enlarge.setAttribute('data-testid', 'enlarge');
+        enlarge.setAttribute('aria-label', `הגדלת ${d.name}`);
+        enlarge.textContent = '⤢';
+        enlarge.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openZoom(d, kinds[idx]);
+        });
+        carousel.appendChild(enlarge);
+
+        // tapping the image also opens fullscreen (keyboard: Enter/Space)
+        thumb.addEventListener('click', () => openZoom(d, kinds[idx]));
+        thumb.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openZoom(d, kinds[idx]);
+          }
+        });
+
+        card.appendChild(carousel);
+
+        // ---- name (navigates) ----
+        const name = document.createElement('a');
         name.className = 'tname';
+        name.href = href;
         name.textContent = d.name;
-        a.appendChild(name);
+        card.appendChild(name);
 
-        // colour note
+        // ---- colour note ----
         const dots = document.createElement('div');
         dots.className = 'dots';
         if (d.recolor === 'fixed') {
@@ -689,22 +1148,23 @@
           more.textContent = 'ועוד';
           dots.appendChild(more);
         }
-        a.appendChild(dots);
+        card.appendChild(dots);
 
-        // price
+        // ---- price ----
         const price = document.createElement('div');
         price.className = 'price';
         price.textContent = `החל מ-${PRICE} ₪`;
-        a.appendChild(price);
+        card.appendChild(price);
 
-        // button-styled affordance (whole tile is the link)
-        const cta = document.createElement('span');
+        // ---- deep-link CTA ----
+        const cta = document.createElement('a');
         cta.className = 'tile-cta';
-        cta.setAttribute('aria-hidden', 'true');
+        cta.href = href;
+        cta.setAttribute('data-testid', 'tile-cta');
         cta.textContent = 'בחרו עיצוב ›';
-        a.appendChild(cta);
+        card.appendChild(cta);
 
-        return a;
+        return card;
       }
 
       try {
@@ -720,6 +1180,284 @@
           '<a class="btn" href="options.html">להזמנה ובחירת עיצוב ›</a></div>';
         console.error('products gallery failed to render:', err);
       }
+
+      /* ===================================================================
+         FULLSCREEN ZOOM OVERLAY (self-contained; NOT shared with options.html).
+         Loads the current product's FULL SVG on demand and paints it in the
+         design's ORIGINAL colours (no colour picker here). Cache fetched SVGs.
+         =================================================================== */
+      const zoomOverlay = document.getElementById('zoomOverlay');
+      const zoomViewport = document.getElementById('zoomViewport');
+      const zoomContent = document.getElementById('zoomContent');
+      const zoomSeg = document.getElementById('zoomSeg');
+      const zoomHint = document.getElementById('zoomHint');
+      const zoomPrevBtn = document.getElementById('zoomPrev');
+      const zoomNextBtn = document.getElementById('zoomNext');
+      const zoomInBtn = document.getElementById('zoomIn');
+      const zoomOutBtn = document.getElementById('zoomOut');
+      const zoomCloseBtn = document.getElementById('zoomClose');
+
+      const ZOOM_MIN = 1;
+      const ZOOM_MAX = 4;
+      let zoomScale = 1;
+      let zoomOpen = false;
+      let zoomPushed = false; // did we push a history entry to pop on close?
+      let zoomOpener = null; // element focus returns to on close
+      let curDesign = null;
+      let curKinds = [];
+      let curKind = 'front';
+      let loadToken = 0; // invalidates a stale in-flight SVG fetch
+
+      // Cache fetched SVG text by path (the full multi-MB SVGs are only ever
+      // loaded here, on demand — never inlined in the grid).
+      const svgCache = new Map();
+      function loadSvg(path) {
+        if (svgCache.has(path)) return svgCache.get(path);
+        const p = fetch(path).then((r) =>
+          r.ok ? r.text() : Promise.reject(new Error('svg ' + r.status))
+        );
+        svgCache.set(path, p);
+        return p;
+      }
+
+      // Wrap the tokenized SVG so its var(--cN) paint resolves to the design's
+      // ORIGINAL hexes (mirror of the site's paintSvg — no --cN vars are set, so
+      // the fallback hex wins). Fixed designs (empty anchors) carry literal colours.
+      let svgUid = 0;
+      function paintOriginal(svgText, anchors) {
+        if (!anchors || !anchors.length) return svgText;
+        const id = 'zoom-svg-' + ++svgUid;
+        const rules = anchors
+          .map(
+            (hex, i) =>
+              `#${id} [fill="var(--c${i})"]{fill:var(--c${i},${hex})}` +
+              `#${id} [stroke="var(--c${i})"]{stroke:var(--c${i},${hex})}`
+          )
+          .join('');
+        return svgText.replace(/<svg\b([^>]*)>/i, `<svg id="${id}"$1><style>${rules}</style>`);
+      }
+
+      function setZoom(z) {
+        zoomScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100));
+        zoomContent.style.setProperty('--zoom', String(zoomScale));
+        zoomOutBtn.disabled = zoomScale <= ZOOM_MIN;
+        zoomInBtn.disabled = zoomScale >= ZOOM_MAX;
+      }
+
+      // Build the front/back/board segmented control for the current design.
+      function buildSeg() {
+        zoomSeg.replaceChildren();
+        for (const kind of curKinds) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.setAttribute('data-testid', 'zoom-seg-' + kind);
+          b.setAttribute('data-kind', kind);
+          b.setAttribute('aria-pressed', kind === curKind ? 'true' : 'false');
+          b.textContent = KIND_LABEL[kind] || kind;
+          b.addEventListener('click', () => switchProduct(kind));
+          zoomSeg.appendChild(b);
+        }
+        const single = curKinds.length <= 1;
+        zoomPrevBtn.hidden = single;
+        zoomNextBtn.hidden = single;
+      }
+
+      // Load + inline the current product's SVG at its original colours, resetting
+      // zoom. Guarded against a stale fetch landing after the user switched product.
+      async function renderProduct() {
+        const path = curDesign.products[curKind];
+        const anchors = curDesign.anchors || [];
+        const token = ++loadToken;
+        zoomContent.removeAttribute('style');
+        zoomContent.innerHTML = '<div class="zoom-loading">טוען…</div>';
+        setZoom(1);
+        zoomSeg.querySelectorAll('button').forEach((b) => {
+          b.setAttribute(
+            'aria-pressed',
+            b.getAttribute('data-kind') === curKind ? 'true' : 'false'
+          );
+        });
+        try {
+          const svg = paintOriginal(await loadSvg(path), anchors);
+          if (token !== loadToken || !zoomOpen) return; // stale / closed
+          zoomContent.innerHTML = svg;
+          setZoom(1);
+        } catch (e) {
+          if (token !== loadToken) return;
+          zoomContent.innerHTML = '<div class="zoom-loading">לא ניתן לטעון את התצוגה</div>';
+        }
+      }
+
+      function switchProduct(kind) {
+        if (!zoomOpen || kind === curKind || !curKinds.includes(kind)) return;
+        curKind = kind;
+        renderProduct();
+      }
+
+      function stepProduct(delta) {
+        if (curKinds.length <= 1) return;
+        const i = curKinds.indexOf(curKind);
+        switchProduct(curKinds[(i + delta + curKinds.length) % curKinds.length]);
+      }
+
+      function maybeShowHint() {
+        const useful =
+          typeof matchMedia === 'function' &&
+          matchMedia('(pointer: coarse)').matches &&
+          matchMedia('(orientation: portrait)').matches;
+        if (!useful) return;
+        let seen = false;
+        try {
+          seen = localStorage.getItem('dugri_zoom_hint') === '1';
+        } catch (e) {}
+        if (seen) return;
+        zoomHint.hidden = false;
+        requestAnimationFrame(() => zoomHint.classList.add('is-shown'));
+        setTimeout(() => {
+          zoomHint.classList.remove('is-shown');
+          setTimeout(() => {
+            zoomHint.hidden = true;
+          }, 450);
+        }, 3400);
+        try {
+          localStorage.setItem('dugri_zoom_hint', '1');
+        } catch (e) {}
+      }
+
+      function openZoom(design, kind) {
+        if (zoomOpen) return;
+        curDesign = design;
+        curKinds = productKinds(design);
+        curKind = curKinds.includes(kind) ? kind : curKinds[0];
+        buildSeg();
+        zoomOpener = document.activeElement;
+        zoomOverlay.hidden = false;
+        zoomOpen = true;
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+        document.addEventListener('keydown', onZoomKey);
+        // Android hardware back / browser back closes the overlay via popstate.
+        try {
+          history.pushState({ zoom: true }, '');
+          zoomPushed = true;
+        } catch (e) {
+          zoomPushed = false;
+        }
+        zoomCloseBtn.focus();
+        maybeShowHint();
+        renderProduct();
+      }
+
+      function hideZoom() {
+        zoomOpen = false;
+        zoomOverlay.hidden = true;
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+        document.removeEventListener('keydown', onZoomKey);
+        loadToken++; // drop any in-flight fetch result
+        zoomContent.innerHTML = '';
+        zoomContent.removeAttribute('style');
+        if (zoomOpener && typeof zoomOpener.focus === 'function') zoomOpener.focus();
+      }
+
+      function closeZoom() {
+        if (!zoomOpen) return;
+        if (zoomPushed) {
+          zoomPushed = false;
+          history.back();
+        } else {
+          hideZoom();
+        }
+      }
+
+      window.addEventListener('popstate', () => {
+        if (zoomOpen) {
+          zoomPushed = false;
+          hideZoom();
+        }
+      });
+
+      function onZoomKey(e) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          closeZoom();
+        } else if (e.key === '+' || e.key === '=') {
+          setZoom(zoomScale + 0.5);
+        } else if (e.key === '-') {
+          setZoom(zoomScale - 0.5);
+        } else if (e.key === 'ArrowRight') {
+          stepProduct(-1); // RTL: right = previous
+        } else if (e.key === 'ArrowLeft') {
+          stepProduct(1); // RTL: left = next
+        }
+      }
+
+      zoomInBtn.addEventListener('click', () => setZoom(zoomScale + 0.5));
+      zoomOutBtn.addEventListener('click', () => setZoom(zoomScale - 0.5));
+      zoomCloseBtn.addEventListener('click', closeZoom);
+      zoomPrevBtn.addEventListener('click', () => stepProduct(-1));
+      zoomNextBtn.addEventListener('click', () => stepProduct(1));
+      // tapping the dim backdrop (not the sheet) closes
+      zoomViewport.addEventListener('click', (e) => {
+        if (e.target === zoomViewport) closeZoom();
+      });
+
+      // double-tap / double-click toggles zoom (reliable in the IG in-app browser).
+      // A pointerup only counts as a TAP if the pointer barely moved since its
+      // pointerdown — otherwise dragging to pan a zoomed sheet is misread as a tap.
+      const TAP_MOVE_MAX = 10; // px
+      let lastTap = 0;
+      let downX = 0;
+      let downY = 0;
+      let downMoved = false;
+      zoomViewport.addEventListener('pointerdown', (e) => {
+        downX = e.clientX;
+        downY = e.clientY;
+        downMoved = false;
+      });
+      zoomViewport.addEventListener('pointermove', (e) => {
+        if (Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_MOVE_MAX) downMoved = true;
+      });
+      zoomViewport.addEventListener('pointerup', (e) => {
+        if (downMoved || Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_MOVE_MAX) {
+          lastTap = 0;
+          return;
+        }
+        const now = Date.now();
+        if (now - lastTap < 320) {
+          setZoom(zoomScale > ZOOM_MIN ? ZOOM_MIN : 2.5);
+          lastTap = 0;
+        } else {
+          lastTap = now;
+        }
+      });
+
+      // pinch-to-zoom — progressive enhancement on top of the buttons.
+      let pinchDist = 0;
+      let pinchBase = 1;
+      function touchDist(t) {
+        return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+      }
+      zoomViewport.addEventListener(
+        'touchstart',
+        (e) => {
+          if (e.touches.length === 2) {
+            pinchDist = touchDist(e.touches);
+            pinchBase = zoomScale;
+          }
+        },
+        { passive: true }
+      );
+      zoomViewport.addEventListener(
+        'touchmove',
+        (e) => {
+          if (e.touches.length === 2 && pinchDist > 0) {
+            e.preventDefault();
+            setZoom(pinchBase * (touchDist(e.touches) / pinchDist));
+          }
+        },
+        { passive: false }
+      );
     </script>
   </body>
 </html>

@@ -44,6 +44,10 @@ export const DESIGNS = Object.entries(GENERATED).map(([id, g]) => ({
   // representative page-accent colour (present for EVERY design, incl. fixed ones
   // that have no anchors) so the page tint can switch even when the SVG can't.
   accent: g.accent || null,
+  // `thumb` is the small picker thumbnail (= front) used by options.html; `thumbs`
+  // is the per-product raster map {front,back[,board]} the templates gallery
+  // carousel flips through. board is omitted for boardless designs (kids).
   thumb: g.thumb || null,
+  thumbs: g.thumbs || null,
   products: g.products,
 }));
