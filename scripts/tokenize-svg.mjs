@@ -535,11 +535,15 @@ for (const r of report) {
   if (p.board) prodParts.push(`board:'${p.board}'`); // board optional
   // Per-product gallery thumbs (rendered by scripts/product-thumbs.mjs). `thumb`
   // above stays the small picker thumb (= front) so options.html is unaffected.
-  const thumbParts = [
-    `front:'assets/designs/${r.id}/thumb-front.webp'`,
-    `back:'assets/designs/${r.id}/thumb-back.webp'`,
-  ];
-  if (p.board) thumbParts.push(`board:'assets/designs/${r.id}/thumb-board.webp'`);
+  // Emit a kind ONLY if its webp actually exists on disk, so the manifest can never
+  // list a missing file (e.g. a design tokenized here before product-thumbs ran).
+  // products.html falls back to the front `thumb` for any kind not listed here.
+  // NOTE: scripts/product-thumbs.mjs re-emits this same GENERATED shape — keep the
+  // two serializers in sync if the manifest fields change.
+  const thumbKinds = p.board ? ['front', 'back', 'board'] : ['front', 'back'];
+  const thumbParts = thumbKinds
+    .filter((k) => existsSync(resolve(OUT_ASSETS, r.id, `thumb-${k}.webp`)))
+    .map((k) => `${k}:'assets/designs/${r.id}/thumb-${k}.webp'`);
   const key = `${r.id}:`.padEnd(14);
   const accentPart = r.accent ? `accent:'${r.accent}', ` : '';
   js +=

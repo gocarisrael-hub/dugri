@@ -998,7 +998,13 @@
 
       // ---- one tile -----------------------------------------------------------
       function tile(d) {
-        const kinds = productKinds(d);
+        const thumbs = d.thumbs || {};
+        let kinds = productKinds(d);
+        // Never throw on a design missing its thumbs map (e.g. added before
+        // product-thumbs ran): fall back to the front thumb so the tile still shows
+        // an image (single state, no flip arrows).
+        if (!kinds.length) kinds = ['front'];
+        const srcFor = (kind) => thumbs[kind] || d.thumb || '';
         // Fixed-colour designs (neon) have nothing to pick on the colour step, so
         // skip it and deep-link to the add-ons step instead. Sliders start on colour.
         const step = d.recolor === 'fixed' ? 3 : 2;
@@ -1022,7 +1028,7 @@
         const img = document.createElement('img');
         img.loading = 'lazy';
         img.decoding = 'async';
-        img.src = d.thumbs[kinds[0]];
+        img.src = srcFor(kinds[0]);
         img.alt = d.name;
         img.setAttribute('data-testid', 'tile-thumb');
         thumb.appendChild(img);
@@ -1033,7 +1039,7 @@
         function show(i) {
           idx = (i + kinds.length) % kinds.length;
           const kind = kinds[idx];
-          img.src = d.thumbs[kind];
+          img.src = srcFor(kind);
           img.alt = `${d.name} · ${KIND_LABEL[kind] || kind}`;
           carousel.querySelectorAll('.car-dot').forEach((dot, di) => {
             dot.classList.toggle('is-active', di === idx);
@@ -1161,8 +1167,19 @@
         cta.className = 'tile-cta';
         cta.href = href;
         cta.setAttribute('data-testid', 'tile-cta');
+        // Name the design for assistive tech (the visible text is only "בחרו עיצוב ›").
+        cta.setAttribute('aria-label', `בחרו עיצוב ${d.name}`);
         cta.textContent = 'בחרו עיצוב ›';
         card.appendChild(cta);
+
+        // Tapping anywhere on the card proceeds to the wizard — EXCEPT on the
+        // interactive controls (arrows, dots, enlarge, the image=zoom) and the
+        // name/CTA links, which act on their own. Restores the old whole-tile tap.
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('a, button, .thumb, [role="button"]')) return;
+          window.location.href = href;
+        });
 
         return card;
       }
@@ -1170,7 +1187,16 @@
       try {
         if (!Array.isArray(DESIGNS) || !DESIGNS.length) throw new Error('empty catalog');
         const frag = document.createDocumentFragment();
-        for (const d of DESIGNS) frag.appendChild(tile(d));
+        for (const d of DESIGNS) {
+          // Isolate each tile so a single bad design skips only itself, never the
+          // whole gallery.
+          try {
+            frag.appendChild(tile(d));
+          } catch (tileErr) {
+            console.error('skipping design tile:', d && d.id, tileErr);
+          }
+        }
+        if (!frag.childNodes.length) throw new Error('no tiles rendered');
         grid.replaceChildren(frag);
       } catch (err) {
         // Graceful degradation: never leave a blank page — offer the wizard directly.
@@ -1216,6 +1242,10 @@
         const p = fetch(path).then((r) =>
           r.ok ? r.text() : Promise.reject(new Error('svg ' + r.status))
         );
+        // Cache only successful loads: on a rejection (network blip / 5xx) evict the
+        // entry so a later open retries, instead of being pinned to a permanently
+        // rejected promise (which would show the error forever until a reload).
+        p.catch(() => svgCache.delete(path));
         svgCache.set(path, p);
         return p;
       }

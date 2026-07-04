@@ -233,6 +233,24 @@ test.describe('templates gallery (products.html)', () => {
     );
     await expect(page.getByTestId('chasers-card')).toBeVisible();
   });
+
+  test('tapping the card body (not a control) navigates into the wizard', async ({ page }) => {
+    await page.goto('/products.html');
+    // The whole tile is clickable again: tapping a non-control area (the price line)
+    // of a slider design proceeds to its colour step — not just the CTA button.
+    await page.locator('.tile[data-design-id="bachelorette"] .price').click();
+    await page.waitForURL(/options\.html\?design=bachelorette&step=2/);
+    await expect(page.getByTestId('step-2')).toBeVisible();
+  });
+
+  test('the deep-link CTA carries an accessible name that includes the design', async ({
+    page,
+  }) => {
+    await page.goto('/products.html');
+    const tile = page.locator('.tile[data-design-id="bachelorette"]');
+    const name = (await tile.locator('.tname').textContent()).trim();
+    await expect(tile.locator('.tile-cta')).toHaveAttribute('aria-label', `בחרו עיצוב ${name}`);
+  });
 });
 
 test.describe('templates-first funnel (index.html)', () => {
