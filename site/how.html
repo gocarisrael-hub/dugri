@@ -453,23 +453,6 @@
       .proof {
         background: var(--surface);
         text-align: center;
-        padding-top: 38px;
-        padding-bottom: 38px;
-      }
-      /* compact "כבר חוגגים איתנו" section */
-      .proof .sec-title {
-        margin-bottom: 22px;
-      }
-      .proof .sec-title h2 {
-        font-size: 28px;
-      }
-      .proof .vclips {
-        max-width: 620px;
-      }
-      @media (min-width: 720px) {
-        .proof .reviews {
-          max-width: 860px;
-        }
       }
       .stars {
         color: var(--gold);
@@ -949,16 +932,12 @@
       }
 
       /* gallery */
-      /* Single horizontal row of peek photos (scrolls on narrow screens). */
       .gallery {
         display: grid;
-        grid-auto-flow: column;
-        grid-auto-columns: minmax(150px, 1fr);
+        grid-template-columns: repeat(2, 1fr);
         gap: 12px;
-        max-width: 760px;
+        max-width: 560px;
         margin: 0 auto;
-        overflow-x: auto;
-        padding-bottom: 6px;
       }
       .gphoto {
         aspect-ratio: 4/5;
@@ -1405,7 +1384,7 @@
   <body>
     <nav class="nav" aria-label="ניווט ראשי">
       <div class="nav-inner">
-        <a class="nav-logo" href="#top" aria-label="דוגרי - לראש העמוד"
+        <a class="nav-logo" href="index.html" aria-label="דוגרי - לעמוד הבית"
           ><img src="assets/logo.png" alt="דוגרי"
         /></a>
         <button
@@ -1420,9 +1399,9 @@
         </button>
         <div class="nav-links" id="navLinks" data-testid="nav-links">
           <a href="products.html">העיצובים שלנו</a>
-          <a href="how.html">איך זה עובד?</a>
-          <a href="#gallery">הצצה</a>
-          <a href="#proof">המלצות</a>
+          <a href="how.html" aria-current="page">איך זה עובד?</a>
+          <a href="index.html#gallery">הצצה</a>
+          <a href="index.html#proof">המלצות</a>
           <a href="timer.html">טיימר</a>
           <a class="nav-cta" href="products.html" data-ga="order_started" data-ga-cta="nav"
             >הזמנה</a
@@ -1432,174 +1411,88 @@
     </nav>
 
     <header id="top">
-      <div class="confetti" id="confetti" aria-hidden="true"></div>
       <div class="wrap">
-        <h1 class="brand"><img class="brand-logo" src="assets/logo.png" alt="דוגרי" /></h1>
-        <div class="tagline">
-          <span class="tagline-1">שלחו לנו את הסיפורים שרק אתם מכירים.</span>
-          <span class="tagline-2">אנחנו נהפוך אותם למשחק שיפוצץ את הערב</span>
-        </div>
-        <p class="launch-offer">
-          <span class="launch-badge">מבצע השקה</span>
-          <span class="launch-text"
-            >מספר הזמנות מוגבל בכל שבוע · אספקה תוך
-            <span style="white-space: nowrap">24 שעות</span></span
-          >
+        <h1>איך זה עובד?</h1>
+        <p class="lede">
+          שלושה צעדים פשוטים - שולחים מילים, אנחנו מעצבים, ואתם מדפיסים ומשחקים. הנה כל התהליך ומה
+          בדיוק מקבלים בקובץ.
         </p>
         <div class="hero-cta">
-          <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
+          <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="how-hero"
             >בונים את המשחק · <s class="was">129 ₪</s
             ><span style="white-space: nowrap">79 ₪</span></a
           >
-          <a class="btn ghost" href="how.html">איך זה עובד?</a>
+          <a class="btn ghost" href="index.html">חזרה לעמוד הבית</a>
         </div>
-        <div class="hero-video" data-testid="hero-video">
-          <video
-            autoplay
-            muted
-            loop
-            playsinline
-            preload="metadata"
-            poster="assets/video/dugri-hero-loop-poster.jpg"
-            aria-label="סרטון ממסיבה אמיתית עם משחק דוגרי"
-          >
-            <source src="assets/video/dugri-hero-loop.mp4" type="video/mp4" />
-          </video>
-          <p class="vcap"><strong>אירוע אמיתי</strong> · ככה זה נראה כשמשחקים דוגרי במסיבה</p>
-        </div>
-        <p class="lede">
-          משחק קלפים שהוא רק שלכם - מלא בבדיחות פנימיות, סיפורים מביכים ורגעים שרק אתם מכירים.
-          ההפתעה שכולם יזכרו מהערב.
-        </p>
-        <p class="trust">
-          <span>אספקה תוך 24 שעות</span> · <span>ללא הגבלת מילים</span> · <span>תשלום מאובטח</span>
-        </p>
       </div>
     </header>
 
-    <section id="gallery">
+    <section id="how">
       <div class="wrap">
         <div class="sec-title reveal">
-          <h2>הצצה</h2>
-          <p>קלפים ולוחות אמיתיים מאירועים</p>
+          <h2>איך זה עובד?</h2>
+          <p>שלושה צעדים, בלי כאב ראש</p>
         </div>
-        <div class="gallery stagger">
-          <div class="gphoto">
-            <img src="assets/gallery-1.jpg" alt="קלף דוגרי עם אייקונים מותאמים וארבע מילים" />
+        <div class="steps stagger">
+          <div class="step">
+            <div class="n">1</div>
+            <h3>ממלאים בלי להתאמץ</h3>
+            <p>שולחים מילים, שמות וביטויים שקשורים למי שחוגגים. מינימום 100.</p>
+            <span class="hint">שלחנו לכם דף עזר עם קטגוריות - אף פעם לא נתקעים מול דף ריק</span>
           </div>
-          <div class="gphoto">
-            <img src="assets/gallery-2.jpg" alt="חפיסת קלפים דוגרי ביד" />
+          <div class="step">
+            <div class="n">2</div>
+            <h3>אנחנו עושים את הקסם</h3>
+            <p>המילים הופכות לחפיסת קלפים ולוח משחק אישיים, בעיצוב ולצבעים שהם בול בשבילכם.</p>
           </div>
-          <div class="gphoto">
-            <img src="assets/gallery-3.jpg" alt="לוח משחק דוגרי עם טוקנים" />
-          </div>
-          <div class="gphoto">
-            <img src="assets/gallery-4.jpg" alt="לוח משחק וקלפים דוגרי על השולחן" />
+          <div class="step">
+            <div class="n">3</div>
+            <h3>מדפיסים ומשחקים</h3>
+            <p>PDF מוכן, מתאים לכל בית דפוס, מודפס תוך דקות. עד 24 שעות מרגע שליחת המילים.</p>
           </div>
         </div>
       </div>
     </section>
 
-    <section class="proof" id="proof">
+    <section id="included">
       <div class="wrap">
         <div class="sec-title reveal">
-          <h2>כבר חוגגים איתנו</h2>
-          <p>ככה זה נראה כשהמשחק מגיע לשולחן</p>
+          <h2>מה מקבלים</h2>
+          <p>חבילה שלמה, נשלחת במייל או בוואטסאפ</p>
         </div>
-        <div class="vclips reveal" data-testid="proof-clips">
-          <div class="vclip">
-            <video
-              autoplay
-              muted
-              loop
-              playsinline
-              preload="metadata"
-              poster="assets/video/party-poster.jpg"
-              aria-label="רגעים ממסיבה אמיתית עם משחק דוגרי"
-            >
-              <source src="assets/video/party.mp4" type="video/mp4" />
-            </video>
+        <div class="items stagger">
+          <div class="item">
+            <span class="tick">✦</span>
+            <div>
+              <h4>חפיסת קלפים מותאמת</h4>
+              <p>המילים שלכם הופכות לקלפים מעוצבים - כל קלף הוא בדיחה פנימית שמחכה להיקרא.</p>
+            </div>
           </div>
-          <div class="vclip">
-            <video
-              autoplay
-              muted
-              loop
-              playsinline
-              preload="metadata"
-              poster="assets/video/toast-poster.jpg"
-              aria-label="הרמת כוסית וצחוקים סביב משחק דוגרי"
-            >
-              <source src="assets/video/toast.mp4" type="video/mp4" />
-            </video>
+          <div class="item">
+            <span class="tick">✦</span>
+            <div>
+              <h4>לוח משחק שמכניס את כולם לאווירה</h4>
+              <p>לוח מעוצב ומותאם לכמות הקלפים - מוציאים, פורסים, ומתחילים לצחוק.</p>
+            </div>
+          </div>
+          <div class="item">
+            <span class="tick">✦</span>
+            <div>
+              <h4>חוקים ברורים מהרגע הראשון</h4>
+              <p>קבוצות, טיימר, ניקוד וווריאציות לכל אירוע - בלי ויכוחים על הכללים.</p>
+            </div>
+          </div>
+          <div class="item">
+            <span class="tick">✦</span>
+            <div>
+              <h4>הדפסה בלי כאב ראש</h4>
+              <p>
+                בדיוק איזה נייר, איך מדפיסים בגודל מקורי ואיפה גוזרים - כל בית דפוס שכונתי יסתדר.
+              </p>
+            </div>
           </div>
         </div>
-        <div class="stars reveal" aria-hidden="true">★★★★★</div>
-        <p class="proof-note" style="margin-top: 0; margin-bottom: 18px">מה אומרים אחרי המסיבה</p>
-        <div class="reviews stagger" data-testid="proof-reviews">
-          <figure class="review">
-            <img
-              src="assets/testimonials/review-1.jpg"
-              alt="המלצה אמיתית בוואטסאפ ממסיבת רווקות - לא הפסקנו לצחוק שעה וחצי"
-              loading="lazy"
-            />
-          </figure>
-          <figure class="review">
-            <img
-              src="assets/testimonials/review-2.jpg"
-              alt="המלצה אמיתית בוואטסאפ - היה מושלם, החלק הכי אהוב במסיבה"
-              loading="lazy"
-            />
-          </figure>
-          <figure class="review">
-            <img
-              src="assets/testimonials/review-3.jpg"
-              alt="המלצה אמיתית בוואטסאפ - שעה וחצי של צחוק רצוף, אישי ומצחיק ומרגש"
-              loading="lazy"
-            />
-          </figure>
-        </div>
-      </div>
-    </section>
-
-    <section id="faq">
-      <div class="wrap">
-        <div class="sec-title reveal">
-          <h2>שאלות נפוצות</h2>
-        </div>
-        <div class="faq stagger">
-          <details>
-            <summary>מה זה בעצם המשחק?</summary>
-            <p>
-              משחק מסיבה אישי בסגנון ניחוש מילים בקבוצות: אתם שולחים לנו 100+ מילים וביטויים על בעל
-              או בעלת השמחה - בדיחות פנימיות, הרגלים, אנשים ומקומות - ואנחנו הופכים אותם לחפיסת
-              קלפים מעוצבת ולוח משחק מוכנים להדפסה. מתחלקים לקבוצות, מתחרים מי יגרום לחברים לנחש מהר
-              יותר, וכל החדר צוחק על האדם שחוגגים - כי כל מילה היא רק עליו.
-            </p>
-          </details>
-          <details>
-            <summary>כמה מילים צריך לשלוח?</summary>
-            <p>
-              מינימום 100, ואין הגבלה עליונה. אנחנו שולחים דף עזר עם קטגוריות ודוגמאות שמקל מאוד
-              להיזכר - אנשים, מקומות, בדיחות פנימיות, ביטויים שהוא תמיד אומר.
-            </p>
-          </details>
-          <details>
-            <summary>מתי בדיוק מקבלים?</summary>
-            <p>
-              הספירה מתחילה מרגע שאתם שולחים את רשימת המילים - לא מרגע התשלום. תוך 24 שעות מאותו רגע
-              הקובץ אצלכם במייל ובוואטסאפ. יש לכם תאריך אירוע קרוב? יש גם אקספרס בעדיפות שמקצר את זה
-              לכמה שעות.
-            </p>
-          </details>
-          <details>
-            <summary>איך מזמינים ומשלמים?</summary>
-            <p>
-              בוחרים חבילה ומשלמים באתר בתשלום מאובטח. מיד אחרי התשלום מקבלים הודעה בוואטסאפ ובמייל
-              לשליחת המילים, ומשם אנחנו מתחילים.
-            </p>
-          </details>
-        </div>
+        <p class="delivery-note">הכל כלול בקובץ אחד - ב-79 ₪.</p>
       </div>
     </section>
 

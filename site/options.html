@@ -1460,8 +1460,10 @@
           <span></span>
         </button>
         <div class="nav-links" id="navLinks" data-testid="nav-links">
-          <a href="index.html#examples">דוגמאות</a>
-          <a href="index.html#pricing">מחירים</a>
+          <a href="products.html">העיצובים שלנו</a>
+          <a href="how.html">איך זה עובד?</a>
+          <a href="index.html#gallery">הצצה</a>
+          <a href="index.html#proof">המלצות</a>
           <a href="timer.html">טיימר</a>
           <a class="nav-cta" href="products.html">הזמנה</a>
         </div>
@@ -2035,8 +2037,8 @@
       // Colour controls per design:
       //  - recolor:'fixed' (neon) — the picker is HIDDEN and the design stays in
       //    its original colours (baked-in raster glow can't be recoloured).
-      //  - recolor:'slider' with a raster <image> part — the picker stays, but a
-      //    subtle caption explains the photographic background stays fixed.
+      //  - recolor:'slider' — the picker stays. (No caption is shown for designs
+      //    whose background raster stays fixed; only truly fixed designs get a note.)
       const rasterNote = document.getElementById('rasterNote');
       function isFixedDesign() {
         const d = DESIGNS[designIndex];
@@ -2050,9 +2052,6 @@
         if (!rasterNote) return;
         if (fixed) {
           rasterNote.textContent = 'בעיצוב הזה הצבעים קבועים — הוא מגיע במראה המקורי';
-          rasterNote.hidden = false;
-        } else if (d && d.hasRaster) {
-          rasterNote.textContent = 'חלק מהרקע בעיצוב זה קבוע ולא משתנה עם הצבע';
           rasterNote.hidden = false;
         } else {
           rasterNote.hidden = true;
