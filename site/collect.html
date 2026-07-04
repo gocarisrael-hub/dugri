@@ -1337,9 +1337,9 @@
             // count mixes causes, so use neutral wording.
             if (skipped === 1 && clean.length === 1) {
               const shown = clean[0].replace(/\s+/g, ' ');
-              openDialog('המילה "' + shown + '" כבר קיימת ברשימה');
+              toast('המילה "' + shown + '" כבר קיימת ברשימה');
             } else {
-              openDialog('המילים כבר קיימות ולא נוספו שוב');
+              toast('המילים כבר קיימות ולא נוספו שוב');
             }
           }
           return true;
