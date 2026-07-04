@@ -12,15 +12,10 @@ import subprocess
 import sys
 import csv as csvmod
 
+import config
+
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 HERE = os.path.dirname(os.path.abspath(__file__))
-# Hebrew word font. Real theme font is FB Bloomfield (not yet sourced); using
-# almoni-neue as the stand-in per request.
-HEB = os.path.join(HERE, "..", "resources", "canva", "fonts",
-                   "almoni-neue-aaa-bold-OFFICE.ttf")
-# title display font for the trip theme (the "WELCOME PARTY" bubble font)
-TITLE_FONT = os.path.join(HERE, "..", "resources", "canva", "fonts",
-                          "sprite-graffiti", "Sprite Graffiti.otf")
 
 
 def dims(svg):
@@ -60,13 +55,15 @@ def _title_metrics(font_path, ref=200):
 _TITLE_UID = [0]
 
 
-def title_block(box, lines, fill, outline, font_path=None):
+def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow):
     _TITLE_UID[0] += 1
     uid = _TITLE_UID[0]
-    """Graffiti title (Sprite Graffiti): sized so the WIDEST line fills the box
-    width, tight line spacing, a drop shadow + thick dark outline behind a light
-    fill — matching the real card's 3D bubble look."""
-    font_path = font_path or TITLE_FONT
+    """Graffiti-style stacked title: sized so the WIDEST line fills the box
+    width, tight line spacing, an optional drop shadow + thick dark outline
+    behind a light fill — the 3D bubble look. All style knobs come from the
+    theme config: ``outline_w`` (dark ring thickness as a fraction of glyph
+    size), ``arch`` (upward bulge fraction) and ``shadow`` (draw the drop
+    shadow layer or not)."""
     x0, y0, x1, y1 = box["x0"], box["y0"], box["x1"], box["y1"]
     cx = (x0 + x1) / 2
     bw, bh = x1 - x0, y1 - y0
@@ -79,12 +76,12 @@ def title_block(box, lines, fill, outline, font_path=None):
     total = gap * (n - 1)
     top = (y0 + y1) / 2 - total / 2
     dx, dy = size * 0.035, size * 0.06                    # drop-shadow offset
-    bulge = size * 0.11                                   # graffiti upward arch
+    bulge = size * arch                                   # graffiti upward arch
     # Boldness = a heavy dark OUTLINE ring (not fattened fill). Three stacked
     # layers per line on the arched path: shadow, dark dilated body (outline),
     # light fill on top -> the visible dark ring thickness equals T. (Agent B.)
     w_fat = size * 0.005                                  # minimal body fatten
-    t_ring = size * 0.098                                 # dark outline ring
+    t_ring = size * outline_w                             # dark outline ring
     outer = w_fat + 2 * t_ring
     defs, out = [], []
 
@@ -104,28 +101,34 @@ def title_block(box, lines, fill, outline, font_path=None):
             defs.append(f'<path id="{pid}" fill="none" d="M {xl+ox:.1f} {by+oy:.1f} '
                         f'Q {cx+ox:.1f} {by+oy-2*bulge:.1f} {xr+ox:.1f} {by+oy:.1f}"/>')
 
-        arc(f"t{uid}s{k}", dx, dy)                        # shadow path
+        if shadow:
+            arc(f"t{uid}s{k}", dx, dy)                    # shadow path
         arc(f"t{uid}m{k}", 0, 0)                          # main path
-        out.append(on_path(f"t{uid}s{k}", outline, outline, outer, line))   # shadow
+        if shadow:
+            out.append(on_path(f"t{uid}s{k}", outline, outline, outer, line))  # shadow
         out.append(on_path(f"t{uid}m{k}", outline, outline, outer, line))   # outline
         out.append(on_path(f"t{uid}m{k}", fill, fill, w_fat, line))         # fill body
     return "<defs>" + "".join(defs) + "</defs>" + "".join(out)
 
 
 def build_page(theme, clean_svg, words_by_card, title_lines):
-    recipe = json.load(open(os.path.join(HERE, "recipes", f"{theme}.json")))
+    cfg = config.theme(theme)
+    config.ensure_calibrated(cfg)
+    recipe = json.load(open(os.path.join(HERE, "recipes", f"{cfg['recipe']}.json")))
+    word_font = config.font_path(theme, cfg["word_font"])
+    title_font = config.font_path(theme, cfg["title_font"])
+    ts = cfg["title_style"]
     svg = open(clean_svg, encoding="utf-8").read()
-    style = ("<style>" + font_face("HebWord", HEB)
-             + font_face("TitleFont", TITLE_FONT) + "</style>")
+    style = ("<style>" + font_face("HebWord", word_font)
+             + font_face("TitleFont", title_font) + "</style>")
     overlay = [style]
     for ci, card in enumerate(recipe["cards"]):
         if not card:
             continue
         if card.get("title") and title_lines:
-            # trip title style: light-cyan fill + dark outline (sampled off the
-            # real card). TODO: store fill/outline per theme in the recipe.
             overlay.append(title_block(card["title"][0], title_lines,
-                                       "#97d8e6", "#0d3e43"))
+                                       ts["fill"], ts["outline"], title_font,
+                                       ts["outline_w"], ts["arch"], ts["shadow"]))
         words = words_by_card[ci] if ci < len(words_by_card) else []
         # ONE uniform word size per card (like the real card); per-word ink
         # heights vary by letters, so fit from the median, not each slot.
