@@ -15,23 +15,23 @@ disjoint from every themed list; each themed list is ~260 generic fillers +
 ~90 theme words, shuffled together. Hebrew-only, ≤3 words, no proper/brand
 names, numbers, or slang.
 
-| File | List | Count |
-|------|------|-------|
-| `generic-350.txt` | Generic (exclusive — appears in no themed list) | 350 |
-| `bachelorette-350.txt` | Bachelorette party — מסיבת רווקות | 350 |
-| `kids-birthday-350.txt` | Children's birthday — יום הולדת לילדים | 350 |
-| `family-350.txt` | Family — משפחה | 350 |
-| `anniversary-350.txt` | Wedding anniversary — יום נישואין | 350 |
-| `friends-350.txt` | Friends gathering — מפגש חברים | 350 |
+| File                    | List                                            | Count |
+| ----------------------- | ----------------------------------------------- | ----- |
+| `generic-350.txt`       | Generic (exclusive — appears in no themed list) | 350   |
+| `bachelorette-350.txt`  | Bachelorette party — מסיבת רווקות               | 350   |
+| `kids-birthday-350.txt` | Children's birthday — יום הולדת לילדים          | 350   |
+| `family-350.txt`        | Family — משפחה                                  | 350   |
+| `anniversary-350.txt`   | Wedding anniversary — יום נישואין               | 350   |
+| `friends-350.txt`       | Friends gathering — מפגש חברים                  | 350   |
 
 ### Earlier curated seed lists
 
-| File | Audience | Count |
-|------|----------|-------|
-| `friends-25-final.txt` | Group of friends, ~25 y/o (Hadar's picks + more) | 239 |
-| `combined-416.txt` | CSV deck words + random friends words, shuffled | 416 |
-| `hadar list.txt` | Hadar's hand-picked seed | 112 |
-| `friends-25.txt` | Original draft | 300 |
+| File                   | Audience                                         | Count |
+| ---------------------- | ------------------------------------------------ | ----- |
+| `friends-25-final.txt` | Group of friends, ~25 y/o (Hadar's picks + more) | 239   |
+| `combined-416.txt`     | CSV deck words + random friends words, shuffled  | 416   |
+| `hadar list.txt`       | Hadar's hand-picked seed                         | 112   |
+| `friends-25.txt`       | Original draft                                   | 300   |
 
 ## Format
 

@@ -4,7 +4,8 @@ Turns an order (honoree name/title + words) into print-ready cards + board,
 reproducing a Canva template exactly — without Canva.
 
 ## Pipeline
-1. `recipe.py`  — auto-detect a per-theme RECIPE from a text-filled full-deck
+
+1. `recipe.py` — auto-detect a per-theme RECIPE from a text-filled full-deck
    page: the 8-card grid + each card's title/word slots (position, size,
    colour) in SVG user units. Stored in `recipes/<theme>.json`.
    (Robustness upgrade: diff the text-filled page against the client's
