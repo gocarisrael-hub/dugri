@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Assemble a full order into ONE print-ready PDF: front card pages (title +
+words from the CSV) + the game board (title) — onto the clean text-free
+backgrounds.
+
+  python3 generator/build.py <theme> <fronts_clean.svg> <board_clean.svg> \
+                             <csv> <NAME> <out.pdf> [<backs_clean.svg>]
+
+<theme> is a key in generator/themes.json (e.g. "trip comeback"). Fonts,
+colours, title lines and the board/back title slots all come from that config.
+NAME is the honoree; the title is built from the theme's title_lines template
+(e.g. trip comeback: OZ -> "OZ'S / WELCOME / PARTY").
+"""
+import os
+import subprocess
+import sys
+import re
+from PIL import Image
+
+import config
+import render_page as rp
+
+CHROME = rp.CHROME
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def svg_dims(svg):
+    head = open(svg, encoding="utf-8").read(2000)
+    w = int(re.search(r'width="(\d+)"', head).group(1))
+    h = int(re.search(r'height="(\d+)"', head).group(1))
+    vb = [float(x) for x in re.search(r'viewBox="([^"]+)"', head).group(1).split()]
+    return w, h, vb
+
+
+def render_svg(svg_text, w, h, out_png):
+    p = out_png.replace(".png", ".svg")
+    open(p, "w", encoding="utf-8").write(svg_text)
+    subprocess.run([CHROME, "--headless", "--disable-gpu",
+                    "--force-device-scale-factor=2", f"--screenshot={out_png}",
+                    f"--window-size={w},{h}", p], check=True, stderr=subprocess.DEVNULL)
+    return out_png
+
+
+def render_board(theme, board_clean, title_lines, out_png):
+    cfg = config.theme(theme)
+    config.ensure_calibrated(cfg)
+    bd, ts = cfg["board"], cfg["title_style"]
+    frac = bd["frac"]
+    title_font = config.font_path(theme, cfg["title_font"])
+    w, h, vb = svg_dims(board_clean)
+    box = {k: (frac[k] * vb[2] if "x" in k else frac[k] * vb[3]) for k in frac}
+    svg = open(board_clean, encoding="utf-8").read()
+    style = "<style>" + rp.font_face("TitleFont", title_font) + "</style>"
+    body = style + rp.title_block(box, title_lines, bd["fill"], bd["outline"],
+                                  title_font, ts["outline_w"], ts["arch"], ts["shadow"])
+    return render_svg(svg.replace("</svg>", body + "</svg>"), w, h, out_png)
+
+
+def render_backs(theme, backs_clean, title_lines, out_png):
+    """Overlay the centered title on each of the 8 clean backs."""
+    import json
+    cfg = config.theme(theme)
+    config.ensure_calibrated(cfg)
+    bk, ts = cfg["back"], cfg["title_style"]
+    frac = bk["frac"]
+    title_font = config.font_path(theme, cfg["title_font"])
+    recipe = json.load(open(os.path.join(HERE, "recipes", f"{cfg['recipe']}.json")))
+    w, h, vb = svg_dims(backs_clean)
+    svg = open(backs_clean, encoding="utf-8").read()
+    body = ["<style>" + rp.font_face("TitleFont", title_font) + "</style>"]
+    for card in recipe["cards"]:
+        if not card:
+            continue
+        cx0, cy0, cx1, cy1 = card["cell"]
+        cw, ch = cx1 - cx0, cy1 - cy0
+        box = {"x0": cx0 + frac["x0"] * cw, "x1": cx0 + frac["x1"] * cw,
+               "y0": cy0 + frac["y0"] * ch, "y1": cy0 + frac["y1"] * ch}
+        body.append(rp.title_block(box, title_lines, bk["fill"], bk["outline"],
+                                   title_font, ts["outline_w"], ts["arch"], ts["shadow"]))
+    return render_svg(svg.replace("</svg>", "".join(body) + "</svg>"), w, h, out_png)
+
+
+def main():
+    theme, fronts, board, csvp, name, out_pdf = sys.argv[1:7]
+    backs = sys.argv[7] if len(sys.argv) > 7 else None
+    cfg = config.theme(theme)
+    config.ensure_calibrated(cfg)
+    title_lines = config.title_lines(cfg, name, {})
+    os.makedirs("/tmp/gen/build", exist_ok=True)
+    rows = rp.load_csv_row  # noqa
+    import csv as csvmod
+    data = list(csvmod.DictReader(open(csvp, encoding="utf-8-sig")))
+
+    # one shared back page (identical for every front) when a backs bg is given
+    back_png = None
+    if backs:
+        back_png = render_backs(theme, backs, title_lines, "/tmp/gen/build/back.png")
+        print("back")
+
+    pages = []
+    for i in range(len(data)):
+        wbc = rp.load_csv_row(csvp, i)
+        png = f"/tmp/gen/build/front_{i+1}.png"
+        rp.render(theme, fronts, wbc, title_lines, png)
+        pages.append(png)
+        if back_png:                       # duplex order: front then its back
+            pages.append(back_png)
+        print(f"front page {i+1}/{len(data)}")
+    board_png = render_board(theme, board, title_lines, "/tmp/gen/build/board.png")
+    pages.append(board_png)
+    print("board")
+
+    imgs = [Image.open(p).convert("RGB") for p in pages]
+    imgs[0].save(out_pdf, save_all=True, append_images=imgs[1:], resolution=300)
+    nback = len(data) if back_png else 0
+    print(f"\nwrote {out_pdf}  ({len(pages)} pages: {len(data)} fronts "
+          f"+ {nback} backs + board)")
+
+
+if __name__ == "__main__":
+    main()
