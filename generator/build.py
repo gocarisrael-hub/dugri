@@ -44,10 +44,12 @@ def render_svg(svg_text, w, h, out_png):
 def render_board(theme, board_clean, title_lines, out_png):
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    bd, ts = cfg["board"], cfg["title_style"]
+    w, h, vb = svg_dims(board_clean)
+    bd, ts = cfg.get("board"), cfg["title_style"]
+    if not bd:  # theme has no personalized board title -> use the clean board as-is
+        return render_svg(open(board_clean, encoding="utf-8").read(), w, h, out_png)
     frac = bd["frac"]
     title_font = config.font_path(theme, cfg["title_font"])
-    w, h, vb = svg_dims(board_clean)
     box = {k: (frac[k] * vb[2] if "x" in k else frac[k] * vb[3]) for k in frac}
     svg = open(board_clean, encoding="utf-8").read()
     style = "<style>" + rp.font_face("TitleFont", title_font) + "</style>"
@@ -61,11 +63,13 @@ def render_backs(theme, backs_clean, title_lines, out_png):
     import json
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    bk, ts = cfg["back"], cfg["title_style"]
+    w, h, vb = svg_dims(backs_clean)
+    bk, ts = cfg.get("back"), cfg["title_style"]
+    if not bk:  # theme has no personalized back title -> use the clean backs as-is
+        return render_svg(open(backs_clean, encoding="utf-8").read(), w, h, out_png)
     frac = bk["frac"]
     title_font = config.font_path(theme, cfg["title_font"])
     recipe = json.load(open(os.path.join(HERE, "recipes", f"{cfg['recipe']}.json")))
-    w, h, vb = svg_dims(backs_clean)
     svg = open(backs_clean, encoding="utf-8").read()
     body = ["<style>" + rp.font_face("TitleFont", title_font) + "</style>"]
     for card in recipe["cards"]:

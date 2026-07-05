@@ -143,11 +143,10 @@
   "wordlist": "generic-350.txt",
   "display_he": "דוגרי יום הולדת בנות ניאון",
   "dir": "resources/canva/templates/birthday-girls-neon",
-  "recipe": null,
+  "recipe": "birthday-girls-neon",
   "visibility": "public",
   "title_text": "XOXO {NAME}'S BIRTHDAY",
   "title_lines": [
-   "XOXO",
    "{NAME}'S",
    "BIRTHDAY"
   ],
@@ -156,17 +155,41 @@
   "extra_fields": [],
   "title_font": "NeoNeon.otf",
   "word_font": "Cafe.ttf",
-  "title_style": null,
-  "board": null,
-  "back": null,
-  "calibrated": false
+  "title_style": {
+   "fill": "#ffdff9",
+   "outline": "#ff2ec4",
+   "outline_w": 0.11,
+   "arch": 0,
+   "shadow": true
+  },
+  "board": {
+   "frac": {
+    "x0": 0.019,
+    "y0": 0.908,
+    "x1": 0.146,
+    "y1": 0.975
+   },
+   "fill": "#fff9ff",
+   "outline": "#ff52ff"
+  },
+  "back": {
+   "frac": {
+    "x0": 0.167,
+    "y0": 0.377,
+    "x1": 0.812,
+    "y1": 0.542
+   },
+   "fill": "#ffe3ff",
+   "outline": "#e634f3"
+  },
+  "calibrated": true
  },
  "birthday-boys-basketball": {
   "slug": "birthday-boys-basketball",
   "wordlist": "generic-350.txt",
   "display_he": "דוגרי יום הולדת בנים כדורסל",
   "dir": "resources/canva/templates/birthday-boys-basketball",
-  "recipe": null,
+  "recipe": "birthday-boys-basketball",
   "visibility": "public",
   "title_text": "{NAME} בן {AGE}",
   "title_lines": [
@@ -179,17 +202,23 @@
   ],
   "title_font": "Assistant-Bold.ttf",
   "word_font": "PlaypenSansHebrew-Medium.ttf",
-  "title_style": null,
+  "title_style": {
+   "fill": "#02408c",
+   "outline": "#02408c",
+   "outline_w": 0.02,
+   "arch": 0,
+   "shadow": false
+  },
   "board": null,
   "back": null,
-  "calibrated": false
+  "calibrated": true
  },
  "anniversary": {
   "slug": "anniversary",
   "wordlist": "anniversary-350.txt",
   "display_he": "דוגרי יום נישואין",
   "dir": "resources/canva/templates/anniversary",
-  "recipe": null,
+  "recipe": "anniversary",
   "visibility": "public",
   "title_text": "{YEARS} שנה נישואין\n{NAME1} ו{NAME2}",
   "title_lines": [
@@ -205,17 +234,41 @@
   ],
   "title_font": "Shmulik CLM Medium.ttf",
   "word_font": "Dana Yad AlefAlefAlef Normal.ttf",
-  "title_style": null,
-  "board": null,
-  "back": null,
-  "calibrated": false
+  "title_style": {
+   "fill": "#004aad",
+   "outline": "#004aad",
+   "outline_w": 0.05,
+   "arch": 0,
+   "shadow": true
+  },
+  "board": {
+   "frac": {
+    "x0": 0.0142,
+    "y0": 0.9238,
+    "x1": 0.1634,
+    "y1": 0.9836
+   },
+   "fill": "#004aad",
+   "outline": "#004aad"
+  },
+  "back": {
+   "frac": {
+    "x0": 0.1341,
+    "y0": 0.4358,
+    "x1": 0.8369,
+    "y1": 0.5717
+   },
+   "fill": "#ffffff",
+   "outline": "#004aad"
+  },
+  "calibrated": true
  },
  "japanese": {
   "slug": "japanese",
   "wordlist": "generic-350.txt",
   "display_he": "דוגרי יפני",
   "dir": "resources/canva/templates/japanese",
-  "recipe": null,
+  "recipe": "japanese",
   "visibility": "public",
   "title_text": "{NAME}'S {AGE}S",
   "title_lines": [
@@ -229,10 +282,25 @@
   ],
   "title_font": "Quick.ttf",
   "word_font": "Fredoka-Medium.ttf",
-  "title_style": null,
-  "board": null,
+  "title_style": {
+   "fill": "#d3292a",
+   "outline": "#d3292a",
+   "outline_w": 0.02,
+   "arch": 0,
+   "shadow": false
+  },
+  "board": {
+   "frac": {
+    "x0": 0.012,
+    "y0": 0.885,
+    "x1": 0.136,
+    "y1": 0.972
+   },
+   "fill": "#d3292a",
+   "outline": "#d3292a"
+  },
   "back": null,
-  "calibrated": false
+  "calibrated": true
  },
  "football-boys": {
   "slug": "football-boys",
