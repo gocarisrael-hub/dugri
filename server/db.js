@@ -10,6 +10,14 @@ const crypto = require('crypto');
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DB_FILE = path.join(DATA_DIR, 'dugri-data.json');
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+// Collections stay open for a full year — long enough that they effectively never
+// expire within the order flow (a customer has all the time they need to gather
+// and add words). Used for a new collection's expires_at.
+const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+// A collection with no words earns ONE nudge email this long after it was paid
+// (or created, when unpaid): the buyer hasn't sent any words yet and production
+// can't start until they do. See collectionsDueForReminder.
+const REMINDER_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
 
 // A PeleCard pay session only counts as "in flight" (and thus blocks the free
 // coupon path) for a short window — a hosted-iframe session that isn't completed
@@ -131,8 +139,10 @@ const db = {
       chasers: !!contact.chasers,
       status: 'open',
       created_at: nowIso(),
-      expires_at: new Date(Date.now() + WEEK_MS).toISOString(),
+      expires_at: new Date(Date.now() + YEAR_MS).toISOString(),
       closed_at: null,
+      // One-time "you haven't added words yet" nudge timestamp; null until sent.
+      reminded_at: null,
       // Admin soft-cancel (reversible); a hard delete removes the row entirely.
       cancelled: false,
       cancelled_at: null,
@@ -506,6 +516,39 @@ const db = {
     c.uses = (c.uses || 0) + 1;
     saveDb();
     return true;
+  },
+
+  // --- Words reminder ------------------------------------------------------
+  // Mark a collection as having received its one-time "add your words" nudge, so
+  // the scheduler never emails the same customer twice. No-op/false when unknown.
+  markReminded(id) {
+    const c = this.getCollection(id);
+    if (!c) return false;
+    c.reminded_at = nowIso();
+    saveDb();
+    return true;
+  },
+
+  // Pure query (given the current store + a `now` ms timestamp): the collections
+  // that are DUE for the one-time words reminder. A collection qualifies when it
+  // has an owner_email to send to, has NO words yet, hasn't already been reminded,
+  // isn't cancelled, and its reference time — the order's paid_at when paid, else
+  // created_at — is more than REMINDER_AFTER_MS (3 days) before `now`. Read-only:
+  // it never mutates or persists (the scheduler calls markReminded per send).
+  collectionsDueForReminder(now = Date.now()) {
+    const cutoff = now - REMINDER_AFTER_MS;
+    return _db.collections.filter((c) => {
+      if (!c || !c.owner_email) return false;
+      if (c.cancelled) return false;
+      if (c.reminded_at) return false;
+      const hasWords = _db.words.some((w) => w.collection_id === c.id);
+      if (hasWords) return false;
+      const paidAt = c.order && c.order.paid && c.order.paid_at ? c.order.paid_at : null;
+      const basis = paidAt || c.created_at;
+      const basisMs = Date.parse(basis);
+      if (Number.isNaN(basisMs)) return false;
+      return basisMs < cutoff;
+    });
   },
 };
 

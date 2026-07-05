@@ -778,9 +778,54 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(SITE_DIR, 'index.html'));
 });
 
+// --- Words-reminder scheduler ---------------------------------------------
+// A collection that's been sitting for 3+ days with no words gets ONE nudge email
+// asking the buyer to add their word list (production can't start until it
+// arrives). One pass = find the due collections (db.collectionsDueForReminder),
+// email each via notify.sendWordsReminder, then mark it reminded so it's never
+// emailed again. Exposed as a callable so a test can run a single pass without
+// waiting on the interval. Fully wrapped and no-ops when email is unconfigured;
+// it never throws into the caller.
+const REMINDER_SCAN_INTERVAL_MS = Number(process.env.REMINDER_SCAN_INTERVAL_MS || 60 * 60 * 1000);
+
+async function runReminderScan(now = Date.now()) {
+  if (!notify.isConfigured()) return 0;
+  const base = paymentBaseUrl();
+  let sent = 0;
+  try {
+    const due = db.collectionsDueForReminder(now);
+    for (const c of due) {
+      try {
+        // word_count is 0 for every due collection (the query requires it); pass
+        // it so the reminder's body renders a correct count.
+        await notify.sendWordsReminder({ ...c, word_count: 0 }, base);
+        // Mark reminded regardless of the send result — one nudge per collection.
+        // sendWordsReminder already swallows its own failures (returns false), so
+        // a transient miss won't loop the same customer forever.
+        db.markReminded(c.id);
+        sent += 1;
+      } catch (e) {
+        console.warn('[reminder] send failed:', e && e.message ? e.message : e);
+      }
+    }
+  } catch (e) {
+    console.warn('[reminder] scan failed:', e && e.message ? e.message : e);
+  }
+  return sent;
+}
+
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log(`dugri server listening on ${PORT}`));
+  // Hourly reminder scan, only when email is configured. unref() so the timer
+  // never keeps the process alive on its own, and the scan is fire-and-forget.
+  if (notify.isConfigured()) {
+    const timer = setInterval(() => {
+      runReminderScan().catch(() => {});
+    }, REMINDER_SCAN_INTERVAL_MS);
+    if (timer.unref) timer.unref();
+  }
 }
 
 module.exports = app;
+module.exports.runReminderScan = runReminderScan;
