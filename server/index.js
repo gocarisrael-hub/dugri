@@ -304,6 +304,21 @@ app.post('/api/admin/collections/:id/paid', (req, res) => {
   res.json({ ok: true });
 });
 
+// Admin: create a bespoke "custom" (599₪) order on a collection and return the
+// owner pay link, so the admin can hand-set an order to version:'custom' and send
+// the customer a payment link. setOrder is called with the collection's own owner
+// token (admin is already authenticated) and needs no address for custom.
+app.post('/api/admin/collections/:id/custom', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const order = db.setOrder(req.params.id, c.owner_token, { version: 'custom' });
+  if (order && order.error) return res.status(400).json({ error: order.error });
+  const base = paymentBaseUrl();
+  const payLink = base ? base + '/collect.html?c=' + c.id + '&k=' + c.owner_token : null;
+  res.json({ order, pay_link: payLink });
+});
+
 // Admin: generate the full print-ready PDF for a collection. The admin supplies
 // the theme (a generator/themes.json key) — the design->theme mapping is a later
 // workstream. Body: { theme, word_font?, extra_fields? }. Gathers the
@@ -592,6 +607,11 @@ function sendPaidNotifications(collectionId, base, amountCharged) {
   // Also confirm to the BUYER (their own email), with the collect link so they
   // can keep adding their words. Skips gracefully if no buyer email.
   notify.sendBuyerConfirmation(enriched, base, options).catch(() => {});
+  // A bespoke "custom" order (599₪, no template) needs hand-design after payment.
+  // Fire an EXTRA Dugri-only alert so it stands out from the normal paid emails.
+  if (c.order && c.order.version === 'custom') {
+    notify.sendCustomOrderAlert(enriched, base, options).catch(() => {});
+  }
 }
 
 // Owner-only: start a PeleCard card payment for this collection's order.

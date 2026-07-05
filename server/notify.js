@@ -193,6 +193,7 @@ const VERSION_LABELS = {
   pdf: 'דיגיטלי (PDF)',
   pickup: 'איסוף עצמי',
   delivery: 'משלוח עד הבית',
+  custom: 'עיצוב אישי בהתאמה מלאה',
 };
 
 function honoreeName(collection) {
@@ -260,6 +261,24 @@ function buildPaidMessage(collection, baseUrl, options) {
   const subject = 'דוגרי · התקבל תשלום — ' + name;
   const text = [
     'התקבל תשלום עבור ההזמנה של ' + name + '.',
+    '',
+    ...orderLines(collection, baseUrl, options),
+  ].join('\n');
+  return { subject, text };
+}
+
+// Pure builder: the Dugri-only "CUSTOM order — needs hand-design" alert. Fired
+// (in ADDITION to the normal paid emails) when a paid order is a bespoke custom
+// order (order.version === 'custom'). A distinct subject/line so it stands out
+// in the owner's inbox as work that needs a hand-designed game. `baseUrl` is the
+// normalized public origin (optional; the owner link is omitted without it).
+// Returns {subject, text} — same shape as the other builders.
+function buildCustomOrderAlert(collection, baseUrl, options) {
+  const name = honoreeName(collection);
+  const subject = 'דוגרי · הזמנה בהתאמה אישית — צריך עיצוב ידני · ' + name;
+  const text = [
+    'התקבלה הזמנת עיצוב אישי (מותאם אישית) עבור ' + name + '.',
+    'ההזמנה דורשת עיצוב ידני — אין תבנית מוכנה, יש להכין עיצוב בהתאמה מלאה.',
     '',
     ...orderLines(collection, baseUrl, options),
   ].join('\n');
@@ -473,6 +492,18 @@ async function sendOrderPaid(collection, baseUrl, options) {
   }
 }
 
+// Fire the Dugri-only "custom order needs hand-design" alert (to NOTIFY_TO).
+// Called alongside sendOrderPaid for a paid bespoke order. `baseUrl` is the
+// normalized public origin (optional). Never throws.
+async function sendCustomOrderAlert(collection, baseUrl, options) {
+  try {
+    return await send(buildCustomOrderAlert(collection, baseUrl, options));
+  } catch (e) {
+    console.warn('[notify] sendCustomOrderAlert failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
 // Fire the BUYER confirmation to the customer's own email. Sent to the
 // collection's owner_email (captured at checkout), NOT to NOTIFY_TO. Skips
 // gracefully (returns false) when that address is missing/empty, and stays
@@ -560,12 +591,14 @@ module.exports = {
   isConfigured,
   renderEmailHtml,
   buildPaidMessage,
+  buildCustomOrderAlert,
   buildBuyerConfirmation,
   buildFinishedMessage,
   buildPdfReadyMessage,
   buildProductionError,
   buildWordsReminder,
   sendOrderPaid,
+  sendCustomOrderAlert,
   sendBuyerConfirmation,
   sendOrderFinished,
   sendPdfReady,
