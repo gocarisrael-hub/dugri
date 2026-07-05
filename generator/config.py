@@ -12,6 +12,12 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, ".."))
 THEMES_JSON = os.path.join(HERE, "themes.json")
+# Shared word-font pool the customer can pick from in the order preview. A
+# filename here overrides a theme's own card word font. Kept OUTSIDE any single
+# theme's fonts/ dir so the same options are offered for every theme;
+# ``word-fonts/options.json`` lists them as [{label, file}, ...].
+WORD_FONTS_DIR = os.path.join(HERE, "word-fonts")
+WORD_FONTS_JSON = os.path.join(WORD_FONTS_DIR, "options.json")
 
 
 def load_themes():
@@ -36,6 +42,43 @@ def theme_dir(name):
 def font_path(theme_name, filename):
     """Absolute path to a font file inside the theme's ``fonts/`` dir."""
     return os.path.join(theme_dir(theme_name), "fonts", filename)
+
+
+def word_font_options():
+    """The shared word-font choices, as a list of ``{"label", "file"}`` dicts.
+
+    A single default list (read from ``word-fonts/options.json``) offered for
+    every theme, so the order preview shows the same picker regardless of design.
+    Returns ``[]`` when the manifest is missing/unparseable (never crashes).
+    """
+    try:
+        with open(WORD_FONTS_JSON, encoding="utf-8") as f:
+            opts = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return [o for o in opts if isinstance(o, dict) and o.get("file")]
+
+
+def resolve_word_font(theme_name, filename=None):
+    """Resolve the card word-font path for a theme, honouring an override.
+
+    ``filename`` is an optional override (e.g. one the customer picked in the
+    preview). Resolution order:
+      1. no override -> the theme's own configured ``word_font`` (in its fonts/);
+      2. a file that exists in the theme's own ``fonts/`` dir;
+      3. otherwise fall back to the shared ``word-fonts/`` pool.
+    Returns the theme-local path as a last resort so callers still get a path
+    (font loading then fails loudly on a genuinely unknown filename).
+    """
+    if not filename:
+        return font_path(theme_name, theme(theme_name)["word_font"])
+    own = font_path(theme_name, filename)
+    if os.path.exists(own):
+        return own
+    shared = os.path.join(WORD_FONTS_DIR, filename)
+    if os.path.exists(shared):
+        return shared
+    return own
 
 
 def clean_path(theme_name, which):

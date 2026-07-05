@@ -1698,6 +1698,108 @@
             />
           </label>
         </div>
+
+        <!-- LIVE RENDERED PREVIEW: right after a valid name is entered we POST it
+             to /api/preview and show the REAL rendered sample card + board with
+             the name, plus a Hebrew word-font picker. Best-effort — any failure
+             just hides the panel and never blocks the wizard. -->
+        <div class="name-preview" id="namePreview" data-testid="name-preview" hidden>
+          <p class="name-preview-lbl">כך זה ייראה עם השם:</p>
+          <p
+            class="name-preview-warn"
+            id="namePreviewWarn"
+            data-testid="name-preview-warning"
+            hidden
+          ></p>
+          <div class="name-preview-imgs">
+            <figure class="name-preview-fig">
+              <img id="namePreviewCard" data-testid="name-preview-card" alt="תצוגת קלף" />
+            </figure>
+            <figure class="name-preview-fig">
+              <img id="namePreviewBoard" data-testid="name-preview-board" alt="תצוגת לוח" />
+            </figure>
+          </div>
+          <div class="name-preview-empty" id="namePreviewEmpty" data-testid="name-preview-loading">
+            טוען תצוגה…
+          </div>
+          <div class="wiz-fontpicker">
+            <span class="wiz-lbl">גופן המילים</span>
+            <div
+              class="font-opts"
+              id="fontOpts"
+              data-testid="font-opts"
+              role="group"
+              aria-label="גופן המילים"
+            ></div>
+          </div>
+        </div>
+        <style>
+          .name-preview {
+            margin-top: 20px;
+          }
+          .name-preview-lbl {
+            font-weight: 800;
+            margin: 0 0 8px;
+          }
+          .name-preview-warn {
+            color: #9b1c31;
+            background: #fff0f2;
+            border: 1px solid #ffd0d8;
+            border-radius: 10px;
+            padding: 8px 12px;
+            margin: 0 0 10px;
+            font-size: 14px;
+          }
+          .name-preview-imgs {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+          }
+          .name-preview-fig {
+            margin: 0;
+            flex: 1 1 200px;
+            min-width: 0;
+          }
+          .name-preview-fig img {
+            width: 100%;
+            height: auto;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+            display: block;
+            background: #fff;
+          }
+          .name-preview-fig img:not([src]),
+          .name-preview-fig img[hidden] {
+            display: none;
+          }
+          .name-preview-empty {
+            color: #666;
+            padding: 10px 0;
+          }
+          .wiz-fontpicker {
+            margin-top: 14px;
+          }
+          .font-opts {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+          }
+          .font-opt {
+            border: 2px solid #ddd;
+            background: #fff;
+            border-radius: 999px;
+            padding: 7px 14px;
+            font-family: inherit;
+            font-size: 14px;
+            cursor: pointer;
+          }
+          .font-opt[aria-pressed='true'] {
+            border-color: var(--accent, #e5197d);
+            background: var(--cfg-bg, #fff0f7);
+            font-weight: 800;
+          }
+        </style>
       </section>
 
       <!-- STEP 5 — your details -->
@@ -2291,9 +2393,131 @@
       // Re-validate Next as the user fills the extra fields on the name step.
       extraInputEls.forEach((el) =>
         el.addEventListener('input', () => {
-          if (currentStep === 4) refreshControls();
+          if (currentStep === 4) {
+            refreshControls();
+            requestPreview();
+          }
         })
       );
+
+      /* ---- live rendered preview + word-font picker (name step) -------------
+         Once a valid name is entered we POST it (with the resolved theme, extra
+         fields and chosen word-font) to /api/preview and show the REAL rendered
+         sample card + board. Picking a font re-requests the preview. The chosen
+         font is sent with the order so production uses it. Best-effort: any
+         failure just hides the loader and never blocks the wizard. */
+      const namePreview = document.getElementById('namePreview');
+      const namePreviewCard = document.getElementById('namePreviewCard');
+      const namePreviewBoard = document.getElementById('namePreviewBoard');
+      const namePreviewWarn = document.getElementById('namePreviewWarn');
+      const namePreviewEmpty = document.getElementById('namePreviewEmpty');
+      const fontOpts = document.getElementById('fontOpts');
+
+      // The card word-font the customer picked (a filename in the shared pool);
+      // null keeps the theme's default font. Sent with the created collection.
+      let chosenWordFont = null;
+      let fontPickerBuilt = false;
+      let previewEpoch = 0; // guards against out-of-order preview responses
+      let previewTimer = null; // debounce handle
+
+      // Build the picker once from the options the first preview returns.
+      function buildFontPicker(options) {
+        if (fontPickerBuilt || !Array.isArray(options) || !options.length) return;
+        fontPickerBuilt = true;
+        options.forEach((opt) => {
+          if (!opt || !opt.file) return;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'font-opt';
+          btn.dataset.font = opt.file;
+          btn.dataset.testid = 'font-opt-' + opt.file;
+          btn.setAttribute('aria-pressed', 'false');
+          btn.textContent = opt.label || opt.file;
+          btn.addEventListener('click', () => {
+            // Toggle: re-clicking the active font returns to the theme default.
+            chosenWordFont = chosenWordFont === opt.file ? null : opt.file;
+            markActiveFont();
+            requestPreview({ immediate: true });
+          });
+          fontOpts.appendChild(btn);
+        });
+      }
+      function markActiveFont() {
+        fontOpts
+          .querySelectorAll('.font-opt')
+          .forEach((b) =>
+            b.setAttribute('aria-pressed', b.dataset.font === chosenWordFont ? 'true' : 'false')
+          );
+      }
+
+      // A preview can be requested only on the name step, for a resolved theme,
+      // with a non-empty name and any required extra fields filled.
+      function previewReady() {
+        return (
+          currentStep === 4 &&
+          !!currentTheme() &&
+          nameInput.value.trim().length > 0 &&
+          extraFieldsValid()
+        );
+      }
+
+      async function doPreview() {
+        const theme = currentTheme();
+        const name = nameInput.value.trim();
+        const epoch = ++previewEpoch;
+        namePreview.hidden = false;
+        namePreviewEmpty.hidden = false;
+        try {
+          const r = await fetch('/api/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              theme,
+              name,
+              extra_fields: collectedExtraFields(),
+              word_font: chosenWordFont,
+            }),
+          });
+          const data = await r.json();
+          if (epoch !== previewEpoch) return; // a newer request superseded this one
+          if (!r.ok) throw new Error(data.error || 'failed');
+          buildFontPicker(data.word_font_options);
+          markActiveFont();
+          if (data.card) namePreviewCard.src = data.card;
+          if (data.board) {
+            namePreviewBoard.src = data.board;
+            namePreviewBoard.hidden = false;
+          } else {
+            namePreviewBoard.hidden = true;
+          }
+          if (data.warning) {
+            namePreviewWarn.textContent = data.warning;
+            namePreviewWarn.hidden = false;
+          } else {
+            namePreviewWarn.hidden = true;
+          }
+          namePreviewEmpty.hidden = true;
+        } catch (e) {
+          if (epoch !== previewEpoch) return;
+          // best-effort: just drop the loader; keep any previously shown images
+          namePreviewEmpty.hidden = true;
+        }
+      }
+
+      // Debounced by default (collapses typing bursts); { immediate:true } skips
+      // the debounce for deliberate actions (font pick, entering the step).
+      function requestPreview(opts = {}) {
+        if (!previewReady()) {
+          namePreview.hidden = true;
+          return;
+        }
+        clearTimeout(previewTimer);
+        if (opts.immediate) {
+          doPreview();
+          return;
+        }
+        previewTimer = setTimeout(doPreview, 450);
+      }
 
       // Both contact fields are required so we can always reach the owner with
       // the management link (same rules the retired thankyou page used).
@@ -2351,7 +2575,11 @@
           checkoutTracked = true;
           track('begin_checkout');
         }
-        if (currentStep === 4) nameInput.focus();
+        if (currentStep === 4) {
+          nameInput.focus();
+          // render (or refresh) the live preview for the current name/theme
+          requestPreview({ immediate: true });
+        }
         if (currentStep === 5) emailInput.focus();
         window.scrollTo({ top: 0, behavior: 'auto' });
       }
@@ -2396,7 +2624,10 @@
 
       // Live-validate so Next / "צרו את המשחק" enables as the user types.
       nameInput.addEventListener('input', () => {
-        if (currentStep === 4) refreshControls();
+        if (currentStep === 4) {
+          refreshControls();
+          requestPreview();
+        }
       });
       [emailInput, phoneInput].forEach((el) =>
         el.addEventListener('input', () => {
@@ -2471,6 +2702,8 @@
               // resolved generator theme + the theme's required extra fields
               theme: currentTheme(),
               extra_fields: collectedExtraFields(),
+              // the card word-font the customer picked in the preview (or null)
+              word_font: chosenWordFont,
               chasers: s.chasers,
             }),
           });

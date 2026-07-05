@@ -61,6 +61,26 @@ function readExtraField(collection, field) {
   return null;
 }
 
+// Check ONE name against a theme's expected script. Returns a human-readable
+// Hebrew warning string when the name doesn't fit the theme's name_form, or null
+// when it fits (or there is nothing to check). Shared by the pre-production
+// validator below and the live order preview (/api/preview), so the customer
+// sees the same language warning immediately while choosing.
+function checkNameLanguage(name, theme) {
+  const n = name ? String(name).trim() : '';
+  if (!n || !theme || !theme.name_form) return null;
+  const form = theme.name_form;
+  const hasHeb = HEBREW_RE.test(n);
+  const hasLat = LATIN_RE.test(n);
+  const expected = LANG_LABEL[form] || form;
+  const bad =
+    form === 'hebrew'
+      ? !hasHeb || hasLat
+      : (form === 'english' || form === 'english-caps') && (!hasLat || hasHeb);
+  if (!bad) return null;
+  return 'שם החוגג/ת צריך להיות ב' + expected + ' (בהתאם לעיצוב): "' + n + '"';
+}
+
 // PURE validator: given the collection, its theme config (from getTheme, may be
 // null when the theme is unknown), and the words list (an array or a count),
 // returns an array of human-readable Hebrew problem strings. Empty array = the
@@ -71,21 +91,8 @@ function validateOrderForProduction(collection, theme, words) {
   const name = collection && collection.honoree_name ? String(collection.honoree_name).trim() : '';
 
   // 1) Name language must match the theme's name_form.
-  if (theme && theme.name_form) {
-    const form = theme.name_form;
-    const hasHeb = HEBREW_RE.test(name);
-    const hasLat = LATIN_RE.test(name);
-    const expected = LANG_LABEL[form] || form;
-    if (form === 'hebrew') {
-      if (!hasHeb || hasLat) {
-        problems.push('שם החוגג/ת צריך להיות ב' + expected + ' (בהתאם לעיצוב): "' + name + '"');
-      }
-    } else if (form === 'english' || form === 'english-caps') {
-      if (!hasLat || hasHeb) {
-        problems.push('שם החוגג/ת צריך להיות ב' + expected + ' (בהתאם לעיצוב): "' + name + '"');
-      }
-    }
-  }
+  const langProblem = checkNameLanguage(name, theme);
+  if (langProblem) problems.push(langProblem);
 
   // 2) Every extra field the theme requires must be present.
   const required = theme && Array.isArray(theme.extra_fields) ? theme.extra_fields : [];
@@ -108,5 +115,6 @@ function validateOrderForProduction(collection, theme, words) {
 module.exports = {
   loadThemes,
   getTheme,
+  checkNameLanguage,
   validateOrderForProduction,
 };

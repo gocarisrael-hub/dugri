@@ -115,9 +115,10 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
     recipe = json.load(open(os.path.join(HERE, "recipes", f"{cfg['recipe']}.json")))
-    # word_font optionally overrides the theme's card font (a filename in the
-    # theme's fonts/ dir); falls back to the configured word_font otherwise.
-    word_font = config.font_path(theme, word_font or cfg["word_font"])
+    # word_font optionally overrides the theme's card font (a filename); it
+    # resolves against the theme's own fonts/ dir first, then the shared
+    # word-fonts/ pool. No override -> the theme's configured word_font.
+    word_font = config.resolve_word_font(theme, word_font)
     title_font = config.font_path(theme, cfg["title_font"])
     ts = cfg["title_style"]
     svg = open(clean_svg, encoding="utf-8").read()
