@@ -1,6 +1,7 @@
 {
   "trip comeback": {
     "slug": "trip-comeback",
+    "wordlist": "friends-350.txt",
     "display_he": "דוגרי מסיבת חזרה מטיול",
     "dir": "resources/canva/templates/trip comeback",
     "recipe": "trip",
@@ -33,6 +34,7 @@
   },
   "bachelorette": {
     "slug": "bachelorette",
+    "wordlist": "bachelorette-350.txt",
     "display_he": "דוגרי רווקות",
     "dir": "resources/canva/templates/bachelorette",
     "recipe": "רווקות",
@@ -51,6 +53,7 @@
   },
   "birthday-girls": {
     "slug": "birthday-girls",
+    "wordlist": "generic-350.txt",
     "display_he": "דוגרי יום הולדת בנות",
     "dir": "resources/canva/templates/birthday-girls",
     "recipe": null,
@@ -69,6 +72,7 @@
   },
   "birthday-girls-neon": {
     "slug": "birthday-girls-neon",
+    "wordlist": "generic-350.txt",
     "display_he": "דוגרי יום הולדת בנות ניאון",
     "dir": "resources/canva/templates/birthday-girls-neon",
     "recipe": null,
@@ -87,6 +91,7 @@
   },
   "birthday-boys-basketball": {
     "slug": "birthday-boys-basketball",
+    "wordlist": "generic-350.txt",
     "display_he": "דוגרי יום הולדת בנים כדורסל",
     "dir": "resources/canva/templates/birthday-boys-basketball",
     "recipe": null,
@@ -105,6 +110,7 @@
   },
   "anniversary": {
     "slug": "anniversary",
+    "wordlist": "anniversary-350.txt",
     "display_he": "דוגרי יום נישואין",
     "dir": "resources/canva/templates/anniversary",
     "recipe": null,
@@ -123,6 +129,7 @@
   },
   "japanese": {
     "slug": "japanese",
+    "wordlist": "generic-350.txt",
     "display_he": "דוגרי יפני",
     "dir": "resources/canva/templates/japanese",
     "recipe": null,
@@ -141,6 +148,7 @@
   },
   "football-boys": {
     "slug": "football-boys",
+    "wordlist": "generic-350.txt",
     "display_he": "דוגרי כדורגל בנים",
     "dir": "resources/canva/templates/football-boys",
     "recipe": null,

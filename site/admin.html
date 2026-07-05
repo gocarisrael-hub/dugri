@@ -663,6 +663,67 @@
           td.appendChild(document.createTextNode(' '));
           td.appendChild(csvBtn);
 
+          // Generate the print-ready PDF from the collected words. The admin
+          // supplies the theme (a themes.json key) — design->theme mapping is a
+          // later workstream. On success shows a download link + production state.
+          const prod = (c.order && c.order.production) || c.production || null;
+          const genBtn = document.createElement('button');
+          genBtn.textContent = 'צור PDF';
+          const pdfWrap = document.createElement('span');
+          const showPdf = () => {
+            pdfWrap.textContent = ' ';
+            const a = document.createElement('a');
+            a.className = 'act';
+            a.textContent = 'הורד PDF';
+            a.href =
+              location.origin +
+              '/api/admin/collections/' +
+              c.id +
+              '/pdf?key=' +
+              encodeURIComponent(key);
+            a.target = '_blank';
+            a.rel = 'noopener';
+            pdfWrap.appendChild(a);
+          };
+          genBtn.onclick = async () => {
+            const theme = prompt('מפתח תמה (themes.json key):', c.design || 'trip comeback');
+            if (!theme) return;
+            const orig = genBtn.textContent;
+            genBtn.disabled = true;
+            genBtn.textContent = 'מייצר…';
+            try {
+              const r = await fetch(
+                '/api/admin/collections/' + c.id + '/generate?key=' + encodeURIComponent(key),
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ theme }),
+                }
+              );
+              const data = await r.json().catch(() => ({}));
+              if (r.ok) {
+                genBtn.textContent = 'צור PDF מחדש';
+                genBtn.disabled = false;
+                showPdf();
+              } else {
+                genBtn.textContent = orig;
+                genBtn.disabled = false;
+                alert('שגיאה ביצירת PDF: ' + (data.detail || data.error || r.status));
+              }
+            } catch {
+              genBtn.textContent = orig;
+              genBtn.disabled = false;
+              alert('שגיאה ביצירת ה-PDF');
+            }
+          };
+          td.appendChild(document.createTextNode(' '));
+          td.appendChild(genBtn);
+          td.appendChild(pdfWrap);
+          if (prod && prod.state === 'generated') {
+            genBtn.textContent = 'צור PDF מחדש';
+            showPdf();
+          }
+
           // Cancel / restore (soft) + hard delete.
           if (c.cancelled) {
             const badge = document.createElement('span');
