@@ -116,7 +116,9 @@ describe('POST /api/admin/collections/:id/generate', () => {
   });
 
   it('generates a PDF, records production, returns a keyed link, and serves the file', async () => {
-    const c = seedWithWords('הפקה מוצלחת', ['מים', 'אש', 'רוח']);
+    // 'trip comeback' is an english-caps theme, so the honoree name must be Latin
+    // (the pre-production validation rejects a Hebrew name here).
+    const c = seedWithWords('Shira', ['מים', 'אש', 'רוח']);
     const r = await post(key('/api/admin/collections/' + c.id + '/generate'), {
       theme: 'trip comeback',
     });
@@ -142,7 +144,7 @@ describe('POST /api/admin/collections/:id/generate', () => {
   });
 
   it('mirrors production onto the order when one exists', async () => {
-    const c = seedWithWords('עם הזמנה', ['a', 'b']);
+    const c = seedWithWords('With Order', ['a', 'b']);
     db.setOrder(c.id, c.owner_token, { version: 'pdf' });
     await post(key('/api/admin/collections/' + c.id + '/generate'), { theme: 'trip comeback' });
     expect(db.getCollection(c.id).order.production.state).toBe('generated');
