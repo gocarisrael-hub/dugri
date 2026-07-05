@@ -32,8 +32,10 @@ const MAX_SESSIONS = Number(process.env.PELECARD_MAX_SESSIONS || 50);
 const DEFAULTS = { collections: [], words: [], coupons: [], design_codes: [] };
 
 // Single source of truth for order pricing (NIS).
-// pdf = digital PDF; pickup = printed + pickup at גלאור; delivery = door-to-door.
-const ORDER_PRICES = { pdf: 79, pickup: 149, delivery: 199 };
+// pdf = digital PDF; pickup = printed + pickup at גלאור; delivery = door-to-door;
+// custom = a "hand-designed just for you" bespoke game (design is TBD — the
+// customer buys the custom slot and we design it by hand afterwards).
+const ORDER_PRICES = { pdf: 79, pickup: 149, delivery: 199, custom: 599 };
 
 function loadDb() {
   try {
@@ -406,6 +408,15 @@ const db = {
     if (meta.token && c.order.pelecard && Array.isArray(c.order.pelecard.sessions)) {
       const s = c.order.pelecard.sessions.find((x) => x.token === meta.token);
       if (s) s.resolved = true;
+    }
+    // A custom ("hand-designed just for you") order needs manual design work once
+    // paid — flag a production sub-state so the admin dashboard surfaces it as
+    // awaiting design. Mirrored to the collection (like setProduction) and never
+    // clobbers an already-recorded production state.
+    if (c.order.version === 'custom' && !c.order.production) {
+      const rec = { state: 'needs_design', custom: true, flagged_at: c.order.paid_at };
+      c.order.production = rec;
+      c.production = rec;
     }
     saveDb();
     return true;

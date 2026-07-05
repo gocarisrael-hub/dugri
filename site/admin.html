@@ -412,6 +412,7 @@
         pdf: 'דיגיטלי',
         pickup: 'משחק מוכן (איסוף)',
         delivery: 'המפונקת (משלוח)',
+        custom: 'עיצוב אישי (בהתאמה)',
       };
 
       function formatAddress(a) {
@@ -639,6 +640,13 @@
             a.target = '_blank';
             a.rel = 'noopener';
             tdProduction.appendChild(a);
+          } else if (prod && prod.state === 'needs_design') {
+            // Bespoke custom order: paid, awaiting hand-design (no template).
+            const badge = document.createElement('span');
+            badge.className = 'pill prod-error';
+            badge.textContent = 'עיצוב אישי — לעצב';
+            badge.title = 'הזמנה בהתאמה אישית — דורשת עיצוב ידני';
+            tdProduction.appendChild(badge);
           } else {
             tdProduction.className = 'muted';
             tdProduction.textContent = prod && prod.state === 'pending' ? 'ממתין' : '—';
