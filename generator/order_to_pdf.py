@@ -16,6 +16,7 @@ config.clean_path(theme, which). Only calibrated themes render; others raise.
 """
 import argparse
 import os
+import shutil
 import sys
 import tempfile
 
@@ -45,31 +46,48 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
         workdir = tempfile.mkdtemp(prefix="dugri-order-")
     os.makedirs(workdir, exist_ok=True)
 
-    if out_pdf is None:
+    own_out = out_pdf is None
+    if own_out:
         fd, out_pdf = tempfile.mkstemp(prefix="dugri-order-", suffix=".pdf")
         os.close(fd)
 
-    # 1) Top up the personal words to a full deck.
-    words = topup(personal_words, theme_key)
+    try:
+        # 1) Top up the personal words to a full deck.
+        words = topup(personal_words, theme_key)
 
-    # 2) Write the words to a temp file, then pack into the 32-col Canva CSV.
-    words_path = os.path.join(workdir, "words.txt")
-    with open(words_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(words) + "\n")
-    csv_path = os.path.join(workdir, "order.csv")
-    pack.pack(words, csv_path)
+        # 2) Write the words to a temp file, then pack into the 32-col Canva CSV.
+        words_path = os.path.join(workdir, "words.txt")
+        with open(words_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(words) + "\n")
+        csv_path = os.path.join(workdir, "order.csv")
+        pack.pack(words, csv_path)
 
-    # 3) Render the full PDF onto the theme's clean backgrounds.
-    fronts = config.clean_path(theme_key, "fronts")
-    board = config.clean_path(theme_key, "board")
-    backs_path = config.clean_path(theme_key, "backs")
-    backs = backs_path if os.path.exists(backs_path) else None
+        # 3) Render the full PDF onto the theme's clean backgrounds.
+        fronts = config.clean_path(theme_key, "fronts")
+        board = config.clean_path(theme_key, "board")
+        backs_path = config.clean_path(theme_key, "backs")
+        backs = backs_path if os.path.exists(backs_path) else None
 
-    return buildmod.build_pdf(
-        theme_key, fronts, board, csv_path, name, out_pdf,
-        backs=backs, extra_fields=extra_fields or {}, word_font=word_font,
-        workdir=os.path.join(workdir, "build"), progress=progress,
-    )
+        return buildmod.build_pdf(
+            theme_key, fronts, board, csv_path, name, out_pdf,
+            backs=backs, extra_fields=extra_fields or {}, word_font=word_font,
+            workdir=os.path.join(workdir, "build"), progress=progress,
+        )
+    except BaseException:
+        # On failure, drop a half-written PDF we created (a partial file is
+        # useless). A caller-supplied out_pdf is left untouched.
+        if own_out:
+            try:
+                os.remove(out_pdf)
+            except OSError:
+                pass
+        raise
+    finally:
+        # The scratch dir (intermediate CSV + per-page PNGs) is never part of the
+        # result — remove it when we created it, on both success and failure, so a
+        # failed render can't leak a temp dir. The finished out_pdf is separate.
+        if own_workdir:
+            shutil.rmtree(workdir, ignore_errors=True)
 
 
 def _parse_fields(pairs):

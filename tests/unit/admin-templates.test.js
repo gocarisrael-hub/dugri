@@ -20,11 +20,18 @@ const serverDir = path.join(__dirname, '..', '..', 'server');
 const ADMIN_KEY = 'test-admin-key';
 const SVG = (label) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg">${label}</svg>`);
 
-// Build a fresh throwaway repo scaffold: generator/themes.json seeded to {}.
+// Build a fresh throwaway repo scaffold. The real themes.json always ships with
+// entries; an EMPTY mapping is now treated as missing/corrupt and refused (so a
+// lone entry can't wipe the file), hence we seed one existing theme here so
+// onboarding always appends alongside it.
 function makeScaffold() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-tpl-root-'));
   fs.mkdirSync(path.join(root, 'generator'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'generator', 'themes.json'), '{}\n', 'utf8');
+  fs.writeFileSync(
+    path.join(root, 'generator', 'themes.json'),
+    JSON.stringify({ 'seed-theme': { slug: 'seed-theme', calibrated: true } }, null, 1) + '\n',
+    'utf8'
+  );
   return root;
 }
 
@@ -103,13 +110,43 @@ describe('templates.js pure logic', () => {
     expect(out.fonts).toEqual({ title: 'Title.ttf', word: 'Word.ttf' });
   });
 
-  it('appendThemeEntry adds the entry and refuses to overwrite an existing key', () => {
+  it('appendThemeEntry adds the entry, keeps existing ones, and refuses to overwrite a key', () => {
     const root = makeScaffold();
     const themesPath = path.join(root, 'generator', 'themes.json');
     templates.appendThemeEntry(themesPath, 'demo', { slug: 'demo', calibrated: false });
     const themes = JSON.parse(fs.readFileSync(themesPath, 'utf8'));
     expect(themes.demo.slug).toBe('demo');
+    // the pre-existing (seeded) theme is preserved, not wiped
+    expect(themes['seed-theme'].slug).toBe('seed-theme');
     expect(() => templates.appendThemeEntry(themesPath, 'demo', {})).toThrow(/already registered/);
+    // atomic write leaves no leftover temp file behind
+    const leftover = fs
+      .readdirSync(path.join(root, 'generator'))
+      .filter((f) => f.startsWith('.themes.') && f.endsWith('.tmp'));
+    expect(leftover).toEqual([]);
+  });
+
+  it('loadThemes/appendThemeEntry THROW on a corrupt themes.json and never wipe it', () => {
+    const root = makeScaffold();
+    const themesPath = path.join(root, 'generator', 'themes.json');
+    // a non-empty but unparseable file (e.g. a truncated write)
+    const corrupt = '{ "seed-theme": { "slug": "seed-theme"';
+    fs.writeFileSync(themesPath, corrupt, 'utf8');
+    expect(() => templates.loadThemes(themesPath)).toThrow(/unparseable/);
+    expect(() => templates.appendThemeEntry(themesPath, 'new-one', { slug: 'new-one' })).toThrow(
+      /unparseable/
+    );
+    // the corrupt file is left exactly as-is — no partial overwrite
+    expect(fs.readFileSync(themesPath, 'utf8')).toBe(corrupt);
+  });
+
+  it('appendThemeEntry refuses to write when the loaded mapping is empty', () => {
+    const root = makeScaffold();
+    const themesPath = path.join(root, 'generator', 'themes.json');
+    fs.writeFileSync(themesPath, '{}\n', 'utf8');
+    expect(() => templates.appendThemeEntry(themesPath, 'x', { slug: 'x' })).toThrow(/empty/);
+    // the file is untouched (not overwritten with a lone entry)
+    expect(JSON.parse(fs.readFileSync(themesPath, 'utf8'))).toEqual({});
   });
 
   it('onboardTemplate (runRecipe:false) writes files + a private uncalibrated theme entry', () => {

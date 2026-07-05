@@ -20,6 +20,7 @@ CLI (prints the two PNG paths as JSON):
 import argparse
 import json
 import os
+import shutil
 import sys
 import tempfile
 
@@ -99,39 +100,48 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None):
     config.ensure_calibrated(cfg)
     title_lines = config.title_lines(cfg, name, extra_fields or {})
 
-    if workdir is None:
+    own_workdir = workdir is None
+    if own_workdir:
         workdir = tempfile.mkdtemp(prefix="dugri-preview-")
     os.makedirs(workdir, exist_ok=True)
 
-    recipe = _recipe(cfg)
-    idx = _sample_card_index(recipe)
+    try:
+        recipe = _recipe(cfg)
+        idx = _sample_card_index(recipe)
 
-    # Fill only the sample card with placeholder words; the rest stay blank (we
-    # crop away everything but this one card anyway).
-    words_by_card = [[] for _ in recipe["cards"]]
-    words_by_card[idx] = list(PLACEHOLDER_WORDS)
+        # Fill only the sample card with placeholder words; the rest stay blank (we
+        # crop away everything but this one card anyway).
+        words_by_card = [[] for _ in recipe["cards"]]
+        words_by_card[idx] = list(PLACEHOLDER_WORDS)
 
-    fronts = config.clean_path(theme, "fronts")
-    full_png = os.path.join(workdir, "front_full.png")
-    rp.render(theme, fronts, words_by_card, title_lines, full_png, word_font=word_font)
+        fronts = config.clean_path(theme, "fronts")
+        full_png = os.path.join(workdir, "front_full.png")
+        rp.render(theme, fronts, words_by_card, title_lines, full_png, word_font=word_font)
 
-    card_png = _crop_card(
-        full_png, recipe["cards"][idx]["cell"], recipe["viewBox"],
-        os.path.join(workdir, "card.png"),
-    )
-    _downscale(card_png, CARD_MAX_W)
-
-    out = {"card": card_png}
-
-    board_clean = config.clean_path(theme, "board")
-    if os.path.exists(board_clean):
-        board_png = buildmod.render_board(
-            theme, board_clean, title_lines, os.path.join(workdir, "board.png")
+        card_png = _crop_card(
+            full_png, recipe["cards"][idx]["cell"], recipe["viewBox"],
+            os.path.join(workdir, "card.png"),
         )
-        _downscale(board_png, BOARD_MAX_W)
-        out["board"] = board_png
+        _downscale(card_png, CARD_MAX_W)
 
-    return out
+        out = {"card": card_png}
+
+        board_clean = config.clean_path(theme, "board")
+        if os.path.exists(board_clean):
+            board_png = buildmod.render_board(
+                theme, board_clean, title_lines, os.path.join(workdir, "board.png")
+            )
+            _downscale(board_png, BOARD_MAX_W)
+            out["board"] = board_png
+
+        return out
+    except BaseException:
+        # The produced PNGs live INSIDE workdir, so we only clean up a workdir WE
+        # created — and only on the error path (a caller passing its own workdir,
+        # like the server, cleans it up itself after reading the images back).
+        if own_workdir:
+            shutil.rmtree(workdir, ignore_errors=True)
+        raise
 
 
 def _parse_fields(pairs):

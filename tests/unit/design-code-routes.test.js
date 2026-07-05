@@ -123,10 +123,18 @@ describe('POST /api/design-code/validate (public unlock)', () => {
     expect(db.getDesignCodeByCode('UNLOCK1').uses).toBe(1);
   });
 
-  it('returns valid:false + reason for an unknown code (no leak)', async () => {
-    const r = await post('/api/design-code/validate', { code: 'GHOSTCODE' });
-    expect(r.status).toBe(200);
-    expect(r.body).toEqual({ valid: false, reason: 'not_found' });
+  it('returns a GENERIC valid:false with no reason (no enumeration oracle)', async () => {
+    // An unknown code and an inactive code must be indistinguishable to the public
+    // caller — no `reason` field that would reveal whether a code exists.
+    const unknown = await post('/api/design-code/validate', { code: 'GHOSTCODE' });
+    expect(unknown.status).toBe(200);
+    expect(unknown.body).toEqual({ valid: false });
+
+    await post(key('/api/admin/design-codes'), { code: 'INACTIVE1', design_id: 'neon' });
+    const created = db.getDesignCodeByCode('INACTIVE1');
+    db.setDesignCodeActive(created.id, false);
+    const inactive = await post('/api/design-code/validate', { code: 'INACTIVE1' });
+    expect(inactive.body).toEqual({ valid: false });
   });
 
   it('rate-limits by client IP once the per-IP budget is exhausted', async () => {

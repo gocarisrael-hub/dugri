@@ -742,7 +742,12 @@
             pdfWrap.appendChild(a);
           };
           genBtn.onclick = async () => {
-            const theme = prompt('מפתח תמה (themes.json key):', c.design || 'trip comeback');
+            // Default to the RESOLVED generator theme key stored on the order/
+            // collection — never c.design (the Hebrew display name, which is not a
+            // themes.json key). Fall back to a known key only as a last resort.
+            const defaultTheme =
+              (c.order && c.order.theme) || c.theme || (prod && prod.theme) || 'trip comeback';
+            const theme = prompt('מפתח תמה (themes.json key):', defaultTheme);
             if (!theme) return;
             const orig = genBtn.textContent;
             genBtn.disabled = true;
@@ -761,6 +766,22 @@
                 genBtn.textContent = 'צור PDF מחדש';
                 genBtn.disabled = false;
                 showPdf();
+                // Refresh the "הפקה" cell to its generated state — it was built on
+                // page load and would otherwise stay stale (— / שגיאה) until reload.
+                tdProduction.textContent = '';
+                tdProduction.className = '';
+                const doneLink = document.createElement('a');
+                doneLink.className = 'act';
+                doneLink.textContent = 'מוכן ✓';
+                doneLink.href =
+                  location.origin +
+                  '/api/admin/collections/' +
+                  c.id +
+                  '/pdf?key=' +
+                  encodeURIComponent(key);
+                doneLink.target = '_blank';
+                doneLink.rel = 'noopener';
+                tdProduction.appendChild(doneLink);
               } else {
                 genBtn.textContent = orig;
                 genBtn.disabled = false;

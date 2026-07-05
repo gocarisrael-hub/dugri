@@ -8,6 +8,7 @@ it all flows from here.
 """
 import json
 import os
+import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, ".."))
@@ -67,18 +68,21 @@ def resolve_word_font(theme_name, filename=None):
       1. no override -> the theme's own configured ``word_font`` (in its fonts/);
       2. a file that exists in the theme's own ``fonts/`` dir;
       3. otherwise fall back to the shared ``word-fonts/`` pool.
-    Returns the theme-local path as a last resort so callers still get a path
-    (font loading then fails loudly on a genuinely unknown filename).
+    When the override resolves to nothing that exists (neither in the theme's
+    fonts/ nor the shared pool), fall back to the theme's own default word_font
+    rather than returning a path that isn't there — the theme default is the only
+    trusted path, so the render never dies with an opaque FileNotFoundError.
     """
+    default_path = font_path(theme_name, theme(theme_name)["word_font"])
     if not filename:
-        return font_path(theme_name, theme(theme_name)["word_font"])
+        return default_path
     own = font_path(theme_name, filename)
     if os.path.exists(own):
         return own
     shared = os.path.join(WORD_FONTS_DIR, filename)
     if os.path.exists(shared):
         return shared
-    return own
+    return default_path
 
 
 def clean_path(theme_name, which):
@@ -121,5 +125,9 @@ def title_lines(cfg, name, extra_fields_dict=None):
     for line in cfg["title_lines"]:
         for key, val in values.items():
             line = line.replace("{" + key + "}", val)
+        # Defense-in-depth: strip any placeholder we couldn't fill so the title
+        # never prints raw braces like "{AGE}" (server validation already blocks
+        # this case, but a missing extra field must never leak into the render).
+        line = re.sub(r"\{[^{}]*\}", "", line)
         out.append(line)
     return out

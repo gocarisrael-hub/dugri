@@ -126,10 +126,14 @@ describe('POST /api/admin/collections/:id/generate', () => {
     expect(r.body.production.state).toBe('generated');
     expect(r.body.production.pages).toBe(3);
     expect(r.body.production.pdf_file).toBe(c.id + '.pdf');
-    // the link is the admin-gated download route with the key embedded
+    // the response link (admin-facing) is the admin-gated route with the key
     expect(r.body.link).toContain('/api/admin/collections/' + c.id + '/pdf?key=' + ADMIN_KEY);
-    // production is persisted (mirrored to the collection)
+    // production is persisted (mirrored to the collection) with a capability token
     expect(db.getCollection(c.id).production.state).toBe('generated');
+    expect(typeof r.body.production.pdf_token).toBe('string');
+    expect(r.body.production.pdf_token.length).toBeGreaterThan(16);
+    // the token is NOT the admin key (that would defeat the whole point)
+    expect(r.body.production.pdf_token).not.toBe(ADMIN_KEY);
     // the PDF was actually written to GENERATED_DIR
     expect(fs.existsSync(path.join(genDir, c.id + '.pdf'))).toBe(true);
 
@@ -143,6 +147,41 @@ describe('POST /api/admin/collections/:id/generate', () => {
     expect(noKey.status).toBe(403);
   });
 
+  it('serves the PDF over the PUBLIC token route WITHOUT the admin key', async () => {
+    const c = seedWithWords('Token', ['a', 'b']);
+    const r = await post(key('/api/admin/collections/' + c.id + '/generate'), {
+      theme: 'trip comeback',
+    });
+    const token = r.body.production.pdf_token;
+    // the customer's capability link (?t=<token>) downloads the file, no key
+    const dl = await fetch(base + '/api/collections/' + c.id + '/pdf?t=' + token);
+    expect(dl.status).toBe(200);
+    expect(dl.headers.get('content-type')).toContain('application/pdf');
+  });
+
+  it('the public token route is 403 with a wrong/missing token and never accepts the admin key', async () => {
+    const c = seedWithWords('BadToken', ['a', 'b']);
+    await post(key('/api/admin/collections/' + c.id + '/generate'), { theme: 'trip comeback' });
+    // no token
+    expect((await fetch(base + '/api/collections/' + c.id + '/pdf')).status).toBe(403);
+    // wrong token
+    expect((await fetch(base + '/api/collections/' + c.id + '/pdf?t=nope')).status).toBe(403);
+    // the admin key is NOT a valid capability token on the public route
+    const asKey = await fetch(base + '/api/collections/' + c.id + '/pdf?t=' + ADMIN_KEY);
+    expect(asKey.status).toBe(403);
+  });
+
+  it('reuses the same pdf_token across regenerations', async () => {
+    const c = seedWithWords('Regen', ['a', 'b']);
+    const r1 = await post(key('/api/admin/collections/' + c.id + '/generate'), {
+      theme: 'trip comeback',
+    });
+    const r2 = await post(key('/api/admin/collections/' + c.id + '/generate'), {
+      theme: 'trip comeback',
+    });
+    expect(r2.body.production.pdf_token).toBe(r1.body.production.pdf_token);
+  });
+
   it('mirrors production onto the order when one exists', async () => {
     const c = seedWithWords('With Order', ['a', 'b']);
     db.setOrder(c.id, c.owner_token, { version: 'pdf' });
@@ -150,14 +189,17 @@ describe('POST /api/admin/collections/:id/generate', () => {
     expect(db.getCollection(c.id).order.production.state).toBe('generated');
   });
 
-  it('400 with a clear detail when the theme is not calibrated', async () => {
-    const c = seedWithWords('לא מכויל', ['a', 'b']);
+  it('400 "unknown theme" for a theme that is not a themes.json key', async () => {
+    // An unknown theme must be rejected BEFORE validation/generation — otherwise
+    // getTheme() is null, validation is skipped, and the generator runs anyway.
+    const c = seedWithWords('לא ידוע', ['a', 'b']);
     const r = await post(key('/api/admin/collections/' + c.id + '/generate'), {
       theme: 'uncal-theme',
     });
     expect(r.status).toBe(400);
-    expect(r.body.error).toBe('generation failed');
-    expect(r.body.detail).toMatch(/not calibrated/i);
+    expect(r.body.error).toBe('unknown theme');
+    // and nothing was generated
+    expect(fs.existsSync(path.join(genDir, c.id + '.pdf'))).toBe(false);
   });
 
   it('404 downloading a PDF that was never generated', async () => {

@@ -343,10 +343,16 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
   const words = db.listWords(c.id).map((w) => w.text);
   if (!words.length) return res.status(400).json({ error: 'no words to generate' });
 
+  // Reject an unknown theme up front. An unknown key makes getTheme() null, which
+  // makes validateOrderForProduction skip every theme-specific check (name
+  // language, required extra fields) and still spawn the generator — so a bad
+  // theme must fail fast here, before any validation is trusted or Chrome runs.
+  const themeConfig = validate.getTheme(theme);
+  if (!themeConfig) return res.status(400).json({ error: 'unknown theme' });
+
   // Validate the order BEFORE spending time/money on generation. On any problem
   // we do NOT run the generator: we record an 'error' production status (shown in
   // admin), email the client + Dugri what to fix, and 400 with the problem list.
-  const themeConfig = validate.getTheme(theme);
   const problems = validate.validateOrderForProduction(c, themeConfig, words);
   if (problems.length) {
     const production = db.setProduction(c.id, {
@@ -386,17 +392,29 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       theme,
       pages,
     });
-    // The download link is the admin-gated route WITH the key embedded, so the
-    // client (who has no key) can still open it — a capability URL for this one
-    // file. Only built when a public base URL is configured.
     const base = paymentBaseUrl();
-    const link = base
+    // Two links, and they are NOT interchangeable:
+    //  - adminLink carries the master ADMIN_KEY and is for Dugri's own inbox only.
+    //  - customerLink carries this collection's per-order pdf_token capability
+    //    (set by db.setProduction) so the CUSTOMER can download WITHOUT ever
+    //    seeing the admin secret. The customer email must use customerLink.
+    const adminLink = base
       ? base + '/api/admin/collections/' + c.id + '/pdf?key=' + encodeURIComponent(ADMIN_KEY)
       : null;
-    if (notify.isConfigured() && link) {
-      notify.sendPdfReady({ ...c, count: words.length }, base, link).catch(() => {});
+    const customerLink =
+      base && production && production.pdf_token
+        ? base + '/api/collections/' + c.id + '/pdf?t=' + encodeURIComponent(production.pdf_token)
+        : null;
+    if (notify.isConfigured() && (adminLink || customerLink)) {
+      notify
+        .sendPdfReady({ ...c, count: words.length }, base, {
+          admin: adminLink,
+          customer: customerLink,
+        })
+        .catch(() => {});
     }
-    res.json({ ok: true, production, link });
+    // The admin UI is already authenticated, so the response keeps the admin link.
+    res.json({ ok: true, production, link: adminLink });
   } catch (e) {
     const detail = String((e && e.message) || e);
     // A clear, actionable status for the common "theme not calibrated" case.
@@ -413,6 +431,33 @@ app.get('/api/admin/collections/:id/pdf', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const c = db.getCollection(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
+  const file = path.join(GENERATED_DIR, c.id + '.pdf');
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'no pdf' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + c.id + '.pdf"');
+  res.sendFile(file);
+});
+
+// Constant-time compare of a supplied pdf capability token against the stored
+// one, so the public download route can't be used as a timing oracle.
+function pdfTokenOk(provided, expected) {
+  if (!expected) return false;
+  const a = Buffer.from(String(provided || ''));
+  const b = Buffer.from(String(expected));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// PUBLIC: download a generated order PDF via the per-collection capability token
+// stored on order.production.pdf_token (NOT the admin key) — this is the link the
+// customer's "PDF ready" email points at. 404 when the collection/PDF is absent;
+// 403 on a missing/wrong token. Uses the stored id (never the raw param) so the
+// path can never traverse out of GENERATED_DIR.
+app.get('/api/collections/:id/pdf', (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const production = (c.order && c.order.production) || c.production || null;
+  const token = production && production.pdf_token;
+  if (!pdfTokenOk(req.query.t, token)) return res.status(403).json({ error: 'forbidden' });
   const file = path.join(GENERATED_DIR, c.id + '.pdf');
   if (!fs.existsSync(file)) return res.status(404).json({ error: 'no pdf' });
   res.setHeader('Content-Type', 'application/pdf');
@@ -513,14 +558,16 @@ app.delete('/api/admin/design-codes/:id', (req, res) => {
 // PUBLIC design-code validation: the client enters an access code in the order
 // flow to unlock a PRIVATE design. Public (no owner token — a fresh visitor is
 // choosing a design), but rate-limited per client IP like the coupon oracle to
-// blunt code enumeration. Only the unlocked design id is ever leaked. Returns
-// { valid:true, design } or { valid:false, reason }.
+// blunt code enumeration. Only the unlocked design id is ever leaked. On failure
+// it returns a GENERIC { valid:false } with NO reason — distinguishing not_found
+// from inactive/expired would turn this into an enumeration oracle (an attacker
+// learns which codes exist). Detailed reasons stay internal (db.validateDesignCode).
 app.post('/api/design-code/validate', (req, res) => {
   if (!couponRateOk('designcode:' + clientKey(req))) {
     return res.status(429).json({ error: 'too many attempts' });
   }
   const r = db.validateDesignCode(req.body && req.body.code);
-  if (!r.valid) return res.json({ valid: false, reason: r.reason });
+  if (!r.valid) return res.json({ valid: false });
   db.incrementDesignCodeUses(req.body && req.body.code);
   res.json({ valid: true, design: r.design_id });
 });

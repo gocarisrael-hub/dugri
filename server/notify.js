@@ -547,18 +547,24 @@ async function sendOrderFinished(collection, baseUrl) {
   }
 }
 
-// Fire the "PDF ready" notification with the download `link`. Sends the same
-// message to Dugri (NOTIFY_TO) AND, when present, the client's own email
-// (owner_email). Fully wrapped — never throws. Returns true when at least one
-// send succeeded.
-async function sendPdfReady(collection, baseUrl, link) {
+// Fire the "PDF ready" notification. `links` is either a single string (legacy:
+// the same link to everyone) or a { admin, customer } pair. Dugri (NOTIFY_TO)
+// gets the admin link; the CUSTOMER (owner_email) gets the customer link — which
+// carries a capability token, NEVER the admin key. Each recipient gets a message
+// built with only their own link, so the admin secret can't leak in the customer
+// email. Fully wrapped — never throws. Returns true when at least one send
+// succeeded.
+async function sendPdfReady(collection, baseUrl, links) {
   try {
-    const msg = buildPdfReadyMessage(collection, link, baseUrl);
-    const owner = await send(msg); // -> NOTIFY_TO (Dugri)
+    const adminLink = typeof links === 'string' ? links : (links && links.admin) || null;
+    const customerLink = typeof links === 'string' ? links : (links && links.customer) || null;
+    const ownerMsg = buildPdfReadyMessage(collection, adminLink, baseUrl);
+    const owner = await send(ownerMsg); // -> NOTIFY_TO (Dugri)
     let client = false;
     const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
     if (to && to.toLowerCase() !== String(NOTIFY_TO).toLowerCase()) {
-      client = await send({ ...msg, to });
+      const clientMsg = buildPdfReadyMessage(collection, customerLink, baseUrl);
+      client = await send({ ...clientMsg, to });
     }
     return owner || client;
   } catch (e) {

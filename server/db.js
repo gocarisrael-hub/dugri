@@ -432,6 +432,14 @@ const db = {
     const c = this.getCollection(id);
     if (!c) return false;
     const rec = { ...production };
+    // A successfully generated PDF gets a per-collection capability token so the
+    // customer can be emailed a download link that never carries the admin key.
+    // Reuse an existing token across regenerations so any already-sent link keeps
+    // working; only mint one the first time this collection produces a PDF.
+    if (rec.state === 'generated' && !rec.pdf_token) {
+      const prev = (c.order && c.order.production) || c.production || null;
+      rec.pdf_token = (prev && prev.pdf_token) || crypto.randomBytes(24).toString('hex');
+    }
     c.production = rec;
     if (c.order) c.order.production = rec;
     saveDb();

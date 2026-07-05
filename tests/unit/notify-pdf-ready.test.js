@@ -107,4 +107,24 @@ describe('sendPdfReady', () => {
     );
     expect(calls.length).toBe(1);
   });
+
+  it('sends the ADMIN link to Dugri and the CUSTOMER link to the client — never the admin key to the customer', async () => {
+    setResend(true);
+    const notify = loadFresh();
+    const { calls } = stubFetch();
+    const adminLink = 'https://dugri.example/api/admin/collections/col-1/pdf?key=SUPERSECRET';
+    const customerLink = 'https://dugri.example/api/collections/col-1/pdf?t=capabilitytoken123';
+    await notify.sendPdfReady({ honoree_name: 'עוז', owner_email: 'client@x.com' }, '', {
+      admin: adminLink,
+      customer: customerLink,
+    });
+    const byRecipient = Object.fromEntries(calls.map((c) => [c.body.to[0], c.body]));
+    // Dugri (NOTIFY_TO) gets the admin link.
+    expect(byRecipient['owner@dugri.example'].text).toContain(adminLink);
+    // The customer gets the capability link and NEVER the admin key.
+    const customer = byRecipient['client@x.com'];
+    expect(customer.text).toContain(customerLink);
+    expect(JSON.stringify(customer)).not.toContain('SUPERSECRET');
+    expect(JSON.stringify(customer)).not.toContain('key=');
+  });
 });

@@ -71,6 +71,83 @@ def test_resolve_word_font_prefers_theme_own_dir():
     assert config.WORD_FONTS_DIR not in p
 
 
+def test_resolve_word_font_missing_override_falls_back_to_theme_default():
+    # an override filename that exists in NEITHER the theme fonts/ nor the shared
+    # pool must NOT return a non-existent path (opaque FileNotFoundError mid-render)
+    # — it falls back to the theme's own default word_font, which is trusted.
+    p = config.resolve_word_font("trip comeback", "does-not-exist-anywhere.ttf")
+    default = config.font_path("trip comeback", config.theme("trip comeback")["word_font"])
+    assert p == default
+    assert os.path.exists(p)
+
+
+def test_title_lines_blanks_unfilled_placeholders():
+    # a required extra field missing from the dict must never print raw braces
+    # like "{AGE}" — the token is blanked out after substitution (defense-in-depth).
+    cfg = {"name_form": "english", "title_lines": ["{NAME}'S {AGE} PARTY"]}
+    out = config.title_lines(cfg, "oz", {})
+    assert out == ["oz'S  PARTY"]
+    assert "{" not in out[0] and "}" not in out[0]
+
+
+def test_build_page_survives_card_with_no_word_slots():
+    # A non-null recipe card with an empty "words" list (e.g. a title-only card)
+    # used to crash build_page via statistics.median([]) -> StatisticsError. The
+    # page must still render (the empty-slot card is skipped).
+    import json
+    import tempfile
+
+    import render_page
+
+    font = os.path.join(config.HERE, "Cafe-Regular.ttf")  # a real font in generator/
+    tmp = tempfile.mkdtemp(prefix="dugri-test-build-")
+    clean = os.path.join(tmp, "clean.svg")
+    with open(clean, "w", encoding="utf-8") as f:
+        f.write('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"></svg>')
+
+    cfg = {
+        "slug": "synthetic",
+        "calibrated": True,
+        "recipe": "synthetic-empty-words-test",
+        "title_font": "Cafe-Regular.ttf",
+        "word_font": "Cafe-Regular.ttf",
+        "title_style": {
+            "fill": "#fff", "outline": "#000", "outline_w": 0.05,
+            "arch": 0.1, "shadow": True,
+        },
+    }
+    recipe = {
+        "viewBox": [0, 0, 100, 100],
+        "cards": [
+            {"words": []},  # non-null but NO word slots -> would crash median([])
+            {"words": [{"x0": 0, "y0": 30, "x1": 100, "y1": 50, "color": "#000"}]},
+        ],
+    }
+    recipe_path = os.path.join(render_page.HERE, "recipes", cfg["recipe"] + ".json")
+    saved = {
+        "theme": config.theme,
+        "ensure": config.ensure_calibrated,
+        "rwf": config.resolve_word_font,
+        "fp": config.font_path,
+    }
+    try:
+        config.theme = lambda name: cfg
+        config.ensure_calibrated = lambda c: None
+        config.resolve_word_font = lambda name, fn=None: font
+        config.font_path = lambda name, fn: font
+        with open(recipe_path, "w", encoding="utf-8") as f:
+            json.dump(recipe, f)
+        out = render_page.build_page("synthetic", clean, [["a"], ["b"]], [], word_font=None)
+        assert "<svg" in out
+    finally:
+        config.theme = saved["theme"]
+        config.ensure_calibrated = saved["ensure"]
+        config.resolve_word_font = saved["rwf"]
+        config.font_path = saved["fp"]
+        if os.path.exists(recipe_path):
+            os.remove(recipe_path)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

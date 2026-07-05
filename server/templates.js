@@ -50,12 +50,26 @@ function looksLikeSvg(buf) {
 }
 
 // Read the themes mapping (key -> config) from a themes.json path. Returns {}
-// when absent so a first-ever onboarding still works.
+// only when the file is genuinely absent or empty (a first-ever onboarding). A
+// file that EXISTS with content but won't parse is CORRUPT — we THROW rather than
+// return {}, because swallowing the error here would let appendThemeEntry write
+// back a single entry and destroy every existing theme.
 function loadThemes(themesPath) {
+  let raw;
   try {
-    return JSON.parse(fs.readFileSync(themesPath, 'utf8'));
+    raw = fs.readFileSync(themesPath, 'utf8');
   } catch {
-    return {};
+    return {}; // missing file -> no themes yet
+  }
+  if (!raw.trim()) return {}; // present but empty/whitespace -> no themes yet
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    throw new Error(
+      'themes.json exists but is unparseable — refusing to touch it (would wipe ' +
+        'existing themes): ' +
+        ((e && e.message) || e)
+    );
   }
 }
 
@@ -99,13 +113,25 @@ function buildThemeEntry({
 }
 
 // Append one entry to themes.json under `key`. Throws when the key is already
-// taken (never silently overwrites a shipped theme). Preserves the file's 1-space
-// indent so the diff against the hand-maintained file stays minimal.
+// taken (never silently overwrites a shipped theme), and refuses to write when
+// the loaded mapping is empty — the shipped themes.json always has entries, so an
+// empty load means the file is missing/corrupt and writing a lone entry would
+// destroy it. The write is ATOMIC (temp file in the same dir, then rename) so a
+// crash mid-write can never leave a truncated themes.json. Preserves the file's
+// 1-space indent so the diff against the hand-maintained file stays minimal.
 function appendThemeEntry(themesPath, key, entry) {
   const themes = loadThemes(themesPath);
   if (themes[key]) throw new Error('theme already registered: ' + key);
+  if (!themes || Object.keys(themes).length === 0) {
+    throw new Error(
+      'refusing to write themes.json: loaded mapping is empty (missing/corrupt file)'
+    );
+  }
   themes[key] = entry;
-  fs.writeFileSync(themesPath, JSON.stringify(themes, null, 1) + '\n', 'utf8');
+  const dir = path.dirname(themesPath);
+  const tmp = path.join(dir, `.themes.${process.pid}.${Date.now()}.tmp`);
+  fs.writeFileSync(tmp, JSON.stringify(themes, null, 1) + '\n', 'utf8');
+  fs.renameSync(tmp, themesPath);
   return entry;
 }
 

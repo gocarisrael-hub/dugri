@@ -133,6 +133,10 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
                                        ts["fill"], ts["outline"], title_font,
                                        ts["outline_w"], ts["arch"], ts["shadow"]))
         words = words_by_card[ci] if ci < len(words_by_card) else []
+        # A card may carry a title but no word slots (its title was drawn above);
+        # skip the word pass so statistics.median([]) can't crash the whole page.
+        if not card["words"]:
+            continue
         # ONE uniform word size per card (like the real card); per-word ink
         # heights vary by letters, so fit from the median, not each slot.
         import statistics

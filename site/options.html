@@ -3076,7 +3076,11 @@
         const cId = params.get('color');
         if (dId) {
           const di = DESIGNS.findIndex((d) => d.id === dId);
-          if (di >= 0) designIndex = di;
+          // Only auto-select a design from the URL when it's PUBLIC. A private
+          // design must be unlocked with its access code (submitDesignCode ->
+          // unlockDesign); a shared ?design=<private id> link must never bypass
+          // that and reveal it. Treat a private id as if it weren't supplied.
+          if (di >= 0 && DESIGNS[di].public) designIndex = di;
         }
         if (cId && cId !== 'original') {
           const ci = MAIN_COLORS.findIndex((c) => c.id === cId);
