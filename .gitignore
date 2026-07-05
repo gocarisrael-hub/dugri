@@ -9,6 +9,7 @@
 
 # Node / tests
 node_modules/
+node_modules
 coverage/
 test-results/
 playwright-report/
@@ -20,6 +21,9 @@ playwright-report/
 # Word-collection local data (server JSON store + e2e throwaway dir)
 .e2e-data/
 dugri-data.json
+
+# Generated order PDFs (produced on demand by the server; never committed)
+server/generated/
 
 # Large local media / working files (keep out of git — GitHub caps files at 100MB)
 resources/clips/

@@ -26,7 +26,7 @@ function freshCollection() {
 
 describe('setOrder', () => {
   it('exports ORDER_PRICES with the agreed totals', () => {
-    expect(ORDER_PRICES).toEqual({ pdf: 79, pickup: 149, delivery: 199 });
+    expect(ORDER_PRICES).toEqual({ pdf: 79, pickup: 149, delivery: 199, custom: 599 });
   });
 
   it('prices pdf/pickup/delivery from ORDER_PRICES', () => {

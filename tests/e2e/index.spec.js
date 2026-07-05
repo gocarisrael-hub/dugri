@@ -85,23 +85,6 @@ test.describe('price CTA wrapping', () => {
   });
 });
 
-test.describe('audience "who is this game for" section', () => {
-  const LABELS = ['מסיבת רווקות', 'יום הולדת עגול', 'יום נישואין', 'פרישה'];
-
-  test('is present with all event labels', async ({ page }) => {
-    await page.goto('/index.html');
-    const section = page.locator('[data-testid="audience"]');
-    await expect(section).toBeVisible();
-    const grid = page.locator('[data-testid="audience-grid"]');
-    // The 5 event cards (round-birthday merged into one).
-    await expect(grid.locator('.aud-card')).toHaveCount(LABELS.length);
-    const text = await grid.innerText();
-    for (const label of LABELS) {
-      expect(text).toContain(label);
-    }
-  });
-});
-
 test.describe('real contact info', () => {
   test('Instagram link resolves to dugri_israel with no placeholder', async ({ page }) => {
     await page.goto('/index.html');

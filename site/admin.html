@@ -131,6 +131,11 @@
         background: #f1eef0;
         color: #7c6a74;
       }
+      .prod-error {
+        background: #fdecec;
+        color: #c0143c;
+        cursor: help;
+      }
       button {
         font: inherit;
         font-size: 13px;
@@ -248,7 +253,7 @@
         background: #f1eef0;
         color: #7c6a74;
       }
-      /* Narrow phones: 14 columns can't fit as a grid, so stack each row into a
+      /* Narrow phones: 15 columns can't fit as a grid, so stack each row into a
          label:value card. The label comes from each cell's data-label (set in
          JS). This keeps every value on-screen with zero horizontal scroll. */
       @media (max-width: 600px) {
@@ -314,6 +319,8 @@
         <a data-page="dashboard.html">לוח בקרה</a>
         <a data-page="admin.html" class="active">ניהול הזמנות</a>
         <a data-page="coupons.html">ניהול קופונים</a>
+        <a data-page="design-codes.html">קודי עיצוב</a>
+        <a data-page="admin-templates.html">תבנית חדשה</a>
       </nav>
       <h1>ניהול הזמנות · דוגרי</h1>
       <div class="sub" id="sub">טוען…</div>
@@ -406,6 +413,7 @@
         pdf: 'דיגיטלי',
         pickup: 'משחק מוכן (איסוף)',
         delivery: 'המפונקת (משלוח)',
+        custom: 'עיצוב אישי (בהתאמה)',
       };
 
       function formatAddress(a) {
@@ -503,7 +511,7 @@
         }
         const table = document.createElement('table');
         table.innerHTML =
-          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>נוצר</th><th>מעקב</th><th>ניהול</th></tr></thead>';
+          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>הפקה</th><th>נוצר</th><th>מעקב</th><th>ניהול</th></tr></thead>';
         const tb = document.createElement('tbody');
         for (const c of cols) {
           const tr = document.createElement('tr');
@@ -598,6 +606,53 @@
             tdPaid.appendChild(payBtn);
           }
 
+          // Production state ("הפקה"): the outcome of the last generate attempt.
+          // error -> red pill, the problems as tooltip + a one-line summary;
+          // generated -> a keyed download link; pending/none -> a muted dash.
+          const prod = (c.order && c.order.production) || c.production || null;
+          const tdProduction = document.createElement('td');
+          if (prod && prod.state === 'error') {
+            const errs = Array.isArray(prod.errors)
+              ? prod.errors
+              : prod.errors
+                ? [prod.errors]
+                : [];
+            const badge = document.createElement('span');
+            badge.className = 'pill prod-error';
+            badge.textContent = 'שגיאה';
+            if (errs.length) badge.title = errs.join('\n');
+            tdProduction.appendChild(badge);
+            if (errs.length) {
+              const small = document.createElement('div');
+              small.className = 'muted';
+              small.textContent = errs[0];
+              tdProduction.appendChild(small);
+            }
+          } else if (prod && prod.state === 'generated') {
+            const a = document.createElement('a');
+            a.className = 'act';
+            a.textContent = 'מוכן ✓';
+            a.href =
+              location.origin +
+              '/api/admin/collections/' +
+              c.id +
+              '/pdf?key=' +
+              encodeURIComponent(key);
+            a.target = '_blank';
+            a.rel = 'noopener';
+            tdProduction.appendChild(a);
+          } else if (prod && prod.state === 'needs_design') {
+            // Bespoke custom order: paid, awaiting hand-design (no template).
+            const badge = document.createElement('span');
+            badge.className = 'pill prod-error';
+            badge.textContent = 'עיצוב אישי — לעצב';
+            badge.title = 'הזמנה בהתאמה אישית — דורשת עיצוב ידני';
+            tdProduction.appendChild(badge);
+          } else {
+            tdProduction.className = 'muted';
+            tdProduction.textContent = prod && prod.state === 'pending' ? 'ממתין' : '—';
+          }
+
           tr.appendChild(tdName);
           tr.appendChild(tdContact);
           tr.appendChild(tdCount);
@@ -609,6 +664,7 @@
           tr.appendChild(tdTotal);
           tr.appendChild(tdAddress);
           tr.appendChild(tdPaid);
+          tr.appendChild(tdProduction);
           tr.appendChild(tdDate);
 
           // Follow-up: WhatsApp / Call / Email. Each link is shown only when the
@@ -662,6 +718,88 @@
           td.appendChild(copyBtn);
           td.appendChild(document.createTextNode(' '));
           td.appendChild(csvBtn);
+
+          // Generate the print-ready PDF from the collected words. The admin
+          // supplies the theme (a themes.json key) — design->theme mapping is a
+          // later workstream. On success shows a download link + production state.
+          // `prod` (the last production result) was computed above for the הפקה column.
+          const genBtn = document.createElement('button');
+          genBtn.textContent = 'צור PDF';
+          const pdfWrap = document.createElement('span');
+          const showPdf = () => {
+            pdfWrap.textContent = ' ';
+            const a = document.createElement('a');
+            a.className = 'act';
+            a.textContent = 'הורד PDF';
+            a.href =
+              location.origin +
+              '/api/admin/collections/' +
+              c.id +
+              '/pdf?key=' +
+              encodeURIComponent(key);
+            a.target = '_blank';
+            a.rel = 'noopener';
+            pdfWrap.appendChild(a);
+          };
+          genBtn.onclick = async () => {
+            // Default to the RESOLVED generator theme key stored on the order/
+            // collection — never c.design (the Hebrew display name, which is not a
+            // themes.json key). Fall back to a known key only as a last resort.
+            const defaultTheme =
+              (c.order && c.order.theme) || c.theme || (prod && prod.theme) || 'trip comeback';
+            const theme = prompt('מפתח תמה (themes.json key):', defaultTheme);
+            if (!theme) return;
+            const orig = genBtn.textContent;
+            genBtn.disabled = true;
+            genBtn.textContent = 'מייצר…';
+            try {
+              const r = await fetch(
+                '/api/admin/collections/' + c.id + '/generate?key=' + encodeURIComponent(key),
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ theme }),
+                }
+              );
+              const data = await r.json().catch(() => ({}));
+              if (r.ok) {
+                genBtn.textContent = 'צור PDF מחדש';
+                genBtn.disabled = false;
+                showPdf();
+                // Refresh the "הפקה" cell to its generated state — it was built on
+                // page load and would otherwise stay stale (— / שגיאה) until reload.
+                tdProduction.textContent = '';
+                tdProduction.className = '';
+                const doneLink = document.createElement('a');
+                doneLink.className = 'act';
+                doneLink.textContent = 'מוכן ✓';
+                doneLink.href =
+                  location.origin +
+                  '/api/admin/collections/' +
+                  c.id +
+                  '/pdf?key=' +
+                  encodeURIComponent(key);
+                doneLink.target = '_blank';
+                doneLink.rel = 'noopener';
+                tdProduction.appendChild(doneLink);
+              } else {
+                genBtn.textContent = orig;
+                genBtn.disabled = false;
+                alert('שגיאה ביצירת PDF: ' + (data.detail || data.error || r.status));
+              }
+            } catch {
+              genBtn.textContent = orig;
+              genBtn.disabled = false;
+              alert('שגיאה ביצירת ה-PDF');
+            }
+          };
+          td.appendChild(document.createTextNode(' '));
+          td.appendChild(genBtn);
+          td.appendChild(pdfWrap);
+          if (prod && prod.state === 'generated') {
+            genBtn.textContent = 'צור PDF מחדש';
+            showPdf();
+          }
 
           // Cancel / restore (soft) + hard delete.
           if (c.cancelled) {
@@ -733,6 +871,7 @@
             'סכום',
             'כתובת',
             'תשלום',
+            'הפקה',
             'נוצר',
             'מעקב',
             'ניהול',

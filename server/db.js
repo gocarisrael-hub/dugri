@@ -10,6 +10,14 @@ const crypto = require('crypto');
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DB_FILE = path.join(DATA_DIR, 'dugri-data.json');
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+// Collections stay open for a full year — long enough that they effectively never
+// expire within the order flow (a customer has all the time they need to gather
+// and add words). Used for a new collection's expires_at.
+const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+// A collection with no words earns ONE nudge email this long after it was paid
+// (or created, when unpaid): the buyer hasn't sent any words yet and production
+// can't start until they do. See collectionsDueForReminder.
+const REMINDER_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
 
 // A PeleCard pay session only counts as "in flight" (and thus blocks the free
 // coupon path) for a short window — a hosted-iframe session that isn't completed
@@ -21,11 +29,13 @@ const SESSION_TTL_MS = Number(process.env.PELECARD_SESSION_TTL_MS || 20 * 60 * 1
 // verify against, leaving a charged customer's order stuck unpaid.
 const MAX_SESSIONS = Number(process.env.PELECARD_MAX_SESSIONS || 50);
 
-const DEFAULTS = { collections: [], words: [], coupons: [] };
+const DEFAULTS = { collections: [], words: [], coupons: [], design_codes: [] };
 
 // Single source of truth for order pricing (NIS).
-// pdf = digital PDF; pickup = printed + pickup at גלאור; delivery = door-to-door.
-const ORDER_PRICES = { pdf: 79, pickup: 149, delivery: 199 };
+// pdf = digital PDF; pickup = printed + pickup at גלאור; delivery = door-to-door;
+// custom = a "hand-designed just for you" bespoke game (design is TBD — the
+// customer buys the custom slot and we design it by hand afterwards).
+const ORDER_PRICES = { pdf: 79, pickup: 149, delivery: 199, custom: 599 };
 
 function loadDb() {
   try {
@@ -72,6 +82,22 @@ function norm(s) {
   return String(s).trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+// Theme extra fields (e.g. AGE, or YEARS + NAME1 + NAME2) collected in the order
+// flow. Stored as a flat object of trimmed string values, each capped. Non-object
+// input (missing, array, primitive) normalizes to an empty object so the field is
+// always a plain object on the collection.
+function sanitizeExtraFields(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(input)) {
+    if (v == null) continue;
+    const key = String(k).trim().slice(0, 40);
+    if (!key) continue;
+    out[key] = String(v).trim().slice(0, 80);
+  }
+  return out;
+}
+
 // 'cancelled' (admin soft-cancel) takes precedence; otherwise open while not
 // closed and not past expiry; otherwise 'closed' / 'expired'.
 function effectiveStatus(c) {
@@ -97,6 +123,16 @@ const db = {
       // Hebrew display names chosen in the order flow (optional).
       design: contact.design ? String(contact.design).trim().slice(0, 80) : null,
       color: contact.color ? String(contact.color).trim().slice(0, 80) : null,
+      // Generator theme (a generator/themes.json key) the chosen design resolves
+      // to; drives which template production runs. Capped like other order text.
+      theme: contact.theme ? String(contact.theme).trim().slice(0, 80) : null,
+      // Theme-required extra fields collected after a design is chosen (AGE, or
+      // YEARS + NAME1 + NAME2). Always a plain object; {} when none are needed.
+      extra_fields: sanitizeExtraFields(contact.extra_fields),
+      // Card word-font the customer picked in the preview (a filename in the
+      // shared word-fonts/ pool). Passed to the generator as its word_font
+      // override at production time. Capped; null keeps the theme's default font.
+      word_font: contact.word_font ? String(contact.word_font).trim().slice(0, 80) : null,
       // Honoree gender for the site's gendered question phrasing. Only 'male' or
       // 'female' are accepted; anything else stores null.
       gender: contact.gender === 'male' || contact.gender === 'female' ? contact.gender : null,
@@ -105,8 +141,10 @@ const db = {
       chasers: !!contact.chasers,
       status: 'open',
       created_at: nowIso(),
-      expires_at: new Date(Date.now() + WEEK_MS).toISOString(),
+      expires_at: new Date(Date.now() + YEAR_MS).toISOString(),
       closed_at: null,
+      // One-time "you haven't added words yet" nudge timestamp; null until sent.
+      reminded_at: null,
       // Admin soft-cancel (reversible); a hard delete removes the row entirely.
       cancelled: false,
       cancelled_at: null,
@@ -371,8 +409,41 @@ const db = {
       const s = c.order.pelecard.sessions.find((x) => x.token === meta.token);
       if (s) s.resolved = true;
     }
+    // A custom ("hand-designed just for you") order needs manual design work once
+    // paid — flag a production sub-state so the admin dashboard surfaces it as
+    // awaiting design. Mirrored to the collection (like setProduction) and never
+    // clobbers an already-recorded production state.
+    if (c.order.version === 'custom' && !c.order.production) {
+      const rec = { state: 'needs_design', custom: true, flagged_at: c.order.paid_at };
+      c.order.production = rec;
+      c.production = rec;
+    }
     saveDb();
     return true;
+  },
+
+  // Record the PDF-production state for a collection. Shape:
+  // { state:'generated', pdf_file, generated_at, theme?, pages? }. Stored on the
+  // order when one exists (order.production, per the order model) and always
+  // mirrored to the collection (c.production) so an order that was generated
+  // before a version was chosen still surfaces its production state. Returns the
+  // stored production object, or false when the collection is unknown.
+  setProduction(id, production) {
+    const c = this.getCollection(id);
+    if (!c) return false;
+    const rec = { ...production };
+    // A successfully generated PDF gets a per-collection capability token so the
+    // customer can be emailed a download link that never carries the admin key.
+    // Reuse an existing token across regenerations so any already-sent link keeps
+    // working; only mint one the first time this collection produces a PDF.
+    if (rec.state === 'generated' && !rec.pdf_token) {
+      const prev = (c.order && c.order.production) || c.production || null;
+      rec.pdf_token = (prev && prev.pdf_token) || crypto.randomBytes(24).toString('hex');
+    }
+    c.production = rec;
+    if (c.order) c.order.production = rec;
+    saveDb();
+    return rec;
   },
 
   // --- Discount coupons ---------------------------------------------------
@@ -460,6 +531,111 @@ const db = {
   // marked paid). No-op/false when the code is unknown.
   incrementCouponUses(code) {
     const c = this.getCouponByCode(code);
+    if (!c) return false;
+    c.uses = (c.uses || 0) + 1;
+    saveDb();
+    return true;
+  },
+
+  // --- Words reminder ------------------------------------------------------
+  // Mark a collection as having received its one-time "add your words" nudge.
+  markReminded(id) {
+    const c = this.getCollection(id);
+    if (!c) return false;
+    c.reminded_at = nowIso();
+    saveDb();
+    return true;
+  },
+
+  // The collections DUE for the one-time words reminder (read-only query).
+  collectionsDueForReminder(now = Date.now()) {
+    const cutoff = now - REMINDER_AFTER_MS;
+    return _db.collections.filter((c) => {
+      if (!c || !c.owner_email) return false;
+      if (c.cancelled) return false;
+      if (c.reminded_at) return false;
+      const hasWords = _db.words.some((w) => w.collection_id === c.id);
+      if (hasWords) return false;
+      const paidAt = c.order && c.order.paid && c.order.paid_at ? c.order.paid_at : null;
+      const basis = paidAt || c.created_at;
+      const basisMs = Date.parse(basis);
+      if (Number.isNaN(basisMs)) return false;
+      return basisMs < cutoff;
+    });
+  },
+
+  // --- Private-design access codes ----------------------------------------
+  createDesignCode({ code, design_id, valid_until } = {}) {
+    const c = normCode(code);
+    if (!/^[A-Z0-9]{3,20}$/.test(c)) return { error: 'bad code' };
+    const design = String(design_id == null ? '' : design_id)
+      .trim()
+      .slice(0, 80);
+    if (!design) return { error: 'bad design_id' };
+    let until = null;
+    if (valid_until != null && valid_until !== '') {
+      const s = String(valid_until).trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || Number.isNaN(Date.parse(s))) {
+        return { error: 'bad valid_until' };
+      }
+      until = s;
+    }
+    if (_db.design_codes.some((x) => x.code === c)) return { error: 'duplicate' };
+    const rec = {
+      id: uid(),
+      code: c,
+      design_id: design,
+      valid_until: until,
+      active: true,
+      created_at: nowIso(),
+      uses: 0,
+    };
+    _db.design_codes.push(rec);
+    saveDb();
+    return rec;
+  },
+
+  listDesignCodes() {
+    return [..._db.design_codes].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+
+  getDesignCodeByCode(code) {
+    const c = normCode(code);
+    return _db.design_codes.find((x) => x.code === c) || null;
+  },
+
+  getDesignCodeById(id) {
+    return _db.design_codes.find((x) => x.id === id) || null;
+  },
+
+  setDesignCodeActive(id, active) {
+    const c = this.getDesignCodeById(id);
+    if (!c) return null;
+    c.active = !!active;
+    saveDb();
+    return c;
+  },
+
+  deleteDesignCode(id) {
+    const before = _db.design_codes.length;
+    _db.design_codes = _db.design_codes.filter((x) => x.id !== id);
+    if (_db.design_codes.length === before) return false;
+    saveDb();
+    return true;
+  },
+
+  validateDesignCode(code) {
+    const c = this.getDesignCodeByCode(code);
+    if (!c) return { valid: false, reason: 'not_found' };
+    if (!c.active) return { valid: false, reason: 'inactive' };
+    if (c.valid_until && todayStrIsrael() > c.valid_until) {
+      return { valid: false, reason: 'expired' };
+    }
+    return { valid: true, design_id: c.design_id };
+  },
+
+  incrementDesignCodeUses(code) {
+    const c = this.getDesignCodeByCode(code);
     if (!c) return false;
     c.uses = (c.uses || 0) + 1;
     saveDb();

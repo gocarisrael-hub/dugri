@@ -12,3 +12,7 @@ site/assets
 **/*.png
 **/*.jpg
 **/*.jpeg
+
+# generated / runtime-managed generator data (recipes are auto-detected; themes.json is rewritten by the template-upload endpoint)
+generator/recipes/
+generator/themes.json

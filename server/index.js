@@ -2,10 +2,15 @@
 // collaborative word-collection feature.
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
+const os = require('os');
+const { spawn } = require('child_process');
 const express = require('express');
 const db = require('./db');
 const pelecard = require('./pelecard');
 const notify = require('./notify');
+const validate = require('./validate');
+const templates = require('./templates');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -24,6 +29,171 @@ function paymentBaseUrl() {
 }
 
 const SITE_DIR = path.join(__dirname, '..', 'site');
+// Repo root (so we can invoke the Python generator) and the private directory
+// where produced order PDFs are written. GENERATED_DIR lives under server/ (NOT
+// site/) so express.static never exposes it — the only way out is the
+// admin-key-gated download route below.
+const REPO_ROOT = path.join(__dirname, '..');
+const GENERATED_DIR = process.env.GENERATED_DIR || path.join(__dirname, 'generated');
+const PYTHON_BIN = process.env.PYTHON || 'python3';
+// Repo root the admin template-onboarding endpoint writes NEW private templates
+// into (resources/canva/templates/<slug>/ + generator/themes.json). Overridable
+// via TEMPLATE_ROOT so tests can point it at a throwaway scaffold and never touch
+// the real repo. Max multipart upload size for that endpoint (several SVGs + two
+// fonts).
+const TEMPLATE_ROOT = process.env.TEMPLATE_ROOT || REPO_ROOT;
+const TEMPLATE_UPLOAD_LIMIT = process.env.TEMPLATE_UPLOAD_LIMIT || '30mb';
+// Hard cap on a single generation run (Chrome renders one page at a time, so a
+// large deck is slow); the child is SIGKILLed past this and the request 504s.
+const GENERATE_TIMEOUT_MS = Number(process.env.GENERATE_TIMEOUT_MS || 120000);
+
+// Spawn the Python generator for one order and resolve { pages } on success.
+// Writes the words to a temp file (cleaned up after), streams the theme +
+// honoree + optional word-font/extra-fields as CLI args, captures stderr for a
+// useful error, and enforces a timeout. Never leaks the child process.
+function runGenerator({ theme, name, words, outPdf, wordFont, extraFields }) {
+  return new Promise((resolve, reject) => {
+    let wordsFile;
+    try {
+      fs.mkdirSync(GENERATED_DIR, { recursive: true });
+      wordsFile = path.join(os.tmpdir(), 'dugri-words-' + crypto.randomUUID() + '.txt');
+      fs.writeFileSync(wordsFile, words.join('\n') + '\n', 'utf8');
+    } catch (e) {
+      return reject(e);
+    }
+    const args = [
+      path.join(REPO_ROOT, 'generator', 'order_to_pdf.py'),
+      theme,
+      name,
+      wordsFile,
+      outPdf,
+    ];
+    if (wordFont) args.push('--word-font', wordFont);
+    for (const [k, v] of Object.entries(extraFields || {})) {
+      args.push('--field', `${k}=${v}`);
+    }
+    const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, GENERATE_TIMEOUT_MS);
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      try {
+        fs.unlinkSync(wordsFile);
+      } catch {
+        /* best-effort cleanup */
+      }
+      reject(e);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      try {
+        fs.unlinkSync(wordsFile);
+      } catch {
+        /* best-effort cleanup */
+      }
+      if (timedOut) return reject(new Error('generation timed out'));
+      if (code !== 0) {
+        return reject(new Error((stderr || stdout || 'exit ' + code).trim().slice(0, 800)));
+      }
+      const m = /\((\d+) pages?\)/.exec(stdout);
+      resolve({ pages: m ? Number(m[1]) : null });
+    });
+  });
+}
+
+// --- Order preview (public) ---------------------------------------------------
+// The generator preview script + the shared word-font pool it draws from.
+const PREVIEW_SCRIPT = path.join(REPO_ROOT, 'generator', 'preview.py');
+const WORD_FONTS_DIR = path.join(REPO_ROOT, 'generator', 'word-fonts');
+// One preview render is two Chrome pages; keep it short so a public request can't
+// tie up the box. The child is SIGKILLed past this and the request 504s.
+const PREVIEW_TIMEOUT_MS = Number(process.env.PREVIEW_TIMEOUT_MS || 40000);
+
+// The shared word-font choices ([{label,file}]), read fresh (tiny file). Returns
+// [] when missing/unparseable so a bad file never crashes a preview request.
+function wordFontOptions() {
+  try {
+    const opts = JSON.parse(fs.readFileSync(path.join(WORD_FONTS_DIR, 'options.json'), 'utf8'));
+    return Array.isArray(opts) ? opts.filter((o) => o && o.file) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Spawn the preview generator and resolve { card, board } as PNG data URLs.
+// Renders the two PNGs into a private temp dir, reads them back as base64, and
+// always removes the dir. Enforces a timeout and never leaks the child process.
+function runPreview({ theme, name, wordFont, extraFields }) {
+  return new Promise((resolve, reject) => {
+    let outDir;
+    try {
+      outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-preview-'));
+    } catch (e) {
+      return reject(e);
+    }
+    const cleanup = () => {
+      try {
+        fs.rmSync(outDir, { recursive: true, force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+    };
+    const args = [PREVIEW_SCRIPT, theme, name, outDir];
+    if (wordFont) args.push('--word-font', wordFont);
+    for (const [k, v] of Object.entries(extraFields || {})) {
+      args.push('--field', `${k}=${v}`);
+    }
+    const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, PREVIEW_TIMEOUT_MS);
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      cleanup();
+      reject(e);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        cleanup();
+        return reject(new Error('preview timed out'));
+      }
+      if (code !== 0) {
+        cleanup();
+        return reject(new Error((stderr || stdout || 'exit ' + code).trim().slice(0, 800)));
+      }
+      try {
+        // The script prints a JSON line of the produced PNG paths (last line).
+        const produced = JSON.parse(stdout.trim().split('\n').pop() || '{}');
+        const out = {};
+        for (const key of ['card', 'board']) {
+          if (produced[key] && fs.existsSync(produced[key])) {
+            out[key] = 'data:image/png;base64,' + fs.readFileSync(produced[key]).toString('base64');
+          }
+        }
+        cleanup();
+        if (!out.card) return reject(new Error('preview produced no card image'));
+        resolve(out);
+      } catch (e) {
+        cleanup();
+        reject(e);
+      }
+    });
+  });
+}
 
 function publicView(c) {
   const words = db.listWords(c.id);
@@ -61,6 +231,13 @@ app.post('/api/collections', (req, res) => {
     phone: b.phone,
     design: b.design,
     color: b.color,
+    // Resolved generator theme + any theme-required extra fields (AGE, or
+    // YEARS + NAME1 + NAME2); db.createCollection validates/sanitizes both.
+    theme: b.theme,
+    extra_fields: b.extra_fields,
+    // Card word-font the customer picked in the preview (a filename in the
+    // shared word-fonts/ pool); db.createCollection caps + defaults it.
+    word_font: b.word_font,
     chasers: b.chasers,
     gender: b.gender,
   });
@@ -135,6 +312,159 @@ app.post('/api/admin/collections/:id/paid', (req, res) => {
   res.json({ ok: true });
 });
 
+// Admin: create a bespoke "custom" (599₪) order on a collection and return the
+// owner pay link, so the admin can hand-set an order to version:'custom' and send
+// the customer a payment link. setOrder is called with the collection's own owner
+// token (admin is already authenticated) and needs no address for custom.
+app.post('/api/admin/collections/:id/custom', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const order = db.setOrder(req.params.id, c.owner_token, { version: 'custom' });
+  if (order && order.error) return res.status(400).json({ error: order.error });
+  const base = paymentBaseUrl();
+  const payLink = base ? base + '/collect.html?c=' + c.id + '&k=' + c.owner_token : null;
+  res.json({ order, pay_link: payLink });
+});
+
+// Admin: generate the full print-ready PDF for a collection. The admin supplies
+// the theme (a generator/themes.json key) — the design->theme mapping is a later
+// workstream. Body: { theme, word_font?, extra_fields? }. Gathers the
+// collection's words + honoree name, spawns the Python generator, stores the PDF
+// under GENERATED_DIR/<id>.pdf, records order.production, and (when email is
+// configured) mails a download link to the client + Dugri.
+app.post('/api/admin/collections/:id/generate', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const b = req.body || {};
+  const theme = String(b.theme || '').trim();
+  if (!theme) return res.status(400).json({ error: 'theme required' });
+  const words = db.listWords(c.id).map((w) => w.text);
+  if (!words.length) return res.status(400).json({ error: 'no words to generate' });
+
+  // Reject an unknown theme up front. An unknown key makes getTheme() null, which
+  // makes validateOrderForProduction skip every theme-specific check (name
+  // language, required extra fields) and still spawn the generator — so a bad
+  // theme must fail fast here, before any validation is trusted or Chrome runs.
+  const themeConfig = validate.getTheme(theme);
+  if (!themeConfig) return res.status(400).json({ error: 'unknown theme' });
+
+  // Validate the order BEFORE spending time/money on generation. On any problem
+  // we do NOT run the generator: we record an 'error' production status (shown in
+  // admin), email the client + Dugri what to fix, and 400 with the problem list.
+  const problems = validate.validateOrderForProduction(c, themeConfig, words);
+  if (problems.length) {
+    const production = db.setProduction(c.id, {
+      state: 'error',
+      errors: problems,
+      checked_at: new Date().toISOString(),
+      theme,
+    });
+    const base = paymentBaseUrl();
+    if (notify.isConfigured()) {
+      notify.sendProductionError({ ...c, count: words.length }, base, problems).catch(() => {});
+    }
+    return res.status(400).json({ error: 'validation failed', problems, production });
+  }
+
+  const wordFont = b.word_font ? String(b.word_font) : null;
+  const extraFields =
+    b.extra_fields && typeof b.extra_fields === 'object' && !Array.isArray(b.extra_fields)
+      ? b.extra_fields
+      : {};
+  // Use the stored (validated) id — never the raw param — for the output path.
+  const outPdf = path.join(GENERATED_DIR, c.id + '.pdf');
+
+  try {
+    const { pages } = await runGenerator({
+      theme,
+      name: c.honoree_name || '',
+      words,
+      outPdf,
+      wordFont,
+      extraFields,
+    });
+    const production = db.setProduction(c.id, {
+      state: 'generated',
+      pdf_file: path.basename(outPdf),
+      generated_at: new Date().toISOString(),
+      theme,
+      pages,
+    });
+    const base = paymentBaseUrl();
+    // Two links, and they are NOT interchangeable:
+    //  - adminLink carries the master ADMIN_KEY and is for Dugri's own inbox only.
+    //  - customerLink carries this collection's per-order pdf_token capability
+    //    (set by db.setProduction) so the CUSTOMER can download WITHOUT ever
+    //    seeing the admin secret. The customer email must use customerLink.
+    const adminLink = base
+      ? base + '/api/admin/collections/' + c.id + '/pdf?key=' + encodeURIComponent(ADMIN_KEY)
+      : null;
+    const customerLink =
+      base && production && production.pdf_token
+        ? base + '/api/collections/' + c.id + '/pdf?t=' + encodeURIComponent(production.pdf_token)
+        : null;
+    if (notify.isConfigured() && (adminLink || customerLink)) {
+      notify
+        .sendPdfReady({ ...c, count: words.length }, base, {
+          admin: adminLink,
+          customer: customerLink,
+        })
+        .catch(() => {});
+    }
+    // The admin UI is already authenticated, so the response keeps the admin link.
+    res.json({ ok: true, production, link: adminLink });
+  } catch (e) {
+    const detail = String((e && e.message) || e);
+    // A clear, actionable status for the common "theme not calibrated" case.
+    const status = /not calibrated|unknown theme/i.test(detail) ? 400 : 500;
+    res.status(status).json({ error: 'generation failed', detail: detail.slice(0, 800) });
+  }
+});
+
+// Admin: download a previously generated order PDF. Gated by the admin key (also
+// how the emailed capability link works). 404 when the collection or PDF is
+// absent. Uses the stored collection id (not the raw param) so the file path can
+// never traverse out of GENERATED_DIR.
+app.get('/api/admin/collections/:id/pdf', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const file = path.join(GENERATED_DIR, c.id + '.pdf');
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'no pdf' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + c.id + '.pdf"');
+  res.sendFile(file);
+});
+
+// Constant-time compare of a supplied pdf capability token against the stored
+// one, so the public download route can't be used as a timing oracle.
+function pdfTokenOk(provided, expected) {
+  if (!expected) return false;
+  const a = Buffer.from(String(provided || ''));
+  const b = Buffer.from(String(expected));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// PUBLIC: download a generated order PDF via the per-collection capability token
+// stored on order.production.pdf_token (NOT the admin key) — this is the link the
+// customer's "PDF ready" email points at. 404 when the collection/PDF is absent;
+// 403 on a missing/wrong token. Uses the stored id (never the raw param) so the
+// path can never traverse out of GENERATED_DIR.
+app.get('/api/collections/:id/pdf', (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const production = (c.order && c.order.production) || c.production || null;
+  const token = production && production.pdf_token;
+  if (!pdfTokenOk(req.query.t, token)) return res.status(403).json({ error: 'forbidden' });
+  const file = path.join(GENERATED_DIR, c.id + '.pdf');
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'no pdf' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + c.id + '.pdf"');
+  res.sendFile(file);
+});
+
 // Admin: soft-cancel a collection (body {undo:true} to restore).
 app.post('/api/admin/collections/:id/cancel', (req, res) => {
   if (!requireAdmin(req, res)) return;
@@ -186,6 +516,62 @@ app.delete('/api/admin/coupons/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// --- Private-design access codes (admin CRUD) ----------------------------
+// Mirrors the coupon admin routes. An access code unlocks a PRIVATE design in
+// the order flow (see POST /api/design-code/validate). All gated by ADMIN_KEY.
+
+// Admin: list all design access codes.
+app.get('/api/admin/design-codes', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ design_codes: db.listDesignCodes() });
+});
+
+// Admin: create an access code. 400 on invalid input or a duplicate code.
+app.post('/api/admin/design-codes', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const b = req.body || {};
+  const dc = db.createDesignCode({
+    code: b.code,
+    design_id: b.design_id,
+    valid_until: b.valid_until,
+  });
+  if (dc && dc.error) return res.status(400).json({ error: dc.error });
+  res.status(201).json({ design_code: dc });
+});
+
+// Admin: toggle an access code's active flag. 404 when the id is unknown.
+app.post('/api/admin/design-codes/:id', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const active = !!(req.body && req.body.active);
+  const dc = db.setDesignCodeActive(req.params.id, active);
+  if (!dc) return res.status(404).json({ error: 'not found' });
+  res.json({ design_code: dc });
+});
+
+// Admin: delete an access code. 404 when the id is unknown.
+app.delete('/api/admin/design-codes/:id', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (!db.deleteDesignCode(req.params.id)) return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true });
+});
+
+// PUBLIC design-code validation: the client enters an access code in the order
+// flow to unlock a PRIVATE design. Public (no owner token — a fresh visitor is
+// choosing a design), but rate-limited per client IP like the coupon oracle to
+// blunt code enumeration. Only the unlocked design id is ever leaked. On failure
+// it returns a GENERIC { valid:false } with NO reason — distinguishing not_found
+// from inactive/expired would turn this into an enumeration oracle (an attacker
+// learns which codes exist). Detailed reasons stay internal (db.validateDesignCode).
+app.post('/api/design-code/validate', (req, res) => {
+  if (!couponRateOk('designcode:' + clientKey(req))) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
+  const r = db.validateDesignCode(req.body && req.body.code);
+  if (!r.valid) return res.json({ valid: false });
+  db.incrementDesignCodeUses(req.body && req.body.code);
+  res.json({ valid: true, design: r.design_id });
+});
+
 // OWNER-SCOPED coupon validation so checkout can preview the discount. Requires
 // the collection id + owner_token (so it is NOT a fully-open enumeration oracle)
 // and is rate-limited per collection. Only the discount percentage is ever
@@ -203,6 +589,48 @@ app.post('/api/collections/:id/coupon/validate', (req, res) => {
   const r = db.validateCoupon(req.body && req.body.code);
   if (!r.valid) return res.json({ valid: false, reason: r.reason });
   res.json({ valid: true, discount_pct: r.coupon.discount_pct });
+});
+
+// Public order PREVIEW: render a REAL sample card + board for a theme with the
+// honoree name (and an optional word-font pick), so the customer sees their card
+// right after entering the name. Rate-limited per client IP like the coupon
+// oracle (each call spawns Chrome). Also runs the name-language check and returns
+// a `warning` when the name doesn't fit the theme's script, plus the shared
+// word-font options so the client can render the picker.
+app.post('/api/preview', async (req, res) => {
+  if (!couponRateOk('preview:' + clientKey(req))) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
+  const b = req.body || {};
+  const theme = String(b.theme || '').trim();
+  const name = String(b.name || '').trim();
+  const themeConfig = validate.getTheme(theme);
+  if (!themeConfig) return res.status(400).json({ error: 'unknown theme' });
+  if (!name) return res.status(400).json({ error: 'name required' });
+
+  const options = wordFontOptions();
+  // Only ever spawn with a word_font that is one of the offered options — never
+  // an arbitrary client-supplied filename.
+  let wordFont = null;
+  if (b.word_font) {
+    const wanted = String(b.word_font).trim();
+    if (options.some((o) => o.file === wanted)) wordFont = wanted;
+  }
+  const extraFields =
+    b.extra_fields && typeof b.extra_fields === 'object' && !Array.isArray(b.extra_fields)
+      ? b.extra_fields
+      : {};
+  // Surfaced to the customer immediately (doesn't block rendering the preview).
+  const warning = validate.checkNameLanguage(name, themeConfig);
+
+  try {
+    const imgs = await runPreview({ theme, name, wordFont, extraFields });
+    res.json({ ...imgs, warning, word_font: wordFont, word_font_options: options });
+  } catch (e) {
+    const detail = String((e && e.message) || e);
+    const status = /not calibrated|unknown theme/i.test(detail) ? 400 : 500;
+    res.status(status).json({ error: 'preview failed', detail: detail.slice(0, 800) });
+  }
 });
 
 // Public read: anyone with the link can see the words.
@@ -288,6 +716,11 @@ function sendPaidNotifications(collectionId, base, amountCharged) {
   // Also confirm to the BUYER (their own email), with the collect link so they
   // can keep adding their words. Skips gracefully if no buyer email.
   notify.sendBuyerConfirmation(enriched, base, options).catch(() => {});
+  // A bespoke "custom" order (599₪, no template) needs hand-design after payment.
+  // Fire an EXTRA Dugri-only alert so it stands out from the normal paid emails.
+  if (c.order && c.order.version === 'custom') {
+    notify.sendCustomOrderAlert(enriched, base, options).catch(() => {});
+  }
 }
 
 // Owner-only: start a PeleCard card payment for this collection's order.
@@ -450,6 +883,42 @@ app.post('/api/payment/callback', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Admin: onboard a NEW private template. Multipart upload of the clean +
+// filled {fronts,backs,board} SVGs, the title + word font files, and a few text
+// fields (slug, display_he, title_text, name_form, language?, extra_fields?).
+// Writes them into resources/canva/templates/<slug>/, best-effort runs
+// generator/recipe_diff.py to produce generator/recipes/<slug>.json, and appends
+// a visibility:"private", calibrated:false entry to generator/themes.json. The
+// new template is NOT yet renderable — it needs a title-style calibration pass.
+// Body is parsed with a tiny in-repo multipart parser (no multer/busboy dep).
+app.post(
+  '/api/admin/templates',
+  express.raw({ type: () => true, limit: TEMPLATE_UPLOAD_LIMIT }),
+  (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
+    if (!boundary || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ error: 'expected multipart/form-data upload' });
+    }
+    const { fields, files } = templates.parseMultipart(req.body, boundary);
+    let result;
+    try {
+      result = templates.onboardTemplate({
+        root: TEMPLATE_ROOT,
+        pythonBin: PYTHON_BIN,
+        fields,
+        files,
+      });
+    } catch (e) {
+      return res
+        .status(500)
+        .json({ error: 'onboarding failed', detail: String((e && e.message) || e) });
+    }
+    if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
+    res.status(201).json({ ok: true, ...result });
+  }
+);
+
 // Unknown API routes -> JSON 404 (must come before static/catch-all).
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
 
@@ -474,9 +943,54 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(SITE_DIR, 'index.html'));
 });
 
+// --- Words-reminder scheduler ---------------------------------------------
+// A collection that's been sitting for 3+ days with no words gets ONE nudge email
+// asking the buyer to add their word list (production can't start until it
+// arrives). One pass = find the due collections (db.collectionsDueForReminder),
+// email each via notify.sendWordsReminder, then mark it reminded so it's never
+// emailed again. Exposed as a callable so a test can run a single pass without
+// waiting on the interval. Fully wrapped and no-ops when email is unconfigured;
+// it never throws into the caller.
+const REMINDER_SCAN_INTERVAL_MS = Number(process.env.REMINDER_SCAN_INTERVAL_MS || 60 * 60 * 1000);
+
+async function runReminderScan(now = Date.now()) {
+  if (!notify.isConfigured()) return 0;
+  const base = paymentBaseUrl();
+  let sent = 0;
+  try {
+    const due = db.collectionsDueForReminder(now);
+    for (const c of due) {
+      try {
+        // word_count is 0 for every due collection (the query requires it); pass
+        // it so the reminder's body renders a correct count.
+        await notify.sendWordsReminder({ ...c, word_count: 0 }, base);
+        // Mark reminded regardless of the send result — one nudge per collection.
+        // sendWordsReminder already swallows its own failures (returns false), so
+        // a transient miss won't loop the same customer forever.
+        db.markReminded(c.id);
+        sent += 1;
+      } catch (e) {
+        console.warn('[reminder] send failed:', e && e.message ? e.message : e);
+      }
+    }
+  } catch (e) {
+    console.warn('[reminder] scan failed:', e && e.message ? e.message : e);
+  }
+  return sent;
+}
+
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log(`dugri server listening on ${PORT}`));
+  // Hourly reminder scan, only when email is configured. unref() so the timer
+  // never keeps the process alive on its own, and the scan is fire-and-forget.
+  if (notify.isConfigured()) {
+    const timer = setInterval(() => {
+      runReminderScan().catch(() => {});
+    }, REMINDER_SCAN_INTERVAL_MS);
+    if (timer.unref) timer.unref();
+  }
 }
 
 module.exports = app;
+module.exports.runReminderScan = runReminderScan;

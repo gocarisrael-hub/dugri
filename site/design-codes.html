@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>דוגרי · קודי עיצוב</title>
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      />
+    </noscript>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Heebo', Arial, sans-serif;
+        background: #fff5f8;
+        color: #2c1a29;
+        padding: 22px 16px 60px;
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 16px;
+      }
+      .nav a {
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid #f0c9da;
+        background: #fff;
+        color: #8a2b53;
+        border-radius: 99px;
+        padding: 6px 14px;
+      }
+      .nav a.active {
+        background: #e5197d;
+        border-color: #e5197d;
+        color: #fff;
+      }
+      h1 {
+        font-size: 24px;
+        font-weight: 900;
+        margin-bottom: 4px;
+      }
+      .sub {
+        color: #7c6a74;
+        margin-bottom: 18px;
+      }
+      .msg {
+        background: #fff;
+        border: 1px solid #f0dee4;
+        border-radius: 14px;
+        padding: 20px;
+        text-align: center;
+      }
+      .panel {
+        background: #fff;
+        border: 1px solid #f0dee4;
+        border-radius: 14px;
+        padding: 16px 18px;
+        margin-bottom: 18px;
+      }
+      .panel h2 {
+        font-size: 16px;
+        font-weight: 800;
+        color: #8a2b53;
+        margin-bottom: 12px;
+      }
+      .form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: flex-end;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .field label {
+        font-size: 12.5px;
+        color: #7c6a74;
+        font-weight: 700;
+      }
+      .field input,
+      .field select {
+        font: inherit;
+        font-size: 14px;
+        border: 1px solid #f0c9da;
+        border-radius: 9px;
+        padding: 8px 10px;
+        background: #fff;
+        color: #2c1a29;
+      }
+      #code {
+        text-transform: uppercase;
+        width: 160px;
+      }
+      #design {
+        min-width: 200px;
+      }
+      button {
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        border: 1px solid #e5197d;
+        background: #e5197d;
+        color: #fff;
+        border-radius: 9px;
+        padding: 9px 16px;
+        margin: 0;
+      }
+      button.ghost {
+        background: #fff;
+        color: #e5197d;
+        padding: 6px 10px;
+      }
+      button.danger {
+        border-color: #c0143c;
+        color: #c0143c;
+        background: #fff;
+        padding: 6px 10px;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .err {
+        color: #c0143c;
+        font-size: 13px;
+        font-weight: 700;
+        margin-top: 10px;
+        min-height: 18px;
+      }
+      #content {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+        border: 1px solid #f0dee4;
+        border-radius: 14px;
+        overflow: hidden;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: right;
+        padding: 10px 12px;
+        border-bottom: 1px solid #f4e7ec;
+        vertical-align: middle;
+      }
+      th {
+        background: #fde3ee;
+        color: #8a2b53;
+        font-size: 12.5px;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      .code {
+        font-weight: 800;
+        letter-spacing: 0.5px;
+      }
+      .pill {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 99px;
+        font-weight: 700;
+        font-size: 12.5px;
+      }
+      .on {
+        background: #e6f6ee;
+        color: #1f7a4d;
+      }
+      .off {
+        background: #f1eef0;
+        color: #7c6a74;
+      }
+      .muted {
+        color: #7c6a74;
+        font-size: 12.5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="nav" id="nav">
+        <a data-page="dashboard.html">לוח בקרה</a>
+        <a data-page="admin.html">ניהול הזמנות</a>
+        <a data-page="coupons.html">ניהול קופונים</a>
+        <a data-page="design-codes.html" class="active">קודי עיצוב</a>
+      </nav>
+      <h1>קודי עיצוב · דוגרי</h1>
+      <div class="sub" id="sub">טוען…</div>
+
+      <div class="panel" id="createPanel" hidden>
+        <h2>קוד עיצוב חדש</h2>
+        <form class="form" id="form">
+          <div class="field">
+            <label for="code">קוד</label>
+            <input id="code" type="text" autocomplete="off" placeholder="VIP2026" />
+          </div>
+          <div class="field">
+            <label for="design">עיצוב</label>
+            <select id="design"></select>
+          </div>
+          <div class="field">
+            <label for="until">בתוקף עד (ריק = ללא תפוגה)</label>
+            <input id="until" type="date" />
+          </div>
+          <button type="submit" id="submitBtn">צור קוד</button>
+        </form>
+        <div class="err" id="err"></div>
+      </div>
+
+      <div id="content"></div>
+    </div>
+
+    <script type="module">
+      import { DESIGNS } from './js/designs.js';
+
+      const key = new URLSearchParams(location.search).get('key') || '';
+      // Carry the admin key across the linked admin pages.
+      for (const a of document.querySelectorAll('#nav a')) {
+        a.href = a.dataset.page + (key ? '?key=' + encodeURIComponent(key) : '');
+      }
+
+      const sub = document.getElementById('sub');
+      const content = document.getElementById('content');
+      const createPanel = document.getElementById('createPanel');
+      const form = document.getElementById('form');
+      const codeEl = document.getElementById('code');
+      const designEl = document.getElementById('design');
+      const untilEl = document.getElementById('until');
+      const submitBtn = document.getElementById('submitBtn');
+      const errEl = document.getElementById('err');
+
+      // Display name per design id, for the table + the create dropdown.
+      const NAME_BY_ID = new Map(DESIGNS.map((d) => [d.id, d.name]));
+      // Populate the design dropdown. Private designs (the usual target of a code)
+      // are marked so the admin can tell them apart from the public ones.
+      for (const d of DESIGNS) {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = d.name + (d.public ? '' : ' · פרטי');
+        designEl.appendChild(opt);
+      }
+
+      // Human-readable Hebrew for the server's terse error codes.
+      const ERR_HE = {
+        'bad code': 'קוד לא תקין (3–20 תווים, אותיות וספרות בלבד).',
+        'bad design_id': 'יש לבחור עיצוב.',
+        'bad valid_until': 'תאריך תפוגה לא תקין.',
+        duplicate: 'קוד כזה כבר קיים.',
+        forbidden: 'מפתח גישה שגוי.',
+        'admin disabled: set ADMIN_KEY': 'ניהול מושבת בשרת (חסר ADMIN_KEY).',
+      };
+
+      const withKey = (path) =>
+        path + (path.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key);
+
+      // valid_until is a plain 'YYYY-MM-DD' calendar date. Parse the parts as a
+      // LOCAL date so it renders on the intended day in any timezone.
+      function fmtDate(ymd) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd));
+        if (!m) return ymd;
+        const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        return d.toLocaleDateString('he-IL', {
+          day: '2-digit',
+          month: '2-digit',
+          year: '2-digit',
+        });
+      }
+
+      function render(codes) {
+        if (!codes.length) {
+          content.innerHTML = '<div class="msg">אין קודי עיצוב עדיין.</div>';
+          return;
+        }
+        const table = document.createElement('table');
+        table.innerHTML =
+          '<thead><tr><th>קוד</th><th>עיצוב</th><th>בתוקף עד</th><th>סטטוס</th><th>שימושים</th><th>ניהול</th></tr></thead>';
+        const tb = document.createElement('tbody');
+        for (const c of codes) {
+          const tr = document.createElement('tr');
+
+          const tdCode = document.createElement('td');
+          tdCode.className = 'code';
+          tdCode.textContent = c.code;
+
+          const tdDesign = document.createElement('td');
+          tdDesign.textContent = NAME_BY_ID.get(c.design_id) || c.design_id;
+
+          const tdUntil = document.createElement('td');
+          if (c.valid_until) {
+            tdUntil.textContent = fmtDate(c.valid_until);
+          } else {
+            tdUntil.className = 'muted';
+            tdUntil.textContent = 'ללא תפוגה';
+          }
+
+          const tdStatus = document.createElement('td');
+          const pill = document.createElement('span');
+          pill.className = 'pill ' + (c.active ? 'on' : 'off');
+          pill.textContent = c.active ? 'פעיל' : 'כבוי';
+          tdStatus.appendChild(pill);
+
+          const tdUses = document.createElement('td');
+          tdUses.textContent = c.uses || 0;
+
+          const tdManage = document.createElement('td');
+          const toggleBtn = document.createElement('button');
+          toggleBtn.className = 'ghost';
+          toggleBtn.textContent = c.active ? 'כבה' : 'הפעל';
+          toggleBtn.onclick = async () => {
+            toggleBtn.disabled = true;
+            await apiToggle(c.id, !c.active);
+            load();
+          };
+          const delBtn = document.createElement('button');
+          delBtn.className = 'danger';
+          delBtn.textContent = 'מחק';
+          delBtn.onclick = async () => {
+            if (!confirm('למחוק את הקוד ' + c.code + '?')) return;
+            delBtn.disabled = true;
+            await apiDelete(c.id);
+            load();
+          };
+          tdManage.appendChild(toggleBtn);
+          tdManage.appendChild(document.createTextNode(' '));
+          tdManage.appendChild(delBtn);
+
+          tr.appendChild(tdCode);
+          tr.appendChild(tdDesign);
+          tr.appendChild(tdUntil);
+          tr.appendChild(tdStatus);
+          tr.appendChild(tdUses);
+          tr.appendChild(tdManage);
+          tb.appendChild(tr);
+        }
+        table.appendChild(tb);
+        content.innerHTML = '';
+        content.appendChild(table);
+      }
+
+      async function apiToggle(id, active) {
+        try {
+          const r = await fetch(withKey('/api/admin/design-codes/' + id), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ active }),
+          });
+          return r.ok;
+        } catch {
+          return false;
+        }
+      }
+
+      async function apiDelete(id) {
+        try {
+          const r = await fetch(withKey('/api/admin/design-codes/' + id), { method: 'DELETE' });
+          return r.ok;
+        } catch {
+          return false;
+        }
+      }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errEl.textContent = '';
+        const code = codeEl.value.trim();
+        const design_id = designEl.value;
+        const until = untilEl.value; // '' or 'YYYY-MM-DD'
+        submitBtn.disabled = true;
+        try {
+          const r = await fetch(withKey('/api/admin/design-codes'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, design_id, valid_until: until || null }),
+          });
+          if (r.ok) {
+            form.reset();
+            load();
+          } else {
+            let msg = 'לא ניתן ליצור את הקוד.';
+            try {
+              const data = await r.json();
+              if (data && data.error) msg = ERR_HE[data.error] || data.error;
+            } catch {
+              /* keep default */
+            }
+            errEl.textContent = msg;
+          }
+        } catch {
+          errEl.textContent = 'שגיאה בשליחה.';
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+
+      async function load() {
+        if (!key) {
+          sub.textContent = '';
+          createPanel.hidden = true;
+          content.innerHTML =
+            '<div class="msg">חסר מפתח גישה. פתחו עם <code>?key=…</code> בכתובת.</div>';
+          return;
+        }
+        try {
+          const r = await fetch('/api/admin/design-codes?key=' + encodeURIComponent(key));
+          if (r.status === 403) {
+            sub.textContent = '';
+            createPanel.hidden = true;
+            content.innerHTML = '<div class="msg">מפתח גישה שגוי.</div>';
+            return;
+          }
+          const codes = (await r.json()).design_codes || [];
+          sub.textContent = codes.length + ' קודי עיצוב';
+          createPanel.hidden = false;
+          render(codes);
+        } catch {
+          sub.textContent = '';
+          content.innerHTML = '<div class="msg">שגיאה בטעינה.</div>';
+        }
+      }
+      load();
+    </script>
+  </body>
+</html>

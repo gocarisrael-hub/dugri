@@ -453,6 +453,23 @@
       .proof {
         background: var(--surface);
         text-align: center;
+        padding-top: 38px;
+        padding-bottom: 38px;
+      }
+      /* compact "כבר חוגגים איתנו" section */
+      .proof .sec-title {
+        margin-bottom: 22px;
+      }
+      .proof .sec-title h2 {
+        font-size: 28px;
+      }
+      .proof .vclips {
+        max-width: 620px;
+      }
+      @media (min-width: 720px) {
+        .proof .reviews {
+          max-width: 860px;
+        }
       }
       .stars {
         color: var(--gold);
@@ -932,12 +949,16 @@
       }
 
       /* gallery */
+      /* Single horizontal row of peek photos (scrolls on narrow screens). */
       .gallery {
         display: grid;
-        grid-template-columns: repeat(2, 1fr);
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(150px, 1fr);
         gap: 12px;
-        max-width: 560px;
+        max-width: 760px;
         margin: 0 auto;
+        overflow-x: auto;
+        padding-bottom: 6px;
       }
       .gphoto {
         aspect-ratio: 4/5;
@@ -1398,8 +1419,10 @@
           <span></span>
         </button>
         <div class="nav-links" id="navLinks" data-testid="nav-links">
-          <a href="#gallery">דוגמאות</a>
-          <a href="#pricing">מחירים</a>
+          <a href="products.html">העיצובים שלנו</a>
+          <a href="how.html">איך זה עובד?</a>
+          <a href="#gallery">הצצה</a>
+          <a href="#proof">המלצות</a>
           <a href="timer.html">טיימר</a>
           <a class="nav-cta" href="products.html" data-ga="order_started" data-ga-cta="nav"
             >הזמנה</a
@@ -1428,7 +1451,7 @@
             >בונים את המשחק · <s class="was">129 ₪</s
             ><span style="white-space: nowrap">79 ₪</span></a
           >
-          <a class="btn ghost" href="#how">איך זה עובד? ↓</a>
+          <a class="btn ghost" href="how.html">איך זה עובד?</a>
         </div>
         <div class="hero-video" data-testid="hero-video">
           <video
@@ -1453,33 +1476,6 @@
         </p>
       </div>
     </header>
-
-    <section class="audience" id="audience" data-testid="audience">
-      <div class="wrap">
-        <div class="sec-title reveal">
-          <h2>לכל אירוע שמסתובב סביב בנאדם אחד</h2>
-          <p>כל שמחה שמסתובבת סביב אדם אחד - המשחק כולו עליו</p>
-        </div>
-        <div class="audience-grid stagger" data-testid="audience-grid">
-          <div class="aud-card">
-            <span class="aud-emoji" aria-hidden="true">👰</span>
-            <span class="aud-label">מסיבת רווקות</span>
-          </div>
-          <div class="aud-card">
-            <span class="aud-emoji" aria-hidden="true">🎂</span>
-            <span class="aud-label">יום הולדת עגול</span>
-          </div>
-          <div class="aud-card">
-            <span class="aud-emoji" aria-hidden="true">💍</span>
-            <span class="aud-label">יום נישואין</span>
-          </div>
-          <div class="aud-card">
-            <span class="aud-emoji" aria-hidden="true">🎖</span>
-            <span class="aud-label">פרישה</span>
-          </div>
-        </div>
-      </div>
-    </section>
 
     <section id="gallery">
       <div class="wrap">
@@ -1566,117 +1562,6 @@
       </div>
     </section>
 
-    <section id="how">
-      <div class="wrap">
-        <div class="sec-title reveal">
-          <h2>איך זה עובד?</h2>
-          <p>שלושה צעדים, בלי כאב ראש</p>
-        </div>
-        <div class="steps stagger">
-          <div class="step">
-            <div class="n">1</div>
-            <h3>ממלאים בלי להתאמץ</h3>
-            <p>שולחים מילים, שמות וביטויים שקשורים למי שחוגגים. מינימום 100.</p>
-            <span class="hint">שלחנו לכם דף עזר עם קטגוריות - אף פעם לא נתקעים מול דף ריק</span>
-          </div>
-          <div class="step">
-            <div class="n">2</div>
-            <h3>אנחנו עושים את הקסם</h3>
-            <p>המילים הופכות לחפיסת קלפים ולוח משחק אישיים, בעיצוב ולצבעים שהם בול בשבילכם.</p>
-          </div>
-          <div class="step">
-            <div class="n">3</div>
-            <h3>מדפיסים ומשחקים</h3>
-            <p>PDF מוכן, מתאים לכל בית דפוס, מודפס תוך דקות. עד 24 שעות מרגע שליחת המילים.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="included">
-      <div class="wrap">
-        <div class="sec-title reveal">
-          <h2>מה מקבלים</h2>
-          <p>חבילה שלמה, נשלחת במייל או בוואטסאפ</p>
-        </div>
-        <div class="items stagger">
-          <div class="item">
-            <span class="tick">✦</span>
-            <div>
-              <h4>חפיסת קלפים מותאמת</h4>
-              <p>המילים שלכם הופכות לקלפים מעוצבים - כל קלף הוא בדיחה פנימית שמחכה להיקרא.</p>
-            </div>
-          </div>
-          <div class="item">
-            <span class="tick">✦</span>
-            <div>
-              <h4>לוח משחק שמכניס את כולם לאווירה</h4>
-              <p>לוח מעוצב ומותאם לכמות הקלפים - מוציאים, פורסים, ומתחילים לצחוק.</p>
-            </div>
-          </div>
-          <div class="item">
-            <span class="tick">✦</span>
-            <div>
-              <h4>חוקים ברורים מהרגע הראשון</h4>
-              <p>קבוצות, טיימר, ניקוד וווריאציות לכל אירוע - בלי ויכוחים על הכללים.</p>
-            </div>
-          </div>
-          <div class="item">
-            <span class="tick">✦</span>
-            <div>
-              <h4>הדפסה בלי כאב ראש</h4>
-              <p>
-                בדיוק איזה נייר, איך מדפיסים בגודל מקורי ואיפה גוזרים - כל בית דפוס שכונתי יסתדר.
-              </p>
-            </div>
-          </div>
-        </div>
-        <p class="delivery-note">הכל כלול בקובץ אחד - ב-79 ₪.</p>
-      </div>
-    </section>
-
-    <section id="pricing">
-      <div class="wrap">
-        <div class="sec-title reveal">
-          <h2>מחירים</h2>
-          <p>הכל כלול. בלי כוכביות.</p>
-        </div>
-        <div class="prices stagger">
-          <div class="plan">
-            <h3>המשחק האישי שלכם</h3>
-            <p class="plan-promise">כל החדר צוחק - עליו, באהבה</p>
-            <div class="anchor">129 ₪</div>
-            <div class="price"><small>החל מ-</small> 79 <small>ש"ח</small></div>
-            <p class="btn-reassure">מחיר השקה · לזמן מוגבל</p>
-            <ul>
-              <li>חפיסת קלפים מהמילים שלכם</li>
-              <li>לוח משחק + דף חוקים</li>
-              <li>תבנית עיצוב לבחירה + צבעים</li>
-              <li>ללא הגבלת מילים</li>
-              <li>הוראות הדפסה וגזירה</li>
-            </ul>
-            <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="pricing"
-              >בונים את המשחק · <s class="was">129 ₪</s
-              ><span style="white-space: nowrap">79 ₪</span></a
-            >
-            <p class="btn-reassure">אספקה תוך 24 שעות · תשלום מאובטח</p>
-          </div>
-        </div>
-        <p class="guarantee">מובטח שתאהבו - אנחנו מתקנים עד שזה מושלם.</p>
-        <div class="addons">
-          <h4>תוספות</h4>
-          <ul>
-            <li>אקספרס בעדיפות, אספקה תוך כמה שעות (תוספת 49 ₪)</li>
-            <li>גרסה פיזית עד הבית - בקרוב</li>
-          </ul>
-        </div>
-        <p class="delivery-note">
-          מינימום 100 מילים. <b>הקובץ אצלכם תוך 24 שעות</b> מרגע שליחת המילים · תשלום מאובטח.
-        </p>
-        <p class="urgency">יש לכם תאריך אירוע? ספרו לנו ונוודא שתספיקו.</p>
-      </div>
-    </section>
-
     <section id="faq">
       <div class="wrap">
         <div class="sec-title reveal">
@@ -1700,14 +1585,6 @@
             </p>
           </details>
           <details>
-            <summary>מה אם לא מצליחה לחשוב על מספיק מילים?</summary>
-            <p>
-              זה קורה לכולם בהתחלה - ובדיוק בשביל זה יש את דף העזר. הוא מחלק את כל החיים של בעל
-              השמחה לקטגוריות עם דוגמאות (אנשים, מקומות, בדיחות פנימיות, ביטויים, פאדיחות), וברגע
-              שמתחילים - המילים פשוט זורמות. רוב האנשים מגיעים הרבה מעבר ל-100 בלי לשים לב.
-            </p>
-          </details>
-          <details>
             <summary>מתי בדיוק מקבלים?</summary>
             <p>
               הספירה מתחילה מרגע שאתם שולחים את רשימת המילים - לא מרגע התשלום. תוך 24 שעות מאותו רגע
@@ -1728,7 +1605,7 @@
 
     <section class="final" id="order">
       <div class="wrap reveal">
-        <h2>מוכנים להפתיע אותו?</h2>
+        <h2>מוכנים להפתיע אותה?</h2>
         <p>כמה מילים מכם - וכל החדר יצחק עליו. או עליה. בדרך הכי אישית שיש.</p>
         <div class="hero-cta">
           <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="final"

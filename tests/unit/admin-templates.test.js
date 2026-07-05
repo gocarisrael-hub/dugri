@@ -1,0 +1,422 @@
+// @vitest-environment node
+//
+// Admin template onboarding: (1) the pure-ish write + themes.json-append logic in
+// server/templates.js, and (2) the multipart POST /api/admin/templates endpoint
+// booted on the real Express app. Both run against a THROWAWAY repo scaffold
+// (TEMPLATE_ROOT) so nothing touches the real resources/ or generator/themes.json.
+// The recipe step is exercised with a fast FAKE "python" (a shell script) that
+// writes generator/recipes/<slug>.json — no Chrome/Pillow needed in CI.
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import os from 'node:os';
+import fs from 'node:fs';
+
+const require = createRequire(import.meta.url);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const serverDir = path.join(__dirname, '..', '..', 'server');
+
+const ADMIN_KEY = 'test-admin-key';
+const SVG = (label) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg">${label}</svg>`);
+
+// Build a fresh throwaway repo scaffold. The real themes.json always ships with
+// entries; an EMPTY mapping is now treated as missing/corrupt and refused (so a
+// lone entry can't wipe the file), hence we seed one existing theme here so
+// onboarding always appends alongside it.
+function makeScaffold() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-tpl-root-'));
+  fs.mkdirSync(path.join(root, 'generator'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'generator', 'themes.json'),
+    JSON.stringify({ 'seed-theme': { slug: 'seed-theme', calibrated: true } }, null, 1) + '\n',
+    'utf8'
+  );
+  return root;
+}
+
+// Standard set of valid onboarding files (clean+filled fronts/backs/board + fonts).
+function validFiles() {
+  return {
+    clean_fronts: { filename: 'cf.svg', data: SVG('clean-fronts') },
+    clean_backs: { filename: 'cb.svg', data: SVG('clean-backs') },
+    clean_board: { filename: 'cbo.svg', data: SVG('clean-board') },
+    filled_fronts: { filename: 'ff.svg', data: SVG('filled-fronts') },
+    filled_backs: { filename: 'fb.svg', data: SVG('filled-backs') },
+    filled_board: { filename: 'fbo.svg', data: SVG('filled-board') },
+    title_font: { filename: 'Title.ttf', data: Buffer.from('TITLEFONT') },
+    word_font: { filename: 'Word.ttf', data: Buffer.from('WORDFONT') },
+  };
+}
+
+describe('templates.js pure logic', () => {
+  let templates;
+  beforeAll(() => {
+    delete require.cache[require.resolve(path.join(serverDir, 'templates.js'))];
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  it('isSafeSlug accepts good slugs and rejects unsafe ones', () => {
+    expect(templates.isSafeSlug('bat-mitzvah-gold')).toBe(true);
+    expect(templates.isSafeSlug('a1')).toBe(true);
+    expect(templates.isSafeSlug('Bad')).toBe(false); // uppercase
+    expect(templates.isSafeSlug('has space')).toBe(false);
+    expect(templates.isSafeSlug('../etc')).toBe(false);
+    expect(templates.isSafeSlug('trailing-')).toBe(false);
+    expect(templates.isSafeSlug('')).toBe(false);
+  });
+
+  it('buildThemeEntry produces a private, uncalibrated entry with null style/board/back', () => {
+    const e = templates.buildThemeEntry({
+      slug: 'demo',
+      displayHe: 'דמו',
+      titleText: "{NAME}'S\nB-DAY",
+      titleFont: 'Title.ttf',
+      wordFont: 'Word.ttf',
+      nameForm: 'english',
+      extraFields: ['AGE'],
+    });
+    expect(e.visibility).toBe('private');
+    expect(e.calibrated).toBe(false);
+    expect(e.title_style).toBeNull();
+    expect(e.board).toBeNull();
+    expect(e.back).toBeNull();
+    expect(e.recipe).toBe('demo');
+    expect(e.dir).toBe('resources/canva/templates/demo');
+    expect(e.title_lines).toEqual(["{NAME}'S", 'B-DAY']);
+    expect(e.extra_fields).toEqual(['AGE']);
+    expect(e.language).toBe('english');
+  });
+
+  it('writeTemplateFiles lands the SVGs + fonts on disk', () => {
+    const root = makeScaffold();
+    const out = templates.writeTemplateFiles({
+      root,
+      slug: 'demo',
+      clean: { fronts: SVG('cf'), backs: SVG('cb'), board: SVG('cbo') },
+      filled: { fronts: SVG('ff'), backs: SVG('fb'), board: SVG('fbo') },
+      fonts: {
+        title: { name: 'Title.ttf', data: Buffer.from('T') },
+        word: { name: 'Word.ttf', data: Buffer.from('W') },
+      },
+    });
+    const dir = out.dir;
+    for (const role of ['fronts', 'backs', 'board']) {
+      expect(fs.existsSync(path.join(dir, 'clean', role + '.svg'))).toBe(true);
+      expect(fs.existsSync(path.join(dir, 'filled', role + '.svg'))).toBe(true);
+    }
+    expect(fs.existsSync(path.join(dir, 'fonts', 'Title.ttf'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'fonts', 'Word.ttf'))).toBe(true);
+    expect(out.fonts).toEqual({ title: 'Title.ttf', word: 'Word.ttf' });
+  });
+
+  it('appendThemeEntry adds the entry, keeps existing ones, and refuses to overwrite a key', () => {
+    const root = makeScaffold();
+    const themesPath = path.join(root, 'generator', 'themes.json');
+    templates.appendThemeEntry(themesPath, 'demo', { slug: 'demo', calibrated: false });
+    const themes = JSON.parse(fs.readFileSync(themesPath, 'utf8'));
+    expect(themes.demo.slug).toBe('demo');
+    // the pre-existing (seeded) theme is preserved, not wiped
+    expect(themes['seed-theme'].slug).toBe('seed-theme');
+    expect(() => templates.appendThemeEntry(themesPath, 'demo', {})).toThrow(/already registered/);
+    // atomic write leaves no leftover temp file behind
+    const leftover = fs
+      .readdirSync(path.join(root, 'generator'))
+      .filter((f) => f.startsWith('.themes.') && f.endsWith('.tmp'));
+    expect(leftover).toEqual([]);
+  });
+
+  it('loadThemes/appendThemeEntry THROW on a corrupt themes.json and never wipe it', () => {
+    const root = makeScaffold();
+    const themesPath = path.join(root, 'generator', 'themes.json');
+    // a non-empty but unparseable file (e.g. a truncated write)
+    const corrupt = '{ "seed-theme": { "slug": "seed-theme"';
+    fs.writeFileSync(themesPath, corrupt, 'utf8');
+    expect(() => templates.loadThemes(themesPath)).toThrow(/unparseable/);
+    expect(() => templates.appendThemeEntry(themesPath, 'new-one', { slug: 'new-one' })).toThrow(
+      /unparseable/
+    );
+    // the corrupt file is left exactly as-is — no partial overwrite
+    expect(fs.readFileSync(themesPath, 'utf8')).toBe(corrupt);
+  });
+
+  it('appendThemeEntry refuses to write when the loaded mapping is empty', () => {
+    const root = makeScaffold();
+    const themesPath = path.join(root, 'generator', 'themes.json');
+    fs.writeFileSync(themesPath, '{}\n', 'utf8');
+    expect(() => templates.appendThemeEntry(themesPath, 'x', { slug: 'x' })).toThrow(/empty/);
+    // the file is untouched (not overwritten with a lone entry)
+    expect(JSON.parse(fs.readFileSync(themesPath, 'utf8'))).toEqual({});
+  });
+
+  it('onboardTemplate (runRecipe:false) writes files + a private uncalibrated theme entry', () => {
+    const root = makeScaffold();
+    const r = templates.onboardTemplate({
+      root,
+      runRecipe: false,
+      fields: {
+        slug: 'party-x',
+        display_he: 'דוגרי מסיבה',
+        title_text: "{NAME}'S PARTY",
+        name_form: 'english-caps',
+        extra_fields: 'AGE',
+      },
+      files: validFiles(),
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.key).toBe('party-x');
+    expect(r.calibrated).toBe(false);
+    expect(r.visibility).toBe('private');
+    expect(r.recipe).toBe('skipped');
+
+    const themes = JSON.parse(fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8'));
+    expect(themes['party-x'].visibility).toBe('private');
+    expect(themes['party-x'].calibrated).toBe(false);
+    expect(themes['party-x'].name_form).toBe('english-caps');
+    expect(themes['party-x'].extra_fields).toEqual(['AGE']);
+    expect(themes['party-x'].title_font).toBe('Title.ttf');
+    expect(themes['party-x'].word_font).toBe('Word.ttf');
+
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'party-x');
+    expect(fs.existsSync(path.join(dir, 'clean', 'fronts.svg'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'filled', 'board.svg'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'fonts', 'Title.ttf'))).toBe(true);
+  });
+
+  it('onboardTemplate rejects an unsafe slug, a duplicate, and missing files', () => {
+    const root = makeScaffold();
+    expect(
+      templates.onboardTemplate({
+        root,
+        runRecipe: false,
+        fields: { slug: 'Bad Slug' },
+        files: validFiles(),
+      }).error
+    ).toMatch(/invalid slug/);
+
+    // seed a theme then try to reuse the key
+    templates.appendThemeEntry(path.join(root, 'generator', 'themes.json'), 'taken', {
+      slug: 'taken',
+    });
+    const dup = templates.onboardTemplate({
+      root,
+      runRecipe: false,
+      fields: { slug: 'taken', display_he: 'x', title_text: 'x', name_form: 'english' },
+      files: validFiles(),
+    });
+    expect(dup.error).toMatch(/already exists/);
+
+    const missing = validFiles();
+    delete missing.clean_board;
+    const miss = templates.onboardTemplate({
+      root,
+      runRecipe: false,
+      fields: { slug: 'nofile', display_he: 'x', title_text: 'x', name_form: 'english' },
+      files: missing,
+    });
+    expect(miss.error).toMatch(/missing clean board/);
+  });
+
+  it('runRecipeDiff reports ok when the runner writes the recipe json', () => {
+    const root = makeScaffold();
+    // pretend the template files already exist
+    fs.mkdirSync(path.join(root, 'resources', 'canva', 'templates', 'rx', 'clean'), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(root, 'resources', 'canva', 'templates', 'rx', 'filled'), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(root, 'resources', 'canva', 'templates', 'rx', 'clean', 'fronts.svg'),
+      SVG('c')
+    );
+    fs.writeFileSync(
+      path.join(root, 'resources', 'canva', 'templates', 'rx', 'filled', 'fronts.svg'),
+      SVG('f')
+    );
+    const runner = () => {
+      fs.mkdirSync(path.join(root, 'generator', 'recipes'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'generator', 'recipes', 'rx.json'), '{"cards":[]}');
+      return { status: 0, stdout: 'ok', stderr: '' };
+    };
+    const res = templates.runRecipeDiff({ root, slug: 'rx', runner });
+    expect(res.ok).toBe(true);
+  });
+
+  it('parseMultipart round-trips fields + files from a raw body', () => {
+    const boundary = 'X-BOUND-123';
+    const body = buildMultipart(boundary, [
+      { name: 'slug', value: 'demo' },
+      { name: 'title_font', filename: 'T.ttf', data: Buffer.from('FONTBYTES') },
+    ]);
+    const { fields, files } = templates.parseMultipart(body, boundary);
+    expect(fields.slug).toBe('demo');
+    expect(files.title_font.filename).toBe('T.ttf');
+    expect(files.title_font.data.toString()).toBe('FONTBYTES');
+  });
+});
+
+// -- multipart body builder + endpoint test -----------------------------------
+
+function buildMultipart(boundary, parts) {
+  const chunks = [];
+  for (const p of parts) {
+    chunks.push(Buffer.from('--' + boundary + '\r\n'));
+    if (p.filename != null) {
+      chunks.push(
+        Buffer.from(
+          'Content-Disposition: form-data; name="' +
+            p.name +
+            '"; filename="' +
+            p.filename +
+            '"\r\nContent-Type: application/octet-stream\r\n\r\n'
+        )
+      );
+      chunks.push(Buffer.isBuffer(p.data) ? p.data : Buffer.from(String(p.data)));
+      chunks.push(Buffer.from('\r\n'));
+    } else {
+      chunks.push(
+        Buffer.from(
+          'Content-Disposition: form-data; name="' + p.name + '"\r\n\r\n' + p.value + '\r\n'
+        )
+      );
+    }
+  }
+  chunks.push(Buffer.from('--' + boundary + '--\r\n'));
+  return Buffer.concat(chunks);
+}
+
+function onboardParts() {
+  const f = validFiles();
+  return [
+    { name: 'slug', value: 'endpoint-demo' },
+    { name: 'display_he', value: 'דוגרי אנדפוינט' },
+    { name: 'title_text', value: "{NAME}'S B-DAY" },
+    { name: 'name_form', value: 'english' },
+    { name: 'extra_fields', value: 'AGE' },
+    ...Object.entries(f).map(([name, file]) => ({
+      name,
+      filename: file.filename,
+      data: file.data,
+    })),
+  ];
+}
+
+describe('POST /api/admin/templates', () => {
+  let app;
+  let server;
+  let base;
+  let root;
+
+  beforeAll(async () => {
+    root = makeScaffold();
+    process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-tpl-data-'));
+    process.env.GENERATED_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-tpl-gen-'));
+    process.env.ADMIN_KEY = ADMIN_KEY;
+    process.env.TEMPLATE_ROOT = root;
+
+    // FAKE python: write generator/recipes/<slug>.json next to the script arg.
+    const fakeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-tpl-py-'));
+    const fake = path.join(fakeDir, 'fake-recipe.sh');
+    fs.writeFileSync(
+      fake,
+      [
+        '#!/bin/sh',
+        '# $1=script $2=filled $3=clean $4=slug',
+        'd=$(dirname "$1")',
+        'mkdir -p "$d/recipes"',
+        'printf \'{"theme":"%s","cards":[]}\' "$4" > "$d/recipes/$4.json"',
+        'echo "wrote recipe for $4"',
+        '',
+      ].join('\n'),
+      { mode: 0o755 }
+    );
+    process.env.PYTHON = fake;
+
+    for (const f of ['db.js', 'pelecard.js', 'notify.js', 'templates.js', 'index.js']) {
+      delete require.cache[require.resolve(path.join(serverDir, f))];
+    }
+    app = require(path.join(serverDir, 'index.js'));
+    await new Promise((resolve) => {
+      server = app.listen(0, () => {
+        base = 'http://127.0.0.1:' + server.address().port;
+        resolve();
+      });
+    });
+  });
+
+  afterAll(() => {
+    if (server) server.close();
+  });
+
+  async function upload(parts, { withKey = true } = {}) {
+    const boundary = '----dugriTest' + Math.random().toString(16).slice(2);
+    const body = buildMultipart(boundary, parts);
+    const url = base + '/api/admin/templates' + (withKey ? '?key=' + ADMIN_KEY : '');
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
+      body,
+    });
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  }
+
+  it('403 without the admin key', async () => {
+    const r = await upload(onboardParts(), { withKey: false });
+    expect(r.status).toBe(403);
+  });
+
+  it('onboards a new private template: files land, recipe produced, themes.json gains an uncalibrated entry', async () => {
+    const r = await upload(onboardParts());
+    expect(r.status).toBe(201);
+    expect(r.body.ok).toBe(true);
+    expect(r.body.key).toBe('endpoint-demo');
+    expect(r.body.calibrated).toBe(false);
+    expect(r.body.visibility).toBe('private');
+    expect(r.body.recipe).toBe('generated');
+    expect(r.body.note).toMatch(/calibrat/i);
+
+    // files landed under the throwaway TEMPLATE_ROOT
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'endpoint-demo');
+    expect(fs.existsSync(path.join(dir, 'clean', 'fronts.svg'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'filled', 'backs.svg'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'fonts', 'Title.ttf'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'fonts', 'Word.ttf'))).toBe(true);
+
+    // recipe was produced by the fake python
+    expect(fs.existsSync(path.join(root, 'generator', 'recipes', 'endpoint-demo.json'))).toBe(true);
+
+    // themes.json gained a private, uncalibrated entry
+    const themes = JSON.parse(fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8'));
+    expect(themes['endpoint-demo'].visibility).toBe('private');
+    expect(themes['endpoint-demo'].calibrated).toBe(false);
+    expect(themes['endpoint-demo'].title_style).toBeNull();
+    expect(themes['endpoint-demo'].extra_fields).toEqual(['AGE']);
+  });
+
+  it('409/400-style rejects a duplicate slug', async () => {
+    const r = await upload(onboardParts());
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/already exists/);
+  });
+
+  it('400 on an invalid slug', async () => {
+    const parts = onboardParts().map((p) =>
+      p.name === 'slug' ? { name: 'slug', value: 'Bad Slug!' } : p
+    );
+    const r = await upload(parts);
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/invalid slug/);
+  });
+
+  it('400 when a required SVG is missing', async () => {
+    const parts = onboardParts().filter((p) => p.name !== 'clean_board');
+    // also give it a fresh slug so it fails on the missing file, not a dup
+    const fresh = parts.map((p) =>
+      p.name === 'slug' ? { name: 'slug', value: 'missing-svg' } : p
+    );
+    const r = await upload(fresh);
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/missing clean board/);
+  });
+});

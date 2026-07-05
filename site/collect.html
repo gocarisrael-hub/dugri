@@ -952,6 +952,19 @@
               <span class="opt-note">אזורים מרוחקים בתיאום ובתוספת תשלום</span>
             </span>
           </label>
+          <label class="pay-opt pay-opt-custom">
+            <input type="radio" name="payVersion" value="custom" />
+            <span class="opt-body">
+              <span class="opt-title"
+                ><span>עיצוב אישי בהתאמה מלאה ✨ · מעוצב ביד במיוחד עבורכם</span
+                ><span class="opt-price">₪599</span></span
+              >
+              <span class="opt-note"
+                >בלי תבנית מוכנה — עיצוב ייחודי שנבנה מאפס סביב הסיפור שלכם</span
+              >
+              <span class="opt-note">ניצור קשר לאחר התשלום לתיאום העיצוב</span>
+            </span>
+          </label>
         </div>
 
         <div id="addressForm" class="hidden">
@@ -1162,7 +1175,7 @@
           banner.style.display = 'block';
           banner.textContent =
             state && state.status === 'expired'
-              ? 'האיסוף הסתיים (עברו שבעה ימים). אפשר עדיין לראות את המילים.'
+              ? 'האיסוף הסתיים. אפשר עדיין לראות את המילים.'
               : 'האיסוף נסגר על ידי המארגנ/ת. תודה לכולם! 🎉';
         }
       }
@@ -1337,9 +1350,9 @@
             // count mixes causes, so use neutral wording.
             if (skipped === 1 && clean.length === 1) {
               const shown = clean[0].replace(/\s+/g, ' ');
-              openDialog('המילה "' + shown + '" כבר קיימת ברשימה');
+              toast('המילה "' + shown + '" כבר קיימת ברשימה');
             } else {
-              openDialog('המילים כבר קיימות ולא נוספו שוב');
+              toast('המילים כבר קיימות ולא נוספו שוב');
             }
           }
           return true;
@@ -1513,7 +1526,7 @@
         if (paidCloseBtn) paidCloseBtn.onclick = closeCollection;
       }
       // ---- owner: pay panel ----
-      const PAY_PRICES = { pdf: 79, pickup: 149, delivery: 199 };
+      const PAY_PRICES = { pdf: 79, pickup: 149, delivery: 199, custom: 599 };
       function selectedVersion() {
         const checked = document.querySelector('input[name="payVersion"]:checked');
         return (checked && checked.value) || 'pdf';
