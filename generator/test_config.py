@@ -27,7 +27,8 @@ def test_anniversary_hebrew_years_and_two_names():
 
 
 def test_uncalibrated_raises():
-    cfg = config.theme("japanese")
+    # all real themes are now calibrated, so use a synthetic uncalibrated config
+    cfg = {"slug": "x", "calibrated": False}
     raised = False
     try:
         config.ensure_calibrated(cfg)
