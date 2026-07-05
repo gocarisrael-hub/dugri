@@ -72,6 +72,22 @@ function norm(s) {
   return String(s).trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+// Theme extra fields (e.g. AGE, or YEARS + NAME1 + NAME2) collected in the order
+// flow. Stored as a flat object of trimmed string values, each capped. Non-object
+// input (missing, array, primitive) normalizes to an empty object so the field is
+// always a plain object on the collection.
+function sanitizeExtraFields(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(input)) {
+    if (v == null) continue;
+    const key = String(k).trim().slice(0, 40);
+    if (!key) continue;
+    out[key] = String(v).trim().slice(0, 80);
+  }
+  return out;
+}
+
 // 'cancelled' (admin soft-cancel) takes precedence; otherwise open while not
 // closed and not past expiry; otherwise 'closed' / 'expired'.
 function effectiveStatus(c) {
@@ -97,6 +113,12 @@ const db = {
       // Hebrew display names chosen in the order flow (optional).
       design: contact.design ? String(contact.design).trim().slice(0, 80) : null,
       color: contact.color ? String(contact.color).trim().slice(0, 80) : null,
+      // Generator theme (a generator/themes.json key) the chosen design resolves
+      // to; drives which template production runs. Capped like other order text.
+      theme: contact.theme ? String(contact.theme).trim().slice(0, 80) : null,
+      // Theme-required extra fields collected after a design is chosen (AGE, or
+      // YEARS + NAME1 + NAME2). Always a plain object; {} when none are needed.
+      extra_fields: sanitizeExtraFields(contact.extra_fields),
       // Honoree gender for the site's gendered question phrasing. Only 'male' or
       // 'female' are accepted; anything else stores null.
       gender: contact.gender === 'male' || contact.gender === 'female' ? contact.gender : null,

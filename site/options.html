@@ -965,6 +965,23 @@
         outline: 3px solid var(--hot);
         outline-offset: 2px;
       }
+      /* theme-specific extra fields on the name step (AGE / YEARS + names) —
+         stacked, matching the contact step's field rhythm. */
+      .wiz-extra {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        max-width: 440px;
+        margin: 18px auto 0;
+        text-align: start;
+      }
+      /* the box + its per-field labels carry a display: rule (flex/block) that
+         would otherwise beat the UA [hidden] { display: none }; re-assert it so
+         a hidden extra field/box actually stays hidden. */
+      .wiz-extra[hidden],
+      .wiz-extra .wiz-field[hidden] {
+        display: none;
+      }
       .wiz-err {
         display: block;
         color: #c2415f;
@@ -1623,6 +1640,64 @@
             <span>זכר</span>
           </label>
         </div>
+
+        <!-- theme-specific extra fields: shown only when the chosen design's
+             generator theme needs them (AGE for japanese/kids, YEARS + two names
+             for anniversary). Each field is toggled by renderExtraFields(). -->
+        <div class="wiz-extra" id="extraFields" data-testid="extra-fields" hidden>
+          <label class="wiz-field" data-extra-field="AGE" hidden>
+            <span class="wiz-lbl">גיל</span>
+            <input
+              class="wiz-input"
+              type="number"
+              min="0"
+              max="120"
+              inputmode="numeric"
+              id="extraAge"
+              data-testid="extra-age"
+              data-extra-input="AGE"
+              placeholder="למשל: 30"
+            />
+          </label>
+          <label class="wiz-field" data-extra-field="YEARS" hidden>
+            <span class="wiz-lbl">שנות נישואין</span>
+            <input
+              class="wiz-input"
+              type="number"
+              min="0"
+              max="120"
+              inputmode="numeric"
+              id="extraYears"
+              data-testid="extra-years"
+              data-extra-input="YEARS"
+              placeholder="למשל: 25"
+            />
+          </label>
+          <label class="wiz-field" data-extra-field="NAME1" hidden>
+            <span class="wiz-lbl">שם ראשון</span>
+            <input
+              class="wiz-input"
+              type="text"
+              maxlength="40"
+              id="extraName1"
+              data-testid="extra-name1"
+              data-extra-input="NAME1"
+              placeholder="למשל: דנה"
+            />
+          </label>
+          <label class="wiz-field" data-extra-field="NAME2" hidden>
+            <span class="wiz-lbl">שם שני</span>
+            <input
+              class="wiz-input"
+              type="text"
+              maxlength="40"
+              id="extraName2"
+              data-testid="extra-name2"
+              data-extra-input="NAME2"
+              placeholder="למשל: יוסי"
+            />
+          </label>
+        </div>
       </section>
 
       <!-- STEP 5 — your details -->
@@ -1727,7 +1802,7 @@
     </div>
 
     <script type="module">
-      import { DESIGNS, MAIN_COLORS } from './js/designs.js';
+      import { DESIGNS, MAIN_COLORS, themeForDesign, extraFieldsForDesign } from './js/designs.js';
       import {
         applyPalette,
         applyOriginal,
@@ -1983,6 +2058,7 @@
         updateOrigChip();
         updateColorControls();
         setActiveSwatch(-1);
+        renderExtraFields(); // the theme's required extra inputs may change
         const d = DESIGNS[i] || {};
         track('select_design', { design: d.name || d.id || i });
         renderDesign().then(persist);
@@ -2164,6 +2240,61 @@
         return el ? el.value : null;
       }
 
+      // --- theme extra fields (AGE / YEARS + two names) ----------------------
+      // Once a design is chosen its generator theme may need extra inputs. We
+      // reveal only the fields that theme requires, require them before leaving
+      // the name step, and send them (plus the resolved theme) with the order.
+      const extraFieldsBox = document.getElementById('extraFields');
+      const extraFieldEls = Array.from(document.querySelectorAll('[data-extra-field]'));
+      const extraInputEls = Array.from(document.querySelectorAll('[data-extra-input]'));
+
+      // The generator theme key for the currently selected design (or null).
+      function currentTheme() {
+        const d = DESIGNS[designIndex] || {};
+        return themeForDesign(d.id);
+      }
+      // The extra-field keys the current design's theme requires ([] if none).
+      function currentExtraFields() {
+        const d = DESIGNS[designIndex] || {};
+        return extraFieldsForDesign(d.id);
+      }
+      function extraInput(key) {
+        return document.querySelector('[data-extra-input="' + key + '"]');
+      }
+      // Show exactly the inputs the current theme needs; hide the whole box when
+      // the theme needs none, so most designs see the name step unchanged.
+      function renderExtraFields() {
+        const needed = currentExtraFields();
+        const need = new Set(needed);
+        extraFieldEls.forEach((el) => {
+          el.hidden = !need.has(el.dataset.extraField);
+        });
+        extraFieldsBox.hidden = needed.length === 0;
+        refreshControls();
+      }
+      // Every required extra field has a non-empty value.
+      function extraFieldsValid() {
+        return currentExtraFields().every((key) => {
+          const input = extraInput(key);
+          return input && input.value.trim().length > 0;
+        });
+      }
+      // The required extra fields as a { KEY: value } object ({} when none).
+      function collectedExtraFields() {
+        const out = {};
+        currentExtraFields().forEach((key) => {
+          const input = extraInput(key);
+          if (input) out[key] = input.value.trim();
+        });
+        return out;
+      }
+      // Re-validate Next as the user fills the extra fields on the name step.
+      extraInputEls.forEach((el) =>
+        el.addEventListener('input', () => {
+          if (currentStep === 4) refreshControls();
+        })
+      );
+
       // Both contact fields are required so we can always reach the owner with
       // the management link (same rules the retired thankyou page used).
       const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -2172,7 +2303,8 @@
 
       function validateStep(n) {
         if (n <= 3) return true; // design / color / add-ons all have safe defaults
-        if (n === 4) return nameInput.value.trim().length > 0;
+        // name step: require the name AND any extra fields the theme needs.
+        if (n === 4) return nameInput.value.trim().length > 0 && extraFieldsValid();
         if (n === 5)
           return isValidEmail(emailInput.value.trim()) && isValidIlMobile(phoneInput.value.trim());
         return true;
@@ -2301,6 +2433,16 @@
           openGenderModal();
           return;
         }
+        // theme extra fields (AGE / YEARS + names) are required when the theme
+        // needs them — bounce back to the name step and focus the first blank.
+        if (!extraFieldsValid()) {
+          goStep(4);
+          const firstEmpty = currentExtraFields()
+            .map((k) => extraInput(k))
+            .find((el) => el && !el.value.trim());
+          if (firstEmpty) firstEmpty.focus();
+          return;
+        }
         if (!isValidEmail(email)) {
           emailErr.hidden = false;
           emailInput.focus();
@@ -2326,6 +2468,9 @@
               phone,
               design: s.designName || null,
               color: s.colorName || null,
+              // resolved generator theme + the theme's required extra fields
+              theme: currentTheme(),
+              extra_fields: collectedExtraFields(),
               chasers: s.chasers,
             }),
           });
@@ -2581,6 +2726,7 @@
         updateColorControls();
         setActiveSwatch(colorIndex);
         paintChasers();
+        renderExtraFields(); // reflect the restored design's theme extra fields
       })();
 
       // restore the wizard position from ?step=N (defaults to the first step)
