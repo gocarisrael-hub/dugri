@@ -979,7 +979,9 @@
          enlarge button that opens a fullscreen zoom of the full SVG, and a deep-link
          CTA into the wizard (options.html?design=<id>&step=<2 slider|3 fixed>). -->
     <script type="module">
-      import { DESIGNS, MAIN_COLORS } from './js/designs.js';
+      // PUBLIC_DESIGNS excludes private designs (hidden until unlocked with an
+      // access code in the order flow); the public gallery only shows those.
+      import { PUBLIC_DESIGNS as DESIGNS, MAIN_COLORS } from './js/designs.js';
 
       const PRICE = 79;
       const grid = document.getElementById('tileGrid');

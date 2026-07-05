@@ -62,6 +62,25 @@ export const THEME_EXTRA_FIELDS = {
   'football-boys': [],
 };
 
+/**
+ * Visibility per generator theme, mirroring each theme's `visibility` field in
+ * `generator/themes.json` ("public" | "private"). Inlined here (rather than
+ * fetched) so the public design lists can filter without a round-trip. A private
+ * theme's design is hidden from the public grid and only revealed with a valid
+ * access code. Keep in sync with themes.json if a theme's visibility changes;
+ * any theme absent here defaults to public.
+ */
+export const VISIBILITY_BY_THEME = {
+  'trip comeback': 'public',
+  bachelorette: 'public',
+  'birthday-girls': 'public',
+  'birthday-girls-neon': 'public',
+  'birthday-boys-basketball': 'public',
+  anniversary: 'public',
+  japanese: 'public',
+  'football-boys': 'public',
+};
+
 /** Resolve a design id to its generator theme key, or null when unknown. */
 export function themeForDesign(id) {
   return THEME_BY_DESIGN[id] || null;
@@ -71,6 +90,21 @@ export function themeForDesign(id) {
 export function extraFieldsForDesign(id) {
   const theme = themeForDesign(id);
   return (theme && THEME_EXTRA_FIELDS[theme]) || [];
+}
+
+/**
+ * A design's visibility ('public' | 'private') via its theme's visibility in
+ * themes.json (mirrored in VISIBILITY_BY_THEME). Unknown/unmapped designs
+ * default to 'public'. Accepts a visibility map override for testability.
+ */
+export function visibilityForDesign(id, visibilityByTheme = VISIBILITY_BY_THEME) {
+  const theme = themeForDesign(id);
+  return (theme && visibilityByTheme[theme]) || 'public';
+}
+
+/** Whether a design should appear in the PUBLIC design lists (not private). */
+export function isPublicDesign(id, visibilityByTheme = VISIBILITY_BY_THEME) {
+  return visibilityForDesign(id, visibilityByTheme) !== 'private';
 }
 
 /**
@@ -96,4 +130,16 @@ export const DESIGNS = Object.entries(GENERATED).map(([id, g]) => ({
   thumb: g.thumb || null,
   thumbs: g.thumbs || null,
   products: g.products,
+  // Visibility from the mapped theme (themes.json). Private designs are hidden
+  // from the public grid until unlocked with an access code; `public` is the
+  // convenient boolean the public lists filter on.
+  visibility: visibilityForDesign(id),
+  public: isPublicDesign(id),
 }));
+
+/**
+ * The PUBLIC subset of DESIGNS — private designs (theme visibility "private")
+ * filtered out. This is what the public design lists (options.html grid,
+ * products.html gallery) render. Admin/order code paths use the full DESIGNS.
+ */
+export const PUBLIC_DESIGNS = DESIGNS.filter((d) => d.public);

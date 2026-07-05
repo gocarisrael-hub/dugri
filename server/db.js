@@ -21,7 +21,7 @@ const SESSION_TTL_MS = Number(process.env.PELECARD_SESSION_TTL_MS || 20 * 60 * 1
 // verify against, leaving a charged customer's order stuck unpaid.
 const MAX_SESSIONS = Number(process.env.PELECARD_MAX_SESSIONS || 50);
 
-const DEFAULTS = { collections: [], words: [], coupons: [] };
+const DEFAULTS = { collections: [], words: [], coupons: [], design_codes: [] };
 
 // Single source of truth for order pricing (NIS).
 // pdf = digital PDF; pickup = printed + pickup at גלאור; delivery = door-to-door.
@@ -502,6 +502,103 @@ const db = {
   // marked paid). No-op/false when the code is unknown.
   incrementCouponUses(code) {
     const c = this.getCouponByCode(code);
+    if (!c) return false;
+    c.uses = (c.uses || 0) + 1;
+    saveDb();
+    return true;
+  },
+
+  // --- Private-design access codes ----------------------------------------
+  // A PRIVATE design (one whose generator theme has visibility:"private" in
+  // themes.json) is hidden from the public design list. The admin creates an
+  // access code, tied to that design, and hands it to a specific client; the
+  // client enters it in the order flow to reveal that one design and order it
+  // at standard pricing. Mirrors the coupon model (normCode, active, Israel-time
+  // expiry). Shape: { id, code, design_id, valid_until, active, created_at,
+  // uses }. `design_id` is the id the site unlocks (a THEME_BY_DESIGN key) — or
+  // a theme key. `valid_until` is a 'YYYY-MM-DD' string (inclusive) or null =
+  // never expires. `uses` counts unlocks.
+
+  // Create an access code. Validates the code shape/uniqueness and that a
+  // design_id was given, then persists it. Returns the stored code, or { error }
+  // on bad input or a duplicate code.
+  createDesignCode({ code, design_id, valid_until } = {}) {
+    const c = normCode(code);
+    if (!/^[A-Z0-9]{3,20}$/.test(c)) return { error: 'bad code' };
+    const design = String(design_id == null ? '' : design_id)
+      .trim()
+      .slice(0, 80);
+    if (!design) return { error: 'bad design_id' };
+    let until = null;
+    if (valid_until != null && valid_until !== '') {
+      const s = String(valid_until).trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || Number.isNaN(Date.parse(s))) {
+        return { error: 'bad valid_until' };
+      }
+      until = s;
+    }
+    if (_db.design_codes.some((x) => x.code === c)) return { error: 'duplicate' };
+    const rec = {
+      id: uid(),
+      code: c,
+      design_id: design,
+      valid_until: until,
+      active: true,
+      created_at: nowIso(),
+      uses: 0,
+    };
+    _db.design_codes.push(rec);
+    saveDb();
+    return rec;
+  },
+
+  // All access codes, newest first.
+  listDesignCodes() {
+    return [..._db.design_codes].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+
+  getDesignCodeByCode(code) {
+    const c = normCode(code);
+    return _db.design_codes.find((x) => x.code === c) || null;
+  },
+
+  getDesignCodeById(id) {
+    return _db.design_codes.find((x) => x.id === id) || null;
+  },
+
+  setDesignCodeActive(id, active) {
+    const c = this.getDesignCodeById(id);
+    if (!c) return null;
+    c.active = !!active;
+    saveDb();
+    return c;
+  },
+
+  deleteDesignCode(id) {
+    const before = _db.design_codes.length;
+    _db.design_codes = _db.design_codes.filter((x) => x.id !== id);
+    if (_db.design_codes.length === before) return false;
+    saveDb();
+    return true;
+  },
+
+  // Validate an access code entered in the order flow. Returns
+  // { valid:true, design_id } for an active, unexpired code, or
+  // { valid:false, reason } with reason in 'not_found'|'inactive'|'expired'.
+  // Mirrors validateCoupon (including the inclusive Israel-time expiry).
+  validateDesignCode(code) {
+    const c = this.getDesignCodeByCode(code);
+    if (!c) return { valid: false, reason: 'not_found' };
+    if (!c.active) return { valid: false, reason: 'inactive' };
+    if (c.valid_until && todayStrIsrael() > c.valid_until) {
+      return { valid: false, reason: 'expired' };
+    }
+    return { valid: true, design_id: c.design_id };
+  },
+
+  // Increment an access code's unlock counter. No-op/false when unknown.
+  incrementDesignCodeUses(code) {
+    const c = this.getDesignCodeByCode(code);
     if (!c) return false;
     c.uses = (c.uses || 0) + 1;
     saveDb();
