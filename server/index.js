@@ -135,6 +135,10 @@ app.post('/api/collections', (req, res) => {
     phone: b.phone,
     design: b.design,
     color: b.color,
+    // Resolved generator theme + any theme-required extra fields (AGE, or
+    // YEARS + NAME1 + NAME2); db.createCollection validates/sanitizes both.
+    theme: b.theme,
+    extra_fields: b.extra_fields,
     chasers: b.chasers,
     gender: b.gender,
   });
