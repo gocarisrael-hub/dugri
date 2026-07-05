@@ -229,6 +229,29 @@ function buildFinishedMessage(collection, baseUrl) {
   return { subject, text };
 }
 
+// Pure builder: the "production blocked — needs fixing" email. `problems` is the
+// list of Hebrew problem strings from validateOrderForProduction; the body lists
+// each one so the client (and Dugri) know exactly what to correct before we can
+// generate. The owner link (when available) lets them update the order.
+// Returns {subject, text} — same shape as the other builders.
+function buildProductionError(collection, baseUrl, problems) {
+  const name = honoreeName(collection);
+  const subject = 'דוגרי · צריך תיקון לפני הפקה — ' + name;
+  const lines = ['לא הצלחנו להפיק את הקובץ של ' + name + ' — יש לתקן את הנקודות הבאות:', ''];
+  for (const p of Array.isArray(problems) ? problems : []) {
+    lines.push('· ' + p);
+  }
+  const link = ownerLink(collection, baseUrl);
+  if (link) {
+    lines.push('');
+    lines.push('לעדכון ההזמנה:');
+    lines.push(link);
+  }
+  lines.push('');
+  lines.push('צוות דוגרי');
+  return { subject, text: lines.join('\n') };
+}
+
 // Send one message via the Resend HTTPS API. `to` overrides the recipient
 // (defaults to the owner's NOTIFY_TO — e.g. the buyer confirmation is sent to
 // the customer's address). Fully wrapped: a failure (a non-2xx response, a
@@ -339,14 +362,36 @@ async function sendPdfReady(collection, baseUrl, link) {
   }
 }
 
+// Fire the "production blocked — needs fixing" notification. Sends the same
+// message to Dugri (NOTIFY_TO) AND, when present, the client (owner_email) —
+// same fan-out and de-dupe as sendPdfReady. Fully wrapped — never throws.
+// Returns true when at least one send succeeded.
+async function sendProductionError(collection, baseUrl, problems) {
+  try {
+    const msg = buildProductionError(collection, baseUrl, problems);
+    const owner = await send(msg); // -> NOTIFY_TO (Dugri)
+    let client = false;
+    const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
+    if (to && to.toLowerCase() !== String(NOTIFY_TO).toLowerCase()) {
+      client = await send({ ...msg, to });
+    }
+    return owner || client;
+  } catch (e) {
+    console.warn('[notify] sendProductionError failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
 module.exports = {
   isConfigured,
   buildPaidMessage,
   buildBuyerConfirmation,
   buildFinishedMessage,
   buildPdfReadyMessage,
+  buildProductionError,
   sendOrderPaid,
   sendBuyerConfirmation,
   sendOrderFinished,
   sendPdfReady,
+  sendProductionError,
 };

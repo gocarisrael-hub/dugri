@@ -9,6 +9,7 @@ const express = require('express');
 const db = require('./db');
 const pelecard = require('./pelecard');
 const notify = require('./notify');
+const validate = require('./validate');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -224,6 +225,26 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
   if (!theme) return res.status(400).json({ error: 'theme required' });
   const words = db.listWords(c.id).map((w) => w.text);
   if (!words.length) return res.status(400).json({ error: 'no words to generate' });
+
+  // Validate the order BEFORE spending time/money on generation. On any problem
+  // we do NOT run the generator: we record an 'error' production status (shown in
+  // admin), email the client + Dugri what to fix, and 400 with the problem list.
+  const themeConfig = validate.getTheme(theme);
+  const problems = validate.validateOrderForProduction(c, themeConfig, words);
+  if (problems.length) {
+    const production = db.setProduction(c.id, {
+      state: 'error',
+      errors: problems,
+      checked_at: new Date().toISOString(),
+      theme,
+    });
+    const base = paymentBaseUrl();
+    if (notify.isConfigured()) {
+      notify.sendProductionError({ ...c, count: words.length }, base, problems).catch(() => {});
+    }
+    return res.status(400).json({ error: 'validation failed', problems, production });
+  }
+
   const wordFont = b.word_font ? String(b.word_font) : null;
   const extraFields =
     b.extra_fields && typeof b.extra_fields === 'object' && !Array.isArray(b.extra_fields)
