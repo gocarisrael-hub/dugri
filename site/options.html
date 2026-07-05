@@ -924,6 +924,58 @@
         outline: 2px solid var(--hot);
         border-color: var(--hot);
       }
+      /* "יש לך קוד?" access-code box under the design grid (unobtrusive). */
+      .code-box {
+        max-width: 440px;
+        margin: 18px auto 0;
+        text-align: center;
+      }
+      .code-box > summary {
+        cursor: pointer;
+        font-weight: 700;
+        font-size: 13.5px;
+        color: var(--wine-deep);
+        list-style: none;
+      }
+      .code-box > summary::-webkit-details-marker {
+        display: none;
+      }
+      .code-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .code-input {
+        margin: 0;
+        flex: 1 1 auto;
+      }
+      .code-btn {
+        font: inherit;
+        font-weight: 800;
+        white-space: nowrap;
+        border: none;
+        border-radius: 14px;
+        padding: 0 18px;
+        background: var(--hot);
+        color: #fff;
+        cursor: pointer;
+      }
+      .code-btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .code-msg {
+        margin-top: 8px;
+        font-size: 13px;
+        font-weight: 700;
+        min-height: 16px;
+      }
+      .code-msg.ok {
+        color: #1f7a4d;
+      }
+      .code-msg.err {
+        color: #c0143c;
+      }
       /* gender choice on the name step - a two-option segmented control */
       .gender-group {
         display: flex;
@@ -1567,6 +1619,26 @@
           role="group"
           aria-label="עיצובים"
         ></div>
+        <!-- Access code for a PRIVATE design: a client given a code unlocks their
+             hidden design and orders it at standard pricing. -->
+        <details class="code-box" data-testid="design-code-box">
+          <summary>יש לך קוד?</summary>
+          <div class="code-row">
+            <input
+              type="text"
+              id="designCode"
+              class="wiz-input code-input"
+              data-testid="design-code-input"
+              autocomplete="off"
+              placeholder="קוד עיצוב"
+              aria-label="קוד עיצוב"
+            />
+            <button type="button" id="designCodeBtn" class="code-btn" data-testid="design-code-btn">
+              פתחו עיצוב
+            </button>
+          </div>
+          <p class="code-msg" id="designCodeMsg" data-testid="design-code-msg" hidden></p>
+        </details>
       </section>
 
       <!-- STEP 2 — color -->
@@ -2119,6 +2191,10 @@
 
       /* ---- build design thumbnails ---- */
       const designList = document.getElementById('designList');
+      // Buttons keyed by design id so an unlock (access code) can reveal a
+      // private tile. Private tiles are built but hidden — keeping DESIGNS
+      // indices stable so all the index-based state below stays correct.
+      const designButtons = new Map();
       DESIGNS.forEach((d, i) => {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -2128,6 +2204,9 @@
         btn.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
         btn.setAttribute('aria-label', d.name);
         btn.innerHTML = '<div class="thumb"></div><div class="dname">' + d.name + '</div>';
+        // Private designs stay hidden until unlocked with a valid access code.
+        if (!d.public) btn.hidden = true;
+        designButtons.set(d.id, btn);
         designList.appendChild(btn);
         // Lightweight RASTER thumbnail (built at build time, ~5KB webp) — NOT the
         // multi-MB full-page SVG. Inlining seven full-page SVGs (~15MB, seven huge
@@ -2150,6 +2229,73 @@
         }
         btn.addEventListener('click', () => selectDesign(i));
       });
+
+      /* ---- private-design access code ("יש לך קוד?") ---- */
+      // Validate a code against the server; on success reveal that (hidden)
+      // private design's tile and select it so the client orders it normally.
+      const codeInput = document.getElementById('designCode');
+      const codeBtn = document.getElementById('designCodeBtn');
+      const codeMsg = document.getElementById('designCodeMsg');
+      const unlocked = new Set(); // design ids already revealed this session
+
+      function showCodeMsg(text, ok) {
+        codeMsg.textContent = text;
+        codeMsg.className = 'code-msg ' + (ok ? 'ok' : 'err');
+        codeMsg.hidden = false;
+      }
+
+      // Reveal a design tile by id and select it. Returns false if that id isn't
+      // a real design in this catalog (e.g. a code points at an unknown design).
+      function unlockDesign(id) {
+        const idx = DESIGNS.findIndex((d) => d.id === id);
+        if (idx < 0) return false;
+        const btn = designButtons.get(id);
+        if (btn) btn.hidden = false;
+        unlocked.add(id);
+        selectDesign(idx);
+        return true;
+      }
+
+      async function submitDesignCode() {
+        const code = (codeInput.value || '').trim();
+        if (!code) {
+          showCodeMsg('הזינו קוד', false);
+          return;
+        }
+        codeBtn.disabled = true;
+        try {
+          const r = await fetch('/api/design-code/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code }),
+          });
+          if (r.status === 429) {
+            showCodeMsg('יותר מדי ניסיונות, נסו שוב עוד רגע', false);
+            return;
+          }
+          const data = await r.json().catch(() => ({}));
+          if (data && data.valid && unlockDesign(data.design)) {
+            showCodeMsg('העיצוב נפתח!', true);
+            codeInput.value = '';
+          } else {
+            showCodeMsg('קוד לא תקין', false);
+          }
+        } catch {
+          showCodeMsg('שגיאה, נסו שוב', false);
+        } finally {
+          codeBtn.disabled = false;
+        }
+      }
+
+      if (codeBtn) codeBtn.addEventListener('click', submitDesignCode);
+      if (codeInput) {
+        codeInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            submitDesignCode();
+          }
+        });
+      }
 
       function selectDesign(i) {
         designIndex = i;

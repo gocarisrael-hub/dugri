@@ -29,7 +29,7 @@ const SESSION_TTL_MS = Number(process.env.PELECARD_SESSION_TTL_MS || 20 * 60 * 1
 // verify against, leaving a charged customer's order stuck unpaid.
 const MAX_SESSIONS = Number(process.env.PELECARD_MAX_SESSIONS || 50);
 
-const DEFAULTS = { collections: [], words: [], coupons: [] };
+const DEFAULTS = { collections: [], words: [], coupons: [], design_codes: [] };
 
 // Single source of truth for order pricing (NIS).
 // pdf = digital PDF; pickup = printed + pickup at גלאור; delivery = door-to-door.
@@ -519,8 +519,7 @@ const db = {
   },
 
   // --- Words reminder ------------------------------------------------------
-  // Mark a collection as having received its one-time "add your words" nudge, so
-  // the scheduler never emails the same customer twice. No-op/false when unknown.
+  // Mark a collection as having received its one-time "add your words" nudge.
   markReminded(id) {
     const c = this.getCollection(id);
     if (!c) return false;
@@ -529,12 +528,7 @@ const db = {
     return true;
   },
 
-  // Pure query (given the current store + a `now` ms timestamp): the collections
-  // that are DUE for the one-time words reminder. A collection qualifies when it
-  // has an owner_email to send to, has NO words yet, hasn't already been reminded,
-  // isn't cancelled, and its reference time — the order's paid_at when paid, else
-  // created_at — is more than REMINDER_AFTER_MS (3 days) before `now`. Read-only:
-  // it never mutates or persists (the scheduler calls markReminded per send).
+  // The collections DUE for the one-time words reminder (read-only query).
   collectionsDueForReminder(now = Date.now()) {
     const cutoff = now - REMINDER_AFTER_MS;
     return _db.collections.filter((c) => {
@@ -549,6 +543,84 @@ const db = {
       if (Number.isNaN(basisMs)) return false;
       return basisMs < cutoff;
     });
+  },
+
+  // --- Private-design access codes ----------------------------------------
+  createDesignCode({ code, design_id, valid_until } = {}) {
+    const c = normCode(code);
+    if (!/^[A-Z0-9]{3,20}$/.test(c)) return { error: 'bad code' };
+    const design = String(design_id == null ? '' : design_id)
+      .trim()
+      .slice(0, 80);
+    if (!design) return { error: 'bad design_id' };
+    let until = null;
+    if (valid_until != null && valid_until !== '') {
+      const s = String(valid_until).trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || Number.isNaN(Date.parse(s))) {
+        return { error: 'bad valid_until' };
+      }
+      until = s;
+    }
+    if (_db.design_codes.some((x) => x.code === c)) return { error: 'duplicate' };
+    const rec = {
+      id: uid(),
+      code: c,
+      design_id: design,
+      valid_until: until,
+      active: true,
+      created_at: nowIso(),
+      uses: 0,
+    };
+    _db.design_codes.push(rec);
+    saveDb();
+    return rec;
+  },
+
+  listDesignCodes() {
+    return [..._db.design_codes].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+
+  getDesignCodeByCode(code) {
+    const c = normCode(code);
+    return _db.design_codes.find((x) => x.code === c) || null;
+  },
+
+  getDesignCodeById(id) {
+    return _db.design_codes.find((x) => x.id === id) || null;
+  },
+
+  setDesignCodeActive(id, active) {
+    const c = this.getDesignCodeById(id);
+    if (!c) return null;
+    c.active = !!active;
+    saveDb();
+    return c;
+  },
+
+  deleteDesignCode(id) {
+    const before = _db.design_codes.length;
+    _db.design_codes = _db.design_codes.filter((x) => x.id !== id);
+    if (_db.design_codes.length === before) return false;
+    saveDb();
+    return true;
+  },
+
+  validateDesignCode(code) {
+    const c = this.getDesignCodeByCode(code);
+    if (!c) return { valid: false, reason: 'not_found' };
+    if (!c.active) return { valid: false, reason: 'inactive' };
+    if (c.valid_until && todayStrIsrael() > c.valid_until) {
+      return { valid: false, reason: 'expired' };
+    }
+    return { valid: true, design_id: c.design_id };
+  },
+
+  incrementDesignCodeUses(code) {
+    const c = this.getDesignCodeByCode(code);
+    if (!c) return false;
+    c.uses = (c.uses || 0) + 1;
+    saveDb();
+    return true;
   },
 };
 

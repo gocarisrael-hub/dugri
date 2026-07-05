@@ -448,6 +448,60 @@ app.delete('/api/admin/coupons/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// --- Private-design access codes (admin CRUD) ----------------------------
+// Mirrors the coupon admin routes. An access code unlocks a PRIVATE design in
+// the order flow (see POST /api/design-code/validate). All gated by ADMIN_KEY.
+
+// Admin: list all design access codes.
+app.get('/api/admin/design-codes', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ design_codes: db.listDesignCodes() });
+});
+
+// Admin: create an access code. 400 on invalid input or a duplicate code.
+app.post('/api/admin/design-codes', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const b = req.body || {};
+  const dc = db.createDesignCode({
+    code: b.code,
+    design_id: b.design_id,
+    valid_until: b.valid_until,
+  });
+  if (dc && dc.error) return res.status(400).json({ error: dc.error });
+  res.status(201).json({ design_code: dc });
+});
+
+// Admin: toggle an access code's active flag. 404 when the id is unknown.
+app.post('/api/admin/design-codes/:id', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const active = !!(req.body && req.body.active);
+  const dc = db.setDesignCodeActive(req.params.id, active);
+  if (!dc) return res.status(404).json({ error: 'not found' });
+  res.json({ design_code: dc });
+});
+
+// Admin: delete an access code. 404 when the id is unknown.
+app.delete('/api/admin/design-codes/:id', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (!db.deleteDesignCode(req.params.id)) return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true });
+});
+
+// PUBLIC design-code validation: the client enters an access code in the order
+// flow to unlock a PRIVATE design. Public (no owner token — a fresh visitor is
+// choosing a design), but rate-limited per client IP like the coupon oracle to
+// blunt code enumeration. Only the unlocked design id is ever leaked. Returns
+// { valid:true, design } or { valid:false, reason }.
+app.post('/api/design-code/validate', (req, res) => {
+  if (!couponRateOk('designcode:' + clientKey(req))) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
+  const r = db.validateDesignCode(req.body && req.body.code);
+  if (!r.valid) return res.json({ valid: false, reason: r.reason });
+  db.incrementDesignCodeUses(req.body && req.body.code);
+  res.json({ valid: true, design: r.design_id });
+});
+
 // OWNER-SCOPED coupon validation so checkout can preview the discount. Requires
 // the collection id + owner_token (so it is NOT a fully-open enumeration oracle)
 // and is rate-limited per collection. Only the discount percentage is ever
