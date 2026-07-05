@@ -100,6 +100,93 @@ function runGenerator({ theme, name, words, outPdf, wordFont, extraFields }) {
   });
 }
 
+// --- Order preview (public) ---------------------------------------------------
+// The generator preview script + the shared word-font pool it draws from.
+const PREVIEW_SCRIPT = path.join(REPO_ROOT, 'generator', 'preview.py');
+const WORD_FONTS_DIR = path.join(REPO_ROOT, 'generator', 'word-fonts');
+// One preview render is two Chrome pages; keep it short so a public request can't
+// tie up the box. The child is SIGKILLed past this and the request 504s.
+const PREVIEW_TIMEOUT_MS = Number(process.env.PREVIEW_TIMEOUT_MS || 40000);
+
+// The shared word-font choices ([{label,file}]), read fresh (tiny file). Returns
+// [] when missing/unparseable so a bad file never crashes a preview request.
+function wordFontOptions() {
+  try {
+    const opts = JSON.parse(fs.readFileSync(path.join(WORD_FONTS_DIR, 'options.json'), 'utf8'));
+    return Array.isArray(opts) ? opts.filter((o) => o && o.file) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Spawn the preview generator and resolve { card, board } as PNG data URLs.
+// Renders the two PNGs into a private temp dir, reads them back as base64, and
+// always removes the dir. Enforces a timeout and never leaks the child process.
+function runPreview({ theme, name, wordFont, extraFields }) {
+  return new Promise((resolve, reject) => {
+    let outDir;
+    try {
+      outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-preview-'));
+    } catch (e) {
+      return reject(e);
+    }
+    const cleanup = () => {
+      try {
+        fs.rmSync(outDir, { recursive: true, force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+    };
+    const args = [PREVIEW_SCRIPT, theme, name, outDir];
+    if (wordFont) args.push('--word-font', wordFont);
+    for (const [k, v] of Object.entries(extraFields || {})) {
+      args.push('--field', `${k}=${v}`);
+    }
+    const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, PREVIEW_TIMEOUT_MS);
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      cleanup();
+      reject(e);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        cleanup();
+        return reject(new Error('preview timed out'));
+      }
+      if (code !== 0) {
+        cleanup();
+        return reject(new Error((stderr || stdout || 'exit ' + code).trim().slice(0, 800)));
+      }
+      try {
+        // The script prints a JSON line of the produced PNG paths (last line).
+        const produced = JSON.parse(stdout.trim().split('\n').pop() || '{}');
+        const out = {};
+        for (const key of ['card', 'board']) {
+          if (produced[key] && fs.existsSync(produced[key])) {
+            out[key] = 'data:image/png;base64,' + fs.readFileSync(produced[key]).toString('base64');
+          }
+        }
+        cleanup();
+        if (!out.card) return reject(new Error('preview produced no card image'));
+        resolve(out);
+      } catch (e) {
+        cleanup();
+        reject(e);
+      }
+    });
+  });
+}
+
 function publicView(c) {
   const words = db.listWords(c.id);
   return {
@@ -140,6 +227,9 @@ app.post('/api/collections', (req, res) => {
     // YEARS + NAME1 + NAME2); db.createCollection validates/sanitizes both.
     theme: b.theme,
     extra_fields: b.extra_fields,
+    // Card word-font the customer picked in the preview (a filename in the
+    // shared word-fonts/ pool); db.createCollection caps + defaults it.
+    word_font: b.word_font,
     chasers: b.chasers,
     gender: b.gender,
   });
@@ -375,6 +465,48 @@ app.post('/api/collections/:id/coupon/validate', (req, res) => {
   const r = db.validateCoupon(req.body && req.body.code);
   if (!r.valid) return res.json({ valid: false, reason: r.reason });
   res.json({ valid: true, discount_pct: r.coupon.discount_pct });
+});
+
+// Public order PREVIEW: render a REAL sample card + board for a theme with the
+// honoree name (and an optional word-font pick), so the customer sees their card
+// right after entering the name. Rate-limited per client IP like the coupon
+// oracle (each call spawns Chrome). Also runs the name-language check and returns
+// a `warning` when the name doesn't fit the theme's script, plus the shared
+// word-font options so the client can render the picker.
+app.post('/api/preview', async (req, res) => {
+  if (!couponRateOk('preview:' + clientKey(req))) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
+  const b = req.body || {};
+  const theme = String(b.theme || '').trim();
+  const name = String(b.name || '').trim();
+  const themeConfig = validate.getTheme(theme);
+  if (!themeConfig) return res.status(400).json({ error: 'unknown theme' });
+  if (!name) return res.status(400).json({ error: 'name required' });
+
+  const options = wordFontOptions();
+  // Only ever spawn with a word_font that is one of the offered options — never
+  // an arbitrary client-supplied filename.
+  let wordFont = null;
+  if (b.word_font) {
+    const wanted = String(b.word_font).trim();
+    if (options.some((o) => o.file === wanted)) wordFont = wanted;
+  }
+  const extraFields =
+    b.extra_fields && typeof b.extra_fields === 'object' && !Array.isArray(b.extra_fields)
+      ? b.extra_fields
+      : {};
+  // Surfaced to the customer immediately (doesn't block rendering the preview).
+  const warning = validate.checkNameLanguage(name, themeConfig);
+
+  try {
+    const imgs = await runPreview({ theme, name, wordFont, extraFields });
+    res.json({ ...imgs, warning, word_font: wordFont, word_font_options: options });
+  } catch (e) {
+    const detail = String((e && e.message) || e);
+    const status = /not calibrated|unknown theme/i.test(detail) ? 400 : 500;
+    res.status(status).json({ error: 'preview failed', detail: detail.slice(0, 800) });
+  }
 });
 
 // Public read: anyone with the link can see the words.

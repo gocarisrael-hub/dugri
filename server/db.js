@@ -119,6 +119,10 @@ const db = {
       // Theme-required extra fields collected after a design is chosen (AGE, or
       // YEARS + NAME1 + NAME2). Always a plain object; {} when none are needed.
       extra_fields: sanitizeExtraFields(contact.extra_fields),
+      // Card word-font the customer picked in the preview (a filename in the
+      // shared word-fonts/ pool). Passed to the generator as its word_font
+      // override at production time. Capped; null keeps the theme's default font.
+      word_font: contact.word_font ? String(contact.word_font).trim().slice(0, 80) : null,
       // Honoree gender for the site's gendered question phrasing. Only 'male' or
       // 'female' are accepted; anything else stores null.
       gender: contact.gender === 'male' || contact.gender === 'female' ? contact.gender : null,
