@@ -10,6 +10,7 @@ const db = require('./db');
 const pelecard = require('./pelecard');
 const notify = require('./notify');
 const validate = require('./validate');
+const templates = require('./templates');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -35,6 +36,13 @@ const SITE_DIR = path.join(__dirname, '..', 'site');
 const REPO_ROOT = path.join(__dirname, '..');
 const GENERATED_DIR = process.env.GENERATED_DIR || path.join(__dirname, 'generated');
 const PYTHON_BIN = process.env.PYTHON || 'python3';
+// Repo root the admin template-onboarding endpoint writes NEW private templates
+// into (resources/canva/templates/<slug>/ + generator/themes.json). Overridable
+// via TEMPLATE_ROOT so tests can point it at a throwaway scaffold and never touch
+// the real repo. Max multipart upload size for that endpoint (several SVGs + two
+// fonts).
+const TEMPLATE_ROOT = process.env.TEMPLATE_ROOT || REPO_ROOT;
+const TEMPLATE_UPLOAD_LIMIT = process.env.TEMPLATE_UPLOAD_LIMIT || '30mb';
 // Hard cap on a single generation run (Chrome renders one page at a time, so a
 // large deck is slow); the child is SIGKILLed past this and the request 504s.
 const GENERATE_TIMEOUT_MS = Number(process.env.GENERATE_TIMEOUT_MS || 120000);
@@ -753,6 +761,42 @@ app.post('/api/payment/callback', async (req, res) => {
   }
   res.json({ ok: true });
 });
+
+// Admin: onboard a NEW private template. Multipart upload of the clean +
+// filled {fronts,backs,board} SVGs, the title + word font files, and a few text
+// fields (slug, display_he, title_text, name_form, language?, extra_fields?).
+// Writes them into resources/canva/templates/<slug>/, best-effort runs
+// generator/recipe_diff.py to produce generator/recipes/<slug>.json, and appends
+// a visibility:"private", calibrated:false entry to generator/themes.json. The
+// new template is NOT yet renderable — it needs a title-style calibration pass.
+// Body is parsed with a tiny in-repo multipart parser (no multer/busboy dep).
+app.post(
+  '/api/admin/templates',
+  express.raw({ type: () => true, limit: TEMPLATE_UPLOAD_LIMIT }),
+  (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
+    if (!boundary || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ error: 'expected multipart/form-data upload' });
+    }
+    const { fields, files } = templates.parseMultipart(req.body, boundary);
+    let result;
+    try {
+      result = templates.onboardTemplate({
+        root: TEMPLATE_ROOT,
+        pythonBin: PYTHON_BIN,
+        fields,
+        files,
+      });
+    } catch (e) {
+      return res
+        .status(500)
+        .json({ error: 'onboarding failed', detail: String((e && e.message) || e) });
+    }
+    if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
+    res.status(201).json({ ok: true, ...result });
+  }
+);
 
 // Unknown API routes -> JSON 404 (must come before static/catch-all).
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
