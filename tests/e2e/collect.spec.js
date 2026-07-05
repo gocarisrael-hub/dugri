@@ -103,7 +103,7 @@ test('owner deleting a word asks for confirmation: cancel/Esc keep it, confirm r
   await expect(page.locator('#wordsWrap')).toContainText('סוכר באמא');
 });
 
-test('submitting a word that already exists pops a duplicate dialog and does not add a row', async ({
+test('submitting a word that already exists shows a non-blocking duplicate toast and does not add a row', async ({
   page,
 }) => {
   await createCollection(page, 'שירה');
@@ -112,32 +112,26 @@ test('submitting a word that already exists pops a duplicate dialog and does not
   await page.fill('#wordInput', 'הדייט מטבריה');
   await page.click('#addBtn');
   await expect(page.locator('#count')).toHaveText('1');
-  // The duplicate popup is not shown for a fresh add.
-  await expect(page.getByTestId('msg-modal')).toBeHidden();
 
   // Submit the SAME word again (case/space-insensitive dupe on the server).
   await page.fill('#wordInput', '  הדייט   מטבריה ');
   await page.click('#addBtn');
 
-  // A clear duplicate popup appears, naming the word. In info mode there is no
-  // cancel button — just the OK acknowledgement.
-  await expect(page.getByTestId('msg-modal')).toBeVisible();
-  await expect(page.locator('#msgModalText')).toContainText('כבר קיימת ברשימה');
-  await expect(page.locator('#msgModalText')).toContainText('הדייט מטבריה');
-  await expect(page.getByTestId('msg-modal-cancel')).toBeHidden();
+  // A non-blocking toast appears, naming the word (normalized). It fades in via
+  // the .show class rather than opening the blocking modal.
+  await expect(page.locator('#toast')).toHaveClass(/show/);
+  await expect(page.locator('#toast')).toContainText('כבר קיימת ברשימה');
+  await expect(page.locator('#toast')).toContainText('הדייט מטבריה');
+
+  // The blocking dialog stays hidden — the notice never steals focus.
+  await expect(page.getByTestId('msg-modal')).toBeHidden();
   // No new row was added — still exactly one word.
   await expect(page.locator('#count')).toHaveText('1');
+  // The input keeps focus so the user can keep typing without a click.
+  await expect(page.locator('#wordInput')).toBeFocused();
 
-  // Dismissing the popup ("הבנתי") closes it and leaves the page usable.
-  await page.getByTestId('msg-modal-ok').click();
-  await expect(page.getByTestId('msg-modal')).toBeHidden();
-
-  // Escape also closes the dialog (shared modal-dismiss behavior).
-  await page.fill('#wordInput', 'הדייט מטבריה');
-  await page.click('#addBtn');
-  await expect(page.getByTestId('msg-modal')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByTestId('msg-modal')).toBeHidden();
+  // The toast auto-dismisses: it drops the .show class after its timer.
+  await expect(page.locator('#toast')).not.toHaveClass(/show/, { timeout: 4000 });
 });
 
 test('add-word failure surfaces an error and keeps the typed word', async ({ page }) => {
