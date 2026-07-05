@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>דוגרי · תבנית חדשה</title>
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
+      />
+    </noscript>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Heebo', Arial, sans-serif;
+        background: #fff5f8;
+        color: #2c1a29;
+        padding: 22px 16px 60px;
+      }
+      .wrap {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 16px;
+      }
+      .nav a {
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid #f0c9da;
+        background: #fff;
+        color: #8a2b53;
+        border-radius: 99px;
+        padding: 6px 14px;
+      }
+      .nav a.active {
+        background: #e5197d;
+        border-color: #e5197d;
+        color: #fff;
+      }
+      h1 {
+        font-size: 24px;
+        font-weight: 900;
+        margin-bottom: 4px;
+      }
+      .sub {
+        color: #8a2b53;
+        font-size: 14px;
+        margin-bottom: 18px;
+      }
+      form {
+        background: #fff;
+        border: 1px solid #f0c9da;
+        border-radius: 16px;
+        padding: 20px;
+      }
+      fieldset {
+        border: 1px solid #f0c9da;
+        border-radius: 12px;
+        padding: 14px 14px 6px;
+        margin-bottom: 16px;
+      }
+      legend {
+        font-weight: 800;
+        color: #8a2b53;
+        padding: 0 6px;
+        font-size: 14px;
+      }
+      label {
+        display: block;
+        margin-bottom: 12px;
+        font-size: 13.5px;
+        font-weight: 700;
+      }
+      label .hint {
+        display: block;
+        font-weight: 400;
+        color: #96798a;
+        font-size: 12px;
+        margin-top: 2px;
+      }
+      input[type='text'],
+      input[type='file'],
+      select {
+        width: 100%;
+        margin-top: 5px;
+        padding: 9px 10px;
+        border: 1px solid #e6b9cd;
+        border-radius: 9px;
+        font-family: inherit;
+        font-size: 14px;
+        background: #fffafc;
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .row > label {
+        flex: 1 1 200px;
+      }
+      button {
+        appearance: none;
+        border: none;
+        background: #e5197d;
+        color: #fff;
+        font-family: inherit;
+        font-weight: 800;
+        font-size: 15px;
+        padding: 12px 22px;
+        border-radius: 99px;
+        cursor: pointer;
+      }
+      button[disabled] {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .msg {
+        margin-top: 16px;
+        padding: 12px 14px;
+        border-radius: 10px;
+        font-size: 13.5px;
+        white-space: pre-wrap;
+        line-height: 1.5;
+      }
+      .msg.ok {
+        background: #e7f8ee;
+        border: 1px solid #9bdcb4;
+        color: #16663a;
+      }
+      .msg.err {
+        background: #fdecef;
+        border: 1px solid #f2a9ba;
+        color: #9c1f38;
+      }
+      code {
+        background: #fbe6ef;
+        padding: 1px 5px;
+        border-radius: 5px;
+        direction: ltr;
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="nav" id="nav">
+        <a data-page="dashboard.html">לוח בקרה</a>
+        <a data-page="admin.html">ניהול הזמנות</a>
+        <a data-page="coupons.html">ניהול קופונים</a>
+        <a data-page="admin-templates.html" class="active">תבנית חדשה</a>
+      </nav>
+      <h1>העלאת תבנית פרטית · דוגרי</h1>
+      <div class="sub">
+        מעלים SVG-ים, פונטים וכמה שדות — התבנית נרשמת כפרטית ולא מכוילת
+        (<code>calibrated:false</code>). עדיין צריך מעבר כיול של סגנון הכותרת לפני שאפשר להפיק.
+      </div>
+
+      <form id="form">
+        <fieldset>
+          <legend>פרטים</legend>
+          <div class="row">
+            <label
+              >Slug (מזהה)
+              <span class="hint"
+                >אותיות קטנות, ספרות ומקפים בלבד. לדוגמה <code>bat-mitzvah-gold</code></span
+              >
+              <input type="text" name="slug" required dir="ltr" placeholder="my-private-design" />
+            </label>
+            <label
+              >שם לתצוגה (עברית)
+              <input type="text" name="display_he" required placeholder="דוגרי בת מצווה" />
+            </label>
+          </div>
+          <label
+            >טקסט כותרת (title_text)
+            <span class="hint"
+              >אפשר משתנים כמו <code>{NAME}</code>, <code>{AGE}</code>. שורה חדשה = שורת כותרת
+              נוספת.</span
+            >
+            <input type="text" name="title_text" required placeholder="{NAME}'S B-DAY" />
+          </label>
+          <div class="row">
+            <label
+              >צורת שם (name_form)
+              <select name="name_form" required>
+                <option value="hebrew">hebrew (עברית)</option>
+                <option value="english">english (Title Case)</option>
+                <option value="english-caps">english-caps (UPPER)</option>
+              </select>
+            </label>
+            <label
+              >שפה (language)
+              <span class="hint">אופציונלי — ברירת מחדל לפי צורת השם.</span>
+              <input type="text" name="language" dir="ltr" placeholder="english" />
+            </label>
+          </div>
+          <label
+            >שדות נוספים (extra_fields)
+            <span class="hint"
+              >מופרדים בפסיק, למשל <code>AGE</code> או <code>YEARS,NAME1,NAME2</code></span
+            >
+            <input type="text" name="extra_fields" dir="ltr" placeholder="AGE" />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>SVG נקי (clean — ללא טקסט)</legend>
+          <div class="row">
+            <label
+              >fronts<input type="file" name="clean_fronts" accept=".svg,image/svg+xml" required
+            /></label>
+            <label
+              >backs<input type="file" name="clean_backs" accept=".svg,image/svg+xml" required
+            /></label>
+            <label
+              >board<input type="file" name="clean_board" accept=".svg,image/svg+xml" required
+            /></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>SVG ממולא (filled — עם טקסט לדוגמה)</legend>
+          <div class="row">
+            <label
+              >fronts<input type="file" name="filled_fronts" accept=".svg,image/svg+xml" required
+            /></label>
+            <label
+              >backs<input type="file" name="filled_backs" accept=".svg,image/svg+xml" required
+            /></label>
+            <label
+              >board<input type="file" name="filled_board" accept=".svg,image/svg+xml" required
+            /></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>פונטים</legend>
+          <div class="row">
+            <label
+              >פונט כותרת (title_font)<input
+                type="file"
+                name="title_font"
+                accept=".ttf,.otf"
+                required
+            /></label>
+            <label
+              >פונט מילים (word_font)<input
+                type="file"
+                name="word_font"
+                accept=".ttf,.otf"
+                required
+            /></label>
+          </div>
+        </fieldset>
+
+        <button type="submit" id="submit">צור תבנית</button>
+        <div id="msg" hidden></div>
+      </form>
+    </div>
+
+    <script type="module">
+      const key = new URLSearchParams(location.search).get('key') || '';
+      // Carry the admin key across the linked admin pages.
+      for (const a of document.querySelectorAll('#nav a')) {
+        a.href = a.dataset.page + (key ? '?key=' + encodeURIComponent(key) : '');
+      }
+      const form = document.getElementById('form');
+      const submitBtn = document.getElementById('submit');
+      const msg = document.getElementById('msg');
+
+      function show(kind, text) {
+        msg.hidden = false;
+        msg.className = 'msg ' + kind;
+        msg.textContent = text;
+      }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!key) {
+          show('err', 'חסר מפתח גישה. פתחו את העמוד עם ?key=… בכתובת.');
+          return;
+        }
+        submitBtn.disabled = true;
+        show('ok', 'מעלה ומעבד…');
+        try {
+          const res = await fetch('/api/admin/templates?key=' + encodeURIComponent(key), {
+            method: 'POST',
+            body: new FormData(form),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            show(
+              'err',
+              'שגיאה: ' + (data.error || res.status) + (data.detail ? '\n' + data.detail : '')
+            );
+          } else {
+            const recipeTxt =
+              data.recipe === 'generated'
+                ? 'recipe זוהה אוטומטית ✓'
+                : 'recipe לא נוצר כאן — צריך להריץ recipe_diff.py ידנית';
+            show(
+              'ok',
+              'נוצרה תבנית: ' +
+                data.key +
+                '\nvisibility: private · calibrated: false\n' +
+                recipeTxt +
+                '\n\n' +
+                (data.note || '')
+            );
+            form.reset();
+          }
+        } catch (err) {
+          show('err', 'שגיאת רשת: ' + err);
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
