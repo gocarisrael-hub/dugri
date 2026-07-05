@@ -278,17 +278,14 @@ test.describe('order wizard', () => {
     await expect.poll(() => page.url()).not.toContain('chasers=1');
   });
 
-  test('a slider theme keeps the colour picker and notes that photos stay fixed', async ({
-    page,
-  }) => {
+  test('a slider theme keeps the colour picker and shows no fixed-photo note', async ({ page }) => {
     await page.goto('/options.html');
     // the default design (bachelorette) is a slider whose board embeds a photo.
     await page.getByTestId('next-btn').click(); // -> colour step
     await expect(page.getByTestId('step-2')).toBeVisible();
     await expect(page.getByTestId('color-list')).toBeVisible();
-    const note = page.getByTestId('raster-note');
-    await expect(note).toBeVisible();
-    await expect(note).toContainText('קבוע');
+    // No caption is shown when picking a colour for a recolourable design.
+    await expect(page.getByTestId('raster-note')).toBeHidden();
   });
 
   test('neon is FIXED: the colour picker is hidden and its colours never change', async ({
