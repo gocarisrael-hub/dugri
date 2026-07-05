@@ -200,6 +200,23 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
   return { subject, text: lines.join('\n') };
 }
 
+// Pure builder: the "your game PDF is ready" email. `link` is the download URL
+// for the generated print-ready PDF (the admin-gated GET route). Returns
+// {subject, text}. The same body is sent to the client and to Dugri.
+function buildPdfReadyMessage(collection, link) {
+  const name = honoreeName(collection);
+  const subject = 'דוגרי · הקובץ שלכם מוכן — ' + name;
+  const lines = ['הקובץ המוכן להדפסה של המשחק עבור ' + name + ' מוכן!', ''];
+  if (link) {
+    lines.push('להורדת ה-PDF:');
+    lines.push(link);
+    lines.push('');
+  }
+  lines.push('נתראה על הלוח,');
+  lines.push('צוות דוגרי');
+  return { subject, text: lines.join('\n') };
+}
+
 // Pure builder: the "order finished / ready to produce" email.
 function buildFinishedMessage(collection, baseUrl) {
   const name = honoreeName(collection);
@@ -302,12 +319,34 @@ async function sendOrderFinished(collection, baseUrl) {
   }
 }
 
+// Fire the "PDF ready" notification with the download `link`. Sends the same
+// message to Dugri (NOTIFY_TO) AND, when present, the client's own email
+// (owner_email). Fully wrapped — never throws. Returns true when at least one
+// send succeeded.
+async function sendPdfReady(collection, baseUrl, link) {
+  try {
+    const msg = buildPdfReadyMessage(collection, link);
+    const owner = await send(msg); // -> NOTIFY_TO (Dugri)
+    let client = false;
+    const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
+    if (to && to.toLowerCase() !== String(NOTIFY_TO).toLowerCase()) {
+      client = await send({ ...msg, to });
+    }
+    return owner || client;
+  } catch (e) {
+    console.warn('[notify] sendPdfReady failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
 module.exports = {
   isConfigured,
   buildPaidMessage,
   buildBuyerConfirmation,
   buildFinishedMessage,
+  buildPdfReadyMessage,
   sendOrderPaid,
   sendBuyerConfirmation,
   sendOrderFinished,
+  sendPdfReady,
 };

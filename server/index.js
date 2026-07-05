@@ -2,6 +2,9 @@
 // collaborative word-collection feature.
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
+const os = require('os');
+const { spawn } = require('child_process');
 const express = require('express');
 const db = require('./db');
 const pelecard = require('./pelecard');
@@ -24,6 +27,77 @@ function paymentBaseUrl() {
 }
 
 const SITE_DIR = path.join(__dirname, '..', 'site');
+// Repo root (so we can invoke the Python generator) and the private directory
+// where produced order PDFs are written. GENERATED_DIR lives under server/ (NOT
+// site/) so express.static never exposes it — the only way out is the
+// admin-key-gated download route below.
+const REPO_ROOT = path.join(__dirname, '..');
+const GENERATED_DIR = process.env.GENERATED_DIR || path.join(__dirname, 'generated');
+const PYTHON_BIN = process.env.PYTHON || 'python3';
+// Hard cap on a single generation run (Chrome renders one page at a time, so a
+// large deck is slow); the child is SIGKILLed past this and the request 504s.
+const GENERATE_TIMEOUT_MS = Number(process.env.GENERATE_TIMEOUT_MS || 120000);
+
+// Spawn the Python generator for one order and resolve { pages } on success.
+// Writes the words to a temp file (cleaned up after), streams the theme +
+// honoree + optional word-font/extra-fields as CLI args, captures stderr for a
+// useful error, and enforces a timeout. Never leaks the child process.
+function runGenerator({ theme, name, words, outPdf, wordFont, extraFields }) {
+  return new Promise((resolve, reject) => {
+    let wordsFile;
+    try {
+      fs.mkdirSync(GENERATED_DIR, { recursive: true });
+      wordsFile = path.join(os.tmpdir(), 'dugri-words-' + crypto.randomUUID() + '.txt');
+      fs.writeFileSync(wordsFile, words.join('\n') + '\n', 'utf8');
+    } catch (e) {
+      return reject(e);
+    }
+    const args = [
+      path.join(REPO_ROOT, 'generator', 'order_to_pdf.py'),
+      theme,
+      name,
+      wordsFile,
+      outPdf,
+    ];
+    if (wordFont) args.push('--word-font', wordFont);
+    for (const [k, v] of Object.entries(extraFields || {})) {
+      args.push('--field', `${k}=${v}`);
+    }
+    const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, GENERATE_TIMEOUT_MS);
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      try {
+        fs.unlinkSync(wordsFile);
+      } catch {
+        /* best-effort cleanup */
+      }
+      reject(e);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      try {
+        fs.unlinkSync(wordsFile);
+      } catch {
+        /* best-effort cleanup */
+      }
+      if (timedOut) return reject(new Error('generation timed out'));
+      if (code !== 0) {
+        return reject(new Error((stderr || stdout || 'exit ' + code).trim().slice(0, 800)));
+      }
+      const m = /\((\d+) pages?\)/.exec(stdout);
+      resolve({ pages: m ? Number(m[1]) : null });
+    });
+  });
+}
 
 function publicView(c) {
   const words = db.listWords(c.id);
@@ -133,6 +207,79 @@ app.post('/api/admin/collections/:id/paid', (req, res) => {
   if (!requireAdmin(req, res)) return;
   if (!db.markPaid(req.params.id)) return res.status(404).json({ error: 'not found' });
   res.json({ ok: true });
+});
+
+// Admin: generate the full print-ready PDF for a collection. The admin supplies
+// the theme (a generator/themes.json key) — the design->theme mapping is a later
+// workstream. Body: { theme, word_font?, extra_fields? }. Gathers the
+// collection's words + honoree name, spawns the Python generator, stores the PDF
+// under GENERATED_DIR/<id>.pdf, records order.production, and (when email is
+// configured) mails a download link to the client + Dugri.
+app.post('/api/admin/collections/:id/generate', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const b = req.body || {};
+  const theme = String(b.theme || '').trim();
+  if (!theme) return res.status(400).json({ error: 'theme required' });
+  const words = db.listWords(c.id).map((w) => w.text);
+  if (!words.length) return res.status(400).json({ error: 'no words to generate' });
+  const wordFont = b.word_font ? String(b.word_font) : null;
+  const extraFields =
+    b.extra_fields && typeof b.extra_fields === 'object' && !Array.isArray(b.extra_fields)
+      ? b.extra_fields
+      : {};
+  // Use the stored (validated) id — never the raw param — for the output path.
+  const outPdf = path.join(GENERATED_DIR, c.id + '.pdf');
+
+  try {
+    const { pages } = await runGenerator({
+      theme,
+      name: c.honoree_name || '',
+      words,
+      outPdf,
+      wordFont,
+      extraFields,
+    });
+    const production = db.setProduction(c.id, {
+      state: 'generated',
+      pdf_file: path.basename(outPdf),
+      generated_at: new Date().toISOString(),
+      theme,
+      pages,
+    });
+    // The download link is the admin-gated route WITH the key embedded, so the
+    // client (who has no key) can still open it — a capability URL for this one
+    // file. Only built when a public base URL is configured.
+    const base = paymentBaseUrl();
+    const link = base
+      ? base + '/api/admin/collections/' + c.id + '/pdf?key=' + encodeURIComponent(ADMIN_KEY)
+      : null;
+    if (notify.isConfigured() && link) {
+      notify.sendPdfReady({ ...c, count: words.length }, base, link).catch(() => {});
+    }
+    res.json({ ok: true, production, link });
+  } catch (e) {
+    const detail = String((e && e.message) || e);
+    // A clear, actionable status for the common "theme not calibrated" case.
+    const status = /not calibrated|unknown theme/i.test(detail) ? 400 : 500;
+    res.status(status).json({ error: 'generation failed', detail: detail.slice(0, 800) });
+  }
+});
+
+// Admin: download a previously generated order PDF. Gated by the admin key (also
+// how the emailed capability link works). 404 when the collection or PDF is
+// absent. Uses the stored collection id (not the raw param) so the file path can
+// never traverse out of GENERATED_DIR.
+app.get('/api/admin/collections/:id/pdf', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const file = path.join(GENERATED_DIR, c.id + '.pdf');
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'no pdf' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + c.id + '.pdf"');
+  res.sendFile(file);
 });
 
 // Admin: soft-cancel a collection (body {undo:true} to restore).

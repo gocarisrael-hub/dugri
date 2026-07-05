@@ -375,6 +375,22 @@ const db = {
     return true;
   },
 
+  // Record the PDF-production state for a collection. Shape:
+  // { state:'generated', pdf_file, generated_at, theme?, pages? }. Stored on the
+  // order when one exists (order.production, per the order model) and always
+  // mirrored to the collection (c.production) so an order that was generated
+  // before a version was chosen still surfaces its production state. Returns the
+  // stored production object, or false when the collection is unknown.
+  setProduction(id, production) {
+    const c = this.getCollection(id);
+    if (!c) return false;
+    const rec = { ...production };
+    c.production = rec;
+    if (c.order) c.order.production = rec;
+    saveDb();
+    return rec;
+  },
+
   // --- Discount coupons ---------------------------------------------------
   // A coupon is a percentage-off code the admin creates and the checkout
   // applies. Shape: { id, code, discount_pct, valid_until, active, created_at,
