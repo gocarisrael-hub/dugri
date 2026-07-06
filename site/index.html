@@ -177,126 +177,156 @@
         background: var(--section);
       }
 
-      /* ============ NAV ============ */
-      .nav {
+      /* ============ HEADER (sticky top bar) ============ */
+      .hdr {
         position: fixed;
         top: 0;
         inset-inline: 0;
         z-index: 80;
-        background: rgba(247, 244, 239, 0.86);
+        background: rgba(247, 244, 239, 0.82);
         backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
         border-bottom: 1px solid var(--line);
       }
-      .nav-inner {
+      .hdr-inner {
+        position: relative;
         max-width: 1080px;
         margin: 0 auto;
-        padding: 9px 20px;
+        min-height: 42px;
+        padding: 9px 16px;
         display: flex;
         align-items: center;
-        gap: 14px;
+        justify-content: space-between;
+        gap: 10px;
       }
-      .nav-logo {
+      @media (min-width: 720px) {
+        .hdr-inner {
+          padding: 10px 22px;
+        }
+      }
+      /* CENTER zone: logo pinned to the true center regardless of side widths */
+      .hdr-logo {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
         display: flex;
         align-items: center;
       }
-      .nav-logo img {
-        height: 32px;
+      .hdr-logo img {
+        height: 34px;
         width: auto;
         display: block;
       }
-      .nav-links {
-        display: flex;
+      /* LEFT zone: solid sage "order now" pill */
+      .hdr-order {
+        display: inline-flex;
         align-items: center;
-        gap: 4px;
-        margin-inline-start: auto;
-      }
-      .nav-links a {
+        justify-content: center;
+        gap: 6px;
         font-family: var(--display);
-        font-weight: 700;
-        font-size: 15px;
-        color: var(--ink);
-        padding: 8px 12px;
-        border-radius: 10px;
+        font-weight: 800;
+        font-size: 14px;
+        letter-spacing: -0.01em;
+        background: var(--sage);
+        color: #fff;
         text-decoration: none;
+        white-space: nowrap;
+        padding: 9px 16px;
+        border-radius: var(--radius-pill);
+        box-shadow: var(--shadow-sm);
+        transition:
+          background 0.2s var(--ease),
+          transform 0.14s var(--ease),
+          box-shadow 0.25s var(--ease);
+      }
+      .hdr-order:hover {
+        background: var(--sage-deep);
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-md);
+      }
+      .hdr-order:active {
+        transform: translateY(0) scale(0.99);
+      }
+      @media (min-width: 720px) {
+        .hdr-order {
+          font-size: 15px;
+          padding: 10px 22px;
+        }
+      }
+      /* RIGHT zone: hamburger button */
+      .hdr-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 40px;
+        flex: 0 0 auto;
+        background: none;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        color: var(--ink);
+        cursor: pointer;
         transition:
           background 0.18s var(--ease),
-          color 0.18s var(--ease);
+          border-color 0.18s var(--ease);
       }
-      .nav-links a:hover {
+      .hdr-toggle:hover {
+        background: var(--section);
+        border-color: var(--sage);
+      }
+      .hdr-toggle svg {
+        width: 20px;
+        height: 20px;
+        display: block;
+      }
+      /* slide-down menu panel, dropped under the bar */
+      .hdr-menu {
+        position: absolute;
+        top: 100%;
+        inset-inline: 0;
+        background: var(--bg);
+        border-bottom: 1px solid var(--line);
+        box-shadow: var(--shadow-md);
+        padding: 8px 16px 14px;
+        display: none;
+      }
+      .hdr-menu.open {
+        display: block;
+      }
+      .hdr-menu a {
+        display: block;
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 17px;
+        color: var(--ink);
+        text-decoration: none;
+        padding: 13px 8px;
+        border-radius: 10px;
+        transition:
+          background 0.16s var(--ease),
+          color 0.16s var(--ease);
+      }
+      .hdr-menu a + a {
+        border-top: 1px solid var(--line);
+      }
+      .hdr-menu a:hover,
+      .hdr-menu a:focus-visible {
         background: var(--section);
         color: var(--sage-deeper);
       }
-      .nav-links a.nav-cta {
-        background: var(--sage);
-        color: #fff;
-        padding: 9px 20px;
-        border-radius: var(--radius-pill);
-        box-shadow: var(--shadow-sm);
-      }
-      .nav-links a.nav-cta:hover {
-        background: var(--sage-deep);
-        color: #fff;
-      }
-      .nav-toggle {
-        display: none;
-        margin-inline-start: auto;
-        background: none;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        width: 42px;
-        height: 40px;
-        cursor: pointer;
-        align-items: center;
-        justify-content: center;
-      }
-      .nav-toggle span,
-      .nav-toggle span::before,
-      .nav-toggle span::after {
-        display: block;
-        width: 20px;
-        height: 2px;
-        background: var(--ink);
-        position: relative;
-        transition: transform 0.2s var(--ease);
-      }
-      .nav-toggle span::before {
-        content: '';
-        position: absolute;
-        top: -6px;
-      }
-      .nav-toggle span::after {
-        content: '';
-        position: absolute;
-        top: 6px;
-      }
-      @media (max-width: 720px) {
-        .nav-toggle {
-          display: flex;
-        }
-        .nav-links {
-          position: absolute;
-          top: 100%;
-          inset-inline: 0;
-          flex-direction: column;
-          align-items: stretch;
-          gap: 0;
-          background: var(--bg);
-          border-bottom: 1px solid var(--line);
-          box-shadow: var(--shadow-md);
-          padding: 8px 14px 14px;
-          margin: 0;
-          display: none;
-        }
-        .nav-links.open {
-          display: flex;
-        }
-        .nav-links a {
-          padding: 13px 10px;
-        }
-        .nav-links a.nav-cta {
-          margin-top: 6px;
-          text-align: center;
-          justify-content: center;
+      @media (min-width: 720px) {
+        .hdr-menu {
+          max-width: 1080px;
+          margin: 0 auto;
+          inset-inline: auto;
+          inset-inline-end: 22px;
+          min-width: 220px;
+          border: 1px solid var(--line);
+          border-radius: var(--radius);
+          padding: 8px;
+          margin-top: 8px;
+          overflow: hidden;
         }
       }
 
@@ -1017,32 +1047,47 @@
     </style>
   </head>
   <body>
-    <nav class="nav" aria-label="ניווט ראשי">
-      <div class="nav-inner">
-        <a class="nav-logo" href="#top" aria-label="דוגרי - לראש העמוד"
-          ><img src="assets/logo.png" alt="דוגרי"
-        /></a>
+    <header class="hdr" aria-label="ניווט ראשי">
+      <div class="hdr-inner">
         <button
-          class="nav-toggle"
+          class="hdr-toggle"
           type="button"
           data-testid="nav-toggle"
           aria-expanded="false"
-          aria-controls="navLinks"
+          aria-controls="navMenu"
           aria-label="תפריט"
         >
-          <span></span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <line x1="4" y1="7" x2="20" y2="7" stroke-width="2" stroke-linecap="round" />
+            <line x1="4" y1="12" x2="20" y2="12" stroke-width="2" stroke-linecap="round" />
+            <line x1="4" y1="17" x2="20" y2="17" stroke-width="2" stroke-linecap="round" />
+          </svg>
         </button>
-        <div class="nav-links" id="navLinks" data-testid="nav-links">
-          <a href="#how">איך זה עובד</a>
-          <a href="#examples">דוגמאות</a>
-          <a href="#reviews">המלצות</a>
-          <a href="#faq">שאלות</a>
-          <a class="nav-cta" href="products.html" data-ga="order_started" data-ga-cta="nav"
-            >בונים את המשחק</a
-          >
-        </div>
+        <a class="hdr-logo" href="#top" aria-label="דוגרי - לראש העמוד"
+          ><img src="assets/logo.png" alt="דוגרי"
+        /></a>
+        <a
+          class="hdr-order nav-cta"
+          href="products.html"
+          data-testid="order-now"
+          data-ga="order_started"
+          data-ga-cta="nav"
+          >הזמינו עכשיו</a
+        >
       </div>
-    </nav>
+      <nav
+        class="hdr-menu"
+        id="navMenu"
+        data-testid="nav-menu"
+        role="menu"
+        aria-label="תפריט ניווט"
+      >
+        <a href="products.html" role="menuitem">החנות</a>
+        <a href="#reviews" role="menuitem">המלצות</a>
+        <a href="#story" role="menuitem">הסיפור שלנו</a>
+        <a href="#faq" role="menuitem">שאלות</a>
+      </nav>
+    </header>
 
     <header class="hero" id="top" data-reveal>
       <div class="wrap">
@@ -1531,19 +1576,37 @@
           }, 2500);
         }
 
-        /* Mobile nav toggle. */
-        var navToggle = document.querySelector('.nav-toggle');
-        var navLinks = document.getElementById('navLinks');
-        if (navToggle && navLinks) {
-          navToggle.addEventListener('click', function () {
-            var open = navLinks.classList.toggle('open');
+        /* Header menu: hamburger opens a slide-down panel.
+           Closes on link click, outside click and Esc. */
+        var navToggle = document.querySelector('[data-testid="nav-toggle"]');
+        var navMenu = document.getElementById('navMenu');
+        if (navToggle && navMenu) {
+          var closeMenu = function () {
+            navMenu.classList.remove('open');
+            navToggle.setAttribute('aria-expanded', 'false');
+          };
+          navToggle.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var open = navMenu.classList.toggle('open');
             navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
           });
-          navLinks.querySelectorAll('a').forEach(function (a) {
-            a.addEventListener('click', function () {
-              navLinks.classList.remove('open');
-              navToggle.setAttribute('aria-expanded', 'false');
-            });
+          navMenu.querySelectorAll('a').forEach(function (a) {
+            a.addEventListener('click', closeMenu);
+          });
+          document.addEventListener('click', function (e) {
+            if (
+              navMenu.classList.contains('open') &&
+              !navMenu.contains(e.target) &&
+              !navToggle.contains(e.target)
+            ) {
+              closeMenu();
+            }
+          });
+          document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && navMenu.classList.contains('open')) {
+              closeMenu();
+              navToggle.focus();
+            }
           });
         }
       })();
