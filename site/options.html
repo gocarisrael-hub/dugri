@@ -24,35 +24,19 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Heebo:wght@600;700;800;900&display=swap"
       media="print"
       onload="this.media = 'all'"
     />
     <noscript>
       <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Heebo:wght@600;700;800;900&display=swap"
       />
     </noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
     <style>
       :root {
-        --bg: #fff5f8;
-        --surface: #ffffff;
-        --blush: #fbe8ee;
-        --blush-deep: #f1d2dc;
-        --ink: #2c1a29;
-        --muted: #7c6a74;
-        --wine: #9b2d54;
-        --wine-deep: #7a1f40;
-        --gold: #bc9a4c;
-        --hot: #e5197d;
-        --hot-deep: #c7106a;
-        --line: #f0dee4;
-        --font: 'Calibri', 'Carlito', 'Segoe UI', 'Arial', 'Helvetica Neue', sans-serif;
-        --display: 'Heebo', 'Calibri', 'Carlito', 'Segoe UI', 'Arial', sans-serif;
-        --shadow-sm: 0 2px 8px rgba(44, 26, 41, 0.06), 0 1px 2px rgba(44, 26, 41, 0.04);
-        --shadow-md: 0 10px 28px rgba(44, 26, 41, 0.1), 0 3px 8px rgba(44, 26, 41, 0.06);
-        --shadow-lg: 0 26px 60px rgba(44, 26, 41, 0.16), 0 8px 18px rgba(44, 26, 41, 0.08);
         /* fixed chrome heights, reused by the body padding and the wizard column
            so the preview-fills-the-column math can't go stale if either changes. */
         --nav-h: 60px;
@@ -61,8 +45,10 @@
            (841.92 x 595.5 ≈ 1.414) — every product (front/back/board) is now a full
            page, so all three previews use this one ratio. */
         --page-ratio: 841.92 / 595.5;
+        /* live page accent — configurator overrides this at runtime per design/colour;
+           defaults to the brand sage. */
+        --accent: var(--sage);
         /* live palette tokens (configurator sets --c0..--cN on previews) */
-        --accent: var(--hot);
       }
       * {
         box-sizing: border-box;
@@ -125,7 +111,7 @@
         font-weight: 800;
         font-size: 17.5px;
         letter-spacing: -0.01em;
-        background: linear-gradient(135deg, var(--hot), var(--wine));
+        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
         color: #fff;
         border: none;
         cursor: pointer;
@@ -161,12 +147,12 @@
         transform: translateY(0) scale(0.99);
       }
       .btn:focus-visible {
-        outline: 3px solid var(--hot);
+        outline: 3px solid var(--sage);
         outline-offset: 3px;
       }
       a:focus-visible,
       button:focus-visible {
-        outline: 3px solid var(--hot);
+        outline: 3px solid var(--sage);
         outline-offset: 2px;
         border-radius: 8px;
       }
@@ -180,7 +166,7 @@
         background: rgba(255, 255, 255, 0.94);
         backdrop-filter: blur(10px);
         border-bottom: 1px solid var(--line);
-        box-shadow: 0 6px 20px rgba(44, 26, 41, 0.07);
+        box-shadow: 0 6px 20px rgba(35, 32, 28, 0.07);
       }
       .nav-inner {
         max-width: 1000px;
@@ -209,7 +195,7 @@
         font-family: var(--display);
         font-weight: 800;
         font-size: 15.5px;
-        color: var(--wine);
+        color: var(--sage-deep);
         padding: 8px 12px;
         border-radius: 10px;
         text-decoration: none;
@@ -218,11 +204,11 @@
           color 0.18s ease;
       }
       .nav-links a:hover {
-        background: var(--blush);
-        color: var(--wine-deep);
+        background: var(--section);
+        color: var(--sage-deeper);
       }
       .nav-links a.nav-cta {
-        background: linear-gradient(135deg, var(--hot), var(--wine));
+        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
         color: #fff;
         padding: 9px 20px;
         box-shadow: 0 6px 16px rgba(229, 25, 125, 0.26);
@@ -235,7 +221,7 @@
         display: none;
         margin-inline-start: auto;
         background: none;
-        border: 1px solid var(--blush-deep);
+        border: 1px solid var(--line);
         border-radius: 10px;
         width: 42px;
         height: 40px;
@@ -249,7 +235,7 @@
         display: block;
         width: 20px;
         height: 2px;
-        background: var(--wine);
+        background: var(--sage-deep);
         position: relative;
         transition:
           transform 0.2s ease,
@@ -278,7 +264,7 @@
           gap: 0;
           background: rgba(255, 255, 255, 0.98);
           border-bottom: 1px solid var(--line);
-          box-shadow: 0 14px 28px rgba(44, 26, 41, 0.12);
+          box-shadow: 0 14px 28px rgba(35, 32, 28, 0.12);
           padding: 8px 14px 14px;
           margin: 0;
           display: none;
@@ -324,8 +310,8 @@
         font-family: var(--display);
         font-weight: 800;
         font-size: 14px;
-        color: var(--wine);
-        background: var(--blush);
+        color: var(--sage-deep);
+        background: var(--section);
         padding: 7px 16px;
         border-radius: 999px;
       }
@@ -397,19 +383,19 @@
         font-family: var(--display);
         font-weight: 800;
         font-size: 15.5px;
-        color: var(--wine);
-        background: var(--blush);
-        border: 1px solid var(--blush-deep);
+        color: var(--sage-deep);
+        background: var(--section);
+        border: 1px solid var(--line);
         border-radius: 999px;
         padding: 9px 22px;
         cursor: pointer;
         transition: all 0.18s ease;
       }
       .tab:hover {
-        background: var(--blush-deep);
+        background: var(--line);
       }
       .tab[aria-selected='true'] {
-        background: linear-gradient(135deg, var(--hot), var(--wine));
+        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
         color: #fff;
         border-color: transparent;
         box-shadow: 0 8px 18px rgba(229, 25, 125, 0.26);
@@ -420,11 +406,11 @@
         background:
           radial-gradient(
             70% 70% at 50% 0%,
-            color-mix(in srgb, var(--accent, #e5197d) 16%, transparent),
+            color-mix(in srgb, var(--sage, #8ca287) 16%, transparent),
             transparent 70%
           ),
           var(--cfg-bg, var(--bg));
-        border: 1px dashed var(--blush-deep);
+        border: 1px dashed var(--line);
         /* Size to the sheet it holds (the sheet fills the card width, height by
            its A4-landscape ratio). Grid-centers the page; overflow hidden keeps
            the rounded corners clean. */
@@ -493,7 +479,7 @@
         display: block;
       }
       .preview-panel svg {
-        filter: drop-shadow(0 14px 30px rgba(44, 26, 41, 0.16));
+        filter: drop-shadow(0 14px 30px rgba(35, 32, 28, 0.16));
       }
       .preview-empty {
         color: var(--muted);
@@ -519,23 +505,23 @@
         font-size: 13px;
         line-height: 1;
         color: #fff;
-        background: rgba(44, 26, 41, 0.62);
+        background: rgba(35, 32, 28, 0.62);
         backdrop-filter: blur(4px);
         border: none;
         border-radius: 999px;
         padding: 8px 13px;
         cursor: zoom-in;
-        box-shadow: 0 4px 14px rgba(44, 26, 41, 0.28);
+        box-shadow: 0 4px 14px rgba(35, 32, 28, 0.28);
         transition:
           background 0.18s ease,
           transform 0.15s ease;
       }
       .preview-zoom-btn:hover {
-        background: rgba(44, 26, 41, 0.8);
+        background: rgba(35, 32, 28, 0.8);
         transform: translateY(-1px);
       }
       .preview-zoom-btn:focus-visible {
-        outline: 3px solid var(--hot);
+        outline: 3px solid var(--sage);
         outline-offset: 2px;
       }
       .preview-zoom-btn .zi {
@@ -587,7 +573,7 @@
         box-shadow: var(--shadow-md);
       }
       .design[aria-pressed='true'] {
-        border-color: var(--hot);
+        border-color: var(--sage);
         box-shadow:
           0 0 0 3px rgba(229, 25, 125, 0.18),
           var(--shadow-md);
@@ -598,7 +584,7 @@
         aspect-ratio: 841.92 / 595.5;
         border-radius: 10px;
         overflow: hidden;
-        background: var(--blush);
+        background: var(--section);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -614,7 +600,7 @@
         font-family: var(--display);
         font-weight: 800;
         font-size: 13.5px;
-        color: var(--wine-deep);
+        color: var(--sage-deeper);
         text-align: center;
       }
 
@@ -680,10 +666,10 @@
         gap: 14px;
         background: linear-gradient(
           135deg,
-          color-mix(in srgb, var(--hot) 8%, var(--surface)),
+          color-mix(in srgb, var(--sage) 8%, var(--surface)),
           var(--surface)
         );
-        border: 1.5px solid var(--blush-deep);
+        border: 1.5px solid var(--line);
         border-radius: 18px;
         padding: 16px 18px;
         box-shadow: var(--shadow-sm);
@@ -698,7 +684,7 @@
         box-shadow: var(--shadow-md);
       }
       .addon.is-on {
-        border-color: var(--hot);
+        border-color: var(--sage);
         box-shadow:
           0 0 0 3px rgba(229, 25, 125, 0.16),
           var(--shadow-md);
@@ -756,7 +742,7 @@
       .switch .track {
         position: absolute;
         inset: 0;
-        background: var(--blush-deep);
+        background: var(--line);
         border-radius: 999px;
         transition: background 0.2s ease;
       }
@@ -773,13 +759,13 @@
         transition: transform 0.2s ease;
       }
       .switch input:checked + .track {
-        background: linear-gradient(135deg, var(--hot), var(--wine));
+        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
       }
       .switch input:checked + .track::before {
         transform: translateX(-22px);
       }
       .switch input:focus-visible + .track {
-        outline: 3px solid var(--hot);
+        outline: 3px solid var(--sage);
         outline-offset: 2px;
       }
 
@@ -792,7 +778,7 @@
         font-family: var(--display);
         font-weight: 800;
         font-size: 14px;
-        color: var(--wine);
+        color: var(--sage-deep);
         text-align: center;
         margin-bottom: 7px;
       }
@@ -806,7 +792,7 @@
         display: block;
         height: 100%;
         width: 20%;
-        background: linear-gradient(90deg, var(--hot), var(--wine));
+        background: linear-gradient(90deg, var(--sage), var(--sage-deep));
         transition: width 0.4s ease;
       }
 
@@ -857,8 +843,8 @@
         font-family: var(--display);
         font-weight: 800;
         font-size: 14px;
-        color: var(--wine-deep);
-        background: var(--blush);
+        color: var(--sage-deeper);
+        background: var(--section);
         padding: 8px 16px;
         border-radius: 999px;
       }
@@ -905,7 +891,7 @@
         font-family: var(--display);
         font-weight: 800;
         font-size: 14px;
-        color: var(--wine-deep);
+        color: var(--sage-deeper);
         margin-bottom: 6px;
       }
       .wiz-input {
@@ -921,8 +907,8 @@
         color: var(--ink);
       }
       .wiz-input:focus {
-        outline: 2px solid var(--hot);
-        border-color: var(--hot);
+        outline: 2px solid var(--sage);
+        border-color: var(--sage);
       }
       /* "יש לך קוד?" access-code box under the design grid (unobtrusive). */
       .code-box {
@@ -937,7 +923,7 @@
         cursor: pointer;
         font-weight: 700;
         font-size: 13.5px;
-        color: var(--wine-deep);
+        color: var(--sage-deeper);
         list-style: none;
       }
       .code-box > summary::-webkit-details-marker {
@@ -959,7 +945,7 @@
         border: none;
         border-radius: 14px;
         padding: 0 18px;
-        background: var(--hot);
+        background: var(--sage);
         color: #fff;
         cursor: pointer;
       }
@@ -1013,11 +999,11 @@
       .gender-opt input:checked + span {
         border-color: transparent;
         color: #fff;
-        background: linear-gradient(135deg, var(--hot), var(--wine));
+        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
         box-shadow: 0 8px 18px rgba(229, 25, 125, 0.24);
       }
       .gender-opt input:focus-visible + span {
-        outline: 3px solid var(--hot);
+        outline: 3px solid var(--sage);
         outline-offset: 2px;
       }
       /* theme-specific extra fields on the name step (AGE / YEARS + names) —
@@ -1054,7 +1040,7 @@
         position: fixed;
         inset: 0;
         z-index: 90;
-        background: rgba(44, 26, 41, 0.5);
+        background: rgba(35, 32, 28, 0.5);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1094,7 +1080,7 @@
         background: rgba(255, 255, 255, 0.96);
         border-top: 1px solid var(--line);
         backdrop-filter: blur(8px);
-        box-shadow: 0 -8px 24px rgba(44, 26, 41, 0.08);
+        box-shadow: 0 -8px 24px rgba(35, 32, 28, 0.08);
         padding: 12px 16px;
       }
       .wiz-bar-inner {
@@ -1110,16 +1096,16 @@
         font-family: var(--display);
         font-weight: 800;
         font-size: 16px;
-        color: var(--wine);
-        background: var(--blush);
-        border: 1.5px solid var(--blush-deep);
+        color: var(--sage-deep);
+        background: var(--section);
+        border: 1.5px solid var(--line);
         border-radius: 999px;
         padding: 14px 22px;
         cursor: pointer;
         transition: background 0.18s ease;
       }
       .wiz-back:hover {
-        background: var(--blush-deep);
+        background: var(--line);
       }
       .wiz-back.is-hidden {
         visibility: hidden;
@@ -1472,7 +1458,7 @@
         cursor: not-allowed;
       }
       .zoom-btn:focus-visible {
-        outline: 3px solid var(--hot);
+        outline: 3px solid var(--sage);
         outline-offset: 2px;
       }
       .zoom-close {
@@ -1870,7 +1856,7 @@
             cursor: pointer;
           }
           .font-opt[aria-pressed='true'] {
-            border-color: var(--accent, #e5197d);
+            border-color: var(--sage, #8ca287);
             background: var(--cfg-bg, #fff0f7);
             font-weight: 800;
           }
@@ -2135,10 +2121,10 @@
         await ensurePanel(activeTab);
       }
 
-      // brand fallback tint (matches :root --hot) so the page theme NEVER keeps a
+      // brand fallback tint (matches :root --sage) so the page theme NEVER keeps a
       // previous design's stale tint — even for a fixed design shipped without an
       // accent and without anchors.
-      const DEFAULT_TINT = '#e5197d';
+      const DEFAULT_TINT = '#8ca287';
 
       // apply current color palette to every preview panel + page accent
       function recolor() {

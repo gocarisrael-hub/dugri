@@ -18,6 +18,7 @@
         href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
       />
     </noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
     <style>
       * {
         box-sizing: border-box;
@@ -26,8 +27,8 @@
       }
       body {
         font-family: 'Heebo', Arial, sans-serif;
-        background: #fff5f8;
-        color: #2c1a29;
+        background: #f7f4ef;
+        color: #23201c;
         padding: 22px 16px 60px;
       }
       .wrap {
@@ -44,15 +45,15 @@
         font-size: 13px;
         font-weight: 700;
         text-decoration: none;
-        border: 1px solid #f0c9da;
+        border: 1px solid #e4ddd0;
         background: #fff;
-        color: #8a2b53;
+        color: #5c7357;
         border-radius: 99px;
         padding: 6px 14px;
       }
       .nav a.active {
-        background: #e5197d;
-        border-color: #e5197d;
+        background: #8ca287;
+        border-color: #8ca287;
         color: #fff;
       }
       h1 {
@@ -61,12 +62,12 @@
         margin-bottom: 4px;
       }
       .sub {
-        color: #7c6a74;
+        color: #6b645b;
         margin-bottom: 18px;
       }
       .msg {
         background: #fff;
-        border: 1px solid #f0dee4;
+        border: 1px solid #e4ddd0;
         border-radius: 14px;
         padding: 20px;
         text-align: center;
@@ -87,7 +88,7 @@
         table-layout: fixed;
         border-collapse: collapse;
         background: #fff;
-        border: 1px solid #f0dee4;
+        border: 1px solid #e4ddd0;
         border-radius: 14px;
         overflow: hidden;
         font-size: 14px;
@@ -96,7 +97,7 @@
       td {
         text-align: right;
         padding: 8px 8px;
-        border-bottom: 1px solid #f4e7ec;
+        border-bottom: 1px solid #efe9df;
         vertical-align: top;
         /* Let long emails / word-lists / collect links wrap anywhere instead of
            blowing the column (and the table) wide. */
@@ -105,8 +106,8 @@
         overflow-wrap: anywhere;
       }
       th {
-        background: #fde3ee;
-        color: #8a2b53;
+        background: #f3e6e3;
+        color: #5c7357;
         font-size: 12.5px;
       }
       tr:last-child td {
@@ -124,16 +125,16 @@
         color: #1f7a4d;
       }
       .closed {
-        background: #fde3ee;
-        color: #c7106a;
+        background: #f3e6e3;
+        color: #6f8a6a;
       }
       .expired {
-        background: #f1eef0;
-        color: #7c6a74;
+        background: #efe9df;
+        color: #6b645b;
       }
       .prod-error {
-        background: #fdecec;
-        color: #c0143c;
+        background: #f3e6e3;
+        color: #6f8a6a;
         cursor: help;
       }
       button {
@@ -141,15 +142,15 @@
         font-size: 13px;
         font-weight: 700;
         cursor: pointer;
-        border: 1px solid #e5197d;
+        border: 1px solid #8ca287;
         background: #fff;
-        color: #e5197d;
+        color: #8ca287;
         border-radius: 9px;
         padding: 6px 10px;
         margin: 2px 0;
       }
       .muted {
-        color: #7c6a74;
+        color: #6b645b;
         font-size: 12.5px;
       }
       .contact {
@@ -165,7 +166,7 @@
       }
       .stat {
         background: #fff;
-        border: 1px solid #f0dee4;
+        border: 1px solid #e4ddd0;
         border-radius: 12px;
         padding: 10px 16px;
         min-width: 110px;
@@ -173,11 +174,11 @@
       .stat .val {
         font-size: 22px;
         font-weight: 900;
-        color: #8a2b53;
+        color: #5c7357;
       }
       .stat .lab {
         font-size: 12.5px;
-        color: #7c6a74;
+        color: #6b645b;
       }
       .controls {
         display: flex;
@@ -197,21 +198,21 @@
         font-size: 13px;
         font-weight: 700;
         cursor: pointer;
-        border: 1px solid #f0c9da;
+        border: 1px solid #e4ddd0;
         background: #fff;
-        color: #8a2b53;
+        color: #5c7357;
         border-radius: 99px;
         padding: 6px 12px;
         margin: 0;
       }
       .tab.active {
-        background: #e5197d;
-        border-color: #e5197d;
+        background: #8ca287;
+        border-color: #8ca287;
         color: #fff;
       }
       .sortwrap {
         font-size: 13px;
-        color: #7c6a74;
+        color: #6b645b;
         display: inline-flex;
         align-items: center;
         gap: 6px;
@@ -219,11 +220,11 @@
       .sortwrap select {
         font: inherit;
         font-size: 13px;
-        border: 1px solid #f0c9da;
+        border: 1px solid #e4ddd0;
         border-radius: 9px;
         padding: 5px 8px;
         background: #fff;
-        color: #2c1a29;
+        color: #23201c;
       }
       .followup {
         display: inline-flex;
@@ -235,8 +236,8 @@
         font-size: 12.5px;
         font-weight: 700;
         text-decoration: none;
-        border: 1px solid #d7c4ce;
-        color: #5a4651;
+        border: 1px solid #e4ddd0;
+        color: #4b463d;
         border-radius: 8px;
         padding: 4px 8px;
         white-space: nowrap;
@@ -246,12 +247,12 @@
         color: #128c3e;
       }
       button.danger {
-        border-color: #c0143c;
-        color: #c0143c;
+        border-color: #6f8a6a;
+        color: #6f8a6a;
       }
       .cancelled {
-        background: #f1eef0;
-        color: #7c6a74;
+        background: #efe9df;
+        color: #6b645b;
       }
       /* Narrow phones: 15 columns can't fit as a grid, so stack each row into a
          label:value card. The label comes from each cell's data-label (set in
@@ -281,14 +282,14 @@
         }
         tr {
           background: #fff;
-          border: 1px solid #f0dee4;
+          border: 1px solid #e4ddd0;
           border-radius: 14px;
           margin-bottom: 12px;
           padding: 4px 12px;
           overflow: hidden;
         }
         tr:last-child td {
-          border-bottom: 1px solid #f4e7ec;
+          border-bottom: 1px solid #efe9df;
         }
         td {
           display: flex;
@@ -302,7 +303,7 @@
         td::before {
           content: attr(data-label);
           font-weight: 700;
-          color: #8a2b53;
+          color: #5c7357;
           font-size: 12.5px;
           flex: 0 0 auto;
         }

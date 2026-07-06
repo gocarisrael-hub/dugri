@@ -8,15 +8,16 @@ JSON-file store under `DATA_DIR`.
 
 Landing (`index.html`) → **order wizard** (`options.html`, 5 steps: design → color →
 add-ons → celebrant name → contact) → creates a collection → **`collect.html`**
-(collect 100+ words with friends, and pay any time). Payment is via **Bit** (the
-owner reconciles manually and marks paid on the admin page). `admin.html?key=…`
+(collect 100+ words with friends, and pay any time). Payment is **credit card only**,
+via the **PeleCard** iframe in the pay panel (`pay-done.html` posts the result back;
+no Bit). `admin.html?key=…`
 lists every order (design/color/version/total/address/🥃-chasers) with a "סמן כשולם" button.
 
 ## Pages
 
 - `index.html` — landing page.
 - `options.html` — the step-by-step order wizard.
-- `collect.html` — collaborative word collection + the owner pay panel (Bit).
+- `collect.html` — collaborative word collection + the owner pay panel (PeleCard card payment).
 - `admin.html` — owner orders page (needs `?key=<ADMIN_KEY>`).
 - `timer.html` — in-game timer.
 - `js/` — `configurator.js`, `collect.js`, `word-prompts.js`, `analytics.js`, `consent.js`, etc.
@@ -25,7 +26,7 @@ lists every order (design/color/version/total/address/🥃-chasers) with a "סמ
 ## Config
 
 - Google Analytics id lives in `js/consent.js` (`GA_ID`).
-- The Bit "pay me" link is in `collect.html`'s pay panel.
+- Card payment (PeleCard) opens from `collect.html`'s pay panel; `pay-done.html` is the iframe callback.
 - Server env: `ADMIN_KEY` (required in production for the admin page), `DATA_DIR`
   (the JSON store path; a Railway volume in prod, e.g. `/data`).
 

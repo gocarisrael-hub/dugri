@@ -31,16 +31,9 @@
         href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800;900&display=swap"
       />
     </noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
     <style>
       :root {
-        --bg: #fff5f8;
-        --surface: #fff;
-        --ink: #2c1a29;
-        --muted: #7c6a74;
-        --hot: #e5197d;
-        --hot-deep: #c7106a;
-        --line: #f0dee4;
-        --ok: #1f9d6b;
       }
       * {
         box-sizing: border-box;
@@ -81,10 +74,10 @@
         line-height: 1;
       }
       .home-link:hover {
-        color: var(--hot);
+        color: var(--sage);
       }
       .home-link:focus-visible {
-        outline: 2px solid var(--hot);
+        outline: 2px solid var(--sage);
         outline-offset: 3px;
         border-radius: 6px;
       }
@@ -96,7 +89,7 @@
       }
       header .brand {
         font-weight: 900;
-        color: var(--hot);
+        color: var(--sage);
         font-size: 20px;
         letter-spacing: 0.02em;
       }
@@ -116,7 +109,7 @@
         border-radius: 16px;
         padding: 16px;
         margin: 14px 0;
-        box-shadow: 0 6px 20px rgba(44, 26, 41, 0.05);
+        box-shadow: 0 6px 20px rgba(35, 32, 28, 0.05);
       }
       .bar {
         height: 8px;
@@ -128,7 +121,7 @@
       .bar > i {
         display: block;
         height: 100%;
-        background: linear-gradient(90deg, var(--hot), var(--hot-deep));
+        background: linear-gradient(90deg, var(--sage), var(--sage-deep));
         width: 0;
         transition: width 0.4s ease;
       }
@@ -138,7 +131,7 @@
       .stage2-label {
         font-size: 13px;
         font-weight: 800;
-        color: var(--hot-deep);
+        color: var(--sage-deep);
         margin-top: 10px;
       }
       .bar-stage2 {
@@ -146,7 +139,7 @@
         background: #fde3ee;
       }
       .bar-stage2 > i {
-        background: linear-gradient(90deg, #f5559f, var(--hot-deep));
+        background: linear-gradient(90deg, #f5559f, var(--sage-deep));
       }
       label.fld {
         display: block;
@@ -165,8 +158,8 @@
       }
       input[type='text']:focus,
       textarea:focus {
-        outline: 2px solid var(--hot);
-        border-color: var(--hot);
+        outline: 2px solid var(--sage);
+        border-color: var(--sage);
       }
       .row {
         display: flex;
@@ -182,7 +175,7 @@
         border: none;
         border-radius: 12px;
         padding: 12px 18px;
-        background: var(--hot);
+        background: var(--sage);
         color: #fff;
         transition:
           transform 0.1s ease,
@@ -196,12 +189,12 @@
       }
       button.ghost {
         background: #fff;
-        color: var(--hot);
-        border: 1.5px solid var(--hot);
+        color: var(--sage);
+        border: 1.5px solid var(--sage);
       }
       button.soft {
-        background: var(--hot-soft, #fde3ee);
-        color: var(--hot-deep);
+        background: var(--sage-soft, #fde3ee);
+        color: var(--sage-deep);
       }
       button:disabled {
         opacity: 0.5;
@@ -238,9 +231,9 @@
         color: var(--ink);
       }
       .chip.active {
-        background: var(--hot);
+        background: var(--sage);
         color: #fff;
-        border-color: var(--hot);
+        border-color: var(--sage);
       }
       .qlist {
         margin-top: 10px;
@@ -278,7 +271,7 @@
       }
       .word .del {
         background: none;
-        color: #c2415f;
+        color: #a85a4f;
         border: none;
         padding: 0 2px;
         font-size: 16px;
@@ -312,10 +305,10 @@
         text-align: center;
         margin: 26px 0 72px;
         padding: 15px 18px;
-        border: 1.5px solid var(--hot);
+        border: 1.5px solid var(--sage);
         border-radius: 14px;
         background: #fff5fa;
-        color: var(--hot-deep);
+        color: var(--sage-deep);
         font-weight: 800;
         font-size: 16px;
         text-decoration: none;
@@ -330,7 +323,7 @@
         transform: scale(0.99);
       }
       .order-cta:focus-visible {
-        outline: 2px solid var(--hot);
+        outline: 2px solid var(--sage);
         outline-offset: 3px;
       }
       .howto {
@@ -341,7 +334,7 @@
       .howto summary {
         cursor: pointer;
         font-weight: 800;
-        color: var(--hot-deep);
+        color: var(--sage-deep);
         list-style: none;
       }
       .howto summary::-webkit-details-marker {
@@ -365,7 +358,7 @@
       .cat b {
         display: block;
         font-size: 15px;
-        color: var(--hot-deep);
+        color: var(--sage-deep);
       }
       .cat span {
         font-size: 13.5px;
@@ -416,9 +409,9 @@
         font-size: 14px;
       }
       .tab.active {
-        background: var(--hot);
+        background: var(--sage);
         color: #fff;
-        border-color: var(--hot);
+        border-color: var(--sage);
       }
       .panel {
         margin-top: 4px;
@@ -431,7 +424,7 @@
       }
       .count-pill {
         background: #fde3ee;
-        color: var(--hot-deep);
+        color: var(--sage-deep);
         font-weight: 800;
         border-radius: 99px;
         padding: 4px 12px;
@@ -443,13 +436,13 @@
         left: 50%;
         bottom: 22px;
         transform: translateX(-50%) translateY(10px);
-        background: #2c1a29;
+        background: #23201c;
         color: #fff;
         font-weight: 700;
         font-size: 14.5px;
         padding: 10px 18px;
         border-radius: 999px;
-        box-shadow: 0 10px 28px rgba(44, 26, 41, 0.28);
+        box-shadow: 0 10px 28px rgba(35, 32, 28, 0.28);
         opacity: 0;
         transition:
           opacity 0.2s ease,
@@ -525,7 +518,7 @@
         margin-bottom: 6px;
       }
       .paid-card .paid-body {
-        color: #2c1a29;
+        color: #23201c;
         margin-bottom: 14px;
       }
       .paid-card .paid-cta {
@@ -550,7 +543,7 @@
         font-weight: 900;
         font-size: 18px;
         color: #fff;
-        background: linear-gradient(135deg, var(--hot), var(--hot-deep));
+        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
         padding: 16px 18px;
         text-align: center;
       }
@@ -598,14 +591,14 @@
           background 0.15s ease;
       }
       .pay-opt:hover {
-        border-color: var(--hot);
+        border-color: var(--sage);
       }
       .pay-opt input {
         margin-top: 3px;
-        accent-color: var(--hot);
+        accent-color: var(--sage);
       }
       .pay-opt.active {
-        border-color: var(--hot);
+        border-color: var(--sage);
         background: #fff5fa;
       }
       .pay-opt .opt-body {
@@ -619,7 +612,7 @@
         flex-wrap: wrap;
       }
       .pay-opt .opt-price {
-        color: var(--hot-deep);
+        color: var(--sage-deep);
         font-weight: 900;
         white-space: nowrap;
       }
@@ -664,7 +657,7 @@
         color: var(--ok);
       }
       .coupon-msg.err {
-        color: #c2415f;
+        color: #a85a4f;
       }
       .coupon-remove {
         background: none;
@@ -680,7 +673,7 @@
         color: var(--ink);
       }
       .pay-err {
-        color: #c2415f;
+        color: #a85a4f;
         font-weight: 700;
         font-size: 14px;
         text-align: center;
@@ -690,27 +683,43 @@
       .pay-soon-note {
         background: #f6f2ee;
         border: 1px solid #e6ddd2;
-        color: #7c6a74;
+        color: #6b645b;
         border-radius: 12px;
         padding: 12px 14px;
         font-weight: 700;
         text-align: center;
         margin-top: 12px;
       }
+      /* small trust line above the pay button (secure + delivery expectation) */
+      .pay-trust {
+        text-align: center;
+        color: var(--muted);
+        font-size: 13.5px;
+        font-weight: 600;
+        margin: 4px 0 0;
+      }
       /* credit-card pay (PeleCard iframe) — the only payment path */
       .card-pay-btn {
         width: 100%;
         /* breathing room so the button doesn't crowd the copy above it */
-        margin-top: 16px;
+        margin-top: 14px;
         padding: 15px;
         border: none;
-        border-radius: 12px;
-        background: #1d1d1f;
+        border-radius: var(--radius-pill);
+        background: var(--sage);
         color: #fff;
         font: inherit;
         font-weight: 800;
         font-size: 17px;
         cursor: pointer;
+        box-shadow: var(--shadow-sm);
+        transition:
+          background 0.2s var(--ease),
+          transform 0.2s var(--ease);
+      }
+      .card-pay-btn:hover:not(:disabled) {
+        background: var(--sage-deep);
+        transform: translateY(-1px);
       }
       .card-pay-btn:disabled {
         opacity: 0.6;
@@ -914,7 +923,7 @@
 
       <!-- OWNER: pay panel (collapsible, one button at the bottom) -->
       <details class="card owner-only hidden pay-collapse" id="payPanel">
-        <summary class="pay-summary">💜 שלמו וקבלו את המשחק</summary>
+        <summary class="pay-summary">שלמו וקבלו את המשחק</summary>
         <p class="muted" style="margin-bottom: 10px">
           אפשר לשלם מתי שרוצים ולהמשיך להוסיף מילים תוך כדי - ועד שתלחצו על
           <b>"מספיק! סיימנו"</b> האיסוף נשאר פתוח. בונוס: <b>תשלום פותח עוד עשרות שאלות</b> שיעזרו
@@ -997,11 +1006,13 @@
         </div>
         <div class="pay-err" id="payErr"></div>
 
+        <p class="pay-trust">🔒 תשלום מאובטח בכרטיס אשראי · הקובץ נשלח עד 24 שעות מקבלת המילים</p>
+
         <button type="button" id="cardPayBtn" class="card-pay-btn hidden">
           💳 תשלום בכרטיס אשראי
         </button>
         <!-- Shown instead of the button when card payment isn't configured yet -->
-        <p class="pay-soon-note hidden" id="cardSoonNote">התשלום בכרטיס אשראי ייפתח בקרוב 💜</p>
+        <p class="pay-soon-note hidden" id="cardSoonNote">התשלום בכרטיס אשראי ייפתח בקרוב</p>
       </details>
 
       <!-- Tailored order CTA at the bottom of the content. Wording is set in JS

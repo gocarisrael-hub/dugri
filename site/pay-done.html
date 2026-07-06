@@ -4,29 +4,33 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>דוגרי · תשלום</title>
+    <link rel="stylesheet" href="/css/tokens.css" />
     <style>
       body {
         margin: 0;
-        font-family:
-          'Heebo',
-          system-ui,
-          -apple-system,
-          sans-serif;
+        font-family: var(--font);
         display: grid;
         place-items: center;
         min-height: 100vh;
-        background: #faf7f2;
-        color: #1d1d1f;
+        background: var(--bg);
+        color: var(--ink);
         text-align: center;
         padding: 24px;
       }
       .msg {
         font-size: 18px;
-        font-weight: 600;
+        font-weight: 700;
+        font-family: var(--display);
+      }
+      .msg.ok {
+        color: var(--sage-deep);
+      }
+      .msg.err {
+        color: #a85a4f; /* deep blush — readable failure state */
       }
       .sub {
         margin-top: 8px;
-        color: #6b6b70;
+        color: var(--muted);
         font-size: 14px;
       }
     </style>
@@ -43,7 +47,9 @@
       (function () {
         var params = new URLSearchParams(location.search);
         var ok = !params.has('error');
-        document.getElementById('msg').textContent = ok ? 'התשלום התקבל ✓' : 'התשלום לא הושלם';
+        var msgEl = document.getElementById('msg');
+        msgEl.className = 'msg ' + (ok ? 'ok' : 'err');
+        msgEl.textContent = ok ? 'התשלום התקבל ✓' : 'התשלום לא הושלם';
         document.getElementById('sub').textContent = ok ? 'מעבירים אתכם בחזרה…' : 'אפשר לנסות שוב';
         try {
           if (window.parent && window.parent !== window) {

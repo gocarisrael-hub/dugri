@@ -37,36 +37,20 @@
     <!-- Heebo = bold Hebrew display face for headings; matches the energetic vivid-pink logo -->
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Heebo:wght@600;700;800;900&display=swap"
       media="print"
       onload="this.media = 'all'"
     />
     <noscript>
       <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@500;700;800;900&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Heebo:wght@600;700;800;900&display=swap"
       />
     </noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
     <style>
       :root {
-        --bg: #fff5f8; /* very light pink */
-        --surface: #ffffff;
-        --blush: #fbe8ee;
-        --blush-deep: #f1d2dc;
-        --ink: #2c1a29;
-        --muted: #7c6a74;
-        --wine: #9b2d54;
-        --wine-deep: #7a1f40;
-        --gold: #bc9a4c;
-        --hot: #e5197d; /* vivid pink, matches the logo */
-        --hot-deep: #c7106a;
-        --line: #f0dee4;
-        --font: 'Calibri', 'Carlito', 'Segoe UI', 'Arial', 'Helvetica Neue', sans-serif;
-        --display: 'Heebo', 'Calibri', 'Carlito', 'Segoe UI', 'Arial', sans-serif;
         /* layered shadow tokens */
-        --shadow-sm: 0 2px 8px rgba(44, 26, 41, 0.06), 0 1px 2px rgba(44, 26, 41, 0.04);
-        --shadow-md: 0 10px 28px rgba(44, 26, 41, 0.1), 0 3px 8px rgba(44, 26, 41, 0.06);
-        --shadow-lg: 0 26px 60px rgba(44, 26, 41, 0.16), 0 8px 18px rgba(44, 26, 41, 0.08);
       }
       * {
         box-sizing: border-box;
@@ -114,7 +98,7 @@
         font-weight: 800;
         font-size: 17.5px;
         letter-spacing: -0.01em;
-        background: linear-gradient(135deg, var(--hot), var(--wine));
+        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
         color: #fff;
         border: none;
         cursor: pointer;
@@ -152,19 +136,19 @@
         transform: translateY(0) scale(0.99);
       }
       .btn:focus-visible {
-        outline: 3px solid var(--hot);
+        outline: 3px solid var(--sage);
         outline-offset: 3px;
       }
       a:focus-visible,
       summary:focus-visible {
-        outline: 3px solid var(--hot);
+        outline: 3px solid var(--sage);
         outline-offset: 2px;
         border-radius: 6px;
       }
       /* quiet secondary - a text link, not a competing pill */
       .btn.ghost {
         background: none;
-        color: var(--wine);
+        color: var(--sage-deep);
         box-shadow: none;
         padding: 16px 12px;
         font-weight: 800;
@@ -176,7 +160,7 @@
         background: none;
         transform: none;
         filter: none;
-        color: var(--wine-deep);
+        color: var(--sage-deeper);
         text-decoration: underline;
       }
       .btn.wa {
@@ -307,8 +291,8 @@
       .tagline .tagline-1,
       .tagline .tagline-2 {
         display: block;
-        color: var(--wine); /* fallback if background-clip: text is unsupported */
-        background: linear-gradient(100deg, var(--wine), var(--hot) 60%, var(--wine-deep));
+        color: var(--sage-deep); /* fallback if background-clip: text is unsupported */
+        background: linear-gradient(100deg, var(--sage-deep), var(--sage) 60%, var(--sage-deeper));
         -webkit-background-clip: text;
         background-clip: text;
         -webkit-text-fill-color: transparent;
@@ -328,16 +312,16 @@
         margin-top: 16px;
         padding: 7px 16px 7px 7px;
         background: var(--surface);
-        border: 1px solid var(--blush-deep);
+        border: 1px solid var(--line);
         border-radius: 999px;
         box-shadow: var(--shadow-sm);
-        color: var(--wine-deep);
+        color: var(--sage-deeper);
         font-size: 14px;
         font-weight: 700;
       }
       .launch-offer .launch-badge {
         display: inline-block;
-        background: linear-gradient(135deg, var(--hot), var(--wine));
+        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
         color: #fff;
         font-family: var(--display);
         font-weight: 800;
@@ -383,7 +367,7 @@
       .occasions .tag {
         background: var(--surface);
         border: 1px solid var(--line);
-        color: var(--wine-deep);
+        color: var(--sage-deeper);
         font-size: 13.5px;
         font-weight: 700;
         padding: 6px 13px;
@@ -400,7 +384,7 @@
         display: block;
         border-radius: 20px;
         box-shadow: var(--shadow-lg);
-        background: var(--blush);
+        background: var(--section);
       }
       .hero-video .vcap {
         margin-top: 12px;
@@ -409,7 +393,7 @@
         text-align: center;
       }
       .hero-video .vcap strong {
-        color: var(--wine);
+        color: var(--sage-deep);
       }
 
       @media (min-width: 720px) {
@@ -472,7 +456,7 @@
         }
       }
       .stars {
-        color: var(--gold);
+        color: var(--blush);
         font-size: 24px;
         letter-spacing: 2px;
         margin-bottom: 22px;
@@ -548,7 +532,7 @@
         font-weight: 900;
         font-size: 22px;
         color: #fff;
-        background: linear-gradient(140deg, var(--hot), var(--wine));
+        background: linear-gradient(140deg, var(--sage), var(--sage-deep));
         width: 48px;
         height: 48px;
         border-radius: 14px;
@@ -569,8 +553,8 @@
       .step .hint {
         margin-top: 8px;
         font-size: 13px;
-        color: var(--wine-deep);
-        background: var(--blush);
+        color: var(--sage-deeper);
+        background: var(--section);
         border-radius: 8px;
         padding: 6px 10px;
         display: inline-block;
@@ -611,7 +595,7 @@
         gap: 10px;
         text-align: center;
         background: var(--surface);
-        border: 1.5px solid var(--blush-deep);
+        border: 1.5px solid var(--line);
         border-radius: 20px;
         padding: 26px 16px;
         box-shadow: var(--shadow-sm);
@@ -623,7 +607,7 @@
       .aud-card:hover {
         transform: translateY(-5px);
         box-shadow: var(--shadow-md);
-        border-color: var(--hot);
+        border-color: var(--sage);
       }
       .aud-emoji {
         font-size: 40px;
@@ -634,7 +618,7 @@
         font-weight: 800;
         font-size: 19px;
         letter-spacing: -0.01em;
-        color: var(--wine-deep);
+        color: var(--sage-deeper);
       }
       @media (min-width: 720px) {
         .aud-label {
@@ -708,7 +692,7 @@
         background: #25d366;
       }
       .foot-icon.fi-call {
-        background: linear-gradient(140deg, var(--hot), var(--wine));
+        background: linear-gradient(140deg, var(--sage), var(--sage-deep));
       }
       .foot-icon.fi-ig {
         background: radial-gradient(
@@ -761,10 +745,10 @@
       .item:hover {
         transform: translateY(-3px);
         box-shadow: var(--shadow-md);
-        border-color: var(--blush-deep);
+        border-color: var(--line);
       }
       .item .tick {
-        color: var(--wine);
+        color: var(--sage-deep);
         font-weight: 800;
         font-size: 18px;
         flex: 0 0 auto;
@@ -808,7 +792,7 @@
         border: 2px solid transparent;
         background:
           linear-gradient(var(--surface), var(--surface)) padding-box,
-          linear-gradient(140deg, var(--hot), var(--wine) 70%, var(--gold)) border-box;
+          linear-gradient(140deg, var(--sage), var(--sage-deep) 70%, var(--blush)) border-box;
         box-shadow:
           0 24px 54px rgba(155, 45, 84, 0.2),
           0 0 0 6px rgba(229, 25, 125, 0.05);
@@ -825,7 +809,7 @@
         position: absolute;
         top: -14px;
         inset-inline-start: 24px;
-        background: linear-gradient(135deg, var(--hot), var(--wine));
+        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
         color: #fff;
         font-family: var(--display);
         font-size: 12px;
@@ -840,7 +824,7 @@
         font-weight: 700;
       }
       .plan-promise {
-        color: var(--wine-deep);
+        color: var(--sage-deeper);
         font-size: 14.5px;
         font-weight: 700;
         margin-top: 4px;
@@ -862,7 +846,7 @@
         font-family: var(--display);
         font-size: 48px;
         font-weight: 900;
-        color: var(--wine);
+        color: var(--sage-deep);
         margin: 2px 0 2px;
         letter-spacing: -0.02em;
       }
@@ -883,7 +867,7 @@
         margin-top: 20px;
         font-size: 16px;
         font-weight: 700;
-        color: var(--wine);
+        color: var(--sage-deep);
       }
       .urgency {
         text-align: center;
@@ -906,7 +890,7 @@
         content: '✦';
         position: absolute;
         inset-inline-start: 0;
-        color: var(--gold);
+        color: var(--blush);
       }
       .plan .btn {
         margin-top: auto;
@@ -915,7 +899,7 @@
       .addons {
         max-width: 780px;
         margin: 20px auto 0;
-        background: var(--blush);
+        background: var(--section);
         border-radius: 14px;
         padding: 18px 22px;
       }
@@ -925,7 +909,7 @@
       }
       .addons li {
         font-size: 14.5px;
-        color: var(--wine-deep);
+        color: var(--sage-deeper);
         margin-bottom: 4px;
         list-style: none;
         padding-inline-start: 18px;
@@ -936,7 +920,7 @@
         position: absolute;
         inset-inline-start: 0;
         font-weight: 800;
-        color: var(--wine);
+        color: var(--sage-deep);
       }
       .delivery-note {
         text-align: center;
@@ -963,8 +947,8 @@
       .gphoto {
         aspect-ratio: 4/5;
         border-radius: 16px;
-        background: var(--blush);
-        border: 1px solid var(--blush-deep);
+        background: var(--section);
+        border: 1px solid var(--line);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1006,8 +990,8 @@
       .vclip {
         border-radius: 16px;
         overflow: hidden;
-        background: var(--blush);
-        border: 1px solid var(--blush-deep);
+        background: var(--section);
+        border: 1px solid var(--line);
         box-shadow: var(--shadow-sm);
         transition:
           transform 0.3s ease,
@@ -1057,7 +1041,7 @@
           border-color 0.2s ease;
       }
       details[open] {
-        border-color: var(--blush-deep);
+        border-color: var(--line);
         box-shadow: var(--shadow-md);
       }
       summary {
@@ -1073,7 +1057,7 @@
       summary::after {
         content: '+';
         float: left;
-        color: var(--wine);
+        color: var(--sage-deep);
         font-weight: 800;
       }
       details[open] summary::after {
@@ -1088,7 +1072,7 @@
       /* final cta */
       .final {
         text-align: center;
-        background: linear-gradient(180deg, var(--bg), var(--blush));
+        background: linear-gradient(180deg, var(--bg), var(--section));
       }
       .final h2 {
         font-size: 32px;
@@ -1129,7 +1113,7 @@
         gap: 10px;
         z-index: 50;
         backdrop-filter: blur(6px);
-        box-shadow: 0 -8px 24px rgba(44, 26, 41, 0.08);
+        box-shadow: 0 -8px 24px rgba(35, 32, 28, 0.08);
       }
       .sticky .btn {
         flex: 1 1 auto;
@@ -1186,7 +1170,7 @@
         text-align: center;
         background:
           radial-gradient(60% 90% at 50% 100%, rgba(229, 25, 125, 0.1), transparent 65%),
-          linear-gradient(180deg, var(--bg), var(--blush));
+          linear-gradient(180deg, var(--bg), var(--section));
       }
       .final h2 {
         font-size: 34px;
@@ -1241,7 +1225,7 @@
         background: rgba(255, 255, 255, 0.94);
         backdrop-filter: blur(10px);
         border-bottom: 1px solid var(--line);
-        box-shadow: 0 6px 20px rgba(44, 26, 41, 0.07);
+        box-shadow: 0 6px 20px rgba(35, 32, 28, 0.07);
       }
       .nav-inner {
         max-width: 1000px;
@@ -1270,7 +1254,7 @@
         font-family: var(--display);
         font-weight: 800;
         font-size: 15.5px;
-        color: var(--wine);
+        color: var(--sage-deep);
         padding: 8px 12px;
         border-radius: 10px;
         text-decoration: none;
@@ -1279,11 +1263,11 @@
           color 0.18s ease;
       }
       .nav-links a:hover {
-        background: var(--blush);
-        color: var(--wine-deep);
+        background: var(--section);
+        color: var(--sage-deeper);
       }
       .nav-links a.nav-cta {
-        background: linear-gradient(135deg, var(--hot), var(--wine));
+        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
         color: #fff;
         padding: 9px 20px;
         box-shadow: 0 6px 16px rgba(229, 25, 125, 0.26);
@@ -1296,7 +1280,7 @@
         display: none;
         margin-inline-start: auto;
         background: none;
-        border: 1px solid var(--blush-deep);
+        border: 1px solid var(--line);
         border-radius: 10px;
         width: 42px;
         height: 40px;
@@ -1310,7 +1294,7 @@
         display: block;
         width: 20px;
         height: 2px;
-        background: var(--wine);
+        background: var(--sage-deep);
         position: relative;
         transition:
           transform 0.2s ease,
@@ -1339,7 +1323,7 @@
           gap: 0;
           background: rgba(255, 255, 255, 0.98);
           border-bottom: 1px solid var(--line);
-          box-shadow: 0 14px 28px rgba(44, 26, 41, 0.12);
+          box-shadow: 0 14px 28px rgba(35, 32, 28, 0.12);
           padding: 8px 14px 14px;
           margin: 0;
           display: none;
@@ -1758,7 +1742,7 @@
         if (!reduce) {
           var c = document.getElementById('confetti');
           if (c) {
-            var colors = ['#E5197D', '#C7106A', '#9B2D54', '#BC9A4C', '#F1D2DC'];
+            var colors = ['#8ca287', '#6f8a6a', '#6f8a6a', '#d8a7a0', '#e4ddd0'];
             for (var i = 0; i < 26; i++) {
               var p = document.createElement('i');
               p.style.left = 5 + Math.random() * 90 + '%';

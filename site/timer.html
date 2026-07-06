@@ -30,23 +30,9 @@
         href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Heebo:wght@400;500;700;800;900&display=swap"
       />
     </noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
     <style>
       :root {
-        --bg: #fff5f8;
-        --surface: #fff;
-        --blush: #fbe8ee;
-        --blush-deep: #f1d2dc;
-        --ink: #2c1a29;
-        --muted: #7c6a74;
-        --wine: #9b2d54;
-        --wine-deep: #7a1f40;
-        --gold: #bc9a4c;
-        --gold-light: #e3c87e;
-        --hot: #e5197d;
-        --hot-deep: #c7106a;
-        --line: #f0dee4;
-        --font: 'Calibri', 'Carlito', 'Segoe UI', 'Arial', sans-serif;
-        --display: 'Heebo', 'Calibri', 'Carlito', 'Arial', sans-serif;
       }
 
       * {
@@ -91,7 +77,7 @@
         font-family: var(--display);
         font-weight: 900;
         font-size: 24px;
-        color: var(--wine);
+        color: var(--sage-deep);
         letter-spacing: -0.01em;
         opacity: 0;
         transform: translateY(8px);
@@ -99,7 +85,7 @@
       }
 
       h1 .dot {
-        color: var(--hot);
+        color: var(--sage);
       }
 
       @keyframes rise {
@@ -201,7 +187,7 @@
         line-height: 1;
         font-variant-numeric: tabular-nums;
         letter-spacing: -0.02em;
-        background: linear-gradient(140deg, var(--hot) 0%, var(--wine) 100%);
+        background: linear-gradient(140deg, var(--sage) 0%, var(--sage-deep) 100%);
         -webkit-background-clip: text;
         background-clip: text;
         -webkit-text-fill-color: transparent;
@@ -228,7 +214,7 @@
       .count.done {
         -webkit-text-fill-color: initial;
         background: none;
-        color: var(--wine);
+        color: var(--sage-deep);
         font-size: 40px;
         animation: pop 0.6s cubic-bezier(0.2, 1.5, 0.3, 1);
       }
@@ -258,7 +244,7 @@
       }
 
       .status.done {
-        color: var(--hot);
+        color: var(--sage);
       }
 
       /* ---- Controls ---- */
@@ -285,7 +271,7 @@
         border-radius: 999px;
         text-decoration: none;
         color: #fff;
-        background: linear-gradient(135deg, var(--hot), var(--wine));
+        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
         box-shadow:
           0 10px 24px rgba(229, 25, 125, 0.3),
           inset 0 1px 0 rgba(255, 255, 255, 0.25);
@@ -332,9 +318,9 @@
 
       .btn.sec {
         background: none;
-        color: var(--wine);
+        color: var(--sage-deep);
         box-shadow: none;
-        border: 2px solid var(--blush-deep);
+        border: 2px solid var(--line);
       }
 
       .btn.sec::after {
@@ -342,7 +328,7 @@
       }
 
       .btn.sec:hover {
-        background: var(--blush);
+        background: var(--section);
         filter: none;
         box-shadow: 0 8px 18px rgba(155, 45, 84, 0.12);
       }
@@ -356,7 +342,7 @@
       }
 
       .back a {
-        color: var(--wine);
+        color: var(--sage-deep);
         font-weight: 700;
         text-decoration: none;
         border-bottom: 1px solid transparent;
@@ -364,7 +350,7 @@
       }
 
       .back a:hover {
-        border-color: var(--wine);
+        border-color: var(--sage-deep);
       }
 
       /* ---- Reduced motion ---- */
@@ -437,11 +423,11 @@
             <!-- frame gradient -->
             <linearGradient id="frame" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" stop-color="#b23a63" />
-              <stop offset="1" stop-color="#7a1f40" />
+              <stop offset="1" stop-color="#5c7357" />
             </linearGradient>
             <radialGradient id="cap" cx="0.5" cy="0.3" r="0.8">
               <stop offset="0" stop-color="#c0466f" />
-              <stop offset="1" stop-color="#7a1f40" />
+              <stop offset="1" stop-color="#5c7357" />
             </radialGradient>
             <!-- soft glow for the falling stream -->
             <filter id="soft" x="-60%" y="-30%" width="220%" height="160%">
