@@ -271,3 +271,31 @@ test.describe('templates-first funnel (index.html)', () => {
     await expect(page.locator('#stickyOrder')).toHaveAttribute('href', 'products.html');
   });
 });
+
+test.describe('sticky add-to-cart', () => {
+  // Conversion-critical: the bar must stay out of the way at the top, slide in
+  // once the hero is scrolled past, anchor to the on-page design chooser, and
+  // never wrap onto two lines on a narrow phone.
+  test('hidden at top, appears after scroll, links to #gallery, single line at 320px', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.goto('/products.html');
+
+    const atc = page.getByTestId('sticky-atc');
+    await expect(atc).toHaveCount(1);
+    // At the top it is present but not yet revealed.
+    await expect(atc).not.toHaveClass(/is-visible/);
+
+    // Scroll past the 480px reveal threshold.
+    await page.evaluate(() => window.scrollTo(0, 700));
+    await expect(atc).toHaveClass(/is-visible/);
+
+    // Its CTA anchors to the on-page design chooser.
+    await expect(atc.locator('a.btn')).toHaveAttribute('href', '#gallery');
+    // Price stays intact and the bar never overflows horizontally (one line).
+    await expect(atc.locator('.now')).toHaveText('79 ₪');
+    const overflowX = await atc.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(overflowX).toBeLessThanOrEqual(1);
+  });
+});
