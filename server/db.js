@@ -258,6 +258,11 @@ const db = {
   reopenCollection(id) {
     const c = this.getCollection(id);
     if (!c) return null;
+    // A soft-cancelled collection is reopened by restoring it (cancelCollection
+    // undo), never here. Mutating its lifecycle fields would silently drop the
+    // original closed_at/expiry (a later restore would then resurface it as
+    // freshly open) while effectiveStatus still reported 'cancelled'. No-op.
+    if (c.cancelled) return effectiveStatus(c);
     c.status = 'open';
     c.closed_at = null;
     c.expires_at = new Date(Date.now() + YEAR_MS).toISOString();

@@ -138,12 +138,24 @@ describe('reopenCollection', () => {
     expect(db.addWords(c.id, ['אחרי'], null)).toMatchObject({ added: 1 });
   });
 
-  it('does NOT un-cancel a soft-cancelled collection', () => {
+  it('is a no-op on a soft-cancelled collection: stays cancelled, keeps closed_at/expires_at', () => {
     const c = db.createCollection('לקוח', { email: 'reopen-cancelled@example.com' });
+    // Close it (records closed_at), then cancel it while closed.
+    db.closeCollection(c.id, c.owner_token);
     db.cancelCollection(c.id);
-    // status/expiry are cleared, but a cancelled collection stays cancelled.
+    const before = db.getCollection(c.id);
+    const closedAt = before.closed_at;
+    const expiresAt = before.expires_at;
+    expect(closedAt).not.toBe(null);
+
+    // Reopen must NOT touch a cancelled collection — mutating it would drop the
+    // original closed_at/expiry that a later restore relies on.
     expect(db.reopenCollection(c.id)).toBe('cancelled');
-    expect(db.getCollection(c.id).cancelled).toBe(true);
+    const after = db.getCollection(c.id);
+    expect(after.cancelled).toBe(true);
+    expect(after.status).toBe('closed');
+    expect(after.closed_at).toBe(closedAt);
+    expect(after.expires_at).toBe(expiresAt);
   });
 
   it('returns null for an unknown id', () => {
