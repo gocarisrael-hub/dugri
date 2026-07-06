@@ -474,6 +474,14 @@ app.post('/api/admin/collections/:id/cancel', (req, res) => {
   res.json({ ok: true });
 });
 
+// Admin: reopen a closed/expired collection so it accepts words again.
+app.post('/api/admin/collections/:id/reopen', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const status = db.reopenCollection(req.params.id);
+  if (!status) return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true, status });
+});
+
 // Admin: hard-delete a collection and its words.
 app.delete('/api/admin/collections/:id', (req, res) => {
   if (!requireAdmin(req, res)) return;

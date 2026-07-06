@@ -108,3 +108,45 @@ describe('markReminded', () => {
     expect(db.markReminded('no-such-id')).toBe(false);
   });
 });
+
+describe('reopenCollection', () => {
+  it('reopens an owner-closed collection so it accepts words again', () => {
+    const c = db.createCollection('לקוח', { email: 'reopen-closed@example.com' });
+    db.closeCollection(c.id, c.owner_token);
+    expect(db.effectiveStatus(db.getCollection(c.id))).toBe('closed');
+    // While closed, addWords refuses.
+    expect(db.addWords(c.id, ['לפני'], null)).toMatchObject({ closed: true });
+
+    expect(db.reopenCollection(c.id)).toBe('open');
+    const live = db.getCollection(c.id);
+    expect(live.status).toBe('open');
+    expect(live.closed_at).toBe(null);
+    // Now words are accepted again.
+    expect(db.addWords(c.id, ['אחרי'], null)).toMatchObject({ added: 1 });
+  });
+
+  it('reopens an expired collection by pushing expires_at ~1 year out', () => {
+    const c = db.createCollection('לקוח', { email: 'reopen-expired@example.com' });
+    // Force the deadline into the past — the exact scenario we are recovering.
+    db.getCollection(c.id).expires_at = new Date(Date.now() - DAY_MS).toISOString();
+    expect(db.effectiveStatus(db.getCollection(c.id))).toBe('expired');
+    expect(db.addWords(c.id, ['לפני'], null)).toMatchObject({ closed: true });
+
+    expect(db.reopenCollection(c.id)).toBe('open');
+    const live = db.getCollection(c.id);
+    expect(Date.parse(live.expires_at)).toBeGreaterThan(Date.now() + 300 * DAY_MS);
+    expect(db.addWords(c.id, ['אחרי'], null)).toMatchObject({ added: 1 });
+  });
+
+  it('does NOT un-cancel a soft-cancelled collection', () => {
+    const c = db.createCollection('לקוח', { email: 'reopen-cancelled@example.com' });
+    db.cancelCollection(c.id);
+    // status/expiry are cleared, but a cancelled collection stays cancelled.
+    expect(db.reopenCollection(c.id)).toBe('cancelled');
+    expect(db.getCollection(c.id).cancelled).toBe(true);
+  });
+
+  it('returns null for an unknown id', () => {
+    expect(db.reopenCollection('no-such-id')).toBe(null);
+  });
+});
