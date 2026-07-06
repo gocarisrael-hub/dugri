@@ -7,32 +7,15 @@ import { test, expect } from '@playwright/test';
 // - the price CTA label + price + ₪ never wrap onto a second line.
 
 test.describe('landing page hero', () => {
-  test('shows the exact new tagline copy', async ({ page }) => {
+  test('shows the exact new hero headline', async ({ page }) => {
     await page.goto('/index.html');
-    const tagline = page.locator('.tagline');
-    await expect(tagline).toBeVisible();
-    const text = (await tagline.innerText()).replace(/\s+/g, ' ').trim();
-    expect(text).toContain('שלחו לנו את הסיפורים שרק אתם מכירים.');
-    expect(text).toContain('אנחנו נהפוך אותם למשחק שיפוצץ את הערב');
-    // The old tagline must be gone.
-    expect(text).not.toContain('בלי פילטרים');
+    const headline = page.locator('.hero h1');
+    await expect(headline).toBeVisible();
+    const text = (await headline.innerText()).replace(/\s+/g, ' ').trim();
+    expect(text).toContain('המשחק הכי אישי שתעניקו אי פעם');
     // Brand rule: never the trademarked word.
     const body = await page.locator('body').innerText();
     expect(body).not.toContain('אליאס');
-  });
-
-  test('both tagline lines paint their gradient (line 1 is not invisible)', async ({ page }) => {
-    await page.goto('/index.html');
-    // The gradient-clip must live on each line, and neither line may have a
-    // partial-opacity layer — otherwise line 1 paints transparent over the bg.
-    for (const sel of ['.tagline-1', '.tagline-2']) {
-      const s = await page.locator(sel).evaluate((el) => {
-        const cs = getComputedStyle(el);
-        return { bg: cs.backgroundImage, opacity: cs.opacity };
-      });
-      expect(s.bg).toContain('gradient');
-      expect(parseFloat(s.opacity)).toBe(1);
-    }
   });
 
   test('a real product visual (hero video) appears above the fold in the hero', async ({

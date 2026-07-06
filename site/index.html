@@ -14,14 +14,14 @@
     </script>
     <script src="js/consent.js" defer></script>
     <script type="module" src="js/analytics.js"></script>
-    <title>דוגרי - המשחק שמפוצץ את החדר</title>
+    <title>דוגרי - המשחק הכי אישי שתעניקו אי פעם</title>
     <meta
       name="description"
-      content="משחק מסיבה מותאם אישית לכל שמחה: רווקות, יום הולדת עגול, יום נישואין ועוד. שולחים מילים על בעל השמחה ומקבלים חפיסת קלפים ולוח מעוצבים, מוכנים להדפסה. אספקה תוך 24 שעות."
+      content="משחק מסיבה מותאם אישית לכל שמחה: יום הולדת, רווקות, חתונה, זוגות, חברים ופרישה. שולחים מילים על בעל השמחה ומקבלים חפיסת קלפים ולוח מעוצבים, מוכנים להדפסה. אספקה תוך 24 שעות."
     />
 
     <!-- Open Graph (for sharing in WhatsApp / Instagram) -->
-    <meta property="og:title" content="דוגרי - המשחק שמפוצץ את החדר" />
+    <meta property="og:title" content="דוגרי - המשחק הכי אישי שתעניקו אי פעם" />
     <meta
       property="og:description"
       content="משחק מסיבה מותאם אישית. שולחים מילים על בעל השמחה, מקבלים משחק מעוצב מוכן להדפסה."
@@ -33,8 +33,7 @@
     <link rel="preload" as="image" href="assets/logo.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- Carlito = free, metric-compatible look-alike of Calibri (fallback for devices without Calibri) -->
-    <!-- Heebo = bold Hebrew display face for headings; matches the energetic vivid-pink logo -->
+    <!-- Heebo = bold Hebrew display face for headings; Assistant = calm body face -->
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Heebo:wght@600;700;800;900&display=swap"
@@ -49,9 +48,6 @@
     </noscript>
     <link rel="stylesheet" href="/css/tokens.css" />
     <style>
-      :root {
-        /* layered shadow tokens */
-      }
       * {
         box-sizing: border-box;
         margin: 0;
@@ -67,10 +63,11 @@
         line-height: 1.6;
         font-size: 17px;
         -webkit-font-smoothing: antialiased;
-        padding-bottom: 78px;
+        padding-top: 60px; /* clear fixed nav */
+        padding-bottom: 78px; /* clear sticky order bar (mobile) */
       }
       .wrap {
-        max-width: 1000px;
+        max-width: 1080px;
         margin: 0 auto;
         padding: 0 22px;
       }
@@ -79,1158 +76,121 @@
       h3,
       h4 {
         font-family: var(--display);
-        line-height: 1.15;
+        line-height: 1.12;
         font-weight: 800;
-        letter-spacing: -0.015em;
+        letter-spacing: -0.02em;
+        color: var(--ink);
       }
       a {
         color: inherit;
       }
+      img,
+      video {
+        max-width: 100%;
+      }
 
+      /* ---------- buttons ---------- */
       .btn {
-        position: relative;
-        overflow: hidden;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 9px;
+        gap: 8px;
         font-family: var(--display);
         font-weight: 800;
-        font-size: 17.5px;
+        font-size: 17px;
         letter-spacing: -0.01em;
-        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
+        background: var(--sage);
         color: #fff;
         border: none;
         cursor: pointer;
-        padding: 16px 32px;
-        border-radius: 999px;
+        padding: 15px 30px;
+        border-radius: var(--radius-pill);
         text-decoration: none;
         white-space: nowrap;
-        box-shadow: 0 10px 24px rgba(229, 25, 125, 0.3);
+        box-shadow: var(--shadow-sm);
         transition:
-          transform 0.14s ease,
-          box-shadow 0.25s ease,
-          filter 0.2s ease;
-      }
-      /* sweeping shine on hover */
-      .btn::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        inset-inline-start: -130%;
-        width: 60%;
-        height: 100%;
-        background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
-        transform: skewX(-18deg);
-        transition: inset-inline-start 0.55s ease;
-      }
-      .btn:hover::after {
-        inset-inline-start: 130%;
+          background 0.2s var(--ease),
+          transform 0.14s var(--ease),
+          box-shadow 0.25s var(--ease);
       }
       .btn:hover {
+        background: var(--sage-deep);
         transform: translateY(-2px);
-        box-shadow: 0 18px 36px rgba(229, 25, 125, 0.4);
-        filter: brightness(1.05);
+        box-shadow: var(--shadow-md);
       }
       .btn:active {
         transform: translateY(0) scale(0.99);
       }
-      .btn:focus-visible {
-        outline: 3px solid var(--sage);
-        outline-offset: 3px;
-      }
-      a:focus-visible,
-      summary:focus-visible {
-        outline: 3px solid var(--sage);
-        outline-offset: 2px;
-        border-radius: 6px;
-      }
-      /* quiet secondary - a text link, not a competing pill */
       .btn.ghost {
-        background: none;
+        background: transparent;
         color: var(--sage-deep);
         box-shadow: none;
-        padding: 16px 12px;
-        font-weight: 800;
-      }
-      .btn.ghost::after {
-        display: none;
+        padding: 15px 18px;
+        border: 1px solid var(--line);
       }
       .btn.ghost:hover {
-        background: none;
-        transform: none;
-        filter: none;
+        background: var(--section);
         color: var(--sage-deeper);
-        text-decoration: underline;
       }
       .btn.wa {
         background: #25d366;
         color: #06310f;
-        box-shadow: 0 8px 18px rgba(37, 211, 102, 0.25);
+        box-shadow: var(--shadow-sm);
       }
       .btn.wa:hover {
         background: #1fb959;
-        box-shadow: 0 12px 24px rgba(37, 211, 102, 0.32);
-      }
-
-      /* HERO */
-      header {
-        position: relative;
-        overflow: hidden;
-        background:
-          radial-gradient(60% 50% at 18% 8%, rgba(229, 25, 125, 0.12), transparent 60%),
-          radial-gradient(55% 45% at 92% 4%, rgba(188, 154, 76, 0.14), transparent 60%),
-          radial-gradient(120% 90% at 88% -10%, rgba(155, 45, 84, 0.1), transparent 60%),
-          linear-gradient(180deg, #fff, var(--bg));
-        border-bottom: 1px solid var(--line);
-        padding: 46px 0 40px;
-        text-align: center;
-      }
-      header .wrap {
-        position: relative;
-        z-index: 2;
-      }
-
-      /* confetti / sparkle burst behind the logo */
-      .confetti {
-        position: absolute;
-        inset: 0;
-        top: 0;
-        height: 340px;
-        pointer-events: none;
-        z-index: 1;
-        overflow: hidden;
-      }
-      .confetti i {
-        position: absolute;
-        top: -12px;
-        width: 9px;
-        height: 14px;
-        border-radius: 2px;
-        opacity: 0;
-        animation: confettiFall 3.2s ease-in forwards;
-      }
-      .confetti i:nth-child(odd) {
-        border-radius: 50%;
-      }
-      @keyframes confettiFall {
-        0% {
-          opacity: 0;
-          transform: translateY(-20px) rotate(0deg);
-        }
-        12% {
-          opacity: 1;
-        }
-        100% {
-          opacity: 0;
-          transform: translateY(330px) rotate(540deg);
-        }
-      }
-      /* soft floating sparkles that loop gently */
-      .sparkle {
-        position: absolute;
-        border-radius: 50%;
-        filter: blur(0.3px);
-        background: radial-gradient(circle, #fff 0 30%, rgba(229, 25, 125, 0) 70%);
-        box-shadow: 0 0 10px rgba(229, 25, 125, 0.5);
-        opacity: 0;
-        animation: twinkle 4s ease-in-out infinite;
-      }
-      @keyframes twinkle {
-        0%,
-        100% {
-          opacity: 0;
-          transform: scale(0.6);
-        }
-        50% {
-          opacity: 0.9;
-          transform: scale(1);
-        }
-      }
-      header h1 {
-        font-size: 50px;
-        font-weight: 700;
-        color: var(--ink);
-        letter-spacing: -0.01em;
-      }
-      .brand {
-        margin: 0;
-      }
-      .brand-logo {
-        display: block;
-        margin: 0 auto;
-        width: 240px;
-        max-width: 72%;
-        height: auto;
-        position: relative;
-        animation: logoPop 0.7s cubic-bezier(0.18, 0.89, 0.32, 1.28) both;
-        filter: drop-shadow(0 8px 22px rgba(229, 25, 125, 0.22));
-      }
-      @keyframes logoPop {
-        0% {
-          opacity: 0;
-          transform: scale(0.82) translateY(10px);
-        }
-        100% {
-          opacity: 1;
-          transform: scale(1) translateY(0);
-        }
-      }
-      .tagline {
-        font-family: var(--display);
-        font-size: 24px;
-        margin-top: 10px;
-        font-weight: 900;
-        letter-spacing: -0.01em;
-        line-height: 1.25;
-      }
-      /* Gradient text must live on the element that holds the text, not an
-         ancestor: when the gradient was on .tagline and .tagline-1 had its own
-         opacity layer, line 1 painted transparent (invisible over the bg).
-         Apply the clip per line and drop the opacity. */
-      .tagline .tagline-1,
-      .tagline .tagline-2 {
-        display: block;
-        color: var(--sage-deep); /* fallback if background-clip: text is unsupported */
-        background: linear-gradient(100deg, var(--sage-deep), var(--sage) 60%, var(--sage-deeper));
-        -webkit-background-clip: text;
-        background-clip: text;
-        -webkit-text-fill-color: transparent;
-      }
-      .tagline .tagline-1 {
-        font-size: 0.78em;
-        font-weight: 800;
-      }
-
-      /* launch / FOMO offer banner under the tagline */
-      .launch-offer {
-        display: inline-flex;
-        align-items: center;
-        gap: 9px;
-        flex-wrap: wrap;
-        justify-content: center;
-        margin-top: 16px;
-        padding: 7px 16px 7px 7px;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        box-shadow: var(--shadow-sm);
-        color: var(--sage-deeper);
-        font-size: 14px;
-        font-weight: 700;
-      }
-      .launch-offer .launch-badge {
-        display: inline-block;
-        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
-        color: #fff;
-        font-family: var(--display);
-        font-weight: 800;
-        font-size: 13px;
-        letter-spacing: 0.01em;
-        padding: 5px 13px;
-        border-radius: 999px;
-        white-space: nowrap;
-      }
-      .launch-offer .launch-text {
-        color: var(--muted);
-      }
-      header p.lede {
-        max-width: 600px;
-        margin: 16px auto 0;
-        color: var(--muted);
-        font-size: 18px;
-      }
-      .hero-cta {
-        margin-top: 26px;
-        display: flex;
-        gap: 10px;
-        justify-content: center;
-        align-items: center;
-        flex-wrap: wrap;
-      }
-      .trust {
-        margin-top: 14px;
-        color: var(--muted);
-        font-size: 13.5px;
-        font-weight: 600;
-      }
-      .trust span {
-        white-space: nowrap;
-      }
-      .occasions {
-        display: flex;
-        gap: 8px;
-        justify-content: center;
-        flex-wrap: wrap;
-        margin-top: 22px;
-      }
-      .occasions .tag {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        color: var(--sage-deeper);
-        font-size: 13.5px;
-        font-weight: 700;
-        padding: 6px 13px;
-        border-radius: 999px;
-      }
-      /* hero video loop - real party footage (vertical phone clip) */
-      .hero-video {
-        margin: 26px auto 0;
-        max-width: 320px;
-        position: relative;
-      }
-      .hero-video video {
-        width: 100%;
-        display: block;
-        border-radius: 20px;
-        box-shadow: var(--shadow-lg);
-        background: var(--section);
-      }
-      .hero-video .vcap {
-        margin-top: 12px;
-        font-size: 14px;
-        color: var(--muted);
-        text-align: center;
-      }
-      .hero-video .vcap strong {
-        color: var(--sage-deep);
-      }
-
-      @media (min-width: 720px) {
-        header h1 {
-          font-size: 64px;
-        }
-        .brand-logo {
-          width: 310px;
-        }
-      }
-
-      /* SECTIONS */
-      section {
-        padding: 48px 0;
-        border-bottom: 1px solid var(--line);
-        position: relative;
-      }
-      .sec-title {
-        text-align: center;
-        margin-bottom: 30px;
-      }
-      .sec-title h2 {
-        font-size: 34px;
-        font-weight: 800;
-      }
-      .sec-title p {
-        color: var(--muted);
-        margin-top: 6px;
-        font-size: 16px;
-      }
-
-      /* reassurance line under CTAs */
-      .reassure {
-        margin-top: 12px;
-        color: var(--muted);
-        font-size: 14px;
-        font-weight: 600;
-      }
-
-      /* social proof */
-      .proof {
-        background: var(--surface);
-        text-align: center;
-        padding-top: 38px;
-        padding-bottom: 38px;
-      }
-      /* compact "כבר חוגגים איתנו" section */
-      .proof .sec-title {
-        margin-bottom: 22px;
-      }
-      .proof .sec-title h2 {
-        font-size: 28px;
-      }
-      .proof .vclips {
-        max-width: 620px;
-      }
-      @media (min-width: 720px) {
-        .proof .reviews {
-          max-width: 860px;
-        }
-      }
-      .stars {
-        color: var(--blush);
-        font-size: 24px;
-        letter-spacing: 2px;
-        margin-bottom: 22px;
-      }
-      .reviews {
-        display: grid;
-        gap: 12px;
-        /* On mobile show the WhatsApp reviews 2-up so the page is shorter on phones. */
-        grid-template-columns: 1fr 1fr;
-        max-width: 480px;
-        margin: 0 auto;
-      }
-      @media (min-width: 720px) {
-        .reviews {
-          grid-template-columns: repeat(3, 1fr);
-          max-width: 1040px;
-          align-items: start;
-        }
-      }
-      .review {
-        margin: 0;
-        transition:
-          transform 0.25s ease,
-          box-shadow 0.25s ease;
-      }
-      .review:hover {
-        transform: translateY(-4px);
-      }
-      .review img {
-        display: block;
-        width: 100%;
-        height: auto;
-        border-radius: 16px;
-        box-shadow: var(--shadow-sm);
-      }
-      .review:hover img {
-        box-shadow: var(--shadow-md);
-      }
-      .proof-note {
-        margin-top: 18px;
-        font-size: 13px;
-        color: var(--muted);
-      }
-
-      /* steps */
-      .steps {
-        display: grid;
-        gap: 16px;
-        grid-template-columns: 1fr;
-      }
-      @media (min-width: 720px) {
-        .steps {
-          grid-template-columns: repeat(3, 1fr);
-        }
-      }
-      .step {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 18px;
-        padding: 26px 24px;
-        text-align: center;
-        box-shadow: var(--shadow-sm);
-        transition:
-          transform 0.25s ease,
-          box-shadow 0.25s ease;
-      }
-      .step:hover {
-        transform: translateY(-5px);
-        box-shadow: var(--shadow-md);
-      }
-      .step .n {
-        font-family: var(--display);
-        font-weight: 900;
-        font-size: 22px;
-        color: #fff;
-        background: linear-gradient(140deg, var(--sage), var(--sage-deep));
-        width: 48px;
-        height: 48px;
-        border-radius: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 14px;
-        box-shadow: 0 8px 18px rgba(229, 25, 125, 0.28);
-      }
-      .step h3 {
-        font-size: 20px;
-        margin-bottom: 6px;
-      }
-      .step p {
-        color: var(--muted);
-        font-size: 15px;
-      }
-      .step .hint {
-        margin-top: 8px;
-        font-size: 13px;
-        color: var(--sage-deeper);
-        background: var(--section);
-        border-radius: 8px;
-        padding: 6px 10px;
-        display: inline-block;
-      }
-
-      /* audience - "who is this game for" */
-      .audience {
-        background:
-          radial-gradient(60% 80% at 12% 0%, rgba(229, 25, 125, 0.08), transparent 65%),
-          radial-gradient(55% 70% at 90% 100%, rgba(188, 154, 76, 0.1), transparent 65%),
-          linear-gradient(180deg, var(--surface), var(--bg));
-      }
-      .audience .sec-title h2 {
-        font-size: 40px;
-      }
-      .audience-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 14px;
-        max-width: 880px;
-        margin: 0 auto;
-      }
-      @media (min-width: 560px) {
-        .audience-grid {
-          grid-template-columns: repeat(3, 1fr);
-        }
-      }
-      @media (min-width: 820px) {
-        .audience-grid {
-          grid-template-columns: repeat(4, 1fr);
-        }
-      }
-      .aud-card {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        text-align: center;
-        background: var(--surface);
-        border: 1.5px solid var(--line);
-        border-radius: 20px;
-        padding: 26px 16px;
-        box-shadow: var(--shadow-sm);
-        transition:
-          transform 0.22s ease,
-          box-shadow 0.22s ease,
-          border-color 0.22s ease;
-      }
-      .aud-card:hover {
-        transform: translateY(-5px);
-        box-shadow: var(--shadow-md);
-        border-color: var(--sage);
-      }
-      .aud-emoji {
-        font-size: 40px;
-        line-height: 1;
-      }
-      .aud-label {
-        font-family: var(--display);
-        font-weight: 800;
-        font-size: 19px;
-        letter-spacing: -0.01em;
-        color: var(--sage-deeper);
-      }
-      @media (min-width: 720px) {
-        .aud-label {
-          font-size: 21px;
-        }
-        .aud-emoji {
-          font-size: 46px;
-        }
-      }
-
-      /* footer contact details */
-      .foot-contact {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px 22px;
-        justify-content: center;
-        margin-top: 14px;
-        font-size: 14.5px;
-      }
-      .foot-contact a {
-        color: #fff;
-        text-decoration: none;
-        font-weight: 700;
-      }
-      .foot-contact a:hover {
-        text-decoration: underline;
-      }
-      .foot-contact .fc-label {
-        color: #c7a9b5;
-        font-weight: 600;
-      }
-
-      /* footer contact icon buttons (round, separated) */
-      .foot-icons {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 16px;
-        margin-top: 18px;
-      }
-      .foot-icon {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 48px;
-        height: 48px;
-        border-radius: 50%;
-        color: #fff;
-        text-decoration: none;
-        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
-        transition:
-          transform 0.16s ease,
-          box-shadow 0.2s ease,
-          filter 0.2s ease;
-      }
-      .foot-icon:hover {
-        transform: translateY(-2px);
-        filter: brightness(1.06);
-        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.34);
-      }
-      .foot-icon:focus-visible {
-        outline: 3px solid #fff;
-        outline-offset: 3px;
-      }
-      .foot-icon svg {
-        width: 24px;
-        height: 24px;
-        display: block;
-      }
-      .foot-icon.fi-wa {
-        background: #25d366;
-      }
-      .foot-icon.fi-call {
-        background: linear-gradient(140deg, var(--sage), var(--sage-deep));
-      }
-      .foot-icon.fi-ig {
-        background: radial-gradient(
-          circle at 30% 107%,
-          #fdf497 0%,
-          #fdf497 5%,
-          #fd5949 45%,
-          #d6249f 60%,
-          #285aeb 90%
-        );
-      }
-      /* visually hide label text (keeps it in the accessible/text tree) */
-      .visually-hidden {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        margin: -1px;
-        padding: 0;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
-      }
-
-      /* included */
-      .items {
-        display: grid;
-        gap: 12px;
-        grid-template-columns: 1fr;
-      }
-      @media (min-width: 720px) {
-        .items {
-          grid-template-columns: 1fr 1fr;
-        }
-      }
-      .item {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        padding: 16px 18px;
-        display: flex;
-        gap: 13px;
-        align-items: flex-start;
-        box-shadow: var(--shadow-sm);
-        transition:
-          transform 0.22s ease,
-          box-shadow 0.22s ease,
-          border-color 0.22s ease;
-      }
-      .item:hover {
-        transform: translateY(-3px);
-        box-shadow: var(--shadow-md);
-        border-color: var(--line);
-      }
-      .item .tick {
-        color: var(--sage-deep);
-        font-weight: 800;
-        font-size: 18px;
-        flex: 0 0 auto;
-      }
-      .item h4 {
-        font-size: 16.5px;
-        font-weight: 700;
-        margin-bottom: 2px;
-      }
-      .item p {
-        color: var(--muted);
-        font-size: 14px;
-      }
-
-      /* pricing */
-      .prices {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 18px;
-        max-width: 420px;
-        margin: 0 auto;
-      }
-      .plan {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 20px;
-        padding: 26px 24px;
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        box-shadow: var(--shadow-sm);
-        transition:
-          transform 0.25s ease,
-          box-shadow 0.25s ease;
-      }
-      .plan:hover {
-        transform: translateY(-4px);
-        box-shadow: var(--shadow-md);
-      }
-      .plan.featured {
-        border: 2px solid transparent;
-        background:
-          linear-gradient(var(--surface), var(--surface)) padding-box,
-          linear-gradient(140deg, var(--sage), var(--sage-deep) 70%, var(--blush)) border-box;
-        box-shadow:
-          0 24px 54px rgba(155, 45, 84, 0.2),
-          0 0 0 6px rgba(229, 25, 125, 0.05);
-      }
-      .plan.featured::before {
-        content: '';
-        position: absolute;
-        inset: -2px;
-        border-radius: 20px;
-        z-index: -1;
-        background: radial-gradient(60% 80% at 50% 0%, rgba(229, 25, 125, 0.14), transparent 70%);
-      }
-      .flag {
-        position: absolute;
-        top: -14px;
-        inset-inline-start: 24px;
-        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
-        color: #fff;
-        font-family: var(--display);
-        font-size: 12px;
-        font-weight: 800;
-        padding: 6px 14px;
-        border-radius: 999px;
-        box-shadow: 0 8px 18px rgba(229, 25, 125, 0.34);
-        letter-spacing: 0.02em;
-      }
-      .plan h3 {
-        font-size: 24px;
-        font-weight: 700;
-      }
-      .plan-promise {
-        color: var(--sage-deeper);
-        font-size: 14.5px;
-        font-weight: 700;
-        margin-top: 4px;
-      }
-      .anchor {
-        color: var(--muted);
-        font-size: 15px;
-        text-decoration: line-through;
-        margin-top: 8px;
       }
       .was {
         text-decoration: line-through;
-        opacity: 0.55;
+        opacity: 0.6;
         font-weight: 700;
         margin-inline-end: 5px;
-        font-size: 0.85em;
-      }
-      .price {
-        font-family: var(--display);
-        font-size: 48px;
-        font-weight: 900;
-        color: var(--sage-deep);
-        margin: 2px 0 2px;
-        letter-spacing: -0.02em;
-      }
-      .price small {
-        font-size: 18px;
-        color: var(--muted);
-        font-weight: 500;
-      }
-      .btn-reassure {
-        text-align: center;
-        margin-top: 10px;
-        font-size: 13px;
-        color: var(--muted);
-        font-weight: 600;
-      }
-      .guarantee {
-        text-align: center;
-        margin-top: 20px;
-        font-size: 16px;
-        font-weight: 700;
-        color: var(--sage-deep);
-      }
-      .urgency {
-        text-align: center;
-        margin-top: 8px;
-        font-size: 14.5px;
-        color: var(--muted);
-      }
-      .plan ul {
-        list-style: none;
-        margin: 14px 0 20px;
-        display: grid;
-        gap: 9px;
-      }
-      .plan li {
-        padding-inline-start: 24px;
-        position: relative;
-        font-size: 15px;
-      }
-      .plan li::before {
-        content: '✦';
-        position: absolute;
-        inset-inline-start: 0;
-        color: var(--blush);
-      }
-      .plan .btn {
-        margin-top: auto;
-        width: 100%;
-      }
-      .addons {
-        max-width: 780px;
-        margin: 20px auto 0;
-        background: var(--section);
-        border-radius: 14px;
-        padding: 18px 22px;
-      }
-      .addons h4 {
-        font-size: 18px;
-        margin-bottom: 8px;
-      }
-      .addons li {
-        font-size: 14.5px;
-        color: var(--sage-deeper);
-        margin-bottom: 4px;
-        list-style: none;
-        padding-inline-start: 18px;
-        position: relative;
-      }
-      .addons li::before {
-        content: '+';
-        position: absolute;
-        inset-inline-start: 0;
-        font-weight: 800;
-        color: var(--sage-deep);
-      }
-      .delivery-note {
-        text-align: center;
-        margin-top: 18px;
-        font-size: 15px;
-        color: var(--muted);
-      }
-      .delivery-note b {
-        color: var(--ink);
+        font-size: 0.82em;
       }
 
-      /* gallery */
-      /* Single horizontal row of peek photos (scrolls on narrow screens). */
-      .gallery {
-        display: grid;
-        grid-auto-flow: column;
-        grid-auto-columns: minmax(150px, 1fr);
-        gap: 12px;
-        max-width: 760px;
-        margin: 0 auto;
-        overflow-x: auto;
-        padding-bottom: 6px;
+      /* ---------- shared section rhythm ---------- */
+      section {
+        padding: 72px 0;
       }
-      .gphoto {
-        aspect-ratio: 4/5;
-        border-radius: 16px;
-        background: var(--section);
-        border: 1px solid var(--line);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        overflow: hidden;
-        box-shadow: var(--shadow-sm);
-        transition:
-          transform 0.3s ease,
-          box-shadow 0.3s ease;
-      }
-      .gphoto:hover {
-        transform: translateY(-5px) scale(1.015);
-        box-shadow: var(--shadow-md);
-      }
-      .gphoto img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        transition: transform 0.5s ease;
-      }
-      .gphoto:hover img {
-        transform: scale(1.06);
-      }
-
-      /* proof video row - looping real clips */
-      .vclips {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-        margin-top: 22px;
-      }
-      @media (min-width: 720px) {
-        .vclips {
-          grid-template-columns: repeat(2, 1fr);
-          max-width: 760px;
-          margin-left: auto;
-          margin-right: auto;
-        }
-      }
-      .vclip {
-        border-radius: 16px;
-        overflow: hidden;
-        background: var(--section);
-        border: 1px solid var(--line);
-        box-shadow: var(--shadow-sm);
-        transition:
-          transform 0.3s ease,
-          box-shadow 0.3s ease;
-      }
-      .vclip:hover {
-        transform: translateY(-5px) scale(1.015);
-        box-shadow: var(--shadow-md);
-      }
-      .vclip video {
-        width: 100%;
-        height: 100%;
-        display: block;
-        object-fit: cover;
-        aspect-ratio: 16/9;
-      }
-      .vclips {
-        display: grid;
-        /* On mobile show the party clips 2-up (side by side) so the page is shorter on phones. */
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-        max-width: 760px;
-        margin: 22px auto 4px;
-      }
-      @media (min-width: 620px) {
-        .vclips {
-          grid-template-columns: 1fr 1fr;
-          gap: 16px;
-        }
-      }
-
-      /* FAQ */
-      .faq {
-        max-width: 760px;
-        margin: 0 auto;
-        display: grid;
-        gap: 10px;
-      }
-      details {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 4px 18px;
-        box-shadow: var(--shadow-sm);
-        transition:
-          box-shadow 0.2s ease,
-          border-color 0.2s ease;
-      }
-      details[open] {
-        border-color: var(--line);
-        box-shadow: var(--shadow-md);
-      }
-      summary {
-        cursor: pointer;
-        font-weight: 700;
-        padding: 14px 0;
-        list-style: none;
-        font-size: 16.5px;
-      }
-      summary::-webkit-details-marker {
-        display: none;
-      }
-      summary::after {
-        content: '+';
-        float: left;
-        color: var(--sage-deep);
-        font-weight: 800;
-      }
-      details[open] summary::after {
-        content: '-';
-      }
-      details p {
-        color: var(--muted);
-        font-size: 15px;
-        padding: 0 0 16px;
-      }
-
-      /* final cta */
-      .final {
-        text-align: center;
-        background: linear-gradient(180deg, var(--bg), var(--section));
-      }
-      .final h2 {
-        font-size: 32px;
-      }
-      .final p {
-        color: var(--muted);
-        max-width: 520px;
-        margin: 10px auto 22px;
-      }
-
-      footer {
-        padding: 30px 0;
-        text-align: center;
-        font-size: 14px;
-        background: var(--ink);
-        color: #e8d7de;
-      }
-      footer a {
-        color: #fff;
-        font-weight: 700;
-        text-decoration: none;
-      }
-      footer .tag {
-        margin-top: 8px;
-        font-size: 13px;
-        color: #c7a9b5;
-      }
-
-      /* sticky mobile CTA */
-      .sticky {
-        position: fixed;
-        bottom: 0;
-        inset-inline: 0;
-        background: rgba(255, 255, 255, 0.96);
+      section + section {
         border-top: 1px solid var(--line);
-        padding: 12px 16px;
-        display: flex;
-        gap: 10px;
-        z-index: 50;
-        backdrop-filter: blur(6px);
-        box-shadow: 0 -8px 24px rgba(35, 32, 28, 0.08);
       }
-      .sticky .btn {
-        flex: 1 1 auto;
-        min-width: 0;
-        font-size: 14px;
-        padding: 13px 8px;
-        white-space: nowrap;
-        letter-spacing: -0.01em;
+      .sec-title {
+        text-align: center;
+        max-width: 620px;
+        margin: 0 auto 40px;
       }
-      /* The WhatsApp button only needs room for its short label; give the rest
-         of the bar to the order CTA so its text always fits. */
-      .sticky #waSticky {
-        flex: 0 0 auto;
-        padding: 13px 16px;
+      .sec-title h2 {
+        font-size: 36px;
       }
-      .sticky #stickyOrder .was {
-        font-size: 0.78em;
+      .sec-title p {
+        color: var(--muted);
+        margin-top: 10px;
+        font-size: 17px;
       }
       @media (min-width: 720px) {
-        .sticky {
-          display: none;
-        }
-        body {
-          padding-bottom: 0;
+        .sec-title h2 {
+          font-size: 44px;
         }
       }
-
-      /* ============ SECTION GLOWS / GRADIENT MESH ============ */
-      #how::before,
-      #pricing::before,
-      #gallery::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        z-index: 0;
-      }
-      #how::before {
-        background: radial-gradient(45% 60% at 12% 8%, rgba(229, 25, 125, 0.05), transparent 70%);
-      }
-      #pricing::before {
-        background: radial-gradient(50% 60% at 88% 10%, rgba(188, 154, 76, 0.07), transparent 70%);
-      }
-      #gallery::before {
-        background: radial-gradient(50% 60% at 50% 0%, rgba(229, 25, 125, 0.05), transparent 70%);
-      }
-      #how .wrap,
-      #pricing .wrap,
-      #gallery .wrap {
-        position: relative;
-        z-index: 1;
-      }
-      .final {
-        text-align: center;
-        background:
-          radial-gradient(60% 90% at 50% 100%, rgba(229, 25, 125, 0.1), transparent 65%),
-          linear-gradient(180deg, var(--bg), var(--section));
-      }
-      .final h2 {
-        font-size: 34px;
+      .alt {
+        background: var(--section);
       }
 
-      /* ============ SCROLL REVEALS (enhancement only - default visible) ============ */
-      .reveal-on .reveal {
-        opacity: 0;
-        transform: translateY(26px);
-        transition:
-          opacity 0.7s cubic-bezier(0.22, 0.61, 0.36, 1),
-          transform 0.7s cubic-bezier(0.22, 0.61, 0.36, 1);
-      }
-      .reveal-on .reveal.is-in {
-        opacity: 1;
-        transform: none;
-      }
-      /* stagger children */
-      .reveal-on .stagger > * {
-        opacity: 0;
-        transform: translateY(22px);
-        transition:
-          opacity 0.6s ease,
-          transform 0.6s ease;
-      }
-      .reveal-on .stagger.is-in > * {
-        opacity: 1;
-        transform: none;
-      }
-      .reveal-on .stagger.is-in > *:nth-child(2) {
-        transition-delay: 0.08s;
-      }
-      .reveal-on .stagger.is-in > *:nth-child(3) {
-        transition-delay: 0.16s;
-      }
-      .reveal-on .stagger.is-in > *:nth-child(4) {
-        transition-delay: 0.24s;
-      }
-      .reveal-on .stagger.is-in > *:nth-child(5) {
-        transition-delay: 0.32s;
-      }
-      .reveal-on .stagger.is-in > *:nth-child(6) {
-        transition-delay: 0.4s;
-      }
-
-      /* ============ SHARED STICKY NAV ============ */
+      /* ============ NAV ============ */
       .nav {
         position: fixed;
         top: 0;
         inset-inline: 0;
         z-index: 80;
-        background: rgba(255, 255, 255, 0.94);
-        backdrop-filter: blur(10px);
+        background: rgba(247, 244, 239, 0.86);
+        backdrop-filter: blur(12px);
         border-bottom: 1px solid var(--line);
-        box-shadow: 0 6px 20px rgba(35, 32, 28, 0.07);
       }
       .nav-inner {
-        max-width: 1000px;
+        max-width: 1080px;
         margin: 0 auto;
-        padding: 8px 18px;
+        padding: 9px 20px;
         display: flex;
         align-items: center;
         gap: 14px;
@@ -1240,40 +200,41 @@
         align-items: center;
       }
       .nav-logo img {
-        height: 34px;
+        height: 32px;
         width: auto;
         display: block;
       }
       .nav-links {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 4px;
         margin-inline-start: auto;
       }
       .nav-links a {
         font-family: var(--display);
-        font-weight: 800;
-        font-size: 15.5px;
-        color: var(--sage-deep);
+        font-weight: 700;
+        font-size: 15px;
+        color: var(--ink);
         padding: 8px 12px;
         border-radius: 10px;
         text-decoration: none;
         transition:
-          background 0.18s ease,
-          color 0.18s ease;
+          background 0.18s var(--ease),
+          color 0.18s var(--ease);
       }
       .nav-links a:hover {
         background: var(--section);
         color: var(--sage-deeper);
       }
       .nav-links a.nav-cta {
-        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
+        background: var(--sage);
         color: #fff;
         padding: 9px 20px;
-        box-shadow: 0 6px 16px rgba(229, 25, 125, 0.26);
+        border-radius: var(--radius-pill);
+        box-shadow: var(--shadow-sm);
       }
       .nav-links a.nav-cta:hover {
-        filter: brightness(1.05);
+        background: var(--sage-deep);
         color: #fff;
       }
       .nav-toggle {
@@ -1294,11 +255,9 @@
         display: block;
         width: 20px;
         height: 2px;
-        background: var(--sage-deep);
+        background: var(--ink);
         position: relative;
-        transition:
-          transform 0.2s ease,
-          opacity 0.2s ease;
+        transition: transform 0.2s var(--ease);
       }
       .nav-toggle span::before {
         content: '';
@@ -1310,7 +269,7 @@
         position: absolute;
         top: 6px;
       }
-      @media (max-width: 640px) {
+      @media (max-width: 720px) {
         .nav-toggle {
           display: flex;
         }
@@ -1321,9 +280,9 @@
           flex-direction: column;
           align-items: stretch;
           gap: 0;
-          background: rgba(255, 255, 255, 0.98);
+          background: var(--bg);
           border-bottom: 1px solid var(--line);
-          box-shadow: 0 14px 28px rgba(35, 32, 28, 0.12);
+          box-shadow: var(--shadow-md);
           padding: 8px 14px 14px;
           margin: 0;
           display: none;
@@ -1333,35 +292,716 @@
         }
         .nav-links a {
           padding: 13px 10px;
-          border-radius: 10px;
         }
         .nav-links a.nav-cta {
           margin-top: 6px;
           text-align: center;
           justify-content: center;
         }
-        /* Tighten the hero on phones so the real product visual reaches
-           into the first viewport (above the fold), not below it. */
-        header {
-          padding: 26px 0 32px;
-        }
-        .brand-logo {
-          width: 190px;
-        }
-        .tagline {
-          font-size: 21px;
-          margin-top: 8px;
-        }
-        .launch-offer {
-          margin-top: 12px;
-        }
-        .hero-cta {
-          margin-top: 18px;
+      }
+
+      /* ============ HERO ============ */
+      .hero {
+        padding: 40px 0 56px;
+      }
+      .hero-inner {
+        display: grid;
+        gap: 34px;
+        align-items: center;
+        text-align: center;
+      }
+      @media (min-width: 860px) {
+        .hero-inner {
+          grid-template-columns: 1.08fr 0.92fr;
+          text-align: start;
+          gap: 44px;
         }
       }
-      /* keep hero clear of the fixed nav */
-      body {
-        padding-top: 54px;
+      .hero h1 {
+        font-size: 40px;
+        font-weight: 900;
+        line-height: 1.08;
+      }
+      @media (min-width: 720px) {
+        .hero h1 {
+          font-size: 58px;
+        }
+      }
+      .hero-sub {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 18px;
+        max-width: 30ch;
+        margin-inline: auto;
+      }
+      @media (min-width: 860px) {
+        .hero-sub {
+          margin-inline: 0;
+        }
+      }
+      .hero-sub b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .launch-offer {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-top: 22px;
+        padding: 7px 16px 7px 7px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-pill);
+        box-shadow: var(--shadow-sm);
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .launch-offer .launch-badge {
+        display: inline-block;
+        background: var(--sage);
+        color: #fff;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 13px;
+        padding: 5px 13px;
+        border-radius: var(--radius-pill);
+        white-space: nowrap;
+      }
+      .launch-offer .launch-text {
+        color: var(--muted);
+      }
+      .hero-cta {
+        margin-top: 26px;
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      @media (min-width: 860px) {
+        .hero-cta {
+          justify-content: flex-start;
+        }
+      }
+      .trust {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .trust .st {
+        color: var(--blush);
+        letter-spacing: 1px;
+        margin-inline-end: 4px;
+      }
+      /* hero video loop - real party footage (vertical phone clip) */
+      .hero-video {
+        margin: 0 auto;
+        max-width: 320px;
+        width: 100%;
+      }
+      .hero-video video {
+        width: 100%;
+        display: block;
+        border-radius: 22px;
+        box-shadow: var(--shadow-lg);
+        background: var(--section);
+        aspect-ratio: 9 / 16;
+        object-fit: cover;
+      }
+      .hero-video .vcap {
+        margin-top: 12px;
+        font-size: 14px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .hero-video .vcap strong {
+        color: var(--sage-deep);
+      }
+
+      /* ============ EVENT SELECTOR (#events) ============ */
+      #events {
+        --event-accent: var(--sage);
+      }
+      .event-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
+        max-width: 700px;
+        margin: 0 auto 34px;
+      }
+      .event-pill {
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 16px;
+        cursor: pointer;
+        background: var(--surface);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-pill);
+        padding: 11px 22px;
+        transition:
+          background 0.18s var(--ease),
+          color 0.18s var(--ease),
+          border-color 0.18s var(--ease),
+          transform 0.14s var(--ease);
+      }
+      .event-pill:hover {
+        border-color: var(--sage);
+        transform: translateY(-1px);
+      }
+      .event-pill.is-active,
+      .event-pill[aria-selected='true'] {
+        background: var(--sage);
+        border-color: var(--sage);
+        color: #fff;
+      }
+      .event-preview {
+        max-width: 460px;
+        margin: 0 auto;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-md);
+        padding: 28px 26px 30px;
+        text-align: center;
+      }
+      .event-mockup {
+        display: block;
+        width: 100%;
+        max-width: 320px;
+        aspect-ratio: 3 / 4;
+        object-fit: contain;
+        margin: 0 auto;
+        border-radius: 14px;
+        background: var(--section);
+        box-shadow: 0 0 0 6px color-mix(in srgb, var(--event-accent) 16%, transparent);
+        transition: box-shadow 0.3s var(--ease);
+      }
+      .event-dots {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin: 20px 0 14px;
+        min-height: 16px;
+      }
+      .event-dot {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        box-shadow: inset 0 0 0 1px rgba(35, 32, 28, 0.08);
+      }
+      .event-copy {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 22px;
+        color: var(--ink);
+        margin-bottom: 18px;
+      }
+      #eventCta {
+        background: var(--event-accent);
+      }
+      #eventCta:hover {
+        filter: brightness(0.94);
+        background: var(--event-accent);
+      }
+
+      /* ============ HOW IT WORKS (#how) ============ */
+      .steps {
+        display: grid;
+        gap: 18px;
+        grid-template-columns: 1fr;
+      }
+      @media (min-width: 760px) {
+        .steps {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      .step {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 30px 26px;
+        text-align: center;
+        box-shadow: var(--shadow-sm);
+        transition:
+          transform 0.25s var(--ease),
+          box-shadow 0.25s var(--ease);
+      }
+      .step:hover {
+        transform: translateY(-5px);
+        box-shadow: var(--shadow-md);
+      }
+      .step .n {
+        font-family: var(--display);
+        font-weight: 900;
+        font-size: 22px;
+        color: #fff;
+        background: var(--sage);
+        width: 52px;
+        height: 52px;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 16px;
+      }
+      .step h3 {
+        font-size: 21px;
+        margin-bottom: 8px;
+      }
+      .step p {
+        color: var(--muted);
+        font-size: 15.5px;
+      }
+
+      /* ============ EXAMPLES (#examples) ============ */
+      .examples-strip {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(200px, 1fr);
+        gap: 16px;
+        overflow-x: auto;
+        padding: 4px 4px 14px;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+      }
+      .ex-card {
+        scroll-snap-align: start;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        flex-direction: column;
+        transition:
+          transform 0.25s var(--ease),
+          box-shadow 0.25s var(--ease);
+      }
+      .ex-card:hover {
+        transform: translateY(-5px);
+        box-shadow: var(--shadow-md);
+      }
+      .ex-card .ex-media {
+        aspect-ratio: 4 / 5;
+        background: var(--section);
+        overflow: hidden;
+      }
+      .ex-card .ex-media img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .ex-card .ex-cap {
+        padding: 14px 16px 18px;
+      }
+      .ex-card .ex-cap strong {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 16px;
+        display: block;
+      }
+      .ex-card .ex-cap span {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .ex-hint {
+        text-align: center;
+        margin-top: 16px;
+        color: var(--muted);
+        font-size: 13.5px;
+      }
+
+      /* ============ WHY DUGRI (#why) ============ */
+      .why-grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: 1fr;
+        max-width: 940px;
+        margin: 0 auto;
+      }
+      @media (min-width: 560px) {
+        .why-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (min-width: 900px) {
+        .why-grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      .why-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 26px 24px;
+        box-shadow: var(--shadow-sm);
+        transition:
+          transform 0.22s var(--ease),
+          box-shadow 0.22s var(--ease),
+          border-color 0.22s var(--ease);
+      }
+      .why-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-md);
+        border-color: var(--sage);
+      }
+      .why-card .why-mark {
+        color: var(--sage-deep);
+        font-size: 26px;
+        line-height: 1;
+        margin-bottom: 12px;
+      }
+      .why-card h3 {
+        font-size: 20px;
+        margin-bottom: 6px;
+      }
+      .why-card p {
+        color: var(--muted);
+        font-size: 15px;
+      }
+
+      /* ============ SOCIAL PROOF (#reviews) ============ */
+      .proof-head .stars {
+        color: var(--blush);
+        font-size: 24px;
+        letter-spacing: 2px;
+        margin-top: 10px;
+      }
+      .vclips {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        max-width: 720px;
+        margin: 0 auto 22px;
+      }
+      .vclip {
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--section);
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow-sm);
+        transition:
+          transform 0.3s var(--ease),
+          box-shadow 0.3s var(--ease);
+      }
+      .vclip:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-md);
+      }
+      .vclip video {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+        aspect-ratio: 9 / 12;
+      }
+      .reviews {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: 1fr 1fr;
+        max-width: 520px;
+        margin: 0 auto;
+      }
+      @media (min-width: 760px) {
+        .reviews {
+          grid-template-columns: repeat(3, 1fr);
+          max-width: 900px;
+          align-items: start;
+        }
+      }
+      .review {
+        margin: 0;
+        transition:
+          transform 0.25s var(--ease),
+          box-shadow 0.25s var(--ease);
+      }
+      .review:hover {
+        transform: translateY(-4px);
+      }
+      .review img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-sm);
+      }
+      .review:hover img {
+        box-shadow: var(--shadow-md);
+      }
+      .proof-note {
+        text-align: center;
+        margin: 26px auto 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      /* ============ FOUNDER STORY (#story) ============ */
+      .story-inner {
+        display: grid;
+        gap: 32px;
+        align-items: center;
+      }
+      @media (min-width: 820px) {
+        .story-inner {
+          grid-template-columns: 0.9fr 1.1fr;
+        }
+      }
+      .story-photos {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .story-photo {
+        aspect-ratio: 3 / 4;
+        border-radius: var(--radius);
+        background: var(--section);
+        border: 1px solid var(--line);
+        overflow: hidden;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        color: var(--muted);
+        font-size: 13px;
+        padding: 10px;
+        text-align: center;
+      }
+      .story-photo:nth-child(1) {
+        transform: translateY(14px);
+      }
+      .story-copy h2 {
+        font-size: 34px;
+        margin-bottom: 14px;
+      }
+      .story-copy p {
+        color: var(--muted);
+        font-size: 16.5px;
+        margin-bottom: 12px;
+      }
+      .story-copy .sign {
+        font-family: var(--display);
+        font-weight: 800;
+        color: var(--ink);
+      }
+      .story-copy .btn {
+        margin-top: 12px;
+      }
+
+      /* ============ FAQ (#faq) ============ */
+      .faq {
+        max-width: 760px;
+        margin: 0 auto;
+        display: grid;
+        gap: 10px;
+      }
+      details {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 4px 20px;
+        box-shadow: var(--shadow-sm);
+        transition:
+          box-shadow 0.2s var(--ease),
+          border-color 0.2s var(--ease);
+      }
+      details[open] {
+        border-color: var(--sage);
+        box-shadow: var(--shadow-md);
+      }
+      summary {
+        cursor: pointer;
+        font-family: var(--display);
+        font-weight: 700;
+        padding: 16px 0;
+        list-style: none;
+        font-size: 17px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+      summary::-webkit-details-marker {
+        display: none;
+      }
+      summary::after {
+        content: '+';
+        color: var(--sage-deep);
+        font-weight: 800;
+        font-size: 22px;
+      }
+      details[open] summary::after {
+        content: '\2212';
+      }
+      details p {
+        color: var(--muted);
+        font-size: 15.5px;
+        padding: 0 0 18px;
+      }
+
+      /* ============ FINAL CTA (#order) ============ */
+      .final {
+        text-align: center;
+        background: var(--section);
+      }
+      .final h2 {
+        font-size: 34px;
+      }
+      @media (min-width: 720px) {
+        .final h2 {
+          font-size: 44px;
+        }
+      }
+      .final p {
+        color: var(--muted);
+        max-width: 540px;
+        margin: 14px auto 26px;
+        font-size: 17px;
+      }
+      .reassure {
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      /* ============ FOOTER ============ */
+      footer {
+        padding: 40px 0 34px;
+        text-align: center;
+        font-size: 14px;
+        background: var(--ink);
+        color: #e9e2d7;
+      }
+      footer .foot-brand {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 20px;
+        color: #fff;
+      }
+      footer a {
+        color: #fff;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      footer .foot-tag {
+        margin-top: 10px;
+        font-size: 13px;
+        color: #b9b0a2;
+      }
+      .foot-contact {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 22px;
+        justify-content: center;
+        margin-top: 16px;
+        font-size: 14.5px;
+      }
+      .foot-contact a:hover {
+        text-decoration: underline;
+      }
+      .foot-contact .fc-label {
+        color: #b9b0a2;
+        font-weight: 600;
+      }
+      .foot-icons {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 16px;
+        margin-top: 20px;
+      }
+      .foot-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        color: #fff;
+        text-decoration: none;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+        transition:
+          transform 0.16s var(--ease),
+          filter 0.2s var(--ease);
+      }
+      .foot-icon:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.06);
+      }
+      .foot-icon svg {
+        width: 24px;
+        height: 24px;
+        display: block;
+      }
+      .foot-icon.fi-wa {
+        background: #25d366;
+      }
+      .foot-icon.fi-call {
+        background: var(--sage);
+      }
+      .foot-icon.fi-ig {
+        background: radial-gradient(
+          circle at 30% 107%,
+          #fdf497 0%,
+          #fdf497 5%,
+          #fd5949 45%,
+          #d6249f 60%,
+          #285aeb 90%
+        );
+      }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      /* ============ STICKY MOBILE ORDER BAR ============ */
+      .sticky {
+        position: fixed;
+        bottom: 0;
+        inset-inline: 0;
+        background: rgba(247, 244, 239, 0.96);
+        border-top: 1px solid var(--line);
+        padding: 12px 16px;
+        display: flex;
+        gap: 10px;
+        z-index: 50;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 -8px 24px rgba(35, 32, 28, 0.08);
+      }
+      .sticky .btn {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-size: 14px;
+        padding: 13px 8px;
+        white-space: nowrap;
+        letter-spacing: -0.01em;
+      }
+      .sticky #waSticky {
+        flex: 0 0 auto;
+        padding: 13px 16px;
+      }
+      .sticky #stickyOrder .was {
+        font-size: 0.78em;
+      }
+      @media (min-width: 720px) {
+        .sticky {
+          display: none;
+        }
+        body {
+          padding-bottom: 0;
+        }
       }
 
       /* ============ REDUCED MOTION ============ */
@@ -1373,15 +1013,6 @@
           animation-duration: 0.001ms !important;
           animation-iteration-count: 1 !important;
           transition-duration: 0.001ms !important;
-        }
-        .reveal-on .reveal,
-        .reveal-on .stagger > * {
-          opacity: 1 !important;
-          transform: none !important;
-        }
-        .confetti,
-        .sparkle {
-          display: none !important;
         }
       }
     </style>
@@ -1403,94 +1034,241 @@
           <span></span>
         </button>
         <div class="nav-links" id="navLinks" data-testid="nav-links">
-          <a href="products.html">העיצובים שלנו</a>
-          <a href="how.html">איך זה עובד?</a>
-          <a href="#gallery">הצצה</a>
-          <a href="#proof">המלצות</a>
-          <a href="timer.html">טיימר</a>
-          <a class="nav-cta" href="products.html" data-ga="order_started" data-ga-cta="nav"
-            >הזמנה</a
+          <a href="#how">איך זה עובד</a>
+          <a href="#examples">דוגמאות</a>
+          <a href="#reviews">המלצות</a>
+          <a href="#faq">שאלות</a>
+          <a class="nav-cta" href="options.html" data-ga="order_started" data-ga-cta="nav"
+            >בונים את המשחק</a
           >
         </div>
       </div>
     </nav>
 
-    <header id="top">
-      <div class="confetti" id="confetti" aria-hidden="true"></div>
+    <header class="hero" id="top" data-reveal>
       <div class="wrap">
-        <h1 class="brand"><img class="brand-logo" src="assets/logo.png" alt="דוגרי" /></h1>
-        <div class="tagline">
-          <span class="tagline-1">שלחו לנו את הסיפורים שרק אתם מכירים.</span>
-          <span class="tagline-2">אנחנו נהפוך אותם למשחק שיפוצץ את הערב</span>
+        <div class="hero-inner">
+          <div class="hero-text">
+            <h1>המשחק הכי אישי<br />שתעניקו אי פעם</h1>
+            <p class="hero-sub">
+              משחק מסיבה שבנוי כולו מהאדם שחוגגים — לכל
+              <b>יום הולדת · רווקות · חתונה · זוגות · חברים · פרישה</b>.
+            </p>
+            <p class="launch-offer">
+              <span class="launch-badge">מבצע השקה</span>
+              <span class="launch-text"
+                >מספר הזמנות מוגבל בכל שבוע · אספקה תוך
+                <span style="white-space: nowrap">24 שעות</span></span
+              >
+            </p>
+            <div class="hero-cta">
+              <a class="btn" href="options.html" data-ga="order_started" data-ga-cta="hero"
+                >בונים את המשחק →</a
+              >
+              <a class="btn ghost" href="#examples">דוגמאות</a>
+            </div>
+            <p class="trust"><span class="st">★★★★★</span> אלפי רגעים בלתי נשכחים</p>
+          </div>
+          <div class="hero-media">
+            <div class="hero-video" data-testid="hero-video">
+              <video
+                autoplay
+                muted
+                loop
+                playsinline
+                preload="metadata"
+                poster="assets/video/dugri-hero-loop-poster.jpg"
+                aria-label="סרטון ממסיבה אמיתית עם משחק דוגרי"
+              >
+                <source src="assets/video/dugri-hero-loop.mp4" type="video/mp4" />
+              </video>
+              <p class="vcap"><strong>אירוע אמיתי</strong> · ככה זה נראה כשמשחקים דוגרי</p>
+            </div>
+          </div>
         </div>
-        <p class="launch-offer">
-          <span class="launch-badge">מבצע השקה</span>
-          <span class="launch-text"
-            >מספר הזמנות מוגבל בכל שבוע · אספקה תוך
-            <span style="white-space: nowrap">24 שעות</span></span
-          >
-        </p>
-        <div class="hero-cta">
-          <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
-            >בונים את המשחק · <s class="was">129 ₪</s
-            ><span style="white-space: nowrap">79 ₪</span></a
-          >
-          <a class="btn ghost" href="how.html">איך זה עובד?</a>
-        </div>
-        <div class="hero-video" data-testid="hero-video">
-          <video
-            autoplay
-            muted
-            loop
-            playsinline
-            preload="metadata"
-            poster="assets/video/dugri-hero-loop-poster.jpg"
-            aria-label="סרטון ממסיבה אמיתית עם משחק דוגרי"
-          >
-            <source src="assets/video/dugri-hero-loop.mp4" type="video/mp4" />
-          </video>
-          <p class="vcap"><strong>אירוע אמיתי</strong> · ככה זה נראה כשמשחקים דוגרי במסיבה</p>
-        </div>
-        <p class="lede">
-          משחק קלפים שהוא רק שלכם - מלא בבדיחות פנימיות, סיפורים מביכים ורגעים שרק אתם מכירים.
-          ההפתעה שכולם יזכרו מהערב.
-        </p>
-        <p class="trust">
-          <span>אספקה תוך 24 שעות</span> · <span>ללא הגבלת מילים</span> · <span>תשלום מאובטח</span>
-        </p>
       </div>
     </header>
 
-    <section id="gallery">
+    <section id="events" data-reveal>
       <div class="wrap">
-        <div class="sec-title reveal">
-          <h2>הצצה</h2>
-          <p>קלפים ולוחות אמיתיים מאירועים</p>
+        <div class="sec-title">
+          <h2>מוצר אחד, כל אירוע</h2>
+          <p>מותאם בדיוק לאנשים שלכם</p>
         </div>
-        <div class="gallery stagger">
-          <div class="gphoto">
-            <img src="assets/gallery-1.jpg" alt="קלף דוגרי עם אייקונים מותאמים וארבע מילים" />
+        <div class="event-pills" role="tablist" aria-label="בחירת אירוע">
+          <button
+            class="event-pill is-active"
+            role="tab"
+            aria-selected="true"
+            data-design-id="birthday"
+          >
+            יום הולדת
+          </button>
+          <button class="event-pill" role="tab" aria-selected="false" data-design-id="bachelorette">
+            רווקות
+          </button>
+          <button class="event-pill" role="tab" aria-selected="false" data-design-id="marriage">
+            חתונה
+          </button>
+          <button class="event-pill" role="tab" aria-selected="false" data-design-id="posttrip">
+            חזרה מטיול
+          </button>
+          <button class="event-pill" role="tab" aria-selected="false" data-design-id="neon">
+            ניאון
+          </button>
+          <button class="event-pill" role="tab" aria-selected="false" data-design-id="kids">
+            ילדים
+          </button>
+        </div>
+        <div class="event-preview">
+          <img id="eventMockup" class="event-mockup" alt="" />
+          <div id="eventDots" class="event-dots" aria-hidden="true"></div>
+          <p id="eventCopy" class="event-copy"></p>
+          <a id="eventCta" class="btn" href="options.html?design=birthday">בונים את המשחק →</a>
+        </div>
+      </div>
+    </section>
+    <script type="module">
+      import { initEventSelector } from './js/event-selector.js';
+      initEventSelector();
+    </script>
+
+    <section id="how" class="alt" data-reveal>
+      <div class="wrap">
+        <div class="sec-title">
+          <h2>איך זה עובד</h2>
+          <p>שלושה צעדים מרשימה של מילים למשחק שכולם יזכרו</p>
+        </div>
+        <div class="steps">
+          <div class="step">
+            <div class="n">1</div>
+            <h3>מספרים לנו על האדם</h3>
+            <p>
+              שולחים 100+ מילים וביטויים — בדיחות פנימיות, הרגלים, אנשים ומקומות. יש דף עזר שמקל
+              להיזכר.
+            </p>
           </div>
-          <div class="gphoto">
-            <img src="assets/gallery-2.jpg" alt="חפיסת קלפים דוגרי ביד" />
+          <div class="step">
+            <div class="n">2</div>
+            <h3>אנחנו מעצבים את המשחק האישי</h3>
+            <p>
+              הופכים את המילים לחפיסת קלפים מעוצבת וללוח משחק, בסגנון ובצבעים שמתאימים בדיוק לאירוע
+              שלכם.
+            </p>
           </div>
-          <div class="gphoto">
-            <img src="assets/gallery-3.jpg" alt="לוח משחק דוגרי עם טוקנים" />
-          </div>
-          <div class="gphoto">
-            <img src="assets/gallery-4.jpg" alt="לוח משחק וקלפים דוגרי על השולחן" />
+          <div class="step">
+            <div class="n">3</div>
+            <h3>מדפיסים, משחקים, זוכרים לנצח</h3>
+            <p>
+              מקבלים קובץ מוכן להדפסה עם הוראות ברורות. מתחלקים לקבוצות — וכל החדר צוחק על מי
+              שחוגגים.
+            </p>
           </div>
         </div>
       </div>
     </section>
 
-    <section class="proof" id="proof">
+    <section id="examples" data-reveal>
       <div class="wrap">
-        <div class="sec-title reveal">
+        <div class="sec-title">
+          <h2>דוגמאות מהמשחק</h2>
+          <p>קלפים, בדיחות פנימיות ולוחות אמיתיים מאירועים</p>
+        </div>
+        <div class="examples-strip">
+          <div class="ex-card">
+            <div class="ex-media">
+              <img src="assets/gallery-1.jpg" alt="קלף דוגרי עם אייקונים מותאמים וארבע מילים" />
+            </div>
+            <div class="ex-cap">
+              <strong>קלף אישי</strong>
+              <span>ארבע מילים שרק אתם מבינים</span>
+            </div>
+          </div>
+          <div class="ex-card">
+            <div class="ex-media">
+              <img src="assets/gallery-2.jpg" alt="חפיסת קלפים דוגרי ביד" />
+            </div>
+            <div class="ex-cap">
+              <strong>חפיסה שלמה</strong>
+              <span>עשרות קלפים לערב שלם</span>
+            </div>
+          </div>
+          <div class="ex-card">
+            <div class="ex-media">
+              <img src="assets/gallery-3.jpg" alt="לוח משחק דוגרי עם טוקנים" />
+            </div>
+            <div class="ex-cap">
+              <strong>לוח המשחק</strong>
+              <span>מסלול, טוקנים וניקוד</span>
+            </div>
+          </div>
+          <div class="ex-card">
+            <div class="ex-media">
+              <img src="assets/gallery-4.jpg" alt="לוח משחק וקלפים דוגרי על השולחן" />
+            </div>
+            <div class="ex-cap">
+              <strong>הסט המלא</strong>
+              <span>מוכן על השולחן</span>
+            </div>
+          </div>
+          <div class="ex-card">
+            <div class="ex-media">
+              <img src="assets/card-real.png" alt="קלף דוגרי מודפס אמיתי" />
+            </div>
+            <div class="ex-cap">
+              <strong>מודפס אמיתי</strong>
+              <span>ככה זה מגיע לשולחן</span>
+            </div>
+          </div>
+        </div>
+        <p class="ex-hint">גררו הצידה כדי לראות עוד ←</p>
+      </div>
+    </section>
+
+    <section id="why" class="alt" data-reveal>
+      <div class="wrap">
+        <div class="sec-title">
+          <h2>למה דוגרי</h2>
+          <p>לא עוד משחק קופסה — רגע שכולם ייקחו איתם הביתה</p>
+        </div>
+        <div class="why-grid">
+          <div class="why-card">
+            <div class="why-mark">✦</div>
+            <h3>צוחקים חזק יותר</h3>
+            <p>כשכל מילה היא בדיחה פנימית, הצחוק אמיתי ומתגלגל.</p>
+          </div>
+          <div class="why-card">
+            <div class="why-mark">✦</div>
+            <h3>אף אחד לא מקבל מתנה גנרית</h3>
+            <p>זו מתנה שאי אפשר לקנות בחנות — נבנתה רק בשבילם.</p>
+          </div>
+          <div class="why-card">
+            <div class="why-mark">✦</div>
+            <h3>כולם מרגישים חלק</h3>
+            <p>כל אחד סביב השולחן מזהה סיפור ומצטרף למשחק.</p>
+          </div>
+          <div class="why-card">
+            <div class="why-mark">✦</div>
+            <h3>כל משחק ייחודי</h3>
+            <p>אין שני משחקים זהים — שלכם קיים בעותק אחד בעולם.</p>
+          </div>
+          <div class="why-card">
+            <div class="why-mark">✦</div>
+            <h3>מעוצב בדיוק לאנשים שלכם</h3>
+            <p>סגנון וצבעים שמתאימים לאירוע ולאדם שחוגגים.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="reviews" data-reveal>
+      <div class="wrap">
+        <div class="sec-title proof-head">
           <h2>כבר חוגגים איתנו</h2>
           <p>ככה זה נראה כשהמשחק מגיע לשולחן</p>
+          <div class="stars" aria-hidden="true">★★★★★</div>
         </div>
-        <div class="vclips reveal" data-testid="proof-clips">
+        <div class="vclips" data-testid="proof-clips">
           <div class="vclip">
             <video
               autoplay
@@ -1518,9 +1296,7 @@
             </video>
           </div>
         </div>
-        <div class="stars reveal" aria-hidden="true">★★★★★</div>
-        <p class="proof-note" style="margin-top: 0; margin-bottom: 18px">מה אומרים אחרי המסיבה</p>
-        <div class="reviews stagger" data-testid="proof-reviews">
+        <div class="reviews" data-testid="proof-reviews">
           <figure class="review">
             <img
               src="assets/testimonials/review-1.jpg"
@@ -1543,15 +1319,40 @@
             />
           </figure>
         </div>
+        <p class="proof-note">המלצות אמיתיות מלקוחות שכבר חגגו איתנו</p>
       </div>
     </section>
 
-    <section id="faq">
+    <section id="story" class="alt" data-reveal>
       <div class="wrap">
-        <div class="sec-title reveal">
+        <div class="story-inner">
+          <div class="story-photos" aria-hidden="true">
+            <div class="story-photo">מאחורי הקלעים</div>
+            <div class="story-photo">מהסטודיו שלנו</div>
+          </div>
+          <div class="story-copy">
+            <h2>למה התחלנו את דוגרי</h2>
+            <p>
+              הכול התחיל ממסיבה אחת שרצינו להפוך לבלתי נשכחת. חיפשנו מתנה שתגרום לכל החדר לצחוק —
+              ולא מצאנו. אז ישבנו וכתבנו מאה מילים על החוגגת, והמשחק שיצא מזה פוצץ את הערב.
+            </p>
+            <p>
+              מאז הפכנו את זה למקצוע: לוקחים את הסיפורים שרק אתם מכירים והופכים אותם למשחק אישי אחד
+              ויחיד. כל הזמנה מרגישה לנו אישית — כי היא באמת כזו.
+            </p>
+            <p class="sign">— הצוות של דוגרי</p>
+            <a class="btn ghost" href="#faq">רוצה לשמוע הכל?</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq" data-reveal>
+      <div class="wrap">
+        <div class="sec-title">
           <h2>שאלות נפוצות</h2>
         </div>
-        <div class="faq stagger">
+        <div class="faq">
           <details>
             <summary>מה זה בעצם המשחק?</summary>
             <p>
@@ -1587,14 +1388,13 @@
       </div>
     </section>
 
-    <section class="final" id="order">
-      <div class="wrap reveal">
-        <h2>מוכנים להפתיע אותה?</h2>
+    <section class="final" id="order" data-reveal>
+      <div class="wrap">
+        <h2>מוכנים להפתיע?</h2>
         <p>כמה מילים מכם - וכל החדר יצחק עליו. או עליה. בדרך הכי אישית שיש.</p>
-        <div class="hero-cta">
-          <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="final"
-            >בונים את המשחק · <s class="was">129 ₪</s
-            ><span style="white-space: nowrap">79 ₪</span></a
+        <div class="hero-cta" style="justify-content: center">
+          <a class="btn" href="options.html" data-ga="order_started" data-ga-cta="final"
+            >בונים את המשחק →</a
           >
           <a
             class="btn wa"
@@ -1614,7 +1414,7 @@
 
     <footer>
       <div class="wrap">
-        <p>דוגרי</p>
+        <p class="foot-brand">דוגרי</p>
         <div class="foot-icons">
           <a
             class="foot-icon fi-wa"
@@ -1675,7 +1475,7 @@
             <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
           >
         </div>
-        <p class="tag">צילמתם? תייגו אותנו</p>
+        <p class="foot-tag">צילמתם? תייגו אותנו</p>
       </div>
     </footer>
 
@@ -1683,7 +1483,7 @@
       <a
         class="btn"
         id="stickyOrder"
-        href="products.html"
+        href="options.html"
         data-ga="order_started"
         data-ga-cta="sticky"
         >מזמינים · <s class="was">129 ₪</s><span style="white-space: nowrap">79 ₪</span></a
@@ -1702,17 +1502,14 @@
     </div>
 
     <script>
-      /* ============================================================
-     ROUND B - visual & interaction enhancement layer.
-     Pure progressive enhancement: content is visible without JS.
-     ============================================================ */
+      /* Progressive enhancement: scroll reveals + mobile nav toggle.
+         Content is fully visible without JS. */
       (function () {
         var reduce =
           window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-        /* ---- Scroll reveals (only arm if motion is allowed) ---- */
+        /* Scroll reveals for [data-reveal] sections (motion-safe only). */
         if (!reduce && 'IntersectionObserver' in window) {
-          document.documentElement.classList.add('reveal-on');
           var io = new IntersectionObserver(
             function (entries) {
               entries.forEach(function (e) {
@@ -1722,52 +1519,20 @@
                 }
               });
             },
-            { threshold: 0.12, rootMargin: '0px 0px -8% 0px' }
+            { threshold: 0.08, rootMargin: '0px 0px -6% 0px' }
           );
-          document.querySelectorAll('.reveal, .stagger').forEach(function (el) {
+          document.querySelectorAll('[data-reveal]').forEach(function (el) {
             io.observe(el);
           });
-          /* safety net: if anything is still hidden after 2.5s, force it visible */
+          /* Safety net: force-show anything still hidden after 2.5s. */
           setTimeout(function () {
-            document
-              .querySelectorAll('.reveal:not(.is-in), .stagger:not(.is-in)')
-              .forEach(function (el) {
-                var r = el.getBoundingClientRect();
-                if (r.top < window.innerHeight) el.classList.add('is-in');
-              });
+            document.querySelectorAll('[data-reveal]:not(.is-in)').forEach(function (el) {
+              if (el.getBoundingClientRect().top < window.innerHeight) el.classList.add('is-in');
+            });
           }, 2500);
         }
 
-        /* ---- Confetti burst behind the logo (one-shot, on load) ---- */
-        if (!reduce) {
-          var c = document.getElementById('confetti');
-          if (c) {
-            var colors = ['#8ca287', '#6f8a6a', '#6f8a6a', '#d8a7a0', '#e4ddd0'];
-            for (var i = 0; i < 26; i++) {
-              var p = document.createElement('i');
-              p.style.left = 5 + Math.random() * 90 + '%';
-              p.style.background = colors[i % colors.length];
-              p.style.animationDelay = Math.random() * 0.9 + 's';
-              p.style.animationDuration = 2.6 + Math.random() * 1.4 + 's';
-              p.style.transform = 'scale(' + (0.7 + Math.random() * 0.9) + ')';
-              c.appendChild(p);
-            }
-            /* a few looping twinkle sparkles */
-            for (var s = 0; s < 6; s++) {
-              var sp = document.createElement('span');
-              sp.className = 'sparkle';
-              var size = 6 + Math.random() * 10;
-              sp.style.width = size + 'px';
-              sp.style.height = size + 'px';
-              sp.style.left = 10 + Math.random() * 80 + '%';
-              sp.style.top = 10 + Math.random() * 60 + '%';
-              sp.style.animationDelay = Math.random() * 3 + 's';
-              c.appendChild(sp);
-            }
-          }
-        }
-
-        /* ---- Shared nav: mobile toggle menu ---- */
+        /* Mobile nav toggle. */
         var navToggle = document.querySelector('.nav-toggle');
         var navLinks = document.getElementById('navLinks');
         if (navToggle && navLinks) {
@@ -1775,7 +1540,6 @@
             var open = navLinks.classList.toggle('open');
             navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
           });
-          /* close the menu after tapping a link */
           navLinks.querySelectorAll('a').forEach(function (a) {
             a.addEventListener('click', function () {
               navLinks.classList.remove('open');
