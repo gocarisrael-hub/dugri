@@ -16,7 +16,7 @@ import { pathToFileURL } from 'node:url';
 // Static pages that must return 200 and contain a known marker substring. Each
 // marker was copied from the real file in site/ (a title or on-page heading).
 const PAGES = [
-  { path: '/', marker: 'המשחק שמפוצץ את החדר' },
+  { path: '/', marker: 'המשחק הכי אישי' },
   { path: '/collect.html', marker: 'אוספים מילים' },
   { path: '/options.html', marker: 'בונים את המשחק' },
   { path: '/admin.html', marker: 'ניהול הזמנות' },
