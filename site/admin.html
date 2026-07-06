@@ -821,6 +821,28 @@
             td.appendChild(document.createTextNode(' '));
             td.appendChild(restoreBtn);
           } else {
+            // Closed (owner finished) or expired (deadline passed) collections
+            // no longer accept words — offer a reopen so the customer can add
+            // more. Reopen flips status back to open and extends the expiry.
+            if (c.status === 'closed' || c.status === 'expired') {
+              const reopenBtn = document.createElement('button');
+              reopenBtn.textContent = 'פתח מחדש';
+              reopenBtn.onclick = async () => {
+                if (!confirm('לפתוח מחדש את איסוף המילים של ' + (c.honoree_name || '') + '?'))
+                  return;
+                reopenBtn.disabled = true;
+                const ok = await adminAction(
+                  'POST',
+                  '/api/admin/collections/' + c.id + '/reopen',
+                  {}
+                );
+                if (ok) load();
+                else reopenBtn.disabled = false;
+              };
+              td.appendChild(document.createTextNode(' '));
+              td.appendChild(reopenBtn);
+            }
+
             const cancelBtn = document.createElement('button');
             cancelBtn.textContent = 'בטל';
             cancelBtn.onclick = async () => {

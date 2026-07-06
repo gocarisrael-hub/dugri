@@ -112,6 +112,42 @@ test('בטל marks cancelled + שחזר restores; מחק removes the row', async
   await expect(page.locator('tbody tr').filter({ hasText: name })).toHaveCount(0);
 });
 
+test('פתח מחדש reopens a closed collection so it accepts words again', async ({
+  page,
+  request,
+}) => {
+  page.on('dialog', (dialog) => dialog.accept());
+  const name = uniq('פתח');
+  const { id, owner_token } = await seed(request, {
+    name,
+    email: 'reopen@example.com',
+    phone: '0537776666',
+    words: ['ראשונה'],
+  });
+  // Owner closes the list — it now refuses new words (409).
+  await request.post(`/api/collections/${id}/close`, { data: { owner_token } });
+  const rejected = await request.post(`/api/collections/${id}/words`, {
+    data: { words: ['לפני'] },
+  });
+  expect(rejected.status()).toBe(409);
+
+  await page.goto(`/admin.html?key=${KEY}`);
+  const row = page.locator('tbody tr').filter({ hasText: name });
+  await expect(row).toHaveCount(1);
+  await expect(row.locator('.pill.closed').first()).toBeVisible();
+
+  // Reopen -> status flips back to open (פתוח) and the reopen button is gone.
+  await row.getByRole('button', { name: 'פתח מחדש' }).click();
+  await expect(row.locator('.pill.open').first()).toBeVisible();
+  await expect(row.getByRole('button', { name: 'פתח מחדש' })).toHaveCount(0);
+
+  // The collection accepts words again.
+  const accepted = await request.post(`/api/collections/${id}/words`, {
+    data: { words: ['אחרי'] },
+  });
+  expect(accepted.status()).toBe(200);
+});
+
 test('order table fits the viewport width — no horizontal scroll', async ({ page, request }) => {
   // Seed a row with deliberately long values (email + word list) that would
   // otherwise force the wide table to overflow sideways.

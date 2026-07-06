@@ -248,6 +248,28 @@ const db = {
     return true;
   },
 
+  // Admin: reopen a collection that stopped accepting words because it was
+  // closed (owner finished the list) or its expiry passed, so a customer can add
+  // more words. Flips status back to 'open', clears closed_at, and pushes
+  // expires_at out a fresh full year (same window a new collection gets). Does
+  // NOT touch a soft-cancel — a cancelled order is restored with cancelCollection
+  // (undo), and effectiveStatus keeps returning 'cancelled' until it is. Returns
+  // the new effective status, or null when the collection doesn't exist.
+  reopenCollection(id) {
+    const c = this.getCollection(id);
+    if (!c) return null;
+    // A soft-cancelled collection is reopened by restoring it (cancelCollection
+    // undo), never here. Mutating its lifecycle fields would silently drop the
+    // original closed_at/expiry (a later restore would then resurface it as
+    // freshly open) while effectiveStatus still reported 'cancelled'. No-op.
+    if (c.cancelled) return effectiveStatus(c);
+    c.status = 'open';
+    c.closed_at = null;
+    c.expires_at = new Date(Date.now() + YEAR_MS).toISOString();
+    saveDb();
+    return effectiveStatus(c);
+  },
+
   // Admin: hard-delete a collection and all of its words. Returns false when
   // the collection doesn't exist.
   deleteCollection(id) {

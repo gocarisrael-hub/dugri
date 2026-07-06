@@ -108,3 +108,57 @@ describe('markReminded', () => {
     expect(db.markReminded('no-such-id')).toBe(false);
   });
 });
+
+describe('reopenCollection', () => {
+  it('reopens an owner-closed collection so it accepts words again', () => {
+    const c = db.createCollection('לקוח', { email: 'reopen-closed@example.com' });
+    db.closeCollection(c.id, c.owner_token);
+    expect(db.effectiveStatus(db.getCollection(c.id))).toBe('closed');
+    // While closed, addWords refuses.
+    expect(db.addWords(c.id, ['לפני'], null)).toMatchObject({ closed: true });
+
+    expect(db.reopenCollection(c.id)).toBe('open');
+    const live = db.getCollection(c.id);
+    expect(live.status).toBe('open');
+    expect(live.closed_at).toBe(null);
+    // Now words are accepted again.
+    expect(db.addWords(c.id, ['אחרי'], null)).toMatchObject({ added: 1 });
+  });
+
+  it('reopens an expired collection by pushing expires_at ~1 year out', () => {
+    const c = db.createCollection('לקוח', { email: 'reopen-expired@example.com' });
+    // Force the deadline into the past — the exact scenario we are recovering.
+    db.getCollection(c.id).expires_at = new Date(Date.now() - DAY_MS).toISOString();
+    expect(db.effectiveStatus(db.getCollection(c.id))).toBe('expired');
+    expect(db.addWords(c.id, ['לפני'], null)).toMatchObject({ closed: true });
+
+    expect(db.reopenCollection(c.id)).toBe('open');
+    const live = db.getCollection(c.id);
+    expect(Date.parse(live.expires_at)).toBeGreaterThan(Date.now() + 300 * DAY_MS);
+    expect(db.addWords(c.id, ['אחרי'], null)).toMatchObject({ added: 1 });
+  });
+
+  it('is a no-op on a soft-cancelled collection: stays cancelled, keeps closed_at/expires_at', () => {
+    const c = db.createCollection('לקוח', { email: 'reopen-cancelled@example.com' });
+    // Close it (records closed_at), then cancel it while closed.
+    db.closeCollection(c.id, c.owner_token);
+    db.cancelCollection(c.id);
+    const before = db.getCollection(c.id);
+    const closedAt = before.closed_at;
+    const expiresAt = before.expires_at;
+    expect(closedAt).not.toBe(null);
+
+    // Reopen must NOT touch a cancelled collection — mutating it would drop the
+    // original closed_at/expiry that a later restore relies on.
+    expect(db.reopenCollection(c.id)).toBe('cancelled');
+    const after = db.getCollection(c.id);
+    expect(after.cancelled).toBe(true);
+    expect(after.status).toBe('closed');
+    expect(after.closed_at).toBe(closedAt);
+    expect(after.expires_at).toBe(expiresAt);
+  });
+
+  it('returns null for an unknown id', () => {
+    expect(db.reopenCollection('no-such-id')).toBe(null);
+  });
+});
