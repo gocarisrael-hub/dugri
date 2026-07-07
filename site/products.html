@@ -26,6 +26,8 @@
       />
     </noscript>
     <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/header.css" />
+    <script src="js/header.js" defer></script>
     <style>
       * {
         box-sizing: border-box;
@@ -42,8 +44,8 @@
         line-height: 1.6;
         font-size: 17px;
         -webkit-font-smoothing: antialiased;
-        /* clear the fixed nav (top) */
-        padding-top: 58px;
+        /* clear the fixed header (top) */
+        padding-top: 60px;
       }
       .wrap {
         max-width: 1000px;
@@ -130,132 +132,6 @@
         outline: 3px solid var(--sage);
         outline-offset: 3px;
         border-radius: 8px;
-      }
-
-      /* ---- shared nav ---- */
-      .nav {
-        position: fixed;
-        top: 0;
-        inset-inline: 0;
-        z-index: 80;
-        background: rgba(255, 255, 255, 0.94);
-        backdrop-filter: blur(10px);
-        border-bottom: 1px solid var(--line);
-        box-shadow: 0 6px 20px rgba(35, 32, 28, 0.07);
-      }
-      .nav-inner {
-        max-width: 1000px;
-        margin: 0 auto;
-        padding: 8px 18px;
-        display: flex;
-        align-items: center;
-        gap: 14px;
-      }
-      .nav-logo {
-        display: flex;
-        align-items: center;
-      }
-      .nav-logo img {
-        height: 34px;
-        width: auto;
-        display: block;
-      }
-      .nav-links {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-inline-start: auto;
-      }
-      .nav-links a {
-        font-family: var(--display);
-        font-weight: 800;
-        font-size: 15.5px;
-        color: var(--sage-deep);
-        padding: 8px 12px;
-        border-radius: 10px;
-        text-decoration: none;
-        transition:
-          background 0.18s ease,
-          color 0.18s ease;
-      }
-      .nav-links a:hover {
-        background: var(--section);
-        color: var(--sage-deeper);
-      }
-      .nav-links a.nav-cta {
-        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
-        color: #fff;
-        padding: 9px 20px;
-        box-shadow: 0 6px 16px rgba(92, 115, 87, 0.24);
-      }
-      .nav-links a.nav-cta:hover {
-        filter: brightness(1.05);
-        color: #fff;
-      }
-      .nav-toggle {
-        display: none;
-        margin-inline-start: auto;
-        background: none;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        width: 42px;
-        height: 40px;
-        cursor: pointer;
-        align-items: center;
-        justify-content: center;
-      }
-      .nav-toggle span,
-      .nav-toggle span::before,
-      .nav-toggle span::after {
-        display: block;
-        width: 20px;
-        height: 2px;
-        background: var(--sage-deep);
-        position: relative;
-        transition:
-          transform 0.2s ease,
-          opacity 0.2s ease;
-      }
-      .nav-toggle span::before {
-        content: '';
-        position: absolute;
-        top: -6px;
-      }
-      .nav-toggle span::after {
-        content: '';
-        position: absolute;
-        top: 6px;
-      }
-      @media (max-width: 640px) {
-        .nav-toggle {
-          display: flex;
-        }
-        .nav-links {
-          position: absolute;
-          top: 100%;
-          inset-inline: 0;
-          flex-direction: column;
-          align-items: stretch;
-          gap: 0;
-          background: rgba(255, 255, 255, 0.98);
-          border-bottom: 1px solid var(--line);
-          box-shadow: 0 14px 28px rgba(35, 32, 28, 0.12);
-          padding: 8px 14px 14px;
-          margin: 0;
-          display: none;
-        }
-        .nav-links.open {
-          display: flex;
-        }
-        .nav-links a {
-          padding: 13px 10px;
-          border-radius: 10px;
-        }
-        .nav-links a.nav-cta {
-          margin-top: 6px;
-          text-align: center;
-          justify-content: center;
-        }
       }
 
       /* ====================================================================
@@ -457,31 +333,47 @@
     </style>
   </head>
   <body>
-    <nav class="nav" aria-label="ניווט ראשי">
-      <div class="nav-inner">
-        <a class="nav-logo" href="index.html#top" aria-label="דוגרי - לדף הבית"
-          ><img src="assets/logo.png" alt="דוגרי"
-        /></a>
+    <header class="hdr" aria-label="ניווט ראשי">
+      <div class="hdr-inner">
         <button
-          class="nav-toggle"
+          class="hdr-toggle"
           type="button"
           data-testid="nav-toggle"
           aria-expanded="false"
-          aria-controls="navLinks"
+          aria-controls="navMenu"
           aria-label="תפריט"
         >
-          <span></span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <line x1="4" y1="7" x2="20" y2="7" stroke-width="2" stroke-linecap="round" />
+            <line x1="4" y1="12" x2="20" y2="12" stroke-width="2" stroke-linecap="round" />
+            <line x1="4" y1="17" x2="20" y2="17" stroke-width="2" stroke-linecap="round" />
+          </svg>
         </button>
-        <div class="nav-links" id="navLinks" data-testid="nav-links">
-          <a href="products.html" aria-current="page">העיצובים שלנו</a>
-          <a href="how.html">איך זה עובד?</a>
-          <a href="index.html#gallery">הצצה</a>
-          <a href="index.html#proof">המלצות</a>
-          <a href="timer.html">טיימר</a>
-          <a class="nav-cta" href="#gallery" data-ga="order_started" data-ga-cta="nav">הזמנה</a>
-        </div>
+        <a class="hdr-logo" href="index.html" aria-label="דוגרי - לדף הבית"
+          ><img src="assets/logo.png" alt="דוגרי"
+        /></a>
+        <a
+          class="hdr-order nav-cta"
+          href="products.html"
+          data-testid="order-now"
+          data-ga="order_started"
+          data-ga-cta="nav"
+          >הזמינו עכשיו</a
+        >
       </div>
-    </nav>
+      <nav
+        class="hdr-menu"
+        id="navMenu"
+        data-testid="nav-menu"
+        role="menu"
+        aria-label="תפריט ניווט"
+      >
+        <a href="products.html" role="menuitem">החנות</a>
+        <a href="index.html#reviews" role="menuitem">המלצות</a>
+        <a href="index.html#story" role="menuitem">הסיפור שלנו</a>
+        <a href="index.html#faq" role="menuitem">שאלות</a>
+      </nav>
+    </header>
 
     <main>
       <!-- STORE — the whole page is one clean product grid. Cards are rendered
@@ -562,27 +454,6 @@
         <p class="tag">צילמתם? תייגו אותנו</p>
       </div>
     </footer>
-
-    <!-- Progressive enhancement: mobile nav toggle only. -->
-    <script>
-      (function () {
-        /* ---- Shared nav: mobile toggle menu ---- */
-        var navToggle = document.querySelector('.nav-toggle');
-        var navLinks = document.getElementById('navLinks');
-        if (navToggle && navLinks) {
-          navToggle.addEventListener('click', function () {
-            var open = navLinks.classList.toggle('open');
-            navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-          });
-          navLinks.querySelectorAll('a').forEach(function (a) {
-            a.addEventListener('click', function () {
-              navLinks.classList.remove('open');
-              navToggle.setAttribute('aria-expanded', 'false');
-            });
-          });
-        }
-      })();
-    </script>
 
     <!-- Store grid: one clean product card per design, single source of truth =
          js/designs.js (PUBLIC_DESIGNS excludes private designs, hidden until

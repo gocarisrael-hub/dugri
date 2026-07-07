@@ -48,6 +48,8 @@
     </noscript>
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/carousel.css" />
+    <link rel="stylesheet" href="/css/header.css" />
+    <script src="js/header.js" defer></script>
     <style>
       * {
         box-sizing: border-box;
@@ -64,8 +66,7 @@
         line-height: 1.6;
         font-size: 17px;
         -webkit-font-smoothing: antialiased;
-        padding-top: 60px; /* clear fixed nav */
-        padding-bottom: 78px; /* clear sticky order bar (mobile) */
+        padding-top: 60px; /* clear fixed header */
       }
       .wrap {
         max-width: 1080px;
@@ -176,159 +177,6 @@
       }
       .alt {
         background: var(--section);
-      }
-
-      /* ============ HEADER (sticky top bar) ============ */
-      .hdr {
-        position: fixed;
-        top: 0;
-        inset-inline: 0;
-        z-index: 80;
-        background: rgba(247, 244, 239, 0.82);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border-bottom: 1px solid var(--line);
-      }
-      .hdr-inner {
-        position: relative;
-        max-width: 1080px;
-        margin: 0 auto;
-        min-height: 42px;
-        padding: 9px 16px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-      }
-      @media (min-width: 720px) {
-        .hdr-inner {
-          padding: 10px 22px;
-        }
-      }
-      /* CENTER zone: logo pinned to the true center regardless of side widths */
-      .hdr-logo {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%);
-        display: flex;
-        align-items: center;
-      }
-      .hdr-logo img {
-        height: 34px;
-        width: auto;
-        display: block;
-      }
-      /* LEFT zone: solid sage "order now" pill */
-      .hdr-order {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        font-family: var(--display);
-        font-weight: 800;
-        font-size: 14px;
-        letter-spacing: -0.01em;
-        background: var(--sage);
-        color: #fff;
-        text-decoration: none;
-        white-space: nowrap;
-        padding: 9px 16px;
-        border-radius: var(--radius-pill);
-        box-shadow: var(--shadow-sm);
-        transition:
-          background 0.2s var(--ease),
-          transform 0.14s var(--ease),
-          box-shadow 0.25s var(--ease);
-      }
-      .hdr-order:hover {
-        background: var(--sage-deep);
-        transform: translateY(-1px);
-        box-shadow: var(--shadow-md);
-      }
-      .hdr-order:active {
-        transform: translateY(0) scale(0.99);
-      }
-      @media (min-width: 720px) {
-        .hdr-order {
-          font-size: 15px;
-          padding: 10px 22px;
-        }
-      }
-      /* RIGHT zone: hamburger button */
-      .hdr-toggle {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 42px;
-        height: 40px;
-        flex: 0 0 auto;
-        background: none;
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        color: var(--ink);
-        cursor: pointer;
-        transition:
-          background 0.18s var(--ease),
-          border-color 0.18s var(--ease);
-      }
-      .hdr-toggle:hover {
-        background: var(--section);
-        border-color: var(--sage);
-      }
-      .hdr-toggle svg {
-        width: 20px;
-        height: 20px;
-        display: block;
-      }
-      /* slide-down menu panel, dropped under the bar */
-      .hdr-menu {
-        position: absolute;
-        top: 100%;
-        inset-inline: 0;
-        background: var(--bg);
-        border-bottom: 1px solid var(--line);
-        box-shadow: var(--shadow-md);
-        padding: 8px 16px 14px;
-        display: none;
-      }
-      .hdr-menu.open {
-        display: block;
-      }
-      .hdr-menu a {
-        display: block;
-        font-family: var(--display);
-        font-weight: 700;
-        font-size: 17px;
-        color: var(--ink);
-        text-decoration: none;
-        padding: 13px 8px;
-        border-radius: 10px;
-        transition:
-          background 0.16s var(--ease),
-          color 0.16s var(--ease);
-      }
-      .hdr-menu a + a {
-        border-top: 1px solid var(--line);
-      }
-      .hdr-menu a:hover,
-      .hdr-menu a:focus-visible {
-        background: var(--section);
-        color: var(--sage-deeper);
-      }
-      @media (min-width: 720px) {
-        .hdr-menu {
-          max-width: 1080px;
-          margin: 0 auto;
-          inset-inline: auto;
-          inset-inline-end: 22px;
-          min-width: 220px;
-          border: 1px solid var(--line);
-          border-radius: var(--radius);
-          padding: 8px;
-          margin-top: 8px;
-          overflow: hidden;
-        }
       }
 
       /* ============ HERO (full-bleed auto-rotating slideshow) ============ */
@@ -829,44 +677,6 @@
         border: 0;
       }
 
-      /* ============ STICKY MOBILE ORDER BAR ============ */
-      .sticky {
-        position: fixed;
-        bottom: 0;
-        inset-inline: 0;
-        background: rgba(247, 244, 239, 0.96);
-        border-top: 1px solid var(--line);
-        padding: 12px 16px;
-        display: flex;
-        gap: 10px;
-        z-index: 50;
-        backdrop-filter: blur(8px);
-        box-shadow: 0 -8px 24px rgba(35, 32, 28, 0.08);
-      }
-      .sticky .btn {
-        flex: 1 1 auto;
-        min-width: 0;
-        font-size: 14px;
-        padding: 13px 8px;
-        white-space: nowrap;
-        letter-spacing: -0.01em;
-      }
-      .sticky #waSticky {
-        flex: 0 0 auto;
-        padding: 13px 16px;
-      }
-      .sticky #stickyOrder .was {
-        font-size: 0.78em;
-      }
-      @media (min-width: 720px) {
-        .sticky {
-          display: none;
-        }
-        body {
-          padding-bottom: 0;
-        }
-      }
-
       /* ============ REDUCED MOTION ============ */
       @media (prefers-reduced-motion: reduce) {
         html {
@@ -897,7 +707,7 @@
             <line x1="4" y1="17" x2="20" y2="17" stroke-width="2" stroke-linecap="round" />
           </svg>
         </button>
-        <a class="hdr-logo" href="#top" aria-label="דוגרי - לראש העמוד"
+        <a class="hdr-logo" href="index.html" aria-label="דוגרי - לדף הבית"
           ><img src="assets/logo.png" alt="דוגרי"
         /></a>
         <a
@@ -917,9 +727,9 @@
         aria-label="תפריט ניווט"
       >
         <a href="products.html" role="menuitem">החנות</a>
-        <a href="#reviews" role="menuitem">המלצות</a>
-        <a href="#story" role="menuitem">הסיפור שלנו</a>
-        <a href="#faq" role="menuitem">שאלות</a>
+        <a href="index.html#reviews" role="menuitem">המלצות</a>
+        <a href="index.html#story" role="menuitem">הסיפור שלנו</a>
+        <a href="index.html#faq" role="menuitem">שאלות</a>
       </nav>
     </header>
 
@@ -1247,30 +1057,8 @@
       </div>
     </footer>
 
-    <div class="sticky">
-      <a
-        class="btn"
-        id="stickyOrder"
-        href="products.html"
-        data-ga="order_started"
-        data-ga-cta="sticky"
-        >מזמינים · <s class="was">129 ₪</s><span style="white-space: nowrap">79 ₪</span></a
-      >
-      <a
-        class="btn wa"
-        id="waSticky"
-        href="#"
-        target="_blank"
-        rel="noopener"
-        data-ga="contact_click"
-        data-ga-channel="whatsapp"
-        data-ga-where="sticky"
-        >וואטסאפ</a
-      >
-    </div>
-
     <script>
-      /* Progressive enhancement: scroll reveals + mobile nav toggle.
+      /* Progressive enhancement: scroll reveals.
          Content is fully visible without JS. */
       (function () {
         var reduce =
@@ -1299,40 +1087,6 @@
             });
           }, 2500);
         }
-
-        /* Header menu: hamburger opens a slide-down panel.
-           Closes on link click, outside click and Esc. */
-        var navToggle = document.querySelector('[data-testid="nav-toggle"]');
-        var navMenu = document.getElementById('navMenu');
-        if (navToggle && navMenu) {
-          var closeMenu = function () {
-            navMenu.classList.remove('open');
-            navToggle.setAttribute('aria-expanded', 'false');
-          };
-          navToggle.addEventListener('click', function (e) {
-            e.stopPropagation();
-            var open = navMenu.classList.toggle('open');
-            navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-          });
-          navMenu.querySelectorAll('a').forEach(function (a) {
-            a.addEventListener('click', closeMenu);
-          });
-          document.addEventListener('click', function (e) {
-            if (
-              navMenu.classList.contains('open') &&
-              !navMenu.contains(e.target) &&
-              !navToggle.contains(e.target)
-            ) {
-              closeMenu();
-            }
-          });
-          document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape' && navMenu.classList.contains('open')) {
-              closeMenu();
-              navToggle.focus();
-            }
-          });
-        }
       })();
     </script>
 
@@ -1356,7 +1110,7 @@
 
       const waBase = 'https://wa.me/' + CONFIG.whatsapp;
       const waMsg = encodeURIComponent('היי! אני רוצה להזמין משחק דוגרי');
-      ['waLink', 'waCtaLink', 'waSticky'].forEach((id) => {
+      ['waLink', 'waCtaLink'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.href = waBase + '?text=' + waMsg;
       });
