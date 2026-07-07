@@ -140,6 +140,25 @@ test.describe('fullscreen zoom overlay', () => {
     await vp.dispatchEvent('pointerup', { clientX: 260, clientY: 200 });
     expect(await zoomVar()).toBe(1);
   });
+
+  test('a horizontal swipe moves between views (front → back)', async ({ page }) => {
+    await page.goto('/options.html');
+    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await page.getByTestId('zoom-open').click();
+    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
+    // opens on the front view
+    await expect(page.getByTestId('zoom-tab-front')).toHaveAttribute('aria-selected', 'true');
+
+    // swipe left (finger right→left) → the next view (back)
+    const vp = page.getByTestId('zoom-viewport');
+    await vp.dispatchEvent('pointerdown', { clientX: 320, clientY: 300 });
+    await vp.dispatchEvent('pointerup', { clientX: 60, clientY: 300 });
+
+    await expect(page.getByTestId('zoom-tab-back')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('zoom-tab-front')).toHaveAttribute('aria-selected', 'false');
+    // the artwork for the new view is present
+    await expect(page.locator('#zoomContent svg, #zoomContent img')).toBeVisible();
+  });
 });
 
 // The rotate-device hint is only meaningful on a touch device held in portrait.

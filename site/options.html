@@ -426,10 +426,10 @@
         background: var(--line);
       }
       .tab[aria-selected='true'] {
-        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
+        background: linear-gradient(135deg, #e85a97, #c53f79);
         color: #fff;
         border-color: transparent;
-        box-shadow: 0 8px 18px rgba(229, 25, 125, 0.26);
+        box-shadow: 0 8px 18px rgba(232, 90, 151, 0.3);
       }
       .preview-stage {
         position: relative;
@@ -441,7 +441,6 @@
             transparent 70%
           ),
           var(--cfg-bg, var(--bg));
-        border: 1px dashed var(--line);
         /* Size to the sheet it holds (the sheet fills the card width, height by
            its A4-landscape ratio). Grid-centers the page; overflow hidden keeps
            the rounded corners clean. */
@@ -656,10 +655,10 @@
         height: 46px;
         border-radius: 50%;
         cursor: pointer;
-        border: 3px solid #fff;
-        box-shadow:
-          0 0 0 1px var(--line),
-          var(--shadow-sm);
+        /* clean swatch: NO resting frame/ring — just the colour itself. The
+           selected state (below) adds the only ring. */
+        border: none;
+        box-shadow: none;
         transition:
           transform 0.16s ease,
           box-shadow 0.2s ease;
@@ -669,8 +668,10 @@
         transform: scale(1.08);
       }
       .swatch[aria-pressed='true'] {
+        /* clear SELECTED state: a brand-pink ring + slight lift, so the chosen
+           colour is obvious without the busy default framing. */
         box-shadow:
-          0 0 0 3px var(--ink),
+          0 0 0 3px #e85a97,
           var(--shadow-md);
         transform: scale(1.06);
       }
@@ -692,23 +693,17 @@
         text-align: center;
       }
 
-      /* ===== CHASERS ADD-ON CARD ===== */
+      /* ===== CHASERS ADD-ON (the only add-on) — no box: a clean icon + text
+         row that sits directly on the page, no border / background / shadow. */
       .addon {
         display: flex;
         align-items: center;
         gap: 14px;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 16px 18px;
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        padding: 8px 2px;
         cursor: pointer;
-        transition: border-color 0.2s ease;
-      }
-      .addon:hover {
-        border-color: var(--ink);
-      }
-      .addon.is-on {
-        border-color: var(--ink);
       }
       .addon-ico {
         width: 30px;
@@ -1872,29 +1867,8 @@
             data-testid="name-preview-warning"
             hidden
           ></p>
-          <div class="name-preview-imgs" id="namePreviewImgs">
-            <figure class="name-preview-fig">
-              <img id="namePreviewCard" data-testid="name-preview-card" alt="תצוגת קלף" />
-            </figure>
-            <figure class="name-preview-fig">
-              <img id="namePreviewBoard" data-testid="name-preview-board" alt="תצוגת לוח" />
-            </figure>
-          </div>
-          <!-- Client fallback when the server preview is unavailable: a neutral
-               card-shaped placeholder with the name in a handwriting font plus a
-               short note — never a blank area. See doPreview()'s catch. -->
-          <div
-            class="name-preview-fallback"
-            id="namePreviewFallback"
-            data-testid="name-preview-fallback"
-            hidden
-          >
-            <div class="npf-card"><span class="npf-name" id="npfName"></span></div>
-            <p class="npf-note">לא הצלחנו לטעון תצוגה מקדימה כרגע</p>
-          </div>
-          <div class="name-preview-empty" id="namePreviewEmpty" data-testid="name-preview-loading">
-            טוען תצוגה…
-          </div>
+          <!-- Font picker sits ABOVE the rendered images: pick a font here and
+               see it applied on the card + board below. -->
           <div class="wiz-fontpicker">
             <span class="wiz-lbl">גופן המילים</span>
             <div
@@ -1904,6 +1878,51 @@
               role="group"
               aria-label="גופן המילים"
             ></div>
+          </div>
+          <div class="name-preview-imgs" id="namePreviewImgs">
+            <figure class="name-preview-fig">
+              <img id="namePreviewCard" data-testid="name-preview-card" alt="תצוגת קלף" />
+            </figure>
+            <figure class="name-preview-fig">
+              <img id="namePreviewBoard" data-testid="name-preview-board" alt="תצוגת לוח" />
+            </figure>
+          </div>
+          <!-- Enlarge the rendered name preview: opens the shared zoom overlay in
+               image mode, swiping between the card + board (see openNameZoom). -->
+          <button
+            class="name-preview-zoom"
+            type="button"
+            id="nameZoomOpen"
+            data-testid="name-zoom-open"
+            aria-label="הגדלת התצוגה"
+            hidden
+          >
+            <svg class="zi" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path
+                d="M4 4h6v2H6v4H4V4Zm10 0h6v6h-2V6h-4V4ZM6 14v4h4v2H4v-6h2Zm14 0v6h-6v-2h4v-4h2Z"
+              />
+            </svg>
+            הגדלה
+          </button>
+          <!-- Client fallback when the server preview is unavailable: a neutral
+               card-shaped placeholder with the name in a handwriting font plus a
+               short note and a retry — never a blank area. See doPreview()'s catch. -->
+          <div
+            class="name-preview-fallback"
+            id="namePreviewFallback"
+            data-testid="name-preview-fallback"
+            hidden
+          >
+            <div class="npf-card"><span class="npf-name" id="npfName"></span></div>
+            <p class="npf-note" id="npfNote" data-testid="name-preview-note">
+              לא הצלחנו לטעון תצוגה מקדימה כרגע
+            </p>
+            <button type="button" class="npf-retry" id="npfRetry" data-testid="name-preview-retry">
+              נסו שוב
+            </button>
+          </div>
+          <div class="name-preview-empty" id="namePreviewEmpty" data-testid="name-preview-loading">
+            טוען תצוגה…
           </div>
         </div>
         <style>
@@ -1951,6 +1970,7 @@
             border: 1px solid var(--line);
             border-radius: var(--radius);
             background: #fff;
+            cursor: zoom-in;
           }
           /* board is a supporting thumbnail — a touch smaller than the card */
           .name-preview-fig:last-child img {
@@ -1998,8 +2018,56 @@
             color: var(--muted);
             padding: 10px 0;
           }
+          /* enlarge affordance under the rendered images */
+          .name-preview-zoom {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin: 12px auto 0;
+            font-family: var(--display);
+            font-weight: 800;
+            font-size: 13px;
+            line-height: 1;
+            color: var(--ink);
+            background: transparent;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            padding: 8px 14px;
+            cursor: zoom-in;
+            transition:
+              border-color 0.15s ease,
+              color 0.15s ease;
+          }
+          .name-preview-zoom[hidden] {
+            display: none;
+          }
+          .name-preview-zoom:hover {
+            border-color: #e85a97;
+            color: #c53f79;
+          }
+          .name-preview-zoom .zi {
+            width: 14px;
+            height: 14px;
+            flex: 0 0 auto;
+          }
+          .npf-retry {
+            margin: 10px auto 0;
+            font-family: var(--display);
+            font-weight: 800;
+            font-size: 13px;
+            color: #fff;
+            background: #e85a97;
+            border: none;
+            border-radius: var(--radius);
+            padding: 8px 16px;
+            cursor: pointer;
+          }
+          .npf-retry:hover {
+            background: #c53f79;
+          }
+          /* the font picker now sits ABOVE the images */
           .wiz-fontpicker {
-            margin-top: 18px;
+            margin: 0 0 16px;
           }
           .wiz-fontpicker .wiz-lbl {
             display: block;
@@ -2887,11 +2955,18 @@
       const namePreviewImgs = document.getElementById('namePreviewImgs');
       const namePreviewFallback = document.getElementById('namePreviewFallback');
       const npfName = document.getElementById('npfName');
+      const npfNote = document.getElementById('npfNote');
+      const npfRetry = document.getElementById('npfRetry');
+      const nameZoomOpenBtn = document.getElementById('nameZoomOpen');
       const fontOpts = document.getElementById('fontOpts');
 
-      // The card word-font the customer picked (a filename in the shared pool);
-      // null keeps the theme's default font. Sent with the created collection.
-      let chosenWordFont = null;
+      // The picker ALWAYS starts on a real default font (first in the shared
+      // pool) so a chip is visibly selected on load and the first render matches
+      // the marked chip — rather than starting on the (unmarked) theme default.
+      const DEFAULT_WORD_FONT = 'Cafe Regular.ttf';
+      // The card word-font the customer picked (a filename in the shared pool).
+      // Sent with the created collection.
+      let chosenWordFont = DEFAULT_WORD_FONT;
       let fontPickerBuilt = false;
       let previewEpoch = 0; // guards against out-of-order preview responses
       let previewTimer = null; // debounce handle
@@ -2913,6 +2988,13 @@
       function buildFontPicker(options) {
         if (fontPickerBuilt || !Array.isArray(options) || !options.length) return;
         fontPickerBuilt = true;
+        // Guarantee the chosen font is a real member of the returned pool so its
+        // chip is always the one marked selected (fall back to the first option
+        // if the preferred default isn't offered for this theme).
+        const files = options.map((o) => o && o.file).filter(Boolean);
+        if (!chosenWordFont || !files.includes(chosenWordFont)) {
+          chosenWordFont = files.includes(DEFAULT_WORD_FONT) ? DEFAULT_WORD_FONT : files[0];
+        }
         options.forEach((opt) => {
           if (!opt || !opt.file) return;
           const btn = document.createElement('button');
@@ -2958,12 +3040,19 @@
         );
       }
 
-      async function doPreview() {
+      // `attempt` drives a one-shot auto-retry: attempt 0 is the first try (shows
+      // the loader), attempt 1 is the single automatic retry fired ~0.9s after a
+      // transient failure. If the retry also fails we settle on the friendly
+      // fallback with a manual "נסו שוב" — never a blank / stuck "טוען…".
+      async function doPreview(attempt = 0) {
         const theme = currentTheme();
         const name = honoreeNameValue();
         const epoch = ++previewEpoch;
         namePreview.hidden = false;
-        namePreviewEmpty.hidden = false;
+        if (attempt === 0) {
+          namePreviewFallback.hidden = true;
+          namePreviewEmpty.hidden = false;
+        }
         try {
           const r = await fetch('/api/preview', {
             method: 'POST',
@@ -2997,16 +3086,32 @@
             namePreviewWarn.hidden = true;
           }
           namePreviewEmpty.hidden = true;
+          // images are ready → offer the enlarge affordance
+          if (nameZoomOpenBtn) nameZoomOpenBtn.hidden = false;
         } catch (e) {
           if (epoch !== previewEpoch) return;
           // Server preview unavailable (network drop or non-OK response) — never
-          // leave a blank area. Drop the loader and show a neutral card-shaped
-          // placeholder with the name in a handwriting font plus a short note,
-          // instead of srcless/hidden <img>s with nothing in their place.
+          // leave a blank area. Show a neutral card-shaped placeholder with the
+          // name in a handwriting font, and a small note. The enlarge affordance
+          // has nothing real to show, so hide it.
           namePreviewEmpty.hidden = true;
           namePreviewWarn.hidden = true;
           namePreviewImgs.hidden = true;
+          if (nameZoomOpenBtn) nameZoomOpenBtn.hidden = true;
           npfName.textContent = name;
+          if (attempt === 0) {
+            // one automatic retry — self-heals transient hiccups
+            npfNote.textContent = 'לא הצלחנו לטעון תצוגה — מנסים שוב…';
+            npfRetry.hidden = true;
+            namePreviewFallback.hidden = false;
+            setTimeout(() => {
+              if (epoch === previewEpoch) doPreview(1);
+            }, 900);
+            return;
+          }
+          // retry also failed — settle with a manual retry button
+          npfNote.textContent = 'לא הצלחנו לטעון תצוגה מקדימה כרגע';
+          npfRetry.hidden = false;
           namePreviewFallback.hidden = false;
         }
       }
@@ -3025,6 +3130,13 @@
         }
         previewTimer = setTimeout(doPreview, 450);
       }
+
+      // Manual retry from the fallback: start a fresh attempt (loader + one auto
+      // retry again). openNameZoom is a hoisted declaration in the zoom section.
+      if (npfRetry) npfRetry.addEventListener('click', () => doPreview(0));
+      if (nameZoomOpenBtn) nameZoomOpenBtn.addEventListener('click', () => openNameZoom());
+      // tapping the rendered images also enlarges them
+      if (namePreviewImgs) namePreviewImgs.addEventListener('click', () => openNameZoom());
 
       // Both contact fields are required so we can always reach the owner with
       // the management link (same rules the retired thankyou page used).
@@ -3361,21 +3473,100 @@
         setZoom(1);
       }
 
-      // In-overlay view switch (card / back / board). Sync the main tabs + active
-      // panel, make sure that panel's SVG is inlined, then re-clone it into the
-      // zoom. Board-less designs never expose a board tab here (see updateZoomTabs).
-      const zoomTabEls = Array.from(document.querySelectorAll('.zoom-tab'));
-      function updateZoomTabs() {
+      const zoomTabs = document.getElementById('zoomTabs');
+
+      // The overlay walks an ordered list of VIEWS. In 'design' mode the views are
+      // the product tabs (front / back / board that exist) cloned from the live
+      // SVG panels; in 'names' mode they are the two rendered name-preview images
+      // (card / board). Either way the tab bar AND a finger-swipe walk the same
+      // list, so the enlarged view is swipeable like the site carousels.
+      let zoomMode = 'design'; // 'design' | 'names'
+      let zoomViews = []; // [{ id, label }]
+      let zoomIndex = 0;
+      let nameZoomCardSrc = '';
+      let nameZoomBoardSrc = '';
+
+      function designZoomViews() {
         const d = DESIGNS[designIndex] || {};
         const hasBoard = !!(d.products && d.products.board);
-        zoomTabEls.forEach((b) => {
-          if (b.dataset.ztab === 'board') b.hidden = !hasBoard;
-          b.setAttribute('aria-selected', b.dataset.ztab === activeTab ? 'true' : 'false');
-        });
+        const v = [
+          { id: 'front', label: 'קלף' },
+          { id: 'back', label: 'גב' },
+        ];
+        if (hasBoard) v.push({ id: 'board', label: 'לוח' });
+        return v;
       }
+
+      // (Re)build the bottom tab bar from the current view list, marking activeId.
+      function buildZoomTabs(activeId) {
+        zoomTabs.innerHTML = '';
+        zoomViews.forEach((view) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'zoom-tab';
+          b.setAttribute('role', 'tab');
+          b.dataset.ztab = view.id;
+          b.dataset.testid = 'zoom-tab-' + view.id;
+          b.setAttribute('aria-selected', view.id === activeId ? 'true' : 'false');
+          b.textContent = view.label;
+          b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            zoomGoTo(view.id);
+          });
+          zoomTabs.appendChild(b);
+        });
+        zoomTabs.hidden = zoomViews.length < 2;
+      }
+      function markZoomTab(activeId) {
+        zoomTabs
+          .querySelectorAll('.zoom-tab')
+          .forEach((b) =>
+            b.setAttribute('aria-selected', b.dataset.ztab === activeId ? 'true' : 'false')
+          );
+      }
+
+      // Show one name-preview image (card / board) in the overlay.
+      function showNameImage(id) {
+        zoomContent.removeAttribute('style');
+        const src = id === 'board' ? nameZoomBoardSrc : nameZoomCardSrc;
+        zoomContent.innerHTML = '';
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = '';
+        zoomContent.appendChild(img);
+        setZoom(1);
+      }
+
+      // Navigate the overlay to a view id (works in both modes).
+      function zoomGoTo(id) {
+        const idx = zoomViews.findIndex((v) => v.id === id);
+        if (idx < 0) return;
+        zoomIndex = idx;
+        if (zoomMode === 'names') {
+          showNameImage(id);
+          markZoomTab(id);
+          track('zoom_nav', { tab: id });
+        } else {
+          zoomShowTab(id); // clones the live SVG; also re-marks the tab
+        }
+      }
+
+      // Finger-swipe between adjacent views (only when NOT zoomed in — otherwise a
+      // drag pans the enlarged sheet). Clamps at the ends (no wrap).
+      function zoomAdjacent(dir) {
+        if (zoomScale > ZOOM_MIN) return;
+        const n = zoomViews.length;
+        if (n < 2) return;
+        const i = Math.min(n - 1, Math.max(0, zoomIndex + dir));
+        if (i === zoomIndex) return;
+        zoomGoTo(zoomViews[i].id);
+      }
+
+      // In-overlay design view switch: sync the main tabs + active panel, ensure
+      // that panel's SVG is inlined, then clone it into the zoom.
       async function zoomShowTab(tab) {
         if (tab === activeTab && zoomContent.querySelector('svg, img')) {
-          updateZoomTabs();
+          markZoomTab(tab);
           return;
         }
         selectTab(tab); // sync main tabs + active panel (kicks lazy inline)
@@ -3389,15 +3580,9 @@
         }
         if (!zoomOpen) return; // overlay closed while we awaited — bail
         fillZoom();
-        updateZoomTabs();
+        markZoomTab(tab);
         track('zoom_nav', { tab });
       }
-      zoomTabEls.forEach((b) =>
-        b.addEventListener('click', (e) => {
-          e.stopPropagation();
-          zoomShowTab(b.dataset.ztab);
-        })
-      );
 
       function maybeShowHint() {
         // Only useful on a touch device held in PORTRAIT — that's when rotating
@@ -3427,15 +3612,8 @@
         } catch (e) {}
       }
 
-      function openZoom() {
-        if (zoomOpen) return;
-        // Not from the collapsed name/contact mini-preview (steps 4-5): there the
-        // ⤢ affordance is hidden and the thumbnail is just a reminder, so a stray
-        // tap must not throw up a fullscreen zoom with no way it was signalled.
-        if (previewCard.classList.contains('is-collapsed')) return;
-        fillZoom();
-        if (!zoomContent.querySelector('svg, img')) return; // nothing rendered yet
-        updateZoomTabs();
+      // Shared open scaffolding for both modes: lock scroll, wire ESC/back, focus.
+      function openZoomShell() {
         zoomOpener = document.activeElement;
         zoomOverlay.hidden = false;
         zoomOpen = true;
@@ -3450,8 +3628,49 @@
           zoomPushed = false;
         }
         zoomCloseBtn.focus();
+      }
+
+      function openZoom() {
+        if (zoomOpen) return;
+        // Not from the collapsed name/contact mini-preview (steps 4-5): there the
+        // ⤢ affordance is hidden and the thumbnail is just a reminder, so a stray
+        // tap must not throw up a fullscreen zoom with no way it was signalled.
+        if (previewCard.classList.contains('is-collapsed')) return;
+        zoomMode = 'design';
+        zoomViews = designZoomViews();
+        zoomIndex = Math.max(
+          0,
+          zoomViews.findIndex((v) => v.id === activeTab)
+        );
+        fillZoom();
+        if (!zoomContent.querySelector('svg, img')) return; // nothing rendered yet
+        buildZoomTabs(activeTab);
+        openZoomShell();
         maybeShowHint();
         track('open_zoom', { tab: activeTab });
+      }
+
+      // Enlarge the name-step preview: swipe between the rendered card + board
+      // images, reusing the same overlay (item 8.4 / 5d). Best-effort — needs a
+      // real rendered card to show.
+      function openNameZoom() {
+        if (zoomOpen) return;
+        const cardSrc = namePreviewCard.getAttribute('src');
+        if (!cardSrc) return; // nothing rendered to enlarge
+        zoomMode = 'names';
+        nameZoomCardSrc = cardSrc;
+        const boardSrc =
+          !namePreviewBoard.hidden && namePreviewBoard.getAttribute('src')
+            ? namePreviewBoard.getAttribute('src')
+            : '';
+        nameZoomBoardSrc = boardSrc;
+        zoomViews = [{ id: 'card', label: 'קלף' }];
+        if (boardSrc) zoomViews.push({ id: 'board', label: 'לוח' });
+        zoomIndex = 0;
+        buildZoomTabs('card');
+        showNameImage('card');
+        openZoomShell();
+        track('open_zoom', { tab: 'name-card' });
       }
 
       function hideZoom() {
@@ -3461,6 +3680,7 @@
         document.documentElement.style.overflow = '';
         document.removeEventListener('keydown', onZoomKey);
         zoomContent.innerHTML = '';
+        zoomMode = 'design';
         if (zoomOpener && typeof zoomOpener.focus === 'function') zoomOpener.focus();
       }
 
@@ -3506,6 +3726,7 @@
       // pointerdown — otherwise dragging to pan a zoomed sheet would be misread as
       // a tap and snap the zoom mid-read.
       const TAP_MOVE_MAX = 10; // px
+      const SWIPE_MIN = 45; // px — horizontal travel that counts as a view swipe
       let lastTap = 0;
       let downX = 0;
       let downY = 0;
@@ -3519,8 +3740,21 @@
         if (Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_MOVE_MAX) downMoved = true;
       });
       zoomViewport.addEventListener('pointerup', (e) => {
+        const dx = e.clientX - downX;
+        const dy = e.clientY - downY;
+        // horizontal finger-swipe between views — only when NOT zoomed in (a drag
+        // while zoomed pans the sheet). Swipe left → next view, right → previous.
+        if (
+          zoomScale <= ZOOM_MIN &&
+          Math.abs(dx) >= SWIPE_MIN &&
+          Math.abs(dx) > Math.abs(dy) * 1.3
+        ) {
+          zoomAdjacent(dx < 0 ? 1 : -1);
+          lastTap = 0;
+          return;
+        }
         // a drag/pan (moved past the threshold) is never a tap
-        if (downMoved || Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_MOVE_MAX) {
+        if (downMoved || Math.hypot(dx, dy) > TAP_MOVE_MAX) {
           lastTap = 0;
           return;
         }
