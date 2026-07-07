@@ -199,18 +199,44 @@
         transition:
           transform 0.1s ease,
           filter 0.15s ease,
-          background-color 0.26s var(--ease),
-          color 0.26s var(--ease),
-          border-color 0.26s var(--ease);
+          color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
       button:hover {
         filter: brightness(1.05);
       }
       button:active {
         transform: scale(0.98);
+      }
+      /* press: directional white wipe (RTL sweeps in from the right, 300ms).
+         Solid black buttons only — light variants (ghost/soft/tab/etc.) are excluded
+         so a white fill never lands on a light background. */
+      button:not(.ghost):not(.soft):not(.tab):not(.coupon-remove):not(.pay-modal-x) {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        border: 1.5px solid #141414;
+      }
+      button:not(.ghost):not(.soft):not(.tab):not(.coupon-remove):not(.pay-modal-x)::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
         background: #fff;
+        transform: scaleX(0);
+        transform-origin: right;
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      button:not(.ghost):not(.soft):not(.tab):not(.coupon-remove):not(.pay-modal-x):active {
         color: #141414;
-        border-color: #141414;
+      }
+      button:not(.ghost):not(.soft):not(.tab):not(.coupon-remove):not(.pay-modal-x):active::before {
+        transform: scaleX(1);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        button:not(.ghost):not(.soft):not(.tab):not(.coupon-remove):not(.pay-modal-x),
+        button:not(.ghost):not(.soft):not(.tab):not(.coupon-remove):not(.pay-modal-x)::before {
+          transition: none;
+        }
       }
       button.ghost {
         background: #fff;
@@ -740,7 +766,8 @@
         box-shadow: var(--shadow-sm);
         transition:
           background 0.2s var(--ease),
-          transform 0.2s var(--ease);
+          transform 0.2s var(--ease),
+          color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
       .card-pay-btn:hover:not(:disabled) {
         background: var(--sage-deep);
