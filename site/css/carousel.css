@@ -17,8 +17,10 @@
 /* The scroll/track container. Native horizontal scroll with a hidden scrollbar.
    scroll-behavior stays auto (never native smooth on the track) so advances go
    through scrollIntoView({behavior}) and the JS turbo boost, uncontested.
-   touch-action: pan-x lets the browser drive the horizontal swipe while vertical
-   gestures still scroll the page. */
+   touch-action: pan-x pan-y — the browser drives HORIZONTAL swipes on the rail
+   AND lets VERTICAL drags scroll the page through it (critical for the tall hero
+   slideshow: 'pan-x' alone blocked scrolling the page when the finger started on
+   the photo). It disambiguates by the gesture's initial direction. */
 .carousel-track {
   display: flex;
   gap: var(--carousel-gap, 16px);
@@ -26,7 +28,7 @@
   overflow-y: hidden;
   scroll-behavior: auto;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
+  touch-action: pan-x pan-y;
   overscroll-behavior-x: contain;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* old Edge */
