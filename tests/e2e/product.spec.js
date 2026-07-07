@@ -23,6 +23,20 @@ test.describe('product detail page', () => {
     await expect(buy).toHaveAttribute('href', 'options.html?design=bachelorette&step=2');
   });
 
+  test('the gallery sources crisp hi-res renders, not the tiny thumb-*.webp', async ({ page }) => {
+    await page.goto('/product.html?design=bachelorette');
+    const imgs = page.locator('#galleryTrack img');
+    await expect(imgs.first()).toBeVisible();
+    const srcs = await imgs.evaluateAll((els) => els.map((i) => i.getAttribute('src') || ''));
+    expect(srcs.length).toBeGreaterThan(0);
+    for (const src of srcs) {
+      // Must not point at the tiny picker thumbs (thumb-front/back/board.webp),
+      // which upscale blurry full-width. Expect the hi-res gallery renders.
+      expect(src).not.toMatch(/thumb-(front|back|board)\.webp$/);
+      expect(src).toMatch(/gallery-(front|back|board)\.webp$/);
+    }
+  });
+
   test('the buy button reflects whichever design is in the URL', async ({ page }) => {
     // neon is a fixed-colour design (no colour step) → straight to step 3.
     await page.goto('/product.html?design=neon');
