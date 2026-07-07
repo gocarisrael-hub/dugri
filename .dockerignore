@@ -23,3 +23,22 @@ resources/
 *.md
 .DS_Store
 **/.DS_Store
+
+# The API also spawns the Python generator (previews + order PDFs), so the image
+# needs the generator code AND the theme assets it reads at runtime. Re-include
+# them AFTER the blanket excludes above so these rules win.
+#
+# Generator code, recipes, themes.json and the shared word-font pool.
+!generator/
+!generator/**
+**/__pycache__/
+
+# Each theme's clean/ background SVGs + fonts/ are all that the render path reads.
+# Re-include the whole templates tree, then drop the heavy filled/ reference
+# exports (Canva calibration renders, not used at runtime) to keep the image lean.
+!resources/
+!resources/canva/
+!resources/canva/templates/
+!resources/canva/templates/**
+resources/canva/templates/*/filled
+resources/canva/templates/*/filled/**
