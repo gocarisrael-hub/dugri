@@ -42,6 +42,7 @@ function noopApi() {
  * @param {object} [opts]
  * @param {'scroller'|'slideshow'} [opts.mode='scroller']
  * @param {number}  [opts.interval=5000]  slideshow auto-advance ms
+ * @param {boolean} [opts.autoplay=true]  slideshow only: auto-advance on a timer
  * @param {boolean} [opts.loop]           default: true for slideshow, false for scroller
  * @param {boolean} [opts.dots=true]
  * @param {boolean} [opts.arrows]         default: true for slideshow, false for scroller
@@ -55,6 +56,7 @@ export function initCarousel(root, opts = {}) {
 
   const mode = opts.mode === 'slideshow' ? 'slideshow' : 'scroller';
   const interval = Number.isFinite(opts.interval) ? opts.interval : 5000;
+  const autoplay = opts.autoplay !== false; // slideshow auto-advance (scroller never plays)
   const loop = opts.loop != null ? !!opts.loop : mode === 'slideshow';
   const showDots = opts.dots !== false;
   const showArrows = opts.arrows != null ? !!opts.arrows : mode === 'slideshow';
@@ -219,7 +221,7 @@ export function initCarousel(root, opts = {}) {
     }
   }
   function play() {
-    if (mode !== 'slideshow' || reduced() || n < 2) return;
+    if (mode !== 'slideshow' || !autoplay || reduced() || n < 2) return;
     stopTimer();
     timer = setInterval(next, interval);
   }

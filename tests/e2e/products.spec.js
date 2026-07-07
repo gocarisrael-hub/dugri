@@ -35,6 +35,13 @@ test.describe('store grid (products.html)', () => {
     }
   });
 
+  test('has exactly one (visually-hidden) page heading for a11y/SEO', async ({ page }) => {
+    await page.goto('/products.html');
+    const h1 = page.locator('h1');
+    await expect(h1).toHaveCount(1);
+    await expect(h1).not.toHaveText('');
+  });
+
   test('shows only the grid — no hero and no design chooser', async ({ page }) => {
     await page.goto('/products.html');
 

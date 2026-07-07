@@ -188,6 +188,26 @@ describe('initCarousel — slideshow auto-advance', () => {
     expect(api.current()).toBe(0); // wrapped
   });
 
+  it('autoplay:false keeps a slideshow manual — the timer never advances it', () => {
+    vi.useFakeTimers();
+    const root = buildTrack(3);
+    const api = initCarousel(root, { mode: 'slideshow', autoplay: false, interval: 1000 });
+    expect(api.current()).toBe(0);
+
+    // No auto-advance, even after several intervals...
+    vi.advanceTimersByTime(5000);
+    expect(api.current()).toBe(0);
+
+    // ...and an explicit play() must not sneak a timer back in.
+    api.play();
+    vi.advanceTimersByTime(5000);
+    expect(api.current()).toBe(0);
+
+    // Manual navigation still works.
+    api.next();
+    expect(api.current()).toBe(1);
+  });
+
   it('pause() stops auto-advance and play() resumes it', () => {
     vi.useFakeTimers();
     const root = buildTrack(3);

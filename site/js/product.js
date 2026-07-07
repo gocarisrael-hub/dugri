@@ -98,6 +98,7 @@ function renderGallery(d) {
   // so the shopper controls it; dots + swipe/keys drive navigation.
   initCarousel(track, {
     mode: 'slideshow',
+    autoplay: false,
     loop: false,
     dots: true,
     arrows: false,
