@@ -122,6 +122,9 @@
         white-space: nowrap;
         box-shadow: var(--shadow-md);
         transition:
+          background-color 0.26s var(--ease),
+          color 0.26s var(--ease),
+          border-color 0.26s var(--ease),
           transform 0.14s ease,
           box-shadow 0.25s ease,
           filter 0.2s ease;
@@ -147,6 +150,9 @@
       }
       .btn:active {
         transform: translateY(0) scale(0.99);
+        background: #fff;
+        color: #141414;
+        border-color: #141414;
       }
       .btn:focus-visible {
         outline: 3px solid var(--sage);
@@ -359,10 +365,8 @@
         display: flex;
         flex-direction: column;
         background: var(--surface);
-        border: 1.5px solid var(--line);
         border-radius: var(--radius);
         padding: 14px 14px 16px;
-        box-shadow: var(--shadow-sm);
         text-decoration: none;
         color: inherit;
         transition:
@@ -395,7 +399,6 @@
         border-radius: var(--radius);
         overflow: hidden;
         background: var(--section);
-        border: 1px solid var(--line);
       }
       .pdp-rel-thumb img {
         width: 100%;
@@ -456,10 +459,10 @@
         justify-content: center;
         width: 48px;
         height: 48px;
-        border-radius: var(--radius);
-        border: 1px solid rgba(255, 255, 255, 0.35);
+        border-radius: 50%;
         color: #fff;
         text-decoration: none;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
         transition:
           transform 0.16s ease,
           box-shadow 0.2s ease,
@@ -467,8 +470,8 @@
       }
       .foot-icon:hover {
         transform: translateY(-2px);
-        background: rgba(255, 255, 255, 0.1);
-        border-color: rgba(255, 255, 255, 0.7);
+        filter: brightness(1.06);
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.34);
       }
       .foot-icon:focus-visible {
         outline: 3px solid #fff;
@@ -480,13 +483,20 @@
         display: block;
       }
       .foot-icon.fi-wa {
-        background: transparent;
+        background: #25d366;
       }
       .foot-icon.fi-call {
-        background: transparent;
+        background: linear-gradient(140deg, #8ca287, #6f8a6a);
       }
       .foot-icon.fi-ig {
-        background: transparent;
+        background: radial-gradient(
+          circle at 30% 107%,
+          #fdf497 0%,
+          #fdf497 5%,
+          #fd5949 45%,
+          #d6249f 60%,
+          #285aeb 90%
+        );
       }
       .foot-contact {
         display: flex;
