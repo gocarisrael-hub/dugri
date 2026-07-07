@@ -86,6 +86,11 @@ function el(tag, cls, attrs) {
 
 // ---- renderers ----------------------------------------------------------
 
+// The live carousel instances, kept so the zoom overlay can open on whichever
+// image the inline gallery is currently showing (galleryApi.current()).
+let galleryApi = null;
+let zoomApi = null;
+
 function renderGallery(d) {
   const track = document.getElementById('galleryTrack');
   if (!track) return;
@@ -103,13 +108,110 @@ function renderGallery(d) {
   }
   // Slideshow feel with dots (owner-swappable photo carousel). No auto-advance
   // so the shopper controls it; dots + swipe/keys drive navigation.
-  initCarousel(track, {
+  galleryApi = initCarousel(track, {
     mode: 'slideshow',
     autoplay: false,
     loop: false,
     dots: true,
     arrows: false,
     dotsInto: document.getElementById('galleryDots'),
+  });
+}
+
+// Fullscreen zoom overlay: a swipeable track of the SAME gallery images so the
+// shopper can enlarge a photo and finger-drag between front / back / board
+// exactly like the site carousels. Mirrors the wizard's overlay (options.html)
+// but is self-contained here. Esc closes, body scroll is locked while open, and
+// the overlay sits above the fixed header (z-index in product.html CSS).
+function renderZoom(d) {
+  const track = document.getElementById('pdpZoomTrack');
+  const overlay = document.getElementById('pdpZoom');
+  const openBtn = document.getElementById('galleryZoomOpen');
+  const closeBtn = document.getElementById('pdpZoomClose');
+  if (!track || !overlay || !openBtn || !closeBtn) return;
+
+  track.textContent = '';
+  for (const shot of galleryPhotos(d)) {
+    const slide = el('div', 'pdp-zoom-slide', { 'data-label': shot.label });
+    const img = el('img', null, {
+      src: shot.src,
+      alt: shot.label,
+      loading: 'lazy',
+      decoding: 'async',
+    });
+    slide.appendChild(img);
+    track.appendChild(slide);
+  }
+  // Same shared engine as the site carousels → native, reliable finger-swipe.
+  zoomApi = initCarousel(track, {
+    mode: 'slideshow',
+    dots: true,
+    loop: true,
+    arrows: false,
+    autoplay: false,
+    dotsInto: document.getElementById('pdpZoomDots'),
+  });
+
+  let opener = null;
+  function open() {
+    if (!overlay.hidden) return;
+    overlay.hidden = false;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    // Open on whichever image the inline gallery is showing (no smooth jump).
+    if (galleryApi && zoomApi) zoomApi.goTo(galleryApi.current(), false);
+    opener = document.activeElement;
+    closeBtn.focus();
+  }
+  function close() {
+    if (overlay.hidden) return;
+    overlay.hidden = true;
+    document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
+    if (opener && typeof opener.focus === 'function') opener.focus();
+  }
+
+  openBtn.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+  // Tap the dim backdrop (anything but the image, dots or close) to dismiss.
+  overlay.addEventListener('click', (e) => {
+    if (e.target.closest('img, .pdp-zoom-dots, .pdp-zoom-close')) return;
+    close();
+  });
+  // Keyboard while open: Esc closes; arrows swipe (RTL-mapped, matching carousel).
+  document.addEventListener('keydown', (e) => {
+    if (overlay.hidden) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (zoomApi) zoomApi.next();
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (zoomApi) zoomApi.prev();
+    }
+  });
+}
+
+// Back-to-store: prefer a real history.back() when the shopper arrived from
+// within the site (returns them to their place in the store); otherwise let the
+// anchor's href (products.html) handle a fresh tab / deep link.
+function wireBack() {
+  const back = document.querySelector('.pdp-back');
+  if (!back) return;
+  back.addEventListener('click', (e) => {
+    let sameOrigin = false;
+    try {
+      const ref = document.referrer || '';
+      sameOrigin = !!ref && new URL(ref).origin === window.location.origin;
+    } catch {
+      sameOrigin = false;
+    }
+    if (sameOrigin && window.history.length > 1) {
+      e.preventDefault();
+      window.history.back();
+    }
   });
 }
 
@@ -178,8 +280,10 @@ function boot() {
   const d = resolveDesign();
   if (!d) return; // no public designs at all — leave the static shell as-is
   renderGallery(d);
+  renderZoom(d);
   renderInfo(d);
   renderRelated(d);
+  wireBack();
 }
 
 if (document.readyState === 'loading') {
