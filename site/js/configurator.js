@@ -340,6 +340,49 @@ export function selectionNamesFromIds(ids, designs, mainColors, planLabels) {
 }
 
 // ---------------------------------------------------------------------------
+// Phone (Israeli mobile) normalization + validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalize a raw phone string into the canonical Israeli local mobile form
+ * (0XXXXXXXXX, 10 digits). Handles the shapes iPhone/browser autofill produces:
+ *   - spaces, dashes, dots, parentheses, non-breaking spaces (stripped)
+ *   - a leading + and/or the 972 country code (converted to a local 0)
+ *   - a bare mobile with no leading 0 (e.g. 546577715 -> 0546577715)
+ * The result is NOT guaranteed valid — callers validate with isValidIlMobile.
+ * Non-mobile / garbage input is returned digit-normalized so validation fails.
+ * @param {string} v
+ * @returns {string}
+ */
+export function normalizeIlPhone(v) {
+  let s = String(v == null ? '' : v)
+    // strip spaces (incl. NBSP/thin space), dashes, dots, parentheses, slashes
+    .replace(/[\s().\-/]/g, '')
+    .replace(/^\+/, ''); // a leading + (kept only at the very start)
+  // Country code: 972 -> local 0. Tolerate the autofilled "+972 0..." variant
+  // (972 followed by a redundant leading 0) by not doubling the 0.
+  if (s.startsWith('972')) {
+    s = s.slice(3).replace(/^0+/, '');
+    s = '0' + s;
+  } else if (/^5\d{8}$/.test(s)) {
+    // bare mobile without the leading 0 (e.g. 546577715)
+    s = '0' + s;
+  }
+  return s;
+}
+
+/**
+ * True iff `v` is (or normalizes to) a valid Israeli mobile number: 05X plus 7
+ * more digits — 10 digits total, e.g. 0546577715. Accepts every autofill shape
+ * normalizeIlPhone handles (+972…, 972…, spaced/dashed, no leading 0).
+ * @param {string} v
+ * @returns {boolean}
+ */
+export function isValidIlMobile(v) {
+  return /^05\d{8}$/.test(normalizeIlPhone(v));
+}
+
+// ---------------------------------------------------------------------------
 // Manifest validation
 // ---------------------------------------------------------------------------
 

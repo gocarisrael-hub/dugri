@@ -169,6 +169,41 @@ test.describe('order wizard', () => {
     await expect(page.getByTestId('step-now')).toHaveText('4');
   });
 
+  // Buy-now deep-link (#8a): the product page links to
+  // options.html?design=<id>&step=2 (colour step) — and &step=3 for the neon
+  // fixed-colour design, whose colour step is skipped.
+  test('?design=<id>&step=2 preselects the design and jumps to the colour step', async ({
+    page,
+  }) => {
+    await page.goto('/options.html?design=birthday&step=2');
+    // Landed straight on the colour step (design-picking step skipped).
+    await expect(page.getByTestId('step-2')).toBeVisible();
+    await expect(page.getByTestId('step-now')).toHaveText('2');
+    // The requested design is the selected one (birthday = design-2).
+    await expect(page.locator('.design[data-design-id="birthday"]')).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    // A slider design keeps the colour picker on this step.
+    await expect(page.getByTestId('color-list')).toBeVisible();
+  });
+
+  test('?design=neon&step=3 skips the (fixed) colour step and lands on add-ons', async ({
+    page,
+  }) => {
+    await page.goto('/options.html?design=neon&step=3');
+    await expect(page.getByTestId('step-3')).toBeVisible();
+    await expect(page.getByTestId('step-now')).toHaveText('3');
+    await expect(page.locator('.design[data-design-id="neon"]')).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    // Stepping Back reaches the colour step, where neon's picker is hidden (fixed).
+    await page.getByTestId('back-btn').click();
+    await expect(page.getByTestId('step-2')).toBeVisible();
+    await expect(page.getByTestId('color-list')).toBeHidden();
+  });
+
   test('step 4 blocks Next until a name is entered', async ({ page }) => {
     await page.goto('/options.html?step=4'); // deep-link straight to the name step
     await expect(page.getByTestId('step-4')).toBeVisible();
@@ -213,6 +248,27 @@ test.describe('order wizard', () => {
     await create.click();
     await page.waitForURL(/collect\.html\?c=.+&k=.+/);
     await expect(page.locator('#title')).toContainText('שירה');
+  });
+
+  // Phone validation (#9): iPhone/browser autofill produces shapes like
+  // "+972 54-657-7715" or a bare "546577715". These must be accepted (normalized
+  // to a local 05X number), not rejected for a missing leading 0.
+  test('accepts iPhone-autofill phone formats (+972, spaces/dashes, no leading 0)', async ({
+    page,
+  }) => {
+    await page.goto('/options.html?step=4');
+    await page.fill('#honoreeInput', 'שירה');
+    await page.getByTestId('gender-female').check();
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('step-5')).toBeVisible();
+    await page.fill('#ownerEmail', 'owner@example.com');
+
+    const create = page.getByTestId('next-btn');
+    for (const phone of ['+972 54-657-7715', '+972546577715', '546577715', '054-657-7715']) {
+      await page.fill('#ownerPhone', phone);
+      await expect(page.getByTestId('phone-err'), phone).toBeHidden();
+      await expect(create, phone).toBeEnabled();
+    }
   });
 
   test('Back returns to a prior step and progress reflects position', async ({ page }) => {

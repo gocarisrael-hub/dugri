@@ -202,6 +202,10 @@ function publicView(c) {
     honoree_name: c.honoree_name,
     // Honoree gender ('male' | 'female' | null) for gendered question phrasing.
     gender: c.gender || null,
+    // Generator theme (a generator/themes.json key) the order resolved to. Lets
+    // collect.html pick the right idea-prompt set per event (kid-appropriate for a
+    // child's birthday, couple prompts for an anniversary). Not sensitive.
+    theme: c.theme || null,
     status: db.effectiveStatus(c),
     expires_at: c.expires_at,
     // Whether the order has been marked paid (manually in admin, or by the

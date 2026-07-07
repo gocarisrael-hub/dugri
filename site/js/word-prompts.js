@@ -164,6 +164,237 @@ export const PREMIUM_PROMPTS = [
   { id: 'premium-17', cat: 'childhood', text: 'הזיכרון מבית הספר ש{name} הכי {אוהבת|אוהב} לספר' },
 ];
 
+// ---------------------------------------------------------------------------
+// Per-event prompt sets
+// ---------------------------------------------------------------------------
+// The default CATEGORIES/PROMPTS above are the adult, single-honoree set (asks
+// about exes, drinking, army, nightlife…). Two events need a tailored set:
+//   • KIDS (a child's birthday) — must be kid-appropriate: NO exes/drinking/etc.
+//   • ANNIVERSARY (a couple) — asks about the two partners TOGETHER, so {name}
+//     is the couple's combined name (e.g. "דנה ויוסי") and prompts use plural,
+//     gender-neutral phrasing (no {female|male} single-gender alternations).
+// categoriesForTheme()/promptsForTheme() pick the right set by generator theme.
+
+/** Kid-appropriate categories for a child's birthday. {name} = the child. */
+export const KIDS_CATEGORIES = [
+  {
+    id: 'friends',
+    label: 'חברים',
+    emoji: '🧒',
+    questions: [
+      'מי {החברה הכי טובה|החבר הכי טוב} של {name}?',
+      'עם מי {name} הכי {אוהבת|אוהב} לשחק?',
+      'שם של {חברה|חבר} מהגן או מבית הספר של {name}',
+      'עם מי {name} תמיד {יושבת|יושב} בכיתה?',
+    ],
+  },
+  {
+    id: 'school',
+    label: 'גן ובית ספר',
+    emoji: '🎒',
+    questions: [
+      'איך קוראים {לגננת|לגנן} או {למורה|למורה} של {name}?',
+      'השיעור או הפעילות ש{name} הכי {אוהבת|אוהב}',
+      'מה {name} הכי {אוהבת|אוהב} לעשות בהפסקה?',
+    ],
+  },
+  {
+    id: 'favorites',
+    label: 'הדברים האהובים',
+    emoji: '⭐',
+    questions: [
+      'הצבע האהוב על {name}',
+      'הצעצוע ש{name} לא {מוותרת|מוותר} עליו',
+      'החיה האהובה על {name}',
+      'הבובה או הדמות ש{name} הכי {אוהבת|אוהב}',
+    ],
+  },
+  {
+    id: 'shows',
+    label: 'סדרות ומשחקים',
+    emoji: '📺',
+    questions: [
+      'הסדרה או הסרט ש{name} {מבקשת|מבקש} לראות שוב ושוב',
+      'הדמות המצוירת האהובה על {name}',
+      'המשחק (במחשב או בחצר) ש{name} הכי {אוהבת|אוהב}',
+    ],
+  },
+  {
+    id: 'food',
+    label: 'אוכל וממתקים',
+    emoji: '🍭',
+    questions: [
+      'המאכל האהוב על {name}',
+      'הממתק ש{name} הכי {אוהבת|אוהב}',
+      'האוכל ש{name} מסרבת בכל תוקף לאכול',
+      'מה {name} הכי {אוהבת|אוהב} לקבל לארוחת בוקר?',
+    ],
+  },
+  {
+    id: 'hobbies',
+    label: 'תחביבים וספורט',
+    emoji: '⚽',
+    questions: [
+      'התחביב או החוג של {name}',
+      'ספורט או משחק ש{name} {אוהבת|אוהב} לשחק',
+      'משהו חדש ש{name} {לומדת|לומד} עכשיו',
+    ],
+  },
+  {
+    id: 'funny',
+    label: 'דברים מצחיקים',
+    emoji: '😄',
+    questions: [
+      'משהו מצחיק ש{name} תמיד {עושה|עושה}',
+      'מילה או משפט ש{name} {אומרת|אומר} כל הזמן',
+      'מה {name} עושה {כשהיא שמחה|כשהוא שמח}?',
+    ],
+  },
+  {
+    id: 'family',
+    label: 'משפחה',
+    emoji: '👨‍👩‍👧',
+    questions: [
+      'שמות של האחים או האחיות של {name}',
+      'הכינוי החמוד שקוראים ל{name} בבית',
+      'עם מי מהמשפחה {name} הכי {אוהבת|אוהב} להיות?',
+    ],
+  },
+  {
+    id: 'party',
+    label: 'יום ההולדת',
+    emoji: '🎂',
+    questions: [
+      'איזו מתנה {name} הכי {רוצה|רוצה} ליום ההולדת?',
+      'הנושא של מסיבת יום ההולדת של {name}',
+      'לאן {name} {חולמת|חולם} לחגוג?',
+    ],
+  },
+];
+
+/** Couple/anniversary categories. {name} = both partners (e.g. "דנה ויוסי"). */
+export const COUPLE_CATEGORIES = [
+  {
+    id: 'begin',
+    label: 'איך הכל התחיל',
+    emoji: '💞',
+    questions: [
+      'איפה {name} נפגשו בפעם הראשונה?',
+      'לאן {name} יצאו בדייט הראשון?',
+      'מי מביניהם התאהב ראשון?',
+      'מי הכיר ביניהם?',
+    ],
+  },
+  {
+    id: 'together',
+    label: 'ביחד',
+    emoji: '✈️',
+    questions: [
+      'הטיול הכי טוב ש{name} עשו יחד',
+      'הסדרה ש{name} צופים בה ביחד',
+      'השיר של {name}',
+      'הפעילות ש{name} הכי אוהבים לעשות בסופ״ש',
+    ],
+  },
+  {
+    id: 'home',
+    label: 'הבית המשותף',
+    emoji: '🏠',
+    questions: [
+      'מי מבשל בבית של {name}?',
+      'ההרגל של אחד שמשגע את השני',
+      'חיית המחמד (או החלום) של {name}',
+      'הדבר שתמיד גורם ל{name} להתווכח בכיף',
+    ],
+  },
+  {
+    id: 'family',
+    label: 'משפחה',
+    emoji: '👨‍👩‍👧',
+    questions: [
+      'שמות הילדים של {name}',
+      'הכינוי ש{name} נותנים אחד לשני',
+      'מי מהמשפחה תמיד מגיע לביקור אצל {name}?',
+    ],
+  },
+  {
+    id: 'jokes',
+    label: 'בדיחות פנימיות',
+    emoji: '😂',
+    questions: [
+      'בדיחה פנימית שרק {name} מבינים',
+      'הסיפור הכי מביך שקרה ל{name} יחד',
+      'משהו ש{name} עדיין צוחקים עליו מהחתונה',
+    ],
+  },
+  {
+    id: 'food',
+    label: 'אוכל',
+    emoji: '🍝',
+    questions: [
+      'המנה ש{name} תמיד מזמינים',
+      'המסעדה הקבועה של {name}',
+      'המאכל שאחד אוהב והשני שונא',
+    ],
+  },
+  {
+    id: 'traditions',
+    label: 'מסורות',
+    emoji: '🥂',
+    questions: [
+      'המסורת של {name} לכל יום נישואין',
+      'המקום המיוחד של {name}',
+      'משפט שאחד תמיד אומר לשני',
+    ],
+  },
+];
+
+/** Flat bank (PROMPTS-shape: {id, cat, text}) derived from a categories array. */
+function flatten(categories) {
+  return categories.flatMap((cat) =>
+    cat.questions.map((text, i) => ({ id: `${cat.id}-${i}`, cat: cat.id, text }))
+  );
+}
+
+export const KIDS_PROMPTS = flatten(KIDS_CATEGORIES);
+export const COUPLE_PROMPTS = flatten(COUPLE_CATEGORIES);
+
+// Generator themes that use the kid-appropriate set (from designs.js THEME_BY_DESIGN).
+const KIDS_THEMES = new Set(['birthday-boys-basketball']);
+
+/** True for a generator theme whose event is a child's birthday. */
+export function isKidsTheme(theme) {
+  return KIDS_THEMES.has(theme) || /kids/.test(String(theme || ''));
+}
+/** True for the couple/anniversary generator theme. */
+export function isCoupleTheme(theme) {
+  return theme === 'anniversary';
+}
+
+/** The category set for a generator theme: kids / couple / default. */
+export function categoriesForTheme(theme) {
+  if (isKidsTheme(theme)) return KIDS_CATEGORIES;
+  if (isCoupleTheme(theme)) return COUPLE_CATEGORIES;
+  return CATEGORIES;
+}
+/** The flat idea-prompt bank for a generator theme. */
+export function promptsForTheme(theme) {
+  if (isKidsTheme(theme)) return KIDS_PROMPTS;
+  if (isCoupleTheme(theme)) return COUPLE_PROMPTS;
+  return PROMPTS;
+}
+/**
+ * Extra (paid) idea prompts for a generator theme. The default set has a curated
+ * PREMIUM_PROMPTS bank; kids/couple reuse their own prompts (no adult premium
+ * bank leaks into a child's or a couple's collection).
+ */
+export function premiumPromptsForTheme(theme) {
+  // Kids/couple ship a single curated set (already shown in full), so there is no
+  // separate paid bank — returning [] avoids duplicating their prompts when paid.
+  if (isKidsTheme(theme) || isCoupleTheme(theme)) return [];
+  return PREMIUM_PROMPTS;
+}
+
 const FALLBACK_NAME = 'בעלת השמחה';
 const FALLBACK_NAME_MALE = 'בעל השמחה';
 

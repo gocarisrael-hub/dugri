@@ -68,3 +68,54 @@ test.describe('theme extra fields on the name step', () => {
     expect(captured.body.extra_fields).toEqual({ AGE: '30' });
   });
 });
+
+// Marriage / anniversary is a COUPLE event (#8b): the name step must ask the two
+// partners' names ONCE — not a single "name" AND then two names. The lone honoree
+// name box + gender picker are hidden; the two NAME fields (+ YEARS) are the ask.
+test.describe('anniversary (couple) name step', () => {
+  // design-1 = marriage -> theme "anniversary" (extra_fields: YEARS, NAME1, NAME2)
+  test('hides the single-name box + gender and asks the two partner names once', async ({
+    page,
+  }) => {
+    await toNameStepWithDesign(page, 'design-1');
+    await expect(page.getByTestId('extra-fields')).toBeVisible();
+    // No redundant single-name ask, and no gender for a couple.
+    await expect(page.getByTestId('honoree-input')).toBeHidden();
+    await expect(page.getByTestId('gender-group')).toBeHidden();
+    // The two partner names + years ARE the ask.
+    await expect(page.getByTestId('extra-name1')).toBeVisible();
+    await expect(page.getByTestId('extra-name2')).toBeVisible();
+    await expect(page.getByTestId('extra-years')).toBeVisible();
+    await expect(page.getByTestId('step-4')).toContainText('שמות בני הזוג');
+  });
+
+  test('requires both names + years and advances with NO gender prompt', async ({ page }) => {
+    await toNameStepWithDesign(page, 'design-1');
+    // Blank / partial -> Next disabled.
+    await expect(page.getByTestId('next-btn')).toBeDisabled();
+    await page.getByTestId('extra-name1').fill('דנה');
+    await page.getByTestId('extra-name2').fill('יוסי');
+    await expect(page.getByTestId('next-btn')).toBeDisabled(); // years still blank
+    await page.getByTestId('extra-years').fill('25');
+    await expect(page.getByTestId('next-btn')).toBeEnabled();
+    // Advancing must NOT pop the gender prompt (couples have no single gender).
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('gender-modal')).toBeHidden();
+    await expect(page.getByTestId('step-5')).toBeVisible();
+  });
+
+  test('sends the couple honoree name synthesized from both partner names', async ({ page }) => {
+    const captured = await captureCollectionPost(page);
+    await toNameStepWithDesign(page, 'design-1');
+    await page.getByTestId('extra-name1').fill('דנה');
+    await page.getByTestId('extra-name2').fill('יוסי');
+    await page.getByTestId('extra-years').fill('25');
+    await page.getByTestId('next-btn').click(); // -> step 5
+    await page.getByTestId('owner-email').fill('a@b.com');
+    await page.getByTestId('owner-phone').fill('0521234567');
+    await page.getByTestId('next-btn').click(); // create
+    await expect.poll(() => captured.body && captured.body.theme).toBe('anniversary');
+    expect(captured.body.honoree_name).toBe('דנה ויוסי');
+    expect(captured.body.extra_fields).toEqual({ YEARS: '25', NAME1: 'דנה', NAME2: 'יוסי' });
+  });
+});

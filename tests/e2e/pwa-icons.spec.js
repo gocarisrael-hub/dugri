@@ -23,7 +23,7 @@ test.describe('home-screen / PWA icons', () => {
         '/manifest.webmanifest'
       );
       // Brand chrome colour for the standalone shell.
-      await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#8ca287');
+      await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#ffffff');
     });
   }
 
