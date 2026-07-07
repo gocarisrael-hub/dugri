@@ -129,7 +129,11 @@ export function initCarousel(root, opts = {}) {
   const cleanups = []; // teardown thunks
 
   // ---- endless-loop state (clones; activated only once real layout exists) ---
-  const canLoop = n >= 2; // one slide → nothing to loop
+  // Endless-loop clones only when the caller opted in (loop:true) AND there are ≥2
+  // slides. A loop:false carousel (e.g. the PDP photo gallery) must NEVER be cloned:
+  // cloning it into a looped-but-clamped state on a snap track makes the image
+  // flicker. Honor the flag.
+  const canLoop = loop && n >= 2;
   let loopActive = false; // true once clones are in place
   const cloneNodes = []; // every injected clone (removed on destroy)
   let appendRef = null; // first append clone (copy of slide 0) — the period anchor

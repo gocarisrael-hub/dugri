@@ -5,9 +5,10 @@ import { test, expect } from '@playwright/test';
 //   1. Advancing is PASSIVE — it scrolls only the track horizontally and never
 //      moves the page's vertical scroll (the old scrollIntoView yanked the window
 //      back up to the hero whenever autoplay fired after the user scrolled down).
-//   2. Every carousel is ENDLESS — clones wrap the real set so last→first is a
-//      seamless forward hop, and next() past the end returns to the first slide
-//      with the first dot lit.
+//   2. Looping is OPT-IN — a carousel with loop:true (hero, reviews) is ENDLESS:
+//      clones wrap the real set so last→first is a seamless forward hop and next()
+//      past the end returns to the first slide with the first dot lit. A loop:false
+//      / unset carousel (PDP gallery, home rail) is NEVER cloned.
 
 // Wait until the endless-loop clones have been injected into `selector`'s track.
 async function waitForLoop(page, selector) {
@@ -100,22 +101,20 @@ test.describe('carousel — endless loop', () => {
     expect(result.current).toBe(result.last);
   });
 
-  test('a scroller rail is made endless (clones injected around the real cards)', async ({
-    page,
-  }) => {
+  test('looping is opt-in: a carousel without loop:true is NEVER cloned', async ({ page }) => {
+    // The PDP photo gallery is loop:false and the home rail leaves loop unset — a
+    // loop:false/unset carousel must never inject clones (cloning it caused the
+    // product-page image to flicker). Wait for real content, then assert zero clones.
     await page.goto('/index.html');
-    await waitForLoop(page, '#productsTrack');
+    await expect(
+      page.locator('#productsTrack .home-prod-card:not([data-carousel-clone])')
+    ).toHaveCount(7);
+    await expect(page.locator('#productsTrack .home-prod-card[data-carousel-clone]')).toHaveCount(
+      0
+    );
 
-    const counts = await page.evaluate(() => {
-      const track = document.querySelector('#productsTrack');
-      return {
-        real: track.querySelectorAll('.home-prod-card:not([data-carousel-clone])').length,
-        clones: track.querySelectorAll('.home-prod-card[data-carousel-clone]').length,
-      };
-    });
-
-    expect(counts.real).toBe(7);
-    // Clones on BOTH sides — at least one full extra set so the drag never hits a wall.
-    expect(counts.clones).toBeGreaterThanOrEqual(counts.real);
+    await page.goto('/product.html?design=bachelorette');
+    await expect(page.locator('#galleryTrack .pdp-gallery-slide')).not.toHaveCount(0);
+    await expect(page.locator('#galleryTrack [data-carousel-clone]')).toHaveCount(0);
   });
 });
