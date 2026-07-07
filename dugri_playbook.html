@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>דוגרי — פלייבוק תפעולי</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --ink: #1a1a1a;
+        --muted: #6b6b6b;
+        --line: #ececec;
+        --section: #fdf2f5; /* very light pink — same wash as the site */
+        --pink: #e85a97; /* brand pink accent */
+        --pink-deep: #c53f79;
+        --code-bg: #1e1e22;
+        --code-ink: #f2f2f4;
+        --radius: 10px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: 'Heebo', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+        line-height: 1.7;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 0 22px 90px;
+      }
+      header {
+        padding: 46px 0 26px;
+        border-bottom: 3px solid var(--pink);
+        margin-bottom: 12px;
+      }
+      .kicker {
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--pink-deep);
+        margin: 0 0 8px;
+        font-weight: 700;
+      }
+      h1 {
+        font-size: clamp(28px, 6vw, 40px);
+        font-weight: 800;
+        margin: 0 0 8px;
+        letter-spacing: -0.01em;
+      }
+      header p {
+        margin: 0;
+        color: var(--muted);
+        max-width: 62ch;
+      }
+      nav.toc {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 22px 0 8px;
+      }
+      nav.toc a {
+        font-size: 13.5px;
+        color: var(--pink-deep);
+        text-decoration: none;
+        background: var(--section);
+        border: 1px solid #f3d9e4;
+        padding: 6px 12px;
+        border-radius: 999px;
+      }
+      nav.toc a:hover {
+        background: #fbe4ee;
+      }
+      section.card {
+        margin: 34px 0;
+        padding: 26px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        scroll-margin-top: 18px;
+      }
+      section.card > h2 {
+        margin: 0 0 4px;
+        font-size: 22px;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      section.card > h2 .num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: var(--pink);
+        color: #fff;
+        font-size: 15px;
+        flex: 0 0 auto;
+      }
+      section.card > .lead {
+        margin: 0 0 16px;
+        color: var(--muted);
+      }
+      h3 {
+        font-size: 15px;
+        font-weight: 800;
+        margin: 22px 0 8px;
+        color: var(--pink-deep);
+      }
+      p,
+      li {
+        font-size: 15.5px;
+      }
+      ol,
+      ul {
+        padding-inline-start: 22px;
+      }
+      code.inline {
+        background: var(--section);
+        border: 1px solid #f3d9e4;
+        border-radius: 5px;
+        padding: 1px 6px;
+        font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 13px;
+        direction: ltr;
+        unicode-bidi: embed;
+      }
+      /* copyable block */
+      .block {
+        position: relative;
+        margin: 12px 0 4px;
+      }
+      .block pre {
+        margin: 0;
+        background: var(--code-bg);
+        color: var(--code-ink);
+        border-radius: var(--radius);
+        padding: 18px 18px 18px;
+        overflow-x: auto;
+        direction: ltr;
+        text-align: left;
+        font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .block.rtl pre {
+        direction: rtl;
+        text-align: right;
+      }
+      .block .copy {
+        position: absolute;
+        top: 10px;
+        inset-inline-end: 10px;
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 7px;
+        padding: 5px 12px;
+        font-size: 12.5px;
+        font-family: inherit;
+        cursor: pointer;
+        backdrop-filter: blur(4px);
+      }
+      .block .copy:hover {
+        background: rgba(255, 255, 255, 0.22);
+      }
+      .block .copy.done {
+        background: var(--pink);
+        border-color: var(--pink);
+      }
+      .todo {
+        background: #fff8e6;
+        border: 1px dashed #e6c65a;
+        border-radius: 8px;
+        padding: 12px 14px;
+        color: #7a5c00;
+        font-size: 14px;
+        margin: 10px 0;
+      }
+      .note {
+        background: var(--section);
+        border-inline-start: 3px solid var(--pink);
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: 14px;
+        margin: 12px 0;
+      }
+      table.map {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0;
+        font-size: 14px;
+      }
+      table.map th,
+      table.map td {
+        border: 1px solid var(--line);
+        padding: 7px 10px;
+        text-align: right;
+      }
+      table.map th {
+        background: var(--section);
+        font-weight: 700;
+      }
+      footer {
+        margin-top: 40px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <p class="kicker">Internal · לא מוגש ללקוחות</p>
+        <h1>פלייבוק תפעולי — דוגרי</h1>
+        <p>
+          כל ה"איך עושים" החוזר של הזמנה: הפרומפטים, המתכונים והמפרטים שמייצרים משחק מרשימת מילים.
+          המסמך יושב ב-git (גיבוי + היסטוריה) אבל מחוץ ל-<code class="inline">site/</code> — הוא לא
+          עולה לאתר. כל בלוק כולל כפתור "העתק".
+        </p>
+        <nav class="toc">
+          <a href="#images">תמונות קרוסלה (ChatGPT)</a>
+          <a href="#whiten">רקע לבן + מידות</a>
+          <a href="#csv">CSV + Bulk Create</a>
+          <a href="#print">הדפסה וגזירה</a>
+        </nav>
+      </header>
+
+      <!-- ============ 1. IMAGE PROMPT ============ -->
+      <section class="card" id="images">
+        <h2><span class="num">1</span> תמונות הקרוסלה — פרומפט ל-ChatGPT</h2>
+        <p class="lead">
+          הדרך הקבועה לייצר את תמונות המוצר לקרוסלה ולעמודי המוצר. שומרים כאן את הפרומפט המדויק כדי
+          שכל תמונה חדשה תצא באותו סגנון.
+        </p>
+
+        <div class="todo">
+          ⚠️ צריך להדביק כאן את הפרומפט המדויק שלך. שלחי לי אותו בצ'אט ואמלא את הבלוק למטה + אשמור
+          בגיט.
+        </div>
+
+        <h3>הפרומפט</h3>
+        <div class="block rtl">
+          <button class="copy" type="button">העתק</button>
+          <pre id="img-prompt">[[ כאן ייכנס הפרומפט המדויק שלך ל-ChatGPT ליצירת תמונות הקרוסלה ]]
+
+טיפ למלא בזמן ההדבקה:
+- הניסוח המלא של הבקשה (סגנון, זווית, תאורה, רקע, יחס גובה-רוחב)
+- אילו אלמנטים חייבים להופיע (חפיסת קלפים + לוח משחק)
+- מה משתנה לכל עיצוב/אירוע (צבעים, מוטיב)</pre>
+        </div>
+        <div class="note">
+          כל תמונה חדשה: מריצים את הפרומפט ב-ChatGPT, מורידים PNG, ואז עוברים לשלב 2 (רקע לבן +
+          המרה ל-webp במידה הנכונה).
+        </div>
+
+        <h3>מיפוי תמונה → עיצוב (ai official)</h3>
+        <table class="map">
+          <tr>
+            <th>קובץ מקור</th>
+            <th>אירוע / עיצוב</th>
+          </tr>
+          <tr>
+            <td>05_58_28</td>
+            <td>רווקות (bachelorette) — ורוד, הליד</td>
+          </tr>
+          <tr>
+            <td>07_00_41</td>
+            <td>יום הולדת (birthday)</td>
+          </tr>
+          <tr>
+            <td>07_03_36</td>
+            <td>אחרי טיול (posttrip)</td>
+          </tr>
+          <tr>
+            <td>07_06_28</td>
+            <td>יום נישואין (marriage)</td>
+          </tr>
+          <tr>
+            <td>07_06_53</td>
+            <td>יפני (japanese)</td>
+          </tr>
+          <tr>
+            <td>07_10_15</td>
+            <td>ניאון (neon)</td>
+          </tr>
+          <tr>
+            <td>07_10_29</td>
+            <td>ילדים (kids)</td>
+          </tr>
+        </table>
+      </section>
+
+      <!-- ============ 2. WHITEN + SIZE ============ -->
+      <section class="card" id="whiten">
+        <h2><span class="num">2</span> רקע לבן + מידות (עיבוד אחרי ChatGPT)</h2>
+        <p class="lead">
+          אחרי שמורידים PNG מ-ChatGPT: מלבינים את הרקע והופכים ל-webp במידה הנכונה, עם ImageMagick
+          (<code class="inline">magick</code>). לא צריך כלי AI.
+        </p>
+
+        <h3>רקע לבן — flood fill מהפינות (fuzz 14%)</h3>
+        <p>
+          fuzz 14% בטוח למוצרים בהירים; 18% כבר "בורח" פנימה. תמונות הקרוסלה/כרטיס נשמרות ב-
+          <code class="inline">site/assets/designs/&lt;id&gt;/cover.webp</code>.
+        </p>
+        <div class="block">
+          <button class="copy" type="button">העתק</button>
+          <pre>magick input.png \
+  -fuzz 14% -fill white \
+  -draw "color 0,0 floodfill" \
+  -draw "color %[fx:w-1],0 floodfill" \
+  -draw "color 0,%[fx:h-1] floodfill" \
+  -draw "color %[fx:w-1],%[fx:h-1] floodfill" \
+  -resize 900x -quality 86 \
+  site/assets/designs/&lt;id&gt;/cover.webp</pre>
+        </div>
+
+        <h3>תמונות גלריה חדות לעמוד המוצר (~1100px)</h3>
+        <div class="block">
+          <button class="copy" type="button">העתק</button>
+          <pre>magick -density 200 -background white input.png \
+  -resize 1100x -quality 88 \
+  site/assets/designs/&lt;id&gt;/gallery-front.webp</pre>
+        </div>
+
+        <h3>תמונות הירו (רוחב מלא, ~1600px)</h3>
+        <div class="block">
+          <button class="copy" type="button">העתק</button>
+          <pre>magick input.png -resize 1600x -quality 82 site/assets/hero-1.jpg</pre>
+        </div>
+      </section>
+
+      <!-- ============ 3. CSV + BULK CREATE ============ -->
+      <section class="card" id="csv">
+        <h2><span class="num">3</span> רשימת מילים → CSV → Bulk Create (Canva)</h2>
+        <p class="lead">הליבה של כל הזמנה: "רשימת מילים פנימה, PDF החוצה".</p>
+        <ol>
+          <li>ממירים את רשימת המילים ל-CSV (הסקריפט למטה).</li>
+          <li>ב-Canva מחברים את שדות הטקסט לתוויות הנתונים (autofill) לפי כותרות ה-CSV.</li>
+          <li>Bulk Create מייצר דף לכל שורה.</li>
+          <li>מייצאים PDF.</li>
+        </ol>
+        <div class="note">
+          32 עמודות <code class="inline">c1w1</code>…<code class="inline">c8w4</code> (c=קלף,
+          w=מילה). כל שורה = דף שלם של 8 קלפים × 4 מילים. מסירים כפילויות, מערבבים, ומשלימים את
+          השורה האחרונה במחרוזות ריקות עד 32. הלוח נשאר עותק יחיד — לא חלק מה-Bulk Create.
+          <br />תבנית קיימת: <code class="inline">alias Shira</code> · Canva design id
+          <code class="inline">DAHML5i7T6k</code>.
+        </div>
+
+        <h3>הסקריפט (Python)</h3>
+        <div class="block">
+          <button class="copy" type="button">העתק</button>
+          <pre>import csv, random, math
+
+def build_csv(words, out, shuffle=True, seed=42):
+    seen = set()
+    uniq = [w for w in (x.strip() for x in words)
+            if w and not (w in seen or seen.add(w))]
+    if shuffle:
+        random.seed(seed); random.shuffle(uniq)
+    PER = 32
+    pages = math.ceil(len(uniq) / PER)
+    padded = uniq + [''] * (pages * PER - len(uniq))
+    headers = [f"c{c}w{w}" for c in range(1, 9) for w in range(1, 5)]
+    with open(out, 'w', encoding='utf-8', newline='') as f:
+        wr = csv.writer(f); wr.writerow(headers)
+        for p in range(pages):
+            wr.writerow(padded[p * PER:(p + 1) * PER])</pre>
+        </div>
+      </section>
+
+      <!-- ============ 4. PRINT ============ -->
+      <section class="card" id="print">
+        <h2><span class="num">4</span> הוראות הדפסה וגזירה</h2>
+        <ul>
+          <li>קלפים: נייר <strong>300 גרם</strong>, צבע.</li>
+          <li>
+            קריטי: להדפיס ב<strong>גודל מקורי 100%</strong> — לא "התאם לעמוד" (אחרת הקלפים לא
+            יתאימו לגזירה).
+          </li>
+          <li>כולל קווי גזירה + הוראות גזירה בקובץ.</li>
+          <li>אספקה: הקובץ נשלח עד 24 שעות מרגע קבלת רשימת המילים (לא מרגע התשלום).</li>
+        </ul>
+      </section>
+
+      <footer>
+        פלייבוק פנימי · לעדכן כשמשתנה תהליך. לא לפרסם, לא להעלות ל-<code class="inline"
+          >site/</code
+        >.
+      </footer>
+    </div>
+
+    <script>
+      // one-click copy for every .block (copies its <pre> text)
+      document.querySelectorAll('.block .copy').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const pre = btn.parentElement.querySelector('pre');
+          try {
+            await navigator.clipboard.writeText(pre.innerText);
+            const old = btn.textContent;
+            btn.textContent = 'הועתק ✓';
+            btn.classList.add('done');
+            setTimeout(() => {
+              btn.textContent = old;
+              btn.classList.remove('done');
+            }, 1400);
+          } catch {
+            const r = document.createRange();
+            r.selectNodeContents(pre);
+            const sel = getSelection();
+            sel.removeAllRanges();
+            sel.addRange(r);
+          }
+        });
+      });
+    </script>
+  </body>
+</html>
