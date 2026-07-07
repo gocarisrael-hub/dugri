@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { initCarousel } from '../../site/js/carousel.js';
+import { initCarousel, releaseTargetIndex } from '../../site/js/carousel.js';
 
 // jsdom has no layout/scroll metrics, so these tests exercise the IMPERATIVE
 // API and DOM wiring (dots, aria-current, teardown) — never pixel scroll.
@@ -38,6 +38,55 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe('releaseTargetIndex — pure release-target math', () => {
+  const CW = 100; // card width; scrollLeft/CW is the fractional index
+  const COUNT = 5; // valid indices 0..4
+
+  it('picks the nearest card when velocity is zero', () => {
+    // 2.6 → 3, 2.4 → 2, exact-half 2.5 → 3 (round-half-up)
+    expect(releaseTargetIndex({ scrollLeft: 260, cardWidth: CW, count: COUNT, velocity: 0 })).toBe(
+      3
+    );
+    expect(releaseTargetIndex({ scrollLeft: 240, cardWidth: CW, count: COUNT, velocity: 0 })).toBe(
+      2
+    );
+    expect(releaseTargetIndex({ scrollLeft: 250, cardWidth: CW, count: COUNT, velocity: 0 })).toBe(
+      3
+    );
+  });
+
+  it('adds at most +1 card for a forward flick (nudge clamped)', () => {
+    // Nearest is 2; a hard positive flick may not push past 3.
+    expect(
+      releaseTargetIndex({ scrollLeft: 200, cardWidth: CW, count: COUNT, velocity: 1000 })
+    ).toBe(3);
+  });
+
+  it('subtracts at most 1 card for a backward flick (nudge clamped)', () => {
+    // Nearest is 2; a hard negative flick may not push below 1.
+    expect(
+      releaseTargetIndex({ scrollLeft: 200, cardWidth: CW, count: COUNT, velocity: -1000 })
+    ).toBe(1);
+  });
+
+  it('clamps at index 0 (cannot flick before the first card)', () => {
+    expect(
+      releaseTargetIndex({ scrollLeft: 0, cardWidth: CW, count: COUNT, velocity: -1000 })
+    ).toBe(0);
+  });
+
+  it('clamps at count-1 (cannot flick past the last card)', () => {
+    expect(
+      releaseTargetIndex({ scrollLeft: 400, cardWidth: CW, count: COUNT, velocity: 1000 })
+    ).toBe(4);
+  });
+
+  it('guards degenerate inputs (count<1 → 0, count 1 → 0)', () => {
+    expect(releaseTargetIndex({ scrollLeft: 999, cardWidth: CW, count: 0, velocity: 5 })).toBe(0);
+    expect(releaseTargetIndex({ scrollLeft: 999, cardWidth: CW, count: 1, velocity: 5 })).toBe(0);
+  });
 });
 
 describe('initCarousel — defensive guards', () => {
