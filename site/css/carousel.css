@@ -15,7 +15,10 @@
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x mandatory;
-  scroll-behavior: smooth;
+  /* No native smooth scroll: js/carousel.js runs its own rAF glide (fixed ~260ms,
+     --ease curve) so advances feel flowy and quick instead of the browser's slow,
+     distance-scaled default. scroll-snap-type stays for at-rest alignment only. */
+  scroll-behavior: auto;
   -webkit-overflow-scrolling: touch;
   /* Let vertical page scroll pass through; JS pointer-drag owns the horizontal
      axis (so touch drag gets our momentum + snap, not the browser's). */
@@ -51,17 +54,14 @@
   scroll-snap-type: x proximity;
 }
 
-/* Each slide / card snaps to the track start. Width comes from the page. Slides
-   force a stop on every one (one-at-a-time hero); cards allow skating past. */
+/* Each slide / card snaps to the track start. Width comes from the page.
+   Both use scroll-snap-stop:normal so a fast multi-advance (JS glide across
+   several cards / a quick sequence of hero advances) is never jammed one step
+   at a time — the JS engine owns which card we land on. */
 .carousel-slide,
 .carousel-card {
   scroll-snap-align: start;
   flex: 0 0 auto;
-}
-.carousel-slide {
-  scroll-snap-stop: always;
-}
-.carousel-card {
   scroll-snap-stop: normal;
 }
 
