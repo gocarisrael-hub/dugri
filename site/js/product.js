@@ -53,16 +53,23 @@ function resolveDesign() {
   return match || first;
 }
 
-/** The filler gallery photos for a design: its product thumbs (front/back/board),
- *  board skipped when the design ships without one (e.g. kids). Each is a
- *  {src, label}. The OWNER replaces these with real product photos at
+/** The filler gallery photos for a design: front/back/board, board skipped when
+ *  the design ships without one (e.g. kids). Each is a {src, label}. The gallery
+ *  is shown full-width, so it sources the crisp hi-res renders
+ *  (assets/designs/<id>/gallery-front|back|board.webp, ~1100px from the vector
+ *  SVGs) rather than the tiny picker thumbs (thumb-*.webp), which upscale blurry.
+ *  The OWNER can later replace these with real product photos at
  *  assets/products/<id>/1.jpg, 2.jpg, 3.jpg… (see product.html gallery comment). */
 function galleryPhotos(d) {
+  // A design's available product kinds; board is absent for boardless designs.
   const thumbs = d.thumbs || {};
   const KIND = { front: 'קלף', back: 'גב הקלף', board: 'לוח המשחק' };
   const shots = ['front', 'back', 'board']
     .filter((k) => thumbs[k])
-    .map((k) => ({ src: thumbs[k], label: `${d.name} · ${KIND[k]}` }));
+    .map((k) => ({
+      src: `assets/designs/${d.id}/gallery-${k}.webp`,
+      label: `${d.name} · ${KIND[k]}`,
+    }));
   // Never render an empty gallery: fall back to the single picker thumb.
   if (!shots.length && d.thumb) shots.push({ src: d.thumb, label: d.name });
   return shots;

@@ -65,15 +65,16 @@
         padding-top: 60px;
       }
       /* Comfortable content gutter so nothing sits flush against the screen
-         edge on phone or desktop. */
+         edge on phone or desktop — roomy side padding keeps the page from
+         reading as compressed against the edges at any width. */
       .wrap {
         max-width: 1000px;
         margin: 0 auto;
-        padding: 0 24px;
+        padding: 0 26px;
       }
       @media (min-width: 720px) {
         .wrap {
-          padding: 0 40px;
+          padding: 0 52px;
         }
       }
       h1,
@@ -597,9 +598,11 @@
     <main>
       <div class="wrap pdp">
         <!-- 1. PHOTO GALLERY.
-             FILLER photos = this design's product thumbs
-             (assets/designs/<id>/thumb-front.webp, thumb-back.webp, thumb-board.webp;
-             board skipped when absent, e.g. kids), wired by js/product.js.
+             FILLER photos = this design's crisp hi-res renders
+             (assets/designs/<id>/gallery-front.webp, gallery-back.webp,
+             gallery-board.webp; ~1100px from the vector SVGs so they stay sharp
+             full-width; board skipped when absent, e.g. kids), wired by
+             js/product.js.
              OWNER: replace these with real product photos at
              assets/products/<id>/1.jpg, 2.jpg, 3.jpg… (update galleryPhotos()
              in js/product.js to point at them). -->
@@ -623,7 +626,7 @@
         <section class="pdp-sec">
           <h2>על העיצוב</h2>
           <p id="pdpAbout">
-            אותו משחק דוגרי בעיצוב ייחודי — חפיסת קלפים ולוח מותאמים אישית מהמילים, הבדיחות והרגעים
+            אותו משחק דוגרי בעיצוב ייחודי, חפיסת קלפים ולוח מותאמים אישית מהמילים, הבדיחות והרגעים
             שרק אתם מכירים.
           </p>
         </section>
