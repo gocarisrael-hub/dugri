@@ -232,14 +232,14 @@
    "NAME1",
    "NAME2"
   ],
-  "title_font": "Shmulik CLM Medium.ttf",
+  "title_font": "Dana Yad AlefAlefAlef Normal.ttf",
   "word_font": "Dana Yad AlefAlefAlef Normal.ttf",
   "title_style": {
    "fill": "#004aad",
    "outline": "#004aad",
-   "outline_w": 0.05,
+   "outline_w": 0,
    "arch": 0,
-   "shadow": true
+   "shadow": false
   },
   "board": {
    "frac": {

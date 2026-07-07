@@ -28,6 +28,21 @@ def test_anniversary_hebrew_years_and_two_names():
     assert lines == ["30 שנה נישואין", "מיכל וזאבי"]
 
 
+def test_anniversary_title_uses_standard_script_font():
+    # Regression (bug 8.2): the marriage/anniversary title used to render in a
+    # heavy display font (Shmulik CLM) with a graffiti outline + drop shadow, so
+    # it looked like a completely different font than the card words. The real
+    # Canva design draws the title in the SAME flowing script as the words, just
+    # larger. Guard that the title font matches the word font and no heavy
+    # outline/shadow is applied.
+    cfg = config.theme("anniversary")
+    assert cfg["title_font"] == cfg["word_font"], (
+        "anniversary title must use the same script font as the words"
+    )
+    assert cfg["title_style"]["outline_w"] == 0, "no heavy outline ring on the title"
+    assert cfg["title_style"]["shadow"] is False, "no drop shadow on the title"
+
+
 def test_uncalibrated_raises():
     # all real themes are now calibrated, so use a synthetic uncalibrated config
     cfg = {"slug": "x", "calibrated": False}

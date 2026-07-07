@@ -19,7 +19,8 @@ import sys
 from collections import Counter
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CHROME = os.environ.get(
+    "CHROME", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCALE = 2
 
