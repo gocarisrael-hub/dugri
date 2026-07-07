@@ -14,7 +14,8 @@ import csv as csvmod
 
 import config
 
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CHROME = os.environ.get(
+    "CHROME", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -157,7 +158,8 @@ def render(theme, clean_svg, words_by_card, title_lines, out_png, word_font=None
     svg_path = out_png.replace(".png", ".svg")
     open(svg_path, "w", encoding="utf-8").write(svg)
     w, h = dims(clean_svg)
-    subprocess.run([CHROME, "--headless", "--disable-gpu",
+    subprocess.run([CHROME, "--headless", "--no-sandbox",
+                    "--disable-dev-shm-usage", "--disable-gpu",
                     "--force-device-scale-factor=2", f"--screenshot={out_png}",
                     f"--window-size={w},{h}", svg_path],
                    check=True, stderr=subprocess.DEVNULL)
