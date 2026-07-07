@@ -1,9 +1,12 @@
 /*
  * Dugri design tokens — the single source of truth for the site palette.
  *
- * Black-&-white rebuild: white ground, near-black ink, neutral grays. Colour comes
- * ONLY from the product images — the site chrome is strictly monochrome. Corners are
- * sharp (radius 0) everywhere. Headings are thin Heebo Light with airy tracking.
+ * Mostly-monochrome rebuild: white ground, near-black ink, neutral hairlines/text.
+ * The section wash (--section) and the blush surface tint (--blush-tint) are now a
+ * VERY LIGHT PINK rather than grey — a soft accent that ties to the pink logo, so the
+ * alternating .alt sections read faintly pink instead of grey. Ink, muted text and
+ * hairlines stay neutral. Corners are sharp (radius 0) everywhere. Headings are thin
+ * Heebo Light with airy tracking.
  *
  * The old sage/blush token NAMES are kept (--sage, --blush, …) and simply remapped to
  * black/gray, so every page that references them turns monochrome without per-page edits.
@@ -14,7 +17,7 @@
 :root {
   /* neutrals — white ground, near-black ink */
   --bg: #ffffff; /* page background */
-  --section: #f5f5f5; /* alternating sections / soft surfaces */
+  --section: #fdf2f5; /* very-light-pink wash for alternating sections / soft surfaces (ties to the pink logo) */
   --surface: #ffffff; /* cards */
   --ink: #141414; /* near-black text */
   --muted: #6b6b6b; /* gray secondary text */
@@ -26,9 +29,9 @@
   --sage-deeper: #000000;
   --sage-tint: #f0f0f0; /* selected-card wash, active pills */
 
-  /* small accents — remapped from blush to neutral */
+  /* small accents — blush stays near-black ink; its tint is a very-light-pink surface */
   --blush: #141414;
-  --blush-tint: #f4f4f4;
+  --blush-tint: #fceef3;
 
   /* functional — semantic status only (not brand accent) */
   --ok: #2f9e6b; /* success state (payment received, etc.) */
