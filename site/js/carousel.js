@@ -58,6 +58,28 @@ export function turboBoostPx(velocity) {
   return v * TURBO_GAIN;
 }
 
+// Real slide index behind a cloned-carousel child. For the seamless loop the real
+// set is cloned on both sides, so DOM children run [prepend clones][real][append
+// clones]; `prepend` is how many clone slides precede the real set. This maps any
+// child's position back to its 0..n-1 real index, so a clone lights the SAME dot
+// as its original. Guards a non-positive count → 0.
+export function realIndexFromClonedIndex(childIndex, n, prepend) {
+  const count = Math.trunc(n);
+  if (!(count > 0)) return 0;
+  const p = Math.trunc(prepend) || 0;
+  return (((Math.trunc(childIndex) - p) % count) + count) % count;
+}
+
+// How many whole "periods" the track must silently jump so a drifting offset `d`
+// (the first real slide's physical distance from the track start) returns to the
+// home band (−period, period). The loop scrolls by k·period onto pixel-identical
+// clones, so the jump is invisible. Direction-agnostic: it works on a relative
+// physical offset, so it is correct for either RTL scrollLeft-sign convention.
+export function loopJumpCount(d, period) {
+  if (!(period > 0) || !Number.isFinite(d)) return 0;
+  return -Math.trunc(d / period) || 0; // `|| 0` normalises −0 → 0
+}
+
 /** A safe no-op API, returned for a missing / empty / already-torn-down root. */
 function noopApi() {
   const noop = () => {};
@@ -103,8 +125,17 @@ export function initCarousel(root, opts = {}) {
   const slides = Array.from(root.children);
   const n = slides.length;
 
-  let index = 0; // current logical slide
+  let index = 0; // current logical slide (real 0..n-1)
   const cleanups = []; // teardown thunks
+
+  // ---- endless-loop state (clones; activated only once real layout exists) ---
+  const canLoop = n >= 2; // one slide → nothing to loop
+  let loopActive = false; // true once clones are in place
+  const cloneNodes = []; // every injected clone (removed on destroy)
+  let appendRef = null; // first append clone (copy of slide 0) — the period anchor
+  let recenterTimer = null; // debounce for the slideshow's idle recenter
+  const shiftAdjusters = []; // notified of a programmatic scrollLeft jump (turbo baseline)
+  const pinnedBg = []; // [node, priorInlineBg] — restored on destroy
   const on = (el, type, fn, o) => {
     if (!el) return;
     el.addEventListener(type, fn, o);
@@ -137,25 +168,76 @@ export function initCarousel(root, opts = {}) {
     return dir.toLowerCase() === 'rtl';
   };
 
-  // ---- advance (native, RTL-safe) ----------------------------------------
-  // Bring slide `i` to the track start via scrollIntoView. inline:'start' aligns
-  // horizontally with no scrollLeft-sign math (correct in LTR and RTL);
-  // block:'nearest' never scrolls the page vertically. Smooth unless reduced
-  // motion is on (then it jumps instantly).
+  // ---- advance (PASSIVE, horizontal-only, RTL-safe, loop-aware) -----------
+  // Scroll only the TRACK, horizontally, so the DOM node for real slide `i` aligns
+  // to the track start. Uses a relative delta (node.left − track.left) fed to
+  // root.scrollBy({left}) — the page's VERTICAL scroll is never touched. (The old
+  // scrollIntoView pulled the whole window back up to the hero when autoplay fired
+  // after the user had scrolled down.) The delta is RTL-safe: scrollBy({left:delta})
+  // shifts every child's physical .left by −delta in both LTR and RTL, so no
+  // scrollLeft-sign math is needed. With the loop on, the copy of slide `i` nearest
+  // the viewport is chosen, so last→first hops FORWARD into a clone (seamless)
+  // instead of rewinding across every slide. jsdom (no layout) no-ops but keeps the
+  // index state.
   function advanceTo(i, smooth) {
-    const slide = slides[i];
-    if (!slide || typeof slide.scrollIntoView !== 'function') return;
+    let rootRect;
+    try {
+      rootRect = root.getBoundingClientRect();
+    } catch {
+      return; // detached — index state still tracks the logical slide
+    }
+    if (!rootRect || rootRect.width === 0) return; // jsdom / no layout
+    const node = pickNode(i);
+    if (!node || typeof node.getBoundingClientRect !== 'function') return;
+    let nodeRect;
+    try {
+      nodeRect = node.getBoundingClientRect();
+    } catch {
+      return;
+    }
+    const delta = nodeRect.left - rootRect.left;
     const behavior = smooth && !reduced() ? 'smooth' : 'auto';
     try {
-      slide.scrollIntoView({ behavior, inline: 'start', block: 'nearest' });
+      root.scrollBy({ left: delta, behavior });
     } catch {
-      // Older engines reject the options object — fall back to the boolean form.
+      // Older engines reject the options object — fall back to a direct horizontal
+      // set (still horizontal-only, so it never scrolls the page vertically).
       try {
-        slide.scrollIntoView(false);
+        root.scrollLeft += delta;
       } catch {
         /* jsdom / unsupported — index state still tracks the logical slide */
       }
     }
+  }
+
+  // The DOM node for real slide `i` whose start is nearest the track start —
+  // the original or (with the loop on) whichever clone is closest, so every
+  // advance is a short seamless hop. Without clones this is just slides[i]; in
+  // jsdom every rect is 0 so the first match (the original) wins.
+  function pickNode(i) {
+    let rootLeft = 0;
+    try {
+      rootLeft = root.getBoundingClientRect().left;
+    } catch {
+      /* jsdom */
+    }
+    let best = null;
+    let bestD = Infinity;
+    for (const node of root.children) {
+      if (node.__carouselIndex !== i) continue;
+      let l = 0;
+      try {
+        l = node.getBoundingClientRect().left;
+      } catch {
+        /* jsdom */
+      }
+      const d = Math.abs(l - rootLeft);
+      if (best === null || d < bestD) {
+        bestD = d;
+        best = node;
+      }
+    }
+    return best || slides[i] || null;
   }
 
   // The card whose center is nearest the track center — the visually-dominant
@@ -164,14 +246,21 @@ export function initCarousel(root, opts = {}) {
   function nearestIndex() {
     try {
       const rr = root.getBoundingClientRect();
-      const railCenter = rr.left + rr.width / 2;
-      const centers = slides.map((s) => {
-        const r = s.getBoundingClientRect();
-        return r.left + r.width / 2;
-      });
-      // All-zero rects (jsdom / detached) → every center is 0; keep index.
+      // All-zero rects (jsdom / detached) → keep index.
       if (rr.width === 0) return index;
-      return nearestByCenter(centers, railCenter);
+      const railCenter = rr.left + rr.width / 2;
+      // Scan ALL children (real + clones): a centered clone must light its
+      // original's dot, so we map the nearest node back to its real index.
+      const centers = [];
+      const realOf = [];
+      for (const node of root.children) {
+        const r = node.getBoundingClientRect();
+        centers.push(r.left + r.width / 2);
+        realOf.push(node.__carouselIndex != null ? node.__carouselIndex : 0);
+      }
+      if (centers.length === 0) return index;
+      const pos = nearestByCenter(centers, railCenter);
+      return realOf[pos] != null ? realOf[pos] : index;
     } catch {
       return index;
     }
@@ -287,6 +376,12 @@ export function initCarousel(root, opts = {}) {
     let down = false;
     let boostRaf = 0;
 
+    // A seamless-loop recenter jump moves scrollLeft by a whole period. Fold that
+    // jump into `last` so the velocity sample doesn't read it as a giant fling.
+    shiftAdjusters.push((deltaScrollLeft) => {
+      last += deltaScrollLeft;
+    });
+
     const stopBoost = () => {
       if (boostRaf && caf) caf(boostRaf);
       boostRaf = 0;
@@ -335,6 +430,13 @@ export function initCarousel(root, opts = {}) {
   // active dot. Never touches scrollLeft, so it can't fight the native scroll.
   let scrollRaf = 0;
   function onScroll() {
+    if (loopActive) {
+      // Scroller: recenter immediately so a free drag / fling wraps seamlessly with
+      // no edge. Slideshow: debounce to an idle moment so we never cut a smooth
+      // advance or a snap mid-animation (the jump lands on identical pixels anyway).
+      if (mode === 'scroller') maybeRecenter();
+      else scheduleRecenter();
+    }
     if (scrollRaf && caf) caf(scrollRaf);
     const commit = () => {
       scrollRaf = 0;
@@ -397,6 +499,7 @@ export function initCarousel(root, opts = {}) {
   root.classList.add(modeClass);
   const slideClass = mode === 'scroller' ? 'carousel-card' : 'carousel-slide';
   slides.forEach((s, i) => {
+    s.__carouselIndex = i; // real index — clones copy this so dots stay mapped
     s.setAttribute('role', 'group');
     s.setAttribute('aria-roledescription', 'slide');
     const label = (s.dataset && s.dataset.label) || `שקופית ${i + 1} מתוך ${n}`;
@@ -404,6 +507,223 @@ export function initCarousel(root, opts = {}) {
     if (!s.classList.contains('carousel-slide') && !s.classList.contains('carousel-card')) {
       s.classList.add(slideClass);
     }
+  });
+
+  // ---- endless loop (seamless clones, both modes) ------------------------
+  // Clone the whole real set enough times to fill the viewport on each side, park
+  // on the first real slide, and on scroll silently jump by one real-set "period"
+  // whenever the position drifts a full set into a clone region. Because the jump
+  // lands on pixel-identical clones, there is no visible rewind/flash — the wrap
+  // from last→first (or first→last) is seamless in BOTH modes and BOTH directions
+  // (so a free drag/fling on a scroller keeps going instead of hitting a wall).
+  // Needs real layout, so it stays dormant in jsdom and retries via ResizeObserver
+  // until the track has a width (mounted / images loaded).
+  function setupLoop() {
+    if (loopActive || !canLoop) return;
+    let rr;
+    try {
+      rr = root.getBoundingClientRect();
+    } catch {
+      return;
+    }
+    const viewport = rr.width;
+    if (!(viewport > 0)) return; // no layout yet — caller retries
+    // Physical span of the real set via min-left / max-right, so it is correct
+    // regardless of direction (in RTL slide n-1 sits physically LEFT of slide 0,
+    // which would make a naive last−first span negative).
+    let minLeft = Infinity;
+    let maxRight = -Infinity;
+    try {
+      for (const s of slides) {
+        const r = s.getBoundingClientRect();
+        if (r.left < minLeft) minLeft = r.left;
+        if (r.left + r.width > maxRight) maxRight = r.left + r.width;
+      }
+    } catch {
+      return;
+    }
+    const setWidth = maxRight - minLeft;
+    if (!(setWidth > 0)) return; // no layout yet — caller retries
+    // Enough whole sets on each side to always fill the viewport, plus one extra so
+    // the viewport stays fully covered right up to the recenter boundary (where the
+    // offset reaches a full period) with no edge gap.
+    const copies = Math.ceil(viewport / setWidth) + 1;
+
+    // Pin each real slide's positional background-color inline BEFORE cloning, so a
+    // slide styled by position (e.g. .review:nth-of-type(n) shades) keeps its colour
+    // once the prepend clones shift its nth-of-type index — and clones inherit the
+    // pinned colour via cloneNode, so the whole loop stays visually correct. Only
+    // background-color is touched (no carousel slide animates it), and it is restored
+    // on destroy. Guarded for jsdom (no getComputedStyle layout).
+    try {
+      if (typeof getComputedStyle === 'function') {
+        for (const s of slides) {
+          const bg = getComputedStyle(s).backgroundColor;
+          if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+            pinnedBg.push([s, s.style.backgroundColor]);
+            s.style.backgroundColor = bg;
+          }
+        }
+      }
+    } catch {
+      /* jsdom / unsupported — no positional pinning needed there */
+    }
+
+    const mkClone = (node, realIndex) => {
+      const c = node.cloneNode(true);
+      c.__carouselIndex = realIndex;
+      c.setAttribute('aria-hidden', 'true'); // a clone must not double-announce
+      c.setAttribute('data-carousel-clone', '');
+      c.removeAttribute('id');
+      if (c.querySelectorAll) {
+        for (const kid of c.querySelectorAll('[id]')) kid.removeAttribute('id');
+        // Demote headings so a clone never adds a second <h1> etc. Styling rides on
+        // the class, so a <p> with the same class looks identical.
+        for (const h of c.querySelectorAll('h1,h2,h3,h4,h5,h6')) {
+          const p = document.createElement('p');
+          for (const a of h.attributes) p.setAttribute(a.name, a.value);
+          p.innerHTML = h.innerHTML;
+          h.replaceWith(p);
+        }
+      }
+      cloneNodes.push(c);
+      return c;
+    };
+
+    const after = document.createDocumentFragment();
+    const before = document.createDocumentFragment();
+    for (let s = 0; s < copies; s++) {
+      for (let i = 0; i < n; i++) {
+        const c = mkClone(slides[i], i);
+        if (s === 0 && i === 0) appendRef = c; // first append clone → the period anchor
+        after.appendChild(c);
+      }
+    }
+    for (let s = 0; s < copies; s++) {
+      for (let i = 0; i < n; i++) before.appendChild(mkClone(slides[i], i));
+    }
+    root.appendChild(after);
+    root.insertBefore(before, slides[0]);
+    loopActive = true;
+
+    // Park on the first real slide so the prepend clones sit scrolled off the
+    // START edge (physical left in LTR, physical right in RTL). Without this the
+    // browser's default position would show the prepend clones, not slide 0.
+    try {
+      const rootRect = root.getBoundingClientRect();
+      const r0 = slides[0].getBoundingClientRect();
+      const delta = isRTL()
+        ? r0.left + r0.width - (rootRect.left + rootRect.width) // align right edges
+        : r0.left - rootRect.left; // align left edges
+      root.scrollBy({ left: delta, behavior: 'auto' });
+    } catch {
+      /* ignore */
+    }
+    updateControls();
+  }
+
+  // Shift the content so the first real slide's physical left moves by
+  // `deltaPhysical` (scrollBy({left:−delta}) ⇒ content moves right by delta). Since
+  // every position sits exactly one real-set apart from a pixel-identical clone, a
+  // jump of one period is invisible. Broadcast the applied scrollLeft delta so the
+  // turbo velocity baseline stays sane.
+  function shiftContent(deltaPhysical) {
+    let applied = 0;
+    let before = 0;
+    try {
+      before = root.scrollLeft;
+      root.scrollBy({ left: -deltaPhysical, behavior: 'auto' });
+      applied = root.scrollLeft - before;
+    } catch {
+      try {
+        root.scrollLeft = before - deltaPhysical;
+        applied = root.scrollLeft - before;
+      } catch {
+        applied = 0;
+      }
+    }
+    for (const fn of shiftAdjusters) {
+      try {
+        fn(applied);
+      } catch {
+        /* keep going */
+      }
+    }
+  }
+
+  // If the first real slide has drifted a whole set (or more) off the home band,
+  // silently jump back by that many periods. Uses fixed references (slides[0] and
+  // the first append clone) and a relative physical offset, so it can't ping-pong
+  // and is RTL-safe.
+  function maybeRecenter() {
+    if (!loopActive || !appendRef) return;
+    let rr, r0, ar;
+    try {
+      rr = root.getBoundingClientRect();
+      r0 = slides[0].getBoundingClientRect();
+      ar = appendRef.getBoundingClientRect();
+    } catch {
+      return;
+    }
+    // Magnitude of the physical distance to the identical clone one set away. Use
+    // abs so it is correct in RTL (there the append clone sits physically LEFT of
+    // slide 0, so a signed difference would be negative). Content is periodic with
+    // this magnitude in BOTH physical directions (clones on both sides).
+    const period = Math.abs(ar.left - r0.left);
+    if (!(period > 0)) return;
+    const d = r0.left - rr.left; // first real slide's offset from the track's left edge
+    const k = loopJumpCount(d, period);
+    if (k !== 0) shiftContent(k * period);
+  }
+
+  function scheduleRecenter() {
+    if (recenterTimer) clearTimeout(recenterTimer);
+    recenterTimer = setTimeout(() => {
+      recenterTimer = null;
+      maybeRecenter();
+    }, 120);
+  }
+
+  // Bring the loop up once the track has a real width. jsdom has no layout (and
+  // usually no ResizeObserver), so this simply never activates there.
+  if (canLoop && raf) {
+    raf(() => {
+      if (loopActive) return;
+      setupLoop();
+      const RO = typeof window !== 'undefined' ? window.ResizeObserver : undefined;
+      if (!loopActive && typeof RO === 'function') {
+        const ro = new RO(() => {
+          setupLoop();
+          if (loopActive) ro.disconnect();
+        });
+        ro.observe(root);
+        cleanups.push(() => ro.disconnect());
+      }
+    });
+  }
+  cleanups.push(() => {
+    if (recenterTimer) {
+      clearTimeout(recenterTimer);
+      recenterTimer = null;
+    }
+    for (const c of cloneNodes) {
+      try {
+        c.remove();
+      } catch {
+        /* ignore */
+      }
+    }
+    cloneNodes.length = 0;
+    for (const [node, prev] of pinnedBg) {
+      try {
+        node.style.backgroundColor = prev;
+      } catch {
+        /* ignore */
+      }
+    }
+    pinnedBg.length = 0;
+    appendRef = null;
+    loopActive = false;
   });
 
   // ---- go live -----------------------------------------------------------

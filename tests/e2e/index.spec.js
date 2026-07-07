@@ -11,7 +11,9 @@ test.describe('landing page hero', () => {
   test('shows a 3-slide hero, each with a sentence and a CTA into the store', async ({ page }) => {
     await page.goto('/index.html');
 
-    const slides = page.locator('.hero-slide');
+    // Real slides only — the endless-loop engine injects aria-hidden clones
+    // ([data-carousel-clone]) around the set so the hero wraps seamlessly.
+    const slides = page.locator('.hero-slide:not([data-carousel-clone])');
     await expect(slides).toHaveCount(3);
 
     // The first slide's title is the page <h1> and carries the headline sentence.
@@ -20,7 +22,7 @@ test.describe('landing page hero', () => {
     await expect(h1).toContainText('המתנה המושלמת');
 
     // Every hero CTA is a solid button that opens the store.
-    const heroCtas = page.locator('.hero-slide [data-ga-cta="hero"]');
+    const heroCtas = page.locator('.hero-slide:not([data-carousel-clone]) [data-ga-cta="hero"]');
     await expect(heroCtas).toHaveCount(3);
     const hrefs = await heroCtas.evaluateAll((els) => els.map((a) => a.getAttribute('href')));
     for (const href of hrefs) expect(href).toBe('products.html');
@@ -36,7 +38,7 @@ test.describe('landing page hero', () => {
   }) => {
     await page.goto('/index.html');
 
-    const bgs = page.locator('.hero-slide .hero-slide__bg');
+    const bgs = page.locator('.hero-slide:not([data-carousel-clone]) .hero-slide__bg');
     await expect(bgs).toHaveCount(3);
 
     const srcs = await bgs.evaluateAll((els) => els.map((img) => img.getAttribute('src')));
@@ -72,7 +74,7 @@ test.describe('home product rail', () => {
     const rail = page.getByTestId('home-products');
     await expect(rail).toBeVisible();
 
-    const cards = rail.locator('a.home-prod-card');
+    const cards = rail.locator('a.home-prod-card:not([data-carousel-clone])');
     await expect(cards).toHaveCount(7);
 
     // Every card links to product.html?design=<id> and shows a name + price.
@@ -132,7 +134,9 @@ test.describe('real customer testimonials', () => {
   }) => {
     await page.goto('/index.html');
 
-    const reviews = page.locator('[data-testid="proof-reviews"] img');
+    const reviews = page.locator(
+      '[data-testid="proof-reviews"] .review:not([data-carousel-clone]) img'
+    );
     await expect(reviews).toHaveCount(3);
 
     const srcs = await reviews.evaluateAll((els) => els.map((img) => img.getAttribute('src')));
@@ -156,7 +160,9 @@ test.describe('real customer testimonials', () => {
   test('each review sits in its own distinct non-white light-pink box', async ({ page }) => {
     await page.goto('/index.html');
 
-    const reviews = page.locator('[data-testid="proof-reviews"] .review');
+    const reviews = page.locator(
+      '[data-testid="proof-reviews"] .review:not([data-carousel-clone])'
+    );
     await expect(reviews).toHaveCount(3);
 
     const bgs = await reviews.evaluateAll((els) =>
