@@ -95,36 +95,6 @@
         border-radius: 7px;
         display: block;
       }
-      /* Back control — mirrors .home-link but on the opposite inline edge (RTL:
-         inline-end = left). Goes to the previous page (history.back), falling back
-         to the home page with no JS. The chevron ‹ (U+2039) is bidi-mirrored in
-         this RTL page so it points RIGHT — the natural "back" direction here. */
-      .back-link {
-        position: absolute;
-        top: 16px;
-        inset-inline-end: 0;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 26px;
-        height: 26px;
-        text-decoration: none;
-        color: var(--muted);
-        font-weight: 700;
-        line-height: 1;
-      }
-      .back-link:hover {
-        color: var(--sage);
-      }
-      .back-link:focus-visible {
-        outline: 2px solid var(--sage);
-        outline-offset: 3px;
-        border-radius: 6px;
-      }
-      .back-glyph {
-        font-size: 28px;
-        line-height: 1;
-      }
       header .brand {
         font-weight: 900;
         color: var(--sage);
@@ -830,18 +800,6 @@
           data-testid="home-link"
         >
           <img class="home-logo" src="assets/logo.png" alt="" />
-        </a>
-        <a
-          class="back-link"
-          href="/"
-          onclick="
-            history.back();
-            return false;
-          "
-          aria-label="חזרה"
-          data-testid="back-link"
-        >
-          <span class="back-glyph" aria-hidden="true">‹</span>
         </a>
         <div class="brand">דוגרי</div>
         <h1 id="title">אוספים מילים…</h1>
