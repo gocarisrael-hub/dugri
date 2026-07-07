@@ -32,14 +32,14 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Gveret+Levin&family=Heebo:wght@600;700;800;900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Fredoka:wght@400;500&family=Gveret+Levin&family=Heebo:wght@600;700;800;900&family=Playpen+Sans+Hebrew:wght@400;500&display=swap"
       media="print"
       onload="this.media = 'all'"
     />
     <noscript>
       <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Gveret+Levin&family=Heebo:wght@600;700;800;900&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Fredoka:wght@400;500&family=Gveret+Levin&family=Heebo:wght@600;700;800;900&family=Playpen+Sans+Hebrew:wght@400;500&display=swap"
       />
     </noscript>
     <link rel="stylesheet" href="/css/tokens.css" />
@@ -538,7 +538,9 @@
         outline-offset: 2px;
       }
       .preview-zoom-btn .zi {
-        font-size: 15px;
+        width: 15px;
+        height: 15px;
+        flex: 0 0 auto;
       }
       /* on the collapsed mini-preview (name/contact steps) it would crowd the chip */
       .preview-card.is-collapsed .preview-zoom-btn {
@@ -677,35 +679,24 @@
         display: flex;
         align-items: center;
         gap: 14px;
-        background: linear-gradient(
-          135deg,
-          color-mix(in srgb, var(--sage) 8%, var(--surface)),
-          var(--surface)
-        );
-        border: 1.5px solid var(--line);
+        background: var(--surface);
+        border: 1px solid var(--line);
         border-radius: var(--radius);
         padding: 16px 18px;
-        box-shadow: var(--shadow-sm);
         cursor: pointer;
-        transition:
-          border-color 0.2s ease,
-          box-shadow 0.2s ease,
-          transform 0.16s ease;
+        transition: border-color 0.2s ease;
       }
       .addon:hover {
-        transform: translateY(-2px);
-        box-shadow: var(--shadow-md);
+        border-color: var(--ink);
       }
       .addon.is-on {
-        border-color: var(--sage);
-        box-shadow:
-          0 0 0 3px rgba(229, 25, 125, 0.16),
-          var(--shadow-md);
+        border-color: var(--ink);
       }
-      .addon-emoji {
-        font-size: 30px;
-        line-height: 1;
+      .addon-ico {
+        width: 30px;
+        height: 30px;
         flex: 0 0 auto;
+        color: var(--ink);
       }
       .addon-body {
         flex: 1 1 auto;
@@ -772,13 +763,13 @@
         transition: transform 0.2s ease;
       }
       .switch input:checked + .track {
-        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
+        background: var(--ink);
       }
       .switch input:checked + .track::before {
         transform: translateX(-22px);
       }
       .switch input:focus-visible + .track {
-        outline: 3px solid var(--sage);
+        outline: 3px solid var(--ink);
         outline-offset: 2px;
       }
 
@@ -1342,8 +1333,9 @@
           padding: 9px 12px;
           gap: 10px;
         }
-        .addon-emoji {
-          font-size: 22px;
+        .addon-ico {
+          width: 24px;
+          height: 24px;
         }
         .addon-desc {
           font-size: 12px;
@@ -1494,7 +1486,8 @@
       .zoom-hint {
         position: absolute;
         z-index: 2;
-        inset-block-end: calc(env(safe-area-inset-bottom, 0px) + 18px);
+        /* sits ABOVE the bottom view-switch tab bar so the two don't collide */
+        inset-block-end: calc(env(safe-area-inset-bottom, 0px) + 74px);
         inset-inline: 0;
         margin: 0 auto;
         width: max-content;
@@ -1514,6 +1507,47 @@
         opacity: 1;
       }
       .zoom-hint[hidden] {
+        display: none;
+      }
+      /* bottom-centred so it never overlaps the top toolbar (−/＋/×) on a narrow
+         phone, where a centred TOP bar would sit under the zoom buttons. */
+      .zoom-tabs {
+        position: absolute;
+        z-index: 3;
+        inset-block-end: calc(env(safe-area-inset-bottom, 0px) + 16px);
+        inset-inline-start: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 5px;
+        padding: 4px;
+        background: rgba(20, 20, 20, 0.55);
+        backdrop-filter: blur(6px);
+        border-radius: var(--radius);
+      }
+      .zoom-tab {
+        font-family: var(--display);
+        font-weight: 600;
+        font-size: 13px;
+        line-height: 1;
+        color: #fff;
+        background: transparent;
+        border: none;
+        border-radius: var(--radius);
+        padding: 7px 13px;
+        cursor: pointer;
+        transition:
+          background 0.15s ease,
+          color 0.15s ease;
+      }
+      .zoom-tab[aria-selected='true'] {
+        background: #fff;
+        color: var(--ink);
+      }
+      .zoom-tab:focus-visible {
+        outline: 2px solid #fff;
+        outline-offset: 2px;
+      }
+      .zoom-tab[hidden] {
         display: none;
       }
 
@@ -1616,7 +1650,12 @@
             data-testid="zoom-open"
             aria-label="הגדלת התצוגה למסך מלא"
           >
-            <span class="zi" aria-hidden="true">⤢</span> הגדלה
+            <svg class="zi" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path
+                d="M4 4h6v2H6v4H4V4Zm10 0h6v6h-2V6h-4V4ZM6 14v4h4v2H4v-6h2Zm14 0v6h-6v-2h4v-4h2Z"
+              />
+            </svg>
+            הגדלה
           </button>
         </div>
         <div class="preview-chip" id="previewChip" hidden>
@@ -1678,7 +1717,23 @@
         <h2 class="wiz-title">תוספות</h2>
         <p class="wiz-sub">לא חובה - אפשר פשוט להמשיך.</p>
         <label class="addon" id="chasersCard" data-testid="chasers-card">
-          <span class="addon-emoji" aria-hidden="true">🥃</span>
+          <svg
+            class="addon-ico"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path
+              d="M7.3 8.5h9.4l-1 11.2a1.4 1.4 0 0 1-1.4 1.3H9.7a1.4 1.4 0 0 1-1.4-1.3L7.3 8.5Z"
+            />
+            <path d="M7.7 12.6c2.7 1.2 5.9 1.2 8.6 0" />
+            <path d="M10.5 6.2c0-1.3 1-1.3 1-2.6" />
+            <path d="M13.6 6.4c0-1 .9-1 .9-2" />
+          </svg>
           <span class="addon-body">
             <span class="addon-title">
               הוסיפו צ'ייסרים למשחק
@@ -1841,37 +1896,52 @@
         <style>
           .name-preview {
             margin-top: 20px;
+            text-align: center;
           }
           .name-preview-lbl {
-            font-weight: 800;
-            margin: 0 0 8px;
+            font-family: var(--display);
+            font-weight: 500;
+            font-size: 14px;
+            letter-spacing: 0.04em;
+            color: var(--muted);
+            margin: 0 0 12px;
           }
           .name-preview-warn {
-            color: #9b1c31;
-            background: #fff0f2;
-            border: 1px solid #ffd0d8;
+            color: var(--ink);
+            background: var(--surface);
+            border: 1px solid var(--line);
             border-radius: var(--radius);
             padding: 8px 12px;
-            margin: 0 0 10px;
+            margin: 0 auto 12px;
+            max-width: 460px;
             font-size: 14px;
           }
+          /* card primary, board smaller; centered and contained so neither image
+             ever overflows its frame. On a narrow phone they wrap and stack. */
           .name-preview-imgs {
             display: flex;
-            gap: 12px;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 14px;
             flex-wrap: wrap;
           }
           .name-preview-fig {
             margin: 0;
-            flex: 1 1 200px;
-            min-width: 0;
+            flex: 0 1 auto;
+            max-width: 100%;
           }
           .name-preview-fig img {
-            width: 100%;
-            height: auto;
-            border-radius: var(--radius);
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
             display: block;
+            width: 100%;
+            max-width: 300px;
+            height: auto;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
             background: #fff;
+          }
+          /* board is a supporting thumbnail — a touch smaller than the card */
+          .name-preview-fig:last-child img {
+            max-width: 232px;
           }
           .name-preview-fig img:not([src]),
           .name-preview-fig img[hidden] {
@@ -1897,7 +1967,6 @@
             background: #fff;
             border: 1px solid var(--line);
             border-radius: var(--radius);
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
           }
           .npf-name {
             font-family: 'Gveret Levin', 'Segoe Script', cursive;
@@ -1917,27 +1986,58 @@
             padding: 10px 0;
           }
           .wiz-fontpicker {
-            margin-top: 14px;
+            margin-top: 18px;
+          }
+          .wiz-fontpicker .wiz-lbl {
+            display: block;
+            text-align: center;
           }
           .font-opts {
             display: flex;
+            justify-content: center;
             gap: 8px;
             flex-wrap: wrap;
-            margin-top: 8px;
+            margin-top: 10px;
           }
+          /* each option previews a Hebrew sample in (a best match for) the font,
+             with the family name beneath. Selected = solid ink chip. */
           .font-opt {
-            border: 2px solid var(--line);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            min-width: 66px;
+            border: 1px solid var(--line);
             background: #fff;
             border-radius: var(--radius);
-            padding: 7px 14px;
-            font-family: inherit;
-            font-size: 14px;
+            padding: 9px 12px;
             cursor: pointer;
+            transition:
+              border-color 0.15s ease,
+              background 0.15s ease;
+          }
+          .font-opt:hover {
+            border-color: var(--ink);
+          }
+          .font-opt .fo-sample {
+            font-size: 21px;
+            line-height: 1.05;
+            color: var(--ink);
+          }
+          .font-opt .fo-label {
+            font-family: var(--display);
+            font-size: 10.5px;
+            letter-spacing: 0.02em;
+            color: var(--muted);
           }
           .font-opt[aria-pressed='true'] {
             border-color: var(--ink);
-            background: var(--sage-tint);
-            font-weight: 800;
+            background: var(--ink);
+          }
+          .font-opt[aria-pressed='true'] .fo-sample,
+          .font-opt[aria-pressed='true'] .fo-label {
+            color: #fff;
           }
         </style>
       </section>
@@ -1946,6 +2046,78 @@
       <section class="wiz-step" data-step="5" data-testid="step-5">
         <h2 class="wiz-title">הפרטים שלכם</h2>
         <p class="wiz-sub">לשליחת קישור הניהול והקובץ המוכן.</p>
+        <!-- compact recap of everything picked, so the details step confirms the
+             order visually (thumbnail of the chosen card + chips). Populated by
+             paintStep5Summary() whenever step 5 is shown. -->
+        <div class="order-summary" id="orderSummary" data-testid="order-summary" hidden>
+          <div class="os-thumb" id="osThumb" aria-hidden="true" hidden></div>
+          <div class="os-list" id="osList"></div>
+        </div>
+        <style>
+          .order-summary {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            padding: 8px 10px;
+            margin: 0 0 10px;
+            text-align: right;
+          }
+          .order-summary[hidden] {
+            display: none;
+          }
+          /* height-capped so a PORTRAIT card thumb and a LANDSCAPE board/page thumb
+             both stay short — keeps step 5 within a phone screen (no scroll). */
+          .os-thumb {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+          }
+          .os-thumb img,
+          .os-thumb svg {
+            display: block;
+            width: auto;
+            max-width: 78px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: #fff;
+          }
+          .os-thumb img {
+            max-height: 46px;
+          }
+          .os-thumb svg {
+            height: 46px;
+          }
+          .os-list {
+            flex: 1 1 auto;
+            min-width: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px 10px;
+          }
+          .os-row {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 12.5px;
+            line-height: 1.3;
+            color: var(--ink);
+          }
+          .os-row .os-k {
+            color: var(--muted);
+          }
+          .os-row .os-v {
+            font-weight: 600;
+          }
+          .os-swatch {
+            width: 12px;
+            height: 12px;
+            flex: 0 0 auto;
+            border: 1px solid var(--line);
+            display: inline-block;
+          }
+        </style>
         <label class="wiz-field">
           <span class="wiz-lbl">מייל</span>
           <input
@@ -2014,6 +2186,40 @@
     <div class="zoom" id="zoomOverlay" data-testid="zoom-overlay" hidden>
       <div class="zoom-viewport" id="zoomViewport" data-testid="zoom-viewport">
         <div class="zoom-content" id="zoomContent" data-testid="zoom-content"></div>
+      </div>
+      <!-- switch between the card / back / board WITHOUT leaving the zoom. Mirrors
+           the main .tabs; the board button hides on board-less designs (e.g. kids). -->
+      <div class="zoom-tabs" id="zoomTabs" role="tablist" aria-label="מעבר בין תצוגות">
+        <button
+          class="zoom-tab"
+          type="button"
+          role="tab"
+          data-ztab="front"
+          data-testid="zoom-tab-front"
+          aria-selected="true"
+        >
+          קלף
+        </button>
+        <button
+          class="zoom-tab"
+          type="button"
+          role="tab"
+          data-ztab="back"
+          data-testid="zoom-tab-back"
+          aria-selected="false"
+        >
+          גב
+        </button>
+        <button
+          class="zoom-tab"
+          type="button"
+          role="tab"
+          data-ztab="board"
+          data-testid="zoom-tab-board"
+          aria-selected="false"
+        >
+          לוח
+        </button>
       </div>
       <div class="zoom-toolbar" role="group" aria-label="שליטה בהגדלה">
         <button
@@ -2677,6 +2883,19 @@
       let previewEpoch = 0; // guards against out-of-order preview responses
       let previewTimer = null; // debounce handle
 
+      // Best-effort CSS family per word-font file so each chip PREVIEWS the look.
+      // Fredoka + Playpen Sans Hebrew load as web fonts (both carry Hebrew); the
+      // rest fall back to a near match. The card image above is the true preview,
+      // re-rendered server-side on selection.
+      const FONT_CSS = {
+        'Fredoka-Medium.ttf': "'Fredoka', var(--font)",
+        'PlaypenSansHebrew-Medium.ttf': "'Playpen Sans Hebrew', var(--font)",
+        'Cafe Regular.ttf': "'Gveret Levin', cursive",
+        'nrkis.ttf': "'Heebo', serif",
+        'almoni-neue-aaa-bold-OFFICE.ttf': "'Heebo', sans-serif",
+      };
+      const FONT_SAMPLE = 'דוגמה';
+
       // Build the picker once from the options the first preview returns.
       function buildFontPicker(options) {
         if (fontPickerBuilt || !Array.isArray(options) || !options.length) return;
@@ -2689,7 +2908,15 @@
           btn.dataset.font = opt.file;
           btn.dataset.testid = 'font-opt-' + opt.file;
           btn.setAttribute('aria-pressed', 'false');
-          btn.textContent = opt.label || opt.file;
+          const sample = document.createElement('span');
+          sample.className = 'fo-sample';
+          sample.textContent = FONT_SAMPLE;
+          if (FONT_CSS[opt.file]) sample.style.fontFamily = FONT_CSS[opt.file];
+          if (opt.file === 'almoni-neue-aaa-bold-OFFICE.ttf') sample.style.fontWeight = '700';
+          const label = document.createElement('span');
+          label.className = 'fo-label';
+          label.textContent = opt.label || opt.file;
+          btn.append(sample, label);
           btn.addEventListener('click', () => {
             // Toggle: re-clicking the active font returns to the theme default.
             chosenWordFont = chosenWordFont === opt.file ? null : opt.file;
@@ -2820,6 +3047,74 @@
       }
 
       let checkoutTracked = false;
+      // Step 5 recap: a small thumbnail of the chosen card + chips of every
+      // choice, so the details step visually confirms the order. Reuses the same
+      // state the URL/collapsed chip do; kept compact so step 5 still fits a phone.
+      function labelForExtraField(key) {
+        const el = document.querySelector('[data-extra-field="' + key + '"] .wiz-lbl');
+        return (el && el.textContent.trim()) || key;
+      }
+      function paintStep5Summary() {
+        const box = document.getElementById('orderSummary');
+        const thumb = document.getElementById('osThumb');
+        const list = document.getElementById('osList');
+        if (!box || !thumb || !list) return;
+        const s = currentSelection();
+        // thumbnail: prefer the rendered name-card (real, with the name), else the
+        // live front-panel SVG (always reflects design + colour).
+        thumb.innerHTML = '';
+        const cardImg = document.getElementById('namePreviewCard');
+        if (cardImg && cardImg.src && cardImg.src.indexOf('data:image') === 0) {
+          const im = document.createElement('img');
+          im.src = cardImg.src;
+          im.alt = '';
+          thumb.appendChild(im);
+        } else {
+          const svg = document.querySelector(
+            '#previewStage .preview-panel[data-panel="front"] svg'
+          );
+          if (svg) {
+            const clone = svg.cloneNode(true);
+            clone.removeAttribute('width');
+            clone.removeAttribute('height');
+            thumb.appendChild(clone);
+          }
+        }
+        thumb.hidden = thumb.childElementCount === 0;
+        // chips
+        list.innerHTML = '';
+        const add = (k, v, swatchHex) => {
+          if (v == null || v === '') return;
+          const row = document.createElement('span');
+          row.className = 'os-row';
+          if (swatchHex) {
+            const sw = document.createElement('span');
+            sw.className = 'os-swatch';
+            sw.style.background = swatchHex;
+            row.appendChild(sw);
+          }
+          const kEl = document.createElement('span');
+          kEl.className = 'os-k';
+          kEl.textContent = k;
+          const vEl = document.createElement('span');
+          vEl.className = 'os-v';
+          vEl.textContent = v;
+          row.append(kEl, vEl);
+          list.appendChild(row);
+        };
+        add('עיצוב', s.designName);
+        add('צבע', s.colorName, s.mainHex);
+        const nm = honoreeNameValue();
+        if (nm) add('שם', nm);
+        const extras = collectedExtraFields();
+        Object.keys(extras).forEach((key) => {
+          if (key === 'NAME1' || key === 'NAME2') return; // already in the name
+          if (extras[key]) add(labelForExtraField(key), extras[key]);
+        });
+        add('צ׳ייסרים', s.chasers ? 'כן' : 'לא');
+        box.hidden = false;
+      }
+
       function goStep(n, opts = {}) {
         // any step change dismisses the gender prompt so its full-screen overlay
         // never lingers on top of an unrelated step (e.g. after navigating back).
@@ -2856,7 +3151,10 @@
           // render (or refresh) the live preview for the current name/theme
           requestPreview({ immediate: true });
         }
-        if (currentStep === 5) emailInput.focus();
+        if (currentStep === 5) {
+          paintStep5Summary();
+          emailInput.focus();
+        }
         window.scrollTo({ top: 0, behavior: 'auto' });
       }
 
@@ -3042,6 +3340,44 @@
         setZoom(1);
       }
 
+      // In-overlay view switch (card / back / board). Sync the main tabs + active
+      // panel, make sure that panel's SVG is inlined, then re-clone it into the
+      // zoom. Board-less designs never expose a board tab here (see updateZoomTabs).
+      const zoomTabEls = Array.from(document.querySelectorAll('.zoom-tab'));
+      function updateZoomTabs() {
+        const d = DESIGNS[designIndex] || {};
+        const hasBoard = !!(d.products && d.products.board);
+        zoomTabEls.forEach((b) => {
+          if (b.dataset.ztab === 'board') b.hidden = !hasBoard;
+          b.setAttribute('aria-selected', b.dataset.ztab === activeTab ? 'true' : 'false');
+        });
+      }
+      async function zoomShowTab(tab) {
+        if (tab === activeTab && zoomContent.querySelector('svg, img')) {
+          updateZoomTabs();
+          return;
+        }
+        selectTab(tab); // sync main tabs + active panel (kicks lazy inline)
+        const panel = panels[tab];
+        // selectTab's ensurePanel is async and its lazy-cache flag flips
+        // synchronously, so a second ensurePanel would resolve before the SVG
+        // actually lands. Poll the panel until its artwork is inlined instead.
+        for (let i = 0; i < 80 && zoomOpen; i++) {
+          if (panel && panel.querySelector('svg, img')) break;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        if (!zoomOpen) return; // overlay closed while we awaited — bail
+        fillZoom();
+        updateZoomTabs();
+        track('zoom_nav', { tab });
+      }
+      zoomTabEls.forEach((b) =>
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          zoomShowTab(b.dataset.ztab);
+        })
+      );
+
       function maybeShowHint() {
         // Only useful on a touch device held in PORTRAIT — that's when rotating
         // to landscape actually makes the landscape sheet fill the screen. On a
@@ -3078,6 +3414,7 @@
         if (previewCard.classList.contains('is-collapsed')) return;
         fillZoom();
         if (!zoomContent.querySelector('svg, img')) return; // nothing rendered yet
+        updateZoomTabs();
         zoomOpener = document.activeElement;
         zoomOverlay.hidden = false;
         zoomOpen = true;
