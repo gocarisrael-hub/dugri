@@ -43,4 +43,14 @@ test.describe('admin playbook / notebook', () => {
     const r = await request.get('/api/admin/playbook?key=nope');
     expect(r.status()).toBe(403);
   });
+
+  test('opens from the orders-management page nav, carrying the key', async ({ page }) => {
+    await page.goto(`/admin.html?key=${KEY}`);
+    const link = page.locator('#nav a[data-page="admin-playbook.html"]');
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', /admin-playbook\.html\?key=/);
+    await link.click();
+    await expect(page).toHaveURL(/admin-playbook\.html\?key=/);
+    await expect(page.locator('#app')).toBeVisible();
+  });
 });
