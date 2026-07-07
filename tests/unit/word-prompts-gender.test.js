@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { renderQuestion, fillName, CATEGORIES, PROMPTS } from '../../site/js/word-prompts.js';
+import {
+  renderQuestion,
+  fillName,
+  CATEGORIES,
+  PROMPTS,
+  KIDS_CATEGORIES,
+  KIDS_PROMPTS,
+  COUPLE_CATEGORIES,
+  COUPLE_PROMPTS,
+  categoriesForTheme,
+  promptsForTheme,
+  premiumPromptsForTheme,
+  isKidsTheme,
+  isCoupleTheme,
+} from '../../site/js/word-prompts.js';
 
 describe('renderQuestion', () => {
   it('interpolates {name}', () => {
@@ -59,5 +73,64 @@ describe('renderQuestion', () => {
     // sanity: the flat PROMPTS bank matches the nested CATEGORIES source
     const nested = CATEGORIES.flatMap((c) => c.questions).length;
     expect(PROMPTS.length).toBe(nested);
+  });
+});
+
+describe('per-event prompt sets', () => {
+  const raw = (text) => renderQuestion(text, 'שם', 'female');
+
+  it('routes generator themes to the right category set', () => {
+    expect(categoriesForTheme('birthday-boys-basketball')).toBe(KIDS_CATEGORIES);
+    expect(categoriesForTheme('anniversary')).toBe(COUPLE_CATEGORIES);
+    expect(categoriesForTheme('bachelorette')).toBe(CATEGORIES);
+    expect(categoriesForTheme(null)).toBe(CATEGORIES);
+    expect(promptsForTheme('birthday-boys-basketball')).toBe(KIDS_PROMPTS);
+    expect(promptsForTheme('anniversary')).toBe(COUPLE_PROMPTS);
+    expect(promptsForTheme('japanese')).toBe(PROMPTS);
+  });
+
+  it('classifies kids and couple themes', () => {
+    expect(isKidsTheme('birthday-boys-basketball')).toBe(true);
+    expect(isKidsTheme('anniversary')).toBe(false);
+    expect(isCoupleTheme('anniversary')).toBe(true);
+    expect(isCoupleTheme('birthday-boys-basketball')).toBe(false);
+  });
+
+  it('kids prompts are kid-appropriate — no exes/drinking/army/curses/nightlife', () => {
+    const kidText = KIDS_PROMPTS.map((p) => raw(p.text)).join(' | ');
+    for (const bad of ['אקס', 'שתי', 'שיכור', 'צבא', 'קללה', 'בלילה', 'משקה']) {
+      expect(kidText, bad).not.toContain(bad);
+    }
+    // The default adult set DOES include an ex prompt — proving kids diverges.
+    expect(PROMPTS.map((p) => raw(p.text)).join(' ')).toContain('אקס');
+  });
+
+  it('kids/couple premium bank is empty (no adult prompts leak in when paid)', () => {
+    expect(premiumPromptsForTheme('birthday-boys-basketball')).toEqual([]);
+    expect(premiumPromptsForTheme('anniversary')).toEqual([]);
+    expect(premiumPromptsForTheme('bachelorette').length).toBeGreaterThan(0);
+  });
+
+  it('renders every kids/couple prompt without leaving raw tokens', () => {
+    for (const g of ['female', 'male']) {
+      for (const p of KIDS_PROMPTS.concat(COUPLE_PROMPTS)) {
+        const out = renderQuestion(p.text, 'שם', g);
+        expect(out).not.toContain('{name}');
+        expect(out).not.toMatch(/\{[^{}]*\|[^{}]*\}/);
+      }
+    }
+  });
+
+  it('couple prompts use no single-gender alternation (they are about the pair)', () => {
+    for (const c of COUPLE_CATEGORIES) {
+      for (const q of c.questions) {
+        expect(q, q).not.toMatch(/\{[^{}]*\|[^{}]*\}/);
+      }
+    }
+  });
+
+  it('flat kids/couple banks match their nested category sources', () => {
+    expect(KIDS_PROMPTS.length).toBe(KIDS_CATEGORIES.flatMap((c) => c.questions).length);
+    expect(COUPLE_PROMPTS.length).toBe(COUPLE_CATEGORIES.flatMap((c) => c.questions).length);
   });
 });

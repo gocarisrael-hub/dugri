@@ -23,12 +23,11 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
     <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#8ca287" />
+    <meta name="theme-color" content="#ffffff" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="דוגרי" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    ." "
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -125,7 +124,7 @@
         border: none;
         cursor: pointer;
         padding: 16px 32px;
-        border-radius: 999px;
+        border-radius: var(--radius);
         text-decoration: none;
         box-shadow: 0 10px 24px rgba(229, 25, 125, 0.3);
         transition:
@@ -163,7 +162,7 @@
       button:focus-visible {
         outline: 3px solid var(--sage);
         outline-offset: 2px;
-        border-radius: 8px;
+        border-radius: var(--radius);
       }
 
       /* ===== SHARED STICKY NAV ===== */
@@ -206,7 +205,7 @@
         font-size: 15.5px;
         color: var(--sage-deep);
         padding: 8px 12px;
-        border-radius: 10px;
+        border-radius: var(--radius);
         text-decoration: none;
         transition:
           background 0.18s ease,
@@ -231,7 +230,7 @@
         margin-inline-start: auto;
         background: none;
         border: 1px solid var(--line);
-        border-radius: 10px;
+        border-radius: var(--radius);
         width: 42px;
         height: 40px;
         cursor: pointer;
@@ -283,7 +282,7 @@
         }
         .nav-links a {
           padding: 13px 10px;
-          border-radius: 10px;
+          border-radius: var(--radius);
         }
         .nav-links a.nav-cta {
           margin-top: 6px;
@@ -322,7 +321,7 @@
         color: var(--sage-deep);
         background: var(--section);
         padding: 7px 16px;
-        border-radius: 999px;
+        border-radius: var(--radius);
       }
 
       /* layout: preview + controls. Colours sit right by the preview so they're
@@ -368,7 +367,7 @@
       .preview-card {
         background: var(--surface);
         border: 1px solid var(--line);
-        border-radius: 22px;
+        border-radius: var(--radius);
         padding: 18px;
         box-shadow: var(--shadow-md);
         /* the live preview is the dominant focal element — give it a wide column */
@@ -395,7 +394,7 @@
         color: var(--sage-deep);
         background: var(--section);
         border: 1px solid var(--line);
-        border-radius: 999px;
+        border-radius: var(--radius);
         padding: 9px 22px;
         cursor: pointer;
         transition: all 0.18s ease;
@@ -411,11 +410,11 @@
       }
       .preview-stage {
         position: relative;
-        border-radius: 16px;
+        border-radius: var(--radius);
         background:
           radial-gradient(
             70% 70% at 50% 0%,
-            color-mix(in srgb, var(--sage, #8ca287) 16%, transparent),
+            color-mix(in srgb, var(--sage, #141414) 16%, transparent),
             transparent 70%
           ),
           var(--cfg-bg, var(--bg));
@@ -517,7 +516,7 @@
         background: rgba(35, 32, 28, 0.62);
         backdrop-filter: blur(4px);
         border: none;
-        border-radius: 999px;
+        border-radius: var(--radius);
         padding: 8px 13px;
         cursor: zoom-in;
         box-shadow: 0 4px 14px rgba(35, 32, 28, 0.28);
@@ -564,7 +563,7 @@
         max-width: 150px;
         background: var(--surface);
         border: 2px solid var(--line);
-        border-radius: 16px;
+        border-radius: var(--radius);
         padding: 10px;
         cursor: pointer;
         transition:
@@ -591,7 +590,7 @@
         width: 100%;
         /* landscape, matching the full-page A4 thumbnails (was portrait 5/7). */
         aspect-ratio: 841.92 / 595.5;
-        border-radius: 10px;
+        border-radius: var(--radius);
         overflow: hidden;
         background: var(--section);
         display: flex;
@@ -679,7 +678,7 @@
           var(--surface)
         );
         border: 1.5px solid var(--line);
-        border-radius: 18px;
+        border-radius: var(--radius);
         padding: 16px 18px;
         box-shadow: var(--shadow-sm);
         cursor: pointer;
@@ -721,10 +720,10 @@
         font-family: var(--display);
         font-weight: 800;
         font-size: 11.5px;
-        color: #1f7a4d;
-        background: #e6f6ee;
+        color: #fff;
+        background: var(--ink);
         padding: 3px 9px;
-        border-radius: 999px;
+        border-radius: var(--radius);
       }
       .addon-desc {
         margin-top: 4px;
@@ -752,7 +751,7 @@
         position: absolute;
         inset: 0;
         background: var(--line);
-        border-radius: 999px;
+        border-radius: var(--radius);
         transition: background 0.2s ease;
       }
       .switch .track::before {
@@ -794,7 +793,7 @@
       .bar {
         height: 8px;
         background: var(--line);
-        border-radius: 99px;
+        border-radius: var(--radius);
         overflow: hidden;
       }
       .bar > i {
@@ -855,7 +854,7 @@
         color: var(--sage-deeper);
         background: var(--section);
         padding: 8px 16px;
-        border-radius: 999px;
+        border-radius: var(--radius);
       }
 
       /* the steps themselves - one visible at a time */
@@ -879,11 +878,15 @@
         }
       }
       .wiz-title {
+        font-family: var(--display);
+        font-weight: var(--h-weight);
+        letter-spacing: var(--h-spacing);
         font-size: 23px;
         text-align: center;
         color: var(--ink);
       }
       .wiz-sub {
+        font-weight: var(--sub-weight);
         text-align: center;
         color: var(--muted);
         margin: 6px 0 18px;
@@ -911,9 +914,15 @@
         font: inherit;
         padding: 14px 15px;
         border: 1.5px solid var(--line);
-        border-radius: 14px;
+        border-radius: var(--radius);
         background: var(--surface);
         color: var(--ink);
+      }
+      /* Placeholder/example text: legible muted gray (never washed-out or hidden),
+         so the example is readable before the user types. */
+      .wiz-input::placeholder {
+        color: var(--muted);
+        opacity: 1;
       }
       .wiz-input:focus {
         outline: 2px solid var(--sage);
@@ -952,7 +961,7 @@
         font-weight: 800;
         white-space: nowrap;
         border: none;
-        border-radius: 14px;
+        border-radius: var(--radius);
         padding: 0 18px;
         background: var(--sage);
         color: #fff;
@@ -969,7 +978,8 @@
         min-height: 16px;
       }
       .code-msg.ok {
-        color: #1f7a4d;
+        color: var(--ink);
+        font-weight: 800;
       }
       .code-msg.err {
         color: #c0143c;
@@ -997,7 +1007,7 @@
         text-align: center;
         padding: 12px 10px;
         border: 1.5px solid var(--line);
-        border-radius: 14px;
+        border-radius: var(--radius);
         background: var(--surface);
         color: var(--ink);
         font-family: var(--display);
@@ -1027,14 +1037,17 @@
       }
       /* the box + its per-field labels carry a display: rule (flex/block) that
          would otherwise beat the UA [hidden] { display: none }; re-assert it so
-         a hidden extra field/box actually stays hidden. */
+         a hidden extra field/box actually stays hidden. Same for the single-name
+         box + gender picker, which couple mode (anniversary) hides. */
       .wiz-extra[hidden],
-      .wiz-extra .wiz-field[hidden] {
+      .wiz-extra .wiz-field[hidden],
+      .wiz-input[hidden],
+      .gender-group[hidden] {
         display: none;
       }
       .wiz-err {
         display: block;
-        color: #a85a4f;
+        color: #c0143c;
         font-size: 13.5px;
         font-weight: 700;
         margin-top: 7px;
@@ -1061,7 +1074,7 @@
       }
       .wiz-modal-card {
         background: var(--surface);
-        border-radius: 20px;
+        border-radius: var(--radius);
         box-shadow: var(--shadow-lg);
         max-width: 380px;
         width: 100%;
@@ -1108,7 +1121,7 @@
         color: var(--sage-deep);
         background: var(--section);
         border: 1.5px solid var(--line);
-        border-radius: 999px;
+        border-radius: var(--radius);
         padding: 14px 22px;
         cursor: pointer;
         transition: background 0.18s ease;
@@ -1172,7 +1185,7 @@
         .preview-card {
           padding: 10px;
           margin-top: 8px;
-          border-radius: 16px;
+          border-radius: var(--radius);
         }
         .tabs {
           gap: 6px;
@@ -1212,7 +1225,7 @@
           max-width: 92px;
           padding: 6px;
           gap: 4px;
-          border-radius: 12px;
+          border-radius: var(--radius);
         }
         .design .dname {
           font-size: 11.5px;
@@ -1352,7 +1365,7 @@
         }
         .wiz-input {
           padding: 7px 12px;
-          border-radius: 12px;
+          border-radius: var(--radius);
         }
         .gender-group {
           margin-top: 7px;
@@ -1431,7 +1444,7 @@
         width: 100%;
         height: auto;
         display: block;
-        border-radius: 6px;
+        border-radius: var(--radius);
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
       }
       .zoom-toolbar {
@@ -1487,7 +1500,7 @@
         font-weight: 700;
         font-size: 14px;
         padding: 9px 16px;
-        border-radius: 999px;
+        border-radius: var(--radius);
         opacity: 0;
         transition: opacity 0.4s ease;
         pointer-events: none;
@@ -1684,8 +1697,10 @@
 
       <!-- STEP 4 — honoree name -->
       <section class="wiz-step" data-step="4" data-testid="step-4">
-        <h2 class="wiz-title">שם בעל/ת השמחה</h2>
-        <p class="wiz-sub">השם הזה יופיע על הקלפים - כתבו אותו בדיוק כפי שתרצו שיופיע.</p>
+        <h2 class="wiz-title" id="nameStepTitle">שם בעל/ת השמחה</h2>
+        <p class="wiz-sub" id="nameStepSub">
+          השם הזה יופיע על הקלפים - כתבו אותו בדיוק כפי שתרצו שיופיע.
+        </p>
         <input
           class="wiz-input"
           type="text"
@@ -1697,6 +1712,7 @@
         />
         <div
           class="gender-group"
+          id="genderGroup"
           role="radiogroup"
           aria-label="מין בעל/ת השמחה"
           data-testid="gender-group"
@@ -1744,7 +1760,7 @@
             />
           </label>
           <label class="wiz-field" data-extra-field="NAME1" hidden>
-            <span class="wiz-lbl">שם ראשון</span>
+            <span class="wiz-lbl">שם בן/בת הזוג הראשון</span>
             <input
               class="wiz-input"
               type="text"
@@ -1753,10 +1769,11 @@
               data-testid="extra-name1"
               data-extra-input="NAME1"
               placeholder="למשל: דנה"
+              autocomplete="name"
             />
           </label>
           <label class="wiz-field" data-extra-field="NAME2" hidden>
-            <span class="wiz-lbl">שם שני</span>
+            <span class="wiz-lbl">שם בן/בת הזוג השני</span>
             <input
               class="wiz-input"
               type="text"
@@ -1765,6 +1782,7 @@
               data-testid="extra-name2"
               data-extra-input="NAME2"
               placeholder="למשל: יוסי"
+              autocomplete="name"
             />
           </label>
         </div>
@@ -1815,7 +1833,7 @@
             color: #9b1c31;
             background: #fff0f2;
             border: 1px solid #ffd0d8;
-            border-radius: 10px;
+            border-radius: var(--radius);
             padding: 8px 12px;
             margin: 0 0 10px;
             font-size: 14px;
@@ -1833,7 +1851,7 @@
           .name-preview-fig img {
             width: 100%;
             height: auto;
-            border-radius: 12px;
+            border-radius: var(--radius);
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
             display: block;
             background: #fff;
@@ -1843,7 +1861,7 @@
             display: none;
           }
           .name-preview-empty {
-            color: #666;
+            color: var(--muted);
             padding: 10px 0;
           }
           .wiz-fontpicker {
@@ -1856,17 +1874,17 @@
             margin-top: 8px;
           }
           .font-opt {
-            border: 2px solid #ddd;
+            border: 2px solid var(--line);
             background: #fff;
-            border-radius: 999px;
+            border-radius: var(--radius);
             padding: 7px 14px;
             font-family: inherit;
             font-size: 14px;
             cursor: pointer;
           }
           .font-opt[aria-pressed='true'] {
-            border-color: var(--sage, #8ca287);
-            background: var(--cfg-bg, #f7f4ef);
+            border-color: var(--ink);
+            background: var(--sage-tint);
             font-weight: 800;
           }
         </style>
@@ -1982,6 +2000,8 @@
         lightTint,
         pageTint,
         validateManifest,
+        isValidIlMobile,
+        normalizeIlPhone,
       } from './js/configurator.js';
       import { track } from './js/analytics.js';
 
@@ -2130,10 +2150,10 @@
         await ensurePanel(activeTab);
       }
 
-      // brand fallback tint (matches :root --sage) so the page theme NEVER keeps a
-      // previous design's stale tint — even for a fixed design shipped without an
-      // accent and without anchors.
-      const DEFAULT_TINT = '#8ca287';
+      // brand fallback tint (near-black ink, matching the B&W chrome) so the page
+      // theme NEVER keeps a previous design's stale tint — even for a fixed design
+      // shipped without an accent and without anchors.
+      const DEFAULT_TINT = '#141414';
 
       // apply current color palette to every preview panel + page accent
       function recolor() {
@@ -2493,11 +2513,35 @@
       const extraFieldsBox = document.getElementById('extraFields');
       const extraFieldEls = Array.from(document.querySelectorAll('[data-extra-field]'));
       const extraInputEls = Array.from(document.querySelectorAll('[data-extra-input]'));
+      const nameStepTitle = document.getElementById('nameStepTitle');
+      const nameStepSub = document.getElementById('nameStepSub');
+      const genderGroup = document.getElementById('genderGroup');
 
       // The generator theme key for the currently selected design (or null).
       function currentTheme() {
         const d = DESIGNS[designIndex] || {};
         return themeForDesign(d.id);
+      }
+
+      // Anniversary is a COUPLE event: instead of a single honoree name + gender we
+      // ask the two partners' names once (the NAME1/NAME2 extra fields). The single
+      // name box and the gender picker are hidden, and the honoree name sent with
+      // the order is synthesized from the two names ("דנה ויוסי").
+      function isCoupleTheme() {
+        return currentTheme() === 'anniversary';
+      }
+      // The honoree name to send / preview: the two partners' names for a couple,
+      // otherwise the single name box value.
+      function honoreeNameValue() {
+        if (isCoupleTheme()) {
+          const a = (extraInput('NAME1') || {}).value || '';
+          const b = (extraInput('NAME2') || {}).value || '';
+          const n1 = a.trim();
+          const n2 = b.trim();
+          if (n1 && n2) return n1 + ' ו' + n2;
+          return n1 || n2;
+        }
+        return nameInput.value.trim();
       }
       // The extra-field keys the current design's theme requires ([] if none).
       function currentExtraFields() {
@@ -2516,6 +2560,20 @@
           el.hidden = !need.has(el.dataset.extraField);
         });
         extraFieldsBox.hidden = needed.length === 0;
+        // Couple mode (anniversary): swap the single-name ask for the two partner
+        // names. Hide the lone name box + gender picker and retitle the step so the
+        // two NAME fields ARE the ask — no redundant "name, then two names".
+        const couple = isCoupleTheme();
+        nameInput.hidden = couple;
+        if (genderGroup) genderGroup.hidden = couple;
+        if (nameStepTitle) {
+          nameStepTitle.textContent = couple ? 'שמות בני הזוג' : 'שם בעל/ת השמחה';
+        }
+        if (nameStepSub) {
+          nameStepSub.textContent = couple
+            ? 'השמות יופיעו על הקלפים - כתבו אותם בדיוק כפי שתרצו שיופיעו.'
+            : 'השם הזה יופיע על הקלפים - כתבו אותו בדיוק כפי שתרצו שיופיע.';
+        }
         refreshControls();
       }
       // Every required extra field has a non-empty value.
@@ -2600,14 +2658,14 @@
         return (
           currentStep === 4 &&
           !!currentTheme() &&
-          nameInput.value.trim().length > 0 &&
+          honoreeNameValue().length > 0 &&
           extraFieldsValid()
         );
       }
 
       async function doPreview() {
         const theme = currentTheme();
-        const name = nameInput.value.trim();
+        const name = honoreeNameValue();
         const epoch = ++previewEpoch;
         namePreview.hidden = false;
         namePreviewEmpty.hidden = false;
@@ -2667,12 +2725,15 @@
       // the management link (same rules the retired thankyou page used).
       const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       const isValidEmail = (v) => EMAIL_RE.test(v);
-      const isValidIlMobile = (v) => /^0\d{8,9}$/.test(String(v).replace(/[\s-]/g, ''));
+      // isValidIlMobile / normalizeIlPhone are imported from configurator.js — they
+      // accept every iPhone-autofill shape (+972…, 972…, spaced/dashed, no leading 0).
 
       function validateStep(n) {
         if (n <= 3) return true; // design / color / add-ons all have safe defaults
         // name step: require the name AND any extra fields the theme needs.
-        if (n === 4) return nameInput.value.trim().length > 0 && extraFieldsValid();
+        // couple mode has no single-name box — the two NAME extra fields cover it.
+        if (n === 4)
+          return (isCoupleTheme() || nameInput.value.trim().length > 0) && extraFieldsValid();
         if (n === 5)
           return isValidEmail(emailInput.value.trim()) && isValidIlMobile(phoneInput.value.trim());
         return true;
@@ -2720,7 +2781,13 @@
           track('begin_checkout');
         }
         if (currentStep === 4) {
-          nameInput.focus();
+          // couple mode hides the single-name box — focus the first partner name.
+          if (isCoupleTheme()) {
+            const first = extraInput('NAME1');
+            if (first) first.focus();
+          } else {
+            nameInput.focus();
+          }
           // render (or refresh) the live preview for the current name/theme
           requestPreview({ immediate: true });
         }
@@ -2749,8 +2816,9 @@
 
       function next() {
         if (!validateStep(currentStep)) return;
-        // name step: block advancing until a gender is actively chosen
-        if (currentStep === 4 && !selectedGender()) {
+        // name step: block advancing until a gender is actively chosen (couple mode
+        // has no single honoree, so no gender is asked)
+        if (currentStep === 4 && !isCoupleTheme() && !selectedGender()) {
           openGenderModal();
           return;
         }
@@ -2795,15 +2863,17 @@
 
       // Final step: create the shared collection, then go collect words + pay.
       async function createCollection() {
-        const name = nameInput.value.trim();
+        const name = honoreeNameValue();
         const email = emailInput.value.trim();
-        const phone = phoneInput.value.trim();
+        // Send the normalized local mobile (0XXXXXXXXX) regardless of the shape the
+        // customer / autofill typed (+972…, spaces, dashes, no leading 0).
+        const phone = normalizeIlPhone(phoneInput.value.trim());
         createErr.hidden = true;
         if (!name) {
           goStep(4);
           return;
         }
-        if (!selectedGender()) {
+        if (!isCoupleTheme() && !selectedGender()) {
           goStep(4);
           openGenderModal();
           return;
@@ -3132,25 +3202,25 @@
         align-items: center;
         gap: 8px;
         padding: 10px 16px 10px 12px;
-        background: #25d366;
+        background: #141414;
         color: #fff;
-        border-radius: 999px;
+        border-radius: 0;
         text-decoration: none;
         font-family: inherit;
         font-weight: 800;
         font-size: 15px;
         line-height: 1;
-        box-shadow: 0 6px 20px rgba(37, 211, 102, 0.45);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
         transition:
           transform 0.15s ease,
           box-shadow 0.15s ease;
       }
       .wa-help:hover {
         transform: translateY(-2px);
-        box-shadow: 0 10px 26px rgba(37, 211, 102, 0.5);
+        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
       }
       .wa-help:focus-visible {
-        outline: 3px solid rgba(37, 211, 102, 0.45);
+        outline: 3px solid #141414;
         outline-offset: 2px;
       }
       .wa-help-ico {

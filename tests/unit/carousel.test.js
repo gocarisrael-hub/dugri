@@ -18,6 +18,20 @@ function buildTrack(n, { dir = 'rtl' } = {}) {
   return root;
 }
 
+// jsdom lacks a PointerEvent constructor, so synthesize a plain event and hang
+// the pointer props the engine reads (clientX, button, pointerId, pointerType)
+// on it. That's enough to exercise the tap-vs-drag decision without layout.
+function firePointer(el, type, x) {
+  const e = new Event(type, { bubbles: true, cancelable: true });
+  e.clientX = x;
+  e.clientY = 0;
+  e.button = 0;
+  e.pointerId = 1;
+  e.pointerType = 'mouse';
+  el.dispatchEvent(e);
+  return e;
+}
+
 beforeEach(() => {
   document.body.innerHTML = '';
 });
@@ -228,6 +242,67 @@ describe('initCarousel — slideshow auto-advance', () => {
     const api = initCarousel(root, { mode: 'scroller', interval: 500 });
     vi.advanceTimersByTime(5000);
     expect(api.current()).toBe(0);
+  });
+});
+
+describe('initCarousel — mode class', () => {
+  it('tags a scroller root with carousel--scroller and removes it on destroy', () => {
+    const root = buildTrack(3);
+    const api = initCarousel(root, { mode: 'scroller' });
+    expect(root.classList.contains('carousel--scroller')).toBe(true);
+    expect(root.classList.contains('carousel--slideshow')).toBe(false);
+    api.destroy();
+    expect(root.classList.contains('carousel--scroller')).toBe(false);
+  });
+
+  it('tags a slideshow root with carousel--slideshow', () => {
+    const root = buildTrack(3);
+    initCarousel(root, { mode: 'slideshow' });
+    expect(root.classList.contains('carousel--slideshow')).toBe(true);
+    expect(root.classList.contains('carousel--scroller')).toBe(false);
+  });
+});
+
+describe('initCarousel — pointer drag vs tap', () => {
+  it('a press that moves under the threshold stays a tap (never .is-dragging)', () => {
+    const root = buildTrack(3);
+    initCarousel(root, { mode: 'scroller' });
+
+    firePointer(root, 'pointerdown', 100);
+    firePointer(root, 'pointermove', 103); // 3px < 6px threshold
+    expect(root.classList.contains('is-dragging')).toBe(false);
+
+    firePointer(root, 'pointerup', 103);
+    expect(root.classList.contains('is-dragging')).toBe(false);
+  });
+
+  it('a press dragged past the threshold promotes to a drag (.is-dragging)', () => {
+    const root = buildTrack(3);
+    initCarousel(root, { mode: 'scroller' });
+
+    firePointer(root, 'pointerdown', 100);
+    firePointer(root, 'pointermove', 130); // 30px > 6px threshold → drag
+    expect(root.classList.contains('is-dragging')).toBe(true);
+  });
+
+  it('a pointerdown with no move at all leaves the click free to land', () => {
+    const root = buildTrack(3);
+    initCarousel(root, { mode: 'scroller' });
+
+    const link = document.createElement('a');
+    link.href = '#x';
+    let clicked = false;
+    link.addEventListener('click', () => {
+      clicked = true;
+    });
+    root.children[0].appendChild(link);
+
+    firePointer(root, 'pointerdown', 50);
+    firePointer(root, 'pointerup', 50);
+    link.click(); // the synthesized click a real tap would produce
+
+    expect(clicked).toBe(true);
+    expect(root.classList.contains('is-dragging')).toBe(false);
   });
 });
 

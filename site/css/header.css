@@ -9,7 +9,7 @@
   top: 0;
   inset-inline: 0;
   z-index: 80;
-  background: rgba(247, 244, 239, 0.82);
+  background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
@@ -44,40 +44,44 @@
   width: auto;
   display: block;
 }
-/* LEFT zone: solid sage "order now" pill */
+/* LEFT zone: solid-black "order now" button — sharp premium rectangle */
 .hdr-order {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   font-family: var(--display);
-  font-weight: 800;
-  font-size: 14px;
-  letter-spacing: -0.01em;
-  background: var(--sage);
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  background: var(--sage-deep);
   color: #fff;
   text-decoration: none;
   white-space: nowrap;
-  padding: 9px 16px;
-  border-radius: var(--radius-pill);
-  box-shadow: var(--shadow-sm);
+  padding: 10px 20px;
+  border: 1px solid var(--sage-deep);
+  border-radius: 0;
   transition:
-    background 0.2s var(--ease),
-    transform 0.14s var(--ease),
-    box-shadow 0.25s var(--ease);
+    background 0.18s var(--ease),
+    color 0.18s var(--ease),
+    border-color 0.18s var(--ease);
 }
-.hdr-order:hover {
-  background: var(--sage-deep);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
+/* Tasteful hover: invert to white ground with a crisp black hairline. */
+.hdr-order:hover,
+.hdr-order:focus-visible {
+  background: #fff;
+  color: var(--sage-deep);
+  border-color: var(--sage-deep);
 }
 .hdr-order:active {
-  transform: translateY(0) scale(0.99);
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
 }
 @media (min-width: 720px) {
   .hdr-order {
-    font-size: 15px;
-    padding: 10px 22px;
+    font-size: 14px;
+    padding: 11px 24px;
   }
 }
 /* RIGHT zone: hamburger button */
@@ -90,7 +94,7 @@
   flex: 0 0 auto;
   background: none;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius);
   color: var(--ink);
   cursor: pointer;
   transition:
@@ -128,7 +132,7 @@
   color: var(--ink);
   text-decoration: none;
   padding: 13px 8px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   transition:
     background 0.16s var(--ease),
     color 0.16s var(--ease);
@@ -142,12 +146,18 @@
   color: var(--sage-deeper);
 }
 @media (min-width: 720px) {
+  /* Small dropdown panel that drops straight UNDER the hamburger. The toggle is
+     the first item in the centered (max-width 1080) inner row, so in this RTL
+     layout it sits at the row's inline-start (right) edge, 22px inside it. We
+     pin the panel's inline-start (right) edge to that same x so it hangs right
+     below the button — for a viewport wider than the row we add the outer
+     gutter (50% - 540px), and never less than the 22px inner padding. */
   .hdr-menu {
-    max-width: 1080px;
-    margin: 0 auto;
     inset-inline: auto;
-    inset-inline-end: 22px;
+    inset-inline-start: max(22px, calc(50% - 540px + 22px));
+    width: max-content;
     min-width: 220px;
+    max-width: 320px;
     border: 1px solid var(--line);
     border-radius: var(--radius);
     padding: 8px;

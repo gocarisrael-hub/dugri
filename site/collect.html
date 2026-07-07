@@ -20,12 +20,11 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
     <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#8ca287" />
+    <meta name="theme-color" content="#ffffff" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="דוגרי" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    ." "
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -103,12 +102,15 @@
         letter-spacing: 0.02em;
       }
       header h1 {
+        font-family: var(--display);
         font-size: 30px;
-        font-weight: 900;
+        font-weight: var(--h-weight);
+        letter-spacing: var(--h-spacing);
         margin-top: 4px;
         line-height: 1.15;
       }
       header .sub {
+        font-weight: var(--sub-weight);
         color: var(--muted);
         margin-top: 6px;
       }
@@ -162,8 +164,16 @@
         font: inherit;
         padding: 12px 14px;
         border: 1.5px solid var(--line);
-        border-radius: 12px;
+        border-radius: var(--radius);
         background: #fff;
+        color: var(--ink);
+      }
+      /* Placeholder/example text: legible muted gray (never washed-out), so the
+         example stays readable before the user types; typed text is full-ink. */
+      input[type='text']::placeholder,
+      textarea::placeholder {
+        color: var(--muted);
+        opacity: 1;
       }
       input[type='text']:focus,
       textarea:focus {
@@ -280,16 +290,16 @@
       }
       .word .del {
         background: none;
-        color: #a85a4f;
+        color: var(--ink);
         border: none;
         padding: 0 2px;
         font-size: 16px;
         line-height: 1;
       }
       .banner {
-        background: #fff4e6;
-        border: 1px solid #f3d9ad;
-        color: #92600b;
+        background: var(--section);
+        border: 1px solid var(--line);
+        color: var(--ink);
         border-radius: 12px;
         padding: 12px 14px;
         text-align: center;
@@ -374,8 +384,8 @@
         color: var(--muted);
       }
       .premium-badge {
-        background: #eafaf2;
-        color: #119a6e;
+        background: var(--section);
+        color: var(--ink);
         border-radius: 99px;
         padding: 7px 13px;
         font-size: 14px;
@@ -384,9 +394,9 @@
       }
       .lock-teaser {
         margin-top: 10px;
-        background: #fff4e6;
-        border: 1px solid #f3d9ad;
-        color: #92600b;
+        background: var(--section);
+        border: 1px solid var(--line);
+        color: var(--ink);
         border-radius: 12px;
         padding: 10px 13px;
         font-size: 14px;
@@ -445,7 +455,7 @@
         left: 50%;
         bottom: 22px;
         transform: translateX(-50%) translateY(10px);
-        background: #23201c;
+        background: var(--ink);
         color: #fff;
         font-weight: 700;
         font-size: 14.5px;
@@ -505,9 +515,9 @@
       }
       /* top pay reminder (owner, unpaid only) — nudges toward the pay panel */
       .pay-reminder {
-        background: #fff4e6;
-        border: 1px solid #f3d9ad;
-        color: #92600b;
+        background: var(--section);
+        border: 1px solid var(--line);
+        color: var(--ink);
         border-radius: 12px;
         padding: 12px 14px;
         text-align: center;
@@ -517,17 +527,17 @@
       }
       /* paid state — replaces the pay panel with a "keep adding, then סיום" card */
       .paid-card {
-        background: linear-gradient(135deg, #eafaf2, #f5fff9);
-        border: 1px solid #bfe8d3;
+        background: linear-gradient(135deg, var(--section), var(--surface));
+        border: 1px solid var(--line);
       }
       .paid-card .paid-title {
         font-weight: 900;
         font-size: 19px;
-        color: #119a6e;
+        color: var(--ink);
         margin-bottom: 6px;
       }
       .paid-card .paid-body {
-        color: #23201c;
+        color: var(--ink);
         margin-bottom: 14px;
       }
       .paid-card .paid-cta {
@@ -666,7 +676,7 @@
         color: var(--ok);
       }
       .coupon-msg.err {
-        color: #a85a4f;
+        color: var(--ink);
       }
       .coupon-remove {
         background: none;
@@ -682,7 +692,7 @@
         color: var(--ink);
       }
       .pay-err {
-        color: #a85a4f;
+        color: var(--ink);
         font-weight: 700;
         font-size: 14px;
         text-align: center;
@@ -690,9 +700,9 @@
         display: none;
       }
       .pay-soon-note {
-        background: #f6f2ee;
-        border: 1px solid #e6ddd2;
-        color: #6b645b;
+        background: var(--section);
+        border: 1px solid var(--line);
+        color: var(--muted);
         border-radius: 12px;
         padding: 12px 14px;
         font-weight: 700;
@@ -761,7 +771,7 @@
         height: 32px;
         border: none;
         border-radius: 99px;
-        background: #f0eee9;
+        background: var(--section);
         font-size: 20px;
         line-height: 1;
         cursor: pointer;
@@ -1073,7 +1083,12 @@
     </div>
 
     <script type="module">
-      import { CATEGORIES, PROMPTS, PREMIUM_PROMPTS, renderQuestion } from './js/word-prompts.js';
+      import {
+        categoriesForTheme,
+        promptsForTheme,
+        premiumPromptsForTheme,
+        renderQuestion,
+      } from './js/word-prompts.js';
       import { parseWordText } from './js/collect.js';
       import { track } from './js/analytics.js';
 
@@ -1202,6 +1217,9 @@
 
       function render() {
         if (!state) return;
+        // Now that the collection (and its event theme) is loaded, make sure the
+        // idea chips match the event (kids / couple / default).
+        buildCats();
         document.title = 'דוגרי · מילים על ' + honoree();
         $('#title').textContent = 'אוספים מילים על ' + honoree();
         const n = state.count;
@@ -1451,13 +1469,22 @@
       );
 
       // ---- idea generator ----
-      // When the order is marked paid (manually, in admin) the public view sets
-      // state.paid; we then draw from PROMPTS + PREMIUM_PROMPTS for more variety.
+      // The prompt bank is chosen per event theme (kids / couple / default). When
+      // the order is marked paid the default event unlocks its extra premium bank
+      // for more variety (kids/couple ship a single curated set — see word-prompts).
       function isPaid() {
         return !!(state && state.paid);
       }
+      // The event theme (from the collection) drives which prompt set is used:
+      // kid-appropriate for a child's birthday, couple prompts for an anniversary,
+      // otherwise the default adult set.
+      function eventTheme() {
+        return (state && state.theme) || null;
+      }
       function pickPrompt() {
-        const pool = isPaid() ? PROMPTS.concat(PREMIUM_PROMPTS) : PROMPTS;
+        const theme = eventTheme();
+        const base = promptsForTheme(theme);
+        const pool = isPaid() ? base.concat(premiumPromptsForTheme(theme)) : base;
         const seen = new Set(seenPrompts);
         let avail = pool.filter((p) => !seen.has(p.id));
         if (!avail.length) avail = pool;
@@ -1484,9 +1511,18 @@
       }
 
       // ---- category chips ----
+      // Rebuilt whenever the event theme becomes known (or changes), so the chips
+      // match the event: kid-appropriate for a child, couple prompts for an
+      // anniversary. Guarded so we don't rebuild identical chips on every poll.
+      let builtCatsTheme = undefined;
       function buildCats() {
+        const theme = eventTheme();
+        if (builtCatsTheme === theme && $('#catChips').children.length) return;
+        builtCatsTheme = theme;
         const chips = $('#catChips');
-        for (const cat of CATEGORIES) {
+        chips.innerHTML = '';
+        $('#qList').innerHTML = '';
+        for (const cat of categoriesForTheme(theme)) {
           const b = document.createElement('button');
           b.className = 'chip';
           b.type = 'button';
@@ -1801,25 +1837,25 @@
         align-items: center;
         gap: 8px;
         padding: 10px 16px 10px 12px;
-        background: #25d366;
+        background: #141414;
         color: #fff;
-        border-radius: 999px;
+        border-radius: 0;
         text-decoration: none;
         font-family: inherit;
         font-weight: 800;
         font-size: 15px;
         line-height: 1;
-        box-shadow: 0 6px 20px rgba(37, 211, 102, 0.45);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
         transition:
           transform 0.15s ease,
           box-shadow 0.15s ease;
       }
       .wa-help:hover {
         transform: translateY(-2px);
-        box-shadow: 0 10px 26px rgba(37, 211, 102, 0.5);
+        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
       }
       .wa-help:focus-visible {
-        outline: 3px solid rgba(37, 211, 102, 0.45);
+        outline: 3px solid #141414;
         outline-offset: 2px;
       }
       .wa-help-ico {
