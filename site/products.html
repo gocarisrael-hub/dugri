@@ -222,8 +222,9 @@
       }
       /* the product image — the only visual weight in the card. Sharp corners
          (no rounding that would clip the art), no border / background / shadow.
-         object-fit:contain guarantees the WHOLE product picture shows, never
-         cropped; the frame's aspect-ratio matches the artwork so it fits flush. */
+         object-fit:cover lets the landscape cover photo fill the frame cleanly
+         (matching the home rail); the frame's aspect-ratio is close to the
+         photo's (~1.5) so the crop is minimal. */
       .product-card__media {
         display: block;
         width: 100%;
@@ -235,7 +236,7 @@
       .product-card__media img {
         width: 100%;
         height: 100%;
-        object-fit: contain;
+        object-fit: cover;
         display: block;
       }
       .product-name {
@@ -525,14 +526,13 @@
         link.setAttribute('aria-label', d.name);
 
         // Product image (no border / background / shadow — "just the picture").
-        // FILLER: the design's front thumb. The real store cover photo will live
-        // at assets/products/<id>/1.jpg once shot.
+        // Real store cover photo: deck + game board on a table, per design.
         const media = document.createElement('span');
         media.className = 'product-card__media';
         const img = document.createElement('img');
         img.loading = 'lazy';
         img.decoding = 'async';
-        img.src = `assets/designs/${d.id}/thumb-front.webp`;
+        img.src = `assets/designs/${d.id}/cover.webp`;
         img.alt = d.name;
         img.setAttribute('data-testid', 'product-image');
         media.appendChild(img);
