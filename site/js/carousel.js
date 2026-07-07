@@ -1,71 +1,61 @@
-// carousel.js — one dependency-free, RTL-aware carousel engine for the dugri
-// homepage. It powers three surfaces from the same code:
-//   • 'slideshow' — full-bleed hero, one slide at a time, auto-advances.
-//   • 'scroller'  — free-swipe product / reviews rail that shows a peek of the
-//                   next card (card width is the PAGE's job via CSS, never ours).
+// carousel.js — dependency-free, RTL-aware carousel engine for the dugri site.
+// Two surfaces from one module, both on a NATIVE horizontal scroll track (the
+// browser owns touch, so swiping is 100% reliable — the module never intercepts
+// the finger):
+//   • 'scroller'  — free-glide product / reviews rail (NO snap) with a "turbo"
+//                   momentum extender that adds decaying scroll ON TOP of the
+//                   phone's own fling after the finger lifts, so the rail travels
+//                   faster / further. Card width is the PAGE's job via CSS.
+//   • 'slideshow' — full-bleed hero, one slide at a time, native scroll-snap
+//                   (x mandatory), auto-advances on a timer.
 //
-// Both modes are built on a native horizontal scroll-snap track, so wheel /
-// trackpad / native momentum come for free; on top we add pointer-drag with
-// inertia + snap, keyboard, dots and optional arrows. The module NEVER sets a
-// card width and NEVER restyles anything global — it only wires behaviour and
-// renders its own controls. Import it anywhere: a missing / empty root no-ops.
+// Nothing here calls preventDefault or captures the pointer: every listener is
+// passive, so the native scroll / fling is never fought. Advances (dots, arrows,
+// autoplay) use slide.scrollIntoView({inline:'start'}), which is RTL-safe with no
+// scrollLeft-sign math. The module NEVER sets a card width and NEVER restyles
+// anything global — it only wires behaviour and renders its own controls. Import
+// it anywhere: a missing / empty root no-ops.
 //
 // Public API (returned by initCarousel):
 //   { next(), prev(), goTo(i), current(), pause(), play(), destroy() }
 //
-// RTL: the site is dir="rtl". "next" always means the *later* slide (index+1);
-// the physical scroll direction is derived from live geometry
-// (getBoundingClientRect deltas), so it is correct in both LTR and RTL and
-// across every browser's scrollLeft sign convention. Keyboard arrows are mapped
-// visually (in RTL, ArrowLeft advances, ArrowRight goes back).
+// RTL: the site is dir="rtl". "next" always means the *later* slide (index+1).
+// Advances are geometry-free (scrollIntoView) and dot-sync uses relative center
+// distances, so both are correct in LTR and RTL across every browser's
+// scrollLeft sign convention. Keyboard arrows are mapped visually (in RTL,
+// ArrowLeft advances, ArrowRight goes back).
 
-// ---- release-target math (pure, exported, unit-tested) -------------------
-// Decide which card a released drag should settle on, in ONE decision: the
-// nearest card PLUS a light velocity nudge capped to at most one card beyond it.
-// Coordinates are position-space: `scrollLeft`/`cardWidth` describe the current
-// position (their ratio is the fractional index) and `velocity` is signed so
-// that positive means motion toward a HIGHER index. The fling is projected a
-// short fixed time (PROJECT_MS) and the nudge is clamped to ±1 so a flick never
-// overshoots. Returns a clamped integer index in [0, count-1].
-const PROJECT_MS = 90; // how far a flick is "thrown" before it must settle
-export function releaseTargetIndex({ scrollLeft, cardWidth, count, velocity }) {
-  const c = Number.isFinite(count) ? Math.floor(count) : 0;
-  if (c < 1) return 0;
-  const cw = Number.isFinite(cardWidth) && cardWidth > 0 ? cardWidth : 1;
-  const nearest = Math.round((Number(scrollLeft) || 0) / cw);
-  const projectedCards = ((Number(velocity) || 0) * PROJECT_MS) / cw;
-  let nudge = Math.round(projectedCards);
-  if (nudge > 1) nudge = 1;
-  else if (nudge < -1) nudge = -1;
-  const target = nearest + nudge;
-  return Math.max(0, Math.min(c - 1, target));
+// ---- pure helpers (exported, unit-tested) --------------------------------
+
+// Index of the card whose center is nearest `railCenter`. `centers` is the list
+// of card center coordinates (any axis, any sign) and `railCenter` the track's
+// center. Uses only relative distances, so it is direction-agnostic — correct in
+// both LTR and RTL. Returns 0 for an empty / invalid list.
+export function nearestByCenter(centers, railCenter) {
+  if (!Array.isArray(centers) || centers.length === 0) return 0;
+  const target = Number(railCenter) || 0;
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < centers.length; i++) {
+    const d = Math.abs((Number(centers[i]) || 0) - target);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
 }
 
-// A `cubic-bezier(p1x,p1y,p2x,p2y)` easing evaluator (Newton-Raphson on x→t,
-// then bezier y). Mirrors the CSS `--ease` token so JS glides feel identical to
-// the CSS transitions. Returns fn(x∈[0,1]) → eased y.
-function cubicBezier(p1x, p1y, p2x, p2y) {
-  const cx = 3 * p1x;
-  const bx = 3 * (p2x - p1x) - cx;
-  const ax = 1 - cx - bx;
-  const cy = 3 * p1y;
-  const by = 3 * (p2y - p1y) - cy;
-  const ay = 1 - cy - by;
-  const fx = (t) => ((ax * t + bx) * t + cx) * t;
-  const fy = (t) => ((ay * t + by) * t + cy) * t;
-  const dfx = (t) => (3 * ax * t + 2 * bx) * t + cx;
-  return (x) => {
-    if (x <= 0) return 0;
-    if (x >= 1) return 1;
-    let t = x;
-    for (let i = 0; i < 5; i++) {
-      const err = fx(t) - x;
-      if (Math.abs(err) < 1e-4) break;
-      const d = dfx(t) || 1e-6;
-      t -= err / d;
-    }
-    return fy(t);
-  };
+// Turbo momentum: map a release velocity (px/ms, signed) to the INITIAL per-frame
+// boost distance added on top of the native fling. Below TURBO_THRESHOLD the
+// gesture is a tap / slow drag → no boost (returns 0). Above it, scale by
+// TURBO_GAIN (0.7 × a ~16ms frame). Sign is preserved so it is direction-agnostic.
+export const TURBO_THRESHOLD = 0.25; // px/ms — below this, no boost
+export const TURBO_GAIN = 0.7 * 16; // velocity → initial per-frame px
+export function turboBoostPx(velocity) {
+  const v = Number(velocity) || 0;
+  if (Math.abs(v) < TURBO_THRESHOLD) return 0;
+  return v * TURBO_GAIN;
 }
 
 /** A safe no-op API, returned for a missing / empty / already-torn-down root. */
@@ -128,6 +118,14 @@ export function initCarousel(root, opts = {}) {
       : null;
   const reduced = () => !!(mq && mq.matches);
 
+  const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : null;
+  const caf = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : null;
+  const perf =
+    typeof window !== 'undefined' && window.performance && window.performance.now
+      ? window.performance
+      : null;
+  const nowMs = () => (perf ? perf.now() : Date.now());
+
   const isRTL = () => {
     try {
       if (getComputedStyle(root).direction === 'rtl') return true;
@@ -139,100 +137,44 @@ export function initCarousel(root, opts = {}) {
     return dir.toLowerCase() === 'rtl';
   };
 
-  // ---- JS-animated scroll (replaces native scroll-behavior:smooth) -------
-  // Every advance / release runs through ONE rAF tween of scrollLeft with a
-  // fixed ~260ms duration and the site's --ease curve. No native smooth scroll,
-  // no friction-coast; a single motion into the target card.
-  const GLIDE_MS = 260;
-  const ease = cubicBezier(0.2, 0.7, 0.2, 1);
-  const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : null;
-  const caf = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : null;
-  const perf =
-    typeof window !== 'undefined' && window.performance && window.performance.now
-      ? window.performance
-      : null;
-  const nowMs = () => (perf ? perf.now() : Date.now());
-
-  let animRaf = 0;
-  let animating = false;
-  function cancelAnim() {
-    if (animRaf && caf) caf(animRaf);
-    animRaf = 0;
-    animating = false;
-  }
-
-  // Tween root.scrollLeft to an absolute target. Cancels any in-flight tween.
-  // duration<=0 / reduced-motion / no rAF / negligible distance → jump instantly.
-  // Always calls onDone once the position has settled.
-  function animateScrollTo(el, targetLeft, duration, onDone) {
-    cancelAnim();
-    const start = el.scrollLeft;
-    const dist = targetLeft - start;
-    if (!raf || duration <= 0 || reduced() || Math.abs(dist) < 0.5) {
-      el.scrollLeft = targetLeft;
-      if (onDone) onDone();
-      return;
-    }
-    animating = true;
-    const t0 = nowMs();
-    const frame = (now) => {
-      const elapsed = (now || nowMs()) - t0;
-      const t = Math.min(1, elapsed / duration);
-      el.scrollLeft = start + dist * ease(t);
-      if (t < 1) {
-        animRaf = raf(frame);
-      } else {
-        animRaf = 0;
-        animating = false;
-        if (onDone) onDone();
-      }
-    };
-    animRaf = raf(frame);
-  }
-
-  // ---- geometry helpers --------------------------------------------------
-  // Scroll so slide `i` aligns to the track start. Uses a relative delta so it
-  // is direction-agnostic (works in LTR and RTL regardless of scrollLeft sign),
-  // resolved to an absolute target and glided via animateScrollTo.
-  function scrollToIndex(i, smooth, onDone) {
+  // ---- advance (native, RTL-safe) ----------------------------------------
+  // Bring slide `i` to the track start via scrollIntoView. inline:'start' aligns
+  // horizontally with no scrollLeft-sign math (correct in LTR and RTL);
+  // block:'nearest' never scrolls the page vertically. Smooth unless reduced
+  // motion is on (then it jumps instantly).
+  function advanceTo(i, smooth) {
     const slide = slides[i];
-    if (!slide) {
-      if (onDone) onDone();
-      return;
-    }
-    let delta = 0;
+    if (!slide || typeof slide.scrollIntoView !== 'function') return;
+    const behavior = smooth && !reduced() ? 'smooth' : 'auto';
     try {
-      delta = slide.getBoundingClientRect().left - root.getBoundingClientRect().left;
+      slide.scrollIntoView({ behavior, inline: 'start', block: 'nearest' });
     } catch {
-      delta = 0;
+      // Older engines reject the options object — fall back to the boolean form.
+      try {
+        slide.scrollIntoView(false);
+      } catch {
+        /* jsdom / unsupported — index state still tracks the logical slide */
+      }
     }
-    if (!delta) {
-      // nothing to do (or no layout, e.g. jsdom) — still settle any release.
-      if (onDone) onDone();
-      return;
-    }
-    const duration = smooth && !reduced() ? GLIDE_MS : 0;
-    animateScrollTo(root, root.scrollLeft + delta, duration, onDone);
   }
 
-  // The slide whose start is nearest the track start — the "snapped" card.
+  // The card whose center is nearest the track center — the visually-dominant
+  // card, used to keep dots / index in sync with a native scroll. Geometry is
+  // guarded: with no layout (jsdom) it holds the current index.
   function nearestIndex() {
-    let best = index;
-    let bestD = Infinity;
-    let trLeft = 0;
     try {
-      trLeft = root.getBoundingClientRect().left;
+      const rr = root.getBoundingClientRect();
+      const railCenter = rr.left + rr.width / 2;
+      const centers = slides.map((s) => {
+        const r = s.getBoundingClientRect();
+        return r.left + r.width / 2;
+      });
+      // All-zero rects (jsdom / detached) → every center is 0; keep index.
+      if (rr.width === 0) return index;
+      return nearestByCenter(centers, railCenter);
     } catch {
       return index;
     }
-    slides.forEach((s, i) => {
-      const d = Math.abs(s.getBoundingClientRect().left - trLeft);
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
-    });
-    return best;
   }
 
   // ---- controls (dots + arrows) ------------------------------------------
@@ -303,7 +245,7 @@ export function initCarousel(root, opts = {}) {
     if (n === 0) return;
     index = loop ? ((i % n) + n) % n : Math.max(0, Math.min(n - 1, i));
     updateControls();
-    scrollToIndex(index, smooth);
+    advanceTo(index, smooth);
   }
   function next() {
     goTo(index + 1);
@@ -333,131 +275,69 @@ export function initCarousel(root, opts = {}) {
   }
   cleanups.push(stopTimer);
 
-  // ---- pointer drag with inertia + snap ----------------------------------
-  // A press only becomes a drag once the pointer moves past DRAG_THRESHOLD px.
-  // Until then it stays a tap: we do NOT capture the pointer, so a click on a
-  // child link/button inside the track still fires and navigates. (Capturing on
-  // pointerdown retargets the synthesized click to the track and swallows it.)
-  const DRAG_THRESHOLD = 6;
-  let pressed = false; // pointer is down inside the track
-  let captured = false; // we've taken pointer capture for an active drag
-  let dragging = false; // the press has been promoted to a drag
-  let startX = 0;
-  let startScroll = 0;
-  let lastX = 0;
-  let lastT = 0;
-  let velocity = 0; // pointer px / ms
+  // ---- turbo momentum extender (scroller only) ---------------------------
+  // After the finger lifts, add decaying scrollLeft ON TOP of the native fling so
+  // the rail travels faster / further. Passive throughout — never preventDefault,
+  // never capture — so the native touch scroll is never fought. Direction-agnostic
+  // (relative scrollLeft deltas → correct in RTL). No-op under reduced motion.
+  if (mode === 'scroller') {
+    let last = root.scrollLeft;
+    let lastT = nowMs();
+    let vel = 0; // px/ms, signed
+    let down = false;
+    let boostRaf = 0;
 
-  function onPointerDown(e) {
-    if (e.pointerType === 'mouse' && e.button !== 0) return; // primary button only
-    pressed = true;
-    dragging = false; // stays a tap until the pointer moves past the threshold
-    captured = false;
-    startX = lastX = e.clientX;
-    lastT = e.timeStamp || Date.now();
-    startScroll = root.scrollLeft;
-    velocity = 0;
-    cancelAnim(); // touch-down kills any in-flight glide so the finger owns it
-  }
-  function onPointerMove(e) {
-    if (!pressed) return;
-    const x = e.clientX;
-    if (!dragging) {
-      // Not a drag yet — ignore tiny jitter so a tap can still click through.
-      if (Math.abs(x - startX) < DRAG_THRESHOLD) return;
-      // Promote to a real drag: now it's safe to pause + capture the pointer.
-      dragging = true;
-      if (mode === 'slideshow') pause();
-      root.classList.add('is-dragging');
-      try {
-        if (root.setPointerCapture) {
-          root.setPointerCapture(e.pointerId);
-          captured = true;
+    const stopBoost = () => {
+      if (boostRaf && caf) caf(boostRaf);
+      boostRaf = 0;
+    };
+    const onTurboScroll = () => {
+      const t = nowMs();
+      const dt = t - lastT;
+      if (dt > 0) vel = (root.scrollLeft - last) / dt;
+      last = root.scrollLeft;
+      lastT = t;
+    };
+    const onTurboDown = () => {
+      down = true;
+      stopBoost(); // touch-down kills any in-flight boost so the finger owns it
+    };
+    const onTurboCancel = () => {
+      down = false;
+    };
+    const onTurboUp = () => {
+      down = false;
+      if (reduced() || !raf) return; // no boost under reduced motion / no rAF
+      let px = turboBoostPx(vel);
+      if (px === 0) return; // tap / slow drag → no boost
+      const friction = 0.955;
+      const step = () => {
+        if (down || Math.abs(px) < 0.4) {
+          boostRaf = 0;
+          return;
         }
-      } catch {
-        /* not supported */
-      }
-    }
-    // 1:1 drag: moving the pointer right reveals the previous card.
-    root.scrollLeft = startScroll - (x - startX);
-    const now = e.timeStamp || Date.now();
-    const dt = now - lastT || 16;
-    velocity = (x - lastX) / dt;
-    lastX = x;
-    lastT = now;
-  }
-  function onPointerUp(e) {
-    if (!pressed) return;
-    pressed = false;
-    const wasDragging = dragging;
-    dragging = false;
-    if (captured) {
-      captured = false;
-      try {
-        root.releasePointerCapture && root.releasePointerCapture(e.pointerId);
-      } catch {
-        /* ignore */
-      }
-    }
-    // A plain tap never scrolled or paused — leave it alone so the click lands.
-    if (!wasDragging) {
-      root.classList.remove('is-dragging');
-      return;
-    }
-    // Keep 'is-dragging' on through the glide: it holds CSS scroll-snap OFF so
-    // the browser's snap engine can't fight our JS tween. endDrag() (fired when
-    // the single glide settles) clears it once we've aligned to the target card.
-    releaseGlide();
-    if (mode === 'slideshow') play();
-  }
+        root.scrollLeft += px;
+        px *= friction;
+        boostRaf = raf(step);
+      };
+      step();
+    };
 
-  function endDrag() {
-    root.classList.remove('is-dragging');
+    on(root, 'scroll', onTurboScroll, { passive: true });
+    on(root, 'pointerdown', onTurboDown, { passive: true });
+    on(root, 'pointercancel', onTurboCancel, { passive: true });
+    on(root, 'pointerup', onTurboUp, { passive: true });
+    cleanups.push(stopBoost);
   }
-
-  // ONE decision on release: pick the target card (nearest + a capped velocity
-  // nudge) via the pure releaseTargetIndex(), then a single glide into it. No
-  // friction coast, no second smooth-scroll — one motion, light momentum.
-  function computeReleaseTarget() {
-    // Geometry-based fractional position at the track start: RTL-agnostic and
-    // monotonically increasing with index, so it feeds the pure math cleanly.
-    let frac = index;
-    let stepDelta = 0;
-    try {
-      const trLeft = root.getBoundingClientRect().left;
-      const l0 = slides[0].getBoundingClientRect().left;
-      const l1 = slides[1] ? slides[1].getBoundingClientRect().left : null;
-      stepDelta = l1 != null ? l1 - l0 : 0;
-      if (!stepDelta) return nearestIndex(); // 1 slide / no layout → no nudge
-      frac = -(l0 - trLeft) / stepDelta;
-    } catch {
-      return nearestIndex();
-    }
-    // Pointer px/ms → index units/ms, signed so positive = toward higher index.
-    // Drag maps scrollLeft = startScroll-(x-startX) ⇒ d(frac)/dt = -velocity/stepDelta.
-    const vIndex = -velocity / stepDelta;
-    return releaseTargetIndex({ scrollLeft: frac, cardWidth: 1, count: n, velocity: vIndex });
-  }
-
-  function releaseGlide() {
-    const target = computeReleaseTarget();
-    index = loop ? ((target % n) + n) % n : Math.max(0, Math.min(n - 1, target));
-    updateControls();
-    scrollToIndex(index, true, endDrag);
-  }
-  cleanups.push(cancelAnim);
-
-  on(root, 'pointerdown', onPointerDown);
-  on(root, 'pointermove', onPointerMove);
-  on(root, 'pointerup', onPointerUp);
-  on(root, 'pointercancel', onPointerUp);
 
   // ---- native scroll → keep dots / index in sync -------------------------
+  // rAF-throttled, passive: recompute the nearest-by-center card and move the
+  // active dot. Never touches scrollLeft, so it can't fight the native scroll.
   let scrollRaf = 0;
   function onScroll() {
-    if (dragging || animating) return; // drag / JS glide drive index themselves
     if (scrollRaf && caf) caf(scrollRaf);
     const commit = () => {
+      scrollRaf = 0;
       const i = nearestIndex();
       if (i !== index) {
         index = i;
@@ -510,9 +390,9 @@ export function initCarousel(root, opts = {}) {
   root.setAttribute('role', 'group');
   root.setAttribute('aria-roledescription', 'carousel');
   if (!root.classList.contains('carousel-track')) root.classList.add('carousel-track');
-  // Mode class lets the CSS pick the right snap feel: a slideshow snaps hard
-  // (one slide at a time), a scroller snaps loosely so a fling can glide across
-  // several cards before settling.
+  // Mode class lets the CSS pick the right feel: a slideshow snaps hard (one slide
+  // at a time, scroll-snap x mandatory); a scroller free-glides (scroll-snap none)
+  // and gets the JS turbo momentum on top.
   const modeClass = mode === 'slideshow' ? 'carousel--slideshow' : 'carousel--scroller';
   root.classList.add(modeClass);
   const slideClass = mode === 'scroller' ? 'carousel-card' : 'carousel-slide';
@@ -532,7 +412,6 @@ export function initCarousel(root, opts = {}) {
 
   function destroy() {
     pause();
-    cancelAnim();
     if (scrollRaf && caf) caf(scrollRaf);
     while (cleanups.length) {
       try {
@@ -542,7 +421,6 @@ export function initCarousel(root, opts = {}) {
       }
     }
     if (addedTabindex) root.removeAttribute('tabindex');
-    root.classList.remove('is-dragging');
     root.classList.remove(modeClass);
     delete root.__carousel;
   }

@@ -1,8 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { initCarousel, releaseTargetIndex } from '../../site/js/carousel.js';
+import {
+  initCarousel,
+  nearestByCenter,
+  turboBoostPx,
+  TURBO_THRESHOLD,
+  TURBO_GAIN,
+} from '../../site/js/carousel.js';
 
 // jsdom has no layout/scroll metrics, so these tests exercise the IMPERATIVE
-// API and DOM wiring (dots, aria-current, teardown) — never pixel scroll.
+// API and DOM wiring (dots, aria-current, teardown) — never pixel scroll. The
+// native-scroll motion (turbo boost, snap) needs a real device and isn't
+// asserted here; the pure helpers below cover the decision math instead.
 
 /** Build a track with `n` child slides and return the root element. */
 function buildTrack(n, { dir = 'rtl' } = {}) {
@@ -18,20 +26,6 @@ function buildTrack(n, { dir = 'rtl' } = {}) {
   return root;
 }
 
-// jsdom lacks a PointerEvent constructor, so synthesize a plain event and hang
-// the pointer props the engine reads (clientX, button, pointerId, pointerType)
-// on it. That's enough to exercise the tap-vs-drag decision without layout.
-function firePointer(el, type, x) {
-  const e = new Event(type, { bubbles: true, cancelable: true });
-  e.clientX = x;
-  e.clientY = 0;
-  e.button = 0;
-  e.pointerId = 1;
-  e.pointerType = 'mouse';
-  el.dispatchEvent(e);
-  return e;
-}
-
 beforeEach(() => {
   document.body.innerHTML = '';
 });
@@ -40,52 +34,57 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('releaseTargetIndex — pure release-target math', () => {
-  const CW = 100; // card width; scrollLeft/CW is the fractional index
-  const COUNT = 5; // valid indices 0..4
-
-  it('picks the nearest card when velocity is zero', () => {
-    // 2.6 → 3, 2.4 → 2, exact-half 2.5 → 3 (round-half-up)
-    expect(releaseTargetIndex({ scrollLeft: 260, cardWidth: CW, count: COUNT, velocity: 0 })).toBe(
-      3
-    );
-    expect(releaseTargetIndex({ scrollLeft: 240, cardWidth: CW, count: COUNT, velocity: 0 })).toBe(
-      2
-    );
-    expect(releaseTargetIndex({ scrollLeft: 250, cardWidth: CW, count: COUNT, velocity: 0 })).toBe(
-      3
-    );
+describe('nearestByCenter — pure dot-sync math', () => {
+  it('picks the card whose center is closest to the rail center', () => {
+    const centers = [0, 100, 200, 300, 400];
+    expect(nearestByCenter(centers, 190)).toBe(2); // 190 nearest 200
+    expect(nearestByCenter(centers, 140)).toBe(1); // 140 nearest 100 (dist 40 < 60)
+    expect(nearestByCenter(centers, 0)).toBe(0);
+    expect(nearestByCenter(centers, 400)).toBe(4);
   });
 
-  it('adds at most +1 card for a forward flick (nudge clamped)', () => {
-    // Nearest is 2; a hard positive flick may not push past 3.
-    expect(
-      releaseTargetIndex({ scrollLeft: 200, cardWidth: CW, count: COUNT, velocity: 1000 })
-    ).toBe(3);
+  it('is direction-agnostic — works with negative (RTL-style) coordinates', () => {
+    // In RTL the physical order runs the other way; only relative distance matters.
+    const centers = [400, 300, 200, 100, 0];
+    expect(nearestByCenter(centers, 190)).toBe(2);
+    expect(nearestByCenter(centers, -50)).toBe(4);
   });
 
-  it('subtracts at most 1 card for a backward flick (nudge clamped)', () => {
-    // Nearest is 2; a hard negative flick may not push below 1.
-    expect(
-      releaseTargetIndex({ scrollLeft: 200, cardWidth: CW, count: COUNT, velocity: -1000 })
-    ).toBe(1);
+  it('ties resolve to the earlier (lower) index', () => {
+    expect(nearestByCenter([0, 100], 50)).toBe(0);
   });
 
-  it('clamps at index 0 (cannot flick before the first card)', () => {
-    expect(
-      releaseTargetIndex({ scrollLeft: 0, cardWidth: CW, count: COUNT, velocity: -1000 })
-    ).toBe(0);
+  it('guards an empty / invalid list → index 0', () => {
+    expect(nearestByCenter([], 123)).toBe(0);
+    expect(nearestByCenter(null, 123)).toBe(0);
+  });
+});
+
+describe('turboBoostPx — velocity → initial momentum boost', () => {
+  it('returns no boost for a tap / slow drag below the threshold', () => {
+    expect(turboBoostPx(0)).toBe(0);
+    expect(turboBoostPx(0.24)).toBe(0);
+    expect(turboBoostPx(-0.24)).toBe(0);
   });
 
-  it('clamps at count-1 (cannot flick past the last card)', () => {
-    expect(
-      releaseTargetIndex({ scrollLeft: 400, cardWidth: CW, count: COUNT, velocity: 1000 })
-    ).toBe(4);
+  it('scales velocity by the gain above the threshold', () => {
+    expect(turboBoostPx(1)).toBeCloseTo(TURBO_GAIN, 6); // 1 * gain
+    expect(turboBoostPx(2)).toBeCloseTo(2 * TURBO_GAIN, 6);
   });
 
-  it('guards degenerate inputs (count<1 → 0, count 1 → 0)', () => {
-    expect(releaseTargetIndex({ scrollLeft: 999, cardWidth: CW, count: 0, velocity: 5 })).toBe(0);
-    expect(releaseTargetIndex({ scrollLeft: 999, cardWidth: CW, count: 1, velocity: 5 })).toBe(0);
+  it('preserves direction (sign) so it works in RTL too', () => {
+    expect(turboBoostPx(1)).toBeGreaterThan(0);
+    expect(turboBoostPx(-1)).toBeLessThan(0);
+    expect(turboBoostPx(-1)).toBeCloseTo(-TURBO_GAIN, 6);
+  });
+
+  it('kicks in right at the threshold boundary', () => {
+    expect(turboBoostPx(TURBO_THRESHOLD)).toBeCloseTo(TURBO_THRESHOLD * TURBO_GAIN, 6);
+  });
+
+  it('guards non-finite input → 0', () => {
+    expect(turboBoostPx(NaN)).toBe(0);
+    expect(turboBoostPx(undefined)).toBe(0);
   });
 });
 
@@ -312,29 +311,9 @@ describe('initCarousel — mode class', () => {
   });
 });
 
-describe('initCarousel — pointer drag vs tap', () => {
-  it('a press that moves under the threshold stays a tap (never .is-dragging)', () => {
-    const root = buildTrack(3);
-    initCarousel(root, { mode: 'scroller' });
-
-    firePointer(root, 'pointerdown', 100);
-    firePointer(root, 'pointermove', 103); // 3px < 6px threshold
-    expect(root.classList.contains('is-dragging')).toBe(false);
-
-    firePointer(root, 'pointerup', 103);
-    expect(root.classList.contains('is-dragging')).toBe(false);
-  });
-
-  it('a press dragged past the threshold promotes to a drag (.is-dragging)', () => {
-    const root = buildTrack(3);
-    initCarousel(root, { mode: 'scroller' });
-
-    firePointer(root, 'pointerdown', 100);
-    firePointer(root, 'pointermove', 130); // 30px > 6px threshold → drag
-    expect(root.classList.contains('is-dragging')).toBe(true);
-  });
-
-  it('a pointerdown with no move at all leaves the click free to land', () => {
+describe('initCarousel — native scroll leaves clicks free', () => {
+  it('never intercepts the pointer, so a click inside a card still lands', () => {
+    // No pointer-drag interception any more: a tap on a child link fires natively.
     const root = buildTrack(3);
     initCarousel(root, { mode: 'scroller' });
 
@@ -346,11 +325,19 @@ describe('initCarousel — pointer drag vs tap', () => {
     });
     root.children[0].appendChild(link);
 
-    firePointer(root, 'pointerdown', 50);
-    firePointer(root, 'pointerup', 50);
-    link.click(); // the synthesized click a real tap would produce
-
+    link.click();
     expect(clicked).toBe(true);
+  });
+
+  it('the turbo listeners are passive (no is-dragging class, ever)', () => {
+    const root = buildTrack(3);
+    initCarousel(root, { mode: 'scroller' });
+    const down = new Event('pointerdown', { bubbles: true });
+    const up = new Event('pointerup', { bubbles: true });
+    expect(() => {
+      root.dispatchEvent(down);
+      root.dispatchEvent(up);
+    }).not.toThrow();
     expect(root.classList.contains('is-dragging')).toBe(false);
   });
 });
