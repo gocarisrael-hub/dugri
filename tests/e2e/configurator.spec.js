@@ -13,8 +13,10 @@ test.describe('order wizard', () => {
     await expect(page.getByTestId('plan-price')).toHaveText('79');
     await expect(page.getByTestId('step-1')).toBeVisible();
     await expect(page.getByTestId('step-now')).toHaveText('1');
-    // On the first step Back is hidden and Next reads "הבא".
-    await expect(page.getByTestId('back-btn')).toHaveClass(/is-hidden/);
+    // On the first step Back is not hidden: it's a "return to store" control
+    // (label "חזרה לחנות") that navigates to products.html. Next reads "הבא".
+    await expect(page.getByTestId('back-btn')).not.toHaveClass(/is-hidden/);
+    await expect(page.getByTestId('back-btn')).toHaveText('חזרה לחנות');
     await expect(page.getByTestId('next-btn')).toHaveText('הבא');
 
     const designs = page.getByTestId('design-list').locator('.design');
@@ -186,6 +188,17 @@ test.describe('order wizard', () => {
     );
     // A slider design keeps the colour picker on this step.
     await expect(page.getByTestId('color-list')).toBeVisible();
+  });
+
+  test('step 1 back button returns to the store (products.html)', async ({ page }) => {
+    await page.goto('/options.html?plan=base');
+    await expect(page.getByTestId('step-1')).toBeVisible();
+    // Visible return-to-store control on the first step.
+    const backBtn = page.getByTestId('back-btn');
+    await expect(backBtn).not.toHaveClass(/is-hidden/);
+    await expect(backBtn).toHaveText('חזרה לחנות');
+    await backBtn.click();
+    await page.waitForURL(/products\.html/);
   });
 
   test('?design=neon&step=3 skips the (fixed) colour step and lands on add-ons', async ({

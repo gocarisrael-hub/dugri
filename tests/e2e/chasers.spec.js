@@ -9,6 +9,10 @@ test('chasers add-on flows from the wizard into the order and admin', async ({ p
   // Step 1 -> 2 -> 3, then turn the add-on on (carries ?chasers=1).
   await page.getByTestId('next-btn').click();
   await page.getByTestId('next-btn').click();
+  // The chasers add-on icon is the owner-provided photo, not the old svg.
+  const chasersIco = page.locator('#chasersCard img.addon-ico');
+  await expect(chasersIco).toHaveAttribute('src', 'assets/ico-chasers.png');
+  await expect(page.locator('#chasersCard svg.addon-ico')).toHaveCount(0);
   await page.getByTestId('chasers-toggle').check();
   await expect(page.getByTestId('chasers-toggle')).toBeChecked();
   expect(page.url()).toContain('chasers=1');
