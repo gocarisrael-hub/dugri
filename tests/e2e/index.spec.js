@@ -134,3 +134,17 @@ test.describe('real customer testimonials', () => {
     expect(body).not.toContain('אליאס');
   });
 });
+
+test.describe('hero lets the page scroll vertically', () => {
+  test('the hero carousel track allows vertical page scroll (touch-action includes pan-y)', async ({
+    page,
+  }) => {
+    await page.goto('/index.html');
+    const hero = page.locator('.hero-track.carousel-track');
+    await expect(hero).toHaveCount(1);
+    // Regression guard: 'pan-x' alone blocked scrolling the page when a touch
+    // started on the tall hero photo. The track must allow vertical panning too.
+    const touchAction = await hero.evaluate((el) => getComputedStyle(el).touchAction);
+    expect(touchAction).toContain('pan-y');
+  });
+});
