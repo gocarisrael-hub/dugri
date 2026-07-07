@@ -32,14 +32,14 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Heebo:wght@600;700;800;900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Gveret+Levin&family=Heebo:wght@600;700;800;900&display=swap"
       media="print"
       onload="this.media = 'all'"
     />
     <noscript>
       <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Heebo:wght@600;700;800;900&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Gveret+Levin&family=Heebo:wght@600;700;800;900&display=swap"
       />
     </noscript>
     <link rel="stylesheet" href="/css/tokens.css" />
@@ -68,8 +68,7 @@
       }
       body {
         font-family: var(--font);
-        background: var(--cfg-bg, var(--bg));
-        transition: background 0.35s ease;
+        background: var(--bg);
         color: var(--ink);
         line-height: 1.6;
         font-size: 17px;
@@ -130,7 +129,10 @@
         transition:
           transform 0.14s ease,
           box-shadow 0.25s ease,
-          filter 0.2s ease;
+          filter 0.2s ease,
+          background-color 0.26s var(--ease),
+          color 0.26s var(--ease),
+          border-color 0.26s var(--ease);
       }
       .btn::after {
         content: '';
@@ -153,6 +155,9 @@
       }
       .btn:active {
         transform: translateY(0) scale(0.99);
+        background: #fff;
+        color: #141414;
+        border-color: #141414;
       }
       .btn:focus-visible {
         outline: 3px solid var(--sage);
@@ -751,7 +756,7 @@
         position: absolute;
         inset: 0;
         background: var(--line);
-        border-radius: var(--radius);
+        border-radius: 999px;
         transition: background 0.2s ease;
       }
       .switch .track::before {
@@ -913,7 +918,7 @@
         display: block;
         font: inherit;
         padding: 14px 15px;
-        border: 1.5px solid var(--line);
+        border: 1px solid var(--line);
         border-radius: var(--radius);
         background: var(--surface);
         color: var(--ink);
@@ -925,8 +930,8 @@
         opacity: 1;
       }
       .wiz-input:focus {
-        outline: 2px solid var(--sage);
-        border-color: var(--sage);
+        outline: none;
+        border-color: var(--ink);
       }
       /* "יש לך קוד?" access-code box under the design grid (unobtrusive). */
       .code-box {
@@ -1799,13 +1804,25 @@
             data-testid="name-preview-warning"
             hidden
           ></p>
-          <div class="name-preview-imgs">
+          <div class="name-preview-imgs" id="namePreviewImgs">
             <figure class="name-preview-fig">
               <img id="namePreviewCard" data-testid="name-preview-card" alt="תצוגת קלף" />
             </figure>
             <figure class="name-preview-fig">
               <img id="namePreviewBoard" data-testid="name-preview-board" alt="תצוגת לוח" />
             </figure>
+          </div>
+          <!-- Client fallback when the server preview is unavailable: a neutral
+               card-shaped placeholder with the name in a handwriting font plus a
+               short note — never a blank area. See doPreview()'s catch. -->
+          <div
+            class="name-preview-fallback"
+            id="namePreviewFallback"
+            data-testid="name-preview-fallback"
+            hidden
+          >
+            <div class="npf-card"><span class="npf-name" id="npfName"></span></div>
+            <p class="npf-note">לא הצלחנו לטעון תצוגה מקדימה כרגע</p>
           </div>
           <div class="name-preview-empty" id="namePreviewEmpty" data-testid="name-preview-loading">
             טוען תצוגה…
@@ -1859,6 +1876,41 @@
           .name-preview-fig img:not([src]),
           .name-preview-fig img[hidden] {
             display: none;
+          }
+          /* author display:flex would otherwise beat the UA [hidden] rule */
+          .name-preview-imgs[hidden] {
+            display: none;
+          }
+          .name-preview-fallback {
+            margin-top: 4px;
+          }
+          .npf-card {
+            width: 200px;
+            max-width: 60%;
+            aspect-ratio: 5 / 7;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            text-align: center;
+            background: #fff;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+          }
+          .npf-name {
+            font-family: 'Gveret Levin', 'Segoe Script', cursive;
+            font-size: 34px;
+            line-height: 1.15;
+            color: var(--ink);
+            word-break: break-word;
+          }
+          .npf-note {
+            margin: 10px 0 0;
+            text-align: center;
+            color: var(--muted);
+            font-size: 14px;
           }
           .name-preview-empty {
             color: var(--muted);
@@ -2613,6 +2665,9 @@
       const namePreviewBoard = document.getElementById('namePreviewBoard');
       const namePreviewWarn = document.getElementById('namePreviewWarn');
       const namePreviewEmpty = document.getElementById('namePreviewEmpty');
+      const namePreviewImgs = document.getElementById('namePreviewImgs');
+      const namePreviewFallback = document.getElementById('namePreviewFallback');
+      const npfName = document.getElementById('npfName');
       const fontOpts = document.getElementById('fontOpts');
 
       // The card word-font the customer picked (a filename in the shared pool);
@@ -2685,6 +2740,9 @@
           if (!r.ok) throw new Error(data.error || 'failed');
           buildFontPicker(data.word_font_options);
           markActiveFont();
+          // Real preview arrived — hide any prior fallback, show the images.
+          namePreviewFallback.hidden = true;
+          namePreviewImgs.hidden = false;
           if (data.card) namePreviewCard.src = data.card;
           if (data.board) {
             namePreviewBoard.src = data.board;
@@ -2701,8 +2759,15 @@
           namePreviewEmpty.hidden = true;
         } catch (e) {
           if (epoch !== previewEpoch) return;
-          // best-effort: just drop the loader; keep any previously shown images
+          // Server preview unavailable (network drop or non-OK response) — never
+          // leave a blank area. Drop the loader and show a neutral card-shaped
+          // placeholder with the name in a handwriting font plus a short note,
+          // instead of srcless/hidden <img>s with nothing in their place.
           namePreviewEmpty.hidden = true;
+          namePreviewWarn.hidden = true;
+          namePreviewImgs.hidden = true;
+          npfName.textContent = name;
+          namePreviewFallback.hidden = false;
         }
       }
 
@@ -3202,7 +3267,7 @@
         align-items: center;
         gap: 8px;
         padding: 10px 16px 10px 12px;
-        background: #141414;
+        background: #25d366;
         color: #fff;
         border-radius: 0;
         text-decoration: none;

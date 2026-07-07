@@ -95,6 +95,36 @@
         border-radius: 7px;
         display: block;
       }
+      /* Back control — mirrors .home-link but on the opposite inline edge (RTL:
+         inline-end = left). Goes to the previous page (history.back), falling back
+         to the home page with no JS. The chevron ‹ (U+2039) is bidi-mirrored in
+         this RTL page so it points RIGHT — the natural "back" direction here. */
+      .back-link {
+        position: absolute;
+        top: 16px;
+        inset-inline-end: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        text-decoration: none;
+        color: var(--muted);
+        font-weight: 700;
+        line-height: 1;
+      }
+      .back-link:hover {
+        color: var(--sage);
+      }
+      .back-link:focus-visible {
+        outline: 2px solid var(--sage);
+        outline-offset: 3px;
+        border-radius: 6px;
+      }
+      .back-glyph {
+        font-size: 28px;
+        line-height: 1;
+      }
       header .brand {
         font-weight: 900;
         color: var(--sage);
@@ -163,7 +193,7 @@
         width: 100%;
         font: inherit;
         padding: 12px 14px;
-        border: 1.5px solid var(--line);
+        border: 1px solid var(--line);
         border-radius: var(--radius);
         background: #fff;
         color: var(--ink);
@@ -177,8 +207,8 @@
       }
       input[type='text']:focus,
       textarea:focus {
-        outline: 2px solid var(--sage);
-        border-color: var(--sage);
+        outline: none;
+        border-color: var(--ink);
       }
       .row {
         display: flex;
@@ -198,13 +228,19 @@
         color: #fff;
         transition:
           transform 0.1s ease,
-          filter 0.15s ease;
+          filter 0.15s ease,
+          background-color 0.26s var(--ease),
+          color 0.26s var(--ease),
+          border-color 0.26s var(--ease);
       }
       button:hover {
         filter: brightness(1.05);
       }
       button:active {
         transform: scale(0.98);
+        background: #fff;
+        color: #141414;
+        border-color: #141414;
       }
       button.ghost {
         background: #fff;
@@ -794,6 +830,18 @@
           data-testid="home-link"
         >
           <img class="home-logo" src="assets/logo.png" alt="" />
+        </a>
+        <a
+          class="back-link"
+          href="/"
+          onclick="
+            history.back();
+            return false;
+          "
+          aria-label="חזרה"
+          data-testid="back-link"
+        >
+          <span class="back-glyph" aria-hidden="true">‹</span>
         </a>
         <div class="brand">דוגרי</div>
         <h1 id="title">אוספים מילים…</h1>
@@ -1837,7 +1885,7 @@
         align-items: center;
         gap: 8px;
         padding: 10px 16px 10px 12px;
-        background: #141414;
+        background: #25d366;
         color: #fff;
         border-radius: 0;
         text-decoration: none;
