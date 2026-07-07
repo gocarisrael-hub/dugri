@@ -296,7 +296,6 @@ export function initCarousel(root, opts = {}) {
     pressed = false;
     const wasDragging = dragging;
     dragging = false;
-    root.classList.remove('is-dragging');
     if (captured) {
       captured = false;
       try {
@@ -306,36 +305,55 @@ export function initCarousel(root, opts = {}) {
       }
     }
     // A plain tap never scrolled or paused — leave it alone so the click lands.
-    if (!wasDragging) return;
+    if (!wasDragging) {
+      root.classList.remove('is-dragging');
+      return;
+    }
+    // Keep 'is-dragging' on through the fling: it holds CSS scroll-snap OFF so
+    // the browser's snap engine can't fight our JS momentum (which is what made
+    // the release feel like it stuttered / stuck). endDrag() clears it once the
+    // glide has settled onto a card.
     applyMomentum();
     if (mode === 'slideshow') play();
+  }
+
+  function endDrag() {
+    root.classList.remove('is-dragging');
   }
 
   function snapToNearest() {
     goTo(nearestIndex(), true);
   }
 
-  // Glide the scroll position with decaying velocity, then snap to the nearest
-  // card. Scroll velocity is the inverse of the pointer velocity.
+  // Glide the scroll position with decaying velocity, then settle onto the
+  // nearest card. Scroll velocity is the inverse of the pointer velocity. CSS
+  // snapping stays disabled (via 'is-dragging') for the whole glide and is only
+  // re-enabled by endDrag() after we've aligned to the target.
   function applyMomentum() {
     if (!raf) {
       snapToNearest();
+      endDrag();
       return;
     }
     let v = -velocity * 16; // px / frame
-    const friction = 0.92;
+    const friction = 0.94;
     const step = () => {
-      if (Math.abs(v) < 0.5) {
+      if (Math.abs(v) < 0.4) {
         cancelMomentum();
         snapToNearest();
+        endDrag();
         return;
       }
       root.scrollLeft += v;
       v *= friction;
       momentumRaf = raf(step);
     };
-    if (Math.abs(v) < 0.5) snapToNearest();
-    else momentumRaf = raf(step);
+    if (Math.abs(v) < 0.4) {
+      snapToNearest();
+      endDrag();
+    } else {
+      momentumRaf = raf(step);
+    }
   }
   cleanups.push(cancelMomentum);
 
@@ -402,6 +420,11 @@ export function initCarousel(root, opts = {}) {
   root.setAttribute('role', 'group');
   root.setAttribute('aria-roledescription', 'carousel');
   if (!root.classList.contains('carousel-track')) root.classList.add('carousel-track');
+  // Mode class lets the CSS pick the right snap feel: a slideshow snaps hard
+  // (one slide at a time), a scroller snaps loosely so a fling can glide across
+  // several cards before settling.
+  const modeClass = mode === 'slideshow' ? 'carousel--slideshow' : 'carousel--scroller';
+  root.classList.add(modeClass);
   const slideClass = mode === 'scroller' ? 'carousel-card' : 'carousel-slide';
   slides.forEach((s, i) => {
     s.setAttribute('role', 'group');
@@ -430,6 +453,7 @@ export function initCarousel(root, opts = {}) {
     }
     if (addedTabindex) root.removeAttribute('tabindex');
     root.classList.remove('is-dragging');
+    root.classList.remove(modeClass);
     delete root.__carousel;
   }
 

@@ -33,26 +33,25 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
     <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#8ca287" />
+    <meta name="theme-color" content="#ffffff" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="דוגרי" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    ." "
     <link rel="preload" as="image" href="assets/logo.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- Heebo = bold Hebrew display face for headings; Assistant = calm body face -->
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Heebo:wght@600;700;800;900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Assistant:wght@200;400;500;600&family=Heebo:wght@300;600;700;800;900&display=swap"
       media="print"
       onload="this.media = 'all'"
     />
     <noscript>
       <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Heebo:wght@600;700;800;900&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Assistant:wght@200;400;500;600&family=Heebo:wght@300;600;700;800;900&display=swap"
       />
     </noscript>
     <link rel="stylesheet" href="/css/tokens.css" />
@@ -87,9 +86,9 @@
       h3,
       h4 {
         font-family: var(--display);
-        line-height: 1.12;
-        font-weight: 800;
-        letter-spacing: -0.02em;
+        line-height: 1.18;
+        font-weight: var(--h-weight);
+        letter-spacing: var(--h-spacing);
         color: var(--ink);
       }
       a {
@@ -144,12 +143,13 @@
         color: var(--sage-deeper);
       }
       .btn.wa {
-        background: #25d366;
-        color: #06310f;
-        box-shadow: var(--shadow-sm);
+        background: var(--surface);
+        color: var(--ink);
+        border: 1px solid var(--ink);
+        box-shadow: none;
       }
       .btn.wa:hover {
-        background: #1fb959;
+        background: var(--section);
       }
       .was {
         text-decoration: line-through;
@@ -178,6 +178,7 @@
         color: var(--muted);
         margin-top: 10px;
         font-size: 17px;
+        font-weight: var(--sub-weight);
       }
       @media (min-width: 720px) {
         .sec-title h2 {
@@ -215,8 +216,10 @@
         height: 100%;
         object-fit: cover;
         z-index: 0;
+        /* lift the dull hero photos: bright, airy, appealing */
+        filter: brightness(1.1) saturate(1.05) contrast(1.02);
       }
-      /* dark gradient overlay keeps the white text legible over any photo */
+      /* clean white scrim keeps the near-black headline + button legible */
       .hero-slide::after {
         content: '';
         position: absolute;
@@ -224,9 +227,9 @@
         z-index: 1;
         background: linear-gradient(
           180deg,
-          rgba(35, 32, 28, 0.34) 0%,
-          rgba(35, 32, 28, 0.46) 55%,
-          rgba(35, 32, 28, 0.64) 100%
+          rgba(255, 255, 255, 0.55) 0%,
+          rgba(255, 255, 255, 0.72) 50%,
+          rgba(255, 255, 255, 0.58) 100%
         );
       }
       .hero-slide__inner {
@@ -241,30 +244,19 @@
       }
       .hero-slide__title {
         font-family: var(--display);
-        font-weight: 800;
-        color: #fff;
+        font-weight: var(--h-weight);
+        color: var(--ink);
         font-size: 29px;
-        line-height: 1.16;
-        letter-spacing: -0.02em;
-        text-shadow: 0 2px 20px rgba(0, 0, 0, 0.4);
+        line-height: 1.22;
+        letter-spacing: var(--h-spacing);
+        text-shadow: 0 1px 16px rgba(255, 255, 255, 0.7);
       }
       @media (min-width: 720px) {
         .hero-slide__title {
           font-size: 46px;
         }
       }
-      /* solid white button (inverse of the page's sage .btn) */
-      .hero .btn {
-        background: #fff;
-        color: var(--sage-deeper);
-        box-shadow: var(--shadow-md);
-      }
-      .hero .btn:hover {
-        background: #fff;
-        color: var(--sage-deep);
-        transform: translateY(-2px);
-        box-shadow: var(--shadow-lg);
-      }
+      /* hero CTA is the default sharp solid-black rectangle (.btn) — no override */
       /* carousel dots, overlaid on the photo at bottom-center */
       .hero-dots {
         position: absolute;
@@ -280,14 +272,14 @@
         padding: 8px 0;
       }
       .hero-dots .carousel-dot {
-        background: rgba(255, 255, 255, 0.5);
+        background: rgba(20, 20, 20, 0.35);
       }
       .hero-dots .carousel-dot:hover {
-        background: rgba(255, 255, 255, 0.85);
+        background: rgba(20, 20, 20, 0.6);
       }
       .hero-dots .carousel-dot.is-active,
       .hero-dots .carousel-dot[aria-current='true'] {
-        background: #fff;
+        background: var(--ink);
       }
 
       /* .hero-cta is shared with the final #order section */
@@ -318,6 +310,7 @@
         color: var(--muted);
         margin-top: 10px;
         font-size: 17px;
+        font-weight: var(--sub-weight);
       }
       @media (min-width: 720px) {
         .home-products-head h2 {
@@ -401,45 +394,22 @@
         letter-spacing: 2px;
         margin-top: 10px;
       }
-      /* reviews carousel: each WhatsApp screenshot in a clean, intentional card. */
+      /* reviews carousel: ONE WhatsApp screenshot per slide, framed in mono chrome. */
       #reviewsTrack.carousel-track {
-        max-width: 940px;
+        max-width: 380px;
         margin: 0 auto;
         padding: 4px 0 10px;
       }
       .review {
-        flex-basis: 80%;
-        max-width: 340px;
+        /* one screenshot per view — each slide fills the track width */
+        flex-basis: 100%;
+        max-width: 100%;
         margin: 0;
         background: var(--surface);
         border: 1px solid var(--line);
         border-radius: var(--radius);
         overflow: hidden;
         box-shadow: var(--shadow-md);
-        transition:
-          transform 0.25s var(--ease),
-          box-shadow 0.25s var(--ease);
-      }
-      @media (min-width: 560px) {
-        .review {
-          flex-basis: 46%;
-        }
-      }
-      @media (min-width: 820px) {
-        .review {
-          flex-basis: 31%;
-        }
-      }
-      /* subtle WhatsApp-green top accent so the cards read intentional, not raw. */
-      .review::before {
-        content: '';
-        display: block;
-        height: 5px;
-        background: #25d366;
-      }
-      .review:hover {
-        transform: translateY(-4px);
-        box-shadow: var(--shadow-lg);
       }
       .review img {
         display: block;
@@ -507,9 +477,6 @@
         font-family: var(--display);
         font-weight: 800;
         color: var(--ink);
-      }
-      .story-copy .btn {
-        margin-top: 12px;
       }
 
       /* ============ FAQ (#faq) ============ */
@@ -635,44 +602,31 @@
         gap: 16px;
         margin-top: 20px;
       }
+      /* monochrome icon buttons: white glyph on the dark footer, sharp corners */
       .foot-icon {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 48px;
-        height: 48px;
-        border-radius: 50%;
+        width: 46px;
+        height: 46px;
+        border-radius: var(--radius);
+        border: 1px solid rgba(255, 255, 255, 0.35);
         color: #fff;
         text-decoration: none;
-        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
         transition:
           transform 0.16s var(--ease),
-          filter 0.2s var(--ease);
+          background 0.2s var(--ease),
+          border-color 0.2s var(--ease);
       }
       .foot-icon:hover {
         transform: translateY(-2px);
-        filter: brightness(1.06);
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.7);
       }
       .foot-icon svg {
         width: 24px;
         height: 24px;
         display: block;
-      }
-      .foot-icon.fi-wa {
-        background: #25d366;
-      }
-      .foot-icon.fi-call {
-        background: var(--sage);
-      }
-      .foot-icon.fi-ig {
-        background: radial-gradient(
-          circle at 30% 107%,
-          #fdf497 0%,
-          #fdf497 5%,
-          #fd5949 45%,
-          #d6249f 60%,
-          #285aeb 90%
-        );
       }
       .visually-hidden {
         position: absolute;
@@ -758,7 +712,7 @@
               מסיבת רווקות לחברה הכי טובה? יום נישואין? אבא בן 50? יש לנו את המתנה המושלמת
             </h1>
             <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
-              >לרכישה ‹‹</a
+              >לרכישה ‹</a
             >
           </div>
         </div>
@@ -767,7 +721,7 @@
           <div class="hero-slide__inner">
             <p class="hero-slide__title">דוגרי – המתנה הכי אישית ומקורית שאפשר לתת</p>
             <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
-              >לרכישה ‹‹</a
+              >לרכישה ‹</a
             >
           </div>
         </div>
@@ -776,7 +730,7 @@
           <div class="hero-slide__inner">
             <p class="hero-slide__title">מחפשים מתנה בלי פילטרים? מזל שאתם כאן</p>
             <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
-              >לרכישה ‹‹</a
+              >לרכישה ‹</a
             >
           </div>
         </div>
@@ -841,10 +795,16 @@
         initCarousel(productsTrack, { mode: 'scroller', dots: false });
       }
 
-      // ---- REVIEWS: swipeable rail of WhatsApp screenshots ----
+      // ---- REVIEWS: one WhatsApp screenshot per slide; swipe → next review ----
       const reviewsTrack = document.getElementById('reviewsTrack');
       if (reviewsTrack) {
-        initCarousel(reviewsTrack, { mode: 'scroller' });
+        initCarousel(reviewsTrack, {
+          mode: 'slideshow',
+          autoplay: false,
+          loop: true,
+          dots: true,
+          arrows: false,
+        });
       }
     </script>
 
@@ -869,7 +829,7 @@
             href="products.html"
             data-ga="order_started"
             data-ga-cta="home-products"
-            >מעבר אל החנות ›</a
+            >מעבר אל החנות ‹</a
           >
         </div>
       </div>
@@ -928,7 +888,6 @@
               ויחיד. כל הזמנה מרגישה לנו אישית — כי היא באמת כזו.
             </p>
             <p class="sign">— הצוות של דוגרי</p>
-            <a class="btn ghost" href="#faq">רוצה לשמוע הכל?</a>
           </div>
         </div>
       </div>
@@ -981,7 +940,7 @@
         <p>כמה מילים מכם - וכל החדר יצחק עליו. או עליה. בדרך הכי אישית שיש.</p>
         <div class="hero-cta" style="justify-content: center">
           <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="final"
-            >בונים את המשחק →</a
+            >בונים את המשחק ‹</a
           >
           <a
             class="btn wa"

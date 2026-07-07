@@ -5,7 +5,7 @@
  * ONLY from the product images — the site chrome is strictly monochrome. Corners are
  * sharp (radius 0) everywhere. Headings are thin Heebo Light with airy tracking.
  *
- * The old sage/pink token NAMES are kept (--sage, --blush, …) and simply remapped to
+ * The old sage/blush token NAMES are kept (--sage, --blush, …) and simply remapped to
  * black/gray, so every page that references them turns monochrome without per-page edits.
  *
  * NOTE: layout tokens (--nav-h, --wizbar-h, --page-ratio) stay inline in options.html —

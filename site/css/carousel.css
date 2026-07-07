@@ -3,7 +3,7 @@
  *
  * The PAGE owns card width (e.g. .carousel-card { flex-basis: 82% } to peek the
  * next card) and slide height; this file only wires the scroll-snap mechanics
- * and the module's own controls (dots / arrows) in the site's sage tokens. It
+ * and the module's own controls (dots / arrows) in the site's monochrome tokens. It
  * restyles nothing global. Requires css/tokens.css for the vars below (each has
  * a safe fallback so the file also works standalone).
  */
@@ -40,12 +40,29 @@
   user-select: none;
 }
 
-/* Each slide / card snaps to the track start. Width comes from the page. */
+/* Snap feel per mode. A slideshow snaps hard (mandatory) so it always rests on
+   exactly one slide; a scroller snaps loosely (proximity) so a fling can glide
+   across several cards and coast to a stop instead of jamming on the next one.
+   The base .carousel-track keeps mandatory as a safe default for either mode. */
+.carousel--slideshow {
+  scroll-snap-type: x mandatory;
+}
+.carousel--scroller {
+  scroll-snap-type: x proximity;
+}
+
+/* Each slide / card snaps to the track start. Width comes from the page. Slides
+   force a stop on every one (one-at-a-time hero); cards allow skating past. */
 .carousel-slide,
 .carousel-card {
   scroll-snap-align: start;
-  scroll-snap-stop: always;
   flex: 0 0 auto;
+}
+.carousel-slide {
+  scroll-snap-stop: always;
+}
+.carousel-card {
+  scroll-snap-stop: normal;
 }
 
 /* ---- dots ---------------------------------------------------------------- */
@@ -61,20 +78,20 @@
   height: 8px;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-pill, 999px);
-  background: var(--line, #e4ddd0);
+  border-radius: var(--radius-pill, 0);
+  background: var(--line, #e6e6e6);
   cursor: pointer;
   transition:
     background 0.25s var(--ease, cubic-bezier(0.2, 0.7, 0.2, 1)),
     width 0.25s var(--ease, cubic-bezier(0.2, 0.7, 0.2, 1));
 }
 .carousel-dot:hover {
-  background: var(--sage, #8ca287);
+  background: var(--sage, #141414);
 }
 .carousel-dot.is-active,
 .carousel-dot[aria-current='true'] {
   width: 22px;
-  background: var(--sage-deep, #6f8a6a);
+  background: var(--sage-deep, #000000);
 }
 
 /* ---- arrows -------------------------------------------------------------- */
@@ -87,11 +104,11 @@
   padding: 0;
   font-size: 22px;
   line-height: 1;
-  color: var(--ink, #23201c);
+  color: var(--ink, #141414);
   background: var(--surface, #fff);
-  border: 1px solid var(--line, #e4ddd0);
-  border-radius: var(--radius-pill, 999px);
-  box-shadow: var(--shadow-sm, 0 2px 10px rgba(35, 32, 28, 0.05));
+  border: 1px solid var(--line, #e6e6e6);
+  border-radius: var(--radius-pill, 0);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
   cursor: pointer;
   transition:
     background 0.2s var(--ease, cubic-bezier(0.2, 0.7, 0.2, 1)),
@@ -99,8 +116,8 @@
     transform 0.2s var(--ease, cubic-bezier(0.2, 0.7, 0.2, 1));
 }
 .carousel-arrow:hover {
-  background: var(--sage-tint, #e7ede3);
-  border-color: var(--sage, #8ca287);
+  background: var(--sage-tint, #f0f0f0);
+  border-color: var(--sage, #141414);
 }
 .carousel-arrow:active {
   transform: scale(0.94);

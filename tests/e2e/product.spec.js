@@ -17,14 +17,19 @@ test.describe('product detail page', () => {
     await expect(page.locator('#pdpTitle')).not.toHaveText('');
     await expect(page.locator('#pdpPriceNow')).toContainText('79 ₪');
 
-    // Buy now carries the chosen design into the order flow.
+    // Buy now carries the chosen design into the order flow and jumps straight
+    // to the colour step (step 2) for recolourable designs.
     const buy = page.getByTestId('pdp-buy');
-    await expect(buy).toHaveAttribute('href', 'options.html?design=bachelorette');
+    await expect(buy).toHaveAttribute('href', 'options.html?design=bachelorette&step=2');
   });
 
   test('the buy button reflects whichever design is in the URL', async ({ page }) => {
+    // neon is a fixed-colour design (no colour step) → straight to step 3.
     await page.goto('/product.html?design=neon');
-    await expect(page.getByTestId('pdp-buy')).toHaveAttribute('href', 'options.html?design=neon');
+    await expect(page.getByTestId('pdp-buy')).toHaveAttribute(
+      'href',
+      'options.html?design=neon&step=3'
+    );
   });
 
   test('the related rail shows every design and links back to the detail pages', async ({
@@ -50,17 +55,17 @@ test.describe('product detail page', () => {
     await page.waitForURL(/product\.html\?design=birthday/);
     await expect(page.getByTestId('pdp-buy')).toHaveAttribute(
       'href',
-      'options.html?design=birthday'
+      'options.html?design=birthday&step=2'
     );
   });
 
   test('an unknown ?design falls back to the first design (no broken page)', async ({ page }) => {
     await page.goto('/product.html?design=does-not-exist');
     await expect(page.getByTestId('pdp-gallery')).toBeVisible();
-    // Falls back to the first public design (bachelorette).
+    // Falls back to the first public design (bachelorette) → colour step (2).
     await expect(page.getByTestId('pdp-buy')).toHaveAttribute(
       'href',
-      'options.html?design=bachelorette'
+      'options.html?design=bachelorette&step=2'
     );
   });
 
