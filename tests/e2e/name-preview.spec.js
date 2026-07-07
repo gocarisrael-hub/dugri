@@ -73,15 +73,20 @@ test.describe('name-step live preview + font picker', () => {
     expect(reqs[reqs.length - 1].name).toBe('Shira');
     expect(reqs[reqs.length - 1].theme).toBe('bachelorette');
 
-    // the font picker rendered all five options
-    await expect(page.getByTestId('font-opts').locator('.font-opt')).toHaveCount(5);
+    // the picker rendered the five shared options plus the "מקורי" (original) chip
+    await expect(
+      page.getByTestId('font-opts').locator('.font-opt:not(.font-opt-orig)')
+    ).toHaveCount(5);
+    await expect(page.getByTestId('font-opt-original')).toBeVisible();
   });
 
   test('switching the word font re-requests the preview with that font', async ({ page }) => {
     const reqs = await mockPreview(page);
     await toNameStep(page);
     await page.getByTestId('honoree-input').fill('Shira');
-    await expect(page.getByTestId('font-opts').locator('.font-opt')).toHaveCount(5);
+    await expect(
+      page.getByTestId('font-opts').locator('.font-opt:not(.font-opt-orig)')
+    ).toHaveCount(5);
 
     const before = reqs.length;
     await page.getByTestId('font-opt-Fredoka-Medium.ttf').click();
@@ -95,19 +100,20 @@ test.describe('name-step live preview + font picker', () => {
     );
   });
 
-  test('a default font is preselected on load (its chip is marked)', async ({ page }) => {
+  test('the ORIGINAL font is preselected on load and marked so clients can tell', async ({
+    page,
+  }) => {
     await mockPreview(page);
     await toNameStep(page);
     await page.getByTestId('honoree-input').fill('Shira');
-    await expect(page.getByTestId('font-opts').locator('.font-opt')).toHaveCount(5);
+    await expect(
+      page.getByTestId('font-opts').locator('.font-opt:not(.font-opt-orig)')
+    ).toHaveCount(5);
 
-    // exactly one chip is marked selected on load, and it's the default (Cafe).
+    // exactly one chip is marked selected on load, and it's the "מקורי" (original) chip.
     const pressed = page.getByTestId('font-opts').locator('.font-opt[aria-pressed="true"]');
     await expect(pressed).toHaveCount(1);
-    await expect(page.getByTestId('font-opt-Cafe Regular.ttf')).toHaveAttribute(
-      'aria-pressed',
-      'true'
-    );
+    await expect(page.getByTestId('font-opt-original')).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('the font picker sits ABOVE the rendered card/board images', async ({ page }) => {

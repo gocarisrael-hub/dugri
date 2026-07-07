@@ -440,7 +440,7 @@
             color-mix(in srgb, var(--sage, #141414) 16%, transparent),
             transparent 70%
           ),
-          var(--cfg-bg, var(--bg));
+          var(--bg);
         /* Size to the sheet it holds (the sheet fills the card width, height by
            its A4-landscape ratio). Grid-centers the page; overflow hidden keeps
            the rounded corners clean. */
@@ -2512,7 +2512,9 @@
         {
           const root = document.documentElement.style;
           root.setProperty('--accent', activeMain);
-          root.setProperty('--cfg-bg', lightTint(activeMain));
+          // NB: the preview stage background stays neutral (var(--bg)) and does NOT
+          // follow the picked colour — the design's background is part of its
+          // identity and must read as its original (see .preview-stage background).
         }
 
         // 2) SVG TOKEN RECOLOR. Only designs with anchors carry var(--cN) tokens;
@@ -2960,13 +2962,14 @@
       const nameZoomOpenBtn = document.getElementById('nameZoomOpen');
       const fontOpts = document.getElementById('fontOpts');
 
-      // The picker ALWAYS starts on a real default font (first in the shared
-      // pool) so a chip is visibly selected on load and the first render matches
-      // the marked chip — rather than starting on the (unmarked) theme default.
-      const DEFAULT_WORD_FONT = 'Cafe Regular.ttf';
-      // The card word-font the customer picked (a filename in the shared pool).
-      // Sent with the created collection.
-      let chosenWordFont = DEFAULT_WORD_FONT;
+      // The picker ALWAYS starts on the design's ORIGINAL font — represented by a
+      // marked "מקורי" chip (like the colour picker) so clients can tell the
+      // authentic font apart. chosenWordFont === null means "no override → the
+      // theme's own font"; a filename means the customer picked an alternative.
+      let chosenWordFont = null;
+      // The design's original word-font file (from the theme), used to render the
+      // "מקורי" chip's sample in the authentic look when the CSS is known.
+      let themeWordFont = null;
       let fontPickerBuilt = false;
       let previewEpoch = 0; // guards against out-of-order preview responses
       let previewTimer = null; // debounce handle
@@ -2988,13 +2991,32 @@
       function buildFontPicker(options) {
         if (fontPickerBuilt || !Array.isArray(options) || !options.length) return;
         fontPickerBuilt = true;
-        // Guarantee the chosen font is a real member of the returned pool so its
-        // chip is always the one marked selected (fall back to the first option
-        // if the preferred default isn't offered for this theme).
-        const files = options.map((o) => o && o.file).filter(Boolean);
-        if (!chosenWordFont || !files.includes(chosenWordFont)) {
-          chosenWordFont = files.includes(DEFAULT_WORD_FONT) ? DEFAULT_WORD_FONT : files[0];
-        }
+
+        // "מקורי" chip FIRST — the design's OWN original font, selected by default.
+        // Picking it sends no override, so the server renders the theme's authentic
+        // font. Mirrors the colour picker's "מקורי" so the original is always marked.
+        const origBtn = document.createElement('button');
+        origBtn.type = 'button';
+        origBtn.className = 'font-opt font-opt-orig';
+        origBtn.dataset.font = ''; // '' = original / no override
+        origBtn.dataset.testid = 'font-opt-original';
+        origBtn.setAttribute('aria-pressed', 'true');
+        const oSample = document.createElement('span');
+        oSample.className = 'fo-sample';
+        oSample.textContent = FONT_SAMPLE;
+        if (themeWordFont && FONT_CSS[themeWordFont])
+          oSample.style.fontFamily = FONT_CSS[themeWordFont];
+        const oLabel = document.createElement('span');
+        oLabel.className = 'fo-label';
+        oLabel.textContent = 'מקורי';
+        origBtn.append(oSample, oLabel);
+        origBtn.addEventListener('click', () => {
+          chosenWordFont = null; // back to the design's original font
+          markActiveFont();
+          requestPreview({ immediate: true });
+        });
+        fontOpts.appendChild(origBtn);
+
         options.forEach((opt) => {
           if (!opt || !opt.file) return;
           const btn = document.createElement('button');
@@ -3022,11 +3044,12 @@
         });
       }
       function markActiveFont() {
-        fontOpts
-          .querySelectorAll('.font-opt')
-          .forEach((b) =>
-            b.setAttribute('aria-pressed', b.dataset.font === chosenWordFont ? 'true' : 'false')
-          );
+        fontOpts.querySelectorAll('.font-opt').forEach((b) => {
+          // The "מקורי" chip (data-font='') is active whenever no override is chosen.
+          const active =
+            b.dataset.font === '' ? !chosenWordFont : b.dataset.font === chosenWordFont;
+          b.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
       }
 
       // A preview can be requested only on the name step, for a resolved theme,
@@ -3067,6 +3090,7 @@
           const data = await r.json();
           if (epoch !== previewEpoch) return; // a newer request superseded this one
           if (!r.ok) throw new Error(data.error || 'failed');
+          if (data.theme_word_font) themeWordFont = data.theme_word_font;
           buildFontPicker(data.word_font_options);
           markActiveFont();
           // Real preview arrived — hide any prior fallback, show the images.

@@ -394,28 +394,40 @@ test.describe('order wizard', () => {
       page.evaluate(() =>
         getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
       );
-    const bg = () =>
-      page.evaluate(() =>
-        getComputedStyle(document.documentElement).getPropertyValue('--cfg-bg').trim()
-      );
 
-    // Pick a slider design + a vivid main colour so the page turns that colour.
+    // Pick a slider design + a vivid main colour so the page accent turns that colour.
+    // (The preview-stage BACKGROUND deliberately stays neutral and never follows the
+    // picked colour — the design's background is part of its identity.)
     await page.locator('.design[data-design-id="bachelorette"]').click();
     await page.getByTestId('next-btn').click(); // colour step
     await page.getByTestId('color-1').click(); // some slider colour
     const sliderAccent = await accent();
-    const sliderBg = await bg();
     expect(sliderAccent).toMatch(/^#|rgb/);
 
-    // Now switch to neon (fixed). Its OWN accent/bg must take over — not the stale
+    // Now switch to neon (fixed). Its OWN accent must take over — not the stale
     // slider tint (the regression: empty anchors made recolor() bail before the
     // page theme was set).
     await page.getByTestId('back-btn').click();
     await page.locator('.design[data-design-id="neon"]').click();
     await expect.poll(accent).not.toBe(sliderAccent);
-    await expect.poll(bg).not.toBe(sliderBg);
     // and it matches neon's manifest accent (#ff00db)
     expect((await accent()).toLowerCase()).toBe('#ff00db');
+  });
+
+  test('picking a colour does NOT tint the preview stage background (stays the original)', async ({
+    page,
+  }) => {
+    await page.goto('/options.html');
+    await page.locator('.design[data-design-id="bachelorette"]').click();
+    await page.getByTestId('next-btn').click(); // colour step
+    await page.getByTestId('color-1').click(); // a vivid slider colour
+
+    // The stage no longer uses a colour-following --cfg-bg — it stays var(--bg). The
+    // var must be unset so the background behind the product reads as its original.
+    const cfgBg = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--cfg-bg').trim()
+    );
+    expect(cfgBg).toBe('');
   });
 
   test('design tiles use lightweight <img> thumbnails, not inlined full-page SVGs', async ({

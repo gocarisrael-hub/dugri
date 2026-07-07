@@ -666,7 +666,15 @@ app.post('/api/preview', async (req, res) => {
 
   try {
     const imgs = await runPreview({ theme, name, wordFont, extraFields });
-    res.json({ ...imgs, warning, word_font: wordFont, word_font_options: options });
+    // theme_word_font = the design's OWN original word font (from themes.json), so
+    // the picker can mark the "מקורי" (original) choice and clients can tell it apart.
+    res.json({
+      ...imgs,
+      warning,
+      word_font: wordFont,
+      word_font_options: options,
+      theme_word_font: themeConfig.word_font || null,
+    });
   } catch (e) {
     const detail = String((e && e.message) || e);
     const status = /not calibrated|unknown theme/i.test(detail) ? 400 : 500;
