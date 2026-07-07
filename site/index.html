@@ -248,7 +248,8 @@
         /* lift the dull hero photos: bright, airy, appealing */
         filter: brightness(1.1) saturate(1.05) contrast(1.02);
       }
-      /* clean white scrim keeps the near-black headline + button legible */
+      /* white scrim keeps the near-black headline + button legible over the
+         busier, more colourful official product photos */
       .hero-slide::after {
         content: '';
         position: absolute;
@@ -256,9 +257,9 @@
         z-index: 1;
         background: linear-gradient(
           180deg,
-          rgba(255, 255, 255, 0.55) 0%,
-          rgba(255, 255, 255, 0.72) 50%,
-          rgba(255, 255, 255, 0.58) 100%
+          rgba(255, 255, 255, 0.62) 0%,
+          rgba(255, 255, 255, 0.8) 50%,
+          rgba(255, 255, 255, 0.66) 100%
         );
       }
       .hero-slide__inner {
@@ -427,11 +428,23 @@
         flex-basis: 100%;
         max-width: 100%;
         margin: 0;
-        background: var(--surface);
+        /* padding lets the very-light-pink frame show around the screenshot */
+        padding: 10px;
+        background: #fdecf2; /* fallback; per-review shade set below */
         border: 1px solid var(--line);
         border-radius: var(--radius);
         overflow: hidden;
         box-shadow: var(--shadow-md);
+      }
+      /* each review its own very-light-pink shade (pastel testimonial cards) */
+      .review:nth-of-type(1) {
+        background: #fdecf2; /* rosé */
+      }
+      .review:nth-of-type(2) {
+        background: #fbeee9; /* peachy */
+      }
+      .review:nth-of-type(3) {
+        background: #f4ecf5; /* lilac-pink */
       }
       .review img {
         display: block;
@@ -736,15 +749,16 @@
 
     <!--
       HERO: full-bleed, swipeable, auto-rotating slideshow (js/carousel.js).
-      FILLER IMAGES: the three backgrounds use assets/gallery-1.jpg /
-      gallery-2.jpg / gallery-3.jpg as placeholders. OWNER: replace each
-      hero-slide__bg src with the real hero photos, which should live at
-      assets/hero/slide-1.jpg, assets/hero/slide-2.jpg, assets/hero/slide-3.jpg.
+      Backgrounds are the official product photos (assets/hero-1.jpg /
+      hero-2.jpg / hero-3.jpg): pink bachelorette, blue anniversary and a
+      kids/basketball board — variety across events, pink leads. A white scrim
+      (.hero-slide::after) sits over each photo to keep the near-black headline
+      + button legible on the busier images.
     -->
     <section id="top" class="hero">
       <div class="hero-track carousel-track">
         <div class="hero-slide">
-          <img class="hero-slide__bg" src="assets/gallery-1.jpg" alt="" aria-hidden="true" />
+          <img class="hero-slide__bg" src="assets/hero-1.jpg" alt="" aria-hidden="true" />
           <div class="hero-slide__inner">
             <h1 class="hero-slide__title">
               מסיבת רווקות לחברה הכי טובה? יום נישואין? אבא בן 50? יש לנו את המתנה המושלמת
@@ -755,16 +769,16 @@
           </div>
         </div>
         <div class="hero-slide">
-          <img class="hero-slide__bg" src="assets/gallery-2.jpg" alt="" aria-hidden="true" />
+          <img class="hero-slide__bg" src="assets/hero-2.jpg" alt="" aria-hidden="true" />
           <div class="hero-slide__inner">
-            <p class="hero-slide__title">דוגרי – המתנה הכי אישית ומקורית שאפשר לתת</p>
+            <p class="hero-slide__title">דוגרי, המתנה הכי אישית ומקורית שאפשר לתת</p>
             <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
               >לרכישה ›</a
             >
           </div>
         </div>
         <div class="hero-slide">
-          <img class="hero-slide__bg" src="assets/gallery-3.jpg" alt="" aria-hidden="true" />
+          <img class="hero-slide__bg" src="assets/hero-3.jpg" alt="" aria-hidden="true" />
           <div class="hero-slide__inner">
             <p class="hero-slide__title">מחפשים מתנה בלי פילטרים? מזל שאתם כאן</p>
             <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
@@ -918,14 +932,14 @@
             <p class="story-kicker">הסיפור שלנו</p>
             <h2>למה התחלנו את דוגרי</h2>
             <p>
-              הכול התחיל ממסיבה אחת שרצינו להפוך לבלתי נשכחת. חיפשנו מתנה שתגרום לכל החדר לצחוק —
-              ולא מצאנו. אז ישבנו וכתבנו מאה מילים על החוגגת, והמשחק שיצא מזה פוצץ את הערב.
+              הכול התחיל ממסיבה אחת שרצינו להפוך לבלתי נשכחת. חיפשנו מתנה שתגרום לכל החדר לצחוק, ולא
+              מצאנו. אז ישבנו וכתבנו מאה מילים על החוגגת, והמשחק שיצא מזה פוצץ את הערב.
             </p>
             <p>
               מאז הפכנו את זה למקצוע: לוקחים את הסיפורים שרק אתם מכירים והופכים אותם למשחק אישי אחד
-              ויחיד. כל הזמנה מרגישה לנו אישית — כי היא באמת כזו.
+              ויחיד. כל הזמנה מרגישה לנו אישית, כי היא באמת כזו.
             </p>
-            <p class="sign">— הצוות של דוגרי</p>
+            <p class="sign">הצוות של דוגרי</p>
           </div>
         </div>
       </div>

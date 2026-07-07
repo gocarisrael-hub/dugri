@@ -29,6 +29,25 @@ test.describe('landing page hero', () => {
     const body = await page.locator('body').innerText();
     expect(body).not.toContain('אליאס');
   });
+
+  test('hero backgrounds are the official product photos (assets/hero-N.jpg) and load', async ({
+    page,
+    request,
+  }) => {
+    await page.goto('/index.html');
+
+    const bgs = page.locator('.hero-slide .hero-slide__bg');
+    await expect(bgs).toHaveCount(3);
+
+    const srcs = await bgs.evaluateAll((els) => els.map((img) => img.getAttribute('src')));
+    expect(srcs).toEqual(['assets/hero-1.jpg', 'assets/hero-2.jpg', 'assets/hero-3.jpg']);
+    // No filler gallery placeholders may remain in the hero.
+    for (const src of srcs) {
+      expect(src).not.toMatch(/gallery-/);
+      const res = await request.get('/' + src);
+      expect(res.status(), `${src} should load`).toBe(200);
+    }
+  });
 });
 
 test.describe('shared sticky header', () => {
@@ -132,6 +151,31 @@ test.describe('real customer testimonials', () => {
     expect(body).not.toContain('שם הלקוח');
     // Brand rule: never the trademarked word.
     expect(body).not.toContain('אליאס');
+  });
+
+  test('each review sits in its own distinct non-white light-pink box', async ({ page }) => {
+    await page.goto('/index.html');
+
+    const reviews = page.locator('[data-testid="proof-reviews"] .review');
+    await expect(reviews).toHaveCount(3);
+
+    const bgs = await reviews.evaluateAll((els) =>
+      els.map((el) => getComputedStyle(el).backgroundColor)
+    );
+    expect(bgs.length).toBe(3);
+    // None is white or transparent — each carries a pink tint...
+    const WHITE = new Set(['rgb(255, 255, 255)', 'rgba(0, 0, 0, 0)', 'transparent']);
+    for (const bg of bgs) {
+      expect(WHITE.has(bg), `review bg ${bg} must be a tint, not white/transparent`).toBe(false);
+      // ...and it reads as a light pink: all channels bright (very light) and the
+      // green channel is suppressed below red/blue, giving the pink/magenta cast.
+      const [r, g, b] = bg.match(/\d+/g).map(Number);
+      expect(Math.min(r, g, b)).toBeGreaterThan(230);
+      expect(r).toBeGreaterThan(240);
+      expect(g).toBeLessThan(Math.max(r, b));
+    }
+    // The three shades are distinct from one another.
+    expect(new Set(bgs).size).toBe(3);
   });
 });
 
