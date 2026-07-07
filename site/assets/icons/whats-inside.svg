@@ -1,0 +1,11 @@
+<!-- Placeholder "what's inside" icon (card deck / box outline). Drawn in
+     currentColor so it inherits the section's sage tint. The owner will swap in
+     the real brand icon here (same path: assets/icons/whats-inside.svg). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+     stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+     stroke-linejoin="round" role="img" aria-hidden="true">
+  <rect x="3" y="7" width="13" height="14" rx="2.2" />
+  <path d="M8 4.6l11.4 2 .8 13.4" opacity="0.9" transform="rotate(6 8 4.6)" />
+  <path d="M6.5 11.5h6" />
+  <path d="M6.5 15h4" />
+</svg>

@@ -1,16 +1,25 @@
 <!doctype html>
 <html lang="he" dir="rtl">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>דוגרי · העיצובים שלנו</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Google Analytics (GA4) — loads after consent (js/consent.js) -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('consent', 'default', { analytics_storage: 'denied' });
+    </script>
+    <script src="js/consent.js" defer></script>
+    <script type="module" src="js/analytics.js"></script>
+    <title>עמוד מוצר · דוגרי</title>
     <meta
       name="description"
-      content="בוחרים עיצוב למשחק המותאם אישית של דוגרי. גלריית עיצובים - לוחצים על עיצוב וממשיכים לעמוד המוצר וההזמנה."
+      content="עמוד המוצר של דוגרי — גלריית תמונות, פרטי העיצוב ומה כלול בחבילה. בוחרים עיצוב וממשיכים להזמנה."
     />
-
     <link rel="icon" type="image/png" href="assets/logo.png" />
-    <link rel="preload" as="image" href="assets/logo.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -26,6 +35,7 @@
       />
     </noscript>
     <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/carousel.css" />
     <link rel="stylesheet" href="/css/header.css" />
     <script src="js/header.js" defer></script>
     <style>
@@ -44,7 +54,6 @@
         line-height: 1.6;
         font-size: 17px;
         -webkit-font-smoothing: antialiased;
-        /* clear the fixed header (top) */
         padding-top: 60px;
       }
       .wrap {
@@ -76,7 +85,7 @@
         border: 0;
       }
 
-      /* ---- shared button ---- */
+      /* ---- shared button (matches products.html) ---- */
       .btn {
         position: relative;
         overflow: hidden;
@@ -128,116 +137,280 @@
         outline: 3px solid var(--sage);
         outline-offset: 3px;
       }
+      .btn.ghost {
+        background: none;
+        color: var(--sage-deep);
+        box-shadow: none;
+        padding: 16px 12px;
+      }
+      .btn.ghost::after {
+        display: none;
+      }
+      .btn.ghost:hover {
+        background: none;
+        transform: none;
+        filter: none;
+        color: var(--sage-deeper);
+        text-decoration: underline;
+      }
       a:focus-visible {
         outline: 3px solid var(--sage);
         outline-offset: 3px;
         border-radius: 8px;
       }
 
-      /* ====================================================================
-         STORE GRID — the whole page. A clean grid of product photos, no card
-         chrome (no border, background or shadow — "just the pictures"). Each
-         card links to that design's detail page (product.html?design=<id>),
-         which hosts the multi-photo gallery. Cards render client-side from
-         js/designs.js (PUBLIC_DESIGNS) — single source of truth.
-         ==================================================================== */
-      .store {
-        padding: 34px 0 54px;
+      /* ---- page layout ---- */
+      main {
+        padding-bottom: 40px;
       }
-      .store-grid {
-        display: grid;
-        /* 2 columns on mobile; more on wider screens. */
-        grid-template-columns: repeat(2, 1fr);
-        gap: 30px 20px;
-      }
-      @media (min-width: 560px) {
-        .store-grid {
-          grid-template-columns: repeat(3, 1fr);
-          gap: 34px 24px;
-        }
-      }
-      @media (min-width: 860px) {
-        .store-grid {
-          grid-template-columns: repeat(4, 1fr);
-        }
+      .pdp {
+        padding: 26px 0 8px;
       }
 
-      /* a single product card = one link, no chrome */
-      .product-card {
-        display: block;
+      /* ---- 1. PHOTO GALLERY ---- */
+      .pdp-gallery {
+        position: relative;
+        border-radius: 22px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow-md);
+        background: var(--section);
       }
-      .product-card__link {
-        display: flex;
-        flex-direction: column;
-        text-decoration: none;
-        color: inherit;
-        border-radius: 18px;
-        transition: transform 0.2s ease;
+      /* the carousel track fills the frame; each slide is one full-width photo. */
+      #galleryTrack.carousel-track {
+        gap: 0;
       }
-      .product-card__link:hover {
-        transform: translateY(-4px);
-      }
-      .product-card__link:focus-visible {
-        outline: 3px solid var(--sage);
-        outline-offset: 4px;
-        border-radius: 18px;
-      }
-      /* the product image — the only visual weight in the card. A nice rounded
-         corner and generous spacing; no border / background / shadow. */
-      .product-card__media {
-        display: block;
+      .pdp-gallery-slide {
         width: 100%;
         aspect-ratio: 841.92 / 595.5;
-        border-radius: 16px;
-        overflow: hidden;
+        background: var(--section);
       }
-      .product-card__media img {
+      .pdp-gallery-slide img {
         width: 100%;
         height: 100%;
         object-fit: cover;
         display: block;
       }
-      .product-name {
-        display: block;
+      /* dots sit over the image, bottom-centered */
+      .pdp-gallery-dots {
+        position: absolute;
+        inset-block-end: 6px;
+        inset-inline: 0;
+        z-index: 2;
+        pointer-events: none;
+      }
+      .pdp-gallery-dots .carousel-dots {
+        pointer-events: auto;
+        padding: 8px 0;
+      }
+      .pdp-gallery-dots .carousel-dot {
+        background: rgba(255, 255, 255, 0.7);
+        box-shadow: 0 1px 3px rgba(35, 32, 28, 0.3);
+      }
+      .pdp-gallery-dots .carousel-dot.is-active,
+      .pdp-gallery-dots .carousel-dot[aria-current='true'] {
+        background: var(--sage-deep);
+      }
+
+      /* ---- 2. TITLE + PRICE ---- */
+      .pdp-head {
+        margin-top: 20px;
+      }
+      .pdp-head h1 {
+        font-size: 30px;
+        font-weight: 800;
+        color: var(--ink);
+      }
+      @media (min-width: 640px) {
+        .pdp-head h1 {
+          font-size: 38px;
+        }
+      }
+      .pdp-price {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin-top: 10px;
+        flex-wrap: wrap;
+      }
+      .pdp-price .now {
+        font-family: var(--display);
+        font-size: 34px;
+        font-weight: 900;
+        color: var(--sage-deep);
+        letter-spacing: -0.02em;
+      }
+      .pdp-price .was {
+        color: var(--muted);
+        text-decoration: line-through;
+        font-weight: 700;
+        font-size: 18px;
+      }
+
+      /* ---- 3. SECTIONS ---- */
+      .pdp-sec {
+        margin-top: 26px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 22px 22px 24px;
+        box-shadow: var(--shadow-sm);
+      }
+      .pdp-sec h2 {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 21px;
+        font-weight: 800;
+        color: var(--sage-deeper);
+        margin-bottom: 12px;
+      }
+      .pdp-sec p {
+        color: var(--muted);
+        font-size: 16px;
+      }
+      .pdp-sec .sec-icon {
+        width: 26px;
+        height: 26px;
+        flex: 0 0 auto;
+        color: var(--sage-deep);
+      }
+      .pdp-list {
+        list-style: none;
+        display: grid;
+        gap: 10px;
+      }
+      .pdp-list li {
+        display: flex;
+        align-items: flex-start;
+        gap: 11px;
+        font-size: 16.5px;
+        color: var(--ink);
+      }
+      .pdp-list li .tick {
+        color: var(--sage-deep);
+        font-weight: 800;
+        font-size: 18px;
+        flex: 0 0 auto;
+        line-height: 1.4;
+      }
+
+      /* buy section */
+      .pdp-buy-sec {
         text-align: center;
+        background: linear-gradient(160deg, var(--surface), var(--sage-tint));
+      }
+      .pdp-buy-sec .note {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 14.5px;
+      }
+      #pdpBuy {
+        font-size: 19px;
+        padding: 17px 40px;
+      }
+
+      /* ---- 4. RELATED RAIL ---- */
+      .pdp-related {
+        margin-top: 40px;
+        padding-top: 8px;
+        border-top: 1px solid var(--line);
+      }
+      .pdp-related-head {
+        text-align: center;
+        margin: 22px 0 18px;
+      }
+      .pdp-related-head h2 {
+        font-size: 26px;
+        font-weight: 800;
+      }
+      .pdp-related-head p {
+        color: var(--muted);
+        font-size: 15px;
+        margin-top: 4px;
+      }
+      /* PAGE owns card width so a peek of the next card shows (per carousel.css). */
+      #relatedTrack.carousel-track {
+        padding: 4px 0 8px;
+      }
+      .pdp-rel-card {
+        flex-basis: 76%;
+        max-width: 260px;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border: 1.5px solid var(--line);
+        border-radius: 20px;
+        padding: 14px 14px 16px;
+        box-shadow: var(--shadow-sm);
+        text-decoration: none;
+        color: inherit;
+        transition:
+          transform 0.22s ease,
+          box-shadow 0.22s ease,
+          border-color 0.22s ease;
+      }
+      @media (min-width: 560px) {
+        .pdp-rel-card {
+          flex-basis: 46%;
+        }
+      }
+      @media (min-width: 820px) {
+        .pdp-rel-card {
+          flex-basis: 31%;
+        }
+      }
+      .pdp-rel-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-md);
+        border-color: var(--sage);
+      }
+      .pdp-rel-card[aria-current='true'] {
+        border-color: var(--sage);
+        box-shadow: var(--shadow-md);
+      }
+      .pdp-rel-thumb {
+        aspect-ratio: 841.92 / 595.5;
+        width: 100%;
+        border-radius: 14px;
+        overflow: hidden;
+        background: var(--section);
+        border: 1px solid var(--line);
+      }
+      .pdp-rel-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .pdp-rel-name {
+        display: block;
         font-family: var(--display);
         font-weight: 800;
-        font-size: 15.5px;
-        letter-spacing: -0.01em;
-        color: var(--ink);
+        font-size: 18px;
+        color: var(--sage-deeper);
         margin-top: 12px;
       }
-      .product-price {
+      .pdp-rel-price {
         display: block;
-        text-align: center;
-        margin-top: 3px;
+        margin-top: 4px;
         font-weight: 700;
-        font-size: 14.5px;
         color: var(--ink);
+        font-size: 15px;
       }
-      .product-price s {
-        color: var(--muted);
-        font-weight: 600;
-        margin-inline-start: 6px;
-      }
-
-      /* graceful fallback if the catalog module can't load */
-      .store-fallback {
-        grid-column: 1 / -1;
+      .pdp-store-cta {
         text-align: center;
-        padding: 40px 0;
-      }
-      .store-fallback .btn {
-        margin-top: 14px;
+        margin-top: 20px;
       }
 
-      /* ---- footer ---- */
+      /* ---- footer (copied from products.html) ---- */
       footer {
         padding: 30px 0;
         text-align: center;
         font-size: 14px;
         background: var(--ink);
         color: #e8ddd4;
+        margin-top: 40px;
       }
       footer a {
         color: #fff;
@@ -376,15 +549,82 @@
     </header>
 
     <main>
-      <!-- STORE — the whole page is one clean product grid. Cards are rendered
-           client-side from js/designs.js (PUBLIC_DESIGNS); each links to that
-           design's detail page (product.html?design=<id>). -->
-      <section class="store">
+      <div class="wrap pdp">
+        <!-- 1. PHOTO GALLERY.
+             FILLER photos = this design's product thumbs
+             (assets/designs/<id>/thumb-front.webp, thumb-back.webp, thumb-board.webp;
+             board skipped when absent, e.g. kids), wired by js/product.js.
+             OWNER: replace these with real product photos at
+             assets/products/<id>/1.jpg, 2.jpg, 3.jpg… (update galleryPhotos()
+             in js/product.js to point at them). -->
+        <section class="pdp-gallery" data-testid="pdp-gallery" aria-label="גלריית תמונות המוצר">
+          <div id="galleryTrack">
+            <!-- gallery slides injected by js/product.js -->
+          </div>
+          <div class="pdp-gallery-dots" id="galleryDots"></div>
+        </section>
+
+        <!-- 2. TITLE + PRICE -->
+        <div class="pdp-head">
+          <h1 id="pdpTitle">המשחק המותאם אישית</h1>
+          <div class="pdp-price">
+            <span class="now" id="pdpPriceNow">79 ₪</span>
+            <span class="was" id="pdpPriceWas">129 ₪</span>
+          </div>
+        </div>
+
+        <!-- 3a. ABOUT THIS DESIGN -->
+        <section class="pdp-sec">
+          <h2>על העיצוב</h2>
+          <p id="pdpAbout">
+            אותו משחק דוגרי בעיצוב ייחודי — חפיסת קלפים ולוח מותאמים אישית מהמילים, הבדיחות והרגעים
+            שרק אתם מכירים.
+          </p>
+        </section>
+
+        <!-- 3b. WHAT'S INSIDE -->
+        <section class="pdp-sec">
+          <h2>
+            <!-- OWNER: swap in the real icon at assets/icons/whats-inside.svg -->
+            <img class="sec-icon" src="assets/icons/whats-inside.svg" alt="" aria-hidden="true" />
+            מה בפנים
+          </h2>
+          <ul class="pdp-list">
+            <li><span class="tick" aria-hidden="true">✓</span> חפיסת קלפים מותאמת אישית</li>
+            <li><span class="tick" aria-hidden="true">✓</span> לוח משחק</li>
+            <li><span class="tick" aria-hidden="true">✓</span> דף חוקים</li>
+            <li><span class="tick" aria-hidden="true">✓</span> הוראות הדפסה וגזירה</li>
+            <li><span class="tick" aria-hidden="true">✓</span> דף עזר לאיסוף מילים</li>
+          </ul>
+        </section>
+
+        <!-- 3c. BUY NOW -->
+        <section class="pdp-sec pdp-buy-sec">
+          <a
+            class="btn"
+            id="pdpBuy"
+            href="options.html"
+            data-testid="pdp-buy"
+            data-ga="order_started"
+            data-ga-cta="pdp"
+            >קנו עכשיו</a
+          >
+          <p class="note">מבצע השקה · אספקה תוך 24 שעות · ללא הגבלת מילים</p>
+        </section>
+      </div>
+
+      <!-- 4. RELATED PRODUCTS RAIL -->
+      <section class="pdp-related" data-testid="pdp-related" aria-label="עוד עיצובים">
         <div class="wrap">
-          <!-- Clean "just the pictures" grid — heading kept for a11y/SEO, visually hidden. -->
-          <h1 class="visually-hidden">העיצובים של דוגרי</h1>
-          <div class="store-grid" id="storeGrid" data-testid="store-grid">
-            <!-- product cards rendered from js/designs.js -->
+          <div class="pdp-related-head">
+            <h2>עוד עיצובים</h2>
+            <p>אותו משחק, כל עיצוב במגוון צבעים</p>
+          </div>
+          <div id="relatedTrack">
+            <!-- related cards injected by js/product.js -->
+          </div>
+          <div class="pdp-store-cta">
+            <a class="btn ghost" href="products.html">מעבר אל החנות ›</a>
           </div>
         </div>
       </section>
@@ -457,85 +697,7 @@
       </div>
     </footer>
 
-    <!-- Store grid: one clean product card per design, single source of truth =
-         js/designs.js (PUBLIC_DESIGNS excludes private designs, hidden until
-         unlocked with an access code in the order flow). Each card shows ONE
-         image and links to the design's detail page (product.html?design=<id>),
-         which hosts the multi-photo gallery. -->
-    <script type="module">
-      import { PUBLIC_DESIGNS as DESIGNS } from './js/designs.js';
-
-      const PRICE = 79;
-      const WAS = 129;
-      const grid = document.getElementById('storeGrid');
-
-      // ---- one product card ---------------------------------------------------
-      function card(d) {
-        const article = document.createElement('article');
-        article.className = 'product-card';
-        article.setAttribute('data-testid', 'product-card');
-        article.setAttribute('data-design-id', d.id);
-
-        // The whole card is a single link to the design's detail page.
-        const link = document.createElement('a');
-        link.className = 'product-card__link';
-        link.href = `product.html?design=${encodeURIComponent(d.id)}`;
-        link.setAttribute('data-testid', 'product-link');
-        link.setAttribute('aria-label', d.name);
-
-        // Product image (no border / background / shadow — "just the picture").
-        // FILLER: the design's front thumb. The real store cover photo will live
-        // at assets/products/<id>/1.jpg once shot.
-        const media = document.createElement('span');
-        media.className = 'product-card__media';
-        const img = document.createElement('img');
-        img.loading = 'lazy';
-        img.decoding = 'async';
-        img.src = `assets/designs/${d.id}/thumb-front.webp`;
-        img.alt = d.name;
-        img.setAttribute('data-testid', 'product-image');
-        media.appendChild(img);
-        link.appendChild(media);
-
-        // Hebrew design name.
-        const name = document.createElement('span');
-        name.className = 'product-name';
-        name.textContent = d.name;
-        link.appendChild(name);
-
-        // Price: ₪79 with a struck ₪129.
-        const price = document.createElement('span');
-        price.className = 'product-price';
-        const was = document.createElement('s');
-        was.textContent = `${WAS} ₪`;
-        price.appendChild(was);
-        price.append(` ${PRICE} ₪`);
-        link.appendChild(price);
-
-        article.appendChild(link);
-        return article;
-      }
-
-      try {
-        if (!Array.isArray(DESIGNS) || !DESIGNS.length) throw new Error('empty catalog');
-        const frag = document.createDocumentFragment();
-        for (const d of DESIGNS) {
-          // Isolate each card so one bad design skips only itself, not the grid.
-          try {
-            frag.appendChild(card(d));
-          } catch (cardErr) {
-            console.error('skipping product card:', d && d.id, cardErr);
-          }
-        }
-        if (!frag.childNodes.length) throw new Error('no cards rendered');
-        grid.replaceChildren(frag);
-      } catch (err) {
-        // Graceful degradation: never leave a blank page — offer the wizard.
-        grid.innerHTML =
-          '<div class="store-fallback"><p>לא הצלחנו לטעון את גלריית העיצובים כרגע.</p>' +
-          '<a class="btn" href="options.html">להזמנה ובחירת עיצוב ›</a></div>';
-        console.error('store grid failed to render:', err);
-      }
-    </script>
+    <!-- Per-product detail rendering: reads ?design=<id> and renders from js/designs.js. -->
+    <script type="module" src="js/product.js"></script>
   </body>
 </html>

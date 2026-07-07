@@ -1,0 +1,157 @@
+/* ============================================================
+   SHARED SITE HEADER (sticky three-zone top bar)
+   Used by index.html, products.html and product.html.
+   Markup lives in each page; toggle behaviour in js/header.js.
+   Zones: order-now pill · centered logo · hamburger menu.
+   ============================================================ */
+.hdr {
+  position: fixed;
+  top: 0;
+  inset-inline: 0;
+  z-index: 80;
+  background: rgba(247, 244, 239, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.hdr-inner {
+  position: relative;
+  max-width: 1080px;
+  margin: 0 auto;
+  min-height: 42px;
+  padding: 9px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+@media (min-width: 720px) {
+  .hdr-inner {
+    padding: 10px 22px;
+  }
+}
+/* CENTER zone: logo pinned to the true center regardless of side widths */
+.hdr-logo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+}
+.hdr-logo img {
+  height: 34px;
+  width: auto;
+  display: block;
+}
+/* LEFT zone: solid sage "order now" pill */
+.hdr-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  background: var(--sage);
+  color: #fff;
+  text-decoration: none;
+  white-space: nowrap;
+  padding: 9px 16px;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
+  transition:
+    background 0.2s var(--ease),
+    transform 0.14s var(--ease),
+    box-shadow 0.25s var(--ease);
+}
+.hdr-order:hover {
+  background: var(--sage-deep);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+.hdr-order:active {
+  transform: translateY(0) scale(0.99);
+}
+@media (min-width: 720px) {
+  .hdr-order {
+    font-size: 15px;
+    padding: 10px 22px;
+  }
+}
+/* RIGHT zone: hamburger button */
+.hdr-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 40px;
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background 0.18s var(--ease),
+    border-color 0.18s var(--ease);
+}
+.hdr-toggle:hover {
+  background: var(--section);
+  border-color: var(--sage);
+}
+.hdr-toggle svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+/* slide-down menu panel, dropped under the bar */
+.hdr-menu {
+  position: absolute;
+  top: 100%;
+  inset-inline: 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  box-shadow: var(--shadow-md);
+  padding: 8px 16px 14px;
+  display: none;
+}
+.hdr-menu.open {
+  display: block;
+}
+.hdr-menu a {
+  display: block;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--ink);
+  text-decoration: none;
+  padding: 13px 8px;
+  border-radius: 10px;
+  transition:
+    background 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+.hdr-menu a + a {
+  border-top: 1px solid var(--line);
+}
+.hdr-menu a:hover,
+.hdr-menu a:focus-visible {
+  background: var(--section);
+  color: var(--sage-deeper);
+}
+@media (min-width: 720px) {
+  .hdr-menu {
+    max-width: 1080px;
+    margin: 0 auto;
+    inset-inline: auto;
+    inset-inline-end: 22px;
+    min-width: 220px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 8px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+}

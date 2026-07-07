@@ -47,6 +47,9 @@
       />
     </noscript>
     <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/carousel.css" />
+    <link rel="stylesheet" href="/css/header.css" />
+    <script src="js/header.js" defer></script>
     <style>
       * {
         box-sizing: border-box;
@@ -63,8 +66,7 @@
         line-height: 1.6;
         font-size: 17px;
         -webkit-font-smoothing: antialiased;
-        padding-top: 60px; /* clear fixed nav */
-        padding-bottom: 78px; /* clear sticky order bar (mobile) */
+        padding-top: 60px; /* clear fixed header */
       }
       .wrap {
         max-width: 1080px;
@@ -177,201 +179,109 @@
         background: var(--section);
       }
 
-      /* ============ NAV ============ */
-      .nav {
-        position: fixed;
-        top: 0;
-        inset-inline: 0;
-        z-index: 80;
-        background: rgba(247, 244, 239, 0.86);
-        backdrop-filter: blur(12px);
-        border-bottom: 1px solid var(--line);
-      }
-      .nav-inner {
-        max-width: 1080px;
-        margin: 0 auto;
-        padding: 9px 20px;
-        display: flex;
-        align-items: center;
-        gap: 14px;
-      }
-      .nav-logo {
-        display: flex;
-        align-items: center;
-      }
-      .nav-logo img {
-        height: 32px;
-        width: auto;
-        display: block;
-      }
-      .nav-links {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        margin-inline-start: auto;
-      }
-      .nav-links a {
-        font-family: var(--display);
-        font-weight: 700;
-        font-size: 15px;
-        color: var(--ink);
-        padding: 8px 12px;
-        border-radius: 10px;
-        text-decoration: none;
-        transition:
-          background 0.18s var(--ease),
-          color 0.18s var(--ease);
-      }
-      .nav-links a:hover {
-        background: var(--section);
-        color: var(--sage-deeper);
-      }
-      .nav-links a.nav-cta {
-        background: var(--sage);
-        color: #fff;
-        padding: 9px 20px;
-        border-radius: var(--radius-pill);
-        box-shadow: var(--shadow-sm);
-      }
-      .nav-links a.nav-cta:hover {
-        background: var(--sage-deep);
-        color: #fff;
-      }
-      .nav-toggle {
-        display: none;
-        margin-inline-start: auto;
-        background: none;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        width: 42px;
-        height: 40px;
-        cursor: pointer;
-        align-items: center;
-        justify-content: center;
-      }
-      .nav-toggle span,
-      .nav-toggle span::before,
-      .nav-toggle span::after {
-        display: block;
-        width: 20px;
-        height: 2px;
-        background: var(--ink);
-        position: relative;
-        transition: transform 0.2s var(--ease);
-      }
-      .nav-toggle span::before {
-        content: '';
-        position: absolute;
-        top: -6px;
-      }
-      .nav-toggle span::after {
-        content: '';
-        position: absolute;
-        top: 6px;
-      }
-      @media (max-width: 720px) {
-        .nav-toggle {
-          display: flex;
-        }
-        .nav-links {
-          position: absolute;
-          top: 100%;
-          inset-inline: 0;
-          flex-direction: column;
-          align-items: stretch;
-          gap: 0;
-          background: var(--bg);
-          border-bottom: 1px solid var(--line);
-          box-shadow: var(--shadow-md);
-          padding: 8px 14px 14px;
-          margin: 0;
-          display: none;
-        }
-        .nav-links.open {
-          display: flex;
-        }
-        .nav-links a {
-          padding: 13px 10px;
-        }
-        .nav-links a.nav-cta {
-          margin-top: 6px;
-          text-align: center;
-          justify-content: center;
-        }
-      }
-
-      /* ============ HERO ============ */
+      /* ============ HERO (full-bleed auto-rotating slideshow) ============ */
       .hero {
-        padding: 40px 0 56px;
+        position: relative;
+        padding: 0;
       }
-      .hero-inner {
-        display: grid;
-        gap: 34px;
+      /* the swipe track: one full-viewport-width slide at a time */
+      .hero-track {
+        height: min(88vh, 720px);
+      }
+      .hero-slide {
+        position: relative;
+        flex: 0 0 100%;
+        width: 100%;
+        height: 100%;
+        display: flex;
         align-items: center;
-        text-align: center;
-      }
-      @media (min-width: 860px) {
-        .hero-inner {
-          grid-template-columns: 1.08fr 0.92fr;
-          text-align: start;
-          gap: 44px;
-        }
-      }
-      .hero h1 {
-        font-size: 40px;
-        font-weight: 900;
-        line-height: 1.08;
-      }
-      @media (min-width: 720px) {
-        .hero h1 {
-          font-size: 58px;
-        }
-      }
-      .hero-sub {
-        margin-top: 18px;
-        color: var(--muted);
-        font-size: 18px;
-        max-width: 30ch;
-        margin-inline: auto;
-      }
-      @media (min-width: 860px) {
-        .hero-sub {
-          margin-inline: 0;
-        }
-      }
-      .hero-sub b {
-        color: var(--ink);
-        font-weight: 600;
-      }
-      .launch-offer {
-        display: inline-flex;
-        align-items: center;
-        gap: 9px;
-        flex-wrap: wrap;
         justify-content: center;
-        margin-top: 22px;
-        padding: 7px 16px 7px 7px;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: var(--radius-pill);
-        box-shadow: var(--shadow-sm);
-        font-size: 14px;
-        font-weight: 700;
+        text-align: center;
+        overflow: hidden;
       }
-      .launch-offer .launch-badge {
-        display: inline-block;
-        background: var(--sage);
-        color: #fff;
+      .hero-slide__bg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        z-index: 0;
+      }
+      /* dark gradient overlay keeps the white text legible over any photo */
+      .hero-slide::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        background: linear-gradient(
+          180deg,
+          rgba(35, 32, 28, 0.34) 0%,
+          rgba(35, 32, 28, 0.46) 55%,
+          rgba(35, 32, 28, 0.64) 100%
+        );
+      }
+      .hero-slide__inner {
+        position: relative;
+        z-index: 2;
+        max-width: 760px;
+        padding: 0 24px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 26px;
+      }
+      .hero-slide__title {
         font-family: var(--display);
         font-weight: 800;
-        font-size: 13px;
-        padding: 5px 13px;
-        border-radius: var(--radius-pill);
-        white-space: nowrap;
+        color: #fff;
+        font-size: 29px;
+        line-height: 1.16;
+        letter-spacing: -0.02em;
+        text-shadow: 0 2px 20px rgba(0, 0, 0, 0.4);
       }
-      .launch-offer .launch-text {
-        color: var(--muted);
+      @media (min-width: 720px) {
+        .hero-slide__title {
+          font-size: 46px;
+        }
       }
+      /* solid white button (inverse of the page's sage .btn) */
+      .hero .btn {
+        background: #fff;
+        color: var(--sage-deeper);
+        box-shadow: var(--shadow-md);
+      }
+      .hero .btn:hover {
+        background: #fff;
+        color: var(--sage-deep);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-lg);
+      }
+      /* carousel dots, overlaid on the photo at bottom-center */
+      .hero-dots {
+        position: absolute;
+        inset-inline: 0;
+        bottom: 14px;
+        z-index: 3;
+        display: flex;
+        justify-content: center;
+        pointer-events: none;
+      }
+      .hero-dots .carousel-dots {
+        pointer-events: auto;
+        padding: 8px 0;
+      }
+      .hero-dots .carousel-dot {
+        background: rgba(255, 255, 255, 0.5);
+      }
+      .hero-dots .carousel-dot:hover {
+        background: rgba(255, 255, 255, 0.85);
+      }
+      .hero-dots .carousel-dot.is-active,
+      .hero-dots .carousel-dot[aria-current='true'] {
+        background: #fff;
+      }
+
+      /* .hero-cta is shared with the final #order section */
       .hero-cta {
         margin-top: 26px;
         display: flex;
@@ -385,284 +295,94 @@
           justify-content: flex-start;
         }
       }
-      .trust {
-        margin-top: 18px;
-        color: var(--muted);
-        font-size: 14px;
-        font-weight: 600;
-      }
-      .trust .st {
-        color: var(--blush);
-        letter-spacing: 1px;
-        margin-inline-end: 4px;
-      }
-      /* hero video loop - real party footage (vertical phone clip) */
-      .hero-video {
-        margin: 0 auto;
-        max-width: 320px;
-        width: 100%;
-      }
-      .hero-video video {
-        width: 100%;
-        display: block;
-        border-radius: 22px;
-        box-shadow: var(--shadow-lg);
-        background: var(--section);
-        aspect-ratio: 9 / 16;
-        object-fit: cover;
-      }
-      .hero-video .vcap {
-        margin-top: 12px;
-        font-size: 14px;
-        color: var(--muted);
-        text-align: center;
-      }
-      .hero-video .vcap strong {
-        color: var(--sage-deep);
-      }
 
-      /* ============ EVENT SELECTOR (#events) ============ */
-      #events {
-        --event-accent: var(--sage);
-      }
-      .event-pills {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        justify-content: center;
-        max-width: 700px;
-        margin: 0 auto 34px;
-      }
-      .event-pill {
-        font-family: var(--display);
-        font-weight: 700;
-        font-size: 16px;
-        cursor: pointer;
-        background: var(--surface);
-        color: var(--ink);
-        border: 1px solid var(--line);
-        border-radius: var(--radius-pill);
-        padding: 11px 22px;
-        transition:
-          background 0.18s var(--ease),
-          color 0.18s var(--ease),
-          border-color 0.18s var(--ease),
-          transform 0.14s var(--ease);
-      }
-      .event-pill:hover {
-        border-color: var(--sage);
-        transform: translateY(-1px);
-      }
-      .event-pill.is-active,
-      .event-pill[aria-selected='true'] {
-        background: var(--sage);
-        border-color: var(--sage);
-        color: #fff;
-      }
-      .event-preview {
-        max-width: 460px;
-        margin: 0 auto;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        box-shadow: var(--shadow-md);
-        padding: 28px 26px 30px;
+      /* ============ HOME PRODUCTS RAIL (data-testid=home-products) ============ */
+      .home-products-head {
         text-align: center;
+        max-width: 620px;
+        margin: 0 auto 26px;
       }
-      .event-mockup {
-        display: block;
-        width: 100%;
-        max-width: 320px;
-        aspect-ratio: 3 / 4;
-        object-fit: contain;
-        margin: 0 auto;
-        border-radius: 14px;
-        background: var(--section);
-        box-shadow: 0 0 0 6px color-mix(in srgb, var(--event-accent) 16%, transparent);
-        transition: box-shadow 0.3s var(--ease);
+      .home-products-head h2 {
+        font-size: 36px;
       }
-      .event-dots {
-        display: flex;
-        gap: 8px;
-        justify-content: center;
-        margin: 20px 0 14px;
-        min-height: 16px;
+      .home-products-head p {
+        color: var(--muted);
+        margin-top: 10px;
+        font-size: 17px;
       }
-      .event-dot {
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        box-shadow: inset 0 0 0 1px rgba(35, 32, 28, 0.08);
-      }
-      .event-copy {
-        font-family: var(--display);
-        font-weight: 800;
-        font-size: 22px;
-        color: var(--ink);
-        margin-bottom: 18px;
-      }
-      #eventCta {
-        background: var(--sage);
-      }
-      #eventCta:hover {
-        background: var(--sage-deep);
-      }
-
-      /* ============ HOW IT WORKS (#how) ============ */
-      .steps {
-        display: grid;
-        gap: 18px;
-        grid-template-columns: 1fr;
-      }
-      @media (min-width: 760px) {
-        .steps {
-          grid-template-columns: repeat(3, 1fr);
+      @media (min-width: 720px) {
+        .home-products-head h2 {
+          font-size: 44px;
         }
       }
-      .step {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 30px 26px;
-        text-align: center;
-        box-shadow: var(--shadow-sm);
-        transition:
-          transform 0.25s var(--ease),
-          box-shadow 0.25s var(--ease);
+      /* PAGE owns card width so a peek of the next card shows (per carousel.css). */
+      #productsTrack.carousel-track {
+        padding: 4px 0 10px;
       }
-      .step:hover {
-        transform: translateY(-5px);
-        box-shadow: var(--shadow-md);
-      }
-      .step .n {
-        font-family: var(--display);
-        font-weight: 900;
-        font-size: 22px;
-        color: #fff;
-        background: var(--sage);
-        width: 52px;
-        height: 52px;
-        border-radius: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 16px;
-      }
-      .step h3 {
-        font-size: 21px;
-        margin-bottom: 8px;
-      }
-      .step p {
-        color: var(--muted);
-        font-size: 15.5px;
-      }
-
-      /* ============ EXAMPLES (#examples) ============ */
-      .examples-strip {
-        display: grid;
-        grid-auto-flow: column;
-        grid-auto-columns: minmax(200px, 1fr);
-        gap: 16px;
-        overflow-x: auto;
-        padding: 4px 4px 14px;
-        scroll-snap-type: x mandatory;
-        -webkit-overflow-scrolling: touch;
-      }
-      .ex-card {
-        scroll-snap-align: start;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        overflow: hidden;
-        box-shadow: var(--shadow-sm);
+      .home-prod-card {
+        flex-basis: 76%;
+        max-width: 260px;
         display: flex;
         flex-direction: column;
-        transition:
-          transform 0.25s var(--ease),
-          box-shadow 0.25s var(--ease);
-      }
-      .ex-card:hover {
-        transform: translateY(-5px);
-        box-shadow: var(--shadow-md);
-      }
-      .ex-card .ex-media {
-        aspect-ratio: 4 / 5;
-        background: var(--section);
-        overflow: hidden;
-      }
-      .ex-card .ex-media img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block;
-      }
-      .ex-card .ex-cap {
-        padding: 14px 16px 18px;
-      }
-      .ex-card .ex-cap strong {
-        font-family: var(--display);
-        font-weight: 800;
-        font-size: 16px;
-        display: block;
-      }
-      .ex-card .ex-cap span {
-        color: var(--muted);
-        font-size: 14px;
-      }
-      .ex-hint {
-        text-align: center;
-        margin-top: 16px;
-        color: var(--muted);
-        font-size: 13.5px;
-      }
-
-      /* ============ WHY DUGRI (#why) ============ */
-      .why-grid {
-        display: grid;
-        gap: 16px;
-        grid-template-columns: 1fr;
-        max-width: 940px;
-        margin: 0 auto;
-      }
-      @media (min-width: 560px) {
-        .why-grid {
-          grid-template-columns: repeat(2, 1fr);
-        }
-      }
-      @media (min-width: 900px) {
-        .why-grid {
-          grid-template-columns: repeat(3, 1fr);
-        }
-      }
-      .why-card {
         background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 26px 24px;
+        border: 1.5px solid var(--line);
+        border-radius: 20px;
+        padding: 14px 14px 16px;
         box-shadow: var(--shadow-sm);
+        text-decoration: none;
+        color: inherit;
         transition:
           transform 0.22s var(--ease),
           box-shadow 0.22s var(--ease),
           border-color 0.22s var(--ease);
       }
-      .why-card:hover {
+      @media (min-width: 560px) {
+        .home-prod-card {
+          flex-basis: 46%;
+        }
+      }
+      @media (min-width: 820px) {
+        .home-prod-card {
+          flex-basis: 31%;
+        }
+      }
+      .home-prod-card:hover {
         transform: translateY(-4px);
         box-shadow: var(--shadow-md);
         border-color: var(--sage);
       }
-      .why-card .why-mark {
-        color: var(--sage-deep);
-        font-size: 26px;
-        line-height: 1;
-        margin-bottom: 12px;
+      .home-prod-thumb {
+        aspect-ratio: 841.92 / 595.5;
+        width: 100%;
+        border-radius: 14px;
+        overflow: hidden;
+        background: var(--section);
+        border: 1px solid var(--line);
       }
-      .why-card h3 {
-        font-size: 20px;
-        margin-bottom: 6px;
+      .home-prod-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
       }
-      .why-card p {
-        color: var(--muted);
+      .home-prod-name {
+        display: block;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 18px;
+        color: var(--sage-deeper);
+        margin-top: 12px;
+      }
+      .home-prod-price {
+        display: block;
+        margin-top: 4px;
+        font-weight: 700;
+        color: var(--ink);
         font-size: 15px;
+      }
+      .home-products-cta {
+        text-align: center;
+        margin-top: 22px;
       }
 
       /* ============ SOCIAL PROOF (#reviews) ============ */
@@ -672,70 +392,54 @@
         letter-spacing: 2px;
         margin-top: 10px;
       }
-      .vclips {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        max-width: 720px;
-        margin: 0 auto 22px;
-      }
-      .vclip {
-        border-radius: var(--radius);
-        overflow: hidden;
-        background: var(--section);
-        border: 1px solid var(--line);
-        box-shadow: var(--shadow-sm);
-        transition:
-          transform 0.3s var(--ease),
-          box-shadow 0.3s var(--ease);
-      }
-      .vclip:hover {
-        transform: translateY(-4px);
-        box-shadow: var(--shadow-md);
-      }
-      .vclip video {
-        width: 100%;
-        height: 100%;
-        display: block;
-        object-fit: cover;
-        aspect-ratio: 9 / 12;
-      }
-      .reviews {
-        display: grid;
-        gap: 14px;
-        grid-template-columns: 1fr 1fr;
-        max-width: 520px;
+      /* reviews carousel: each WhatsApp screenshot in a clean, intentional card. */
+      #reviewsTrack.carousel-track {
+        max-width: 940px;
         margin: 0 auto;
-      }
-      @media (min-width: 760px) {
-        .reviews {
-          grid-template-columns: repeat(3, 1fr);
-          max-width: 900px;
-          align-items: start;
-        }
+        padding: 4px 0 10px;
       }
       .review {
+        flex-basis: 80%;
+        max-width: 340px;
         margin: 0;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        box-shadow: var(--shadow-md);
         transition:
           transform 0.25s var(--ease),
           box-shadow 0.25s var(--ease);
       }
+      @media (min-width: 560px) {
+        .review {
+          flex-basis: 46%;
+        }
+      }
+      @media (min-width: 820px) {
+        .review {
+          flex-basis: 31%;
+        }
+      }
+      /* subtle WhatsApp-green top accent so the cards read intentional, not raw. */
+      .review::before {
+        content: '';
+        display: block;
+        height: 5px;
+        background: #25d366;
+      }
       .review:hover {
         transform: translateY(-4px);
+        box-shadow: var(--shadow-lg);
       }
       .review img {
         display: block;
         width: 100%;
         height: auto;
-        border-radius: var(--radius);
-        box-shadow: var(--shadow-sm);
-      }
-      .review:hover img {
-        box-shadow: var(--shadow-md);
       }
       .proof-note {
         text-align: center;
-        margin: 26px auto 0;
+        margin: 22px auto 0;
         font-size: 13px;
         color: var(--muted);
       }
@@ -772,6 +476,14 @@
       }
       .story-photo:nth-child(1) {
         transform: translateY(14px);
+      }
+      .story-kicker {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 14px;
+        letter-spacing: 0.08em;
+        color: var(--sage-deep);
+        margin-bottom: 8px;
       }
       .story-copy h2 {
         font-size: 34px;
@@ -965,44 +677,6 @@
         border: 0;
       }
 
-      /* ============ STICKY MOBILE ORDER BAR ============ */
-      .sticky {
-        position: fixed;
-        bottom: 0;
-        inset-inline: 0;
-        background: rgba(247, 244, 239, 0.96);
-        border-top: 1px solid var(--line);
-        padding: 12px 16px;
-        display: flex;
-        gap: 10px;
-        z-index: 50;
-        backdrop-filter: blur(8px);
-        box-shadow: 0 -8px 24px rgba(35, 32, 28, 0.08);
-      }
-      .sticky .btn {
-        flex: 1 1 auto;
-        min-width: 0;
-        font-size: 14px;
-        padding: 13px 8px;
-        white-space: nowrap;
-        letter-spacing: -0.01em;
-      }
-      .sticky #waSticky {
-        flex: 0 0 auto;
-        padding: 13px 16px;
-      }
-      .sticky #stickyOrder .was {
-        font-size: 0.78em;
-      }
-      @media (min-width: 720px) {
-        .sticky {
-          display: none;
-        }
-        body {
-          padding-bottom: 0;
-        }
-      }
-
       /* ============ REDUCED MOTION ============ */
       @media (prefers-reduced-motion: reduce) {
         html {
@@ -1017,285 +691,189 @@
     </style>
   </head>
   <body>
-    <nav class="nav" aria-label="ניווט ראשי">
-      <div class="nav-inner">
-        <a class="nav-logo" href="#top" aria-label="דוגרי - לראש העמוד"
-          ><img src="assets/logo.png" alt="דוגרי"
-        /></a>
+    <header class="hdr" aria-label="ניווט ראשי">
+      <div class="hdr-inner">
         <button
-          class="nav-toggle"
+          class="hdr-toggle"
           type="button"
           data-testid="nav-toggle"
           aria-expanded="false"
-          aria-controls="navLinks"
+          aria-controls="navMenu"
           aria-label="תפריט"
         >
-          <span></span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <line x1="4" y1="7" x2="20" y2="7" stroke-width="2" stroke-linecap="round" />
+            <line x1="4" y1="12" x2="20" y2="12" stroke-width="2" stroke-linecap="round" />
+            <line x1="4" y1="17" x2="20" y2="17" stroke-width="2" stroke-linecap="round" />
+          </svg>
         </button>
-        <div class="nav-links" id="navLinks" data-testid="nav-links">
-          <a href="#how">איך זה עובד</a>
-          <a href="#examples">דוגמאות</a>
-          <a href="#reviews">המלצות</a>
-          <a href="#faq">שאלות</a>
-          <a class="nav-cta" href="products.html" data-ga="order_started" data-ga-cta="nav"
-            >בונים את המשחק</a
-          >
-        </div>
+        <a class="hdr-logo" href="index.html" aria-label="דוגרי - לדף הבית"
+          ><img src="assets/logo.png" alt="דוגרי"
+        /></a>
+        <a
+          class="hdr-order nav-cta"
+          href="products.html"
+          data-testid="order-now"
+          data-ga="order_started"
+          data-ga-cta="nav"
+          >הזמינו עכשיו</a
+        >
       </div>
-    </nav>
-
-    <header class="hero" id="top" data-reveal>
-      <div class="wrap">
-        <div class="hero-inner">
-          <div class="hero-text">
-            <h1>המשחק הכי אישי<br />שתעניקו אי פעם</h1>
-            <p class="hero-sub">
-              משחק מסיבה שבנוי כולו מהאדם שחוגגים — לכל
-              <b>יום הולדת · רווקות · חתונה · זוגות · חברים · פרישה</b>.
-            </p>
-            <p class="launch-offer">
-              <span class="launch-badge">מבצע השקה</span>
-              <span class="launch-text"
-                >מספר הזמנות מוגבל בכל שבוע · אספקה תוך
-                <span style="white-space: nowrap">24 שעות</span></span
-              >
-            </p>
-            <div class="hero-cta">
-              <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
-                >בונים את המשחק →</a
-              >
-              <a class="btn ghost" href="#examples">דוגמאות</a>
-            </div>
-            <p class="trust"><span class="st">★★★★★</span> אלפי רגעים בלתי נשכחים</p>
-          </div>
-          <div class="hero-media">
-            <div class="hero-video" data-testid="hero-video">
-              <video
-                autoplay
-                muted
-                loop
-                playsinline
-                preload="metadata"
-                poster="assets/video/dugri-hero-loop-poster.jpg"
-                aria-label="סרטון ממסיבה אמיתית עם משחק דוגרי"
-              >
-                <source src="assets/video/dugri-hero-loop.mp4" type="video/mp4" />
-              </video>
-              <p class="vcap"><strong>אירוע אמיתי</strong> · ככה זה נראה כשמשחקים דוגרי</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      <nav
+        class="hdr-menu"
+        id="navMenu"
+        data-testid="nav-menu"
+        role="menu"
+        aria-label="תפריט ניווט"
+      >
+        <a href="products.html" role="menuitem">החנות</a>
+        <a href="index.html#reviews" role="menuitem">המלצות</a>
+        <a href="index.html#story" role="menuitem">הסיפור שלנו</a>
+        <a href="index.html#faq" role="menuitem">שאלות</a>
+      </nav>
     </header>
 
-    <section id="events" data-reveal>
-      <div class="wrap">
-        <div class="sec-title">
-          <h2>מוצר אחד, כל אירוע</h2>
-          <p>מותאם בדיוק לאנשים שלכם</p>
+    <!--
+      HERO: full-bleed, swipeable, auto-rotating slideshow (js/carousel.js).
+      FILLER IMAGES: the three backgrounds use assets/gallery-1.jpg /
+      gallery-2.jpg / gallery-3.jpg as placeholders. OWNER: replace each
+      hero-slide__bg src with the real hero photos, which should live at
+      assets/hero/slide-1.jpg, assets/hero/slide-2.jpg, assets/hero/slide-3.jpg.
+    -->
+    <section id="top" class="hero">
+      <div class="hero-track carousel-track">
+        <div class="hero-slide">
+          <img class="hero-slide__bg" src="assets/gallery-1.jpg" alt="" aria-hidden="true" />
+          <div class="hero-slide__inner">
+            <h1 class="hero-slide__title">
+              מסיבת רווקות לחברה הכי טובה? יום נישואין? אבא בן 50? יש לנו את המתנה המושלמת
+            </h1>
+            <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
+              >לרכישה ‹‹</a
+            >
+          </div>
         </div>
-        <div class="event-pills" role="tablist" aria-label="בחירת אירוע">
-          <button
-            class="event-pill is-active"
-            role="tab"
-            aria-selected="true"
-            data-design-id="birthday"
-          >
-            יום הולדת
-          </button>
-          <button class="event-pill" role="tab" aria-selected="false" data-design-id="bachelorette">
-            רווקות
-          </button>
-          <button class="event-pill" role="tab" aria-selected="false" data-design-id="marriage">
-            חתונה
-          </button>
-          <button class="event-pill" role="tab" aria-selected="false" data-design-id="posttrip">
-            חזרה מטיול
-          </button>
-          <button class="event-pill" role="tab" aria-selected="false" data-design-id="neon">
-            ניאון
-          </button>
-          <button class="event-pill" role="tab" aria-selected="false" data-design-id="kids">
-            ילדים
-          </button>
+        <div class="hero-slide">
+          <img class="hero-slide__bg" src="assets/gallery-2.jpg" alt="" aria-hidden="true" />
+          <div class="hero-slide__inner">
+            <p class="hero-slide__title">דוגרי – המתנה הכי אישית ומקורית שאפשר לתת</p>
+            <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
+              >לרכישה ‹‹</a
+            >
+          </div>
         </div>
-        <div class="event-preview">
-          <img id="eventMockup" class="event-mockup" alt="" />
-          <div id="eventDots" class="event-dots" aria-hidden="true"></div>
-          <p id="eventCopy" class="event-copy"></p>
-          <a id="eventCta" class="btn" href="options.html?design=birthday">בונים את המשחק →</a>
+        <div class="hero-slide">
+          <img class="hero-slide__bg" src="assets/gallery-3.jpg" alt="" aria-hidden="true" />
+          <div class="hero-slide__inner">
+            <p class="hero-slide__title">מחפשים מתנה בלי פילטרים? מזל שאתם כאן</p>
+            <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
+              >לרכישה ‹‹</a
+            >
+          </div>
         </div>
       </div>
+      <div class="hero-dots"></div>
     </section>
     <script type="module">
-      import { initEventSelector } from './js/event-selector.js';
-      initEventSelector();
+      import { initCarousel } from './js/carousel.js';
+      import { PUBLIC_DESIGNS } from './js/designs.js';
+
+      // ---- HERO: full-bleed auto-rotating slideshow ----
+      const heroTrack = document.querySelector('.hero-track');
+      if (heroTrack) {
+        initCarousel(heroTrack, {
+          mode: 'slideshow',
+          interval: 6000,
+          loop: true,
+          dots: true,
+          arrows: false,
+          dotsInto: document.querySelector('.hero-dots'),
+        });
+      }
+
+      // ---- PRODUCTS RAIL: one card per public design → product.html?design=<id> ----
+      const PRICE = 79;
+      // Short label: the design name trimmed to ≤3 words.
+      const shortLabel = (name) =>
+        String(name || '')
+          .trim()
+          .split(/\s+/)
+          .slice(0, 3)
+          .join(' ');
+      const productsTrack = document.getElementById('productsTrack');
+      if (productsTrack) {
+        for (const d of PUBLIC_DESIGNS) {
+          const card = document.createElement('a');
+          card.className = 'home-prod-card';
+          card.href = `product.html?design=${encodeURIComponent(d.id)}`;
+          card.dataset.label = d.name;
+          card.setAttribute('data-ga', 'order_started');
+          card.setAttribute('data-ga-cta', 'home-products');
+
+          const thumb = document.createElement('div');
+          thumb.className = 'home-prod-thumb';
+          const img = document.createElement('img');
+          img.src = `assets/designs/${d.id}/thumb-front.webp`;
+          img.alt = d.name;
+          img.loading = 'lazy';
+          img.decoding = 'async';
+          thumb.appendChild(img);
+
+          const name = document.createElement('span');
+          name.className = 'home-prod-name';
+          name.textContent = shortLabel(d.name);
+          const price = document.createElement('span');
+          price.className = 'home-prod-price';
+          price.textContent = `${PRICE} ₪`;
+
+          card.append(thumb, name, price);
+          productsTrack.appendChild(card);
+        }
+        initCarousel(productsTrack, { mode: 'scroller', dots: false });
+      }
+
+      // ---- REVIEWS: swipeable rail of WhatsApp screenshots ----
+      const reviewsTrack = document.getElementById('reviewsTrack');
+      if (reviewsTrack) {
+        initCarousel(reviewsTrack, { mode: 'scroller' });
+      }
     </script>
 
-    <section id="how" class="alt" data-reveal>
+    <!--
+      PRODUCTS RAIL: a swipeable rail of the public designs, modeled on
+      product.html's related rail. Cards are injected by the module script at
+      the bottom of the page from PUBLIC_DESIGNS (js/designs.js); each links to
+      product.html?design=<id>.
+    -->
+    <section id="products" data-testid="home-products" data-reveal>
       <div class="wrap">
-        <div class="sec-title">
-          <h2>איך זה עובד</h2>
-          <p>שלושה צעדים מרשימה של מילים למשחק שכולם יזכרו</p>
+        <div class="home-products-head">
+          <h2>העיצובים שלנו</h2>
+          <p>אותו משחק, בעיצוב שמתאים בדיוק לאירוע שלכם</p>
         </div>
-        <div class="steps">
-          <div class="step">
-            <div class="n">1</div>
-            <h3>מספרים לנו על האדם</h3>
-            <p>
-              שולחים 100+ מילים וביטויים — בדיחות פנימיות, הרגלים, אנשים ומקומות. יש דף עזר שמקל
-              להיזכר.
-            </p>
-          </div>
-          <div class="step">
-            <div class="n">2</div>
-            <h3>אנחנו מעצבים את המשחק האישי</h3>
-            <p>
-              הופכים את המילים לחפיסת קלפים מעוצבת וללוח משחק, בסגנון ובצבעים שמתאימים בדיוק לאירוע
-              שלכם.
-            </p>
-          </div>
-          <div class="step">
-            <div class="n">3</div>
-            <h3>מדפיסים, משחקים, זוכרים לנצח</h3>
-            <p>
-              מקבלים קובץ מוכן להדפסה עם הוראות ברורות. מתחלקים לקבוצות — וכל החדר צוחק על מי
-              שחוגגים.
-            </p>
-          </div>
+        <div id="productsTrack">
+          <!-- product cards injected by the module script below -->
+        </div>
+        <div class="home-products-cta">
+          <a
+            class="btn ghost"
+            href="products.html"
+            data-ga="order_started"
+            data-ga-cta="home-products"
+            >מעבר אל החנות ›</a
+          >
         </div>
       </div>
     </section>
 
-    <section id="examples" data-reveal>
-      <div class="wrap">
-        <div class="sec-title">
-          <h2>דוגמאות מהמשחק</h2>
-          <p>קלפים, בדיחות פנימיות ולוחות אמיתיים מאירועים</p>
-        </div>
-        <div class="examples-strip">
-          <div class="ex-card">
-            <div class="ex-media">
-              <img src="assets/gallery-1.jpg" alt="קלף דוגרי עם אייקונים מותאמים וארבע מילים" />
-            </div>
-            <div class="ex-cap">
-              <strong>קלף אישי</strong>
-              <span>ארבע מילים שרק אתם מבינים</span>
-            </div>
-          </div>
-          <div class="ex-card">
-            <div class="ex-media">
-              <img src="assets/gallery-2.jpg" alt="חפיסת קלפים דוגרי ביד" />
-            </div>
-            <div class="ex-cap">
-              <strong>חפיסה שלמה</strong>
-              <span>עשרות קלפים לערב שלם</span>
-            </div>
-          </div>
-          <div class="ex-card">
-            <div class="ex-media">
-              <img src="assets/gallery-3.jpg" alt="לוח משחק דוגרי עם טוקנים" />
-            </div>
-            <div class="ex-cap">
-              <strong>לוח המשחק</strong>
-              <span>מסלול, טוקנים וניקוד</span>
-            </div>
-          </div>
-          <div class="ex-card">
-            <div class="ex-media">
-              <img src="assets/gallery-4.jpg" alt="לוח משחק וקלפים דוגרי על השולחן" />
-            </div>
-            <div class="ex-cap">
-              <strong>הסט המלא</strong>
-              <span>מוכן על השולחן</span>
-            </div>
-          </div>
-          <div class="ex-card">
-            <div class="ex-media">
-              <img src="assets/card-real.png" alt="קלף דוגרי מודפס אמיתי" />
-            </div>
-            <div class="ex-cap">
-              <strong>מודפס אמיתי</strong>
-              <span>ככה זה מגיע לשולחן</span>
-            </div>
-          </div>
-        </div>
-        <p class="ex-hint">גררו הצידה כדי לראות עוד ←</p>
-      </div>
-    </section>
-
-    <section id="why" class="alt" data-reveal>
-      <div class="wrap">
-        <div class="sec-title">
-          <h2>למה דוגרי</h2>
-          <p>לא עוד משחק קופסה — רגע שכולם ייקחו איתם הביתה</p>
-        </div>
-        <div class="why-grid">
-          <div class="why-card">
-            <div class="why-mark">✦</div>
-            <h3>צוחקים חזק יותר</h3>
-            <p>כשכל מילה היא בדיחה פנימית, הצחוק אמיתי ומתגלגל.</p>
-          </div>
-          <div class="why-card">
-            <div class="why-mark">✦</div>
-            <h3>אף אחד לא מקבל מתנה גנרית</h3>
-            <p>זו מתנה שאי אפשר לקנות בחנות — נבנתה רק בשבילם.</p>
-          </div>
-          <div class="why-card">
-            <div class="why-mark">✦</div>
-            <h3>כולם מרגישים חלק</h3>
-            <p>כל אחד סביב השולחן מזהה סיפור ומצטרף למשחק.</p>
-          </div>
-          <div class="why-card">
-            <div class="why-mark">✦</div>
-            <h3>כל משחק ייחודי</h3>
-            <p>אין שני משחקים זהים — שלכם קיים בעותק אחד בעולם.</p>
-          </div>
-          <div class="why-card">
-            <div class="why-mark">✦</div>
-            <h3>מעוצב בדיוק לאנשים שלכם</h3>
-            <p>סגנון וצבעים שמתאימים לאירוע ולאדם שחוגגים.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="reviews" data-reveal>
+    <section id="reviews" class="alt" data-reveal>
       <div class="wrap">
         <div class="sec-title proof-head">
-          <h2>כבר חוגגים איתנו</h2>
+          <h2>מה מספרים עלינו</h2>
           <p>ככה זה נראה כשהמשחק מגיע לשולחן</p>
           <div class="stars" aria-hidden="true">★★★★★</div>
         </div>
-        <div class="vclips" data-testid="proof-clips">
-          <div class="vclip">
-            <video
-              autoplay
-              muted
-              loop
-              playsinline
-              preload="metadata"
-              poster="assets/video/party-poster.jpg"
-              aria-label="רגעים ממסיבה אמיתית עם משחק דוגרי"
-            >
-              <source src="assets/video/party.mp4" type="video/mp4" />
-            </video>
-          </div>
-          <div class="vclip">
-            <video
-              autoplay
-              muted
-              loop
-              playsinline
-              preload="metadata"
-              poster="assets/video/toast-poster.jpg"
-              aria-label="הרמת כוסית וצחוקים סביב משחק דוגרי"
-            >
-              <source src="assets/video/toast.mp4" type="video/mp4" />
-            </video>
-          </div>
-        </div>
-        <div class="reviews" data-testid="proof-reviews">
+        <div id="reviewsTrack" data-testid="proof-reviews">
           <figure class="review">
             <img
               src="assets/testimonials/review-1.jpg"
@@ -1330,6 +908,7 @@
             <div class="story-photo">מהסטודיו שלנו</div>
           </div>
           <div class="story-copy">
+            <p class="story-kicker">הסיפור שלנו</p>
             <h2>למה התחלנו את דוגרי</h2>
             <p>
               הכול התחיל ממסיבה אחת שרצינו להפוך לבלתי נשכחת. חיפשנו מתנה שתגרום לכל החדר לצחוק —
@@ -1478,30 +1057,8 @@
       </div>
     </footer>
 
-    <div class="sticky">
-      <a
-        class="btn"
-        id="stickyOrder"
-        href="products.html"
-        data-ga="order_started"
-        data-ga-cta="sticky"
-        >מזמינים · <s class="was">129 ₪</s><span style="white-space: nowrap">79 ₪</span></a
-      >
-      <a
-        class="btn wa"
-        id="waSticky"
-        href="#"
-        target="_blank"
-        rel="noopener"
-        data-ga="contact_click"
-        data-ga-channel="whatsapp"
-        data-ga-where="sticky"
-        >וואטסאפ</a
-      >
-    </div>
-
     <script>
-      /* Progressive enhancement: scroll reveals + mobile nav toggle.
+      /* Progressive enhancement: scroll reveals.
          Content is fully visible without JS. */
       (function () {
         var reduce =
@@ -1530,22 +1087,6 @@
             });
           }, 2500);
         }
-
-        /* Mobile nav toggle. */
-        var navToggle = document.querySelector('.nav-toggle');
-        var navLinks = document.getElementById('navLinks');
-        if (navToggle && navLinks) {
-          navToggle.addEventListener('click', function () {
-            var open = navLinks.classList.toggle('open');
-            navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-          });
-          navLinks.querySelectorAll('a').forEach(function (a) {
-            a.addEventListener('click', function () {
-              navLinks.classList.remove('open');
-              navToggle.setAttribute('aria-expanded', 'false');
-            });
-          });
-        }
       })();
     </script>
 
@@ -1569,7 +1110,7 @@
 
       const waBase = 'https://wa.me/' + CONFIG.whatsapp;
       const waMsg = encodeURIComponent('היי! אני רוצה להזמין משחק דוגרי');
-      ['waLink', 'waCtaLink', 'waSticky'].forEach((id) => {
+      ['waLink', 'waCtaLink'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.href = waBase + '?text=' + waMsg;
       });
