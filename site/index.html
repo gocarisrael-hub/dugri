@@ -448,248 +448,93 @@
         }
       }
 
-      /* ============ EVENT SELECTOR (#events) ============ */
-      #events {
-        --event-accent: var(--sage);
-      }
-      .event-pills {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        justify-content: center;
-        max-width: 700px;
-        margin: 0 auto 34px;
-      }
-      .event-pill {
-        font-family: var(--display);
-        font-weight: 700;
-        font-size: 16px;
-        cursor: pointer;
-        background: var(--surface);
-        color: var(--ink);
-        border: 1px solid var(--line);
-        border-radius: var(--radius-pill);
-        padding: 11px 22px;
-        transition:
-          background 0.18s var(--ease),
-          color 0.18s var(--ease),
-          border-color 0.18s var(--ease),
-          transform 0.14s var(--ease);
-      }
-      .event-pill:hover {
-        border-color: var(--sage);
-        transform: translateY(-1px);
-      }
-      .event-pill.is-active,
-      .event-pill[aria-selected='true'] {
-        background: var(--sage);
-        border-color: var(--sage);
-        color: #fff;
-      }
-      .event-preview {
-        max-width: 460px;
-        margin: 0 auto;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        box-shadow: var(--shadow-md);
-        padding: 28px 26px 30px;
+      /* ============ HOME PRODUCTS RAIL (data-testid=home-products) ============ */
+      .home-products-head {
         text-align: center;
+        max-width: 620px;
+        margin: 0 auto 26px;
       }
-      .event-mockup {
-        display: block;
-        width: 100%;
-        max-width: 320px;
-        aspect-ratio: 3 / 4;
-        object-fit: contain;
-        margin: 0 auto;
-        border-radius: 14px;
-        background: var(--section);
-        box-shadow: 0 0 0 6px color-mix(in srgb, var(--event-accent) 16%, transparent);
-        transition: box-shadow 0.3s var(--ease);
+      .home-products-head h2 {
+        font-size: 36px;
       }
-      .event-dots {
-        display: flex;
-        gap: 8px;
-        justify-content: center;
-        margin: 20px 0 14px;
-        min-height: 16px;
+      .home-products-head p {
+        color: var(--muted);
+        margin-top: 10px;
+        font-size: 17px;
       }
-      .event-dot {
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        box-shadow: inset 0 0 0 1px rgba(35, 32, 28, 0.08);
-      }
-      .event-copy {
-        font-family: var(--display);
-        font-weight: 800;
-        font-size: 22px;
-        color: var(--ink);
-        margin-bottom: 18px;
-      }
-      #eventCta {
-        background: var(--sage);
-      }
-      #eventCta:hover {
-        background: var(--sage-deep);
-      }
-
-      /* ============ HOW IT WORKS (#how) ============ */
-      .steps {
-        display: grid;
-        gap: 18px;
-        grid-template-columns: 1fr;
-      }
-      @media (min-width: 760px) {
-        .steps {
-          grid-template-columns: repeat(3, 1fr);
+      @media (min-width: 720px) {
+        .home-products-head h2 {
+          font-size: 44px;
         }
       }
-      .step {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 30px 26px;
-        text-align: center;
-        box-shadow: var(--shadow-sm);
-        transition:
-          transform 0.25s var(--ease),
-          box-shadow 0.25s var(--ease);
+      /* PAGE owns card width so a peek of the next card shows (per carousel.css). */
+      #productsTrack.carousel-track {
+        padding: 4px 0 10px;
       }
-      .step:hover {
-        transform: translateY(-5px);
-        box-shadow: var(--shadow-md);
-      }
-      .step .n {
-        font-family: var(--display);
-        font-weight: 900;
-        font-size: 22px;
-        color: #fff;
-        background: var(--sage);
-        width: 52px;
-        height: 52px;
-        border-radius: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 16px;
-      }
-      .step h3 {
-        font-size: 21px;
-        margin-bottom: 8px;
-      }
-      .step p {
-        color: var(--muted);
-        font-size: 15.5px;
-      }
-
-      /* ============ EXAMPLES (#examples) ============ */
-      .examples-strip {
-        display: grid;
-        grid-auto-flow: column;
-        grid-auto-columns: minmax(200px, 1fr);
-        gap: 16px;
-        overflow-x: auto;
-        padding: 4px 4px 14px;
-        scroll-snap-type: x mandatory;
-        -webkit-overflow-scrolling: touch;
-      }
-      .ex-card {
-        scroll-snap-align: start;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        overflow: hidden;
-        box-shadow: var(--shadow-sm);
+      .home-prod-card {
+        flex-basis: 76%;
+        max-width: 260px;
         display: flex;
         flex-direction: column;
-        transition:
-          transform 0.25s var(--ease),
-          box-shadow 0.25s var(--ease);
-      }
-      .ex-card:hover {
-        transform: translateY(-5px);
-        box-shadow: var(--shadow-md);
-      }
-      .ex-card .ex-media {
-        aspect-ratio: 4 / 5;
-        background: var(--section);
-        overflow: hidden;
-      }
-      .ex-card .ex-media img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block;
-      }
-      .ex-card .ex-cap {
-        padding: 14px 16px 18px;
-      }
-      .ex-card .ex-cap strong {
-        font-family: var(--display);
-        font-weight: 800;
-        font-size: 16px;
-        display: block;
-      }
-      .ex-card .ex-cap span {
-        color: var(--muted);
-        font-size: 14px;
-      }
-      .ex-hint {
-        text-align: center;
-        margin-top: 16px;
-        color: var(--muted);
-        font-size: 13.5px;
-      }
-
-      /* ============ WHY DUGRI (#why) ============ */
-      .why-grid {
-        display: grid;
-        gap: 16px;
-        grid-template-columns: 1fr;
-        max-width: 940px;
-        margin: 0 auto;
-      }
-      @media (min-width: 560px) {
-        .why-grid {
-          grid-template-columns: repeat(2, 1fr);
-        }
-      }
-      @media (min-width: 900px) {
-        .why-grid {
-          grid-template-columns: repeat(3, 1fr);
-        }
-      }
-      .why-card {
         background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 26px 24px;
+        border: 1.5px solid var(--line);
+        border-radius: 20px;
+        padding: 14px 14px 16px;
         box-shadow: var(--shadow-sm);
+        text-decoration: none;
+        color: inherit;
         transition:
           transform 0.22s var(--ease),
           box-shadow 0.22s var(--ease),
           border-color 0.22s var(--ease);
       }
-      .why-card:hover {
+      @media (min-width: 560px) {
+        .home-prod-card {
+          flex-basis: 46%;
+        }
+      }
+      @media (min-width: 820px) {
+        .home-prod-card {
+          flex-basis: 31%;
+        }
+      }
+      .home-prod-card:hover {
         transform: translateY(-4px);
         box-shadow: var(--shadow-md);
         border-color: var(--sage);
       }
-      .why-card .why-mark {
-        color: var(--sage-deep);
-        font-size: 26px;
-        line-height: 1;
-        margin-bottom: 12px;
+      .home-prod-thumb {
+        aspect-ratio: 841.92 / 595.5;
+        width: 100%;
+        border-radius: 14px;
+        overflow: hidden;
+        background: var(--section);
+        border: 1px solid var(--line);
       }
-      .why-card h3 {
-        font-size: 20px;
-        margin-bottom: 6px;
+      .home-prod-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
       }
-      .why-card p {
-        color: var(--muted);
+      .home-prod-name {
+        display: block;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 18px;
+        color: var(--sage-deeper);
+        margin-top: 12px;
+      }
+      .home-prod-price {
+        display: block;
+        margin-top: 4px;
+        font-weight: 700;
+        color: var(--ink);
         font-size: 15px;
+      }
+      .home-products-cta {
+        text-align: center;
+        margin-top: 22px;
       }
 
       /* ============ SOCIAL PROOF (#reviews) ============ */
@@ -699,70 +544,54 @@
         letter-spacing: 2px;
         margin-top: 10px;
       }
-      .vclips {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        max-width: 720px;
-        margin: 0 auto 22px;
-      }
-      .vclip {
-        border-radius: var(--radius);
-        overflow: hidden;
-        background: var(--section);
-        border: 1px solid var(--line);
-        box-shadow: var(--shadow-sm);
-        transition:
-          transform 0.3s var(--ease),
-          box-shadow 0.3s var(--ease);
-      }
-      .vclip:hover {
-        transform: translateY(-4px);
-        box-shadow: var(--shadow-md);
-      }
-      .vclip video {
-        width: 100%;
-        height: 100%;
-        display: block;
-        object-fit: cover;
-        aspect-ratio: 9 / 12;
-      }
-      .reviews {
-        display: grid;
-        gap: 14px;
-        grid-template-columns: 1fr 1fr;
-        max-width: 520px;
+      /* reviews carousel: each WhatsApp screenshot in a clean, intentional card. */
+      #reviewsTrack.carousel-track {
+        max-width: 940px;
         margin: 0 auto;
-      }
-      @media (min-width: 760px) {
-        .reviews {
-          grid-template-columns: repeat(3, 1fr);
-          max-width: 900px;
-          align-items: start;
-        }
+        padding: 4px 0 10px;
       }
       .review {
+        flex-basis: 80%;
+        max-width: 340px;
         margin: 0;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        box-shadow: var(--shadow-md);
         transition:
           transform 0.25s var(--ease),
           box-shadow 0.25s var(--ease);
       }
+      @media (min-width: 560px) {
+        .review {
+          flex-basis: 46%;
+        }
+      }
+      @media (min-width: 820px) {
+        .review {
+          flex-basis: 31%;
+        }
+      }
+      /* subtle WhatsApp-green top accent so the cards read intentional, not raw. */
+      .review::before {
+        content: '';
+        display: block;
+        height: 5px;
+        background: #25d366;
+      }
       .review:hover {
         transform: translateY(-4px);
+        box-shadow: var(--shadow-lg);
       }
       .review img {
         display: block;
         width: 100%;
         height: auto;
-        border-radius: var(--radius);
-        box-shadow: var(--shadow-sm);
-      }
-      .review:hover img {
-        box-shadow: var(--shadow-md);
       }
       .proof-note {
         text-align: center;
-        margin: 26px auto 0;
+        margin: 22px auto 0;
         font-size: 13px;
         color: var(--muted);
       }
@@ -799,6 +628,14 @@
       }
       .story-photo:nth-child(1) {
         transform: translateY(14px);
+      }
+      .story-kicker {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 14px;
+        letter-spacing: 0.08em;
+        color: var(--sage-deep);
+        margin-bottom: 8px;
       }
       .story-copy h2 {
         font-size: 34px;
@@ -1129,6 +966,9 @@
     </section>
     <script type="module">
       import { initCarousel } from './js/carousel.js';
+      import { PUBLIC_DESIGNS } from './js/designs.js';
+
+      // ---- HERO: full-bleed auto-rotating slideshow ----
       const heroTrack = document.querySelector('.hero-track');
       if (heroTrack) {
         initCarousel(heroTrack, {
@@ -1140,216 +980,90 @@
           dotsInto: document.querySelector('.hero-dots'),
         });
       }
+
+      // ---- PRODUCTS RAIL: one card per public design → product.html?design=<id> ----
+      const PRICE = 79;
+      // Short label: the design name trimmed to ≤3 words.
+      const shortLabel = (name) =>
+        String(name || '')
+          .trim()
+          .split(/\s+/)
+          .slice(0, 3)
+          .join(' ');
+      const productsTrack = document.getElementById('productsTrack');
+      if (productsTrack) {
+        for (const d of PUBLIC_DESIGNS) {
+          const card = document.createElement('a');
+          card.className = 'home-prod-card';
+          card.href = `product.html?design=${encodeURIComponent(d.id)}`;
+          card.dataset.label = d.name;
+          card.setAttribute('data-ga', 'order_started');
+          card.setAttribute('data-ga-cta', 'home-products');
+
+          const thumb = document.createElement('div');
+          thumb.className = 'home-prod-thumb';
+          const img = document.createElement('img');
+          img.src = `assets/designs/${d.id}/thumb-front.webp`;
+          img.alt = d.name;
+          img.loading = 'lazy';
+          img.decoding = 'async';
+          thumb.appendChild(img);
+
+          const name = document.createElement('span');
+          name.className = 'home-prod-name';
+          name.textContent = shortLabel(d.name);
+          const price = document.createElement('span');
+          price.className = 'home-prod-price';
+          price.textContent = `${PRICE} ₪`;
+
+          card.append(thumb, name, price);
+          productsTrack.appendChild(card);
+        }
+        initCarousel(productsTrack, { mode: 'scroller', dots: false });
+      }
+
+      // ---- REVIEWS: swipeable rail of WhatsApp screenshots ----
+      const reviewsTrack = document.getElementById('reviewsTrack');
+      if (reviewsTrack) {
+        initCarousel(reviewsTrack, { mode: 'scroller' });
+      }
     </script>
 
-    <section id="events" data-reveal>
+    <!--
+      PRODUCTS RAIL: a swipeable rail of the public designs, modeled on
+      product.html's related rail. Cards are injected by the module script at
+      the bottom of the page from PUBLIC_DESIGNS (js/designs.js); each links to
+      product.html?design=<id>.
+    -->
+    <section id="products" data-testid="home-products" data-reveal>
       <div class="wrap">
-        <div class="sec-title">
-          <h2>מוצר אחד, כל אירוע</h2>
-          <p>מותאם בדיוק לאנשים שלכם</p>
+        <div class="home-products-head">
+          <h2>העיצובים שלנו</h2>
+          <p>אותו משחק, בעיצוב שמתאים בדיוק לאירוע שלכם</p>
         </div>
-        <div class="event-pills" role="tablist" aria-label="בחירת אירוע">
-          <button
-            class="event-pill is-active"
-            role="tab"
-            aria-selected="true"
-            data-design-id="birthday"
+        <div id="productsTrack">
+          <!-- product cards injected by the module script below -->
+        </div>
+        <div class="home-products-cta">
+          <a
+            class="btn ghost"
+            href="products.html"
+            data-ga="order_started"
+            data-ga-cta="home-products"
+            >מעבר אל החנות ›</a
           >
-            יום הולדת
-          </button>
-          <button class="event-pill" role="tab" aria-selected="false" data-design-id="bachelorette">
-            רווקות
-          </button>
-          <button class="event-pill" role="tab" aria-selected="false" data-design-id="marriage">
-            חתונה
-          </button>
-          <button class="event-pill" role="tab" aria-selected="false" data-design-id="posttrip">
-            חזרה מטיול
-          </button>
-          <button class="event-pill" role="tab" aria-selected="false" data-design-id="neon">
-            ניאון
-          </button>
-          <button class="event-pill" role="tab" aria-selected="false" data-design-id="kids">
-            ילדים
-          </button>
-        </div>
-        <div class="event-preview">
-          <img id="eventMockup" class="event-mockup" alt="" />
-          <div id="eventDots" class="event-dots" aria-hidden="true"></div>
-          <p id="eventCopy" class="event-copy"></p>
-          <a id="eventCta" class="btn" href="options.html?design=birthday">בונים את המשחק →</a>
-        </div>
-      </div>
-    </section>
-    <script type="module">
-      import { initEventSelector } from './js/event-selector.js';
-      initEventSelector();
-    </script>
-
-    <section id="how" class="alt" data-reveal>
-      <div class="wrap">
-        <div class="sec-title">
-          <h2>איך זה עובד</h2>
-          <p>שלושה צעדים מרשימה של מילים למשחק שכולם יזכרו</p>
-        </div>
-        <div class="steps">
-          <div class="step">
-            <div class="n">1</div>
-            <h3>מספרים לנו על האדם</h3>
-            <p>
-              שולחים 100+ מילים וביטויים — בדיחות פנימיות, הרגלים, אנשים ומקומות. יש דף עזר שמקל
-              להיזכר.
-            </p>
-          </div>
-          <div class="step">
-            <div class="n">2</div>
-            <h3>אנחנו מעצבים את המשחק האישי</h3>
-            <p>
-              הופכים את המילים לחפיסת קלפים מעוצבת וללוח משחק, בסגנון ובצבעים שמתאימים בדיוק לאירוע
-              שלכם.
-            </p>
-          </div>
-          <div class="step">
-            <div class="n">3</div>
-            <h3>מדפיסים, משחקים, זוכרים לנצח</h3>
-            <p>
-              מקבלים קובץ מוכן להדפסה עם הוראות ברורות. מתחלקים לקבוצות — וכל החדר צוחק על מי
-              שחוגגים.
-            </p>
-          </div>
         </div>
       </div>
     </section>
 
-    <section id="examples" data-reveal>
-      <div class="wrap">
-        <div class="sec-title">
-          <h2>דוגמאות מהמשחק</h2>
-          <p>קלפים, בדיחות פנימיות ולוחות אמיתיים מאירועים</p>
-        </div>
-        <div class="examples-strip">
-          <div class="ex-card">
-            <div class="ex-media">
-              <img src="assets/gallery-1.jpg" alt="קלף דוגרי עם אייקונים מותאמים וארבע מילים" />
-            </div>
-            <div class="ex-cap">
-              <strong>קלף אישי</strong>
-              <span>ארבע מילים שרק אתם מבינים</span>
-            </div>
-          </div>
-          <div class="ex-card">
-            <div class="ex-media">
-              <img src="assets/gallery-2.jpg" alt="חפיסת קלפים דוגרי ביד" />
-            </div>
-            <div class="ex-cap">
-              <strong>חפיסה שלמה</strong>
-              <span>עשרות קלפים לערב שלם</span>
-            </div>
-          </div>
-          <div class="ex-card">
-            <div class="ex-media">
-              <img src="assets/gallery-3.jpg" alt="לוח משחק דוגרי עם טוקנים" />
-            </div>
-            <div class="ex-cap">
-              <strong>לוח המשחק</strong>
-              <span>מסלול, טוקנים וניקוד</span>
-            </div>
-          </div>
-          <div class="ex-card">
-            <div class="ex-media">
-              <img src="assets/gallery-4.jpg" alt="לוח משחק וקלפים דוגרי על השולחן" />
-            </div>
-            <div class="ex-cap">
-              <strong>הסט המלא</strong>
-              <span>מוכן על השולחן</span>
-            </div>
-          </div>
-          <div class="ex-card">
-            <div class="ex-media">
-              <img src="assets/card-real.png" alt="קלף דוגרי מודפס אמיתי" />
-            </div>
-            <div class="ex-cap">
-              <strong>מודפס אמיתי</strong>
-              <span>ככה זה מגיע לשולחן</span>
-            </div>
-          </div>
-        </div>
-        <p class="ex-hint">גררו הצידה כדי לראות עוד ←</p>
-      </div>
-    </section>
-
-    <section id="why" class="alt" data-reveal>
-      <div class="wrap">
-        <div class="sec-title">
-          <h2>למה דוגרי</h2>
-          <p>לא עוד משחק קופסה — רגע שכולם ייקחו איתם הביתה</p>
-        </div>
-        <div class="why-grid">
-          <div class="why-card">
-            <div class="why-mark">✦</div>
-            <h3>צוחקים חזק יותר</h3>
-            <p>כשכל מילה היא בדיחה פנימית, הצחוק אמיתי ומתגלגל.</p>
-          </div>
-          <div class="why-card">
-            <div class="why-mark">✦</div>
-            <h3>אף אחד לא מקבל מתנה גנרית</h3>
-            <p>זו מתנה שאי אפשר לקנות בחנות — נבנתה רק בשבילם.</p>
-          </div>
-          <div class="why-card">
-            <div class="why-mark">✦</div>
-            <h3>כולם מרגישים חלק</h3>
-            <p>כל אחד סביב השולחן מזהה סיפור ומצטרף למשחק.</p>
-          </div>
-          <div class="why-card">
-            <div class="why-mark">✦</div>
-            <h3>כל משחק ייחודי</h3>
-            <p>אין שני משחקים זהים — שלכם קיים בעותק אחד בעולם.</p>
-          </div>
-          <div class="why-card">
-            <div class="why-mark">✦</div>
-            <h3>מעוצב בדיוק לאנשים שלכם</h3>
-            <p>סגנון וצבעים שמתאימים לאירוע ולאדם שחוגגים.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="reviews" data-reveal>
+    <section id="reviews" class="alt" data-reveal>
       <div class="wrap">
         <div class="sec-title proof-head">
-          <h2>כבר חוגגים איתנו</h2>
+          <h2>מה מספרים עלינו</h2>
           <p>ככה זה נראה כשהמשחק מגיע לשולחן</p>
           <div class="stars" aria-hidden="true">★★★★★</div>
         </div>
-        <div class="vclips" data-testid="proof-clips">
-          <div class="vclip">
-            <video
-              autoplay
-              muted
-              loop
-              playsinline
-              preload="metadata"
-              poster="assets/video/party-poster.jpg"
-              aria-label="רגעים ממסיבה אמיתית עם משחק דוגרי"
-            >
-              <source src="assets/video/party.mp4" type="video/mp4" />
-            </video>
-          </div>
-          <div class="vclip">
-            <video
-              autoplay
-              muted
-              loop
-              playsinline
-              preload="metadata"
-              poster="assets/video/toast-poster.jpg"
-              aria-label="הרמת כוסית וצחוקים סביב משחק דוגרי"
-            >
-              <source src="assets/video/toast.mp4" type="video/mp4" />
-            </video>
-          </div>
-        </div>
-        <div class="reviews" data-testid="proof-reviews">
+        <div id="reviewsTrack" data-testid="proof-reviews">
           <figure class="review">
             <img
               src="assets/testimonials/review-1.jpg"
@@ -1384,6 +1098,7 @@
             <div class="story-photo">מהסטודיו שלנו</div>
           </div>
           <div class="story-copy">
+            <p class="story-kicker">הסיפור שלנו</p>
             <h2>למה התחלנו את דוגרי</h2>
             <p>
               הכול התחיל ממסיבה אחת שרצינו להפוך לבלתי נשכחת. חיפשנו מתנה שתגרום לכל החדר לצחוק —
