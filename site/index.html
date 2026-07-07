@@ -225,7 +225,8 @@
       }
       /* the swipe track: one full-viewport-width slide at a time */
       .hero-track {
-        height: min(88vh, 720px);
+        /* ~2/3 of the old min(88vh,720px) — a shorter, tighter hero */
+        height: min(60vh, 480px);
       }
       .hero-slide {
         position: relative;
@@ -245,11 +246,11 @@
         height: 100%;
         object-fit: cover;
         z-index: 0;
-        /* lift the dull hero photos: bright, airy, appealing */
-        filter: brightness(1.1) saturate(1.05) contrast(1.02);
+        /* keep the photos rich, not washed out */
+        filter: saturate(1.06) contrast(1.03);
       }
-      /* white scrim keeps the near-black headline + button legible over the
-         busier, more colourful official product photos */
+      /* light white scrim — much lighter than before so the photo stays vivid;
+         the headline leans on its own halo (text-shadow below) for legibility */
       .hero-slide::after {
         content: '';
         position: absolute;
@@ -257,9 +258,9 @@
         z-index: 1;
         background: linear-gradient(
           180deg,
-          rgba(255, 255, 255, 0.62) 0%,
-          rgba(255, 255, 255, 0.8) 50%,
-          rgba(255, 255, 255, 0.66) 100%
+          rgba(255, 255, 255, 0.24) 0%,
+          rgba(255, 255, 255, 0.46) 50%,
+          rgba(255, 255, 255, 0.28) 100%
         );
       }
       .hero-slide__inner {
@@ -279,7 +280,11 @@
         font-size: 29px;
         line-height: 1.22;
         letter-spacing: var(--h-spacing);
-        text-shadow: 0 1px 16px rgba(255, 255, 255, 0.7);
+        /* a tight white halo so the near-black headline stays crisp on the
+           now-lighter scrim, without washing the whole photo */
+        text-shadow:
+          0 0 10px rgba(255, 255, 255, 0.95),
+          0 1px 22px rgba(255, 255, 255, 0.9);
       }
       @media (min-width: 720px) {
         .hero-slide__title {
