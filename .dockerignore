@@ -15,7 +15,7 @@ node_modules/
 # (These are already excluded by the `*` rule above, but listed for clarity so
 # they can never accidentally land in the build context or image.)
 CLAUDE.md
-alias_ishi_plan.html
+dugri_plan.html
 resources/
 .git/
 .github/

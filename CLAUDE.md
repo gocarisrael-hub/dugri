@@ -123,7 +123,7 @@ def build_csv(words, out, shuffle=True, seed=42):
 ## נכסים שכבר נוצרו (בסביבת Claude.ai, צריך להעביר/לשחזר)
 
 - alias_shira_bulk.csv — ה-CSV לדוגמה של תבנית שירה (15 שורות).
-- alias_ishi_plan.html — מסמך מוצר/תמחור/תוכנית מעוצב (RTL).
+- dugri_plan.html — מסמך מוצר/תמחור/תוכנית מעוצב (RTL).
 
 ## הקשר על בעלת העסק והעדפות עבודה
 

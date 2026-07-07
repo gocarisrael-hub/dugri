@@ -18,7 +18,7 @@ import re
 import subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = "/Users/hadar/projects/alias"
+ROOT = os.path.dirname(HERE)
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 # --- calibrated recipe for the bachelorette card (from fit.py) ---
