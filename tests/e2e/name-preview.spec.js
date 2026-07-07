@@ -94,4 +94,111 @@ test.describe('name-step live preview + font picker', () => {
       'true'
     );
   });
+
+  test('a default font is preselected on load (its chip is marked)', async ({ page }) => {
+    await mockPreview(page);
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+    await expect(page.getByTestId('font-opts').locator('.font-opt')).toHaveCount(5);
+
+    // exactly one chip is marked selected on load, and it's the default (Cafe).
+    const pressed = page.getByTestId('font-opts').locator('.font-opt[aria-pressed="true"]');
+    await expect(pressed).toHaveCount(1);
+    await expect(page.getByTestId('font-opt-Cafe Regular.ttf')).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+  });
+
+  test('the font picker sits ABOVE the rendered card/board images', async ({ page }) => {
+    await mockPreview(page);
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+    await expect(page.getByTestId('name-preview-card')).toBeVisible();
+
+    const fontsBottom = await page
+      .getByTestId('font-opts')
+      .evaluate((el) => el.getBoundingClientRect().bottom);
+    const imgsTop = await page
+      .locator('#namePreviewImgs')
+      .evaluate((el) => el.getBoundingClientRect().top);
+    // the picker's bottom is at or above the images' top → it's above them
+    expect(fontsBottom).toBeLessThanOrEqual(imgsTop + 1);
+  });
+
+  test('the name preview can be enlarged and swiped between card + board', async ({ page }) => {
+    await mockPreview(page);
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+    await expect(page.getByTestId('name-preview-card')).toBeVisible();
+
+    // the enlarge affordance appears once a real preview has rendered
+    const enlarge = page.getByTestId('name-zoom-open');
+    await expect(enlarge).toBeVisible();
+    await enlarge.click();
+
+    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
+    await expect(page.locator('#zoomContent img')).toBeVisible();
+    // it opens on the card view
+    await expect(page.getByTestId('zoom-tab-card')).toHaveAttribute('aria-selected', 'true');
+
+    // swipe left → the board view
+    const vp = page.getByTestId('zoom-viewport');
+    await vp.dispatchEvent('pointerdown', { clientX: 300, clientY: 300 });
+    await vp.dispatchEvent('pointerup', { clientX: 80, clientY: 300 });
+    await expect(page.getByTestId('zoom-tab-board')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('zoom-tab-card')).toHaveAttribute('aria-selected', 'false');
+  });
+});
+
+test.describe('name-step preview resilience', () => {
+  // When /api/preview keeps failing the UI must never look broken: it shows the
+  // friendly fallback (name in a script font) with a retry — after one automatic
+  // retry — instead of a stuck "טוען תצוגה…".
+  test('a failing preview falls back gracefully with a retry', async ({ page }) => {
+    await page.route('**/api/preview', (route) =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
+    );
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+
+    // the fallback card shows the name — never a blank / stuck loader
+    await expect(page.getByTestId('name-preview-fallback')).toBeVisible();
+    await expect(page.locator('#npfName')).toHaveText('Shira');
+    await expect(page.getByTestId('name-preview-loading')).toBeHidden();
+
+    // after the single automatic retry also fails, a manual retry is offered
+    await expect(page.getByTestId('name-preview-retry')).toBeVisible({ timeout: 5000 });
+  });
+
+  test('an automatic retry self-heals a transient hiccup', async ({ page }) => {
+    const PNG =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+    let calls = 0;
+    await page.route('**/api/preview', (route) => {
+      calls += 1;
+      if (calls === 1) {
+        return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          card: PNG,
+          board: PNG,
+          warning: null,
+          word_font: null,
+          word_font_options: [{ label: 'Cafe', file: 'Cafe Regular.ttf' }],
+        }),
+      });
+    });
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+
+    // the first attempt fails, the auto-retry succeeds → the real image lands
+    await expect(page.getByTestId('name-preview-card')).toHaveAttribute('src', /^data:image\/png/, {
+      timeout: 5000,
+    });
+    await expect(page.getByTestId('name-preview-fallback')).toBeHidden();
+  });
 });
