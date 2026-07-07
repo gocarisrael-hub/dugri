@@ -24,7 +24,13 @@
         margin: 0;
         background: var(--bg);
         color: var(--ink);
-        font-family: 'Heebo', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+        font-family:
+          'Heebo',
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Arial,
+          sans-serif;
         line-height: 1.7;
         -webkit-font-smoothing: antialiased;
       }
@@ -251,16 +257,18 @@
         <h3>הפרומפט</h3>
         <div class="block rtl">
           <button class="copy" type="button">העתק</button>
-          <pre id="img-prompt">[[ כאן ייכנס הפרומפט המדויק שלך ל-ChatGPT ליצירת תמונות הקרוסלה ]]
+          <pre id="img-prompt">
+[[ כאן ייכנס הפרומפט המדויק שלך ל-ChatGPT ליצירת תמונות הקרוסלה ]]
 
 טיפ למלא בזמן ההדבקה:
 - הניסוח המלא של הבקשה (סגנון, זווית, תאורה, רקע, יחס גובה-רוחב)
 - אילו אלמנטים חייבים להופיע (חפיסת קלפים + לוח משחק)
-- מה משתנה לכל עיצוב/אירוע (צבעים, מוטיב)</pre>
+- מה משתנה לכל עיצוב/אירוע (צבעים, מוטיב)</pre
+          >
         </div>
         <div class="note">
-          כל תמונה חדשה: מריצים את הפרומפט ב-ChatGPT, מורידים PNG, ואז עוברים לשלב 2 (רקע לבן +
-          המרה ל-webp במידה הנכונה).
+          כל תמונה חדשה: מריצים את הפרומפט ב-ChatGPT, מורידים PNG, ואז עוברים לשלב 2 (רקע לבן + המרה
+          ל-webp במידה הנכונה).
         </div>
 
         <h3>מיפוי תמונה → עיצוב (ai official)</h3>
@@ -315,22 +323,26 @@
         </p>
         <div class="block">
           <button class="copy" type="button">העתק</button>
-          <pre>magick input.png \
+          <pre>
+magick input.png \
   -fuzz 14% -fill white \
   -draw "color 0,0 floodfill" \
   -draw "color %[fx:w-1],0 floodfill" \
   -draw "color 0,%[fx:h-1] floodfill" \
   -draw "color %[fx:w-1],%[fx:h-1] floodfill" \
   -resize 900x -quality 86 \
-  site/assets/designs/&lt;id&gt;/cover.webp</pre>
+  site/assets/designs/&lt;id&gt;/cover.webp</pre
+          >
         </div>
 
         <h3>תמונות גלריה חדות לעמוד המוצר (~1100px)</h3>
         <div class="block">
           <button class="copy" type="button">העתק</button>
-          <pre>magick -density 200 -background white input.png \
+          <pre>
+magick -density 200 -background white input.png \
   -resize 1100x -quality 88 \
-  site/assets/designs/&lt;id&gt;/gallery-front.webp</pre>
+  site/assets/designs/&lt;id&gt;/gallery-front.webp</pre
+          >
         </div>
 
         <h3>תמונות הירו (רוחב מלא, ~1600px)</h3>
@@ -361,7 +373,8 @@
         <h3>הסקריפט (Python)</h3>
         <div class="block">
           <button class="copy" type="button">העתק</button>
-          <pre>import csv, random, math
+          <pre>
+import csv, random, math
 
 def build_csv(words, out, shuffle=True, seed=42):
     seen = set()
@@ -376,7 +389,8 @@ def build_csv(words, out, shuffle=True, seed=42):
     with open(out, 'w', encoding='utf-8', newline='') as f:
         wr = csv.writer(f); wr.writerow(headers)
         for p in range(pages):
-            wr.writerow(padded[p * PER:(p + 1) * PER])</pre>
+            wr.writerow(padded[p * PER:(p + 1) * PER])</pre
+          >
         </div>
       </section>
 
@@ -386,8 +400,8 @@ def build_csv(words, out, shuffle=True, seed=42):
         <ul>
           <li>קלפים: נייר <strong>300 גרם</strong>, צבע.</li>
           <li>
-            קריטי: להדפיס ב<strong>גודל מקורי 100%</strong> — לא "התאם לעמוד" (אחרת הקלפים לא
-            יתאימו לגזירה).
+            קריטי: להדפיס ב<strong>גודל מקורי 100%</strong> — לא "התאם לעמוד" (אחרת הקלפים לא יתאימו
+            לגזירה).
           </li>
           <li>כולל קווי גזירה + הוראות גזירה בקובץ.</li>
           <li>אספקה: הקובץ נשלח עד 24 שעות מרגע קבלת רשימת המילים (לא מרגע התשלום).</li>
@@ -395,8 +409,7 @@ def build_csv(words, out, shuffle=True, seed=42):
       </section>
 
       <footer>
-        פלייבוק פנימי · לעדכן כשמשתנה תהליך. לא לפרסם, לא להעלות ל-<code class="inline"
-          >site/</code
+        פלייבוק פנימי · לעדכן כשמשתנה תהליך. לא לפרסם, לא להעלות ל-<code class="inline">site/</code
         >.
       </footer>
     </div>

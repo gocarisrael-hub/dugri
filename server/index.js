@@ -11,6 +11,7 @@ const pelecard = require('./pelecard');
 const notify = require('./notify');
 const validate = require('./validate');
 const templates = require('./templates');
+const playbook = require('./playbook');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -329,6 +330,34 @@ app.post('/api/admin/collections/:id/custom', (req, res) => {
   const base = paymentBaseUrl();
   const payLink = base ? base + '/collect.html?c=' + c.id + '&k=' + c.owner_token : null;
   res.json({ order, pay_link: payLink });
+});
+
+// Admin: operational playbook / notebook. The owner's organized notes (recipes,
+// prompts, reminders) — read + add + edit + delete, all behind the admin key.
+// Data persists under DATA_DIR (see server/playbook.js). The static page shell is
+// site/admin-playbook.html; it holds no content until it loads this gated API.
+app.get('/api/admin/playbook', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ notes: playbook.list() });
+});
+app.post('/api/admin/playbook', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { section, title, body, pinned } = req.body || {};
+  if (!String(title || '').trim() && !String(body || '').trim()) {
+    return res.status(400).json({ error: 'title or body required' });
+  }
+  res.status(201).json({ note: playbook.add({ section, title, body, pinned }) });
+});
+app.patch('/api/admin/playbook/:id', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const note = playbook.update(req.params.id, req.body || {});
+  if (!note) return res.status(404).json({ error: 'not found' });
+  res.json({ note });
+});
+app.delete('/api/admin/playbook/:id', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (!playbook.remove(req.params.id)) return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true });
 });
 
 // Admin: generate the full print-ready PDF for a collection. The admin supplies
