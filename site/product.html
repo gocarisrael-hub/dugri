@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Google Analytics (GA4) — loads after consent (js/consent.js) -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('consent', 'default', { analytics_storage: 'denied' });
+    </script>
+    <script src="js/consent.js" defer></script>
+    <script type="module" src="js/analytics.js"></script>
+    <title>עמוד מוצר · דוגרי</title>
+    <meta
+      name="description"
+      content="עמוד המוצר של דוגרי — גלריית תמונות, פרטי העיצוב ומה כלול בחבילה. בוחרים עיצוב וממשיכים להזמנה."
+    />
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Heebo:wght@600;700;800;900&display=swap"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600&family=Heebo:wght@600;700;800;900&display=swap"
+      />
+    </noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/carousel.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--ink);
+        line-height: 1.6;
+        font-size: 17px;
+        -webkit-font-smoothing: antialiased;
+        padding-top: 58px;
+      }
+      .wrap {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 0 22px;
+      }
+      h1,
+      h2,
+      h3,
+      h4 {
+        font-family: var(--display);
+        line-height: 1.15;
+        font-weight: 800;
+        letter-spacing: -0.015em;
+      }
+      a {
+        color: inherit;
+      }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      /* ---- shared button (matches products.html) ---- */
+      .btn {
+        position: relative;
+        overflow: hidden;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 17.5px;
+        letter-spacing: -0.01em;
+        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        padding: 16px 32px;
+        border-radius: 999px;
+        text-decoration: none;
+        white-space: nowrap;
+        box-shadow: 0 10px 24px rgba(92, 115, 87, 0.28);
+        transition:
+          transform 0.14s ease,
+          box-shadow 0.25s ease,
+          filter 0.2s ease;
+      }
+      .btn::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        inset-inline-start: -130%;
+        width: 60%;
+        height: 100%;
+        background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+        transform: skewX(-18deg);
+        transition: inset-inline-start 0.55s ease;
+      }
+      .btn:hover::after {
+        inset-inline-start: 130%;
+      }
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 18px 36px rgba(92, 115, 87, 0.36);
+        filter: brightness(1.04);
+      }
+      .btn:active {
+        transform: translateY(0) scale(0.99);
+      }
+      .btn:focus-visible {
+        outline: 3px solid var(--sage);
+        outline-offset: 3px;
+      }
+      .btn.ghost {
+        background: none;
+        color: var(--sage-deep);
+        box-shadow: none;
+        padding: 16px 12px;
+      }
+      .btn.ghost::after {
+        display: none;
+      }
+      .btn.ghost:hover {
+        background: none;
+        transform: none;
+        filter: none;
+        color: var(--sage-deeper);
+        text-decoration: underline;
+      }
+      a:focus-visible {
+        outline: 3px solid var(--sage);
+        outline-offset: 3px;
+        border-radius: 8px;
+      }
+
+      /* ---- shared nav (copied from products.html) ---- */
+      .nav {
+        position: fixed;
+        top: 0;
+        inset-inline: 0;
+        z-index: 80;
+        background: rgba(255, 255, 255, 0.94);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--line);
+        box-shadow: 0 6px 20px rgba(35, 32, 28, 0.07);
+      }
+      .nav-inner {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 8px 18px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .nav-logo {
+        display: flex;
+        align-items: center;
+      }
+      .nav-logo img {
+        height: 34px;
+        width: auto;
+        display: block;
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-inline-start: auto;
+      }
+      .nav-links a {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 15.5px;
+        color: var(--sage-deep);
+        padding: 8px 12px;
+        border-radius: 10px;
+        text-decoration: none;
+        transition:
+          background 0.18s ease,
+          color 0.18s ease;
+      }
+      .nav-links a:hover {
+        background: var(--section);
+        color: var(--sage-deeper);
+      }
+      .nav-links a.nav-cta {
+        background: linear-gradient(135deg, var(--sage), var(--sage-deep));
+        color: #fff;
+        padding: 9px 20px;
+        box-shadow: 0 6px 16px rgba(92, 115, 87, 0.24);
+      }
+      .nav-links a.nav-cta:hover {
+        filter: brightness(1.05);
+        color: #fff;
+      }
+      .nav-toggle {
+        display: none;
+        margin-inline-start: auto;
+        background: none;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        width: 42px;
+        height: 40px;
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+      }
+      .nav-toggle span,
+      .nav-toggle span::before,
+      .nav-toggle span::after {
+        display: block;
+        width: 20px;
+        height: 2px;
+        background: var(--sage-deep);
+        position: relative;
+        transition:
+          transform 0.2s ease,
+          opacity 0.2s ease;
+      }
+      .nav-toggle span::before {
+        content: '';
+        position: absolute;
+        top: -6px;
+      }
+      .nav-toggle span::after {
+        content: '';
+        position: absolute;
+        top: 6px;
+      }
+      @media (max-width: 640px) {
+        .nav-toggle {
+          display: flex;
+        }
+        .nav-links {
+          position: absolute;
+          top: 100%;
+          inset-inline: 0;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0;
+          background: rgba(255, 255, 255, 0.98);
+          border-bottom: 1px solid var(--line);
+          box-shadow: 0 14px 28px rgba(35, 32, 28, 0.12);
+          padding: 8px 14px 14px;
+          margin: 0;
+          display: none;
+        }
+        .nav-links.open {
+          display: flex;
+        }
+        .nav-links a {
+          padding: 13px 10px;
+          border-radius: 10px;
+        }
+        .nav-links a.nav-cta {
+          margin-top: 6px;
+          text-align: center;
+          justify-content: center;
+        }
+      }
+
+      /* ---- page layout ---- */
+      main {
+        padding-bottom: 40px;
+      }
+      .pdp {
+        padding: 26px 0 8px;
+      }
+
+      /* ---- 1. PHOTO GALLERY ---- */
+      .pdp-gallery {
+        position: relative;
+        border-radius: 22px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow-md);
+        background: var(--section);
+      }
+      /* the carousel track fills the frame; each slide is one full-width photo. */
+      #galleryTrack.carousel-track {
+        gap: 0;
+      }
+      .pdp-gallery-slide {
+        width: 100%;
+        aspect-ratio: 841.92 / 595.5;
+        background: var(--section);
+      }
+      .pdp-gallery-slide img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      /* dots sit over the image, bottom-centered */
+      .pdp-gallery-dots {
+        position: absolute;
+        inset-block-end: 6px;
+        inset-inline: 0;
+        z-index: 2;
+        pointer-events: none;
+      }
+      .pdp-gallery-dots .carousel-dots {
+        pointer-events: auto;
+        padding: 8px 0;
+      }
+      .pdp-gallery-dots .carousel-dot {
+        background: rgba(255, 255, 255, 0.7);
+        box-shadow: 0 1px 3px rgba(35, 32, 28, 0.3);
+      }
+      .pdp-gallery-dots .carousel-dot.is-active,
+      .pdp-gallery-dots .carousel-dot[aria-current='true'] {
+        background: var(--sage-deep);
+      }
+
+      /* ---- 2. TITLE + PRICE ---- */
+      .pdp-head {
+        margin-top: 20px;
+      }
+      .pdp-head h1 {
+        font-size: 30px;
+        font-weight: 800;
+        color: var(--ink);
+      }
+      @media (min-width: 640px) {
+        .pdp-head h1 {
+          font-size: 38px;
+        }
+      }
+      .pdp-price {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin-top: 10px;
+        flex-wrap: wrap;
+      }
+      .pdp-price .now {
+        font-family: var(--display);
+        font-size: 34px;
+        font-weight: 900;
+        color: var(--sage-deep);
+        letter-spacing: -0.02em;
+      }
+      .pdp-price .was {
+        color: var(--muted);
+        text-decoration: line-through;
+        font-weight: 700;
+        font-size: 18px;
+      }
+
+      /* ---- 3. SECTIONS ---- */
+      .pdp-sec {
+        margin-top: 26px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 22px 22px 24px;
+        box-shadow: var(--shadow-sm);
+      }
+      .pdp-sec h2 {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 21px;
+        font-weight: 800;
+        color: var(--sage-deeper);
+        margin-bottom: 12px;
+      }
+      .pdp-sec p {
+        color: var(--muted);
+        font-size: 16px;
+      }
+      .pdp-sec .sec-icon {
+        width: 26px;
+        height: 26px;
+        flex: 0 0 auto;
+        color: var(--sage-deep);
+      }
+      .pdp-list {
+        list-style: none;
+        display: grid;
+        gap: 10px;
+      }
+      .pdp-list li {
+        display: flex;
+        align-items: flex-start;
+        gap: 11px;
+        font-size: 16.5px;
+        color: var(--ink);
+      }
+      .pdp-list li .tick {
+        color: var(--sage-deep);
+        font-weight: 800;
+        font-size: 18px;
+        flex: 0 0 auto;
+        line-height: 1.4;
+      }
+
+      /* buy section */
+      .pdp-buy-sec {
+        text-align: center;
+        background: linear-gradient(160deg, var(--surface), var(--sage-tint));
+      }
+      .pdp-buy-sec .note {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 14.5px;
+      }
+      #pdpBuy {
+        font-size: 19px;
+        padding: 17px 40px;
+      }
+
+      /* ---- 4. RELATED RAIL ---- */
+      .pdp-related {
+        margin-top: 40px;
+        padding-top: 8px;
+        border-top: 1px solid var(--line);
+      }
+      .pdp-related-head {
+        text-align: center;
+        margin: 22px 0 18px;
+      }
+      .pdp-related-head h2 {
+        font-size: 26px;
+        font-weight: 800;
+      }
+      .pdp-related-head p {
+        color: var(--muted);
+        font-size: 15px;
+        margin-top: 4px;
+      }
+      /* PAGE owns card width so a peek of the next card shows (per carousel.css). */
+      #relatedTrack.carousel-track {
+        padding: 4px 0 8px;
+      }
+      .pdp-rel-card {
+        flex-basis: 76%;
+        max-width: 260px;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border: 1.5px solid var(--line);
+        border-radius: 20px;
+        padding: 14px 14px 16px;
+        box-shadow: var(--shadow-sm);
+        text-decoration: none;
+        color: inherit;
+        transition:
+          transform 0.22s ease,
+          box-shadow 0.22s ease,
+          border-color 0.22s ease;
+      }
+      @media (min-width: 560px) {
+        .pdp-rel-card {
+          flex-basis: 46%;
+        }
+      }
+      @media (min-width: 820px) {
+        .pdp-rel-card {
+          flex-basis: 31%;
+        }
+      }
+      .pdp-rel-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-md);
+        border-color: var(--sage);
+      }
+      .pdp-rel-card[aria-current='true'] {
+        border-color: var(--sage);
+        box-shadow: var(--shadow-md);
+      }
+      .pdp-rel-thumb {
+        aspect-ratio: 841.92 / 595.5;
+        width: 100%;
+        border-radius: 14px;
+        overflow: hidden;
+        background: var(--section);
+        border: 1px solid var(--line);
+      }
+      .pdp-rel-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .pdp-rel-name {
+        display: block;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 18px;
+        color: var(--sage-deeper);
+        margin-top: 12px;
+      }
+      .pdp-rel-price {
+        display: block;
+        margin-top: 4px;
+        font-weight: 700;
+        color: var(--ink);
+        font-size: 15px;
+      }
+      .pdp-store-cta {
+        text-align: center;
+        margin-top: 20px;
+      }
+
+      /* ---- footer (copied from products.html) ---- */
+      footer {
+        padding: 30px 0;
+        text-align: center;
+        font-size: 14px;
+        background: var(--ink);
+        color: #e8ddd4;
+        margin-top: 40px;
+      }
+      footer a {
+        color: #fff;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      footer .tag {
+        margin-top: 8px;
+        font-size: 13px;
+        color: #b9aca0;
+      }
+      .foot-icons {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 16px;
+        margin-top: 18px;
+      }
+      .foot-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        color: #fff;
+        text-decoration: none;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+        transition:
+          transform 0.16s ease,
+          box-shadow 0.2s ease,
+          filter 0.2s ease;
+      }
+      .foot-icon:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.06);
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.34);
+      }
+      .foot-icon:focus-visible {
+        outline: 3px solid #fff;
+        outline-offset: 3px;
+      }
+      .foot-icon svg {
+        width: 24px;
+        height: 24px;
+        display: block;
+      }
+      .foot-icon.fi-wa {
+        background: #25d366;
+      }
+      .foot-icon.fi-call {
+        background: linear-gradient(140deg, var(--sage), var(--sage-deep));
+      }
+      .foot-icon.fi-ig {
+        background: radial-gradient(
+          circle at 30% 107%,
+          #fdf497 0%,
+          #fdf497 5%,
+          #fd5949 45%,
+          #d6249f 60%,
+          #285aeb 90%
+        );
+      }
+      .foot-contact {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 22px;
+        justify-content: center;
+        margin-top: 14px;
+        font-size: 14.5px;
+      }
+      .foot-contact a {
+        color: #fff;
+        text-decoration: none;
+        font-weight: 700;
+      }
+      .foot-contact a:hover {
+        text-decoration: underline;
+      }
+      .foot-contact .fc-label {
+        color: #b9aca0;
+        font-weight: 600;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        * {
+          transition-duration: 0.001ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header: reused from products.html (header unification handled separately). -->
+    <nav class="nav" aria-label="ניווט ראשי">
+      <div class="nav-inner">
+        <a class="nav-logo" href="index.html#top" aria-label="דוגרי - לדף הבית"
+          ><img src="assets/logo.png" alt="דוגרי"
+        /></a>
+        <button
+          class="nav-toggle"
+          type="button"
+          data-testid="nav-toggle"
+          aria-expanded="false"
+          aria-controls="navLinks"
+          aria-label="תפריט"
+        >
+          <span></span>
+        </button>
+        <div class="nav-links" id="navLinks" data-testid="nav-links">
+          <a href="products.html">העיצובים שלנו</a>
+          <a href="how.html">איך זה עובד?</a>
+          <a href="index.html#gallery">הצצה</a>
+          <a href="index.html#proof">המלצות</a>
+          <a href="timer.html">טיימר</a>
+          <a class="nav-cta" href="products.html" data-ga="order_started" data-ga-cta="nav"
+            >הזמנה</a
+          >
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <div class="wrap pdp">
+        <!-- 1. PHOTO GALLERY.
+             FILLER photos = this design's product thumbs
+             (assets/designs/<id>/thumb-front.webp, thumb-back.webp, thumb-board.webp;
+             board skipped when absent, e.g. kids), wired by js/product.js.
+             OWNER: replace these with real product photos at
+             assets/products/<id>/1.jpg, 2.jpg, 3.jpg… (update galleryPhotos()
+             in js/product.js to point at them). -->
+        <section class="pdp-gallery" data-testid="pdp-gallery" aria-label="גלריית תמונות המוצר">
+          <div id="galleryTrack">
+            <!-- gallery slides injected by js/product.js -->
+          </div>
+          <div class="pdp-gallery-dots" id="galleryDots"></div>
+        </section>
+
+        <!-- 2. TITLE + PRICE -->
+        <div class="pdp-head">
+          <h1 id="pdpTitle">המשחק המותאם אישית</h1>
+          <div class="pdp-price">
+            <span class="now" id="pdpPriceNow">79 ₪</span>
+            <span class="was" id="pdpPriceWas">129 ₪</span>
+          </div>
+        </div>
+
+        <!-- 3a. ABOUT THIS DESIGN -->
+        <section class="pdp-sec">
+          <h2>על העיצוב</h2>
+          <p id="pdpAbout">
+            אותו משחק דוגרי בעיצוב ייחודי — חפיסת קלפים ולוח מותאמים אישית מהמילים, הבדיחות והרגעים
+            שרק אתם מכירים.
+          </p>
+        </section>
+
+        <!-- 3b. WHAT'S INSIDE -->
+        <section class="pdp-sec">
+          <h2>
+            <!-- OWNER: swap in the real icon at assets/icons/whats-inside.svg -->
+            <img class="sec-icon" src="assets/icons/whats-inside.svg" alt="" aria-hidden="true" />
+            מה בפנים
+          </h2>
+          <ul class="pdp-list">
+            <li><span class="tick" aria-hidden="true">✓</span> חפיסת קלפים מותאמת אישית</li>
+            <li><span class="tick" aria-hidden="true">✓</span> לוח משחק</li>
+            <li><span class="tick" aria-hidden="true">✓</span> דף חוקים</li>
+            <li><span class="tick" aria-hidden="true">✓</span> הוראות הדפסה וגזירה</li>
+            <li><span class="tick" aria-hidden="true">✓</span> דף עזר לאיסוף מילים</li>
+          </ul>
+        </section>
+
+        <!-- 3c. BUY NOW -->
+        <section class="pdp-sec pdp-buy-sec">
+          <a
+            class="btn"
+            id="pdpBuy"
+            href="options.html"
+            data-testid="pdp-buy"
+            data-ga="order_started"
+            data-ga-cta="pdp"
+            >קנו עכשיו</a
+          >
+          <p class="note">מבצע השקה · אספקה תוך 24 שעות · ללא הגבלת מילים</p>
+        </section>
+      </div>
+
+      <!-- 4. RELATED PRODUCTS RAIL -->
+      <section class="pdp-related" data-testid="pdp-related" aria-label="עוד עיצובים">
+        <div class="wrap">
+          <div class="pdp-related-head">
+            <h2>עוד עיצובים</h2>
+            <p>אותו משחק, כל עיצוב במגוון צבעים</p>
+          </div>
+          <div id="relatedTrack">
+            <!-- related cards injected by js/product.js -->
+          </div>
+          <div class="pdp-store-cta">
+            <a class="btn ghost" href="products.html">מעבר אל החנות ›</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <p>דוגרי</p>
+        <div class="foot-icons">
+          <a
+            class="foot-icon fi-wa"
+            id="waLink"
+            href="https://wa.me/972546577715"
+            target="_blank"
+            rel="noopener"
+            aria-label="וואטסאפ"
+            data-ga="contact_click"
+            data-ga-channel="whatsapp"
+            data-ga-where="footer"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path
+                d="M19.05 4.91A9.82 9.82 0 0 0 12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.91-7.02ZM12.05 20.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23a8.2 8.2 0 0 1 8.23 8.24c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.51.11-.11.25-.29.37-.43.13-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01a.92.92 0 0 0-.66.31c-.23.25-.87.85-.87 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z"
+              />
+            </svg>
+            <span class="visually-hidden">וואטסאפ</span>
+          </a>
+          <a
+            class="foot-icon fi-call"
+            href="tel:+972546577715"
+            aria-label="התקשרו"
+            data-ga="contact_click"
+            data-ga-channel="call"
+            data-ga-where="footer"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path
+                d="M6.62 10.79a15.53 15.53 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.24.2 2.45.57 3.57a1 1 0 0 1-.24 1.02l-2.21 2.2Z"
+              />
+            </svg>
+            <span class="visually-hidden">התקשרו</span>
+          </a>
+          <a
+            class="foot-icon fi-ig"
+            id="igLink"
+            href="https://instagram.com/dugri_israel"
+            target="_blank"
+            rel="noopener"
+            aria-label="אינסטגרם"
+            data-ga="contact_click"
+            data-ga-channel="instagram"
+            data-ga-where="footer"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path
+                d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41a3.72 3.72 0 0 1-1.38-.9 3.72 3.72 0 0 1-.9-1.38c-.16-.42-.36-1.06-.41-2.23C2.17 15.58 2.16 15.2 2.16 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16Zm0 1.62c-3.15 0-3.52.01-4.76.07-1.15.05-1.77.24-2.19.41-.55.21-.94.47-1.35.88-.41.41-.67.8-.88 1.35-.16.42-.36 1.04-.41 2.19-.06 1.24-.07 1.61-.07 4.76s.01 3.52.07 4.76c.05 1.15.24 1.77.41 2.19.21.55.47.94.88 1.35.41.41.8.67 1.35.88.42.16 1.04.36 2.19.41 1.24.06 1.61.07 4.76.07s3.52-.01 4.76-.07c1.15-.05 1.77-.24 2.19-.41.55-.21.94-.47 1.35-.88.41-.41.67-.8.88-1.35.16-.42.36-1.04.41-2.19.06-1.24.07-1.61.07-4.76s-.01-3.52-.07-4.76c-.05-1.15-.24-1.77-.41-2.19a3.63 3.63 0 0 0-.88-1.35 3.63 3.63 0 0 0-1.35-.88c-.42-.16-1.04-.36-2.19-.41-1.24-.06-1.61-.07-4.76-.07Zm0 4.18a5.04 5.04 0 1 0 0 10.08 5.04 5.04 0 0 0 0-10.08Zm0 8.31a3.27 3.27 0 1 1 0-6.54 3.27 3.27 0 0 1 0 6.54Zm6.41-8.51a1.18 1.18 0 1 1-2.36 0 1.18 1.18 0 0 1 2.36 0Z"
+              />
+            </svg>
+            <span class="visually-hidden" id="igLabel">@dugri_israel</span>
+          </a>
+        </div>
+        <div class="foot-contact">
+          <span><span class="fc-label">וואטסאפ / טלפון:</span> 0546577715</span>
+          <span
+            ><span class="fc-label">מייל:</span>
+            <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
+          >
+        </div>
+        <p class="tag">צילמתם? תייגו אותנו</p>
+      </div>
+    </footer>
+
+    <!-- Progressive enhancement: mobile nav toggle (copied from products.html). -->
+    <script>
+      (function () {
+        var navToggle = document.querySelector('.nav-toggle');
+        var navLinks = document.getElementById('navLinks');
+        if (navToggle && navLinks) {
+          navToggle.addEventListener('click', function () {
+            var open = navLinks.classList.toggle('open');
+            navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          });
+          navLinks.querySelectorAll('a').forEach(function (a) {
+            a.addEventListener('click', function () {
+              navLinks.classList.remove('open');
+              navToggle.setAttribute('aria-expanded', 'false');
+            });
+          });
+        }
+      })();
+    </script>
+
+    <!-- Per-product detail rendering: reads ?design=<id> and renders from js/designs.js. -->
+    <script type="module" src="js/product.js"></script>
+  </body>
+</html>
