@@ -15,7 +15,7 @@ test.describe('funnel events', () => {
       });
     });
 
-    await page.locator('.hero-cta a[data-ga="order_started"]').first().click();
+    await page.locator('.hero-slide a[data-ga-cta="hero"]').first().click();
 
     const dataLayer = await page.evaluate(() => window.dataLayer.map((a) => Array.from(a)));
     const found = dataLayer.some(

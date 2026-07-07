@@ -229,7 +229,14 @@ export function initCarousel(root, opts = {}) {
   cleanups.push(stopTimer);
 
   // ---- pointer drag with inertia + snap ----------------------------------
-  let dragging = false;
+  // A press only becomes a drag once the pointer moves past DRAG_THRESHOLD px.
+  // Until then it stays a tap: we do NOT capture the pointer, so a click on a
+  // child link/button inside the track still fires and navigates. (Capturing on
+  // pointerdown retargets the synthesized click to the track and swallows it.)
+  const DRAG_THRESHOLD = 6;
+  let pressed = false; // pointer is down inside the track
+  let captured = false; // we've taken pointer capture for an active drag
+  let dragging = false; // the press has been promoted to a drag
   let startX = 0;
   let startScroll = 0;
   let lastX = 0;
@@ -246,23 +253,34 @@ export function initCarousel(root, opts = {}) {
 
   function onPointerDown(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return; // primary button only
-    dragging = true;
+    pressed = true;
+    dragging = false; // stays a tap until the pointer moves past the threshold
+    captured = false;
     startX = lastX = e.clientX;
     lastT = e.timeStamp || Date.now();
     startScroll = root.scrollLeft;
     velocity = 0;
     cancelMomentum();
-    if (mode === 'slideshow') pause();
-    root.classList.add('is-dragging');
-    try {
-      root.setPointerCapture && root.setPointerCapture(e.pointerId);
-    } catch {
-      /* not supported */
-    }
   }
   function onPointerMove(e) {
-    if (!dragging) return;
+    if (!pressed) return;
     const x = e.clientX;
+    if (!dragging) {
+      // Not a drag yet — ignore tiny jitter so a tap can still click through.
+      if (Math.abs(x - startX) < DRAG_THRESHOLD) return;
+      // Promote to a real drag: now it's safe to pause + capture the pointer.
+      dragging = true;
+      if (mode === 'slideshow') pause();
+      root.classList.add('is-dragging');
+      try {
+        if (root.setPointerCapture) {
+          root.setPointerCapture(e.pointerId);
+          captured = true;
+        }
+      } catch {
+        /* not supported */
+      }
+    }
     // 1:1 drag: moving the pointer right reveals the previous card.
     root.scrollLeft = startScroll - (x - startX);
     const now = e.timeStamp || Date.now();
@@ -272,14 +290,21 @@ export function initCarousel(root, opts = {}) {
     lastT = now;
   }
   function onPointerUp(e) {
-    if (!dragging) return;
+    if (!pressed) return;
+    pressed = false;
+    const wasDragging = dragging;
     dragging = false;
     root.classList.remove('is-dragging');
-    try {
-      root.releasePointerCapture && root.releasePointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
+    if (captured) {
+      captured = false;
+      try {
+        root.releasePointerCapture && root.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
     }
+    // A plain tap never scrolled or paused — leave it alone so the click lands.
+    if (!wasDragging) return;
     applyMomentum();
     if (mode === 'slideshow') play();
   }
