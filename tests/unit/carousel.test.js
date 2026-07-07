@@ -3,6 +3,8 @@ import {
   initCarousel,
   nearestByCenter,
   turboBoostPx,
+  realIndexFromClonedIndex,
+  loopJumpCount,
   TURBO_THRESHOLD,
   TURBO_GAIN,
 } from '../../site/js/carousel.js';
@@ -85,6 +87,75 @@ describe('turboBoostPx — velocity → initial momentum boost', () => {
   it('guards non-finite input → 0', () => {
     expect(turboBoostPx(NaN)).toBe(0);
     expect(turboBoostPx(undefined)).toBe(0);
+  });
+});
+
+describe('realIndexFromClonedIndex — clone → real dot mapping', () => {
+  it('maps the real set (no prepend) to itself', () => {
+    for (let i = 0; i < 3; i++) expect(realIndexFromClonedIndex(i, 3, 0)).toBe(i);
+  });
+
+  it('maps append clones back to their original real index', () => {
+    // Layout with prepend=3: [P0 P1 P2][R0 R1 R2][A0 A1 A2] at child indices 0..8.
+    expect(realIndexFromClonedIndex(3, 3, 3)).toBe(0); // R0
+    expect(realIndexFromClonedIndex(5, 3, 3)).toBe(2); // R2
+    expect(realIndexFromClonedIndex(6, 3, 3)).toBe(0); // A0 → dot 0
+    expect(realIndexFromClonedIndex(8, 3, 3)).toBe(2); // A2 → dot 2
+  });
+
+  it('maps prepend clones back too (negative offset wraps positively)', () => {
+    expect(realIndexFromClonedIndex(0, 3, 3)).toBe(0); // P0 → dot 0
+    expect(realIndexFromClonedIndex(2, 3, 3)).toBe(2); // P2 → dot 2
+  });
+
+  it('handles multiple clone sets on each side', () => {
+    // prepend=6 (two sets of 3): child 12 is A0 of the first append set.
+    expect(realIndexFromClonedIndex(12, 3, 6)).toBe(0);
+    expect(realIndexFromClonedIndex(13, 3, 6)).toBe(1);
+  });
+
+  it('guards a non-positive count → 0', () => {
+    expect(realIndexFromClonedIndex(5, 0, 0)).toBe(0);
+    expect(realIndexFromClonedIndex(5, -2, 0)).toBe(0);
+  });
+});
+
+describe('loopJumpCount — seamless recenter math', () => {
+  it('no jump while inside the home band (|d| < period)', () => {
+    expect(loopJumpCount(0, 100)).toBe(0);
+    expect(loopJumpCount(99, 100)).toBe(0);
+    expect(loopJumpCount(-99, 100)).toBe(0);
+  });
+
+  it('jumps back one period once a full set has been scrolled forward', () => {
+    // d reaches −period at the end of a full loop → jump +1 period to recenter.
+    expect(loopJumpCount(-100, 100)).toBe(1);
+    expect(loopJumpCount(-150, 100)).toBe(1);
+  });
+
+  it('jumps the other way when scrolled a full set backward', () => {
+    expect(loopJumpCount(100, 100)).toBe(-1);
+    expect(loopJumpCount(150, 100)).toBe(-1);
+  });
+
+  it('handles multi-period overshoot (fast fling) in one correction', () => {
+    expect(loopJumpCount(-260, 100)).toBe(2);
+    expect(loopJumpCount(310, 100)).toBe(-3);
+  });
+
+  it('applying the jump lands the offset back inside the band', () => {
+    const period = 100;
+    for (const d of [-260, -100, -1, 0, 1, 100, 310]) {
+      const settled = d + loopJumpCount(d, period) * period;
+      expect(Math.abs(settled)).toBeLessThan(period);
+    }
+  });
+
+  it('guards a non-positive period or non-finite offset → 0', () => {
+    expect(loopJumpCount(500, 0)).toBe(0);
+    expect(loopJumpCount(500, -100)).toBe(0);
+    expect(loopJumpCount(NaN, 100)).toBe(0);
+    expect(loopJumpCount(Infinity, 100)).toBe(0);
   });
 });
 

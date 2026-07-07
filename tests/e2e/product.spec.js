@@ -52,7 +52,9 @@ test.describe('product detail page', () => {
     await page.goto('/product.html?design=bachelorette');
 
     const rail = page.getByTestId('pdp-related');
-    const cards = rail.locator('a.pdp-rel-card');
+    // Real cards only — the endless-loop engine adds aria-hidden clones
+    // ([data-carousel-clone]) so the rail wraps seamlessly.
+    const cards = rail.locator('a.pdp-rel-card:not([data-carousel-clone])');
     await expect(cards).toHaveCount(7);
 
     const hrefs = await cards.evaluateAll((els) => els.map((a) => a.getAttribute('href')));
@@ -62,10 +64,14 @@ test.describe('product detail page', () => {
     }
 
     // The current design is marked in its own rail card.
-    await expect(rail.locator('.pdp-rel-card[aria-current="true"]')).toHaveCount(1);
+    await expect(
+      rail.locator('.pdp-rel-card[aria-current="true"]:not([data-carousel-clone])')
+    ).toHaveCount(1);
 
     // Clicking a related card navigates to that design's detail page.
-    await page.locator('.pdp-rel-card[href="product.html?design=birthday"]').click();
+    await page
+      .locator('.pdp-rel-card[href="product.html?design=birthday"]:not([data-carousel-clone])')
+      .click();
     await page.waitForURL(/product\.html\?design=birthday/);
     await expect(page.getByTestId('pdp-buy')).toHaveAttribute(
       'href',
