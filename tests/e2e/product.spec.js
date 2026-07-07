@@ -90,4 +90,58 @@ test.describe('product detail page', () => {
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   });
+
+  test('the header has a back-to-store control pointing at products.html', async ({ page }) => {
+    await page.goto('/product.html?design=bachelorette');
+    const back = page.getByTestId('pdp-back');
+    await expect(back).toBeVisible();
+    await expect(back).toHaveAttribute('href', 'products.html');
+  });
+
+  test('the back control returns to the store (history-aware from within the site)', async ({
+    page,
+  }) => {
+    // Arrive at the product page FROM the store, so back should return there.
+    await page.goto('/products.html');
+    await page.goto('/product.html?design=bachelorette');
+    await page.getByTestId('pdp-back').click();
+    await page.waitForURL(/\/products\.html$/);
+  });
+
+  test('the enlarge button opens a fullscreen overlay with the swipeable images', async ({
+    page,
+  }) => {
+    await page.goto('/product.html?design=bachelorette');
+
+    const overlay = page.getByTestId('pdp-zoom');
+    await expect(overlay).toBeHidden();
+
+    // A visible enlarge affordance sits over the gallery.
+    const enlarge = page.getByTestId('gallery-enlarge');
+    await expect(enlarge).toBeVisible();
+    await enlarge.click();
+
+    // Overlay opens with a swipeable track of the SAME gallery images + dots.
+    await expect(overlay).toBeVisible();
+    const slides = overlay.locator('.pdp-zoom-slide img');
+    await expect(slides.first()).toBeVisible();
+    expect(await slides.count()).toBeGreaterThan(1);
+    await expect(overlay.locator('.carousel-dots .carousel-dot').first()).toBeVisible();
+
+    // Body scroll is locked while the overlay is open.
+    await expect(page.locator('body')).toHaveCSS('overflow', 'hidden');
+
+    // Close via the close control restores the page.
+    await page.getByTestId('pdp-zoom-close').click();
+    await expect(overlay).toBeHidden();
+    await expect(page.locator('body')).not.toHaveCSS('overflow', 'hidden');
+  });
+
+  test('Esc closes the enlarge overlay', async ({ page }) => {
+    await page.goto('/product.html?design=bachelorette');
+    await page.getByTestId('gallery-enlarge').click();
+    await expect(page.getByTestId('pdp-zoom')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('pdp-zoom')).toBeHidden();
+  });
 });

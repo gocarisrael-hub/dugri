@@ -258,6 +258,182 @@
         background: var(--sage-deep);
       }
 
+      /* ---- header: back-to-store (leading edge) ---- */
+      /* Group the back link + hamburger together at the row's inline-start (right
+         in RTL) so the absolutely-centered logo never collides with them. */
+      .hdr-lead {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .pdp-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 40px;
+        padding: 0 14px 0 12px;
+        font-family: var(--display);
+        font-weight: 500;
+        font-size: 14px;
+        letter-spacing: 0.02em;
+        color: var(--ink);
+        text-decoration: none;
+        background: none;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        transition:
+          background 0.18s var(--ease),
+          border-color 0.18s var(--ease),
+          color 0.18s var(--ease);
+      }
+      .pdp-back:hover,
+      .pdp-back:focus-visible {
+        background: var(--section);
+        border-color: var(--sage);
+        color: var(--sage-deeper);
+      }
+      .pdp-back svg {
+        width: 18px;
+        height: 18px;
+        display: block;
+        flex: 0 0 auto;
+      }
+      /* On the narrowest phones drop the word, keep the arrow as a compact icon. */
+      @media (max-width: 380px) {
+        .pdp-back span {
+          display: none;
+        }
+        .pdp-back {
+          padding: 0;
+          width: 40px;
+          justify-content: center;
+        }
+      }
+
+      /* ---- gallery: enlarge affordance ---- */
+      .pdp-gallery-zoom {
+        position: absolute;
+        z-index: 3;
+        inset-block-start: 10px;
+        inset-inline-end: 10px;
+        width: 42px;
+        height: 42px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        background: rgba(20, 18, 20, 0.6);
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        transition:
+          background 0.18s var(--ease),
+          transform 0.16s var(--ease);
+      }
+      .pdp-gallery-zoom:hover {
+        background: var(--sage-deep);
+      }
+      .pdp-gallery-zoom:active {
+        transform: scale(0.94);
+      }
+      .pdp-gallery-zoom:focus-visible {
+        outline: 3px solid #fff;
+        outline-offset: 2px;
+      }
+      .pdp-gallery-zoom svg {
+        width: 22px;
+        height: 22px;
+        display: block;
+      }
+
+      /* ---- fullscreen zoom overlay ---- */
+      .pdp-zoom {
+        position: fixed;
+        inset: 0;
+        z-index: 120; /* above the fixed header (80) */
+        background: rgba(20, 18, 20, 0.95);
+      }
+      .pdp-zoom[hidden] {
+        display: none;
+      }
+      /* The swipeable track fills the overlay; slides are full-viewport, so a
+         finger-drag advances between front / back / board (shared carousel). */
+      #pdpZoomTrack {
+        position: absolute;
+        inset: 0;
+      }
+      #pdpZoomTrack.carousel-track {
+        gap: 0;
+      }
+      .pdp-zoom-slide {
+        flex: 0 0 100%;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: max(env(safe-area-inset-top, 0px), 60px) 20px 64px;
+      }
+      .pdp-zoom-slide img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        display: block;
+        border-radius: var(--radius);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      }
+      .pdp-zoom-dots {
+        position: absolute;
+        z-index: 2;
+        inset-block-end: calc(env(safe-area-inset-bottom, 0px) + 14px);
+        inset-inline: 0;
+        pointer-events: none;
+      }
+      .pdp-zoom-dots .carousel-dots {
+        pointer-events: auto;
+      }
+      .pdp-zoom-dots .carousel-dot {
+        background: rgba(255, 255, 255, 0.45);
+      }
+      .pdp-zoom-dots .carousel-dot.is-active,
+      .pdp-zoom-dots .carousel-dot[aria-current='true'] {
+        background: #fff;
+      }
+      .pdp-zoom-close {
+        position: absolute;
+        z-index: 3;
+        inset-block-start: calc(env(safe-area-inset-top, 0px) + 12px);
+        inset-inline-end: 12px;
+        width: 46px;
+        height: 46px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        background: rgba(255, 255, 255, 0.16);
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        transition: background 0.16s var(--ease);
+      }
+      .pdp-zoom-close:hover {
+        background: rgba(255, 255, 255, 0.3);
+      }
+      .pdp-zoom-close:focus-visible {
+        outline: 3px solid #fff;
+        outline-offset: 2px;
+      }
+      .pdp-zoom-close svg {
+        width: 24px;
+        height: 24px;
+        display: block;
+      }
+
       /* ---- 2. TITLE + PRICE ---- */
       .pdp-head {
         margin-top: 20px;
@@ -555,20 +731,37 @@
   <body>
     <header class="hdr" aria-label="ניווט ראשי">
       <div class="hdr-inner">
-        <button
-          class="hdr-toggle"
-          type="button"
-          data-testid="nav-toggle"
-          aria-expanded="false"
-          aria-controls="navMenu"
-          aria-label="תפריט"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-            <line x1="4" y1="7" x2="20" y2="7" stroke-width="2" stroke-linecap="round" />
-            <line x1="4" y1="12" x2="20" y2="12" stroke-width="2" stroke-linecap="round" />
-            <line x1="4" y1="17" x2="20" y2="17" stroke-width="2" stroke-linecap="round" />
-          </svg>
-        </button>
+        <div class="hdr-lead">
+          <!-- Back to store: leading-edge affordance so the shopper can return to
+               products.html from a product page. Prefers history.back() when the
+               shopper arrived from within the site (see js/product.js); the href
+               keeps it a real link (and the fallback) for a fresh/deep-link tab. -->
+          <a class="pdp-back" href="products.html" data-testid="pdp-back" aria-label="חזרה לחנות">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <path
+                d="M9 6l6 6-6 6"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span>לחנות</span>
+          </a>
+          <button
+            class="hdr-toggle"
+            type="button"
+            data-testid="nav-toggle"
+            aria-expanded="false"
+            aria-controls="navMenu"
+            aria-label="תפריט"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <line x1="4" y1="7" x2="20" y2="7" stroke-width="2" stroke-linecap="round" />
+              <line x1="4" y1="12" x2="20" y2="12" stroke-width="2" stroke-linecap="round" />
+              <line x1="4" y1="17" x2="20" y2="17" stroke-width="2" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
         <a class="hdr-logo" href="index.html" aria-label="דוגרי - לדף הבית"
           ><img src="assets/logo.png" alt="דוגרי"
         /></a>
@@ -611,6 +804,24 @@
             <!-- gallery slides injected by js/product.js -->
           </div>
           <div class="pdp-gallery-dots" id="galleryDots"></div>
+          <!-- Enlarge: opens the current photo in the fullscreen zoom overlay,
+               where the shopper can swipe between front / back / board. -->
+          <button
+            class="pdp-gallery-zoom"
+            type="button"
+            id="galleryZoomOpen"
+            data-testid="gallery-enlarge"
+            aria-label="הגדלת התמונה"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <path
+                d="M9 4H5a1 1 0 0 0-1 1v4M15 4h4a1 1 0 0 1 1 1v4M9 20H5a1 1 0 0 1-1-1v-4M15 20h4a1 1 0 0 0 1-1v-4"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
         </section>
 
         <!-- 2. TITLE + PRICE -->
@@ -745,6 +956,30 @@
         <p class="tag">צילמתם? תייגו אותנו</p>
       </div>
     </footer>
+
+    <!-- FULLSCREEN GALLERY ZOOM OVERLAY.
+         A swipeable track of the SAME gallery images (front / back / board),
+         driven by the shared carousel engine (slideshow mode) so a finger-drag
+         moves between views exactly like the site carousels. Slides + dots are
+         injected by js/product.js; the enlarge button opens it on whichever
+         image the gallery is showing. -->
+    <div class="pdp-zoom" id="pdpZoom" data-testid="pdp-zoom" hidden>
+      <div id="pdpZoomTrack">
+        <!-- zoom slides injected by js/product.js -->
+      </div>
+      <div class="pdp-zoom-dots" id="pdpZoomDots"></div>
+      <button
+        class="pdp-zoom-close"
+        type="button"
+        id="pdpZoomClose"
+        data-testid="pdp-zoom-close"
+        aria-label="סגירה"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18" stroke-width="2" stroke-linecap="round" />
+        </svg>
+      </button>
+    </div>
 
     <!-- Per-product detail rendering: reads ?design=<id> and renders from js/designs.js. -->
     <script type="module" src="js/product.js"></script>
