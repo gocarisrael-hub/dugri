@@ -277,5 +277,49 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
 
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
     await expect(page.locator('#zoomContent img')).toBeVisible();
+    // opens on the card view (nothing was swiped)
+    await expect(page.getByTestId('zoom-tab-card')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('tapping after a swipe opens the zoom on the CURRENT view, not the card', async ({
+    page,
+  }) => {
+    await mockPreview(page);
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+    await expect(page.getByTestId('name-preview-card')).toBeVisible();
+
+    // swipe the inline carousel to the board view
+    await swipe(page, 300, 60); // → back
+    await swipe(page, 300, 60); // → board
+    await expect.poll(() => activeView(page)).toBe('board');
+
+    // tap the viewport → zoom must open on BOARD (the view under the finger)
+    const vp = page.getByTestId('name-preview-viewport');
+    await vp.dispatchEvent('pointerdown', { clientX: 200, clientY: 200 });
+    await vp.dispatchEvent('pointerup', { clientX: 202, clientY: 201 });
+
+    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
+    await expect(page.getByTestId('zoom-tab-board')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('zoom-tab-card')).toHaveAttribute('aria-selected', 'false');
+  });
+
+  test('a tap that slides slightly (below the swipe threshold) still opens the zoom', async ({
+    page,
+  }) => {
+    await mockPreview(page);
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+    await expect(page.getByTestId('name-preview-card')).toBeVisible();
+
+    const vp = page.getByTestId('name-preview-viewport');
+    // ~20px of horizontal slide: not a swipe (< 45px threshold), but it must not
+    // fall into a dead zone — it should still register as a tap and open the zoom.
+    await vp.dispatchEvent('pointerdown', { clientX: 200, clientY: 200 });
+    await vp.dispatchEvent('pointerup', { clientX: 220, clientY: 205 });
+
+    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
+    // no view change (below swipe threshold) → still the card
+    await expect(page.getByTestId('zoom-tab-card')).toHaveAttribute('aria-selected', 'true');
   });
 });

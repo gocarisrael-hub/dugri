@@ -3366,10 +3366,10 @@
       }
 
       // Touch/mouse swipe + tap-to-zoom on the viewport. A horizontal drag past
-      // the threshold navigates; anything smaller is treated as a tap and opens the
-      // fullscreen zoom (the dedicated "הגדלה" button remains the primary control).
+      // the threshold navigates; any other tap/click that isn't a vertical scroll
+      // enlarges the CURRENT view. The dedicated "הגדלה" button stays the primary
+      // control.
       const NP_SWIPE_MIN = 45; // px
-      const NP_TAP_MOVE_MAX = 10; // px
       if (namePreviewViewport) {
         let npDownX = 0;
         let npDownY = 0;
@@ -3378,6 +3378,14 @@
           npDown = true;
           npDownX = e.clientX;
           npDownY = e.clientY;
+          // Capture the pointer so a drag-swipe whose pointerup lands outside the
+          // narrow viewport still fires here (touch captures implicitly; this
+          // matters for mouse drags). Ignore if the pointer isn't capturable.
+          try {
+            namePreviewViewport.setPointerCapture(e.pointerId);
+          } catch {
+            /* non-capturable pointer — swipe still works within the box */
+          }
         });
         namePreviewViewport.addEventListener('pointerup', (e) => {
           if (!npDown) return;
@@ -3389,8 +3397,10 @@
             npAdjacent(dx < 0 ? 1 : -1);
             return;
           }
-          // a genuine tap (barely moved) → open the fullscreen zoom
-          if (Math.hypot(dx, dy) <= NP_TAP_MOVE_MAX) openNameZoom();
+          // Not a swipe → treat as a tap and enlarge the view under the finger
+          // (not always the card), unless the gesture travelled far vertically
+          // (a page scroll rather than a tap).
+          if (Math.abs(dy) < NP_SWIPE_MIN) openNameZoom(npViews[npIndex]);
         });
         namePreviewViewport.addEventListener('pointercancel', () => {
           npDown = false;
@@ -3947,7 +3957,7 @@
       // Enlarge the name-step preview: swipe between the rendered card + board
       // images, reusing the same overlay (item 8.4 / 5d). Best-effort — needs a
       // real rendered card to show.
-      function openNameZoom() {
+      function openNameZoom(startId = 'card') {
         if (zoomOpen) return;
         const cardSrc = namePreviewCard.getAttribute('src');
         if (!cardSrc) return; // nothing rendered to enlarge
@@ -3967,11 +3977,13 @@
         zoomViews = [{ id: 'card', label: 'קלף' }];
         if (backSrc) zoomViews.push({ id: 'back', label: 'גב' });
         if (boardSrc) zoomViews.push({ id: 'board', label: 'לוח' });
-        zoomIndex = 0;
-        buildZoomTabs('card');
-        showNameImage('card');
+        // Open on the requested view (the one the user tapped) when it's present,
+        // else fall back to the card. showNameImage() sets zoomIndex from the id.
+        const start = zoomViews.some((v) => v.id === startId) ? startId : 'card';
+        buildZoomTabs(start);
+        showNameImage(start);
         openZoomShell();
-        track('open_zoom', { tab: 'name-card' });
+        track('open_zoom', { tab: 'name-' + start });
       }
 
       function hideZoom() {
