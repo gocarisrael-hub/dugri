@@ -226,6 +226,41 @@ test.describe('order wizard', () => {
     await expect(page.getByTestId('next-btn')).toBeEnabled();
   });
 
+  // The honoree name drives the printed cards, so it must be a real name:
+  // letters (Hebrew or English) plus spaces / hyphen / apostrophe only. Digits
+  // or other symbols show an inline error and block advancing.
+  test('step 4 rejects names with digits/symbols and accepts Hebrew or English letters', async ({
+    page,
+  }) => {
+    await page.goto('/options.html?step=4');
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    const next = page.getByTestId('next-btn');
+    const err = page.getByTestId('name-err');
+
+    // A name containing digits -> inline error + Next blocked (can't advance).
+    await page.fill('#honoreeInput', 'הדר123');
+    await expect(err).toBeVisible();
+    await expect(next).toBeDisabled();
+
+    // A name containing a symbol -> same rejection.
+    await page.fill('#honoreeInput', 'הדר@');
+    await expect(err).toBeVisible();
+    await expect(next).toBeDisabled();
+
+    // A valid Hebrew name -> error clears and Next enables.
+    await page.fill('#honoreeInput', 'הדר');
+    await expect(err).toBeHidden();
+    await expect(next).toBeEnabled();
+
+    // A valid English name -> also accepted, and advances normally (with gender).
+    await page.fill('#honoreeInput', 'Hadar');
+    await expect(err).toBeHidden();
+    await expect(next).toBeEnabled();
+    await page.getByTestId('gender-female').check();
+    await next.click();
+    await expect(page.getByTestId('step-5')).toBeVisible();
+  });
+
   test('step 5 validates email + phone, then creates the collection', async ({ page }) => {
     await page.goto('/options.html?step=4');
     await page.fill('#honoreeInput', 'שירה');

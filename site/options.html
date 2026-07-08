@@ -1787,6 +1787,9 @@
           placeholder="למשל: שירה"
           autocomplete="name"
         />
+        <span class="wiz-err" id="nameErr" data-testid="name-err" hidden
+          >אפשר להזין רק אותיות (עברית או אנגלית), רווחים, מקף (-) וגרש (').</span
+        >
         <div
           class="gender-group"
           id="genderGroup"
@@ -2357,6 +2360,7 @@
         pageTint,
         validateManifest,
         isValidIlMobile,
+        isValidHonoreeName,
         normalizeIlPhone,
       } from './js/configurator.js';
       import { track } from './js/analytics.js';
@@ -2849,6 +2853,7 @@
       const nameInput = document.getElementById('honoreeInput');
       const emailInput = document.getElementById('ownerEmail');
       const phoneInput = document.getElementById('ownerPhone');
+      const nameErr = document.getElementById('nameErr');
       const emailErr = document.getElementById('emailErr');
       const phoneErr = document.getElementById('phoneErr');
       const createErr = document.getElementById('createErr');
@@ -3201,10 +3206,23 @@
         // name step: require the name AND any extra fields the theme needs.
         // couple mode has no single-name box — the two NAME extra fields cover it.
         if (n === 4)
-          return (isCoupleTheme() || nameInput.value.trim().length > 0) && extraFieldsValid();
+          return (isCoupleTheme() || isValidHonoreeName(nameInput.value)) && extraFieldsValid();
         if (n === 5)
           return isValidEmail(emailInput.value.trim()) && isValidIlMobile(phoneInput.value.trim());
         return true;
+      }
+
+      // Inline name error on step 4: shown once the user has typed a value that
+      // isn't a valid name (letters/spaces/-/' only). Empty just disables Next
+      // without a scary error, mirroring the step-5 email/phone pattern. Couple
+      // themes hide the single name box, so there's nothing to validate here.
+      function refreshNameError() {
+        if (isCoupleTheme()) {
+          nameErr.hidden = true;
+          return;
+        }
+        const v = nameInput.value.trim();
+        nameErr.hidden = !(v.length && !isValidHonoreeName(v));
       }
 
       // Inline field errors on step 5 (only once the user has typed something).
@@ -3222,6 +3240,7 @@
         backBtn.textContent = currentStep === 1 ? 'חזרה לחנות' : 'הקודם';
         nextBtn.textContent = currentStep === TOTAL_STEPS ? 'צרו את המשחק' : 'הבא';
         nextBtn.disabled = !validateStep(currentStep);
+        if (currentStep === 4) refreshNameError();
         if (currentStep === 5) refreshStep5Errors();
       }
 
@@ -3388,6 +3407,11 @@
           requestPreview();
         }
       });
+      // Surface the name error on blur too (e.g. the user leaves an invalid
+      // value without further typing).
+      nameInput.addEventListener('blur', () => {
+        if (currentStep === 4) refreshNameError();
+      });
       [emailInput, phoneInput].forEach((el) =>
         el.addEventListener('input', () => {
           if (currentStep === 5) refreshControls();
@@ -3418,6 +3442,15 @@
         createErr.hidden = true;
         if (!name) {
           goStep(4);
+          return;
+        }
+        // Reject a single honoree name that isn't letters/spaces/-/' (couple
+        // themes have no single name box — their two names are validated as
+        // extra fields).
+        if (!isCoupleTheme() && !isValidHonoreeName(nameInput.value)) {
+          goStep(4);
+          refreshNameError();
+          nameInput.focus();
           return;
         }
         if (!isCoupleTheme() && !selectedGender()) {
