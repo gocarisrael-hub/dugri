@@ -333,14 +333,8 @@
         display: flex;
         width: max-content;
         white-space: nowrap;
-        /* The page is dir="rtl", but the scroll keyframe animates translateX 0 →
-           -50% (an LTR-direction move). In an RTL flow the track's content grows
-           leftward, so a negative translate marches the whole strip off the left
-           edge and leaves a blank gap. Forcing the TRACK to LTR lays its content
-           out left-to-right (left edge anchored at the strip's left), so the
-           translate scrolls the correct way and the two-halves loop stays
-           seamless. Each Hebrew phrase span still renders RTL via inherent bidi
-           (see .marquee__group > span). */
+        /* direction: ltr for the same reason as .marquee above — keep both in
+           sync so the LTR scroll direction matches the layout flow. */
         direction: ltr;
         animation: marquee-scroll 26s linear infinite;
       }
