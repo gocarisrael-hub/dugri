@@ -50,6 +50,41 @@ test.describe('landing page hero', () => {
       expect(res.status(), `${src} should load`).toBe(200);
     }
   });
+
+  test("the middle slide's headline sits lower than the first slide's", async ({ page }) => {
+    await page.goto('/index.html');
+
+    // Slide 2's inner carries the --low modifier so its headline clears the faces
+    // in hero-2.jpg; slides 1 and 3 are unchanged. Compare the two real inners'
+    // vertical positions (both share the same baseline but slide 2 is nudged down).
+    const inners = page.locator('.hero-slide:not([data-carousel-clone]) .hero-slide__inner');
+    await expect(inners).toHaveCount(3);
+    const ys = await inners.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
+    expect(ys[1]).toBeGreaterThan(ys[0]);
+    expect(ys[2]).toBeLessThan(ys[1]); // slide 3 back at the normal (higher) baseline
+  });
+});
+
+test.describe('hero marquee ribbon', () => {
+  test('a scrolling ribbon lists all three phrases, duplicated for a seamless loop', async ({
+    page,
+  }) => {
+    await page.goto('/index.html');
+
+    const marquee = page.getByTestId('hero-marquee');
+    await expect(marquee).toHaveCount(1);
+
+    const phrases = ['מפעילים את הטיימר', 'מנחשים מילים', 'הכל עליכם'];
+
+    // The phrase set is duplicated inside the track so the CSS translateX 0 → -50%
+    // loop is seamless; each identical group must carry all three phrases.
+    const groups = marquee.locator('.marquee__group');
+    await expect(groups).toHaveCount(2);
+    for (let i = 0; i < 2; i++) {
+      const txt = await groups.nth(i).innerText();
+      for (const p of phrases) expect(txt).toContain(p);
+    }
+  });
 });
 
 test.describe('shared sticky header', () => {
@@ -157,7 +192,7 @@ test.describe('real customer testimonials', () => {
     expect(body).not.toContain('אליאס');
   });
 
-  test('each review sits in its own distinct non-white light-pink box', async ({ page }) => {
+  test('each review sits in its own distinct non-white warm-sand box', async ({ page }) => {
     await page.goto('/index.html');
 
     const reviews = page.locator(
@@ -169,16 +204,18 @@ test.describe('real customer testimonials', () => {
       els.map((el) => getComputedStyle(el).backgroundColor)
     );
     expect(bgs.length).toBe(4);
-    // None is white or transparent — each carries a pink tint...
+    // None is white or transparent — each carries a warm-sand tint (pink is
+    // logo-only now)...
     const WHITE = new Set(['rgb(255, 255, 255)', 'rgba(0, 0, 0, 0)', 'transparent']);
     for (const bg of bgs) {
       expect(WHITE.has(bg), `review bg ${bg} must be a tint, not white/transparent`).toBe(false);
-      // ...and it reads as a light pink: all channels bright (very light) and the
-      // green channel is suppressed below red/blue, giving the pink/magenta cast.
       const [r, g, b] = bg.match(/\d+/g).map(Number);
-      expect(Math.min(r, g, b)).toBeGreaterThan(230);
-      expect(r).toBeGreaterThan(240);
-      expect(g).toBeLessThan(Math.max(r, b));
+      // ...and it reads as a light warm neutral: every channel bright (light),
+      // none pure white, and warm — red at least as strong as blue (sand, not
+      // pink/blue). A pink cast would push blue up over red; sand keeps r ≥ b.
+      expect(Math.min(r, g, b)).toBeGreaterThan(200);
+      expect(Math.max(r, g, b)).toBeLessThan(250);
+      expect(r).toBeGreaterThanOrEqual(b);
     }
     // The four shades are distinct from one another.
     expect(new Set(bgs).size).toBe(4);

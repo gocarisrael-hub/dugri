@@ -37,16 +37,15 @@ test.describe('carousel — passive advance (never scrolls the page)', () => {
     const before = await page.evaluate(() => window.scrollY);
     expect(before).toBeGreaterThan(0);
 
-    // Advance via the API (arrows/dots/autoplay all funnel through goTo→advanceTo)
-    // and via an in-page dot click. We click in-page (element.click()) rather than
-    // via Playwright, whose auto-scroll-into-view would itself move the page and
-    // mask the very thing under test.
+    // Advance via the API (arrows/autoplay all funnel through goTo→advanceTo).
+    // The hero has no dots any more, so every advance goes through the API; all of
+    // these are horizontal-only and must leave the page's vertical scroll alone.
     await page.evaluate(() => {
       const api = document.querySelector('.hero-track').__carousel;
       api.next();
       api.next();
       api.goTo(0);
-      document.querySelector('.hero-dots .carousel-dot:last-child').click(); // dot → goTo(last)
+      api.goTo(2); // jump to the last slide
     });
     await page.waitForTimeout(600); // let any (horizontal) smooth scroll settle
 
@@ -75,10 +74,6 @@ test.describe('carousel — endless loop', () => {
 
     expect(settled.real).toBe(3);
     expect(settled.current).toBe(0); // wrapped back to the start
-
-    // The first dot is the active one.
-    const dots = page.locator('.hero-dots .carousel-dot');
-    await expect(dots.first()).toHaveAttribute('aria-current', 'true');
   });
 
   test('the reviews slideshow wraps too (prev from the first goes to the last)', async ({

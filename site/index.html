@@ -248,6 +248,15 @@
         z-index: 0;
         /* keep the photos rich, not washed out */
         filter: saturate(1.06) contrast(1.03);
+        /* Anti-flicker: the endless-loop recenter does an instant scrollBy of a
+           whole period onto pixel-identical clones. Without a compositor layer the
+           browser repaints these large full-bleed photos during that jump, which
+           flashes. Promote each bg to its own GPU layer so the jump is a cheap
+           layer reposition with no repaint. Hero-scoped — no other carousel image
+           is touched. */
+        transform: translateZ(0);
+        backface-visibility: hidden;
+        will-change: transform;
       }
       /* light white scrim — much lighter than before so the photo stays vivid;
          the headline leans on its own halo (text-shadow below) for legibility */
@@ -292,29 +301,57 @@
         }
       }
       /* hero CTA is the default sharp solid-black rectangle (.btn) — no override */
-      /* carousel dots, overlaid on the photo at bottom-center */
-      .hero-dots {
-        position: absolute;
-        inset-inline: 0;
-        bottom: 14px;
-        z-index: 3;
+      /* slide 2's headline sits over faces — drop it a touch so it clears them.
+         (translateY is a static offset, unaffected by reduced-motion.) */
+      .hero-slide__inner--low {
+        transform: translateY(30px);
+      }
+
+      /* ============ HERO MARQUEE RIBBON ============ */
+      /* slim full-width strip under the hero: three phrases scroll endlessly.
+         The track holds the phrase set TWICE; animating translateX 0 → -50%
+         loops seamlessly (the second half is pixel-identical to the first). */
+      .marquee {
+        overflow: hidden;
+        background: var(--section);
+        color: var(--ink);
+        border-block: 1px solid var(--line);
+        padding: 11px 0;
+      }
+      .marquee__track {
         display: flex;
-        justify-content: center;
-        pointer-events: none;
+        width: max-content;
+        white-space: nowrap;
+        animation: marquee-scroll 26s linear infinite;
       }
-      .hero-dots .carousel-dots {
-        pointer-events: auto;
-        padding: 8px 0;
+      .marquee__group {
+        display: flex;
+        align-items: center;
+        flex: 0 0 auto;
       }
-      .hero-dots .carousel-dot {
-        background: rgba(20, 20, 20, 0.35);
+      .marquee__group > span {
+        font-family: var(--display);
+        font-weight: 400;
+        font-size: 15px;
+        letter-spacing: 0.14em;
+        padding: 0 4px;
       }
-      .hero-dots .carousel-dot:hover {
-        background: rgba(20, 20, 20, 0.6);
+      .marquee__sep {
+        color: var(--accent-deep);
+        padding: 0 18px;
       }
-      .hero-dots .carousel-dot.is-active,
-      .hero-dots .carousel-dot[aria-current='true'] {
-        background: var(--ink);
+      @keyframes marquee-scroll {
+        from {
+          transform: translateX(0);
+        }
+        to {
+          transform: translateX(-50%);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .marquee__track {
+          animation: none;
+        }
       }
 
       /* .hero-cta is shared with the final #order section */
@@ -433,30 +470,30 @@
         flex-basis: 100%;
         max-width: 100%;
         margin: 0;
-        /* a roomy rectangular MAT: generous vertical padding so the pink frame
-           reads as a tall box around the screenshot (sharp corners, brand rule) */
+        /* a roomy rectangular MAT: generous vertical padding so the warm-sand
+           frame reads as a tall box around the screenshot (sharp corners, brand rule) */
         padding: 30px 20px;
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #fdecf2; /* fallback; per-review shade set below */
+        background: #f4efe6; /* fallback; per-review shade set below */
         border: 1px solid var(--line);
         border-radius: var(--radius);
         overflow: hidden;
         box-shadow: var(--shadow-md);
       }
-      /* each review its own very-light-pink shade (pastel testimonial cards) */
+      /* each review its own distinct warm-sand shade (pink is logo-only now) */
       .review:nth-of-type(1) {
-        background: #fdecf2; /* rosé */
+        background: #f4efe6; /* light sand */
       }
       .review:nth-of-type(2) {
-        background: #fbeee9; /* peachy */
+        background: #efe7d9; /* greige */
       }
       .review:nth-of-type(3) {
-        background: #f4ecf5; /* lilac-pink */
+        background: #f1ebe0; /* warm linen */
       }
       .review:nth-of-type(4) {
-        background: #f9ecf3; /* magenta-rosé */
+        background: #ece3d5; /* deeper sand */
       }
       .review img {
         display: block;
@@ -765,7 +802,7 @@
       Backgrounds are real customer/product photos (assets/hero-1.jpg /
       hero-2.jpg / hero-3.jpg): a bachelorette party mid-play, the branded
       flat-lay of many designs, and a hand-held birthday set — real use, variety
-      across events, pink leads. A white scrim (.hero-slide::after) sits over each
+      across events. A white scrim (.hero-slide::after) sits over each
       photo to keep the near-black headline + button legible on the busier images.
     -->
     <section id="top" class="hero">
@@ -783,7 +820,7 @@
         </div>
         <div class="hero-slide">
           <img class="hero-slide__bg" src="assets/hero-2.jpg" alt="" aria-hidden="true" />
-          <div class="hero-slide__inner">
+          <div class="hero-slide__inner hero-slide__inner--low">
             <p class="hero-slide__title">דוגרי, המתנה הכי אישית ומקורית שאפשר לתת</p>
             <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
               >לרכישה ›</a
@@ -800,8 +837,27 @@
           </div>
         </div>
       </div>
-      <div class="hero-dots"></div>
     </section>
+
+    <!--
+      MARQUEE RIBBON: a slim strip under the hero whose three phrases scroll
+      endlessly. The set is duplicated inside the track so the CSS translateX
+      0 → -50% loop is seamless; animation is disabled under reduced-motion.
+    -->
+    <div class="marquee" data-testid="hero-marquee" aria-hidden="true">
+      <div class="marquee__track">
+        <span class="marquee__group">
+          <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span> <span>מנחשים מילים</span
+          ><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+          ><span class="marquee__sep">◆</span>
+        </span>
+        <span class="marquee__group">
+          <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span> <span>מנחשים מילים</span
+          ><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+          ><span class="marquee__sep">◆</span>
+        </span>
+      </div>
+    </div>
     <script type="module">
       import { initCarousel } from './js/carousel.js';
       import { PUBLIC_DESIGNS } from './js/designs.js';
@@ -813,9 +869,8 @@
           mode: 'slideshow',
           interval: 6000,
           loop: true,
-          dots: true,
+          dots: false,
           arrows: false,
-          dotsInto: document.querySelector('.hero-dots'),
         });
       }
 
@@ -841,7 +896,7 @@
           const thumb = document.createElement('div');
           thumb.className = 'home-prod-thumb';
           const img = document.createElement('img');
-          img.src = `assets/designs/${d.id}/cover.webp`;
+          img.src = `assets/designs/${d.id}/store.webp`;
           img.alt = d.name;
           img.loading = 'lazy';
           img.decoding = 'async';
@@ -867,7 +922,7 @@
           mode: 'slideshow',
           autoplay: false,
           loop: true,
-          dots: true,
+          dots: false,
           arrows: false,
         });
       }
@@ -883,7 +938,6 @@
       <div class="wrap">
         <div class="home-products-head">
           <h2>העיצובים שלנו</h2>
-          <p>אותו משחק, בעיצוב שמתאים בדיוק לאירוע שלכם</p>
         </div>
         <div id="productsTrack">
           <!-- product cards injected by the module script below -->
