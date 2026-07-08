@@ -28,7 +28,10 @@ test('chasers add-on flows from the wizard into the order and admin', async ({ p
     .toBe('rgb(183, 163, 137)');
 
   // Step 3 -> 4 (name) -> 5 (contact) -> create the shared collection.
-  const honoree = 'צ׳ייסר-בדיקה-' + Date.now();
+  // The default design (bachelorette) is an ENGLISH theme, so the honoree must
+  // be a single English word; digits are rejected in a name, so the unique
+  // suffix is letters-only (a → j digit encoding) rather than Date.now().
+  const honoree = 'Chaser' + String(Date.now()).replace(/[0-9]/g, (d) => 'abcdefghij'[+d]);
   await page.getByTestId('next-btn').click();
   await page.fill('#honoreeInput', honoree);
   await page.getByTestId('gender-female').check(); // gender is required to advance

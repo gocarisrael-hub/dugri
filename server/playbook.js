@@ -120,6 +120,10 @@ function load() {
   return seeded;
 }
 function save() {
+  // Ensure the data dir exists before the atomic tmp-write+rename — otherwise
+  // writeFileSync throws ENOENT on the first save when DATA_DIR hasn't been
+  // created yet (server/db.js does the same guard before its atomic write).
+  fs.mkdirSync(DATA_DIR, { recursive: true });
   const tmp = `${FILE}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(_notes, null, 2), 'utf8');
   fs.renameSync(tmp, FILE);
