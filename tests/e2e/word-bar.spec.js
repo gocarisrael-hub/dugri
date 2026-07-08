@@ -71,6 +71,28 @@ test('crossing to exactly 100 words: stage-2 bar replaces stage-1, ~¼ full', as
   expect(w).toBeLessThan(30);
 });
 
+test('bar fill is the warm-sand accent, not black', async ({ page, request }) => {
+  // Stage 1 (<100): #barFill1 is visible. Stage 2 (>=100): #barFill2. Check both.
+  const stage1 = await makeCollection(request, 'לירי', 40);
+  await openCollect(page, stage1.id, stage1.k);
+  await expect(page.locator('#stage1')).toBeVisible();
+  const fill1 = await page
+    .locator('#barFill1')
+    .evaluate((el) => getComputedStyle(el).backgroundImage);
+  // The sand accent (#b7a389 = rgb(183, 163, 137)) is present; black (rgb(20, 20, 20)) is not.
+  expect(fill1).toContain('rgb(183, 163, 137)');
+  expect(fill1).not.toContain('rgb(20, 20, 20)');
+
+  const stage2 = await makeCollection(request, 'רומי', 200);
+  await openCollect(page, stage2.id, stage2.k);
+  await expect(page.locator('#stage2')).toBeVisible();
+  const fill2 = await page
+    .locator('#barFill2')
+    .evaluate((el) => getComputedStyle(el).backgroundImage);
+  expect(fill2).toContain('rgb(183, 163, 137)');
+  expect(fill2).not.toContain('rgb(20, 20, 20)');
+});
+
 test('more words (200): stage-2 fill grows toward the max', async ({ page, request }) => {
   const { id, k } = await makeCollection(request, 'יעל', 200);
   await openCollect(page, id, k);
