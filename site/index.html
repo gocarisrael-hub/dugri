@@ -320,11 +320,22 @@
         color: var(--ink);
         border-block: 1px solid var(--line);
         padding: 11px 0;
+        /* The page is dir="rtl"; in an RTL container a wider-than-viewport child
+           is anchored to the RIGHT and overflows LEFT, so the LTR scroll keyframe
+           (translateX 0 → -50%) marches the whole track off the left edge and
+           leaves the strip blank. Forcing the strip (and thus the track) to LTR
+           anchors the track's left edge at x=0, so the translate scrolls the
+           correct way and the two-halves loop stays seamless. Hebrew phrases
+           still render RTL via inherent bidi (see .marquee__group > span). */
+        direction: ltr;
       }
       .marquee__track {
         display: flex;
         width: max-content;
         white-space: nowrap;
+        /* direction: ltr for the same reason as .marquee above — keep both in
+           sync so the LTR scroll direction matches the layout flow. */
+        direction: ltr;
         animation: marquee-scroll 26s linear infinite;
       }
       .marquee__half {
@@ -343,6 +354,10 @@
         font-size: 15px;
         letter-spacing: 0.14em;
         padding: 0 4px;
+        /* The track is forced LTR (for a correct scroll direction), so isolate
+           each phrase as its own bidi run to keep the Hebrew glyph order correct
+           and pin every ◆ separator between phrases, not swallowed into one. */
+        unicode-bidi: isolate;
       }
       .marquee__sep {
         color: var(--accent-deep);
