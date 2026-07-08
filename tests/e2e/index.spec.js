@@ -51,17 +51,40 @@ test.describe('landing page hero', () => {
     }
   });
 
-  test("the middle slide's headline sits lower than the first slide's", async ({ page }) => {
+  test("the middle slide's headline sits BELOW its CTA button", async ({ page }) => {
     await page.goto('/index.html');
 
-    // Slide 2's inner carries the --low modifier so its headline clears the faces
-    // in hero-2.jpg; slides 1 and 3 are unchanged. Compare the two real inners'
-    // vertical positions (both share the same baseline but slide 2 is nudged down).
+    // Slide 2 (hero-2.jpg) reads badly with the headline overlapping the board
+    // photo, so on THAT slide only the CTA is on top and the headline drops
+    // underneath it. Slides 1 and 3 keep the headline ABOVE the button. Fade mode
+    // stacks all three slides in the same box, so every inner still has layout
+    // (getBoundingClientRect is valid even on the hidden slides).
     const inners = page.locator('.hero-slide:not([data-carousel-clone]) .hero-slide__inner');
     await expect(inners).toHaveCount(3);
-    const ys = await inners.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
-    expect(ys[1]).toBeGreaterThan(ys[0]);
-    expect(ys[2]).toBeLessThan(ys[1]); // slide 3 back at the normal (higher) baseline
+
+    // Slide 2: headline top is BELOW the button's bottom.
+    const s2 = await inners.nth(1).evaluate((inner) => {
+      const btn = inner.querySelector('.btn');
+      const title = inner.querySelector('.hero-slide__title');
+      return {
+        titleTop: title.getBoundingClientRect().top,
+        btnBottom: btn.getBoundingClientRect().bottom,
+      };
+    });
+    expect(s2.titleTop).toBeGreaterThan(s2.btnBottom);
+
+    // Slides 1 & 3 (control): headline stays ABOVE the button.
+    for (const idx of [0, 2]) {
+      const s = await inners.nth(idx).evaluate((inner) => {
+        const btn = inner.querySelector('.btn');
+        const title = inner.querySelector('.hero-slide__title');
+        return {
+          titleBottom: title.getBoundingClientRect().bottom,
+          btnTop: btn.getBoundingClientRect().top,
+        };
+      });
+      expect(s.titleBottom).toBeLessThanOrEqual(s.btnTop);
+    }
   });
 });
 
