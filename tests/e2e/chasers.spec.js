@@ -3,7 +3,27 @@ import { test, expect } from '@playwright/test';
 // Full flow for the optional "צ'ייסרים" drinking-game add-on:
 // toggle it in step 3 of the order wizard -> finish the wizard (name + contact)
 // -> the owner sees the 🥃 badge in the admin orders table.
+// A 1x1 transparent PNG used as the fake rendered preview image.
+const PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+
 test('chasers add-on flows from the wizard into the order and admin', async ({ page }) => {
+  // The create button is gated on the name step until the preview shows — stub
+  // /api/preview so the gate opens without the Python render.
+  await page.route('**/api/preview', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        card: PNG,
+        back: PNG,
+        board: PNG,
+        warning: null,
+        word_font: null,
+        word_font_options: [],
+      }),
+    })
+  );
   await page.goto('/options.html?plan=base');
 
   // Step 1 -> 2 -> 3, then turn the add-on on (carries ?chasers=1).
@@ -27,10 +47,10 @@ test('chasers add-on flows from the wizard into the order and admin', async ({ p
     )
     .toBe('rgb(183, 163, 137)');
 
-  // Step 3 -> 4 (name) -> 5 (contact) -> create the shared collection.
-  // The default design (bachelorette) is an ENGLISH theme, so the honoree must
-  // be a single English word; digits are rejected in a name, so the unique
-  // suffix is letters-only (a → j digit encoding) rather than Date.now().
+  // Step 3 -> 4 (name) -> 5 (contact) -> create the shared collection. The
+  // honoree is a SINGLE English word (default design bachelorette is english),
+  // made unique with a letters-only suffix (digits are rejected in a name) so the
+  // admin row can be found by it.
   const honoree = 'Chaser' + String(Date.now()).replace(/[0-9]/g, (d) => 'abcdefghij'[+d]);
   await page.getByTestId('next-btn').click();
   await page.fill('#honoreeInput', honoree);

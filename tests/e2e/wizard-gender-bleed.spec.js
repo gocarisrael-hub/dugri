@@ -6,7 +6,31 @@ import { test, expect } from '@playwright/test';
 //     nothing is pre-selected and a choice is required to advance);
 //  2. the card preview showing a real printed-background "bleed" around the card.
 
+// A 1x1 transparent PNG used as the fake rendered preview image.
+const PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+
+// The create button is gated on the name step until the preview shows, so stub
+// /api/preview to open the gate deterministically without the Python render.
+async function mockPreview(page) {
+  await page.route('**/api/preview', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        card: PNG,
+        back: PNG,
+        board: PNG,
+        warning: null,
+        word_font: null,
+        word_font_options: [],
+      }),
+    })
+  );
+}
+
 async function toNameStep(page) {
+  await mockPreview(page);
   await page.goto('/options.html?plan=base');
   await expect(page.getByTestId('step-1')).toBeVisible();
   // steps 1-3 have safe defaults -> Next straight through to the name step.
@@ -43,7 +67,7 @@ test.describe('honoree gender', () => {
 
   test('advancing without a gender is blocked and prompts a choice', async ({ page }) => {
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('שירה');
+    await page.getByTestId('honoree-input').fill('Shira');
     // name is set but no gender picked -> Next must not advance...
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-4')).toBeVisible();
@@ -61,7 +85,7 @@ test.describe('honoree gender', () => {
 
   test('the gender prompt does not linger after navigating away', async ({ page }) => {
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('שירה');
+    await page.getByTestId('honoree-input').fill('Shira');
     await page.getByTestId('next-btn').click(); // no gender -> prompt opens
     await expect(page.getByTestId('gender-modal')).toBeVisible();
     // navigating away (browser Back -> popstate) must dismiss the full-screen
@@ -74,7 +98,7 @@ test.describe('honoree gender', () => {
   test('choosing female is sent in the create payload', async ({ page }) => {
     const captured = await captureCollectionPost(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('שירה');
+    await page.getByTestId('honoree-input').fill('Shira');
     await page.getByTestId('gender-female').check();
     await expect(page.getByTestId('gender-female')).toBeChecked();
     await page.getByTestId('next-btn').click(); // -> step 5 (contact)
@@ -82,13 +106,13 @@ test.describe('honoree gender', () => {
     await page.getByTestId('owner-phone').fill('0521234567');
     await page.getByTestId('next-btn').click(); // create
     await expect.poll(() => captured.body && captured.body.gender).toBe('female');
-    expect(captured.body.honoree_name).toBe('שירה');
+    expect(captured.body.honoree_name).toBe('Shira');
   });
 
   test('choosing male is sent in the create payload', async ({ page }) => {
     const captured = await captureCollectionPost(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('דני');
+    await page.getByTestId('honoree-input').fill('Danny');
     await page.getByTestId('gender-male').check();
     await expect(page.getByTestId('gender-male')).toBeChecked();
     await page.getByTestId('next-btn').click(); // -> step 5

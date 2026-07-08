@@ -21,9 +21,33 @@ function captureCollectionPost(page) {
     .then(() => captured);
 }
 
+// A 1x1 transparent PNG data URL used as the fake rendered preview image.
+const PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+
+// The create button is gated on the name step until the name-preview shows, so
+// stub /api/preview to open the gate deterministically without the Python render.
+async function mockPreview(page) {
+  await page.route('**/api/preview', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        card: PNG,
+        back: PNG,
+        board: PNG,
+        warning: null,
+        word_font: null,
+        word_font_options: [],
+      }),
+    })
+  );
+}
+
 // Pick a design by its tile testid, then advance to the name step (steps 2-3
 // have safe defaults, so Next walks straight through).
 async function toNameStepWithDesign(page, designTestId) {
+  await mockPreview(page);
   await page.goto('/options.html?plan=base');
   await expect(page.getByTestId('step-1')).toBeVisible();
   await page.getByTestId(designTestId).click();
@@ -46,7 +70,7 @@ test.describe('theme extra fields on the name step', () => {
     await expect(page.getByTestId('extra-fields')).toBeVisible();
     await expect(page.getByTestId('extra-age')).toBeVisible();
     // name + gender set but age blank -> Next stays disabled (age is required)...
-    await page.getByTestId('honoree-input').fill('שירה');
+    await page.getByTestId('honoree-input').fill('Shira');
     await page.getByTestId('gender-female').check();
     await expect(page.getByTestId('next-btn')).toBeDisabled();
     // ...filling the age enables it.
@@ -57,7 +81,7 @@ test.describe('theme extra fields on the name step', () => {
   test('the age value + resolved theme are sent in the create payload', async ({ page }) => {
     const captured = await captureCollectionPost(page);
     await toNameStepWithDesign(page, 'design-3');
-    await page.getByTestId('honoree-input').fill('שירה');
+    await page.getByTestId('honoree-input').fill('Shira');
     await page.getByTestId('gender-female').check();
     await page.getByTestId('extra-age').fill('30');
     await page.getByTestId('next-btn').click(); // -> step 5 (contact)

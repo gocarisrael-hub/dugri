@@ -1801,7 +1801,8 @@
           autocomplete="name"
         />
         <span class="wiz-err" id="nameErr" data-testid="name-err" hidden
-          >אפשר להזין רק אותיות (עברית או אנגלית), רווחים, מקף (-) וגרש (').</span
+          >אפשר להזין שם אחד בלבד באותיות (עברית או אנגלית), ללא רווחים - מותר מקף (-) וגרש
+          (').</span
         >
         <div
           class="gender-group"
@@ -1831,12 +1832,16 @@
               type="number"
               min="0"
               max="120"
+              step="1"
               inputmode="numeric"
               id="extraAge"
               data-testid="extra-age"
               data-extra-input="AGE"
               placeholder="למשל: 30"
             />
+            <span class="wiz-err" data-extra-err="AGE" data-testid="extra-age-err" hidden
+              >אפשר להזין מספר שלם בלבד (גיל בין 0 ל-120).</span
+            >
           </label>
           <label class="wiz-field" data-extra-field="YEARS" hidden>
             <span class="wiz-lbl">שנות נישואין</span>
@@ -1845,12 +1850,16 @@
               type="number"
               min="0"
               max="120"
+              step="1"
               inputmode="numeric"
               id="extraYears"
               data-testid="extra-years"
               data-extra-input="YEARS"
               placeholder="למשל: 25"
             />
+            <span class="wiz-err" data-extra-err="YEARS" data-testid="extra-years-err" hidden
+              >אפשר להזין מספר שלם בלבד (שנים בין 0 ל-120).</span
+            >
           </label>
           <label class="wiz-field" data-extra-field="NAME1" hidden>
             <span class="wiz-lbl">שם בן/בת הזוג הראשון</span>
@@ -1864,6 +1873,9 @@
               placeholder="למשל: דנה"
               autocomplete="name"
             />
+            <span class="wiz-err" data-extra-err="NAME1" data-testid="extra-name1-err" hidden
+              >אפשר להזין שם אחד בעברית בלבד (בלי רווחים, ספרות או אנגלית).</span
+            >
           </label>
           <label class="wiz-field" data-extra-field="NAME2" hidden>
             <span class="wiz-lbl">שם בן/בת הזוג השני</span>
@@ -1877,6 +1889,9 @@
               placeholder="למשל: יוסי"
               autocomplete="name"
             />
+            <span class="wiz-err" data-extra-err="NAME2" data-testid="extra-name2-err" hidden
+              >אפשר להזין שם אחד בעברית בלבד (בלי רווחים, ספרות או אנגלית).</span
+            >
           </label>
         </div>
 
@@ -2440,7 +2455,13 @@
     </div>
 
     <script type="module">
-      import { DESIGNS, MAIN_COLORS, themeForDesign, extraFieldsForDesign } from './js/designs.js';
+      import {
+        DESIGNS,
+        MAIN_COLORS,
+        themeForDesign,
+        extraFieldsForDesign,
+        languageForDesign,
+      } from './js/designs.js';
       import {
         applyPalette,
         applyOriginal,
@@ -2450,6 +2471,7 @@
         validateManifest,
         isValidIlMobile,
         isValidHonoreeName,
+        isValidIntegerField,
         normalizeIlPhone,
         previewViewList,
       } from './js/configurator.js';
@@ -2976,6 +2998,14 @@
         return themeForDesign(d.id);
       }
 
+      // The name LANGUAGE ('english' | 'hebrew') the current design requires, from
+      // its theme's `language` in themes.json (mirrored in designs.js). The honoree
+      // name (and the couple NAME1/NAME2 fields) must be written in this script.
+      function currentLanguage() {
+        const d = DESIGNS[designIndex] || {};
+        return languageForDesign(d.id);
+      }
+
       // Anniversary is a COUPLE event: instead of a single honoree name + gender we
       // ask the two partners' names once (the NAME1/NAME2 extra fields). The single
       // name box and the gender picker are hidden, and the honoree name sent with
@@ -3029,11 +3059,33 @@
         }
         refreshControls();
       }
-      // Every required extra field has a non-empty value.
+      // Numeric extra fields (AGE / YEARS) must be a digits-only integer within the
+      // input's own min/max; name extra fields (NAME1 / NAME2, anniversary) must be
+      // a single name in the design's language (Hebrew for the couple theme). Empty
+      // is always invalid — every shown extra field is required.
+      const NUMERIC_EXTRA_FIELDS = new Set(['AGE', 'YEARS']);
+      function isValidExtraField(key, input) {
+        if (!input) return false;
+        const raw = input.value.trim();
+        if (!raw) return false;
+        if (NUMERIC_EXTRA_FIELDS.has(key)) {
+          return isValidIntegerField(raw, input.min, input.max);
+        }
+        return isValidHonoreeName(raw, currentLanguage());
+      }
+      // Every required extra field holds a valid value (type + language enforced).
       function extraFieldsValid() {
-        return currentExtraFields().every((key) => {
+        return currentExtraFields().every((key) => isValidExtraField(key, extraInput(key)));
+      }
+      // Inline errors for the extra fields: shown only once the user has typed a
+      // value that fails validation (empty just disables Next, like the name box).
+      function refreshExtraErrors() {
+        currentExtraFields().forEach((key) => {
+          const errEl = document.querySelector('[data-extra-err="' + key + '"]');
+          if (!errEl) return;
           const input = extraInput(key);
-          return input && input.value.trim().length > 0;
+          const raw = input ? input.value.trim() : '';
+          errEl.hidden = !(raw.length && !isValidExtraField(key, input));
         });
       }
       // The required extra fields as a { KEY: value } object ({} when none).
@@ -3167,13 +3219,63 @@
         });
       }
 
+      // --- create-button preview gate --------------------------------------
+      // On the name step (PREVIEW_STEP = 4) the "הבא" button must not enable until
+      // the customer has actually SEEN the name-preview render — so they can't step
+      // toward "צרו את המשחק" (step 5) without seeing a preview first. previewShown
+      // flips once the preview reaches a terminal on-screen state — the real
+      // card/board images, OR the graceful fallback placeholder when a render fails
+      // — so a resolved preview (even a failed one that showed its fallback) unlocks
+      // it. A 20s backstop covers a preview that never settles (a hung/slow render),
+      // so a valid client is never permanently stuck behind a spinner. The gate is
+      // re-closed (resetPreviewGate) whenever the previewed inputs change, so an
+      // edited name/design must render its own preview before the button re-opens.
+      const PREVIEW_STEP = 4;
+      const PREVIEW_FALLBACK_MS = 20000;
+      let previewShown = false;
+      let previewFallbackFired = false;
+      let previewFallbackTimer = null;
+      // Arm the 20s backstop when a preview is triggered (attempt 0). No-op once
+      // the preview has already shown or the backstop already fired.
+      function armPreviewFallback() {
+        if (previewShown || previewFallbackFired) return;
+        clearTimeout(previewFallbackTimer);
+        previewFallbackTimer = setTimeout(() => {
+          previewFallbackFired = true;
+          refreshControls();
+        }, PREVIEW_FALLBACK_MS);
+      }
+      // The preview reached a terminal on-screen state → unlock now, drop backstop.
+      function markPreviewShown() {
+        if (previewShown) return;
+        previewShown = true;
+        clearTimeout(previewFallbackTimer);
+        refreshControls();
+      }
+      // Re-close the gate: a change to the previewed inputs (name / design / extra
+      // fields) invalidates the preview already on screen, so the button must wait
+      // for the NEW preview to render (or the backstop) before it can be used again.
+      // Without this the previewShown latch would stay open across name/design edits
+      // and let the game be created for inputs whose preview was never seen.
+      function resetPreviewGate() {
+        previewShown = false;
+        previewFallbackFired = false;
+        clearTimeout(previewFallbackTimer);
+      }
+      // Whether the button may enable on the preview step.
+      function previewGateOpen() {
+        return previewShown || previewFallbackFired;
+      }
+
       // A preview can be requested only on the name step, for a resolved theme,
-      // with a non-empty name and any required extra fields filled.
+      // with a VALID name (right script for the design's language, single word)
+      // and any required extra fields filled — so we never render (server-side) a
+      // name that validateStep would reject anyway.
       function previewReady() {
         return (
           currentStep === 4 &&
           !!currentTheme() &&
-          honoreeNameValue().length > 0 &&
+          (isCoupleTheme() || isValidHonoreeName(honoreeNameValue(), currentLanguage())) &&
           extraFieldsValid()
         );
       }
@@ -3190,6 +3292,8 @@
         if (attempt === 0) {
           namePreviewFallback.hidden = true;
           namePreviewEmpty.hidden = false;
+          // A preview was triggered — start the 20s backstop for the create gate.
+          armPreviewFallback();
         }
         try {
           const r = await fetch('/api/preview', {
@@ -3238,6 +3342,8 @@
           if (nameZoomOpenBtn) nameZoomOpenBtn.hidden = false;
           // rebuild the swipe/dots for the views that actually rendered
           syncNamePreviewCarousel();
+          // the preview rendered on screen → unlock the create-button gate
+          markPreviewShown();
         } catch (e) {
           if (epoch !== previewEpoch) return;
           // Server preview unavailable (network drop or non-OK response) — never
@@ -3264,22 +3370,30 @@
           npfNote.textContent = 'לא הצלחנו לטעון תצוגה מקדימה כרגע';
           npfRetry.hidden = false;
           namePreviewFallback.hidden = false;
+          // the preview settled on its graceful fallback (shown on screen) → unlock
+          // the create-button gate so a valid client isn't stuck behind a failure.
+          markPreviewShown();
         }
       }
 
       // Debounced by default (collapses typing bursts); { immediate:true } skips
       // the debounce for deliberate actions (font pick, entering the step).
       function requestPreview(opts = {}) {
+        // The inputs changed → the preview on screen is now stale; re-close the
+        // gate so the create button waits for the fresh preview (or the backstop).
+        resetPreviewGate();
         if (!previewReady()) {
           namePreview.hidden = true;
+          refreshControls();
           return;
         }
         clearTimeout(previewTimer);
         if (opts.immediate) {
           doPreview();
-          return;
+        } else {
+          previewTimer = setTimeout(doPreview, 450);
         }
-        previewTimer = setTimeout(doPreview, 450);
+        refreshControls();
       }
 
       // Manual retry from the fallback: start a fresh attempt (loader + one auto
@@ -3416,26 +3530,51 @@
 
       function validateStep(n) {
         if (n <= 3) return true; // design / color / add-ons all have safe defaults
-        // name step: require the name AND any extra fields the theme needs.
-        // couple mode has no single-name box — the two NAME extra fields cover it.
+        // name step: require the name (in the design's language) AND any extra
+        // fields the theme needs. Couple mode has no single-name box — the two
+        // NAME extra fields (validated in extraFieldsValid) cover it.
         if (n === 4)
-          return (isCoupleTheme() || isValidHonoreeName(nameInput.value)) && extraFieldsValid();
+          return (
+            (isCoupleTheme() || isValidHonoreeName(nameInput.value, currentLanguage())) &&
+            extraFieldsValid()
+          );
         if (n === 5)
           return isValidEmail(emailInput.value.trim()) && isValidIlMobile(phoneInput.value.trim());
         return true;
       }
 
+      // The single-word format error (also the HTML default) vs. the language
+      // mismatch hint, kept in sync with the #nameErr default text.
+      const NAME_FORMAT_ERR =
+        "אפשר להזין שם אחד בלבד באותיות (עברית או אנגלית), ללא רווחים - מותר מקף (-) וגרש (').";
+
       // Inline name error on step 4: shown once the user has typed a value that
-      // isn't a valid name (letters/spaces/-/' only). Empty just disables Next
-      // without a scary error, mirroring the step-5 email/phone pattern. Couple
-      // themes hide the single name box, so there's nothing to validate here.
+      // isn't a valid single-word name in the design's language. Empty just
+      // disables Next without a scary error, mirroring the step-5 pattern. Couple
+      // themes hide the single name box, so there's nothing to validate here. The
+      // message distinguishes a wrong SCRIPT (right format, wrong language) from a
+      // general format problem so the hint tells the user exactly what to fix.
       function refreshNameError() {
         if (isCoupleTheme()) {
           nameErr.hidden = true;
           return;
         }
         const v = nameInput.value.trim();
-        nameErr.hidden = !(v.length && !isValidHonoreeName(v));
+        const lang = currentLanguage();
+        if (!v.length || isValidHonoreeName(v, lang)) {
+          nameErr.hidden = true;
+          return;
+        }
+        if (isValidHonoreeName(v)) {
+          // format is fine → the only failing rule is the design's language
+          nameErr.textContent =
+            lang === 'english'
+              ? 'העיצוב הזה דורש שם באנגלית - הזינו את השם באותיות לטיניות.'
+              : 'העיצוב הזה דורש שם בעברית - הזינו את השם באותיות עבריות.';
+        } else {
+          nameErr.textContent = NAME_FORMAT_ERR;
+        }
+        nameErr.hidden = false;
       }
 
       // Inline field errors on step 5 (only once the user has typed something).
@@ -3452,8 +3591,20 @@
         backBtn.classList.remove('is-hidden');
         backBtn.textContent = currentStep === 1 ? 'חזרה לחנות' : 'הקודם';
         nextBtn.textContent = currentStep === TOTAL_STEPS ? 'צרו את המשחק' : 'הבא';
-        nextBtn.disabled = !validateStep(currentStep);
-        if (currentStep === 4) refreshNameError();
+        let disabled = !validateStep(currentStep);
+        // On the preview step, also hold the button until the name-preview has
+        // shown (or the 20s backstop elapsed): never let the game be created
+        // before the customer has actually seen a preview. Only gate when a preview
+        // can actually render (a resolved theme); a themeless design renders no
+        // preview, so gating it would trap the button disabled forever.
+        if (currentStep === PREVIEW_STEP && !disabled && currentTheme()) {
+          disabled = !previewGateOpen();
+        }
+        nextBtn.disabled = disabled;
+        if (currentStep === 4) {
+          refreshNameError();
+          refreshExtraErrors();
+        }
         if (currentStep === 5) refreshStep5Errors();
       }
 
@@ -3660,7 +3811,7 @@
         // Reject a single honoree name that isn't letters/spaces/-/' (couple
         // themes have no single name box — their two names are validated as
         // extra fields).
-        if (!isCoupleTheme() && !isValidHonoreeName(nameInput.value)) {
+        if (!isCoupleTheme() && !isValidHonoreeName(nameInput.value, currentLanguage())) {
           goStep(4);
           refreshNameError();
           nameInput.focus();
