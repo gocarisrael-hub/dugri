@@ -88,7 +88,11 @@ def _crop_card(full_png, cell, viewbox, out_png):
 
 
 def preview(theme, name, extra_fields=None, word_font=None, workdir=None):
-    """Render a preview and return ``{"card": path, "board": path}``.
+    """Render a preview and return ``{"card": path, "board": path, "back": path}``.
+
+    ``board`` and ``back`` are included only when the theme has that artwork; the
+    single run produces the front card, the game board AND the personalized card
+    back together (one Chrome per product, no separate back process).
 
     theme         a key in generator/themes.json (must be calibrated)
     name          the honoree name (cased per the theme's name_form)
@@ -133,6 +137,26 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None):
             )
             _downscale(board_png, BOARD_MAX_W)
             out["board"] = board_png
+
+        # The design's REAL personalized card BACK, produced in this SAME preview
+        # run (no second Chrome process). Uses the production duplex path
+        # (build.render_backs -> centered title on the clean back sheet), then
+        # crops the SAME sample card cell used for the front so the back mirrors
+        # the card exactly. Best-effort: a theme with no back art — or any failure
+        # rendering it — omits "back" and never breaks the card+board result.
+        backs_clean = config.clean_path(theme, "backs")
+        if os.path.exists(backs_clean):
+            try:
+                back_full = os.path.join(workdir, "back_full.png")
+                buildmod.render_backs(theme, backs_clean, title_lines, back_full)
+                back_png = _crop_card(
+                    back_full, recipe["cards"][idx]["cell"], recipe["viewBox"],
+                    os.path.join(workdir, "back.png"),
+                )
+                _downscale(back_png, CARD_MAX_W)
+                out["back"] = back_png
+            except Exception:
+                pass
 
         return out
     except BaseException:

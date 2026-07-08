@@ -165,11 +165,33 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
         import statistics
         heights = [s["y1"] - s["y0"] for s in card["words"]]
         size = statistics.median(heights) * 1.4
+        # Card's left edge (cell = [x0,y0,x1,y1]) with a small inner margin, so the
+        # bounds guard below has something to clamp against. A card may have no cell
+        # in older recipes — fall back to no clamp (guard becomes a no-op).
+        cell = card.get("cell")
+        wf_metrics, wf_ref = _word_metrics(word_font)
         for wi, slot in enumerate(card["words"]):
             if wi >= len(words) or not words[wi]:
                 continue
-            baseline = (slot["y0"] + slot["y1"]) / 2 + size * 0.34
-            overlay.append(word_text(slot["x1"], baseline, size, slot["color"],
+            wsize = size
+            # SAFETY GUARD: a word is right-anchored near slot x1 and flows LEFT, so
+            # an unusually long (real-order) word could spill PAST the card's left
+            # edge. Shrink just that word's font so it always stays inside the card.
+            # This is a no-op for every word that already fits (all current designs
+            # render byte-identically), so it can't disturb a good layout — it only
+            # rescues a word that would otherwise overflow the card bounds. It does
+            # NOT push words away from foreground ARTWORK inside the card; that is a
+            # per-design recipe concern (see report), not a safe global change.
+            if cell:
+                left_bound = cell[0] + (cell[2] - cell[0]) * 0.02
+                marker_w = wf_metrics.getlength(f"{wi + 1}.") / wf_ref * (wsize * 0.9)
+                word_right = slot["x1"] - marker_w - wsize * 0.30
+                avail = word_right - left_bound
+                word_w = wf_metrics.getlength(words[wi]) / wf_ref * wsize
+                if avail > 0 and word_w > avail:
+                    wsize = wsize * (avail / word_w)
+            baseline = (slot["y0"] + slot["y1"]) / 2 + wsize * 0.34
+            overlay.append(word_text(slot["x1"], baseline, wsize, slot["color"],
                                      wi + 1, words[wi], word_font))
     body = "".join(overlay)
     return svg.replace("</svg>", body + "</svg>")
@@ -194,85 +216,8 @@ def load_csv_row(path, row):
     return [[r.get(f"c{c}w{w}", "") for w in range(1, 5)] for c in range(1, 9)]
 
 
-def _sample_cell(recipe):
-    """Cell of a representative card: the first that carries a title, else the
-    first non-empty card. Mirrors preview.py's front-card pick so the cropped
-    back matches the cropped card's aspect."""
-    cards = recipe["cards"]
-    for c in cards:
-        if c and c.get("title"):
-            return c["cell"]
-    for c in cards:
-        if c:
-            return c["cell"]
-    return cards[0]["cell"]
-
-
-def render_back(theme, name, out_dir, extra_fields=None, max_w=700):
-    """Render the design's REAL personalized card BACK for the order preview and
-    return ``{"back": path}`` (or ``{}`` if the theme has no back art).
-
-    Uses the same production path as the duplex PDF (``build.render_backs`` — the
-    centered title on the design's clean back), then crops ONE back out of the
-    8-up sheet (same recipe cell preview.py uses for the front card) and
-    down-samples it, so the returned back mirrors the returned card exactly."""
-    import json as _json
-    import build
-    from PIL import Image
-
-    cfg = config.theme(theme)
-    config.ensure_calibrated(cfg)
-    backs_clean = config.clean_path(theme, "backs")
-    if not os.path.exists(backs_clean):
-        return {}
-    os.makedirs(out_dir, exist_ok=True)
-    tlines = config.title_lines(cfg, name, extra_fields or {})
-    with open(os.path.join(HERE, "recipes", f"{cfg['recipe']}.json"), encoding="utf-8") as f:
-        recipe = _json.load(f)
-
-    full = os.path.join(out_dir, "back_full.png")
-    build.render_backs(theme, backs_clean, tlines, full)
-
-    x0, y0, x1, y1 = _sample_cell(recipe)
-    _, _, vbw, vbh = recipe["viewBox"]
-    img = Image.open(full)
-    sx, sy = img.width / vbw, img.height / vbh
-    box = (
-        max(0, int(x0 * sx)),
-        max(0, int(y0 * sy)),
-        min(img.width, int(round(x1 * sx))),
-        min(img.height, int(round(y1 * sy))),
-    )
-    crop = img.crop(box)
-    if crop.width > max_w:
-        h = round(crop.height * max_w / crop.width)
-        crop = crop.resize((max_w, h), Image.LANCZOS)
-    out = os.path.join(out_dir, "back.png")
-    crop.save(out)
-    return {"back": out}
-
-
-def _parse_fields(pairs):
-    out = {}
-    for p in pairs or []:
-        if "=" in p:
-            k, v = p.split("=", 1)
-            out[k.strip()] = v
-    return out
-
-
 if __name__ == "__main__":
-    # Back-render mode for the order preview (spawned by server /api/preview):
-    #   python3 render_page.py --back <theme> <name> <out_dir> [--field K=V ...]
-    # Prints a JSON line {"back": path} (or {}) the server parses.
-    if len(sys.argv) > 1 and sys.argv[1] == "--back":
-        _theme, _name, _out = sys.argv[2:5]
-        # remaining args are "--field K=V" pairs; _parse_fields keeps only K=V.
-        _fields = _parse_fields(sys.argv[5:])
-        import json as _json
-        print(_json.dumps(render_back(_theme, _name, _out, _fields)))
-    else:
-        theme, clean, csvp, row, title, out = sys.argv[1:7]
-        wbc = load_csv_row(csvp, int(row))
-        render(theme, clean, wbc, title.split("|"), out)   # "OZ'S|WELCOME|PARTY"
-        print("wrote", out)
+    theme, clean, csvp, row, title, out = sys.argv[1:7]
+    wbc = load_csv_row(csvp, int(row))
+    render(theme, clean, wbc, title.split("|"), out)   # "OZ'S|WELCOME|PARTY"
+    print("wrote", out)
