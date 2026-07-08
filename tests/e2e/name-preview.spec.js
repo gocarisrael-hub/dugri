@@ -32,6 +32,7 @@ function mockPreview(page) {
         contentType: 'application/json',
         body: JSON.stringify({
           card: PNG,
+          back: PNG,
           board: PNG,
           warning: null,
           word_font: body.word_font || null,
@@ -66,6 +67,9 @@ test.describe('name-step live preview + font picker', () => {
     const card = page.getByTestId('name-preview-card');
     await expect(card).toBeVisible();
     await expect(card).toHaveAttribute('src', /^data:image\/png/);
+    // the design's real card back renders too, alongside the card + board
+    await expect(page.getByTestId('name-preview-back')).toHaveAttribute('src', /^data:image\/png/);
+    await expect(page.getByTestId('name-preview-back')).toBeVisible();
     await expect(page.getByTestId('name-preview-board')).toHaveAttribute('src', /^data:image\/png/);
 
     // the name was sent to the preview endpoint
@@ -132,7 +136,7 @@ test.describe('name-step live preview + font picker', () => {
     expect(fontsBottom).toBeLessThanOrEqual(imgsTop + 1);
   });
 
-  test('the name preview can be enlarged and swiped between card + board', async ({ page }) => {
+  test('the name preview can be enlarged and swiped front → back → board', async ({ page }) => {
     await mockPreview(page);
     await toNameStep(page);
     await page.getByTestId('honoree-input').fill('Shira');
@@ -145,15 +149,27 @@ test.describe('name-step live preview + font picker', () => {
 
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
     await expect(page.locator('#zoomContent img')).toBeVisible();
-    // it opens on the card view
+    // it opens on the card (front) view; all three tabs exist in order
     await expect(page.getByTestId('zoom-tab-card')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('zoom-tab-back')).toBeVisible();
+    await expect(page.getByTestId('zoom-tab-board')).toBeVisible();
 
-    // swipe left → the board view
     const vp = page.getByTestId('zoom-viewport');
-    await vp.dispatchEvent('pointerdown', { clientX: 300, clientY: 300 });
-    await vp.dispatchEvent('pointerup', { clientX: 80, clientY: 300 });
-    await expect(page.getByTestId('zoom-tab-board')).toHaveAttribute('aria-selected', 'true');
+    const swipeLeft = async () => {
+      await vp.dispatchEvent('pointerdown', { clientX: 300, clientY: 300 });
+      await vp.dispatchEvent('pointerup', { clientX: 80, clientY: 300 });
+    };
+
+    // swipe left → the BACK view (front → back)
+    await swipeLeft();
+    await expect(page.getByTestId('zoom-tab-back')).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByTestId('zoom-tab-card')).toHaveAttribute('aria-selected', 'false');
+    await expect(page.getByTestId('zoom-tab-board')).toHaveAttribute('aria-selected', 'false');
+
+    // swipe left again → the BOARD view (back → board)
+    await swipeLeft();
+    await expect(page.getByTestId('zoom-tab-board')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('zoom-tab-back')).toHaveAttribute('aria-selected', 'false');
   });
 });
 

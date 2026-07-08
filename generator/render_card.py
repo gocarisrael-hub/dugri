@@ -76,14 +76,27 @@ def build_svg(title_lines, words):
         f'{txt}</text>'
         for t, txt in zip(TITLE, title_lines))
 
+    # RTL numbered line: the marker ("1.") sits on the RIGHT (the Hebrew reading
+    # start) and the word flows to its LEFT. Chrome's SVG text engine ignores
+    # ``direction="rtl"`` for run ordering, and mixing Hebrew + digits + the
+    # neutral "." in one <text> makes bidi split the "." from its digit — so we
+    # render the marker and word as TWO independent <text> elements (no bidi
+    # crosses the boundary): the marker's right edge is pinned to NUM_X and the
+    # word is right-aligned just left of it, measuring the marker width for the gap.
+    from PIL import ImageFont
+    hebfont = ImageFont.truetype(FONTS["CardHebrew"], 200)
     sw = stroke(WORD_STROKE, INK)
     body = ""
     for i, (y, w) in enumerate(zip(WORD_BASELINES, words), start=1):
+        marker = f"{i}."
+        marker_w = hebfont.getlength(marker) / 200 * NUM_SIZE
+        word_x = NUM_X - marker_w - WORD_SIZE * 0.30
         body += (f'<text x="{NUM_X:.2f}" y="{y:.2f}" font-family="CardHebrew" '
-                 f'font-size="{WORD_SIZE:.2f}" fill="{INK}"{sw} direction="rtl" '
-                 f'text-anchor="start" xml:space="preserve">'
-                 f'<tspan font-size="{NUM_SIZE:.2f}">{i}.</tspan> '
-                 f'<tspan>{w}</tspan></text>')
+                 f'font-size="{NUM_SIZE:.2f}" fill="{INK}"{sw} '
+                 f'text-anchor="end" xml:space="preserve">{marker}</text>'
+                 f'<text x="{word_x:.2f}" y="{y:.2f}" font-family="CardHebrew" '
+                 f'font-size="{WORD_SIZE:.2f}" fill="{INK}"{sw} '
+                 f'text-anchor="end" xml:space="preserve">{w}</text>')
     return svg.replace("</svg>", style + masks + title + body + "</svg>")
 
 
