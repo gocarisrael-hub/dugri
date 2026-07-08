@@ -497,6 +497,51 @@ test('pay/init coupon errors: 400 clears the coupon, 409 and 429 show their mess
   await expect(page.locator('#payErr')).toContainText('יותר מדי ניסיונות');
 });
 
+test('questionnaire: answering a question adds the word + shows ✓, and add-another adds a second word', async ({
+  page,
+}) => {
+  await createCollection(page, 'שירה');
+
+  // Open a category so its questions render as interactive rows.
+  await page.locator('#catChips .chip').first().click();
+  const row = page.getByTestId('q-row').first();
+  await expect(row).toBeVisible();
+
+  // No answer yet → no ✓, exactly one answer line (input + add).
+  await expect(row.getByTestId('q-check')).toBeHidden();
+  await expect(row.getByTestId('q-input')).toHaveCount(1);
+
+  // Type an answer and add it → it goes straight into the collected word list,
+  // the counter moves, and the question gets its green ✓.
+  await row.getByTestId('q-input').fill('אמא רבקה');
+  await row.getByTestId('q-add').click();
+  await expect(page.locator('#wordsWrap')).toContainText('אמא רבקה');
+  await expect(page.locator('#count')).toHaveText('1');
+  await expect(row.getByTestId('q-check')).toBeVisible();
+
+  // add-another: a fresh empty input appeared on the same question (2 inputs now,
+  // and exactly one still-active add button).
+  await expect(row.getByTestId('q-input')).toHaveCount(2);
+  await expect(row.getByTestId('q-add')).toHaveCount(1);
+
+  // A second, distinct word added from the same question lands as its own word.
+  await row.getByTestId('q-input').nth(1).fill('אחות נועה');
+  await row.getByTestId('q-add').click();
+  await expect(page.locator('#wordsWrap')).toContainText('אחות נועה');
+  await expect(page.locator('#count')).toHaveText('2');
+  await expect(row.getByTestId('q-input')).toHaveCount(3);
+});
+
+test('questionnaire question text carries the honoree name + gender phrasing', async ({ page }) => {
+  await createCollection(page, 'שירה'); // created with gender=female in the wizard
+  await page.locator('#catChips .chip').first().click();
+  // The first default category is "people"; its first question interpolates the
+  // name and resolves the {female|male} token to the feminine form.
+  const firstText = page.getByTestId('q-row').first().locator('.q-text');
+  await expect(firstText).toContainText('שירה');
+  await expect(firstText).toContainText('קוראת'); // feminine form, not "קורא"
+});
+
 test('how-to guidance is a collapsed details on collect that can be opened', async ({ page }) => {
   await createCollection(page, 'רוני');
   const details = page.locator('details.howto');
