@@ -433,8 +433,12 @@
         flex-basis: 100%;
         max-width: 100%;
         margin: 0;
-        /* padding lets the very-light-pink frame show around the screenshot */
-        padding: 10px;
+        /* a roomy rectangular MAT: generous vertical padding so the pink frame
+           reads as a tall box around the screenshot (sharp corners, brand rule) */
+        padding: 30px 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         background: #fdecf2; /* fallback; per-review shade set below */
         border: 1px solid var(--line);
         border-radius: var(--radius);
@@ -451,10 +455,14 @@
       .review:nth-of-type(3) {
         background: #f4ecf5; /* lilac-pink */
       }
+      .review:nth-of-type(4) {
+        background: #f9ecf3; /* magenta-rosé */
+      }
       .review img {
         display: block;
         width: 100%;
         height: auto;
+        /* the screenshots keep their own dark chat background + timestamp */
       }
       .proof-note {
         text-align: center;
@@ -903,20 +911,27 @@
           <figure class="review">
             <img
               src="assets/testimonials/review-1.jpg"
-              alt="המלצה אמיתית בוואטסאפ ממסיבת רווקות - לא הפסקנו לצחוק שעה וחצי"
+              alt="המלצה אמיתית בוואטסאפ ממסיבת רווקות - דוגרי גנב את ההצגה, לא הפסקנו לצחוק שעה וחצי"
               loading="lazy"
             />
           </figure>
           <figure class="review">
             <img
               src="assets/testimonials/review-2.jpg"
-              alt="המלצה אמיתית בוואטסאפ - היה מושלם, החלק הכי אהוב במסיבה"
+              alt="המלצה אמיתית בוואטסאפ - היה מושלם, בסוף הערב אמרה שזה החלק הכי אהוב במסיבה"
               loading="lazy"
             />
           </figure>
           <figure class="review">
             <img
               src="assets/testimonials/review-3.jpg"
+              alt="המלצה אמיתית בוואטסאפ - היה ממש כיף, כולם באטרף, מתנה שווה בטירוף"
+              loading="lazy"
+            />
+          </figure>
+          <figure class="review">
+            <img
+              src="assets/testimonials/review-4.jpg"
               alt="המלצה אמיתית בוואטסאפ - שעה וחצי של צחוק רצוף, אישי ומצחיק ומרגש"
               loading="lazy"
             />

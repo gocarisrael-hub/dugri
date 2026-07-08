@@ -128,7 +128,7 @@ test.describe('real contact info', () => {
 });
 
 test.describe('real customer testimonials', () => {
-  test('proof section shows exactly 3 real review images that load (200) and no placeholders', async ({
+  test('proof section shows exactly 4 real review images that load (200) and no placeholders', async ({
     page,
     request,
   }) => {
@@ -137,10 +137,10 @@ test.describe('real customer testimonials', () => {
     const reviews = page.locator(
       '[data-testid="proof-reviews"] .review:not([data-carousel-clone]) img'
     );
-    await expect(reviews).toHaveCount(3);
+    await expect(reviews).toHaveCount(4);
 
     const srcs = await reviews.evaluateAll((els) => els.map((img) => img.getAttribute('src')));
-    expect(srcs.length).toBe(3);
+    expect(srcs.length).toBe(4);
     for (const src of srcs) {
       // Every testimonial image must live under assets/testimonials/...
       expect(src).toMatch(/^assets\/testimonials\//);
@@ -163,12 +163,12 @@ test.describe('real customer testimonials', () => {
     const reviews = page.locator(
       '[data-testid="proof-reviews"] .review:not([data-carousel-clone])'
     );
-    await expect(reviews).toHaveCount(3);
+    await expect(reviews).toHaveCount(4);
 
     const bgs = await reviews.evaluateAll((els) =>
       els.map((el) => getComputedStyle(el).backgroundColor)
     );
-    expect(bgs.length).toBe(3);
+    expect(bgs.length).toBe(4);
     // None is white or transparent — each carries a pink tint...
     const WHITE = new Set(['rgb(255, 255, 255)', 'rgba(0, 0, 0, 0)', 'transparent']);
     for (const bg of bgs) {
@@ -180,8 +180,23 @@ test.describe('real customer testimonials', () => {
       expect(r).toBeGreaterThan(240);
       expect(g).toBeLessThan(Math.max(r, b));
     }
-    // The three shades are distinct from one another.
-    expect(new Set(bgs).size).toBe(3);
+    // The four shades are distinct from one another.
+    expect(new Set(bgs).size).toBe(4);
+  });
+
+  test('each review box is a roomy rectangular mat (tall vertical padding)', async ({ page }) => {
+    await page.goto('/index.html');
+
+    const first = page
+      .locator('[data-testid="proof-reviews"] .review:not([data-carousel-clone])')
+      .first();
+    const pad = await first.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { top: parseFloat(s.paddingTop), bottom: parseFloat(s.paddingBottom) };
+    });
+    // the pink frame reads as a tall box around the screenshot, not a hugging 10px line
+    expect(pad.top).toBeGreaterThanOrEqual(24);
+    expect(pad.bottom).toBeGreaterThanOrEqual(24);
   });
 });
 
