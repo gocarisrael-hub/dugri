@@ -40,6 +40,27 @@
         margin: 0 auto;
         padding: 0 18px 100px;
       }
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 22px 0 0;
+      }
+      .nav a {
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid #e4ddd0;
+        background: #fff;
+        color: #5c7357;
+        border-radius: 99px;
+        padding: 6px 14px;
+      }
+      .nav a.active {
+        background: #8ca287;
+        border-color: #8ca287;
+        color: #fff;
+      }
       header {
         padding: 34px 0 18px;
         border-bottom: 3px solid var(--pink);
@@ -276,6 +297,15 @@
   </head>
   <body>
     <div class="wrap">
+      <nav class="nav" id="nav">
+        <a data-page="dashboard.html">לוח בקרה</a>
+        <a data-page="admin.html">ניהול הזמנות</a>
+        <a data-page="coupons.html">ניהול קופונים</a>
+        <a data-page="design-codes.html">קודי עיצוב</a>
+        <a data-page="admin-templates.html">תבנית חדשה</a>
+        <a data-page="admin-designs.html">עיצובים</a>
+        <a data-page="admin-playbook.html" class="active">פלייבוק</a>
+      </nav>
       <header>
         <p class="kicker">Internal · פלייבוק תפעולי</p>
         <h1>הפלייבוק שלי</h1>
@@ -321,6 +351,10 @@
     <script>
       const key = new URLSearchParams(location.search).get('key') || '';
       const qs = (id) => document.getElementById(id);
+      // Carry the admin key across the linked admin pages.
+      for (const a of document.querySelectorAll('#nav a')) {
+        a.href = a.dataset.page + (key ? '?key=' + encodeURIComponent(key) : '');
+      }
       const app = qs('app');
       let editingId = null;
 

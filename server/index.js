@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const { spawn } = require('child_process');
+const { pathToFileURL } = require('url');
 const express = require('express');
 const db = require('./db');
 const pelecard = require('./pelecard');
@@ -361,6 +362,69 @@ app.delete('/api/admin/playbook/:id', (req, res) => {
   if (!requireAdmin(req, res)) return;
   if (!playbook.remove(req.params.id)) return res.status(404).json({ error: 'not found' });
   res.json({ ok: true });
+});
+
+// Admin: design asset inventory — READ-ONLY visibility into which per-design
+// files exist on disk under site/assets/designs/<id>/ and which are MISSING, so
+// gaps like the kids design shipping without a board (board.svg / thumb-board /
+// gallery-board) are visible and tracked. The design catalog (id, Hebrew name,
+// theme, public flag) is the single source of truth in the ESM module
+// site/js/designs.js, dynamically imported into this CommonJS server.
+const DESIGN_ASSETS_DIR = path.join(__dirname, '..', 'site', 'assets', 'designs');
+// The full set of files a COMPLETE design ships, grouped by product part so the
+// UI can label a gap by group (e.g. "חסר: לוח"). board-group files are
+// legitimately absent for a boardless design — still reported missing on purpose.
+const DESIGN_ASSET_GROUPS = [
+  { group: 'front', label: 'חזית', files: ['front.svg', 'thumb-front.webp', 'gallery-front.webp'] },
+  { group: 'back', label: 'גב', files: ['back.svg', 'thumb-back.webp', 'gallery-back.webp'] },
+  { group: 'board', label: 'לוח', files: ['board.svg', 'thumb-board.webp', 'gallery-board.webp'] },
+  { group: 'picker', label: 'ממוזערת', files: ['thumb.webp'] },
+  { group: 'cover', label: 'שער', files: ['cover.webp'] },
+  { group: 'store', label: 'חנות', files: ['store.webp'] },
+];
+// Flat list of every expected file with its group, in a stable display order.
+const EXPECTED_DESIGN_ASSETS = DESIGN_ASSET_GROUPS.flatMap((g) =>
+  g.files.map((file) => ({ file, group: g.group, groupLabel: g.label }))
+);
+
+app.get('/api/admin/designs', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let catalog;
+  try {
+    const mod = await import(pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js')));
+    catalog = mod.DESIGNS || [];
+  } catch (e) {
+    return res.status(500).json({ error: 'failed to load design catalog: ' + e.message });
+  }
+  const designs = catalog.map((d) => {
+    const dir = path.join(DESIGN_ASSETS_DIR, d.id);
+    const assets = EXPECTED_DESIGN_ASSETS.map((a) => ({
+      ...a,
+      exists: fs.existsSync(path.join(dir, a.file)),
+    }));
+    const present = assets.filter((a) => a.exists).map((a) => a.file);
+    const missing = assets.filter((a) => !a.exists).map((a) => a.file);
+    // Group the missing files so the UI shows one badge per affected part.
+    const missingGroups = DESIGN_ASSET_GROUPS.map((g) => ({
+      group: g.group,
+      label: g.label,
+      files: g.files.filter((f) => missing.includes(f)),
+    })).filter((g) => g.files.length > 0);
+    return {
+      id: d.id,
+      name: d.name,
+      theme: d.theme,
+      visibility: d.visibility,
+      public: d.public,
+      thumb: 'assets/designs/' + d.id + '/thumb.webp',
+      assets,
+      present,
+      missing,
+      missingGroups,
+      complete: missing.length === 0,
+    };
+  });
+  res.json({ designs, expected: EXPECTED_DESIGN_ASSETS });
 });
 
 // Admin: generate the full print-ready PDF for a collection. The admin supplies
