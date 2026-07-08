@@ -127,12 +127,12 @@ test.describe('product detail page', () => {
     await expect(enlarge).toBeVisible();
     await enlarge.click();
 
-    // Overlay opens with a swipeable track of the SAME gallery images + dots.
+    // Overlay opens with a swipeable track of the SAME gallery images (no dots).
     await expect(overlay).toBeVisible();
     const slides = overlay.locator('.pdp-zoom-slide img');
     await expect(slides.first()).toBeVisible();
     expect(await slides.count()).toBeGreaterThan(1);
-    await expect(overlay.locator('.carousel-dots .carousel-dot').first()).toBeVisible();
+    await expect(overlay.locator('.carousel-dots .carousel-dot')).toHaveCount(0);
 
     // Body scroll is locked while the overlay is open.
     await expect(page.locator('body')).toHaveCSS('overflow', 'hidden');
