@@ -39,26 +39,45 @@ def _word_metrics(font_path, ref=200):
     return ImageFont.truetype(font_path, ref), ref
 
 
+def _marker_geometry(font, ref, num, msize):
+    # Standard numbered look in RTL: the DIGIT is the rightmost glyph and the
+    # PERIOD sits immediately to its LEFT (so reading right-to-left gives "1."),
+    # then a gap, then the word. Digit and period are separate <text> runs so
+    # bidi can never reorder the "." away from its digit. Returns the digit
+    # string, the period's right-anchor offset relative to the digit's right
+    # edge (a negative number), and the marker's total width (digit + tiny
+    # inter-gap + period) — the caller uses the width to place the word.
+    digit = f"{num}"
+    digit_w = font.getlength(digit) / ref * msize
+    dot_w = font.getlength(".") / ref * msize
+    tiny = msize * 0.06                      # hairline gap between digit & period
+    dot_x = -digit_w - tiny                  # period right edge, just left of digit
+    marker_w = digit_w + tiny + dot_w        # full marker span (digit..period)
+    return digit, dot_x, marker_w
+
+
 def word_text(x_right, baseline, size, color, num, word, font_path):
-    # RTL numbered line: the marker ("1.") must sit on the RIGHT (the Hebrew
-    # reading start) and the word flow to its LEFT. Chrome's headless SVG text
-    # engine ignores ``direction="rtl"`` (and inline bidi controls) for run
-    # ORDERING, and when Hebrew + digits + the neutral "." share one <text> the
-    # bidi algorithm reorders the "." AWAY from its digit (".01" / marker on the
-    # wrong side). So we render the marker and the word as TWO independent <text>
-    # elements — no bidi can cross the element boundary. The marker is pinned by
-    # its right edge to the slot's right edge; the word is right-aligned just to
-    # its left, measuring the marker's width so the gap is exact.
-    marker = f"{num}."
+    # RTL numbered line: the marker must sit on the RIGHT (the Hebrew reading
+    # start) and the word flow to its LEFT. Chrome's headless SVG text engine
+    # ignores ``direction="rtl"`` (and inline bidi controls) for run ORDERING,
+    # and when Hebrew + digits + the neutral "." share one <text> the bidi
+    # algorithm reorders the "." AWAY from its digit. So we render the DIGIT,
+    # the PERIOD and the WORD as THREE independent right-anchored <text> runs —
+    # no bidi crosses an element boundary. The digit's right edge is pinned to
+    # the slot's right edge (rightmost glyph); the period is pinned just to its
+    # LEFT; the word is right-aligned just left of the whole marker.
     msize = size * 0.9
     font, ref = _word_metrics(font_path)
-    marker_w = font.getlength(marker) / ref * msize
+    digit, dot_x, marker_w = _marker_geometry(font, ref, num, msize)
     gap = size * 0.30
     word_x = x_right - marker_w - gap
     return (
         f'<text x="{x_right:.2f}" y="{baseline:.2f}" font-family="HebWord" '
         f'font-size="{msize:.2f}" fill="{color}" text-anchor="end" '
-        f'xml:space="preserve">{marker}</text>'
+        f'direction="ltr" xml:space="preserve">{digit}</text>'
+        f'<text x="{x_right + dot_x:.2f}" y="{baseline:.2f}" font-family="HebWord" '
+        f'font-size="{msize:.2f}" fill="{color}" text-anchor="end" '
+        f'xml:space="preserve">.</text>'
         f'<text x="{word_x:.2f}" y="{baseline:.2f}" font-family="HebWord" '
         f'font-size="{size:.2f}" fill="{color}" text-anchor="end" '
         f'xml:space="preserve">{escape(word)}</text>'
@@ -184,7 +203,7 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
             # per-design recipe concern (see report), not a safe global change.
             if cell:
                 left_bound = cell[0] + (cell[2] - cell[0]) * 0.02
-                marker_w = wf_metrics.getlength(f"{wi + 1}.") / wf_ref * (wsize * 0.9)
+                _, _, marker_w = _marker_geometry(wf_metrics, wf_ref, wi + 1, wsize * 0.9)
                 word_right = slot["x1"] - marker_w - wsize * 0.30
                 avail = word_right - left_bound
                 word_w = wf_metrics.getlength(words[wi]) / wf_ref * wsize
