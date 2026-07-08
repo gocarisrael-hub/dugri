@@ -304,8 +304,11 @@
 
       /* ============ HERO MARQUEE RIBBON ============ */
       /* slim full-width strip under the hero: three phrases scroll endlessly.
-         The track holds the phrase set TWICE; animating translateX 0 → -50%
-         loops seamlessly (the second half is pixel-identical to the first). */
+         The track is exactly TWO identical halves; animating translateX 0 → -50%
+         moves it by one half-width, so the loop is perfectly seamless (the second
+         half is pixel-identical to the first). Each half repeats the 3-phrase
+         group several times so a single half is always wider than the viewport —
+         no blank stretch can appear at any screen width. */
       .marquee {
         overflow: hidden;
         background: var(--section);
@@ -318,6 +321,11 @@
         width: max-content;
         white-space: nowrap;
         animation: marquee-scroll 26s linear infinite;
+      }
+      .marquee__half {
+        display: flex;
+        align-items: center;
+        flex: 0 0 auto;
       }
       .marquee__group {
         display: flex;
@@ -455,7 +463,7 @@
 
       /* ============ SOCIAL PROOF (#reviews) ============ */
       .proof-head .stars {
-        color: var(--blush);
+        color: #f5b301;
         font-size: 24px;
         letter-spacing: 2px;
         margin-top: 10px;
@@ -477,36 +485,33 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #f4efe6; /* fallback; per-review shade set below */
+        background: #fdf6ec; /* fallback; per-review shade set below */
         border: 1px solid var(--line);
         border-radius: var(--radius);
         overflow: hidden;
         box-shadow: var(--shadow-md);
       }
-      /* each review its own distinct warm-sand shade (pink is logo-only now) */
+      /* each review its own distinct warm off-white CARD shade — deliberately
+         LIGHTER than the sand section (--section #f4efe6) so, with the hairline
+         border + shadow, each mat lifts clearly off the wash instead of blending
+         into it. Four distinct shades; warm (pink is logo-only now). */
       .review:nth-of-type(1) {
-        background: #f4efe6; /* light sand */
+        background: #fffdfa; /* brightest warm white */
       }
       .review:nth-of-type(2) {
-        background: #efe7d9; /* greige */
+        background: #fefaf3; /* soft cream */
       }
       .review:nth-of-type(3) {
-        background: #f1ebe0; /* warm linen */
+        background: #fdf6ec; /* warm ivory */
       }
       .review:nth-of-type(4) {
-        background: #ece3d5; /* deeper sand */
+        background: #fcf2e4; /* light sand-cream */
       }
       .review img {
         display: block;
         width: 100%;
         height: auto;
         /* the screenshots keep their own dark chat background + timestamp */
-      }
-      .proof-note {
-        text-align: center;
-        margin: 22px auto 0;
-        font-size: 13px;
-        color: var(--muted);
       }
 
       /* ============ FOUNDER STORY (#story) ============ */
@@ -845,20 +850,57 @@
 
     <!--
       MARQUEE RIBBON: a slim strip under the hero whose three phrases scroll
-      endlessly. The set is duplicated inside the track so the CSS translateX
-      0 → -50% loop is seamless; animation is disabled under reduced-motion.
+      endlessly. The track is TWO identical halves (.marquee__half); the CSS
+      translateX 0 → -50% loop moves it by exactly one half, so it is seamless.
+      Each half repeats the 3-phrase group four times, so a single half is always
+      wider than the viewport and no blank gap can appear. Animation is disabled
+      under reduced-motion.
     -->
     <div class="marquee" data-testid="hero-marquee" aria-hidden="true">
       <div class="marquee__track">
-        <span class="marquee__group">
-          <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span> <span>מנחשים מילים</span
-          ><span class="marquee__sep">◆</span> <span>הכל עליכם</span
-          ><span class="marquee__sep">◆</span>
+        <span class="marquee__half">
+          <span class="marquee__group">
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            ><span class="marquee__sep">◆</span>
+          </span>
+          <span class="marquee__group">
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            ><span class="marquee__sep">◆</span>
+          </span>
+          <span class="marquee__group">
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            ><span class="marquee__sep">◆</span>
+          </span>
+          <span class="marquee__group">
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            ><span class="marquee__sep">◆</span>
+          </span>
         </span>
-        <span class="marquee__group">
-          <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span> <span>מנחשים מילים</span
-          ><span class="marquee__sep">◆</span> <span>הכל עליכם</span
-          ><span class="marquee__sep">◆</span>
+        <span class="marquee__half">
+          <span class="marquee__group">
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            ><span class="marquee__sep">◆</span>
+          </span>
+          <span class="marquee__group">
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            ><span class="marquee__sep">◆</span>
+          </span>
+          <span class="marquee__group">
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            ><span class="marquee__sep">◆</span>
+          </span>
+          <span class="marquee__group">
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            ><span class="marquee__sep">◆</span>
+          </span>
         </span>
       </div>
     </div>
@@ -1002,7 +1044,6 @@
             />
           </figure>
         </div>
-        <p class="proof-note">המלצות אמיתיות מלקוחות שכבר חגגו איתנו</p>
       </div>
     </section>
 
