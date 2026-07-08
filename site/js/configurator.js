@@ -383,6 +383,32 @@ export function isValidIlMobile(v) {
 }
 
 // ---------------------------------------------------------------------------
+// Honoree name validation
+// ---------------------------------------------------------------------------
+
+// Allowed characters in a honoree name: Hebrew letters (the whole Hebrew block
+// ֐-׿), English letters, spaces, hyphen and apostrophe. Digits and any
+// other symbol are rejected.
+const HONOREE_ALLOWED_RE = /^[֐-׿A-Za-z '-]+$/;
+// Must contain at least one actual letter (Hebrew or English) — a value made of
+// only spaces/hyphens/apostrophes is not a real name.
+const HONOREE_LETTER_RE = /[֐-׿A-Za-z]/;
+
+/**
+ * True iff `v` is an acceptable honoree name: non-empty once trimmed, made up
+ * ONLY of letters (Hebrew or English) plus spaces, hyphens and apostrophes, and
+ * containing at least one letter. Any digit or other symbol makes it invalid.
+ * @param {string} v
+ * @returns {boolean}
+ */
+export function isValidHonoreeName(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return false;
+  if (!HONOREE_ALLOWED_RE.test(s)) return false;
+  return HONOREE_LETTER_RE.test(s);
+}
+
+// ---------------------------------------------------------------------------
 // Manifest validation
 // ---------------------------------------------------------------------------
 
