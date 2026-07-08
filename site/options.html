@@ -1873,6 +1873,9 @@
               placeholder="למשל: דנה"
               autocomplete="name"
             />
+            <span class="wiz-err" data-extra-err="NAME1" data-testid="extra-name1-err" hidden
+              >אפשר להזין שם אחד בעברית בלבד (בלי רווחים, ספרות או אנגלית).</span
+            >
           </label>
           <label class="wiz-field" data-extra-field="NAME2" hidden>
             <span class="wiz-lbl">שם בן/בת הזוג השני</span>
@@ -1886,6 +1889,9 @@
               placeholder="למשל: יוסי"
               autocomplete="name"
             />
+            <span class="wiz-err" data-extra-err="NAME2" data-testid="extra-name2-err" hidden
+              >אפשר להזין שם אחד בעברית בלבד (בלי רווחים, ספרות או אנגלית).</span
+            >
           </label>
         </div>
 
@@ -3214,13 +3220,16 @@
       }
 
       // --- create-button preview gate --------------------------------------
-      // The final "צרו את המשחק" button must not enable on the preview step until
-      // the customer has actually SEEN the name-preview render. previewShown flips
-      // once the preview reaches a terminal on-screen state — the real card/board
-      // images, OR the graceful fallback placeholder when a render fails — so a
-      // resolved preview (even a failed one that showed its fallback) unlocks it.
-      // A 20s backstop covers a preview that never settles (a hung/slow render),
-      // so a valid client is never permanently stuck behind a spinner.
+      // On the name step (PREVIEW_STEP = 4) the "הבא" button must not enable until
+      // the customer has actually SEEN the name-preview render — so they can't step
+      // toward "צרו את המשחק" (step 5) without seeing a preview first. previewShown
+      // flips once the preview reaches a terminal on-screen state — the real
+      // card/board images, OR the graceful fallback placeholder when a render fails
+      // — so a resolved preview (even a failed one that showed its fallback) unlocks
+      // it. A 20s backstop covers a preview that never settles (a hung/slow render),
+      // so a valid client is never permanently stuck behind a spinner. The gate is
+      // re-closed (resetPreviewGate) whenever the previewed inputs change, so an
+      // edited name/design must render its own preview before the button re-opens.
       const PREVIEW_STEP = 4;
       const PREVIEW_FALLBACK_MS = 20000;
       let previewShown = false;
@@ -3243,18 +3252,30 @@
         clearTimeout(previewFallbackTimer);
         refreshControls();
       }
+      // Re-close the gate: a change to the previewed inputs (name / design / extra
+      // fields) invalidates the preview already on screen, so the button must wait
+      // for the NEW preview to render (or the backstop) before it can be used again.
+      // Without this the previewShown latch would stay open across name/design edits
+      // and let the game be created for inputs whose preview was never seen.
+      function resetPreviewGate() {
+        previewShown = false;
+        previewFallbackFired = false;
+        clearTimeout(previewFallbackTimer);
+      }
       // Whether the button may enable on the preview step.
       function previewGateOpen() {
         return previewShown || previewFallbackFired;
       }
 
       // A preview can be requested only on the name step, for a resolved theme,
-      // with a non-empty name and any required extra fields filled.
+      // with a VALID name (right script for the design's language, single word)
+      // and any required extra fields filled — so we never render (server-side) a
+      // name that validateStep would reject anyway.
       function previewReady() {
         return (
           currentStep === 4 &&
           !!currentTheme() &&
-          honoreeNameValue().length > 0 &&
+          (isCoupleTheme() || isValidHonoreeName(honoreeNameValue(), currentLanguage())) &&
           extraFieldsValid()
         );
       }
@@ -3358,16 +3379,21 @@
       // Debounced by default (collapses typing bursts); { immediate:true } skips
       // the debounce for deliberate actions (font pick, entering the step).
       function requestPreview(opts = {}) {
+        // The inputs changed → the preview on screen is now stale; re-close the
+        // gate so the create button waits for the fresh preview (or the backstop).
+        resetPreviewGate();
         if (!previewReady()) {
           namePreview.hidden = true;
+          refreshControls();
           return;
         }
         clearTimeout(previewTimer);
         if (opts.immediate) {
           doPreview();
-          return;
+        } else {
+          previewTimer = setTimeout(doPreview, 450);
         }
-        previewTimer = setTimeout(doPreview, 450);
+        refreshControls();
       }
 
       // Manual retry from the fallback: start a fresh attempt (loader + one auto
@@ -3568,8 +3594,10 @@
         let disabled = !validateStep(currentStep);
         // On the preview step, also hold the button until the name-preview has
         // shown (or the 20s backstop elapsed): never let the game be created
-        // before the customer has actually seen a preview.
-        if (currentStep === PREVIEW_STEP && !disabled) {
+        // before the customer has actually seen a preview. Only gate when a preview
+        // can actually render (a resolved theme); a themeless design renders no
+        // preview, so gating it would trap the button disabled forever.
+        if (currentStep === PREVIEW_STEP && !disabled && currentTheme()) {
           disabled = !previewGateOpen();
         }
         nextBtn.disabled = disabled;

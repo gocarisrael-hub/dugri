@@ -67,6 +67,40 @@ test.describe('create-button preview gate (step 4)', () => {
     await expect(page.getByTestId('name-preview-fallback')).toBeVisible({ timeout: 5000 });
     await expect(page.getByTestId('next-btn')).toBeEnabled({ timeout: 5000 });
   });
+
+  test('editing the name after a preview RE-CLOSES the gate until the new preview renders', async ({
+    page,
+  }) => {
+    // Hold the 2nd+ preview so we can observe the gate re-close after a name edit
+    // (the create button must not stay unlocked from the previous name's preview).
+    let calls = 0;
+    let releaseSecond;
+    const second = new Promise((r) => (releaseSecond = r));
+    await page.route('**/api/preview', async (route) => {
+      calls += 1;
+      if (calls >= 2) await second;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: previewBody });
+    });
+
+    await page.goto('/options.html?step=4'); // bachelorette (english)
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    const next = page.getByTestId('next-btn');
+
+    // name A renders → gate opens
+    await page.fill('#honoreeInput', 'David');
+    await expect(page.getByTestId('name-preview-card')).toHaveAttribute('src', /^data:image\/png/);
+    await expect(next).toBeEnabled();
+
+    // edit to name B → gate must re-close while B's preview is pending
+    await page.fill('#honoreeInput', 'Sarah');
+    await expect(next).toBeDisabled();
+    await page.waitForTimeout(700); // debounce fired, request held → still gated
+    await expect(next).toBeDisabled();
+
+    // B's preview renders → gate re-opens
+    releaseSecond();
+    await expect(next).toBeEnabled();
+  });
 });
 
 test.describe('name language + single-word rules block Next', () => {
@@ -116,5 +150,29 @@ test.describe('name language + single-word rules block Next', () => {
     // A Hebrew name clears the name error (age is still required to advance).
     await page.fill('#honoreeInput', 'שירה');
     await expect(err).toBeHidden();
+  });
+
+  test('a couple (anniversary) design shows an inline error for an invalid partner name', async ({
+    page,
+  }) => {
+    await page.route('**/api/preview', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: previewBody })
+    );
+    // marriage = anniversary (hebrew, couple): the two partner-name fields replace
+    // the single honoree box and must each be a single Hebrew word.
+    await page.goto('/options.html?design=marriage&step=4');
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    const next = page.getByTestId('next-btn');
+    const name1Err = page.getByTestId('extra-name1-err');
+
+    // English partner name on a Hebrew couple design → inline error + blocked
+    // (previously this failed silently with a dead, unexplained Next button).
+    await page.getByTestId('extra-name1').fill('David');
+    await expect(name1Err).toBeVisible();
+    await expect(next).toBeDisabled();
+
+    // a single Hebrew word clears that field's error
+    await page.getByTestId('extra-name1').fill('דנה');
+    await expect(name1Err).toBeHidden();
   });
 });
