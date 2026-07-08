@@ -290,15 +290,66 @@
         margin-top: 10px;
         display: none;
         flex-direction: column;
+        gap: 10px;
+      }
+      /* Interactive questionnaire row: a themed question + one or more answer
+         lines that feed straight into the collected word list. A green ✓ appears
+         on the question head once it has at least one answer. */
+      .q-row {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 12px;
+      }
+      .q-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .q-check {
+        color: var(--ok);
+        font-weight: 900;
+        flex: 0 0 auto;
+      }
+      .q-text {
+        flex: 1;
+      }
+      .q-lines {
+        margin-top: 8px;
+        display: flex;
+        flex-direction: column;
         gap: 6px;
       }
-      .qlist button {
-        background: #fff;
+      .q-line {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .q-line input {
+        flex: 1;
+        padding: 8px 10px;
+        font-size: 14px;
+      }
+      /* A committed answer line: the word is locked in and shown with a small ✓
+         in place of its add button. */
+      .q-line input.committed {
+        background: var(--sage-tint);
         color: var(--ink);
-        border: 1px solid var(--line);
-        text-align: right;
-        font-weight: 600;
-        padding: 10px 12px;
+        border-color: var(--line);
+      }
+      .q-add {
+        flex: 0 0 auto;
+        padding: 8px 14px;
+        font-size: 14px;
+      }
+      .q-line-done {
+        flex: 0 0 auto;
+        color: var(--ok);
+        font-weight: 900;
+        font-size: 18px;
+        padding: 0 6px;
       }
       .words {
         display: flex;
@@ -347,10 +398,10 @@
       .hidden {
         display: none !important;
       }
-      /* Tailored order CTA at the bottom of the content. On-brand pink, subtle
-         (outlined card, not a modal), and given generous spacing so it never
-         overlaps the fixed WhatsApp help button (bottom-left) or the toast
-         (bottom-center). */
+      /* Tailored order CTA at the bottom of the content. Warm-sand/brand accent
+         tokens (never pink — pink lives only on the logo), subtle (outlined card,
+         not a modal), and given generous spacing so it never overlaps the fixed
+         WhatsApp help button (bottom-left) or the toast (bottom-center). */
       .order-cta {
         display: block;
         text-align: center;
@@ -444,20 +495,23 @@
         font-weight: 800;
         margin-bottom: 8px;
       }
+      /* Compact segmented control — small enough to read as a switcher, not a
+         primary action. Tighter padding + smaller type than the old chunky tabs. */
       .tabs {
         display: flex;
-        gap: 6px;
+        gap: 4px;
         margin-bottom: 12px;
       }
       .tab {
         flex: 1;
         background: #fff;
         color: var(--ink);
-        border: 1.5px solid var(--line);
-        border-radius: 12px;
-        padding: 10px 8px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 5px 6px;
         font-weight: 700;
-        font-size: 14px;
+        font-size: 12.5px;
+        line-height: 1.2;
       }
       .tab.active {
         background: var(--sage);
@@ -914,7 +968,11 @@
 
       <!-- word-finding helpers -->
       <div class="card" id="helpCard">
-        <div class="sec-h">תקועים? קבלו השראה 👇</div>
+        <div class="sec-h">תקועים? ענו על כמה שאלות ונמלא לכם מילים 👇</div>
+        <p class="muted" style="margin: -2px 0 4px">
+          בחרו קטגוריה, כתבו תשובה ולחצו “הוסף” — כל תשובה נכנסת ישר לרשימה. אפשר כמה תשובות לכל
+          שאלה.
+        </p>
         <div class="chips" id="catChips"></div>
         <div class="qlist" id="qList"></div>
 
@@ -1564,6 +1622,92 @@
           chips.appendChild(b);
         }
       }
+      // Build one interactive questionnaire row: the themed question plus an
+      // answer line (input + "add"). Typing an answer and adding it routes the
+      // word straight into the collected list via addWords() — the SAME path as
+      // the single/list/file tabs — so it dedupes and moves the counter. Once a
+      // question has ≥1 answer a green ✓ shows on its head; each add commits the
+      // current line and opens a fresh empty one (add-another) so a single
+      // question can contribute several distinct words.
+      function buildQRow(question) {
+        const text = renderQ(question);
+        const row = document.createElement('div');
+        row.className = 'q-row';
+        row.setAttribute('data-testid', 'q-row');
+
+        const head = document.createElement('div');
+        head.className = 'q-head';
+        const check = document.createElement('span');
+        check.className = 'q-check hidden';
+        check.textContent = '✓';
+        check.setAttribute('data-testid', 'q-check');
+        const label = document.createElement('span');
+        label.className = 'q-text';
+        label.textContent = text;
+        head.appendChild(check);
+        head.appendChild(label);
+        row.appendChild(head);
+
+        const lines = document.createElement('div');
+        lines.className = 'q-lines';
+        row.appendChild(lines);
+
+        // Append a fresh, empty answer line (the only one with an active "add").
+        function addLine(focus) {
+          const line = document.createElement('div');
+          line.className = 'q-line';
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.className = 'q-input';
+          input.setAttribute('data-testid', 'q-input');
+          input.setAttribute('autocomplete', 'off');
+          input.placeholder = text;
+          const add = document.createElement('button');
+          add.type = 'button';
+          add.className = 'soft q-add';
+          add.textContent = 'הוסף';
+          add.setAttribute('data-testid', 'q-add');
+
+          async function commit() {
+            const v = input.value.trim();
+            if (!v) return;
+            add.disabled = true;
+            const ok = await addWords(v, 'question');
+            if (!ok) {
+              // Save failed — keep the typed answer so the user can retry.
+              add.disabled = false;
+              input.focus();
+              return;
+            }
+            // Lock this line in, swap its button for a ✓, mark the question done,
+            // and open a new empty line so more words can be added to it.
+            input.readOnly = true;
+            input.classList.add('committed');
+            check.classList.remove('hidden');
+            const done = document.createElement('span');
+            done.className = 'q-line-done';
+            done.textContent = '✓';
+            add.replaceWith(done);
+            addLine(true);
+          }
+
+          add.onclick = commit;
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commit();
+            }
+          });
+          line.appendChild(input);
+          line.appendChild(add);
+          lines.appendChild(line);
+          if (focus) input.focus();
+        }
+
+        addLine(false);
+        return row;
+      }
+
       function showCat(cat, btn) {
         document.querySelectorAll('.chip').forEach((c) => c.classList.remove('active'));
         btn.classList.add('active');
@@ -1571,14 +1715,7 @@
         list.innerHTML = '';
         list.style.display = 'flex';
         for (const question of cat.questions) {
-          const b = document.createElement('button');
-          b.type = 'button';
-          b.textContent = renderQ(question);
-          b.onclick = () => {
-            $('#wordInput').focus();
-            $('#wordInput').placeholder = renderQ(question);
-          };
-          list.appendChild(b);
+          list.appendChild(buildQRow(question));
         }
       }
 
