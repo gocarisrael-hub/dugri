@@ -426,10 +426,13 @@
         background: var(--line);
       }
       .tab[aria-selected='true'] {
-        background: linear-gradient(135deg, #e85a97, #c53f79);
+        /* warm-sand brand accent (tokens.css --accent #b7a389 / --accent-deep
+           #9c8768). Hard-coded because THIS page's --accent is the live per-design
+           colour the configurator overrides at runtime — pink for pink designs. */
+        background: linear-gradient(135deg, #b7a389, #9c8768);
         color: #fff;
         border-color: transparent;
-        box-shadow: 0 8px 18px rgba(232, 90, 151, 0.3);
+        box-shadow: 0 8px 18px rgba(156, 135, 104, 0.3);
       }
       .preview-stage {
         position: relative;
@@ -668,10 +671,11 @@
         transform: scale(1.08);
       }
       .swatch[aria-pressed='true'] {
-        /* clear SELECTED state: a brand-pink ring + slight lift, so the chosen
-           colour is obvious without the busy default framing. */
+        /* clear SELECTED state: a warm-sand accent ring + slight lift, so the
+           chosen colour is obvious without the busy default framing. Hard-coded
+           sand (#b7a389) — this page's --accent is the live per-design colour. */
         box-shadow:
-          0 0 0 3px #e85a97,
+          0 0 0 3px #b7a389,
           var(--shadow-md);
         transform: scale(1.06);
       }
@@ -782,7 +786,9 @@
         transition: transform 0.2s ease;
       }
       .switch input:checked + .track {
-        background: var(--ink);
+        /* warm-sand accent (#b7a389) for the "on" state — hard-coded, since this
+           page's --accent is the live per-design colour set at runtime. */
+        background: #b7a389;
       }
       .switch input:checked + .track::before {
         transform: translateX(-22px);
@@ -1884,6 +1890,14 @@
               <img id="namePreviewCard" data-testid="name-preview-card" alt="תצוגת קלף" />
             </figure>
             <figure class="name-preview-fig">
+              <img
+                id="namePreviewBack"
+                data-testid="name-preview-back"
+                alt="תצוגת גב הקלף"
+                hidden
+              />
+            </figure>
+            <figure class="name-preview-fig">
               <img id="namePreviewBoard" data-testid="name-preview-board" alt="תצוגת לוח" />
             </figure>
           </div>
@@ -2951,6 +2965,7 @@
          failure just hides the loader and never blocks the wizard. */
       const namePreview = document.getElementById('namePreview');
       const namePreviewCard = document.getElementById('namePreviewCard');
+      const namePreviewBack = document.getElementById('namePreviewBack');
       const namePreviewBoard = document.getElementById('namePreviewBoard');
       const namePreviewWarn = document.getElementById('namePreviewWarn');
       const namePreviewEmpty = document.getElementById('namePreviewEmpty');
@@ -3097,6 +3112,15 @@
           namePreviewFallback.hidden = true;
           namePreviewImgs.hidden = false;
           if (data.card) namePreviewCard.src = data.card;
+          // the design's real card back (best-effort server-side): show it between
+          // the card and the board when present, hide it otherwise.
+          if (data.back) {
+            namePreviewBack.src = data.back;
+            namePreviewBack.hidden = false;
+          } else {
+            namePreviewBack.hidden = true;
+            namePreviewBack.removeAttribute('src');
+          }
           if (data.board) {
             namePreviewBoard.src = data.board;
             namePreviewBoard.hidden = false;
@@ -3508,6 +3532,7 @@
       let zoomViews = []; // [{ id, label }]
       let zoomIndex = 0;
       let nameZoomCardSrc = '';
+      let nameZoomBackSrc = '';
       let nameZoomBoardSrc = '';
 
       function designZoomViews() {
@@ -3552,7 +3577,8 @@
       // Show one name-preview image (card / board) in the overlay.
       function showNameImage(id) {
         zoomContent.removeAttribute('style');
-        const src = id === 'board' ? nameZoomBoardSrc : nameZoomCardSrc;
+        const src =
+          id === 'board' ? nameZoomBoardSrc : id === 'back' ? nameZoomBackSrc : nameZoomCardSrc;
         zoomContent.innerHTML = '';
         const img = document.createElement('img');
         img.src = src;
@@ -3683,12 +3709,19 @@
         if (!cardSrc) return; // nothing rendered to enlarge
         zoomMode = 'names';
         nameZoomCardSrc = cardSrc;
+        const backSrc =
+          !namePreviewBack.hidden && namePreviewBack.getAttribute('src')
+            ? namePreviewBack.getAttribute('src')
+            : '';
+        nameZoomBackSrc = backSrc;
         const boardSrc =
           !namePreviewBoard.hidden && namePreviewBoard.getAttribute('src')
             ? namePreviewBoard.getAttribute('src')
             : '';
         nameZoomBoardSrc = boardSrc;
+        // swipe order: front (card) → back → board
         zoomViews = [{ id: 'card', label: 'קלף' }];
+        if (backSrc) zoomViews.push({ id: 'back', label: 'גב' });
         if (boardSrc) zoomViews.push({ id: 'board', label: 'לוח' });
         zoomIndex = 0;
         buildZoomTabs('card');

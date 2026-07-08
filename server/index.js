@@ -112,6 +112,9 @@ function runGenerator({ theme, name, words, outPdf, wordFont, extraFields }) {
 // --- Order preview (public) ---------------------------------------------------
 // The generator preview script + the shared word-font pool it draws from.
 const PREVIEW_SCRIPT = path.join(REPO_ROOT, 'generator', 'preview.py');
+// The page renderer also exposes a `--back` mode that renders the design's real
+// personalized card BACK (cropped to one card, like the front) for the preview.
+const RENDER_PAGE_SCRIPT = path.join(REPO_ROOT, 'generator', 'render_page.py');
 const WORD_FONTS_DIR = path.join(REPO_ROOT, 'generator', 'word-fonts');
 // One preview render is two Chrome pages; keep it short so a public request can't
 // tie up the box. The child is SIGKILLed past this and the request 504s.
@@ -191,6 +194,66 @@ function runPreview({ theme, name, wordFont, extraFields }) {
       } catch (e) {
         cleanup();
         reject(e);
+      }
+    });
+  });
+}
+
+// Render the design's real personalized card BACK as a PNG data URL, mirroring
+// how runPreview renders card/board (own temp dir, timeout, base64 read-back,
+// always cleaned up). Spawns render_page.py's `--back` mode. Best-effort: it
+// NEVER rejects — resolves the back data URL, or null when there is no back art
+// / the render fails — so a missing back can't break the card+board preview.
+function runBackPreview({ theme, name, extraFields }) {
+  return new Promise((resolve) => {
+    let outDir;
+    try {
+      outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-back-'));
+    } catch {
+      return resolve(null);
+    }
+    const cleanup = () => {
+      try {
+        fs.rmSync(outDir, { recursive: true, force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+    };
+    const args = [RENDER_PAGE_SCRIPT, '--back', theme, name, outDir];
+    for (const [k, v] of Object.entries(extraFields || {})) {
+      args.push('--field', `${k}=${v}`);
+    }
+    const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
+    let stdout = '';
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, PREVIEW_TIMEOUT_MS);
+    child.stdout.on('data', (d) => (stdout += d));
+    child.on('error', () => {
+      clearTimeout(timer);
+      cleanup();
+      resolve(null);
+    });
+    child.on('close', () => {
+      clearTimeout(timer);
+      if (timedOut) {
+        cleanup();
+        return resolve(null);
+      }
+      try {
+        // The script prints a JSON line: {"back": path} (or {} when no back art).
+        const produced = JSON.parse(stdout.trim().split('\n').pop() || '{}');
+        let back = null;
+        if (produced.back && fs.existsSync(produced.back)) {
+          back = 'data:image/png;base64,' + fs.readFileSync(produced.back).toString('base64');
+        }
+        cleanup();
+        resolve(back);
+      } catch {
+        cleanup();
+        resolve(null);
       }
     });
   });
@@ -665,11 +728,18 @@ app.post('/api/preview', async (req, res) => {
   const warning = validate.checkNameLanguage(name, themeConfig);
 
   try {
-    const imgs = await runPreview({ theme, name, wordFont, extraFields });
+    // Render card+board and the design's real back in parallel. runPreview
+    // rejects on failure (→ handled below, same as before); runBackPreview is
+    // best-effort and resolves null, so an absent back never fails the request.
+    const [imgs, back] = await Promise.all([
+      runPreview({ theme, name, wordFont, extraFields }),
+      runBackPreview({ theme, name, extraFields }),
+    ]);
     // theme_word_font = the design's OWN original word font (from themes.json), so
     // the picker can mark the "מקורי" (original) choice and clients can tell it apart.
     res.json({
       ...imgs,
+      ...(back ? { back } : {}),
       warning,
       word_font: wordFont,
       word_font_options: options,

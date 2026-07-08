@@ -5,6 +5,7 @@ at the recipe slots. No masking needed (background is already text-free).
   python3 generator/render_page.py <theme> <clean_svg> <csv> <row> <title> <out.png>
 """
 import base64
+import functools
 import json
 import os
 import re
@@ -32,19 +33,40 @@ def font_face(name, path):
             f"src:url(data:font/ttf;base64,{b64}) format('truetype');}}")
 
 
-def word_text(x_right, baseline, size, color, num, word):
-    return (f'<text x="{x_right:.2f}" y="{baseline:.2f}" font-family="HebWord" '
-            f'font-size="{size:.2f}" fill="{color}" direction="rtl" '
-            f'text-anchor="start" xml:space="preserve">'
-            f'<tspan font-size="{size*0.9:.2f}">{num}.</tspan> '
-            f'<tspan>{escape(word)}</tspan></text>')
+@functools.lru_cache(maxsize=8)
+def _word_metrics(font_path, ref=200):
+    from PIL import ImageFont
+    return ImageFont.truetype(font_path, ref), ref
+
+
+def word_text(x_right, baseline, size, color, num, word, font_path):
+    # RTL numbered line: the marker ("1.") must sit on the RIGHT (the Hebrew
+    # reading start) and the word flow to its LEFT. Chrome's headless SVG text
+    # engine ignores ``direction="rtl"`` (and inline bidi controls) for run
+    # ORDERING, and when Hebrew + digits + the neutral "." share one <text> the
+    # bidi algorithm reorders the "." AWAY from its digit (".01" / marker on the
+    # wrong side). So we render the marker and the word as TWO independent <text>
+    # elements — no bidi can cross the element boundary. The marker is pinned by
+    # its right edge to the slot's right edge; the word is right-aligned just to
+    # its left, measuring the marker's width so the gap is exact.
+    marker = f"{num}."
+    msize = size * 0.9
+    font, ref = _word_metrics(font_path)
+    marker_w = font.getlength(marker) / ref * msize
+    gap = size * 0.30
+    word_x = x_right - marker_w - gap
+    return (
+        f'<text x="{x_right:.2f}" y="{baseline:.2f}" font-family="HebWord" '
+        f'font-size="{msize:.2f}" fill="{color}" text-anchor="end" '
+        f'xml:space="preserve">{marker}</text>'
+        f'<text x="{word_x:.2f}" y="{baseline:.2f}" font-family="HebWord" '
+        f'font-size="{size:.2f}" fill="{color}" text-anchor="end" '
+        f'xml:space="preserve">{escape(word)}</text>'
+    )
 
 
 def escape(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-import functools
 
 
 @functools.lru_cache(maxsize=8)
@@ -148,7 +170,7 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
                 continue
             baseline = (slot["y0"] + slot["y1"]) / 2 + size * 0.34
             overlay.append(word_text(slot["x1"], baseline, size, slot["color"],
-                                     wi + 1, words[wi]))
+                                     wi + 1, words[wi], word_font))
     body = "".join(overlay)
     return svg.replace("</svg>", body + "</svg>")
 
@@ -172,8 +194,85 @@ def load_csv_row(path, row):
     return [[r.get(f"c{c}w{w}", "") for w in range(1, 5)] for c in range(1, 9)]
 
 
+def _sample_cell(recipe):
+    """Cell of a representative card: the first that carries a title, else the
+    first non-empty card. Mirrors preview.py's front-card pick so the cropped
+    back matches the cropped card's aspect."""
+    cards = recipe["cards"]
+    for c in cards:
+        if c and c.get("title"):
+            return c["cell"]
+    for c in cards:
+        if c:
+            return c["cell"]
+    return cards[0]["cell"]
+
+
+def render_back(theme, name, out_dir, extra_fields=None, max_w=700):
+    """Render the design's REAL personalized card BACK for the order preview and
+    return ``{"back": path}`` (or ``{}`` if the theme has no back art).
+
+    Uses the same production path as the duplex PDF (``build.render_backs`` — the
+    centered title on the design's clean back), then crops ONE back out of the
+    8-up sheet (same recipe cell preview.py uses for the front card) and
+    down-samples it, so the returned back mirrors the returned card exactly."""
+    import json as _json
+    import build
+    from PIL import Image
+
+    cfg = config.theme(theme)
+    config.ensure_calibrated(cfg)
+    backs_clean = config.clean_path(theme, "backs")
+    if not os.path.exists(backs_clean):
+        return {}
+    os.makedirs(out_dir, exist_ok=True)
+    tlines = config.title_lines(cfg, name, extra_fields or {})
+    with open(os.path.join(HERE, "recipes", f"{cfg['recipe']}.json"), encoding="utf-8") as f:
+        recipe = _json.load(f)
+
+    full = os.path.join(out_dir, "back_full.png")
+    build.render_backs(theme, backs_clean, tlines, full)
+
+    x0, y0, x1, y1 = _sample_cell(recipe)
+    _, _, vbw, vbh = recipe["viewBox"]
+    img = Image.open(full)
+    sx, sy = img.width / vbw, img.height / vbh
+    box = (
+        max(0, int(x0 * sx)),
+        max(0, int(y0 * sy)),
+        min(img.width, int(round(x1 * sx))),
+        min(img.height, int(round(y1 * sy))),
+    )
+    crop = img.crop(box)
+    if crop.width > max_w:
+        h = round(crop.height * max_w / crop.width)
+        crop = crop.resize((max_w, h), Image.LANCZOS)
+    out = os.path.join(out_dir, "back.png")
+    crop.save(out)
+    return {"back": out}
+
+
+def _parse_fields(pairs):
+    out = {}
+    for p in pairs or []:
+        if "=" in p:
+            k, v = p.split("=", 1)
+            out[k.strip()] = v
+    return out
+
+
 if __name__ == "__main__":
-    theme, clean, csvp, row, title, out = sys.argv[1:7]
-    wbc = load_csv_row(csvp, int(row))
-    render(theme, clean, wbc, title.split("|"), out)   # "OZ'S|WELCOME|PARTY"
-    print("wrote", out)
+    # Back-render mode for the order preview (spawned by server /api/preview):
+    #   python3 render_page.py --back <theme> <name> <out_dir> [--field K=V ...]
+    # Prints a JSON line {"back": path} (or {}) the server parses.
+    if len(sys.argv) > 1 and sys.argv[1] == "--back":
+        _theme, _name, _out = sys.argv[2:5]
+        # remaining args are "--field K=V" pairs; _parse_fields keeps only K=V.
+        _fields = _parse_fields(sys.argv[5:])
+        import json as _json
+        print(_json.dumps(render_back(_theme, _name, _out, _fields)))
+    else:
+        theme, clean, csvp, row, title, out = sys.argv[1:7]
+        wbc = load_csv_row(csvp, int(row))
+        render(theme, clean, wbc, title.split("|"), out)   # "OZ'S|WELCOME|PARTY"
+        print("wrote", out)

@@ -17,6 +17,16 @@ test('chasers add-on flows from the wizard into the order and admin', async ({ p
   await expect(page.getByTestId('chasers-toggle')).toBeChecked();
   expect(page.url()).toContain('chasers=1');
 
+  // the toggle's "on" state paints the warm-sand accent (--accent #b7a389),
+  // not the old near-black ink (poll past the 0.2s background transition).
+  await expect
+    .poll(() =>
+      page
+        .locator('#chasersCard .switch input:checked + .track')
+        .evaluate((el) => getComputedStyle(el).backgroundColor)
+    )
+    .toBe('rgb(183, 163, 137)');
+
   // Step 3 -> 4 (name) -> 5 (contact) -> create the shared collection.
   const honoree = 'צ׳ייסר-בדיקה-' + Date.now();
   await page.getByTestId('next-btn').click();
