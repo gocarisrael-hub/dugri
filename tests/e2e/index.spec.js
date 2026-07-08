@@ -62,16 +62,24 @@ test.describe('landing page hero', () => {
     const inners = page.locator('.hero-slide:not([data-carousel-clone]) .hero-slide__inner');
     await expect(inners).toHaveCount(3);
 
-    // Slide 2: headline top is BELOW the button's bottom.
+    // Slide 2: headline top is BELOW the button's bottom, and the whole
+    // button+headline group is nudged into the LOWER third of the photo
+    // (approved layout) — the headline's bottom sits past the hero mid-line.
     const s2 = await inners.nth(1).evaluate((inner) => {
+      const slide = inner.closest('.hero-slide');
+      const hero = slide.getBoundingClientRect();
       const btn = inner.querySelector('.btn');
       const title = inner.querySelector('.hero-slide__title');
+      const tb = title.getBoundingClientRect();
       return {
-        titleTop: title.getBoundingClientRect().top,
+        titleTop: tb.top,
         btnBottom: btn.getBoundingClientRect().bottom,
+        titleBottomPct: ((tb.bottom - hero.top) / hero.height) * 100,
       };
     });
     expect(s2.titleTop).toBeGreaterThan(s2.btnBottom);
+    // lower third: the headline reaches past the middle of the slide.
+    expect(s2.titleBottomPct).toBeGreaterThan(60);
 
     // Slides 1 & 3 (control): headline stays ABOVE the button.
     for (const idx of [0, 2]) {
