@@ -4,6 +4,30 @@ import { test, expect } from '@playwright/test';
 // add-ons -> name -> contact). Steps show/hide via JS; Back/Next + ?step=N drive
 // navigation. Runs on every configured project (desktop + mobile).
 
+// A 1x1 transparent PNG data URL used as the fake rendered preview image.
+const PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+
+// The create button is gated on the name step until the live name-preview shows.
+// Stub /api/preview so the real (Python) render isn't needed and the gate opens
+// deterministically — the same technique name-preview.spec.js uses.
+async function mockPreview(page) {
+  await page.route('**/api/preview', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        card: PNG,
+        back: PNG,
+        board: PNG,
+        warning: null,
+        word_font: null,
+        word_font_options: [],
+      }),
+    })
+  );
+}
+
 test.describe('order wizard', () => {
   test('preview + design + color recolor work across the first steps', async ({ page }) => {
     await page.goto('/options.html?plan=base');
@@ -218,41 +242,58 @@ test.describe('order wizard', () => {
   });
 
   test('step 4 blocks Next until a name is entered', async ({ page }) => {
+    await mockPreview(page);
     await page.goto('/options.html?step=4'); // deep-link straight to the name step
     await expect(page.getByTestId('step-4')).toBeVisible();
     await expect(page.getByTestId('next-btn')).toBeDisabled();
     await expect(page.getByTestId('step-4')).toContainText('יופיע על הקלפים');
-    await page.fill('#honoreeInput', 'שירה');
+    // Default design is bachelorette (an ENGLISH-language theme), so a valid name
+    // here is an English single word.
+    await page.fill('#honoreeInput', 'Shira');
     await expect(page.getByTestId('next-btn')).toBeEnabled();
   });
 
-  // The honoree name drives the printed cards, so it must be a real name:
-  // letters (Hebrew or English) plus spaces / hyphen / apostrophe only. Digits
-  // or other symbols show an inline error and block advancing.
-  test('step 4 rejects names with digits/symbols and accepts Hebrew or English letters', async ({
+  // The honoree name drives the printed cards, so it must be a real SINGLE-word
+  // name: letters plus hyphen / apostrophe only (no spaces, digits or symbols),
+  // AND in the language the chosen design requires. The default design here is
+  // bachelorette (english), so digits/symbols/spaces AND Hebrew are all rejected
+  // with an inline error that blocks advancing; a single English word is accepted.
+  test('step 4 rejects digits/symbols/spaces and the wrong language, accepts a single English name', async ({
     page,
   }) => {
+    await mockPreview(page);
     await page.goto('/options.html?step=4');
     await expect(page.getByTestId('step-4')).toBeVisible();
     const next = page.getByTestId('next-btn');
     const err = page.getByTestId('name-err');
 
     // A name containing digits -> inline error + Next blocked (can't advance).
-    await page.fill('#honoreeInput', 'הדר123');
+    await page.fill('#honoreeInput', 'Hadar123');
     await expect(err).toBeVisible();
     await expect(next).toBeDisabled();
 
     // A name containing a symbol -> same rejection.
-    await page.fill('#honoreeInput', 'הדר@');
+    await page.fill('#honoreeInput', 'Hadar@');
     await expect(err).toBeVisible();
     await expect(next).toBeDisabled();
 
-    // A valid Hebrew name -> error clears and Next enables.
+    // Two words (a space) -> rejected: the honoree name must be a single word.
+    await page.fill('#honoreeInput', 'Anne Marie');
+    await expect(err).toBeVisible();
+    await expect(next).toBeDisabled();
+
+    // A Hebrew name on an ENGLISH design -> rejected, with a language hint.
     await page.fill('#honoreeInput', 'הדר');
+    await expect(err).toBeVisible();
+    await expect(err).toContainText('אנגלית');
+    await expect(next).toBeDisabled();
+
+    // A hyphenated single English name -> allowed (single name, right language).
+    await page.fill('#honoreeInput', 'Anne-Marie');
     await expect(err).toBeHidden();
     await expect(next).toBeEnabled();
 
-    // A valid English name -> also accepted, and advances normally (with gender).
+    // A plain single English word -> accepted, and advances normally (with gender).
     await page.fill('#honoreeInput', 'Hadar');
     await expect(err).toBeHidden();
     await expect(next).toBeEnabled();
@@ -262,8 +303,9 @@ test.describe('order wizard', () => {
   });
 
   test('step 5 validates email + phone, then creates the collection', async ({ page }) => {
+    await mockPreview(page);
     await page.goto('/options.html?step=4');
-    await page.fill('#honoreeInput', 'שירה');
+    await page.fill('#honoreeInput', 'Shira');
     await page.getByTestId('gender-female').check(); // gender is required to advance
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-5')).toBeVisible();
@@ -295,7 +337,7 @@ test.describe('order wizard', () => {
     await expect(create).toBeEnabled();
     await create.click();
     await page.waitForURL(/collect\.html\?c=.+&k=.+/);
-    await expect(page.locator('#title')).toContainText('שירה');
+    await expect(page.locator('#title')).toContainText('Shira');
   });
 
   // Phone validation (#9): iPhone/browser autofill produces shapes like
@@ -304,8 +346,9 @@ test.describe('order wizard', () => {
   test('accepts iPhone-autofill phone formats (+972, spaces/dashes, no leading 0)', async ({
     page,
   }) => {
+    await mockPreview(page);
     await page.goto('/options.html?step=4');
-    await page.fill('#honoreeInput', 'שירה');
+    await page.fill('#honoreeInput', 'Shira');
     await page.getByTestId('gender-female').check();
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-5')).toBeVisible();

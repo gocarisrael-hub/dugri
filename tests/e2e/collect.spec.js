@@ -1,6 +1,27 @@
 import { test, expect } from '@playwright/test';
 
+// A 1x1 transparent PNG used as the fake rendered preview image.
+const PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+
 async function createCollection(page, name) {
+  // The create button is gated on the name step until the preview shows — stub
+  // /api/preview so the gate opens without the Python render. Default design is
+  // bachelorette (an ENGLISH theme), so `name` must be a single English word.
+  await page.route('**/api/preview', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        card: PNG,
+        back: PNG,
+        board: PNG,
+        warning: null,
+        word_font: null,
+        word_font_options: [],
+      }),
+    })
+  );
   // Collections are now created at the end of the order wizard (options.html).
   await page.goto('/options.html');
   await page.getByTestId('next-btn').click(); // design -> color
@@ -18,8 +39,8 @@ async function createCollection(page, name) {
 test('create → add words (one-by-one + paste, deduped) → idea generator → close', async ({
   page,
 }) => {
-  await createCollection(page, 'שירה');
-  await expect(page.locator('#title')).toContainText('שירה');
+  await createCollection(page, 'Shira');
+  await expect(page.locator('#title')).toContainText('Shira');
 
   // one-by-one
   await page.fill('#wordInput', 'הדייט מטבריה');
@@ -32,7 +53,7 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
   // idea generator (single tab) shows a personalized prompt
   await page.click('#ideaBtn');
   await expect(page.locator('#ideaBox')).toBeVisible();
-  await expect(page.locator('#ideaBox')).toContainText('שירה');
+  await expect(page.locator('#ideaBox')).toContainText('Shira');
 
   // switch to the list tab; third item is a duplicate → only 2 new, total 3
   await page.click('#tab-list');
@@ -52,7 +73,7 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
 test('owner deleting a word asks for confirmation: cancel/Esc keep it, confirm removes just that one', async ({
   page,
 }) => {
-  await createCollection(page, 'שירה');
+  await createCollection(page, 'Shira');
 
   // Seed TWO words as the owner, so each row's delete control must be uniquely
   // selectable (a shared testid alone would collide under Playwright strict mode).
@@ -106,7 +127,7 @@ test('owner deleting a word asks for confirmation: cancel/Esc keep it, confirm r
 test('submitting a word that already exists shows a non-blocking duplicate toast and does not add a row', async ({
   page,
 }) => {
-  await createCollection(page, 'שירה');
+  await createCollection(page, 'Shira');
 
   // Add a word once — succeeds.
   await page.fill('#wordInput', 'הדייט מטבריה');
@@ -135,7 +156,7 @@ test('submitting a word that already exists shows a non-blocking duplicate toast
 });
 
 test('add-word failure surfaces an error and keeps the typed word', async ({ page }) => {
-  await createCollection(page, 'שקד');
+  await createCollection(page, 'Shira');
 
   // Force the save request to fail (HTTP 500) — a dropped/errored add. Only the
   // POST /words call is intercepted; GET refreshes still hit the real server.
@@ -162,7 +183,7 @@ test('add-word failure surfaces an error and keeps the typed word', async ({ pag
 });
 
 test('owner pay panel: select delivery → address fields appear + total 199', async ({ page }) => {
-  await createCollection(page, 'דנה');
+  await createCollection(page, 'Shira');
 
   // Owner sees the pay panel; it's collapsed by default — open it first.
   await expect(page.locator('#payPanel')).toBeVisible();
@@ -184,7 +205,7 @@ test('owner pay panel: select delivery → address fields appear + total 199', a
 test('owner pay panel is collapsed by default and opens on the summary button', async ({
   page,
 }) => {
-  await createCollection(page, 'אורי');
+  await createCollection(page, 'Shira');
   const panel = page.locator('#payPanel');
   await expect(panel).toBeVisible();
   // Collapsed by default: the inner options are hidden behind one button.
@@ -201,7 +222,7 @@ test('card disabled: no dead pay CTA, neutral note instead, and no top nag', asy
   // The E2E server runs without PELECARD_* credentials, so card_enabled is
   // false. There must be NO clickable pay button, a neutral "coming soon" note
   // in the panel instead, and the top reminder must NOT nag toward a dead panel.
-  await createCollection(page, 'נועה');
+  await createCollection(page, 'Shira');
   await expect(page.locator('#payReminder')).toBeHidden();
   await page.locator('#payPanel summary').click();
   await expect(page.locator('#cardPayBtn')).toBeHidden();
@@ -211,7 +232,7 @@ test('card disabled: no dead pay CTA, neutral note instead, and no top nag', asy
 });
 
 test('below 100 words: Stage-1 bar is scaled to the 100-word minimum', async ({ page }) => {
-  await createCollection(page, 'ליהיא');
+  await createCollection(page, 'Shira');
   // Stage 1 frames the 100-word minimum (not the 416 max) below the goal.
   await expect(page.locator('.count-pill')).toContainText('/ 100');
   await expect(page.locator('.count-pill')).toContainText('מינימום');
@@ -230,7 +251,7 @@ test('below 100 words: Stage-1 bar is scaled to the 100-word minimum', async ({ 
 test('at 100+ words: Stage-2 bar replaces Stage-1 and is scaled to the 416 max', async ({
   page,
 }) => {
-  await createCollection(page, 'רוני');
+  await createCollection(page, 'Shira');
   const url = new URL(page.url());
   const c = url.searchParams.get('c');
   // Reach exactly the 100-word minimum in one API call.
@@ -254,7 +275,7 @@ test('at 100+ words: Stage-2 bar replaces Stage-1 and is scaled to the 416 max',
 test('over the 416 cap: counter shows 416 max (no fraction over cap), bar full', async ({
   page,
 }) => {
-  await createCollection(page, 'אגם');
+  await createCollection(page, 'Shira');
   const url = new URL(page.url());
   const c = url.searchParams.get('c');
   // Push the count past the cap in one API call (417 unique words).
@@ -274,7 +295,7 @@ test('over the 416 cap: counter shows 416 max (no fraction over cap), bar full',
 });
 
 test('struck old price carries the ₪ sign alongside the new price', async ({ page }) => {
-  await createCollection(page, 'מור');
+  await createCollection(page, 'Shira');
   await page.locator('#payPanel summary').click();
   const was = page.locator('#payPanel s.was');
   await expect(was).toHaveText('₪129');
@@ -282,7 +303,7 @@ test('struck old price carries the ₪ sign alongside the new price', async ({ p
 });
 
 test('after payment: pay panel + reminder disappear, סיום card takes over', async ({ page }) => {
-  await createCollection(page, 'רותם');
+  await createCollection(page, 'Shira');
   const url = new URL(page.url());
   const c = url.searchParams.get('c');
   const k = url.searchParams.get('k');
@@ -310,7 +331,7 @@ test('after payment: pay panel + reminder disappear, סיום card takes over', 
 });
 
 test('pay panel shows the new version names and prices', async ({ page }) => {
-  await createCollection(page, 'יעל');
+  await createCollection(page, 'Shira');
   const panel = page.locator('#payPanel');
   await expect(panel).toContainText('דיגיטלי (PDF)');
   await expect(panel).toContainText('מורידים, מדפיסים לבד');
@@ -360,7 +381,7 @@ test('owner applies a valid coupon → discounted total with the struck full pri
   page,
 }) => {
   await seedCoupon(page, 'TEST25', 25);
-  await createCollection(page, 'רבקה');
+  await createCollection(page, 'Shira');
 
   // Open the (collapsed) pay panel — a pdf order starts at ₪79.
   await page.locator('#payPanel summary').click();
@@ -393,7 +414,7 @@ test('owner applies a valid coupon → discounted total with the struck full pri
 test('unknown coupon code shows a not-found message and leaves the total full', async ({
   page,
 }) => {
-  await createCollection(page, 'נטע');
+  await createCollection(page, 'Shira');
   await page.locator('#payPanel summary').click();
   await expect(page.locator('#payTotal')).toHaveText('79');
 
@@ -430,7 +451,7 @@ test('free coupon: pay/init free:true skips the iframe, shows paid UI, clears th
     });
   });
 
-  await createCollection(page, 'לירון');
+  await createCollection(page, 'Shira');
   await page.locator('#payPanel summary').click();
   await expect(page.locator('#cardPayBtn')).toBeVisible();
 
@@ -471,7 +492,7 @@ test('pay/init coupon errors: 400 clears the coupon, 409 and 429 show their mess
     });
   });
 
-  await createCollection(page, 'שני');
+  await createCollection(page, 'Shira');
   await page.locator('#payPanel summary').click();
 
   // Apply a real coupon (79 → 59), then pay/init rejects it → the coupon-invalid
@@ -500,7 +521,7 @@ test('pay/init coupon errors: 400 clears the coupon, 409 and 429 show their mess
 test('questionnaire: answering a question adds the word + shows ✓, and add-another adds a second word', async ({
   page,
 }) => {
-  await createCollection(page, 'שירה');
+  await createCollection(page, 'Shira');
 
   // Open a category so its questions render as interactive rows.
   await page.locator('#catChips .chip').first().click();
@@ -533,17 +554,17 @@ test('questionnaire: answering a question adds the word + shows ✓, and add-ano
 });
 
 test('questionnaire question text carries the honoree name + gender phrasing', async ({ page }) => {
-  await createCollection(page, 'שירה'); // created with gender=female in the wizard
+  await createCollection(page, 'Shira'); // created with gender=female in the wizard
   await page.locator('#catChips .chip').first().click();
   // The first default category is "people"; its first question interpolates the
   // name and resolves the {female|male} token to the feminine form.
   const firstText = page.getByTestId('q-row').first().locator('.q-text');
-  await expect(firstText).toContainText('שירה');
+  await expect(firstText).toContainText('Shira');
   await expect(firstText).toContainText('קוראת'); // feminine form, not "קורא"
 });
 
 test('how-to guidance is a collapsed details on collect that can be opened', async ({ page }) => {
-  await createCollection(page, 'רוני');
+  await createCollection(page, 'Shira');
   const details = page.locator('details.howto');
   await expect(details).toBeAttached();
   // Collapsed by default: the category content is hidden.
@@ -554,7 +575,7 @@ test('how-to guidance is a collapsed details on collect that can be opened', asy
 });
 
 test('unpaid owner sees the locked teaser, not the unlock badge', async ({ page }) => {
-  await createCollection(page, 'טל');
+  await createCollection(page, 'Shira');
   await expect(page.locator('#lockTeaser')).toBeVisible();
   await expect(page.locator('#lockTeaser')).toContainText('שלמו כדי לפתוח');
   await expect(page.locator('#premiumBadge')).toBeHidden();
@@ -564,7 +585,7 @@ test('home link (→ index.html) and a tailored order CTA (→ options.html) are
   page,
   context,
 }) => {
-  await createCollection(page, 'הדר');
+  await createCollection(page, 'Shira');
 
   // Home affordance at the top links back to the main site.
   const home = page.getByTestId('home-link');
@@ -590,7 +611,7 @@ test('home link (→ index.html) and a tailored order CTA (→ options.html) are
 });
 
 test('contributor (no owner key) does NOT see the pay panel', async ({ page, context }) => {
-  await createCollection(page, 'מאיה');
+  await createCollection(page, 'Shira');
   const friendsUrl = page.url().replace(/&k=.*/, '');
   const friend = await context.newPage();
   await friend.goto(friendsUrl);
@@ -601,7 +622,7 @@ test('contributor (no owner key) sees words but cannot add after close', async (
   page,
   context,
 }) => {
-  await createCollection(page, 'נועה');
+  await createCollection(page, 'Shira');
   const ownerUrl = page.url();
   const friendsUrl = ownerUrl.replace(/&k=.*/, '');
 

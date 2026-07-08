@@ -81,9 +81,39 @@ export const VISIBILITY_BY_THEME = {
   'football-boys': 'public',
 };
 
+/**
+ * Required name language per generator theme, mirroring each theme's `language`
+ * field in `generator/themes.json` ("english" | "hebrew"). Inlined here (rather
+ * than fetched) so the order wizard can enforce the honoree-name script for the
+ * chosen design without a round-trip. Keep in sync with themes.json if a theme's
+ * language changes; any theme absent here falls back via languageForDesign().
+ */
+export const LANGUAGE_BY_THEME = {
+  'trip comeback': 'english',
+  bachelorette: 'english',
+  'birthday-girls': 'english',
+  'birthday-girls-neon': 'english',
+  'birthday-boys-basketball': 'hebrew',
+  anniversary: 'hebrew',
+  japanese: 'english',
+  'football-boys': 'english',
+};
+
 /** Resolve a design id to its generator theme key, or null when unknown. */
 export function themeForDesign(id) {
   return THEME_BY_DESIGN[id] || null;
+}
+
+/**
+ * A design's required name language ('english' | 'hebrew') via its theme's
+ * `language` in themes.json (mirrored in LANGUAGE_BY_THEME). Unknown/unmapped
+ * designs default to 'hebrew' — the product and its UI are Hebrew-first, so a
+ * design that declares no language is treated as needing a Hebrew name. Accepts
+ * a language map override for testability.
+ */
+export function languageForDesign(id, languageByTheme = LANGUAGE_BY_THEME) {
+  const theme = themeForDesign(id);
+  return (theme && languageByTheme[theme]) || 'hebrew';
 }
 
 /** The extra fields a design's theme requires (via themeForDesign); [] if none. */

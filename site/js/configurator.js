@@ -386,26 +386,76 @@ export function isValidIlMobile(v) {
 // Honoree name validation
 // ---------------------------------------------------------------------------
 
-// Allowed characters in a honoree name: Hebrew letters (the whole Hebrew block
-// ֐-׿), English letters, spaces, hyphen and apostrophe. Digits and any
-// other symbol are rejected.
-const HONOREE_ALLOWED_RE = /^[֐-׿A-Za-z '-]+$/;
+// Allowed characters in a SINGLE-word honoree name: Hebrew letters (the whole
+// Hebrew block ֐-׿), English letters, hyphen and apostrophe (so single names
+// like "Anne-Marie" / "O'Neil" still pass). NOTE: whitespace is deliberately NOT
+// in this class — the honoree name is ONE word, so any internal space (and any
+// digit or other symbol) makes it invalid.
+const HONOREE_ALLOWED_RE = /^[֐-׿A-Za-z'-]+$/;
 // Must contain at least one actual letter (Hebrew or English) — a value made of
-// only spaces/hyphens/apostrophes is not a real name.
+// only hyphens/apostrophes is not a real name.
 const HONOREE_LETTER_RE = /[֐-׿A-Za-z]/;
+// Script detectors, used to enforce the name language a design requires.
+const HEBREW_LETTER_RE = /[֐-׿]/;
+const LATIN_LETTER_RE = /[A-Za-z]/;
 
 /**
- * True iff `v` is an acceptable honoree name: non-empty once trimmed, made up
- * ONLY of letters (Hebrew or English) plus spaces, hyphens and apostrophes, and
- * containing at least one letter. Any digit or other symbol makes it invalid.
+ * True iff `v` is an acceptable honoree name: a SINGLE word (no whitespace),
+ * non-empty once trimmed, made up ONLY of letters (Hebrew or English) plus
+ * hyphen and apostrophe, and containing at least one letter. Any digit,
+ * whitespace or other symbol makes it invalid.
+ *
+ * The optional `language` enforces the name's SCRIPT to match a design's
+ * required language:
+ *   - 'english' → must be written in Latin letters and contain NO Hebrew letters.
+ *   - 'hebrew'  → must be written in Hebrew letters and contain NO Latin letters.
+ * When `language` is omitted (or any other value) the script is NOT constrained,
+ * so the original one-argument behaviour is preserved (backward-compatible).
+ *
  * @param {string} v
+ * @param {('english'|'hebrew')} [language]
  * @returns {boolean}
  */
-export function isValidHonoreeName(v) {
+export function isValidHonoreeName(v, language) {
   const s = String(v == null ? '' : v).trim();
   if (!s) return false;
   if (!HONOREE_ALLOWED_RE.test(s)) return false;
-  return HONOREE_LETTER_RE.test(s);
+  if (!HONOREE_LETTER_RE.test(s)) return false;
+  if (language === 'english') {
+    if (HEBREW_LETTER_RE.test(s)) return false;
+    if (!LATIN_LETTER_RE.test(s)) return false;
+  } else if (language === 'hebrew') {
+    if (LATIN_LETTER_RE.test(s)) return false;
+    if (!HEBREW_LETTER_RE.test(s)) return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Numeric extra-field validation (AGE / YEARS)
+// ---------------------------------------------------------------------------
+
+/**
+ * True iff `v` is a plain INTEGER made of digits only (an optional single
+ * leading '-' allowed) that falls within [min, max] when those bounds are
+ * given. Stricter than parseInt/Number: any non-digit character — a letter,
+ * space, '.', 'e' or '+' — makes it invalid, so "12abc", "3.5", "1e3" and " "
+ * are all rejected. `min`/`max` may be numbers or numeric strings; '', null or
+ * undefined means that side is unbounded. Unparseable bounds are ignored.
+ * @param {string} v
+ * @param {number|string} [min]
+ * @param {number|string} [max]
+ * @returns {boolean}
+ */
+export function isValidIntegerField(v, min, max) {
+  const s = String(v == null ? '' : v).trim();
+  if (!/^-?\d+$/.test(s)) return false;
+  const n = Number(s);
+  const lo = min === '' || min == null ? -Infinity : Number(min);
+  const hi = max === '' || max == null ? Infinity : Number(max);
+  if (!Number.isNaN(lo) && n < lo) return false;
+  if (!Number.isNaN(hi) && n > hi) return false;
+  return true;
 }
 
 // ---------------------------------------------------------------------------
