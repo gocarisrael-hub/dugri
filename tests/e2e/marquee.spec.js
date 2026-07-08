@@ -54,14 +54,14 @@ test.describe('hero marquee: true endless loop, never blank', () => {
       let worstGap = -Infinity; // >0 px means a blank edge was exposed
       let samples = 0;
       const durationMs = 2500;
-      const start = performance.now();
+      const start = Date.now();
       return await new Promise((resolve) => {
         function tick() {
           const t = track.getBoundingClientRect();
           const s = strip.getBoundingClientRect();
           worstGap = Math.max(worstGap, t.left - s.left, s.right - t.right);
           samples++;
-          if (performance.now() - start < durationMs) requestAnimationFrame(tick);
+          if (Date.now() - start < durationMs) requestAnimationFrame(tick);
           else resolve({ worstGap, samples });
         }
         requestAnimationFrame(tick);
