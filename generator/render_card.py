@@ -88,12 +88,22 @@ def build_svg(title_lines, words):
     sw = stroke(WORD_STROKE, INK)
     body = ""
     for i, (y, w) in enumerate(zip(WORD_BASELINES, words), start=1):
-        marker = f"{i}."
-        marker_w = hebfont.getlength(marker) / 200 * NUM_SIZE
+        # DIGIT rightmost (pinned to NUM_X), PERIOD just to its LEFT, then the
+        # word — three independent right-anchored runs so bidi can't reorder the
+        # "." away from its digit. Reading right-to-left gives "1." then the word.
+        digit = f"{i}"
+        digit_w = hebfont.getlength(digit) / 200 * NUM_SIZE
+        dot_w = hebfont.getlength(".") / 200 * NUM_SIZE
+        tiny = NUM_SIZE * 0.06
+        dot_x = NUM_X - digit_w - tiny
+        marker_w = digit_w + tiny + dot_w
         word_x = NUM_X - marker_w - WORD_SIZE * 0.30
         body += (f'<text x="{NUM_X:.2f}" y="{y:.2f}" font-family="CardHebrew" '
                  f'font-size="{NUM_SIZE:.2f}" fill="{INK}"{sw} '
-                 f'text-anchor="end" xml:space="preserve">{marker}</text>'
+                 f'text-anchor="end" direction="ltr" xml:space="preserve">{digit}</text>'
+                 f'<text x="{dot_x:.2f}" y="{y:.2f}" font-family="CardHebrew" '
+                 f'font-size="{NUM_SIZE:.2f}" fill="{INK}"{sw} '
+                 f'text-anchor="end" xml:space="preserve">.</text>'
                  f'<text x="{word_x:.2f}" y="{y:.2f}" font-family="CardHebrew" '
                  f'font-size="{WORD_SIZE:.2f}" fill="{INK}"{sw} '
                  f'text-anchor="end" xml:space="preserve">{w}</text>')
