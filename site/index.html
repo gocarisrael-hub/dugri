@@ -301,6 +301,11 @@
         }
       }
       /* hero CTA is the default sharp solid-black rectangle (.btn) — no override */
+      /* slide 2 (דוגרי): the CTA+headline group drops into the lower third of the
+         photo (approved layout) instead of sitting dead-centre like slides 1 & 3. */
+      .hero-slide--mid .hero-slide__inner {
+        transform: translateY(20px);
+      }
 
       /* ============ HERO MARQUEE RIBBON ============ */
       /* slim full-width strip under the hero: three phrases scroll endlessly.
@@ -824,11 +829,13 @@
             >
           </div>
         </div>
-        <div class="hero-slide">
+        <div class="hero-slide hero-slide--mid">
           <img class="hero-slide__bg" src="assets/hero-2.jpg" alt="" aria-hidden="true" />
           <!-- slide 2 only: CTA on top, headline UNDERNEATH it — the headline
                reads badly overlapping the board photo, so it drops below the
-               button here (slides 1 & 3 keep the headline above the button). -->
+               button here (slides 1 & 3 keep the headline above the button).
+               The button+title group is nudged into the lower third (approved
+               layout) rather than dead-centred. -->
           <div class="hero-slide__inner">
             <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
               >לרכישה ›</a
