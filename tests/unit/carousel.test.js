@@ -382,6 +382,81 @@ describe('initCarousel — mode class', () => {
   });
 });
 
+describe('initCarousel — fade mode (cross-fade slideshow, no clones)', () => {
+  const visibleSlides = (root) => Array.from(root.children).filter((s) => s.style.opacity === '1');
+
+  it('stacks slides absolutely and tags the root carousel--fade', () => {
+    const root = buildTrack(3);
+    initCarousel(root, { mode: 'fade', autoplay: false });
+    expect(root.classList.contains('carousel--fade')).toBe(true);
+    expect(root.classList.contains('carousel--slideshow')).toBe(false);
+    for (const s of root.children) expect(s.style.position).toBe('absolute');
+  });
+
+  it('shows exactly ONE slide at a time (opacity 1); advancing moves it', () => {
+    const root = buildTrack(3);
+    const api = initCarousel(root, { mode: 'fade', autoplay: false });
+    expect(visibleSlides(root).length).toBe(1);
+    expect(visibleSlides(root)[0]).toBe(root.children[0]);
+
+    api.next();
+    expect(visibleSlides(root).length).toBe(1);
+    expect(visibleSlides(root)[0]).toBe(root.children[1]);
+
+    api.goTo(2);
+    expect(visibleSlides(root).length).toBe(1);
+    expect(visibleSlides(root)[0]).toBe(root.children[2]);
+  });
+
+  it('injects NO clones (fade cross-fades in place)', () => {
+    const root = buildTrack(3);
+    initCarousel(root, { mode: 'fade', autoplay: false });
+    expect(root.querySelectorAll('[data-carousel-clone]').length).toBe(0);
+    expect(root.children.length).toBe(3); // only the real slides, no clones added
+  });
+
+  it('auto-advances on the interval and wraps last→first', () => {
+    vi.useFakeTimers();
+    const root = buildTrack(3);
+    const api = initCarousel(root, { mode: 'fade', interval: 1000 });
+    expect(api.current()).toBe(0);
+
+    vi.advanceTimersByTime(1000);
+    expect(api.current()).toBe(1);
+
+    vi.advanceTimersByTime(1000);
+    expect(api.current()).toBe(2);
+
+    vi.advanceTimersByTime(1000);
+    expect(api.current()).toBe(0); // wrapped round with no clone / jump
+    expect(visibleSlides(root)[0]).toBe(root.children[0]);
+  });
+
+  it('only the visible slide is announced (aria-hidden on the rest)', () => {
+    const root = buildTrack(3);
+    const api = initCarousel(root, { mode: 'fade', autoplay: false });
+    expect(root.children[0].hasAttribute('aria-hidden')).toBe(false);
+    expect(root.children[1].getAttribute('aria-hidden')).toBe('true');
+    expect(root.children[2].getAttribute('aria-hidden')).toBe('true');
+
+    api.goTo(2);
+    expect(root.children[2].hasAttribute('aria-hidden')).toBe(false);
+    expect(root.children[0].getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('restores inline styles, aria and the mode class on destroy', () => {
+    const root = buildTrack(3);
+    const api = initCarousel(root, { mode: 'fade', autoplay: false });
+    api.destroy();
+    for (const s of root.children) {
+      expect(s.style.position).toBe('');
+      expect(s.style.opacity).toBe('');
+      expect(s.hasAttribute('aria-hidden')).toBe(false);
+    }
+    expect(root.classList.contains('carousel--fade')).toBe(false);
+  });
+});
+
 describe('initCarousel — native scroll leaves clicks free', () => {
   it('never intercepts the pointer, so a click inside a card still lands', () => {
     // No pointer-drag interception any more: a tap on a child link fires natively.

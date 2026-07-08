@@ -115,10 +115,12 @@ export function initCarousel(root, opts = {}) {
   if (!root || !root.children || root.children.length === 0) return noopApi();
   if (root.__carousel) return root.__carousel; // idempotent
 
-  const mode = opts.mode === 'slideshow' ? 'slideshow' : 'scroller';
+  const mode = opts.mode === 'slideshow' ? 'slideshow' : opts.mode === 'fade' ? 'fade' : 'scroller';
   const interval = Number.isFinite(opts.interval) ? opts.interval : 5000;
-  const autoplay = opts.autoplay !== false; // slideshow auto-advance (scroller never plays)
-  const loop = opts.loop != null ? !!opts.loop : mode === 'slideshow';
+  // slideshow / fade auto-advance on a timer (scroller never plays)
+  const autoplay = opts.autoplay !== false;
+  const timed = mode === 'slideshow' || mode === 'fade';
+  const loop = opts.loop != null ? !!opts.loop : timed;
   const showDots = opts.dots !== false;
   const showArrows = opts.arrows != null ? !!opts.arrows : mode === 'slideshow';
 
@@ -133,7 +135,9 @@ export function initCarousel(root, opts = {}) {
   // slides. A loop:false carousel (e.g. the PDP photo gallery) must NEVER be cloned:
   // cloning it into a looped-but-clamped state on a snap track makes the image
   // flicker. Honor the flag.
-  const canLoop = loop && n >= 2;
+  // Fade mode NEVER clones: it cross-fades stacked slides in place, so there is no
+  // scroll track to wrap and no full-bleed clone to repaint (the iOS flicker source).
+  const canLoop = loop && n >= 2 && mode !== 'fade';
   let loopActive = false; // true once clones are in place
   const cloneNodes = []; // every injected clone (removed on destroy)
   let appendRef = null; // first append clone (copy of slide 0) — the period anchor
@@ -184,6 +188,13 @@ export function initCarousel(root, opts = {}) {
   // instead of rewinding across every slide. jsdom (no layout) no-ops but keeps the
   // index state.
   function advanceTo(i, smooth) {
+    // Fade mode has no scroll track — advancing just lights slide `i` and the CSS
+    // opacity transition cross-fades from the previous one. Wrapping is inherent
+    // (goTo already took i mod n), so last→first fades round with no jump / clone.
+    if (mode === 'fade') {
+      showFade(i);
+      return;
+    }
     let rootRect;
     try {
       rootRect = root.getBoundingClientRect();
@@ -268,6 +279,81 @@ export function initCarousel(root, opts = {}) {
     } catch {
       return index;
     }
+  }
+
+  // ---- fade mode (cross-fade slideshow) ----------------------------------
+  // Stack every slide in one box (absolute, same rect) and cross-fade opacity
+  // between them — NO horizontal scroll and NO clones. Both a scroll jump and a
+  // full-bleed clone force iOS to repaint the large hero photo, which is exactly
+  // what flickered on auto-advance; an opacity blend on a promoted layer does not.
+  // Wrapping is inherent: goTo() hands us the index already taken mod n, so
+  // last→first simply fades round. Under reduced motion the transition is dropped
+  // (instant swap) and autoplay is already suppressed by play(), so it just rests
+  // on the first slide. Idempotent inline styles, all restored on destroy.
+  const FADE_MS = 800;
+  function showFade(i) {
+    for (let k = 0; k < slides.length; k++) {
+      const s = slides[k];
+      const active = k === i;
+      s.style.opacity = active ? '1' : '0';
+      s.style.zIndex = active ? '1' : '0';
+      s.style.pointerEvents = active ? '' : 'none';
+      if (active) s.removeAttribute('aria-hidden');
+      else s.setAttribute('aria-hidden', 'true'); // only the visible slide announces
+    }
+  }
+  function setupFade() {
+    const transition = reduced() ? 'none' : `opacity ${FADE_MS}ms var(--ease, ease)`;
+    root.style.position = 'relative'; // anchor the absolutely-stacked slides
+    root.style.display = 'block'; // override the .carousel-track flex row
+    root.style.overflow = 'hidden';
+    cleanups.push(() => {
+      root.style.position = '';
+      root.style.display = '';
+      root.style.overflow = '';
+    });
+    for (const s of slides) {
+      const st = s.style;
+      st.position = 'absolute';
+      st.top = '0';
+      st.left = '0';
+      st.right = '0';
+      st.bottom = '0';
+      st.width = '100%';
+      st.height = '100%';
+      st.transition = 'none'; // no transition for the INITIAL hide (see below)
+      // Own compositor layer so the cross-fade is a cheap GPU opacity blend
+      // instead of a repaint of the full-bleed photo.
+      st.willChange = 'opacity';
+      st.transform = 'translateZ(0)';
+      cleanups.push(() => {
+        st.position = '';
+        st.top = '';
+        st.left = '';
+        st.right = '';
+        st.bottom = '';
+        st.width = '';
+        st.height = '';
+        st.transition = '';
+        st.willChange = '';
+        st.transform = '';
+        st.opacity = '';
+        st.zIndex = '';
+        st.pointerEvents = '';
+        s.removeAttribute('aria-hidden');
+      });
+    }
+    // Commit the initial opacities (slide 0 shown, the rest hidden) with NO
+    // transition, so the non-active slides don't visibly fade OUT from 1→0 on
+    // load. A forced reflow flushes that state, then we enable the cross-fade so
+    // only subsequent advances animate.
+    showFade(index);
+    try {
+      void root.offsetHeight; // force layout flush (no-op in jsdom)
+    } catch {
+      /* jsdom / detached */
+    }
+    for (const s of slides) s.style.transition = transition;
   }
 
   // ---- controls (dots + arrows) ------------------------------------------
@@ -359,7 +445,7 @@ export function initCarousel(root, opts = {}) {
     }
   }
   function play() {
-    if (mode !== 'slideshow' || !autoplay || reduced() || n < 2) return;
+    if (!timed || !autoplay || reduced() || n < 2) return;
     stopTimer();
     timer = setInterval(next, interval);
   }
@@ -473,8 +559,8 @@ export function initCarousel(root, opts = {}) {
     addedTabindex = true;
   }
 
-  // ---- slideshow: pause on hover / focus, resume on leave ----------------
-  if (mode === 'slideshow') {
+  // ---- auto-advancing modes: pause on hover / focus, resume on leave -----
+  if (timed) {
     on(root, 'mouseenter', pause);
     on(root, 'mouseleave', play);
     on(root, 'focusin', pause);
@@ -483,7 +569,7 @@ export function initCarousel(root, opts = {}) {
 
   // React to a live reduced-motion toggle.
   const onMotion = () => {
-    if (mode !== 'slideshow') return;
+    if (!timed) return;
     if (reduced()) pause();
     else play();
   };
@@ -499,7 +585,12 @@ export function initCarousel(root, opts = {}) {
   // Mode class lets the CSS pick the right feel: a slideshow snaps hard (one slide
   // at a time, scroll-snap x mandatory); a scroller free-glides (scroll-snap none)
   // and gets the JS turbo momentum on top.
-  const modeClass = mode === 'slideshow' ? 'carousel--slideshow' : 'carousel--scroller';
+  const modeClass =
+    mode === 'slideshow'
+      ? 'carousel--slideshow'
+      : mode === 'fade'
+        ? 'carousel--fade'
+        : 'carousel--scroller';
   root.classList.add(modeClass);
   const slideClass = mode === 'scroller' ? 'carousel-card' : 'carousel-slide';
   slides.forEach((s, i) => {
@@ -732,7 +823,8 @@ export function initCarousel(root, opts = {}) {
 
   // ---- go live -----------------------------------------------------------
   updateControls();
-  if (mode === 'slideshow') play();
+  if (mode === 'fade') setupFade();
+  if (timed) play();
 
   function destroy() {
     pause();
