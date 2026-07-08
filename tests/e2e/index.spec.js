@@ -89,7 +89,7 @@ test.describe('landing page hero', () => {
 });
 
 test.describe('hero marquee ribbon', () => {
-  test('a scrolling ribbon lists all three phrases, duplicated for a seamless loop', async ({
+  test('a scrolling ribbon lists all three phrases, built from two identical halves for a seamless loop', async ({
     page,
   }) => {
     await page.goto('/index.html');
@@ -99,14 +99,24 @@ test.describe('hero marquee ribbon', () => {
 
     const phrases = ['מפעילים את הטיימר', 'מנחשים מילים', 'הכל עליכם'];
 
-    // The phrase set is duplicated inside the track so the CSS translateX 0 → -50%
-    // loop is seamless; each identical group must carry all three phrases.
-    const groups = marquee.locator('.marquee__group');
-    await expect(groups).toHaveCount(2);
-    for (let i = 0; i < 2; i++) {
-      const txt = await groups.nth(i).innerText();
+    // The track is EXACTLY two halves; the CSS translateX 0 → -50% loop moves it
+    // by one half-width, so the loop is seamless only if the two halves are
+    // pixel-identical. Each half repeats the 3-phrase group several times so a
+    // single half is always wider than the viewport (no blank gap at any width).
+    const halves = marquee.locator('.marquee__half');
+    await expect(halves).toHaveCount(2);
+
+    const texts = await halves.evaluateAll((els) => els.map((el) => el.innerText));
+    // Each half carries all three phrases...
+    for (const txt of texts) {
       for (const p of phrases) expect(txt).toContain(p);
     }
+    // ...and the two halves are identical, which is what makes the loop seamless.
+    expect(texts[0]).toBe(texts[1]);
+
+    // Each half repeats the 3-phrase group multiple times so it can fill the strip.
+    const groupsPerHalf = await halves.first().locator('.marquee__group').count();
+    expect(groupsPerHalf).toBeGreaterThanOrEqual(3);
   });
 });
 
@@ -215,7 +225,9 @@ test.describe('real customer testimonials', () => {
     expect(body).not.toContain('אליאס');
   });
 
-  test('each review sits in its own distinct non-white warm-sand box', async ({ page }) => {
+  test('each review sits in its own distinct warm card that lifts off the sand section', async ({
+    page,
+  }) => {
     await page.goto('/index.html');
 
     const reviews = page.locator(
@@ -227,18 +239,26 @@ test.describe('real customer testimonials', () => {
       els.map((el) => getComputedStyle(el).backgroundColor)
     );
     expect(bgs.length).toBe(4);
-    // None is white or transparent — each carries a warm-sand tint (pink is
-    // logo-only now)...
-    const WHITE = new Set(['rgb(255, 255, 255)', 'rgba(0, 0, 0, 0)', 'transparent']);
+
+    // The section wash is the sand token --section (#f4efe6). Each review is a
+    // distinct warm off-white CARD, deliberately LIGHTER than the section so it
+    // lifts off the wash (border + shadow do the rest) instead of blending in.
+    const SECTION = [244, 239, 230];
+    const sectionSum = SECTION[0] + SECTION[1] + SECTION[2];
     for (const bg of bgs) {
-      expect(WHITE.has(bg), `review bg ${bg} must be a tint, not white/transparent`).toBe(false);
+      // never transparent
+      expect(bg, `review bg ${bg} must be an opaque fill`).not.toMatch(
+        /rgba?\(0, 0, 0, 0\)|transparent/
+      );
       const [r, g, b] = bg.match(/\d+/g).map(Number);
-      // ...and it reads as a light warm neutral: every channel bright (light),
-      // none pure white, and warm — red at least as strong as blue (sand, not
-      // pink/blue). A pink cast would push blue up over red; sand keeps r ≥ b.
-      expect(Math.min(r, g, b)).toBeGreaterThan(200);
-      expect(Math.max(r, g, b)).toBeLessThan(250);
+      // clearly not the sand section itself
+      expect([r, g, b], `review bg ${bg} must differ from the sand section`).not.toEqual(SECTION);
+      // a bright, light card...
+      expect(Math.min(r, g, b)).toBeGreaterThan(210);
+      // ...that is warm — red at least as strong as blue (sand/cream, not pink/blue)
       expect(r).toBeGreaterThanOrEqual(b);
+      // ...and lighter than the sand section, so it reads as a raised card on it
+      expect(r + g + b).toBeGreaterThan(sectionSum);
     }
     // The four shades are distinct from one another.
     expect(new Set(bgs).size).toBe(4);
