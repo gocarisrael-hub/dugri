@@ -497,15 +497,27 @@
          mini-preview overrides this with its own small height cap. */
       .preview-panel[data-panel='front'] svg,
       .preview-panel[data-panel='back'] svg,
-      .preview-panel[data-panel='board'] svg,
-      .preview-panel[data-panel='front'] img,
-      .preview-panel[data-panel='back'] img,
-      .preview-panel[data-panel='board'] img {
+      .preview-panel[data-panel='board'] svg {
         width: 100%;
         height: auto;
         max-width: 100%;
         max-height: min(56vh, 460px);
         aspect-ratio: var(--page-ratio);
+      }
+      /* Raster products (e.g. a rendered card/board image) must keep their TRUE
+         aspect ratio — never squished into the landscape page box. Size them by
+         their intrinsic ratio (auto/auto, capped by the same viewport share) and
+         add object-fit: contain so, even if a cap clamps them, the art letterboxes
+         inside the frame rather than stretching. The <img> default is object-fit:
+         fill, which is what squished portrait art into the 1.414 landscape box. */
+      .preview-panel[data-panel='front'] img,
+      .preview-panel[data-panel='back'] img,
+      .preview-panel[data-panel='board'] img {
+        width: auto;
+        height: auto;
+        max-width: 100%;
+        max-height: min(56vh, 460px);
+        object-fit: contain;
       }
       .preview-panel svg,
       .preview-panel img {
@@ -862,6 +874,7 @@
         height: auto;
         max-width: 100%;
         max-height: clamp(84px, 12vh, 128px);
+        object-fit: contain;
       }
       .preview-chip {
         margin-top: 12px;
@@ -1891,22 +1904,45 @@
               aria-label="גופן המילים"
             ></div>
           </div>
-          <div class="name-preview-imgs" id="namePreviewImgs">
-            <figure class="name-preview-fig">
-              <img id="namePreviewCard" data-testid="name-preview-card" alt="תצוגת קלף" />
-            </figure>
-            <figure class="name-preview-fig">
-              <img
-                id="namePreviewBack"
-                data-testid="name-preview-back"
-                alt="תצוגת גב הקלף"
-                hidden
-              />
-            </figure>
-            <figure class="name-preview-fig">
-              <img id="namePreviewBoard" data-testid="name-preview-board" alt="תצוגת לוח" />
-            </figure>
+          <!-- Swipeable inline carousel: ONE view at a time (card → back → board),
+               advanced by a horizontal finger-swipe on touch or by the dots below
+               on desktop. Tapping (no drag) still opens the fullscreen zoom, and
+               the explicit "הגדלה" button is the primary enlarge affordance. The
+               track is direction:ltr so the JS translateX math is unambiguous in
+               this RTL page; the images themselves carry no directional content. -->
+          <div
+            class="name-preview-viewport"
+            id="namePreviewViewport"
+            data-testid="name-preview-viewport"
+          >
+            <div class="name-preview-imgs" id="namePreviewImgs">
+              <figure class="name-preview-fig" data-npview="card">
+                <img id="namePreviewCard" data-testid="name-preview-card" alt="תצוגת קלף" />
+              </figure>
+              <figure class="name-preview-fig" data-npview="back" hidden>
+                <img
+                  id="namePreviewBack"
+                  data-testid="name-preview-back"
+                  alt="תצוגת גב הקלף"
+                  hidden
+                />
+              </figure>
+              <figure class="name-preview-fig" data-npview="board">
+                <img id="namePreviewBoard" data-testid="name-preview-board" alt="תצוגת לוח" />
+              </figure>
+            </div>
           </div>
+          <!-- Desktop / no-touch navigation between the views (also a live position
+               indicator on touch). One dot per PRESENT view, rebuilt when the set
+               changes (back/board are conditional). -->
+          <div
+            class="name-preview-dots"
+            id="namePreviewDots"
+            data-testid="name-preview-dots"
+            role="tablist"
+            aria-label="מעבר בין תצוגות"
+            hidden
+          ></div>
           <!-- Enlarge the rendered name preview: opens the shared zoom overlay in
                image mode, swiping between the card + board (see openNameZoom). -->
           <button
@@ -1968,37 +2004,90 @@
             max-width: 460px;
             font-size: 14px;
           }
-          /* card primary, board smaller; centered and contained so neither image
-             ever overflows its frame. On a narrow phone they wrap and stack. */
+          /* Swipeable carousel: the viewport clips to ONE slide; the track holds
+             the card/back/board figures side by side and is translated by JS.
+             touch-action: pan-y lets a vertical drag still scroll the page while a
+             horizontal drag is captured as a view-swipe. */
+          .name-preview-viewport {
+            max-width: 320px;
+            margin: 0 auto;
+            overflow: hidden;
+            touch-action: pan-y;
+          }
           .name-preview-imgs {
             display: flex;
-            justify-content: center;
+            flex-wrap: nowrap;
             align-items: flex-start;
-            gap: 14px;
-            flex-wrap: wrap;
+            /* the JS view-swipe math is written LTR; keep the track LTR even on
+               this RTL page (the images carry no directional content). */
+            direction: ltr;
+            transition: transform 0.28s ease;
+            will-change: transform;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .name-preview-imgs {
+              transition: none;
+            }
           }
           .name-preview-fig {
             margin: 0;
-            flex: 0 1 auto;
-            max-width: 100%;
+            /* each figure is exactly one viewport wide, so only one shows at a time */
+            flex: 0 0 100%;
+            display: flex;
+            justify-content: center;
+          }
+          /* a view that isn't present (no back / no board) drops out of the track */
+          .name-preview-fig[hidden] {
+            display: none;
           }
           .name-preview-fig img {
             display: block;
             width: 100%;
             max-width: 300px;
             height: auto;
+            object-fit: contain;
             border: 1px solid var(--line);
             border-radius: var(--radius);
             background: #fff;
             cursor: zoom-in;
           }
           /* board is a supporting thumbnail — a touch smaller than the card */
-          .name-preview-fig:last-child img {
+          .name-preview-fig[data-npview='board'] img {
             max-width: 232px;
           }
           .name-preview-fig img:not([src]),
           .name-preview-fig img[hidden] {
             display: none;
+          }
+          /* the dots row: one dot per present view, doubling as a desktop control */
+          .name-preview-dots {
+            display: flex;
+            justify-content: center;
+            gap: 9px;
+            margin-top: 12px;
+          }
+          .name-preview-dots[hidden] {
+            display: none;
+          }
+          .np-dot {
+            width: 10px;
+            height: 10px;
+            padding: 0;
+            border: none;
+            border-radius: 50%;
+            background: var(--line);
+            cursor: pointer;
+            transition:
+              background 0.18s ease,
+              transform 0.18s ease;
+          }
+          .np-dot[aria-selected='true'] {
+            background: var(--accent);
+            transform: scale(1.25);
+          }
+          .np-dot:focus-visible {
+            outline: 3px solid var(--sage);
+            outline-offset: 2px;
           }
           /* author display:flex would otherwise beat the UA [hidden] rule */
           .name-preview-imgs[hidden] {
@@ -2362,6 +2451,7 @@
         isValidIlMobile,
         isValidHonoreeName,
         normalizeIlPhone,
+        previewViewList,
       } from './js/configurator.js';
       import { track } from './js/analytics.js';
 
@@ -2978,6 +3068,8 @@
       const namePreviewWarn = document.getElementById('namePreviewWarn');
       const namePreviewEmpty = document.getElementById('namePreviewEmpty');
       const namePreviewImgs = document.getElementById('namePreviewImgs');
+      const namePreviewViewport = document.getElementById('namePreviewViewport');
+      const namePreviewDots = document.getElementById('namePreviewDots');
       const namePreviewFallback = document.getElementById('namePreviewFallback');
       const npfName = document.getElementById('npfName');
       const npfNote = document.getElementById('npfNote');
@@ -3144,6 +3236,8 @@
           namePreviewEmpty.hidden = true;
           // images are ready → offer the enlarge affordance
           if (nameZoomOpenBtn) nameZoomOpenBtn.hidden = false;
+          // rebuild the swipe/dots for the views that actually rendered
+          syncNamePreviewCarousel();
         } catch (e) {
           if (epoch !== previewEpoch) return;
           // Server preview unavailable (network drop or non-OK response) — never
@@ -3153,6 +3247,7 @@
           namePreviewEmpty.hidden = true;
           namePreviewWarn.hidden = true;
           namePreviewImgs.hidden = true;
+          namePreviewDots.hidden = true;
           if (nameZoomOpenBtn) nameZoomOpenBtn.hidden = true;
           npfName.textContent = name;
           if (attempt === 0) {
@@ -3191,8 +3286,116 @@
       // retry again). openNameZoom is a hoisted declaration in the zoom section.
       if (npfRetry) npfRetry.addEventListener('click', () => doPreview(0));
       if (nameZoomOpenBtn) nameZoomOpenBtn.addEventListener('click', () => openNameZoom());
-      // tapping the rendered images also enlarges them
-      if (namePreviewImgs) namePreviewImgs.addEventListener('click', () => openNameZoom());
+
+      /* ================= inline name-preview carousel =================
+         The step-4 preview shows ONE view at a time (card → back → board) and is
+         directly swipeable: a horizontal finger-swipe advances/retreats, dots give
+         a desktop-operable equivalent, and a plain tap still opens the fullscreen
+         zoom. The present view set mirrors openNameZoom (card always; back/board
+         only when the server returned them), so the swipe never lands on an empty
+         slide. */
+      const npFigs = namePreviewImgs
+        ? Array.from(namePreviewImgs.querySelectorAll('.name-preview-fig'))
+        : [];
+      let npViews = []; // present view ids in track order, e.g. ['card','board']
+      let npIndex = 0;
+
+      // Which views actually rendered — same rule (and order) the zoom overlay uses.
+      function namePreviewPresentViews() {
+        return previewViewList({
+          hasBack: !namePreviewBack.hidden && !!namePreviewBack.getAttribute('src'),
+          hasBoard: !namePreviewBoard.hidden && !!namePreviewBoard.getAttribute('src'),
+        });
+      }
+
+      function npApplyTransform() {
+        // slides are 100% wide and the track is LTR, so view i sits at i*100%.
+        namePreviewImgs.style.transform = 'translateX(-' + npIndex * 100 + '%)';
+      }
+
+      function npMarkDots() {
+        namePreviewDots.querySelectorAll('.np-dot').forEach((d, i) => {
+          d.setAttribute('aria-selected', i === npIndex ? 'true' : 'false');
+        });
+      }
+
+      const NP_VIEW_LABELS = { card: 'קלף', back: 'גב', board: 'לוח' };
+      function npBuildDots() {
+        namePreviewDots.innerHTML = '';
+        npViews.forEach((id, i) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'np-dot';
+          b.setAttribute('role', 'tab');
+          b.dataset.npdot = id;
+          b.dataset.testid = 'name-preview-dot-' + id;
+          b.setAttribute('aria-label', NP_VIEW_LABELS[id] || id);
+          b.setAttribute('aria-selected', i === npIndex ? 'true' : 'false');
+          b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            npGoTo(i);
+          });
+          namePreviewDots.appendChild(b);
+        });
+        // one lone view needs no navigation control
+        namePreviewDots.hidden = npViews.length < 2;
+      }
+
+      function npGoTo(i) {
+        if (i < 0 || i >= npViews.length) return;
+        npIndex = i;
+        npApplyTransform();
+        npMarkDots();
+      }
+      function npAdjacent(dir) {
+        npGoTo(Math.min(npViews.length - 1, Math.max(0, npIndex + dir)));
+      }
+
+      // Recompute the present views, show/hide their figures, rebuild the dots and
+      // clamp the current index. Called whenever a fresh preview lands.
+      function syncNamePreviewCarousel() {
+        if (!namePreviewImgs) return;
+        npViews = namePreviewPresentViews();
+        npFigs.forEach((fig) => {
+          fig.hidden = npViews.indexOf(fig.dataset.npview) < 0;
+        });
+        if (npIndex >= npViews.length) npIndex = npViews.length - 1;
+        if (npIndex < 0) npIndex = 0;
+        npBuildDots();
+        npApplyTransform();
+      }
+
+      // Touch/mouse swipe + tap-to-zoom on the viewport. A horizontal drag past
+      // the threshold navigates; anything smaller is treated as a tap and opens the
+      // fullscreen zoom (the dedicated "הגדלה" button remains the primary control).
+      const NP_SWIPE_MIN = 45; // px
+      const NP_TAP_MOVE_MAX = 10; // px
+      if (namePreviewViewport) {
+        let npDownX = 0;
+        let npDownY = 0;
+        let npDown = false;
+        namePreviewViewport.addEventListener('pointerdown', (e) => {
+          npDown = true;
+          npDownX = e.clientX;
+          npDownY = e.clientY;
+        });
+        namePreviewViewport.addEventListener('pointerup', (e) => {
+          if (!npDown) return;
+          npDown = false;
+          const dx = e.clientX - npDownX;
+          const dy = e.clientY - npDownY;
+          // horizontal swipe → change view (LTR track: left = next, right = prev)
+          if (Math.abs(dx) >= NP_SWIPE_MIN && Math.abs(dx) > Math.abs(dy) * 1.3) {
+            npAdjacent(dx < 0 ? 1 : -1);
+            return;
+          }
+          // a genuine tap (barely moved) → open the fullscreen zoom
+          if (Math.hypot(dx, dy) <= NP_TAP_MOVE_MAX) openNameZoom();
+        });
+        namePreviewViewport.addEventListener('pointercancel', () => {
+          npDown = false;
+        });
+      }
 
       // Both contact fields are required so we can always reach the owner with
       // the management link (same rules the retired thankyou page used).

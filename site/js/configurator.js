@@ -483,3 +483,18 @@ export function assertManifest(designs, mainColors) {
   }
   return true;
 }
+
+/**
+ * Ordered list of name-preview view ids that actually rendered. The card is
+ * always present; the card back and board are conditional on the server having
+ * returned them. Used by BOTH the inline swipe carousel and the fullscreen zoom
+ * so they walk the exact same sequence (card → back → board).
+ * @param {{ hasBack?: boolean, hasBoard?: boolean }} present
+ * @returns {Array<'card'|'back'|'board'>}
+ */
+export function previewViewList({ hasBack = false, hasBoard = false } = {}) {
+  const views = ['card'];
+  if (hasBack) views.push('back');
+  if (hasBoard) views.push('board');
+  return views;
+}
