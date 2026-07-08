@@ -106,13 +106,13 @@ function renderGallery(d) {
     slide.appendChild(img);
     track.appendChild(slide);
   }
-  // Slideshow feel with dots (owner-swappable photo carousel). No auto-advance
-  // so the shopper controls it; dots + swipe/keys drive navigation.
+  // Slideshow feel, no dots (owner-swappable photo carousel). No auto-advance
+  // so the shopper controls it; swipe/keys drive navigation.
   galleryApi = initCarousel(track, {
     mode: 'slideshow',
     autoplay: false,
     loop: false,
-    dots: true,
+    dots: false,
     arrows: false,
     dotsInto: document.getElementById('galleryDots'),
   });
@@ -145,7 +145,7 @@ function renderZoom(d) {
   // Same shared engine as the site carousels → native, reliable finger-swipe.
   zoomApi = initCarousel(track, {
     mode: 'slideshow',
-    dots: true,
+    dots: false,
     loop: true,
     arrows: false,
     autoplay: false,

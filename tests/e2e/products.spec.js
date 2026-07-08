@@ -28,7 +28,7 @@ test.describe('store grid (products.html)', () => {
       // The real store cover photo (deck + board on a table), a name and a price.
       await expect(card.locator('[data-testid="product-image"]')).toHaveAttribute(
         'src',
-        /assets\/designs\/.+\/cover\.webp$/
+        /assets\/designs\/.+\/store\.webp$/
       );
       await expect(card.locator('.product-name')).not.toHaveText('');
       await expect(card.locator('.product-price')).toContainText('79 ₪');
