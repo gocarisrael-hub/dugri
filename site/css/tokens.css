@@ -2,11 +2,12 @@
  * Dugri design tokens — the single source of truth for the site palette.
  *
  * Mostly-monochrome rebuild: white ground, near-black ink, neutral hairlines/text.
- * The section wash (--section) and the blush surface tint (--blush-tint) are now a
- * VERY LIGHT PINK rather than grey — a soft accent that ties to the pink logo, so the
- * alternating .alt sections read faintly pink instead of grey. Ink, muted text and
- * hairlines stay neutral. Corners are sharp (radius 0) everywhere. Headings are thin
- * Heebo Light with airy tracking.
+ * The section wash (--section) and the blush surface tint (--blush-tint) are a WARM
+ * SAND / GREIGE — a natural, light neutral (replacing the old very-light-pink), so the
+ * alternating .alt sections read as soft warm surfaces. Pink now lives ONLY on the logo.
+ * --accent is the warm-sand accent used where a soft brand accent is wanted (e.g. the
+ * chasers toggle), replacing the previous black/pink. Ink, muted text and hairlines stay
+ * neutral. Corners are sharp (radius 0) everywhere. Headings are thin Heebo Light.
  *
  * The old sage/blush token NAMES are kept (--sage, --blush, …) and simply remapped to
  * black/gray, so every page that references them turns monochrome without per-page edits.
@@ -17,7 +18,7 @@
 :root {
   /* neutrals — white ground, near-black ink */
   --bg: #ffffff; /* page background */
-  --section: #fdf2f5; /* very-light-pink wash for alternating sections / soft surfaces (ties to the pink logo) */
+  --section: #f4efe6; /* warm sand/greige wash for alternating sections / soft surfaces (natural, light) */
   --surface: #ffffff; /* cards */
   --ink: #141414; /* near-black text */
   --muted: #6b6b6b; /* gray secondary text */
@@ -29,9 +30,15 @@
   --sage-deeper: #000000;
   --sage-tint: #f0f0f0; /* selected-card wash, active pills */
 
-  /* small accents — blush stays near-black ink; its tint is a very-light-pink surface */
+  /* small accents — blush stays near-black ink; its tint is a warm-sand surface */
   --blush: #141414;
-  --blush-tint: #fceef3;
+  --blush-tint: #efe7d9;
+
+  /* warm-sand brand accent — the natural, light accent that replaces pink/black where a
+     soft accent is wanted (e.g. the chasers yes/no toggle). Full-strength + deep + tint. */
+  --accent: #b7a389;
+  --accent-deep: #9c8768;
+  --accent-tint: #ece3d5;
 
   /* functional — semantic status only (not brand accent) */
   --ok: #2f9e6b; /* success state (payment received, etc.) */
