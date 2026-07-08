@@ -159,6 +159,27 @@ test.describe('fullscreen zoom overlay', () => {
     // the artwork for the new view is present
     await expect(page.locator('#zoomContent svg, #zoomContent img')).toBeVisible();
   });
+
+  test('the viewport reserves horizontal for the swipe until zoomed in', async ({ page }) => {
+    // On real iOS a viewport that keeps touch-action:pan-x lets the browser eat a
+    // sideways drag as native panning, so the finger-swipe between views never
+    // fires (Playwright's synthetic pointer events bypass this, so the swipe test
+    // above passes even when real touch is broken). Guard the actual mechanism:
+    // at rest the viewport must reserve horizontal (pan-y only), and only hand it
+    // back to native panning once zoomed in.
+    await page.goto('/options.html');
+    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await page.getByTestId('zoom-open').click();
+    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
+
+    const vp = page.getByTestId('zoom-viewport');
+    const touchAction = () => vp.evaluate((el) => getComputedStyle(el).touchAction);
+    // at rest (sheet fits, zoom = 1): horizontal is ours → pan-y only
+    expect(await touchAction()).toBe('pan-y');
+    // zoom in → the overflowing sheet needs native horizontal panning
+    await page.getByTestId('zoom-in').click();
+    expect(await touchAction()).toBe('pan-x pan-y');
+  });
 });
 
 // The rotate-device hint is only meaningful on a touch device held in portrait.

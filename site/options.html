@@ -1449,9 +1449,12 @@
         display: grid;
         place-content: safe center;
         padding: 14px;
-        /* allow single-finger pan (native scroll) while our JS owns two-finger
-           pinch and double-tap; disables the browser's own double-tap zoom. */
-        touch-action: pan-x pan-y;
+        /* At rest (image fits, not zoomed) we reserve HORIZONTAL gestures for our
+           JS view-swipe — so touch-action is pan-y only; otherwise iOS consumes a
+           sideways drag as native panning and the swipe never registers. When
+           zoomed in, setZoom() switches this to pan-x pan-y so the overflowing
+           sheet can be panned. JS owns two-finger pinch + double-tap. */
+        touch-action: pan-y;
         -webkit-overflow-scrolling: touch;
       }
       .zoom-content {
@@ -3507,6 +3510,11 @@
         zoomContent.style.setProperty('--zoom', String(zoomScale));
         zoomOutBtn.disabled = zoomScale <= ZOOM_MIN;
         zoomInBtn.disabled = zoomScale >= ZOOM_MAX;
+        // Reserve horizontal for the JS view-swipe while the sheet fits; once
+        // zoomed in, hand horizontal back to native panning so the overflowing
+        // sheet can be dragged around. This is what makes the finger-swipe
+        // between card/back/board actually fire on real iOS touch.
+        zoomViewport.style.touchAction = zoomScale > ZOOM_MIN ? 'pan-x pan-y' : 'pan-y';
       }
 
       // Clone the active panel's live SVG (carrying its current palette) in.
