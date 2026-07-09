@@ -43,6 +43,176 @@ def test_anniversary_title_uses_standard_script_font():
     assert cfg["title_style"]["shadow"] is False, "no drop shadow on the title"
 
 
+def test_title_is_rtl_by_language():
+    # RTL handling is keyed off the theme's language: Hebrew titles are RTL,
+    # English ones are not. (bug: anniversary "{YEARS} שנה נישואין" had the number
+    # on the wrong/left side because the title text had no base direction.)
+    import render_page
+
+    assert render_page.title_is_rtl(config.theme("anniversary")) is True
+    assert render_page.title_is_rtl(config.theme("birthday-boys-basketball")) is True
+    assert render_page.title_is_rtl(config.theme("trip comeback")) is False
+    assert render_page.title_is_rtl(config.theme("bachelorette")) is False
+
+
+def test_title_block_applies_rtl_for_hebrew_digit_title():
+    # Regression: a Hebrew title that mixes a number with Hebrew words (e.g.
+    # "30 שנה נישואין") must be drawn with a right-to-left BASE direction so the
+    # number reads on the RIGHT (Hebrew start), not the left. Assert the emitted
+    # SVG <text> carries direction="rtl" for a Hebrew title and NOT for English.
+    import render_page
+
+    font = os.path.join(config.HERE, "Cafe-Regular.ttf")  # a real font in generator/
+    box = {"x0": 0, "y0": 0, "x1": 400, "y1": 200}
+
+    he = render_page.title_block(
+        box, ["30 שנה נישואין"], "#004aad", "#004aad", font, 0, 0, False, rtl=True
+    )
+    assert 'direction="rtl"' in he, "Hebrew digit title must render right-to-left"
+    # the digits are kept as one unit ("30"), not reversed/split into the markup
+    assert "30 שנה נישואין" in he
+
+    en = render_page.title_block(
+        box, ["OZ'S"], "#000", "#000", font, 0, 0, False, rtl=False
+    )
+    assert 'direction="rtl"' not in en, "English titles must stay left-to-right"
+
+
+def test_board_and_backs_render_paths_wire_rtl():
+    # Regression: the RTL base-direction fix must reach the BOARD and card-BACK
+    # title paths too, not only the front card. A Hebrew digit title (anniversary
+    # "30 שנה נישואין") would otherwise keep the number on the wrong side on the
+    # board + backs. Spy on title_block to assert render_board/render_backs pass
+    # rtl=True for a Hebrew theme and rtl=False for an English one.
+    import json
+    import tempfile
+
+    import render_page as rp
+    import build
+
+    font = os.path.join(config.HERE, "Cafe-Regular.ttf")  # a real font in generator/
+    tmp = tempfile.mkdtemp(prefix="dugri-test-rtl-")
+
+    def make_svg(p):
+        with open(p, "w", encoding="utf-8") as f:
+            f.write('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" '
+                    'viewBox="0 0 100 100"></svg>')
+
+    board_svg = os.path.join(tmp, "board.svg")
+    backs_svg = os.path.join(tmp, "backs.svg")
+    make_svg(board_svg)
+    make_svg(backs_svg)
+
+    def make_cfg(language):
+        return {
+            "slug": "synthetic", "calibrated": True, "language": language,
+            "recipe": "synthetic-rtl-test",
+            "title_font": "Cafe-Regular.ttf", "word_font": "Cafe-Regular.ttf",
+            "title_style": {"fill": "#fff", "outline": "#000", "outline_w": 0.0,
+                            "arch": 0.1, "shadow": False},
+            "board": {"fill": "#fff", "outline": "#000",
+                      "frac": {"x0": 0.1, "y0": 0.1, "x1": 0.9, "y1": 0.3}},
+            "back": {"fill": "#fff", "outline": "#000",
+                     "frac": {"x0": 0.1, "y0": 0.1, "x1": 0.9, "y1": 0.9}},
+        }
+
+    recipe = {"viewBox": [0, 0, 100, 100], "cards": [{"cell": [0, 0, 50, 50]}]}
+    recipe_path = os.path.join(rp.HERE, "recipes", "synthetic-rtl-test.json")
+
+    calls = []  # each captured rtl kwarg from a title_block call
+
+    def spy_title_block(box, lines, fill, outline, font_path, outline_w, arch,
+                        shadow, rtl=False):
+        calls.append(rtl)
+        return "<g/>"
+
+    saved = {
+        "theme": config.theme, "ensure": config.ensure_calibrated,
+        "fp": config.font_path, "tb": rp.title_block,
+        "rs": build.render_svg, "ff": rp.font_face,
+    }
+    try:
+        with open(recipe_path, "w", encoding="utf-8") as f:
+            json.dump(recipe, f)
+        config.ensure_calibrated = lambda c: None
+        config.font_path = lambda name, fn: font
+        rp.font_face = lambda name, path: ""
+        rp.title_block = spy_title_block
+        build.render_svg = lambda svg_text, w, h, out_png: out_png
+
+        # Hebrew theme -> both surfaces must be RTL.
+        config.theme = lambda name: make_cfg("hebrew")
+        calls.clear()
+        build.render_board("x", board_svg, ["30 שנה נישואין"], os.path.join(tmp, "b.png"))
+        build.render_backs("x", backs_svg, ["30 שנה נישואין"], os.path.join(tmp, "k.png"))
+        assert calls and all(c is True for c in calls), (
+            "board + back titles must be RTL for a Hebrew theme, got " + repr(calls)
+        )
+
+        # English theme -> both surfaces must stay LTR.
+        config.theme = lambda name: make_cfg("english")
+        calls.clear()
+        build.render_board("x", board_svg, ["OZ'S"], os.path.join(tmp, "b2.png"))
+        build.render_backs("x", backs_svg, ["OZ'S"], os.path.join(tmp, "k2.png"))
+        assert calls and all(c is False for c in calls), (
+            "board + back titles must stay LTR for an English theme, got " + repr(calls)
+        )
+    finally:
+        config.theme = saved["theme"]
+        config.ensure_calibrated = saved["ensure"]
+        config.font_path = saved["fp"]
+        rp.title_block = saved["tb"]
+        build.render_svg = saved["rs"]
+        rp.font_face = saved["ff"]
+        if os.path.exists(recipe_path):
+            os.remove(recipe_path)
+
+
+def test_title_block_rtl_reorders_digit_in_raster():
+    # The substring tests above prove the rtl WIRING (direction="rtl" reaches the
+    # SVG); this proves the SEMANTICS — that this generator's headless-Chrome SVG
+    # rasterizer actually HONORS direction="rtl" on a textPath title (word_text
+    # documents Chrome ignoring it for a different, neutral-punctuation-in-one-
+    # <text> path, so a "present but no-op" false green is the risk). We render the
+    # Hebrew digit title "30 שנה נישואין" both ways and require the rasters to
+    # DIFFER: if direction="rtl" were a no-op the two PNGs would be byte-identical.
+    # Chrome-guarded so it skips where the rasterizer is absent (e.g. CI, which
+    # runs only the JS suite) rather than failing.
+    import hashlib
+    import subprocess
+    import tempfile
+
+    import render_page as rp
+
+    if not os.path.exists(rp.CHROME):
+        return  # no rasterizer here (CI/JS-only) -> skip, don't fail
+
+    font = os.path.join(config.HERE, "Cafe-Regular.ttf")
+    box = {"x0": 0, "y0": 0, "x1": 600, "y1": 200}
+    tmp = tempfile.mkdtemp(prefix="dugri-test-raster-")
+
+    def raster(rtl, name):
+        body = rp.title_block(box, ["30 שנה נישואין"], "#000", "#000", font,
+                              0.0, 0.0, False, rtl=rtl)
+        svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="200" '
+               'viewBox="0 0 600 200"><rect width="600" height="200" fill="#fff"/>'
+               "<style>" + rp.font_face("TitleFont", font) + "</style>" + body + "</svg>")
+        svg_p = os.path.join(tmp, name + ".svg")
+        png_p = os.path.join(tmp, name + ".png")
+        with open(svg_p, "w", encoding="utf-8") as f:
+            f.write(svg)
+        subprocess.run([rp.CHROME, "--headless", "--disable-gpu",
+                        "--force-device-scale-factor=2", f"--screenshot={png_p}",
+                        "--window-size=600,200", svg_p], check=True,
+                       stderr=subprocess.DEVNULL)
+        return hashlib.md5(open(png_p, "rb").read()).hexdigest()
+
+    assert raster(True, "rtl_on") != raster(False, "rtl_off"), (
+        "direction=\"rtl\" must actually change the raster (else the fix is a "
+        "silent no-op the substring test would still pass)"
+    )
+
+
 def test_uncalibrated_raises():
     # all real themes are now calibrated, so use a synthetic uncalibrated config
     cfg = {"slug": "x", "calibrated": False}
