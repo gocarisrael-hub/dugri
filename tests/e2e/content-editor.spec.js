@@ -57,6 +57,25 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(page.locator('.dugri-editbar__status')).toHaveText('נשמר');
   });
 
+  test('clicking an editable link in edit mode edits it instead of navigating away', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    // The hero CTA is a real <a href="products.html">. In edit mode a click must
+    // place the caret to edit its label, NOT follow the link — otherwise the owner
+    // can never edit an interactive element's text. (Regression guard: without the
+    // capture-phase preventDefault this navigates to products.html.)
+    const cta = page.locator('[data-edit="index-hero-cta-1"]');
+    await expect(cta).toHaveAttribute('contenteditable', /plaintext-only|true/);
+    await cta.evaluate((node) => node.click());
+
+    await expect(page).toHaveURL(/index\.html/); // did not navigate to products.html
+    await expect(cta).toBeFocused(); // focused for editing instead
+  });
+
   test('replacing a photo posts the image and swaps in the returned src', async ({ page }) => {
     await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
 

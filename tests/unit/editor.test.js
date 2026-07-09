@@ -12,14 +12,20 @@ beforeAll(async () => {
 });
 
 describe('derivePage', () => {
-  it('maps a pathname to its html filename, defaulting to index.html', () => {
+  it('maps a pathname to the html file the server serves for it', () => {
     expect(editor.derivePage('/index.html')).toBe('index.html');
     expect(editor.derivePage('/how.html')).toBe('how.html');
     expect(editor.derivePage('/sub/dir/collect.html')).toBe('collect.html');
-    // extension-less routes and the bare root are the homepage
+    // The server serves extension-less routes as "<name>.html" (express.static
+    // extensions:['html']), so we must resolve them the same way — NOT to index.
+    expect(editor.derivePage('/products')).toBe('products.html');
+    expect(editor.derivePage('/how')).toBe('how.html');
+    expect(editor.derivePage('/collect')).toBe('collect.html');
+    // the bare root / empty path is the homepage
     expect(editor.derivePage('/')).toBe('index.html');
-    expect(editor.derivePage('/products')).toBe('index.html');
     expect(editor.derivePage('')).toBe('index.html');
+    // a real non-page asset extension falls back to the homepage
+    expect(editor.derivePage('/favicon.ico')).toBe('index.html');
   });
 });
 

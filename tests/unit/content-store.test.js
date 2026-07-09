@@ -77,8 +77,19 @@ describe('content store', () => {
     expect(store.extFromMagic(PNG)).toBe('.png');
     expect(store.extFromMagic(JPG)).toBe('.jpg');
     expect(store.extFromMagic(WEBP)).toBe('.webp');
-    expect(store.extFromMagic(SVG)).toBe('.svg');
     expect(store.extFromMagic(Buffer.from('not an image at all!!'))).toBe(null);
+  });
+
+  it('REJECTS svg uploads (stored-XSS surface): raster formats only', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    // An SVG can carry <script> and would be served from our origin, so it must
+    // never be accepted — extFromMagic returns null and saveImageBytes throws.
+    expect(store.extFromMagic(SVG)).toBe(null);
+    const xmlSvg = Buffer.from('<?xml version="1.0"?><svg onload="alert(1)"></svg>');
+    expect(store.extFromMagic(xmlSvg)).toBe(null);
+    expect(() => store.saveImageBytes(SVG)).toThrow(/unsupported/);
   });
 
   it('saves image bytes under a content-hash name + sniffed ext, de-dupes, and serves back', async () => {

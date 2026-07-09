@@ -21,14 +21,20 @@
   var LS_KEY = 'dugri_admin_key';
   var TEXT_CAP = 5000;
 
-  // The page name is the html filename; anything without a ".html" tail (a bare
-  // "/" or extension-less route) is the homepage.
+  // The page name is the html filename that the server actually serves for this
+  // URL. The server maps extension-less routes to "<name>.html" (express.static
+  // extensions:['html'] — e.g. "/how" -> how.html), so we must do the same or the
+  // wrong page's overrides load. Rules: an explicit ".html" tail is taken as-is; a
+  // bare "/" (empty last segment) is the homepage; an extension-less segment
+  // becomes "<segment>.html"; any other real asset extension falls back to home.
   function derivePage(pathname) {
     var last = String(pathname || '')
       .split('/')
       .pop();
-    if (!last || !/\.html$/i.test(last)) return 'index.html';
-    return last;
+    if (!last) return 'index.html';
+    if (/\.html$/i.test(last)) return last;
+    if (/\.[a-z0-9]+$/i.test(last)) return 'index.html';
+    return last + '.html';
   }
 
   // Escape a key for use inside a [attr="..."] selector (keys are validated
@@ -133,6 +139,28 @@
       // Safari/Firefox ignore plaintext-only — fall back to plain contenteditable.
       if (el.contentEditable !== 'plaintext-only') el.setAttribute('contenteditable', 'true');
       el.setAttribute('tabindex', '0');
+      // An editable that is ALSO interactive (a link or a button with its own
+      // click handler) would navigate / fire that handler when the owner clicks
+      // to edit its label — e.g. clicking the collect page's "finish" button would
+      // finalize the order, or a hero CTA <a> would navigate away. In edit mode a
+      // click must only place the caret: swallow the click in the CAPTURE phase
+      // (stopImmediatePropagation kills the element's own page handler too) and
+      // preventDefault (stops link nav / form submit), then focus for editing.
+      if (
+        /^(a|button)$/i.test(el.tagName) ||
+        el.hasAttribute('onclick') ||
+        el.getAttribute('role') === 'button'
+      ) {
+        el.addEventListener(
+          'click',
+          function (e) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (document.activeElement !== el) el.focus();
+          },
+          true
+        );
+      }
       var original = el.textContent;
       el.addEventListener('focus', function () {
         original = el.textContent;
@@ -211,7 +239,7 @@
   function openImagePicker(page, key, editKey, setStatus, onDone) {
     var input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'image/png,image/jpeg,image/webp,image/svg+xml';
+    input.accept = 'image/png,image/jpeg,image/webp';
     input.style.display = 'none';
     document.body.appendChild(input);
     input.addEventListener('change', function () {

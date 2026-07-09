@@ -61,6 +61,11 @@ function save() {
 // Sniff the image type from the leading magic bytes — NEVER trust a client-sent
 // filename or Content-Type. Returns a safe extension from a tight allowlist, or
 // null when the bytes are not one of the accepted formats.
+//
+// RASTER ONLY, on purpose. SVG is deliberately NOT accepted: an uploaded .svg is
+// served from our own origin at a public /content-uploads URL, and an SVG can
+// carry <script>, so allowing it would be a stored-XSS vector able to read the
+// admin key from localStorage. Photos are raster anyway, so we lose nothing.
 function extFromMagic(buf) {
   if (!Buffer.isBuffer(buf) || buf.length < 12) return null;
   // PNG: 89 50 4E 47 0D 0A 1A 0A
@@ -80,17 +85,18 @@ function extFromMagic(buf) {
   ) {
     return '.webp';
   }
-  // SVG: text starting with "<svg" or an XML prolog that contains "<svg".
-  const head = buf.slice(0, 256).toString('utf8').trim().toLowerCase();
-  if (head.startsWith('<svg') || (head.startsWith('<?xml') && head.includes('<svg'))) return '.svg';
   return null;
 }
 
 // Read the override sub-tree for one page (validated). Unknown page -> {}.
+// Returns the live sub-tree by reference: the sole caller (GET /api/content) only
+// serializes it, and res.json already makes a fresh copy — so this is the site's
+// hottest endpoint and must not deep-clone on every request. Callers must treat
+// the result as read-only.
 function getPage(page) {
   const p = pageOk(page);
-  if (!p) return {};
-  return _store[p] ? JSON.parse(JSON.stringify(_store[p])) : {};
+  if (!p || !_store[p]) return {};
+  return _store[p];
 }
 
 // Merge one field into a page/key entry. Returns null on a bad page/key.

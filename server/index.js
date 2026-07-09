@@ -1059,13 +1059,17 @@ app.get('/api/content', (req, res) => {
 // produces (hash + allowlisted ext), so there is no traversal or arbitrary read.
 app.get('/content-uploads/:name', (req, res) => {
   const name = String(req.params.name || '');
-  if (!/^[a-f0-9]{16}\.(webp|jpe?g|png|svg)$/.test(name)) {
+  // Raster only (webp/jpg/png) — SVG is never stored (see content.extFromMagic).
+  if (!/^[a-f0-9]{16}\.(webp|jpe?g|png)$/.test(name)) {
     return res.status(404).type('txt').send('Not found');
   }
   const file = path.join(content._uploadDir, name);
   if (!fs.existsSync(file)) return res.status(404).type('txt').send('Not found');
   // Content-addressed names never change contents, so cache hard + immutable.
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  // Defense in depth: never let a browser MIME-sniff an uploaded file into an
+  // executable type, so a served image can't be interpreted as HTML/script.
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.sendFile(file);
 });
 
@@ -1097,9 +1101,14 @@ app.delete('/api/admin/content', (req, res) => {
 // content-hash filename; the override then points every tagged node at it.
 app.post(
   '/api/admin/content/image',
+  // Authenticate (on ?key=, available before the body) BEFORE buffering up to
+  // several MB, so an unauthenticated client can't force large allocations.
+  (req, res, next) => {
+    if (!requireAdmin(req, res)) return;
+    next();
+  },
   express.raw({ type: () => true, limit: CONTENT_IMAGE_UPLOAD_LIMIT }),
   (req, res) => {
-    if (!requireAdmin(req, res)) return;
     const boundary = templates.boundaryFromContentType(req.headers['content-type']);
     if (!boundary || !Buffer.isBuffer(req.body)) {
       return res.status(400).json({ error: 'expected multipart/form-data upload' });
