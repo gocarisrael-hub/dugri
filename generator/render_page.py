@@ -97,7 +97,17 @@ def _title_metrics(font_path, ref=200):
 _TITLE_UID = [0]
 
 
-def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow):
+def title_is_rtl(cfg):
+    # A title is right-to-left when the theme's language is Hebrew. RTL matters
+    # for any title that mixes digits with Hebrew (e.g. anniversary "30 שנה
+    # נישואין" or "{NAME} בן {AGE}"): with the default LTR base direction the
+    # leading/embedded digit run lays out on the wrong side. English themes stay
+    # LTR and are untouched.
+    return cfg.get("language") == "hebrew"
+
+
+def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
+                rtl=False):
     _TITLE_UID[0] += 1
     uid = _TITLE_UID[0]
     """Graffiti-style stacked title: sized so the WIDEST line fills the box
@@ -126,11 +136,21 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow):
     t_ring = size * outline_w                             # dark outline ring
     outer = w_fat + 2 * t_ring
     defs, out = [], []
+    # RTL (Hebrew) titles: set a right-to-left BASE direction on the <text> so a
+    # mixed digit+Hebrew line (e.g. "30 שנה נישואין") reads correctly — the number
+    # on the RIGHT (Hebrew reading start), not the LEFT. VERIFIED against the real
+    # headless-Chrome SVG rasterizer this generator targets: `direction="rtl"`
+    # correctly reorders the runs for BOTH a leading digit ("30 שנה נישואין" ->
+    # 30 on the right) and a trailing digit ("{NAME} בן {AGE}" -> age on the
+    # left). It does NOT reverse the digits themselves (unlike unicode-bidi
+    # "bidi-override", which renders "30" as "03"), so plain `direction="rtl"` is
+    # the right, self-contained fix here — no run-splitting like word_text needs.
+    dir_attr = ' direction="rtl"' if rtl else ""
 
     def on_path(pid, fill_c, stroke_c, swv, line):
         return (f'<text font-family="TitleFont" font-size="{size:.2f}" fill="{fill_c}" '
                 f'stroke="{stroke_c}" stroke-width="{swv:.2f}" paint-order="stroke" '
-                f'stroke-linejoin="round" stroke-linecap="round">'
+                f'stroke-linejoin="round" stroke-linecap="round"{dir_attr}>'
                 f'<textPath href="#{pid}" startOffset="50%" text-anchor="middle">'
                 f'{escape(line)}</textPath></text>')
 
@@ -173,7 +193,8 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
         if card.get("title") and title_lines:
             overlay.append(title_block(card["title"][0], title_lines,
                                        ts["fill"], ts["outline"], title_font,
-                                       ts["outline_w"], ts["arch"], ts["shadow"]))
+                                       ts["outline_w"], ts["arch"], ts["shadow"],
+                                       rtl=title_is_rtl(cfg)))
         words = words_by_card[ci] if ci < len(words_by_card) else []
         # A card may carry a title but no word slots (its title was drawn above);
         # skip the word pass so statistics.median([]) can't crash the whole page.

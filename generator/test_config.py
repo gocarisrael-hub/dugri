@@ -43,6 +43,41 @@ def test_anniversary_title_uses_standard_script_font():
     assert cfg["title_style"]["shadow"] is False, "no drop shadow on the title"
 
 
+def test_title_is_rtl_by_language():
+    # RTL handling is keyed off the theme's language: Hebrew titles are RTL,
+    # English ones are not. (bug: anniversary "{YEARS} שנה נישואין" had the number
+    # on the wrong/left side because the title text had no base direction.)
+    import render_page
+
+    assert render_page.title_is_rtl(config.theme("anniversary")) is True
+    assert render_page.title_is_rtl(config.theme("birthday-boys-basketball")) is True
+    assert render_page.title_is_rtl(config.theme("trip comeback")) is False
+    assert render_page.title_is_rtl(config.theme("bachelorette")) is False
+
+
+def test_title_block_applies_rtl_for_hebrew_digit_title():
+    # Regression: a Hebrew title that mixes a number with Hebrew words (e.g.
+    # "30 שנה נישואין") must be drawn with a right-to-left BASE direction so the
+    # number reads on the RIGHT (Hebrew start), not the left. Assert the emitted
+    # SVG <text> carries direction="rtl" for a Hebrew title and NOT for English.
+    import render_page
+
+    font = os.path.join(config.HERE, "Cafe-Regular.ttf")  # a real font in generator/
+    box = {"x0": 0, "y0": 0, "x1": 400, "y1": 200}
+
+    he = render_page.title_block(
+        box, ["30 שנה נישואין"], "#004aad", "#004aad", font, 0, 0, False, rtl=True
+    )
+    assert 'direction="rtl"' in he, "Hebrew digit title must render right-to-left"
+    # the digits are kept as one unit ("30"), not reversed/split into the markup
+    assert "30 שנה נישואין" in he
+
+    en = render_page.title_block(
+        box, ["OZ'S"], "#000", "#000", font, 0, 0, False, rtl=False
+    )
+    assert 'direction="rtl"' not in en, "English titles must stay left-to-right"
+
+
 def test_uncalibrated_raises():
     # all real themes are now calibrated, so use a synthetic uncalibrated config
     cfg = {"slug": "x", "calibrated": False}
