@@ -76,6 +76,45 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(cta).toBeFocused(); // focused for editing instead
   });
 
+  test("an editable element's OWN page click handler is suppressed in edit mode", async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+
+    // Register a page-level click handler on a [data-edit] element BEFORE editor.js
+    // bootstraps — exactly how collect.html binds #closeBtn.onclick at load. The
+    // guard must beat this even though the page handler is registered first (at the
+    // target node listeners fire in registration order, so only a document-level
+    // capture guard wins). Without the fix, clicking to edit the label re-fires the
+    // page handler (on collect.html: finalizes the order).
+    await page.addInitScript(() => {
+      window.__ownHandlerFired = false;
+      document.addEventListener('DOMContentLoaded', () => {
+        const el = document.querySelector('[data-edit="index-hero-cta-1"]');
+        if (el)
+          el.addEventListener('click', () => {
+            window.__ownHandlerFired = true;
+          });
+      });
+    });
+
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const cta = page.locator('[data-edit="index-hero-cta-1"]');
+    await cta.evaluate((node) => node.click());
+
+    expect(await page.evaluate(() => window.__ownHandlerFired)).toBe(false);
+    await expect(page).toHaveURL(/index\.html/); // and no navigation
+  });
+
+  test('an uploaded .svg name is never served (stored-XSS guard)', async ({ page }) => {
+    // SVG is dropped from the upload allowlist AND from the serve-route regex, so a
+    // .svg content-uploads URL must 404 regardless of any file on disk.
+    const res = await page.request.get('/content-uploads/aaaaaaaaaaaaaaaa.svg');
+    expect(res.status()).toBe(404);
+  });
+
   test('replacing a photo posts the image and swaps in the returned src', async ({ page }) => {
     await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
 

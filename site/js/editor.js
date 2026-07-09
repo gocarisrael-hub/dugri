@@ -37,6 +37,18 @@
     return last + '.html';
   }
 
+  // Resolve the page identity from the SERVED DOCUMENT itself, not the URL. Each
+  // page carries <meta name="dugri:page" content="how.html">, so a vanity/unknown
+  // route the server answers with index.html (its catch-all) correctly reads as
+  // index.html — and a real page served at its extension-less path reads as its
+  // own file. Falls back to the URL heuristic if the meta is missing.
+  function resolvePage(doc, pathname) {
+    var meta = doc && doc.querySelector && doc.querySelector('meta[name="dugri:page"]');
+    var declared = meta && meta.getAttribute('content');
+    if (declared && /^[a-z0-9-]+\.html$/.test(declared)) return declared;
+    return derivePage(pathname);
+  }
+
   // Escape a key for use inside a [attr="..."] selector (keys are validated
   // kebab on the server, but stay defensive on the client too).
   function attrSel(attr, key) {
@@ -85,7 +97,7 @@
   // ---- browser-only edit mode ------------------------------------------------
 
   function bootstrap() {
-    var page = derivePage(location.pathname);
+    var page = resolvePage(document, location.pathname);
     var resolved = resolveEdit(location.search, window.localStorage);
 
     // Overlay overrides for everyone, as early as possible; tolerate failure.
@@ -132,6 +144,36 @@
       if (resetBtn) resetBtn.disabled = !el;
     }
 
+    // An editable that is ALSO interactive (a link, or a button with its own
+    // click handler) would navigate / fire that handler when the owner clicks to
+    // edit its label — e.g. clicking the collect page's "finish" button would
+    // finalize the order, or a hero CTA <a> would navigate away. In edit mode a
+    // click on such an element must only place the caret.
+    //
+    // This guard MUST sit on `document` in the CAPTURE phase. A per-element
+    // listener does not work: the page binds its own handler at load (e.g.
+    // #closeBtn.onclick = closeCollection), and at the TARGET node listeners fire
+    // in REGISTRATION order regardless of the capture flag — so our later listener
+    // would run after the page's handler. A document-level capture listener runs
+    // during the capturing phase, before the target's handlers, and
+    // stopPropagation there prevents the event from ever reaching them.
+    document.addEventListener(
+      'click',
+      function (e) {
+        var el = e.target && e.target.closest && e.target.closest('[data-edit]');
+        if (!el || !el.isContentEditable) return; // only editable text nodes
+        var interactive =
+          /^(a|button)$/i.test(el.tagName) ||
+          el.hasAttribute('onclick') ||
+          el.getAttribute('role') === 'button';
+        if (!interactive) return; // plain text keeps normal caret placement
+        e.preventDefault(); // no link nav / form submit
+        e.stopPropagation(); // page's own handler never runs
+        if (document.activeElement !== el) el.focus();
+      },
+      true
+    );
+
     // Text leaves become editable; save on blur when the text actually changed.
     document.querySelectorAll('[data-edit]').forEach(function (el) {
       el.classList.add('dugri-edit-target');
@@ -139,28 +181,6 @@
       // Safari/Firefox ignore plaintext-only — fall back to plain contenteditable.
       if (el.contentEditable !== 'plaintext-only') el.setAttribute('contenteditable', 'true');
       el.setAttribute('tabindex', '0');
-      // An editable that is ALSO interactive (a link or a button with its own
-      // click handler) would navigate / fire that handler when the owner clicks
-      // to edit its label — e.g. clicking the collect page's "finish" button would
-      // finalize the order, or a hero CTA <a> would navigate away. In edit mode a
-      // click must only place the caret: swallow the click in the CAPTURE phase
-      // (stopImmediatePropagation kills the element's own page handler too) and
-      // preventDefault (stops link nav / form submit), then focus for editing.
-      if (
-        /^(a|button)$/i.test(el.tagName) ||
-        el.hasAttribute('onclick') ||
-        el.getAttribute('role') === 'button'
-      ) {
-        el.addEventListener(
-          'click',
-          function (e) {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-            if (document.activeElement !== el) el.focus();
-          },
-          true
-        );
-      }
       var original = el.textContent;
       el.addEventListener('focus', function () {
         original = el.textContent;
@@ -355,6 +375,7 @@
   // Expose the pure helpers for unit tests (no auto-run on import).
   var api = {
     derivePage: derivePage,
+    resolvePage: resolvePage,
     applyOverrides: applyOverrides,
     resolveEdit: resolveEdit,
     LS_KEY: LS_KEY,

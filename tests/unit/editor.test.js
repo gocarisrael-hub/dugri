@@ -29,6 +29,30 @@ describe('derivePage', () => {
   });
 });
 
+describe('resolvePage — the served document decides the page, not the URL', () => {
+  function withMeta(content) {
+    document.head.innerHTML =
+      content == null ? '' : '<meta name="dugri:page" content="' + content + '">';
+    return document;
+  }
+
+  it('uses the page the served document declares (vanity URL served as index.html)', () => {
+    // A marketing/vanity route like /promo has no promo.html, so the server's
+    // catch-all serves index.html — whose meta declares index.html. The URL alone
+    // would wrongly derive promo.html and miss the homepage overrides.
+    expect(editor.resolvePage(withMeta('index.html'), '/promo')).toBe('index.html');
+    // A real page served at its extension-less path declares its own file.
+    expect(editor.resolvePage(withMeta('how.html'), '/how')).toBe('how.html');
+  });
+
+  it('falls back to the URL heuristic when the meta is missing or invalid', () => {
+    expect(editor.resolvePage(withMeta(null), '/how')).toBe('how.html');
+    expect(editor.resolvePage(withMeta('../evil.html'), '/collect')).toBe('collect.html');
+    expect(editor.resolvePage(withMeta('index.php'), '/')).toBe('index.html');
+    document.head.innerHTML = '';
+  });
+});
+
 describe('applyOverrides', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
