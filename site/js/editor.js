@@ -192,25 +192,47 @@
       true
     );
 
-    // Keydown guard for those same interactive editables. Their native keyboard
-    // behavior hijacks the keys we need for typing a label: <button> and <summary>
-    // ACTIVATE on Space (so a space is never inserted — labels like "לרכישה ›" and
-    // FAQ questions need spaces), and Enter activates/navigates. Intercept in the
-    // capture phase: insert a literal space for Space, and treat Enter as "commit"
-    // (blur → save) rather than a newline in a one-line label.
+    // Ensure a collapsed caret sits inside `el` before an execCommand insert. A
+    // programmatic/Tab focus can leave the selection empty or outside the element,
+    // which would drop the inserted text or land it in a different editable; place
+    // the caret at the end of `el` in that case.
+    function ensureCaretIn(el) {
+      var sel = window.getSelection && window.getSelection();
+      if (!sel) return;
+      if (sel.rangeCount === 0 || !el.contains(sel.anchorNode)) {
+        var r = document.createRange();
+        r.selectNodeContents(el);
+        r.collapse(false); // caret at the end
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+    }
+
+    // Keydown guard. Two jobs:
+    //  • Enter COMMITS on ANY editable node (blur → save) instead of inserting a
+    //    newline: these overrides are single-run plain text applied via
+    //    textContent, so a '\n' would save but collapse to a space on reload —
+    //    silently dropping the owner's break. Enter-to-commit avoids that surprise.
+    //  • Space on an INTERACTIVE editable (<button>/<summary>) is consumed by native
+    //    activation, so a space is never typed (labels like "לרכישה ›" and FAQ
+    //    questions need spaces) — insert it as text instead. Plain editables keep
+    //    native Space. Both run in the capture phase so native behavior never wins.
     document.addEventListener(
       'keydown',
       function (e) {
-        var el = interactiveEditable(e.target);
-        if (!el) return;
-        if (e.key === ' ' || e.key === 'Spacebar') {
+        var edit = e.target && e.target.closest && e.target.closest('[data-edit]');
+        if (!edit || !edit.isContentEditable) return;
+        if (e.key === 'Enter') {
           e.preventDefault();
           e.stopPropagation();
+          edit.blur();
+          return;
+        }
+        if ((e.key === ' ' || e.key === 'Spacebar') && interactiveEditable(e.target)) {
+          e.preventDefault();
+          e.stopPropagation();
+          ensureCaretIn(edit);
           document.execCommand('insertText', false, ' ');
-        } else if (e.key === 'Enter') {
-          e.preventDefault();
-          e.stopPropagation();
-          el.blur();
         }
       },
       true

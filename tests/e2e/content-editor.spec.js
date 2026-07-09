@@ -146,6 +146,41 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     expect(await details.evaluate((d) => d.open)).toBe(true);
   });
 
+  test('Enter commits an editable text node (saves, no newline) rather than inserting a line break', async ({
+    page,
+  }) => {
+    const posts = [];
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) => {
+      if (route.request().method() === 'POST') posts.push(route.request().postDataJSON());
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    // Overrides are single-run plain text; a newline would save but collapse to a
+    // space on reload, silently dropping the break. Enter must COMMIT (blur→save),
+    // and the saved text must carry no '\n'.
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      const r = document.createRange();
+      r.selectNodeContents(n);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    });
+    await page.keyboard.type('תשובה חדשה');
+    await page.keyboard.press('Enter');
+
+    await expect.poll(() => posts.length).toBeGreaterThan(0);
+    const saved = posts[posts.length - 1];
+    expect(saved.key).toBe('index-faq-a1');
+    expect(saved.text).toBe('תשובה חדשה'); // exactly, no trailing newline
+    expect(saved.text).not.toContain('\n');
+    await expect(ans).not.toBeFocused(); // Enter blurred → committed
+  });
+
   test('an uploaded .svg name is never served (stored-XSS guard)', async ({ page }) => {
     // SVG is dropped from the upload allowlist AND from the serve-route regex, so a
     // .svg content-uploads URL must 404 regardless of any file on disk.
