@@ -13,6 +13,7 @@ const notify = require('./notify');
 const validate = require('./validate');
 const templates = require('./templates');
 const playbook = require('./playbook');
+const content = require('./content');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -45,6 +46,10 @@ const PYTHON_BIN = process.env.PYTHON || 'python3';
 // fonts).
 const TEMPLATE_ROOT = process.env.TEMPLATE_ROOT || REPO_ROOT;
 const TEMPLATE_UPLOAD_LIMIT = process.env.TEMPLATE_UPLOAD_LIMIT || '30mb';
+// Max multipart body for a single content-editor photo upload. The store caps the
+// image itself at ~4MB (server/content.js IMAGE_CAP); this leaves headroom for the
+// multipart envelope so a valid image is never rejected at the body-parser layer.
+const CONTENT_IMAGE_UPLOAD_LIMIT = process.env.CONTENT_IMAGE_UPLOAD_LIMIT || '6mb';
 // Hard cap on a single generation run (Chrome renders one page at a time, so a
 // large deck is slow); the child is SIGKILLed past this and the request 504s.
 const GENERATE_TIMEOUT_MS = Number(process.env.GENERATE_TIMEOUT_MS || 120000);
@@ -1036,6 +1041,87 @@ app.post(
     }
     if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
     res.status(201).json({ ok: true, ...result });
+  }
+);
+
+// Inline content editor. The owner edits any tagged text/photo on the live site
+// in an admin-key-gated edit mode; the overrides persist under DATA_DIR (see
+// server/content.js) and overlay the shipped defaults for EVERY visitor. The
+// public GET is unauthenticated on purpose — every visitor must render the
+// current copy — while all writes are behind requireAdmin.
+app.get('/api/content', (req, res) => {
+  res.json({ overrides: content.getPage(req.query.page) });
+});
+
+// Serve an uploaded content image. The files live in DATA_DIR/content-uploads,
+// which is OUTSIDE SITE_DIR, so express.static never reaches them — this route is
+// the only way out. The name is validated to the exact shape saveImageBytes
+// produces (hash + allowlisted ext), so there is no traversal or arbitrary read.
+app.get('/content-uploads/:name', (req, res) => {
+  const name = String(req.params.name || '');
+  if (!/^[a-f0-9]{16}\.(webp|jpe?g|png|svg)$/.test(name)) {
+    return res.status(404).type('txt').send('Not found');
+  }
+  const file = path.join(content._uploadDir, name);
+  if (!fs.existsSync(file)) return res.status(404).type('txt').send('Not found');
+  // Content-addressed names never change contents, so cache hard + immutable.
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.sendFile(file);
+});
+
+// Admin: set a text override for page/key (text may be "" to blank the node).
+app.post('/api/admin/content', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { page, key, text } = req.body || {};
+  if (!content.pageOk(page) || !content.keyOk(key)) {
+    return res.status(400).json({ error: 'bad page or key' });
+  }
+  content.setText(page, key, text);
+  res.json({ ok: true });
+});
+
+// Admin: remove a page/key override entirely (revert to the shipped default).
+app.delete('/api/admin/content', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { page, key } = req.body || {};
+  if (!content.pageOk(page) || !content.keyOk(key)) {
+    return res.status(400).json({ error: 'bad page or key' });
+  }
+  content.remove(page, key);
+  res.json({ ok: true });
+});
+
+// Admin: replace a tagged photo. Multipart upload (fields page,key + a file
+// part) parsed with the same in-repo parser the templates upload uses. The bytes
+// are typed by their magic bytes (not the client name) and saved under a
+// content-hash filename; the override then points every tagged node at it.
+app.post(
+  '/api/admin/content/image',
+  express.raw({ type: () => true, limit: CONTENT_IMAGE_UPLOAD_LIMIT }),
+  (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
+    if (!boundary || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ error: 'expected multipart/form-data upload' });
+    }
+    const { fields, files } = templates.parseMultipart(req.body, boundary);
+    const page = fields.page;
+    const key = fields.key;
+    if (!content.pageOk(page) || !content.keyOk(key)) {
+      return res.status(400).json({ error: 'bad page or key' });
+    }
+    const file = files.file || files.image || Object.values(files)[0];
+    if (!file || !Buffer.isBuffer(file.data)) {
+      return res.status(400).json({ error: 'no image file part' });
+    }
+    let img;
+    try {
+      img = content.saveImageBytes(file.data);
+    } catch (e) {
+      return res.status(400).json({ error: String((e && e.message) || e) });
+    }
+    content.setImg(page, key, img);
+    res.json({ ok: true, img });
   }
 );
 

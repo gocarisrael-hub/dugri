@@ -851,6 +851,7 @@
         border: 0;
       }
     </style>
+    <script src="js/editor.js" defer></script>
   </head>
   <body>
     <div class="wrap">
@@ -939,14 +940,16 @@
 
         <div class="panel hidden" id="panel-file">
           <input type="file" id="fileInput" accept=".txt,.csv,text/plain,text/csv" />
-          <p class="muted">קובץ טקסט או CSV - מילה בכל שורה.</p>
+          <p class="muted" data-edit="collect-file-hint">קובץ טקסט או CSV - מילה בכל שורה.</p>
         </div>
       </div>
 
       <!-- word-finding helpers -->
       <div class="card" id="helpCard">
-        <div class="sec-h">תקועים? ענו על כמה שאלות ונמלא לכם מילים 👇</div>
-        <p class="muted" style="margin: -2px 0 4px">
+        <div class="sec-h" data-edit="collect-help-heading">
+          תקועים? ענו על כמה שאלות ונמלא לכם מילים 👇
+        </div>
+        <p class="muted" style="margin: -2px 0 4px" data-edit="collect-help-intro">
           בחרו קטגוריה, כתבו תשובה ולחצו “הוסף” — כל תשובה נכנסת ישר לרשימה. אפשר כמה תשובות לכל
           שאלה.
         </p>
@@ -954,8 +957,8 @@
         <div class="qlist" id="qList"></div>
 
         <details class="howto">
-          <summary>איך אוספים מילים טובות 👇</summary>
-          <p class="muted" style="margin: 10px 0">
+          <summary data-edit="collect-howto-summary">איך אוספים מילים טובות 👇</summary>
+          <p class="muted" style="margin: 10px 0" data-edit="collect-howto-body">
             זה החלק הכי כיף - וגם הכי קל כשיש כיוון. עברו על הקטגוריות, כתבו כל מה שעולה. מינימום
             100 מילים, וכמה שיותר יותר טוב.
           </p>
@@ -974,8 +977,10 @@
 
       <!-- OWNER: share links -->
       <div class="card share hidden" id="sharePanel">
-        <div class="sec-h">📨 שתפו עם החברות</div>
-        <p class="muted">שלחו את הקישור הזה לכל מי שמכיר/ה את בעלת השמחה:</p>
+        <div class="sec-h" data-edit="collect-share-heading">📨 שתפו עם החברות</div>
+        <p class="muted" data-edit="collect-share-hint">
+          שלחו את הקישור הזה לכל מי שמכיר/ה את בעלת השמחה:
+        </p>
         <div class="row" style="margin-top: 8px">
           <input type="text" id="friendsLink" readonly />
           <button class="ghost" id="copyFriends" type="button">העתק</button>
@@ -991,26 +996,32 @@
 
       <!-- OWNER, paid only: replaces the pay panel — keep adding, then סיום -->
       <div class="card paid-card owner-only hidden" id="paidCard">
-        <div class="paid-title">התשלום התקבל ✓</div>
-        <p class="paid-body">
+        <div class="paid-title" data-edit="collect-paid-title">התשלום התקבל ✓</div>
+        <p class="paid-body" data-edit="collect-paid-body">
           עכשיו הכי חשוב: הוסיפו כמה שיותר מילים. כשתסיימו — לחצו על ‘סיום’, וזהו: אנחנו מתחילים
           להפיק את המשחק 💜
         </p>
-        <button class="paid-cta" id="paidCloseBtn" type="button">סיום — התחילו להפיק ✅</button>
+        <button class="paid-cta" id="paidCloseBtn" type="button" data-edit="collect-paid-cta">
+          סיום — התחילו להפיק ✅
+        </button>
       </div>
 
       <!-- owner / closing controls -->
       <div class="card owner-only hidden" id="ownerControls">
-        <div class="sec-h">ניהול האיסוף</div>
-        <p class="muted">סיימתם לאסוף? סגרו את האיסוף ושלחו לדוגרי.</p>
+        <div class="sec-h" data-edit="collect-owner-heading">ניהול האיסוף</div>
+        <p class="muted" data-edit="collect-owner-hint">
+          סיימתם לאסוף? סגרו את האיסוף ושלחו לדוגרי.
+        </p>
         <div class="actions">
-          <button id="closeBtn" type="button">מספיק! סיימנו לאסוף ✅</button>
+          <button id="closeBtn" type="button" data-edit="collect-close-btn">
+            מספיק! סיימנו לאסוף ✅
+          </button>
         </div>
       </div>
 
       <!-- OWNER: pay panel (collapsible, one button at the bottom) -->
       <details class="card owner-only hidden pay-collapse" id="payPanel">
-        <summary class="pay-summary">שלמו וקבלו את המשחק</summary>
+        <summary class="pay-summary" data-edit="collect-pay-summary">שלמו וקבלו את המשחק</summary>
         <p class="muted" style="margin-top: 16px; margin-bottom: 10px">
           אפשר לשלם מתי שרוצים ולהמשיך להוסיף מילים תוך כדי - ועד שתלחצו על
           <b>"מספיק! סיימנו"</b> האיסוף נשאר פתוח.
@@ -1092,13 +1103,17 @@
         </div>
         <div class="pay-err" id="payErr"></div>
 
-        <p class="pay-trust">🔒 תשלום מאובטח בכרטיס אשראי · הקובץ נשלח עד 24 שעות מקבלת המילים</p>
+        <p class="pay-trust" data-edit="collect-pay-trust">
+          🔒 תשלום מאובטח בכרטיס אשראי · הקובץ נשלח עד 24 שעות מקבלת המילים
+        </p>
 
         <button type="button" id="cardPayBtn" class="card-pay-btn hidden">
           💳 תשלום בכרטיס אשראי
         </button>
         <!-- Shown instead of the button when card payment isn't configured yet -->
-        <p class="pay-soon-note hidden" id="cardSoonNote">התשלום בכרטיס אשראי ייפתח בקרוב</p>
+        <p class="pay-soon-note hidden" id="cardSoonNote" data-edit="collect-pay-soon">
+          התשלום בכרטיס אשראי ייפתח בקרוב
+        </p>
       </details>
 
       <!-- Tailored order CTA at the bottom of the content. Wording is set in JS

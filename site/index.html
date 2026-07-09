@@ -787,6 +787,7 @@
         }
       }
     </style>
+    <script src="js/editor.js" defer></script>
   </head>
   <body>
     <header class="hdr" aria-label="ניווט ראשי">
@@ -842,35 +843,72 @@
     <section id="top" class="hero">
       <div class="hero-track carousel-track">
         <div class="hero-slide">
-          <img class="hero-slide__bg" src="assets/hero-1.jpg" alt="" aria-hidden="true" />
+          <img
+            class="hero-slide__bg"
+            src="assets/hero-1.jpg"
+            alt=""
+            aria-hidden="true"
+            data-edit-img="index-hero-1"
+          />
           <div class="hero-slide__inner">
-            <h1 class="hero-slide__title">
+            <h1 class="hero-slide__title" data-edit="index-hero-1-title">
               מסיבת רווקות לחברה הכי טובה? יום נישואין? אבא בן 50? יש לנו את המתנה המושלמת
             </h1>
-            <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
+            <a
+              class="btn"
+              href="products.html"
+              data-ga="order_started"
+              data-ga-cta="hero"
+              data-edit="index-hero-cta"
               >לרכישה ›</a
             >
           </div>
         </div>
         <div class="hero-slide hero-slide--mid">
-          <img class="hero-slide__bg" src="assets/hero-2.jpg" alt="" aria-hidden="true" />
+          <img
+            class="hero-slide__bg"
+            src="assets/hero-2.jpg"
+            alt=""
+            aria-hidden="true"
+            data-edit-img="index-hero-2"
+          />
           <!-- slide 2 only: CTA on top, headline UNDERNEATH it — the headline
                reads badly overlapping the board photo, so it drops below the
                button here (slides 1 & 3 keep the headline above the button).
                The button+title group is nudged into the lower third (approved
                layout) rather than dead-centred. -->
           <div class="hero-slide__inner">
-            <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
+            <a
+              class="btn"
+              href="products.html"
+              data-ga="order_started"
+              data-ga-cta="hero"
+              data-edit="index-hero-cta"
               >לרכישה ›</a
             >
-            <p class="hero-slide__title">דוגרי, המתנה הכי אישית ומקורית שאפשר לתת</p>
+            <p class="hero-slide__title" data-edit="index-hero-2-title">
+              דוגרי, המתנה הכי אישית ומקורית שאפשר לתת
+            </p>
           </div>
         </div>
         <div class="hero-slide">
-          <img class="hero-slide__bg" src="assets/hero-3.jpg" alt="" aria-hidden="true" />
+          <img
+            class="hero-slide__bg"
+            src="assets/hero-3.jpg"
+            alt=""
+            aria-hidden="true"
+            data-edit-img="index-hero-3"
+          />
           <div class="hero-slide__inner">
-            <p class="hero-slide__title">מחפשים מתנה בלי פילטרים? מזל שאתם כאן</p>
-            <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="hero"
+            <p class="hero-slide__title" data-edit="index-hero-3-title">
+              מחפשים מתנה בלי פילטרים? מזל שאתם כאן
+            </p>
+            <a
+              class="btn"
+              href="products.html"
+              data-ga="order_started"
+              data-ga-cta="hero"
+              data-edit="index-hero-cta"
               >לרכישה ›</a
             >
           </div>
@@ -1022,7 +1060,7 @@
     <section id="products" data-testid="home-products" data-reveal>
       <div class="wrap">
         <div class="home-products-head">
-          <h2>העיצובים שלנו</h2>
+          <h2 data-edit="index-products-heading">העיצובים שלנו</h2>
         </div>
         <div id="productsTrack">
           <!-- product cards injected by the module script below -->
@@ -1033,6 +1071,7 @@
             href="products.html"
             data-ga="order_started"
             data-ga-cta="home-products"
+            data-edit="index-products-cta"
             >מעבר אל החנות ›</a
           >
         </div>
@@ -1042,8 +1081,8 @@
     <section id="reviews" class="alt" data-reveal>
       <div class="wrap">
         <div class="sec-title proof-head">
-          <h2>מה מספרים עלינו</h2>
-          <p>ככה זה נראה כשהמשחק מגיע לשולחן</p>
+          <h2 data-edit="index-reviews-heading">מה מספרים עלינו</h2>
+          <p data-edit="index-reviews-sub">ככה זה נראה כשהמשחק מגיע לשולחן</p>
           <div class="stars" aria-hidden="true">★★★★★</div>
         </div>
         <div id="reviewsTrack" data-testid="proof-reviews">
@@ -1052,6 +1091,7 @@
               src="assets/testimonials/review-1.jpg"
               alt="המלצה אמיתית בוואטסאפ ממסיבת רווקות - דוגרי גנב את ההצגה, לא הפסקנו לצחוק שעה וחצי"
               loading="lazy"
+              data-edit-img="index-review-1"
             />
           </figure>
           <figure class="review">
@@ -1059,6 +1099,7 @@
               src="assets/testimonials/review-2.jpg"
               alt="המלצה אמיתית בוואטסאפ - היה מושלם, בסוף הערב אמרה שזה החלק הכי אהוב במסיבה"
               loading="lazy"
+              data-edit-img="index-review-2"
             />
           </figure>
           <figure class="review">
@@ -1066,6 +1107,7 @@
               src="assets/testimonials/review-3.jpg"
               alt="המלצה אמיתית בוואטסאפ - היה ממש כיף, כולם באטרף, מתנה שווה בטירוף"
               loading="lazy"
+              data-edit-img="index-review-3"
             />
           </figure>
           <figure class="review">
@@ -1073,6 +1115,7 @@
               src="assets/testimonials/review-4.jpg"
               alt="המלצה אמיתית בוואטסאפ - שעה וחצי של צחוק רצוף, אישי ומצחיק ומרגש"
               loading="lazy"
+              data-edit-img="index-review-4"
             />
           </figure>
         </div>
@@ -1087,17 +1130,17 @@
             <div class="story-photo">מהסטודיו שלנו</div>
           </div>
           <div class="story-copy">
-            <p class="story-kicker">הסיפור שלנו</p>
-            <h2>למה התחלנו את דוגרי</h2>
-            <p>
+            <p class="story-kicker" data-edit="index-story-kicker">הסיפור שלנו</p>
+            <h2 data-edit="index-story-heading">למה התחלנו את דוגרי</h2>
+            <p data-edit="index-story-p1">
               הכול התחיל ממסיבה אחת שרצינו להפוך לבלתי נשכחת. חיפשנו מתנה שתגרום לכל החדר לצחוק, ולא
               מצאנו. אז ישבנו וכתבנו מאה מילים על החוגגת, והמשחק שיצא מזה פוצץ את הערב.
             </p>
-            <p>
+            <p data-edit="index-story-p2">
               מאז הפכנו את זה למקצוע: לוקחים את הסיפורים שרק אתם מכירים והופכים אותם למשחק אישי אחד
               ויחיד. כל הזמנה מרגישה לנו אישית, כי היא באמת כזו.
             </p>
-            <p class="sign">הצוות של דוגרי</p>
+            <p class="sign" data-edit="index-story-sign">הצוות של דוגרי</p>
           </div>
         </div>
       </div>
@@ -1106,12 +1149,12 @@
     <section id="faq" data-reveal>
       <div class="wrap">
         <div class="sec-title">
-          <h2>שאלות נפוצות</h2>
+          <h2 data-edit="index-faq-heading">שאלות נפוצות</h2>
         </div>
         <div class="faq">
           <details>
-            <summary>מה זה בעצם המשחק?</summary>
-            <p>
+            <summary data-edit="index-faq-q1">מה זה בעצם המשחק?</summary>
+            <p data-edit="index-faq-a1">
               משחק מסיבה אישי בסגנון ניחוש מילים בקבוצות: אתם שולחים לנו 100+ מילים וביטויים על בעל
               או בעלת השמחה - בדיחות פנימיות, הרגלים, אנשים ומקומות - ואנחנו הופכים אותם לחפיסת
               קלפים מעוצבת ולוח משחק מוכנים להדפסה. מתחלקים לקבוצות, מתחרים מי יגרום לחברים לנחש מהר
@@ -1119,23 +1162,23 @@
             </p>
           </details>
           <details>
-            <summary>כמה מילים צריך לשלוח?</summary>
-            <p>
+            <summary data-edit="index-faq-q2">כמה מילים צריך לשלוח?</summary>
+            <p data-edit="index-faq-a2">
               מינימום 100, ואין הגבלה עליונה. אנחנו שולחים דף עזר עם קטגוריות ודוגמאות שמקל מאוד
               להיזכר - אנשים, מקומות, בדיחות פנימיות, ביטויים שהוא תמיד אומר.
             </p>
           </details>
           <details>
-            <summary>מתי בדיוק מקבלים?</summary>
-            <p>
+            <summary data-edit="index-faq-q3">מתי בדיוק מקבלים?</summary>
+            <p data-edit="index-faq-a3">
               הספירה מתחילה מרגע שאתם שולחים את רשימת המילים - לא מרגע התשלום. תוך 24 שעות מאותו רגע
               הקובץ אצלכם במייל ובוואטסאפ. יש לכם תאריך אירוע קרוב? יש גם אקספרס בעדיפות שמקצר את זה
               לכמה שעות.
             </p>
           </details>
           <details>
-            <summary>איך מזמינים ומשלמים?</summary>
-            <p>
+            <summary data-edit="index-faq-q4">איך מזמינים ומשלמים?</summary>
+            <p data-edit="index-faq-a4">
               בוחרים חבילה ומשלמים באתר בתשלום מאובטח. מיד אחרי התשלום מקבלים הודעה בוואטסאפ ובמייל
               לשליחת המילים, ומשם אנחנו מתחילים.
             </p>
@@ -1146,10 +1189,17 @@
 
     <section class="final" id="order" data-reveal>
       <div class="wrap">
-        <h2>מוכנים להפתיע?</h2>
-        <p>כמה מילים מכם - וכל החדר יצחק עליו. או עליה. בדרך הכי אישית שיש.</p>
+        <h2 data-edit="index-final-heading">מוכנים להפתיע?</h2>
+        <p data-edit="index-final-sub">
+          כמה מילים מכם - וכל החדר יצחק עליו. או עליה. בדרך הכי אישית שיש.
+        </p>
         <div class="hero-cta" style="justify-content: center">
-          <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="final"
+          <a
+            class="btn"
+            href="products.html"
+            data-ga="order_started"
+            data-ga-cta="final"
+            data-edit="index-final-cta"
             >בונים את המשחק ›</a
           >
           <a
@@ -1161,10 +1211,13 @@
             data-ga="contact_click"
             data-ga-channel="whatsapp"
             data-ga-where="final"
+            data-edit="index-final-wa"
             >יש שאלה? דברו איתנו בוואטסאפ</a
           >
         </div>
-        <p class="reassure">אספקה תוך 24 שעות · מובטח שתאהבו - אנחנו מתקנים עד שזה מושלם</p>
+        <p class="reassure" data-edit="index-final-reassure">
+          אספקה תוך 24 שעות · מובטח שתאהבו - אנחנו מתקנים עד שזה מושלם
+        </p>
       </div>
     </section>
 
@@ -1231,7 +1284,7 @@
             <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
           >
         </div>
-        <p class="foot-tag">צילמתם? תייגו אותנו</p>
+        <p class="foot-tag" data-edit="index-footer-tag">צילמתם? תייגו אותנו</p>
       </div>
     </footer>
 
