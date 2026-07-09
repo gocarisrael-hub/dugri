@@ -162,8 +162,11 @@
       function (e) {
         var el = e.target && e.target.closest && e.target.closest('[data-edit]');
         if (!el || !el.isContentEditable) return; // only editable text nodes
+        // Interactive = anything whose native/own click does something other than
+        // place a caret: links & buttons (navigate / submit / handler), a <summary>
+        // (toggles its <details>), a role="button", or an inline onclick.
         var interactive =
-          /^(a|button)$/i.test(el.tagName) ||
+          /^(a|button|summary)$/i.test(el.tagName) ||
           el.hasAttribute('onclick') ||
           el.getAttribute('role') === 'button';
         if (!interactive) return; // plain text keeps normal caret placement

@@ -108,6 +108,24 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(page).toHaveURL(/index\.html/); // and no navigation
   });
 
+  test('clicking an editable <summary> in edit mode edits it without toggling its <details>', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    // A FAQ question is a <summary data-edit> inside a closed <details>. Clicking
+    // it to edit the label must NOT fire the native disclosure toggle (which would
+    // flip the accordion open/closed and fight the owner on every edit click).
+    const summary = page.locator('[data-edit="index-faq-q1"]');
+    const details = page.locator('details', { has: summary });
+    const before = await details.evaluate((d) => d.open);
+    await summary.evaluate((node) => node.click());
+    expect(await details.evaluate((d) => d.open)).toBe(before); // unchanged
+    await expect(summary).toBeFocused(); // focused for editing instead
+  });
+
   test('an uploaded .svg name is never served (stored-XSS guard)', async ({ page }) => {
     // SVG is dropped from the upload allowlist AND from the serve-route regex, so a
     // .svg content-uploads URL must 404 regardless of any file on disk.
