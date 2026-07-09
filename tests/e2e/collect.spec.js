@@ -574,13 +574,6 @@ test('how-to guidance is a collapsed details on collect that can be opened', asy
   await expect(details).toContainText('אנשים');
 });
 
-test('unpaid owner sees the locked teaser, not the unlock badge', async ({ page }) => {
-  await createCollection(page, 'Shira');
-  await expect(page.locator('#lockTeaser')).toBeVisible();
-  await expect(page.locator('#lockTeaser')).toContainText('שלמו כדי לפתוח');
-  await expect(page.locator('#premiumBadge')).toBeHidden();
-});
-
 test('home link (→ index.html) and a tailored order CTA (→ options.html) are present', async ({
   page,
   context,

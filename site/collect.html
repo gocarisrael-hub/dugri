@@ -466,25 +466,6 @@
         font-size: 13.5px;
         color: var(--muted);
       }
-      .premium-badge {
-        background: var(--section);
-        color: var(--ink);
-        border-radius: 99px;
-        padding: 7px 13px;
-        font-size: 14px;
-        font-weight: 800;
-        align-self: center;
-      }
-      .lock-teaser {
-        margin-top: 10px;
-        background: var(--section);
-        border: 1px solid var(--line);
-        color: var(--ink);
-        border-radius: 12px;
-        padding: 10px 13px;
-        font-size: 14px;
-        font-weight: 700;
-      }
       .actions {
         display: flex;
         flex-wrap: wrap;
@@ -942,11 +923,7 @@
           </div>
           <div class="actions">
             <button class="soft" id="ideaBtn" type="button">תני לי רעיון 💡</button>
-            <span class="premium-badge hidden" id="premiumBadge">נפתחו עוד רעיונות ✨</span>
           </div>
-          <p class="lock-teaser hidden" id="lockTeaser">
-            🔓 שלמו כדי לפתוח עוד עשרות שאלות שיעזרו לכם לחשוב על עוד מילים
-          </p>
         </div>
 
         <div class="panel hidden" id="panel-list">
@@ -1036,8 +1013,7 @@
         <summary class="pay-summary">שלמו וקבלו את המשחק</summary>
         <p class="muted" style="margin-top: 16px; margin-bottom: 10px">
           אפשר לשלם מתי שרוצים ולהמשיך להוסיף מילים תוך כדי - ועד שתלחצו על
-          <b>"מספיק! סיימנו"</b> האיסוף נשאר פתוח. בונוס: <b>תשלום פותח עוד עשרות שאלות</b> שיעזרו
-          לכם לחשוב על עוד מילים ✨
+          <b>"מספיק! סיימנו"</b> האיסוף נשאר פתוח.
         </p>
         <div class="pay-opts" id="payOpts" role="radiogroup" aria-label="בחירת גרסה">
           <label class="pay-opt active">
@@ -1174,12 +1150,7 @@
     </div>
 
     <script type="module">
-      import {
-        categoriesForTheme,
-        promptsForTheme,
-        premiumPromptsForTheme,
-        renderQuestion,
-      } from './js/word-prompts.js';
+      import { categoriesForTheme, promptsForTheme, renderQuestion } from './js/word-prompts.js';
       import { parseWordText } from './js/collect.js';
       import { track } from './js/analytics.js';
 
@@ -1399,7 +1370,6 @@
         const open = state.status === 'open';
         setOpenState(open);
         if (isOwner) {
-          applyPaidState();
           const paid = isPaid();
           const cardEnabled = !!state.card_enabled;
           // Paid: drop the pay panel + top reminder, and put a prominent
@@ -1560,9 +1530,7 @@
       );
 
       // ---- idea generator ----
-      // The prompt bank is chosen per event theme (kids / couple / default). When
-      // the order is marked paid the default event unlocks its extra premium bank
-      // for more variety (kids/couple ship a single curated set — see word-prompts).
+      // The prompt bank is chosen per event theme (kids / couple / default).
       function isPaid() {
         return !!(state && state.paid);
       }
@@ -1575,7 +1543,7 @@
       function pickPrompt() {
         const theme = eventTheme();
         const base = promptsForTheme(theme);
-        const pool = isPaid() ? base.concat(premiumPromptsForTheme(theme)) : base;
+        const pool = base;
         const seen = new Set(seenPrompts);
         let avail = pool.filter((p) => !seen.has(p.id));
         if (!avail.length) avail = pool;
@@ -1590,16 +1558,6 @@
         box.textContent = '💡 ' + renderQ(p.text);
         $('#wordInput').focus();
       };
-
-      // Reflect paid/locked state on the idea helper: paid shows an "unlocked"
-      // badge, unpaid shows a teaser nudging toward payment.
-      function applyPaidState() {
-        const paid = isPaid();
-        const badge = $('#premiumBadge');
-        const teaser = $('#lockTeaser');
-        if (badge) badge.classList.toggle('hidden', !paid);
-        if (teaser) teaser.classList.toggle('hidden', paid);
-      }
 
       // ---- category chips ----
       // Rebuilt whenever the event theme becomes known (or changes), so the chips

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { normalizeWord, dedupeWords, parseWordText, buildBulkCsv } from '../../site/js/collect.js';
-import { fillName, nextPrompt, PROMPTS, PREMIUM_PROMPTS } from '../../site/js/word-prompts.js';
+import { fillName, nextPrompt, PROMPTS } from '../../site/js/word-prompts.js';
 
 describe('normalizeWord', () => {
   it('trims, collapses whitespace, lowercases', () => {
@@ -73,21 +73,5 @@ describe('word prompts', () => {
     const seen = PROMPTS.slice(1).map((p) => p.id); // everything except the first
     const p = nextPrompt(seen, () => 0.999);
     expect(p.id).toBe(PROMPTS[0].id);
-  });
-  it('PREMIUM_PROMPTS is a non-trivial bank with the same {id,cat,text} shape', () => {
-    expect(Array.isArray(PREMIUM_PROMPTS)).toBe(true);
-    expect(PREMIUM_PROMPTS.length).toBeGreaterThanOrEqual(15);
-    for (const p of PREMIUM_PROMPTS) {
-      expect(typeof p.id).toBe('string');
-      expect(typeof p.cat).toBe('string');
-      expect(typeof p.text).toBe('string');
-      expect(p.text).toContain('{name}');
-    }
-  });
-  it('PREMIUM_PROMPTS ids are unique and disjoint from PROMPTS', () => {
-    const ids = PREMIUM_PROMPTS.map((p) => p.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    const base = new Set(PROMPTS.map((p) => p.id));
-    expect(ids.some((id) => base.has(id))).toBe(false);
   });
 });
