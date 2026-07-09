@@ -2,6 +2,7 @@
 <html lang="he" dir="rtl">
   <head>
     <meta charset="utf-8" />
+    <meta name="dugri:page" content="products.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>דוגרי · העיצובים שלנו</title>
     <meta
@@ -373,6 +374,7 @@
         }
       }
     </style>
+    <script src="js/editor.js" defer></script>
   </head>
   <body>
     <header class="hdr" aria-label="ניווט ראשי">
@@ -400,6 +402,7 @@
           data-testid="order-now"
           data-ga="order_started"
           data-ga-cta="nav"
+          data-edit="products-nav-order"
           >הזמינו עכשיו</a
         >
       </div>
@@ -424,7 +427,7 @@
       <section class="store">
         <div class="wrap">
           <!-- Clean "just the pictures" grid — heading kept for a11y/SEO, visually hidden. -->
-          <h1 class="visually-hidden">העיצובים של דוגרי</h1>
+          <h1 class="visually-hidden" data-edit="products-heading">העיצובים של דוגרי</h1>
           <div class="store-grid" id="storeGrid" data-testid="store-grid">
             <!-- product cards rendered from js/designs.js -->
           </div>
@@ -495,7 +498,7 @@
             <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
           >
         </div>
-        <p class="tag">צילמתם? תייגו אותנו</p>
+        <p class="tag" data-edit="products-footer-tag">צילמתם? תייגו אותנו</p>
       </div>
     </footer>
 

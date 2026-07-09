@@ -2,6 +2,7 @@
 <html lang="he" dir="rtl">
   <head>
     <meta charset="UTF-8" />
+    <meta name="dugri:page" content="timer.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Google Analytics (GA4) — loads after consent (js/consent.js) -->
     <script>
@@ -424,6 +425,7 @@
         }
       }
     </style>
+    <script src="js/editor.js" defer></script>
   </head>
   <body>
     <img class="logo" src="assets/logo.png" alt="דוגרי" />
@@ -551,7 +553,7 @@
       <button class="btn sec" id="reset" type="button" data-testid="timer-reset">איפוס</button>
     </div>
 
-    <p class="back"><a href="index.html">חזרה לדוגרי ←</a></p>
+    <p class="back"><a href="index.html" data-edit="timer-back-link">חזרה לדוגרי ←</a></p>
 
     <script type="module">
       import { tick } from './js/timer.js';

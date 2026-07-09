@@ -2,6 +2,7 @@
 <html lang="he" dir="rtl">
   <head>
     <meta charset="UTF-8" />
+    <meta name="dugri:page" content="how.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Google Analytics (GA4) - loads after consent (js/consent.js) -->
     <script>
@@ -1400,6 +1401,7 @@
         }
       }
     </style>
+    <script src="js/editor.js" defer></script>
   </head>
   <body>
     <nav class="nav" aria-label="ניווט ראשי">
@@ -1423,7 +1425,12 @@
           <a href="index.html#gallery">הצצה</a>
           <a href="index.html#proof">המלצות</a>
           <a href="timer.html">טיימר</a>
-          <a class="nav-cta" href="products.html" data-ga="order_started" data-ga-cta="nav"
+          <a
+            class="nav-cta"
+            href="products.html"
+            data-ga="order_started"
+            data-ga-cta="nav"
+            data-edit="how-nav-order"
             >הזמנה</a
           >
         </div>
@@ -1432,8 +1439,8 @@
 
     <header id="top">
       <div class="wrap">
-        <h1>איך זה עובד?</h1>
-        <p class="lede">
+        <h1 data-edit="how-hero-heading">איך זה עובד?</h1>
+        <p class="lede" data-edit="how-hero-lede">
           שלושה צעדים פשוטים - שולחים מילים, אנחנו מעצבים, ואתם מדפיסים ומשחקים. הנה כל התהליך ומה
           בדיוק מקבלים בקובץ.
         </p>
@@ -1442,7 +1449,7 @@
             >בונים את המשחק · <s class="was">129 ₪</s
             ><span style="white-space: nowrap">79 ₪</span></a
           >
-          <a class="btn ghost" href="index.html">חזרה לעמוד הבית</a>
+          <a class="btn ghost" href="index.html" data-edit="how-hero-back">חזרה לעמוד הבית</a>
         </div>
       </div>
     </header>
@@ -1450,25 +1457,33 @@
     <section id="how">
       <div class="wrap">
         <div class="sec-title reveal">
-          <h2>איך זה עובד?</h2>
-          <p>שלושה צעדים, בלי כאב ראש</p>
+          <h2 data-edit="how-steps-heading">איך זה עובד?</h2>
+          <p data-edit="how-steps-sub">שלושה צעדים, בלי כאב ראש</p>
         </div>
         <div class="steps stagger">
           <div class="step">
             <div class="n">1</div>
-            <h3>ממלאים בלי להתאמץ</h3>
-            <p>שולחים מילים, שמות וביטויים שקשורים למי שחוגגים. מינימום 100.</p>
-            <span class="hint">שלחנו לכם דף עזר עם קטגוריות - אף פעם לא נתקעים מול דף ריק</span>
+            <h3 data-edit="how-step1-title">ממלאים בלי להתאמץ</h3>
+            <p data-edit="how-step1-body">
+              שולחים מילים, שמות וביטויים שקשורים למי שחוגגים. מינימום 100.
+            </p>
+            <span class="hint" data-edit="how-step1-hint"
+              >שלחנו לכם דף עזר עם קטגוריות - אף פעם לא נתקעים מול דף ריק</span
+            >
           </div>
           <div class="step">
             <div class="n">2</div>
-            <h3>אנחנו עושים את הקסם</h3>
-            <p>המילים הופכות לחפיסת קלפים ולוח משחק אישיים, בעיצוב ולצבעים שהם בול בשבילכם.</p>
+            <h3 data-edit="how-step2-title">אנחנו עושים את הקסם</h3>
+            <p data-edit="how-step2-body">
+              המילים הופכות לחפיסת קלפים ולוח משחק אישיים, בעיצוב ולצבעים שהם בול בשבילכם.
+            </p>
           </div>
           <div class="step">
             <div class="n">3</div>
-            <h3>מדפיסים ומשחקים</h3>
-            <p>PDF מוכן, מתאים לכל בית דפוס, מודפס תוך דקות. עד 24 שעות מרגע שליחת המילים.</p>
+            <h3 data-edit="how-step3-title">מדפיסים ומשחקים</h3>
+            <p data-edit="how-step3-body">
+              PDF מוכן, מתאים לכל בית דפוס, מודפס תוך דקות. עד 24 שעות מרגע שליחת המילים.
+            </p>
           </div>
         </div>
       </div>
@@ -1477,49 +1492,57 @@
     <section id="included">
       <div class="wrap">
         <div class="sec-title reveal">
-          <h2>מה מקבלים</h2>
-          <p>חבילה שלמה, נשלחת במייל או בוואטסאפ</p>
+          <h2 data-edit="how-included-heading">מה מקבלים</h2>
+          <p data-edit="how-included-sub">חבילה שלמה, נשלחת במייל או בוואטסאפ</p>
         </div>
         <div class="items stagger">
           <div class="item">
             <span class="tick">✦</span>
             <div>
-              <h4>חפיסת קלפים מותאמת</h4>
-              <p>המילים שלכם הופכות לקלפים מעוצבים - כל קלף הוא בדיחה פנימית שמחכה להיקרא.</p>
+              <h4 data-edit="how-item1-title">חפיסת קלפים מותאמת</h4>
+              <p data-edit="how-item1-body">
+                המילים שלכם הופכות לקלפים מעוצבים - כל קלף הוא בדיחה פנימית שמחכה להיקרא.
+              </p>
             </div>
           </div>
           <div class="item">
             <span class="tick">✦</span>
             <div>
-              <h4>לוח משחק שמכניס את כולם לאווירה</h4>
-              <p>לוח מעוצב ומותאם לכמות הקלפים - מוציאים, פורסים, ומתחילים לצחוק.</p>
+              <h4 data-edit="how-item2-title">לוח משחק שמכניס את כולם לאווירה</h4>
+              <p data-edit="how-item2-body">
+                לוח מעוצב ומותאם לכמות הקלפים - מוציאים, פורסים, ומתחילים לצחוק.
+              </p>
             </div>
           </div>
           <div class="item">
             <span class="tick">✦</span>
             <div>
-              <h4>חוקים ברורים מהרגע הראשון</h4>
-              <p>קבוצות, טיימר, ניקוד וווריאציות לכל אירוע - בלי ויכוחים על הכללים.</p>
+              <h4 data-edit="how-item3-title">חוקים ברורים מהרגע הראשון</h4>
+              <p data-edit="how-item3-body">
+                קבוצות, טיימר, ניקוד וווריאציות לכל אירוע - בלי ויכוחים על הכללים.
+              </p>
             </div>
           </div>
           <div class="item">
             <span class="tick">✦</span>
             <div>
-              <h4>הדפסה בלי כאב ראש</h4>
-              <p>
+              <h4 data-edit="how-item4-title">הדפסה בלי כאב ראש</h4>
+              <p data-edit="how-item4-body">
                 בדיוק איזה נייר, איך מדפיסים בגודל מקורי ואיפה גוזרים - כל בית דפוס שכונתי יסתדר.
               </p>
             </div>
           </div>
         </div>
-        <p class="delivery-note">הכל כלול בקובץ אחד - ב-79 ₪.</p>
+        <p class="delivery-note" data-edit="how-delivery-note">הכל כלול בקובץ אחד - ב-79 ₪.</p>
       </div>
     </section>
 
     <section class="final" id="order">
       <div class="wrap reveal">
-        <h2>מוכנים להפתיע אותה?</h2>
-        <p>כמה מילים מכם - וכל החדר יצחק עליו. או עליה. בדרך הכי אישית שיש.</p>
+        <h2 data-edit="how-final-heading">מוכנים להפתיע אותה?</h2>
+        <p data-edit="how-final-sub">
+          כמה מילים מכם - וכל החדר יצחק עליו. או עליה. בדרך הכי אישית שיש.
+        </p>
         <div class="hero-cta">
           <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="final"
             >בונים את המשחק · <s class="was">129 ₪</s
@@ -1534,10 +1557,13 @@
             data-ga="contact_click"
             data-ga-channel="whatsapp"
             data-ga-where="final"
+            data-edit="how-final-wa"
             >יש שאלה? דברו איתנו בוואטסאפ</a
           >
         </div>
-        <p class="reassure">אספקה תוך 24 שעות · מובטח שתאהבו - אנחנו מתקנים עד שזה מושלם</p>
+        <p class="reassure" data-edit="how-final-reassure">
+          אספקה תוך 24 שעות · מובטח שתאהבו - אנחנו מתקנים עד שזה מושלם
+        </p>
       </div>
     </section>
 
@@ -1604,7 +1630,7 @@
             <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
           >
         </div>
-        <p class="tag">צילמתם? תייגו אותנו</p>
+        <p class="tag" data-edit="how-footer-tag">צילמתם? תייגו אותנו</p>
       </div>
     </footer>
 
@@ -1626,6 +1652,7 @@
         data-ga="contact_click"
         data-ga-channel="whatsapp"
         data-ga-where="sticky"
+        data-edit="how-sticky-wa"
         >וואטסאפ</a
       >
     </div>

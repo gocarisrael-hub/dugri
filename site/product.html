@@ -2,6 +2,7 @@
 <html lang="he" dir="rtl">
   <head>
     <meta charset="UTF-8" />
+    <meta name="dugri:page" content="product.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Google Analytics (GA4) — loads after consent (js/consent.js) -->
     <script>
@@ -733,6 +734,7 @@
         }
       }
     </style>
+    <script src="js/editor.js" defer></script>
   </head>
   <body>
     <header class="hdr" aria-label="ניווט ראשי">
@@ -777,6 +779,7 @@
           data-testid="order-now"
           data-ga="order_started"
           data-ga-cta="nav"
+          data-edit="product-nav-order"
           >הזמינו עכשיו</a
         >
       </div>
@@ -841,7 +844,7 @@
 
         <!-- 3a. ABOUT THIS DESIGN -->
         <section class="pdp-sec">
-          <h2>על העיצוב</h2>
+          <h2 data-edit="product-about-heading">על העיצוב</h2>
           <p id="pdpAbout">
             אותו משחק דוגרי בעיצוב ייחודי, חפיסת קלפים ולוח מותאמים אישית מהמילים, הבדיחות והרגעים
             שרק אתם מכירים.
@@ -856,11 +859,26 @@
             מה בפנים
           </h2>
           <ul class="pdp-list">
-            <li><span class="tick" aria-hidden="true">✓</span> חפיסת קלפים מותאמת אישית</li>
-            <li><span class="tick" aria-hidden="true">✓</span> לוח משחק</li>
-            <li><span class="tick" aria-hidden="true">✓</span> דף חוקים</li>
-            <li><span class="tick" aria-hidden="true">✓</span> הוראות הדפסה וגזירה</li>
-            <li><span class="tick" aria-hidden="true">✓</span> דף עזר לאיסוף מילים</li>
+            <li>
+              <span class="tick" aria-hidden="true">✓</span>
+              <span data-edit="product-inside-1">חפיסת קלפים מותאמת אישית</span>
+            </li>
+            <li>
+              <span class="tick" aria-hidden="true">✓</span>
+              <span data-edit="product-inside-2">לוח משחק</span>
+            </li>
+            <li>
+              <span class="tick" aria-hidden="true">✓</span>
+              <span data-edit="product-inside-3">דף חוקים</span>
+            </li>
+            <li>
+              <span class="tick" aria-hidden="true">✓</span>
+              <span data-edit="product-inside-4">הוראות הדפסה וגזירה</span>
+            </li>
+            <li>
+              <span class="tick" aria-hidden="true">✓</span>
+              <span data-edit="product-inside-5">דף עזר לאיסוף מילים</span>
+            </li>
           </ul>
         </section>
 
@@ -873,9 +891,12 @@
             data-testid="pdp-buy"
             data-ga="order_started"
             data-ga-cta="pdp"
+            data-edit="product-buy-cta"
             >קנו עכשיו</a
           >
-          <p class="note">מבצע השקה · אספקה תוך 24 שעות · ללא הגבלת מילים</p>
+          <p class="note" data-edit="product-buy-note">
+            מבצע השקה · אספקה תוך 24 שעות · ללא הגבלת מילים
+          </p>
         </section>
       </div>
 
@@ -883,8 +904,8 @@
       <section class="pdp-related" data-testid="pdp-related" aria-label="עוד עיצובים">
         <div class="wrap">
           <div class="pdp-related-head">
-            <h2>עוד עיצובים</h2>
-            <p>אותו משחק, כל עיצוב במגוון צבעים</p>
+            <h2 data-edit="product-related-heading">עוד עיצובים</h2>
+            <p data-edit="product-related-sub">אותו משחק, כל עיצוב במגוון צבעים</p>
           </div>
           <div id="relatedTrack">
             <!-- related cards injected by js/product.js -->
@@ -959,7 +980,7 @@
             <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
           >
         </div>
-        <p class="tag">צילמתם? תייגו אותנו</p>
+        <p class="tag" data-edit="product-footer-tag">צילמתם? תייגו אותנו</p>
       </div>
     </footer>
 
