@@ -3,12 +3,16 @@ import { test, expect } from '@playwright/test';
 // The hero marquee ribbon (site/index.html, .marquee / .marquee__track) is a
 // slim strip under the hero whose three phrases scroll endlessly. The page is
 // dir="rtl", but the scroll keyframe animates translateX 0 → -50% (an
-// LTR-direction move). Regression guard for the RTL bug: in an RTL container the
-// track was anchored to the RIGHT and overflowed LEFT, so translating negative
-// marched the whole strip off the left edge and left the strip BLANK before the
-// animation reset. The fix forces the strip (and track) to `direction: ltr` so
-// the track anchors at left=0 and the two-halves loop scrolls seamlessly, while
-// each Hebrew phrase still renders RTL via inherent bidi + unicode-bidi: isolate.
+// LTR-direction move), played in `reverse` on the track so the content travels
+// the other way: it enters from the LEFT and exits RIGHT. Because `reverse`
+// traverses the exact same set of track positions as the forward animation (just
+// in the opposite temporal order), the two-halves loop stays seamless either way.
+// Regression guard for the RTL bug: in an RTL container the track was anchored to
+// the RIGHT and overflowed LEFT, so translating negative marched the whole strip
+// off the left edge and left the strip BLANK before the animation reset. The fix
+// forces the strip (and track) to `direction: ltr` so the track anchors at left=0
+// and the two-halves loop scrolls seamlessly, while each Hebrew phrase still
+// renders RTL via inherent bidi + unicode-bidi: isolate.
 
 test.describe('hero marquee: true endless loop, never blank', () => {
   test('a single half is at least as wide as the strip (phase-independent seamlessness)', async ({
@@ -84,6 +88,23 @@ test.describe('hero marquee: true endless loop, never blank', () => {
     // translateX keyframe marches it off-screen again.
     const dir = await page.$eval('.marquee__track', (el) => getComputedStyle(el).direction);
     expect(dir).toBe('ltr');
+  });
+
+  test('the animation runs in reverse so the content scrolls the opposite way (enters left, exits right)', async ({
+    page,
+  }) => {
+    await page.goto('/index.html');
+    await page.waitForSelector('.marquee__track');
+    // Deterministic, no frame-rate dependence: the keyframe is a fixed
+    // translateX(0 → -50%) leftward move, so running it in `reverse` makes the
+    // track travel rightward instead (enters from the left, exits right). Assert
+    // the computed animation-direction rather than sampling rAF frame deltas,
+    // which throttle under CI parallel load and would flake red on a correct fix.
+    const dir = await page.$eval(
+      '.marquee__track',
+      (el) => getComputedStyle(el).animationDirection
+    );
+    expect(dir).toBe('reverse');
   });
 });
 

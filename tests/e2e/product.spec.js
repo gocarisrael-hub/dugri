@@ -114,6 +114,27 @@ test.describe('product detail page', () => {
     await page.waitForURL(/\/products\.html$/);
   });
 
+  test('the title and price keep a comfortable gutter from the screen edge (mobile)', async ({
+    page,
+  }) => {
+    // Regression: .pdp used the padding shorthand and zeroed the horizontal
+    // gutter that .wrap provides, so the title + price sat flush against the
+    // (leading, RTL-right) screen edge on phones. They must stay inset.
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto('/product.html?design=bachelorette');
+
+    const vw = 390;
+    const MIN_GUTTER = 16; // comfortably inside the intended 26px gutter
+
+    for (const sel of ['#pdpTitle', '#pdpPriceNow']) {
+      const box = await page.locator(sel).boundingBox();
+      expect(box, `${sel} should have a bounding box`).not.toBeNull();
+      // Inset from both the left edge and the (RTL leading) right edge.
+      expect(box.x, `${sel} left gap`).toBeGreaterThanOrEqual(MIN_GUTTER);
+      expect(vw - (box.x + box.width), `${sel} right gap`).toBeGreaterThanOrEqual(MIN_GUTTER);
+    }
+  });
+
   test('the enlarge button opens a fullscreen overlay with the swipeable images', async ({
     page,
   }) => {
