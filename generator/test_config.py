@@ -78,6 +78,96 @@ def test_title_block_applies_rtl_for_hebrew_digit_title():
     assert 'direction="rtl"' not in en, "English titles must stay left-to-right"
 
 
+def test_board_and_backs_render_paths_wire_rtl():
+    # Regression: the RTL base-direction fix must reach the BOARD and card-BACK
+    # title paths too, not only the front card. A Hebrew digit title (anniversary
+    # "30 שנה נישואין") would otherwise keep the number on the wrong side on the
+    # board + backs. Spy on title_block to assert render_board/render_backs pass
+    # rtl=True for a Hebrew theme and rtl=False for an English one.
+    import json
+    import tempfile
+
+    import render_page as rp
+    import build
+
+    font = os.path.join(config.HERE, "Cafe-Regular.ttf")  # a real font in generator/
+    tmp = tempfile.mkdtemp(prefix="dugri-test-rtl-")
+
+    def make_svg(p):
+        with open(p, "w", encoding="utf-8") as f:
+            f.write('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" '
+                    'viewBox="0 0 100 100"></svg>')
+
+    board_svg = os.path.join(tmp, "board.svg")
+    backs_svg = os.path.join(tmp, "backs.svg")
+    make_svg(board_svg)
+    make_svg(backs_svg)
+
+    def make_cfg(language):
+        return {
+            "slug": "synthetic", "calibrated": True, "language": language,
+            "recipe": "synthetic-rtl-test",
+            "title_font": "Cafe-Regular.ttf", "word_font": "Cafe-Regular.ttf",
+            "title_style": {"fill": "#fff", "outline": "#000", "outline_w": 0.0,
+                            "arch": 0.1, "shadow": False},
+            "board": {"fill": "#fff", "outline": "#000",
+                      "frac": {"x0": 0.1, "y0": 0.1, "x1": 0.9, "y1": 0.3}},
+            "back": {"fill": "#fff", "outline": "#000",
+                     "frac": {"x0": 0.1, "y0": 0.1, "x1": 0.9, "y1": 0.9}},
+        }
+
+    recipe = {"viewBox": [0, 0, 100, 100], "cards": [{"cell": [0, 0, 50, 50]}]}
+    recipe_path = os.path.join(rp.HERE, "recipes", "synthetic-rtl-test.json")
+
+    calls = []  # each captured rtl kwarg from a title_block call
+
+    def spy_title_block(box, lines, fill, outline, font_path, outline_w, arch,
+                        shadow, rtl=False):
+        calls.append(rtl)
+        return "<g/>"
+
+    saved = {
+        "theme": config.theme, "ensure": config.ensure_calibrated,
+        "fp": config.font_path, "tb": rp.title_block,
+        "rs": build.render_svg, "ff": rp.font_face,
+    }
+    try:
+        with open(recipe_path, "w", encoding="utf-8") as f:
+            json.dump(recipe, f)
+        config.ensure_calibrated = lambda c: None
+        config.font_path = lambda name, fn: font
+        rp.font_face = lambda name, path: ""
+        rp.title_block = spy_title_block
+        build.render_svg = lambda svg_text, w, h, out_png: out_png
+
+        # Hebrew theme -> both surfaces must be RTL.
+        config.theme = lambda name: make_cfg("hebrew")
+        calls.clear()
+        build.render_board("x", board_svg, ["30 שנה נישואין"], os.path.join(tmp, "b.png"))
+        build.render_backs("x", backs_svg, ["30 שנה נישואין"], os.path.join(tmp, "k.png"))
+        assert calls and all(c is True for c in calls), (
+            "board + back titles must be RTL for a Hebrew theme, got " + repr(calls)
+        )
+
+        # English theme -> both surfaces must stay LTR.
+        config.theme = lambda name: make_cfg("english")
+        calls.clear()
+        build.render_board("x", board_svg, ["OZ'S"], os.path.join(tmp, "b2.png"))
+        build.render_backs("x", backs_svg, ["OZ'S"], os.path.join(tmp, "k2.png"))
+        assert calls and all(c is False for c in calls), (
+            "board + back titles must stay LTR for an English theme, got " + repr(calls)
+        )
+    finally:
+        config.theme = saved["theme"]
+        config.ensure_calibrated = saved["ensure"]
+        config.font_path = saved["fp"]
+        rp.title_block = saved["tb"]
+        build.render_svg = saved["rs"]
+        rp.font_face = saved["ff"]
+        if os.path.exists(recipe_path):
+            os.remove(recipe_path)
+
+
 def test_uncalibrated_raises():
     # all real themes are now calibrated, so use a synthetic uncalibrated config
     cfg = {"slug": "x", "calibrated": False}
