@@ -207,8 +207,14 @@
       main {
         padding-bottom: 40px;
       }
+      /* Vertical rhythm only — keep the horizontal gutter from .wrap (26px on
+         phone, 52px on desktop) so the title, price, gallery and sections all
+         sit inset from the screen edge instead of flush against it. Using the
+         padding shorthand here would zero the inline padding and undo the
+         .wrap gutter. */
       .pdp {
-        padding: 26px 0 8px;
+        padding-top: 26px;
+        padding-bottom: 8px;
       }
 
       /* ---- 1. PHOTO GALLERY ---- */
