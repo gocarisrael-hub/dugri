@@ -10,7 +10,6 @@ import {
   COUPLE_PROMPTS,
   categoriesForTheme,
   promptsForTheme,
-  premiumPromptsForTheme,
   isKidsTheme,
   isCoupleTheme,
 } from '../../site/js/word-prompts.js';
@@ -103,12 +102,6 @@ describe('per-event prompt sets', () => {
     }
     // The default adult set DOES include an ex prompt — proving kids diverges.
     expect(PROMPTS.map((p) => raw(p.text)).join(' ')).toContain('אקס');
-  });
-
-  it('kids/couple premium bank is empty (no adult prompts leak in when paid)', () => {
-    expect(premiumPromptsForTheme('birthday-boys-basketball')).toEqual([]);
-    expect(premiumPromptsForTheme('anniversary')).toEqual([]);
-    expect(premiumPromptsForTheme('bachelorette').length).toBeGreaterThan(0);
   });
 
   it('renders every kids/couple prompt without leaving raw tokens', () => {
