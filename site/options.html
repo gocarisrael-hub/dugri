@@ -1381,7 +1381,9 @@
         }
         .colors {
           row-gap: 24px;
-          padding-bottom: 18px;
+          /* tighter gap before the chasers add-on so the merged colour+extras
+             step still clears the sticky bar on a phone (was 18px) */
+          padding-bottom: 8px;
         }
         .swatch {
           width: 36px;
@@ -1428,8 +1430,10 @@
           padding: 4px;
           overflow: visible;
         }
-        /* let the sheet use more of a phone's tall viewport than the 56vh base;
-           the reserved active-panel box uses the same cap so it can't reflow. */
+        /* Cap the phone preview so the merged colour+extras step (swatches AND the
+           chasers add-on on one screen) still clears the sticky bar without the
+           page scrolling. The reserved active-panel box uses the same cap so it
+           can't reflow. (Was 48vh; trimmed to fit the taller merged step.) */
         .preview-card:not(.is-collapsed) .preview-panel[data-active='true'],
         .preview-card:not(.is-collapsed) .preview-panel[data-panel='front'] svg,
         .preview-card:not(.is-collapsed) .preview-panel[data-panel='back'] svg,
@@ -1437,7 +1441,12 @@
         .preview-card:not(.is-collapsed) .preview-panel[data-panel='front'] img,
         .preview-card:not(.is-collapsed) .preview-panel[data-panel='back'] img,
         .preview-card:not(.is-collapsed) .preview-panel[data-panel='board'] img {
-          max-height: 48vh;
+          /* On a narrow phone the landscape preview is WIDTH-driven (~249px tall),
+             below any vh cap, and it flex-grows to absorb space freed in the step
+             below — so a vh cap alone never binds. A px cap that DOES bind shrinks
+             the preview enough that the taller merged colour+extras step clears the
+             sticky bar without the page scrolling. */
+          max-height: min(45vh, 232px);
         }
       }
 
