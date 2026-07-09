@@ -152,6 +152,28 @@ test.describe('name language + single-word rules block Next', () => {
     await expect(err).toBeHidden();
   });
 
+  test('creating from the details step with no name bounces back to the name step (step 3)', async ({
+    page,
+  }) => {
+    await page.route('**/api/preview', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: previewBody })
+    );
+    // Deep-link straight to the details step (now step 4) without ever entering a
+    // honoree name, then fill valid contact so the create button enables.
+    await page.goto('/options.html?step=4');
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    await page.getByTestId('owner-email').fill('x@example.com');
+    await page.getByTestId('owner-phone').fill('0521234567');
+    const create = page.getByTestId('next-btn');
+    await expect(create).toBeEnabled();
+
+    // With no name, createCollection must bounce BACK to the name step (step 3),
+    // not dead-end on the details step (the pre-fix goStep(4) was a no-op there).
+    await create.click();
+    await expect(page.getByTestId('step-3')).toBeVisible();
+    await expect(page.getByTestId('step-4')).toBeHidden();
+  });
+
   test('a couple (anniversary) design shows an inline error for an invalid partner name', async ({
     page,
   }) => {

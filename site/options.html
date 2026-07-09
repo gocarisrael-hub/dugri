@@ -1417,7 +1417,7 @@
          we only trim the gutters/padding so the sheet reaches nearly edge-to-edge
          (~350px on a 390px screen) and reads as the dominant focal element. The
          page may scroll on a dense step — the sticky Back/Next bar is fixed and
-         always reachable. Steps 4-5 keep the small collapsed mini-preview. */
+         always reachable. Steps 3-4 keep the small collapsed mini-preview. */
       @media (max-width: 600px) {
         .wrap {
           padding: 0 8px;
@@ -1652,7 +1652,7 @@
         </div>
       </div>
 
-      <!-- LIVE PREVIEW (collapses to a thumbnail + summary on steps 4-5) -->
+      <!-- LIVE PREVIEW (collapses to a thumbnail + summary on steps 3-4) -->
       <section class="preview-card" id="previewCard" data-testid="preview">
         <div class="tabs" role="tablist" aria-label="תצוגה">
           <button
@@ -2225,7 +2225,7 @@
             display: none;
           }
           /* height-capped so a PORTRAIT card thumb and a LANDSCAPE board/page thumb
-             both stay short — keeps step 5 within a phone screen (no scroll). */
+             both stay short — keeps step 4 within a phone screen (no scroll). */
           .os-thumb {
             flex: 0 0 auto;
             display: flex;
@@ -3747,27 +3747,27 @@
         const phone = normalizeIlPhone(phoneInput.value.trim());
         createErr.hidden = true;
         if (!name) {
-          goStep(4);
+          goStep(3);
           return;
         }
         // Reject a single honoree name that isn't letters/spaces/-/' (couple
         // themes have no single name box — their two names are validated as
         // extra fields).
         if (!isCoupleTheme() && !isValidHonoreeName(nameInput.value, currentLanguage())) {
-          goStep(4);
+          goStep(3);
           refreshNameError();
           nameInput.focus();
           return;
         }
         if (!isCoupleTheme() && !selectedGender()) {
-          goStep(4);
+          goStep(3);
           openGenderModal();
           return;
         }
         // theme extra fields (AGE / YEARS + names) are required when the theme
         // needs them — bounce back to the name step and focus the first blank.
         if (!extraFieldsValid()) {
-          goStep(4);
+          goStep(3);
           const firstEmpty = currentExtraFields()
             .map((k) => extraInput(k))
             .find((el) => el && !el.value.trim());
