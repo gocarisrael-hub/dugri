@@ -144,35 +144,74 @@
       if (resetBtn) resetBtn.disabled = !el;
     }
 
-    // An editable that is ALSO interactive (a link, or a button with its own
-    // click handler) would navigate / fire that handler when the owner clicks to
-    // edit its label — e.g. clicking the collect page's "finish" button would
-    // finalize the order, or a hero CTA <a> would navigate away. In edit mode a
-    // click on such an element must only place the caret.
-    //
-    // This guard MUST sit on `document` in the CAPTURE phase. A per-element
-    // listener does not work: the page binds its own handler at load (e.g.
-    // #closeBtn.onclick = closeCollection), and at the TARGET node listeners fire
-    // in REGISTRATION order regardless of the capture flag — so our later listener
-    // would run after the page's handler. A document-level capture listener runs
-    // during the capturing phase, before the target's handlers, and
-    // stopPropagation there prevents the event from ever reaching them.
+    // Disclosure content (<details>/<summary>) must be fully reachable AND stay put
+    // while editing. Editable answers can live inside a normally-CLOSED <details>
+    // (e.g. the FAQ answers on index.html), so force every <details> open — else
+    // that content is display:none and can't be clicked/edited. And hold it open:
+    // the summary click-toggle is already guarded below, but a stray keyboard
+    // toggle (Space/Enter on a focused summary) would still collapse it mid-edit,
+    // so a toggle guard snaps it back open. Setting open=true here re-fires toggle,
+    // but the `if (!d.open)` check makes that a no-op (no loop).
+    document.querySelectorAll('details').forEach(function (d) {
+      d.open = true;
+      d.addEventListener('toggle', function () {
+        if (!d.open) d.open = true;
+      });
+    });
+
+    // An editable element that is ALSO interactive — a link, a button (with its
+    // own click handler), a <summary> (toggles its <details>), a role="button" or
+    // an inline onclick — has native/own key+click behavior other than placing a
+    // caret. In edit mode those must be neutralized so the owner can edit the LABEL.
+    function interactiveEditable(target) {
+      var el = target && target.closest && target.closest('[data-edit]');
+      if (!el || !el.isContentEditable) return null;
+      var interactive =
+        /^(a|button|summary)$/i.test(el.tagName) ||
+        el.hasAttribute('onclick') ||
+        el.getAttribute('role') === 'button';
+      return interactive ? el : null;
+    }
+
+    // Click guard. MUST sit on `document` in the CAPTURE phase: the page binds its
+    // own handler at load (e.g. #closeBtn.onclick = closeCollection), and at the
+    // TARGET node listeners fire in REGISTRATION order regardless of the capture
+    // flag — so a later per-element listener would run after the page's handler. A
+    // document-level capture listener runs during the capturing phase, before the
+    // target's handlers, and stopPropagation there prevents them from ever firing
+    // (and preventDefault stops link nav / form submit / the <details> toggle).
     document.addEventListener(
       'click',
       function (e) {
-        var el = e.target && e.target.closest && e.target.closest('[data-edit]');
-        if (!el || !el.isContentEditable) return; // only editable text nodes
-        // Interactive = anything whose native/own click does something other than
-        // place a caret: links & buttons (navigate / submit / handler), a <summary>
-        // (toggles its <details>), a role="button", or an inline onclick.
-        var interactive =
-          /^(a|button|summary)$/i.test(el.tagName) ||
-          el.hasAttribute('onclick') ||
-          el.getAttribute('role') === 'button';
-        if (!interactive) return; // plain text keeps normal caret placement
-        e.preventDefault(); // no link nav / form submit
-        e.stopPropagation(); // page's own handler never runs
+        var el = interactiveEditable(e.target);
+        if (!el) return; // plain text keeps normal caret placement
+        e.preventDefault();
+        e.stopPropagation();
         if (document.activeElement !== el) el.focus();
+      },
+      true
+    );
+
+    // Keydown guard for those same interactive editables. Their native keyboard
+    // behavior hijacks the keys we need for typing a label: <button> and <summary>
+    // ACTIVATE on Space (so a space is never inserted — labels like "לרכישה ›" and
+    // FAQ questions need spaces), and Enter activates/navigates. Intercept in the
+    // capture phase: insert a literal space for Space, and treat Enter as "commit"
+    // (blur → save) rather than a newline in a one-line label.
+    document.addEventListener(
+      'keydown',
+      function (e) {
+        var el = interactiveEditable(e.target);
+        if (!el) return;
+        if (e.key === ' ' || e.key === 'Spacebar') {
+          e.preventDefault();
+          e.stopPropagation();
+          document.execCommand('insertText', false, ' ');
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          el.blur();
+        }
       },
       true
     );

@@ -108,22 +108,42 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(page).toHaveURL(/index\.html/); // and no navigation
   });
 
-  test('clicking an editable <summary> in edit mode edits it without toggling its <details>', async ({
+  test('an editable <summary>/<details> is reachable, stays open, and accepts spaces', async ({
     page,
   }) => {
     await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) => route.fulfill({ json: { ok: true } }));
     await page.goto('/index.html?edit=1&key=dugri-admin');
     await expect(page.getByText('מצב עריכה')).toBeVisible();
 
-    // A FAQ question is a <summary data-edit> inside a closed <details>. Clicking
-    // it to edit the label must NOT fire the native disclosure toggle (which would
-    // flip the accordion open/closed and fight the owner on every edit click).
+    // FAQ answers live inside a normally-CLOSED <details>. In edit mode every
+    // <details> is FORCED OPEN so its editable answer is reachable, and it must
+    // stay open — clicking the <summary> to edit the question must neither collapse
+    // the panel (native toggle) nor swallow spaces (native Space = activate).
     const summary = page.locator('[data-edit="index-faq-q1"]');
+    const answer = page.locator('[data-edit="index-faq-a1"]');
     const details = page.locator('details', { has: summary });
-    const before = await details.evaluate((d) => d.open);
-    await summary.evaluate((node) => node.click());
-    expect(await details.evaluate((d) => d.open)).toBe(before); // unchanged
-    await expect(summary).toBeFocused(); // focused for editing instead
+
+    expect(await details.evaluate((d) => d.open)).toBe(true); // forced open
+    await expect(answer).toBeVisible(); // reachable → editable
+    await expect(answer).toHaveAttribute('contenteditable', /plaintext-only|true/);
+
+    await summary.click(); // does not toggle the <details> shut
+    expect(await details.evaluate((d) => d.open)).toBe(true);
+    await expect(summary).toBeFocused();
+
+    // Replace the label with text that CONTAINS SPACES; the space must be inserted,
+    // not consumed by the native summary activation, and the panel must stay open.
+    await summary.evaluate((node) => {
+      const r = document.createRange();
+      r.selectNodeContents(node);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    });
+    await page.keyboard.type('שאלה חדשה כאן');
+    await expect(summary).toHaveText('שאלה חדשה כאן');
+    expect(await details.evaluate((d) => d.open)).toBe(true);
   });
 
   test('an uploaded .svg name is never served (stored-XSS guard)', async ({ page }) => {
