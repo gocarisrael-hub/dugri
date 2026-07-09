@@ -18,7 +18,7 @@ test.describe('product detail page', () => {
     await expect(page.locator('#pdpPriceNow')).toContainText('79 ₪');
 
     // Buy now carries the chosen design into the order flow and jumps straight
-    // to the colour step (step 2) for recolourable designs.
+    // to the colour + add-ons step (step 2).
     const buy = page.getByTestId('pdp-buy');
     await expect(buy).toHaveAttribute('href', 'options.html?design=bachelorette&step=2');
   });
@@ -38,11 +38,12 @@ test.describe('product detail page', () => {
   });
 
   test('the buy button reflects whichever design is in the URL', async ({ page }) => {
-    // neon is a fixed-colour design (no colour step) → straight to step 3.
+    // neon is a fixed-colour design, but colour + add-ons are one step now, so it
+    // lands on the same step 2 as every other design.
     await page.goto('/product.html?design=neon');
     await expect(page.getByTestId('pdp-buy')).toHaveAttribute(
       'href',
-      'options.html?design=neon&step=3'
+      'options.html?design=neon&step=2'
     );
   });
 

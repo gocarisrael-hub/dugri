@@ -55,7 +55,7 @@ test.describe('order wizard keeps Next hittable on wide/short screens', () => {
     ['mid-height desktop', DESKTOP_MID],
   ]) {
     test.describe(`on a ${label} screen`, () => {
-      for (const step of [1, 2, 3, 4, 5]) {
+      for (const step of [1, 2, 3, 4]) {
         test(`step ${step}: Next is not covered and stays clickable`, async ({ page }) => {
           await page.setViewportSize(viewport);
           await page.goto('/options.html?step=' + step);
@@ -75,8 +75,6 @@ test.describe('order wizard keeps Next hittable on wide/short screens', () => {
       await expect(page.getByTestId('step-2')).toBeVisible();
       await page.getByTestId('next-btn').click();
       await expect(page.getByTestId('step-3')).toBeVisible();
-      await page.getByTestId('next-btn').click();
-      await expect(page.getByTestId('step-4')).toBeVisible();
     });
   }
 });

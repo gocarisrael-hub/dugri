@@ -48,10 +48,9 @@ async function toNameStep(page) {
   await page.goto('/options.html?plan=base');
   await expect(page.getByTestId('step-1')).toBeVisible();
   await page.getByTestId('design-0').click();
-  await page.getByTestId('next-btn').click(); // -> step 2
-  await page.getByTestId('next-btn').click(); // -> step 3
-  await page.getByTestId('next-btn').click(); // -> step 4 (name)
-  await expect(page.getByTestId('step-4')).toBeVisible();
+  await page.getByTestId('next-btn').click(); // -> step 2 (colour + add-ons)
+  await page.getByTestId('next-btn').click(); // -> step 3 (name)
+  await expect(page.getByTestId('step-3')).toBeVisible();
 }
 
 test.describe('name-step live preview + font picker', () => {
@@ -136,40 +135,17 @@ test.describe('name-step live preview + font picker', () => {
     expect(fontsBottom).toBeLessThanOrEqual(imgsTop + 1);
   });
 
-  test('the name preview can be enlarged and swiped front → back → board', async ({ page }) => {
+  test('the name preview no longer offers a fullscreen enlarge affordance', async ({ page }) => {
     await mockPreview(page);
     await toNameStep(page);
     await page.getByTestId('honoree-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
-    // the enlarge affordance appears once a real preview has rendered
-    const enlarge = page.getByTestId('name-zoom-open');
-    await expect(enlarge).toBeVisible();
-    await enlarge.click();
-
-    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
-    await expect(page.locator('#zoomContent img')).toBeVisible();
-    // it opens on the card (front) view; all three tabs exist in order
-    await expect(page.getByTestId('zoom-tab-card')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByTestId('zoom-tab-back')).toBeVisible();
-    await expect(page.getByTestId('zoom-tab-board')).toBeVisible();
-
-    const vp = page.getByTestId('zoom-viewport');
-    const swipeLeft = async () => {
-      await vp.dispatchEvent('pointerdown', { clientX: 300, clientY: 300 });
-      await vp.dispatchEvent('pointerup', { clientX: 80, clientY: 300 });
-    };
-
-    // swipe left → the BACK view (front → back)
-    await swipeLeft();
-    await expect(page.getByTestId('zoom-tab-back')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByTestId('zoom-tab-card')).toHaveAttribute('aria-selected', 'false');
-    await expect(page.getByTestId('zoom-tab-board')).toHaveAttribute('aria-selected', 'false');
-
-    // swipe left again → the BOARD view (back → board)
-    await swipeLeft();
-    await expect(page.getByTestId('zoom-tab-board')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByTestId('zoom-tab-back')).toHaveAttribute('aria-selected', 'false');
+    // the name-preview zoom was removed: no enlarge button, and tapping the
+    // inline preview does NOT open the shared fullscreen overlay.
+    await expect(page.getByTestId('name-zoom-open')).toHaveCount(0);
+    await page.getByTestId('name-preview-viewport').click({ position: { x: 20, y: 20 } });
+    await expect(page.getByTestId('zoom-overlay')).toBeHidden();
   });
 });
 
