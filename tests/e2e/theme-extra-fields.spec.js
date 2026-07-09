@@ -44,17 +44,16 @@ async function mockPreview(page) {
   );
 }
 
-// Pick a design by its tile testid, then advance to the name step (steps 2-3
-// have safe defaults, so Next walks straight through).
+// Pick a design by its tile testid, then advance to the name step (step 2
+// (colour + add-ons) has safe defaults, so Next walks straight through).
 async function toNameStepWithDesign(page, designTestId) {
   await mockPreview(page);
   await page.goto('/options.html?plan=base');
   await expect(page.getByTestId('step-1')).toBeVisible();
   await page.getByTestId(designTestId).click();
-  await page.getByTestId('next-btn').click(); // -> step 2
-  await page.getByTestId('next-btn').click(); // -> step 3
-  await page.getByTestId('next-btn').click(); // -> step 4 (name)
-  await expect(page.getByTestId('step-4')).toBeVisible();
+  await page.getByTestId('next-btn').click(); // -> step 2 (colour + add-ons)
+  await page.getByTestId('next-btn').click(); // -> step 3 (name)
+  await expect(page.getByTestId('step-3')).toBeVisible();
 }
 
 test.describe('theme extra fields on the name step', () => {
@@ -84,7 +83,7 @@ test.describe('theme extra fields on the name step', () => {
     await page.getByTestId('honoree-input').fill('Shira');
     await page.getByTestId('gender-female').check();
     await page.getByTestId('extra-age').fill('30');
-    await page.getByTestId('next-btn').click(); // -> step 5 (contact)
+    await page.getByTestId('next-btn').click(); // -> step 4 (contact)
     await page.getByTestId('owner-email').fill('a@b.com');
     await page.getByTestId('owner-phone').fill('0521234567');
     await page.getByTestId('next-btn').click(); // create
@@ -110,7 +109,7 @@ test.describe('anniversary (couple) name step', () => {
     await expect(page.getByTestId('extra-name1')).toBeVisible();
     await expect(page.getByTestId('extra-name2')).toBeVisible();
     await expect(page.getByTestId('extra-years')).toBeVisible();
-    await expect(page.getByTestId('step-4')).toContainText('שמות בני הזוג');
+    await expect(page.getByTestId('step-3')).toContainText('שמות בני הזוג');
   });
 
   test('requires both names + years and advances with NO gender prompt', async ({ page }) => {
@@ -125,7 +124,7 @@ test.describe('anniversary (couple) name step', () => {
     // Advancing must NOT pop the gender prompt (couples have no single gender).
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('gender-modal')).toBeHidden();
-    await expect(page.getByTestId('step-5')).toBeVisible();
+    await expect(page.getByTestId('step-4')).toBeVisible();
   });
 
   test('sends the couple honoree name synthesized from both partner names', async ({ page }) => {
@@ -134,7 +133,7 @@ test.describe('anniversary (couple) name step', () => {
     await page.getByTestId('extra-name1').fill('דנה');
     await page.getByTestId('extra-name2').fill('יוסי');
     await page.getByTestId('extra-years').fill('25');
-    await page.getByTestId('next-btn').click(); // -> step 5
+    await page.getByTestId('next-btn').click(); // -> step 4 (contact)
     await page.getByTestId('owner-email').fill('a@b.com');
     await page.getByTestId('owner-phone').fill('0521234567');
     await page.getByTestId('next-btn').click(); // create

@@ -104,10 +104,10 @@ test.describe('fullscreen zoom overlay', () => {
     await expect(page.locator('#zoomContent svg')).toBeVisible();
   });
 
-  test('tapping the COLLAPSED mini-preview (step 5) does NOT open the overlay', async ({
+  test('tapping the COLLAPSED mini-preview (details step) does NOT open the overlay', async ({
     page,
   }) => {
-    await page.goto('/options.html?step=5');
+    await page.goto('/options.html?step=4');
     await expect(page.getByTestId('preview')).toHaveClass(/is-collapsed/);
     // the ⤢ affordance is hidden here, and a stray tap on the reminder thumbnail
     // must be a no-op — not a jarring fullscreen zoom.

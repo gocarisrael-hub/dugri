@@ -33,11 +33,10 @@ async function toNameStep(page) {
   await mockPreview(page);
   await page.goto('/options.html?plan=base');
   await expect(page.getByTestId('step-1')).toBeVisible();
-  // steps 1-3 have safe defaults -> Next straight through to the name step.
-  await page.getByTestId('next-btn').click(); // -> step 2
-  await page.getByTestId('next-btn').click(); // -> step 3
-  await page.getByTestId('next-btn').click(); // -> step 4 (name)
-  await expect(page.getByTestId('step-4')).toBeVisible();
+  // steps 1-2 have safe defaults -> Next straight through to the name step.
+  await page.getByTestId('next-btn').click(); // -> step 2 (colour + add-ons)
+  await page.getByTestId('next-btn').click(); // -> step 3 (name)
+  await expect(page.getByTestId('step-3')).toBeVisible();
 }
 
 // Intercept the create call so no real collection is written; return the
@@ -70,8 +69,8 @@ test.describe('honoree gender', () => {
     await page.getByTestId('honoree-input').fill('Shira');
     // name is set but no gender picked -> Next must not advance...
     await page.getByTestId('next-btn').click();
-    await expect(page.getByTestId('step-4')).toBeVisible();
-    await expect(page.getByTestId('step-5')).not.toBeVisible();
+    await expect(page.getByTestId('step-3')).toBeVisible();
+    await expect(page.getByTestId('step-4')).not.toBeVisible();
     // ...and a prompt tells the user to choose.
     await expect(page.getByTestId('gender-modal')).toBeVisible();
 
@@ -80,7 +79,7 @@ test.describe('honoree gender', () => {
     await expect(page.getByTestId('gender-modal')).toBeHidden();
     await page.getByTestId('gender-female').check();
     await page.getByTestId('next-btn').click();
-    await expect(page.getByTestId('step-5')).toBeVisible();
+    await expect(page.getByTestId('step-4')).toBeVisible();
   });
 
   test('the gender prompt does not linger after navigating away', async ({ page }) => {
@@ -90,8 +89,8 @@ test.describe('honoree gender', () => {
     await expect(page.getByTestId('gender-modal')).toBeVisible();
     // navigating away (browser Back -> popstate) must dismiss the full-screen
     // overlay so it never lingers on top of an unrelated step.
-    await page.goBack(); // -> step 3
-    await expect(page.getByTestId('step-3')).toBeVisible();
+    await page.goBack(); // -> step 2
+    await expect(page.getByTestId('step-2')).toBeVisible();
     await expect(page.getByTestId('gender-modal')).toBeHidden();
   });
 
@@ -101,7 +100,7 @@ test.describe('honoree gender', () => {
     await page.getByTestId('honoree-input').fill('Shira');
     await page.getByTestId('gender-female').check();
     await expect(page.getByTestId('gender-female')).toBeChecked();
-    await page.getByTestId('next-btn').click(); // -> step 5 (contact)
+    await page.getByTestId('next-btn').click(); // -> step 4 (contact)
     await page.getByTestId('owner-email').fill('a@b.com');
     await page.getByTestId('owner-phone').fill('0521234567');
     await page.getByTestId('next-btn').click(); // create
@@ -115,7 +114,7 @@ test.describe('honoree gender', () => {
     await page.getByTestId('honoree-input').fill('Danny');
     await page.getByTestId('gender-male').check();
     await expect(page.getByTestId('gender-male')).toBeChecked();
-    await page.getByTestId('next-btn').click(); // -> step 5
+    await page.getByTestId('next-btn').click(); // -> step 4
     await page.getByTestId('owner-email').fill('a@b.com');
     await page.getByTestId('owner-phone').fill('0521234567');
     await page.getByTestId('next-btn').click(); // create

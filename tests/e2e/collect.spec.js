@@ -24,9 +24,8 @@ async function createCollection(page, name) {
   );
   // Collections are now created at the end of the order wizard (options.html).
   await page.goto('/options.html');
-  await page.getByTestId('next-btn').click(); // design -> color
-  await page.getByTestId('next-btn').click(); // color -> add-ons
-  await page.getByTestId('next-btn').click(); // add-ons -> name
+  await page.getByTestId('next-btn').click(); // design -> colour + add-ons
+  await page.getByTestId('next-btn').click(); // colour + add-ons -> name
   await page.fill('#honoreeInput', name);
   await page.getByTestId('gender-female').check(); // gender is required to advance
   await page.getByTestId('next-btn').click(); // name -> contact

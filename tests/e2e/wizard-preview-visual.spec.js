@@ -1,15 +1,15 @@
 import { test, expect } from '@playwright/test';
 import zlib from 'node:zlib';
 
-// Regression cover for two step-4 name-preview UX fixes:
+// Regression cover for two step-3 name-preview UX fixes:
 //  Bug 1 — preview <img>s were DISTORTED: a raster card forced into the fixed
 //          1.414 landscape page box with the default object-fit: fill stretched
 //          portrait art. The fix keeps each image's TRUE ratio (object-fit:
 //          contain, no forced landscape aspect-ratio on img content).
 //  Bug 2 — the inline name preview was NOT swipeable: front/back/board were static
-//          side-by-side images whose only interaction opened the fullscreen zoom.
-//          The fix makes the inline preview a directly swipeable carousel with dots
-//          for desktop, mirroring the zoom's card → back → board order.
+//          side-by-side images. The fix makes the inline preview a directly
+//          swipeable carousel with dots for desktop, walking card → back → board.
+//          (The name preview no longer has a fullscreen zoom — a plain tap is inert.)
 
 // ---- a tiny solid-colour PNG encoder, so we can mint an image of a KNOWN,
 // controllable aspect ratio (e.g. portrait 5:7) and assert the rendered box keeps
@@ -99,10 +99,9 @@ async function toNameStep(page) {
   await page.goto('/options.html?plan=base');
   await expect(page.getByTestId('step-1')).toBeVisible();
   await page.getByTestId('design-0').click();
-  await page.getByTestId('next-btn').click(); // -> step 2
-  await page.getByTestId('next-btn').click(); // -> step 3
-  await page.getByTestId('next-btn').click(); // -> step 4 (name)
-  await expect(page.getByTestId('step-4')).toBeVisible();
+  await page.getByTestId('next-btn').click(); // -> step 2 (colour + add-ons)
+  await page.getByTestId('next-btn').click(); // -> step 3 (name)
+  await expect(page.getByTestId('step-3')).toBeVisible();
 }
 
 test.describe('Bug 1 — name-preview images are not distorted', () => {
@@ -264,7 +263,7 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
     await expect(page.getByTestId('name-preview-dot-board')).toHaveCount(0);
   });
 
-  test('a plain tap (no drag) still opens the fullscreen zoom', async ({ page }) => {
+  test('a plain tap (no drag) does NOT open a fullscreen zoom', async ({ page }) => {
     await mockPreview(page);
     await toNameStep(page);
     await page.getByTestId('honoree-input').fill('Shira');
@@ -275,15 +274,13 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
     await vp.dispatchEvent('pointerdown', { clientX: 200, clientY: 200 });
     await vp.dispatchEvent('pointerup', { clientX: 202, clientY: 201 });
 
-    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
-    await expect(page.locator('#zoomContent img')).toBeVisible();
-    // opens on the card view (nothing was swiped)
-    await expect(page.getByTestId('zoom-tab-card')).toHaveAttribute('aria-selected', 'true');
+    // the name preview no longer enlarges — the overlay stays hidden
+    await expect(page.getByTestId('zoom-overlay')).toBeHidden();
+    // and the tap did not change the view either
+    expect(await activeView(page)).toBe('card');
   });
 
-  test('tapping after a swipe opens the zoom on the CURRENT view, not the card', async ({
-    page,
-  }) => {
+  test('a tap after a swipe does NOT open a zoom, and keeps the swiped view', async ({ page }) => {
     await mockPreview(page);
     await toNameStep(page);
     await page.getByTestId('honoree-input').fill('Shira');
@@ -294,17 +291,16 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
     await swipe(page, 300, 60); // → board
     await expect.poll(() => activeView(page)).toBe('board');
 
-    // tap the viewport → zoom must open on BOARD (the view under the finger)
+    // tap the viewport → no zoom, and the carousel stays on board
     const vp = page.getByTestId('name-preview-viewport');
     await vp.dispatchEvent('pointerdown', { clientX: 200, clientY: 200 });
     await vp.dispatchEvent('pointerup', { clientX: 202, clientY: 201 });
 
-    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
-    await expect(page.getByTestId('zoom-tab-board')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByTestId('zoom-tab-card')).toHaveAttribute('aria-selected', 'false');
+    await expect(page.getByTestId('zoom-overlay')).toBeHidden();
+    expect(await activeView(page)).toBe('board');
   });
 
-  test('a tap that slides slightly (below the swipe threshold) still opens the zoom', async ({
+  test('a tap that slides slightly (below the swipe threshold) does NOT open a zoom', async ({
     page,
   }) => {
     await mockPreview(page);
@@ -313,13 +309,13 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
     const vp = page.getByTestId('name-preview-viewport');
-    // ~20px of horizontal slide: not a swipe (< 45px threshold), but it must not
-    // fall into a dead zone — it should still register as a tap and open the zoom.
+    // ~20px of horizontal slide: below the 45px swipe threshold, so no view change —
+    // and, with the name zoom removed, it must also NOT open the overlay.
     await vp.dispatchEvent('pointerdown', { clientX: 200, clientY: 200 });
     await vp.dispatchEvent('pointerup', { clientX: 220, clientY: 205 });
 
-    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
+    await expect(page.getByTestId('zoom-overlay')).toBeHidden();
     // no view change (below swipe threshold) → still the card
-    await expect(page.getByTestId('zoom-tab-card')).toHaveAttribute('aria-selected', 'true');
+    expect(await activeView(page)).toBe('card');
   });
 });

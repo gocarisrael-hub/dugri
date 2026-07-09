@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
 
-// Order wizard e2e: a single page with five stepped screens (design -> color ->
-// add-ons -> name -> contact). Steps show/hide via JS; Back/Next + ?step=N drive
-// navigation. Runs on every configured project (desktop + mobile).
+// Order wizard e2e: a single page with four stepped screens (design ->
+// color + add-ons -> name -> contact). Steps show/hide via JS; Back/Next +
+// ?step=N drive navigation. Runs on every configured project (desktop + mobile).
 
 // A 1x1 transparent PNG data URL used as the fake rendered preview image.
 const PNG =
@@ -78,7 +78,7 @@ test.describe('order wizard', () => {
     // The front preview's --c0 (or fill) changed from its initial value.
     await expect.poll(async () => readC0()).not.toBe(before);
 
-    // The board tab recolors too (the preview is live on steps 1-3).
+    // The board tab recolors too (the preview is live on the early steps).
     await page.getByTestId('tab-board').click();
     const boardPanel = page.getByTestId('preview-board');
     await expect(boardPanel).toHaveAttribute('data-active', 'true');
@@ -183,26 +183,25 @@ test.describe('order wizard', () => {
     expect(isPainted(frontFallback), `front fallback background fill: ${frontFallback}`).toBe(true);
   });
 
-  test('defaults advance through design, color and add-ons', async ({ page }) => {
+  test('defaults advance through design and color + add-ons', async ({ page }) => {
     await page.goto('/options.html');
-    for (const s of [1, 2, 3]) {
+    for (const s of [1, 2]) {
       await expect(page.getByTestId('step-' + s)).toBeVisible();
       await expect(page.getByTestId('next-btn')).toBeEnabled();
       await page.getByTestId('next-btn').click();
     }
     // Lands on the name step.
-    await expect(page.getByTestId('step-4')).toBeVisible();
-    await expect(page.getByTestId('step-now')).toHaveText('4');
+    await expect(page.getByTestId('step-3')).toBeVisible();
+    await expect(page.getByTestId('step-now')).toHaveText('3');
   });
 
-  // Buy-now deep-link (#8a): the product page links to
-  // options.html?design=<id>&step=2 (colour step) — and &step=3 for the neon
-  // fixed-colour design, whose colour step is skipped.
-  test('?design=<id>&step=2 preselects the design and jumps to the colour step', async ({
+  // Buy-now deep-link (#8a): the product page links every design to
+  // options.html?design=<id>&step=2 — the merged colour + add-ons step.
+  test('?design=<id>&step=2 preselects the design and jumps to the colour + add-ons step', async ({
     page,
   }) => {
     await page.goto('/options.html?design=birthday&step=2');
-    // Landed straight on the colour step (design-picking step skipped).
+    // Landed straight on the colour + add-ons step (design-picking step skipped).
     await expect(page.getByTestId('step-2')).toBeVisible();
     await expect(page.getByTestId('step-now')).toHaveText('2');
     // The requested design is the selected one (birthday = design-2).
@@ -210,8 +209,10 @@ test.describe('order wizard', () => {
       'aria-pressed',
       'true'
     );
-    // A slider design keeps the colour picker on this step.
+    // A slider design keeps the colour picker on this step, and the merged step
+    // also shows the chasers add-on below it.
     await expect(page.getByTestId('color-list')).toBeVisible();
+    await expect(page.getByTestId('chasers-card')).toBeVisible();
   });
 
   test('step 1 back button returns to the store (products.html)', async ({ page }) => {
@@ -225,28 +226,32 @@ test.describe('order wizard', () => {
     await page.waitForURL(/products\.html/);
   });
 
-  test('?design=neon&step=3 skips the (fixed) colour step and lands on add-ons', async ({
+  test('?design=neon&step=2 lands on the merged step with the colour picker hidden but chasers shown', async ({
     page,
   }) => {
-    await page.goto('/options.html?design=neon&step=3');
-    await expect(page.getByTestId('step-3')).toBeVisible();
-    await expect(page.getByTestId('step-now')).toHaveText('3');
+    await page.goto('/options.html?design=neon&step=2');
+    await expect(page.getByTestId('step-2')).toBeVisible();
+    await expect(page.getByTestId('step-now')).toHaveText('2');
     await expect(page.locator('.design[data-design-id="neon"]')).toHaveAttribute(
       'aria-pressed',
       'true'
     );
-    // Stepping Back reaches the colour step, where neon's picker is hidden (fixed).
-    await page.getByTestId('back-btn').click();
-    await expect(page.getByTestId('step-2')).toBeVisible();
+    // neon is fixed-colour: the swatch picker is hidden and the fixed note shows…
     await expect(page.getByTestId('color-list')).toBeHidden();
+    await expect(page.getByTestId('raster-note')).toBeVisible();
+    // …but the chasers add-on (merged into this step) is still offered.
+    await expect(page.getByTestId('chasers-card')).toBeVisible();
+    // Stepping Back reaches the design step.
+    await page.getByTestId('back-btn').click();
+    await expect(page.getByTestId('step-1')).toBeVisible();
   });
 
-  test('step 4 blocks Next until a name is entered', async ({ page }) => {
+  test('step 3 blocks Next until a name is entered', async ({ page }) => {
     await mockPreview(page);
-    await page.goto('/options.html?step=4'); // deep-link straight to the name step
-    await expect(page.getByTestId('step-4')).toBeVisible();
+    await page.goto('/options.html?step=3'); // deep-link straight to the name step
+    await expect(page.getByTestId('step-3')).toBeVisible();
     await expect(page.getByTestId('next-btn')).toBeDisabled();
-    await expect(page.getByTestId('step-4')).toContainText('יופיע על הקלפים');
+    await expect(page.getByTestId('step-3')).toContainText('יופיע על הקלפים');
     // Default design is bachelorette (an ENGLISH-language theme), so a valid name
     // here is an English single word.
     await page.fill('#honoreeInput', 'Shira');
@@ -258,12 +263,12 @@ test.describe('order wizard', () => {
   // AND in the language the chosen design requires. The default design here is
   // bachelorette (english), so digits/symbols/spaces AND Hebrew are all rejected
   // with an inline error that blocks advancing; a single English word is accepted.
-  test('step 4 rejects digits/symbols/spaces and the wrong language, accepts a single English name', async ({
+  test('step 3 rejects digits/symbols/spaces and the wrong language, accepts a single English name', async ({
     page,
   }) => {
     await mockPreview(page);
-    await page.goto('/options.html?step=4');
-    await expect(page.getByTestId('step-4')).toBeVisible();
+    await page.goto('/options.html?step=3');
+    await expect(page.getByTestId('step-3')).toBeVisible();
     const next = page.getByTestId('next-btn');
     const err = page.getByTestId('name-err');
 
@@ -299,16 +304,16 @@ test.describe('order wizard', () => {
     await expect(next).toBeEnabled();
     await page.getByTestId('gender-female').check();
     await next.click();
-    await expect(page.getByTestId('step-5')).toBeVisible();
+    await expect(page.getByTestId('step-4')).toBeVisible();
   });
 
-  test('step 5 validates email + phone, then creates the collection', async ({ page }) => {
+  test('step 4 validates email + phone, then creates the collection', async ({ page }) => {
     await mockPreview(page);
-    await page.goto('/options.html?step=4');
+    await page.goto('/options.html?step=3');
     await page.fill('#honoreeInput', 'Shira');
     await page.getByTestId('gender-female').check(); // gender is required to advance
     await page.getByTestId('next-btn').click();
-    await expect(page.getByTestId('step-5')).toBeVisible();
+    await expect(page.getByTestId('step-4')).toBeVisible();
 
     // The preview collapses to a summary chip on the contact step.
     await expect(page.getByTestId('continue-summary')).toBeVisible();
@@ -347,11 +352,11 @@ test.describe('order wizard', () => {
     page,
   }) => {
     await mockPreview(page);
-    await page.goto('/options.html?step=4');
+    await page.goto('/options.html?step=3');
     await page.fill('#honoreeInput', 'Shira');
     await page.getByTestId('gender-female').check();
     await page.getByTestId('next-btn').click();
-    await expect(page.getByTestId('step-5')).toBeVisible();
+    await expect(page.getByTestId('step-4')).toBeVisible();
     await page.fill('#ownerEmail', 'owner@example.com');
 
     const create = page.getByTestId('next-btn');
@@ -392,12 +397,11 @@ test.describe('order wizard', () => {
     await expect(page.getByTestId('step-2')).toBeVisible();
   });
 
-  test('chasers add-on toggles in step 3, persists to the URL and survives reload', async ({
+  test('chasers add-on toggles in step 2, persists to the URL and survives reload', async ({
     page,
   }) => {
     await page.goto('/options.html');
-    await page.getByTestId('next-btn').click(); // -> 2
-    await page.getByTestId('next-btn').click(); // -> 3
+    await page.getByTestId('next-btn').click(); // -> 2 (colour + add-ons)
 
     const toggle = page.getByTestId('chasers-toggle');
     const card = page.getByTestId('chasers-card');
@@ -415,9 +419,9 @@ test.describe('order wizard', () => {
     await expect.poll(() => page.url()).toContain('chasers=1');
     await expect(card).toHaveClass(/is-on/);
 
-    // survives a reload: restored to step 3 with the add-on on
+    // survives a reload: restored to step 2 with the add-on on
     await page.reload();
-    await expect(page.getByTestId('step-3')).toBeVisible();
+    await expect(page.getByTestId('step-2')).toBeVisible();
     await expect(page.getByTestId('chasers-toggle')).toBeChecked();
 
     // turning it off removes the param again

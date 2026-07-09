@@ -229,13 +229,13 @@ function renderInfo(d) {
   if (about) about.textContent = ABOUT[d.id] || GENERIC;
 
   // Buy now jumps straight into the order flow for this design. It skips the
-  // wizard's design-picker (step 1) and lands on the colour step (step 2).
-  // Fixed-colour designs (e.g. neon) have no colour step, so they go to step 3.
-  // Team D's wizard honours the step param and preselects the design.
+  // wizard's design-picker (step 1) and lands on the colour + add-ons step
+  // (step 2). Fixed-colour designs (e.g. neon) share the same step — the colour
+  // swatches just show a "background is fixed" note there. Team D's wizard
+  // honours the step param and preselects the design.
   const buy = document.getElementById('pdpBuy');
   if (buy) {
-    const step = d.recolor === 'fixed' ? 3 : 2;
-    buy.href = `options.html?design=${encodeURIComponent(d.id)}&step=${step}`;
+    buy.href = `options.html?design=${encodeURIComponent(d.id)}&step=2`;
   }
 }
 
