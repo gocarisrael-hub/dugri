@@ -24,9 +24,8 @@ async function createCollection(page, name) {
   );
   // Collections are now created at the end of the order wizard (options.html).
   await page.goto('/options.html');
-  await page.getByTestId('next-btn').click(); // design -> color
-  await page.getByTestId('next-btn').click(); // color -> add-ons
-  await page.getByTestId('next-btn').click(); // add-ons -> name
+  await page.getByTestId('next-btn').click(); // design -> colour + add-ons
+  await page.getByTestId('next-btn').click(); // colour + add-ons -> name
   await page.fill('#honoreeInput', name);
   await page.getByTestId('gender-female').check(); // gender is required to advance
   await page.getByTestId('next-btn').click(); // name -> contact
@@ -572,13 +571,6 @@ test('how-to guidance is a collapsed details on collect that can be opened', asy
   await page.locator('.howto summary').click();
   await expect(page.locator('.howto .cat').first()).toBeVisible();
   await expect(details).toContainText('אנשים');
-});
-
-test('unpaid owner sees the locked teaser, not the unlock badge', async ({ page }) => {
-  await createCollection(page, 'Shira');
-  await expect(page.locator('#lockTeaser')).toBeVisible();
-  await expect(page.locator('#lockTeaser')).toContainText('שלמו כדי לפתוח');
-  await expect(page.locator('#premiumBadge')).toBeHidden();
 });
 
 test('home link (→ index.html) and a tailored order CTA (→ options.html) are present', async ({

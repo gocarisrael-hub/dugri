@@ -26,8 +26,7 @@ test('chasers add-on flows from the wizard into the order and admin', async ({ p
   );
   await page.goto('/options.html?plan=base');
 
-  // Step 1 -> 2 -> 3, then turn the add-on on (carries ?chasers=1).
-  await page.getByTestId('next-btn').click();
+  // Step 1 -> 2 (colour + add-ons), then turn the add-on on (carries ?chasers=1).
   await page.getByTestId('next-btn').click();
   // The chasers add-on icon is the owner-provided photo, not the old svg.
   const chasersIco = page.locator('#chasersCard img.addon-ico');
@@ -47,7 +46,7 @@ test('chasers add-on flows from the wizard into the order and admin', async ({ p
     )
     .toBe('rgb(183, 163, 137)');
 
-  // Step 3 -> 4 (name) -> 5 (contact) -> create the shared collection. The
+  // Step 2 -> 3 (name) -> 4 (contact) -> create the shared collection. The
   // honoree is a SINGLE English word (default design bachelorette is english),
   // made unique with a letters-only suffix (digits are rejected in a name) so the
   // admin row can be found by it.

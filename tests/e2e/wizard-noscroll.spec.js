@@ -53,29 +53,25 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
     await assertStepFits(page, '[data-testid="design-list"] .design');
   });
 
-  test('step 2 (color): the swatch grid (with labels) clears the sticky bar', async ({ page }) => {
+  test('step 2 (color + extras): the add-on (last control) clears the sticky bar', async ({
+    page,
+  }) => {
     await page.goto('/options.html?step=2');
     await expect(page.getByTestId('step-2')).toBeVisible();
-    // Measure the whole colour list: its padding clears the labels that overhang
-    // below each swatch, so its bottom clearing the bar means the labels do too.
-    await assertStepFits(page, '[data-testid="color-list"]');
-  });
-
-  test('step 3 (extras): the add-on clears the sticky bar', async ({ page }) => {
-    await page.goto('/options.html?step=3');
-    await expect(page.getByTestId('step-3')).toBeVisible();
+    // The chasers add-on now sits BELOW the colour list on the merged step, so it
+    // is the last control — if it clears the bar, the swatches above it do too.
     await assertStepFits(page, '[data-testid="chasers-card"]');
   });
 
-  test('step 4 (name + gender): the last control clears the sticky bar', async ({ page }) => {
-    await page.goto('/options.html?step=4');
-    await expect(page.getByTestId('step-4')).toBeVisible();
+  test('step 3 (name + gender): the last control clears the sticky bar', async ({ page }) => {
+    await page.goto('/options.html?step=3');
+    await expect(page.getByTestId('step-3')).toBeVisible();
     await assertStepFits(page, '[data-testid="gender-group"]');
   });
 
-  test('step 5 (email + phone): the phone field clears the sticky bar', async ({ page }) => {
-    await page.goto('/options.html?step=5');
-    await expect(page.getByTestId('step-5')).toBeVisible();
+  test('step 4 (email + phone): the phone field clears the sticky bar', async ({ page }) => {
+    await page.goto('/options.html?step=4');
+    await expect(page.getByTestId('step-4')).toBeVisible();
     // The phone field is the last input; it must not sit behind the create bar.
     await assertStepFits(page, '[data-testid="owner-phone"]');
   });

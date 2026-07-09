@@ -34,8 +34,8 @@ test.describe('create-button preview gate (step 4)', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: previewBody });
     });
 
-    await page.goto('/options.html?step=4'); // default design = bachelorette (english)
-    await expect(page.getByTestId('step-4')).toBeVisible();
+    await page.goto('/options.html?step=3'); // default design = bachelorette (english)
+    await expect(page.getByTestId('step-3')).toBeVisible();
 
     const next = page.getByTestId('next-btn');
     // A single valid English name → fields are valid, but the preview hasn't shown
@@ -59,8 +59,8 @@ test.describe('create-button preview gate (step 4)', () => {
     await page.route('**/api/preview', (route) =>
       route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
     );
-    await page.goto('/options.html?step=4');
-    await expect(page.getByTestId('step-4')).toBeVisible();
+    await page.goto('/options.html?step=3');
+    await expect(page.getByTestId('step-3')).toBeVisible();
 
     await page.fill('#honoreeInput', 'Shira');
     // the graceful fallback shows the name, and the button becomes enabled.
@@ -82,8 +82,8 @@ test.describe('create-button preview gate (step 4)', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: previewBody });
     });
 
-    await page.goto('/options.html?step=4'); // bachelorette (english)
-    await expect(page.getByTestId('step-4')).toBeVisible();
+    await page.goto('/options.html?step=3'); // bachelorette (english)
+    await expect(page.getByTestId('step-3')).toBeVisible();
     const next = page.getByTestId('next-btn');
 
     // name A renders → gate opens
@@ -110,8 +110,8 @@ test.describe('name language + single-word rules block Next', () => {
     await page.route('**/api/preview', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: previewBody })
     );
-    await page.goto('/options.html?step=4'); // bachelorette = english
-    await expect(page.getByTestId('step-4')).toBeVisible();
+    await page.goto('/options.html?step=3'); // bachelorette = english
+    await expect(page.getByTestId('step-3')).toBeVisible();
     const next = page.getByTestId('next-btn');
     const err = page.getByTestId('name-err');
 
@@ -137,8 +137,8 @@ test.describe('name language + single-word rules block Next', () => {
       route.fulfill({ status: 200, contentType: 'application/json', body: previewBody })
     );
     // kids = birthday-boys-basketball (hebrew). Deep-link straight to the name step.
-    await page.goto('/options.html?design=kids&step=4');
-    await expect(page.getByTestId('step-4')).toBeVisible();
+    await page.goto('/options.html?design=kids&step=3');
+    await expect(page.getByTestId('step-3')).toBeVisible();
     const err = page.getByTestId('name-err');
 
     // An English name on a Hebrew design → language error + blocked.
@@ -152,6 +152,28 @@ test.describe('name language + single-word rules block Next', () => {
     await expect(err).toBeHidden();
   });
 
+  test('creating from the details step with no name bounces back to the name step (step 3)', async ({
+    page,
+  }) => {
+    await page.route('**/api/preview', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: previewBody })
+    );
+    // Deep-link straight to the details step (now step 4) without ever entering a
+    // honoree name, then fill valid contact so the create button enables.
+    await page.goto('/options.html?step=4');
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    await page.getByTestId('owner-email').fill('x@example.com');
+    await page.getByTestId('owner-phone').fill('0521234567');
+    const create = page.getByTestId('next-btn');
+    await expect(create).toBeEnabled();
+
+    // With no name, createCollection must bounce BACK to the name step (step 3),
+    // not dead-end on the details step (the pre-fix goStep(4) was a no-op there).
+    await create.click();
+    await expect(page.getByTestId('step-3')).toBeVisible();
+    await expect(page.getByTestId('step-4')).toBeHidden();
+  });
+
   test('a couple (anniversary) design shows an inline error for an invalid partner name', async ({
     page,
   }) => {
@@ -160,8 +182,8 @@ test.describe('name language + single-word rules block Next', () => {
     );
     // marriage = anniversary (hebrew, couple): the two partner-name fields replace
     // the single honoree box and must each be a single Hebrew word.
-    await page.goto('/options.html?design=marriage&step=4');
-    await expect(page.getByTestId('step-4')).toBeVisible();
+    await page.goto('/options.html?design=marriage&step=3');
+    await expect(page.getByTestId('step-3')).toBeVisible();
     const next = page.getByTestId('next-btn');
     const name1Err = page.getByTestId('extra-name1-err');
 

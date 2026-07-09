@@ -74,8 +74,7 @@ test.describe('configurator preview polish', () => {
 
   test('the chasers add-on is a clean row with no box (border/bg/shadow)', async ({ page }) => {
     await page.goto('/options.html');
-    await page.getByTestId('next-btn').click(); // -> 2
-    await page.getByTestId('next-btn').click(); // -> 3
+    await page.getByTestId('next-btn').click(); // -> 2 (colour + add-ons)
     const card = page.getByTestId('chasers-card');
     await expect(card).toBeVisible();
 
