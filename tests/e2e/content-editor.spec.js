@@ -181,6 +181,58 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(ans).not.toBeFocused(); // Enter blurred → committed
   });
 
+  test('Space types into an interactive label even via programmatic focus (caret recovery)', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) => route.fulfill({ json: { ok: true } }));
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    // Focus the CTA link WITHOUT a mouse click, so no caret is placed inside it —
+    // ensureCaretIn must recover by dropping a caret at the end before inserting.
+    const cta = page.locator('[data-edit="index-hero-cta-1"]');
+    const before = await cta.textContent();
+    await cta.evaluate((node) => node.focus());
+    await page.keyboard.press('Space');
+    const after = await cta.textContent();
+    // A space was inserted INTO this label (not dropped, not sent elsewhere).
+    expect(after.length).toBe(before.length + 1);
+    expect(after).toContain(' ');
+  });
+
+  test('a newline INTENT (beforeinput) commits instead of inserting a break — robust on mobile/IME', async ({
+    page,
+  }) => {
+    const posts = [];
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) => {
+      if (route.request().method() === 'POST') posts.push(route.request().postDataJSON());
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'תוכן ערוך';
+      // Dispatch the SAME signal a mobile/IME Return produces (keydown there does
+      // not report e.key 'Enter'); the beforeinput guard must catch it and commit.
+      n.dispatchEvent(
+        new window.InputEvent('beforeinput', {
+          inputType: 'insertParagraph',
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    });
+
+    await expect.poll(() => posts.length).toBeGreaterThan(0);
+    expect(posts[posts.length - 1].text).toBe('תוכן ערוך');
+    expect(posts[posts.length - 1].text).not.toContain('\n');
+  });
+
   test('an uploaded .svg name is never served (stored-XSS guard)', async ({ page }) => {
     // SVG is dropped from the upload allowlist AND from the serve-route regex, so a
     // .svg content-uploads URL must 404 regardless of any file on disk.

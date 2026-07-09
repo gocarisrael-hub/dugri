@@ -208,18 +208,40 @@
       }
     }
 
-    // Keydown guard. Two jobs:
-    //  • Enter COMMITS on ANY editable node (blur → save) instead of inserting a
-    //    newline: these overrides are single-run plain text applied via
-    //    textContent, so a '\n' would save but collapse to a space on reload —
-    //    silently dropping the owner's break. Enter-to-commit avoids that surprise.
+    // Newlines never render in these single-run plain-text overrides (applied via
+    // textContent), so a '\n' would save but silently collapse to a space on
+    // reload. Treat any newline INTENT as "commit" (blur → save) instead. We catch
+    // it two ways so it is robust across keyboards:
+    //  • beforeinput (insertParagraph/insertLineBreak) — the reliable signal on
+    //    desktop, IME and MOBILE soft keyboards (whose keydown often reports
+    //    e.key 'Unidentified' / keyCode 229, so a keydown-only guard would miss it).
+    //  • keydown Enter — a belt-and-suspenders catch on hardware keyboards; when it
+    //    fires first it preventDefaults, so beforeinput never runs (no double blur).
+    document.addEventListener(
+      'beforeinput',
+      function (e) {
+        var edit = e.target && e.target.closest && e.target.closest('[data-edit]');
+        if (!edit || !edit.isContentEditable) return;
+        if (e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak') {
+          e.preventDefault();
+          e.stopPropagation();
+          edit.blur();
+        }
+      },
+      true
+    );
+
+    // Keydown guard (hardware keyboards):
+    //  • Enter COMMITS (see above). Skipped mid-IME-composition so a candidate is
+    //    confirmed, not committed as raw pre-composition text.
     //  • Space on an INTERACTIVE editable (<button>/<summary>) is consumed by native
     //    activation, so a space is never typed (labels like "לרכישה ›" and FAQ
     //    questions need spaces) — insert it as text instead. Plain editables keep
-    //    native Space. Both run in the capture phase so native behavior never wins.
+    //    native Space. Runs in the capture phase so native behavior never wins.
     document.addEventListener(
       'keydown',
       function (e) {
+        if (e.isComposing || e.keyCode === 229) return; // let IME/mobile compose
         var edit = e.target && e.target.closest && e.target.closest('[data-edit]');
         if (!edit || !edit.isContentEditable) return;
         if (e.key === 'Enter') {
