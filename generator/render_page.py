@@ -145,6 +145,13 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # left). It does NOT reverse the digits themselves (unlike unicode-bidi
     # "bidi-override", which renders "30" as "03"), so plain `direction="rtl"` is
     # the right, self-contained fix here — no run-splitting like word_text needs.
+    # (Not a contradiction with word_text's "Chrome ignores direction=rtl" note:
+    # THAT path has a NEUTRAL "." wedged between a Hebrew word and a digit inside
+    # ONE plain <text>, where the neutral is reordered away from its digit and a
+    # base direction can't pin it — hence its three-run split. A title line has no
+    # such stranded neutral: it is a digit run beside Hebrew words on a textPath,
+    # where the base direction IS honored. Verified via the real rasterizer in
+    # test_title_block_rtl_reorders_digit_in_raster.)
     dir_attr = ' direction="rtl"' if rtl else ""
 
     def on_path(pid, fill_c, stroke_c, swv, line):

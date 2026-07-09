@@ -168,6 +168,51 @@ def test_board_and_backs_render_paths_wire_rtl():
             os.remove(recipe_path)
 
 
+def test_title_block_rtl_reorders_digit_in_raster():
+    # The substring tests above prove the rtl WIRING (direction="rtl" reaches the
+    # SVG); this proves the SEMANTICS — that this generator's headless-Chrome SVG
+    # rasterizer actually HONORS direction="rtl" on a textPath title (word_text
+    # documents Chrome ignoring it for a different, neutral-punctuation-in-one-
+    # <text> path, so a "present but no-op" false green is the risk). We render the
+    # Hebrew digit title "30 שנה נישואין" both ways and require the rasters to
+    # DIFFER: if direction="rtl" were a no-op the two PNGs would be byte-identical.
+    # Chrome-guarded so it skips where the rasterizer is absent (e.g. CI, which
+    # runs only the JS suite) rather than failing.
+    import hashlib
+    import subprocess
+    import tempfile
+
+    import render_page as rp
+
+    if not os.path.exists(rp.CHROME):
+        return  # no rasterizer here (CI/JS-only) -> skip, don't fail
+
+    font = os.path.join(config.HERE, "Cafe-Regular.ttf")
+    box = {"x0": 0, "y0": 0, "x1": 600, "y1": 200}
+    tmp = tempfile.mkdtemp(prefix="dugri-test-raster-")
+
+    def raster(rtl, name):
+        body = rp.title_block(box, ["30 שנה נישואין"], "#000", "#000", font,
+                              0.0, 0.0, False, rtl=rtl)
+        svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="200" '
+               'viewBox="0 0 600 200"><rect width="600" height="200" fill="#fff"/>'
+               "<style>" + rp.font_face("TitleFont", font) + "</style>" + body + "</svg>")
+        svg_p = os.path.join(tmp, name + ".svg")
+        png_p = os.path.join(tmp, name + ".png")
+        with open(svg_p, "w", encoding="utf-8") as f:
+            f.write(svg)
+        subprocess.run([rp.CHROME, "--headless", "--disable-gpu",
+                        "--force-device-scale-factor=2", f"--screenshot={png_p}",
+                        "--window-size=600,200", svg_p], check=True,
+                       stderr=subprocess.DEVNULL)
+        return hashlib.md5(open(png_p, "rb").read()).hexdigest()
+
+    assert raster(True, "rtl_on") != raster(False, "rtl_off"), (
+        "direction=\"rtl\" must actually change the raster (else the fix is a "
+        "silent no-op the substring test would still pass)"
+    )
+
+
 def test_uncalibrated_raises():
     # all real themes are now calibrated, so use a synthetic uncalibrated config
     cfg = {"slug": "x", "calibrated": False}
