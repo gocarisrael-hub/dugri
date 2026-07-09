@@ -181,42 +181,6 @@ export const PROMPTS = CATEGORIES.flatMap((cat) =>
   cat.questions.map((text, i) => ({ id: `${cat.id}-${i}`, cat: cat.id, text }))
 );
 
-// Extra, higher-depth memory-joggers unlocked AFTER payment. Same shape as
-// PROMPTS ({id, cat, text} with {name} + {female|male} phrasing). Drawn alongside
-// PROMPTS to give paying owners much more variety so they can reach 100+ words.
-export const PREMIUM_PROMPTS = [
-  {
-    id: 'premium-0',
-    cat: 'people',
-    text: 'מי האדם ש{name} {מתקשרת|מתקשר} אליו ראשון כשקורה משהו?',
-  },
-  {
-    id: 'premium-1',
-    cat: 'people',
-    text: 'הכינוי ש{name} {נותנת|נותן} לאנשים ש{name} {אוהבת|אוהב}',
-  },
-  { id: 'premium-2', cat: 'jokes', text: 'הפאדיחה של {name} שכולם עדיין מזכירים' },
-  { id: 'premium-3', cat: 'jokes', text: 'מם או סרטון שמזכיר לכם מיד את {name}' },
-  { id: 'premium-4', cat: 'habits', text: 'מה {name} עושה ראשון {כשהיא נכנסת|כשהוא נכנס} הביתה?' },
-  { id: 'premium-5', cat: 'habits', text: 'האפליקציה ש{name} {פותחת|פותח} הכי הרבה בטלפון' },
-  { id: 'premium-6', cat: 'habits', text: 'הדבר ש{name} {מתעקשת|מתעקש} עליו שמשגע את כולם' },
-  { id: 'premium-7', cat: 'food', text: 'המשקה הקבוע של {name} ביציאה' },
-  {
-    id: 'premium-8',
-    cat: 'food',
-    text: 'מה {name} {מזמינה|מזמין} כשמגיע {אליה|אליו} משלוח בלילה?',
-  },
-  { id: 'premium-9', cat: 'work', text: 'הבוס או הקולגה ש{name} הכי {מספרת|מספר} עליו' },
-  { id: 'premium-10', cat: 'culture', text: 'הסרט ש{name} {ראתה|ראה} מיליון פעם' },
-  { id: 'premium-11', cat: 'culture', text: 'הזמר/ת ש{name} תמיד {שמה|שם} ברכב' },
-  { id: 'premium-12', cat: 'loves', text: 'הקנייה המיותרת ש{name} הכי {גאה בה|גאה בו}' },
-  { id: 'premium-13', cat: 'loves', text: 'התחביב ש{name} {התחילה ולא המשיכה|התחיל ולא המשיך}' },
-  { id: 'premium-14', cat: 'places', text: 'המקום שבו {name} {מרגישה|מרגיש} הכי בבית' },
-  { id: 'premium-15', cat: 'vacations', text: 'הסיפור מהטיול שתמיד עולה כש{name} {מספרת|מספר}' },
-  { id: 'premium-16', cat: 'sayings', text: 'המשפט ש{name} {שולחת|שולח} בוואטסאפ כל הזמן' },
-  { id: 'premium-17', cat: 'childhood', text: 'הזיכרון מבית הספר ש{name} הכי {אוהבת|אוהב} לספר' },
-];
-
 // ---------------------------------------------------------------------------
 // Per-event prompt sets
 // ---------------------------------------------------------------------------
@@ -435,17 +399,6 @@ export function promptsForTheme(theme) {
   if (isKidsTheme(theme)) return KIDS_PROMPTS;
   if (isCoupleTheme(theme)) return COUPLE_PROMPTS;
   return PROMPTS;
-}
-/**
- * Extra (paid) idea prompts for a generator theme. The default set has a curated
- * PREMIUM_PROMPTS bank; kids/couple reuse their own prompts (no adult premium
- * bank leaks into a child's or a couple's collection).
- */
-export function premiumPromptsForTheme(theme) {
-  // Kids/couple ship a single curated set (already shown in full), so there is no
-  // separate paid bank — returning [] avoids duplicating their prompts when paid.
-  if (isKidsTheme(theme) || isCoupleTheme(theme)) return [];
-  return PREMIUM_PROMPTS;
 }
 
 const FALLBACK_NAME = 'בעלת השמחה';

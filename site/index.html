@@ -309,11 +309,13 @@
 
       /* ============ HERO MARQUEE RIBBON ============ */
       /* slim full-width strip under the hero: three phrases scroll endlessly.
-         The track is exactly TWO identical halves; animating translateX 0 → -50%
-         moves it by one half-width, so the loop is perfectly seamless (the second
-         half is pixel-identical to the first). Each half repeats the 3-phrase
-         group several times so a single half is always wider than the viewport —
-         no blank stretch can appear at any screen width. */
+         The track is exactly TWO identical halves; the keyframe shifts it by one
+         half-width (translateX 0 → -50%), played in `reverse` on the track so the
+         content travels the other way (enters LEFT, exits RIGHT). Either way the
+         loop is perfectly seamless (the second half is pixel-identical to the
+         first). Each half repeats the 3-phrase group several times so a single
+         half is always wider than the viewport — no blank stretch can appear at
+         any screen width. */
       .marquee {
         overflow: hidden;
         background: var(--section);
@@ -336,7 +338,13 @@
         /* direction: ltr for the same reason as .marquee above — keep both in
            sync so the LTR scroll direction matches the layout flow. */
         direction: ltr;
-        animation: marquee-scroll 26s linear infinite;
+        /* `reverse` plays the 0 → -50% keyframe backwards (-50% → 0), so the
+           content travels the OTHER way: it enters from the LEFT and exits RIGHT.
+           This traverses the exact same set of track positions as the forward
+           animation, just in the opposite temporal order, so the two-halves loop
+           stays perfectly seamless — a half always covers the strip, no blank
+           edge appears at any phase or viewport width. */
+        animation: marquee-scroll 26s linear infinite reverse;
       }
       .marquee__half {
         display: flex;
@@ -874,6 +882,8 @@
       MARQUEE RIBBON: a slim strip under the hero whose three phrases scroll
       endlessly. The track is TWO identical halves (.marquee__half); the CSS
       translateX 0 → -50% loop moves it by exactly one half, so it is seamless.
+      The animation runs in `reverse`, so content enters from the LEFT and exits
+      RIGHT (same track positions, opposite temporal order — still seamless).
       Each half repeats the 3-phrase group four times, so a single half is always
       wider than the viewport and no blank gap can appear. Animation is disabled
       under reduced-motion.
