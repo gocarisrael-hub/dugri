@@ -115,16 +115,16 @@
         // Edit mode is owner-only and layered AFTER overrides are applied, so the
         // owner edits the current copy. Fail closed: no ?edit → never enable.
         if (!resolved.edit) return;
-        var key = resolved.key;
-        if (key) {
-          // Key came from ?key= (e.g. the dashboard "edit the site" button) or from
-          // storage — remember it so the next page needs only ?edit=1, no re-paste.
-          try {
-            window.localStorage.setItem(LS_KEY, key);
-          } catch {
-            /* storage blocked — key still works for this session */
-          }
-        } else {
+        // Trim the resolved key (from ?key= or storage) as the prompt branch does,
+        // so a stray space never silently 403s every save. We deliberately do NOT
+        // persist a key that arrived via ?key= here: that would store an UNVALIDATED
+        // value, so a stale/typo'd key in a bookmarked ?edit=1&key=… link would
+        // poison storage and lock edit mode into silent 403s. The only writer of a
+        // remembered key is the dashboard "edit the site" button, which stores a key
+        // that already authenticated the dashboard; and an invalid stored key
+        // self-heals (a 403 on save clears it — see the admin fetch helpers).
+        var key = (resolved.key || '').trim();
+        if (!key) {
           key = (window.prompt('מפתח ניהול לעריכת התוכן:') || '').trim();
           if (!key) return; // cancelled → stay a normal visitor
           try {
@@ -382,14 +382,28 @@
   function adminUrl(pathBase, key) {
     return pathBase + '?key=' + encodeURIComponent(key);
   }
+  // Shared handler for an admin write response. A 403 means the key is invalid
+  // (wrong or rotated) — SELF-HEAL by dropping the remembered key so the owner
+  // isn't locked into a broken edit mode: the next ?edit=1 visit re-prompts for a
+  // good key instead of silently re-using the bad stored one.
+  function adminResult(r, failMsg) {
+    if (r.status === 403) {
+      try {
+        window.localStorage.removeItem(LS_KEY);
+      } catch {
+        /* storage blocked — nothing to clear */
+      }
+    }
+    if (!r.ok) throw new Error(failMsg);
+    return r.json();
+  }
   function postText(page, key, editKey, text) {
     return fetch(adminUrl('/api/admin/content', key), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ page: page, key: editKey, text: text }),
     }).then(function (r) {
-      if (!r.ok) throw new Error('save failed');
-      return r.json();
+      return adminResult(r, 'save failed');
     });
   }
   function deleteOverride(page, key, editKey) {
@@ -398,8 +412,7 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ page: page, key: editKey }),
     }).then(function (r) {
-      if (!r.ok) throw new Error('reset failed');
-      return r.json();
+      return adminResult(r, 'reset failed');
     });
   }
   function postImage(page, key, editKey, file) {
@@ -411,8 +424,7 @@
       method: 'POST',
       body: fd,
     }).then(function (r) {
-      if (!r.ok) throw new Error('upload failed');
-      return r.json();
+      return adminResult(r, 'upload failed');
     });
   }
 

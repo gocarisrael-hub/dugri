@@ -166,10 +166,24 @@
 
       // Launch the live-site inline editor in one click, carrying the admin key.
       // The button lives in #links, which only appears once a valid key loads the
-      // dashboard, so a keyless (or wrong-key) session never exposes it.
+      // dashboard, so a keyless (or wrong-key) session never exposes it — meaning
+      // the key here has ALREADY authenticated the dashboard. On click we persist
+      // that VALIDATED key to the same localStorage slot the editor reads, so the
+      // owner can then edit other pages with just ?edit=1. (The editor itself never
+      // persists a raw ?key=, to avoid a stale bookmarked key poisoning storage.)
       const editSite = document.getElementById('editSite');
       if (editSite) {
-        editSite.href = '/index.html?edit=1' + (key ? '&key=' + encodeURIComponent(key) : '');
+        const k = key.trim();
+        editSite.href = '/index.html?edit=1' + (k ? '&key=' + encodeURIComponent(k) : '');
+        editSite.addEventListener('click', () => {
+          if (k) {
+            try {
+              localStorage.setItem('dugri_admin_key', k);
+            } catch {
+              /* storage blocked — the ?key= in the href still launches edit mode */
+            }
+          }
+        });
       }
 
       const sub = document.getElementById('sub');
