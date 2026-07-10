@@ -116,7 +116,15 @@
         // owner edits the current copy. Fail closed: no ?edit → never enable.
         if (!resolved.edit) return;
         var key = resolved.key;
-        if (!key) {
+        if (key) {
+          // Key came from ?key= (e.g. the dashboard "edit the site" button) or from
+          // storage — remember it so the next page needs only ?edit=1, no re-paste.
+          try {
+            window.localStorage.setItem(LS_KEY, key);
+          } catch {
+            /* storage blocked — key still works for this session */
+          }
+        } else {
           key = (window.prompt('מפתח ניהול לעריכת התוכן:') || '').trim();
           if (!key) return; // cancelled → stay a normal visitor
           try {

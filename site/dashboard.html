@@ -148,6 +148,7 @@
       <div class="sub" id="sub">טוען…</div>
       <div class="cards" id="cards" hidden></div>
       <div class="links" id="links" hidden>
+        <a id="editSite" href="#">ערוך את האתר ←</a>
         <a data-page="admin.html">ניהול הזמנות ←</a>
         <a data-page="coupons.html" class="alt">ניהול קופונים ←</a>
         <a data-page="design-codes.html" class="alt">קודי עיצוב ←</a>
@@ -161,6 +162,14 @@
       const withKey = (page) => page + (key ? '?key=' + encodeURIComponent(key) : '');
       for (const a of document.querySelectorAll('[data-page]')) {
         a.href = withKey(a.dataset.page);
+      }
+
+      // Launch the live-site inline editor in one click, carrying the admin key.
+      // The button lives in #links, which only appears once a valid key loads the
+      // dashboard, so a keyless (or wrong-key) session never exposes it.
+      const editSite = document.getElementById('editSite');
+      if (editSite) {
+        editSite.href = '/index.html?edit=1' + (key ? '&key=' + encodeURIComponent(key) : '');
       }
 
       const sub = document.getElementById('sub');

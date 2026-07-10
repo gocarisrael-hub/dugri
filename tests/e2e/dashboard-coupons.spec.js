@@ -30,9 +30,21 @@ test('dashboard shows stat cards and nav links carry the key', async ({ page }) 
   );
 });
 
+test('dashboard "edit the site" button carries the admin key into edit mode', async ({ page }) => {
+  await page.goto(`/dashboard.html?key=${KEY}`);
+
+  // The primary "edit the site" button launches the live editor with ?edit=1
+  // and the admin key attached.
+  const editSite = page.locator('#editSite');
+  await expect(editSite).toBeVisible();
+  await expect(editSite).toHaveAttribute('href', `/index.html?edit=1&key=${KEY}`);
+});
+
 test('dashboard without a key shows the missing-key message', async ({ page }) => {
   await page.goto('/dashboard.html');
   await expect(page.locator('body')).toContainText('חסר מפתח גישה');
+  // With no key the #links block (and its "edit the site" button) stays hidden.
+  await expect(page.locator('#editSite')).toBeHidden();
 });
 
 test('coupons: create, list with 0 uses, toggle inactive, delete', async ({ page }) => {

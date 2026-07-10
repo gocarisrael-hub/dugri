@@ -267,4 +267,19 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(img).toHaveAttribute('src', returnedImg);
     expect(imagePosted).toBe(true);
   });
+
+  test('a ?key= edit session is remembered, so the next page needs only ?edit=1', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+
+    // First page: enter edit mode with the key in the query — this persists it.
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.locator('.dugri-editbar')).toBeVisible();
+
+    // Navigate to another page with ?edit=1 but NO key: edit mode still activates,
+    // proving the key was persisted to localStorage on the first visit.
+    await page.goto('/product.html?edit=1');
+    await expect(page.locator('.dugri-editbar')).toBeVisible();
+  });
 });
