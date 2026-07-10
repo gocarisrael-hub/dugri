@@ -30,9 +30,41 @@ test('dashboard shows stat cards and nav links carry the key', async ({ page }) 
   );
 });
 
+test('dashboard "edit the site" button carries the admin key into edit mode', async ({ page }) => {
+  await page.goto(`/dashboard.html?key=${KEY}`);
+
+  // The primary "edit the site" button launches the live editor with ?edit=1
+  // and the admin key attached.
+  const editSite = page.locator('#editSite');
+  await expect(editSite).toBeVisible();
+  await expect(editSite).toHaveAttribute('href', `/index.html?edit=1&key=${KEY}`);
+});
+
+test('clicking "edit the site" remembers the validated key so other pages need only ?edit=1', async ({
+  page,
+}) => {
+  await page.goto(`/dashboard.html?key=${KEY}`);
+  const editSite = page.locator('#editSite');
+  await expect(editSite).toBeVisible();
+
+  // Clicking launches edit mode on the live site AND persists the dashboard-
+  // validated key (the button only appears after the key authenticated the
+  // dashboard) to the slot the editor reads.
+  await editSite.click();
+  await expect(page).toHaveURL(/index\.html/);
+  await expect(page.locator('.dugri-editbar')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('dugri_admin_key'))).toBe(KEY);
+
+  // A subsequent page then needs only ?edit=1 — no key in the URL.
+  await page.goto('/product.html?edit=1');
+  await expect(page.locator('.dugri-editbar')).toBeVisible();
+});
+
 test('dashboard without a key shows the missing-key message', async ({ page }) => {
   await page.goto('/dashboard.html');
   await expect(page.locator('body')).toContainText('חסר מפתח גישה');
+  // With no key the #links block (and its "edit the site" button) stays hidden.
+  await expect(page.locator('#editSite')).toBeHidden();
 });
 
 test('coupons: create, list with 0 uses, toggle inactive, delete', async ({ page }) => {

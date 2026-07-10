@@ -148,6 +148,7 @@
       <div class="sub" id="sub">טוען…</div>
       <div class="cards" id="cards" hidden></div>
       <div class="links" id="links" hidden>
+        <a id="editSite" href="#">ערוך את האתר ←</a>
         <a data-page="admin.html">ניהול הזמנות ←</a>
         <a data-page="coupons.html" class="alt">ניהול קופונים ←</a>
         <a data-page="design-codes.html" class="alt">קודי עיצוב ←</a>
@@ -156,11 +157,36 @@
     </div>
 
     <script type="module">
-      const key = new URLSearchParams(location.search).get('key') || '';
+      // Trim once at the source so the SAME value is used everywhere — the
+      // collections/coupons validation fetches, the nav links, and the editor
+      // launch/persist — otherwise a whitespace-padded key could validate here yet
+      // be handed to the editor differently and 403 every save.
+      const key = (new URLSearchParams(location.search).get('key') || '').trim();
       // Carry the admin key across the three linked admin pages.
       const withKey = (page) => page + (key ? '?key=' + encodeURIComponent(key) : '');
       for (const a of document.querySelectorAll('[data-page]')) {
         a.href = withKey(a.dataset.page);
+      }
+
+      // Launch the live-site inline editor in one click, carrying the admin key.
+      // The button lives in #links, which only appears once a valid key loads the
+      // dashboard, so a keyless (or wrong-key) session never exposes it — meaning
+      // the key here has ALREADY authenticated the dashboard. On click we persist
+      // that VALIDATED key to the same localStorage slot the editor reads, so the
+      // owner can then edit other pages with just ?edit=1. (The editor itself never
+      // persists a raw ?key=, to avoid a stale bookmarked key poisoning storage.)
+      const editSite = document.getElementById('editSite');
+      if (editSite) {
+        editSite.href = '/index.html?edit=1' + (key ? '&key=' + encodeURIComponent(key) : '');
+        editSite.addEventListener('click', () => {
+          if (key) {
+            try {
+              localStorage.setItem('dugri_admin_key', key);
+            } catch {
+              /* storage blocked — the ?key= in the href still launches edit mode */
+            }
+          }
+        });
       }
 
       const sub = document.getElementById('sub');

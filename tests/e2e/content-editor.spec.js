@@ -267,4 +267,83 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(img).toHaveAttribute('src', returnedImg);
     expect(imagePosted).toBe(true);
   });
+
+  test('a raw ?key= is NOT persisted, so a stale bookmarked key cannot poison storage', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    page.on('dialog', (d) => d.dismiss()); // the no-key prompt is auto-dismissed
+
+    // Entering edit mode with the key in the QUERY must NOT persist it — otherwise a
+    // stale/typo'd key in a bookmarked link would poison storage and lock edit mode
+    // into silent 403s. Only the dashboard button (a validated key) persists.
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.locator('.dugri-editbar')).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem('dugri_admin_key'))).toBeNull();
+
+    // So a later page with only ?edit=1 (no stored key) does NOT auto-enter edit mode.
+    await page.goto('/product.html?edit=1');
+    await expect(page.locator('.dugri-editbar')).toHaveCount(0);
+  });
+
+  test('a 403 on save self-heals by clearing the remembered key', async ({ page }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) =>
+      route.fulfill({ status: 403, json: { error: 'forbidden' } })
+    );
+    // A prior session remembered a key that is now invalid (wrong/rotated).
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem('dugri_admin_key', 'STALEKEY');
+      } catch {
+        /* storage blocked */
+      }
+    });
+
+    await page.goto('/index.html?edit=1'); // edit mode drives off the stored key
+    await expect(page.locator('.dugri-editbar')).toBeVisible();
+
+    // Editing → save → 403. The stale key must be CLEARED so the owner isn't locked
+    // into a broken edit mode (the next ?edit=1 re-prompts instead of reusing it).
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'שינוי';
+      n.dispatchEvent(new Event('blur'));
+    });
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('dugri_admin_key')))
+      .toBeNull();
+  });
+
+  test('a 403 from a URL ?key= does NOT wipe a different, still-valid stored key', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) =>
+      route.fulfill({ status: 403, json: { error: 'forbidden' } })
+    );
+    // A prior dashboard launch remembered a VALID key…
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem('dugri_admin_key', 'K1VALID');
+      } catch {
+        /* storage blocked */
+      }
+    });
+    // …but this visit uses a stale URL key, which wins over storage and 403s.
+    await page.goto('/index.html?edit=1&key=OLDKEY');
+    await expect(page.locator('.dugri-editbar')).toBeVisible();
+
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'שינוי';
+      n.dispatchEvent(new Event('blur'));
+    });
+    // The save failed, but the failing key came from the URL — the DIFFERENT stored
+    // key must survive (only the failing key would be cleared).
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('שגיאה בשמירה');
+    expect(await page.evaluate(() => localStorage.getItem('dugri_admin_key'))).toBe('K1VALID');
+  });
 });
