@@ -382,14 +382,17 @@
   function adminUrl(pathBase, key) {
     return pathBase + '?key=' + encodeURIComponent(key);
   }
-  // Shared handler for an admin write response. A 403 means the key is invalid
-  // (wrong or rotated) — SELF-HEAL by dropping the remembered key so the owner
-  // isn't locked into a broken edit mode: the next ?edit=1 visit re-prompts for a
-  // good key instead of silently re-using the bad stored one.
-  function adminResult(r, failMsg) {
+  // Shared handler for an admin write response. A 403 means the key used for THIS
+  // request is invalid (wrong or rotated) — SELF-HEAL by dropping the remembered
+  // key so the owner isn't locked into a broken edit mode. But only clear storage
+  // when the FAILING key IS the stored one: a 403 from a stale URL ?key= must not
+  // wipe a DIFFERENT, still-valid key that a previous dashboard launch remembered.
+  function adminResult(r, failMsg, usedKey) {
     if (r.status === 403) {
       try {
-        window.localStorage.removeItem(LS_KEY);
+        if (window.localStorage.getItem(LS_KEY) === usedKey) {
+          window.localStorage.removeItem(LS_KEY);
+        }
       } catch {
         /* storage blocked — nothing to clear */
       }
@@ -403,7 +406,7 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ page: page, key: editKey, text: text }),
     }).then(function (r) {
-      return adminResult(r, 'save failed');
+      return adminResult(r, 'save failed', key);
     });
   }
   function deleteOverride(page, key, editKey) {
@@ -412,7 +415,7 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ page: page, key: editKey }),
     }).then(function (r) {
-      return adminResult(r, 'reset failed');
+      return adminResult(r, 'reset failed', key);
     });
   }
   function postImage(page, key, editKey, file) {
@@ -424,7 +427,7 @@
       method: 'POST',
       body: fd,
     }).then(function (r) {
-      return adminResult(r, 'upload failed');
+      return adminResult(r, 'upload failed', key);
     });
   }
 

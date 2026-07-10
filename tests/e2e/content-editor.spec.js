@@ -315,4 +315,35 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
       .poll(() => page.evaluate(() => localStorage.getItem('dugri_admin_key')))
       .toBeNull();
   });
+
+  test('a 403 from a URL ?key= does NOT wipe a different, still-valid stored key', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) =>
+      route.fulfill({ status: 403, json: { error: 'forbidden' } })
+    );
+    // A prior dashboard launch remembered a VALID key…
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem('dugri_admin_key', 'K1VALID');
+      } catch {
+        /* storage blocked */
+      }
+    });
+    // …but this visit uses a stale URL key, which wins over storage and 403s.
+    await page.goto('/index.html?edit=1&key=OLDKEY');
+    await expect(page.locator('.dugri-editbar')).toBeVisible();
+
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'שינוי';
+      n.dispatchEvent(new Event('blur'));
+    });
+    // The save failed, but the failing key came from the URL — the DIFFERENT stored
+    // key must survive (only the failing key would be cleared).
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('שגיאה בשמירה');
+    expect(await page.evaluate(() => localStorage.getItem('dugri_admin_key'))).toBe('K1VALID');
+  });
 });

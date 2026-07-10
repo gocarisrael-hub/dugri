@@ -157,7 +157,11 @@
     </div>
 
     <script type="module">
-      const key = new URLSearchParams(location.search).get('key') || '';
+      // Trim once at the source so the SAME value is used everywhere — the
+      // collections/coupons validation fetches, the nav links, and the editor
+      // launch/persist — otherwise a whitespace-padded key could validate here yet
+      // be handed to the editor differently and 403 every save.
+      const key = (new URLSearchParams(location.search).get('key') || '').trim();
       // Carry the admin key across the three linked admin pages.
       const withKey = (page) => page + (key ? '?key=' + encodeURIComponent(key) : '');
       for (const a of document.querySelectorAll('[data-page]')) {
@@ -173,12 +177,11 @@
       // persists a raw ?key=, to avoid a stale bookmarked key poisoning storage.)
       const editSite = document.getElementById('editSite');
       if (editSite) {
-        const k = key.trim();
-        editSite.href = '/index.html?edit=1' + (k ? '&key=' + encodeURIComponent(k) : '');
+        editSite.href = '/index.html?edit=1' + (key ? '&key=' + encodeURIComponent(key) : '');
         editSite.addEventListener('click', () => {
-          if (k) {
+          if (key) {
             try {
-              localStorage.setItem('dugri_admin_key', k);
+              localStorage.setItem('dugri_admin_key', key);
             } catch {
               /* storage blocked — the ?key= in the href still launches edit mode */
             }
