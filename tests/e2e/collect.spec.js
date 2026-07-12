@@ -602,6 +602,57 @@ test('home link (→ index.html) and a tailored order CTA (→ options.html) are
   await expect(friendCta).toContainText('לאירוע שלכם');
 });
 
+test('owner share panel: WhatsApp button is the primary action, placed before the copy button, and links to wa.me with the friends link', async ({
+  page,
+}) => {
+  await createCollection(page, 'Shira');
+
+  // Share panel is owner-only; setupOwner reveals it.
+  const panel = page.locator('#sharePanel');
+  await expect(panel).toBeVisible();
+
+  const wa = page.getByTestId('share-whatsapp');
+  await expect(wa).toBeVisible();
+
+  // Uses the SAME friends link the copy button shows.
+  const friendsLink = await page.locator('#friendsLink').inputValue();
+  expect(friendsLink).toContain('/collect.html?c=');
+
+  // href is a wa.me share URL carrying the encoded friends link.
+  const href = await wa.getAttribute('href');
+  expect(href).toMatch(/^https:\/\/wa\.me\/\?text=/);
+  expect(href).toContain(encodeURIComponent(friendsLink));
+  await expect(wa).toHaveAttribute('target', '_blank');
+  await expect(wa).toHaveAttribute('rel', /noopener/);
+
+  // Primary action → precedes the secondary copy button in DOM order.
+  const waBeforeCopy = await page.evaluate(() => {
+    const waEl = document.getElementById('shareWhatsapp');
+    const copyEl = document.getElementById('copyFriends');
+    return !!(waEl.compareDocumentPosition(copyEl) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(waBeforeCopy).toBe(true);
+});
+
+test('collected-words list sits BELOW the add-word input in DOM order', async ({ page }) => {
+  await createCollection(page, 'Shira');
+  const inputBeforeWords = await page.evaluate(() => {
+    const addCard = document.getElementById('addCard');
+    const wordsWrap = document.getElementById('wordsWrap');
+    return !!(addCard.compareDocumentPosition(wordsWrap) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(inputBeforeWords).toBe(true);
+});
+
+test('add-word fields carry no example placeholder text', async ({ page }) => {
+  await createCollection(page, 'Shira');
+  expect(await page.locator('#byName').getAttribute('placeholder')).toBeNull();
+  expect(await page.locator('#wordInput').getAttribute('placeholder')).toBeNull();
+  // #wordInput has no visible <label>, so removing its placeholder must not leave
+  // it unnamed for screen readers — it keeps an aria-label as its accessible name.
+  expect((await page.locator('#wordInput').getAttribute('aria-label'))?.trim()).toBeTruthy();
+});
+
 test('contributor (no owner key) does NOT see the pay panel', async ({ page, context }) => {
   await createCollection(page, 'Shira');
   const friendsUrl = page.url().replace(/&k=.*/, '');

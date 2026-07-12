@@ -396,6 +396,34 @@
         text-align: left;
         font-size: 13px;
       }
+      /* Primary share action: opens WhatsApp with the friends link + invite. Full
+         width, brand-green, sits above the (secondary) copy row. */
+      .share-wa {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 8px;
+        padding: 12px 18px;
+        background: #25d366;
+        color: #fff;
+        border-radius: 12px;
+        text-decoration: none;
+        font-weight: 800;
+        border: 1.5px solid #1da851;
+        transition: filter 0.15s ease;
+      }
+      .share-wa:hover {
+        filter: brightness(1.05);
+      }
+      .share-wa:active {
+        transform: scale(0.98);
+      }
+      .share-wa-ico {
+        width: 20px;
+        height: 20px;
+        flex: 0 0 auto;
+      }
       .hidden {
         display: none !important;
       }
@@ -877,33 +905,11 @@
 
       <div class="banner" id="banner"></div>
 
-      <!-- the words (with the live counter) -->
-      <div class="card">
-        <div class="words-head">
-          <span class="sec-h">המילים שכבר נאספו</span>
-          <span class="count-pill"><b id="count">0</b><span id="countMax"> מילים</span></span>
-        </div>
-        <!-- Two-stage progress. Stage 1 measures toward the 100-word minimum;
-             once reached it is replaced by Stage 2, a new bar scaled to the max
-             (so it starts ~¼ full) that grows toward MAX_WORDS. -->
-        <div id="stage1">
-          <div class="bar"><i id="barFill1"></i></div>
-        </div>
-        <div id="stage2" class="hidden">
-          <div class="stage2-label" id="stage2Label"></div>
-          <div class="bar bar-stage2"><i id="barFill2"></i></div>
-        </div>
-        <small class="muted" id="countHint">היעד: לפחות 100 מילים</small>
-        <div class="words" id="wordsWrap" style="margin-top: 12px">
-          <span class="muted" id="emptyWords">עוד אין מילים - היו הראשונים!</span>
-        </div>
-      </div>
-
       <!-- add area -->
       <div class="card" id="addCard">
         <div class="nameRow">
           <label class="fld" for="byName">מי מוסיף? (לא חובה)</label>
-          <input type="text" id="byName" placeholder="השם שלך" maxlength="40" />
+          <input type="text" id="byName" maxlength="40" />
         </div>
 
         <div class="tabs" role="tablist">
@@ -915,12 +921,7 @@
         <div class="panel" id="panel-single">
           <div class="idea" id="ideaBox"></div>
           <div class="row">
-            <input
-              type="text"
-              id="wordInput"
-              placeholder="לדוגמה: הדייט מטבריה"
-              autocomplete="off"
-            />
+            <input type="text" id="wordInput" autocomplete="off" aria-label="מילה להוספה" />
             <button id="addBtn" type="button">הוסף</button>
           </div>
           <div class="actions">
@@ -942,6 +943,28 @@
         <div class="panel hidden" id="panel-file">
           <input type="file" id="fileInput" accept=".txt,.csv,text/plain,text/csv" />
           <p class="muted" data-edit="collect-file-hint">קובץ טקסט או CSV - מילה בכל שורה.</p>
+        </div>
+      </div>
+
+      <!-- the words (with the live counter) -->
+      <div class="card">
+        <div class="words-head">
+          <span class="sec-h">המילים שכבר נאספו</span>
+          <span class="count-pill"><b id="count">0</b><span id="countMax"> מילים</span></span>
+        </div>
+        <!-- Two-stage progress. Stage 1 measures toward the 100-word minimum;
+             once reached it is replaced by Stage 2, a new bar scaled to the max
+             (so it starts ~¼ full) that grows toward MAX_WORDS. -->
+        <div id="stage1">
+          <div class="bar"><i id="barFill1"></i></div>
+        </div>
+        <div id="stage2" class="hidden">
+          <div class="stage2-label" id="stage2Label"></div>
+          <div class="bar bar-stage2"><i id="barFill2"></i></div>
+        </div>
+        <small class="muted" id="countHint">היעד: לפחות 100 מילים</small>
+        <div class="words" id="wordsWrap" style="margin-top: 12px">
+          <span class="muted" id="emptyWords">עוד אין מילים - היו הראשונים!</span>
         </div>
       </div>
 
@@ -982,6 +1005,22 @@
         <p class="muted" data-edit="collect-share-hint">
           שלחו את הקישור הזה לכל מי שמכיר/ה את בעלת השמחה:
         </p>
+        <a
+          class="share-wa"
+          id="shareWhatsapp"
+          href="#"
+          target="_blank"
+          rel="noopener"
+          data-testid="share-whatsapp"
+        >
+          <svg class="share-wa-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              fill="currentColor"
+              d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.86 9.86 0 0 0 12.04 2Zm0 1.8c2.16 0 4.19.84 5.72 2.37a8.05 8.05 0 0 1 2.37 5.72c0 4.47-3.64 8.11-8.12 8.11a8.2 8.2 0 0 1-4.14-1.13l-.3-.18-3.1.81.83-3.02-.19-.31a8.06 8.06 0 0 1-1.26-4.36c0-4.47 3.64-8.11 8.11-8.11ZM8.55 7.33c-.16 0-.42.06-.64.3-.22.24-.85.83-.85 2.02 0 1.2.87 2.35.99 2.51.12.16 1.7 2.6 4.14 3.65.58.25 1.03.4 1.38.51.58.19 1.11.16 1.53.1.47-.07 1.44-.59 1.64-1.16.2-.57.2-1.06.14-1.16-.06-.1-.22-.16-.46-.28-.24-.12-1.44-.71-1.66-.79-.22-.08-.38-.12-.55.12-.16.24-.63.79-.77.95-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.34-1.67-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.32-.76-1.8-.18-.4-.37-.4-.55-.41-.14 0-.3-.01-.46-.01Z"
+            />
+          </svg>
+          שתפו בוואטסאפ
+        </a>
         <div class="row" style="margin-top: 8px">
           <input type="text" id="friendsLink" readonly />
           <button class="ghost" id="copyFriends" type="button">העתק</button>
@@ -1701,6 +1740,12 @@
         $('#sharePanel').classList.remove('hidden');
         $('#friendsLink').value = friendsUrl();
         $('#ownerLink').value = location.href;
+        // Primary share: open WhatsApp with a friendly Hebrew invite + the SAME
+        // friends link the copy button uses.
+        const waInvite = 'עזרו לי להכין הפתעה! הוסיפו מילים על בעל/ת השמחה כאן:';
+        const waBtn = $('#shareWhatsapp');
+        waBtn.href = 'https://wa.me/?text=' + encodeURIComponent(waInvite + ' ' + friendsUrl());
+        waBtn.onclick = () => track('share_link_whatsapp', { link_type: 'friends' });
         $('#copyFriends').onclick = () =>
           copy($('#friendsLink').value, $('#copyFriends'), 'friends');
         $('#copyOwner').onclick = () => copy($('#ownerLink').value, $('#copyOwner'), 'owner');
