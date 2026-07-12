@@ -1159,6 +1159,11 @@
         margin-top: 7px;
         text-align: center;
       }
+      /* display:block above overrides the UA [hidden] rule — restore it so the
+         couple-theme guard (nameHint.hidden = true) actually hides the hint. */
+      .wiz-hint[hidden] {
+        display: none;
+      }
 
       /* gender-required prompt — a small styled dialog over a dimmed backdrop */
       .wiz-modal {
@@ -1927,8 +1932,7 @@
              rewrites live (format vs. language message) — tagging that node would
              fight the JS, so the editable hint is its own permanent element. -->
         <span class="wiz-hint" id="nameHint" data-testid="name-hint" data-edit="options-name-hint"
-          >אפשר להזין שם אחד בלבד באותיות (עברית או אנגלית), ללא רווחים - מותר מקף (-) וגרש
-          (').</span
+          >טיפ: שם אחד בלבד, באותיות עברית או אנגלית.</span
         >
         <span class="wiz-err" id="nameErr" data-testid="name-err" hidden
           >אפשר להזין שם אחד בלבד באותיות (עברית או אנגלית), ללא רווחים - מותר מקף (-) וגרש
@@ -2000,12 +2004,7 @@
               data-extra-input="NAME1"
               autocomplete="name"
             />
-            <span
-              class="wiz-err"
-              data-extra-err="NAME1"
-              data-testid="extra-name1-err"
-              data-edit="options-name1-hint"
-              hidden
+            <span class="wiz-err" data-extra-err="NAME1" data-testid="extra-name1-err" hidden
               >אפשר להזין שם אחד בעברית בלבד (בלי רווחים, ספרות או אנגלית).</span
             >
           </label>
@@ -2020,12 +2019,7 @@
               data-extra-input="NAME2"
               autocomplete="name"
             />
-            <span
-              class="wiz-err"
-              data-extra-err="NAME2"
-              data-testid="extra-name2-err"
-              data-edit="options-name2-hint"
-              hidden
+            <span class="wiz-err" data-extra-err="NAME2" data-testid="extra-name2-err" hidden
               >אפשר להזין שם אחד בעברית בלבד (בלי רווחים, ספרות או אנגלית).</span
             >
           </label>
@@ -3232,6 +3226,11 @@
         // two NAME fields ARE the ask — no redundant "name, then two names".
         const couple = isCoupleTheme();
         nameInput.hidden = couple;
+        // The single-name hint is guidance for the ONE name field — hide it on a
+        // couple design (which shows the two partner-name fields instead), so it
+        // never contradicts the step with "enter a single name".
+        const nameHintEl = document.getElementById('nameHint');
+        if (nameHintEl) nameHintEl.hidden = couple;
         if (genderGroup) genderGroup.hidden = couple;
         if (nameStepTitle) {
           nameStepTitle.textContent = couple ? 'שמות בני הזוג' : 'שם בעל/ת השמחה';

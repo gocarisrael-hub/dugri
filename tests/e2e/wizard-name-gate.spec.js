@@ -202,18 +202,16 @@ test.describe('name language + single-word rules block Next', () => {
     await expect(err).toBeHidden();
     await expect(next).toBeEnabled();
 
-    // The two partner-hint spans (couple design) carry their editable keys too; the
-    // JS only toggles their `hidden`, never their text, so tagging them is safe.
+    // On a couple (anniversary) design the single-name hint is HIDDEN — it's
+    // guidance for the one name field, which couple mode replaces with two partner
+    // fields, so it must not contradict the step. And the partner ERROR spans are
+    // NOT tagged editable (they're hidden-by-default JS error targets the owner
+    // could never reach in edit mode).
     await page.goto('/options.html?design=marriage&step=3');
     await expect(page.getByTestId('step-3')).toBeVisible();
-    await expect(page.getByTestId('extra-name1-err')).toHaveAttribute(
-      'data-edit',
-      'options-name1-hint'
-    );
-    await expect(page.getByTestId('extra-name2-err')).toHaveAttribute(
-      'data-edit',
-      'options-name2-hint'
-    );
+    await expect(page.getByTestId('name-hint')).toBeHidden();
+    await expect(page.getByTestId('extra-name1-err')).not.toHaveAttribute('data-edit', /.*/);
+    await expect(page.getByTestId('extra-name2-err')).not.toHaveAttribute('data-edit', /.*/);
     // partner validation still fires on an invalid name
     await page.getByTestId('extra-name1').fill('David');
     await expect(page.getByTestId('extra-name1-err')).toBeVisible();
