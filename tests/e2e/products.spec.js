@@ -74,6 +74,13 @@ test.describe('store grid (products.html)', () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   });
 
+  test('the header menu links to the timer page', async ({ page }) => {
+    await page.goto('/products.html');
+    const link = page.getByTestId('nav-menu').locator('a[href="timer.html"]');
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveText('טיימר');
+  });
+
   test('the footer WhatsApp link resolves to a real wa.me URL (not "#")', async ({ page }) => {
     await page.goto('/products.html');
     const wa = page.locator('footer #waLink');

@@ -15,7 +15,9 @@ test.describe('product detail page', () => {
 
     await expect(page.getByTestId('pdp-gallery')).toBeVisible();
     await expect(page.locator('#pdpTitle')).not.toHaveText('');
-    await expect(page.locator('#pdpPriceNow')).toContainText('79 ₪');
+    // The now-price is an anchor: "from ₪79" (מ-79) with the crossed-out was.
+    await expect(page.locator('#pdpPriceNow')).toContainText('מ-79 ₪');
+    await expect(page.locator('#pdpPriceWas')).toContainText('129 ₪');
 
     // Buy now carries the chosen design into the order flow and jumps straight
     // to the colour + add-ons step (step 2).
@@ -96,6 +98,13 @@ test.describe('product detail page', () => {
     const toggle = page.getByTestId('nav-toggle');
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('the header menu links to the timer page', async ({ page }) => {
+    await page.goto('/product.html?design=bachelorette');
+    const link = page.getByTestId('nav-menu').locator('a[href="timer.html"]');
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveText('טיימר');
   });
 
   test('the header has a back-to-store control pointing at products.html', async ({ page }) => {

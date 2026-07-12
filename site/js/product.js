@@ -221,7 +221,7 @@ function renderInfo(d) {
   document.title = `${d.name} · דוגרי`;
 
   const now = document.getElementById('pdpPriceNow');
-  if (now) now.textContent = `${PRICE} ₪`;
+  if (now) now.textContent = `מ-${PRICE} ₪`;
   const was = document.getElementById('pdpPriceWas');
   if (was) was.textContent = `${WAS} ₪`;
 

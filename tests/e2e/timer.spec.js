@@ -22,4 +22,36 @@ test.describe('timer', () => {
     await page.getByTestId('timer-reset').click();
     await expect(count).toHaveText('60');
   });
+
+  test('the numeric countdown is the display — no visible hourglass', async ({ page }) => {
+    await page.goto('/timer.html');
+
+    // The numeric count is the primary, visible display.
+    await expect(page.getByTestId('timer-count')).toBeVisible();
+    await expect(page.getByTestId('timer-count')).toHaveText('60');
+
+    // The old sand-clock SVG is gone (not merely hidden).
+    await expect(page.locator('svg.hourglass')).toHaveCount(0);
+    await expect(page.locator('#stage')).toHaveCount(0);
+  });
+
+  test('reset is hidden until start, shows while running, hides again on reset', async ({
+    page,
+  }) => {
+    await page.goto('/timer.html');
+
+    const reset = page.getByTestId('timer-reset');
+    const toggle = page.getByTestId('timer-toggle');
+
+    // Hidden before the timer starts.
+    await expect(reset).toBeHidden();
+
+    // Visible after start.
+    await toggle.click();
+    await expect(reset).toBeVisible();
+
+    // Hidden again after reset.
+    await reset.click();
+    await expect(reset).toBeHidden();
+  });
 });
