@@ -288,6 +288,43 @@ test.describe('real customer testimonials', () => {
   });
 });
 
+test.describe('hero readability + menu + trimmed CTA', () => {
+  test('the hero white scrim is strong enough to keep the dark headline readable', async ({
+    page,
+  }) => {
+    await page.goto('/index.html');
+
+    // The scrim is a white gradient painted on .hero-slide::after. A brighter
+    // wash was needed so the near-black headline stays legible over bright
+    // photos. Read the pseudo-element's computed gradient and assert every white
+    // stop got meaningfully stronger than the old 0.24 / 0.46 / 0.28 baseline.
+    const alphas = await page
+      .locator('.hero-slide')
+      .first()
+      .evaluate((el) => {
+        const bg = window.getComputedStyle(el, '::after').backgroundImage;
+        return [...bg.matchAll(/rgba?\([^)]*?,\s*([\d.]+)\)/g)].map((m) => parseFloat(m[1]));
+      });
+    expect(alphas.length).toBe(3);
+    // Each stop clearly heavier than before; the middle peak carries the headline.
+    expect(alphas[0]).toBeGreaterThan(0.38);
+    expect(alphas[1]).toBeGreaterThan(0.6);
+    expect(alphas[2]).toBeGreaterThan(0.4);
+  });
+
+  test('the final CTA no longer carries the trust/reassure line', async ({ page }) => {
+    await page.goto('/index.html');
+    await expect(page.locator('[data-edit="index-final-reassure"]')).toHaveCount(0);
+  });
+
+  test('the header menu links to the online timer', async ({ page }) => {
+    await page.goto('/index.html');
+    const timer = page.locator('[data-testid="nav-menu"] a[href="timer.html"]');
+    await expect(timer).toHaveCount(1);
+    await expect(timer).toHaveText('טיימר');
+  });
+});
+
 test.describe('hero lets the page scroll vertically', () => {
   test('the hero carousel track allows vertical page scroll (touch-action includes pan-y)', async ({
     page,
