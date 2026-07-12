@@ -1044,10 +1044,15 @@
       const reviewsTrack = document.getElementById('reviewsTrack');
       if (reviewsTrack) {
         initCarousel(reviewsTrack, {
+          // slideshow = native one-per-view scroll-snap. The blank-cards bug was the
+          // loop's initial scrollIntoView running before the (lazy) screenshots had
+          // decoded, so it parked on a zero-size slot; the review images are now
+          // EAGER (loading removed) so layout is correct when the rail positions
+          // itself. Keep loop:true (endless wrap) + dots + autoplay off.
           mode: 'slideshow',
-          autoplay: false,
           loop: true,
-          dots: false,
+          autoplay: false,
+          dots: true,
           arrows: false,
         });
       }
@@ -1092,7 +1097,6 @@
             <img
               src="assets/testimonials/review-1.jpg"
               alt="המלצה אמיתית בוואטסאפ ממסיבת רווקות - דוגרי גנב את ההצגה, לא הפסקנו לצחוק שעה וחצי"
-              loading="lazy"
               data-edit-img="index-review-1"
             />
           </figure>
@@ -1100,7 +1104,6 @@
             <img
               src="assets/testimonials/review-2.jpg"
               alt="המלצה אמיתית בוואטסאפ - היה מושלם, בסוף הערב אמרה שזה החלק הכי אהוב במסיבה"
-              loading="lazy"
               data-edit-img="index-review-2"
             />
           </figure>
@@ -1108,7 +1111,6 @@
             <img
               src="assets/testimonials/review-3.jpg"
               alt="המלצה אמיתית בוואטסאפ - היה ממש כיף, כולם באטרף, מתנה שווה בטירוף"
-              loading="lazy"
               data-edit-img="index-review-3"
             />
           </figure>
@@ -1116,7 +1118,6 @@
             <img
               src="assets/testimonials/review-4.jpg"
               alt="המלצה אמיתית בוואטסאפ - שעה וחצי של צחוק רצוף, אישי ומצחיק ומרגש"
-              loading="lazy"
               data-edit-img="index-review-4"
             />
           </figure>
