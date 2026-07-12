@@ -44,6 +44,7 @@
       />
     </noscript>
     <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/carousel.css" />
     <style>
       :root {
         /* fixed chrome heights, reused by the body padding and the wizard column
@@ -908,6 +909,49 @@
         border-radius: var(--radius);
       }
 
+      /* ---- colour-step preview carousel (front / back / board) ----------
+         A swipeable slideshow of the current design's views in the current
+         colour, on the SHARED carousel engine (css/carousel.css +
+         js/carousel.js) — same feel as every other site carousel. The track
+         is a native horizontal scroll rail; slides are full-width so one view
+         shows at a time and dots below track the position. */
+      .color-carousel {
+        position: relative;
+        margin: 2px 0 18px;
+      }
+      .color-carousel-track.carousel-track {
+        --carousel-gap: 0;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--bg);
+        box-shadow: var(--shadow-sm);
+      }
+      .cc-slide {
+        width: 100%;
+        aspect-ratio: 841.92 / 595.5; /* landscape A-page sheet, like the PDP */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px;
+        box-sizing: border-box;
+      }
+      .cc-slide > svg,
+      .cc-slide > img {
+        max-width: 100%;
+        max-height: 100%;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        display: block;
+      }
+      .cc-slide .preview-empty {
+        color: var(--muted, #8a8a8a);
+        font-size: 14px;
+      }
+      .color-carousel .carousel-dots {
+        padding: 10px 0 0;
+      }
+
       /* the steps themselves - one visible at a time */
       .wiz-step {
         display: none;
@@ -1303,6 +1347,43 @@
         }
         .gender-group {
           margin-top: 12px;
+        }
+      }
+
+      /* PHONES ONLY (portrait width): the colour step also carries the swipe
+         preview carousel, so on a phone the tabbed preview above it shrinks to
+         a slim strip (still fully tappable + zoomable — the shared preview and
+         its zoom stay intact for every step) to keep the whole step (carousel,
+         swatches, add-on) above the fixed Back/Next bar with NO scrolling. See
+         tests/e2e/wizard-noscroll.spec.js. Scoped to <=600px width so the
+         wide/short-desktop layout checks (wizard-preview-fit.spec.js) are
+         untouched, and to body.is-step-color so only step 2 shrinks. */
+      @media (max-width: 600px) {
+        body.is-step-color .preview-card {
+          margin-top: 6px;
+        }
+        body.is-step-color .preview-card:not(.is-collapsed) .preview-stage {
+          min-height: 0;
+        }
+        body.is-step-color .preview-card:not(.is-collapsed) .preview-panel[data-active='true'],
+        body.is-step-color .preview-card:not(.is-collapsed) .preview-panel[data-panel='front'] svg,
+        body.is-step-color .preview-card:not(.is-collapsed) .preview-panel[data-panel='back'] svg,
+        body.is-step-color .preview-card:not(.is-collapsed) .preview-panel[data-panel='board'] svg,
+        body.is-step-color .preview-card:not(.is-collapsed) .preview-panel[data-panel='front'] img,
+        body.is-step-color .preview-card:not(.is-collapsed) .preview-panel[data-panel='back'] img,
+        body.is-step-color .preview-card:not(.is-collapsed) .preview-panel[data-panel='board'] img {
+          width: auto;
+          max-height: 88px;
+        }
+        .color-carousel {
+          margin: 0 0 10px;
+        }
+        .cc-slide {
+          aspect-ratio: auto;
+          height: 156px;
+        }
+        .color-carousel .carousel-dots {
+          padding: 8px 0 0;
         }
       }
 
@@ -1768,6 +1849,18 @@
       <section class="wiz-step" data-step="2" data-testid="step-2">
         <h2 class="wiz-title">צבע ותוספות</h2>
         <p class="wiz-sub">בחרו צבע ראשי - התצוגה מתעדכנת מיד. התוספת למטה לא חובה.</p>
+        <!-- Swipeable front / back / board preview of the CURRENT design in the
+             CURRENT colour, on the shared carousel engine (js/carousel.js). Its
+             slides are built from the same design.products + palette that drive
+             the tabbed preview above, so it always mirrors the live colour. -->
+        <div class="color-carousel" data-testid="color-carousel">
+          <div
+            class="color-carousel-track"
+            id="colorCarouselTrack"
+            data-testid="color-carousel-track"
+          ></div>
+          <div class="color-carousel-dots" id="colorCarouselDots"></div>
+        </div>
         <div
           class="colors"
           id="colorList"
@@ -2440,6 +2533,7 @@
         previewViewList,
       } from './js/configurator.js';
       import { track } from './js/analytics.js';
+      import { initCarousel } from './js/carousel.js';
 
       // Validate the manifest once at load. Don't hard-crash the page on a bad
       // manifest - just surface a clear console error so it's caught in dev/CI.
@@ -2482,6 +2576,11 @@
       let activeTab = 'front';
       let chasers = false; // optional drinking-game add-on (default OFF)
       let currentStep = 1; // wizard position (1..5); read by persist() for the URL
+
+      // colour-step swipe carousel (front/back/board) — see setupColorCarousel
+      let colorCarouselApi = null; // the initCarousel instance for the current design
+      let ccDesign = -1; // designIndex the carousel was last built for (-1 = none/stale)
+      let ccEpoch = 0; // bumped per (re)build so a stale async SVG fetch is discarded
 
       // cache of fetched raw SVG text keyed by path
       const svgCache = new Map();
@@ -2583,6 +2682,10 @@
         Object.values(panels).forEach((el) => (el.innerHTML = ''));
         updateBoardTab();
         recolor();
+        // invalidate the colour-step carousel for the OLD design; rebuild it now
+        // if the shopper is already on the colour step, else lazily on entry.
+        ccDesign = -1;
+        if (currentStep === 2) ensureColorCarousel();
         await ensurePanel(activeTab);
       }
 
@@ -2625,6 +2728,96 @@
           if (!color) return;
           Object.values(panels).forEach((el) => applyPalette(el, color.hex, anchors));
         }
+      }
+
+      /* ---- colour-step preview carousel (front / back / board) ----------
+         A swipeable slideshow of the current design's views in the current
+         colour, on the SHARED carousel engine (initCarousel) — same feel as
+         the rest of the site (a slideshow with dots). It REUSES the exact
+         preview-render helpers (loadSvg + paintSvg + applyOriginal/applyPalette)
+         so it always mirrors the tabbed preview above and never re-implements
+         SVG paint. Built lazily the first time the colour step is shown for a
+         design, and torn down + rebuilt on a design switch. */
+      const ccTrack = document.getElementById('colorCarouselTrack');
+      const ccDots = document.getElementById('colorCarouselDots');
+      const CC_LABELS = { front: 'קלף', back: 'גב', board: 'לוח' };
+
+      // The views this design actually ships, in card→back→board order. front is
+      // always present; back/board only when the design has them, so the carousel
+      // never lands on an empty/broken slide (mirrors updateBoardTab's guard).
+      function ccViews() {
+        const p = (DESIGNS[designIndex] || {}).products || {};
+        return ['front', 'back', 'board'].filter((k) => p[k]);
+      }
+
+      // Paint the current palette onto the carousel track; the inlined SVGs
+      // inherit --cN from it via the CSS cascade, exactly like recolor() does per
+      // panel. Fixed/baked designs (no anchors) keep their own colours.
+      function ccRecolor() {
+        if (!ccTrack) return;
+        const d = DESIGNS[designIndex];
+        if (!d) return;
+        const anchors = d.anchors || [];
+        if (!anchors.length) return;
+        const ci = isFixedDesign() ? -1 : colorIndex;
+        if (ci < 0) applyOriginal(ccTrack, anchors);
+        else {
+          const c = MAIN_COLORS[ci];
+          if (c) applyPalette(ccTrack, c.hex, anchors);
+        }
+      }
+
+      // (Re)build the slides + carousel for the current design.
+      function renderColorCarousel() {
+        if (!ccTrack) return;
+        const d = DESIGNS[designIndex];
+        if (!d) return;
+        ccDesign = designIndex;
+        const epoch = ++ccEpoch; // discard any in-flight fetch from a prior design
+        if (colorCarouselApi) {
+          colorCarouselApi.destroy();
+          colorCarouselApi = null;
+        }
+        ccTrack.textContent = '';
+        const slides = ccViews().map((k) => {
+          const slide = document.createElement('div');
+          slide.className = 'cc-slide';
+          slide.dataset.view = k;
+          slide.dataset.label = CC_LABELS[k]; // carousel reads this for the a11y label
+          ccTrack.appendChild(slide);
+          return [k, slide];
+        });
+        ccRecolor(); // set --cN before the SVGs paint in
+        // Inline each view's SVG EAGERLY (no lazy <img>): the slide box already has
+        // a fixed height, so the carousel initialises on sized slots and never
+        // parks on a blank one while an image decodes.
+        for (const [k, slide] of slides) {
+          loadSvg(d.products[k])
+            .then((txt) => {
+              if (epoch !== ccEpoch) return; // a newer design owns the track now
+              slide.innerHTML = paintSvg(txt, d.anchors);
+            })
+            .catch(() => {
+              if (epoch === ccEpoch) slide.innerHTML = '<div class="preview-empty">אין תצוגה</div>';
+            });
+        }
+        colorCarouselApi = initCarousel(ccTrack, {
+          mode: 'slideshow',
+          // no loop: 3 discrete views (like the PDP gallery). Loop would clone the
+          // slides and its parking can settle off slide 0; without it the carousel
+          // opens cleanly on the front and the dots map 1:1 to the views.
+          loop: false,
+          dots: true,
+          arrows: false,
+          autoplay: false, // the shopper drives it — no auto-rotate on a config step
+          dotsInto: ccDots,
+        });
+      }
+
+      // Build the carousel the first time the colour step is shown for a design,
+      // and rebuild it when the design changed while we were away.
+      function ensureColorCarousel() {
+        if (ccDesign !== designIndex) renderColorCarousel();
       }
 
       /* ---- tabs ---- */
@@ -2844,6 +3037,7 @@
         const c = ci < 0 ? { name: 'מקורי' } : MAIN_COLORS[ci] || {};
         track('select_color', { color: c.name || c.id || ci });
         recolor();
+        ccRecolor(); // keep the colour-step carousel in sync with the picked colour
         persist();
       }
 
@@ -3642,6 +3836,11 @@
         const collapsed = currentStep >= 3; // name/contact steps shrink the preview
         previewCard.classList.toggle('is-collapsed', collapsed);
         previewChip.hidden = !collapsed;
+        // the colour step carries its own swipe preview carousel: mark the body so
+        // the phone layout shrinks the shared preview to make room, and build the
+        // carousel lazily on first entry / after a design switch.
+        document.body.classList.toggle('is-step-color', currentStep === 2);
+        if (currentStep === 2) ensureColorCarousel();
         stepNow.textContent = String(currentStep);
         barFill.style.width = Math.round((currentStep / TOTAL_STEPS) * 100) + '%';
         refreshControls();
