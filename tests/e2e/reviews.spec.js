@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
 
 // Regression for the "reviews show blank cards" bug (site/index.html #reviewsTrack).
-// The testimonials rail shows ONE full-width WhatsApp screenshot per view. It used
-// to be a loop:true slideshow, whose clones mis-parked the rail to a blank
-// gap/sliver in the RTL layout — so the visible slot was empty even though the
-// images loaded. It is now a slideshow with loop:false (no clones → correct start
-// on the first review) and dots (a way to reach the others).
+// The testimonials rail shows ONE full-width WhatsApp screenshot per view. The
+// screenshots were loading="lazy", so the slideshow's initial positioning ran
+// before they decoded and parked the rail on a zero-size slot — leaving the
+// visible slot blank. The images are now EAGER, so layout is correct when the rail
+// positions itself; it keeps loop:true (endless) + dots + autoplay off.
 //
 // The guard must be STRONG. Because the images span the track, a weak "some image
 // overlaps the viewport" check is trivially true even in the blank half-and-half
