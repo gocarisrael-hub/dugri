@@ -20,3 +20,15 @@ test('HTML is served with no-cache', async ({ request }) => {
   const res = await request.get('/');
   expect(res.headers()['cache-control'] || '').toContain('no-cache');
 });
+
+// Public social-proof counter: no admin key, shape { count }, and count is a
+// number at least the fixed base (23) — base plus however many orders are paid.
+test('GET /api/stats/orders returns { count } >= 23 with no auth', async ({ request }) => {
+  const res = await request.get('/api/stats/orders');
+  expect(res.status()).toBe(200);
+  const body = await res.json();
+  expect(typeof body.count).toBe('number');
+  expect(body.count).toBeGreaterThanOrEqual(23);
+  // Only the aggregate is exposed — no order details leak out.
+  expect(Object.keys(body)).toEqual(['count']);
+});

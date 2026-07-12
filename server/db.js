@@ -159,6 +159,13 @@ const db = {
     return _db.collections.find((c) => c.id === id) || null;
   },
 
+  // Count collections whose order is paid (c.order.paid truthy). Feeds the
+  // public /api/stats/orders social-proof counter — it exposes ONLY this
+  // aggregate, never any order detail.
+  countPaidOrders() {
+    return _db.collections.filter((c) => c.order && c.order.paid).length;
+  },
+
   // Admin: every collection enriched with word count + effective status,
   // newest first. Includes owner_token so the admin can build owner links.
   listAllCollections() {

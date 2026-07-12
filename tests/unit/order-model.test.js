@@ -126,6 +126,30 @@ describe('markPaid', () => {
   });
 });
 
+describe('countPaidOrders', () => {
+  it('counts only collections whose order is paid', () => {
+    const before = db.countPaidOrders();
+
+    // A collection with no order at all does not count.
+    freshCollection();
+
+    // A collection with an unpaid order does not count.
+    const unpaid = freshCollection();
+    db.setOrder(unpaid.id, unpaid.owner_token, { version: 'pdf' });
+
+    // Two paid orders do count.
+    const paid1 = freshCollection();
+    db.setOrder(paid1.id, paid1.owner_token, { version: 'pdf' });
+    db.markPaid(paid1.id);
+
+    const paid2 = freshCollection();
+    db.setOrder(paid2.id, paid2.owner_token, { version: 'pickup' });
+    db.markPaid(paid2.id);
+
+    expect(db.countPaidOrders()).toBe(before + 2);
+  });
+});
+
 describe('cancelCollection / effectiveStatus', () => {
   it('initializes cancelled fields to false/null on create', () => {
     const c = freshCollection();
