@@ -123,8 +123,9 @@
         text-decoration: none;
         white-space: nowrap;
         box-shadow: var(--shadow-md);
+        touch-action: manipulation;
         transition:
-          color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+          color 0.14s cubic-bezier(0.4, 0, 0.2, 1),
           transform 0.14s ease,
           box-shadow 0.25s ease,
           filter 0.2s ease;
@@ -140,13 +141,15 @@
         transform: skewX(-18deg);
         transition: inset-inline-start 0.55s ease;
       }
-      .btn:hover::after {
-        inset-inline-start: 130%;
-      }
-      .btn:hover {
-        transform: translateY(-2px);
-        box-shadow: var(--shadow-lg);
-        filter: brightness(1.4);
+      @media (hover: hover) {
+        .btn:hover::after {
+          inset-inline-start: 130%;
+        }
+        .btn:hover {
+          transform: translateY(-2px);
+          box-shadow: var(--shadow-lg);
+          filter: brightness(1.4);
+        }
       }
       .btn:active {
         transform: translateY(0) scale(0.99);
@@ -164,7 +167,7 @@
         background: #fff;
         transform: scaleX(0);
         transform-origin: right;
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: transform 0.14s cubic-bezier(0.4, 0, 0.2, 1);
       }
       .btn:not(.ghost):active {
         color: #141414;
@@ -191,12 +194,14 @@
       .btn.ghost::after {
         display: none;
       }
-      .btn.ghost:hover {
-        background: none;
-        transform: none;
-        filter: none;
-        color: var(--sage-deeper);
-        text-decoration: underline;
+      @media (hover: hover) {
+        .btn.ghost:hover {
+          background: none;
+          transform: none;
+          filter: none;
+          color: var(--sage-deeper);
+          text-decoration: underline;
+        }
       }
       a:focus-visible {
         outline: 3px solid var(--sage);

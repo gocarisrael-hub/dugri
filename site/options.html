@@ -129,11 +129,12 @@
         border-radius: var(--radius);
         text-decoration: none;
         box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+        touch-action: manipulation;
         transition:
           transform 0.14s ease,
           box-shadow 0.25s ease,
           filter 0.2s ease,
-          color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          color 0.14s cubic-bezier(0.4, 0, 0.2, 1);
       }
       /* press: directional white wipe (RTL sweeps in from the right, 300ms) */
       .btn::before {
@@ -144,7 +145,7 @@
         background: #fff;
         transform: scaleX(0);
         transform-origin: right;
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: transform 0.14s cubic-bezier(0.4, 0, 0.2, 1);
       }
       .btn::after {
         content: '';
@@ -157,13 +158,15 @@
         transform: skewX(-18deg);
         transition: inset-inline-start 0.55s ease;
       }
-      .btn:hover::after {
-        inset-inline-start: 130%;
-      }
-      .btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.24);
-        filter: brightness(1.05);
+      @media (hover: hover) {
+        .btn:hover::after {
+          inset-inline-start: 130%;
+        }
+        .btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 18px 36px rgba(0, 0, 0, 0.24);
+          filter: brightness(1.05);
+        }
       }
       .btn:active {
         transform: translateY(0) scale(0.99);
