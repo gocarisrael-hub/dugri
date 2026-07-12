@@ -648,6 +648,9 @@ test('add-word fields carry no example placeholder text', async ({ page }) => {
   await createCollection(page, 'Shira');
   expect(await page.locator('#byName').getAttribute('placeholder')).toBeNull();
   expect(await page.locator('#wordInput').getAttribute('placeholder')).toBeNull();
+  // #wordInput has no visible <label>, so removing its placeholder must not leave
+  // it unnamed for screen readers — it keeps an aria-label as its accessible name.
+  expect((await page.locator('#wordInput').getAttribute('aria-label'))?.trim()).toBeTruthy();
 });
 
 test('contributor (no owner key) does NOT see the pay panel', async ({ page, context }) => {
