@@ -554,25 +554,24 @@
       .preview-stage {
         cursor: zoom-in;
       }
-      /* explicit "enlarge" affordance pinned over the sheet */
+      /* explicit "enlarge" affordance: a small ICON-only button pinned in the
+         TOP-LEFT corner of the sheet (physical top/left so it lands in the same
+         corner in this RTL page). No text label — the icon + aria-label/title
+         carry the meaning. */
       .preview-zoom-btn {
         position: absolute;
         z-index: 3;
-        inset-block-end: 8px;
-        inset-inline-start: 8px;
+        top: 8px;
+        left: 8px;
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        font-family: var(--display);
-        font-weight: 800;
-        font-size: 13px;
-        line-height: 1;
+        justify-content: center;
         color: #fff;
         background: rgba(35, 32, 28, 0.62);
         backdrop-filter: blur(4px);
         border: none;
         border-radius: var(--radius);
-        padding: 8px 13px;
+        padding: 9px;
         cursor: zoom-in;
         box-shadow: 0 4px 14px rgba(35, 32, 28, 0.28);
         transition:
@@ -588,9 +587,10 @@
         outline-offset: 2px;
       }
       .preview-zoom-btn .zi {
-        width: 15px;
-        height: 15px;
+        width: 20px;
+        height: 20px;
         flex: 0 0 auto;
+        display: block;
       }
       /* on the collapsed mini-preview (name/contact steps) it would crowd the chip */
       .preview-card.is-collapsed .preview-zoom-btn {
@@ -1717,6 +1717,45 @@
       .zoom-tab[hidden] {
         display: none;
       }
+      /* Carousel dots for the enlarged view — one per view, sitting just above the
+         tab bar. Same "dots + swipe" feel as the inline preview carousels, tappable
+         and kept in sync with the tabs + the finger-swipe. */
+      .zoom-dots {
+        position: absolute;
+        z-index: 3;
+        inset-block-end: calc(env(safe-area-inset-bottom, 0px) + 62px);
+        inset-inline-start: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 9px;
+        padding: 7px 11px;
+        background: rgba(20, 20, 20, 0.45);
+        backdrop-filter: blur(6px);
+        border-radius: 999px;
+      }
+      .zoom-dots[hidden] {
+        display: none;
+      }
+      .zoom-dot {
+        width: 10px;
+        height: 10px;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.45);
+        cursor: pointer;
+        transition:
+          background 0.18s ease,
+          transform 0.18s ease;
+      }
+      .zoom-dot[aria-selected='true'] {
+        background: #fff;
+        transform: scale(1.25);
+      }
+      .zoom-dot:focus-visible {
+        outline: 2px solid #fff;
+        outline-offset: 2px;
+      }
 
       @media (prefers-reduced-motion: reduce) {
         html {
@@ -1817,13 +1856,13 @@
             id="zoomOpen"
             data-testid="zoom-open"
             aria-label="הגדלת התצוגה למסך מלא"
+            title="הגדלה"
           >
             <svg class="zi" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path
                 d="M4 4h6v2H6v4H4V4Zm10 0h6v6h-2V6h-4V4ZM6 14v4h4v2H4v-6h2Zm14 0v6h-6v-2h4v-4h2Z"
               />
             </svg>
-            הגדלה
           </button>
         </div>
         <div class="preview-chip" id="previewChip" hidden>
@@ -2168,7 +2207,10 @@
              touch-action: pan-y lets a vertical drag still scroll the page while a
              horizontal drag is captured as a view-swipe. */
           .name-preview-viewport {
-            max-width: 320px;
+            /* Show the rendered card BIGGER so more of its themed artwork /
+               background reads (the delivered PNG is up to 700px wide, so there's
+               plenty of headroom — this only enlarges the display, no upscaling). */
+            max-width: 420px;
             margin: 0 auto;
             overflow: hidden;
             touch-action: pan-y;
@@ -2202,7 +2244,7 @@
           .name-preview-fig img {
             display: block;
             width: 100%;
-            max-width: 300px;
+            max-width: 400px;
             height: auto;
             object-fit: contain;
             border: 1px solid var(--line);
@@ -2211,7 +2253,7 @@
           }
           /* board is a supporting thumbnail — a touch smaller than the card */
           .name-preview-fig[data-npview='board'] img {
-            max-width: 232px;
+            max-width: 320px;
           }
           .name-preview-fig img:not([src]),
           .name-preview-fig img[hidden] {
@@ -2535,6 +2577,16 @@
           לוח
         </button>
       </div>
+      <!-- Carousel dots for the enlarged view — one per view, synced with the tabs
+           and the finger-swipe, mirroring the inline preview carousels. -->
+      <div
+        class="zoom-dots"
+        id="zoomDots"
+        data-testid="zoom-dots"
+        role="tablist"
+        aria-label="מעבר בין תצוגות"
+        hidden
+      ></div>
       <div class="zoom-toolbar" role="group" aria-label="שליטה בהגדלה">
         <button
           class="zoom-btn"
@@ -4191,6 +4243,7 @@
       }
 
       const zoomTabs = document.getElementById('zoomTabs');
+      const zoomDots = document.getElementById('zoomDots');
 
       // The overlay walks an ordered list of VIEWS: the product tabs (front / back /
       // board that exist) cloned from the live SVG panels. The tab bar AND a
@@ -4229,6 +4282,30 @@
           zoomTabs.appendChild(b);
         });
         zoomTabs.hidden = zoomViews.length < 2;
+        buildZoomDots(activeId);
+      }
+      // Carousel dots for the enlarged view: one tappable dot per view, in the same
+      // order as the tabs + swipe, so the enlarged view reads as a real swipeable
+      // carousel (dots + swipe) — consistent with the inline preview carousels.
+      function buildZoomDots(activeId) {
+        if (!zoomDots) return;
+        zoomDots.innerHTML = '';
+        zoomViews.forEach((view) => {
+          const d = document.createElement('button');
+          d.type = 'button';
+          d.className = 'zoom-dot';
+          d.setAttribute('role', 'tab');
+          d.dataset.zdot = view.id;
+          d.dataset.testid = 'zoom-dot-' + view.id;
+          d.setAttribute('aria-label', view.label);
+          d.setAttribute('aria-selected', view.id === activeId ? 'true' : 'false');
+          d.addEventListener('click', (e) => {
+            e.stopPropagation();
+            zoomGoTo(view.id);
+          });
+          zoomDots.appendChild(d);
+        });
+        zoomDots.hidden = zoomViews.length < 2;
       }
       function markZoomTab(activeId) {
         zoomTabs
@@ -4236,6 +4313,13 @@
           .forEach((b) =>
             b.setAttribute('aria-selected', b.dataset.ztab === activeId ? 'true' : 'false')
           );
+        if (zoomDots) {
+          zoomDots
+            .querySelectorAll('.zoom-dot')
+            .forEach((d) =>
+              d.setAttribute('aria-selected', d.dataset.zdot === activeId ? 'true' : 'false')
+            );
+        }
       }
 
       // Navigate the overlay to a view id.
@@ -4533,7 +4617,11 @@
       .wa-help {
         position: fixed;
         bottom: calc(88px + env(safe-area-inset-bottom, 0px));
-        left: 16px;
+        /* Physical RIGHT (not left): on the colour step the chasers toggle sits on
+           the physical LEFT of the RTL add-on card, so a left-anchored button
+           covered it. Anchoring right keeps the floating button clear of the
+           toggle (and every left-column control) at any scroll position. */
+        right: 16px;
         z-index: 60;
         display: inline-flex;
         align-items: center;
