@@ -41,9 +41,14 @@ def render_svg(svg_text, w, h, out_png):
     return out_png
 
 
-def render_board(theme, board_clean, title_lines, out_png):
+def render_board(theme, board_clean, title_lines, out_png, chasers=False):
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
+    # Chasers (drinking-game) add-on: prefer the theme's chasers board variant when
+    # it exists, else fall back to the clean board passed in (additive, never errors
+    # for a theme with no chasers board).
+    if chasers:
+        board_clean = config.board_clean_path(theme, chasers=True)
     w, h, vb = svg_dims(board_clean)
     bd, ts = cfg.get("board"), cfg["title_style"]
     if not bd:  # theme has no personalized board title -> use the clean board as-is
@@ -88,7 +93,7 @@ def render_backs(theme, backs_clean, title_lines, out_png):
 
 def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
               extra_fields=None, word_font=None, workdir="/tmp/gen/build",
-              progress=True):
+              progress=True, chasers=False):
     """Assemble the full order PDF and return (out_pdf, page_count).
 
     ``extra_fields`` feeds the theme's title template (e.g. AGE/YEARS/NAME1);
@@ -122,7 +127,8 @@ def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
         if back_png:                       # duplex order: front then its back
             pages.append(back_png)
         log(f"front page {i+1}/{len(data)}")
-    board_png = render_board(theme, board, title_lines, os.path.join(workdir, "board.png"))
+    board_png = render_board(theme, board, title_lines, os.path.join(workdir, "board.png"),
+                             chasers=chasers)
     pages.append(board_png)
     log("board")
 

@@ -108,6 +108,25 @@ describe('templates.js pure logic', () => {
     expect(fs.existsSync(path.join(dir, 'fonts', 'Title.ttf'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'fonts', 'Word.ttf'))).toBe(true);
     expect(out.fonts).toEqual({ title: 'Title.ttf', word: 'Word.ttf' });
+    // no chasers board was supplied -> the optional variant file is NOT created
+    expect(fs.existsSync(path.join(dir, 'clean', 'board-chasers.svg'))).toBe(false);
+  });
+
+  it('writeTemplateFiles lands the optional chasers board variant when supplied', () => {
+    const root = makeScaffold();
+    const out = templates.writeTemplateFiles({
+      root,
+      slug: 'demo-ch',
+      clean: { fronts: SVG('cf'), backs: SVG('cb'), board: SVG('cbo'), board_chasers: SVG('cch') },
+      filled: { fronts: SVG('ff'), backs: SVG('fb'), board: SVG('fbo') },
+      fonts: {
+        title: { name: 'Title.ttf', data: Buffer.from('T') },
+        word: { name: 'Word.ttf', data: Buffer.from('W') },
+      },
+    });
+    // the normal board is untouched and the chasers variant lands next to it
+    expect(fs.existsSync(path.join(out.dir, 'clean', 'board.svg'))).toBe(true);
+    expect(fs.existsSync(path.join(out.dir, 'clean', 'board-chasers.svg'))).toBe(true);
   });
 
   it('appendThemeEntry adds the entry, keeps existing ones, and refuses to overwrite a key', () => {
@@ -181,6 +200,46 @@ describe('templates.js pure logic', () => {
     expect(fs.existsSync(path.join(dir, 'clean', 'fronts.svg'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'filled', 'board.svg'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'fonts', 'Title.ttf'))).toBe(true);
+    // no chasers board was uploaded -> the optional variant is absent (additive)
+    expect(fs.existsSync(path.join(dir, 'clean', 'board-chasers.svg'))).toBe(false);
+  });
+
+  it('onboardTemplate accepts an OPTIONAL chasers board and lands clean/board-chasers.svg', () => {
+    const root = makeScaffold();
+    const files = {
+      ...validFiles(),
+      clean_board_chasers: { filename: 'bch.svg', data: SVG('bch') },
+    };
+    const r = templates.onboardTemplate({
+      root,
+      runRecipe: false,
+      fields: {
+        slug: 'party-ch',
+        display_he: 'צ׳ייסרים',
+        title_text: "{NAME}'S PARTY",
+        name_form: 'english-caps',
+      },
+      files,
+    });
+    expect(r.error).toBeUndefined();
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'party-ch');
+    expect(fs.existsSync(path.join(dir, 'clean', 'board.svg'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'clean', 'board-chasers.svg'))).toBe(true);
+  });
+
+  it('onboardTemplate rejects a chasers board that is not an SVG', () => {
+    const root = makeScaffold();
+    const files = {
+      ...validFiles(),
+      clean_board_chasers: { filename: 'bch.bin', data: Buffer.from('not-an-svg-at-all') },
+    };
+    const r = templates.onboardTemplate({
+      root,
+      runRecipe: false,
+      fields: { slug: 'party-badch', display_he: 'x', title_text: 'x', name_form: 'english' },
+      files,
+    });
+    expect(r.error).toMatch(/chasers board does not look like an SVG/);
   });
 
   it('onboardTemplate rejects an unsafe slug, a duplicate, and missing files', () => {

@@ -58,7 +58,7 @@ const GENERATE_TIMEOUT_MS = Number(process.env.GENERATE_TIMEOUT_MS || 120000);
 // Writes the words to a temp file (cleaned up after), streams the theme +
 // honoree + optional word-font/extra-fields as CLI args, captures stderr for a
 // useful error, and enforces a timeout. Never leaks the child process.
-function runGenerator({ theme, name, words, outPdf, wordFont, extraFields }) {
+function runGenerator({ theme, name, words, outPdf, wordFont, extraFields, chasers }) {
   return new Promise((resolve, reject) => {
     let wordsFile;
     try {
@@ -79,6 +79,9 @@ function runGenerator({ theme, name, words, outPdf, wordFont, extraFields }) {
     for (const [k, v] of Object.entries(extraFields || {})) {
       args.push('--field', `${k}=${v}`);
     }
+    // Chasers add-on: the generator swaps in the theme's chasers board variant
+    // when it ships one (else falls back to the normal board — additive).
+    if (chasers) args.push('--chasers');
     const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
     let stdout = '';
     let stderr = '';
@@ -140,7 +143,7 @@ function wordFontOptions() {
 // card back into a private temp dir; we read them back as base64 and always
 // remove the dir. Enforces a timeout and never leaks the child process. board
 // and back are present only when the theme has that artwork (card is required).
-function runPreview({ theme, name, wordFont, extraFields }) {
+function runPreview({ theme, name, wordFont, extraFields, chasers }) {
   return new Promise((resolve, reject) => {
     let outDir;
     try {
@@ -160,6 +163,9 @@ function runPreview({ theme, name, wordFont, extraFields }) {
     for (const [k, v] of Object.entries(extraFields || {})) {
       args.push('--field', `${k}=${v}`);
     }
+    // Chasers add-on: preview the theme's chasers board variant when it ships one
+    // (else the normal board — additive), matching what production will generate.
+    if (chasers) args.push('--chasers');
     const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
     let stdout = '';
     let stderr = '';
@@ -489,6 +495,7 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       outPdf,
       wordFont,
       extraFields,
+      chasers: !!c.chasers,
     });
     const production = db.setProduction(c.id, {
       state: 'generated',
@@ -733,6 +740,9 @@ app.post('/api/preview', async (req, res) => {
     b.extra_fields && typeof b.extra_fields === 'object' && !Array.isArray(b.extra_fields)
       ? b.extra_fields
       : {};
+  // Chasers add-on toggle from the order flow — when on, preview the theme's
+  // chasers board variant (server falls back to the normal board if none).
+  const chasers = !!b.chasers;
   // Surfaced to the customer immediately (doesn't block rendering the preview).
   const warning = validate.checkNameLanguage(name, themeConfig);
 
@@ -741,7 +751,7 @@ app.post('/api/preview', async (req, res) => {
     // together (one Python process, no second Chrome). runPreview rejects on
     // failure (→ handled below); board/back are simply absent when the theme has
     // no such artwork, so a missing back never fails the request.
-    const imgs = await runPreview({ theme, name, wordFont, extraFields });
+    const imgs = await runPreview({ theme, name, wordFont, extraFields, chasers });
     // theme_word_font = the design's OWN original word font (from themes.json), so
     // the picker can mark the "מקורי" (original) choice and clients can tell it apart.
     res.json({

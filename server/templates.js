@@ -29,6 +29,11 @@ function isSafeSlug(slug) {
 const NAME_FORMS = ['hebrew', 'english', 'english-caps'];
 // The three SVG roles every template ships, for both the clean + filled pages.
 const SVG_ROLES = ['fronts', 'backs', 'board'];
+// Optional extra CLEAN-only board variant for the chasers (drinking-game) add-on,
+// saved as clean/board-chasers.svg. Additive: a template without it is unchanged
+// and orders with chasers on fall back to the normal board.
+const CHASERS_BOARD_FIELD = 'clean_board_chasers';
+const CHASERS_BOARD_FILE = 'board-chasers.svg';
 // The two font roles the onboarding form uploads.
 const FONT_ROLES = ['title', 'word'];
 
@@ -148,6 +153,11 @@ function writeTemplateFiles({ root, slug, clean, filled, fonts }) {
     if (clean[role]) fs.writeFileSync(path.join(dir, 'clean', role + '.svg'), clean[role]);
     if (filled[role]) fs.writeFileSync(path.join(dir, 'filled', role + '.svg'), filled[role]);
   }
+  // Optional chasers board variant (clean only). Written only when supplied so a
+  // template without it stays exactly as before.
+  if (clean.board_chasers) {
+    fs.writeFileSync(path.join(dir, 'clean', CHASERS_BOARD_FILE), clean.board_chasers);
+  }
   const written = {};
   for (const role of FONT_ROLES) {
     const f = fonts && fonts[role];
@@ -230,6 +240,15 @@ function normalizeOnboarding({ root, fields, files }) {
     if (!looksLikeSvg(ff.data)) return { error: 'filled ' + role + ' does not look like an SVG' };
     clean[role] = cf.data;
     filled[role] = ff.data;
+  }
+  // Optional: a chasers board variant (clean SVG only). Accepted when supplied and
+  // it looks like an SVG; absent is fine (feature is additive).
+  const cbc = files && files[CHASERS_BOARD_FIELD];
+  if (cbc && cbc.data && cbc.data.length) {
+    if (!looksLikeSvg(cbc.data)) {
+      return { error: 'chasers board does not look like an SVG' };
+    }
+    clean.board_chasers = cbc.data;
   }
   const titleFontFile = files && files.title_font;
   const wordFontFile = files && files.word_font;

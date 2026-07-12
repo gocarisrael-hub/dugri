@@ -87,7 +87,8 @@ def _crop_card(full_png, cell, viewbox, out_png):
     return out_png
 
 
-def preview(theme, name, extra_fields=None, word_font=None, workdir=None):
+def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
+            chasers=False):
     """Render a preview and return ``{"card": path, "board": path, "back": path}``.
 
     ``board`` and ``back`` are included only when the theme has that artwork; the
@@ -99,6 +100,8 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None):
     extra_fields  dict feeding the title template (AGE/YEARS/NAME1/...)
     word_font     optional card word-font filename override (theme fonts/ or the
                   shared word-fonts/ pool)
+    chasers       when True, show the theme's chasers board variant if it ships one
+                  (clean/board-chasers.svg), else the normal board (additive)
     """
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
@@ -133,7 +136,8 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None):
         board_clean = config.clean_path(theme, "board")
         if os.path.exists(board_clean):
             board_png = buildmod.render_board(
-                theme, board_clean, title_lines, os.path.join(workdir, "board.png")
+                theme, board_clean, title_lines, os.path.join(workdir, "board.png"),
+                chasers=chasers,
             )
             _downscale(board_png, BOARD_MAX_W)
             out["board"] = board_png
@@ -185,11 +189,13 @@ def main():
     ap.add_argument("out_dir")
     ap.add_argument("--word-font", default=None)
     ap.add_argument("--field", action="append", default=[], metavar="KEY=VALUE")
+    ap.add_argument("--chasers", action="store_true",
+                    help="show the theme's chasers board variant when available")
     args = ap.parse_args()
 
     imgs = preview(
         args.theme, args.name, _parse_fields(args.field),
-        word_font=args.word_font, workdir=args.out_dir,
+        word_font=args.word_font, workdir=args.out_dir, chasers=args.chasers,
     )
     # The server parses this JSON line to locate the produced PNGs.
     print(json.dumps(imgs))

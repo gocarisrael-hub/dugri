@@ -90,6 +90,23 @@ def clean_path(theme_name, which):
     return os.path.join(theme_dir(theme_name), "clean", f"{which}.svg")
 
 
+def board_clean_path(theme_name, chasers=False):
+    """Absolute path to the board clean SVG for an order.
+
+    When the ``chasers`` (drinking-game) add-on is on AND the theme ships a
+    ``clean/board-chasers.svg`` variant, that variant is used so the board shows
+    the special "drink" tiles. Otherwise — chasers off, or the theme has no
+    chasers board — this falls back to the normal ``clean/board.svg``. The
+    feature is purely additive: a theme without a chasers board renders exactly
+    as before, and this never raises for a missing chasers file.
+    """
+    if chasers:
+        variant = os.path.join(theme_dir(theme_name), "clean", "board-chasers.svg")
+        if os.path.exists(variant):
+            return variant
+    return clean_path(theme_name, "board")
+
+
 def ensure_calibrated(cfg):
     """Raise a clear error if a theme has no calibrated render style yet."""
     if not cfg.get("calibrated"):

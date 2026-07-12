@@ -3124,6 +3124,9 @@
         chasersCard.classList.toggle('is-on', chasers);
         track('toggle_chasers', { chasers });
         persist();
+        // The board preview depends on the chasers flag — if the name step's live
+        // preview is already up, re-request it so the board reflects the toggle.
+        if (currentStep === 3) requestPreview({ immediate: true });
       });
 
       /* ====================================================================
@@ -3486,6 +3489,9 @@
               name,
               extra_fields: collectedExtraFields(),
               word_font: chosenWordFont,
+              // The chasers add-on toggle (step 2) drives which board variant the
+              // server renders, so the name-step board preview matches the order.
+              chasers,
             }),
           });
           const data = await r.json();
