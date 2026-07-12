@@ -957,54 +957,46 @@
       <div class="marquee__track">
         <span class="marquee__half">
           <span class="marquee__group">
-            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
             ><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
           <span class="marquee__group">
-            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
             ><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
           <span class="marquee__group">
-            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
             ><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
           <span class="marquee__group">
-            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
             ><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
         </span>
         <span class="marquee__half">
           <span class="marquee__group">
-            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
             ><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
           <span class="marquee__group">
-            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
             ><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
           <span class="marquee__group">
-            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
             ><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
           <span class="marquee__group">
-            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
+            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
+            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
             ><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
-            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
         </span>
       </div>
@@ -1109,8 +1101,12 @@
         fetch('/api/stats/orders')
           .then((r) => (r.ok ? r.json() : null))
           .then((data) => {
-            const n = data && Number(data.count);
-            if (Number.isFinite(n) && n >= 0) ordersCountEl.textContent = String(n);
+            // Only accept a real positive number; a 200 with {count:null}/""/0 must
+            // NOT overwrite the reassuring shipped default with a misleading "0".
+            const c = data && data.count;
+            if (typeof c === 'number' && Number.isFinite(c) && c > 0) {
+              ordersCountEl.textContent = String(c);
+            }
           })
           .catch(() => {
             /* fail soft — the shipped default (23) stays */
@@ -1209,7 +1205,7 @@
             <div class="story-photo">
               <img
                 src="assets/gallery-1.jpg"
-                alt=""
+                alt="מאחורי הקלעים"
                 loading="lazy"
                 decoding="async"
                 data-edit-img="index-story-photo-1"
@@ -1218,7 +1214,7 @@
             <div class="story-photo">
               <img
                 src="assets/gallery-2.jpg"
-                alt=""
+                alt="מהסטודיו שלנו"
                 loading="lazy"
                 decoding="async"
                 data-edit-img="index-story-photo-2"
