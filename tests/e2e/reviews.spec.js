@@ -2,53 +2,55 @@ import { test, expect } from '@playwright/test';
 
 // Regression for the "reviews show blank cards" bug (site/index.html #reviewsTrack).
 // The testimonials rail shows ONE full-width WhatsApp screenshot per view. It used
-// to be a loop:slideshow carousel that, in the RTL layout, initialized to a
-// mis-parked position — so the visible slot showed a blank gap/sliver even though
-// the images loaded. It is now a `scroller` (RTL-safe initial position) with
-// scroll-snap re-enabled so it rests one-per-view.
+// to be a loop:true slideshow, whose clones mis-parked the rail to a blank
+// gap/sliver in the RTL layout — so the visible slot was empty even though the
+// images loaded. It is now a slideshow with loop:false (no clones → correct start
+// on the first review) and dots (a way to reach the others).
 //
-// The guard must be STRONG: because the carousel uses loop:true it clones the
-// slides, so many .review img nodes merely *overlap* the viewport at any scroll
-// offset — a weak "some image overlaps" check is trivially true even in the blank
-// state. Instead we require that some review image actually FILLS and is CENTERED
-// in the track (i.e. one screenshot properly on view), which the blank/sliver
-// state fails. We also wait for a real image to decode rather than a fixed delay.
+// The guard must be STRONG. Because the images span the track, a weak "some image
+// overlaps the viewport" check is trivially true even in the blank half-and-half
+// state. Instead we require a review image that FILLS (>=0.7 track width) and is
+// CENTERED (within 0.2 track width of the track centre) — i.e. exactly one
+// screenshot properly on view, which the blank/sliver state fails. We also wait
+// for the image to actually decode rather than a fixed delay (no flake).
 
-async function filledCenteredCount(page) {
-  return page.evaluate(() => {
-    const track = document.getElementById('reviewsTrack');
-    const t = track.getBoundingClientRect();
-    const center = t.left + t.width / 2;
-    return [...document.querySelectorAll('#reviewsTrack .review img')].filter((im) => {
-      const b = im.getBoundingClientRect();
-      const ic = b.left + b.width / 2;
-      // loaded, spans most of the track width, and centered in it (one-per-view)
-      return (
-        im.naturalWidth > 0 && b.width >= t.width * 0.7 && Math.abs(ic - center) <= t.width * 0.2
-      );
-    }).length;
+// Returns the filename of the review screenshot currently filling+centered in the
+// rail, or null if none is (the blank state).
+function centeredReviewSrc() {
+  const track = document.getElementById('reviewsTrack');
+  const t = track.getBoundingClientRect();
+  const centre = t.left + t.width / 2;
+  const on = [...document.querySelectorAll('#reviewsTrack .review img')].find((im) => {
+    const b = im.getBoundingClientRect();
+    return (
+      im.naturalWidth > 0 &&
+      b.width >= t.width * 0.7 &&
+      Math.abs(b.left + b.width / 2 - centre) <= t.width * 0.2
+    );
   });
+  return on ? (on.currentSrc || on.src).split('/').pop() : null;
 }
 
 test.describe('reviews section shows the testimonials (not blank)', () => {
-  test('a screenshot fills and centers the rail at load, and stays snapped after scrolling', async ({
+  test('the first testimonial fills the rail at load, and the dots reach the others', async ({
     page,
   }) => {
     await page.goto('/index.html');
     await page.locator('#reviews').scrollIntoViewIfNeeded();
-    // wait for a real review image to actually decode (no fixed-timeout flake)
+    // wait for a real review image to decode (no fixed-timeout flake)
     await page.waitForFunction(() =>
       [...document.querySelectorAll('#reviewsTrack .review img')].some((i) => i.naturalWidth > 0)
     );
 
-    // exactly one screenshot is properly on view (fills + centered), not a blank sliver
-    await expect.poll(() => filledCenteredCount(page)).toBeGreaterThan(0);
+    // At load a single screenshot is properly on view (fills + centred) — this is
+    // what failed in the blank/mis-parked state (a clone sliver is neither).
+    await expect.poll(() => page.evaluate(centeredReviewSrc)).toBe('review-1.jpg');
 
-    // snap holds: scroll one screenshot over, and a review is again centered (not
-    // resting half-and-half between two, which the pre-snap scroller would do)
-    await page
-      .locator('#reviewsTrack')
-      .evaluate((el) => el.scrollBy({ left: -el.clientWidth, behavior: 'instant' }));
-    await expect.poll(() => filledCenteredCount(page)).toBeGreaterThan(0);
+    // One dot per review, and they navigate: clicking the 3rd brings review-3 fully
+    // on view (proves the other testimonials are reachable and land aligned).
+    const dots = page.locator('#reviews .carousel-dot');
+    await expect(dots).toHaveCount(4);
+    await dots.nth(2).click();
+    await expect.poll(() => page.evaluate(centeredReviewSrc)).toBe('review-3.jpg');
   });
 });

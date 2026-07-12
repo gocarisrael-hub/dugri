@@ -502,14 +502,6 @@
         max-width: 380px;
         margin: 0 auto;
         padding: 4px 0 10px;
-        /* The 'scroller' mode gives the RTL-safe initial position (rests on the
-           first review, not a blank clone the way loop:slideshow did) — but on its
-           own it free-glides with no snap. Re-enable one-per-view snap here so the
-           rail always comes to rest centered on a single screenshot. */
-        scroll-snap-type: x mandatory;
-      }
-      #reviewsTrack .review {
-        scroll-snap-align: start;
       }
       .review {
         /* one screenshot per view — each slide fills the track width */
@@ -1045,9 +1037,13 @@
       const reviewsTrack = document.getElementById('reviewsTrack');
       if (reviewsTrack) {
         initCarousel(reviewsTrack, {
-          mode: 'scroller',
-          loop: true,
-          dots: false,
+          // slideshow = native one-per-view scroll-snap (no turbo). loop:false so
+          // there are no clones — the loop clones were what mis-parked the rail to
+          // a blank position in RTL. dots give a way to reach the other reviews.
+          mode: 'slideshow',
+          loop: false,
+          dots: true,
+          arrows: false,
         });
       }
     </script>
