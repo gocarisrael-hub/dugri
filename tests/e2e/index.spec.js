@@ -317,6 +317,11 @@ test.describe('hero readability + menu + trimmed CTA', () => {
     await expect(page.locator('[data-edit="index-final-reassure"]')).toHaveCount(0);
   });
 
+  test('the how-it-works page also dropped its reassure line', async ({ page }) => {
+    await page.goto('/how.html');
+    await expect(page.locator('[data-edit="how-final-reassure"]')).toHaveCount(0);
+  });
+
   test('the header menu links to the online timer', async ({ page }) => {
     await page.goto('/index.html');
     const timer = page.locator('[data-testid="nav-menu"] a[href="timer.html"]');
