@@ -502,6 +502,14 @@
         max-width: 380px;
         margin: 0 auto;
         padding: 4px 0 10px;
+        /* The 'scroller' mode gives the RTL-safe initial position (rests on the
+           first review, not a blank clone the way loop:slideshow did) — but on its
+           own it free-glides with no snap. Re-enable one-per-view snap here so the
+           rail always comes to rest centered on a single screenshot. */
+        scroll-snap-type: x mandatory;
+      }
+      #reviewsTrack .review {
+        scroll-snap-align: start;
       }
       .review {
         /* one screenshot per view — each slide fills the track width */
