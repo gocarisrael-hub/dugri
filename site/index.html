@@ -119,15 +119,18 @@
         text-decoration: none;
         white-space: nowrap;
         box-shadow: var(--shadow-sm);
+        touch-action: manipulation;
         transition:
-          color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+          color 0.14s cubic-bezier(0.4, 0, 0.2, 1),
           transform 0.14s var(--ease),
           box-shadow 0.25s var(--ease);
       }
-      .btn:hover {
-        background: var(--sage-deep);
-        transform: translateY(-2px);
-        box-shadow: var(--shadow-md);
+      @media (hover: hover) {
+        .btn:hover {
+          background: var(--sage-deep);
+          transform: translateY(-2px);
+          box-shadow: var(--shadow-md);
+        }
       }
       .btn:active {
         transform: translateY(0) scale(0.99);
@@ -147,7 +150,7 @@
         background: #fff;
         transform: scaleX(0);
         transform-origin: right;
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: transform 0.14s cubic-bezier(0.4, 0, 0.2, 1);
       }
       .btn:not(.ghost):not(.wa):active {
         color: #141414;
@@ -168,9 +171,11 @@
         padding: 15px 18px;
         border: 1px solid var(--line);
       }
-      .btn.ghost:hover {
-        background: var(--section);
-        color: var(--sage-deeper);
+      @media (hover: hover) {
+        .btn.ghost:hover {
+          background: var(--section);
+          color: var(--sage-deeper);
+        }
       }
       .btn.wa {
         background: var(--surface);
@@ -178,8 +183,10 @@
         border: 1px solid var(--ink);
         box-shadow: none;
       }
-      .btn.wa:hover {
-        background: var(--section);
+      @media (hover: hover) {
+        .btn.wa:hover {
+          background: var(--section);
+        }
       }
       .was {
         text-decoration: line-through;
