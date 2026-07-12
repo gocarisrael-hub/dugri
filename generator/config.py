@@ -125,13 +125,36 @@ def _form_name(value, name_form):
     return value
 
 
-def title_lines(cfg, name, extra_fields_dict=None):
+def custom_title_lines(custom_title):
+    """Split an order-level custom title into render lines, or return None.
+
+    Lines are separated by newlines; each is stripped and blank lines are
+    dropped. Returns None when the title is missing or only whitespace, so the
+    caller falls back to the theme-derived lines (default behavior unchanged).
+    """
+    if not custom_title:
+        return None
+    lines = [ln.strip() for ln in str(custom_title).splitlines() if ln.strip()]
+    return lines or None
+
+
+def title_lines(cfg, name, extra_fields_dict=None, custom_title=None):
     """Substitute the theme's title_lines template.
 
     ``{NAME}`` comes from ``name`` (cased per ``name_form``); ``{NAME1}`` and
     ``{NAME2}`` come from ``extra_fields_dict`` and are cased the same way;
     ``{AGE}``/``{YEARS}`` (and any other extra field) are substituted verbatim.
+
+    ``custom_title`` (F7) is an OPTIONAL per-order free-form title: when the
+    buyer supplies one it REPLACES the theme-derived lines everywhere the title
+    renders (front cards, card backs, game board), flowing through the SAME
+    ``render_page.title_block`` auto-fit — so a long custom title just renders
+    smaller and can never overflow the card/board. Empty/whitespace is treated
+    as absent, so the default (theme-derived) output stays byte-identical.
     """
+    custom = custom_title_lines(custom_title)
+    if custom is not None:
+        return custom
     extra = dict(extra_fields_dict or {})
     name_form = cfg.get("name_form")
     values = {"NAME": _form_name(name, name_form) if name is not None else ""}

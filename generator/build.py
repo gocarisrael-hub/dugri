@@ -104,17 +104,19 @@ def render_backs(theme, backs_clean, title_lines, out_png):
 
 def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
               extra_fields=None, word_font=None, workdir="/tmp/gen/build",
-              progress=True, chasers=False):
+              progress=True, chasers=False, custom_title=None):
     """Assemble the full order PDF and return (out_pdf, page_count).
 
     ``extra_fields`` feeds the theme's title template (e.g. AGE/YEARS/NAME1);
     ``word_font`` optionally overrides the theme's card word font (a filename in
     the theme's ``fonts/`` dir). ``progress`` prints per-page lines (as the CLI
     did) so a caller can stream progress; pass False to stay quiet.
+    ``custom_title`` (F7) optionally overrides the theme-derived title on every
+    surface (fronts/backs/board); empty/absent keeps the theme default.
     """
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    title_lines = config.title_lines(cfg, name, extra_fields or {})
+    title_lines = config.title_lines(cfg, name, extra_fields or {}, custom_title=custom_title)
     os.makedirs(workdir, exist_ok=True)
     import csv as csvmod
     data = list(csvmod.DictReader(open(csvp, encoding="utf-8-sig")))
