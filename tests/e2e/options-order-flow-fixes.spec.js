@@ -94,4 +94,14 @@ test.describe('B8: order inputs carry no example-value placeholders', () => {
     // this one is an instruction, not an example value — it stays.
     await expect(page.getByTestId('design-code-input')).toHaveAttribute('placeholder', 'קוד עיצוב');
   });
+
+  test('honoreeInput keeps an accessible name after its placeholder was removed', async ({
+    page,
+  }) => {
+    await page.goto('/options.html');
+    // It has no wrapping <label>, so removing the placeholder must not leave it
+    // unnamed for screen readers — it carries an aria-label instead.
+    const label = await page.getByTestId('honoree-input').getAttribute('aria-label');
+    expect(label?.trim()).toBeTruthy();
+  });
 });
