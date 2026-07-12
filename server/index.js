@@ -1134,6 +1134,15 @@ app.post(
   }
 );
 
+// Public social-proof "celebrations" counter for the homepage. Returns ONLY an
+// aggregate number: a fixed base plus the count of paid orders — never any order
+// detail. Unauthenticated on purpose (every visitor renders it). The base is a
+// named constant (overridable via env) so it's easy to bump later.
+const ORDERS_COUNT_BASE = Number(process.env.ORDERS_COUNT_BASE || 23);
+app.get('/api/stats/orders', (req, res) => {
+  res.json({ count: ORDERS_COUNT_BASE + db.countPaidOrders() });
+});
+
 // Unknown API routes -> JSON 404 (must come before static/catch-all).
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
 
