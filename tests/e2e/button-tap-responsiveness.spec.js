@@ -39,12 +39,12 @@ function readBtnStyle() {
   return result;
 }
 
-// Walk every inlined stylesheet and classify `.btn:hover` rules (the lift, plus
-// its `::after` companion) as either gated behind `@media (hover: hover)` or not.
-// Compound selectors like `.btn.ghost:hover` are intentionally ignored — this
-// targets the plain `.btn:hover` lift that must not stick on touch.
+// Walk every inlined stylesheet and classify `.btn` hover rules as either gated
+// behind `@media (hover: hover)` or not. Covers the plain `.btn:hover` lift AND
+// the compound variants the fix also gated — `.btn.ghost:hover`, `.btn.wa:hover`,
+// `.btn.sec:hover` — since any ungated one re-introduces sticky hover on touch.
 function classifyBtnHoverRules() {
-  const BTN_HOVER = /(^|[\s,])\.btn:hover(?![\w.-])/;
+  const BTN_HOVER = /(^|[\s,])\.btn(\.[\w-]+)*:hover(?![\w.-])/;
   const out = { gated: 0, ungated: 0 };
   for (const sheet of window.document.styleSheets) {
     let rules;
