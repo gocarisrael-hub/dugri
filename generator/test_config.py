@@ -418,6 +418,73 @@ def test_render_board_reads_chasers_variant_when_flagged():
         build.render_svg = saved["rs"]
 
 
+def test_render_board_chasers_falls_back_when_viewbox_differs():
+    # SAFETY: a TITLED board places the honoree name by fractions calibrated against
+    # the PLAIN board's viewBox. If an admin uploads a board-chasers.svg with a
+    # DIFFERENT viewBox, trusting it would put the name off-position on the customer's
+    # PDF. render_board must fall back to the plain board in that case; when the
+    # viewBox MATCHES it uses the chasers variant as normal.
+    import tempfile
+
+    import build
+    import render_page as rp
+
+    tmp = tempfile.mkdtemp(prefix="dugri-test-boardvb-")
+    clean = os.path.join(tmp, "clean")
+    os.makedirs(clean, exist_ok=True)
+
+    def hdr(vb, marker):
+        w, h = vb[2], vb[3]
+        return ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" '
+                'viewBox="0 0 %d %d">%s</svg>' % (w, h, w, h, marker))
+
+    board = os.path.join(clean, "board.svg")
+    chasers = os.path.join(clean, "board-chasers.svg")
+    open(board, "w", encoding="utf-8").write(hdr([0, 0, 100, 100], "<!--PLAIN-BOARD-->"))
+
+    # A TITLED synthetic theme (bd truthy) so the name-placement calibration matters.
+    cfg = {"slug": "synthetic", "calibrated": True, "language": "english",
+           "title_font": "Cafe-Regular.ttf",
+           "title_style": {"fill": "#fff", "outline": "#000", "outline_w": 0.0,
+                           "arch": 0.0, "shadow": False},
+           "board": {"fill": "#fff", "outline": "#000",
+                     "frac": {"x0": 0.1, "y0": 0.1, "x1": 0.9, "y1": 0.3}}}
+    captured = {}
+    saved = {"theme": config.theme, "ensure": config.ensure_calibrated,
+             "td": config.theme_dir, "fp": config.font_path,
+             "tb": rp.title_block, "ff": rp.font_face, "rs": build.render_svg}
+    try:
+        config.theme = lambda name: cfg
+        config.ensure_calibrated = lambda c: None
+        config.theme_dir = lambda name: tmp
+        config.font_path = lambda name, fn: fn
+        rp.font_face = lambda name, path: ""
+        rp.title_block = lambda *a, **k: "<g/>"
+        build.render_svg = lambda svg_text, w, h, out: captured.setdefault("svg", svg_text)
+
+        # Chasers board with a DIFFERENT viewBox -> must fall back to the plain board.
+        open(chasers, "w", encoding="utf-8").write(hdr([0, 0, 200, 90], "<!--CHASERS-BOARD-->"))
+        captured.clear()
+        build.render_board("x", board, ["T"], os.path.join(tmp, "d.png"), chasers=True)
+        assert "PLAIN-BOARD" in captured["svg"] and "CHASERS" not in captured["svg"], (
+            "mismatched-viewBox chasers board must fall back to the plain board")
+
+        # Chasers board with a MATCHING viewBox -> the variant is used.
+        open(chasers, "w", encoding="utf-8").write(hdr([0, 0, 100, 100], "<!--CHASERS-BOARD-->"))
+        captured.clear()
+        build.render_board("x", board, ["T"], os.path.join(tmp, "m.png"), chasers=True)
+        assert "CHASERS-BOARD" in captured["svg"], (
+            "matching-viewBox chasers board must be used for a titled board")
+    finally:
+        config.theme = saved["theme"]
+        config.ensure_calibrated = saved["ensure"]
+        config.theme_dir = saved["td"]
+        config.font_path = saved["fp"]
+        rp.title_block = saved["tb"]
+        rp.font_face = saved["ff"]
+        build.render_svg = saved["rs"]
+
+
 def test_render_board_chasers_raster_differs_from_plain():
     # Semantics (not just wiring): the chasers board actually rasterizes to a
     # DIFFERENT image than the plain board when a chasers asset is present. Rendered

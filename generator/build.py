@@ -44,13 +44,24 @@ def render_svg(svg_text, w, h, out_png):
 def render_board(theme, board_clean, title_lines, out_png, chasers=False):
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
+    bd, ts = cfg.get("board"), cfg["title_style"]
     # Chasers (drinking-game) add-on: prefer the theme's chasers board variant when
     # it exists, else fall back to the clean board passed in (additive, never errors
     # for a theme with no chasers board).
     if chasers:
-        board_clean = config.board_clean_path(theme, chasers=True)
+        variant = config.board_clean_path(theme, chasers=True)
+        # For a TITLED board, the honoree name is positioned by fractions (bd["frac"])
+        # calibrated against the PLAIN board's viewBox. A chasers board whose viewBox
+        # differs would place the name off-position on the customer's print-ready PDF.
+        # So only adopt the variant when it's the plain board (no chasers file), the
+        # board carries no title, or its viewBox matches — else keep the plain board
+        # rather than risk a misprinted name.
+        plain = config.clean_path(theme, "board")
+        if not bd or variant == plain or svg_dims(variant)[2] == svg_dims(plain)[2]:
+            board_clean = variant
+        else:
+            board_clean = plain
     w, h, vb = svg_dims(board_clean)
-    bd, ts = cfg.get("board"), cfg["title_style"]
     if not bd:  # theme has no personalized board title -> use the clean board as-is
         return render_svg(open(board_clean, encoding="utf-8").read(), w, h, out_png)
     frac = bd["frac"]
