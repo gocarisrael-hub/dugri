@@ -236,6 +236,43 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
     expect(await trackIndex(page)).toBe(1);
   });
 
+  // Anti-mirror guard: the dots row must flow in the SAME physical direction as
+  // the filmstrip, so the active dot sits under the slide actually on view — not
+  // its left/right mirror. The filmstrip is direction:ltr (card→back→board, left to
+  // right), so the active dot for the FIRST view must be physically LEFT of the
+  // active dot for the LAST view. Before the fix the dots inherited the page's RTL,
+  // so the card (leftmost slide) lit the RIGHTMOST dot — this failed.
+  test('the active dot is NOT mirrored — it flows with the slides (card dot left of board dot)', async ({
+    page,
+  }) => {
+    await mockPreview(page);
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+    await expect(page.getByTestId('name-preview-dots')).toBeVisible();
+
+    // active dot on the first (card) view
+    expect(await activeView(page)).toBe('card');
+    const cardDotX = await page.evaluate(
+      () =>
+        document
+          .querySelector('#namePreviewDots .np-dot[aria-selected="true"]')
+          .getBoundingClientRect().left
+    );
+
+    // advance to the last (board) view and read its active dot
+    await page.getByTestId('name-preview-dot-board').click();
+    await expect.poll(() => activeView(page)).toBe('board');
+    const boardDotX = await page.evaluate(
+      () =>
+        document
+          .querySelector('#namePreviewDots .np-dot[aria-selected="true"]')
+          .getBoundingClientRect().left
+    );
+
+    // filmstrip runs card(left) → board(right); the highlight must move the same way
+    expect(boardDotX).toBeGreaterThan(cardDotX);
+  });
+
   test('desktop dots navigate without any touch gesture', async ({ page }) => {
     await mockPreview(page);
     await toNameStep(page);

@@ -375,6 +375,18 @@ export function initCarousel(root, opts = {}) {
     dotsWrap.className = 'carousel-dots';
     dotsWrap.setAttribute('role', 'group');
     dotsWrap.setAttribute('aria-label', 'ניווט בין שקופיות');
+    // Flow the dots in the SAME physical direction as the track, so dot i always
+    // sits under the physical position of slide i. The dots are a flex row that
+    // otherwise just inherits the page direction; if a page renders its track LTR
+    // on an RTL page (or vice-versa), inherited-RTL dots would run opposite to the
+    // slides and light the mirror of the on-view slide. Pinning the direction to
+    // the track's keeps them in lockstep in BOTH RTL and LTR. Guarded for jsdom.
+    try {
+      const trackDir = getComputedStyle(root).direction;
+      if (trackDir === 'ltr' || trackDir === 'rtl') dotsWrap.style.direction = trackDir;
+    } catch {
+      /* jsdom / detached — dots inherit the page direction, which matches the track */
+    }
     for (let i = 0; i < n; i++) {
       const b = document.createElement('button');
       b.type = 'button';

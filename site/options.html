@@ -2217,9 +2217,14 @@
           .name-preview-fig img[hidden] {
             display: none;
           }
-          /* the dots row: one dot per present view, doubling as a desktop control */
+          /* the dots row: one dot per present view, doubling as a desktop control.
+             The filmstrip above is direction:ltr (card→back→board left-to-right),
+             so the dots MUST flow ltr too — otherwise this RTL page would order the
+             dots right-to-left and dot i would sit under the mirror of slide i (the
+             leftmost slide lighting the rightmost dot). Keep them in lockstep. */
           .name-preview-dots {
             display: flex;
+            direction: ltr;
             justify-content: center;
             gap: 9px;
             margin-top: 12px;
