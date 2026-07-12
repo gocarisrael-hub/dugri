@@ -123,6 +123,77 @@ test('owner deleting a word asks for confirmation: cancel/Esc keep it, confirm r
   await expect(page.locator('#wordsWrap')).toContainText('סוכר באמא');
 });
 
+test('owner taps a word to edit it inline: Enter commits the fix, and it persists across reload', async ({
+  page,
+}) => {
+  await createCollection(page, 'Shira');
+
+  await page.fill('#wordInput', 'הדייט מטבריה');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('1');
+
+  const textFor = (word) => page.locator('.word', { hasText: word }).getByTestId('word-text');
+
+  // Tapping the word text turns it into an inline editable field.
+  await textFor('הדייט מטבריה').click();
+  const editor = page.getByTestId('word-edit-input');
+  await expect(editor).toBeVisible();
+  await expect(editor).toBeFocused();
+
+  // Fix the typo and commit with Enter → the pill shows the new text.
+  await editor.fill('הדייט מטבריה הישנה');
+  await editor.press('Enter');
+  await expect(page.getByTestId('word-edit-input')).toHaveCount(0);
+  await expect(page.locator('#wordsWrap')).toContainText('הדייט מטבריה הישנה');
+  await expect(page.locator('#count')).toHaveText('1'); // still one word — edited, not added
+
+  // Persisted server-side: it survives a reload.
+  await page.reload();
+  await expect(page.locator('#wordsWrap')).toContainText('הדייט מטבריה הישנה');
+  await expect(page.locator('#count')).toHaveText('1');
+});
+
+test('editing a word: Escape cancels and keeps the original text', async ({ page }) => {
+  await createCollection(page, 'Shira');
+
+  await page.fill('#wordInput', 'סוכר באמא');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('1');
+
+  const text = page.locator('.word', { hasText: 'סוכר באמא' }).getByTestId('word-text');
+  await text.click();
+  const editor = page.getByTestId('word-edit-input');
+  await editor.fill('משהו אחר לגמרי');
+  await editor.press('Escape');
+
+  // The edit is discarded — original text stays, no new word created.
+  await expect(page.getByTestId('word-edit-input')).toHaveCount(0);
+  await expect(page.locator('#wordsWrap')).toContainText('סוכר באמא');
+  await expect(page.locator('#wordsWrap')).not.toContainText('משהו אחר לגמרי');
+  await expect(page.locator('#count')).toHaveText('1');
+});
+
+test('a contributor (no owner key) cannot edit words: the text is not tappable', async ({
+  page,
+  context,
+}) => {
+  await createCollection(page, 'Shira');
+  await page.fill('#wordInput', 'בדיחה פנימית');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('1');
+
+  const friendsUrl = page.url().replace(/&k=.*/, '');
+  const friend = await context.newPage();
+  await friend.goto(friendsUrl);
+  await expect(friend.locator('#wordsWrap')).toContainText('בדיחה פנימית');
+  // No edit affordance for a plain contributor: the text has no editable role and
+  // clicking it does not open an editor.
+  const text = friend.getByTestId('word-text');
+  await expect(text).not.toHaveClass(/editable/);
+  await text.click();
+  await expect(friend.getByTestId('word-edit-input')).toHaveCount(0);
+});
+
 test('submitting a word that already exists shows a non-blocking duplicate toast and does not add a row', async ({
   page,
 }) => {

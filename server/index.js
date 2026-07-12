@@ -844,6 +844,21 @@ app.delete('/api/collections/:id/words/:wordId', (req, res) => {
   res.json({ ok: true });
 });
 
+// Owner-only: edit a word's text (fix a typo). Same normalization + 80-char cap
+// as the add path (never trust the client); rejects an empty result and a
+// collision with another existing word. token in the body (not the URL) so it
+// isn't logged, mirroring the delete route.
+app.patch('/api/collections/:id/words/:wordId', (req, res) => {
+  const b = req.body || {};
+  const r = db.editWord(req.params.id, req.params.wordId, b.text, b.owner_token);
+  if (r === null) return res.status(404).json({ error: 'not found' });
+  if (r.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
+  if (r.error === 'not_found') return res.status(404).json({ error: 'word not found' });
+  if (r.error === 'empty') return res.status(400).json({ error: 'text required' });
+  if (r.error === 'duplicate') return res.status(409).json({ error: 'duplicate' });
+  res.json({ ok: true, word: { id: r.id, text: r.text, added_by: r.added_by } });
+});
+
 // A short per-payment ParamX token: <=19 chars, digits + lowercase letters
 // (PeleCard's ParamX limit). PeleCard echoes it back as AdditionalDetailsParamX.
 function newPayToken() {

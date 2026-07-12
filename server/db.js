@@ -254,6 +254,41 @@ const db = {
     return true;
   },
 
+  // Owner-only: edit ONE word's text (fix a typo). Trims, collapses inner
+  // whitespace and caps at 80 like addWords; the word keeps its identity and its
+  // added_by/created_at metadata — only `text` (and its dedupe `norm`) change.
+  // Returns the updated word, or an { error } object:
+  //   'forbidden'  bad owner token
+  //   'not_found'  no such word in this collection
+  //   'empty'      the new text normalizes away to nothing
+  //   'duplicate'  another word in the collection already has this normalized text
+  // Returns null when the collection itself doesn't exist (so the route can 404).
+  // Like deleteWord it does NOT gate on open/closed status — the owner can fix a
+  // typo at any time. Idempotent: re-saving the same text is a no-op that still
+  // succeeds.
+  editWord(id, wordId, text, ownerToken) {
+    const c = this.getCollection(id);
+    if (!c) return null;
+    if (c.owner_token !== ownerToken) return { error: 'forbidden' };
+    const w = _db.words.find((x) => x.id === wordId && x.collection_id === id);
+    if (!w) return { error: 'not_found' };
+    const clean = String(text == null ? '' : text)
+      .trim()
+      .replace(/\s+/g, ' ')
+      .slice(0, 80);
+    if (!clean) return { error: 'empty' };
+    const n = norm(clean);
+    // Reject a collision with a DIFFERENT word that shares the normalized form.
+    // Re-casing/re-spacing the word's own text (same norm, own id) is allowed.
+    const clash = _db.words.some((x) => x.collection_id === id && x.id !== wordId && x.norm === n);
+    if (clash) return { error: 'duplicate' };
+    if (w.text === clean && w.norm === n) return w; // no change — idempotent
+    w.text = clean;
+    w.norm = n;
+    saveDb();
+    return w;
+  },
+
   // Owner-only close. Idempotent: a repeated close on an already-closed
   // collection still succeeds but reports no change, so the caller can fire the
   // "ready to produce" side effects (e.g. the owner email) only on the real
