@@ -233,7 +233,7 @@ test.describe('real customer testimonials', () => {
     expect(body).not.toContain('אליאס');
   });
 
-  test('each review sits in its own distinct warm card that lifts off the sand section', async ({
+  test('each review sits in its own distinct pastel card that lifts off the sand section', async ({
     page,
   }) => {
     await page.goto('/index.html');
@@ -248,11 +248,17 @@ test.describe('real customer testimonials', () => {
     );
     expect(bgs.length).toBe(4);
 
-    // The section wash is the sand token --section (#f4efe6). Each review is a
-    // distinct warm off-white CARD, deliberately LIGHTER than the section so it
-    // lifts off the wash (border + shadow do the rest) instead of blending in.
+    // A deliberate splash of soft colour on the reviews rail only: each review is a
+    // distinct low-saturation pastel MAT that lifts off the sand section (--section
+    // #f4efe6) via hue + the hairline border + shadow. The four shades cycle
+    // light blue → light green → banana yellow → light pink.
     const SECTION = [244, 239, 230];
-    const sectionSum = SECTION[0] + SECTION[1] + SECTION[2];
+    const PASTELS = [
+      'rgb(214, 236, 255)', // #d6ecff light blue
+      'rgb(217, 242, 222)', // #d9f2de light green
+      'rgb(255, 243, 196)', // #fff3c4 banana yellow
+      'rgb(255, 225, 236)', // #ffe1ec light pink
+    ];
     for (const bg of bgs) {
       // never transparent
       expect(bg, `review bg ${bg} must be an opaque fill`).not.toMatch(
@@ -261,14 +267,11 @@ test.describe('real customer testimonials', () => {
       const [r, g, b] = bg.match(/\d+/g).map(Number);
       // clearly not the sand section itself
       expect([r, g, b], `review bg ${bg} must differ from the sand section`).not.toEqual(SECTION);
-      // a bright, light card...
-      expect(Math.min(r, g, b)).toBeGreaterThan(210);
-      // ...that is warm — red at least as strong as blue (sand/cream, not pink/blue)
-      expect(r).toBeGreaterThanOrEqual(b);
-      // ...and lighter than the sand section, so it reads as a raised card on it
-      expect(r + g + b).toBeGreaterThan(sectionSum);
+      // a light, gentle pastel (every channel stays high — no dark/heavy fills)
+      expect(Math.min(r, g, b)).toBeGreaterThan(180);
     }
-    // The four shades are distinct from one another.
+    // Exactly the four intended pastels, in order and all distinct.
+    expect(bgs).toEqual(PASTELS);
     expect(new Set(bgs).size).toBe(4);
   });
 
