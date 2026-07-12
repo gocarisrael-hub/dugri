@@ -1151,6 +1151,14 @@
       .wiz-err[hidden] {
         display: none;
       }
+      /* Static, always-visible guidance under the name field (owner-editable). */
+      .wiz-hint {
+        display: block;
+        color: var(--muted);
+        font-size: 13.5px;
+        margin-top: 7px;
+        text-align: center;
+      }
 
       /* gender-required prompt — a small styled dialog over a dimmed backdrop */
       .wiz-modal {
@@ -1914,6 +1922,14 @@
           maxlength="60"
           autocomplete="name"
         />
+        <!-- Always-visible default guidance the owner can edit ([data-edit]). Kept
+             SEPARATE from #nameErr below, whose textContent refreshNameError()
+             rewrites live (format vs. language message) — tagging that node would
+             fight the JS, so the editable hint is its own permanent element. -->
+        <span class="wiz-hint" id="nameHint" data-testid="name-hint" data-edit="options-name-hint"
+          >אפשר להזין שם אחד בלבד באותיות (עברית או אנגלית), ללא רווחים - מותר מקף (-) וגרש
+          (').</span
+        >
         <span class="wiz-err" id="nameErr" data-testid="name-err" hidden
           >אפשר להזין שם אחד בלבד באותיות (עברית או אנגלית), ללא רווחים - מותר מקף (-) וגרש
           (').</span
@@ -1984,7 +2000,12 @@
               data-extra-input="NAME1"
               autocomplete="name"
             />
-            <span class="wiz-err" data-extra-err="NAME1" data-testid="extra-name1-err" hidden
+            <span
+              class="wiz-err"
+              data-extra-err="NAME1"
+              data-testid="extra-name1-err"
+              data-edit="options-name1-hint"
+              hidden
               >אפשר להזין שם אחד בעברית בלבד (בלי רווחים, ספרות או אנגלית).</span
             >
           </label>
@@ -1999,7 +2020,12 @@
               data-extra-input="NAME2"
               autocomplete="name"
             />
-            <span class="wiz-err" data-extra-err="NAME2" data-testid="extra-name2-err" hidden
+            <span
+              class="wiz-err"
+              data-extra-err="NAME2"
+              data-testid="extra-name2-err"
+              data-edit="options-name2-hint"
+              hidden
               >אפשר להזין שם אחד בעברית בלבד (בלי רווחים, ספרות או אנגלית).</span
             >
           </label>

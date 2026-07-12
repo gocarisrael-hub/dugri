@@ -174,6 +174,52 @@ test.describe('name language + single-word rules block Next', () => {
     await expect(page.getByTestId('step-4')).toBeHidden();
   });
 
+  test('the default name-format hints are owner-editable (data-edit) without breaking validation (I4c)', async ({
+    page,
+  }) => {
+    await page.route('**/api/preview', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: previewBody })
+    );
+    await page.goto('/options.html?step=3'); // bachelorette (english)
+    await expect(page.getByTestId('step-3')).toBeVisible();
+
+    // A SEPARATE always-visible hint carries the editable key — NOT #nameErr, whose
+    // textContent refreshNameError() rewrites live (tagging it would fight the JS).
+    const hint = page.getByTestId('name-hint');
+    await expect(hint).toBeVisible();
+    await expect(hint).toHaveAttribute('data-edit', 'options-name-hint');
+    // The JS-driven error target stays untagged so the sync/override never fights it.
+    await expect(page.getByTestId('name-err')).toHaveCount(1);
+    await expect(page.getByTestId('name-err')).not.toHaveAttribute('data-edit', /.*/);
+
+    // Validation is unchanged: a spaced name errors + blocks, a single word clears.
+    const err = page.getByTestId('name-err');
+    const next = page.getByTestId('next-btn');
+    await page.fill('#honoreeInput', 'Anne Marie');
+    await expect(err).toBeVisible();
+    await expect(next).toBeDisabled();
+    await page.fill('#honoreeInput', 'Shira');
+    await expect(err).toBeHidden();
+    await expect(next).toBeEnabled();
+
+    // The two partner-hint spans (couple design) carry their editable keys too; the
+    // JS only toggles their `hidden`, never their text, so tagging them is safe.
+    await page.goto('/options.html?design=marriage&step=3');
+    await expect(page.getByTestId('step-3')).toBeVisible();
+    await expect(page.getByTestId('extra-name1-err')).toHaveAttribute(
+      'data-edit',
+      'options-name1-hint'
+    );
+    await expect(page.getByTestId('extra-name2-err')).toHaveAttribute(
+      'data-edit',
+      'options-name2-hint'
+    );
+    // partner validation still fires on an invalid name
+    await page.getByTestId('extra-name1').fill('David');
+    await expect(page.getByTestId('extra-name1-err')).toBeVisible();
+    await expect(page.getByTestId('next-btn')).toBeDisabled();
+  });
+
   test('a couple (anniversary) design shows an inline error for an invalid partner name', async ({
     page,
   }) => {

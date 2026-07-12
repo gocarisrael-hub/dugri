@@ -55,6 +55,21 @@
     return '[' + attr + '="' + String(key).replace(/["\\]/g, '\\$&') + '"]';
   }
 
+  // Keep DUPLICATED editable content in sync DURING a live edit session. On page
+  // load applyOverrides sets textContent on EVERY [data-edit="key"] node, so
+  // clones ship identical. But a live edit only mutates the ONE node the owner
+  // clicked, so same-key duplicates (e.g. the hero marquee's two identical halves
+  // and repeated phrase groups) would desync until the next reload. Mirror the new
+  // text onto every same-key node so the duplicates stay pixel-identical mid-edit,
+  // matching what applyOverrides already does on load. Guarded so we never touch a
+  // node whose text already matches (no redundant DOM writes / caret churn).
+  function syncSameKey(root, key, text) {
+    if (!root || !key) return;
+    root.querySelectorAll(attrSel('data-edit', key)).forEach(function (n) {
+      if (n.textContent !== text) n.textContent = text;
+    });
+  }
+
   // Overlay a page's overrides onto a DOM root. Text overrides win only when
   // present (ov.text != null); an unknown key simply matches nothing (no-op).
   function applyOverrides(root, overrides) {
@@ -288,8 +303,13 @@
           el.textContent = next;
         }
         original = next;
+        // Propagate the edit to every OTHER node sharing this data-edit key so
+        // duplicated content (e.g. the marquee clones) stays in sync live, exactly
+        // as applyOverrides syncs them on load. Keeps the save/POST below unchanged.
+        var syncKey = el.getAttribute('data-edit');
+        syncSameKey(document, syncKey, next);
         setStatus('שומר…');
-        postText(page, key, el.getAttribute('data-edit'), next)
+        postText(page, key, syncKey, next)
           .then(function () {
             setStatus('נשמר');
           })
@@ -486,6 +506,7 @@
     derivePage: derivePage,
     resolvePage: resolvePage,
     applyOverrides: applyOverrides,
+    syncSameKey: syncSameKey,
     resolveEdit: resolveEdit,
     LS_KEY: LS_KEY,
   };
