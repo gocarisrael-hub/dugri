@@ -1359,6 +1359,10 @@
         }
       }
 
+      // True while an inline word editor is open, so the background poll skips its
+      // re-render and never detaches the focused input mid-edit.
+      let wordEditOpen = false;
+
       function render() {
         if (!state) return;
         // Now that the collection (and its event theme) is loaded, make sure the
@@ -1623,15 +1627,20 @@
         txt.replaceWith(input);
         input.focus();
         input.select();
+        // Block the background poll from re-rendering (and tearing down) this
+        // focused editor while the owner is mid-correction — a detach would fire
+        // blur → commit with half-typed text (silent data loss).
+        wordEditOpen = true;
 
         let settled = false;
         const commit = async () => {
           if (settled) return;
           settled = true;
-          // Clean exactly like a newly-typed word: parseWordText trims + drops
-          // empties. An edit is a single word, so take the first token.
-          const parts = parseWordText(input.value);
-          const val = parts.length ? parts[0] : '';
+          wordEditOpen = false;
+          // A word is a SINGLE token — clean it the way the server does (trim +
+          // collapse inner whitespace + 80 cap). Do NOT use parseWordText here: it
+          // splits on commas/newlines, which would truncate a word like "טוב, אמיתי".
+          const val = input.value.trim().replace(/\s+/g, ' ').slice(0, 80);
           // Trimmed to empty, or unchanged → restore the pill, no request.
           if (!val || val === w.text) {
             render();
@@ -1642,6 +1651,7 @@
         const cancel = () => {
           if (settled) return;
           settled = true;
+          wordEditOpen = false;
           render(); // discard the edit, rebuild from stored state
         };
         input.addEventListener('keydown', (e) => {
@@ -2129,7 +2139,11 @@
           setupPayPanel();
         }
         refresh();
-        setInterval(refresh, 5000);
+        // Skip the poll while a word is being edited so it can't tear down the
+        // focused editor (which would blur-commit half-typed text).
+        setInterval(() => {
+          if (!wordEditOpen) refresh();
+        }, 5000);
       }
     </script>
 

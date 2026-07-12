@@ -173,6 +173,60 @@ test('editing a word: Escape cancels and keeps the original text', async ({ page
   await expect(page.locator('#count')).toHaveText('1');
 });
 
+test('editing a word to a value containing a comma keeps the whole text (no truncation)', async ({
+  page,
+}) => {
+  await createCollection(page, 'Shira');
+
+  await page.fill('#wordInput', 'ניו יורק');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('1');
+
+  const text = page.locator('.word', { hasText: 'ניו יורק' }).getByTestId('word-text');
+  await text.click();
+  const editor = page.getByTestId('word-edit-input');
+  // A comma must NOT split the word — the old parseWordText path dropped
+  // everything after the comma. The full text must be saved.
+  await editor.fill('ניו יורק, לונדון');
+  await editor.press('Enter');
+
+  await expect(page.getByTestId('word-edit-input')).toHaveCount(0);
+  await expect(page.locator('#wordsWrap')).toContainText('ניו יורק, לונדון');
+  await expect(page.locator('#count')).toHaveText('1');
+
+  await page.reload();
+  await expect(page.locator('#wordsWrap')).toContainText('ניו יורק, לונדון');
+});
+
+test('the background poll does not tear down an in-progress edit (no data loss past 5s)', async ({
+  page,
+}) => {
+  await createCollection(page, 'Shira');
+
+  await page.fill('#wordInput', 'טעות דפוס');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('1');
+
+  const text = page.locator('.word', { hasText: 'טעות דפוס' }).getByTestId('word-text');
+  await text.click();
+  const editor = page.getByTestId('word-edit-input');
+  await editor.fill('התיקון הנכון');
+
+  // Hold the edit open longer than the 5s background poll. The poll must NOT
+  // re-render and detach the focused input (which would blur-commit or lose the
+  // half-typed text). The editor stays open and focused with the typed value.
+  await page.waitForTimeout(6000);
+  await expect(editor).toBeVisible();
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue('התיקון הנכון');
+
+  // Now commit — the intended value lands, exactly one word, nothing lost.
+  await editor.press('Enter');
+  await expect(page.getByTestId('word-edit-input')).toHaveCount(0);
+  await expect(page.locator('#wordsWrap')).toContainText('התיקון הנכון');
+  await expect(page.locator('#count')).toHaveText('1');
+});
+
 test('a contributor (no owner key) cannot edit words: the text is not tappable', async ({
   page,
   context,
