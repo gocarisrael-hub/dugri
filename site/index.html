@@ -393,6 +393,32 @@
         }
       }
 
+      /* ============ CELEBRATIONS COUNTER (#about .stat-box) ============ */
+      .stat-box {
+        max-width: 300px;
+        margin: 28px auto 0;
+        border: 1px solid var(--ink);
+        padding: 22px 28px;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+      }
+      .stat-box__num {
+        font-family: ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+        font-size: 42px;
+        font-weight: 400;
+        line-height: 1;
+        letter-spacing: 0.02em;
+        color: var(--ink);
+      }
+      .stat-box__label {
+        font-size: 15px;
+        letter-spacing: 0.02em;
+        color: var(--muted);
+      }
+
       /* .hero-cta is shared with the final #order section */
       .hero-cta {
         margin-top: 26px;
@@ -572,13 +598,12 @@
         background: var(--section);
         border: 1px solid var(--line);
         overflow: hidden;
-        display: flex;
-        align-items: flex-end;
-        justify-content: center;
-        color: var(--muted);
-        font-size: 13px;
-        padding: 10px;
-        text-align: center;
+      }
+      .story-photo img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
       }
       .story-photo:nth-child(1) {
         transform: translateY(14px);
@@ -932,50 +957,84 @@
       <div class="marquee__track">
         <span class="marquee__half">
           <span class="marquee__group">
-            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
-            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
             ><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
           <span class="marquee__group">
-            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
-            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
             ><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
           <span class="marquee__group">
-            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
-            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
             ><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
           <span class="marquee__group">
-            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
-            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
             ><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
         </span>
         <span class="marquee__half">
           <span class="marquee__group">
-            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
-            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
             ><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
           <span class="marquee__group">
-            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
-            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
             ><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
           <span class="marquee__group">
-            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
-            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
             ><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
           <span class="marquee__group">
-            <span>מפעילים את הטיימר</span><span class="marquee__sep">◆</span>
-            <span>מנחשים מילים</span><span class="marquee__sep">◆</span> <span>הכל עליכם</span
+            <span data-edit="index-marquee-1">מפעילים את הטיימר</span
             ><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-2">מנחשים מילים</span><span class="marquee__sep">◆</span>
+            <span data-edit="index-marquee-3">הכל עליכם</span><span class="marquee__sep">◆</span>
           </span>
         </span>
       </div>
     </div>
+
+    <!--
+      ABOUT + CELEBRATIONS COUNTER: a compact centered block between the marquee
+      and the products rail. The "מה זה דוגרי?" explainer answers the one question
+      a first-time visitor has, and the bordered stat box shows the exact number
+      of celebrations to date. The count is fetched from the public
+      /api/stats/orders endpoint by the module script below; if that fetch fails
+      the shipped default (23) stays, so the box is never broken or empty.
+    -->
+    <section id="about" data-testid="home-about" data-reveal>
+      <div class="wrap">
+        <div class="sec-title">
+          <h2 data-edit="index-about-heading">מה זה דוגרי?</h2>
+          <p data-edit="index-about-body">
+            משחק ניחוש מילים שכולו על האדם שחוגגים — אתם שולחים את המילים, אנחנו מעצבים חפיסה ולוח
+            מוכנים להדפסה, והכל מגיע תוך 24 שעות. פותחים במסיבה, מתחלקים לקבוצות, ומגלים מי באמת
+            מכיר את בעל השמחה.
+          </p>
+        </div>
+        <div class="stat-box">
+          <span class="stat-box__num" data-testid="orders-count">23</span>
+          <span class="stat-box__label" data-edit="index-stat-label">חגיגות עד היום</span>
+        </div>
+      </div>
+    </section>
+
     <script type="module">
       import { initCarousel } from './js/carousel.js';
       import { PUBLIC_DESIGNS } from './js/designs.js';
@@ -1038,6 +1097,24 @@
         // versa) instead of hitting an edge. The cards are layer-promoted in CSS
         // so the seamless-loop recenter is a cheap reposition, not a repaint.
         initCarousel(productsTrack, { mode: 'scroller', loop: true, dots: false });
+      }
+
+      // ---- CELEBRATIONS COUNTER: exact order count from the public stats API ----
+      // The box ships with the real default (23) baked into the HTML, so it is
+      // always populated. On load we ask /api/stats/orders for the live number and
+      // swap it in; any failure (endpoint down, bad payload) is swallowed and the
+      // shipped default stays — the box is never blanked or shows a broken value.
+      const ordersCountEl = document.querySelector('[data-testid="orders-count"]');
+      if (ordersCountEl) {
+        fetch('/api/stats/orders')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            const n = data && Number(data.count);
+            if (Number.isFinite(n) && n >= 0) ordersCountEl.textContent = String(n);
+          })
+          .catch(() => {
+            /* fail soft — the shipped default (23) stays */
+          });
       }
 
       // ---- REVIEWS: one WhatsApp screenshot per slide; swipe → next review ----
@@ -1128,9 +1205,25 @@
     <section id="story" class="alt" data-reveal>
       <div class="wrap">
         <div class="story-inner">
-          <div class="story-photos" aria-hidden="true">
-            <div class="story-photo">מאחורי הקלעים</div>
-            <div class="story-photo">מהסטודיו שלנו</div>
+          <div class="story-photos">
+            <div class="story-photo">
+              <img
+                src="assets/gallery-1.jpg"
+                alt=""
+                loading="lazy"
+                decoding="async"
+                data-edit-img="index-story-photo-1"
+              />
+            </div>
+            <div class="story-photo">
+              <img
+                src="assets/gallery-2.jpg"
+                alt=""
+                loading="lazy"
+                decoding="async"
+                data-edit-img="index-story-photo-2"
+              />
+            </div>
           </div>
           <div class="story-copy">
             <p class="story-kicker" data-edit="index-story-kicker">הסיפור שלנו</p>
