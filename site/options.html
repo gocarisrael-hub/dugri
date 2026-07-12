@@ -1151,6 +1151,19 @@
       .wiz-err[hidden] {
         display: none;
       }
+      /* Static, always-visible guidance under the name field (owner-editable). */
+      .wiz-hint {
+        display: block;
+        color: var(--muted);
+        font-size: 13.5px;
+        margin-top: 7px;
+        text-align: center;
+      }
+      /* display:block above overrides the UA [hidden] rule — restore it so the
+         couple-theme guard (nameHint.hidden = true) actually hides the hint. */
+      .wiz-hint[hidden] {
+        display: none;
+      }
 
       /* gender-required prompt — a small styled dialog over a dimmed backdrop */
       .wiz-modal {
@@ -1914,6 +1927,13 @@
           maxlength="60"
           autocomplete="name"
         />
+        <!-- Always-visible default guidance the owner can edit ([data-edit]). Kept
+             SEPARATE from #nameErr below, whose textContent refreshNameError()
+             rewrites live (format vs. language message) — tagging that node would
+             fight the JS, so the editable hint is its own permanent element. -->
+        <span class="wiz-hint" id="nameHint" data-testid="name-hint" data-edit="options-name-hint"
+          >טיפ: שם אחד בלבד, באותיות עברית או אנגלית.</span
+        >
         <span class="wiz-err" id="nameErr" data-testid="name-err" hidden
           >אפשר להזין שם אחד בלבד באותיות (עברית או אנגלית), ללא רווחים - מותר מקף (-) וגרש
           (').</span
@@ -3206,6 +3226,11 @@
         // two NAME fields ARE the ask — no redundant "name, then two names".
         const couple = isCoupleTheme();
         nameInput.hidden = couple;
+        // The single-name hint is guidance for the ONE name field — hide it on a
+        // couple design (which shows the two partner-name fields instead), so it
+        // never contradicts the step with "enter a single name".
+        const nameHintEl = document.getElementById('nameHint');
+        if (nameHintEl) nameHintEl.hidden = couple;
         if (genderGroup) genderGroup.hidden = couple;
         if (nameStepTitle) {
           nameStepTitle.textContent = couple ? 'שמות בני הזוג' : 'שם בעל/ת השמחה';

@@ -108,6 +108,70 @@ test.describe('hero marquee: true endless loop, never blank', () => {
   });
 });
 
+test.describe('hero marquee: owner-editable phrases (I4a)', () => {
+  test('each of the 3 phrases carries its data-edit key on all 8 clones, separators untagged, halves identical', async ({
+    page,
+  }) => {
+    await page.goto('/index.html');
+    await page.waitForSelector('.marquee__half');
+
+    const info = await page.evaluate(() => {
+      const count = (sel) => document.querySelectorAll(sel).length;
+      // The track is 2 halves × 4 phrase groups = 8 clones of each phrase.
+      const keyed = {
+        'index-marquee-1': count('[data-edit="index-marquee-1"]'),
+        'index-marquee-2': count('[data-edit="index-marquee-2"]'),
+        'index-marquee-3': count('[data-edit="index-marquee-3"]'),
+      };
+      // Separators must NOT be editable.
+      const taggedSeparators = count('.marquee__sep[data-edit]');
+      // The two halves must stay byte-identical so the translateX(-50%) loop is
+      // seamless — compare their innerHTML directly.
+      const halves = Array.from(document.querySelectorAll('.marquee__half'));
+      const halvesIdentical = halves.length === 2 && halves[0].innerHTML === halves[1].innerHTML;
+      // Each phrase's clones must all carry the SAME shipped text.
+      const texts = (key) =>
+        Array.from(document.querySelectorAll('[data-edit="' + key + '"]')).map((n) =>
+          n.textContent.trim()
+        );
+      return {
+        keyed,
+        taggedSeparators,
+        halvesIdentical,
+        phrase1: texts('index-marquee-1'),
+        phrase2: texts('index-marquee-2'),
+        phrase3: texts('index-marquee-3'),
+      };
+    });
+
+    expect(info.keyed['index-marquee-1']).toBe(8);
+    expect(info.keyed['index-marquee-2']).toBe(8);
+    expect(info.keyed['index-marquee-3']).toBe(8);
+    expect(info.taggedSeparators).toBe(0);
+    expect(info.halvesIdentical).toBe(true);
+    expect(new Set(info.phrase1)).toEqual(new Set(['מפעילים את הטיימר']));
+    expect(new Set(info.phrase2)).toEqual(new Set(['מנחשים מילים']));
+    expect(new Set(info.phrase3)).toEqual(new Set(['הכל עליכם']));
+  });
+
+  test('a mocked override replaces the phrase across ALL clones for a visitor', async ({
+    page,
+  }) => {
+    // applyOverrides sets textContent on every [data-edit] node on load, so an
+    // owner override must land identically on all 8 clones (loop stays seamless).
+    await page.route('**/api/content*', (route) =>
+      route.fulfill({ json: { overrides: { 'index-marquee-1': { text: 'לוחצים על השעון' } } } })
+    );
+    await page.goto('/index.html');
+    await page.waitForSelector('.marquee__half');
+    const texts = await page.$$eval('[data-edit="index-marquee-1"]', (els) =>
+      els.map((e) => e.textContent.trim())
+    );
+    expect(texts).toHaveLength(8);
+    expect(new Set(texts)).toEqual(new Set(['לוחצים על השעון']));
+  });
+});
+
 test.describe('hero marquee: reduced motion', () => {
   test('prefers-reduced-motion disables the scroll animation', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });

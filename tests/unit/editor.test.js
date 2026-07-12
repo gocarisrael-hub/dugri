@@ -101,6 +101,34 @@ describe('applyOverrides', () => {
   });
 });
 
+describe('syncSameKey — duplicated editable content stays in sync during a live edit', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('mirrors the new text onto EVERY node sharing the same data-edit key', () => {
+    // The marquee ships each phrase as 8 identical clones (2 halves × 4 groups).
+    // A live edit only mutates the clicked node; syncSameKey propagates it to the
+    // rest so the seamless loop never desyncs mid-session (until a reload).
+    document.body.innerHTML =
+      '<span data-edit="m1">old</span><span data-edit="m1">old</span>' +
+      '<span data-edit="m1">old</span><span data-edit="other">keep</span>';
+    editor.syncSameKey(document, 'm1', 'חדש');
+    document.querySelectorAll('[data-edit="m1"]').forEach((el) => {
+      expect(el.textContent).toBe('חדש');
+    });
+    // a different key is never touched
+    expect(document.querySelector('[data-edit="other"]').textContent).toBe('keep');
+  });
+
+  it('is a safe no-op for a missing key/root and never throws', () => {
+    document.body.innerHTML = '<span data-edit="m1">keep</span>';
+    expect(() => editor.syncSameKey(document, '', 'x')).not.toThrow();
+    expect(() => editor.syncSameKey(null, 'm1', 'x')).not.toThrow();
+    expect(document.querySelector('[data-edit="m1"]').textContent).toBe('keep');
+  });
+});
+
 describe('resolveEdit — edit mode is fail-closed', () => {
   const noKey = { getItem: () => null };
   const storedKey = { getItem: () => 'stored-secret' };

@@ -57,6 +57,34 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(page.locator('.dugri-editbar__status')).toHaveText('נשמר');
   });
 
+  test('editing ONE of several same-key nodes syncs the new text to ALL of them live', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) => route.fulfill({ json: { ok: true } }));
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    // The marquee ships each phrase as 8 identical clones (2 halves × 4 groups).
+    // On page load applyOverrides syncs them; a LIVE edit only mutates the clicked
+    // node, so without syncSameKey the clones desync and the seamless loop breaks.
+    // Editing ONE clone must mirror the new text onto all 8 immediately (no reload).
+    const clones = page.locator('[data-edit="index-marquee-1"]');
+    await expect(clones).toHaveCount(8);
+
+    await clones.first().evaluate((node) => {
+      node.focus();
+      node.textContent = 'לוחצים על השעון';
+      node.dispatchEvent(new Event('blur'));
+    });
+
+    // Every clone now carries the edited text — the duplicated content stays in sync.
+    const texts = await clones.evaluateAll((els) => els.map((e) => e.textContent.trim()));
+    expect(texts).toHaveLength(8);
+    expect(new Set(texts)).toEqual(new Set(['לוחצים על השעון']));
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('נשמר');
+  });
+
   test('clicking an editable link in edit mode edits it instead of navigating away', async ({
     page,
   }) => {
