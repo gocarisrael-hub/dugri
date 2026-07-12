@@ -104,21 +104,26 @@
         }
       }
 
-      /* ---- The timer stage ---- */
-      .stage {
+      /* ---- Countdown number (primary display) ---- */
+      .count-wrap {
         position: relative;
-        margin: 18px 0 2px;
+        z-index: 2;
+        margin: 26px 0 2px;
+        min-height: 220px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         opacity: 0;
         transform: translateY(10px) scale(0.98);
         animation: rise 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.2s forwards;
       }
 
-      /* soft ambient glow behind the glass */
-      .stage::before {
+      /* soft ambient glow behind the number */
+      .count-wrap::before {
         content: '';
         position: absolute;
-        inset: -22% -18%;
-        z-index: 0;
+        inset: -8% -14%;
+        z-index: -1;
         border-radius: 50%;
         background: radial-gradient(
           closest-side,
@@ -130,21 +135,6 @@
         opacity: 0.85;
         transition: opacity 0.6s ease;
         animation: breathe 5.5s ease-in-out infinite;
-      }
-
-      .stage.idle::before {
-        opacity: 0.55;
-        animation-play-state: paused;
-      }
-
-      .stage.done::before {
-        background: radial-gradient(
-          closest-side,
-          rgba(229, 25, 125, 0.32),
-          rgba(188, 154, 76, 0.2) 55%,
-          transparent 74%
-        );
-        opacity: 1;
       }
 
       @keyframes breathe {
@@ -159,43 +149,13 @@
         }
       }
 
-      .glass-wrap {
-        position: relative;
-        z-index: 1;
-        transition: transform 0.9s cubic-bezier(0.6, 0, 0.25, 1);
-        transform-origin: 50% 50%;
-        will-change: transform;
-      }
-
-      .glass-wrap.flip {
-        transform: rotate(180deg);
-      }
-
-      svg.hourglass {
-        width: 184px;
-        height: auto;
-        display: block;
-        filter: drop-shadow(0 18px 30px rgba(155, 45, 84, 0.22));
-      }
-
-      /* ---- Countdown number ---- */
-      .count-wrap {
-        position: relative;
-        z-index: 2;
-        margin-top: 10px;
-        height: 84px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
       .count {
         font-family: var(--display);
         font-weight: 900;
-        font-size: 76px;
+        font-size: 168px;
         line-height: 1;
         font-variant-numeric: tabular-nums;
-        letter-spacing: -0.02em;
+        letter-spacing: -0.03em;
         background: linear-gradient(140deg, var(--sage) 0%, var(--sage-deep) 100%);
         -webkit-background-clip: text;
         background-clip: text;
@@ -224,7 +184,7 @@
         -webkit-text-fill-color: initial;
         background: none;
         color: var(--sage-deep);
-        font-size: 40px;
+        font-size: 52px;
         animation: pop 0.6s cubic-bezier(0.2, 1.5, 0.3, 1);
       }
 
@@ -388,17 +348,14 @@
       @media (prefers-reduced-motion: reduce) {
         .logo,
         h1,
-        .stage,
+        .count-wrap,
         .controls,
         .back {
           animation: none;
           opacity: 1;
           transform: none;
         }
-        .glass-wrap {
-          transition: transform 0.2s ease;
-        }
-        .stage::before {
+        .count-wrap::before {
           animation: none;
         }
         .count,
@@ -417,12 +374,14 @@
       }
 
       @media (max-width: 380px) {
-        svg.hourglass {
-          width: 156px;
-        }
         .count {
-          font-size: 64px;
+          font-size: 118px;
         }
+      }
+
+      /* utility */
+      .hidden {
+        display: none;
       }
     </style>
     <script src="js/editor.js" defer></script>
@@ -431,118 +390,6 @@
     <img class="logo" src="assets/logo.png" alt="דוגרי" />
     <h1>טיימר<span class="dot"> · </span>60 שניות</h1>
 
-    <div class="stage idle" id="stage">
-      <div class="glass-wrap" id="glass">
-        <svg
-          class="hourglass"
-          viewBox="0 0 120 190"
-          aria-hidden="true"
-          shape-rendering="geometricPrecision"
-        >
-          <defs>
-            <!-- glass body sheen -->
-            <linearGradient id="glassSheen" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stop-color="#ffffff" stop-opacity="0.55" />
-              <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.06" />
-              <stop offset="1" stop-color="#ffffff" stop-opacity="0.32" />
-            </linearGradient>
-            <!-- warm sand gradient -->
-            <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#e8cf8c" />
-              <stop offset="0.5" stop-color="#cbab5e" />
-              <stop offset="1" stop-color="#b08f3f" />
-            </linearGradient>
-            <linearGradient id="sandTopGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#f0db9c" />
-              <stop offset="1" stop-color="#cdad60" />
-            </linearGradient>
-            <!-- frame gradient -->
-            <linearGradient id="frame" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#b23a63" />
-              <stop offset="1" stop-color="#5c7357" />
-            </linearGradient>
-            <radialGradient id="cap" cx="0.5" cy="0.3" r="0.8">
-              <stop offset="0" stop-color="#c0466f" />
-              <stop offset="1" stop-color="#5c7357" />
-            </radialGradient>
-            <!-- soft glow for the falling stream -->
-            <filter id="soft" x="-60%" y="-30%" width="220%" height="160%">
-              <feGaussianBlur stdDeviation="0.7" />
-            </filter>
-
-            <!-- bulb silhouettes (used both as glass fill and as clip) -->
-            <path id="topBulb" d="M22 22 H98 C98 50 74 78 60 92 C46 78 22 50 22 22 Z" />
-            <path id="botBulb" d="M60 98 C74 112 98 140 98 168 H22 C22 140 46 112 60 98 Z" />
-            <clipPath id="clipTop"><use href="#topBulb" /></clipPath>
-            <clipPath id="clipBot"><use href="#botBulb" /></clipPath>
-          </defs>
-
-          <!-- glass bulbs (translucent) -->
-          <use href="#topBulb" fill="#ffffff" opacity="0.55" />
-          <use href="#botBulb" fill="#ffffff" opacity="0.55" />
-
-          <!-- TOP sand: a rect clipped to the bulb; we move its top edge down -->
-          <g clip-path="url(#clipTop)">
-            <rect id="sandTop" x="20" y="22" width="80" height="72" fill="url(#sandTopGrad)" />
-            <!-- subtle funnel dip on the sand surface -->
-            <ellipse id="sandTopDip" cx="60" cy="22" rx="40" ry="4" fill="#b08f3f" opacity="0" />
-          </g>
-
-          <!-- BOTTOM sand: a clipped pile that grows upward + a soft mound -->
-          <g clip-path="url(#clipBot)">
-            <rect id="sandBot" x="20" y="168" width="80" height="0" fill="url(#sand)" />
-            <path
-              id="sandMound"
-              d="M22 168 Q60 168 98 168 L98 168 Z"
-              fill="url(#sandTopGrad)"
-              opacity="0"
-            />
-          </g>
-
-          <!-- falling stream: a soft continuous ribbon + moving grains -->
-          <g id="streamG" opacity="0" filter="url(#soft)">
-            <rect id="stream" x="59" y="90" width="2" height="8" fill="#d8b86a" rx="1" />
-            <line
-              id="streamFlow"
-              x1="60"
-              y1="90"
-              x2="60"
-              y2="98"
-              stroke="#f0db9c"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-dasharray="1.4 3.2"
-            />
-          </g>
-
-          <!-- glass sheen overlay -->
-          <use href="#topBulb" fill="url(#glassSheen)" opacity="0.5" />
-          <use href="#botBulb" fill="url(#glassSheen)" opacity="0.5" />
-
-          <!-- glass outline -->
-          <use
-            href="#topBulb"
-            fill="none"
-            stroke="url(#frame)"
-            stroke-width="3"
-            stroke-linejoin="round"
-          />
-          <use
-            href="#botBulb"
-            fill="none"
-            stroke="url(#frame)"
-            stroke-width="3"
-            stroke-linejoin="round"
-          />
-
-          <!-- caps -->
-          <rect x="14" y="10" width="92" height="11" rx="5.5" fill="url(#cap)" />
-          <rect x="14" y="169" width="92" height="11" rx="5.5" fill="url(#cap)" />
-          <rect x="14" y="10" width="92" height="4" rx="2" fill="#ffffff" opacity="0.25" />
-        </svg>
-      </div>
-    </div>
-
     <div class="count-wrap">
       <div class="count" id="count" data-testid="timer-count">60</div>
     </div>
@@ -550,7 +397,9 @@
 
     <div class="controls">
       <button class="btn" id="toggle" type="button" data-testid="timer-toggle">התחל</button>
-      <button class="btn sec" id="reset" type="button" data-testid="timer-reset">איפוס</button>
+      <button class="btn sec hidden" id="reset" type="button" data-testid="timer-reset">
+        איפוס
+      </button>
     </div>
 
     <p class="back"><a href="index.html" data-edit="timer-back-link">חזרה לדוגרי ←</a></p>
@@ -565,25 +414,11 @@
         var reduceMotion =
           window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-        // geometry constants matching the SVG bulbs
-        var TOP_Y = 22; // sand top start
-        var TOP_H = 72; // full top sand height
-        var BOT_BASE = 168; // bottom inner floor
-        var BOT_H = 72; // full bottom sand height
-
         var els = {
-          stage: document.getElementById('stage'),
-          glass: document.getElementById('glass'),
-          sandTop: document.getElementById('sandTop'),
-          sandTopDip: document.getElementById('sandTopDip'),
-          sandBot: document.getElementById('sandBot'),
-          sandMound: document.getElementById('sandMound'),
-          streamG: document.getElementById('streamG'),
-          stream: document.getElementById('stream'),
-          streamFlow: document.getElementById('streamFlow'),
           count: document.getElementById('count'),
           status: document.getElementById('status'),
           toggle: document.getElementById('toggle'),
+          reset: document.getElementById('reset'),
         };
 
         var elapsed = 0;
@@ -592,87 +427,6 @@
         var raf = 0;
         var audio = null;
         var lastShown = -1;
-        var streamPhase = 0;
-        var lastFrameTs = 0;
-
-        // Sand drains at a steady rate, like a real hourglass, so the levels
-        // move continuously every frame. The previous smootherstep easing
-        // flattened the first and last ~15s (near-zero slope at the extremes),
-        // which made the sand look frozen and then lurch through the middle.
-        // A constant-rate (linear) flow keeps the motion fluid end to end.
-        function easeFlow(p) {
-          return Math.min(1, Math.max(0, p));
-        }
-
-        function renderSand(progress) {
-          var ep = easeFlow(progress);
-
-          // top sand shrinks from the bottom up: top edge moves down
-          var topH = TOP_H * (1 - ep);
-          els.sandTop.setAttribute('y', (TOP_Y + TOP_H * ep).toFixed(2));
-          els.sandTop.setAttribute('height', Math.max(0, topH).toFixed(2));
-
-          // funnel dip appears as the top sand drains
-          els.sandTopDip.setAttribute('cy', (TOP_Y + TOP_H * ep).toFixed(2));
-          els.sandTopDip.setAttribute(
-            'opacity',
-            (progress > 0.04 && progress < 0.98 ? 0.35 : 0).toFixed(2)
-          );
-
-          // bottom pile grows upward
-          var botH = BOT_H * ep;
-          els.sandBot.setAttribute('y', (BOT_BASE - botH).toFixed(2));
-          els.sandBot.setAttribute('height', botH.toFixed(2));
-
-          // soft mound on top of the pile
-          var moundY = BOT_BASE - botH;
-          var rise = Math.min(7, botH * 0.18 + 2);
-          els.sandMound.setAttribute(
-            'd',
-            'M22 ' +
-              moundY.toFixed(1) +
-              ' Q60 ' +
-              (moundY - rise).toFixed(1) +
-              ' 98 ' +
-              moundY.toFixed(1) +
-              ' Z'
-          );
-          els.sandMound.setAttribute('opacity', (botH > 4 ? 0.9 : 0).toFixed(2));
-        }
-
-        function renderStream(progress, ts) {
-          var active = running && progress > 0 && progress < 1;
-          if (!active) {
-            els.streamG.setAttribute('opacity', '0');
-            return;
-          }
-          // Fade the ribbon in/out at the very start/end so it appears and
-          // disappears softly instead of popping.
-          var edge = Math.min(progress, 1 - progress);
-          els.streamG.setAttribute('opacity', Math.min(0.92, edge * 40 + 0.3).toFixed(2));
-
-          // The stream lives in the neck. Its foot rests on the growing bottom
-          // pile so it visibly connects the two chambers all the way through.
-          var botEdge = BOT_BASE - BOT_H * easeFlow(progress); // current bottom sand top
-          var sy = 90;
-          var streamBot = Math.max(sy + 4, Math.min(98, botEdge));
-          var sh = streamBot - sy;
-          els.stream.setAttribute('y', sy.toFixed(1));
-          els.stream.setAttribute('height', sh.toFixed(1));
-          els.streamFlow.setAttribute('y1', sy.toFixed(1));
-          els.streamFlow.setAttribute('y2', streamBot.toFixed(1));
-
-          if (!reduceMotion) {
-            // Grains fall: slide the dash pattern downward every frame so the
-            // stream reads as continuously flowing sand.
-            streamPhase = (ts / 1000) * 26; // px/sec, wraps naturally via dashoffset
-            els.streamFlow.setAttribute('stroke-dashoffset', (-streamPhase).toFixed(2));
-            // Gentle width shimmer for a shimmering, fluid ribbon.
-            var w = 1.7 + Math.sin(ts / 90) * 0.45;
-            els.stream.setAttribute('width', w.toFixed(2));
-            els.stream.setAttribute('x', (60 - w / 2).toFixed(2));
-          }
-        }
 
         function setCount(state) {
           if (state.remaining !== lastShown) {
@@ -713,21 +467,14 @@
           running = false;
           elapsed = DURATION;
           cancelAnimationFrame(raf);
-          renderSand(1);
-          renderStream(1, 0);
-          var state = tick(DURATION, DURATION);
+          tick(DURATION, DURATION);
           lastShown = -1;
           els.count.classList.add('done');
           els.count.textContent = 'הזמן נגמר!';
           els.status.textContent = 'כל הכבוד · סבב חדש?';
           els.status.classList.add('done');
-          els.stage.classList.add('done');
-          els.stage.classList.remove('idle');
           els.toggle.textContent = 'שוב';
-          // celebratory flip of the (now empty) glass
-          if (!reduceMotion) els.glass.classList.add('flip');
           beep();
-          void state;
         }
 
         function loop(now) {
@@ -737,11 +484,7 @@
             finish();
             return;
           }
-          var state = tick(ms, DURATION);
-          renderSand(state.progress);
-          renderStream(state.progress, now);
-          setCount(state);
-          lastFrameTs = now;
+          setCount(tick(ms, DURATION));
           raf = requestAnimationFrame(loop);
         }
 
@@ -753,8 +496,7 @@
           running = true;
           els.count.classList.remove('done');
           els.status.classList.remove('done');
-          els.stage.classList.remove('done', 'idle');
-          els.glass.classList.remove('flip');
+          els.reset.classList.remove('hidden');
           els.status.textContent = 'רץ...';
           els.toggle.textContent = 'השהה';
           lastStart = performance.now();
@@ -766,12 +508,8 @@
           running = false;
           elapsed += performance.now() - lastStart;
           cancelAnimationFrame(raf);
-          var state = tick(elapsed, DURATION);
-          renderSand(state.progress);
-          renderStream(state.progress, 0);
           els.status.textContent = 'מושהה';
           els.toggle.textContent = 'המשך';
-          els.stage.classList.add('idle');
         }
 
         function reset() {
@@ -779,13 +517,9 @@
           elapsed = 0;
           lastShown = -1;
           cancelAnimationFrame(raf);
-          els.glass.classList.remove('flip');
           els.count.classList.remove('done');
           els.status.classList.remove('done');
-          els.stage.classList.remove('done');
-          els.stage.classList.add('idle');
-          renderSand(0);
-          renderStream(0, 0);
+          els.reset.classList.add('hidden');
           setCount(tick(0, DURATION));
           els.status.textContent = 'לחצו התחל';
           els.toggle.textContent = 'התחל';
@@ -798,7 +532,7 @@
             start();
           }
         });
-        document.getElementById('reset').addEventListener('click', reset);
+        els.reset.addEventListener('click', reset);
 
         // keyboard niceties
         document.addEventListener('keydown', function (e) {
@@ -815,10 +549,7 @@
         });
 
         // initial paint
-        renderSand(0);
-        renderStream(0, 0);
         setCount(tick(0, DURATION));
-        void lastFrameTs;
       })();
     </script>
   </body>
