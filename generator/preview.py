@@ -88,7 +88,7 @@ def _crop_card(full_png, cell, viewbox, out_png):
 
 
 def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
-            chasers=False):
+            chasers=False, custom_title=None):
     """Render a preview and return ``{"card": path, "board": path, "back": path}``.
 
     ``board`` and ``back`` are included only when the theme has that artwork; the
@@ -102,10 +102,13 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
                   shared word-fonts/ pool)
     chasers       when True, show the theme's chasers board variant if it ships one
                   (clean/board-chasers.svg), else the normal board (additive)
+    custom_title  optional free-form title (F7) overriding the theme-derived title
+                  on the sample card + board; empty/absent keeps the theme default,
+                  so the preview is WYSIWYG for what production renders
     """
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    title_lines = config.title_lines(cfg, name, extra_fields or {})
+    title_lines = config.title_lines(cfg, name, extra_fields or {}, custom_title=custom_title)
 
     own_workdir = workdir is None
     if own_workdir:
@@ -191,11 +194,14 @@ def main():
     ap.add_argument("--field", action="append", default=[], metavar="KEY=VALUE")
     ap.add_argument("--chasers", action="store_true",
                     help="show the theme's chasers board variant when available")
+    ap.add_argument("--title", default=None,
+                    help="optional custom title overriding the theme-derived title")
     args = ap.parse_args()
 
     imgs = preview(
         args.theme, args.name, _parse_fields(args.field),
         word_font=args.word_font, workdir=args.out_dir, chasers=args.chasers,
+        custom_title=args.title,
     )
     # The server parses this JSON line to locate the produced PNGs.
     print(json.dumps(imgs))

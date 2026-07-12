@@ -58,7 +58,7 @@ const GENERATE_TIMEOUT_MS = Number(process.env.GENERATE_TIMEOUT_MS || 120000);
 // Writes the words to a temp file (cleaned up after), streams the theme +
 // honoree + optional word-font/extra-fields as CLI args, captures stderr for a
 // useful error, and enforces a timeout. Never leaks the child process.
-function runGenerator({ theme, name, words, outPdf, wordFont, extraFields, chasers }) {
+function runGenerator({ theme, name, words, outPdf, wordFont, extraFields, chasers, customTitle }) {
   return new Promise((resolve, reject) => {
     let wordsFile;
     try {
@@ -82,6 +82,10 @@ function runGenerator({ theme, name, words, outPdf, wordFont, extraFields, chase
     // Chasers add-on: the generator swaps in the theme's chasers board variant
     // when it ships one (else falls back to the normal board — additive).
     if (chasers) args.push('--chasers');
+    // Custom title (F7): override the theme-derived title on the cards + board.
+    // --title=<value> (single token) so a title that starts with '-' (e.g. "-40",
+    // "-רווקות") is never parsed by argparse as an option and crash the generator.
+    if (customTitle) args.push('--title=' + customTitle);
     const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
     let stdout = '';
     let stderr = '';
@@ -143,7 +147,7 @@ function wordFontOptions() {
 // card back into a private temp dir; we read them back as base64 and always
 // remove the dir. Enforces a timeout and never leaks the child process. board
 // and back are present only when the theme has that artwork (card is required).
-function runPreview({ theme, name, wordFont, extraFields, chasers }) {
+function runPreview({ theme, name, wordFont, extraFields, chasers, customTitle }) {
   return new Promise((resolve, reject) => {
     let outDir;
     try {
@@ -166,6 +170,11 @@ function runPreview({ theme, name, wordFont, extraFields, chasers }) {
     // Chasers add-on: preview the theme's chasers board variant when it ships one
     // (else the normal board — additive), matching what production will generate.
     if (chasers) args.push('--chasers');
+    // Custom title (F7): preview the EXACT overriding title (WYSIWYG), matching
+    // what production will render.
+    // --title=<value> (single token) so a title that starts with '-' (e.g. "-40",
+    // "-רווקות") is never parsed by argparse as an option and crash the generator.
+    if (customTitle) args.push('--title=' + customTitle);
     const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
     let stdout = '';
     let stderr = '';
@@ -259,6 +268,9 @@ app.post('/api/collections', (req, res) => {
     // shared word-fonts/ pool); db.createCollection caps + defaults it.
     word_font: b.word_font,
     chasers: b.chasers,
+    // Optional free-form custom title (F7); db sanitizes/caps and treats
+    // empty/whitespace as absent (the theme's own title is used).
+    custom_title: b.custom_title,
     gender: b.gender,
   });
   res.status(201).json({ id: c.id, owner_token: c.owner_token, expires_at: c.expires_at });
@@ -496,6 +508,7 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       wordFont,
       extraFields,
       chasers: !!c.chasers,
+      customTitle: c.custom_title || null,
     });
     const production = db.setProduction(c.id, {
       state: 'generated',
@@ -743,6 +756,9 @@ app.post('/api/preview', async (req, res) => {
   // Chasers add-on toggle from the order flow — when on, preview the theme's
   // chasers board variant (server falls back to the normal board if none).
   const chasers = !!b.chasers;
+  // Custom title (F7): the buyer's optional overriding title. Sanitized with the
+  // SAME rule stored orders use, so the live preview is WYSIWYG for production.
+  const customTitle = db.sanitizeCustomTitle(b.title);
   // Surfaced to the customer immediately (doesn't block rendering the preview).
   const warning = validate.checkNameLanguage(name, themeConfig);
 
@@ -751,7 +767,7 @@ app.post('/api/preview', async (req, res) => {
     // together (one Python process, no second Chrome). runPreview rejects on
     // failure (→ handled below); board/back are simply absent when the theme has
     // no such artwork, so a missing back never fails the request.
-    const imgs = await runPreview({ theme, name, wordFont, extraFields, chasers });
+    const imgs = await runPreview({ theme, name, wordFont, extraFields, chasers, customTitle });
     // theme_word_font = the design's OWN original word font (from themes.json), so
     // the picker can mark the "מקורי" (original) choice and clients can tell it apart.
     res.json({

@@ -1164,6 +1164,12 @@
       .wiz-hint[hidden] {
         display: none;
       }
+      /* Non-blocking "may print small" note for a long custom title (F7). Amber,
+         advisory — never a hard block; the live preview is the real safety net. */
+      .custom-title-warn {
+        color: #b26a00;
+        font-weight: 600;
+      }
 
       /* gender-required prompt — a small styled dialog over a dimmed backdrop */
       .wiz-modal {
@@ -2025,6 +2031,32 @@
           </label>
         </div>
 
+        <!-- OPTIONAL custom title (F7): overrides the design's own title on the
+             cards + board. Empty = the design's default title (current behavior).
+             The title auto-fits, so a long one just prints smaller — the live
+             preview below shows the exact result so the buyer can self-correct. -->
+        <label class="wiz-field" id="customTitleField" data-testid="custom-title-field">
+          <span class="wiz-lbl">כותרת משלכם (רשות)</span>
+          <textarea
+            class="wiz-input"
+            id="customTitleInput"
+            data-testid="custom-title-input"
+            rows="2"
+            maxlength="63"
+            placeholder="למשל: ליאת חוגגת 40"
+            aria-label="כותרת מותאמת אישית (רשות)"
+          ></textarea>
+          <span class="wiz-hint" data-testid="custom-title-hint"
+            >משאירים ריק - והכותרת של העיצוב תופיע. אפשר לכתוב כותרת משלכם והיא תחליף אותה.</span
+          >
+          <span
+            class="wiz-hint custom-title-warn"
+            id="customTitleWarn"
+            data-testid="custom-title-warn"
+            hidden
+          ></span>
+        </label>
+
         <!-- LIVE RENDERED PREVIEW: right after a valid name is entered we POST it
              to /api/preview and show the REAL rendered sample card + board with
              the name, plus a Hebrew word-font picker. Best-effort — any failure
@@ -2595,6 +2627,7 @@
       let colorIndex = -1; // -1 = the design's original colors (default)
       let activeTab = 'front';
       let chasers = false; // optional drinking-game add-on (default OFF)
+      let customTitle = ''; // optional free-form title override (F7); '' = theme default
       let currentStep = 1; // wizard position (1..5); read by persist() for the URL
 
       // colour-step swipe carousel (front/back/board) — see setupColorCarousel
@@ -3084,6 +3117,7 @@
           colorName,
           mainHex,
           chasers,
+          customTitle,
         };
       }
 
@@ -3314,6 +3348,46 @@
       const npfRetry = document.getElementById('npfRetry');
       const fontOpts = document.getElementById('fontOpts');
 
+      /* ---- optional custom title (F7) --------------------------------------
+         A free-form title the buyer can type to OVERRIDE the design's own title
+         on the cards + board. Empty keeps the design default. The generator
+         auto-fits the title, so a long one can NEVER overflow — it just prints
+         smaller; past a readable length we surface a non-blocking "may print
+         small" note (the live preview is the real safety net). */
+      const customTitleInput = document.getElementById('customTitleInput');
+      const customTitleWarn = document.getElementById('customTitleWarn');
+      // Heuristic thresholds (chars) that correlate with the auto-fit shrinking a
+      // title below a comfortably readable size — advisory only.
+      const TITLE_SMALL_LINE = 18; // a single line this long starts to print small
+      const TITLE_SMALL_WORD = 12; // one unbreakable word this long forces a small fit
+      function refreshCustomTitleWarn() {
+        if (!customTitleWarn) return;
+        const lines = customTitle
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean);
+        const longestLine = lines.reduce((m, l) => Math.max(m, l.length), 0);
+        const longestWord = lines
+          .join(' ')
+          .split(/\s+/)
+          .reduce((m, w) => Math.max(m, w.length), 0);
+        const small = longestLine > TITLE_SMALL_LINE || longestWord > TITLE_SMALL_WORD;
+        customTitleWarn.hidden = !small;
+        if (small) {
+          customTitleWarn.textContent =
+            'כותרת ארוכה - היא תודפס קטן יותר. כדאי לבדוק בתצוגה שהיא נראית טוב.';
+        }
+      }
+      if (customTitleInput) {
+        customTitleInput.addEventListener('input', () => {
+          customTitle = customTitleInput.value;
+          refreshCustomTitleWarn();
+          persist();
+          // Re-render the live preview so the buyer sees the EXACT title (WYSIWYG).
+          if (currentStep === 3) requestPreview();
+        });
+      }
+
       // The picker ALWAYS starts on the design's ORIGINAL font — represented by a
       // marked "מקורי" chip (like the colour picker) so clients can tell the
       // authentic font apart. chosenWordFont === null means "no override → the
@@ -3492,6 +3566,9 @@
               // The chasers add-on toggle (step 2) drives which board variant the
               // server renders, so the name-step board preview matches the order.
               chasers,
+              // Optional custom title (F7) — the server renders the EXACT title so
+              // the buyer sees WYSIWYG before paying. Empty = the theme default.
+              title: customTitle,
             }),
           });
           const data = await r.json();
@@ -4047,6 +4124,9 @@
               // the card word-font the customer picked in the preview (or null)
               word_font: chosenWordFont,
               chasers: s.chasers,
+              // optional free-form custom title (F7); server sanitizes + treats
+              // empty/whitespace as absent (the design's own title is used)
+              custom_title: customTitle,
             }),
           });
           const data = await r.json();
@@ -4412,6 +4492,16 @@
             const saved = JSON.parse(localStorage.getItem('dugri_selection') || 'null');
             if (saved && typeof saved.chasers === 'boolean') chasers = saved.chasers;
           } catch (e) {}
+        }
+        // restore the optional custom title (F7) from the saved selection (it is
+        // kept out of the URL — a free-form title can contain arbitrary text).
+        try {
+          const saved = JSON.parse(localStorage.getItem('dugri_selection') || 'null');
+          if (saved && typeof saved.customTitle === 'string') customTitle = saved.customTitle;
+        } catch (e) {}
+        if (customTitleInput) {
+          customTitleInput.value = customTitle;
+          refreshCustomTitleWarn();
         }
         // a fixed-colour design ignores any restored colour choice.
         if (isFixedDesign()) colorIndex = -1;

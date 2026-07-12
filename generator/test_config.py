@@ -530,6 +530,116 @@ def test_render_board_chasers_raster_differs_from_plain():
         config.theme_dir = saved["td"]
 
 
+def test_custom_title_overrides_theme_derived_lines():
+    # F7 (a): an order-level custom title REPLACES the theme-derived title_lines.
+    # Multi-line titles split on newlines (each line trimmed, blanks dropped).
+    cfg = config.theme("trip comeback")  # normally -> ["OZ'S", "WELCOME", "PARTY"]
+    assert config.title_lines(cfg, "oz", {}, custom_title="ליאת חוגגת 40") == ["ליאת חוגגת 40"]
+    assert config.title_lines(cfg, "oz", {}, custom_title="שורה 1\nשורה 2") == ["שורה 1", "שורה 2"]
+    # surrounding + blank-line whitespace is cleaned; empty lines never render
+    assert config.title_lines(cfg, "oz", {}, custom_title="  A  \n\n  B  ") == ["A", "B"]
+
+
+def test_no_custom_title_leaves_title_lines_byte_identical():
+    # F7 (b): with NO custom title (None / "" / whitespace-only) the output is
+    # byte-identical to today's theme-derived lines — default behavior preserved.
+    for cfg, name, extra in [
+        (config.theme("trip comeback"), "oz", {}),
+        (config.theme("japanese"), "tomer", {"AGE": "30"}),
+        (config.theme("anniversary"), "", {"YEARS": "30", "NAME1": "מיכל", "NAME2": "זאבי"}),
+    ]:
+        base = config.title_lines(cfg, name, extra)
+        assert config.title_lines(cfg, name, extra, custom_title=None) == base
+        assert config.title_lines(cfg, name, extra, custom_title="") == base
+        assert config.title_lines(cfg, name, extra, custom_title="   \n  ") == base
+
+
+def test_custom_title_routes_through_board_title_block():
+    # F7 (c) wiring: render_board must feed the OVERRIDE lines (not the theme's)
+    # into title_block — the same auto-fitting title renderer every title uses.
+    # Spy on title_block to capture the lines it receives.
+    import tempfile
+
+    import render_page as rp
+    import build
+
+    font = os.path.join(config.HERE, "Cafe-Regular.ttf")
+    tmp = tempfile.mkdtemp(prefix="dugri-test-customtitle-")
+    board_svg = os.path.join(tmp, "board.svg")
+    with open(board_svg, "w", encoding="utf-8") as f:
+        f.write('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" '
+                'viewBox="0 0 100 100"></svg>')
+
+    cfg = {"slug": "synthetic", "calibrated": True, "language": "hebrew",
+           "title_font": "Cafe-Regular.ttf", "word_font": "Cafe-Regular.ttf",
+           "title_style": {"fill": "#fff", "outline": "#000", "outline_w": 0.0,
+                           "arch": 0.0, "shadow": False},
+           "board": {"fill": "#fff", "outline": "#000",
+                     "frac": {"x0": 0.1, "y0": 0.1, "x1": 0.9, "y1": 0.3}}}
+    captured = {}
+
+    def spy_title_block(box, lines, *a, **k):
+        captured["lines"] = lines
+        return "<g/>"
+
+    saved = {"theme": config.theme, "ensure": config.ensure_calibrated,
+             "fp": config.font_path, "tb": rp.title_block,
+             "rs": build.render_svg, "ff": rp.font_face}
+    try:
+        config.theme = lambda name: cfg
+        config.ensure_calibrated = lambda c: None
+        config.font_path = lambda name, fn: font
+        rp.font_face = lambda name, path: ""
+        rp.title_block = spy_title_block
+        build.render_svg = lambda svg_text, w, h, out_png: out_png
+
+        # The override lines the CALLER computes (config.title_lines override path)
+        # are what build passes to render_board; assert render_board hands them on.
+        override = config.title_lines(cfg, "x", {}, custom_title="כותרת מיוחדת מאוד")
+        build.render_board("x", board_svg, override, os.path.join(tmp, "b.png"))
+        assert captured["lines"] == ["כותרת מיוחדת מאוד"], (
+            "render_board must feed the custom-title lines into title_block")
+    finally:
+        config.theme = saved["theme"]
+        config.ensure_calibrated = saved["ensure"]
+        config.font_path = saved["fp"]
+        rp.title_block = saved["tb"]
+        build.render_svg = saved["rs"]
+        rp.font_face = saved["ff"]
+
+
+def test_title_block_autofits_overlong_title_within_box():
+    # F7 (c) SAFETY: a long title can NEVER overflow — title_block sizes it to the
+    # SMALLER of fit-to-width / fit-to-height, so an over-long override just renders
+    # SMALLER. Assert the emitted font-size for a long single-line title (1) is
+    # smaller than for a short one in the SAME box, and (2) still fits the box width.
+    import re
+
+    import render_page as rp
+
+    font = os.path.join(config.HERE, "Cafe-Regular.ttf")
+    box = {"x0": 0, "y0": 0, "x1": 400, "y1": 200}
+
+    def emitted_size(line):
+        svg = rp.title_block(box, [line], "#000", "#000", font, 0, 0, False)
+        return float(re.search(r'font-size="([0-9.]+)"', svg).group(1))
+
+    short = emitted_size("קצר")
+    long = emitted_size("כותרת ארוכה מאוד מאוד שלא נגמרת")
+    assert long < short, "a longer title must auto-fit to a SMALLER font size"
+
+    # And it fits the box WIDTH: rendered width = size * (glyph width per unit) must
+    # not exceed the box width (that is exactly what the width term guarantees).
+    from PIL import ImageFont
+
+    f, ref = rp._title_metrics(font)
+    for line in ("קצר", "כותרת ארוכה מאוד מאוד שלא נגמרת"):
+        size = emitted_size(line)
+        rendered_w = f.getlength(line) / ref * size
+        assert rendered_w <= (box["x1"] - box["x0"]) + 1e-6, (
+            "auto-fit must keep the title within the box width (no overflow)")
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

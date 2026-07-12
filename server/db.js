@@ -98,6 +98,26 @@ function sanitizeExtraFields(input) {
   return out;
 }
 
+// F7 custom title: an OPTIONAL per-order free-form title that OVERRIDES the
+// theme-derived title on the cards + board. Normalizes newlines, trims and
+// collapses inner spaces per line, drops blank lines, and caps the total length.
+// Empty/whitespace input -> null (absent), so the theme's own title is used
+// unchanged. Newlines are preserved as deliberate line breaks (the generator
+// splits on them); the cap guards against an unbounded stored string.
+const CUSTOM_TITLE_MAX = 120;
+function sanitizeCustomTitle(input) {
+  if (input == null) return null;
+  const lines = String(input)
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((ln) => ln.trim().replace(/\s+/g, ' '))
+    .filter((ln) => ln.length);
+  if (!lines.length) return null;
+  // Cap by code point (Array.from splits on astral chars) so the 120 boundary
+  // never bisects an emoji/surrogate pair and emits a lone surrogate.
+  return Array.from(lines.join('\n')).slice(0, CUSTOM_TITLE_MAX).join('');
+}
+
 // 'cancelled' (admin soft-cancel) takes precedence; otherwise open while not
 // closed and not past expiry; otherwise 'closed' / 'expired'.
 function effectiveStatus(c) {
@@ -110,6 +130,8 @@ function effectiveStatus(c) {
 
 const db = {
   effectiveStatus,
+  // Exposed for the preview route (parity with stored orders) + unit tests.
+  sanitizeCustomTitle,
 
   createCollection(honoreeName, contact = {}) {
     const c = {
@@ -139,6 +161,10 @@ const db = {
       // Optional drinking-game add-on ("צ'ייסרים") - free; the owner builds the
       // board with special "drink" tiles when this is on.
       chasers: !!contact.chasers,
+      // Optional free-form custom title (F7) overriding the theme's derived title
+      // on the cards + board. Sanitized/capped; null when empty so the theme
+      // default is used. The generator receives this via its --title CLI arg.
+      custom_title: sanitizeCustomTitle(contact.custom_title),
       status: 'open',
       created_at: nowIso(),
       expires_at: new Date(Date.now() + YEAR_MS).toISOString(),
