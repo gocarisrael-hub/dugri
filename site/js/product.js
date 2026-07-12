@@ -262,7 +262,7 @@ function renderRelated(current) {
     const name = el('span', 'pdp-rel-name');
     name.textContent = d.name;
     const price = el('span', 'pdp-rel-price');
-    price.textContent = `${PRICE} ₪`;
+    price.textContent = `מ-${PRICE} ₪`;
 
     card.append(thumb, name, price);
     track.appendChild(card);
