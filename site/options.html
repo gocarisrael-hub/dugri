@@ -512,12 +512,26 @@
          inside the frame rather than stretching. The <img> default is object-fit:
          fill, which is what squished portrait art into the 1.414 landscape box. */
       .preview-panel[data-panel='front'] img,
-      .preview-panel[data-panel='back'] img,
-      .preview-panel[data-panel='board'] img {
+      .preview-panel[data-panel='back'] img {
         width: auto;
         height: auto;
         max-width: 100%;
         max-height: min(56vh, 460px);
+        object-fit: contain;
+      }
+      /* The BOARD is ALWAYS a full-page LANDSCAPE artboard (like the SVG cards),
+         not portrait card art — so a raster board must FILL the panel width exactly
+         as the SVG does, instead of rendering at its small intrinsic size (which is
+         what the auto/auto rule above would do, leaving the board a tiny sliver next
+         to the width-filling SVG cards). Mirror the SVG rule: width-driven, boxed to
+         the page ratio, same viewport cap. object-fit: contain still letterboxes
+         (never squishes) if a non-landscape board is ever supplied. */
+      .preview-panel[data-panel='board'] img {
+        width: 100%;
+        height: auto;
+        max-width: 100%;
+        max-height: min(56vh, 460px);
+        aspect-ratio: var(--page-ratio);
         object-fit: contain;
       }
       .preview-panel svg,
@@ -1802,7 +1816,6 @@
           id="honoreeInput"
           data-testid="honoree-input"
           maxlength="60"
-          placeholder="למשל: שירה"
           autocomplete="name"
         />
         <span class="wiz-err" id="nameErr" data-testid="name-err" hidden
@@ -1842,7 +1855,6 @@
               id="extraAge"
               data-testid="extra-age"
               data-extra-input="AGE"
-              placeholder="למשל: 30"
             />
             <span class="wiz-err" data-extra-err="AGE" data-testid="extra-age-err" hidden
               >אפשר להזין מספר שלם בלבד (גיל בין 0 ל-120).</span
@@ -1860,7 +1872,6 @@
               id="extraYears"
               data-testid="extra-years"
               data-extra-input="YEARS"
-              placeholder="למשל: 25"
             />
             <span class="wiz-err" data-extra-err="YEARS" data-testid="extra-years-err" hidden
               >אפשר להזין מספר שלם בלבד (שנים בין 0 ל-120).</span
@@ -1875,7 +1886,6 @@
               id="extraName1"
               data-testid="extra-name1"
               data-extra-input="NAME1"
-              placeholder="למשל: דנה"
               autocomplete="name"
             />
             <span class="wiz-err" data-extra-err="NAME1" data-testid="extra-name1-err" hidden
@@ -1891,7 +1901,6 @@
               id="extraName2"
               data-testid="extra-name2"
               data-extra-input="NAME2"
-              placeholder="למשל: יוסי"
               autocomplete="name"
             />
             <span class="wiz-err" data-extra-err="NAME2" data-testid="extra-name2-err" hidden
@@ -2285,7 +2294,6 @@
             id="ownerEmail"
             data-testid="owner-email"
             maxlength="120"
-            placeholder="name@example.com"
             autocomplete="email"
             inputmode="email"
           />
@@ -2301,7 +2309,6 @@
             id="ownerPhone"
             data-testid="owner-phone"
             maxlength="40"
-            placeholder="0521234567"
             autocomplete="tel"
             inputmode="tel"
           />
