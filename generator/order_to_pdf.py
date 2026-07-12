@@ -27,7 +27,7 @@ from topup import topup
 
 
 def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
-                 word_font=None, workdir=None, progress=False):
+                 word_font=None, workdir=None, progress=False, chasers=False):
     """Render an order to a PDF and return (out_pdf, page_count).
 
     theme_key     a key in generator/themes.json (e.g. "trip comeback")
@@ -36,6 +36,8 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
     personal_words the customer's own words (all are always included)
     out_pdf       output path; a temp file is used when omitted
     word_font     optional card-font filename override (in the theme fonts dir)
+    chasers       when True, use the theme's chasers board variant if it ships one
+                  (clean/board-chasers.svg), else the normal board (additive)
     """
     cfg = config.theme(theme_key)
     config.ensure_calibrated(cfg)  # fail fast on an uncalibrated theme
@@ -64,7 +66,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
 
         # 3) Render the full PDF onto the theme's clean backgrounds.
         fronts = config.clean_path(theme_key, "fronts")
-        board = config.clean_path(theme_key, "board")
+        board = config.board_clean_path(theme_key, chasers=chasers)
         backs_path = config.clean_path(theme_key, "backs")
         backs = backs_path if os.path.exists(backs_path) else None
 
@@ -72,6 +74,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
             theme_key, fronts, board, csv_path, name, out_pdf,
             backs=backs, extra_fields=extra_fields or {}, word_font=word_font,
             workdir=os.path.join(workdir, "build"), progress=progress,
+            chasers=chasers,
         )
     except BaseException:
         # On failure, drop a half-written PDF we created (a partial file is
@@ -109,12 +112,15 @@ def main():
     ap.add_argument("out_pdf")
     ap.add_argument("--word-font", default=None)
     ap.add_argument("--field", action="append", default=[], metavar="KEY=VALUE")
+    ap.add_argument("--chasers", action="store_true",
+                    help="use the theme's chasers board variant when available")
     args = ap.parse_args()
 
     personal = open(args.words, encoding="utf-8-sig").read().splitlines()
     pdf, pages = order_to_pdf(
         args.theme, args.name, _parse_fields(args.field), personal,
         out_pdf=args.out_pdf, word_font=args.word_font, progress=True,
+        chasers=args.chasers,
     )
     print(f"\nwrote {pdf} ({pages} pages)")
 

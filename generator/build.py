@@ -41,11 +41,27 @@ def render_svg(svg_text, w, h, out_png):
     return out_png
 
 
-def render_board(theme, board_clean, title_lines, out_png):
+def render_board(theme, board_clean, title_lines, out_png, chasers=False):
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    w, h, vb = svg_dims(board_clean)
     bd, ts = cfg.get("board"), cfg["title_style"]
+    # Chasers (drinking-game) add-on: prefer the theme's chasers board variant when
+    # it exists, else fall back to the clean board passed in (additive, never errors
+    # for a theme with no chasers board).
+    if chasers:
+        variant = config.board_clean_path(theme, chasers=True)
+        # For a TITLED board, the honoree name is positioned by fractions (bd["frac"])
+        # calibrated against the PLAIN board's viewBox. A chasers board whose viewBox
+        # differs would place the name off-position on the customer's print-ready PDF.
+        # So only adopt the variant when it's the plain board (no chasers file), the
+        # board carries no title, or its viewBox matches — else keep the plain board
+        # rather than risk a misprinted name.
+        plain = config.clean_path(theme, "board")
+        if not bd or variant == plain or svg_dims(variant)[2] == svg_dims(plain)[2]:
+            board_clean = variant
+        else:
+            board_clean = plain
+    w, h, vb = svg_dims(board_clean)
     if not bd:  # theme has no personalized board title -> use the clean board as-is
         return render_svg(open(board_clean, encoding="utf-8").read(), w, h, out_png)
     frac = bd["frac"]
@@ -88,7 +104,7 @@ def render_backs(theme, backs_clean, title_lines, out_png):
 
 def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
               extra_fields=None, word_font=None, workdir="/tmp/gen/build",
-              progress=True):
+              progress=True, chasers=False):
     """Assemble the full order PDF and return (out_pdf, page_count).
 
     ``extra_fields`` feeds the theme's title template (e.g. AGE/YEARS/NAME1);
@@ -122,7 +138,8 @@ def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
         if back_png:                       # duplex order: front then its back
             pages.append(back_png)
         log(f"front page {i+1}/{len(data)}")
-    board_png = render_board(theme, board, title_lines, os.path.join(workdir, "board.png"))
+    board_png = render_board(theme, board, title_lines, os.path.join(workdir, "board.png"),
+                             chasers=chasers)
     pages.append(board_png)
     log("board")
 

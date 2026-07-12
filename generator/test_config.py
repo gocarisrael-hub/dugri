@@ -333,6 +333,203 @@ def test_build_page_survives_card_with_no_word_slots():
             os.remove(recipe_path)
 
 
+def test_board_clean_path_prefers_chasers_variant_when_present():
+    # chasers on + a board-chasers.svg on disk -> that variant; chasers off (or the
+    # default) -> always the normal board.svg, even when the variant exists.
+    import tempfile
+
+    tmp = tempfile.mkdtemp(prefix="dugri-test-board-")
+    clean = os.path.join(tmp, "clean")
+    os.makedirs(clean, exist_ok=True)
+    board = os.path.join(clean, "board.svg")
+    chasers = os.path.join(clean, "board-chasers.svg")
+    open(board, "w", encoding="utf-8").write("<svg/>")
+    open(chasers, "w", encoding="utf-8").write("<svg/>")
+    saved = config.theme_dir
+    try:
+        config.theme_dir = lambda name: tmp
+        assert config.board_clean_path("x", chasers=True) == chasers
+        assert config.board_clean_path("x", chasers=False) == board
+        assert config.board_clean_path("x") == board  # default is chasers off
+    finally:
+        config.theme_dir = saved
+
+
+def test_board_clean_path_falls_back_when_no_chasers_variant():
+    # chasers on but NO board-chasers.svg -> gracefully falls back to board.svg
+    # (the feature is additive and never raises for a missing chasers asset).
+    import tempfile
+
+    tmp = tempfile.mkdtemp(prefix="dugri-test-board-")
+    clean = os.path.join(tmp, "clean")
+    os.makedirs(clean, exist_ok=True)
+    board = os.path.join(clean, "board.svg")
+    open(board, "w", encoding="utf-8").write("<svg/>")
+    saved = config.theme_dir
+    try:
+        config.theme_dir = lambda name: tmp
+        assert config.board_clean_path("x", chasers=True) == board
+    finally:
+        config.theme_dir = saved
+
+
+def test_render_board_reads_chasers_variant_when_flagged():
+    # render_board must READ the theme's board-chasers.svg when chasers=True and it
+    # exists, and the plain board.svg otherwise. Capture the SVG text handed to
+    # render_svg (no Chrome) to prove which clean board file won.
+    import tempfile
+
+    import build
+
+    tmp = tempfile.mkdtemp(prefix="dugri-test-boardsel-")
+    clean = os.path.join(tmp, "clean")
+    os.makedirs(clean, exist_ok=True)
+    hdr = ('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" '
+           'viewBox="0 0 100 100">{}</svg>')
+    board = os.path.join(clean, "board.svg")
+    chasers = os.path.join(clean, "board-chasers.svg")
+    open(board, "w", encoding="utf-8").write(hdr.format("<!--PLAIN-BOARD-->"))
+    open(chasers, "w", encoding="utf-8").write(hdr.format("<!--CHASERS-BOARD-->"))
+
+    # A board-less (no personalized title) calibrated theme -> render_board renders
+    # the clean board file as-is, so the captured SVG reveals which file was read.
+    cfg = {"slug": "synthetic", "calibrated": True, "board": None,
+           "title_style": {"outline_w": 0, "arch": 0, "shadow": False}}
+    captured = {}
+    saved = {"theme": config.theme, "ensure": config.ensure_calibrated,
+             "td": config.theme_dir, "rs": build.render_svg}
+    try:
+        config.theme = lambda name: cfg
+        config.ensure_calibrated = lambda c: None
+        config.theme_dir = lambda name: tmp
+        build.render_svg = lambda svg_text, w, h, out: captured.setdefault("svg", svg_text)
+
+        captured.clear()
+        build.render_board("x", board, ["T"], os.path.join(tmp, "p.png"), chasers=False)
+        assert "PLAIN-BOARD" in captured["svg"] and "CHASERS" not in captured["svg"]
+
+        captured.clear()
+        build.render_board("x", board, ["T"], os.path.join(tmp, "c.png"), chasers=True)
+        assert "CHASERS-BOARD" in captured["svg"], "chasers=True must read board-chasers.svg"
+    finally:
+        config.theme = saved["theme"]
+        config.ensure_calibrated = saved["ensure"]
+        config.theme_dir = saved["td"]
+        build.render_svg = saved["rs"]
+
+
+def test_render_board_chasers_falls_back_when_viewbox_differs():
+    # SAFETY: a TITLED board places the honoree name by fractions calibrated against
+    # the PLAIN board's viewBox. If an admin uploads a board-chasers.svg with a
+    # DIFFERENT viewBox, trusting it would put the name off-position on the customer's
+    # PDF. render_board must fall back to the plain board in that case; when the
+    # viewBox MATCHES it uses the chasers variant as normal.
+    import tempfile
+
+    import build
+    import render_page as rp
+
+    tmp = tempfile.mkdtemp(prefix="dugri-test-boardvb-")
+    clean = os.path.join(tmp, "clean")
+    os.makedirs(clean, exist_ok=True)
+
+    def hdr(vb, marker):
+        w, h = vb[2], vb[3]
+        return ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" '
+                'viewBox="0 0 %d %d">%s</svg>' % (w, h, w, h, marker))
+
+    board = os.path.join(clean, "board.svg")
+    chasers = os.path.join(clean, "board-chasers.svg")
+    open(board, "w", encoding="utf-8").write(hdr([0, 0, 100, 100], "<!--PLAIN-BOARD-->"))
+
+    # A TITLED synthetic theme (bd truthy) so the name-placement calibration matters.
+    cfg = {"slug": "synthetic", "calibrated": True, "language": "english",
+           "title_font": "Cafe-Regular.ttf",
+           "title_style": {"fill": "#fff", "outline": "#000", "outline_w": 0.0,
+                           "arch": 0.0, "shadow": False},
+           "board": {"fill": "#fff", "outline": "#000",
+                     "frac": {"x0": 0.1, "y0": 0.1, "x1": 0.9, "y1": 0.3}}}
+    captured = {}
+    saved = {"theme": config.theme, "ensure": config.ensure_calibrated,
+             "td": config.theme_dir, "fp": config.font_path,
+             "tb": rp.title_block, "ff": rp.font_face, "rs": build.render_svg}
+    try:
+        config.theme = lambda name: cfg
+        config.ensure_calibrated = lambda c: None
+        config.theme_dir = lambda name: tmp
+        config.font_path = lambda name, fn: fn
+        rp.font_face = lambda name, path: ""
+        rp.title_block = lambda *a, **k: "<g/>"
+        build.render_svg = lambda svg_text, w, h, out: captured.setdefault("svg", svg_text)
+
+        # Chasers board with a DIFFERENT viewBox -> must fall back to the plain board.
+        open(chasers, "w", encoding="utf-8").write(hdr([0, 0, 200, 90], "<!--CHASERS-BOARD-->"))
+        captured.clear()
+        build.render_board("x", board, ["T"], os.path.join(tmp, "d.png"), chasers=True)
+        assert "PLAIN-BOARD" in captured["svg"] and "CHASERS" not in captured["svg"], (
+            "mismatched-viewBox chasers board must fall back to the plain board")
+
+        # Chasers board with a MATCHING viewBox -> the variant is used.
+        open(chasers, "w", encoding="utf-8").write(hdr([0, 0, 100, 100], "<!--CHASERS-BOARD-->"))
+        captured.clear()
+        build.render_board("x", board, ["T"], os.path.join(tmp, "m.png"), chasers=True)
+        assert "CHASERS-BOARD" in captured["svg"], (
+            "matching-viewBox chasers board must be used for a titled board")
+    finally:
+        config.theme = saved["theme"]
+        config.ensure_calibrated = saved["ensure"]
+        config.theme_dir = saved["td"]
+        config.font_path = saved["fp"]
+        rp.title_block = saved["tb"]
+        rp.font_face = saved["ff"]
+        build.render_svg = saved["rs"]
+
+
+def test_render_board_chasers_raster_differs_from_plain():
+    # Semantics (not just wiring): the chasers board actually rasterizes to a
+    # DIFFERENT image than the plain board when a chasers asset is present. Rendered
+    # through this generator's headless-Chrome path. Chrome-guarded so it skips where
+    # the rasterizer is absent (e.g. the JS-only CI) rather than failing.
+    import hashlib
+    import tempfile
+
+    import build
+    import render_page as rp
+
+    if not os.path.exists(rp.CHROME):
+        return  # no rasterizer here -> skip, don't fail
+
+    tmp = tempfile.mkdtemp(prefix="dugri-test-boardraster-")
+    clean = os.path.join(tmp, "clean")
+    os.makedirs(clean, exist_ok=True)
+
+    def svg(fill):
+        return ('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80" '
+                'viewBox="0 0 120 80"><rect width="120" height="80" fill="%s"/></svg>' % fill)
+
+    board = os.path.join(clean, "board.svg")
+    open(board, "w", encoding="utf-8").write(svg("#ffffff"))
+    open(os.path.join(clean, "board-chasers.svg"), "w", encoding="utf-8").write(svg("#c81e1e"))
+
+    cfg = {"slug": "synthetic", "calibrated": True, "board": None,
+           "title_style": {"outline_w": 0, "arch": 0, "shadow": False}}
+    saved = {"theme": config.theme, "ensure": config.ensure_calibrated, "td": config.theme_dir}
+    try:
+        config.theme = lambda name: cfg
+        config.ensure_calibrated = lambda c: None
+        config.theme_dir = lambda name: tmp
+        p_plain = build.render_board("x", board, ["T"], os.path.join(tmp, "plain.png"),
+                                     chasers=False)
+        p_ch = build.render_board("x", board, ["T"], os.path.join(tmp, "ch.png"), chasers=True)
+        h_plain = hashlib.md5(open(p_plain, "rb").read()).hexdigest()
+        h_ch = hashlib.md5(open(p_ch, "rb").read()).hexdigest()
+        assert h_plain != h_ch, "chasers board raster must differ from the plain board"
+    finally:
+        config.theme = saved["theme"]
+        config.ensure_calibrated = saved["ensure"]
+        config.theme_dir = saved["td"]
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:
