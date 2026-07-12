@@ -101,6 +101,17 @@ function readArgvLog() {
     .map((l) => JSON.parse(l));
 }
 
+// F7 passes the title as a SINGLE token `--title=<value>` (not `--title` + value)
+// so a value that starts with '-' can't be mis-parsed by python argparse as an
+// option. These helpers read that single-token form out of a captured argv.
+function titleArg(argv) {
+  const t = argv.find((a) => typeof a === 'string' && a.startsWith('--title='));
+  return t === undefined ? undefined : t.slice('--title='.length);
+}
+function hasTitleArg(argv) {
+  return argv.some((a) => typeof a === 'string' && a.startsWith('--title'));
+}
+
 async function post(urlPath, body) {
   const res = await fetch(base + urlPath, {
     method: 'POST',
@@ -131,6 +142,24 @@ describe('db.sanitizeCustomTitle', () => {
     const long = 'x'.repeat(400);
     expect(db.sanitizeCustomTitle(long).length).toBe(120);
   });
+
+  it('keeps a leading dash verbatim (the generator handles it dash-safely)', () => {
+    expect(db.sanitizeCustomTitle('-40')).toBe('-40');
+    expect(db.sanitizeCustomTitle('  -רווקות  ')).toBe('-רווקות');
+  });
+
+  it('caps at the emoji boundary without splitting an astral surrogate pair', () => {
+    // 119 plain chars + a 2-UTF-16-unit emoji: a naive slice(0,120) would cut the
+    // emoji in half and leave a lone surrogate. Capping by code point keeps the
+    // emoji whole as the 120th code point.
+    const out = db.sanitizeCustomTitle('x'.repeat(119) + '😀' + 'y'.repeat(50));
+    const cps = Array.from(out); // iterates by code point
+    expect(cps.length).toBe(120); // 119 x's + the whole emoji
+    expect(out.endsWith('😀')).toBe(true);
+    // no element is a lone surrogate (a bisected pair would be a length-1 D800–DFFF)
+    const lone = cps.some((ch) => ch.length === 1 && ch >= '\uD800' && ch <= '\uDFFF');
+    expect(lone).toBe(false);
+  });
 });
 
 describe('createCollection custom_title', () => {
@@ -157,10 +186,26 @@ describe('server threads the custom title to the generator', () => {
     const runs = readArgvLog().slice(before);
     const prev = runs.find((a) => a[0].includes('preview.py'));
     expect(prev).toBeTruthy();
-    const ti = prev.indexOf('--title');
-    expect(ti).toBeGreaterThan(-1);
     // sanitized (inner whitespace collapsed, trimmed) — WYSIWYG vs. what is stored
-    expect(prev[ti + 1]).toBe('My Party');
+    expect(titleArg(prev)).toBe('My Party');
+  });
+
+  it('POST /api/preview forwards a dash-leading title as one --title= token (argparse-safe)', async () => {
+    const before = readArgvLog().length;
+    const r = await post('/api/preview', {
+      theme: 'trip comeback',
+      name: 'Shira',
+      title: '-רווקות',
+    });
+    expect(r.status).toBe(200);
+    const prev = readArgvLog()
+      .slice(before)
+      .find((a) => a[0].includes('preview.py'));
+    expect(prev).toBeTruthy();
+    // MUST be the single-token form so python argparse never reads '-רווקות' as an option
+    expect(prev.some((a) => a === '--title=-רווקות')).toBe(true);
+    expect(prev.includes('--title')).toBe(false); // never the two-token form
+    expect(titleArg(prev)).toBe('-רווקות');
   });
 
   it('POST /api/preview omits --title when no title is given', async () => {
@@ -171,7 +216,7 @@ describe('server threads the custom title to the generator', () => {
       .slice(before)
       .find((a) => a[0].includes('preview.py'));
     expect(prev).toBeTruthy();
-    expect(prev.includes('--title')).toBe(false);
+    expect(hasTitleArg(prev)).toBe(false);
   });
 
   it('POST /api/preview omits --title for a whitespace-only title', async () => {
@@ -180,7 +225,7 @@ describe('server threads the custom title to the generator', () => {
     const prev = readArgvLog()
       .slice(before)
       .find((a) => a[0].includes('preview.py'));
-    expect(prev.includes('--title')).toBe(false);
+    expect(hasTitleArg(prev)).toBe(false);
   });
 
   it('generate forwards the collection stored custom_title as --title', async () => {
@@ -195,9 +240,7 @@ describe('server threads the custom title to the generator', () => {
       .slice(before)
       .find((a) => a[0].includes('order_to_pdf.py'));
     expect(gen).toBeTruthy();
-    const ti = gen.indexOf('--title');
-    expect(ti).toBeGreaterThan(-1);
-    expect(gen[ti + 1]).toBe('Custom Deck Title');
+    expect(titleArg(gen)).toBe('Custom Deck Title');
   });
 
   it('generate omits --title when the collection has no custom title', async () => {
@@ -209,6 +252,6 @@ describe('server threads the custom title to the generator', () => {
       .slice(before)
       .find((a) => a[0].includes('order_to_pdf.py'));
     expect(gen).toBeTruthy();
-    expect(gen.includes('--title')).toBe(false);
+    expect(hasTitleArg(gen)).toBe(false);
   });
 });

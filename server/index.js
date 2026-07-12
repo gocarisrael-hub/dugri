@@ -83,7 +83,9 @@ function runGenerator({ theme, name, words, outPdf, wordFont, extraFields, chase
     // when it ships one (else falls back to the normal board — additive).
     if (chasers) args.push('--chasers');
     // Custom title (F7): override the theme-derived title on the cards + board.
-    if (customTitle) args.push('--title', customTitle);
+    // --title=<value> (single token) so a title that starts with '-' (e.g. "-40",
+    // "-רווקות") is never parsed by argparse as an option and crash the generator.
+    if (customTitle) args.push('--title=' + customTitle);
     const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
     let stdout = '';
     let stderr = '';
@@ -170,7 +172,9 @@ function runPreview({ theme, name, wordFont, extraFields, chasers, customTitle }
     if (chasers) args.push('--chasers');
     // Custom title (F7): preview the EXACT overriding title (WYSIWYG), matching
     // what production will render.
-    if (customTitle) args.push('--title', customTitle);
+    // --title=<value> (single token) so a title that starts with '-' (e.g. "-40",
+    // "-רווקות") is never parsed by argparse as an option and crash the generator.
+    if (customTitle) args.push('--title=' + customTitle);
     const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
     let stdout = '';
     let stderr = '';

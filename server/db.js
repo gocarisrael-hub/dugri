@@ -113,7 +113,9 @@ function sanitizeCustomTitle(input) {
     .map((ln) => ln.trim().replace(/\s+/g, ' '))
     .filter((ln) => ln.length);
   if (!lines.length) return null;
-  return lines.join('\n').slice(0, CUSTOM_TITLE_MAX);
+  // Cap by code point (Array.from splits on astral chars) so the 120 boundary
+  // never bisects an emoji/surrogate pair and emits a lone surrogate.
+  return Array.from(lines.join('\n')).slice(0, CUSTOM_TITLE_MAX).join('');
 }
 
 // 'cancelled' (admin soft-cancel) takes precedence; otherwise open while not
