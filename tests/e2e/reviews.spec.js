@@ -53,4 +53,33 @@ test.describe('reviews section shows the testimonials (not blank)', () => {
     await dots.nth(2).click();
     await expect.poll(() => page.evaluate(centeredReviewSrc)).toBe('review-3.jpg');
   });
+
+  test('each review mat has a non-transparent pastel background', async ({ page }) => {
+    await page.goto('/index.html');
+    await page.locator('#reviews').scrollIntoViewIfNeeded();
+
+    // The four soft pastels (light blue → light green → banana yellow → light
+    // pink), as computed rgb() strings. The screenshots sit on top of these mats.
+    const PASTELS = [
+      'rgb(214, 236, 255)', // #d6ecff light blue
+      'rgb(217, 242, 222)', // #d9f2de light green
+      'rgb(255, 243, 196)', // #fff3c4 banana yellow
+      'rgb(255, 225, 236)', // #ffe1ec light pink
+    ];
+
+    // Read the computed background of the four REAL review mats (skip the loop
+    // clones, which carry data-carousel-clone). Each must be a solid pastel, not
+    // the old neutral warm-white / transparent.
+    const bgs = await page.evaluate(() =>
+      [...document.querySelectorAll('#reviewsTrack .review:not([data-carousel-clone])')].map(
+        (el) => getComputedStyle(el).backgroundColor
+      )
+    );
+    expect(bgs).toHaveLength(4);
+    for (let i = 0; i < 4; i++) {
+      expect(bgs[i]).not.toBe('rgba(0, 0, 0, 0)');
+      expect(bgs[i]).not.toBe('transparent');
+      expect(bgs[i]).toBe(PASTELS[i]);
+    }
+  });
 });

@@ -547,27 +547,30 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #fdf6ec; /* fallback; per-review shade set below */
+        background: #d6ecff; /* fallback; per-review pastel set below */
         border: 1px solid var(--line);
         border-radius: var(--radius);
         overflow: hidden;
         box-shadow: var(--shadow-md);
       }
-      /* each review its own distinct warm off-white CARD shade — deliberately
-         LIGHTER than the sand section (--section #f4efe6) so, with the hairline
-         border + shadow, each mat lifts clearly off the wash instead of blending
-         into it. Four distinct shades; warm (pink is logo-only now). */
+      /* Deliberate splash of soft colour on the reviews rail only: each review
+         mat gets one of four low-saturation pastels, cycling by position
+         (light blue → light green → banana yellow → light pink). The pastel is
+         the MAT behind the WhatsApp screenshot — the screenshot keeps its own
+         chat background on top, so it stays fully readable. The carousel pins
+         each slide's computed colour inline before cloning, so the nth-of-type
+         cycle survives the seamless loop. */
       .review:nth-of-type(1) {
-        background: #fffdfa; /* brightest warm white */
+        background: #d6ecff; /* light blue */
       }
       .review:nth-of-type(2) {
-        background: #fefaf3; /* soft cream */
+        background: #d9f2de; /* light green */
       }
       .review:nth-of-type(3) {
-        background: #fdf6ec; /* warm ivory */
+        background: #fff3c4; /* banana yellow */
       }
       .review:nth-of-type(4) {
-        background: #fcf2e4; /* light sand-cream */
+        background: #ffe1ec; /* light pink */
       }
       .review img {
         display: block;
