@@ -256,3 +256,53 @@ test.describe('zoom rotate hint', () => {
     await expect(page.getByTestId('zoom-hint')).toBeHidden();
   });
 });
+
+// OPTION C (enlarged overlay) — every enlarged view is a full-page LANDSCAPE sheet
+// cloned into the same zoom-content box, so the board is ALREADY shown full-width,
+// as large as the overlay allows (never a shrunk sliver) and equal to front/back.
+// Lock that: the board view fills the zoom-content width and never overflows the
+// screen, and switching front → board keeps front full-width (front unchanged).
+test.describe('OPTION C — the enlarged board view fills the overlay width', () => {
+  async function openZoom(page) {
+    await page.goto('/options.html');
+    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await page.getByTestId('zoom-open').click();
+    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
+  }
+  const zoomArt = (page) => page.locator('#zoomContent svg, #zoomContent img').first();
+
+  test('the board view fills the zoom width and never overflows the viewport', async ({ page }) => {
+    await openZoom(page);
+
+    await page.getByTestId('zoom-tab-board').click();
+    await expect(page.getByTestId('zoom-tab-board')).toHaveAttribute('aria-selected', 'true');
+    const art = zoomArt(page);
+    await expect(art).toBeVisible();
+
+    const contentBox = await page.getByTestId('zoom-content').boundingBox();
+    const artBox = await art.boundingBox();
+    // the board art FILLS (≈) the full zoom-content width
+    expect(artBox.width).toBeGreaterThanOrEqual(contentBox.width - 4);
+
+    // and never wider than the screen (no horizontal overflow of the overlay)
+    const innerW = await page.evaluate(() => window.innerWidth);
+    expect(artBox.x).toBeGreaterThanOrEqual(-1);
+    expect(artBox.x + artBox.width).toBeLessThanOrEqual(innerW + 1);
+  });
+
+  test('switching front → board keeps front full-width too (front unchanged)', async ({ page }) => {
+    await openZoom(page);
+
+    // front view (the overlay opens on front) fills the width
+    await expect(zoomArt(page)).toBeVisible();
+    const frontW = (await zoomArt(page).boundingBox()).width;
+
+    // board view fills the same width — the board is never the small one
+    await page.getByTestId('zoom-tab-board').click();
+    await expect(page.getByTestId('zoom-tab-board')).toHaveAttribute('aria-selected', 'true');
+    await expect(zoomArt(page)).toBeVisible();
+    const boardW = (await zoomArt(page).boundingBox()).width;
+
+    expect(boardW).toBeGreaterThanOrEqual(frontW - 4);
+  });
+});

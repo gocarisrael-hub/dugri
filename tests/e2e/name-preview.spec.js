@@ -232,3 +232,84 @@ test.describe('name preview shows more of the card artwork', () => {
     expect(await card.evaluate((el) => getComputedStyle(el).objectFit)).toBe('contain');
   });
 });
+
+// OPTION C — the board is a LANDSCAPE artboard, so on its carousel slide it fills
+// the FULL preview width (the viewport widens to min(100%,700px) and the board img
+// fills it) instead of sitting as a small thumbnail next to the portrait card.
+// The card + back slides are untouched, and a wide board never overflows the page.
+test.describe('OPTION C — the board slide fills the full preview width', () => {
+  test('the board renders full-width (≈ the viewport), wider than the card, no overflow', async ({
+    page,
+  }, testInfo) => {
+    // Kill the carousel slide + viewport-widen transitions (the CSS disables both
+    // under reduced motion) so the board settles into its resting layout instantly
+    // — we then measure the final geometry, never a mid-animation frame.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mockPreview(page);
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+    await expect(page.getByTestId('name-preview-card')).toBeVisible();
+
+    // navigate the inline carousel to the board slide (mock ships card+back+board)
+    const boardDot = page.getByTestId('name-preview-dot-board');
+    await expect(boardDot).toBeVisible();
+    await boardDot.click();
+
+    const viewport = page.getByTestId('name-preview-viewport');
+    // the board slide flags the viewport so it widens to the full preview width
+    await expect(viewport).toHaveClass(/is-board-view/);
+
+    const board = page.getByTestId('name-preview-board');
+    const card = page.getByTestId('name-preview-card');
+    await expect(board).toBeVisible();
+
+    const boardBox = await board.boundingBox();
+    const cardBox = await card.boundingBox();
+    const vpBox = await viewport.boundingBox();
+    expect(boardBox).not.toBeNull();
+
+    // the board FILLS (≈) the full preview viewport width…
+    expect(boardBox.width).toBeGreaterThanOrEqual(vpBox.width - 4);
+    // …and is at least as wide as the portrait card (front/back stay capped) …
+    expect(boardBox.width).toBeGreaterThanOrEqual(cardBox.width);
+    // …undistorted (object-fit stays contain) …
+    expect(await board.evaluate((el) => getComputedStyle(el).objectFit)).toBe('contain');
+
+    // …and never causes horizontal page scroll: it sits within the viewport width.
+    const innerW = await page.evaluate(() => window.innerWidth);
+    expect(boardBox.x).toBeGreaterThanOrEqual(-1);
+    expect(boardBox.x + boardBox.width).toBeLessThanOrEqual(innerW + 1);
+    const pageOverflows = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth + 1
+    );
+    expect(pageOverflows).toBe(false);
+
+    // On a WIDE (desktop) screen the landscape board is CLEARLY wider than the
+    // portrait card — the whole point of Option C. (On a narrow phone both simply
+    // fill the column, which the width/overflow assertions above already cover.)
+    if (testInfo.project.name === 'Desktop Chrome') {
+      expect(boardBox.width).toBeGreaterThan(cardBox.width * 1.3);
+    }
+  });
+
+  test('the card + back slides are unchanged (still capped, no board widening)', async ({
+    page,
+  }) => {
+    await mockPreview(page);
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+    const card = page.getByTestId('name-preview-card');
+    await expect(card).toBeVisible();
+
+    // default slide is the card → the viewport is NOT in board mode
+    await expect(page.getByTestId('name-preview-viewport')).not.toHaveClass(/is-board-view/);
+
+    // front + back stay capped at 400px, exactly as before Option C
+    const cardMaxW = await card.evaluate((el) => parseFloat(getComputedStyle(el).maxWidth));
+    const backMaxW = await page
+      .getByTestId('name-preview-back')
+      .evaluate((el) => parseFloat(getComputedStyle(el).maxWidth));
+    expect(cardMaxW).toBe(400);
+    expect(backMaxW).toBe(400);
+  });
+});
