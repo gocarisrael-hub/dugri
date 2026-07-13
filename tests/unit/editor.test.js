@@ -219,213 +219,224 @@ describe('buildToolbar — Save/Save&Exit buttons + page picker', () => {
   });
 });
 
-describe('createSaveTracker — per-field state survives a settled failure', () => {
-  it('clears a field on success but KEEPS it marked unsaved on failure', async () => {
-    const t = editor.createSaveTracker();
-    expect(t.hasUnsaved()).toBe(false);
-
-    // A successful save clears the field.
-    await t.track('text:a', Promise.resolve('ok'));
-    expect(t.hasUnsaved()).toBe(false);
-
-    // A FAILED save leaves the field marked unsaved EVEN after it settled and was
-    // dropped from the in-flight list — a settled failure is never forgotten.
-    await t.track('text:b', Promise.reject(new Error('boom')));
-    expect(t.hasUnsaved()).toBe(true);
-    await t.flush(); // nothing in flight now, but the failure still counts
-    expect(t.hasUnsaved()).toBe(true);
-
-    // Re-saving the same field successfully clears it (newest save wins).
-    await t.track('text:b', Promise.resolve('ok'));
-    expect(t.hasUnsaved()).toBe(false);
+describe('createContentState — dirtiness is DOM-vs-last-saved (no event/flag races)', () => {
+  it('initText sets the baseline once; a field is dirty until a SUCCESSFUL save', () => {
+    const s = editor.createContentState();
+    s.initText('f', 'orig');
+    s.initText('f', 'later'); // ignored — baseline set once
+    expect(s.isTextDirty('f', 'orig')).toBe(false);
+    expect(s.isTextDirty('f', 'changed')).toBe(true);
+    // markTextSaved advances the baseline to the value that was actually saved.
+    s.markTextSaved('f', 'changed');
+    expect(s.isTextDirty('f', 'changed')).toBe(false);
+    expect(s.textKeys()).toContain('f');
   });
 
-  it('flush waits for every in-flight save and never rejects', async () => {
-    const t = editor.createSaveTracker();
-    t.track('img:x', Promise.reject(new Error('nope')));
-    t.track('text:y', Promise.resolve('ok'));
-    await expect(t.flush()).resolves.toBeDefined(); // resolves despite the rejection
-  });
-});
+  it('an older save completing AFTER a newer failure still leaves the field dirty', async () => {
+    // Regression for the ordering race: save1('A') is slow-SUCCESS, save2('B') FAILS
+    // first. If save1 later clears the field to its OLDER value while the DOM holds
+    // the newer 'B', the field MUST remain dirty (and get re-saved) — never look saved.
+    const s = editor.createContentState();
+    s.initText('f', 'A0');
+    const node = { textContent: 'A0' };
 
-describe('saveAction — "שמור" commits a focused edit + confirms, staying in edit mode', () => {
-  afterEach(() => {
-    document.body.innerHTML = '';
-  });
+    node.textContent = 'A';
+    let resolve1;
+    const save1 = new Promise((r) => (resolve1 = r)).then(() => s.markTextSaved('f', 'A'));
 
-  it('blurs the focused editable (flushing its pending save) and shows נשמר', async () => {
-    // Simulate a focused editable whose blur fires the auto-save (as editor.js wires).
-    document.body.innerHTML = '<span data-edit="hero" tabindex="0">edit</span>';
-    const el = document.querySelector('[data-edit="hero"]');
-    let flushed = false;
-    el.addEventListener('blur', () => {
-      flushed = true;
-    });
-    el.focus();
+    node.textContent = 'B';
+    await Promise.reject().catch(() => {}); // save2 fails → NO markTextSaved
+    expect(s.isTextDirty('f', node.textContent)).toBe(true); // 'B' !== 'A0'
 
-    const setStatus = vi.fn();
-    const flush = vi.fn(() => Promise.resolve([]));
-    await editor.saveAction({ activeEl: el, flush, hasUnsaved: () => false, setStatus });
-
-    expect(flushed).toBe(true); // the pending edit was committed (blur → save)
-    expect(flush).toHaveBeenCalledTimes(1);
-    expect(setStatus).toHaveBeenLastCalledWith('נשמר');
+    resolve1(); // the OLDER save now succeeds, writing the OLDER value 'A'
+    await save1;
+    expect(s.isTextDirty('f', node.textContent)).toBe(true); // 'B' !== 'A' → still dirty
   });
 
-  it('surfaces שגיאה when a field is still unsaved (incl. a settled failure)', async () => {
-    const setStatus = vi.fn();
-    const flush = vi.fn(() => Promise.resolve([]));
-    await editor.saveAction({ activeEl: null, flush, hasUnsaved: () => true, setStatus });
-    expect(setStatus).toHaveBeenLastCalledWith('שגיאה בשמירה');
+  it('tracks image fields as pending/failed until an upload succeeds', () => {
+    const s = editor.createContentState();
+    expect(s.isImgUnsaved('p')).toBe(false);
+    s.setImg('p', 'pending');
+    expect(s.isImgUnsaved('p')).toBe(true);
+    s.setImg('p', 'failed');
+    expect(s.isImgUnsaved('p')).toBe(true); // a failed upload stays unsaved (retry)
+    expect(s.imgKeys()).toContain('p');
+    s.setImg('p', null); // success clears it
+    expect(s.isImgUnsaved('p')).toBe(false);
+    expect(s.imgKeys()).not.toContain('p');
   });
 });
 
-describe('saveExitAction — "שמירה ויציאה" commits BEFORE dropping ?edit', () => {
-  afterEach(() => {
-    document.body.innerHTML = '';
-  });
+// A tiny controller mirroring enableEditMode's saveDirty/hasUnsaved wiring so the
+// end-to-end save flows can be exercised over createContentState + attemptCommit.
+function makeController(post) {
+  const state = editor.createContentState();
+  const nodes = Object.create(null);
+  return {
+    register(key, value) {
+      nodes[key] = { textContent: value };
+      state.initText(key, value);
+    },
+    set(key, value) {
+      nodes[key].textContent = value;
+    },
+    saveDirty() {
+      const saves = [];
+      Object.keys(nodes).forEach((k) => {
+        const cur = nodes[k].textContent;
+        if (state.isTextDirty(k, cur)) {
+          saves.push(
+            post(k, cur).then(
+              () => state.markTextSaved(k, cur),
+              () => {}
+            )
+          );
+        }
+      });
+      return Promise.all(saves);
+    },
+    hasUnsaved() {
+      return Object.keys(nodes).some((k) => state.isTextDirty(k, nodes[k].textContent));
+    },
+  };
+}
 
-  it('waits for pending saves to settle, then navigates (never before)', async () => {
-    document.body.innerHTML = '<span data-edit="hero" tabindex="0">edit</span>';
-    const el = document.querySelector('[data-edit="hero"]');
-    let flushed = false;
-    el.addEventListener('blur', () => {
-      flushed = true;
-    });
-    el.focus();
-
-    let resolveFlush;
-    const flush = vi.fn(() => new Promise((r) => (resolveFlush = r)));
-    const navigate = vi.fn();
+describe('attemptCommit — one flow for Save / Save&Exit / page-switch', () => {
+  it('awaits saveDirty before proceeding, then runs onClean when nothing is unsaved', async () => {
+    let resolveSave;
+    const saveDirty = vi.fn(() => new Promise((r) => (resolveSave = r)));
+    const onClean = vi.fn();
     const setStatus = vi.fn();
-
-    const done = editor.saveExitAction({
-      activeEl: el,
-      flush,
+    const done = editor.attemptCommit({
+      saveDirty,
       hasUnsaved: () => false,
       setStatus,
-      navigate,
+      onClean,
     });
-
-    // The focused edit is committed immediately, but we have NOT navigated yet:
-    // the save is still in flight.
-    expect(flushed).toBe(true);
-    expect(navigate).not.toHaveBeenCalled();
-
-    resolveFlush([]); // the pending save lands
+    expect(setStatus).toHaveBeenCalledWith('שומר…');
+    expect(onClean).not.toHaveBeenCalled(); // waits for the save
+    resolveSave();
     await done;
-    expect(navigate).toHaveBeenCalledTimes(1); // only now do we leave edit mode
+    expect(onClean).toHaveBeenCalledTimes(1);
   });
 
-  it('does NOT navigate when a field is still unsaved — the edit is not silently lost', async () => {
-    const navigate = vi.fn();
+  it('runs onBlocked and shows שגיאה when something is still unsaved', async () => {
+    const onClean = vi.fn();
+    const onBlocked = vi.fn();
     const setStatus = vi.fn();
-    // hasUnsaved stays true and the owner declines the discard prompt → stay put.
-    const confirmDiscard = vi.fn(() => false);
-    await editor.saveExitAction({
-      activeEl: null,
-      flush: () => Promise.resolve([]),
+    await editor.attemptCommit({
+      saveDirty: () => Promise.resolve([]),
       hasUnsaved: () => true,
       setStatus,
-      navigate,
-      confirmDiscard,
+      onClean,
+      onBlocked,
     });
-    expect(navigate).not.toHaveBeenCalled();
+    expect(onClean).not.toHaveBeenCalled();
+    expect(onBlocked).toHaveBeenCalledTimes(1);
     expect(setStatus).toHaveBeenLastCalledWith('שגיאה בשמירה');
-    expect(confirmDiscard).toHaveBeenCalledTimes(1);
-  });
-
-  it('offers an unconditional escape so the owner is never stranded on a failing save', async () => {
-    const navigate = vi.fn();
-    const setStatus = vi.fn();
-    // The save keeps failing (e.g. rotated key 403); confirming the discard prompt
-    // must still let the owner LEAVE edit mode (knowingly dropping the last edit).
-    const confirmDiscard = vi.fn(() => true);
-    await editor.saveExitAction({
-      activeEl: null,
-      flush: () => Promise.resolve([]),
-      hasUnsaved: () => true,
-      setStatus,
-      navigate,
-      confirmDiscard,
-    });
-    expect(setStatus).toHaveBeenLastCalledWith('שגיאה בשמירה');
-    expect(navigate).toHaveBeenCalledTimes(1); // escaped rather than stranded
   });
 });
 
-describe('pageSwitchAction — the picker saves BEFORE navigating away', () => {
-  afterEach(() => {
-    document.body.innerHTML = '';
+describe('save flows over the real state (Save / Save&Exit / picker)', () => {
+  it('a failed save is RETRYABLE — Save re-POSTs and clears the field once the server recovers', async () => {
+    let fail = true;
+    const post = vi.fn(() => (fail ? Promise.reject(new Error('500')) : Promise.resolve()));
+    const c = makeController(post);
+    c.register('f', 'old');
+    c.set('f', 'new'); // an edit
+
+    // First Save fails → field stays dirty → error (NOT a false "נשמר").
+    const s1 = vi.fn();
+    await editor.attemptCommit({
+      saveDirty: c.saveDirty,
+      hasUnsaved: c.hasUnsaved,
+      setStatus: s1,
+      onClean: () => s1('נשמר'),
+    });
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(c.hasUnsaved()).toBe(true);
+    expect(s1).toHaveBeenLastCalledWith('שגיאה בשמירה');
+
+    // Server recovers; clicking שמור again RE-POSTs (the field is still dirty) and clears.
+    fail = false;
+    const s2 = vi.fn();
+    await editor.attemptCommit({
+      saveDirty: c.saveDirty,
+      hasUnsaved: c.hasUnsaved,
+      setStatus: s2,
+      onClean: () => s2('נשמר'),
+    });
+    expect(post).toHaveBeenCalledTimes(2); // retried, not stuck
+    expect(c.hasUnsaved()).toBe(false);
+    expect(s2).toHaveBeenLastCalledWith('נשמר');
   });
 
-  it('commits the focused edit and only navigates after the save settles', async () => {
-    document.body.innerHTML = '<span data-edit="hero" tabindex="0">edit</span>';
-    const el = document.querySelector('[data-edit="hero"]');
-    let flushed = false;
-    el.addEventListener('blur', () => {
-      flushed = true;
-    });
-    el.focus();
+  it('Save&Exit refuses to leave while a field stays dirty, but escapes on confirm', async () => {
+    const post = vi.fn(() => Promise.reject(new Error('403'))); // every save fails
+    const c = makeController(post);
+    c.register('f', 'old');
+    c.set('f', 'new');
 
-    let resolveFlush;
-    const flush = vi.fn(() => new Promise((r) => (resolveFlush = r)));
+    // Decline the discard prompt → stay (edit preserved).
     const navigate = vi.fn();
-    const revert = vi.fn();
-
-    const done = editor.pageSwitchAction({
-      activeEl: el,
-      flush,
-      hasUnsaved: () => false,
+    let confirmReturn = false;
+    await editor.attemptCommit({
+      saveDirty: c.saveDirty,
+      hasUnsaved: c.hasUnsaved,
       setStatus: vi.fn(),
-      navigate,
-      revert,
+      onClean: navigate,
+      onBlocked: () => {
+        if (confirmReturn) navigate();
+      },
     });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(c.hasUnsaved()).toBe(true);
 
-    expect(flushed).toBe(true); // committed immediately…
-    expect(navigate).not.toHaveBeenCalled(); // …but not navigated while in flight
-
-    resolveFlush([]);
-    await done;
+    // Accept the discard prompt → leave anyway (never stranded on a failing key).
+    confirmReturn = true;
+    await editor.attemptCommit({
+      saveDirty: c.saveDirty,
+      hasUnsaved: c.hasUnsaved,
+      setStatus: vi.fn(),
+      onClean: navigate,
+      onBlocked: () => {
+        if (confirmReturn) navigate();
+      },
+    });
     expect(navigate).toHaveBeenCalledTimes(1);
-    expect(revert).not.toHaveBeenCalled();
   });
 
-  it('does NOT navigate on a failed save — stays put and reverts the select', async () => {
+  it('a failed field does NOT permanently block the page picker — discard-and-switch works', async () => {
+    const post = vi.fn(() => Promise.reject(new Error('500'))); // an edit elsewhere is stuck failed
+    const c = makeController(post);
+    c.register('other', 'x');
+    c.set('other', 'y'); // dirty + will fail
+
+    // Owner picks another page and confirms switching without saving → navigates.
     const navigate = vi.fn();
     const revert = vi.fn();
-    const setStatus = vi.fn();
-    await editor.pageSwitchAction({
-      activeEl: null,
-      flush: () => Promise.resolve([]),
-      hasUnsaved: () => true,
-      setStatus,
-      navigate,
-      revert,
+    let confirmSwitch = true;
+    await editor.attemptCommit({
+      saveDirty: c.saveDirty,
+      hasUnsaved: c.hasUnsaved,
+      setStatus: vi.fn(),
+      onClean: navigate,
+      onBlocked: () => (confirmSwitch ? navigate() : revert()),
+    });
+    expect(navigate).toHaveBeenCalledTimes(1); // switched despite the failure
+    expect(revert).not.toHaveBeenCalled();
+
+    // Declining instead reverts the <select> rather than leaving the picker dead.
+    confirmSwitch = false;
+    navigate.mockClear();
+    await editor.attemptCommit({
+      saveDirty: c.saveDirty,
+      hasUnsaved: c.hasUnsaved,
+      setStatus: vi.fn(),
+      onClean: navigate,
+      onBlocked: () => (confirmSwitch ? navigate() : revert()),
     });
     expect(navigate).not.toHaveBeenCalled();
     expect(revert).toHaveBeenCalledTimes(1);
-    expect(setStatus).toHaveBeenLastCalledWith('שגיאה בשמירה');
-  });
-});
-
-describe('commitActive — only an editable field is blurred (fail-closed)', () => {
-  afterEach(() => {
-    document.body.innerHTML = '';
-  });
-
-  it('blurs a focused [data-edit] node but ignores anything else', () => {
-    document.body.innerHTML =
-      '<span data-edit="hero" tabindex="0">a</span><button id="b">x</button>';
-    const el = document.querySelector('[data-edit="hero"]');
-    let blurred = false;
-    el.addEventListener('blur', () => (blurred = true));
-    el.focus();
-    expect(editor.commitActive(el)).toBe(true);
-    expect(blurred).toBe(true);
-
-    // a non-editable element (e.g. the Save button itself) is never committed
-    expect(editor.commitActive(document.getElementById('b'))).toBe(false);
-    expect(editor.commitActive(null)).toBe(false);
   });
 });

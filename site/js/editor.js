@@ -53,119 +53,69 @@
     return String(pathname || '') + (qs ? '?' + qs : '');
   }
 
-  // Save tracking, by PER-FIELD state (not just what's in flight right now). Every
-  // write — a blur-triggered text save AND an image upload — registers here so
-  // "שמור" / "שמירה ויציאה" / the page picker can WAIT for pending saves AND know
-  // whether any edit is still UNSAVED. A field id enters `unsaved` when its save
-  // starts and is removed only when that save SUCCEEDS; a save that FAILS keeps the
-  // field marked unsaved even after it settles (and is dropped from `inflight`), so
-  // a settled failure is never forgotten — success is judged from `unsaved`, not
-  // from what happens to be in flight at click time. Each field's newest save wins:
-  // a later success for the same id clears an earlier failure.
-  function createSaveTracker() {
-    var unsaved = Object.create(null); // fieldId -> true while pending-or-failed
-    var inflight = []; // promises currently settling (each resolves, never rejects)
+  // Save STATE, derived from DOM-vs-last-persisted (NOT from in-flight events). This
+  // removes the whole class of ordering/flag races: dirtiness is a pure function of
+  // "does the current value differ from what was LAST SUCCESSFULLY saved", so nothing
+  // an out-of-order or failed save does can make a still-changed field look saved.
+  //
+  //  • Text fields: lastSavedText[key] = the text value last SUCCESSFULLY persisted
+  //    (initialised to the loaded/override value). It is updated ONLY inside a save's
+  //    success handler, to the EXACT value that save sent — never before the POST and
+  //    never on failure. A field is dirty iff its current DOM text !== lastSavedText.
+  //    So a failed save simply stays dirty (retryable by editing again or "שמור"),
+  //    and an older save's late success that writes an older value still leaves the
+  //    field dirty (DOM holds newer text) → it gets re-saved. No edit is ever lost.
+  //  • Image fields: an <img>/bg only changes its DOM src on a SUCCESSFUL upload, so
+  //    DOM-vs-last can't see an in-flight or failed upload. We mark such a field
+  //    'pending' when a file starts uploading and 'failed' if it errors; it counts as
+  //    unsaved until the upload succeeds (cleared), retryable by re-picking a file.
+  function createContentState() {
+    var lastSavedText = Object.create(null); // key -> last successfully saved text
+    var imgState = Object.create(null); // key -> 'pending' | 'failed'
     return {
-      // Register `promise` (resolves on success, rejects on failure) for `fieldId`.
-      // Returns a promise that resolves true/false and never rejects.
-      track: function (fieldId, promise) {
-        unsaved[fieldId] = true;
-        var settled = promise.then(
-          function () {
-            delete unsaved[fieldId];
-            return true;
-          },
-          function () {
-            return false; // keep fieldId marked unsaved
-          }
-        );
-        inflight.push(settled);
-        var remove = function () {
-          var i = inflight.indexOf(settled);
-          if (i > -1) inflight.splice(i, 1);
-        };
-        settled.then(remove, remove);
-        return settled;
+      initText: function (key, value) {
+        if (!(key in lastSavedText)) lastSavedText[key] = value;
       },
-      // Resolve once every in-flight save settles (never rejects).
-      flush: function () {
-        return Promise.all(inflight.slice());
+      // Call ONLY on a successful save, with the value that save actually sent.
+      markTextSaved: function (key, value) {
+        lastSavedText[key] = value;
       },
-      // Is any field's last save still pending or failed?
-      hasUnsaved: function () {
-        return Object.keys(unsaved).length > 0;
+      isTextDirty: function (key, current) {
+        return current !== lastSavedText[key];
+      },
+      textKeys: function () {
+        return Object.keys(lastSavedText);
+      },
+      setImg: function (key, s) {
+        if (s) imgState[key] = s;
+        else delete imgState[key];
+      },
+      isImgUnsaved: function (key) {
+        return imgState[key] === 'pending' || imgState[key] === 'failed';
+      },
+      imgKeys: function () {
+        return Object.keys(imgState);
       },
     };
   }
-  var saveTracker = createSaveTracker();
-  function flushSaves() {
-    return saveTracker.flush();
-  }
-  function hasUnsaved() {
-    return saveTracker.hasUnsaved();
-  }
 
-  // Blur the active field (if it is an editable [data-edit] node) so its blur→save
-  // fires and gets tracked. Clicking a toolbar control already shifts focus off the
-  // field — this is a belt-and-suspenders commit for when it did not. Returns
-  // whether it blurred anything.
-  function commitActive(activeEl) {
-    if (
-      activeEl &&
-      typeof activeEl.blur === 'function' &&
-      activeEl.getAttribute &&
-      activeEl.getAttribute('data-edit') != null
-    ) {
-      activeEl.blur();
-      return true;
-    }
-    return false;
-  }
-
-  // "שמור": commit any focused edit, wait for pending saves, then confirm in the
-  // status line. The owner STAYS in edit mode. Reports an error if ANY field is
-  // still unsaved (pending failed or a settled failure).
-  // deps = { activeEl, flush, hasUnsaved, setStatus }.
-  function saveAction(deps) {
-    commitActive(deps.activeEl);
+  // ONE flow behind "שמור" / "שמירה ויציאה" / the page picker (the review flagged the
+  // 3-way copy-paste). saveDirty() re-POSTs every dirty field with its CURRENT value
+  // and awaits all writes (text saves + any in-flight image uploads); THEN, if nothing
+  // is still unsaved, onClean() proceeds (confirm status / navigate). If something is
+  // still dirty/failed, the error is shown and onBlocked() offers recovery — a
+  // discard-and-leave / discard-and-switch confirm, or reverting the picker — so the
+  // owner is never stranded and an unsaved edit is never silently dropped.
+  // deps = { saveDirty, hasUnsaved, setStatus, onClean, onBlocked }.
+  function attemptCommit(deps) {
     deps.setStatus('שומר…');
-    return deps.flush().then(function () {
-      deps.setStatus(deps.hasUnsaved() ? 'שגיאה בשמירה' : 'נשמר');
-    });
-  }
-
-  // "שמירה ויציאה": commit any focused edit, WAIT for saves to finish, then leave
-  // edit mode. If any edit is still unsaved, DON'T silently leave (that would drop
-  // it): surface the error and offer an explicit unconditional escape so the owner
-  // is never stranded — confirmDiscard() true means "leave without saving".
-  // deps = { activeEl, flush, hasUnsaved, setStatus, navigate, confirmDiscard }.
-  function saveExitAction(deps) {
-    commitActive(deps.activeEl);
-    deps.setStatus('שומר…');
-    return deps.flush().then(function () {
-      if (!deps.hasUnsaved()) {
-        deps.navigate();
-        return;
+    return deps.saveDirty().then(function () {
+      if (deps.hasUnsaved()) {
+        deps.setStatus('שגיאה בשמירה');
+        if (deps.onBlocked) deps.onBlocked();
+      } else if (deps.onClean) {
+        deps.onClean();
       }
-      deps.setStatus('שגיאה בשמירה');
-      if (deps.confirmDiscard && deps.confirmDiscard()) deps.navigate();
-    });
-  }
-
-  // Page picker: commit any focused edit and WAIT before navigating to another page,
-  // so an in-flight save is never aborted by the navigation. Only switch when the
-  // save landed; on failure stay put, surface the error, and revert the <select> to
-  // the current page. deps = { activeEl, flush, hasUnsaved, setStatus, navigate, revert }.
-  function pageSwitchAction(deps) {
-    commitActive(deps.activeEl);
-    deps.setStatus('שומר…');
-    return deps.flush().then(function () {
-      if (!deps.hasUnsaved()) {
-        deps.navigate();
-        return;
-      }
-      deps.setStatus('שגיאה בשמירה');
-      if (deps.revert) deps.revert();
     });
   }
 
@@ -310,12 +260,63 @@
     var pageSelect = toolbar.querySelector('[data-role="pageselect"]');
     var current = null; // the element the reset action targets
 
+    // Per-field save state + the representative DOM node per text key (same-key
+    // clones stay in sync, so any one node reflects the field's current value). One
+    // list of in-flight image uploads is kept only to AWAIT them (dirtiness itself is
+    // derived from state, never from this list).
+    var state = createContentState();
+    var textNodeByKey = Object.create(null);
+    var pendingUploads = [];
+
     function setStatus(txt) {
       if (status) status.textContent = txt;
     }
     function focusTarget(el) {
       current = el;
       if (resetBtn) resetBtn.disabled = !el;
+    }
+
+    // Save one text field: POST its CURRENT value; on SUCCESS record it as the last
+    // saved value (so the field is no longer dirty); on failure leave it dirty.
+    // Never rejects — resolves once settled. syncSameKey keeps clones identical.
+    function saveTextField(fieldKey, value) {
+      syncSameKey(document, fieldKey, value);
+      setStatus('שומר…');
+      return postText(page, key, fieldKey, value).then(
+        function () {
+          state.markTextSaved(fieldKey, value);
+          setStatus('נשמר');
+          return true;
+        },
+        function () {
+          setStatus('שגיאה בשמירה');
+          return false;
+        }
+      );
+    }
+
+    // Re-save every currently-dirty text field with its CURRENT DOM value, and await
+    // those plus any in-flight image uploads. This is the single saver used by Save /
+    // Save&Exit / the page picker, so a failed field is retried on the next commit.
+    function saveDirtyFields() {
+      var saves = [];
+      Object.keys(textNodeByKey).forEach(function (fieldKey) {
+        var cur = textNodeByKey[fieldKey].textContent;
+        if (state.isTextDirty(fieldKey, cur)) saves.push(saveTextField(fieldKey, cur));
+      });
+      return Promise.all(saves.concat(pendingUploads.slice()));
+    }
+
+    // Is anything still unsaved? Pure function of DOM-vs-last-saved (text) and the
+    // image pending/failed marks — no in-flight bookkeeping decides this.
+    function hasUnsavedNow() {
+      var textDirty = Object.keys(textNodeByKey).some(function (fieldKey) {
+        return state.isTextDirty(fieldKey, textNodeByKey[fieldKey].textContent);
+      });
+      var imgDirty = state.imgKeys().some(function (k) {
+        return state.isImgUnsaved(k);
+      });
+      return textDirty || imgDirty;
     }
 
     // Disclosure content (<details>/<summary>) must be fully reachable AND stay put
@@ -434,46 +435,35 @@
       true
     );
 
-    // Text leaves become editable; save on blur when the text actually changed.
+    // Text leaves become editable; auto-save on blur when the text differs from what
+    // was last saved. Register each field's representative node + its loaded value.
     document.querySelectorAll('[data-edit]').forEach(function (el) {
       el.classList.add('dugri-edit-target');
       el.setAttribute('contenteditable', 'plaintext-only');
       // Safari/Firefox ignore plaintext-only — fall back to plain contenteditable.
       if (el.contentEditable !== 'plaintext-only') el.setAttribute('contenteditable', 'true');
       el.setAttribute('tabindex', '0');
-      var original = el.textContent;
+      var fieldKey = el.getAttribute('data-edit');
+      if (!(fieldKey in textNodeByKey)) textNodeByKey[fieldKey] = el;
+      state.initText(fieldKey, el.textContent);
       el.addEventListener('focus', function () {
-        original = el.textContent;
         focusTarget(el);
       });
-      el.addEventListener('blur', function () {
+      el.addEventListener('blur', function (e) {
         var next = el.textContent;
-        if (next === original) return;
         if (next.length > TEXT_CAP) {
           next = next.slice(0, TEXT_CAP);
           el.textContent = next;
         }
-        original = next;
-        // Propagate the edit to every OTHER node sharing this data-edit key so
-        // duplicated content (e.g. the marquee clones) stays in sync live, exactly
-        // as applyOverrides syncs them on load. Keeps the save/POST below unchanged.
-        var syncKey = el.getAttribute('data-edit');
-        syncSameKey(document, syncKey, next);
-        setStatus('שומר…');
-        // Track the save (keyed by field) so "שמור" / "שמירה ויציאה" / the page
-        // picker can wait for it AND know if it ultimately failed. Pass the raw
-        // promise (rejects on failure) so the tracker keeps the field marked unsaved
-        // on error; the status line reflects success/failure separately.
-        var save = postText(page, key, syncKey, next);
-        save.then(
-          function () {
-            setStatus('נשמר');
-          },
-          function () {
-            setStatus('שגיאה בשמירה');
-          }
-        );
-        saveTracker.track('text:' + syncKey, save);
+        // If focus moved to a TOOLBAR control (Save / Save&Exit / the page picker),
+        // let that action's saveDirty do the single save — the DOM already holds the
+        // latest text — so we don't double-POST the same field.
+        var to = e.relatedTarget;
+        if (to && to.closest && to.closest('.dugri-editbar')) return;
+        // Dirty iff it differs from the last SUCCESSFULLY saved value (retry-safe: a
+        // previously failed field is still dirty and re-saves here).
+        if (!state.isTextDirty(fieldKey, next)) return;
+        saveTextField(fieldKey, next);
       });
     });
 
@@ -487,10 +477,38 @@
       var isBg = el.hasAttribute('data-edit-bg');
       function pick() {
         focusTarget(el);
-        openImagePicker(page, key, editKey, setStatus, function (img) {
-          if (isBg) el.style.backgroundImage = 'url("' + img + '")';
-          else el.setAttribute('src', img);
-        });
+        openImagePicker(
+          page,
+          key,
+          editKey,
+          setStatus,
+          function (img) {
+            if (isBg) el.style.backgroundImage = 'url("' + img + '")';
+            else el.setAttribute('src', img);
+          },
+          {
+            // Track the upload so Save / Save&Exit / the picker WAIT for it, and mark
+            // the field unsaved (pending → cleared on success, 'failed' on error) so
+            // an in-flight or failed upload counts as unsaved (retry by re-picking).
+            onPending: function () {
+              state.setImg(editKey, 'pending');
+            },
+            onSaved: function () {
+              state.setImg(editKey, null);
+            },
+            onFailed: function () {
+              state.setImg(editKey, 'failed');
+            },
+            trackUpload: function (p) {
+              pendingUploads.push(p);
+              var rm = function () {
+                var i = pendingUploads.indexOf(p);
+                if (i > -1) pendingUploads.splice(i, 1);
+              };
+              p.then(rm, rm);
+            },
+          }
+        );
       }
       el.addEventListener('click', function (e) {
         e.preventDefault();
@@ -529,56 +547,62 @@
       location.href = exitHref(location.pathname, location.search);
     }
 
-    // "שמור": commit the focused edit + confirm, staying in edit mode. Clicking the
-    // button already shifts focus off the field (firing its blur→save); commitActive
-    // + flushSaves make the confirmation wait for that save to land, and hasUnsaved
-    // reports a failure (pending or settled) rather than a false "נשמר".
+    // "שמור": save every dirty field (retrying a previously failed one), then confirm.
+    // Stays in edit mode. Reports an error if anything is still unsaved afterwards.
     if (saveBtn) {
       saveBtn.addEventListener('click', function () {
-        saveAction({
-          activeEl: document.activeElement,
-          flush: flushSaves,
-          hasUnsaved: hasUnsaved,
+        attemptCommit({
+          saveDirty: saveDirtyFields,
+          hasUnsaved: hasUnsavedNow,
           setStatus: setStatus,
-        });
-      });
-    }
-
-    // "שמירה ויציאה": commit the focused edit, WAIT for it, then leave edit mode.
-    // On a save failure it does NOT silently leave (would drop the edit); it surfaces
-    // the error and offers an explicit unconditional escape so the owner is never
-    // stranded (e.g. a rotated key that 403s every save).
-    if (exitBtn) {
-      exitBtn.addEventListener('click', function () {
-        saveExitAction({
-          activeEl: document.activeElement,
-          flush: flushSaves,
-          hasUnsaved: hasUnsaved,
-          setStatus: setStatus,
-          navigate: leaveEditMode,
-          confirmDiscard: function () {
-            return window.confirm('השמירה נכשלה. לצאת ממצב עריכה בלי לשמור את השינוי האחרון?');
+          onClean: function () {
+            setStatus('נשמר');
           },
         });
       });
     }
 
-    // Page picker: switch pages only AFTER any pending edit is saved, so navigation
-    // never aborts an in-flight save. On failure, stay + revert the select.
+    // "שמירה ויציאה": save everything, then leave edit mode. On a save failure it does
+    // NOT silently leave (that would drop the edit); it surfaces the error and offers
+    // an explicit discard-and-leave confirm so the owner is never stranded (e.g. a
+    // rotated key that fails every save).
+    if (exitBtn) {
+      exitBtn.addEventListener('click', function () {
+        attemptCommit({
+          saveDirty: saveDirtyFields,
+          hasUnsaved: hasUnsavedNow,
+          setStatus: setStatus,
+          onClean: leaveEditMode,
+          onBlocked: function () {
+            if (window.confirm('השמירה נכשלה. לצאת ממצב עריכה בלי לשמור את השינויים?')) {
+              leaveEditMode();
+            }
+          },
+        });
+      });
+    }
+
+    // Page picker: save everything first, then switch pages only when clean, so no
+    // in-flight save is aborted by the navigation. On a save failure, offer the same
+    // discard-and-switch confirm (never permanently block the picker); if declined,
+    // revert the <select> to the current page.
     if (pageSelect) {
       var currentValue = pageSelect.value;
       pageSelect.addEventListener('change', function () {
         var target = pageSelect.value;
-        pageSwitchAction({
-          activeEl: document.activeElement,
-          flush: flushSaves,
-          hasUnsaved: hasUnsaved,
+        attemptCommit({
+          saveDirty: saveDirtyFields,
+          hasUnsaved: hasUnsavedNow,
           setStatus: setStatus,
-          navigate: function () {
+          onClean: function () {
             location.href = target;
           },
-          revert: function () {
-            pageSelect.value = currentValue;
+          onBlocked: function () {
+            if (window.confirm('השמירה נכשלה. לעבור לעמוד אחר בלי לשמור את השינויים?')) {
+              location.href = target;
+            } else {
+              pageSelect.value = currentValue;
+            }
           },
         });
       });
@@ -587,7 +611,7 @@
     document.documentElement.classList.add('dugri-editing');
   }
 
-  function openImagePicker(page, key, editKey, setStatus, onDone) {
+  function openImagePicker(page, key, editKey, setStatus, onDone, hooks) {
     var input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/png,image/jpeg,image/webp';
@@ -597,11 +621,12 @@
       var file = input.files && input.files[0];
       document.body.removeChild(input);
       if (!file) return;
+      // Mark the field unsaved (pending) and TRACK the upload so Save / Save&Exit /
+      // the page picker WAIT for it and won't navigate away mid-upload (losing the
+      // new image). Success clears the field; failure marks it 'failed' (stays unsaved,
+      // retry by re-picking). onDone applies the returned src on success only.
+      if (hooks && hooks.onPending) hooks.onPending();
       setStatus('מעלה תמונה…');
-      // Track the upload like a text save so "שמור" / "שמירה ויציאה" / the page
-      // picker WAIT for it and won't navigate away mid-upload (which would lose the
-      // new image). The tracked promise rejects if the upload failed OR returned no
-      // img, so the field stays marked unsaved on any failure.
       var upload = postImage(page, key, editKey, file).then(function (data) {
         if (data && data.img) {
           onDone(data.img);
@@ -609,15 +634,19 @@
         }
         throw new Error('upload returned no image');
       });
-      upload.then(
+      var settled = upload.then(
         function () {
+          if (hooks && hooks.onSaved) hooks.onSaved();
           setStatus('נשמר');
+          return true;
         },
         function () {
+          if (hooks && hooks.onFailed) hooks.onFailed();
           setStatus('שגיאה בהעלאה');
+          return false;
         }
       );
-      saveTracker.track('img:' + editKey, upload);
+      if (hooks && hooks.trackUpload) hooks.trackUpload(settled);
     });
     input.click();
   }
@@ -749,11 +778,8 @@
     EDITABLE_PAGES: EDITABLE_PAGES,
     pageEditUrl: pageEditUrl,
     exitHref: exitHref,
-    commitActive: commitActive,
-    createSaveTracker: createSaveTracker,
-    saveAction: saveAction,
-    saveExitAction: saveExitAction,
-    pageSwitchAction: pageSwitchAction,
+    createContentState: createContentState,
+    attemptCommit: attemptCommit,
     buildToolbar: buildToolbar,
   };
   if (typeof window !== 'undefined') window.__dugriEditor = api;

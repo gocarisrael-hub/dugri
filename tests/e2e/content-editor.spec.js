@@ -466,7 +466,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(page.locator('.dugri-editbar')).toHaveCount(0);
   });
 
-  test('the page picker does NOT switch pages while a save is failing — reverts + errors', async ({
+  test('page picker on a failing save: DECLINING the switch reverts + errors (edit kept)', async ({
     page,
   }) => {
     await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
@@ -477,13 +477,14 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await page.goto('/index.html?edit=1&key=dugri-admin');
     await expect(page.getByText('מצב עריכה')).toBeVisible();
 
-    // Type an edit, then pick another page: selecting blurs the field → the save
-    // fires and FAILS, so the picker must NOT navigate (that would drop the edit).
+    // Type an edit, then pick another page: the save FAILS, so the picker offers a
+    // discard-and-switch confirm. DECLINING keeps us here (edit not dropped).
     const ans = page.locator('[data-edit="index-faq-a1"]');
     await ans.click();
     await ans.evaluate((n) => {
       n.textContent = 'עריכה שלא נשמרה';
     });
+    page.once('dialog', (d) => d.dismiss());
     await page.locator('[data-role="pageselect"]').selectOption('how.html?edit=1&key=dugri-admin');
 
     // Stayed on index (no navigation), the select snapped back, and the error shows.
@@ -494,7 +495,30 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     );
   });
 
-  test('a failed save keeps Save at שגיאה and Save&Exit refuses to leave (escape offered)', async ({
+  test('page picker on a failing save: CONFIRMING switches anyway (never permanently blocked)', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) =>
+      route.fulfill({ status: 500, json: { error: 'boom' } })
+    );
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'עריכה שלא נשמרה';
+    });
+    // Accepting the discard-and-switch confirm navigates to the picked page, still
+    // in edit mode — the picker is never left permanently dead by a stuck failure.
+    page.once('dialog', (d) => d.accept());
+    await page.locator('[data-role="pageselect"]').selectOption('how.html?edit=1&key=dugri-admin');
+    await expect(page).toHaveURL(/how\.html\?edit=1&key=dugri-admin/);
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+  });
+
+  test('a failed save keeps Save at שגיאה and Save&Exit refuses to leave (dismiss keeps editing)', async ({
     page,
   }) => {
     await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
@@ -512,16 +536,36 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     });
     await expect(page.locator('.dugri-editbar__status')).toHaveText('שגיאה בשמירה');
 
-    // Save must NOT claim נשמר while the field is still unsaved (settled failure).
+    // Save must NOT claim נשמר while the field is still unsaved (its save failed).
     await page.locator('[data-role="save"]').click();
     await expect(page.locator('.dugri-editbar__status')).toHaveText('שגיאה בשמירה');
 
-    // Save&Exit offers an explicit escape prompt; DISMISSING it keeps us editing
-    // (the unsaved edit is not silently dropped).
+    // Save&Exit offers an explicit discard-and-leave prompt; DISMISSING it keeps us
+    // editing (the unsaved edit is not silently dropped).
     page.once('dialog', (d) => d.dismiss());
     await page.locator('[data-role="exit"]').click();
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('שגיאה בשמירה');
     await expect(page.locator('.dugri-editbar')).toBeVisible();
     await expect(page).toHaveURL(/edit=1/);
+  });
+
+  test('Save&Exit is never a dead end: confirming the discard prompt leaves edit mode', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) =>
+      route.fulfill({ status: 500, json: { error: 'boom' } })
+    );
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'עריכה שנכשלה';
+      n.dispatchEvent(new Event('blur'));
+    });
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('שגיאה בשמירה');
 
     // ACCEPTING the escape prompt lets the owner leave (never stranded on a bad key).
     page.once('dialog', (d) => d.accept());
