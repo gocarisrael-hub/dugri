@@ -608,13 +608,15 @@ function replaceAsset({ root, key, role, file, force = false }) {
   }
 
   // Calibration guard: this template's title/word slots were hand-calibrated
-  // against its current art, so replacing ANY svg-role art may misalign the
+  // against its current art, so REPLACING existing svg-role art may misalign the
   // print. Rather than brittly parse + compare viewBoxes (single vs double
   // quotes, rounding, bytes past a scan window — any of which silently defeats a
   // geometric check), we simply REQUIRE an explicit confirmation: block the swap
   // (409) and make the admin re-upload with `force` after verifying the proof. A
-  // non-calibrated template has no geometry to protect and replaces freely.
-  if (kind === 'svg' && entry.calibrated && !force) {
+  // non-calibrated template has no geometry to protect, and a FIRST-TIME add (no
+  // current file at this role, e.g. a fresh chasers board) isn't replacing
+  // anything — both write freely.
+  if (kind === 'svg' && entry.calibrated && !force && fs.existsSync(abs)) {
     return {
       error:
         'this template is calibrated — replacing its art may misalign the title/word slots. ' +

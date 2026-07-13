@@ -154,6 +154,26 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     await expect(card.locator('.asset[data-role="clean-fronts"]')).toHaveClass(/on/);
   });
 
+  test('a network error during asset replace clears the file input so the same file can be retried', async ({
+    page,
+  }) => {
+    // Abort the upload request to simulate a dropped network. The catch must show a
+    // network error AND reset the file input's value — otherwise re-selecting the
+    // exact same file fires no 'change' event and the retry is impossible.
+    await page.route('**/api/admin/templates/**/assets/**', (route) => route.abort());
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const card = page.locator('.tpl-card[data-key="bachelorette"]');
+    await expect(card).toBeVisible();
+    const input = card.locator('.asset[data-role="clean-fronts"] .repl-input');
+    await input.setInputFiles({
+      name: 'front.svg',
+      mimeType: 'image/svg+xml',
+      buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"></svg>'),
+    });
+    await expect(card.locator('.tpl-msg.err')).toContainText('רשת');
+    await expect(input).toHaveValue(''); // cleared → same file can be re-picked
+  });
+
   test('confirming a calibrated SVG replace adds the missing chasers board', async ({ page }) => {
     const created = path.join(TPL_DIR, 'bachelorette', 'clean', 'board-chasers.svg');
     // Accept the calibration confirm → the UI re-submits with force and the file

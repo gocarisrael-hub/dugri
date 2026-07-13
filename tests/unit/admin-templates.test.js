@@ -543,6 +543,37 @@ describe('templates.js full editing (status / rename / replace)', () => {
     expect(font.error).toBeUndefined();
   });
 
+  it('replaceAsset ADDS a new SVG asset on a CALIBRATED template without force (nothing to replace)', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-add');
+    const themesPath = templates.themesPathFor(root);
+    const themes = templates.loadThemes(themesPath);
+    themes['cal-add'].calibrated = true;
+    templates.writeThemesFile(themesPath, themes);
+    const chasers = path.join(
+      root,
+      'resources',
+      'canva',
+      'templates',
+      'cal-add',
+      'clean',
+      'board-chasers.svg'
+    );
+    expect(fs.existsSync(chasers)).toBe(false); // no current art at this role
+
+    // First-time add of the optional chasers board is NOT replacing existing art,
+    // so it must write directly even though the template is calibrated — no 409.
+    const r = templates.replaceAsset({
+      root,
+      key: 'cal-add',
+      role: 'clean-board-chasers',
+      file: { filename: 'bc.svg', data: SVG('CHASERS-ADD') },
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.calibrationWarning).toBeUndefined();
+    expect(fs.readFileSync(chasers, 'utf8')).toContain('CHASERS-ADD');
+  });
+
   it('replaceAsset on a NON-calibrated template replaces an SVG role freely (no force)', () => {
     const root = makeScaffold();
     onboard(root, 'uncal-x'); // onboarded templates are calibrated:false
