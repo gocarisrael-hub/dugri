@@ -21,6 +21,104 @@
   var LS_KEY = 'dugri_admin_key';
   var TEXT_CAP = 5000;
 
+  // The site's editable pages, in toolbar order. The page picker lets the owner
+  // jump between them WITHOUT leaving edit mode. Each `page` is the html filename
+  // the server serves (matches <meta name="dugri:page">); `label` is the RTL name.
+  var EDITABLE_PAGES = [
+    { page: 'index.html', label: 'בית' },
+    { page: 'options.html', label: 'הזמנה' },
+    { page: 'collect.html', label: 'איסוף מילים' },
+    { page: 'how.html', label: 'איך זה עובד' },
+    { page: 'products.html', label: 'מוצרים' },
+    { page: 'product.html', label: 'מוצר' },
+    { page: 'timer.html', label: 'טיימר' },
+  ];
+
+  // Build the URL that lands the owner on `page` STILL in edit mode: keep ?edit=1
+  // and carry the key forward (?key=) so the picker preserves the owner session.
+  // encodeURIComponent keeps a stray char from breaking the query or an [attr]
+  // when the value is embedded in the toolbar's option markup.
+  function pageEditUrl(page, key) {
+    var url = page + '?edit=1';
+    if (key) url += '&key=' + encodeURIComponent(key);
+    return url;
+  }
+
+  // The URL to leave edit mode: drop ?edit (reload as a normal visitor) but keep
+  // any other params intact. Same behavior the old exit button had inline.
+  function exitHref(pathname, search) {
+    var params = new URLSearchParams(search || '');
+    params.delete('edit');
+    var qs = params.toString();
+    return String(pathname || '') + (qs ? '?' + qs : '');
+  }
+
+  // Save STATE, derived from DOM-vs-last-persisted (NOT from in-flight events). This
+  // removes the whole class of ordering/flag races: dirtiness is a pure function of
+  // "does the current value differ from what was LAST SUCCESSFULLY saved", so nothing
+  // an out-of-order or failed save does can make a still-changed field look saved.
+  //
+  //  • Text fields: lastSavedText[key] = the text value last SUCCESSFULLY persisted
+  //    (initialised to the loaded/override value). It is updated ONLY inside a save's
+  //    success handler, to the EXACT value that save sent — never before the POST and
+  //    never on failure. A field is dirty iff its current DOM text !== lastSavedText.
+  //    So a failed save simply stays dirty (retryable by editing again or "שמור"),
+  //    and an older save's late success that writes an older value still leaves the
+  //    field dirty (DOM holds newer text) → it gets re-saved. No edit is ever lost.
+  //  • Image fields: an <img>/bg only changes its DOM src on a SUCCESSFUL upload, so
+  //    DOM-vs-last can't see an in-flight or failed upload. We mark such a field
+  //    'pending' when a file starts uploading and 'failed' if it errors; it counts as
+  //    unsaved until the upload succeeds (cleared), retryable by re-picking a file.
+  function createContentState() {
+    var lastSavedText = Object.create(null); // key -> last successfully saved text
+    var imgState = Object.create(null); // key -> 'pending' | 'failed'
+    return {
+      initText: function (key, value) {
+        if (!(key in lastSavedText)) lastSavedText[key] = value;
+      },
+      // Call ONLY on a successful save, with the value that save actually sent.
+      markTextSaved: function (key, value) {
+        lastSavedText[key] = value;
+      },
+      isTextDirty: function (key, current) {
+        return current !== lastSavedText[key];
+      },
+      textKeys: function () {
+        return Object.keys(lastSavedText);
+      },
+      setImg: function (key, s) {
+        if (s) imgState[key] = s;
+        else delete imgState[key];
+      },
+      isImgUnsaved: function (key) {
+        return imgState[key] === 'pending' || imgState[key] === 'failed';
+      },
+      imgKeys: function () {
+        return Object.keys(imgState);
+      },
+    };
+  }
+
+  // ONE flow behind "שמור" / "שמירה ויציאה" / the page picker (the review flagged the
+  // 3-way copy-paste). saveDirty() re-POSTs every dirty field with its CURRENT value
+  // and awaits all writes (text saves + any in-flight image uploads); THEN, if nothing
+  // is still unsaved, onClean() proceeds (confirm status / navigate). If something is
+  // still dirty/failed, the error is shown and onBlocked() offers recovery — a
+  // discard-and-leave / discard-and-switch confirm, or reverting the picker — so the
+  // owner is never stranded and an unsaved edit is never silently dropped.
+  // deps = { saveDirty, hasUnsaved, setStatus, onClean, onBlocked }.
+  function attemptCommit(deps) {
+    deps.setStatus('שומר…');
+    return deps.saveDirty().then(function () {
+      if (deps.hasUnsaved()) {
+        deps.setStatus('שגיאה בשמירה');
+        if (deps.onBlocked) deps.onBlocked();
+      } else if (deps.onClean) {
+        deps.onClean();
+      }
+    });
+  }
+
   // The page name is the html filename that the server actually serves for this
   // URL. The server maps extension-less routes to "<name>.html" (express.static
   // extensions:['html'] — e.g. "/how" -> how.html), so we must do the same or the
@@ -154,10 +252,22 @@
 
   function enableEditMode(page, key) {
     injectStyles();
-    var toolbar = buildToolbar();
+    var toolbar = buildToolbar(page, key);
     var status = toolbar.querySelector('[data-role="status"]');
     var resetBtn = toolbar.querySelector('[data-role="reset"]');
+    var saveBtn = toolbar.querySelector('[data-role="save"]');
+    var exitBtn = toolbar.querySelector('[data-role="exit"]');
+    var pageSelect = toolbar.querySelector('[data-role="pageselect"]');
     var current = null; // the element the reset action targets
+
+    // Per-field save state + the representative DOM node per text key (same-key
+    // clones stay in sync, so any one node reflects the field's current value). One
+    // list of in-flight image uploads is kept only to AWAIT them (dirtiness itself is
+    // derived from state, never from this list).
+    var state = createContentState();
+    var textNodeByKey = Object.create(null);
+    var pendingUploads = [];
+    var inflightText = Object.create(null); // key -> { value, promise } of a live save
 
     function setStatus(txt) {
       if (status) status.textContent = txt;
@@ -165,6 +275,63 @@
     function focusTarget(el) {
       current = el;
       if (resetBtn) resetBtn.disabled = !el;
+    }
+
+    // Save one text field: POST its CURRENT value; on SUCCESS record it as the last
+    // saved value (so the field is no longer dirty); on failure leave it dirty.
+    // Never rejects — resolves once settled. syncSameKey keeps clones identical. The
+    // live save is recorded in inflightText so a follow-up commit of the SAME value
+    // can await it instead of firing a redundant second POST.
+    function saveTextField(fieldKey, value) {
+      syncSameKey(document, fieldKey, value);
+      setStatus('שומר…');
+      var p = postText(page, key, fieldKey, value).then(
+        function () {
+          state.markTextSaved(fieldKey, value);
+          setStatus('נשמר');
+          return true;
+        },
+        function () {
+          setStatus('שגיאה בשמירה');
+          return false;
+        }
+      );
+      var rec = { value: value, promise: p };
+      inflightText[fieldKey] = rec;
+      var clear = function () {
+        if (inflightText[fieldKey] === rec) delete inflightText[fieldKey];
+      };
+      p.then(clear, clear);
+      return p;
+    }
+
+    // Re-save every currently-dirty text field with its CURRENT DOM value, and await
+    // those plus any in-flight image uploads. This is the single saver used by Save /
+    // Save&Exit / the page picker, so a failed field is retried on the next commit.
+    // If a field already has a LIVE save for its current value (an auto-save from a
+    // blur to empty space), await that instead of POSTing the same value again.
+    function saveDirtyFields() {
+      var awaits = [];
+      Object.keys(textNodeByKey).forEach(function (fieldKey) {
+        var cur = textNodeByKey[fieldKey].textContent;
+        if (!state.isTextDirty(fieldKey, cur)) return;
+        var live = inflightText[fieldKey];
+        if (live && live.value === cur) awaits.push(live.promise);
+        else awaits.push(saveTextField(fieldKey, cur));
+      });
+      return Promise.all(awaits.concat(pendingUploads.slice()));
+    }
+
+    // Is anything still unsaved? Pure function of DOM-vs-last-saved (text) and the
+    // image pending/failed marks — no in-flight bookkeeping decides this.
+    function hasUnsavedNow() {
+      var textDirty = Object.keys(textNodeByKey).some(function (fieldKey) {
+        return state.isTextDirty(fieldKey, textNodeByKey[fieldKey].textContent);
+      });
+      var imgDirty = state.imgKeys().some(function (k) {
+        return state.isImgUnsaved(k);
+      });
+      return textDirty || imgDirty;
     }
 
     // Disclosure content (<details>/<summary>) must be fully reachable AND stay put
@@ -283,39 +450,41 @@
       true
     );
 
-    // Text leaves become editable; save on blur when the text actually changed.
+    // Text leaves become editable; auto-save on blur when the text differs from what
+    // was last saved. Register each field's representative node + its loaded value.
     document.querySelectorAll('[data-edit]').forEach(function (el) {
       el.classList.add('dugri-edit-target');
       el.setAttribute('contenteditable', 'plaintext-only');
       // Safari/Firefox ignore plaintext-only — fall back to plain contenteditable.
       if (el.contentEditable !== 'plaintext-only') el.setAttribute('contenteditable', 'true');
       el.setAttribute('tabindex', '0');
-      var original = el.textContent;
+      var fieldKey = el.getAttribute('data-edit');
+      if (!(fieldKey in textNodeByKey)) textNodeByKey[fieldKey] = el;
+      state.initText(fieldKey, el.textContent);
       el.addEventListener('focus', function () {
-        original = el.textContent;
         focusTarget(el);
       });
-      el.addEventListener('blur', function () {
+      el.addEventListener('blur', function (e) {
         var next = el.textContent;
-        if (next === original) return;
         if (next.length > TEXT_CAP) {
           next = next.slice(0, TEXT_CAP);
           el.textContent = next;
         }
-        original = next;
-        // Propagate the edit to every OTHER node sharing this data-edit key so
-        // duplicated content (e.g. the marquee clones) stays in sync live, exactly
-        // as applyOverrides syncs them on load. Keeps the save/POST below unchanged.
-        var syncKey = el.getAttribute('data-edit');
-        syncSameKey(document, syncKey, next);
-        setStatus('שומר…');
-        postText(page, key, syncKey, next)
-          .then(function () {
-            setStatus('נשמר');
-          })
-          .catch(function () {
-            setStatus('שגיאה בשמירה');
-          });
+        // Mirror the edited node's value onto EVERY same-key clone FIRST — including
+        // the representative node saveDirtyFields/hasUnsavedNow read. The owner may
+        // have edited a NON-first clone (the marquee ships 8 identical spans), so the
+        // field's dirty state must reflect whichever clone was typed into, not a
+        // stale representative. This runs even when we hand the save to the toolbar.
+        syncSameKey(document, fieldKey, next);
+        // If focus moved to a TOOLBAR control (Save / Save&Exit / the page picker),
+        // let that action's saveDirty do the single save — all clones already hold
+        // the latest text — so we don't double-POST the same field.
+        var to = e.relatedTarget;
+        if (to && to.closest && to.closest('.dugri-editbar')) return;
+        // Dirty iff it differs from the last SUCCESSFULLY saved value (retry-safe: a
+        // previously failed field is still dirty and re-saves here).
+        if (!state.isTextDirty(fieldKey, next)) return;
+        saveTextField(fieldKey, next);
       });
     });
 
@@ -329,10 +498,38 @@
       var isBg = el.hasAttribute('data-edit-bg');
       function pick() {
         focusTarget(el);
-        openImagePicker(page, key, editKey, setStatus, function (img) {
-          if (isBg) el.style.backgroundImage = 'url("' + img + '")';
-          else el.setAttribute('src', img);
-        });
+        openImagePicker(
+          page,
+          key,
+          editKey,
+          setStatus,
+          function (img) {
+            if (isBg) el.style.backgroundImage = 'url("' + img + '")';
+            else el.setAttribute('src', img);
+          },
+          {
+            // Track the upload so Save / Save&Exit / the picker WAIT for it, and mark
+            // the field unsaved (pending → cleared on success, 'failed' on error) so
+            // an in-flight or failed upload counts as unsaved (retry by re-picking).
+            onPending: function () {
+              state.setImg(editKey, 'pending');
+            },
+            onSaved: function () {
+              state.setImg(editKey, null);
+            },
+            onFailed: function () {
+              state.setImg(editKey, 'failed');
+            },
+            trackUpload: function (p) {
+              pendingUploads.push(p);
+              var rm = function () {
+                var i = pendingUploads.indexOf(p);
+                if (i > -1) pendingUploads.splice(i, 1);
+              };
+              p.then(rm, rm);
+            },
+          }
+        );
       }
       el.addEventListener('click', function (e) {
         e.preventDefault();
@@ -367,10 +564,75 @@
       });
     }
 
+    function leaveEditMode() {
+      location.href = exitHref(location.pathname, location.search);
+    }
+
+    // "שמור": save every dirty field (retrying a previously failed one), then confirm.
+    // Stays in edit mode. Reports an error if anything is still unsaved afterwards.
+    if (saveBtn) {
+      saveBtn.addEventListener('click', function () {
+        attemptCommit({
+          saveDirty: saveDirtyFields,
+          hasUnsaved: hasUnsavedNow,
+          setStatus: setStatus,
+          onClean: function () {
+            setStatus('נשמר');
+          },
+        });
+      });
+    }
+
+    // "שמירה ויציאה": save everything, then leave edit mode. On a save failure it does
+    // NOT silently leave (that would drop the edit); it surfaces the error and offers
+    // an explicit discard-and-leave confirm so the owner is never stranded (e.g. a
+    // rotated key that fails every save).
+    if (exitBtn) {
+      exitBtn.addEventListener('click', function () {
+        attemptCommit({
+          saveDirty: saveDirtyFields,
+          hasUnsaved: hasUnsavedNow,
+          setStatus: setStatus,
+          onClean: leaveEditMode,
+          onBlocked: function () {
+            if (window.confirm('השמירה נכשלה. לצאת ממצב עריכה בלי לשמור את השינויים?')) {
+              leaveEditMode();
+            }
+          },
+        });
+      });
+    }
+
+    // Page picker: save everything first, then switch pages only when clean, so no
+    // in-flight save is aborted by the navigation. On a save failure, offer the same
+    // discard-and-switch confirm (never permanently block the picker); if declined,
+    // revert the <select> to the current page.
+    if (pageSelect) {
+      var currentValue = pageSelect.value;
+      pageSelect.addEventListener('change', function () {
+        var target = pageSelect.value;
+        attemptCommit({
+          saveDirty: saveDirtyFields,
+          hasUnsaved: hasUnsavedNow,
+          setStatus: setStatus,
+          onClean: function () {
+            location.href = target;
+          },
+          onBlocked: function () {
+            if (window.confirm('השמירה נכשלה. לעבור לעמוד אחר בלי לשמור את השינויים?')) {
+              location.href = target;
+            } else {
+              pageSelect.value = currentValue;
+            }
+          },
+        });
+      });
+    }
+
     document.documentElement.classList.add('dugri-editing');
   }
 
-  function openImagePicker(page, key, editKey, setStatus, onDone) {
+  function openImagePicker(page, key, editKey, setStatus, onDone, hooks) {
     var input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/png,image/jpeg,image/webp';
@@ -380,19 +642,32 @@
       var file = input.files && input.files[0];
       document.body.removeChild(input);
       if (!file) return;
+      // Mark the field unsaved (pending) and TRACK the upload so Save / Save&Exit /
+      // the page picker WAIT for it and won't navigate away mid-upload (losing the
+      // new image). Success clears the field; failure marks it 'failed' (stays unsaved,
+      // retry by re-picking). onDone applies the returned src on success only.
+      if (hooks && hooks.onPending) hooks.onPending();
       setStatus('מעלה תמונה…');
-      postImage(page, key, editKey, file)
-        .then(function (data) {
-          if (data && data.img) {
-            onDone(data.img);
-            setStatus('נשמר');
-          } else {
-            setStatus('שגיאה בהעלאה');
-          }
-        })
-        .catch(function () {
+      var upload = postImage(page, key, editKey, file).then(function (data) {
+        if (data && data.img) {
+          onDone(data.img);
+          return data;
+        }
+        throw new Error('upload returned no image');
+      });
+      var settled = upload.then(
+        function () {
+          if (hooks && hooks.onSaved) hooks.onSaved();
+          setStatus('נשמר');
+          return true;
+        },
+        function () {
+          if (hooks && hooks.onFailed) hooks.onFailed();
           setStatus('שגיאה בהעלאה');
-        });
+          return false;
+        }
+      );
+      if (hooks && hooks.trackUpload) hooks.trackUpload(settled);
     });
     input.click();
   }
@@ -453,25 +728,33 @@
 
   // ---- toolbar + styles ------------------------------------------------------
 
-  function buildToolbar() {
+  function buildToolbar(page, key) {
     var bar = document.createElement('div');
     bar.className = 'dugri-editbar';
     bar.setAttribute('dir', 'rtl');
     bar.setAttribute('role', 'toolbar');
     bar.setAttribute('aria-label', 'עריכת תוכן');
+    // Page picker: an <option> per editable page whose value is the STILL-editing
+    // URL (?edit=1&key=…) so selecting one navigates there without leaving edit
+    // mode. The current page starts selected.
+    var options = EDITABLE_PAGES.map(function (p) {
+      var selected = p.page === page ? ' selected' : '';
+      return (
+        '<option value="' + pageEditUrl(p.page, key) + '"' + selected + '>' + p.label + '</option>'
+      );
+    }).join('');
     bar.innerHTML =
       '<span class="dugri-editbar__title">מצב עריכה</span>' +
+      '<label class="dugri-editbar__page">עריכת עמוד:' +
+      '<select class="dugri-editbar__select" data-role="pageselect" aria-label="עריכת עמוד">' +
+      options +
+      '</select></label>' +
       '<span class="dugri-editbar__status" data-role="status" aria-live="polite"></span>' +
       '<button type="button" class="dugri-editbar__btn" data-role="reset">אפס לברירת מחדל</button>' +
-      '<button type="button" class="dugri-editbar__btn dugri-editbar__btn--exit" data-role="exit">יציאה</button>';
-    var exit = bar.querySelector('[data-role="exit"]');
-    exit.addEventListener('click', function () {
-      // Drop ?edit (keep any ?key) and reload as a normal visitor.
-      var params = new URLSearchParams(location.search);
-      params.delete('edit');
-      var qs = params.toString();
-      location.href = location.pathname + (qs ? '?' + qs : '');
-    });
+      '<button type="button" class="dugri-editbar__btn" data-role="save">שמור</button>' +
+      '<button type="button" class="dugri-editbar__btn dugri-editbar__btn--exit" data-role="exit">שמירה ויציאה</button>';
+    // The picker's change handler is wired in enableEditMode (it must save-then-nav,
+    // which needs the tracker/status) — buildToolbar only builds the DOM.
     document.body.appendChild(bar);
     return bar;
   }
@@ -483,10 +766,14 @@
       '.dugri-edit-target.dugri-edit-img{cursor:pointer;}',
       '.dugri-edit-target:focus{outline:2px solid #c98a2b;}',
       '.dugri-editbar{position:fixed;inset-block-end:16px;inset-inline-start:16px;z-index:2147483647;',
-      'display:flex;gap:10px;align-items:center;background:#1c1a17;color:#fff;',
+      'display:flex;flex-wrap:wrap;max-width:calc(100vw - 32px);gap:10px;align-items:center;',
+      'background:#1c1a17;color:#fff;',
       'padding:10px 14px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.35);',
       'font-family:inherit;font-size:14px;direction:rtl;}',
       '.dugri-editbar__title{font-weight:700;}',
+      '.dugri-editbar__page{display:flex;align-items:center;gap:6px;color:#e7c98a;font-size:13px;}',
+      '.dugri-editbar__select{background:#fff;color:#1c1a17;border:0;border-radius:8px;',
+      'padding:5px 8px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;}',
       '.dugri-editbar__status{min-width:64px;color:#e7c98a;font-size:13px;}',
       '.dugri-editbar__btn{background:#fff;color:#1c1a17;border:0;border-radius:8px;',
       'padding:6px 12px;font-weight:700;font-size:13px;cursor:pointer;transition:opacity .15s ease;}',
@@ -509,6 +796,12 @@
     syncSameKey: syncSameKey,
     resolveEdit: resolveEdit,
     LS_KEY: LS_KEY,
+    EDITABLE_PAGES: EDITABLE_PAGES,
+    pageEditUrl: pageEditUrl,
+    exitHref: exitHref,
+    createContentState: createContentState,
+    attemptCommit: attemptCommit,
+    buildToolbar: buildToolbar,
   };
   if (typeof window !== 'undefined') window.__dugriEditor = api;
 

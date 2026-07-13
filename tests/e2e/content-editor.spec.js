@@ -85,6 +85,87 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(page.locator('.dugri-editbar__status')).toHaveText('נשמר');
   });
 
+  test('editing a NON-FIRST clone of a shared key still saves via שמור (marquee regression)', async ({
+    page,
+  }) => {
+    const posts = [];
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) => {
+      if (route.request().method() === 'POST') posts.push(route.request().postDataJSON());
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const clones = page.locator('[data-edit="index-marquee-1"]');
+    await expect(clones).toHaveCount(8);
+
+    // Edit the SECOND (non-first) clone, then click שמור. Clicking Save blurs the
+    // clone with focus landing in the toolbar; the edit must STILL be captured and
+    // saved. (Regression: saveDirtyFields read the first, unedited clone → no POST,
+    // a false 'נשמר', and the edit was silently lost.) The marquee scrolls, so focus
+    // + edit the clone via evaluate (not a click on a moving target).
+    const second = clones.nth(1);
+    await second.evaluate((n) => {
+      n.focus();
+      n.textContent = 'עריכה בעותק השני';
+    });
+    await page.locator('[data-role="save"]').click();
+
+    await expect.poll(() => posts.length).toBeGreaterThan(0);
+    expect(posts[posts.length - 1]).toEqual({
+      page: 'index.html',
+      key: 'index-marquee-1',
+      text: 'עריכה בעותק השני',
+    });
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('נשמר');
+    // All clones reflect the edit (synced from whichever clone was typed into).
+    const after = await clones.evaluateAll((els) => els.map((e) => e.textContent.trim()));
+    expect(new Set(after)).toEqual(new Set(['עריכה בעותק השני']));
+  });
+
+  test('editing a non-first clone via שמירה ויציאה persists across all clones on reload', async ({
+    page,
+  }) => {
+    const posts = [];
+    let savedText = null;
+    // The content route reflects whatever was saved, so the post-exit reload shows it.
+    await page.route('**/api/content*', (route) =>
+      route.fulfill({
+        json: { overrides: savedText ? { 'index-marquee-1': { text: savedText } } : {} },
+      })
+    );
+    await page.route('**/api/admin/content*', (route) => {
+      const req = route.request();
+      if (req.method() === 'POST') {
+        const body = req.postDataJSON();
+        savedText = body.text;
+        posts.push(body);
+      }
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const clones = page.locator('[data-edit="index-marquee-1"]');
+    const second = clones.nth(1);
+    await second.evaluate((n) => {
+      n.focus();
+      n.textContent = 'נשמר מהעותק השני';
+    });
+    await page.locator('[data-role="exit"]').click();
+
+    // The edit on the non-first clone was saved, THEN we left edit mode…
+    await expect.poll(() => posts.length).toBeGreaterThan(0);
+    expect(posts[posts.length - 1].text).toBe('נשמר מהעותק השני');
+    await expect(page).not.toHaveURL(/edit=1/);
+    await expect(page.locator('.dugri-editbar')).toHaveCount(0);
+    // …and after the reload every clone shows the persisted override.
+    await expect(clones.first()).toHaveText('נשמר מהעותק השני');
+    const reloaded = await clones.evaluateAll((els) => els.map((e) => e.textContent.trim()));
+    expect(new Set(reloaded)).toEqual(new Set(['נשמר מהעותק השני']));
+  });
+
   test('clicking an editable link in edit mode edits it instead of navigating away', async ({
     page,
   }) => {
@@ -342,6 +423,236 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect
       .poll(() => page.evaluate(() => localStorage.getItem('dugri_admin_key')))
       .toBeNull();
+  });
+
+  test('the toolbar has a page picker + Save + Save&Exit, gated to the owner', async ({ page }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    // Save + Save&Exit buttons and the page picker are present.
+    await expect(page.locator('[data-role="save"]')).toHaveText('שמור');
+    await expect(page.locator('[data-role="exit"]')).toHaveText('שמירה ויציאה');
+    const select = page.locator('[data-role="pageselect"]');
+    await expect(select).toBeVisible();
+    // The picker lists every editable page and starts on the current one.
+    await expect(select.locator('option')).toHaveCount(7);
+    await expect(select).toHaveValue('index.html?edit=1&key=dugri-admin');
+  });
+
+  test('the page picker navigates to another page STILL in edit mode', async ({ page }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    // Selecting a page navigates there carrying ?edit=1&key so edit mode persists.
+    await page.locator('[data-role="pageselect"]').selectOption('how.html?edit=1&key=dugri-admin');
+    await expect(page).toHaveURL(/how\.html\?edit=1&key=dugri-admin/);
+    await expect(page.getByText('מצב עריכה')).toBeVisible(); // landed already editing
+  });
+
+  test('Save commits a focused edit and confirms, staying in edit mode', async ({ page }) => {
+    const posts = [];
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) => {
+      if (route.request().method() === 'POST') posts.push(route.request().postDataJSON());
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    // Type into a field WITHOUT blurring it, then hit Save. Clicking Save shifts
+    // focus off the field → its blur→save fires; Save waits and confirms נשמר.
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'תשובה שמורה';
+    });
+    await page.locator('[data-role="save"]').click();
+
+    await expect.poll(() => posts.length).toBeGreaterThan(0);
+    expect(posts[posts.length - 1].text).toBe('תשובה שמורה');
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('נשמר');
+    // Still in edit mode: the toolbar stays and the URL keeps ?edit=1.
+    await expect(page.locator('.dugri-editbar')).toBeVisible();
+    await expect(page).toHaveURL(/edit=1/);
+  });
+
+  test('Save&Exit commits the focused edit BEFORE leaving edit mode', async ({ page }) => {
+    const posts = [];
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) => {
+      if (route.request().method() === 'POST') posts.push(route.request().postDataJSON());
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'נשמר לפני יציאה';
+    });
+    await page.locator('[data-role="exit"]').click();
+
+    // The half-typed edit was saved…
+    await expect.poll(() => posts.length).toBeGreaterThan(0);
+    expect(posts[posts.length - 1].text).toBe('נשמר לפני יציאה');
+    // …and THEN we dropped ?edit and reloaded as a normal visitor (no toolbar).
+    await expect(page).not.toHaveURL(/edit=1/);
+    await expect(page.locator('.dugri-editbar')).toHaveCount(0);
+  });
+
+  test('Save&Exit WAITS for an in-flight image upload before leaving (no lost image)', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+
+    // Hold the image response open so the upload is still in flight when we exit.
+    const returnedImg = '/content-uploads/1234567890abcdef.png';
+    let releaseImage;
+    const imageHeld = new Promise((r) => (releaseImage = r));
+    let imagePosted = false;
+    await page.route('**/api/admin/content/image*', async (route) => {
+      imagePosted = true;
+      await imageHeld;
+      await route.fulfill({ json: { ok: true, img: returnedImg } });
+    });
+
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const img = page.locator('.review:not([data-carousel-clone]) [data-edit-img="index-review-1"]');
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+    const [chooser] = await Promise.all([
+      page.waitForEvent('filechooser'),
+      img.evaluate((node) => node.click()),
+    ]);
+    await chooser.setFiles({ name: 'photo.png', mimeType: 'image/png', buffer: pngBytes });
+
+    // The upload is in flight (held). Click Save&Exit — it must WAIT, not abort it.
+    await expect.poll(() => imagePosted).toBe(true);
+    await page.locator('[data-role="exit"]').click();
+
+    // Still in edit mode while the upload is pending — we did NOT navigate away and
+    // kill the upload (defect: flushSaves was empty → navigate aborted the upload).
+    await expect(page.locator('.dugri-editbar')).toBeVisible();
+    await expect(page).toHaveURL(/edit=1/);
+
+    // Release the upload → it completes, and only NOW do we leave edit mode. (We
+    // don't assert the applied src: navigation reloads as a normal visitor whose
+    // mocked overrides are empty, so the img reverts — the point is the WAIT.)
+    releaseImage();
+    await expect(page).not.toHaveURL(/edit=1/);
+    await expect(page.locator('.dugri-editbar')).toHaveCount(0);
+  });
+
+  test('page picker on a failing save: DECLINING the switch reverts + errors (edit kept)', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    // Every content save fails (e.g. server error) so the edit stays unsaved.
+    await page.route('**/api/admin/content*', (route) =>
+      route.fulfill({ status: 500, json: { error: 'boom' } })
+    );
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    // Type an edit, then pick another page: the save FAILS, so the picker offers a
+    // discard-and-switch confirm. DECLINING keeps us here (edit not dropped).
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'עריכה שלא נשמרה';
+    });
+    page.once('dialog', (d) => d.dismiss());
+    await page.locator('[data-role="pageselect"]').selectOption('how.html?edit=1&key=dugri-admin');
+
+    // Stayed on index (no navigation), the select snapped back, and the error shows.
+    await expect(page).toHaveURL(/index\.html\?edit=1/);
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('שגיאה בשמירה');
+    await expect(page.locator('[data-role="pageselect"]')).toHaveValue(
+      'index.html?edit=1&key=dugri-admin'
+    );
+  });
+
+  test('page picker on a failing save: CONFIRMING switches anyway (never permanently blocked)', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) =>
+      route.fulfill({ status: 500, json: { error: 'boom' } })
+    );
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'עריכה שלא נשמרה';
+    });
+    // Accepting the discard-and-switch confirm navigates to the picked page, still
+    // in edit mode — the picker is never left permanently dead by a stuck failure.
+    page.once('dialog', (d) => d.accept());
+    await page.locator('[data-role="pageselect"]').selectOption('how.html?edit=1&key=dugri-admin');
+    await expect(page).toHaveURL(/how\.html\?edit=1&key=dugri-admin/);
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+  });
+
+  test('a failed save keeps Save at שגיאה and Save&Exit refuses to leave (dismiss keeps editing)', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) =>
+      route.fulfill({ status: 500, json: { error: 'boom' } })
+    );
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'עריכה שנכשלה';
+      n.dispatchEvent(new Event('blur')); // auto-save fires and fails
+    });
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('שגיאה בשמירה');
+
+    // Save must NOT claim נשמר while the field is still unsaved (its save failed).
+    await page.locator('[data-role="save"]').click();
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('שגיאה בשמירה');
+
+    // Save&Exit offers an explicit discard-and-leave prompt; DISMISSING it keeps us
+    // editing (the unsaved edit is not silently dropped).
+    page.once('dialog', (d) => d.dismiss());
+    await page.locator('[data-role="exit"]').click();
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('שגיאה בשמירה');
+    await expect(page.locator('.dugri-editbar')).toBeVisible();
+    await expect(page).toHaveURL(/edit=1/);
+  });
+
+  test('Save&Exit is never a dead end: confirming the discard prompt leaves edit mode', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) =>
+      route.fulfill({ status: 500, json: { error: 'boom' } })
+    );
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'עריכה שנכשלה';
+      n.dispatchEvent(new Event('blur'));
+    });
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('שגיאה בשמירה');
+
+    // ACCEPTING the escape prompt lets the owner leave (never stranded on a bad key).
+    page.once('dialog', (d) => d.accept());
+    await page.locator('[data-role="exit"]').click();
+    await expect(page).not.toHaveURL(/edit=1/);
+    await expect(page.locator('.dugri-editbar')).toHaveCount(0);
   });
 
   test('a 403 from a URL ?key= does NOT wipe a different, still-valid stored key', async ({
