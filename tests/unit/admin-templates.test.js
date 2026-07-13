@@ -19,9 +19,6 @@ const serverDir = path.join(__dirname, '..', '..', 'server');
 
 const ADMIN_KEY = 'test-admin-key';
 const SVG = (label) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg">${label}</svg>`);
-// An SVG carrying a viewBox, for the calibration-guard tests.
-const SVGVB = (vb, label = '') =>
-  Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}">${label}</svg>`);
 // A buffer that passes the sfnt-magic font check (0x00010000 = TrueType), for
 // exercising the font-replace happy path now that filename extension is ignored.
 const FONT = (label = '') =>
@@ -501,50 +498,63 @@ describe('templates.js full editing (status / rename / replace)', () => {
     ).toBeUndefined();
   });
 
-  it('replaceAsset blocks a viewBox-mismatch SVG on a calibrated template unless forced', () => {
+  it('replaceAsset on a CALIBRATED template requires force to replace an SVG role', () => {
     const root = makeScaffold();
     onboard(root, 'cal-x');
     const themesPath = templates.themesPathFor(root);
     const dir = path.join(root, 'resources', 'canva', 'templates', 'cal-x');
-    // Make the template calibrated with a known current viewBox on the front SVG.
+    // Flip the (freshly onboarded, uncalibrated) template to calibrated.
     const themes = templates.loadThemes(themesPath);
     themes['cal-x'].calibrated = true;
     templates.writeThemesFile(themesPath, themes);
-    fs.writeFileSync(path.join(dir, 'clean', 'fronts.svg'), SVGVB('0 0 100 200', 'orig'));
+    const before = fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8');
 
-    // A DIFFERENT viewBox is blocked (409) and the file is NOT overwritten.
-    const mismatch = templates.replaceAsset({
+    // No force -> blocked (409, calibrationWarning) and the file is NOT overwritten.
+    const blocked = templates.replaceAsset({
       root,
       key: 'cal-x',
       role: 'clean-fronts',
-      file: { filename: 'n.svg', data: SVGVB('0 0 300 400', 'new') },
+      file: { filename: 'n.svg', data: SVG('NEW-ART') },
     });
-    expect(mismatch.httpStatus).toBe(409);
-    expect(mismatch.viewBoxMismatch).toBe(true);
-    expect(mismatch.currentViewBox).toEqual([0, 0, 100, 200]);
-    expect(mismatch.newViewBox).toEqual([0, 0, 300, 400]);
-    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toContain('orig');
+    expect(blocked.httpStatus).toBe(409);
+    expect(blocked.calibrationWarning).toBe(true);
+    expect(blocked.error).toMatch(/calibrated/i);
+    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toBe(before);
 
-    // force overrides the guard and swaps the file.
+    // With force -> the swap goes through.
     const forced = templates.replaceAsset({
       root,
       key: 'cal-x',
       role: 'clean-fronts',
-      file: { filename: 'n.svg', data: SVGVB('0 0 300 400', 'forced') },
+      file: { filename: 'n.svg', data: SVG('NEW-ART') },
       force: true,
     });
     expect(forced.error).toBeUndefined();
-    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toContain('forced');
+    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toContain('NEW-ART');
 
-    // A MATCHING viewBox is allowed without force.
-    const match = templates.replaceAsset({
+    // A FONT role on the same calibrated template does NOT require force (no
+    // geometry to protect).
+    const font = templates.replaceAsset({
       root,
       key: 'cal-x',
-      role: 'clean-fronts',
-      file: { filename: 'n.svg', data: SVGVB('0 0 300 400', 'matched') },
+      role: 'title-font',
+      file: { filename: 'F.ttf', data: FONT('CAL-FONT') },
     });
-    expect(match.error).toBeUndefined();
-    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toContain('matched');
+    expect(font.error).toBeUndefined();
+  });
+
+  it('replaceAsset on a NON-calibrated template replaces an SVG role freely (no force)', () => {
+    const root = makeScaffold();
+    onboard(root, 'uncal-x'); // onboarded templates are calibrated:false
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'uncal-x');
+    const r = templates.replaceAsset({
+      root,
+      key: 'uncal-x',
+      role: 'clean-fronts',
+      file: { filename: 'n.svg', data: SVG('FREE-SWAP') },
+    });
+    expect(r.error).toBeUndefined();
+    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toContain('FREE-SWAP');
   });
 
   it('replaceAsset rejects unknown / traversing role names (whitelist)', () => {

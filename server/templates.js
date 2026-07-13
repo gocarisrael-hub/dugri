@@ -474,23 +474,6 @@ function looksLikeFont(buf) {
   return buf[0] === 0x00 && buf[1] === 0x01 && buf[2] === 0x00 && buf[3] === 0x00;
 }
 
-// Extract an SVG's viewBox as [minX, minY, width, height], or null when absent /
-// malformed. The theme's title_style/board/back geometry is calibrated in these
-// viewBox units (see generator/build.py svg_dims + render_board), so a replacement
-// SVG whose viewBox differs would misposition every title/word slot on the print.
-function svgViewBox(buf) {
-  if (!buf || !buf.length) return null;
-  const head = buf.slice(0, 4000).toString('utf8');
-  const m = /viewBox\s*=\s*"([^"]+)"/i.exec(head);
-  if (!m) return null;
-  const parts = m[1]
-    .trim()
-    .split(/[\s,]+/)
-    .map(Number);
-  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
-  return parts;
-}
-
 // Own-property theme lookup that is SAFE against prototype pollution. A raw
 // `themes[key]` guard treats keys like `__proto__` / `constructor` as truthy
 // (they resolve up the prototype chain), which would let a later `themes[key].x =`
@@ -571,9 +554,10 @@ function renameTemplate({ root, key, displayName }) {
 // no traversal, and the other onboarded assets are untouched). SVG roles are
 // SVG-validated; font roles are validated by sfnt magic. Content validation runs
 // BEFORE any write, so a rejected upload never overwrites the existing asset.
-// On a CALIBRATED template, replacing an SVG whose viewBox differs from the
-// current asset's is blocked (the theme geometry is calibrated to the old
-// viewBox) unless `force` is set — see the viewBox guard below.
+// On a CALIBRATED template, replacing an SVG ROLE requires an explicit `force`
+// confirmation: the theme's title/word geometry was calibrated against the
+// current art, so swapping the art may misalign the print — the admin must verify
+// the proof and confirm. A non-calibrated template replaces freely.
 // For a font role with no filename on record, the uploaded basename is used and
 // recorded in themes.json so the generator can find it.
 // Returns { key, role, path } or { error, httpStatus, ... }.
@@ -623,30 +607,21 @@ function replaceAsset({ root, key, role, file, force = false }) {
     return { error: 'refusing to write outside the template directory', httpStatus: 400 };
   }
 
-  // Calibration guard: on a calibrated template, an SVG replacement whose viewBox
-  // differs from the current asset's would misplace the title/word slots (the
-  // theme geometry is calibrated in the OLD viewBox units). Block it — surfacing
-  // the two viewBoxes so the admin can confirm — unless `force` is set. Skipped
-  // when there is no current asset (nothing to break; e.g. adding the chasers
-  // board fresh — the generator itself guards a mismatched chasers viewBox).
-  if (kind === 'svg' && entry.calibrated && !force && fs.existsSync(abs)) {
-    const curVb = svgViewBox(fs.readFileSync(abs));
-    const newVb = svgViewBox(file.data);
-    if (curVb && (!newVb || curVb.join(' ') !== newVb.join(' '))) {
-      return {
-        error:
-          'viewBox mismatch: the new SVG (' +
-          (newVb ? newVb.join(' ') : 'no viewBox') +
-          ') differs from the current asset (' +
-          curVb.join(' ') +
-          '). This template is calibrated against the current geometry, so swapping ' +
-          'would misposition the title/word slots on the print. Re-upload with force to override.',
-        httpStatus: 409,
-        viewBoxMismatch: true,
-        currentViewBox: curVb,
-        newViewBox: newVb,
-      };
-    }
+  // Calibration guard: this template's title/word slots were hand-calibrated
+  // against its current art, so replacing ANY svg-role art may misalign the
+  // print. Rather than brittly parse + compare viewBoxes (single vs double
+  // quotes, rounding, bytes past a scan window — any of which silently defeats a
+  // geometric check), we simply REQUIRE an explicit confirmation: block the swap
+  // (409) and make the admin re-upload with `force` after verifying the proof. A
+  // non-calibrated template has no geometry to protect and replaces freely.
+  if (kind === 'svg' && entry.calibrated && !force) {
+    return {
+      error:
+        'this template is calibrated — replacing its art may misalign the title/word slots. ' +
+        'Verify the proof before sending to a customer, then re-upload with force to confirm.',
+      httpStatus: 409,
+      calibrationWarning: true,
+    };
   }
 
   fs.mkdirSync(path.dirname(abs), { recursive: true });
@@ -721,7 +696,6 @@ module.exports = {
   writeThemesFile,
   looksLikeSvg,
   looksLikeFont,
-  svgViewBox,
   ownTheme,
   MAX_DISPLAY_NAME,
   REPLACEABLE_ROLES,

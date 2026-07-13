@@ -684,15 +684,16 @@
         tplMsg(card, 'ok', 'מעלה ' + role + '…');
         try {
           let { res, data } = await uploadAsset(card.dataset.key, role, fileObj, false);
-          // 409 viewBox mismatch on a calibrated template: warn + let the admin
-          // confirm that the swap will require re-calibration, then force it.
-          if (res.status === 409 && data.viewBoxMismatch) {
+          // 409 on a CALIBRATED template: replacing its art may misalign the
+          // title/word slots. Warn, and only re-submit with force once the admin
+          // confirms they have verified the proof.
+          if (res.status === 409 && data.calibrationWarning) {
             const proceed = window.confirm(
-              (data.error || 'ה-SVG החדש בגיאומטריה שונה מהנוכחי (viewBox).') +
-                '\n\nהחלפה תדרוש כיול מחדש של התבנית. להמשיך בכל זאת?'
+              (data.error || 'התבנית מכוילת — החלפת האומנות עלולה להזיז את מיקום הכותרת/המילים.') +
+                '\n\nודאו את ההדמיה (proof) לפני שליחה ללקוח. להחליף בכל זאת?'
             );
             if (!proceed) {
-              tplMsg(card, 'err', 'ההחלפה בוטלה (viewBox שונה — התבנית מכוילת).');
+              tplMsg(card, 'err', 'ההחלפה בוטלה (התבנית מכוילת — יש לאשר).');
               input.value = '';
               return;
             }
@@ -707,6 +708,9 @@
           loadTemplates();
         } catch (err) {
           tplMsg(card, 'err', 'שגיאת רשת: ' + err);
+          // Reset so re-selecting the SAME file fires 'change' again and the admin
+          // can retry the upload.
+          input.value = '';
         }
       });
 

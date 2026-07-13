@@ -1124,9 +1124,9 @@ app.post('/api/admin/templates/:key/rename', (req, res) => {
 // upload of one file part; the role (whitelisted) comes from the URL so the write
 // target is a fixed path inside the template dir — no traversal, and the other
 // onboarded assets are untouched. SVG roles are SVG-validated, font roles by sfnt
-// magic. On a calibrated template an SVG whose viewBox differs is rejected (409,
-// viewBoxMismatch) unless the form carries force=1 — the UI re-submits with force
-// after the admin confirms the calibration warning.
+// magic. On a CALIBRATED template, replacing an SVG role is rejected (409,
+// calibrationWarning) unless the form carries force=1 — the UI re-submits with
+// force after the admin confirms they verified the proof.
 app.post(
   '/api/admin/templates/:key/assets/:role',
   express.raw({ type: () => true, limit: TEMPLATE_UPLOAD_LIMIT }),

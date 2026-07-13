@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { FIXTURE_ROOT } from './tpl-fixture.js';
+import { FIXTURE_ROOT, FIXTURE_SENTINEL } from './tpl-fixture.js';
 
 // The template status/edit center is behind the admin key. The e2e server points
 // TEMPLATE_ROOT at a THROWAWAY fixture (.e2e-tpl-root, built fresh by
@@ -88,8 +88,20 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
   // Run the mutating tests on ONE project only — skipped BEFORE the browser page
   // fixture is created on the others, so the full 3-device matrix never launches
   // three concurrent browsers here (and only one project ever writes the file).
-  test.beforeEach(({}, testInfo) => {
+  // THEN refuse to run at all unless the live server lists the fixture-only
+  // sentinel theme — proof it is the test-owned server honoring the throwaway
+  // TEMPLATE_ROOT. If a dev already had `node server/index.js` on :4321 (which
+  // Playwright reuses locally, reuseExistingServer:!CI), the sentinel is absent
+  // and we skip rather than write to the REAL generator/themes.json + resources/.
+  test.beforeEach(async ({ request }, testInfo) => {
     test.skip(testInfo.project.name !== ONLY, 'mutating test runs on one project only');
+    const r = await request.get(`/api/admin/templates?key=${KEY}`);
+    const body = await r.json().catch(() => ({}));
+    const usingFixture = (body.templates || []).some((t) => t.key === FIXTURE_SENTINEL);
+    test.skip(
+      !usingFixture,
+      'server is not the throwaway-fixture server (reused dev server?) — refusing to touch real config'
+    );
   });
 
   test('rename works through the UI and keeps the slug stable', async ({ page }) => {
@@ -115,17 +127,44 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     expect(themes.bachelorette.slug).toBe('bachelorette');
   });
 
-  test('replacing the missing chasers board through the UI marks it present', async ({ page }) => {
+  test('replacing an SVG on a CALIBRATED template requires confirm; cancel aborts', async ({
+    page,
+  }) => {
+    // bachelorette ships calibrated, so ANY svg-role replace must be confirmed.
+    // Dismiss the confirm → nothing is written and the abort is reported.
+    let dialogText = '';
+    page.on('dialog', (d) => {
+      dialogText = d.message();
+      d.dismiss();
+    });
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const card = page.locator('.tpl-card[data-key="bachelorette"]');
+    await expect(card).toBeVisible();
+    await expect(card.locator('.asset[data-role="clean-fronts"]')).toHaveClass(/on/);
+
+    await card.locator('.asset[data-role="clean-fronts"] .repl-input').setInputFiles({
+      name: 'front.svg',
+      mimeType: 'image/svg+xml',
+      buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"></svg>'),
+    });
+
+    await expect(card.locator('.tpl-msg.err')).toContainText('בוטלה');
+    expect(dialogText).toMatch(/מכוילת|proof|כויל/);
+    // clean-fronts is unchanged (still present) — the swap was not written.
+    await expect(card.locator('.asset[data-role="clean-fronts"]')).toHaveClass(/on/);
+  });
+
+  test('confirming a calibrated SVG replace adds the missing chasers board', async ({ page }) => {
     const created = path.join(TPL_DIR, 'bachelorette', 'clean', 'board-chasers.svg');
+    // Accept the calibration confirm → the UI re-submits with force and the file
+    // lands at the exact path the generator reads.
+    page.on('dialog', (d) => d.accept());
     await page.goto(`/admin-templates.html?key=${KEY}`);
     const card = page.locator('.tpl-card[data-key="bachelorette"]');
     await expect(card).toBeVisible();
     const ch = card.locator('.asset[data-role="clean-board-chasers"]');
     await expect(ch).toHaveClass(/off/);
 
-    // Adding the chasers board where none existed: no current asset to compare, so
-    // the calibration guard does not fire (the generator guards a mismatched
-    // chasers viewBox at render).
     await ch.locator('.repl-input').setInputFiles({
       name: 'board-chasers.svg',
       mimeType: 'image/svg+xml',
@@ -138,33 +177,5 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     await expect(now).toHaveClass(/on/);
     await expect(now.locator('.mark')).toHaveText('✓');
     expect(fs.existsSync(created)).toBe(true);
-  });
-
-  test('a viewBox-mismatch SVG replace on a calibrated template is warned + can be cancelled', async ({
-    page,
-  }) => {
-    await page.goto(`/admin-templates.html?key=${KEY}`);
-    const card = page.locator('.tpl-card[data-key="bachelorette"]');
-    await expect(card).toBeVisible();
-
-    // Cancel the calibration confirm dialog so nothing is overwritten.
-    let dialogText = '';
-    page.on('dialog', (d) => {
-      dialogText = d.message();
-      d.dismiss();
-    });
-
-    // A tiny viewBox that cannot match bachelorette's calibrated front geometry.
-    await card.locator('.asset[data-role="clean-fronts"] .repl-input').setInputFiles({
-      name: 'front.svg',
-      mimeType: 'image/svg+xml',
-      buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>'),
-    });
-
-    // The UI surfaced the calibration warning and, on cancel, reports the abort;
-    // clean-fronts stays present (unchanged).
-    await expect(card.locator('.tpl-msg.err')).toContainText('בוטלה');
-    expect(dialogText).toMatch(/viewBox|כיול/);
-    await expect(card.locator('.asset[data-role="clean-fronts"]')).toHaveClass(/on/);
   });
 });
