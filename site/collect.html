@@ -367,6 +367,33 @@
         align-items: center;
         gap: 8px;
       }
+      /* Owner-only: the word text is tappable to edit it in place. A subtle
+         pointer + dotted underline on hover/focus hints it's editable, without
+         a second (crowding) pencil icon in the pill. */
+      .word .wtext.editable {
+        cursor: text;
+        border-radius: 4px;
+      }
+      .word .wtext.editable:hover,
+      .word .wtext.editable:focus-visible {
+        text-decoration: underline dotted;
+        text-underline-offset: 3px;
+        outline: none;
+      }
+      /* The inline editor that replaces the text span while editing. Sized to sit
+         inside the pill without resizing it awkwardly. */
+      .word .word-edit {
+        width: auto;
+        min-width: 70px;
+        max-width: 200px;
+        font: inherit;
+        font-weight: 600;
+        padding: 1px 6px;
+        border: 1px solid var(--ink);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--ink);
+      }
       .word .by {
         color: var(--muted);
         font-size: 12px;
@@ -1332,6 +1359,10 @@
         }
       }
 
+      // True while an inline word editor is open, so the background poll skips its
+      // re-render and never detaches the focused input mid-edit.
+      let wordEditOpen = false;
+
       function render() {
         if (!state) return;
         // Now that the collection (and its event theme) is loaded, make sure the
@@ -1395,7 +1426,25 @@
             const el = document.createElement('span');
             el.className = 'word';
             const txt = document.createElement('span');
+            txt.className = 'wtext';
             txt.textContent = w.text;
+            txt.setAttribute('data-testid', 'word-text');
+            txt.setAttribute('data-word-id', w.id);
+            // Owner can tap (or keyboard-activate) the text to fix a typo in place.
+            if (isOwner) {
+              txt.classList.add('editable');
+              txt.tabIndex = 0;
+              txt.setAttribute('role', 'button');
+              txt.title = 'לחצו לעריכה';
+              txt.setAttribute('aria-label', 'עריכת המילה ' + w.text);
+              txt.onclick = () => startWordEdit(txt, w);
+              txt.onkeydown = (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  startWordEdit(txt, w);
+                }
+              };
+            }
             el.appendChild(txt);
             if (w.added_by) {
               const by = document.createElement('span');
@@ -1536,6 +1585,85 @@
           alert('מחיקת המילה נכשלה. נסו שוב.');
         }
         await refresh();
+      }
+
+      // Owner-only: PATCH one word's text. Mirrors removeWord — token in the body,
+      // refresh() afterwards so the pill re-renders from the authoritative server
+      // state (so a rejected edit reverts to the old text). The server does the
+      // real normalization + validation; we only pass the trimmed value.
+      async function editWord(wordId, text) {
+        try {
+          await api('/words/' + wordId, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ owner_token: ownerToken, text }),
+          });
+        } catch (e) {
+          // 409 = the edit collides with another word; anything else is a real
+          // failure. Empty edits are short-circuited before we get here. In every
+          // case refresh() below restores the old text, so nothing is lost.
+          if (e.status === 409) {
+            toast('כבר יש מילה כזאת ברשימה');
+          } else if (e.status !== 400) {
+            toast('עריכת המילה נכשלה, נסו שוב');
+          }
+        }
+        await refresh();
+      }
+
+      // Turn a word's text span into an inline editable field. Enter / blur
+      // commit, Escape cancels (reverts to the stored text). An edit that trims
+      // to empty, or is unchanged, just restores the pill without a request —
+      // matching how a newly-typed word is trimmed/collapsed before it's saved.
+      function startWordEdit(txt, w) {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'word-edit';
+        input.value = w.text;
+        input.maxLength = 80;
+        input.setAttribute('autocomplete', 'off');
+        input.setAttribute('aria-label', 'עריכת המילה ' + w.text);
+        input.setAttribute('data-testid', 'word-edit-input');
+        txt.replaceWith(input);
+        input.focus();
+        input.select();
+        // Block the background poll from re-rendering (and tearing down) this
+        // focused editor while the owner is mid-correction — a detach would fire
+        // blur → commit with half-typed text (silent data loss).
+        wordEditOpen = true;
+
+        let settled = false;
+        const commit = async () => {
+          if (settled) return;
+          settled = true;
+          wordEditOpen = false;
+          // A word is a SINGLE token — clean it the way the server does (trim +
+          // collapse inner whitespace + 80 cap). Do NOT use parseWordText here: it
+          // splits on commas/newlines, which would truncate a word like "טוב, אמיתי".
+          const val = input.value.trim().replace(/\s+/g, ' ').slice(0, 80);
+          // Trimmed to empty, or unchanged → restore the pill, no request.
+          if (!val || val === w.text) {
+            render();
+            return;
+          }
+          await editWord(w.id, val);
+        };
+        const cancel = () => {
+          if (settled) return;
+          settled = true;
+          wordEditOpen = false;
+          render(); // discard the edit, rebuild from stored state
+        };
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            input.blur(); // → commit
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancel();
+          }
+        });
+        input.addEventListener('blur', commit);
       }
 
       // ---- add interactions ----
@@ -2011,7 +2139,11 @@
           setupPayPanel();
         }
         refresh();
-        setInterval(refresh, 5000);
+        // Skip the poll while a word is being edited so it can't tear down the
+        // focused editor (which would blur-commit half-typed text).
+        setInterval(() => {
+          if (!wordEditOpen) refresh();
+        }, 5000);
       }
     </script>
 
