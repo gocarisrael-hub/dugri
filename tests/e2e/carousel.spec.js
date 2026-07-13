@@ -245,6 +245,114 @@ test.describe('carousel — endless loops (with clones)', () => {
   });
 });
 
+test.describe('carousel — the active dot is not mirrored (dot i aligns with slide i)', () => {
+  // The engine renders its own dots and syncs the active one to the centered slide.
+  // The active dot MUST sit under the physical position of the on-view slide in BOTH
+  // directions: a dot row that runs opposite to the track lights the left/right
+  // mirror of the slide actually centered. We build a real carousel (via the live
+  // module) with fixed-width slides, in each direction, and assert that the ordering
+  // of the dots by index matches the ordering of the slides by index.
+
+  // Build an isolated N-slide carousel of the given direction on the current page,
+  // init it through the real module, and return the physical x of slide i and dot i
+  // plus the active dot's index after advancing to `goToIndex`.
+  async function probe(page, { dir, goToIndex }) {
+    return page.evaluate(
+      async ({ dir, goToIndex }) => {
+        const { initCarousel } = await import('/js/carousel.js');
+        // The host stays on the PAGE direction (rtl) — the dots are rendered as a
+        // sibling of the track inside it, so they inherit rtl. ONLY the track is set
+        // to the tested direction. This mirrors the real name-preview structure,
+        // where the filmstrip is ltr but the dots row is a page-level rtl sibling —
+        // exactly the case that lit the mirror dot before the fix.
+        const host = document.createElement('div');
+        host.style.cssText = 'width:300px;position:fixed;top:0;left:0;';
+        const track = document.createElement('div');
+        track.style.cssText = `direction:${dir};display:flex;overflow-x:auto;width:300px;`;
+        for (let i = 0; i < 4; i++) {
+          const s = document.createElement('div');
+          s.style.cssText = 'flex:0 0 300px;height:80px;';
+          s.textContent = `slide ${i}`;
+          track.appendChild(s);
+        }
+        host.appendChild(track);
+        document.body.appendChild(host);
+
+        const api = initCarousel(track, {
+          mode: 'slideshow',
+          loop: false,
+          dots: true,
+          arrows: false,
+          autoplay: false,
+        });
+        api.goTo(goToIndex, false);
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        track.dispatchEvent(new Event('scroll'));
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+        const dots = [...host.querySelectorAll('.carousel-dot')];
+        const slideOf = (i) =>
+          [...track.children].find(
+            (c) => c.__carouselIndex === i && !c.hasAttribute('data-carousel-clone')
+          );
+        const midX = (el) => {
+          const b = el.getBoundingClientRect();
+          return b.left + b.width / 2;
+        };
+        const activeDot = dots.findIndex((d) => d.getAttribute('aria-current') === 'true');
+
+        const out = {
+          activeDot,
+          apiCurrent: api.current(),
+          dot0X: midX(dots[0]),
+          dot3X: midX(dots[3]),
+          slide0X: midX(slideOf(0)),
+          slide3X: midX(slideOf(3)),
+          dotsDir: getComputedStyle(host.querySelector('.carousel-dots')).direction,
+          trackDir: getComputedStyle(track).direction,
+        };
+        api.destroy();
+        host.remove();
+        return out;
+      },
+      { dir, goToIndex }
+    );
+  }
+
+  test('RTL: dots run the same way as the slides, and the active dot follows the centered slide', async ({
+    page,
+  }) => {
+    await page.goto('/index.html');
+    const r = await probe(page, { dir: 'rtl', goToIndex: 2 });
+
+    expect(r.trackDir).toBe('rtl');
+    expect(r.dotsDir).toBe('rtl'); // dots pinned to the track direction
+    expect(r.apiCurrent).toBe(2);
+    expect(r.activeDot).toBe(2); // the i-th dot lights for slide i
+    // In RTL slide 0 is physically RIGHT of slide 3; the dots must mirror that same
+    // ordering (dot 0 right of dot 3), i.e. NOT run opposite to the slides.
+    expect(Math.sign(r.dot3X - r.dot0X)).toBe(Math.sign(r.slide3X - r.slide0X));
+    expect(r.slide3X).toBeLessThan(r.slide0X); // sanity: RTL really does run right→left
+  });
+
+  test('LTR track on the RTL page: the dots follow the track, not the page (no mirror)', async ({
+    page,
+  }) => {
+    // A page can render a carousel LTR even though the document is RTL (the site's
+    // name-preview does exactly this). The engine must flow its dots with the TRACK,
+    // else the inherited-RTL dots light the mirror of the on-view slide.
+    await page.goto('/index.html');
+    const r = await probe(page, { dir: 'ltr', goToIndex: 2 });
+
+    expect(r.trackDir).toBe('ltr');
+    expect(r.dotsDir).toBe('ltr'); // dots pinned to the LTR track, not the RTL page
+    expect(r.activeDot).toBe(2);
+    // LTR: slide 0 left of slide 3, and the dots must match (dot 0 left of dot 3).
+    expect(Math.sign(r.dot3X - r.dot0X)).toBe(Math.sign(r.slide3X - r.slide0X));
+    expect(r.slide3X).toBeGreaterThan(r.slide0X);
+  });
+});
+
 test.describe('carousel — looping is opt-in', () => {
   test('a carousel without loop:true is NEVER cloned (PDP gallery)', async ({ page }) => {
     // The PDP photo gallery is loop:false — cloning it made the product-page image
