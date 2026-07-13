@@ -654,6 +654,25 @@
         }
       });
 
+      // Upload one asset file. `force` re-submits past a calibration (viewBox)
+      // warning after the admin confirms. Returns { res, data }.
+      async function uploadAsset(cardKey, role, fileObj, force) {
+        const fd = new FormData();
+        fd.append('file', fileObj);
+        if (force) fd.append('force', '1');
+        const res = await fetch(
+          '/api/admin/templates/' +
+            encodeURIComponent(cardKey) +
+            '/assets/' +
+            encodeURIComponent(role) +
+            '?key=' +
+            encodeURIComponent(key),
+          { method: 'POST', body: fd }
+        );
+        const data = await res.json().catch(() => ({}));
+        return { res, data };
+      }
+
       // Asset replace: a file chosen on any per-asset input uploads in place.
       listEl.addEventListener('change', async (e) => {
         const input = e.target.closest('.repl-input');
@@ -661,22 +680,27 @@
         const card = input.closest('.tpl-card');
         const li = input.closest('.asset');
         const role = li.dataset.role;
-        const fd = new FormData();
-        fd.append('file', input.files[0]);
+        const fileObj = input.files[0];
         tplMsg(card, 'ok', 'מעלה ' + role + '…');
         try {
-          const res = await fetch(
-            '/api/admin/templates/' +
-              encodeURIComponent(card.dataset.key) +
-              '/assets/' +
-              encodeURIComponent(role) +
-              '?key=' +
-              encodeURIComponent(key),
-            { method: 'POST', body: fd }
-          );
-          const data = await res.json().catch(() => ({}));
+          let { res, data } = await uploadAsset(card.dataset.key, role, fileObj, false);
+          // 409 viewBox mismatch on a calibrated template: warn + let the admin
+          // confirm that the swap will require re-calibration, then force it.
+          if (res.status === 409 && data.viewBoxMismatch) {
+            const proceed = window.confirm(
+              (data.error || 'ה-SVG החדש בגיאומטריה שונה מהנוכחי (viewBox).') +
+                '\n\nהחלפה תדרוש כיול מחדש של התבנית. להמשיך בכל זאת?'
+            );
+            if (!proceed) {
+              tplMsg(card, 'err', 'ההחלפה בוטלה (viewBox שונה — התבנית מכוילת).');
+              input.value = '';
+              return;
+            }
+            ({ res, data } = await uploadAsset(card.dataset.key, role, fileObj, true));
+          }
           if (!res.ok) {
             tplMsg(card, 'err', 'שגיאה: ' + (data.error || res.status));
+            input.value = '';
             return;
           }
           tplMsg(card, 'ok', 'הקובץ הוחלף: ' + role);

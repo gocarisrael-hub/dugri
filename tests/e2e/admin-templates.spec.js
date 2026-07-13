@@ -1,29 +1,20 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { FIXTURE_ROOT } from './tpl-fixture.js';
 
-// The template status/edit center is behind the admin key. The e2e server runs
-// against the REAL repo (TEMPLATE_ROOT defaults to the repo root) with
-// ADMIN_KEY=dugri-admin. Read-only checks run on every device project; the
-// MUTATING checks (rename + replace) run on a SINGLE project and restore the
-// touched files in a finally block, so the real themes.json / resources are left
-// exactly as they were. Mutations target 'bachelorette'; read-only assertions
+// The template status/edit center is behind the admin key. The e2e server points
+// TEMPLATE_ROOT at a THROWAWAY fixture (.e2e-tpl-root, built fresh by
+// global-setup.js from a copy of themes.json + the 'anniversary' and
+// 'bachelorette' template dirs), so rename/replace here never touch the
+// checked-in generator/themes.json or resources/. Read-only checks run on every
+// device project; MUTATING checks run on ONE project (skipped before the browser
+// page is created on the others) and target 'bachelorette'; read-only assertions
 // target 'anniversary' so the two never overlap across concurrent projects.
 const KEY = 'dugri-admin';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO = path.join(__dirname, '..', '..');
-const THEMES = path.join(REPO, 'generator', 'themes.json');
-const TPL_DIR = path.join(REPO, 'resources', 'canva', 'templates');
-const ONLY = 'Desktop Chrome'; // the one project that performs mutations
-
-// Restore a file atomically (temp + rename) so the live server — which reads
-// themes.json fresh on each request — never observes a half-written file.
-function restoreAtomic(file, bytes) {
-  const tmp = file + '.e2e-restore-' + process.pid;
-  fs.writeFileSync(tmp, bytes);
-  fs.renameSync(tmp, file);
-}
+const ONLY = 'Desktop Chrome';
+const THEMES = path.join(FIXTURE_ROOT, 'generator', 'themes.json');
+const TPL_DIR = path.join(FIXTURE_ROOT, 'resources', 'canva', 'templates');
 
 test.describe('admin templates — status view (read-only)', () => {
   test('list / rename / replace endpoints reject a missing or wrong key', async ({ request }) => {
@@ -54,8 +45,8 @@ test.describe('admin templates — status view (read-only)', () => {
       expect(cb).toBeTruthy();
       expect(cb.optional).toBe(true);
     }
-    // anniversary (never mutated) ships without a chasers board and with its core
-    // assets present.
+    // anniversary (never mutated, copied into the fixture) ships without a chasers
+    // board and with its core assets present.
     const anniv = templates.find((t) => t.key === 'anniversary');
     expect(anniv).toBeTruthy();
     expect(anniv.chasersBoard).toBe(false);
@@ -92,7 +83,7 @@ test.describe('admin templates — status view (read-only)', () => {
   });
 });
 
-test.describe('admin templates — mutations (single project, restores state)', () => {
+test.describe('admin templates — mutations (fixture only, single project)', () => {
   test.describe.configure({ mode: 'serial' });
   // Run the mutating tests on ONE project only — skipped BEFORE the browser page
   // fixture is created on the others, so the full 3-device matrix never launches
@@ -102,58 +93,78 @@ test.describe('admin templates — mutations (single project, restores state)', 
   });
 
   test('rename works through the UI and keeps the slug stable', async ({ page }) => {
-    const original = fs.readFileSync(THEMES);
-    try {
-      await page.goto(`/admin-templates.html?key=${KEY}`);
-      const card = page.locator('.tpl-card[data-key="bachelorette"]');
-      await expect(card).toBeVisible();
-      const slugBefore = (await card.locator('.tpl-slug').textContent()).trim();
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const card = page.locator('.tpl-card[data-key="bachelorette"]');
+    await expect(card).toBeVisible();
+    const slugBefore = (await card.locator('.tpl-slug').textContent()).trim();
 
-      await card.locator('.tpl-rename-btn').click();
-      await card.locator('.tpl-name-input').fill('שם מבחן E2E');
-      await card.locator('.tpl-save-btn').click();
+    await card.locator('.tpl-rename-btn').click();
+    await card.locator('.tpl-name-input').fill('שם מבחן E2E');
+    await card.locator('.tpl-save-btn').click();
 
-      // The list reloads: the card shows the new label, the slug is unchanged.
-      const renamed = page.locator('.tpl-card[data-key="bachelorette"] .tpl-name');
-      await expect(renamed).toHaveText('שם מבחן E2E');
-      expect(
-        (await page.locator('.tpl-card[data-key="bachelorette"] .tpl-slug').textContent()).trim()
-      ).toBe(slugBefore);
+    // The list reloads: the card shows the new label, the slug is unchanged.
+    const renamed = page.locator('.tpl-card[data-key="bachelorette"] .tpl-name');
+    await expect(renamed).toHaveText('שם מבחן E2E');
+    expect(
+      (await page.locator('.tpl-card[data-key="bachelorette"] .tpl-slug').textContent()).trim()
+    ).toBe(slugBefore);
 
-      // Persisted to themes.json; the slug/identity is untouched.
-      const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
-      expect(themes.bachelorette.display_he).toBe('שם מבחן E2E');
-      expect(themes.bachelorette.slug).toBe('bachelorette');
-    } finally {
-      restoreAtomic(THEMES, original);
-    }
+    // Persisted to the FIXTURE themes.json; the slug/identity is untouched.
+    const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
+    expect(themes.bachelorette.display_he).toBe('שם מבחן E2E');
+    expect(themes.bachelorette.slug).toBe('bachelorette');
   });
 
   test('replacing the missing chasers board through the UI marks it present', async ({ page }) => {
     const created = path.join(TPL_DIR, 'bachelorette', 'clean', 'board-chasers.svg');
-    try {
-      await page.goto(`/admin-templates.html?key=${KEY}`);
-      const card = page.locator('.tpl-card[data-key="bachelorette"]');
-      await expect(card).toBeVisible();
-      const ch = card.locator('.asset[data-role="clean-board-chasers"]');
-      await expect(ch).toHaveClass(/off/);
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const card = page.locator('.tpl-card[data-key="bachelorette"]');
+    await expect(card).toBeVisible();
+    const ch = card.locator('.asset[data-role="clean-board-chasers"]');
+    await expect(ch).toHaveClass(/off/);
 
-      await ch.locator('.repl-input').setInputFiles({
-        name: 'board-chasers.svg',
-        mimeType: 'image/svg+xml',
-        buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg">e2e-chasers</svg>'),
-      });
+    // Adding the chasers board where none existed: no current asset to compare, so
+    // the calibration guard does not fire (the generator guards a mismatched
+    // chasers viewBox at render).
+    await ch.locator('.repl-input').setInputFiles({
+      name: 'board-chasers.svg',
+      mimeType: 'image/svg+xml',
+      buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg">e2e-chasers</svg>'),
+    });
 
-      // The list reloads: the chasers-board row is now present (✓) and the file
-      // landed at the exact path the generator reads.
-      const now = page.locator(
-        '.tpl-card[data-key="bachelorette"] .asset[data-role="clean-board-chasers"]'
-      );
-      await expect(now).toHaveClass(/on/);
-      await expect(now.locator('.mark')).toHaveText('✓');
-      expect(fs.existsSync(created)).toBe(true);
-    } finally {
-      if (fs.existsSync(created)) fs.rmSync(created);
-    }
+    const now = page.locator(
+      '.tpl-card[data-key="bachelorette"] .asset[data-role="clean-board-chasers"]'
+    );
+    await expect(now).toHaveClass(/on/);
+    await expect(now.locator('.mark')).toHaveText('✓');
+    expect(fs.existsSync(created)).toBe(true);
+  });
+
+  test('a viewBox-mismatch SVG replace on a calibrated template is warned + can be cancelled', async ({
+    page,
+  }) => {
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const card = page.locator('.tpl-card[data-key="bachelorette"]');
+    await expect(card).toBeVisible();
+
+    // Cancel the calibration confirm dialog so nothing is overwritten.
+    let dialogText = '';
+    page.on('dialog', (d) => {
+      dialogText = d.message();
+      d.dismiss();
+    });
+
+    // A tiny viewBox that cannot match bachelorette's calibrated front geometry.
+    await card.locator('.asset[data-role="clean-fronts"] .repl-input').setInputFiles({
+      name: 'front.svg',
+      mimeType: 'image/svg+xml',
+      buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>'),
+    });
+
+    // The UI surfaced the calibration warning and, on cancel, reports the abort;
+    // clean-fronts stays present (unchanged).
+    await expect(card.locator('.tpl-msg.err')).toContainText('בוטלה');
+    expect(dialogText).toMatch(/viewBox|כיול/);
+    await expect(card.locator('.asset[data-role="clean-fronts"]')).toHaveClass(/on/);
   });
 });

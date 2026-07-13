@@ -20,6 +20,7 @@ playwright-report/
 
 # Word-collection local data (server JSON store + e2e throwaway dir)
 .e2e-data/
+.e2e-tpl-root/
 dugri-data.json
 
 # Generated order PDFs (produced on demand by the server; never committed)

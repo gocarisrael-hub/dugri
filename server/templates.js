@@ -461,17 +461,46 @@ function assetRolesFor(entry) {
   return [...svg, ...fonts];
 }
 
-// A light font sniff so the replace API can reject junk (the onboarding only
-// checked non-empty). Accepts a .ttf/.otf/.ttc name OR a recognizable sfnt magic
-// (0x00010000 TrueType, 'OTTO' CFF/OpenType, 'true'/'ttcf' variants).
-function looksLikeFont(buf, filename) {
-  if (!buf || !buf.length) return false;
-  const name = String(filename || '').toLowerCase();
-  if (name.endsWith('.ttf') || name.endsWith('.otf') || name.endsWith('.ttc')) return true;
+// Validate a font by CONTENT, never by the uploaded filename. A junk/corrupt file
+// named Title.ttf would otherwise overwrite the real font the generator reads and
+// break every PDF for that template. Accept only a recognizable sfnt magic in the
+// first 4 bytes: 0x00010000 (TrueType), 'OTTO' (CFF/OpenType), 'true'/'ttcf'
+// (TrueType/collection variants). The check runs BEFORE any write, so a rejected
+// upload leaves the existing font untouched.
+function looksLikeFont(buf) {
+  if (!buf || buf.length < 4) return false;
   const sig = buf.slice(0, 4).toString('latin1');
   if (sig === 'OTTO' || sig === 'true' || sig === 'ttcf') return true;
-  if (buf[0] === 0x00 && buf[1] === 0x01 && buf[2] === 0x00 && buf[3] === 0x00) return true;
-  return false;
+  return buf[0] === 0x00 && buf[1] === 0x01 && buf[2] === 0x00 && buf[3] === 0x00;
+}
+
+// Extract an SVG's viewBox as [minX, minY, width, height], or null when absent /
+// malformed. The theme's title_style/board/back geometry is calibrated in these
+// viewBox units (see generator/build.py svg_dims + render_board), so a replacement
+// SVG whose viewBox differs would misposition every title/word slot on the print.
+function svgViewBox(buf) {
+  if (!buf || !buf.length) return null;
+  const head = buf.slice(0, 4000).toString('utf8');
+  const m = /viewBox\s*=\s*"([^"]+)"/i.exec(head);
+  if (!m) return null;
+  const parts = m[1]
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
+  return parts;
+}
+
+// Own-property theme lookup that is SAFE against prototype pollution. A raw
+// `themes[key]` guard treats keys like `__proto__` / `constructor` as truthy
+// (they resolve up the prototype chain), which would let a later `themes[key].x =`
+// assignment mutate Object.prototype process-wide. Reject those keys outright and
+// require an OWN enumerable property. Returns the entry or null.
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+function ownTheme(themes, key) {
+  if (typeof key !== 'string' || !key || DANGEROUS_KEYS.has(key)) return null;
+  if (!Object.prototype.hasOwnProperty.call(themes, key)) return null;
+  return themes[key];
 }
 
 // Compute one template's asset checklist: which files are present vs missing,
@@ -528,24 +557,30 @@ function validateDisplayName(name) {
 function renameTemplate({ root, key, displayName }) {
   const themesPath = themesPathFor(root);
   const themes = loadThemes(themesPath);
-  if (!key || !themes[key]) return { error: 'template not found', httpStatus: 404 };
+  const entry = ownTheme(themes, key);
+  if (!entry) return { error: 'template not found', httpStatus: 404 };
   const v = validateDisplayName(displayName);
   if (v.error) return { error: v.error, httpStatus: 400 };
-  themes[key].display_he = v.value;
+  entry.display_he = v.value;
   writeThemesFile(themesPath, themes);
-  return { key, display_he: v.value, slug: themes[key].slug || key };
+  return { key, display_he: v.value, slug: entry.slug || key };
 }
 
 // Replace a SINGLE asset file of an existing template in place. The role must be
 // on the whitelist (so the write target is a fixed path inside the template dir —
 // no traversal, and the other onboarded assets are untouched). SVG roles are
-// SVG-validated; font roles are font-validated. For a font role with no filename
-// on record, the uploaded basename is used and recorded in themes.json so the
-// generator can find it. Returns { key, role, path } or { error, httpStatus }.
-function replaceAsset({ root, key, role, file }) {
+// SVG-validated; font roles are validated by sfnt magic. Content validation runs
+// BEFORE any write, so a rejected upload never overwrites the existing asset.
+// On a CALIBRATED template, replacing an SVG whose viewBox differs from the
+// current asset's is blocked (the theme geometry is calibrated to the old
+// viewBox) unless `force` is set — see the viewBox guard below.
+// For a font role with no filename on record, the uploaded basename is used and
+// recorded in themes.json so the generator can find it.
+// Returns { key, role, path } or { error, httpStatus, ... }.
+function replaceAsset({ root, key, role, file, force = false }) {
   const themesPath = themesPathFor(root);
   const themes = loadThemes(themesPath);
-  const entry = key && themes[key];
+  const entry = ownTheme(themes, key);
   if (!entry) return { error: 'template not found', httpStatus: 404 };
   if (!REPLACEABLE_ROLES.has(role))
     return { error: 'unknown asset role: ' + role, httpStatus: 400 };
@@ -555,15 +590,17 @@ function replaceAsset({ root, key, role, file }) {
   const dir = resolveTemplateDir(root, entry, key);
   if (!dir) return { error: 'template directory is outside the templates root', httpStatus: 400 };
 
+  // Role is whitelisted, so assetRolesFor always yields its spec (single source of
+  // truth for the path + kind — no divergent fallback).
   const spec = assetRolesFor(entry).find((a) => a.role === role);
-  const kind = spec ? spec.kind : role.endsWith('-font') ? 'font' : 'svg';
+  const kind = spec.kind;
 
   // Validate the bytes against the role's kind — same posture as onboarding.
   if (kind === 'svg') {
     if (!looksLikeSvg(file.data))
       return { error: 'file does not look like an SVG', httpStatus: 400 };
   } else if (kind === 'font') {
-    if (!looksLikeFont(file.data, file.filename)) {
+    if (!looksLikeFont(file.data)) {
       return { error: 'file does not look like a font (.ttf/.otf)', httpStatus: 400 };
     }
   }
@@ -571,27 +608,53 @@ function replaceAsset({ root, key, role, file }) {
   // Resolve the destination path. SVG roles have a fixed rel; a font role writes
   // to the recorded filename (the exact path the generator reads) when present,
   // else to the uploaded basename which we then record.
-  let rel = spec && spec.rel;
+  let rel = spec.rel;
   let recordFontField = null;
   if (kind === 'font' && !rel) {
     const name = safeBasename(file.filename);
     if (!name) return { error: 'font filename is missing or unsafe', httpStatus: 400 };
     rel = 'fonts/' + name;
-    recordFontField = spec ? spec.field : role === 'title-font' ? 'title_font' : 'word_font';
+    recordFontField = spec.field;
   }
-  if (!rel) return { error: 'unknown asset role: ' + role, httpStatus: 400 };
 
   const abs = path.resolve(dir, rel);
   // Defense in depth: the resolved target must stay inside the template dir.
   if (abs !== dir && !abs.startsWith(dir + path.sep)) {
     return { error: 'refusing to write outside the template directory', httpStatus: 400 };
   }
+
+  // Calibration guard: on a calibrated template, an SVG replacement whose viewBox
+  // differs from the current asset's would misplace the title/word slots (the
+  // theme geometry is calibrated in the OLD viewBox units). Block it — surfacing
+  // the two viewBoxes so the admin can confirm — unless `force` is set. Skipped
+  // when there is no current asset (nothing to break; e.g. adding the chasers
+  // board fresh — the generator itself guards a mismatched chasers viewBox).
+  if (kind === 'svg' && entry.calibrated && !force && fs.existsSync(abs)) {
+    const curVb = svgViewBox(fs.readFileSync(abs));
+    const newVb = svgViewBox(file.data);
+    if (curVb && (!newVb || curVb.join(' ') !== newVb.join(' '))) {
+      return {
+        error:
+          'viewBox mismatch: the new SVG (' +
+          (newVb ? newVb.join(' ') : 'no viewBox') +
+          ') differs from the current asset (' +
+          curVb.join(' ') +
+          '). This template is calibrated against the current geometry, so swapping ' +
+          'would misposition the title/word slots on the print. Re-upload with force to override.',
+        httpStatus: 409,
+        viewBoxMismatch: true,
+        currentViewBox: curVb,
+        newViewBox: newVb,
+      };
+    }
+  }
+
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   fs.writeFileSync(abs, file.data);
 
   // A newly-named font needs its filename recorded so the generator finds it.
   if (recordFontField) {
-    themes[key][recordFontField] = path.basename(abs);
+    entry[recordFontField] = path.basename(abs);
     writeThemesFile(themesPath, themes);
   }
   return { key, role, path: path.relative(root, abs) };
@@ -658,6 +721,8 @@ module.exports = {
   writeThemesFile,
   looksLikeSvg,
   looksLikeFont,
+  svgViewBox,
+  ownTheme,
   MAX_DISPLAY_NAME,
   REPLACEABLE_ROLES,
   assetRolesFor,

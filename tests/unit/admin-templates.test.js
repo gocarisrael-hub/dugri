@@ -19,6 +19,13 @@ const serverDir = path.join(__dirname, '..', '..', 'server');
 
 const ADMIN_KEY = 'test-admin-key';
 const SVG = (label) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg">${label}</svg>`);
+// An SVG carrying a viewBox, for the calibration-guard tests.
+const SVGVB = (vb, label = '') =>
+  Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}">${label}</svg>`);
+// A buffer that passes the sfnt-magic font check (0x00010000 = TrueType), for
+// exercising the font-replace happy path now that filename extension is ignored.
+const FONT = (label = '') =>
+  Buffer.concat([Buffer.from([0x00, 0x01, 0x00, 0x00]), Buffer.from(label)]);
 
 // Build a fresh throwaway repo scaffold. The real themes.json always ships with
 // entries; an EMPTY mapping is now treated as missing/corrupt and refused (so a
@@ -434,27 +441,110 @@ describe('templates.js full editing (status / rename / replace)', () => {
     );
   });
 
-  it('replaceAsset replaces a font at the recorded path and font-validates junk', () => {
+  it('replaceAsset replaces a font (by sfnt magic) at the recorded path', () => {
     const root = makeScaffold();
     onboard(root, 'rep-f');
     const dir = path.join(root, 'resources', 'canva', 'templates', 'rep-f');
+    const good = FONT('NEWTITLEFONT');
     const r = templates.replaceAsset({
       root,
       key: 'rep-f',
       role: 'title-font',
-      file: { filename: 'New.ttf', data: Buffer.from('NEWTITLEFONT') },
+      file: { filename: 'New.ttf', data: good },
     });
     expect(r.error).toBeUndefined();
     // written to the SAME filename the generator reads from themes.json
-    expect(fs.readFileSync(path.join(dir, 'fonts', 'Title.ttf'), 'utf8')).toBe('NEWTITLEFONT');
-    // reject junk that is neither a font extension nor an sfnt magic
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'Title.ttf')).equals(good)).toBe(true);
+  });
+
+  it('replaceAsset rejects a non-font uploaded as .ttf and leaves the old font intact', () => {
+    const root = makeScaffold();
+    onboard(root, 'rep-junk');
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'rep-junk');
+    const before = fs.readFileSync(path.join(dir, 'fonts', 'Title.ttf'));
+    // Junk bytes with a trusted-looking .ttf name — validation is by CONTENT
+    // (sfnt magic), not the filename, so this must be rejected...
     const bad = templates.replaceAsset({
       root,
-      key: 'rep-f',
-      role: 'word-font',
-      file: { filename: 'junk.txt', data: Buffer.from('nope') },
+      key: 'rep-junk',
+      role: 'title-font',
+      file: { filename: 'Title.ttf', data: Buffer.from('not a real font at all') },
     });
     expect(bad.error).toMatch(/does not look like a font/);
+    expect(bad.httpStatus).toBe(400);
+    // ...and the real font the generator reads is untouched (no partial overwrite).
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'Title.ttf')).equals(before)).toBe(true);
+  });
+
+  it('rename/replace reject prototype-polluting keys without mutating Object.prototype', () => {
+    const root = makeScaffold();
+    onboard(root, 'rep-proto');
+    for (const key of ['__proto__', 'constructor', 'prototype']) {
+      const rn = templates.renameTemplate({ root, key, displayName: 'pwn' });
+      expect(rn.error).toMatch(/not found/);
+      expect(rn.httpStatus).toBe(404);
+      const rp = templates.replaceAsset({
+        root,
+        key,
+        role: 'clean-fronts',
+        file: { filename: 'x.svg', data: SVG('x') },
+      });
+      expect(rp.error).toMatch(/not found/);
+      expect(rp.httpStatus).toBe(404);
+    }
+    // Object.prototype was never polluted by any of the above.
+    expect({}.display_he).toBeUndefined();
+    expect({}.slug).toBeUndefined();
+    // the real template is still renamable normally
+    expect(
+      templates.renameTemplate({ root, key: 'rep-proto', displayName: 'ok' }).error
+    ).toBeUndefined();
+  });
+
+  it('replaceAsset blocks a viewBox-mismatch SVG on a calibrated template unless forced', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-x');
+    const themesPath = templates.themesPathFor(root);
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'cal-x');
+    // Make the template calibrated with a known current viewBox on the front SVG.
+    const themes = templates.loadThemes(themesPath);
+    themes['cal-x'].calibrated = true;
+    templates.writeThemesFile(themesPath, themes);
+    fs.writeFileSync(path.join(dir, 'clean', 'fronts.svg'), SVGVB('0 0 100 200', 'orig'));
+
+    // A DIFFERENT viewBox is blocked (409) and the file is NOT overwritten.
+    const mismatch = templates.replaceAsset({
+      root,
+      key: 'cal-x',
+      role: 'clean-fronts',
+      file: { filename: 'n.svg', data: SVGVB('0 0 300 400', 'new') },
+    });
+    expect(mismatch.httpStatus).toBe(409);
+    expect(mismatch.viewBoxMismatch).toBe(true);
+    expect(mismatch.currentViewBox).toEqual([0, 0, 100, 200]);
+    expect(mismatch.newViewBox).toEqual([0, 0, 300, 400]);
+    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toContain('orig');
+
+    // force overrides the guard and swaps the file.
+    const forced = templates.replaceAsset({
+      root,
+      key: 'cal-x',
+      role: 'clean-fronts',
+      file: { filename: 'n.svg', data: SVGVB('0 0 300 400', 'forced') },
+      force: true,
+    });
+    expect(forced.error).toBeUndefined();
+    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toContain('forced');
+
+    // A MATCHING viewBox is allowed without force.
+    const match = templates.replaceAsset({
+      root,
+      key: 'cal-x',
+      role: 'clean-fronts',
+      file: { filename: 'n.svg', data: SVGVB('0 0 300 400', 'matched') },
+    });
+    expect(match.error).toBeUndefined();
+    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toContain('matched');
   });
 
   it('replaceAsset rejects unknown / traversing role names (whitelist)', () => {
@@ -731,5 +821,27 @@ describe('POST /api/admin/templates', () => {
     const badRole = await post('bogus-role', true);
     expect(badRole.status).toBe(400);
     expect((await badRole.json()).error).toMatch(/unknown asset role/);
+  });
+
+  it('rename/replace routes reject a __proto__ key (404, no pollution)', async () => {
+    const rn = await fetch(base + '/api/admin/templates/__proto__/rename?key=' + ADMIN_KEY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_he: 'pwn' }),
+    });
+    expect(rn.status).toBe(404);
+    const boundary = '----dugriProto' + Math.random().toString(16).slice(2);
+    const body = buildMultipart(boundary, [{ name: 'file', filename: 'x.svg', data: SVG('x') }]);
+    const rp = await fetch(
+      base + '/api/admin/templates/constructor/assets/clean-fronts?key=' + ADMIN_KEY,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
+        body,
+      }
+    );
+    expect(rp.status).toBe(404);
+    // Object.prototype was not polluted by the crafted keys.
+    expect({}.display_he).toBeUndefined();
   });
 });

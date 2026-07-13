@@ -1123,8 +1123,10 @@ app.post('/api/admin/templates/:key/rename', (req, res) => {
 // Admin: replace a SINGLE asset of an existing template in place. Multipart
 // upload of one file part; the role (whitelisted) comes from the URL so the write
 // target is a fixed path inside the template dir — no traversal, and the other
-// onboarded assets are untouched. Same validation as onboarding (SVG-only where
-// the asset is an SVG; a font sniff for the font roles).
+// onboarded assets are untouched. SVG roles are SVG-validated, font roles by sfnt
+// magic. On a calibrated template an SVG whose viewBox differs is rejected (409,
+// viewBoxMismatch) unless the form carries force=1 — the UI re-submits with force
+// after the admin confirms the calibration warning.
 app.post(
   '/api/admin/templates/:key/assets/:role',
   express.raw({ type: () => true, limit: TEMPLATE_UPLOAD_LIMIT }),
@@ -1134,8 +1136,9 @@ app.post(
     if (!boundary || !Buffer.isBuffer(req.body)) {
       return res.status(400).json({ error: 'expected multipart/form-data upload' });
     }
-    const { files } = templates.parseMultipart(req.body, boundary);
+    const { fields, files } = templates.parseMultipart(req.body, boundary);
     const file = files.file || files.asset || Object.values(files)[0];
+    const force = fields && (fields.force === '1' || fields.force === 'true');
     let result;
     try {
       result = templates.replaceAsset({
@@ -1143,11 +1146,15 @@ app.post(
         key: req.params.key,
         role: req.params.role,
         file,
+        force,
       });
     } catch (e) {
       return res.status(500).json({ error: String((e && e.message) || e) });
     }
-    if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
+    if (result.error) {
+      const { httpStatus, error, ...rest } = result;
+      return res.status(httpStatus || 400).json({ error, ...rest });
+    }
     res.json({ ok: true, ...result });
   }
 );
