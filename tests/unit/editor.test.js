@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, vi } from 'vitest';
 
 // Unit tests for the client engine (site/js/editor.js). The file is a classic
 // script that auto-runs ONLY when loaded as a real <script> (document.currentScript
@@ -153,5 +153,166 @@ describe('resolveEdit — edit mode is fail-closed', () => {
     const fromStorage = editor.resolveEdit('?edit=1', storedKey);
     expect(fromStorage.active).toBe(true);
     expect(fromStorage.key).toBe('stored-secret');
+  });
+});
+
+describe('pageEditUrl — the picker keeps the owner in edit mode', () => {
+  it('always carries ?edit=1 and forwards the key so the target page loads editing', () => {
+    expect(editor.pageEditUrl('collect.html', 'secret')).toBe('collect.html?edit=1&key=secret');
+    expect(editor.pageEditUrl('how.html', 'k-e-y')).toBe('how.html?edit=1&key=k-e-y');
+    // a key with a query-breaking char is percent-encoded so it can't corrupt the URL
+    expect(editor.pageEditUrl('index.html', 'a&b c')).toBe('index.html?edit=1&key=a%26b%20c');
+    // no key → still edit mode (bootstrap will fall back to the stored key / prompt)
+    expect(editor.pageEditUrl('timer.html', '')).toBe('timer.html?edit=1');
+  });
+});
+
+describe('exitHref — leaving edit mode drops ?edit but keeps other params', () => {
+  it('removes only the edit param', () => {
+    expect(editor.exitHref('/index.html', '?edit=1')).toBe('/index.html');
+    expect(editor.exitHref('/index.html', '?edit=1&key=secret')).toBe('/index.html?key=secret');
+    expect(editor.exitHref('/how.html', '')).toBe('/how.html');
+  });
+});
+
+describe('the page picker lists every editable page', () => {
+  it('covers the real site pages with RTL labels', () => {
+    const pages = editor.EDITABLE_PAGES.map((p) => p.page);
+    expect(pages).toEqual([
+      'index.html',
+      'options.html',
+      'collect.html',
+      'how.html',
+      'products.html',
+      'product.html',
+      'timer.html',
+    ]);
+    // every entry has a non-empty Hebrew label
+    editor.EDITABLE_PAGES.forEach((p) => expect(p.label.trim().length).toBeGreaterThan(0));
+  });
+});
+
+describe('buildToolbar — Save/Save&Exit buttons + page picker', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('renders the Save, Save&Exit, and Reset buttons', () => {
+    const bar = editor.buildToolbar('index.html', 'secret');
+    expect(bar.querySelector('[data-role="save"]').textContent).toBe('שמור');
+    expect(bar.querySelector('[data-role="exit"]').textContent).toBe('שמירה ויציאה');
+    expect(bar.querySelector('[data-role="reset"]').textContent).toBe('אפס לברירת מחדל');
+    expect(bar.querySelector('[data-role="status"]')).toBeTruthy();
+  });
+
+  it('builds a page picker whose options are correct ?edit=1&key=… URLs', () => {
+    const bar = editor.buildToolbar('how.html', 'secret');
+    const select = bar.querySelector('[data-role="pageselect"]');
+    const opts = Array.from(select.options);
+    // one option per editable page, each value keeps edit mode + key
+    expect(opts.map((o) => o.value)).toEqual(
+      editor.EDITABLE_PAGES.map((p) => p.page + '?edit=1&key=secret')
+    );
+    // the CURRENT page starts selected
+    expect(select.value).toBe('how.html?edit=1&key=secret');
+    expect(opts.find((o) => o.selected).value).toBe('how.html?edit=1&key=secret');
+  });
+});
+
+describe('saveAction — "שמור" commits a focused edit + confirms, staying in edit mode', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('blurs the focused editable (flushing its pending save) and shows נשמר', async () => {
+    // Simulate a focused editable whose blur fires the auto-save (as editor.js wires).
+    document.body.innerHTML = '<span data-edit="hero" tabindex="0">edit</span>';
+    const el = document.querySelector('[data-edit="hero"]');
+    let flushed = false;
+    el.addEventListener('blur', () => {
+      flushed = true;
+    });
+    el.focus();
+
+    const setStatus = vi.fn();
+    const flush = vi.fn(() => Promise.resolve([true]));
+    await editor.saveAction({ activeEl: el, flush, setStatus });
+
+    expect(flushed).toBe(true); // the pending edit was committed (blur → save)
+    expect(flush).toHaveBeenCalledTimes(1);
+    expect(setStatus).toHaveBeenLastCalledWith('נשמר');
+  });
+
+  it('surfaces an error when a tracked save failed', async () => {
+    const setStatus = vi.fn();
+    const flush = vi.fn(() => Promise.resolve([true, false]));
+    await editor.saveAction({ activeEl: null, flush, setStatus });
+    expect(setStatus).toHaveBeenLastCalledWith('שגיאה בשמירה');
+  });
+});
+
+describe('saveExitAction — "שמירה ויציאה" commits BEFORE dropping ?edit', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('waits for pending saves to settle, then navigates (never before)', async () => {
+    document.body.innerHTML = '<span data-edit="hero" tabindex="0">edit</span>';
+    const el = document.querySelector('[data-edit="hero"]');
+    let flushed = false;
+    el.addEventListener('blur', () => {
+      flushed = true;
+    });
+    el.focus();
+
+    let resolveFlush;
+    const flush = vi.fn(() => new Promise((r) => (resolveFlush = r)));
+    const navigate = vi.fn();
+    const setStatus = vi.fn();
+
+    const done = editor.saveExitAction({ activeEl: el, flush, setStatus, navigate });
+
+    // The focused edit is committed immediately, but we have NOT navigated yet:
+    // the save is still in flight.
+    expect(flushed).toBe(true);
+    expect(navigate).not.toHaveBeenCalled();
+
+    resolveFlush([true]); // the pending save lands
+    await done;
+    expect(navigate).toHaveBeenCalledTimes(1); // only now do we leave edit mode
+  });
+
+  it('does NOT navigate when a save failed — the edit is not silently lost', async () => {
+    const navigate = vi.fn();
+    const setStatus = vi.fn();
+    await editor.saveExitAction({
+      activeEl: null,
+      flush: () => Promise.resolve([false]),
+      setStatus,
+      navigate,
+    });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(setStatus).toHaveBeenLastCalledWith('שגיאה בשמירה');
+  });
+});
+
+describe('commitActive — only an editable field is blurred (fail-closed)', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('blurs a focused [data-edit] node but ignores anything else', () => {
+    document.body.innerHTML =
+      '<span data-edit="hero" tabindex="0">a</span><button id="b">x</button>';
+    const el = document.querySelector('[data-edit="hero"]');
+    let blurred = false;
+    el.addEventListener('blur', () => (blurred = true));
+    el.focus();
+    expect(editor.commitActive(el)).toBe(true);
+    expect(blurred).toBe(true);
+
+    // a non-editable element (e.g. the Save button itself) is never committed
+    expect(editor.commitActive(document.getElementById('b'))).toBe(false);
+    expect(editor.commitActive(null)).toBe(false);
   });
 });

@@ -21,6 +21,99 @@
   var LS_KEY = 'dugri_admin_key';
   var TEXT_CAP = 5000;
 
+  // The site's editable pages, in toolbar order. The page picker lets the owner
+  // jump between them WITHOUT leaving edit mode. Each `page` is the html filename
+  // the server serves (matches <meta name="dugri:page">); `label` is the RTL name.
+  var EDITABLE_PAGES = [
+    { page: 'index.html', label: 'בית' },
+    { page: 'options.html', label: 'הזמנה' },
+    { page: 'collect.html', label: 'איסוף מילים' },
+    { page: 'how.html', label: 'איך זה עובד' },
+    { page: 'products.html', label: 'מוצרים' },
+    { page: 'product.html', label: 'מוצר' },
+    { page: 'timer.html', label: 'טיימר' },
+  ];
+
+  // Build the URL that lands the owner on `page` STILL in edit mode: keep ?edit=1
+  // and carry the key forward (?key=) so the picker preserves the owner session.
+  // encodeURIComponent keeps a stray char from breaking the query or an [attr]
+  // when the value is embedded in the toolbar's option markup.
+  function pageEditUrl(page, key) {
+    var url = page + '?edit=1';
+    if (key) url += '&key=' + encodeURIComponent(key);
+    return url;
+  }
+
+  // The URL to leave edit mode: drop ?edit (reload as a normal visitor) but keep
+  // any other params intact. Same behavior the old exit button had inline.
+  function exitHref(pathname, search) {
+    var params = new URLSearchParams(search || '');
+    params.delete('edit');
+    var qs = params.toString();
+    return String(pathname || '') + (qs ? '?' + qs : '');
+  }
+
+  // In-flight save tracking. Every blur-triggered text save (and any future write)
+  // is registered here so "שמור" / "שמירה ויציאה" can WAIT for pending saves to
+  // settle before confirming or leaving — a half-typed focused edit is committed,
+  // never lost. Each tracked promise resolves to a boolean (true = saved ok).
+  var inflightSaves = [];
+  function trackSave(promise) {
+    inflightSaves.push(promise);
+    var remove = function () {
+      var i = inflightSaves.indexOf(promise);
+      if (i > -1) inflightSaves.splice(i, 1);
+    };
+    promise.then(remove, remove);
+    return promise;
+  }
+  // Resolve once every currently in-flight save settles. Never rejects; yields the
+  // array of per-save booleans (empty when nothing was pending).
+  function flushSaves() {
+    return Promise.all(inflightSaves.slice());
+  }
+
+  // Blur the active field (if it is an editable [data-edit] node) so its blur→save
+  // fires and gets tracked. Clicking a toolbar button already shifts focus off the
+  // field — this is a belt-and-suspenders commit for when it did not. Returns
+  // whether it blurred anything.
+  function commitActive(activeEl) {
+    if (
+      activeEl &&
+      typeof activeEl.blur === 'function' &&
+      activeEl.getAttribute &&
+      activeEl.getAttribute('data-edit') != null
+    ) {
+      activeEl.blur();
+      return true;
+    }
+    return false;
+  }
+
+  // "שמור": commit any focused edit, wait for pending saves, then confirm in the
+  // status line. The owner STAYS in edit mode. deps = { activeEl, flush, setStatus }.
+  function saveAction(deps) {
+    commitActive(deps.activeEl);
+    deps.setStatus('שומר…');
+    return deps.flush().then(function (results) {
+      var ok = !results || results.every(Boolean);
+      deps.setStatus(ok ? 'נשמר' : 'שגיאה בשמירה');
+    });
+  }
+
+  // "שמירה ויציאה": commit any focused edit, WAIT for saves to finish, then leave
+  // edit mode (navigate). If a save failed, stay put and surface the error rather
+  // than silently dropping the edit. deps = { activeEl, flush, setStatus, navigate }.
+  function saveExitAction(deps) {
+    commitActive(deps.activeEl);
+    deps.setStatus('שומר…');
+    return deps.flush().then(function (results) {
+      var ok = !results || results.every(Boolean);
+      if (ok) deps.navigate();
+      else deps.setStatus('שגיאה בשמירה');
+    });
+  }
+
   // The page name is the html filename that the server actually serves for this
   // URL. The server maps extension-less routes to "<name>.html" (express.static
   // extensions:['html'] — e.g. "/how" -> how.html), so we must do the same or the
@@ -154,9 +247,11 @@
 
   function enableEditMode(page, key) {
     injectStyles();
-    var toolbar = buildToolbar();
+    var toolbar = buildToolbar(page, key);
     var status = toolbar.querySelector('[data-role="status"]');
     var resetBtn = toolbar.querySelector('[data-role="reset"]');
+    var saveBtn = toolbar.querySelector('[data-role="save"]');
+    var exitBtn = toolbar.querySelector('[data-role="exit"]');
     var current = null; // the element the reset action targets
 
     function setStatus(txt) {
@@ -309,13 +404,21 @@
         var syncKey = el.getAttribute('data-edit');
         syncSameKey(document, syncKey, next);
         setStatus('שומר…');
-        postText(page, key, syncKey, next)
-          .then(function () {
-            setStatus('נשמר');
-          })
-          .catch(function () {
-            setStatus('שגיאה בשמירה');
-          });
+        // Track the save so "שמור" / "שמירה ויציאה" can wait for it to settle.
+        // Resolve to a boolean (never reject) so flushSaves' Promise.all cannot
+        // fail on a save error — the status line already reflects success/failure.
+        trackSave(
+          postText(page, key, syncKey, next).then(
+            function () {
+              setStatus('נשמר');
+              return true;
+            },
+            function () {
+              setStatus('שגיאה בשמירה');
+              return false;
+            }
+          )
+        );
       });
     });
 
@@ -364,6 +467,29 @@
           .catch(function () {
             setStatus('שגיאה באיפוס');
           });
+      });
+    }
+
+    // "שמור": commit the focused edit + confirm, staying in edit mode. Clicking the
+    // button already shifts focus off the field (firing its blur→save); commitActive
+    // + flushSaves make the confirmation wait for that save to land.
+    if (saveBtn) {
+      saveBtn.addEventListener('click', function () {
+        saveAction({ activeEl: document.activeElement, flush: flushSaves, setStatus: setStatus });
+      });
+    }
+
+    // "שמירה ויציאה": commit the focused edit, WAIT for it, then leave edit mode.
+    if (exitBtn) {
+      exitBtn.addEventListener('click', function () {
+        saveExitAction({
+          activeEl: document.activeElement,
+          flush: flushSaves,
+          setStatus: setStatus,
+          navigate: function () {
+            location.href = exitHref(location.pathname, location.search);
+          },
+        });
       });
     }
 
@@ -453,24 +579,35 @@
 
   // ---- toolbar + styles ------------------------------------------------------
 
-  function buildToolbar() {
+  function buildToolbar(page, key) {
     var bar = document.createElement('div');
     bar.className = 'dugri-editbar';
     bar.setAttribute('dir', 'rtl');
     bar.setAttribute('role', 'toolbar');
     bar.setAttribute('aria-label', 'עריכת תוכן');
+    // Page picker: an <option> per editable page whose value is the STILL-editing
+    // URL (?edit=1&key=…) so selecting one navigates there without leaving edit
+    // mode. The current page starts selected.
+    var options = EDITABLE_PAGES.map(function (p) {
+      var selected = p.page === page ? ' selected' : '';
+      return (
+        '<option value="' + pageEditUrl(p.page, key) + '"' + selected + '>' + p.label + '</option>'
+      );
+    }).join('');
     bar.innerHTML =
       '<span class="dugri-editbar__title">מצב עריכה</span>' +
+      '<label class="dugri-editbar__page">עריכת עמוד:' +
+      '<select class="dugri-editbar__select" data-role="pageselect" aria-label="עריכת עמוד">' +
+      options +
+      '</select></label>' +
       '<span class="dugri-editbar__status" data-role="status" aria-live="polite"></span>' +
       '<button type="button" class="dugri-editbar__btn" data-role="reset">אפס לברירת מחדל</button>' +
-      '<button type="button" class="dugri-editbar__btn dugri-editbar__btn--exit" data-role="exit">יציאה</button>';
-    var exit = bar.querySelector('[data-role="exit"]');
-    exit.addEventListener('click', function () {
-      // Drop ?edit (keep any ?key) and reload as a normal visitor.
-      var params = new URLSearchParams(location.search);
-      params.delete('edit');
-      var qs = params.toString();
-      location.href = location.pathname + (qs ? '?' + qs : '');
+      '<button type="button" class="dugri-editbar__btn" data-role="save">שמור</button>' +
+      '<button type="button" class="dugri-editbar__btn dugri-editbar__btn--exit" data-role="exit">שמירה ויציאה</button>';
+    var select = bar.querySelector('[data-role="pageselect"]');
+    select.addEventListener('change', function () {
+      // Navigate to the picked page, staying in edit mode (value carries ?edit=1&key).
+      if (select.value) location.href = select.value;
     });
     document.body.appendChild(bar);
     return bar;
@@ -483,10 +620,14 @@
       '.dugri-edit-target.dugri-edit-img{cursor:pointer;}',
       '.dugri-edit-target:focus{outline:2px solid #c98a2b;}',
       '.dugri-editbar{position:fixed;inset-block-end:16px;inset-inline-start:16px;z-index:2147483647;',
-      'display:flex;gap:10px;align-items:center;background:#1c1a17;color:#fff;',
+      'display:flex;flex-wrap:wrap;max-width:calc(100vw - 32px);gap:10px;align-items:center;',
+      'background:#1c1a17;color:#fff;',
       'padding:10px 14px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.35);',
       'font-family:inherit;font-size:14px;direction:rtl;}',
       '.dugri-editbar__title{font-weight:700;}',
+      '.dugri-editbar__page{display:flex;align-items:center;gap:6px;color:#e7c98a;font-size:13px;}',
+      '.dugri-editbar__select{background:#fff;color:#1c1a17;border:0;border-radius:8px;',
+      'padding:5px 8px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;}',
       '.dugri-editbar__status{min-width:64px;color:#e7c98a;font-size:13px;}',
       '.dugri-editbar__btn{background:#fff;color:#1c1a17;border:0;border-radius:8px;',
       'padding:6px 12px;font-weight:700;font-size:13px;cursor:pointer;transition:opacity .15s ease;}',
@@ -509,6 +650,13 @@
     syncSameKey: syncSameKey,
     resolveEdit: resolveEdit,
     LS_KEY: LS_KEY,
+    EDITABLE_PAGES: EDITABLE_PAGES,
+    pageEditUrl: pageEditUrl,
+    exitHref: exitHref,
+    commitActive: commitActive,
+    saveAction: saveAction,
+    saveExitAction: saveExitAction,
+    buildToolbar: buildToolbar,
   };
   if (typeof window !== 'undefined') window.__dugriEditor = api;
 

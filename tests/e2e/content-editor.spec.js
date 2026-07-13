@@ -344,6 +344,84 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
       .toBeNull();
   });
 
+  test('the toolbar has a page picker + Save + Save&Exit, gated to the owner', async ({ page }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    // Save + Save&Exit buttons and the page picker are present.
+    await expect(page.locator('[data-role="save"]')).toHaveText('שמור');
+    await expect(page.locator('[data-role="exit"]')).toHaveText('שמירה ויציאה');
+    const select = page.locator('[data-role="pageselect"]');
+    await expect(select).toBeVisible();
+    // The picker lists every editable page and starts on the current one.
+    await expect(select.locator('option')).toHaveCount(7);
+    await expect(select).toHaveValue('index.html?edit=1&key=dugri-admin');
+  });
+
+  test('the page picker navigates to another page STILL in edit mode', async ({ page }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    // Selecting a page navigates there carrying ?edit=1&key so edit mode persists.
+    await page.locator('[data-role="pageselect"]').selectOption('how.html?edit=1&key=dugri-admin');
+    await expect(page).toHaveURL(/how\.html\?edit=1&key=dugri-admin/);
+    await expect(page.getByText('מצב עריכה')).toBeVisible(); // landed already editing
+  });
+
+  test('Save commits a focused edit and confirms, staying in edit mode', async ({ page }) => {
+    const posts = [];
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) => {
+      if (route.request().method() === 'POST') posts.push(route.request().postDataJSON());
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    // Type into a field WITHOUT blurring it, then hit Save. Clicking Save shifts
+    // focus off the field → its blur→save fires; Save waits and confirms נשמר.
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'תשובה שמורה';
+    });
+    await page.locator('[data-role="save"]').click();
+
+    await expect.poll(() => posts.length).toBeGreaterThan(0);
+    expect(posts[posts.length - 1].text).toBe('תשובה שמורה');
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('נשמר');
+    // Still in edit mode: the toolbar stays and the URL keeps ?edit=1.
+    await expect(page.locator('.dugri-editbar')).toBeVisible();
+    await expect(page).toHaveURL(/edit=1/);
+  });
+
+  test('Save&Exit commits the focused edit BEFORE leaving edit mode', async ({ page }) => {
+    const posts = [];
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) => {
+      if (route.request().method() === 'POST') posts.push(route.request().postDataJSON());
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const ans = page.locator('[data-edit="index-faq-a1"]');
+    await ans.click();
+    await ans.evaluate((n) => {
+      n.textContent = 'נשמר לפני יציאה';
+    });
+    await page.locator('[data-role="exit"]').click();
+
+    // The half-typed edit was saved…
+    await expect.poll(() => posts.length).toBeGreaterThan(0);
+    expect(posts[posts.length - 1].text).toBe('נשמר לפני יציאה');
+    // …and THEN we dropped ?edit and reloaded as a normal visitor (no toolbar).
+    await expect(page).not.toHaveURL(/edit=1/);
+    await expect(page.locator('.dugri-editbar')).toHaveCount(0);
+  });
+
   test('a 403 from a URL ?key= does NOT wipe a different, still-valid stored key', async ({
     page,
   }) => {
