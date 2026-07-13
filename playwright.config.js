@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { FIXTURE_ROOT } from './tests/e2e/tpl-fixture.js';
 
 // E2E specs live in tests/e2e/*.spec.js and run against the Node server
 // (Express serving site/ + the word-collection /api) on localhost:4321.
@@ -10,6 +11,10 @@ export default defineConfig({
   timeout: 30_000,
   retries: 0,
   reporter: 'list',
+  // Builds .e2e-tpl-root (a throwaway copy of the template config + a couple of
+  // template dirs) so the admin-templates rename/replace tests never touch the
+  // checked-in generator/themes.json or resources/ (see tests/e2e/global-setup.js).
+  globalSetup: './tests/e2e/global-setup.js',
 
   use: {
     baseURL,
@@ -23,10 +28,17 @@ export default defineConfig({
     { name: 'Pixel 7', use: { ...devices['Pixel 7'] } },
   ],
 
-  // Start the Node server (static site + /api). Data goes to a throwaway dir.
+  // Start the Node server (static site + /api). Data goes to a throwaway dir, and
+  // the admin template routes are pointed at the throwaway .e2e-tpl-root so the
+  // rename/replace tests never mutate the checked-in template config.
   webServer: {
     command: `node server/index.js`,
-    env: { PORT: String(PORT), DATA_DIR: '.e2e-data', ADMIN_KEY: 'dugri-admin' },
+    env: {
+      PORT: String(PORT),
+      DATA_DIR: '.e2e-data',
+      ADMIN_KEY: 'dugri-admin',
+      TEMPLATE_ROOT: FIXTURE_ROOT,
+    },
     port: PORT,
     reuseExistingServer: !process.env.CI,
   },

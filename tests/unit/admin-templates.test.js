@@ -19,6 +19,10 @@ const serverDir = path.join(__dirname, '..', '..', 'server');
 
 const ADMIN_KEY = 'test-admin-key';
 const SVG = (label) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg">${label}</svg>`);
+// A buffer that passes the sfnt-magic font check (0x00010000 = TrueType), for
+// exercising the font-replace happy path now that filename extension is ignored.
+const FONT = (label = '') =>
+  Buffer.concat([Buffer.from([0x00, 0x01, 0x00, 0x00]), Buffer.from(label)]);
 
 // Build a fresh throwaway repo scaffold. The real themes.json always ships with
 // entries; an EMPTY mapping is now treated as missing/corrupt and refused (so a
@@ -315,6 +319,317 @@ describe('templates.js pure logic', () => {
   });
 });
 
+describe('templates.js full editing (status / rename / replace)', () => {
+  let templates;
+  beforeAll(() => {
+    delete require.cache[require.resolve(path.join(serverDir, 'templates.js'))];
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  // Onboard one template into a fresh scaffold so status/rename/replace have a
+  // real on-disk template to act on.
+  function onboard(root, slug, extraFiles) {
+    return templates.onboardTemplate({
+      root,
+      runRecipe: false,
+      fields: { slug, display_he: 'שם התחלתי', title_text: '{NAME}', name_form: 'hebrew' },
+      files: { ...validFiles(), ...(extraFiles || {}) },
+    });
+  }
+
+  it('computeTemplateStatus reports present/missing incl. the OPTIONAL chasers board', () => {
+    const root = makeScaffold();
+    onboard(root, 'stat-x');
+    const themes = templates.loadThemes(templates.themesPathFor(root));
+    const st = templates.computeTemplateStatus(root, 'stat-x', themes['stat-x']);
+    const by = Object.fromEntries(st.assets.map((a) => [a.role, a]));
+    expect(by['clean-fronts'].present).toBe(true);
+    expect(by['filled-board'].present).toBe(true);
+    expect(by['title-font'].present).toBe(true);
+    expect(by['word-font'].present).toBe(true);
+    // no chasers board was uploaded -> missing + optional + flagged off
+    expect(by['clean-board-chasers'].present).toBe(false);
+    expect(by['clean-board-chasers'].optional).toBe(true);
+    expect(st.chasersBoard).toBe(false);
+    // an OPTIONAL asset missing does not make the template incomplete
+    expect(st.complete).toBe(true);
+  });
+
+  it('listTemplateStatuses flips chasersBoard true when the variant exists', () => {
+    const root = makeScaffold();
+    onboard(root, 'stat-ch', { clean_board_chasers: { filename: 'b.svg', data: SVG('ch') } });
+    const st = templates.listTemplateStatuses(root).find((t) => t.key === 'stat-ch');
+    expect(st.chasersBoard).toBe(true);
+    expect(st.assets.find((a) => a.role === 'clean-board-chasers').present).toBe(true);
+    // the seeded theme is also listed
+    expect(templates.listTemplateStatuses(root).some((t) => t.key === 'seed-theme')).toBe(true);
+  });
+
+  it('renameTemplate updates display_he, persists, trims, and keeps slug/dir stable', () => {
+    const root = makeScaffold();
+    onboard(root, 'ren-x');
+    const before = templates.loadThemes(templates.themesPathFor(root))['ren-x'];
+    const r = templates.renameTemplate({ root, key: 'ren-x', displayName: '  שם חדש  ' });
+    expect(r.error).toBeUndefined();
+    expect(r.display_he).toBe('שם חדש'); // trimmed
+    const after = templates.loadThemes(templates.themesPathFor(root))['ren-x'];
+    expect(after.display_he).toBe('שם חדש');
+    expect(after.slug).toBe(before.slug); // slug/identity untouched
+    expect(after.dir).toBe(before.dir); // path untouched
+    expect(r.slug).toBe(before.slug);
+  });
+
+  it('renameTemplate validates non-empty + length and unknown key', () => {
+    const root = makeScaffold();
+    onboard(root, 'ren-v');
+    expect(templates.renameTemplate({ root, key: 'ren-v', displayName: '   ' }).error).toMatch(
+      /required/
+    );
+    expect(
+      templates.renameTemplate({ root, key: 'ren-v', displayName: 'x'.repeat(200) }).error
+    ).toMatch(/too long/);
+    const nf = templates.renameTemplate({ root, key: 'ghost', displayName: 'ok' });
+    expect(nf.error).toMatch(/not found/);
+    expect(nf.httpStatus).toBe(404);
+  });
+
+  it('replaceAsset writes the right SVG path, validates SVG, leaves other assets intact', () => {
+    const root = makeScaffold();
+    onboard(root, 'rep-x');
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'rep-x');
+    const r = templates.replaceAsset({
+      root,
+      key: 'rep-x',
+      role: 'clean-fronts',
+      file: { filename: 'new.svg', data: SVG('REPLACED') },
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.path).toBe(
+      path.join('resources', 'canva', 'templates', 'rep-x', 'clean', 'fronts.svg')
+    );
+    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toContain('REPLACED');
+    // the other onboarded assets are untouched
+    expect(fs.existsSync(path.join(dir, 'filled', 'board.svg'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'fonts', 'Title.ttf'))).toBe(true);
+    // reject a non-SVG payload for an SVG role
+    const bad = templates.replaceAsset({
+      root,
+      key: 'rep-x',
+      role: 'clean-board',
+      file: { filename: 'x.bin', data: Buffer.from('not an svg at all') },
+    });
+    expect(bad.error).toMatch(/does not look like an SVG/);
+  });
+
+  it('replaceAsset ADDS the optional chasers board where none existed', () => {
+    const root = makeScaffold();
+    onboard(root, 'rep-ch');
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'rep-ch');
+    expect(fs.existsSync(path.join(dir, 'clean', 'board-chasers.svg'))).toBe(false);
+    const r = templates.replaceAsset({
+      root,
+      key: 'rep-ch',
+      role: 'clean-board-chasers',
+      file: { filename: 'c.svg', data: SVG('CHASERS') },
+    });
+    expect(r.error).toBeUndefined();
+    expect(fs.readFileSync(path.join(dir, 'clean', 'board-chasers.svg'), 'utf8')).toContain(
+      'CHASERS'
+    );
+  });
+
+  it('replaceAsset replaces a font (by sfnt magic) at the recorded path', () => {
+    const root = makeScaffold();
+    onboard(root, 'rep-f');
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'rep-f');
+    const good = FONT('NEWTITLEFONT');
+    const r = templates.replaceAsset({
+      root,
+      key: 'rep-f',
+      role: 'title-font',
+      file: { filename: 'New.ttf', data: good },
+    });
+    expect(r.error).toBeUndefined();
+    // written to the SAME filename the generator reads from themes.json
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'Title.ttf')).equals(good)).toBe(true);
+  });
+
+  it('replaceAsset rejects a non-font uploaded as .ttf and leaves the old font intact', () => {
+    const root = makeScaffold();
+    onboard(root, 'rep-junk');
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'rep-junk');
+    const before = fs.readFileSync(path.join(dir, 'fonts', 'Title.ttf'));
+    // Junk bytes with a trusted-looking .ttf name — validation is by CONTENT
+    // (sfnt magic), not the filename, so this must be rejected...
+    const bad = templates.replaceAsset({
+      root,
+      key: 'rep-junk',
+      role: 'title-font',
+      file: { filename: 'Title.ttf', data: Buffer.from('not a real font at all') },
+    });
+    expect(bad.error).toMatch(/does not look like a font/);
+    expect(bad.httpStatus).toBe(400);
+    // ...and the real font the generator reads is untouched (no partial overwrite).
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'Title.ttf')).equals(before)).toBe(true);
+  });
+
+  it('rename/replace reject prototype-polluting keys without mutating Object.prototype', () => {
+    const root = makeScaffold();
+    onboard(root, 'rep-proto');
+    for (const key of ['__proto__', 'constructor', 'prototype']) {
+      const rn = templates.renameTemplate({ root, key, displayName: 'pwn' });
+      expect(rn.error).toMatch(/not found/);
+      expect(rn.httpStatus).toBe(404);
+      const rp = templates.replaceAsset({
+        root,
+        key,
+        role: 'clean-fronts',
+        file: { filename: 'x.svg', data: SVG('x') },
+      });
+      expect(rp.error).toMatch(/not found/);
+      expect(rp.httpStatus).toBe(404);
+    }
+    // Object.prototype was never polluted by any of the above.
+    expect({}.display_he).toBeUndefined();
+    expect({}.slug).toBeUndefined();
+    // the real template is still renamable normally
+    expect(
+      templates.renameTemplate({ root, key: 'rep-proto', displayName: 'ok' }).error
+    ).toBeUndefined();
+  });
+
+  it('replaceAsset on a CALIBRATED template requires force to replace an SVG role', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-x');
+    const themesPath = templates.themesPathFor(root);
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'cal-x');
+    // Flip the (freshly onboarded, uncalibrated) template to calibrated.
+    const themes = templates.loadThemes(themesPath);
+    themes['cal-x'].calibrated = true;
+    templates.writeThemesFile(themesPath, themes);
+    const before = fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8');
+
+    // No force -> blocked (409, calibrationWarning) and the file is NOT overwritten.
+    const blocked = templates.replaceAsset({
+      root,
+      key: 'cal-x',
+      role: 'clean-fronts',
+      file: { filename: 'n.svg', data: SVG('NEW-ART') },
+    });
+    expect(blocked.httpStatus).toBe(409);
+    expect(blocked.calibrationWarning).toBe(true);
+    expect(blocked.error).toMatch(/calibrated/i);
+    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toBe(before);
+
+    // With force -> the swap goes through.
+    const forced = templates.replaceAsset({
+      root,
+      key: 'cal-x',
+      role: 'clean-fronts',
+      file: { filename: 'n.svg', data: SVG('NEW-ART') },
+      force: true,
+    });
+    expect(forced.error).toBeUndefined();
+    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toContain('NEW-ART');
+
+    // A FONT role on the same calibrated template does NOT require force (no
+    // geometry to protect).
+    const font = templates.replaceAsset({
+      root,
+      key: 'cal-x',
+      role: 'title-font',
+      file: { filename: 'F.ttf', data: FONT('CAL-FONT') },
+    });
+    expect(font.error).toBeUndefined();
+  });
+
+  it('replaceAsset ADDS a new SVG asset on a CALIBRATED template without force (nothing to replace)', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-add');
+    const themesPath = templates.themesPathFor(root);
+    const themes = templates.loadThemes(themesPath);
+    themes['cal-add'].calibrated = true;
+    templates.writeThemesFile(themesPath, themes);
+    const chasers = path.join(
+      root,
+      'resources',
+      'canva',
+      'templates',
+      'cal-add',
+      'clean',
+      'board-chasers.svg'
+    );
+    expect(fs.existsSync(chasers)).toBe(false); // no current art at this role
+
+    // First-time add of the optional chasers board is NOT replacing existing art,
+    // so it must write directly even though the template is calibrated — no 409.
+    const r = templates.replaceAsset({
+      root,
+      key: 'cal-add',
+      role: 'clean-board-chasers',
+      file: { filename: 'bc.svg', data: SVG('CHASERS-ADD') },
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.calibrationWarning).toBeUndefined();
+    expect(fs.readFileSync(chasers, 'utf8')).toContain('CHASERS-ADD');
+  });
+
+  it('replaceAsset on a NON-calibrated template replaces an SVG role freely (no force)', () => {
+    const root = makeScaffold();
+    onboard(root, 'uncal-x'); // onboarded templates are calibrated:false
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'uncal-x');
+    const r = templates.replaceAsset({
+      root,
+      key: 'uncal-x',
+      role: 'clean-fronts',
+      file: { filename: 'n.svg', data: SVG('FREE-SWAP') },
+    });
+    expect(r.error).toBeUndefined();
+    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toContain('FREE-SWAP');
+  });
+
+  it('replaceAsset rejects unknown / traversing role names (whitelist)', () => {
+    const root = makeScaffold();
+    onboard(root, 'rep-w');
+    for (const role of ['../../etc/passwd', 'clean/../../x', 'bogus', '..', 'clean-fronts.svg']) {
+      const r = templates.replaceAsset({
+        root,
+        key: 'rep-w',
+        role,
+        file: { filename: 'x.svg', data: SVG('x') },
+      });
+      expect(r.error).toMatch(/unknown asset role/);
+      expect(r.httpStatus).toBe(400);
+    }
+    // the real front SVG was never overwritten by any traversal attempt
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'rep-w');
+    expect(fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'), 'utf8')).toContain(
+      'clean-fronts'
+    );
+  });
+
+  it('replaceAsset rejects an unknown template key and an empty upload', () => {
+    const root = makeScaffold();
+    onboard(root, 'rep-e');
+    const ghost = templates.replaceAsset({
+      root,
+      key: 'ghost',
+      role: 'clean-fronts',
+      file: { filename: 'x.svg', data: SVG('x') },
+    });
+    expect(ghost.error).toMatch(/not found/);
+    expect(ghost.httpStatus).toBe(404);
+    const empty = templates.replaceAsset({
+      root,
+      key: 'rep-e',
+      role: 'clean-fronts',
+      file: { filename: 'x.svg', data: Buffer.alloc(0) },
+    });
+    expect(empty.error).toMatch(/no file/);
+    expect(empty.httpStatus).toBe(400);
+  });
+});
+
 // -- multipart body builder + endpoint test -----------------------------------
 
 function buildMultipart(boundary, parts) {
@@ -477,5 +792,97 @@ describe('POST /api/admin/templates', () => {
     const r = await upload(fresh);
     expect(r.status).toBe(400);
     expect(r.body.error).toMatch(/missing clean board/);
+  });
+
+  it('GET /api/admin/templates lists statuses incl. chasers-board (403 without key)', async () => {
+    const no = await fetch(base + '/api/admin/templates');
+    expect(no.status).toBe(403);
+    const res = await fetch(base + '/api/admin/templates?key=' + ADMIN_KEY);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    const t = data.templates.find((x) => x.key === 'endpoint-demo');
+    expect(t).toBeTruthy();
+    expect(t.chasersBoard).toBe(false);
+    const cb = t.assets.find((a) => a.role === 'clean-board-chasers');
+    expect(cb.present).toBe(false);
+    expect(cb.optional).toBe(true);
+  });
+
+  it('POST rename updates the label (200), keeps slug stable, 403 no key, 400 empty', async () => {
+    const url = base + '/api/admin/templates/endpoint-demo/rename';
+    const no = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_he: 'x' }),
+    });
+    expect(no.status).toBe(403);
+    const ok = await fetch(url + '?key=' + ADMIN_KEY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_he: 'שם ערוך' }),
+    });
+    expect(ok.status).toBe(200);
+    const themes = JSON.parse(fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8'));
+    expect(themes['endpoint-demo'].display_he).toBe('שם ערוך');
+    expect(themes['endpoint-demo'].slug).toBe('endpoint-demo'); // slug stays stable
+    const bad = await fetch(url + '?key=' + ADMIN_KEY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_he: '   ' }),
+    });
+    expect(bad.status).toBe(400);
+  });
+
+  it('POST asset replace swaps one file (200), 403 no key, 400 unknown role', async () => {
+    const boundary = '----dugriTestR' + Math.random().toString(16).slice(2);
+    const body = buildMultipart(boundary, [
+      { name: 'file', filename: 'new.svg', data: SVG('REPLACED-BY-ENDPOINT') },
+    ]);
+    const post = (role, withKey) =>
+      fetch(
+        base +
+          '/api/admin/templates/endpoint-demo/assets/' +
+          role +
+          (withKey ? '?key=' + ADMIN_KEY : ''),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
+          body,
+        }
+      );
+    const no = await post('clean-fronts', false);
+    expect(no.status).toBe(403);
+    const ok = await post('clean-fronts', true);
+    expect(ok.status).toBe(200);
+    const file = fs.readFileSync(
+      path.join(root, 'resources', 'canva', 'templates', 'endpoint-demo', 'clean', 'fronts.svg'),
+      'utf8'
+    );
+    expect(file).toContain('REPLACED-BY-ENDPOINT');
+    const badRole = await post('bogus-role', true);
+    expect(badRole.status).toBe(400);
+    expect((await badRole.json()).error).toMatch(/unknown asset role/);
+  });
+
+  it('rename/replace routes reject a __proto__ key (404, no pollution)', async () => {
+    const rn = await fetch(base + '/api/admin/templates/__proto__/rename?key=' + ADMIN_KEY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_he: 'pwn' }),
+    });
+    expect(rn.status).toBe(404);
+    const boundary = '----dugriProto' + Math.random().toString(16).slice(2);
+    const body = buildMultipart(boundary, [{ name: 'file', filename: 'x.svg', data: SVG('x') }]);
+    const rp = await fetch(
+      base + '/api/admin/templates/constructor/assets/clean-fronts?key=' + ADMIN_KEY,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
+        body,
+      }
+    );
+    expect(rp.status).toBe(404);
+    // Object.prototype was not polluted by the crafted keys.
+    expect({}.display_he).toBeUndefined();
   });
 });

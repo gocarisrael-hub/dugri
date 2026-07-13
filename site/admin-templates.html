@@ -5,7 +5,7 @@
     <meta name="dugri:page" content="admin-templates.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex" />
-    <title>דוגרי · תבנית חדשה</title>
+    <title>דוגרי · תבניות</title>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
     <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
@@ -167,6 +167,133 @@
         direction: ltr;
         display: inline-block;
       }
+      .sec-h {
+        font-size: 18px;
+        font-weight: 900;
+        margin-bottom: 12px;
+      }
+      .tpl-list {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        margin-bottom: 8px;
+      }
+      .tpl-card {
+        background: #fff;
+        border: 1px solid #e4ddd0;
+        border-radius: 14px;
+        padding: 14px 16px;
+      }
+      .tpl-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .tpl-name {
+        font-size: 16px;
+        font-weight: 800;
+        flex: 1 1 auto;
+      }
+      .tpl-slug {
+        font-size: 12px;
+        color: #6b645b;
+        direction: ltr;
+      }
+      .tpl-badge {
+        font-size: 11px;
+        font-weight: 800;
+        border-radius: 99px;
+        padding: 2px 9px;
+      }
+      .tpl-badge.priv {
+        background: #f3e6e3;
+        color: #8a5a52;
+      }
+      .tpl-badge.uncal {
+        background: #fbeecb;
+        color: #8a6d1e;
+      }
+      .link-btn {
+        appearance: none;
+        border: 1px solid #d8a7a0;
+        background: #faf8f4;
+        color: #5c7357;
+        font-family: inherit;
+        font-weight: 700;
+        font-size: 12px;
+        padding: 4px 12px;
+        border-radius: 99px;
+        cursor: pointer;
+      }
+      .assets {
+        list-style: none;
+        margin: 12px 0 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+        gap: 6px 14px;
+      }
+      .asset {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        padding: 3px 0;
+      }
+      .asset .mark {
+        font-weight: 900;
+        width: 16px;
+        text-align: center;
+      }
+      .asset.on .mark {
+        color: #16663a;
+      }
+      .asset.off .mark {
+        color: #b23b2e;
+      }
+      .asset.off.opt .mark {
+        color: #b9902a;
+      }
+      .asset .lbl {
+        flex: 1 1 auto;
+      }
+      .asset.chasers {
+        grid-column: 1 / -1;
+        background: #f7f4ef;
+        border: 1px solid #e4ddd0;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-weight: 800;
+      }
+      .asset .repl {
+        font-size: 11px;
+        font-weight: 700;
+        color: #5c7357;
+        cursor: pointer;
+        text-decoration: underline;
+        white-space: nowrap;
+      }
+      .asset input[type='file'] {
+        display: none;
+      }
+      .tpl-msg {
+        margin-top: 10px;
+        font-size: 12.5px;
+        border-radius: 8px;
+        padding: 7px 10px;
+        display: none;
+        white-space: pre-wrap;
+      }
+      .tpl-msg.ok {
+        display: block;
+        background: #e7f8ee;
+        color: #16663a;
+      }
+      .tpl-msg.err {
+        display: block;
+        background: #f3e6e3;
+        color: #8a5a52;
+      }
     </style>
     <script src="js/editor.js" defer></script>
   </head>
@@ -176,11 +303,21 @@
         <a data-page="dashboard.html">לוח בקרה</a>
         <a data-page="admin.html">ניהול הזמנות</a>
         <a data-page="coupons.html">ניהול קופונים</a>
-        <a data-page="admin-templates.html" class="active">תבנית חדשה</a>
+        <a data-page="admin-templates.html" class="active">תבניות</a>
         <a data-page="admin-designs.html">עיצובים</a>
         <a data-page="admin-playbook.html">פלייבוק</a>
       </nav>
-      <h1>העלאת תבנית פרטית · דוגרי</h1>
+      <h1>תבניות · דוגרי</h1>
+      <div class="sub">
+        מצב הנכסים של כל תבנית, שינוי שם לתצוגה והחלפת קבצים — ולמטה, העלאת תבנית פרטית חדשה.
+      </div>
+
+      <section id="status">
+        <h2 class="sec-h">מצב תבניות</h2>
+        <div id="tpl-list" class="tpl-list" aria-live="polite">טוען…</div>
+      </section>
+
+      <h2 class="sec-h" style="margin-top: 26px">העלאת תבנית פרטית חדשה</h2>
       <div class="sub">
         מעלים SVG-ים, פונטים וכמה שדות — התבנית נרשמת כפרטית ולא מכוילת
         (<code>calibrated:false</code>). עדיין צריך מעבר כיול של סגנון הכותרת לפני שאפשר להפיק.
@@ -351,7 +488,233 @@
         } finally {
           submitBtn.disabled = false;
         }
+        loadTemplates();
       });
+
+      // --- Template status / rename / asset replace -------------------------
+      const listEl = document.getElementById('tpl-list');
+      const REPL_ACCEPT = { svg: '.svg,image/svg+xml', font: '.ttf,.otf' };
+
+      function tplMsg(card, kind, text) {
+        const m = card.querySelector('.tpl-msg');
+        m.className = 'tpl-msg ' + kind;
+        m.textContent = text;
+      }
+
+      function renderTemplates(items) {
+        listEl.textContent = '';
+        if (!items.length) {
+          listEl.textContent = 'אין תבניות רשומות.';
+          return;
+        }
+        for (const t of items) {
+          const card = document.createElement('div');
+          card.className = 'tpl-card';
+          card.dataset.key = t.key;
+
+          const head = document.createElement('div');
+          head.className = 'tpl-head';
+          const name = document.createElement('span');
+          name.className = 'tpl-name';
+          name.textContent = t.display_he;
+          const slug = document.createElement('span');
+          slug.className = 'tpl-slug';
+          slug.textContent = t.slug;
+          const renameBtn = document.createElement('button');
+          renameBtn.type = 'button';
+          renameBtn.className = 'link-btn tpl-rename-btn';
+          renameBtn.textContent = 'שנה שם';
+          head.append(name, slug);
+          if (t.visibility === 'private') {
+            const b = document.createElement('span');
+            b.className = 'tpl-badge priv';
+            b.textContent = 'פרטית';
+            head.append(b);
+          }
+          if (!t.calibrated) {
+            const b = document.createElement('span');
+            b.className = 'tpl-badge uncal';
+            b.textContent = 'לא מכוילת';
+            head.append(b);
+          }
+          head.append(renameBtn);
+          card.append(head);
+
+          const assets = document.createElement('ul');
+          assets.className = 'assets';
+          for (const a of t.assets) {
+            const li = document.createElement('li');
+            li.className =
+              'asset ' +
+              (a.present ? 'on' : 'off') +
+              (a.optional ? ' opt' : '') +
+              (a.role === 'clean-board-chasers' ? ' chasers' : '');
+            li.dataset.role = a.role;
+            li.dataset.kind = a.kind;
+            const mark = document.createElement('span');
+            mark.className = 'mark';
+            mark.textContent = a.present ? '✓' : '✗';
+            const lbl = document.createElement('span');
+            lbl.className = 'lbl';
+            lbl.textContent = a.label + (a.optional && !a.present ? ' (רשות · חסר)' : '');
+            const repl = document.createElement('label');
+            repl.className = 'repl';
+            repl.textContent = a.present ? 'החלף' : 'העלה';
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.className = 'repl-input';
+            input.accept = REPL_ACCEPT[a.kind] || '';
+            repl.append(input);
+            li.append(mark, lbl, repl);
+            assets.append(li);
+          }
+          card.append(assets);
+
+          const msg = document.createElement('div');
+          msg.className = 'tpl-msg';
+          card.append(msg);
+          listEl.append(card);
+        }
+      }
+
+      async function loadTemplates() {
+        if (!key) {
+          listEl.textContent = 'חסר מפתח גישה. פתחו את העמוד עם ?key=… בכתובת.';
+          return;
+        }
+        try {
+          const res = await fetch('/api/admin/templates?key=' + encodeURIComponent(key));
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            listEl.textContent = 'שגיאה בטעינה: ' + (data.error || res.status);
+            return;
+          }
+          renderTemplates(data.templates || []);
+        } catch (err) {
+          listEl.textContent = 'שגיאת רשת: ' + err;
+        }
+      }
+
+      // Inline rename: swap the name span for an input + save/cancel.
+      listEl.addEventListener('click', async (e) => {
+        const renameBtn = e.target.closest('.tpl-rename-btn');
+        if (renameBtn) {
+          const card = renameBtn.closest('.tpl-card');
+          const nameEl = card.querySelector('.tpl-name');
+          if (card.querySelector('.tpl-name-input')) return;
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.className = 'tpl-name-input';
+          input.value = nameEl.textContent;
+          input.maxLength = 80;
+          input.style.flex = '1 1 auto';
+          const save = document.createElement('button');
+          save.type = 'button';
+          save.className = 'link-btn tpl-save-btn';
+          save.textContent = 'שמור';
+          nameEl.replaceWith(input);
+          renameBtn.replaceWith(save);
+          input.focus();
+          return;
+        }
+        const saveBtn = e.target.closest('.tpl-save-btn');
+        if (saveBtn) {
+          const card = saveBtn.closest('.tpl-card');
+          const input = card.querySelector('.tpl-name-input');
+          const value = input.value.trim();
+          if (!value) {
+            tplMsg(card, 'err', 'שם לא יכול להיות ריק.');
+            return;
+          }
+          saveBtn.disabled = true;
+          try {
+            const res = await fetch(
+              '/api/admin/templates/' +
+                encodeURIComponent(card.dataset.key) +
+                '/rename?key=' +
+                encodeURIComponent(key),
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ display_he: value }),
+              }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              tplMsg(card, 'err', 'שגיאה: ' + (data.error || res.status));
+              saveBtn.disabled = false;
+              return;
+            }
+            tplMsg(card, 'ok', 'השם עודכן.');
+            loadTemplates();
+          } catch (err) {
+            tplMsg(card, 'err', 'שגיאת רשת: ' + err);
+            saveBtn.disabled = false;
+          }
+        }
+      });
+
+      // Upload one asset file. `force` re-submits past a calibration (viewBox)
+      // warning after the admin confirms. Returns { res, data }.
+      async function uploadAsset(cardKey, role, fileObj, force) {
+        const fd = new FormData();
+        fd.append('file', fileObj);
+        if (force) fd.append('force', '1');
+        const res = await fetch(
+          '/api/admin/templates/' +
+            encodeURIComponent(cardKey) +
+            '/assets/' +
+            encodeURIComponent(role) +
+            '?key=' +
+            encodeURIComponent(key),
+          { method: 'POST', body: fd }
+        );
+        const data = await res.json().catch(() => ({}));
+        return { res, data };
+      }
+
+      // Asset replace: a file chosen on any per-asset input uploads in place.
+      listEl.addEventListener('change', async (e) => {
+        const input = e.target.closest('.repl-input');
+        if (!input || !input.files || !input.files.length) return;
+        const card = input.closest('.tpl-card');
+        const li = input.closest('.asset');
+        const role = li.dataset.role;
+        const fileObj = input.files[0];
+        tplMsg(card, 'ok', 'מעלה ' + role + '…');
+        try {
+          let { res, data } = await uploadAsset(card.dataset.key, role, fileObj, false);
+          // 409 on a CALIBRATED template: replacing its art may misalign the
+          // title/word slots. Warn, and only re-submit with force once the admin
+          // confirms they have verified the proof.
+          if (res.status === 409 && data.calibrationWarning) {
+            const proceed = window.confirm(
+              (data.error || 'התבנית מכוילת — החלפת האומנות עלולה להזיז את מיקום הכותרת/המילים.') +
+                '\n\nודאו את ההדמיה (proof) לפני שליחה ללקוח. להחליף בכל זאת?'
+            );
+            if (!proceed) {
+              tplMsg(card, 'err', 'ההחלפה בוטלה (התבנית מכוילת — יש לאשר).');
+              input.value = '';
+              return;
+            }
+            ({ res, data } = await uploadAsset(card.dataset.key, role, fileObj, true));
+          }
+          if (!res.ok) {
+            tplMsg(card, 'err', 'שגיאה: ' + (data.error || res.status));
+            input.value = '';
+            return;
+          }
+          tplMsg(card, 'ok', 'הקובץ הוחלף: ' + role);
+          loadTemplates();
+        } catch (err) {
+          tplMsg(card, 'err', 'שגיאת רשת: ' + err);
+          // Reset so re-selecting the SAME file fires 'change' again and the admin
+          // can retry the upload.
+          input.value = '';
+        }
+      });
+
+      loadTemplates();
     </script>
   </body>
 </html>

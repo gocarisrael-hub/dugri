@@ -1085,6 +1085,80 @@ app.post(
   }
 );
 
+// Admin: template STATUS view — READ-ONLY inventory of every registered template
+// and which of its assets exist vs are MISSING (front/back/board clean+filled,
+// the OPTIONAL chasers board, and both fonts). Powers the admin checklist so gaps
+// — especially a missing chasers board — are visible at a glance.
+app.get('/api/admin/templates', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let list;
+  try {
+    list = templates.listTemplateStatuses(TEMPLATE_ROOT);
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  res.json({ templates: list });
+});
+
+// Admin: rename a template's DISPLAY LABEL only (display_he). The slug/key/dir —
+// the identity stored orders reference — stay stable, so a rename never breaks an
+// existing order. Body: { display_he }.
+app.post('/api/admin/templates/:key/rename', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const displayName = (req.body && (req.body.display_he ?? req.body.name)) || '';
+  let result;
+  try {
+    result = templates.renameTemplate({
+      root: TEMPLATE_ROOT,
+      key: req.params.key,
+      displayName,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
+  res.json({ ok: true, ...result });
+});
+
+// Admin: replace a SINGLE asset of an existing template in place. Multipart
+// upload of one file part; the role (whitelisted) comes from the URL so the write
+// target is a fixed path inside the template dir — no traversal, and the other
+// onboarded assets are untouched. SVG roles are SVG-validated, font roles by sfnt
+// magic. On a CALIBRATED template, replacing an SVG role is rejected (409,
+// calibrationWarning) unless the form carries force=1 — the UI re-submits with
+// force after the admin confirms they verified the proof.
+app.post(
+  '/api/admin/templates/:key/assets/:role',
+  express.raw({ type: () => true, limit: TEMPLATE_UPLOAD_LIMIT }),
+  (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
+    if (!boundary || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ error: 'expected multipart/form-data upload' });
+    }
+    const { fields, files } = templates.parseMultipart(req.body, boundary);
+    const file = files.file || files.asset || Object.values(files)[0];
+    const force = fields && (fields.force === '1' || fields.force === 'true');
+    let result;
+    try {
+      result = templates.replaceAsset({
+        root: TEMPLATE_ROOT,
+        key: req.params.key,
+        role: req.params.role,
+        file,
+        force,
+      });
+    } catch (e) {
+      return res.status(500).json({ error: String((e && e.message) || e) });
+    }
+    if (result.error) {
+      const { httpStatus, error, ...rest } = result;
+      return res.status(httpStatus || 400).json({ error, ...rest });
+    }
+    res.json({ ok: true, ...result });
+  }
+);
+
 // Inline content editor. The owner edits any tagged text/photo on the live site
 // in an admin-key-gated edit mode; the overrides persist under DATA_DIR (see
 // server/content.js) and overlay the shipped defaults for EVERY visitor. The
