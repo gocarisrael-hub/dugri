@@ -267,6 +267,7 @@
     var state = createContentState();
     var textNodeByKey = Object.create(null);
     var pendingUploads = [];
+    var inflightText = Object.create(null); // key -> { value, promise } of a live save
 
     function setStatus(txt) {
       if (status) status.textContent = txt;
@@ -278,11 +279,13 @@
 
     // Save one text field: POST its CURRENT value; on SUCCESS record it as the last
     // saved value (so the field is no longer dirty); on failure leave it dirty.
-    // Never rejects — resolves once settled. syncSameKey keeps clones identical.
+    // Never rejects — resolves once settled. syncSameKey keeps clones identical. The
+    // live save is recorded in inflightText so a follow-up commit of the SAME value
+    // can await it instead of firing a redundant second POST.
     function saveTextField(fieldKey, value) {
       syncSameKey(document, fieldKey, value);
       setStatus('שומר…');
-      return postText(page, key, fieldKey, value).then(
+      var p = postText(page, key, fieldKey, value).then(
         function () {
           state.markTextSaved(fieldKey, value);
           setStatus('נשמר');
@@ -293,18 +296,30 @@
           return false;
         }
       );
+      var rec = { value: value, promise: p };
+      inflightText[fieldKey] = rec;
+      var clear = function () {
+        if (inflightText[fieldKey] === rec) delete inflightText[fieldKey];
+      };
+      p.then(clear, clear);
+      return p;
     }
 
     // Re-save every currently-dirty text field with its CURRENT DOM value, and await
     // those plus any in-flight image uploads. This is the single saver used by Save /
     // Save&Exit / the page picker, so a failed field is retried on the next commit.
+    // If a field already has a LIVE save for its current value (an auto-save from a
+    // blur to empty space), await that instead of POSTing the same value again.
     function saveDirtyFields() {
-      var saves = [];
+      var awaits = [];
       Object.keys(textNodeByKey).forEach(function (fieldKey) {
         var cur = textNodeByKey[fieldKey].textContent;
-        if (state.isTextDirty(fieldKey, cur)) saves.push(saveTextField(fieldKey, cur));
+        if (!state.isTextDirty(fieldKey, cur)) return;
+        var live = inflightText[fieldKey];
+        if (live && live.value === cur) awaits.push(live.promise);
+        else awaits.push(saveTextField(fieldKey, cur));
       });
-      return Promise.all(saves.concat(pendingUploads.slice()));
+      return Promise.all(awaits.concat(pendingUploads.slice()));
     }
 
     // Is anything still unsaved? Pure function of DOM-vs-last-saved (text) and the
@@ -455,9 +470,15 @@
           next = next.slice(0, TEXT_CAP);
           el.textContent = next;
         }
+        // Mirror the edited node's value onto EVERY same-key clone FIRST — including
+        // the representative node saveDirtyFields/hasUnsavedNow read. The owner may
+        // have edited a NON-first clone (the marquee ships 8 identical spans), so the
+        // field's dirty state must reflect whichever clone was typed into, not a
+        // stale representative. This runs even when we hand the save to the toolbar.
+        syncSameKey(document, fieldKey, next);
         // If focus moved to a TOOLBAR control (Save / Save&Exit / the page picker),
-        // let that action's saveDirty do the single save — the DOM already holds the
-        // latest text — so we don't double-POST the same field.
+        // let that action's saveDirty do the single save — all clones already hold
+        // the latest text — so we don't double-POST the same field.
         var to = e.relatedTarget;
         if (to && to.closest && to.closest('.dugri-editbar')) return;
         // Dirty iff it differs from the last SUCCESSFULLY saved value (retry-safe: a

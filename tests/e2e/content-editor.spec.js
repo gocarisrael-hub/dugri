@@ -85,6 +85,87 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(page.locator('.dugri-editbar__status')).toHaveText('נשמר');
   });
 
+  test('editing a NON-FIRST clone of a shared key still saves via שמור (marquee regression)', async ({
+    page,
+  }) => {
+    const posts = [];
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content*', (route) => {
+      if (route.request().method() === 'POST') posts.push(route.request().postDataJSON());
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const clones = page.locator('[data-edit="index-marquee-1"]');
+    await expect(clones).toHaveCount(8);
+
+    // Edit the SECOND (non-first) clone, then click שמור. Clicking Save blurs the
+    // clone with focus landing in the toolbar; the edit must STILL be captured and
+    // saved. (Regression: saveDirtyFields read the first, unedited clone → no POST,
+    // a false 'נשמר', and the edit was silently lost.) The marquee scrolls, so focus
+    // + edit the clone via evaluate (not a click on a moving target).
+    const second = clones.nth(1);
+    await second.evaluate((n) => {
+      n.focus();
+      n.textContent = 'עריכה בעותק השני';
+    });
+    await page.locator('[data-role="save"]').click();
+
+    await expect.poll(() => posts.length).toBeGreaterThan(0);
+    expect(posts[posts.length - 1]).toEqual({
+      page: 'index.html',
+      key: 'index-marquee-1',
+      text: 'עריכה בעותק השני',
+    });
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('נשמר');
+    // All clones reflect the edit (synced from whichever clone was typed into).
+    const after = await clones.evaluateAll((els) => els.map((e) => e.textContent.trim()));
+    expect(new Set(after)).toEqual(new Set(['עריכה בעותק השני']));
+  });
+
+  test('editing a non-first clone via שמירה ויציאה persists across all clones on reload', async ({
+    page,
+  }) => {
+    const posts = [];
+    let savedText = null;
+    // The content route reflects whatever was saved, so the post-exit reload shows it.
+    await page.route('**/api/content*', (route) =>
+      route.fulfill({
+        json: { overrides: savedText ? { 'index-marquee-1': { text: savedText } } : {} },
+      })
+    );
+    await page.route('**/api/admin/content*', (route) => {
+      const req = route.request();
+      if (req.method() === 'POST') {
+        const body = req.postDataJSON();
+        savedText = body.text;
+        posts.push(body);
+      }
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const clones = page.locator('[data-edit="index-marquee-1"]');
+    const second = clones.nth(1);
+    await second.evaluate((n) => {
+      n.focus();
+      n.textContent = 'נשמר מהעותק השני';
+    });
+    await page.locator('[data-role="exit"]').click();
+
+    // The edit on the non-first clone was saved, THEN we left edit mode…
+    await expect.poll(() => posts.length).toBeGreaterThan(0);
+    expect(posts[posts.length - 1].text).toBe('נשמר מהעותק השני');
+    await expect(page).not.toHaveURL(/edit=1/);
+    await expect(page.locator('.dugri-editbar')).toHaveCount(0);
+    // …and after the reload every clone shows the persisted override.
+    await expect(clones.first()).toHaveText('נשמר מהעותק השני');
+    const reloaded = await clones.evaluateAll((els) => els.map((e) => e.textContent.trim()));
+    expect(new Set(reloaded)).toEqual(new Set(['נשמר מהעותק השני']));
+  });
+
   test('clicking an editable link in edit mode edits it instead of navigating away', async ({
     page,
   }) => {
