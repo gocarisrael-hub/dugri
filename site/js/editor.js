@@ -53,28 +53,60 @@
     return String(pathname || '') + (qs ? '?' + qs : '');
   }
 
-  // In-flight save tracking. Every blur-triggered text save (and any future write)
-  // is registered here so "שמור" / "שמירה ויציאה" can WAIT for pending saves to
-  // settle before confirming or leaving — a half-typed focused edit is committed,
-  // never lost. Each tracked promise resolves to a boolean (true = saved ok).
-  var inflightSaves = [];
-  function trackSave(promise) {
-    inflightSaves.push(promise);
-    var remove = function () {
-      var i = inflightSaves.indexOf(promise);
-      if (i > -1) inflightSaves.splice(i, 1);
+  // Save tracking, by PER-FIELD state (not just what's in flight right now). Every
+  // write — a blur-triggered text save AND an image upload — registers here so
+  // "שמור" / "שמירה ויציאה" / the page picker can WAIT for pending saves AND know
+  // whether any edit is still UNSAVED. A field id enters `unsaved` when its save
+  // starts and is removed only when that save SUCCEEDS; a save that FAILS keeps the
+  // field marked unsaved even after it settles (and is dropped from `inflight`), so
+  // a settled failure is never forgotten — success is judged from `unsaved`, not
+  // from what happens to be in flight at click time. Each field's newest save wins:
+  // a later success for the same id clears an earlier failure.
+  function createSaveTracker() {
+    var unsaved = Object.create(null); // fieldId -> true while pending-or-failed
+    var inflight = []; // promises currently settling (each resolves, never rejects)
+    return {
+      // Register `promise` (resolves on success, rejects on failure) for `fieldId`.
+      // Returns a promise that resolves true/false and never rejects.
+      track: function (fieldId, promise) {
+        unsaved[fieldId] = true;
+        var settled = promise.then(
+          function () {
+            delete unsaved[fieldId];
+            return true;
+          },
+          function () {
+            return false; // keep fieldId marked unsaved
+          }
+        );
+        inflight.push(settled);
+        var remove = function () {
+          var i = inflight.indexOf(settled);
+          if (i > -1) inflight.splice(i, 1);
+        };
+        settled.then(remove, remove);
+        return settled;
+      },
+      // Resolve once every in-flight save settles (never rejects).
+      flush: function () {
+        return Promise.all(inflight.slice());
+      },
+      // Is any field's last save still pending or failed?
+      hasUnsaved: function () {
+        return Object.keys(unsaved).length > 0;
+      },
     };
-    promise.then(remove, remove);
-    return promise;
   }
-  // Resolve once every currently in-flight save settles. Never rejects; yields the
-  // array of per-save booleans (empty when nothing was pending).
+  var saveTracker = createSaveTracker();
   function flushSaves() {
-    return Promise.all(inflightSaves.slice());
+    return saveTracker.flush();
+  }
+  function hasUnsaved() {
+    return saveTracker.hasUnsaved();
   }
 
   // Blur the active field (if it is an editable [data-edit] node) so its blur→save
-  // fires and gets tracked. Clicking a toolbar button already shifts focus off the
+  // fires and gets tracked. Clicking a toolbar control already shifts focus off the
   // field — this is a belt-and-suspenders commit for when it did not. Returns
   // whether it blurred anything.
   function commitActive(activeEl) {
@@ -91,26 +123,49 @@
   }
 
   // "שמור": commit any focused edit, wait for pending saves, then confirm in the
-  // status line. The owner STAYS in edit mode. deps = { activeEl, flush, setStatus }.
+  // status line. The owner STAYS in edit mode. Reports an error if ANY field is
+  // still unsaved (pending failed or a settled failure).
+  // deps = { activeEl, flush, hasUnsaved, setStatus }.
   function saveAction(deps) {
     commitActive(deps.activeEl);
     deps.setStatus('שומר…');
-    return deps.flush().then(function (results) {
-      var ok = !results || results.every(Boolean);
-      deps.setStatus(ok ? 'נשמר' : 'שגיאה בשמירה');
+    return deps.flush().then(function () {
+      deps.setStatus(deps.hasUnsaved() ? 'שגיאה בשמירה' : 'נשמר');
     });
   }
 
   // "שמירה ויציאה": commit any focused edit, WAIT for saves to finish, then leave
-  // edit mode (navigate). If a save failed, stay put and surface the error rather
-  // than silently dropping the edit. deps = { activeEl, flush, setStatus, navigate }.
+  // edit mode. If any edit is still unsaved, DON'T silently leave (that would drop
+  // it): surface the error and offer an explicit unconditional escape so the owner
+  // is never stranded — confirmDiscard() true means "leave without saving".
+  // deps = { activeEl, flush, hasUnsaved, setStatus, navigate, confirmDiscard }.
   function saveExitAction(deps) {
     commitActive(deps.activeEl);
     deps.setStatus('שומר…');
-    return deps.flush().then(function (results) {
-      var ok = !results || results.every(Boolean);
-      if (ok) deps.navigate();
-      else deps.setStatus('שגיאה בשמירה');
+    return deps.flush().then(function () {
+      if (!deps.hasUnsaved()) {
+        deps.navigate();
+        return;
+      }
+      deps.setStatus('שגיאה בשמירה');
+      if (deps.confirmDiscard && deps.confirmDiscard()) deps.navigate();
+    });
+  }
+
+  // Page picker: commit any focused edit and WAIT before navigating to another page,
+  // so an in-flight save is never aborted by the navigation. Only switch when the
+  // save landed; on failure stay put, surface the error, and revert the <select> to
+  // the current page. deps = { activeEl, flush, hasUnsaved, setStatus, navigate, revert }.
+  function pageSwitchAction(deps) {
+    commitActive(deps.activeEl);
+    deps.setStatus('שומר…');
+    return deps.flush().then(function () {
+      if (!deps.hasUnsaved()) {
+        deps.navigate();
+        return;
+      }
+      deps.setStatus('שגיאה בשמירה');
+      if (deps.revert) deps.revert();
     });
   }
 
@@ -252,6 +307,7 @@
     var resetBtn = toolbar.querySelector('[data-role="reset"]');
     var saveBtn = toolbar.querySelector('[data-role="save"]');
     var exitBtn = toolbar.querySelector('[data-role="exit"]');
+    var pageSelect = toolbar.querySelector('[data-role="pageselect"]');
     var current = null; // the element the reset action targets
 
     function setStatus(txt) {
@@ -404,21 +460,20 @@
         var syncKey = el.getAttribute('data-edit');
         syncSameKey(document, syncKey, next);
         setStatus('שומר…');
-        // Track the save so "שמור" / "שמירה ויציאה" can wait for it to settle.
-        // Resolve to a boolean (never reject) so flushSaves' Promise.all cannot
-        // fail on a save error — the status line already reflects success/failure.
-        trackSave(
-          postText(page, key, syncKey, next).then(
-            function () {
-              setStatus('נשמר');
-              return true;
-            },
-            function () {
-              setStatus('שגיאה בשמירה');
-              return false;
-            }
-          )
+        // Track the save (keyed by field) so "שמור" / "שמירה ויציאה" / the page
+        // picker can wait for it AND know if it ultimately failed. Pass the raw
+        // promise (rejects on failure) so the tracker keeps the field marked unsaved
+        // on error; the status line reflects success/failure separately.
+        var save = postText(page, key, syncKey, next);
+        save.then(
+          function () {
+            setStatus('נשמר');
+          },
+          function () {
+            setStatus('שגיאה בשמירה');
+          }
         );
+        saveTracker.track('text:' + syncKey, save);
       });
     });
 
@@ -470,24 +525,60 @@
       });
     }
 
+    function leaveEditMode() {
+      location.href = exitHref(location.pathname, location.search);
+    }
+
     // "שמור": commit the focused edit + confirm, staying in edit mode. Clicking the
     // button already shifts focus off the field (firing its blur→save); commitActive
-    // + flushSaves make the confirmation wait for that save to land.
+    // + flushSaves make the confirmation wait for that save to land, and hasUnsaved
+    // reports a failure (pending or settled) rather than a false "נשמר".
     if (saveBtn) {
       saveBtn.addEventListener('click', function () {
-        saveAction({ activeEl: document.activeElement, flush: flushSaves, setStatus: setStatus });
+        saveAction({
+          activeEl: document.activeElement,
+          flush: flushSaves,
+          hasUnsaved: hasUnsaved,
+          setStatus: setStatus,
+        });
       });
     }
 
     // "שמירה ויציאה": commit the focused edit, WAIT for it, then leave edit mode.
+    // On a save failure it does NOT silently leave (would drop the edit); it surfaces
+    // the error and offers an explicit unconditional escape so the owner is never
+    // stranded (e.g. a rotated key that 403s every save).
     if (exitBtn) {
       exitBtn.addEventListener('click', function () {
         saveExitAction({
           activeEl: document.activeElement,
           flush: flushSaves,
+          hasUnsaved: hasUnsaved,
+          setStatus: setStatus,
+          navigate: leaveEditMode,
+          confirmDiscard: function () {
+            return window.confirm('השמירה נכשלה. לצאת ממצב עריכה בלי לשמור את השינוי האחרון?');
+          },
+        });
+      });
+    }
+
+    // Page picker: switch pages only AFTER any pending edit is saved, so navigation
+    // never aborts an in-flight save. On failure, stay + revert the select.
+    if (pageSelect) {
+      var currentValue = pageSelect.value;
+      pageSelect.addEventListener('change', function () {
+        var target = pageSelect.value;
+        pageSwitchAction({
+          activeEl: document.activeElement,
+          flush: flushSaves,
+          hasUnsaved: hasUnsaved,
           setStatus: setStatus,
           navigate: function () {
-            location.href = exitHref(location.pathname, location.search);
+            location.href = target;
+          },
+          revert: function () {
+            pageSelect.value = currentValue;
           },
         });
       });
@@ -507,18 +598,26 @@
       document.body.removeChild(input);
       if (!file) return;
       setStatus('מעלה תמונה…');
-      postImage(page, key, editKey, file)
-        .then(function (data) {
-          if (data && data.img) {
-            onDone(data.img);
-            setStatus('נשמר');
-          } else {
-            setStatus('שגיאה בהעלאה');
-          }
-        })
-        .catch(function () {
+      // Track the upload like a text save so "שמור" / "שמירה ויציאה" / the page
+      // picker WAIT for it and won't navigate away mid-upload (which would lose the
+      // new image). The tracked promise rejects if the upload failed OR returned no
+      // img, so the field stays marked unsaved on any failure.
+      var upload = postImage(page, key, editKey, file).then(function (data) {
+        if (data && data.img) {
+          onDone(data.img);
+          return data;
+        }
+        throw new Error('upload returned no image');
+      });
+      upload.then(
+        function () {
+          setStatus('נשמר');
+        },
+        function () {
           setStatus('שגיאה בהעלאה');
-        });
+        }
+      );
+      saveTracker.track('img:' + editKey, upload);
     });
     input.click();
   }
@@ -604,11 +703,8 @@
       '<button type="button" class="dugri-editbar__btn" data-role="reset">אפס לברירת מחדל</button>' +
       '<button type="button" class="dugri-editbar__btn" data-role="save">שמור</button>' +
       '<button type="button" class="dugri-editbar__btn dugri-editbar__btn--exit" data-role="exit">שמירה ויציאה</button>';
-    var select = bar.querySelector('[data-role="pageselect"]');
-    select.addEventListener('change', function () {
-      // Navigate to the picked page, staying in edit mode (value carries ?edit=1&key).
-      if (select.value) location.href = select.value;
-    });
+    // The picker's change handler is wired in enableEditMode (it must save-then-nav,
+    // which needs the tracker/status) — buildToolbar only builds the DOM.
     document.body.appendChild(bar);
     return bar;
   }
@@ -654,8 +750,10 @@
     pageEditUrl: pageEditUrl,
     exitHref: exitHref,
     commitActive: commitActive,
+    createSaveTracker: createSaveTracker,
     saveAction: saveAction,
     saveExitAction: saveExitAction,
+    pageSwitchAction: pageSwitchAction,
     buildToolbar: buildToolbar,
   };
   if (typeof window !== 'undefined') window.__dugriEditor = api;

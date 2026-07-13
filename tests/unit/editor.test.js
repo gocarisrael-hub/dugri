@@ -219,6 +219,35 @@ describe('buildToolbar — Save/Save&Exit buttons + page picker', () => {
   });
 });
 
+describe('createSaveTracker — per-field state survives a settled failure', () => {
+  it('clears a field on success but KEEPS it marked unsaved on failure', async () => {
+    const t = editor.createSaveTracker();
+    expect(t.hasUnsaved()).toBe(false);
+
+    // A successful save clears the field.
+    await t.track('text:a', Promise.resolve('ok'));
+    expect(t.hasUnsaved()).toBe(false);
+
+    // A FAILED save leaves the field marked unsaved EVEN after it settled and was
+    // dropped from the in-flight list — a settled failure is never forgotten.
+    await t.track('text:b', Promise.reject(new Error('boom')));
+    expect(t.hasUnsaved()).toBe(true);
+    await t.flush(); // nothing in flight now, but the failure still counts
+    expect(t.hasUnsaved()).toBe(true);
+
+    // Re-saving the same field successfully clears it (newest save wins).
+    await t.track('text:b', Promise.resolve('ok'));
+    expect(t.hasUnsaved()).toBe(false);
+  });
+
+  it('flush waits for every in-flight save and never rejects', async () => {
+    const t = editor.createSaveTracker();
+    t.track('img:x', Promise.reject(new Error('nope')));
+    t.track('text:y', Promise.resolve('ok'));
+    await expect(t.flush()).resolves.toBeDefined(); // resolves despite the rejection
+  });
+});
+
 describe('saveAction — "שמור" commits a focused edit + confirms, staying in edit mode', () => {
   afterEach(() => {
     document.body.innerHTML = '';
@@ -235,18 +264,18 @@ describe('saveAction — "שמור" commits a focused edit + confirms, staying i
     el.focus();
 
     const setStatus = vi.fn();
-    const flush = vi.fn(() => Promise.resolve([true]));
-    await editor.saveAction({ activeEl: el, flush, setStatus });
+    const flush = vi.fn(() => Promise.resolve([]));
+    await editor.saveAction({ activeEl: el, flush, hasUnsaved: () => false, setStatus });
 
     expect(flushed).toBe(true); // the pending edit was committed (blur → save)
     expect(flush).toHaveBeenCalledTimes(1);
     expect(setStatus).toHaveBeenLastCalledWith('נשמר');
   });
 
-  it('surfaces an error when a tracked save failed', async () => {
+  it('surfaces שגיאה when a field is still unsaved (incl. a settled failure)', async () => {
     const setStatus = vi.fn();
-    const flush = vi.fn(() => Promise.resolve([true, false]));
-    await editor.saveAction({ activeEl: null, flush, setStatus });
+    const flush = vi.fn(() => Promise.resolve([]));
+    await editor.saveAction({ activeEl: null, flush, hasUnsaved: () => true, setStatus });
     expect(setStatus).toHaveBeenLastCalledWith('שגיאה בשמירה');
   });
 });
@@ -270,28 +299,112 @@ describe('saveExitAction — "שמירה ויציאה" commits BEFORE dropping ?
     const navigate = vi.fn();
     const setStatus = vi.fn();
 
-    const done = editor.saveExitAction({ activeEl: el, flush, setStatus, navigate });
+    const done = editor.saveExitAction({
+      activeEl: el,
+      flush,
+      hasUnsaved: () => false,
+      setStatus,
+      navigate,
+    });
 
     // The focused edit is committed immediately, but we have NOT navigated yet:
     // the save is still in flight.
     expect(flushed).toBe(true);
     expect(navigate).not.toHaveBeenCalled();
 
-    resolveFlush([true]); // the pending save lands
+    resolveFlush([]); // the pending save lands
     await done;
     expect(navigate).toHaveBeenCalledTimes(1); // only now do we leave edit mode
   });
 
-  it('does NOT navigate when a save failed — the edit is not silently lost', async () => {
+  it('does NOT navigate when a field is still unsaved — the edit is not silently lost', async () => {
     const navigate = vi.fn();
     const setStatus = vi.fn();
+    // hasUnsaved stays true and the owner declines the discard prompt → stay put.
+    const confirmDiscard = vi.fn(() => false);
     await editor.saveExitAction({
       activeEl: null,
-      flush: () => Promise.resolve([false]),
+      flush: () => Promise.resolve([]),
+      hasUnsaved: () => true,
       setStatus,
       navigate,
+      confirmDiscard,
     });
     expect(navigate).not.toHaveBeenCalled();
+    expect(setStatus).toHaveBeenLastCalledWith('שגיאה בשמירה');
+    expect(confirmDiscard).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers an unconditional escape so the owner is never stranded on a failing save', async () => {
+    const navigate = vi.fn();
+    const setStatus = vi.fn();
+    // The save keeps failing (e.g. rotated key 403); confirming the discard prompt
+    // must still let the owner LEAVE edit mode (knowingly dropping the last edit).
+    const confirmDiscard = vi.fn(() => true);
+    await editor.saveExitAction({
+      activeEl: null,
+      flush: () => Promise.resolve([]),
+      hasUnsaved: () => true,
+      setStatus,
+      navigate,
+      confirmDiscard,
+    });
+    expect(setStatus).toHaveBeenLastCalledWith('שגיאה בשמירה');
+    expect(navigate).toHaveBeenCalledTimes(1); // escaped rather than stranded
+  });
+});
+
+describe('pageSwitchAction — the picker saves BEFORE navigating away', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('commits the focused edit and only navigates after the save settles', async () => {
+    document.body.innerHTML = '<span data-edit="hero" tabindex="0">edit</span>';
+    const el = document.querySelector('[data-edit="hero"]');
+    let flushed = false;
+    el.addEventListener('blur', () => {
+      flushed = true;
+    });
+    el.focus();
+
+    let resolveFlush;
+    const flush = vi.fn(() => new Promise((r) => (resolveFlush = r)));
+    const navigate = vi.fn();
+    const revert = vi.fn();
+
+    const done = editor.pageSwitchAction({
+      activeEl: el,
+      flush,
+      hasUnsaved: () => false,
+      setStatus: vi.fn(),
+      navigate,
+      revert,
+    });
+
+    expect(flushed).toBe(true); // committed immediately…
+    expect(navigate).not.toHaveBeenCalled(); // …but not navigated while in flight
+
+    resolveFlush([]);
+    await done;
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(revert).not.toHaveBeenCalled();
+  });
+
+  it('does NOT navigate on a failed save — stays put and reverts the select', async () => {
+    const navigate = vi.fn();
+    const revert = vi.fn();
+    const setStatus = vi.fn();
+    await editor.pageSwitchAction({
+      activeEl: null,
+      flush: () => Promise.resolve([]),
+      hasUnsaved: () => true,
+      setStatus,
+      navigate,
+      revert,
+    });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(revert).toHaveBeenCalledTimes(1);
     expect(setStatus).toHaveBeenLastCalledWith('שגיאה בשמירה');
   });
 });
