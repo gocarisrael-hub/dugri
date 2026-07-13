@@ -133,11 +133,19 @@ function appendThemeEntry(themesPath, key, entry) {
     );
   }
   themes[key] = entry;
+  writeThemesFile(themesPath, themes);
+  return entry;
+}
+
+// Atomically write the whole themes mapping back (temp file in the same dir, then
+// rename) so a crash mid-write can never leave a truncated themes.json. Preserves
+// the file's 1-space indent so the diff against the hand-maintained file stays
+// minimal. Shared by appendThemeEntry (onboarding) + renameTemplate/replaceAsset.
+function writeThemesFile(themesPath, themes) {
   const dir = path.dirname(themesPath);
   const tmp = path.join(dir, `.themes.${process.pid}.${Date.now()}.tmp`);
   fs.writeFileSync(tmp, JSON.stringify(themes, null, 1) + '\n', 'utf8');
   fs.renameSync(tmp, themesPath);
-  return entry;
 }
 
 // Write the uploaded SVGs + fonts into resources/canva/templates/<slug>/.
@@ -336,6 +344,259 @@ function onboardTemplate(opts) {
   };
 }
 
+// -- Full template editing (status / rename / single-asset replace) ------------
+// These power the admin "template status" view: list each template's asset
+// checklist (present/missing, incl. the OPTIONAL chasers board), rename the
+// human display label WITHOUT touching the stable slug/key/dir, and replace any
+// single asset file in place (whitelisted role -> fixed path, so no traversal and
+// the other onboarded assets are never disturbed).
+
+// Longest allowed display label (display_he). A generous cap that still rejects
+// pathological input.
+const MAX_DISPLAY_NAME = 80;
+
+// The per-template asset roles the admin can inspect + replace, in display order.
+// Each role has a STABLE id used by the replace API (whitelisted — an unknown or
+// traversing role id is rejected), a fixed on-disk path relative to the template
+// dir, the file kind (svg|font) for validation, whether it is optional, and a
+// Hebrew label. The chasers board is the one OPTIONAL role, called out so the UI
+// can surface its present/missing state at a glance.
+const SVG_ASSET_ROLES = [
+  {
+    role: 'clean-fronts',
+    rel: 'clean/fronts.svg',
+    kind: 'svg',
+    optional: false,
+    label: 'קלף קדמי (נקי)',
+  },
+  {
+    role: 'clean-backs',
+    rel: 'clean/backs.svg',
+    kind: 'svg',
+    optional: false,
+    label: 'גב קלף (נקי)',
+  },
+  { role: 'clean-board', rel: 'clean/board.svg', kind: 'svg', optional: false, label: 'לוח (נקי)' },
+  {
+    role: 'clean-board-chasers',
+    rel: 'clean/' + CHASERS_BOARD_FILE,
+    kind: 'svg',
+    optional: true,
+    label: 'לוח צ׳ייסרים (נקי)',
+  },
+  {
+    role: 'filled-fronts',
+    rel: 'filled/fronts.svg',
+    kind: 'svg',
+    optional: false,
+    label: 'קלף קדמי (ממולא)',
+  },
+  {
+    role: 'filled-backs',
+    rel: 'filled/backs.svg',
+    kind: 'svg',
+    optional: false,
+    label: 'גב קלף (ממולא)',
+  },
+  {
+    role: 'filled-board',
+    rel: 'filled/board.svg',
+    kind: 'svg',
+    optional: false,
+    label: 'לוח (ממולא)',
+  },
+];
+// Font roles resolve their path from the theme entry (the filename the generator
+// reads out of themes.json), so their `rel` is computed per-entry, not fixed.
+const FONT_ASSET_ROLES = [
+  { role: 'title-font', field: 'title_font', kind: 'font', optional: false, label: 'פונט כותרת' },
+  { role: 'word-font', field: 'word_font', kind: 'font', optional: false, label: 'פונט מילים' },
+];
+// Whitelist of replaceable role ids — the ONLY roles the replace API accepts.
+const REPLACEABLE_ROLES = new Set([...SVG_ASSET_ROLES, ...FONT_ASSET_ROLES].map((a) => a.role));
+
+// The absolute templates base dir (resources/canva/templates), fully resolved.
+function templatesBaseDir(root) {
+  return path.resolve(path.join(root, 'resources', 'canva', 'templates'));
+}
+
+// Resolve a theme's on-disk dir, CONFINED to the templates base. The dir comes
+// from the (trusted) themes.json entry, but we still resolve + assert it is the
+// base itself or a child of it, so a doctored `dir`/key can never escape. Returns
+// the absolute path, or null when it would fall outside the base.
+function resolveTemplateDir(root, entry, key) {
+  const base = templatesBaseDir(root);
+  const rel =
+    entry && entry.dir
+      ? String(entry.dir)
+      : path.join('resources', 'canva', 'templates', String(key || ''));
+  const abs = path.resolve(root, rel);
+  if (abs !== base && !abs.startsWith(base + path.sep)) return null;
+  return abs;
+}
+
+// A safe file basename: no path separators, no traversal. Returns null on junk.
+function safeBasename(name) {
+  const b = path.basename(String(name || ''));
+  if (!b || b === '.' || b === '..' || b.includes('/') || b.includes('\\')) return null;
+  return b;
+}
+
+// The full asset-role list for a specific theme entry, with font `rel` resolved
+// from the recorded filename (null when no font is on record yet).
+function assetRolesFor(entry) {
+  const svg = SVG_ASSET_ROLES.map((a) => ({ ...a }));
+  const fonts = FONT_ASSET_ROLES.map((a) => {
+    const name = entry && entry[a.field] ? safeBasename(entry[a.field]) : null;
+    return {
+      role: a.role,
+      field: a.field,
+      kind: a.kind,
+      optional: a.optional,
+      label: a.label,
+      rel: name ? 'fonts/' + name : null,
+      fontName: name,
+    };
+  });
+  return [...svg, ...fonts];
+}
+
+// A light font sniff so the replace API can reject junk (the onboarding only
+// checked non-empty). Accepts a .ttf/.otf/.ttc name OR a recognizable sfnt magic
+// (0x00010000 TrueType, 'OTTO' CFF/OpenType, 'true'/'ttcf' variants).
+function looksLikeFont(buf, filename) {
+  if (!buf || !buf.length) return false;
+  const name = String(filename || '').toLowerCase();
+  if (name.endsWith('.ttf') || name.endsWith('.otf') || name.endsWith('.ttc')) return true;
+  const sig = buf.slice(0, 4).toString('latin1');
+  if (sig === 'OTTO' || sig === 'true' || sig === 'ttcf') return true;
+  if (buf[0] === 0x00 && buf[1] === 0x01 && buf[2] === 0x00 && buf[3] === 0x00) return true;
+  return false;
+}
+
+// Compute one template's asset checklist: which files are present vs missing,
+// flagging the OPTIONAL chasers board separately. Returns a plain descriptor
+// (safe to serialize to the admin UI).
+function computeTemplateStatus(root, key, entry) {
+  const dir = resolveTemplateDir(root, entry, key);
+  const roles = assetRolesFor(entry);
+  const assets = roles.map((a) => ({
+    role: a.role,
+    label: a.label,
+    rel: a.rel,
+    kind: a.kind,
+    optional: !!a.optional,
+    present: !!(dir && a.rel && fs.existsSync(path.join(dir, a.rel))),
+  }));
+  const missingRequired = assets.filter((a) => !a.optional && !a.present).map((a) => a.role);
+  const chasers = assets.find((a) => a.role === 'clean-board-chasers');
+  return {
+    key,
+    slug: (entry && entry.slug) || key,
+    display_he: (entry && entry.display_he) || key,
+    dir: (entry && entry.dir) || 'resources/canva/templates/' + key,
+    visibility: (entry && entry.visibility) || 'public',
+    calibrated: !!(entry && entry.calibrated),
+    assets,
+    chasersBoard: !!(chasers && chasers.present),
+    complete: missingRequired.length === 0,
+    missingRequired,
+  };
+}
+
+// The status of EVERY registered template, in themes.json order.
+function listTemplateStatuses(root) {
+  const themes = loadThemes(themesPathFor(root));
+  return Object.keys(themes).map((key) => computeTemplateStatus(root, key, themes[key]));
+}
+
+// Validate + normalize a display label: non-empty after trim, within the length
+// cap. Returns { value } or { error }.
+function validateDisplayName(name) {
+  const trimmed = String(name == null ? '' : name).trim();
+  if (!trimmed) return { error: 'display name is required' };
+  if (trimmed.length > MAX_DISPLAY_NAME) {
+    return { error: 'display name too long (max ' + MAX_DISPLAY_NAME + ' chars)' };
+  }
+  return { value: trimmed };
+}
+
+// Rename a template's HUMAN LABEL only (display_he). The slug/key/dir/recipe —
+// the identity stored orders reference — are deliberately left untouched, so a
+// rename never breaks an existing order that resolved to this theme. Atomic
+// themes.json write. Returns { key, display_he, slug } or { error, httpStatus }.
+function renameTemplate({ root, key, displayName }) {
+  const themesPath = themesPathFor(root);
+  const themes = loadThemes(themesPath);
+  if (!key || !themes[key]) return { error: 'template not found', httpStatus: 404 };
+  const v = validateDisplayName(displayName);
+  if (v.error) return { error: v.error, httpStatus: 400 };
+  themes[key].display_he = v.value;
+  writeThemesFile(themesPath, themes);
+  return { key, display_he: v.value, slug: themes[key].slug || key };
+}
+
+// Replace a SINGLE asset file of an existing template in place. The role must be
+// on the whitelist (so the write target is a fixed path inside the template dir —
+// no traversal, and the other onboarded assets are untouched). SVG roles are
+// SVG-validated; font roles are font-validated. For a font role with no filename
+// on record, the uploaded basename is used and recorded in themes.json so the
+// generator can find it. Returns { key, role, path } or { error, httpStatus }.
+function replaceAsset({ root, key, role, file }) {
+  const themesPath = themesPathFor(root);
+  const themes = loadThemes(themesPath);
+  const entry = key && themes[key];
+  if (!entry) return { error: 'template not found', httpStatus: 404 };
+  if (!REPLACEABLE_ROLES.has(role))
+    return { error: 'unknown asset role: ' + role, httpStatus: 400 };
+  if (!file || !file.data || !file.data.length)
+    return { error: 'no file uploaded', httpStatus: 400 };
+
+  const dir = resolveTemplateDir(root, entry, key);
+  if (!dir) return { error: 'template directory is outside the templates root', httpStatus: 400 };
+
+  const spec = assetRolesFor(entry).find((a) => a.role === role);
+  const kind = spec ? spec.kind : role.endsWith('-font') ? 'font' : 'svg';
+
+  // Validate the bytes against the role's kind — same posture as onboarding.
+  if (kind === 'svg') {
+    if (!looksLikeSvg(file.data))
+      return { error: 'file does not look like an SVG', httpStatus: 400 };
+  } else if (kind === 'font') {
+    if (!looksLikeFont(file.data, file.filename)) {
+      return { error: 'file does not look like a font (.ttf/.otf)', httpStatus: 400 };
+    }
+  }
+
+  // Resolve the destination path. SVG roles have a fixed rel; a font role writes
+  // to the recorded filename (the exact path the generator reads) when present,
+  // else to the uploaded basename which we then record.
+  let rel = spec && spec.rel;
+  let recordFontField = null;
+  if (kind === 'font' && !rel) {
+    const name = safeBasename(file.filename);
+    if (!name) return { error: 'font filename is missing or unsafe', httpStatus: 400 };
+    rel = 'fonts/' + name;
+    recordFontField = spec ? spec.field : role === 'title-font' ? 'title_font' : 'word_font';
+  }
+  if (!rel) return { error: 'unknown asset role: ' + role, httpStatus: 400 };
+
+  const abs = path.resolve(dir, rel);
+  // Defense in depth: the resolved target must stay inside the template dir.
+  if (abs !== dir && !abs.startsWith(dir + path.sep)) {
+    return { error: 'refusing to write outside the template directory', httpStatus: 400 };
+  }
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, file.data);
+
+  // A newly-named font needs its filename recorded so the generator finds it.
+  if (recordFontField) {
+    themes[key][recordFontField] = path.basename(abs);
+    writeThemesFile(themesPath, themes);
+  }
+  return { key, role, path: path.relative(root, abs) };
+}
+
 // -- Minimal multipart/form-data parser (no external dependency) --------------
 // Splits a raw body Buffer on the boundary and returns { fields, files }, where
 // fields[name] = string and files[name] = { filename, data:Buffer }. Kept small
@@ -394,4 +655,16 @@ module.exports = {
   boundaryFromContentType,
   templateDir,
   themesPathFor,
+  writeThemesFile,
+  looksLikeSvg,
+  looksLikeFont,
+  MAX_DISPLAY_NAME,
+  REPLACEABLE_ROLES,
+  assetRolesFor,
+  resolveTemplateDir,
+  computeTemplateStatus,
+  listTemplateStatuses,
+  validateDisplayName,
+  renameTemplate,
+  replaceAsset,
 };
