@@ -1370,6 +1370,8 @@
         buildCats();
         document.title = 'דוגרי · מילים על ' + honoree();
         $('#title').textContent = 'אוספים מילים על ' + honoree();
+        // Now that the honoree name is known, personalize the owner's share invite.
+        if (isOwner) updateShareInvite();
         const n = state.count;
         const atMax = n >= MAX_WORDS;
         // Stage 2 kicks in once the 100-word minimum is met: the pill/hint reframe
@@ -1864,16 +1866,30 @@
       function friendsUrl() {
         return location.origin + '/collect.html?c=' + id;
       }
+      // Build the WhatsApp share href, personalized with the celebrant name(s).
+      // For a couple the honoree name is already the joined form ("דנה ויוסי"),
+      // so this single branch covers both a lone name and two names. An
+      // empty/missing name falls back to the generic wording (never "undefined").
+      // Called from setupOwner (initial, generic) and render (once state loads).
+      function updateShareInvite() {
+        const waBtn = $('#shareWhatsapp');
+        if (!waBtn) return;
+        const inviteName = state && state.honoree_name ? state.honoree_name.trim() : '';
+        const waInvite = inviteName
+          ? 'עזרו לי להכין הפתעה ל' + inviteName + '! הוסיפו מילים על ' + inviteName + ' כאן:'
+          : 'עזרו לי להכין הפתעה! הוסיפו מילים על בעל/ת השמחה כאן:';
+        waBtn.href = 'https://wa.me/?text=' + encodeURIComponent(waInvite + ' ' + friendsUrl());
+      }
       function setupOwner() {
         $('#sharePanel').classList.remove('hidden');
         $('#friendsLink').value = friendsUrl();
         $('#ownerLink').value = location.href;
         // Primary share: open WhatsApp with a friendly Hebrew invite + the SAME
-        // friends link the copy button uses.
-        const waInvite = 'עזרו לי להכין הפתעה! הוסיפו מילים על בעל/ת השמחה כאן:';
-        const waBtn = $('#shareWhatsapp');
-        waBtn.href = 'https://wa.me/?text=' + encodeURIComponent(waInvite + ' ' + friendsUrl());
-        waBtn.onclick = () => track('share_link_whatsapp', { link_type: 'friends' });
+        // friends link the copy button uses. The href is (re)built by
+        // updateShareInvite() once the collection state (and its honoree name) is
+        // loaded; seed a generic default here so the button always has a target.
+        updateShareInvite();
+        $('#shareWhatsapp').onclick = () => track('share_link_whatsapp', { link_type: 'friends' });
         $('#copyFriends').onclick = () =>
           copy($('#friendsLink').value, $('#copyFriends'), 'friends');
         $('#copyOwner').onclick = () => copy($('#ownerLink').value, $('#copyOwner'), 'owner');
