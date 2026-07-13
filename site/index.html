@@ -40,7 +40,13 @@
     <meta name="apple-mobile-web-app-title" content="דוגרי" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="preload" as="image" href="assets/logo.png" />
-    <link rel="stylesheet" href="/assets/fonts/fonts.css" />
+    <link
+      rel="stylesheet"
+      href="/assets/fonts/fonts.css"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
     <!-- Heebo = bold Hebrew display face for headings; Assistant = calm body face -->
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/carousel.css" />

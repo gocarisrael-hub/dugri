@@ -16,7 +16,18 @@ const FONT_DIR = path.join(SITE, 'assets', 'fonts');
 const CSS = path.join(FONT_DIR, 'fonts.css');
 
 const css = fs.readFileSync(CSS, 'utf8');
-const htmlFiles = fs.readdirSync(SITE).filter((f) => f.endsWith('.html'));
+
+// Every .html under site/ (recursive — files under assets/ count too).
+function walkHtml(dir) {
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const abs = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...walkHtml(abs));
+    else if (e.name.endsWith('.html')) out.push(abs);
+  }
+  return out;
+}
+const htmlFiles = walkHtml(SITE);
 
 describe('self-hosted fonts', () => {
   it('fonts.css never reaches the Google Fonts CDN', () => {
@@ -43,6 +54,8 @@ describe('self-hosted fonts', () => {
       'Gveret Levin': [400],
       'Playpen Sans Hebrew': [400, 500],
       Carlito: [400, 700],
+      Rubik: [500, 700, 900],
+      'Secular One': [400],
     };
     // Split into @font-face blocks and index by family+weight.
     const blocks = css.split('@font-face').slice(1);
@@ -65,33 +78,37 @@ describe('self-hosted fonts', () => {
     for (const s of subsets) expect(['hebrew', 'latin']).toContain(s);
   });
 
-  it('no HTML page references the Google Fonts CDN', () => {
-    for (const f of htmlFiles) {
-      const html = fs.readFileSync(path.join(SITE, f), 'utf8');
-      expect(html, `${f} still hits Google Fonts`).not.toMatch(
+  it('woff2 filenames are content-hashed (so the immutable cache self-busts on regen)', () => {
+    const refs = [...css.matchAll(/url\(\/assets\/fonts\/([^)]+\.woff2)\)/g)].map((m) => m[1]);
+    for (const name of refs) {
+      expect(name, `${name} is not content-hashed`).toMatch(
+        /^[a-z-]+-\d+-[a-z]+\.[0-9a-f]{8}\.woff2$/
+      );
+    }
+  });
+
+  it('no HTML page anywhere under site/ references the Google Fonts CDN', () => {
+    for (const abs of htmlFiles) {
+      const html = fs.readFileSync(abs, 'utf8');
+      expect(html, `${path.relative(SITE, abs)} still hits Google Fonts`).not.toMatch(
         /fonts\.googleapis\.com|fonts\.gstatic\.com/
       );
     }
   });
 
-  it('every page that previously loaded web fonts now links the local stylesheet', () => {
-    // The customer + admin pages all render Hebrew text and must self-host.
-    const pages = [
-      'index',
-      'product',
-      'products',
-      'options',
-      'collect',
-      'how',
-      'timer',
-      'admin',
-      'dashboard',
-      'admin-templates',
-      'coupons',
-    ];
-    for (const p of pages) {
-      const html = fs.readFileSync(path.join(SITE, `${p}.html`), 'utf8');
-      expect(html, `${p}.html missing local fonts.css`).toContain('/assets/fonts/fonts.css');
+  it('every page that renders brand text (links tokens.css) also links the local font stylesheet', () => {
+    // The invariant: brand tokens (--font/--display) imply the brand faces must
+    // be self-hosted on that page. Derived from the files so a new page can't
+    // silently ship without fonts.
+    const branded = htmlFiles.filter((abs) =>
+      fs.readFileSync(abs, 'utf8').includes('/css/tokens.css')
+    );
+    expect(branded.length).toBeGreaterThanOrEqual(11);
+    for (const abs of branded) {
+      const html = fs.readFileSync(abs, 'utf8');
+      expect(html, `${path.relative(SITE, abs)} missing local fonts.css`).toContain(
+        '/assets/fonts/fonts.css'
+      );
     }
   });
 });

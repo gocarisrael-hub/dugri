@@ -15,6 +15,7 @@
 // Run: node scripts/fetch-fonts.mjs   (re-run to refresh; output is deterministic)
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -31,6 +32,9 @@ const FAMILIES = [
   'Gveret+Levin',
   'Playpen+Sans+Hebrew:wght@400;500',
   'Carlito:wght@400;700',
+  // Used only by the internal logo-options design scratch page.
+  'Rubik:wght@500;700;900',
+  'Secular+One',
 ];
 const KEEP_SUBSETS = new Set(['hebrew', 'latin']);
 // A recent desktop Chrome UA makes css2 return woff2 (the smallest format).
@@ -71,13 +75,21 @@ async function main() {
       const fam = (body.match(/font-family:\s*'([^']+)'/) || [])[1] || 'font';
       const wght = (body.match(/font-weight:\s*(\d+)/) || [])[1] || '400';
       const slug = fam.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      local = `${slug}-${wght}-${subset}.woff2`;
       const buf = Buffer.from(
         await (await fetch(remote, { headers: { 'User-Agent': UA } })).arrayBuffer()
       );
       // woff2 magic 'wOF2' (0x774F4632) — guard against an HTML error page.
       if (buf.length < 4 || buf.toString('latin1', 0, 4) !== 'wOF2')
         throw new Error(`not a woff2: ${remote}`);
+      // Content-hash the filename so a regen with changed bytes produces a NEW
+      // URL — that's what makes the 1-year `immutable` cache safe to bust.
+      const hash = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 8);
+      local = `${slug}-${wght}-${subset}.${hash}.woff2`;
+      // Drop any stale prior hash of this same slot so the dir stays clean.
+      for (const old of fs.readdirSync(OUT_DIR)) {
+        if (new RegExp(`^${slug}-${wght}-${subset}\\.[0-9a-f]{8}\\.woff2$`).test(old))
+          fs.rmSync(path.join(OUT_DIR, old));
+      }
       fs.writeFileSync(path.join(OUT_DIR, local), buf);
       seen.set(remote, local);
     }

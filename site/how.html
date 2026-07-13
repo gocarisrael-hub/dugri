@@ -40,7 +40,13 @@
     <meta name="apple-mobile-web-app-title" content="דוגרי" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="preload" as="image" href="assets/logo.png" />
-    <link rel="stylesheet" href="/assets/fonts/fonts.css" />
+    <link
+      rel="stylesheet"
+      href="/assets/fonts/fonts.css"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
     <!-- Carlito = free, metric-compatible look-alike of Calibri (fallback for devices without Calibri) -->
     <!-- Heebo = bold Hebrew display face for headings; matches the energetic vivid-pink logo -->
     <link rel="stylesheet" href="/css/tokens.css" />

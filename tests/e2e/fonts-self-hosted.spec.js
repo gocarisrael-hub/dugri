@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 // webviews) that block or throttle fonts.gstatic.com still render the brand
 // faces. Assert at RUNTIME that no page reaches the Google Fonts CDN, the local
 // stylesheet + woff2 load, and the display face actually renders.
-const PAGES = ['/', '/options.html', '/collect.html', '/timer.html'];
+const PAGES = ['/', '/options.html', '/collect.html', '/timer.html', '/pay-done.html'];
 
 for (const url of PAGES) {
   test(`${url} loads fonts from the local origin, never Google Fonts`, async ({ page }) => {
@@ -33,10 +33,15 @@ for (const url of PAGES) {
   });
 }
 
-test('a woff2 file is served with a long-lived cache header', async ({ page }) => {
-  await page.goto('/');
-  const res = await page.request.get('/assets/fonts/heebo-300-hebrew.woff2');
+test('a woff2 file is served with an immutable long-lived cache header', async ({ page }) => {
+  // Derive a real woff2 path from the served stylesheet (filenames are
+  // content-hashed, so never hardcode one).
+  const css = await (await page.request.get('/assets/fonts/fonts.css')).text();
+  const ref = css.match(/url\((\/assets\/fonts\/[^)]+\.woff2)\)/);
+  expect(ref, 'no woff2 url in fonts.css').toBeTruthy();
+  const res = await page.request.get(ref[1]);
   expect(res.status()).toBe(200);
   expect(res.headers()['content-type']).toContain('font/woff2');
   expect(res.headers()['cache-control']).toContain('31536000');
+  expect(res.headers()['cache-control']).toContain('immutable');
 });
