@@ -1748,7 +1748,7 @@
           background 0.18s ease,
           transform 0.18s ease;
       }
-      .zoom-dot[aria-selected='true'] {
+      .zoom-dot.is-active {
         background: #fff;
         transform: scale(1.25);
       }
@@ -2579,14 +2579,9 @@
       </div>
       <!-- Carousel dots for the enlarged view — one per view, synced with the tabs
            and the finger-swipe, mirroring the inline preview carousels. -->
-      <div
-        class="zoom-dots"
-        id="zoomDots"
-        data-testid="zoom-dots"
-        role="tablist"
-        aria-label="מעבר בין תצוגות"
-        hidden
-      ></div>
+      <!-- Visual-only position indicator; #zoomTabs above is the accessible tab
+           control, so the dots are aria-hidden to avoid a duplicate tablist. -->
+      <div class="zoom-dots" id="zoomDots" data-testid="zoom-dots" aria-hidden="true" hidden></div>
       <div class="zoom-toolbar" role="group" aria-label="שליטה בהגדלה">
         <button
           class="zoom-btn"
@@ -4294,11 +4289,12 @@
           const d = document.createElement('button');
           d.type = 'button';
           d.className = 'zoom-dot';
-          d.setAttribute('role', 'tab');
+          // Decorative indicator (container is aria-hidden); not keyboard-focusable
+          // and not a tab — the accessible navigation is #zoomTabs.
+          d.tabIndex = -1;
           d.dataset.zdot = view.id;
           d.dataset.testid = 'zoom-dot-' + view.id;
-          d.setAttribute('aria-label', view.label);
-          d.setAttribute('aria-selected', view.id === activeId ? 'true' : 'false');
+          d.classList.toggle('is-active', view.id === activeId);
           d.addEventListener('click', (e) => {
             e.stopPropagation();
             zoomGoTo(view.id);
@@ -4316,9 +4312,7 @@
         if (zoomDots) {
           zoomDots
             .querySelectorAll('.zoom-dot')
-            .forEach((d) =>
-              d.setAttribute('aria-selected', d.dataset.zdot === activeId ? 'true' : 'false')
-            );
+            .forEach((d) => d.classList.toggle('is-active', d.dataset.zdot === activeId));
         }
       }
 

@@ -225,20 +225,21 @@ test.describe('enlarged view carousel dots', () => {
     const dots = page.getByTestId('zoom-dots');
     await expect(dots).toBeVisible();
     await expect(dots.locator('.zoom-dot')).toHaveCount(3);
-    // opens on the front view → front dot is the active one
-    await expect(page.getByTestId('zoom-dot-front')).toHaveAttribute('aria-selected', 'true');
+    // opens on the front view → front dot is the active one (dots are a
+    // visual-only indicator marked with .is-active; #zoomTabs carries the a11y state)
+    await expect(page.getByTestId('zoom-dot-front')).toHaveClass(/is-active/);
 
     // tapping a dot changes the view — the matching tab AND dot light up together
     await page.getByTestId('zoom-dot-board').click();
     await expect(page.getByTestId('zoom-tab-board')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByTestId('zoom-dot-board')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByTestId('zoom-dot-front')).toHaveAttribute('aria-selected', 'false');
+    await expect(page.getByTestId('zoom-dot-board')).toHaveClass(/is-active/);
+    await expect(page.getByTestId('zoom-dot-front')).not.toHaveClass(/is-active/);
 
     // a horizontal finger-swipe also drives the dots (board → back, one step back)
     const vp = page.getByTestId('zoom-viewport');
     await vp.dispatchEvent('pointerdown', { clientX: 60, clientY: 300 });
     await vp.dispatchEvent('pointerup', { clientX: 320, clientY: 300 });
-    await expect(page.getByTestId('zoom-dot-back')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('zoom-dot-back')).toHaveClass(/is-active/);
     await expect(page.getByTestId('zoom-tab-back')).toHaveAttribute('aria-selected', 'true');
   });
 });
