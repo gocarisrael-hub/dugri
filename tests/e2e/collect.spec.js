@@ -747,6 +747,12 @@ test('owner share panel: WhatsApp button is the primary action, placed before th
   const href = await wa.getAttribute('href');
   expect(href).toMatch(/^https:\/\/wa\.me\/\?text=/);
   expect(href).toContain(encodeURIComponent(friendsLink));
+  // The invite is personalized with the celebrant name (URL-encoded in the text).
+  expect(href).toContain(encodeURIComponent('Shira'));
+  const inviteText = new URL(href).searchParams.get('text');
+  expect(inviteText).toContain('הפתעה לShira');
+  expect(inviteText).toContain('מילים על Shira');
+  expect(inviteText).not.toContain('undefined');
   await expect(wa).toHaveAttribute('target', '_blank');
   await expect(wa).toHaveAttribute('rel', /noopener/);
 
@@ -757,6 +763,60 @@ test('owner share panel: WhatsApp button is the primary action, placed before th
     return !!(waEl.compareDocumentPosition(copyEl) & window.Node.DOCUMENT_POSITION_FOLLOWING);
   });
   expect(waBeforeCopy).toBe(true);
+});
+
+test('owner WhatsApp invite: a two-name couple honoree carries both names (URL-encoded) in the text', async ({
+  page,
+}) => {
+  // A couple/anniversary order stores the honoree name as the pre-joined form
+  // ("דנה ויוסי"). Create such a collection directly and open it as the owner.
+  const res = await page.request.post('/api/collections', {
+    data: {
+      honoree_name: 'דנה ויוסי',
+      email: 'test@example.com',
+      phone: '0521234567',
+      gender: 'female',
+    },
+  });
+  expect(res.status()).toBe(201);
+  const { id, owner_token } = await res.json();
+  await page.goto(`/collect.html?c=${id}&k=${owner_token}`);
+
+  const wa = page.getByTestId('share-whatsapp');
+  await expect(wa).toBeVisible();
+  const href = await wa.getAttribute('href');
+  // Both names appear (URL-encoded) in the invite text.
+  expect(href).toContain(encodeURIComponent('דנה ויוסי'));
+  const text = new URL(href).searchParams.get('text');
+  expect(text).toContain('הפתעה לדנה ויוסי');
+  expect(text).toContain('מילים על דנה ויוסי');
+  expect(text).not.toContain('undefined');
+});
+
+test('owner WhatsApp invite: falls back to generic wording when the honoree name is missing', async ({
+  page,
+}) => {
+  // Guard the empty-name path (not reachable via normal creation, which requires
+  // a name): strip honoree_name from the base collection GET and assert the
+  // invite degrades to the generic wording — no name, no "undefined".
+  await createCollection(page, 'Shira');
+  const url = new URL(page.url());
+  const c = url.searchParams.get('c');
+  const k = url.searchParams.get('k');
+  await page.route('**/api/collections/*', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const resp = await route.fetch();
+    const body = await resp.json();
+    delete body.honoree_name;
+    return route.fulfill({ json: body });
+  });
+  await page.goto(`/collect.html?c=${c}&k=${k}`);
+
+  const wa = page.getByTestId('share-whatsapp');
+  await expect(wa).toBeVisible();
+  const text = new URL(await wa.getAttribute('href')).searchParams.get('text');
+  expect(text).toContain('הפתעה! הוסיפו מילים על בעל/ת השמחה');
+  expect(text).not.toContain('undefined');
 });
 
 test('collected-words list sits BELOW the add-word input in DOM order', async ({ page }) => {
