@@ -12,8 +12,11 @@ on:
   workflow_dispatch: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Keep pushes, PRs and the nightly cron in SEPARATE groups (include the event
+  # name) so a merge to main can never cancel the in-progress nightly full-matrix
+  # backstop. Only cancel superseded PR runs; main/nightly always run to completion.
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -38,19 +41,25 @@ jobs:
 
       # --- E2E scope by event, to keep GitHub Actions minutes down ---
       # The full Playwright suite across 3 device profiles is the expensive part.
-      #   PR              -> iPhone 14 only (fast gate; most visitors are on mobile)
-      #   nightly/manual  -> full 3-device matrix (Desktop Chrome + iPhone 14 + Pixel 7)
+      #   PR              -> iPhone 14 + Desktop Chrome. These are the only two
+      #                      profiles with device-gated specs (mobile-only checks
+      #                      run on iPhone 14; several layout/measurement specs are
+      #                      Desktop-Chrome-only). Running both means every
+      #                      merge-gating test executes on a PR. Pixel 7 has NO
+      #                      unique tests (redundant chromium mobile) so it's
+      #                      deferred to the nightly run.
+      #   nightly/manual  -> full 3-device matrix (adds Pixel 7).
       #   push:main       -> NO E2E. The merged commit is a squash of a PR that
-      #                      already ran E2E under review; re-running the full suite
-      #                      on main just doubled every feature's minutes. The
-      #                      Prettier/ESLint/Vitest steps above still run on main as
-      #                      a fast post-merge sanity check.
+      #                      already ran iPhone + Desktop E2E under review; the old
+      #                      unconditional main run just doubled every feature's
+      #                      minutes. Prettier/ESLint/Vitest above still run on main
+      #                      as a fast post-merge sanity check.
       - name: Install Playwright browsers
         if: github.event_name != 'push'
         run: npx playwright install --with-deps chromium
-      - name: E2E tests (PR — iPhone 14 only)
+      - name: E2E tests (PR — iPhone 14 + Desktop Chrome)
         if: github.event_name == 'pull_request'
-        run: npx playwright test --project="iPhone 14"
+        run: npx playwright test --project="iPhone 14" --project="Desktop Chrome"
       - name: E2E tests (full 3-device matrix — nightly / manual)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: npx playwright test
