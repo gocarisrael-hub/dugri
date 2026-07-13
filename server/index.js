@@ -1273,7 +1273,13 @@ app.use(
   express.static(SITE_DIR, {
     extensions: ['html'],
     setHeaders(res, filePath) {
-      if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+      if (filePath.endsWith('.html')) return res.setHeader('Cache-Control', 'no-cache');
+      // Self-hosted fonts: the woff2 files are stable per family/weight/subset, so
+      // cache them hard; let fonts.css revalidate daily so a regen propagates.
+      if (filePath.endsWith('.woff2'))
+        return res.setHeader('Cache-Control', 'public, max-age=31536000');
+      if (filePath.endsWith('fonts.css'))
+        return res.setHeader('Cache-Control', 'public, max-age=86400');
     },
   })
 );
