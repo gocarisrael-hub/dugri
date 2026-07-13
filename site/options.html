@@ -2214,6 +2214,19 @@
             margin: 0 auto;
             overflow: hidden;
             touch-action: pan-y;
+            /* smooth the widen/narrow when swiping onto/off the board slide */
+            transition: max-width 0.28s ease;
+          }
+          /* OPTION C — the board is a LANDSCAPE artboard (~1.41:1, A4 landscape),
+             not a portrait card. On its slide the viewport grows to the full
+             available width so the board renders large (matching how the fullscreen
+             zoom already shows every view full-width) instead of sitting as a tiny
+             sliver inside the portrait-card-sized 420px frame. Capped at the
+             delivered PNG's real resolution (700px) so it is never upscaled, and
+             bounded by 100% of the step column so a wide board never triggers
+             horizontal page scroll. The card + back slides are untouched. */
+          .name-preview-viewport.is-board-view {
+            max-width: min(100%, 700px);
           }
           .name-preview-imgs {
             display: flex;
@@ -2226,7 +2239,8 @@
             will-change: transform;
           }
           @media (prefers-reduced-motion: reduce) {
-            .name-preview-imgs {
+            .name-preview-imgs,
+            .name-preview-viewport {
               transition: none;
             }
           }
@@ -2251,9 +2265,12 @@
             border-radius: var(--radius);
             background: #fff;
           }
-          /* board is a supporting thumbnail — a touch smaller than the card */
+          /* OPTION C — the board slide FILLS the (widened) viewport width: a
+             landscape board reads as the dominant focal element instead of a small
+             thumbnail. width:100% up to the viewport's max (700px real pixels);
+             object-fit stays contain (from the base rule) so it is never distorted. */
           .name-preview-fig[data-npview='board'] img {
-            max-width: 320px;
+            max-width: 100%;
           }
           .name-preview-fig img:not([src]),
           .name-preview-fig img[hidden] {
@@ -3744,6 +3761,13 @@
         });
       }
 
+      // OPTION C — flag the board slide so the viewport widens to show the
+      // landscape board full-width (see .name-preview-viewport.is-board-view).
+      function npMarkActiveView() {
+        if (!namePreviewViewport) return;
+        namePreviewViewport.classList.toggle('is-board-view', npViews[npIndex] === 'board');
+      }
+
       const NP_VIEW_LABELS = { card: 'קלף', back: 'גב', board: 'לוח' };
       function npBuildDots() {
         namePreviewDots.innerHTML = '';
@@ -3771,6 +3795,7 @@
         npIndex = i;
         npApplyTransform();
         npMarkDots();
+        npMarkActiveView();
       }
       function npAdjacent(dir) {
         npGoTo(Math.min(npViews.length - 1, Math.max(0, npIndex + dir)));
@@ -3788,6 +3813,7 @@
         if (npIndex < 0) npIndex = 0;
         npBuildDots();
         npApplyTransform();
+        npMarkActiveView();
       }
 
       // Touch/mouse swipe on the viewport. A horizontal drag past the threshold
