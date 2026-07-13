@@ -1273,7 +1273,15 @@ app.use(
   express.static(SITE_DIR, {
     extensions: ['html'],
     setHeaders(res, filePath) {
-      if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+      if (filePath.endsWith('.html')) return res.setHeader('Cache-Control', 'no-cache');
+      // Self-hosted fonts: woff2 filenames are content-hashed (see
+      // scripts/fetch-fonts.mjs), so a regen with changed bytes yields a NEW url
+      // — the immutable 1-year cache is safe and self-busting. fonts.css keeps a
+      // stable name, so it only revalidates daily to pick up the new hashed refs.
+      if (filePath.endsWith('.woff2'))
+        return res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      if (filePath.endsWith('fonts.css'))
+        return res.setHeader('Cache-Control', 'public, max-age=86400');
     },
   })
 );
