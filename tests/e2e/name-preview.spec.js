@@ -200,3 +200,35 @@ test.describe('name-step preview resilience', () => {
     await expect(page.getByTestId('name-preview-fallback')).toBeHidden();
   });
 });
+
+test.describe('name preview shows more of the card artwork', () => {
+  // The rendered card/back are cropped single cards delivered at up to 700px wide,
+  // so the inline preview was needlessly small (300px). It now renders larger so
+  // more of each card's themed background/artwork reads. Guard the framing: the
+  // card + back images are shown noticeably bigger, at their TRUE ratio (no
+  // stretch — object-fit stays contain).
+  test('the card + back preview images are enlarged (bigger max-width, undistorted)', async ({
+    page,
+  }) => {
+    await mockPreview(page);
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+
+    const card = page.getByTestId('name-preview-card');
+    const back = page.getByTestId('name-preview-back');
+    await expect(card).toBeVisible();
+
+    // the enlarged framing: card/back capped at 400px (was 300), viewport at 420.
+    const cardMaxW = await card.evaluate((el) => parseFloat(getComputedStyle(el).maxWidth));
+    const backMaxW = await back.evaluate((el) => parseFloat(getComputedStyle(el).maxWidth));
+    expect(cardMaxW).toBeGreaterThanOrEqual(400);
+    expect(backMaxW).toBeGreaterThanOrEqual(400);
+    const vpMaxW = await page
+      .getByTestId('name-preview-viewport')
+      .evaluate((el) => parseFloat(getComputedStyle(el).maxWidth));
+    expect(vpMaxW).toBeGreaterThanOrEqual(420);
+
+    // still undistorted: object-fit contain, never stretched to fill a box.
+    expect(await card.evaluate((el) => getComputedStyle(el).objectFit)).toBe('contain');
+  });
+});

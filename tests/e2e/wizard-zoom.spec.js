@@ -182,6 +182,68 @@ test.describe('fullscreen zoom overlay', () => {
   });
 });
 
+// The enlarge affordance is a small ICON-only button pinned in the TOP-LEFT
+// corner of the live preview (no text label), and it opens the fullscreen view.
+test.describe('enlarge icon (top-left, icon-only)', () => {
+  test('is an icon-only button in the top-left corner and opens the overlay', async ({ page }) => {
+    await page.goto('/options.html');
+    const btn = page.getByTestId('zoom-open');
+    await expect(btn).toBeVisible();
+
+    // icon only — no visible text label, but a real accessible name (aria-label)
+    await expect(btn).toHaveText('');
+    const label = await btn.getAttribute('aria-label');
+    expect(label && label.trim().length).toBeTruthy();
+
+    // pinned in the TOP-LEFT corner of the preview stage
+    const b = await btn.boundingBox();
+    const stage = await page.getByTestId('preview-stage').boundingBox();
+    expect(b).not.toBeNull();
+    expect(stage).not.toBeNull();
+    // near the stage's left edge and top edge (well within the top-left quadrant)
+    expect(b.x).toBeLessThan(stage.x + stage.width / 2);
+    expect(b.y).toBeLessThan(stage.y + stage.height / 2);
+    expect(b.x - stage.x).toBeLessThan(40);
+    expect(b.y - stage.y).toBeLessThan(40);
+
+    await btn.click();
+    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
+  });
+});
+
+// The enlarged view is a real swipeable carousel: dots (one per view) + swipe,
+// consistent with the inline preview carousels. Dots stay in sync with the tabs
+// and the finger-swipe, and tapping a dot changes the view.
+test.describe('enlarged view carousel dots', () => {
+  test('dots reflect the views and stay in sync with taps + swipe', async ({ page }) => {
+    await page.goto('/options.html');
+    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await page.getByTestId('zoom-open').click();
+    await expect(page.getByTestId('zoom-overlay')).toBeVisible();
+
+    // one dot per view (bachelorette ships front + back + board = 3), visible
+    const dots = page.getByTestId('zoom-dots');
+    await expect(dots).toBeVisible();
+    await expect(dots.locator('.zoom-dot')).toHaveCount(3);
+    // opens on the front view → front dot is the active one (dots are a
+    // visual-only indicator marked with .is-active; #zoomTabs carries the a11y state)
+    await expect(page.getByTestId('zoom-dot-front')).toHaveClass(/is-active/);
+
+    // tapping a dot changes the view — the matching tab AND dot light up together
+    await page.getByTestId('zoom-dot-board').click();
+    await expect(page.getByTestId('zoom-tab-board')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('zoom-dot-board')).toHaveClass(/is-active/);
+    await expect(page.getByTestId('zoom-dot-front')).not.toHaveClass(/is-active/);
+
+    // a horizontal finger-swipe also drives the dots (board → back, one step back)
+    const vp = page.getByTestId('zoom-viewport');
+    await vp.dispatchEvent('pointerdown', { clientX: 60, clientY: 300 });
+    await vp.dispatchEvent('pointerup', { clientX: 320, clientY: 300 });
+    await expect(page.getByTestId('zoom-dot-back')).toHaveClass(/is-active/);
+    await expect(page.getByTestId('zoom-tab-back')).toHaveAttribute('aria-selected', 'true');
+  });
+});
+
 // The rotate-device hint is only meaningful on a touch device held in portrait.
 test.describe('zoom rotate hint', () => {
   test('is not shown on desktop', async ({ page }, testInfo) => {
