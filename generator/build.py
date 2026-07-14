@@ -19,6 +19,7 @@ from PIL import Image
 
 import config
 import render_page as rp
+import svg_rings
 
 CHROME = rp.CHROME
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -62,12 +63,18 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
         else:
             board_clean = plain
     w, h, vb = svg_dims(board_clean)
+    # Snap any mis-registered "sticker outline" red tile discs concentric to their
+    # white tiles before rendering. Some Canva board exports offset (and double)
+    # the red outline disc a couple of viewBox units off the white tile, which
+    # renders as a red crescent / doubled ring ("ghosting") on every numbered
+    # square. This is a no-op for boards without that pattern.
+    board_svg = svg_rings.align_ring_discs(open(board_clean, encoding="utf-8").read())
     if not bd:  # theme has no personalized board title -> use the clean board as-is
-        return render_svg(open(board_clean, encoding="utf-8").read(), w, h, out_png)
+        return render_svg(board_svg, w, h, out_png)
     frac = bd["frac"]
     title_font = config.font_path(theme, cfg["title_font"])
     box = {k: (frac[k] * vb[2] if "x" in k else frac[k] * vb[3]) for k in frac}
-    svg = open(board_clean, encoding="utf-8").read()
+    svg = board_svg
     style = "<style>" + rp.font_face("TitleFont", title_font) + "</style>"
     body = style + rp.title_block(box, title_lines, bd["fill"], bd["outline"],
                                   title_font, ts["outline_w"], ts["arch"], ts["shadow"],
