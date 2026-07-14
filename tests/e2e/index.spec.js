@@ -346,3 +346,151 @@ test.describe('hero lets the page scroll vertically', () => {
     expect(touchAction).toContain('pan-y');
   });
 });
+
+// ---- item 2a: the #about → #products junction no longer has an oversized void.
+// The compact explainer + counter (#about) leads straight into the designs rail
+// (#products). The default 72px+72px section padding, doubled around the small
+// centered stat box, read as an oversized empty band — and #products had no
+// divider (a <script> between the two sections breaks the `section + section`
+// border-top selector). The junction is tightened and the hairline divider
+// restored so it matches every other section boundary. Measured under reduced
+// motion so the scroll-reveal transform isn't mid-flight (it offsets rects).
+test.describe('spacing: counter → designs junction', () => {
+  test.use({ reducedMotion: 'reduce' });
+
+  test('the gap between the orders counter and the designs section is a normal rhythm, with a divider', async ({
+    page,
+  }) => {
+    await page.goto('/index.html');
+    // let layout settle
+    await page.locator('#products .home-products-head h2').scrollIntoViewIfNeeded();
+
+    const m = await page.evaluate(() => {
+      const stat = document.querySelector('.stat-box').getBoundingClientRect();
+      const head = document.querySelector('#products .home-products-head').getBoundingClientRect();
+      const products = document.getElementById('products');
+      const reviews = document.getElementById('reviews');
+      return {
+        gap: head.top - stat.bottom,
+        productsBorderTop: parseFloat(getComputedStyle(products).borderTopWidth),
+        reviewsBorderTop: parseFloat(getComputedStyle(reviews).borderTopWidth),
+      };
+    });
+
+    // Tightened, but not collapsed: clearly smaller than the old doubled void
+    // (~144px) yet a comfortable rhythm, never touching.
+    expect(m.gap).toBeGreaterThan(40);
+    expect(m.gap).toBeLessThan(120);
+    // The divider is restored so this boundary matches the others (e.g. #reviews).
+    expect(m.productsBorderTop).toBeGreaterThanOrEqual(1);
+    expect(m.productsBorderTop).toBe(m.reviewsBorderTop);
+  });
+});
+
+// ---- item 2b: the reviews rail is visible AND navigable on every viewport,
+// desktop included. The rail shows ONE screenshot per view; desktop has no touch,
+// so without a visible control a mouse user cannot swipe and the tiny dots are
+// easy to miss — the other three testimonials look unreachable ("no reviews on
+// desktop"). Prev/next arrows now flank the dots so all four are reachable. This
+// runs on every project (Desktop Chrome + the phones), so it guards both.
+function centeredReviewSrc() {
+  const track = document.getElementById('reviewsTrack');
+  const t = track.getBoundingClientRect();
+  const centre = t.left + t.width / 2;
+  const on = [...document.querySelectorAll('#reviewsTrack .review img')].find((im) => {
+    const b = im.getBoundingClientRect();
+    return (
+      im.naturalWidth > 0 &&
+      b.width >= t.width * 0.7 &&
+      Math.abs(b.left + b.width / 2 - centre) <= t.width * 0.2
+    );
+  });
+  return on ? (on.currentSrc || on.src).split('/').pop() : null;
+}
+
+test.describe('reviews are visible and navigable on desktop', () => {
+  test('the rail renders a real screenshot and prev/next arrows step through all four', async ({
+    page,
+  }) => {
+    await page.goto('/index.html');
+    await page.locator('#reviews').scrollIntoViewIfNeeded();
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('#reviewsTrack .review img')].some((i) => i.naturalWidth > 0)
+    );
+
+    // The track has a real, non-zero box (not the collapsed / blank state).
+    const trackBox = await page.locator('#reviewsTrack').boundingBox();
+    expect(trackBox.width).toBeGreaterThan(100);
+    expect(trackBox.height).toBeGreaterThan(100);
+
+    // A single screenshot is properly on view at load.
+    await expect.poll(() => page.evaluate(centeredReviewSrc)).toBe('review-1.jpg');
+
+    // Both arrows are present AND visible — the clear desktop control that was
+    // missing. Dots stay too (one per review).
+    const arrows = page.locator('#reviews .carousel-arrow');
+    await expect(arrows).toHaveCount(2);
+    await expect(page.locator('#reviews .carousel-arrow--next')).toBeVisible();
+    await expect(page.locator('#reviews .carousel-arrow--prev')).toBeVisible();
+    await expect(page.locator('#reviews .carousel-dot')).toHaveCount(4);
+
+    // The next arrow advances the rail (review-1 → review-2), proving the other
+    // testimonials are reachable by clicking (works with a mouse, no swipe needed).
+    await page.locator('#reviews .carousel-arrow--next').click();
+    await expect.poll(() => page.evaluate(centeredReviewSrc)).toBe('review-2.jpg');
+
+    // The centred screenshot fills the rail — visible, not a blank sliver.
+    const filledWidth = await page.evaluate(() => {
+      const track = document.getElementById('reviewsTrack');
+      const t = track.getBoundingClientRect();
+      const centre = t.left + t.width / 2;
+      const im = [...document.querySelectorAll('#reviewsTrack .review img')].find((x) => {
+        const b = x.getBoundingClientRect();
+        return x.naturalWidth > 0 && Math.abs(b.left + b.width / 2 - centre) <= t.width * 0.2;
+      });
+      return im ? im.getBoundingClientRect().width / t.width : 0;
+    });
+    expect(filledWidth).toBeGreaterThan(0.7);
+  });
+});
+
+// ---- item 6a: there is now a direct path from the homepage into the order flow.
+// Every existing CTA leads to the shop grid (products.html); the order wizard
+// (options.html) was only reachable by opening a product and pressing "buy". A
+// header-menu link "להזמנה" now goes straight to options.html, which is a
+// self-contained wizard that starts at step 1 (choose a design).
+test.describe('order flow is reachable from the homepage', () => {
+  test('a header link leads directly into the order wizard, which starts at step 1', async ({
+    page,
+  }) => {
+    await page.goto('/index.html');
+
+    const orderLink = page.getByTestId('nav-order-flow');
+    await expect(orderLink).toHaveAttribute('href', 'options.html');
+    await expect(orderLink).toHaveText('להזמנה');
+
+    // Follow it: options.html is a working order-flow entry (step 1 = pick a design).
+    await page.goto('/options.html');
+    await expect(page.locator('.wiz-step.is-active')).toHaveCount(1);
+    // Step 1 offers the design picker, so a shopper can begin without a preselected design.
+    await expect(page.locator('.wiz-step.is-active .design').first()).toBeVisible();
+  });
+
+  test('the shop → product → buy path still reaches options.html (regression)', async ({
+    page,
+  }) => {
+    await page.goto('/index.html');
+    // homepage order CTA → shop
+    await page.getByTestId('order-now').click();
+    await expect(page).toHaveURL(/products\.html/);
+    // shop → a product
+    await page.locator('a[href^="product.html?design="]').first().click();
+    await expect(page).toHaveURL(/product\.html\?design=/);
+    // product → buy → the order wizard
+    const buy = page.getByTestId('pdp-buy');
+    await buy.waitFor();
+    await expect.poll(() => buy.getAttribute('href')).toMatch(/^options\.html\?design=/);
+    await buy.click();
+    await expect(page).toHaveURL(/options\.html\?design=/);
+  });
+});

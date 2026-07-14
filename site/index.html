@@ -427,6 +427,21 @@
         }
       }
 
+      /* #about is a compact explainer + counter that leads straight into the
+         designs. The default 72px+72px section padding, doubled around the small
+         centered stat box, read as an oversized empty void — and #products had no
+         divider line (a <script> between the two sections breaks the
+         `section + section` border-top selector), so nothing anchored the eye.
+         Tighten this one junction and restore the hairline divider so the boundary
+         matches every other section boundary on the page. */
+      #about {
+        padding-bottom: 40px;
+      }
+      #products {
+        padding-top: 40px;
+        border-top: 1px solid var(--line);
+      }
+
       /* ============ HOME PRODUCTS RAIL (data-testid=home-products) ============ */
       .home-products-head {
         text-align: center;
@@ -570,6 +585,28 @@
         width: 100%;
         height: auto;
         /* the screenshots keep their own dark chat background + timestamp */
+      }
+      /* Reviews controls: prev-arrow ‹ dots › next-arrow on one centered row. The
+         rail shows ONE screenshot per view; on desktop there is no touch, so
+         without arrows a mouse user cannot swipe and the tiny dots are easy to
+         miss — the other three testimonials look unreachable ("no reviews"). The
+         arrows give every viewport a clear, obvious way to move through all four.
+         The engine appends the dots first, then the two arrows, into this box, so
+         flex `order` re-sequences them into ‹ dots ›. */
+      .rv-controls {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+      }
+      .rv-controls .carousel-arrow--prev {
+        order: -1;
+      }
+      .rv-controls .carousel-dots {
+        order: 0;
+      }
+      .rv-controls .carousel-arrow--next {
+        order: 1;
       }
 
       /* ============ FOUNDER STORY (#story) ============ */
@@ -847,6 +884,14 @@
         role="menu"
         aria-label="תפריט ניווט"
       >
+        <a
+          href="options.html"
+          role="menuitem"
+          data-testid="nav-order-flow"
+          data-ga="order_started"
+          data-ga-cta="nav-menu"
+          >להזמנה</a
+        >
         <a href="products.html" role="menuitem">החנות</a>
         <a href="index.html#reviews" role="menuitem">המלצות</a>
         <a href="index.html#story" role="menuitem">הסיפור שלנו</a>
@@ -1119,6 +1164,7 @@
 
       // ---- REVIEWS: one WhatsApp screenshot per slide; swipe → next review ----
       const reviewsTrack = document.getElementById('reviewsTrack');
+      const reviewsControls = document.getElementById('reviewsControls');
       if (reviewsTrack) {
         initCarousel(reviewsTrack, {
           // slideshow = native one-per-view scroll-snap. The blank-cards bug was the
@@ -1130,7 +1176,13 @@
           loop: true,
           autoplay: false,
           dots: true,
-          arrows: false,
+          // Arrows: desktop has no touch, so without a visible control a mouse user
+          // cannot swipe and won't find the tiny dots — the rail reads as a single
+          // static review ("no reviews on desktop"). Arrows make all four reachable
+          // on every viewport. Dots + arrows share one centered controls row.
+          arrows: true,
+          dotsInto: reviewsControls,
+          arrowsInto: reviewsControls,
         });
       }
     </script>
@@ -1199,6 +1251,9 @@
             />
           </figure>
         </div>
+        <!-- carousel dots + prev/next arrows are rendered here by initCarousel
+             (dotsInto / arrowsInto), giving desktop mouse users a clear control. -->
+        <div class="rv-controls" id="reviewsControls"></div>
       </div>
     </section>
 
