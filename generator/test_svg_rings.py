@@ -141,57 +141,101 @@ def _chrome():
 
 
 def test_rendered_ring_is_symmetric():
-    """Rasterize-and-eyeball: render the aligned board and check that a sampled
-    numbered tile's red ring is symmetric (red pixels balanced left/right and
-    top/bottom around the tile centre) — i.e. the crescent ghost is gone."""
+    """Rasterize-and-eyeball: render the aligned board and, for SEVERAL numbered
+    tiles, check (1) the red ring is symmetric (red pixels balanced left/right and
+    top/bottom around the tile centre) — the crescent ghost is gone — AND (2) the
+    tile FACE stays legible: the centre of the tile is NOT painted solid red, so
+    the white disc + number still show through. Tile centres and the board's real
+    viewBox are derived from the SVG (never hardcoded), so a viewBox change or a
+    regression that covers a number is caught."""
     chrome = _chrome()
     if not chrome:
         print("  (skip render check: Chrome not found)")
         return
     from PIL import Image
 
-    svg = svg_rings.align_ring_discs(
-        open(config.clean_path(BASKETBALL, "board"), encoding="utf-8").read()
-    )
+    raw = open(config.clean_path(BASKETBALL, "board"), encoding="utf-8").read()
+    svg = svg_rings.align_ring_discs(raw)
+    # Real viewBox (w, h) from the SVG — no magic 842x595.
+    vb = re.search(r'viewBox="[\d.\-]+ [\d.\-]+ ([\d.]+) ([\d.]+)"', raw)
+    assert vb, "board SVG has no viewBox"
+    vbw, vbh = float(vb.group(1)), float(vb.group(2))
+    # Ring-tile centres straight from the planner (the white tiles the numbers sit on).
+    rings = [c for c in svg_rings.plan_circles(raw) if c and c[3] == "ring"]
+    assert len(rings) >= 10, f"expected many ring tiles, got {len(rings)}"
+
     workdir = "/tmp/gen/test_svg_rings"
     os.makedirs(workdir, exist_ok=True)
     p = os.path.join(workdir, "board.svg")
     png = os.path.join(workdir, "board.png")
     open(p, "w", encoding="utf-8").write(svg)
+    # Render into a window whose aspect matches the board's real viewBox, so the SVG
+    # fills it and viewBox->pixel is one uniform scale (coord/vb * imageSize) with no
+    # letterboxing. Guard that assumption explicitly.
+    win_w = 1123
+    win_h = round(win_w * vbh / vbw)
     subprocess.run(
         [chrome, "--headless", "--disable-gpu", "--force-device-scale-factor=2",
-         f"--screenshot={png}", "--window-size=1123,794", p],
+         f"--screenshot={png}", f"--window-size={win_w},{win_h}", p],
         check=True, stderr=subprocess.DEVNULL,
     )
     img = Image.open(png).convert("RGB")
     W, H = img.size
     px = img.load()
-    # Tile "2" sits at viewBox (~156, ~58) in an 842x595 board. Map to pixels and
-    # scan a window around it.
-    cx = int(156.2 / 842.25 * W)
-    cy = int(58.0 / 595.5 * H)
-    rad = int(40 / 842.25 * W)
+    # The board fills the image, so pixels-per-viewBox-unit must match on both axes.
+    assert abs((W / vbw) - (H / vbh)) < 0.5, ("non-uniform scale", W, H, vbw, vbh)
 
     def is_red(r, g, b):
         return r > 150 and g < 90 and b < 90
 
-    left = right = top = bot = 0
-    for y in range(cy - rad, cy + rad):
-        for x in range(cx - rad, cx + rad):
-            if 0 <= x < W and 0 <= y < H and is_red(*px[x, y]):
-                if x < cx:
-                    left += 1
-                else:
-                    right += 1
-                if y < cy:
-                    top += 1
-                else:
-                    bot += 1
-    assert left + right > 100, "expected to find the red ring around tile 2"
-    # A concentric ring is left/right and top/bottom balanced. The pre-fix crescent
-    # was heavily lopsided; require close balance now.
-    assert abs(left - right) / (left + right) < 0.15, (left, right)
-    assert abs(top - bot) / (top + bot) < 0.15, (top, bot)
+    def is_lightish(r, g, b):
+        # the tile face is white; the number is dark ink on white — either way the
+        # centre is NOT a solid red disc.
+        return not is_red(r, g, b)
+
+    # Sample a spread of tiles across the board (first, some middle ones, last).
+    idxs = sorted({0, len(rings) // 4, len(rings) // 2, (3 * len(rings)) // 4, len(rings) - 1})
+    checked = 0
+    for i in idxs:
+        rcx, rcy, rr, _ = rings[i]
+        cx = int(rcx / vbw * W)
+        cy = int(rcy / vbh * H)
+        rad = int((rr * 1.4) / vbw * W)
+        left = right = top = bot = 0
+        for y in range(cy - rad, cy + rad):
+            for x in range(cx - rad, cx + rad):
+                if 0 <= x < W and 0 <= y < H and is_red(*px[x, y]):
+                    left += x < cx
+                    right += x >= cx
+                    top += y < cy
+                    bot += y >= cy
+        assert left + right > 50, f"tile {i}: expected a red ring, found {left + right} px"
+        # Concentric ring: balanced left/right + top/bottom (the pre-fix crescent
+        # was heavily lopsided).
+        assert abs(left - right) / (left + right) < 0.2, (i, "lr", left, right)
+        assert abs(top - bot) / (top + bot) < 0.2, (i, "tb", top, bot)
+        # Legibility: the centre of the tile is not a solid red fill — the white
+        # face + number must show through. Scan a small window at the exact centre.
+        cwin = max(2, rad // 4)
+        light = red = 0
+        for y in range(cy - cwin, cy + cwin):
+            for x in range(cx - cwin, cx + cwin):
+                if 0 <= x < W and 0 <= y < H:
+                    (red, light) = (red + is_red(*px[x, y]), light + is_lightish(*px[x, y]))
+        assert light > red, f"tile {i} centre painted over red (light={light}, red={red})"
+        checked += 1
+    assert checked >= 4, f"expected to check several tiles, checked {checked}"
+
+
+def test_only_basketball_opts_into_the_ring_fix():
+    """The ring transform runs ONLY for themes that opt in via themes.json
+    "fix_ring_discs": true (build.render_board gates on it), so no other/future
+    board can ever be rewritten. Pin that exactly one theme opts in."""
+    import json
+
+    themes = json.load(open(os.path.join(os.path.dirname(__file__), "themes.json"), encoding="utf-8"))
+    opted = [k for k, v in themes.items() if v.get("fix_ring_discs")]
+    assert opted == [BASKETBALL], opted
 
 
 if __name__ == "__main__":

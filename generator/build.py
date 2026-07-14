@@ -67,8 +67,12 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
     # white tiles before rendering. Some Canva board exports offset (and double)
     # the red outline disc a couple of viewBox units off the white tile, which
     # renders as a red crescent / doubled ring ("ghosting") on every numbered
-    # square. This is a no-op for boards without that pattern.
-    board_svg = svg_rings.align_ring_discs(open(board_clean, encoding="utf-8").read())
+    # square. OPT-IN per theme (themes.json "fix_ring_discs": true) so it can only
+    # ever touch the board it was verified against — never a future/other board
+    # that happens to contain red circular art. align_ring_discs is additionally
+    # a no-op on any SVG lacking the exact ring/tile signature (belt-and-braces).
+    raw_board = open(board_clean, encoding="utf-8").read()
+    board_svg = svg_rings.align_ring_discs(raw_board) if cfg.get("fix_ring_discs") else raw_board
     if not bd:  # theme has no personalized board title -> use the clean board as-is
         return render_svg(board_svg, w, h, out_png)
     frac = bd["frac"]

@@ -190,6 +190,7 @@
   "display_he": "דוגרי יום הולדת בנים כדורסל",
   "dir": "resources/canva/templates/birthday-boys-basketball",
   "recipe": "birthday-boys-basketball",
+  "fix_ring_discs": true,
   "visibility": "public",
   "title_text": "{NAME} בן {AGE}",
   "title_lines": [
