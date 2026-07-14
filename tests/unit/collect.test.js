@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeWord, dedupeWords, parseWordText, buildBulkCsv } from '../../site/js/collect.js';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import {
+  normalizeWord,
+  dedupeWords,
+  parseWordText,
+  buildBulkCsv,
+  newestFirst,
+} from '../../site/js/collect.js';
 import { fillName, nextPrompt, PROMPTS } from '../../site/js/word-prompts.js';
 
 describe('normalizeWord', () => {
@@ -58,6 +66,20 @@ describe('buildBulkCsv', () => {
   });
 });
 
+describe('newestFirst', () => {
+  it('returns words newest-first (reversed) without mutating the source', () => {
+    const src = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    expect(newestFirst(src).map((w) => w.id)).toEqual([3, 2, 1]);
+    // The source array is untouched, so delete/edit keep targeting words by id.
+    expect(src.map((w) => w.id)).toEqual([1, 2, 3]);
+  });
+  it('handles empty and non-array input', () => {
+    expect(newestFirst([])).toEqual([]);
+    expect(newestFirst(null)).toEqual([]);
+    expect(newestFirst(undefined)).toEqual([]);
+  });
+});
+
 describe('word prompts', () => {
   it('fillName interpolates the honoree name', () => {
     expect(fillName('איך קוראים ל{name}?', 'שירה')).toBe('איך קוראים לשירה?');
@@ -73,5 +95,25 @@ describe('word prompts', () => {
     const seen = PROMPTS.slice(1).map((p) => p.id); // everything except the first
     const p = nextPrompt(seen, () => 0.999);
     expect(p.id).toBe(PROMPTS[0].id);
+  });
+});
+
+// Regression guard for the duplicate-key bug: every data-edit / data-edit-img
+// key on collect.html must be unique. A reused key makes the content editor
+// mirror one field's edit onto every same-key node (and applyOverrides rewrites
+// them all on load), so two controls can never carry distinct text.
+describe('collect.html editable keys', () => {
+  it('has no duplicate data-edit / data-edit-img keys', () => {
+    // vitest runs from the repo root; read the shipped HTML directly (this test
+    // runs under jsdom, where import.meta.url is not a file: URL).
+    const html = readFileSync(path.resolve('site/collect.html'), 'utf8');
+    const keys = [...html.matchAll(/data-edit(?:-img)?="([^"]+)"/g)].map((m) => m[1]);
+    const seen = new Set();
+    const dupes = [];
+    for (const k of keys) {
+      if (seen.has(k)) dupes.push(k);
+      seen.add(k);
+    }
+    expect(dupes).toEqual([]);
   });
 });
