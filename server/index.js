@@ -1275,6 +1275,7 @@ app.post(
     if (!file || !Buffer.isBuffer(file.data)) {
       return res.status(400).json({ error: 'no image file part' });
     }
+    const before = content.getPhotos(page, key);
     let img;
     try {
       img = content.saveImageBytes(file.data);
@@ -1282,7 +1283,21 @@ app.post(
       return res.status(400).json({ error: String((e && e.message) || e) });
     }
     const imgs = content.addPhoto(page, key, img);
-    if (imgs == null) return res.status(400).json({ error: 'bad page or key' });
+    if (imgs == null) {
+      // Bad page/key AFTER the file was written — reclaim the orphan if unreferenced.
+      if (!content.isImageReferenced(img)) content.deleteUpload(img);
+      return res.status(400).json({ error: 'bad page or key' });
+    }
+    // The upload was DROPPED (array already at PHOTO_CAP, or a content-hash
+    // duplicate) → the array didn't grow. Don't report a false success: delete the
+    // just-written orphan (only when nothing else references this shared, content-
+    // addressed file) and return a clear 409 the owner sees.
+    if (imgs.length <= before.length) {
+      if (!content.isImageReferenced(img)) content.deleteUpload(img);
+      const atCap = before.length >= content.PHOTO_CAP;
+      const error = atCap ? `הגעת למקסימום ${content.PHOTO_CAP} תמונות` : 'התמונה כבר קיימת בגלריה';
+      return res.status(409).json({ error, imgs });
+    }
     res.json({ ok: true, img, imgs });
   }
 );

@@ -202,6 +202,49 @@ function remove(page, key) {
   return true;
 }
 
+// Is `imgPath` referenced by ANY page/key in the store (as a single `img` or in an
+// `imgs` array)? Uploads are content-addressed and shared across the whole store,
+// so a file must NOT be deleted while any override still points at it — this guard
+// makes orphan cleanup (a dropped photo upload) safe. Own-property only, so a key
+// literally named "__proto__" can't smuggle in a prototype hit.
+function isImageReferenced(imgPath) {
+  const target = String(imgPath || '');
+  if (!target) return false;
+  for (const page of Object.keys(_store)) {
+    const bag = _store[page];
+    if (!bag) continue;
+    for (const k of Object.keys(bag)) {
+      const entry = bag[k] || {};
+      if (entry.img === target) return true;
+      if (Array.isArray(entry.imgs) && entry.imgs.indexOf(target) !== -1) return true;
+    }
+  }
+  return false;
+}
+
+// Delete an uploaded file by its "/content-uploads/<name>" path. Used to reclaim an
+// ORPHAN — a just-written upload that was then dropped (photo array at cap, or a
+// content-hash duplicate that isn't the one being referenced). The name is
+// re-validated to the exact hash+ext shape so this can never touch anything else.
+// Returns true if a file was removed. Callers MUST first confirm the path is not
+// referenced anywhere (isImageReferenced) — content-addressed files are shared.
+function deleteUpload(imgPath) {
+  const name = String(imgPath || '')
+    .split('/')
+    .pop();
+  if (!/^[a-f0-9]{16}\.(webp|jpe?g|png)$/.test(name)) return false;
+  const file = path.join(UPLOAD_DIR, name);
+  try {
+    if (fs.existsSync(file)) {
+      fs.unlinkSync(file);
+      return true;
+    }
+  } catch {
+    /* best-effort cleanup — a failure just leaves the file, never throws */
+  }
+  return false;
+}
+
 // Persist raw image bytes under DATA_DIR/content-uploads and return the public
 // "/content-uploads/<name>" path. The name is a content hash + the sniffed
 // extension, so identical bytes de-dupe and the extension can't be spoofed.
@@ -230,6 +273,8 @@ module.exports = {
   addPhoto,
   setPhotos,
   sanitizePhotos,
+  isImageReferenced,
+  deleteUpload,
   remove,
   saveImageBytes,
   extFromMagic,

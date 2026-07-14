@@ -227,12 +227,55 @@ test.describe('per-product photo carousel + editable content', () => {
 
     await page.goto('/product.html?design=bachelorette');
 
+    // The core PDP paints defaults first, then swaps to the custom photos once the
+    // overrides resolve — poll so we assert the settled state, not the interim one.
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
-    await expect(slides).toHaveCount(3);
-    const srcs = await slides.evaluateAll((els) => els.map((i) => i.getAttribute('src')));
-    expect(srcs).toEqual(imgs); // custom photos, in order (not the default renders)
+    await expect
+      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .toEqual(imgs); // custom photos, in order (not the default renders)
     // Dots: one per photo (the shared carousel look).
     await expect(page.locator('#galleryDots .carousel-dot')).toHaveCount(3);
+  });
+
+  // Item 1 fix (FCP/availability): first paint must NOT block on /api/content. Even
+  // with the content endpoint hung, the shopper still sees the gallery, price and a
+  // working buy CTA (rendered synchronously from the bundled catalog).
+  test('the core PDP renders without waiting on /api/content (no FCP block)', async ({ page }) => {
+    // Hold /api/content open for the whole test so overrides never resolve.
+    await page.route('**/api/content*', async () => {
+      await new Promise(() => {}); // never fulfilled
+    });
+    await page.goto('/product.html?design=bachelorette', { waitUntil: 'commit' });
+
+    // Gallery (default renders), price and buy CTA are all present + correct.
+    await expect(page.locator('#galleryTrack .pdp-gallery-slide img').first()).toBeVisible();
+    await expect(page.locator('#pdpTitle')).not.toHaveText('');
+    await expect(page.locator('#pdpPriceNow')).toContainText('מ-79 ₪');
+    await expect(page.getByTestId('pdp-buy')).toHaveAttribute(
+      'href',
+      'options.html?design=bachelorette&step=2'
+    );
+    const srcs = await page
+      .locator('#galleryTrack .pdp-gallery-slide img')
+      .evaluateAll((els) => els.map((i) => i.getAttribute('src') || ''));
+    for (const src of srcs) expect(src).toMatch(/gallery-(front|back|board)\.webp$/);
+  });
+
+  // Item 5 fix (dedupe): product.js reuses the editor's single /api/content fetch
+  // instead of issuing its own — so the hottest endpoint is hit exactly once.
+  test('the page fetches /api/content only once (product reuses the editor fetch)', async ({
+    page,
+  }) => {
+    let contentGets = 0;
+    await page.route('**/api/content*', (route) => {
+      contentGets += 1;
+      return route.fulfill({ json: { overrides: {} } });
+    });
+    await page.goto('/product.html?design=bachelorette');
+    await expect(page.locator('#pdpAbout')).not.toHaveText('');
+    // Give any stray second request a chance to fire before asserting.
+    await page.waitForTimeout(300);
+    expect(contentGets).toBe(1);
   });
 
   test('with NO custom photos the gallery falls back to the default renders', async ({ page }) => {
@@ -381,5 +424,86 @@ test.describe('per-product photo carousel + editable content', () => {
       expect(srcs.length).toBeGreaterThan(0);
       for (const src of srcs) expect(src).toMatch(/gallery-(front|back|board)\.webp$/);
     }).toPass();
+  });
+
+  // Item 3 fix (concurrency): rapid consecutive reorder clicks must not drop edits.
+  // Each op mutates the live order synchronously and the full-array PUTs are queued
+  // in order, so the LAST persisted order matches exactly what the owner did.
+  test('rapid consecutive reorders keep every edit (last saved order is correct)', async ({
+    page,
+  }) => {
+    const A = '/content-uploads/aaaaaaaaaaaaaaaa.png';
+    const B = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
+    const C = '/content-uploads/cccccccccccccccc.jpg';
+    let saved = [A, B, C];
+    const puts = [];
+    await page.route('**/api/content*', (route) =>
+      route.fulfill({ json: { overrides: { 'product-bachelorette-photos': { imgs: saved } } } })
+    );
+    await page.route('**/content-uploads/*', (route) =>
+      route.fulfill({ contentType: 'image/png', body: PNG })
+    );
+    // Delay each PUT a little so the two clicks overlap; capture every order.
+    await page.route('**/api/admin/content/photos*', async (route) => {
+      if (route.request().method() === 'PUT') {
+        const imgs = route.request().postDataJSON().imgs;
+        puts.push(imgs);
+        await new Promise((r) => setTimeout(r, 120));
+        saved = imgs;
+        return route.fulfill({ json: { ok: true, imgs } });
+      }
+      return route.fulfill({ json: { ok: true, imgs: saved } });
+    });
+
+    await page.goto('/product.html?design=bachelorette&edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+    await expect(page.locator('.dugri-photos__item')).toHaveCount(3);
+
+    // Two quick moves that BUILD on each other: [A,B,C] → (move item0 fwd) [B,A,C]
+    // → (move item1 fwd) [B,C,A]. The second click must read the order the first
+    // left behind (a stale base would compute a different, wrong result).
+    // .dugri-photos__btn per item = [◀ back, ▶ forward, ✕ remove]; forward = nth(1).
+    await page.locator('.dugri-photos__item').nth(0).locator('.dugri-photos__btn').nth(1).click();
+    await page.locator('.dugri-photos__item').nth(1).locator('.dugri-photos__btn').nth(1).click();
+
+    // The final persisted order (last PUT) is [B,C,A] — no edit lost.
+    await expect.poll(() => (puts.length ? puts[puts.length - 1] : null)).toEqual([B, C, A]);
+    // And the live carousel reflects that same final order.
+    await expect
+      .poll(() =>
+        page
+          .locator('#galleryTrack .pdp-gallery-slide img')
+          .evaluateAll((els) => els.map((i) => i.getAttribute('src')))
+      )
+      .toEqual([B, C, A]);
+  });
+
+  // Item 2 fix (client half): a dropped upload (server 409 at the 12-photo cap)
+  // surfaces the server's clear Hebrew message, never a false "נשמר".
+  test('an add beyond the cap shows the server’s max-photos message (no false success)', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content/photos*', (route) => {
+      if (route.request().method() === 'POST') {
+        return route.fulfill({
+          status: 409,
+          json: { error: 'הגעת למקסימום 12 תמונות', imgs: [] },
+        });
+      }
+      return route.fulfill({ json: { ok: true, imgs: [] } });
+    });
+
+    await page.goto('/product.html?design=bachelorette&edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+    const add = page.locator('.dugri-photos__add');
+    await expect(add).toBeVisible();
+
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), add.click()]);
+    await chooser.setFiles({ name: 'p.png', mimeType: 'image/png', buffer: PNG });
+
+    // The status shows the cap message, not "נשמר", and no photo was added.
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('הגעת למקסימום 12 תמונות');
+    await expect(page.locator('.dugri-photos__item')).toHaveCount(0);
   });
 });

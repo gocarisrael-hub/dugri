@@ -30,6 +30,26 @@
   var _overrides = null; // last fetched page overrides (applied for every visitor)
   var _rebind = null; // edit-mode (root)=>void: overlay + bind newly-injected nodes
   var _editActive = false;
+  var _ready = false; // true once the overrides fetch has settled (success OR fail)
+  var _readyCbs = []; // onReady() callbacks, flushed with _overrides when ready
+
+  // The overrides fetch has settled — normalise a failure to {} and flush any
+  // onReady() waiters (product.js reuses this single fetch instead of a second GET
+  // of the hottest endpoint). Idempotent.
+  function markReady() {
+    if (_ready) return;
+    if (_overrides == null) _overrides = {};
+    _ready = true;
+    var cbs = _readyCbs;
+    _readyCbs = [];
+    cbs.forEach(function (cb) {
+      try {
+        cb(_overrides);
+      } catch {
+        /* a bad callback must not break the others */
+      }
+    });
+  }
 
   // The site's editable pages, in toolbar order. The page picker lets the owner
   // jump between them WITHOUT leaving edit mode. Each `page` is the html filename
@@ -236,6 +256,12 @@
         /* fail soft — shipped defaults stay */
       })
       .then(function () {
+        // The fetch has settled (success or failure) — publish readiness so pages
+        // that reuse these overrides (product.js) proceed. Done BEFORE edit mode is
+        // resolved: a normal visitor still needs the overrides, and in edit mode the
+        // injected nodes are already present (product renders synchronously), so
+        // enableEditMode's own rebind binds them regardless of callback ordering.
+        markReady();
         // Edit mode is owner-only and layered AFTER overrides are applied, so the
         // owner edits the current copy. Fail closed: no ?edit → never enable.
         if (!resolved.edit) return;
@@ -606,57 +632,70 @@
       addBtn.textContent = '➕ הוסף תמונה';
       panel.append(head, list, addBtn);
 
-      function currentImgs() {
-        return (((_overrides || {})[photoKey] || {}).imgs || []).slice();
-      }
-      // Reflect a new array locally, tell the page to rebuild its carousel, re-render.
+      // `working` is the LIVE local truth for this carousel's order. Move/remove
+      // mutate it SYNCHRONOUSLY (so indices resolve against what's on screen, never
+      // a stale base), and every write is a full-array PUT queued in order — the
+      // last one wins with the correct final order, so rapid consecutive clicks
+      // never drop an edit (the concurrency fix).
+      var working = (((_overrides || {})[photoKey] || {}).imgs || []).slice();
+      var saveQueue = Promise.resolve();
+
+      // Reflect the new order locally (store + carousel + panel) right away.
       function applyImgs(next) {
+        working = next.slice();
         if (!_overrides) _overrides = {};
-        _overrides[photoKey] = Object.assign({}, _overrides[photoKey], { imgs: next });
+        _overrides[photoKey] = Object.assign({}, _overrides[photoKey], { imgs: working.slice() });
         document.dispatchEvent(
-          new CustomEvent('dugri:photos-changed', { detail: { key: photoKey, imgs: next } })
+          new CustomEvent('dugri:photos-changed', {
+            detail: { key: photoKey, imgs: working.slice() },
+          })
         );
         render();
       }
-      function persistOrder(next) {
+      // Serialize a full-array PUT after `saveQueue`, so writes land in click order.
+      function queuePut() {
+        var snapshot = working.slice();
         setStatus('שומר…');
-        trackPending(
-          putPhotoOrder(page, key, photoKey, next).then(
-            function (data) {
-              applyImgs((data && data.imgs) || next);
+        var p = saveQueue.then(function () {
+          return putPhotoOrder(page, key, photoKey, snapshot).then(
+            function () {
               setStatus('נשמר');
             },
             function () {
               setStatus('שגיאה בשמירה');
             }
-          )
-        );
+          );
+        });
+        saveQueue = p;
+        trackPending(p);
       }
       function move(from, to) {
-        var cur = currentImgs();
-        if (to < 0 || to >= cur.length) return;
-        var x = cur.splice(from, 1)[0];
-        cur.splice(to, 0, x);
-        persistOrder(cur);
+        if (to < 0 || to >= working.length) return;
+        var next = working.slice();
+        next.splice(to, 0, next.splice(from, 1)[0]);
+        applyImgs(next); // optimistic + synchronous → indices stay correct
+        queuePut();
       }
       function removeAt(i) {
-        var cur = currentImgs();
-        cur.splice(i, 1);
-        persistOrder(cur);
+        var next = working.slice();
+        next.splice(i, 1);
+        applyImgs(next);
+        queuePut();
       }
       function addPhoto() {
+        // A DETACHED input — never added to the DOM — so a cancelled picker (which
+        // fires no 'change') leaves no leaked node/listener behind (the leak fix).
         var input = document.createElement('input');
         input.type = 'file';
         input.accept = 'image/png,image/jpeg,image/webp';
-        input.style.display = 'none';
-        document.body.appendChild(input);
         input.addEventListener('change', function () {
           var file = input.files && input.files[0];
-          document.body.removeChild(input);
           if (!file) return;
           setStatus('מעלה תמונה…');
-          trackPending(
-            postPhotoUpload(page, key, photoKey, file).then(
+          // Chain the upload after any pending order writes so appends and reorders
+          // stay in order; the server returns the whole array we then adopt.
+          var p = saveQueue.then(function () {
+            return postPhotoUpload(page, key, photoKey, file).then(
               function (data) {
                 if (data && data.imgs) {
                   applyImgs(data.imgs);
@@ -665,16 +704,20 @@
                   setStatus('שגיאה בהעלאה');
                 }
               },
-              function () {
-                setStatus('שגיאה בהעלאה');
+              function (err) {
+                // The server rejects a drop (cap reached / duplicate) with a clear
+                // Hebrew message — surface it instead of a generic error.
+                setStatus((err && err.userMessage) || 'שגיאה בהעלאה');
               }
-            )
-          );
+            );
+          });
+          saveQueue = p;
+          trackPending(p);
         });
         input.click();
       }
       function render() {
-        var cur = currentImgs();
+        var cur = working;
         head.textContent = 'תמונות המוצר (' + cur.length + ')';
         list.textContent = '';
         cur.forEach(function (src, i) {
@@ -813,14 +856,13 @@
   }
 
   function openImagePicker(page, key, editKey, setStatus, onDone, hooks) {
+    // A DETACHED input — never added to the DOM — so a cancelled picker (no
+    // 'change' event) can't leak a node/listener on every open/cancel cycle.
     var input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/png,image/jpeg,image/webp';
-    input.style.display = 'none';
-    document.body.appendChild(input);
     input.addEventListener('change', function () {
       var file = input.files && input.files[0];
-      document.body.removeChild(input);
       if (!file) return;
       // Mark the field unsaved (pending) and TRACK the upload so Save / Save&Exit /
       // the page picker WAIT for it and won't navigate away mid-upload (losing the
@@ -916,6 +958,23 @@
       method: 'POST',
       body: fd,
     }).then(function (r) {
+      // A 409 means the photo was DROPPED (at the 12-photo cap, or a duplicate) —
+      // surface the server's Hebrew message on the rejection so the owner sees WHY,
+      // not a generic error.
+      if (r.status === 409) {
+        return r.json().then(
+          function (d) {
+            var e = new Error((d && d.error) || 'לא ניתן להוסיף תמונה');
+            e.userMessage = (d && d.error) || 'לא ניתן להוסיף תמונה';
+            throw e;
+          },
+          function () {
+            var e = new Error('לא ניתן להוסיף תמונה');
+            e.userMessage = 'לא ניתן להוסיף תמונה';
+            throw e;
+          }
+        );
+      }
       return adminResult(r, 'upload failed', key);
     });
   }
@@ -1026,21 +1085,35 @@
 
   // Public runtime hook for pages that inject editable content AFTER this engine's
   // initial scan (product.js renders the per-design name / about / photo carousel
-  // once ?design resolves). notifyInjected() re-overlays the fetched overrides on
+  // once ?design resolves). notifyInjected() (re)overlays the fetched overrides on
   // the whole document and, in edit mode, binds any newly-injected editable nodes
-  // (idempotent). Safe to call before the engine is ready — it no-ops until the
-  // overrides load and edit mode is resolved, and the bootstrap then covers the
-  // already-present injected nodes. Fail-closed: no edit affordance without an
-  // active edit session.
+  // (idempotent). In edit mode rebindEditable() already overlays the overrides, so
+  // we let it own that; only outside edit mode do we overlay directly. Safe to call
+  // before the engine is ready — it no-ops until the overrides load and edit mode is
+  // resolved, and the bootstrap then covers the already-present injected nodes.
+  // Fail-closed: no edit affordance without an active edit session.
   function notifyInjected() {
-    if (_overrides) applyOverrides(document, _overrides);
-    if (_rebind) _rebind(document);
+    if (_rebind)
+      _rebind(document); // rebindEditable overlays AND binds
+    else if (_overrides) applyOverrides(document, _overrides); // public: overlay only
   }
   if (typeof window !== 'undefined') {
     window.dugriEditor = {
       notifyInjected: notifyInjected,
       isEditActive: function () {
         return _editActive;
+      },
+      // The already-fetched page overrides (or null before the fetch settles), so a
+      // cooperating page reuses this single GET instead of a second round-trip.
+      getOverrides: function () {
+        return _overrides;
+      },
+      // Call `cb(overrides)` once the overrides fetch has settled (immediately if
+      // already ready). Lets product.js await the shared fetch without its own GET.
+      onReady: function (cb) {
+        if (typeof cb !== 'function') return;
+        if (_ready) cb(_overrides);
+        else _readyCbs.push(cb);
       },
     };
   }

@@ -365,9 +365,45 @@ function onPhotosChanged(e) {
   rebuildCarousels(galleryShots(currentDesign, currentOverrides));
 }
 
-// Fetch this page's content overrides (per-design name/about/photos). Fail-soft:
-// any error yields {} so the shipped defaults render.
-function fetchOverrides() {
+// Apply the per-design NAME/ABOUT text overrides onto the already-rendered nodes
+// (the core render used the defaults). Idempotent; safe to call with {}.
+function applyTextOverrides(d, overrides) {
+  const keys = overrideKeys(d.id);
+  const title = document.getElementById('pdpTitle');
+  const nameOv = overrideText(overrides, keys.name);
+  if (title && nameOv != null) {
+    title.textContent = nameOv;
+    document.title = `${nameOv} · דוגרי`;
+  }
+  const about = document.getElementById('pdpAbout');
+  const aboutOv = overrideText(overrides, keys.about);
+  if (about && aboutOv != null) about.textContent = aboutOv;
+}
+
+// Overlay the per-design overrides once they resolve: swap in saved name/about
+// text and, if the owner curated custom photos, rebuild the carousels. Then hand
+// off to the editor so edit mode binds the freshly-injected nodes. Runs even with
+// {} so edit affordances still attach when there are no overrides.
+function applyOverridesToPage(d, overrides) {
+  currentOverrides = overrides || {};
+  applyTextOverrides(d, currentOverrides);
+  if (photosFromOverride(currentOverrides, d.id).length) {
+    rebuildCarousels(galleryShots(d, currentOverrides));
+  }
+  if (window.dugriEditor && typeof window.dugriEditor.notifyInjected === 'function') {
+    window.dugriEditor.notifyInjected();
+  }
+}
+
+// Get this page's content overrides. Preferred path REUSES the editor's single
+// /api/content fetch (window.dugriEditor.onReady) so the hottest endpoint isn't
+// hit twice per load. Only when the editor engine isn't present do we fetch
+// directly. Fail-soft: any error yields {} so the shipped defaults stand.
+function loadOverrides() {
+  const ed = typeof window !== 'undefined' ? window.dugriEditor : null;
+  if (ed && typeof ed.onReady === 'function') {
+    return new Promise((resolve) => ed.onReady((ov) => resolve(ov || {})));
+  }
   return fetch('/api/content?page=product.html')
     .then((r) => (r.ok ? r.json() : { overrides: {} }))
     .then((data) => (data && data.overrides) || {})
@@ -375,28 +411,29 @@ function fetchOverrides() {
 }
 
 // ---- boot ---------------------------------------------------------------
-async function boot() {
+function boot() {
   const d = resolveDesign();
   if (!d) return; // no public designs at all — leave the static shell as-is
   currentDesign = d;
-  currentOverrides = await fetchOverrides();
+  currentOverrides = {};
 
-  const shots = galleryShots(d, currentOverrides);
-  renderInfo(d, currentOverrides);
+  // FIRST PAINT must never block on the network: render the core PDP (gallery,
+  // title, price, buy CTA, related) SYNCHRONOUSLY from the bundled catalog. A
+  // slow / failed /api/content then only affects the per-design overrides, never
+  // the shopper's ability to see the product and buy.
+  const shots = galleryShots(d, currentOverrides); // defaults (no overrides yet)
+  renderInfo(d, currentOverrides); // tags nodes + default name/about + price + buy
   renderGallery(shots);
   renderZoomSlides(shots);
   wireZoom();
   renderRelated(d);
   wireBack();
   markPhotosEditable(d);
-
-  // Let edit mode bind the freshly-injected editable nodes (name/about/photos)
-  // and re-overlay overrides. Safe no-op when the editor isn't ready/active yet —
-  // its own bootstrap then covers the already-present nodes.
-  if (window.dugriEditor && typeof window.dugriEditor.notifyInjected === 'function') {
-    window.dugriEditor.notifyInjected();
-  }
   document.addEventListener('dugri:photos-changed', onPhotosChanged);
+
+  // THEN overlay the per-design overrides when they resolve (reusing the editor's
+  // fetch). Fail-soft: loadOverrides never rejects.
+  loadOverrides().then((ov) => applyOverridesToPage(d, ov));
 }
 
 // Auto-boot only on the real page (a #galleryTrack exists). A bare test import of
