@@ -21,6 +21,16 @@
   var LS_KEY = 'dugri_admin_key';
   var TEXT_CAP = 5000;
 
+  // Cross-module coordination. Some pages inject editable content AFTER this
+  // engine's initial scan (product.js renders the per-design name / about text and
+  // the photo carousel once its ?design resolves). We keep the fetched overrides
+  // and, in edit mode, a rebind hook so late-injected [data-edit] / [data-edit-img]
+  // / [data-edit-photos] nodes still get overlaid + wired. A cooperating page calls
+  // window.dugriEditor.notifyInjected() after it injects (see the export below).
+  var _overrides = null; // last fetched page overrides (applied for every visitor)
+  var _rebind = null; // edit-mode (root)=>void: overlay + bind newly-injected nodes
+  var _editActive = false;
+
   // The site's editable pages, in toolbar order. The page picker lets the owner
   // jump between them WITHOUT leaving edit mode. Each `page` is the html filename
   // the server serves (matches <meta name="dugri:page">); `label` is the RTL name.
@@ -219,7 +229,8 @@
         return r.ok ? r.json() : { overrides: {} };
       })
       .then(function (data) {
-        applyOverrides(document, (data && data.overrides) || {});
+        _overrides = (data && data.overrides) || {};
+        applyOverrides(document, _overrides);
       })
       .catch(function () {
         /* fail soft — shipped defaults stay */
@@ -450,9 +461,26 @@
       true
     );
 
-    // Text leaves become editable; auto-save on blur when the text differs from what
-    // was last saved. Register each field's representative node + its loaded value.
-    document.querySelectorAll('[data-edit]').forEach(function (el) {
+    // Track an in-flight write so Save / Save&Exit / the page picker WAIT for it
+    // (dirtiness itself is derived from state; this list only lets a commit await
+    // still-settling uploads). Self-cleans on settle.
+    function trackPending(p) {
+      pendingUploads.push(p);
+      var rm = function () {
+        var i = pendingUploads.indexOf(p);
+        if (i > -1) pendingUploads.splice(i, 1);
+      };
+      p.then(rm, rm);
+      return p;
+    }
+
+    // Bind ONE editable text leaf: make it editable and auto-save on blur when the
+    // text differs from what was last saved. Idempotent — a node injected AFTER the
+    // initial scan (product.js's per-design name/about) is bound on the next
+    // rebindEditable() with no double-wiring.
+    function bindTextNode(el) {
+      if (el.__dugriEditBound) return;
+      el.__dugriEditBound = true;
       el.classList.add('dugri-edit-target');
       el.setAttribute('contenteditable', 'plaintext-only');
       // Safari/Firefox ignore plaintext-only — fall back to plain contenteditable.
@@ -486,10 +514,13 @@
         if (!state.isTextDirty(fieldKey, next)) return;
         saveTextField(fieldKey, next);
       });
-    });
+    }
 
-    // Photos + CSS-background heroes: click to pick a replacement image.
-    document.querySelectorAll('[data-edit-img],[data-edit-bg]').forEach(function (el) {
+    // Bind ONE photo / CSS-background hero: click to pick a replacement image.
+    // Idempotent, same as bindTextNode.
+    function bindImgNode(el) {
+      if (el.__dugriEditBound) return;
+      el.__dugriEditBound = true;
       el.classList.add('dugri-edit-target', 'dugri-edit-img');
       el.setAttribute('tabindex', '0');
       el.setAttribute('role', 'button');
@@ -520,14 +551,7 @@
             onFailed: function () {
               state.setImg(editKey, 'failed');
             },
-            trackUpload: function (p) {
-              pendingUploads.push(p);
-              var rm = function () {
-                var i = pendingUploads.indexOf(p);
-                if (i > -1) pendingUploads.splice(i, 1);
-              };
-              p.then(rm, rm);
-            },
+            trackUpload: trackPending,
           }
         );
       }
@@ -541,7 +565,163 @@
           pick();
         }
       });
-    });
+    }
+
+    // A small square control button used inside the photo manager.
+    function mkPhotoCtl(glyph, label, disabled, onClick) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'dugri-photos__btn';
+      b.textContent = glyph;
+      b.setAttribute('aria-label', label);
+      b.title = label;
+      b.disabled = !!disabled;
+      b.addEventListener('click', onClick);
+      return b;
+    }
+
+    // Bind ONE per-product PHOTO ARRAY manager. A [data-edit-photos="<key>"]
+    // container (product.js tags the PDP gallery with product-<id>-photos) gets an
+    // owner-only panel to ADD / REMOVE / REORDER the carousel photos. Each action
+    // persists immediately to the server (like a single-image replace) and fires
+    // 'dugri:photos-changed' so the page rebuilds its carousel live. The photos live
+    // in the same content-overrides store under the key's `imgs` array; an empty
+    // array means the page falls back to its shipped default photos.
+    function bindPhotoManager(container) {
+      if (container.__dugriPhotoBound) return;
+      container.__dugriPhotoBound = true;
+      var photoKey = container.getAttribute('data-edit-photos');
+      if (!photoKey) return;
+
+      var panel = document.createElement('div');
+      panel.className = 'dugri-photos';
+      panel.setAttribute('dir', 'rtl');
+      var head = document.createElement('div');
+      head.className = 'dugri-photos__head';
+      var list = document.createElement('div');
+      list.className = 'dugri-photos__list';
+      var addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'dugri-photos__add';
+      addBtn.textContent = '➕ הוסף תמונה';
+      panel.append(head, list, addBtn);
+
+      function currentImgs() {
+        return (((_overrides || {})[photoKey] || {}).imgs || []).slice();
+      }
+      // Reflect a new array locally, tell the page to rebuild its carousel, re-render.
+      function applyImgs(next) {
+        if (!_overrides) _overrides = {};
+        _overrides[photoKey] = Object.assign({}, _overrides[photoKey], { imgs: next });
+        document.dispatchEvent(
+          new CustomEvent('dugri:photos-changed', { detail: { key: photoKey, imgs: next } })
+        );
+        render();
+      }
+      function persistOrder(next) {
+        setStatus('שומר…');
+        trackPending(
+          putPhotoOrder(page, key, photoKey, next).then(
+            function (data) {
+              applyImgs((data && data.imgs) || next);
+              setStatus('נשמר');
+            },
+            function () {
+              setStatus('שגיאה בשמירה');
+            }
+          )
+        );
+      }
+      function move(from, to) {
+        var cur = currentImgs();
+        if (to < 0 || to >= cur.length) return;
+        var x = cur.splice(from, 1)[0];
+        cur.splice(to, 0, x);
+        persistOrder(cur);
+      }
+      function removeAt(i) {
+        var cur = currentImgs();
+        cur.splice(i, 1);
+        persistOrder(cur);
+      }
+      function addPhoto() {
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/png,image/jpeg,image/webp';
+        input.style.display = 'none';
+        document.body.appendChild(input);
+        input.addEventListener('change', function () {
+          var file = input.files && input.files[0];
+          document.body.removeChild(input);
+          if (!file) return;
+          setStatus('מעלה תמונה…');
+          trackPending(
+            postPhotoUpload(page, key, photoKey, file).then(
+              function (data) {
+                if (data && data.imgs) {
+                  applyImgs(data.imgs);
+                  setStatus('נשמר');
+                } else {
+                  setStatus('שגיאה בהעלאה');
+                }
+              },
+              function () {
+                setStatus('שגיאה בהעלאה');
+              }
+            )
+          );
+        });
+        input.click();
+      }
+      function render() {
+        var cur = currentImgs();
+        head.textContent = 'תמונות המוצר (' + cur.length + ')';
+        list.textContent = '';
+        cur.forEach(function (src, i) {
+          var item = document.createElement('figure');
+          item.className = 'dugri-photos__item';
+          var im = document.createElement('img');
+          im.src = src;
+          im.alt = '';
+          var ctl = document.createElement('div');
+          ctl.className = 'dugri-photos__ctl';
+          ctl.append(
+            mkPhotoCtl('◀', 'הזזה אחורה', i <= 0, function () {
+              move(i, i - 1);
+            }),
+            mkPhotoCtl('▶', 'הזזה קדימה', i >= cur.length - 1, function () {
+              move(i, i + 1);
+            })
+          );
+          var del = mkPhotoCtl('✕', 'הסרת התמונה', false, function () {
+            removeAt(i);
+          });
+          del.classList.add('dugri-photos__del');
+          ctl.appendChild(del);
+          item.append(im, ctl);
+          list.appendChild(item);
+        });
+      }
+
+      addBtn.addEventListener('click', addPhoto);
+      render();
+      container.insertAdjacentElement('afterend', panel);
+    }
+
+    // Overlay overrides + (re)bind every editable node under `root`. Called once on
+    // enable and again whenever a page injects late content (notifyInjected). All
+    // three binders are idempotent, so re-scanning the whole document is safe.
+    function rebindEditable(root) {
+      var scope = root || document;
+      if (_overrides) applyOverrides(scope, _overrides);
+      scope.querySelectorAll('[data-edit]').forEach(bindTextNode);
+      scope.querySelectorAll('[data-edit-img],[data-edit-bg]').forEach(bindImgNode);
+      scope.querySelectorAll('[data-edit-photos]').forEach(bindPhotoManager);
+    }
+    rebindEditable(document);
+    // Expose the rebind hook + edit-active flag for late-injecting pages.
+    _rebind = rebindEditable;
+    _editActive = true;
 
     // Reset the focused element to its shipped default (DELETE + reload so the
     // fresh HTML — the default — is served again with no override applied).
@@ -725,6 +905,30 @@
       return adminResult(r, 'upload failed', key);
     });
   }
+  // APPEND one uploaded photo to a per-key photo array (a product carousel).
+  // Resolves to { ok, img, imgs } — the whole new array so the client re-renders.
+  function postPhotoUpload(page, key, editKey, file) {
+    var fd = new window.FormData();
+    fd.append('page', page);
+    fd.append('key', editKey);
+    fd.append('file', file);
+    return fetch(adminUrl('/api/admin/content/photos', key), {
+      method: 'POST',
+      body: fd,
+    }).then(function (r) {
+      return adminResult(r, 'upload failed', key);
+    });
+  }
+  // REPLACE a per-key photo array (remove + reorder send the desired full order).
+  function putPhotoOrder(page, key, editKey, imgs) {
+    return fetch(adminUrl('/api/admin/content/photos', key), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page: page, key: editKey, imgs: imgs }),
+    }).then(function (r) {
+      return adminResult(r, 'save failed', key);
+    });
+  }
 
   // ---- toolbar + styles ------------------------------------------------------
 
@@ -781,6 +985,21 @@
       '.dugri-editbar__btn:disabled{opacity:.4;cursor:default;}',
       '.dugri-editbar__btn--exit{background:#c98a2b;color:#fff;}',
       '@media (prefers-reduced-motion: reduce){.dugri-editbar__btn{transition:none;}}',
+      // per-product photo manager (edit mode only)
+      '.dugri-photos{margin-top:12px;padding:12px;border:2px dashed #c98a2b;border-radius:12px;',
+      'background:rgba(201,138,43,.06);direction:rtl;}',
+      '.dugri-photos__head{font-weight:700;font-size:14px;margin-bottom:8px;color:#1c1a17;}',
+      '.dugri-photos__list{display:flex;flex-wrap:wrap;gap:10px;}',
+      '.dugri-photos__item{width:96px;margin:0;}',
+      '.dugri-photos__item img{width:96px;height:72px;object-fit:cover;border-radius:8px;display:block;',
+      'border:1px solid rgba(0,0,0,.15);}',
+      '.dugri-photos__ctl{display:flex;gap:4px;justify-content:center;margin-top:4px;}',
+      '.dugri-photos__btn{background:#1c1a17;color:#fff;border:0;border-radius:6px;padding:3px 7px;',
+      'font-size:12px;line-height:1;cursor:pointer;}',
+      '.dugri-photos__btn:disabled{opacity:.35;cursor:default;}',
+      '.dugri-photos__del{background:#a8322b;}',
+      '.dugri-photos__add{margin-top:10px;background:#c98a2b;color:#fff;border:0;border-radius:8px;',
+      'padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer;}',
     ].join('');
     var style = document.createElement('style');
     style.id = 'dugri-editor-styles';
@@ -804,6 +1023,27 @@
     buildToolbar: buildToolbar,
   };
   if (typeof window !== 'undefined') window.__dugriEditor = api;
+
+  // Public runtime hook for pages that inject editable content AFTER this engine's
+  // initial scan (product.js renders the per-design name / about / photo carousel
+  // once ?design resolves). notifyInjected() re-overlays the fetched overrides on
+  // the whole document and, in edit mode, binds any newly-injected editable nodes
+  // (idempotent). Safe to call before the engine is ready — it no-ops until the
+  // overrides load and edit mode is resolved, and the bootstrap then covers the
+  // already-present injected nodes. Fail-closed: no edit affordance without an
+  // active edit session.
+  function notifyInjected() {
+    if (_overrides) applyOverrides(document, _overrides);
+    if (_rebind) _rebind(document);
+  }
+  if (typeof window !== 'undefined') {
+    window.dugriEditor = {
+      notifyInjected: notifyInjected,
+      isEditActive: function () {
+        return _editActive;
+      },
+    };
+  }
 
   // Auto-run ONLY when loaded as a real <script> (classic load sets
   // document.currentScript); an ESM test import leaves it null, so tests get the

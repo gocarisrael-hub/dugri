@@ -162,3 +162,90 @@ describe('content store', () => {
     expect(store.remove('how.html', 'how-hero-heading')).toBe(false); // already gone
   });
 });
+
+// Two valid our-own upload paths (16-hex hash + raster ext).
+const P1 = '/content-uploads/aaaaaaaaaaaaaaaa.png';
+const P2 = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
+const P3 = '/content-uploads/cccccccccccccccc.jpg';
+
+describe('content store — per-key photo array (a product carousel)', () => {
+  const dirs = [];
+  const ORIGINAL_DATA_DIR = process.env.DATA_DIR;
+  afterEach(() => {
+    if (ORIGINAL_DATA_DIR === undefined) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = ORIGINAL_DATA_DIR;
+    for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+    dirs.length = 0;
+  });
+
+  it('sanitizePhotos keeps only distinct our-own upload paths, in order, capped', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    // arbitrary URLs, off-origin paths and dupes are dropped; order preserved.
+    expect(
+      store.sanitizePhotos([P2, 'https://evil.example/x.png', P1, P2, '/content-uploads/nope.gif'])
+    ).toEqual([P2, P1]);
+    expect(store.sanitizePhotos('not an array')).toEqual([]);
+    // capped at PHOTO_CAP
+    const many = Array.from(
+      { length: store.PHOTO_CAP + 5 },
+      (_, i) => `/content-uploads/${String(i).padStart(16, '0')}.png`
+    );
+    expect(store.sanitizePhotos(many)).toHaveLength(store.PHOTO_CAP);
+  });
+
+  it('addPhoto appends (deduped, validated) and getPhotos returns a copy', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    expect(store.getPhotos('product.html', 'product-neon-photos')).toEqual([]);
+    expect(store.addPhoto('product.html', 'product-neon-photos', P1)).toEqual([P1]);
+    expect(store.addPhoto('product.html', 'product-neon-photos', P2)).toEqual([P1, P2]);
+    // a duplicate is a no-op-append that still returns the current array
+    expect(store.addPhoto('product.html', 'product-neon-photos', P1)).toEqual([P1, P2]);
+    // an off-origin/garbage path is rejected (null), array untouched
+    expect(store.addPhoto('product.html', 'product-neon-photos', 'https://x/y.png')).toBe(null);
+    expect(store.getPhotos('product.html', 'product-neon-photos')).toEqual([P1, P2]);
+    // getPhotos returns a copy — mutating it can't corrupt the store
+    const got = store.getPhotos('product.html', 'product-neon-photos');
+    got.push(P3);
+    expect(store.getPhotos('product.html', 'product-neon-photos')).toEqual([P1, P2]);
+  });
+
+  it('setPhotos replaces the whole array (remove + reorder), sanitized', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    store.addPhoto('product.html', 'product-kids-photos', P1);
+    store.addPhoto('product.html', 'product-kids-photos', P2);
+    // reorder + drop garbage in one PUT
+    expect(store.setPhotos('product.html', 'product-kids-photos', [P2, P1, 'bad'])).toEqual([
+      P2,
+      P1,
+    ]);
+    // empty array is valid (client then falls back to the shipped defaults)
+    expect(store.setPhotos('product.html', 'product-kids-photos', [])).toEqual([]);
+    expect(store.getPhotos('product.html', 'product-kids-photos')).toEqual([]);
+    // bad page/key → null (no write)
+    expect(store.setPhotos('bad page', 'k', [P1])).toBe(null);
+    expect(store.addPhoto('product.html', 'Bad Key', P1)).toBe(null);
+  });
+
+  it('persists a photo array atomically and reloads it from disk (round-trip)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    let store = await loadStore(dir);
+    store.addPhoto('product.html', 'product-birthday-photos', P1);
+    store.addPhoto('product.html', 'product-birthday-photos', P2);
+    const file = path.join(dir, 'content-overrides.json');
+    expect(fs.existsSync(file)).toBe(true);
+    expect(fs.existsSync(`${file}.tmp`)).toBe(false);
+    // a fresh module instance (same DATA_DIR) loads the persisted array
+    store = await loadStore(dir);
+    expect(store.getPage('product.html')['product-birthday-photos'].imgs).toEqual([P1, P2]);
+    // remove() reverts that carousel entirely (back to the shipped defaults)
+    store.remove('product.html', 'product-birthday-photos');
+    expect(store.getPhotos('product.html', 'product-birthday-photos')).toEqual([]);
+  });
+});

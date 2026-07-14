@@ -1249,6 +1249,60 @@ app.post(
   }
 );
 
+// Admin: APPEND a photo to a page/key's photo ARRAY (a product carousel). Same
+// multipart shape + magic-byte typing as the single-image route; the difference
+// is the bytes are pushed onto the key's `imgs` array (not set as its `img`), and
+// the response returns the whole array so the client re-renders the carousel.
+app.post(
+  '/api/admin/content/photos',
+  (req, res, next) => {
+    if (!requireAdmin(req, res)) return;
+    next();
+  },
+  express.raw({ type: () => true, limit: CONTENT_IMAGE_UPLOAD_LIMIT }),
+  (req, res) => {
+    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
+    if (!boundary || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ error: 'expected multipart/form-data upload' });
+    }
+    const { fields, files } = templates.parseMultipart(req.body, boundary);
+    const page = fields.page;
+    const key = fields.key;
+    if (!content.pageOk(page) || !content.keyOk(key)) {
+      return res.status(400).json({ error: 'bad page or key' });
+    }
+    const file = files.file || files.image || Object.values(files)[0];
+    if (!file || !Buffer.isBuffer(file.data)) {
+      return res.status(400).json({ error: 'no image file part' });
+    }
+    let img;
+    try {
+      img = content.saveImageBytes(file.data);
+    } catch (e) {
+      return res.status(400).json({ error: String((e && e.message) || e) });
+    }
+    const imgs = content.addPhoto(page, key, img);
+    if (imgs == null) return res.status(400).json({ error: 'bad page or key' });
+    res.json({ ok: true, img, imgs });
+  }
+);
+
+// Admin: REPLACE a page/key's whole photo array (used for remove + reorder — the
+// client sends the desired full order as JSON `imgs`). Each entry is re-validated
+// server-side to an our-own /content-uploads path, so the array can never point
+// off-origin. An empty array is valid (reverts that carousel to its defaults).
+app.put('/api/admin/content/photos', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { page, key, imgs } = req.body || {};
+  if (!content.pageOk(page) || !content.keyOk(key)) {
+    return res.status(400).json({ error: 'bad page or key' });
+  }
+  if (!Array.isArray(imgs)) return res.status(400).json({ error: 'imgs must be an array' });
+  const next = content.setPhotos(page, key, imgs);
+  if (next == null) return res.status(400).json({ error: 'bad page or key' });
+  res.json({ ok: true, imgs: next });
+});
+
 // Public social-proof "celebrations" counter for the homepage. Returns ONLY an
 // aggregate number: a fixed base plus the count of paid orders — never any order
 // detail. Unauthenticated on purpose (every visitor renders it). The base is a
