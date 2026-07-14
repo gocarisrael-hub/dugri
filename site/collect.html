@@ -1079,7 +1079,7 @@
         </a>
         <div class="row" style="margin-top: 8px">
           <input type="text" id="friendsLink" readonly />
-          <button class="ghost" id="copyFriends" type="button" data-edit="collect-copy-btn">
+          <button class="ghost" id="copyFriends" type="button" data-edit="collect-copy-friends-btn">
             העתק
           </button>
         </div>
@@ -1088,7 +1088,7 @@
         </p>
         <div class="row" style="margin-top: 8px">
           <input type="text" id="ownerLink" readonly />
-          <button class="ghost" id="copyOwner" type="button" data-edit="collect-copy-btn">
+          <button class="ghost" id="copyOwner" type="button" data-edit="collect-copy-owner-btn">
             העתק
           </button>
         </div>
@@ -1122,11 +1122,9 @@
       <!-- OWNER: pay panel (collapsible, one button at the bottom) -->
       <details class="card owner-only hidden pay-collapse" id="payPanel">
         <summary class="pay-summary" data-edit="collect-pay-summary">שלמו וקבלו את המשחק</summary>
-        <p
-          class="muted"
-          style="margin-top: 16px; margin-bottom: 10px"
-          data-edit="collect-pay-anytime"
-        >
+        <!-- Not data-edit: contains a child <b>, and the content editor persists
+             via textContent, which would flatten the bold permanently. -->
+        <p class="muted" style="margin-top: 16px; margin-bottom: 10px">
           אפשר לשלם מתי שרוצים ולהמשיך להוסיף מילים תוך כדי - ועד שתלחצו על
           <b>"מספיק! סיימנו"</b> האיסוף נשאר פתוח.
         </p>

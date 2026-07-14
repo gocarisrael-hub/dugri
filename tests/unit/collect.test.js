@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import {
   normalizeWord,
   dedupeWords,
@@ -93,5 +95,25 @@ describe('word prompts', () => {
     const seen = PROMPTS.slice(1).map((p) => p.id); // everything except the first
     const p = nextPrompt(seen, () => 0.999);
     expect(p.id).toBe(PROMPTS[0].id);
+  });
+});
+
+// Regression guard for the duplicate-key bug: every data-edit / data-edit-img
+// key on collect.html must be unique. A reused key makes the content editor
+// mirror one field's edit onto every same-key node (and applyOverrides rewrites
+// them all on load), so two controls can never carry distinct text.
+describe('collect.html editable keys', () => {
+  it('has no duplicate data-edit / data-edit-img keys', () => {
+    // vitest runs from the repo root; read the shipped HTML directly (this test
+    // runs under jsdom, where import.meta.url is not a file: URL).
+    const html = readFileSync(path.resolve('site/collect.html'), 'utf8');
+    const keys = [...html.matchAll(/data-edit(?:-img)?="([^"]+)"/g)].map((m) => m[1]);
+    const seen = new Set();
+    const dupes = [];
+    for (const k of keys) {
+      if (seen.has(k)) dupes.push(k);
+      seen.add(k);
+    }
+    expect(dupes).toEqual([]);
   });
 });
