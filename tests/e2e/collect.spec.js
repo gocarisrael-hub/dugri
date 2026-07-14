@@ -846,6 +846,115 @@ test('contributor (no owner key) does NOT see the pay panel', async ({ page, con
   await expect(friend.locator('#payPanel')).toBeHidden();
 });
 
+test('a newly added word appears FIRST (newest on top); delete/edit still target the right word', async ({
+  page,
+}) => {
+  await createCollection(page, 'Shira');
+
+  // Add two words in order. The most recently added must render ABOVE the older
+  // one (server returns them oldest-first; the list renders newest-first).
+  await page.fill('#wordInput', 'ראשונה');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('1');
+  await page.fill('#wordInput', 'שנייה');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('2');
+  expect(await page.getByTestId('word-text').allInnerTexts()).toEqual(['שנייה', 'ראשונה']);
+
+  // A third word jumps straight to the top.
+  await page.fill('#wordInput', 'שלישית');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('3');
+  await expect(page.getByTestId('word-text').first()).toHaveText('שלישית');
+
+  // Delete the NEWEST (top) word → it targets the right row by id; the other two
+  // stay, still newest-first.
+  await page.locator('.word', { hasText: 'שלישית' }).getByTestId('word-del').click();
+  await page.getByTestId('msg-modal-ok').click();
+  await expect(page.locator('#count')).toHaveText('2');
+  expect(await page.getByTestId('word-text').allInnerTexts()).toEqual(['שנייה', 'ראשונה']);
+
+  // Inline-edit the (now top) newest word → edits the correct word, not its
+  // neighbour, and order is unchanged.
+  await page.locator('.word', { hasText: 'שנייה' }).getByTestId('word-text').click();
+  const editor = page.getByTestId('word-edit-input');
+  await editor.fill('שנייה מתוקנת');
+  await editor.press('Enter');
+  await expect(page.getByTestId('word-edit-input')).toHaveCount(0);
+  await expect(page.locator('#count')).toHaveText('2');
+  expect(await page.getByTestId('word-text').allInnerTexts()).toEqual(['שנייה מתוקנת', 'ראשונה']);
+
+  // Newest-first order is STABLE (not random) across a page refresh.
+  await page.reload();
+  expect(await page.getByTestId('word-text').allInnerTexts()).toEqual(['שנייה מתוקנת', 'ראשונה']);
+});
+
+test('a contributor also sees the newest word first', async ({ page, context }) => {
+  await createCollection(page, 'Shira');
+  await page.fill('#wordInput', 'ישנה');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('1');
+  await page.fill('#wordInput', 'חדשה');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('2');
+
+  const friendsUrl = page.url().replace(/&k=.*/, '');
+  const friend = await context.newPage();
+  await friend.goto(friendsUrl);
+  await expect(friend.locator('#count')).toHaveText('2');
+  // The contributor view uses the same render path → newest-first as well.
+  expect(await friend.getByTestId('word-text').allInnerTexts()).toEqual(['חדשה', 'ישנה']);
+});
+
+test('a content override replaces newly-tagged collect copy for a normal visitor', async ({
+  page,
+}) => {
+  await page.route('**/api/content*', (route) =>
+    route.fulfill({ json: { overrides: { 'collect-words-heading': { text: 'מילים שאספנו' } } } })
+  );
+  await page.goto('/collect.html?c=nope');
+  // The newly-tagged heading now honours the owner's override…
+  await expect(page.locator('[data-edit="collect-words-heading"]')).toHaveText('מילים שאספנו');
+  // …and a plain visitor still gets NO edit affordances (fail-closed).
+  await expect(page.locator('.dugri-editbar')).toHaveCount(0);
+});
+
+test('newly-tagged collect copy + the logo image become editable in owner edit mode', async ({
+  page,
+}) => {
+  await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+  await page.goto('/collect.html?edit=1&key=dugri-admin');
+  await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+  // A representative sample of the newly-tagged static copy is now editable
+  // (headings, button labels, form label, help-tile text, owner hint, help label).
+  const keys = [
+    'collect-words-heading',
+    'collect-add-btn',
+    'collect-byname-label',
+    'collect-tab-single',
+    'collect-cat-people-title',
+    'collect-cat-people-eg',
+    'collect-share-wa-label',
+    'collect-owner-link-hint',
+    'collect-coupon-label',
+    'collect-card-pay-btn',
+    'collect-wa-help-label',
+  ];
+  for (const key of keys) {
+    await expect(page.locator(`[data-edit="${key}"]`)).toHaveAttribute(
+      'contenteditable',
+      /plaintext-only|true/
+    );
+  }
+
+  // The brand/home logo (the only raster image on the page) gets the image edit
+  // affordance so the owner can replace it.
+  const logo = page.locator('[data-edit-img="collect-home-logo"]');
+  await expect(logo).toHaveAttribute('role', 'button');
+  await expect(logo).toHaveClass(/dugri-edit-img/);
+});
+
 test('contributor (no owner key) sees words but cannot add after close', async ({
   page,
   context,

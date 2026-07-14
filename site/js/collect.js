@@ -31,6 +31,19 @@ export function dedupeWords(list) {
 }
 
 /**
+ * Order a word list newest-first for display. The server returns words in
+ * insertion order (oldest first, newest last), so a NON-mutating reverse puts the
+ * most recently added word at the top — where the owner/contributor sees it
+ * immediately. Stable across refreshes (server order is stable), and it never
+ * touches the source array, so delete/edit still target words by id regardless of
+ * display order.
+ * @returns {Array}
+ */
+export function newestFirst(words) {
+  return Array.isArray(words) ? words.slice().reverse() : [];
+}
+
+/**
  * Parse pasted text or a .txt/.csv file's contents into an array of words.
  * Splits on newlines and commas (covers one-per-line lists and CSV/comma lists).
  * @returns {string[]}

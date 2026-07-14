@@ -911,7 +911,7 @@
           aria-label="דוגרי · חזרה לדף הבית"
           data-testid="home-link"
         >
-          <img class="home-logo" src="assets/logo.png" alt="" />
+          <img class="home-logo" src="assets/logo.png" alt="" data-edit-img="collect-home-logo" />
         </a>
         <div class="brand">דוגרי</div>
         <h1 id="title">אוספים מילים…</h1>
@@ -919,7 +919,7 @@
       </header>
 
       <!-- OWNER, unpaid only: reminder pointing to the pay panel below -->
-      <div class="pay-reminder owner-only hidden" id="payReminder">
+      <div class="pay-reminder owner-only hidden" id="payReminder" data-edit="collect-pay-reminder">
         עדיין לא שילמתם — התשלום ממתין למטה ⬇
       </div>
 
@@ -928,24 +928,34 @@
       <!-- add area -->
       <div class="card" id="addCard">
         <div class="nameRow">
-          <label class="fld" for="byName">מי מוסיף? (לא חובה)</label>
+          <label class="fld" for="byName" data-edit="collect-byname-label"
+            >מי מוסיף? (לא חובה)</label
+          >
           <input type="text" id="byName" maxlength="40" />
         </div>
 
         <div class="tabs" role="tablist">
-          <button class="tab active" id="tab-single" type="button">✏️ מילה</button>
-          <button class="tab" id="tab-list" type="button">📋 רשימה</button>
-          <button class="tab" id="tab-file" type="button">📄 קובץ</button>
+          <button class="tab active" id="tab-single" type="button" data-edit="collect-tab-single">
+            ✏️ מילה
+          </button>
+          <button class="tab" id="tab-list" type="button" data-edit="collect-tab-list">
+            📋 רשימה
+          </button>
+          <button class="tab" id="tab-file" type="button" data-edit="collect-tab-file">
+            📄 קובץ
+          </button>
         </div>
 
         <div class="panel" id="panel-single">
           <div class="idea" id="ideaBox"></div>
           <div class="row">
             <input type="text" id="wordInput" autocomplete="off" aria-label="מילה להוספה" />
-            <button id="addBtn" type="button">הוסף</button>
+            <button id="addBtn" type="button" data-edit="collect-add-btn">הוסף</button>
           </div>
           <div class="actions">
-            <button class="soft" id="ideaBtn" type="button">תני לי רעיון 💡</button>
+            <button class="soft" id="ideaBtn" type="button" data-edit="collect-idea-btn">
+              תני לי רעיון 💡
+            </button>
           </div>
         </div>
 
@@ -956,7 +966,9 @@
             placeholder="מילה בכל שורה, או מופרדות בפסיקים"
           ></textarea>
           <div class="actions">
-            <button id="pasteAdd" type="button">הוסיפו את כל הרשימה</button>
+            <button id="pasteAdd" type="button" data-edit="collect-paste-add">
+              הוסיפו את כל הרשימה
+            </button>
           </div>
         </div>
 
@@ -969,7 +981,7 @@
       <!-- the words (with the live counter) -->
       <div class="card">
         <div class="words-head">
-          <span class="sec-h">המילים שכבר נאספו</span>
+          <span class="sec-h" data-edit="collect-words-heading">המילים שכבר נאספו</span>
           <span class="count-pill"><b id="count">0</b><span id="countMax"> מילים</span></span>
         </div>
         <!-- Two-stage progress. Stage 1 measures toward the 100-word minimum;
@@ -1007,14 +1019,38 @@
             100 מילים, וכמה שיותר יותר טוב.
           </p>
           <div class="cats">
-            <div class="cat"><b>אנשים</b><span>בן/בת זוג, חברים, משפחה, כינויים</span></div>
-            <div class="cat"><b>מקומות</b><span>חופשות, הבית, מקומות אהובים</span></div>
-            <div class="cat"><b>בדיחות פנימיות</b><span>סיפורים שרק אתם מבינים</span></div>
-            <div class="cat"><b>ביטויים שלו</b><span>מה שהוא תמיד אומר</span></div>
-            <div class="cat"><b>הרגלים</b><span>קפה, נטפליקס, ספורט, אוכל</span></div>
-            <div class="cat"><b>עבודה ותחביבים</b><span>מקצוע, חלומות, תשוקות</span></div>
-            <div class="cat"><b>אירועים מהחיים</b><span>רגעים גדולים, הצלחות, פאדיחות</span></div>
-            <div class="cat"><b>ילדות ועבר</b><span>זיכרונות, סיפורים מצחיקים</span></div>
+            <div class="cat">
+              <b data-edit="collect-cat-people-title">אנשים</b
+              ><span data-edit="collect-cat-people-eg">בן/בת זוג, חברים, משפחה, כינויים</span>
+            </div>
+            <div class="cat">
+              <b data-edit="collect-cat-places-title">מקומות</b
+              ><span data-edit="collect-cat-places-eg">חופשות, הבית, מקומות אהובים</span>
+            </div>
+            <div class="cat">
+              <b data-edit="collect-cat-jokes-title">בדיחות פנימיות</b
+              ><span data-edit="collect-cat-jokes-eg">סיפורים שרק אתם מבינים</span>
+            </div>
+            <div class="cat">
+              <b data-edit="collect-cat-sayings-title">ביטויים שלו</b
+              ><span data-edit="collect-cat-sayings-eg">מה שהוא תמיד אומר</span>
+            </div>
+            <div class="cat">
+              <b data-edit="collect-cat-habits-title">הרגלים</b
+              ><span data-edit="collect-cat-habits-eg">קפה, נטפליקס, ספורט, אוכל</span>
+            </div>
+            <div class="cat">
+              <b data-edit="collect-cat-work-title">עבודה ותחביבים</b
+              ><span data-edit="collect-cat-work-eg">מקצוע, חלומות, תשוקות</span>
+            </div>
+            <div class="cat">
+              <b data-edit="collect-cat-events-title">אירועים מהחיים</b
+              ><span data-edit="collect-cat-events-eg">רגעים גדולים, הצלחות, פאדיחות</span>
+            </div>
+            <div class="cat">
+              <b data-edit="collect-cat-childhood-title">ילדות ועבר</b
+              ><span data-edit="collect-cat-childhood-eg">זיכרונות, סיפורים מצחיקים</span>
+            </div>
           </div>
         </details>
       </div>
@@ -1039,18 +1075,22 @@
               d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.86 9.86 0 0 0 12.04 2Zm0 1.8c2.16 0 4.19.84 5.72 2.37a8.05 8.05 0 0 1 2.37 5.72c0 4.47-3.64 8.11-8.12 8.11a8.2 8.2 0 0 1-4.14-1.13l-.3-.18-3.1.81.83-3.02-.19-.31a8.06 8.06 0 0 1-1.26-4.36c0-4.47 3.64-8.11 8.11-8.11ZM8.55 7.33c-.16 0-.42.06-.64.3-.22.24-.85.83-.85 2.02 0 1.2.87 2.35.99 2.51.12.16 1.7 2.6 4.14 3.65.58.25 1.03.4 1.38.51.58.19 1.11.16 1.53.1.47-.07 1.44-.59 1.64-1.16.2-.57.2-1.06.14-1.16-.06-.1-.22-.16-.46-.28-.24-.12-1.44-.71-1.66-.79-.22-.08-.38-.12-.55.12-.16.24-.63.79-.77.95-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.34-1.67-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.32-.76-1.8-.18-.4-.37-.4-.55-.41-.14 0-.3-.01-.46-.01Z"
             />
           </svg>
-          שתפו בוואטסאפ
+          <span data-edit="collect-share-wa-label">שתפו בוואטסאפ</span>
         </a>
         <div class="row" style="margin-top: 8px">
           <input type="text" id="friendsLink" readonly />
-          <button class="ghost" id="copyFriends" type="button">העתק</button>
+          <button class="ghost" id="copyFriends" type="button" data-edit="collect-copy-btn">
+            העתק
+          </button>
         </div>
-        <p class="muted" style="margin-top: 12px">
+        <p class="muted" style="margin-top: 12px" data-edit="collect-owner-link-hint">
           🔑 הקישור הפרטי שלך לניהול (שמרו אותו לעצמכם - דרכו סוגרים את האיסוף):
         </p>
         <div class="row" style="margin-top: 8px">
           <input type="text" id="ownerLink" readonly />
-          <button class="ghost" id="copyOwner" type="button">העתק</button>
+          <button class="ghost" id="copyOwner" type="button" data-edit="collect-copy-btn">
+            העתק
+          </button>
         </div>
       </div>
 
@@ -1082,7 +1122,11 @@
       <!-- OWNER: pay panel (collapsible, one button at the bottom) -->
       <details class="card owner-only hidden pay-collapse" id="payPanel">
         <summary class="pay-summary" data-edit="collect-pay-summary">שלמו וקבלו את המשחק</summary>
-        <p class="muted" style="margin-top: 16px; margin-bottom: 10px">
+        <p
+          class="muted"
+          style="margin-top: 16px; margin-bottom: 10px"
+          data-edit="collect-pay-anytime"
+        >
           אפשר לשלם מתי שרוצים ולהמשיך להוסיף מילים תוך כדי - ועד שתלחצו על
           <b>"מספיק! סיימנו"</b> האיסוף נשאר פתוח.
         </p>
@@ -1147,13 +1191,25 @@
         </div>
 
         <div class="coupon-box">
-          <label class="fld" for="couponInput">קוד קופון</label>
+          <label class="fld" for="couponInput" data-edit="collect-coupon-label">קוד קופון</label>
           <div class="row">
             <input type="text" id="couponInput" placeholder="הזינו קוד קופון" autocomplete="off" />
-            <button type="button" class="ghost" id="couponApplyBtn">החל קופון</button>
+            <button
+              type="button"
+              class="ghost"
+              id="couponApplyBtn"
+              data-edit="collect-coupon-apply"
+            >
+              החל קופון
+            </button>
           </div>
           <div class="coupon-msg" id="couponMsg" role="status" aria-live="polite"></div>
-          <button type="button" class="coupon-remove hidden" id="couponRemoveBtn">
+          <button
+            type="button"
+            class="coupon-remove hidden"
+            id="couponRemoveBtn"
+            data-edit="collect-coupon-remove"
+          >
             הסירו קופון
           </button>
         </div>
@@ -1167,7 +1223,12 @@
           🔒 תשלום מאובטח בכרטיס אשראי · הקובץ נשלח עד 24 שעות מקבלת המילים
         </p>
 
-        <button type="button" id="cardPayBtn" class="card-pay-btn hidden">
+        <button
+          type="button"
+          id="cardPayBtn"
+          class="card-pay-btn hidden"
+          data-edit="collect-card-pay-btn"
+        >
           💳 תשלום בכרטיס אשראי
         </button>
         <!-- Shown instead of the button when card payment isn't configured yet -->
@@ -1226,7 +1287,7 @@
 
     <script type="module">
       import { categoriesForTheme, promptsForTheme, renderQuestion } from './js/word-prompts.js';
-      import { parseWordText } from './js/collect.js';
+      import { parseWordText, newestFirst } from './js/collect.js';
       import { track } from './js/analytics.js';
 
       const params = new URLSearchParams(location.search);
@@ -1417,7 +1478,10 @@
           wrap.innerHTML = '<span class="muted">עוד אין מילים - היו הראשונים!</span>';
         } else {
           wrap.innerHTML = '';
-          for (const w of state.words) {
+          // Newest-first: the most recently added word shows at the TOP so the
+          // owner/contributor sees it the moment it lands (server returns them
+          // oldest-first). Non-mutating, so delete/edit still target by w.id.
+          for (const w of newestFirst(state.words)) {
             const el = document.createElement('span');
             el.className = 'word';
             const txt = document.createElement('span');
@@ -2216,7 +2280,7 @@
           d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm0 18.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 2.2 0 4.27.86 5.82 2.42a8.18 8.18 0 0 1 2.41 5.83c0 4.54-3.7 8.23-8.24 8.23zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.24-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.51.11-.11.25-.29.37-.43.13-.14.17-.24.25-.41.08-.16.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.4-.42-.56-.43-.14-.01-.31-.01-.48-.01a.92.92 0 0 0-.67.31c-.23.25-.87.85-.87 2.07 0 1.22.89 2.4 1.02 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.47-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"
         />
       </svg>
-      <span class="wa-help-label">עזרה</span>
+      <span class="wa-help-label" data-edit="collect-wa-help-label">עזרה</span>
     </a>
   </body>
 </html>

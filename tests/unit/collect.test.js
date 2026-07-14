@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeWord, dedupeWords, parseWordText, buildBulkCsv } from '../../site/js/collect.js';
+import {
+  normalizeWord,
+  dedupeWords,
+  parseWordText,
+  buildBulkCsv,
+  newestFirst,
+} from '../../site/js/collect.js';
 import { fillName, nextPrompt, PROMPTS } from '../../site/js/word-prompts.js';
 
 describe('normalizeWord', () => {
@@ -55,6 +61,20 @@ describe('buildBulkCsv', () => {
   });
   it('neutralizes spreadsheet formula-injection cells', () => {
     expect(buildBulkCsv(['=1+1']).split('\n')[1]).toContain("'=1+1");
+  });
+});
+
+describe('newestFirst', () => {
+  it('returns words newest-first (reversed) without mutating the source', () => {
+    const src = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    expect(newestFirst(src).map((w) => w.id)).toEqual([3, 2, 1]);
+    // The source array is untouched, so delete/edit keep targeting words by id.
+    expect(src.map((w) => w.id)).toEqual([1, 2, 3]);
+  });
+  it('handles empty and non-array input', () => {
+    expect(newestFirst([])).toEqual([]);
+    expect(newestFirst(null)).toEqual([]);
+    expect(newestFirst(undefined)).toEqual([]);
   });
 });
 
