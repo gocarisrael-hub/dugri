@@ -52,10 +52,31 @@ function truthyEnv(v) {
 
 // Armed only when the bot is enabled AND we have a token AND a base URL. Every
 // impure call short-circuits to a soft failure otherwise, so the module is inert
-// until the owner sets the env on the service.
+// until the owner sets the env on the service. NOTE: the webhook secret is NOT
+// part of the send-gate on purpose (outbound sends don't need it) — but an armed
+// bot with no secret can receive nothing (see warnIfPartiallyConfigured).
 function isConfigured() {
   return Boolean(truthyEnv(WHATSAPP_ENABLED) && WHAPI_TOKEN && BASE_URL);
 }
+
+// Warn (once) at startup when the bot is armed for SENDING (enabled + token) but
+// WHAPI_WEBHOOK_SECRET is missing: verifyWebhookSecret then rejects every inbound
+// request, so words never flow in even though the bot looks configured — a silent
+// failure the owner would otherwise struggle to diagnose. Same posture as
+// notify.js's warnIfPartiallyConfigured. NEVER logs the token or secret value.
+let _partialConfigWarned = false;
+function warnIfPartiallyConfigured() {
+  if (_partialConfigWarned) return;
+  if (truthyEnv(WHATSAPP_ENABLED) && WHAPI_TOKEN && !WHAPI_WEBHOOK_SECRET) {
+    _partialConfigWarned = true;
+    console.warn(
+      '[whatsapp] enabled with a token but WHAPI_WEBHOOK_SECRET is missing — ' +
+        'inbound webhooks will be rejected and no words can be collected. ' +
+        'Set WHAPI_WEBHOOK_SECRET to receive messages.'
+    );
+  }
+}
+warnIfPartiallyConfigured();
 
 // Is a webhook request's `?secret=` the configured one? Constant-time compare so
 // the secret can't be recovered by timing. Returns false when the secret isn't
@@ -146,7 +167,12 @@ async function sendMessage(to, text, opts = {}) {
 // No-op when unconfigured.
 async function getInviteLink(groupId, opts = {}) {
   if (!isConfigured()) return { ok: false, skipped: true, reason: 'not configured' };
-  const id = encodeURIComponent(String(groupId == null ? '' : groupId));
+  // Whapi expects the RAW group id in the path — e.g. "120363xxxx@g.us" — and does
+  // NOT decode a percent-encoded "@" (the `@g.us` suffix is a literal part of the
+  // id per its docs, pattern ^[\d-]{10,31}@g\.us$). encodeURIComponent would turn
+  // "@" into "%40" and 404. The id is well-formed (digits + "@g.us"), so no path
+  // segment needs escaping; pass it through, only trimmed.
+  const id = String(groupId == null ? '' : groupId).trim();
   const r = await whapiRequest('GET', '/groups/' + id + '/invite', { fetchImpl: opts.fetchImpl });
   if (!r.ok) return r;
   const data = r.data || {};
@@ -192,16 +218,31 @@ function normalizeParticipant(p) {
   return null;
 }
 
-// Normalize a Whapi inbound webhook into a single discriminated event our handler
-// can switch on, WITHOUT any WhatsApp-specific knowledge leaking upward:
-//   { kind:'message', groupId, from, fromName, text }
-//   { kind:'participants_added', groupId, added:[{id,name}] }
-//   { kind:'ignore' }                              (self / system / empty / unknown)
-// Participant-add events take priority (they arrive on their own webhook). For a
-// message we take the first genuine inbound text message: our own outgoing
-// (from_me), non-text, and empty-body messages are ignored.
+// Normalize a Whapi inbound webhook into ALL of its actionable events, so the
+// (next-PR) webhook handler can iterate them — a single Whapi POST can batch
+// several messages AND a participant-add in the same body. Returns:
+//   { events: [ ...NormalizedEvent ] }
+// where each NormalizedEvent is one of:
+//   { kind:'participants_added', groupId, added:[{id,name}] }  // a friend joined
+//   { kind:'message', groupId, from, fromName, text }          // a GROUP text msg
+// Anything not actionable is simply omitted (never emitted as an event), so an
+// empty/unknown/self-only body yields { events: [] }. Guarantees for the handler:
+//   • WhatsApp-specific filtering happens HERE, once — the handler just switches
+//     on `kind`. Our own outgoing (from_me), non-text, and empty-body messages are
+//     dropped; only `groups_participants` action:"add" becomes participants_added.
+//   • A message is only surfaced when its chat id is a GROUP id (ends with
+//     "@g.us"). A 1:1 DM to the bot ("…@s.whatsapp.net" / a phone) is NOT word
+//     input and is dropped — otherwise its text would be mis-attributed to a
+//     wrong/nonexistent collection.
+//   • Every emitted event carries a non-empty groupId (both snake_case group_id
+//     and camelCase groupId are accepted); an event with no id is dropped, so the
+//     handler never gets groupId:'' (which would make it sendMessage('', …)).
+//   • Never throws on missing/undefined fields.
+// Participant-add events are listed before message events so a "member joined then
+// spoke" body greets before it processes words.
 function parseWebhook(body) {
-  if (!body || typeof body !== 'object') return { kind: 'ignore' };
+  const events = [];
+  if (!body || typeof body !== 'object') return { events };
 
   // Member-added events: `groups_participants` array with action:"add".
   const groupEvents = Array.isArray(body.groups_participants) ? body.groups_participants : [];
@@ -212,28 +253,30 @@ function parseWebhook(body) {
     const raw = Array.isArray(ev.participants) ? ev.participants : [];
     const added = raw.map(normalizeParticipant).filter(Boolean);
     if (!added.length) continue;
-    return { kind: 'participants_added', groupId, added };
+    events.push({ kind: 'participants_added', groupId, added });
   }
 
-  // Message events: `messages` array. Take the first real inbound text message.
+  // Message events: EVERY genuine inbound GROUP text message in the batch.
   const messages = Array.isArray(body.messages) ? body.messages : [];
   for (const m of messages) {
     if (!m || typeof m !== 'object') continue;
     if (m.from_me) continue; // our own outgoing echo
     if (m.type && m.type !== 'text') continue; // only plain text carries words
+    const groupId = String(m.chat_id || m.chatId || m.group_id || m.groupId || '').trim();
+    if (!groupId || !groupId.endsWith('@g.us')) continue; // group messages only; DMs dropped
     const raw = m.text && typeof m.text === 'object' ? m.text.body : m.text;
     const text = raw == null ? '' : String(raw);
     if (!text.trim()) continue; // empty / system
-    return {
+    events.push({
       kind: 'message',
-      groupId: String(m.chat_id || '').trim(),
+      groupId,
       from: String(m.from || '').trim(),
       fromName: String(m.from_name || ''),
       text,
-    };
+    });
   }
 
-  return { kind: 'ignore' };
+  return { events };
 }
 
 // Build the outgoing text for one trigger from the owner-editable catalog in
@@ -278,18 +321,26 @@ function tzParts(date, timezone) {
 
 // PURE building block for the (next-PR) nudge scheduler. Given a list of group
 // STATE entries (the shape server/wa-state.js hands out: { groupId, closed,
-// last_activity_at, created_at, nudge_slots, quiet:{count} }), a `now`, and the
-// trigger catalog (opts.settings), returns the nudges that are due right now:
+// last_activity_at, created_at, nudge_slots, quiet:{count,last_at} }), a `now`,
+// and the trigger catalog (opts.settings), returns the nudges due right now:
 //   [{ groupId, triggerId, slotKey }]   (slotKey is null for quiet_reminder)
 // It reads timing from the catalog and dedupes daily nudges against each group's
 // own nudge_slots, but performs NO I/O and mutates nothing — the scheduler in
-// index.js owns the loop, the send, and recording the slot. Never throws.
+// index.js owns the loop, the send, and recording the slot / quiet.last_at.
+// Idempotent across ticks so a fast scheduler interval never double-sends. Never
+// throws.
 //   • daily_morning / daily_evening: fire when the group is open, the trigger is
-//     enabled, the current hour (in tz) equals timing.hour, and that day's slot
-//     ("<YYYY-MM-DD>:<triggerId>") hasn't fired for the group yet.
-//   • quiet_reminder: fires when enabled, the group has been idle longer than
-//     timing.idle_hours, fewer than timing.max quiet reminders have been sent, and
-//     the current hour is inside timing.window ([startHour, endHour)).
+//     enabled, the current Jerusalem hour is >= timing.hour (so a tick that missed
+//     the exact hour — a deploy/restart/GC spanning it, or a >1h interval — still
+//     catches up the SAME day), and that day's slot ("<YYYY-MM-DD>:<triggerId>")
+//     hasn't been recorded yet. The date-keyed slot prevents a double-send, and we
+//     never fire BEFORE timing.hour.
+//   • quiet_reminder: fires when enabled, the group has been idle (no activity) for
+//     >= timing.idle_hours, fewer than timing.max quiet reminders have been sent,
+//     the current hour is inside timing.window ([startHour,endHour)), AND it's been
+//     >= timing.idle_hours since the LAST quiet reminder (quiet.last_at) — so at
+//     most one quiet reminder per idle_hours window rather than one per tick. A
+//     brand-new idle group (last_at null) is due immediately.
 function groupsDueForNudge(groups, opts = {}) {
   const store = opts.settings || settings;
   const now = opts.now != null ? new Date(opts.now) : new Date();
@@ -314,7 +365,7 @@ function groupsDueForNudge(groups, opts = {}) {
       const cfg = trigger(id);
       if (!cfg || !cfg.enabled) continue;
       const targetHour = cfg.timing && Number.isFinite(cfg.timing.hour) ? cfg.timing.hour : null;
-      if (targetHour == null || hour !== targetHour) continue;
+      if (targetHour == null || hour < targetHour) continue; // not yet the hour (same-day catch-up once past it)
       const slotKey = today + ':' + id;
       if (Object.prototype.hasOwnProperty.call(slots, slotKey)) continue;
       out.push({ groupId, triggerId: id, slotKey });
@@ -324,6 +375,7 @@ function groupsDueForNudge(groups, opts = {}) {
     if (quiet && quiet.enabled) {
       const timing = quiet.timing || {};
       const idleHours = Number.isFinite(timing.idle_hours) ? timing.idle_hours : 24;
+      const idleMsThreshold = idleHours * 3600 * 1000;
       const max = Number.isFinite(timing.max) ? timing.max : 3;
       const window =
         Array.isArray(timing.window) && timing.window.length === 2 ? timing.window : null;
@@ -331,7 +383,12 @@ function groupsDueForNudge(groups, opts = {}) {
       const lastActivity = Date.parse(g.last_activity_at || g.created_at || '');
       const idleMs = Number.isFinite(lastActivity) ? nowMs - lastActivity : 0;
       const inWindow = window ? hour >= window[0] && hour < window[1] : true;
-      if (count < max && inWindow && idleMs >= idleHours * 3600 * 1000) {
+      // Space reminders: due only if we've never sent one (last_at null) or the
+      // last one was >= idle_hours ago — otherwise all `max` would fire back-to-back.
+      const lastQuiet = g.quiet && g.quiet.last_at ? Date.parse(g.quiet.last_at) : null;
+      const spaced =
+        lastQuiet == null || !Number.isFinite(lastQuiet) || nowMs - lastQuiet >= idleMsThreshold;
+      if (count < max && inWindow && idleMs >= idleMsThreshold && spaced) {
         out.push({ groupId, triggerId: 'quiet_reminder', slotKey: null });
       }
     }

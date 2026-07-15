@@ -206,7 +206,8 @@ describe('getInviteLink issues the right request', () => {
     expect(res.inviteCode).toBe('ABC123');
     expect(res.inviteLink).toBe('https://chat.whatsapp.com/ABC123');
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://gate.example.test/groups/120363%40g.us/invite');
+    // Whapi wants the RAW group id in the path — the "@" must NOT be %40-encoded.
+    expect(url).toBe('https://gate.example.test/groups/120363@g.us/invite');
     expect(init.method).toBe('GET');
     expect(init.headers.Authorization).toBe('Bearer tok-secret');
     // A GET carries no JSON body / content-type.
@@ -270,9 +271,9 @@ describe('splitWords', () => {
 });
 
 describe('parseWebhook', () => {
-  it('normalizes an inbound text message', () => {
+  it('normalizes an inbound group text message', () => {
     const wa = loadFresh();
-    const ev = wa.parseWebhook({
+    const { events } = wa.parseWebhook({
       messages: [
         {
           id: 'm1',
@@ -286,18 +287,46 @@ describe('parseWebhook', () => {
       ],
       event: { type: 'messages', event: 'post' },
     });
-    expect(ev).toEqual({
-      kind: 'message',
-      groupId: '120363@g.us',
-      from: '972500000000',
-      fromName: 'דנה',
-      text: 'שלום, עולם',
+    expect(events).toEqual([
+      {
+        kind: 'message',
+        groupId: '120363@g.us',
+        from: '972500000000',
+        fromName: 'דנה',
+        text: 'שלום, עולם',
+      },
+    ]);
+  });
+
+  it('returns BOTH messages from a batched body (no message dropped)', () => {
+    const wa = loadFresh();
+    const { events } = wa.parseWebhook({
+      messages: [
+        { from_me: false, type: 'text', chat_id: '1@g.us', from: 'a', text: { body: 'one' } },
+        { from_me: false, type: 'text', chat_id: '1@g.us', from: 'b', text: { body: 'two' } },
+      ],
     });
+    expect(events.map((e) => e.text)).toEqual(['one', 'two']);
+    expect(events.every((e) => e.kind === 'message')).toBe(true);
+  });
+
+  it('surfaces a participants-add AND a message from the SAME body', () => {
+    const wa = loadFresh();
+    const { events } = wa.parseWebhook({
+      groups_participants: [{ group_id: '1@g.us', action: 'add', participants: ['x'] }],
+      messages: [
+        { from_me: false, type: 'text', chat_id: '1@g.us', from: 'a', text: { body: 'hi' } },
+      ],
+    });
+    expect(events).toHaveLength(2);
+    // Participant events come first so a new member is greeted before words process.
+    expect(events[0].kind).toBe('participants_added');
+    expect(events[1]).toMatchObject({ kind: 'message', text: 'hi' });
   });
 
   it('normalizes a participants-added event', () => {
     const wa = loadFresh();
-    const ev = wa.parseWebhook({
+    const { events } = wa.parseWebhook({
       groups_participants: [
         {
           group_id: '120363@g.us',
@@ -307,51 +336,94 @@ describe('parseWebhook', () => {
       ],
       event: { type: 'groups', event: 'put' },
     });
-    expect(ev).toEqual({
-      kind: 'participants_added',
-      groupId: '120363@g.us',
-      added: [
-        { id: '972511111111', name: '' },
-        { id: '972522222222', name: 'רון' },
+    expect(events).toEqual([
+      {
+        kind: 'participants_added',
+        groupId: '120363@g.us',
+        added: [
+          { id: '972511111111', name: '' },
+          { id: '972522222222', name: 'רון' },
+        ],
+      },
+    ]);
+  });
+
+  it('drops a 1:1 DM (chat id not @g.us) — not group word input', () => {
+    const wa = loadFresh();
+    const { events } = wa.parseWebhook({
+      messages: [
+        {
+          from_me: false,
+          type: 'text',
+          chat_id: '972500000000@s.whatsapp.net',
+          from: '972500000000',
+          text: { body: 'a DM to the bot' },
+        },
       ],
     });
+    expect(events).toEqual([]);
   });
 
-  it('ignores our own outgoing (from_me) messages', () => {
+  it('accepts a camelCase groupId on the message branch', () => {
     const wa = loadFresh();
-    expect(
-      wa.parseWebhook({ messages: [{ from_me: true, type: 'text', text: { body: 'hi' } }] })
-    ).toEqual({ kind: 'ignore' });
+    const { events } = wa.parseWebhook({
+      messages: [
+        { from_me: false, type: 'text', groupId: '9@g.us', from: 'a', text: { body: 'w' } },
+      ],
+    });
+    expect(events).toEqual([
+      { kind: 'message', groupId: '9@g.us', from: 'a', fromName: '', text: 'w' },
+    ]);
   });
 
-  it('ignores non-text / system messages', () => {
+  it('drops a message with an empty/missing id (never emits groupId:"")', () => {
     const wa = loadFresh();
-    expect(
-      wa.parseWebhook({ messages: [{ from_me: false, type: 'image', chat_id: 'g' }] })
-    ).toEqual({ kind: 'ignore' });
+    const { events } = wa.parseWebhook({
+      messages: [{ from_me: false, type: 'text', chat_id: '', from: 'a', text: { body: 'w' } }],
+    });
+    expect(events).toEqual([]);
   });
 
-  it('ignores empty-body messages', () => {
-    const wa = loadFresh();
-    expect(
-      wa.parseWebhook({ messages: [{ from_me: false, type: 'text', text: { body: '   ' } }] })
-    ).toEqual({ kind: 'ignore' });
-  });
-
-  it('ignores unknown / empty payloads', () => {
-    const wa = loadFresh();
-    expect(wa.parseWebhook(null).kind).toBe('ignore');
-    expect(wa.parseWebhook({}).kind).toBe('ignore');
-    expect(wa.parseWebhook({ statuses: [{}] }).kind).toBe('ignore');
-  });
-
-  it('ignores a non-"add" participant action', () => {
+  it('drops our own outgoing (from_me) messages', () => {
     const wa = loadFresh();
     expect(
       wa.parseWebhook({
-        groups_participants: [{ group_id: 'g', action: 'remove', participants: ['x'] }],
-      }).kind
-    ).toBe('ignore');
+        messages: [{ from_me: true, type: 'text', chat_id: '1@g.us', text: { body: 'hi' } }],
+      })
+    ).toEqual({ events: [] });
+  });
+
+  it('drops non-text / system messages', () => {
+    const wa = loadFresh();
+    expect(
+      wa.parseWebhook({ messages: [{ from_me: false, type: 'image', chat_id: '1@g.us' }] })
+    ).toEqual({ events: [] });
+  });
+
+  it('drops empty-body messages', () => {
+    const wa = loadFresh();
+    expect(
+      wa.parseWebhook({
+        messages: [{ from_me: false, type: 'text', chat_id: '1@g.us', text: { body: '   ' } }],
+      })
+    ).toEqual({ events: [] });
+  });
+
+  it('returns { events: [] } for unknown / empty / undefined payloads', () => {
+    const wa = loadFresh();
+    expect(wa.parseWebhook(null)).toEqual({ events: [] });
+    expect(wa.parseWebhook(undefined)).toEqual({ events: [] });
+    expect(wa.parseWebhook({})).toEqual({ events: [] });
+    expect(wa.parseWebhook({ statuses: [{}] })).toEqual({ events: [] });
+  });
+
+  it('drops a non-"add" participant action', () => {
+    const wa = loadFresh();
+    expect(
+      wa.parseWebhook({
+        groups_participants: [{ group_id: '1@g.us', action: 'remove', participants: ['x'] }],
+      })
+    ).toEqual({ events: [] });
   });
 });
 
@@ -417,6 +489,10 @@ describe('groupsDueForNudge (pure)', () => {
   // 10:00 Asia/Jerusalem => 07:00 UTC — inside the quiet window [9,21), but not a
   // daily-nudge hour, so only quiet_reminder can fire here.
   const midday = Date.UTC(2026, 6, 15, 7, 0);
+  // 09:00 Asia/Jerusalem => 06:00 UTC — PAST the daily_morning hour (7), used to
+  // prove same-day catch-up when a tick missed the exact target hour.
+  const nineAm = Date.UTC(2026, 6, 15, 6, 0);
+  const H = 3600 * 1000;
 
   it('fires the daily_morning nudge at its configured hour when the slot is fresh', () => {
     const wa = loadFresh();
@@ -441,6 +517,42 @@ describe('groupsDueForNudge (pure)', () => {
         },
       ],
       { now: morning, settings: fakeSettings(catalog) }
+    );
+    expect(due.some((d) => d.triggerId === 'daily_morning')).toBe(false);
+  });
+
+  it('catches up the daily nudge later the same day when the exact hour was missed', () => {
+    const wa = loadFresh();
+    // Tick at 09:00, target 07:00, slot not yet recorded → still due (catch-up).
+    const due = wa.groupsDueForNudge(
+      [{ groupId: 'g1', last_activity_at: new Date(nineAm).toISOString(), nudge_slots: {} }],
+      { now: nineAm, settings: fakeSettings(catalog) }
+    );
+    expect(due.some((d) => d.triggerId === 'daily_morning')).toBe(true);
+  });
+
+  it("does not catch up once that day's slot is recorded", () => {
+    const wa = loadFresh();
+    const due = wa.groupsDueForNudge(
+      [
+        {
+          groupId: 'g1',
+          last_activity_at: new Date(nineAm).toISOString(),
+          nudge_slots: { '2026-07-15:daily_morning': true },
+        },
+      ],
+      { now: nineAm, settings: fakeSettings(catalog) }
+    );
+    expect(due.some((d) => d.triggerId === 'daily_morning')).toBe(false);
+  });
+
+  it('does not fire a daily nudge before its target hour', () => {
+    const wa = loadFresh();
+    // 06:00 Jerusalem => 03:00 UTC, before the 07:00 target.
+    const sixAm = Date.UTC(2026, 6, 15, 3, 0);
+    const due = wa.groupsDueForNudge(
+      [{ groupId: 'g1', last_activity_at: new Date(sixAm).toISOString(), nudge_slots: {} }],
+      { now: sixAm, settings: fakeSettings(catalog) }
     );
     expect(due.some((d) => d.triggerId === 'daily_morning')).toBe(false);
   });
@@ -476,6 +588,53 @@ describe('groupsDueForNudge (pure)', () => {
       { now: midday, settings: fakeSettings(catalog) }
     );
     expect(due.some((d) => d.triggerId === 'quiet_reminder')).toBe(true);
+  });
+
+  it('fires quiet_reminder immediately for a brand-new idle group (last_at null)', () => {
+    const wa = loadFresh();
+    const due = wa.groupsDueForNudge(
+      [
+        {
+          groupId: 'g1',
+          last_activity_at: new Date(midday - 48 * H).toISOString(),
+          nudge_slots: {},
+          quiet: { count: 0, last_at: null },
+        },
+      ],
+      { now: midday, settings: fakeSettings(catalog) }
+    );
+    expect(due.some((d) => d.triggerId === 'quiet_reminder')).toBe(true);
+  });
+
+  it('spaces quiet reminders — not due again until idle_hours since the last one', () => {
+    const wa = loadFresh();
+    // Last quiet reminder only 2h ago (< idle_hours 24) → NOT due yet this tick.
+    const recent = wa.groupsDueForNudge(
+      [
+        {
+          groupId: 'g1',
+          last_activity_at: new Date(midday - 48 * H).toISOString(),
+          nudge_slots: {},
+          quiet: { count: 1, last_at: new Date(midday - 2 * H).toISOString() },
+        },
+      ],
+      { now: midday, settings: fakeSettings(catalog) }
+    );
+    expect(recent.some((d) => d.triggerId === 'quiet_reminder')).toBe(false);
+
+    // Last quiet reminder 25h ago (>= idle_hours) → due again.
+    const spaced = wa.groupsDueForNudge(
+      [
+        {
+          groupId: 'g1',
+          last_activity_at: new Date(midday - 48 * H).toISOString(),
+          nudge_slots: {},
+          quiet: { count: 1, last_at: new Date(midday - 25 * H).toISOString() },
+        },
+      ],
+      { now: midday, settings: fakeSettings(catalog) }
+    );
+    expect(spaced.some((d) => d.triggerId === 'quiet_reminder')).toBe(true);
   });
 
   it('does not fire quiet_reminder once the max cap is reached', () => {
@@ -528,5 +687,38 @@ describe('verifyWebhookSecret', () => {
     setEnv(false);
     const wa = loadFresh();
     expect(wa.verifyWebhookSecret('anything')).toBe(false);
+  });
+});
+
+describe('partial-config boot warning', () => {
+  it('warns (once, no secret value logged) when enabled+token but no webhook secret', () => {
+    setEnv(false);
+    process.env.WHATSAPP_ENABLED = 'true';
+    process.env.WHAPI_TOKEN = 'tok-secret';
+    // WHAPI_WEBHOOK_SECRET intentionally unset.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    loadFresh(); // warning fires at module load
+    expect(warn).toHaveBeenCalledTimes(1);
+    const logged = warn.mock.calls[0].join(' ');
+    expect(logged).toContain('WHAPI_WEBHOOK_SECRET');
+    // Never leak the token or a secret value into logs.
+    expect(logged).not.toContain('tok-secret');
+    warn.mockRestore();
+  });
+
+  it('does not warn when fully configured', () => {
+    setEnv(true); // includes WHAPI_WEBHOOK_SECRET
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    loadFresh();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('does not warn when fully dormant (nothing set)', () => {
+    setEnv(false);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    loadFresh();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
