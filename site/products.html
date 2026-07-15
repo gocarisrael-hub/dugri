@@ -506,6 +506,7 @@
          which hosts the multi-photo gallery. -->
     <script type="module">
       import { PUBLIC_DESIGNS as DESIGNS, fetchDesignNames } from './js/designs.js';
+      import { loadDesignImages, overrideFor } from './js/design-images.js';
 
       const PRICE = 79;
       const WAS = 129;
@@ -535,6 +536,7 @@
         img.src = `assets/designs/${d.id}/store.webp`;
         img.alt = d.name;
         img.setAttribute('data-testid', 'product-image');
+        img.setAttribute('data-store-default', img.src);
         media.appendChild(img);
         link.appendChild(media);
 
@@ -607,6 +609,22 @@
             }
           })
           .catch(() => {});
+
+        // Overlay the owner's per-design STORE-tile overrides. First paint already
+        // shows the static store.webp; this swaps in an uploaded picture where one
+        // exists. Timeout-bounded + fail-safe (js/design-images.js): a slow/failed
+        // fetch leaves every static default untouched.
+        loadDesignImages()
+          .then((map) => {
+            for (const img of grid.querySelectorAll('[data-testid="product-image"]')) {
+              const id = img.closest('[data-design-id]')?.getAttribute('data-design-id');
+              const override = overrideFor(map, id, 'store');
+              if (override) img.src = override;
+            }
+          })
+          .catch(() => {
+            /* fail-safe: static store.webp stays */
+          });
       } catch (err) {
         // Graceful degradation: never leave a blank page — offer the wizard.
         grid.innerHTML =

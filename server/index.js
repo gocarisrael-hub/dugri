@@ -15,6 +15,7 @@ const templates = require('./templates');
 const playbook = require('./playbook');
 const content = require('./content');
 const contentImport = require('./content-import');
+const designImages = require('./design-images');
 const settings = require('./settings');
 const whatsapp = require('./whatsapp');
 const waState = require('./wa-state');
@@ -1763,6 +1764,70 @@ app.put('/api/admin/content/photos', (req, res) => {
   const next = content.setPhotos(page, key, imgs);
   if (next == null) return res.status(400).json({ error: 'bad page or key' });
   res.json({ ok: true, imgs: next });
+});
+
+// ---- per-design product-image overrides ------------------------------------
+// The owner can REPLACE a design's static store/gallery pictures (store, board,
+// front, back) with their own uploaded photo, per design + slot, WITHOUT a
+// deploy. Storage reuses content.saveImageBytes (magic-byte typed, size-capped,
+// content-addressed); the map holds only the resulting /content-uploads path
+// (see server/design-images.js). Public GET is unauthenticated (every visitor
+// must resolve the current picture); writes are behind requireAdmin.
+
+// Public: the WHOLE override map { designId: { slot: "/content-uploads/…" } }.
+// products.html + js/product.js read this and prefer an override over the shipped
+// static asset; a missing/failed fetch just leaves the static default in place.
+app.get('/api/design-images', (req, res) => {
+  res.json({ images: designImages.getAll() });
+});
+
+// Admin: upload + set the override for a design/slot. Multipart (fields
+// designId, slot + a file part), same parser + magic-byte typing as the content
+// image route. Auth runs BEFORE buffering up to several MB.
+app.post(
+  '/api/admin/design-images/image',
+  (req, res, next) => {
+    if (!requireAdmin(req, res)) return;
+    next();
+  },
+  express.raw({ type: () => true, limit: CONTENT_IMAGE_UPLOAD_LIMIT }),
+  (req, res) => {
+    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
+    if (!boundary || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ error: 'expected multipart/form-data upload' });
+    }
+    const { fields, files } = templates.parseMultipart(req.body, boundary);
+    const designId = fields.designId || fields.design;
+    const slot = fields.slot;
+    if (!designImages.designOk(designId) || !designImages.slotOk(slot)) {
+      return res.status(400).json({ error: 'bad design or slot' });
+    }
+    const file = files.file || files.image || Object.values(files)[0];
+    if (!file || !Buffer.isBuffer(file.data)) {
+      return res.status(400).json({ error: 'no image file part' });
+    }
+    let img;
+    try {
+      img = content.saveImageBytes(file.data).path;
+    } catch (e) {
+      return res.status(400).json({ error: String((e && e.message) || e) });
+    }
+    const bag = designImages.set(designId, slot, img);
+    if (bag == null) return res.status(400).json({ error: 'bad design or slot' });
+    res.json({ ok: true, img, images: bag });
+  }
+);
+
+// Admin: reset a design/slot back to its shipped static asset (JSON body).
+app.delete('/api/admin/design-images', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { designId, design, slot } = req.body || {};
+  const id = designId || design;
+  if (!designImages.designOk(id) || !designImages.slotOk(slot)) {
+    return res.status(400).json({ error: 'bad design or slot' });
+  }
+  designImages.reset(id, slot);
+  res.json({ ok: true, images: designImages.getForDesign(id) });
 });
 
 // Public social-proof "celebrations" counter for the homepage. Returns ONLY an

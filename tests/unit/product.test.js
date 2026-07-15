@@ -95,4 +95,33 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
       'assets/designs/kids/gallery-back.webp',
     ]);
   });
+
+  it('prefers a per-design SLOT override over the static render, else falls back per-slot', () => {
+    // Only the board slot is overridden → front/back keep their static renders.
+    const map = { neon: { board: P1 } };
+    const shots = galleryShots(design, {}, map);
+    expect(shots.map((s) => s.src)).toEqual([
+      'assets/designs/neon/gallery-front.webp',
+      'assets/designs/neon/gallery-back.webp',
+      P1, // owner's uploaded board picture
+    ]);
+  });
+
+  it('ignores a malformed/off-origin override path and keeps the static asset', () => {
+    const map = {
+      neon: { front: 'https://evil.example/x.png', back: '/content-uploads/nope.gif' },
+    };
+    const shots = galleryShots(design, {}, map);
+    expect(shots.map((s) => s.src)).toEqual([
+      'assets/designs/neon/gallery-front.webp',
+      'assets/designs/neon/gallery-back.webp',
+      'assets/designs/neon/gallery-board.webp',
+    ]);
+  });
+
+  it('curated custom photos still win over per-slot overrides', () => {
+    const map = { neon: { front: P1, back: P2, board: P1 } };
+    const shots = galleryShots(design, { 'product-neon-photos': { imgs: [P2] } }, map);
+    expect(shots.map((s) => s.src)).toEqual([P2]); // the curated carousel wins
+  });
 });
