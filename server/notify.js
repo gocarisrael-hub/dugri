@@ -23,6 +23,14 @@
 //                   domain while replies land in the business inbox (e.g. a
 //                   Gmail).
 
+// Owner-editable message templates + labels live in settings.js (a DATA_DIR
+// store overlaying the registry defaults). notify -> settings only; settings
+// must never require notify (would be a require cycle). With no override every
+// template resolves to the default, which is byte-identical to the strings that
+// used to be inline here — so email output is unchanged until the owner edits it.
+const settings = require('./settings');
+const { interpolate } = settings;
+
 const RESEND_API_URL = 'https://api.resend.com/emails';
 // Abort a stalled Resend request instead of hanging the (fire-and-forget) send
 // forever — on timeout the fetch rejects and the send logs + returns false.
@@ -188,13 +196,33 @@ function renderEmailHtml({ title, bodyLines, cta, baseUrl } = {}) {
 </html>`;
 }
 
-// Hebrew display name for each order version.
-const VERSION_LABELS = {
-  pdf: 'דיגיטלי (PDF)',
-  pickup: 'איסוף עצמי',
-  delivery: 'משלוח עד הבית',
-  custom: 'עיצוב אישי בהתאמה מלאה',
-};
+// Owner-editable string groups (registry-backed; default to the current
+// strings). Read fresh each build so an override takes effect without a restart.
+function emailTpl(name) {
+  return settings.get('email', name);
+}
+function versionLabels() {
+  return settings.get('email', 'version_labels');
+}
+function fieldLabels() {
+  return settings.get('email', 'field_labels');
+}
+function ctaLabels() {
+  return settings.get('email', 'cta_labels');
+}
+function footer() {
+  return settings.get('email', 'footer');
+}
+
+// Hebrew display name for one order version — the mapped label, else the raw
+// version string, else '-' (matches the previous VERSION_LABELS[v] || v || '-').
+function versionLabelFor(version) {
+  const map = versionLabels();
+  if (version && Object.prototype.hasOwnProperty.call(map, version) && map[version]) {
+    return map[version];
+  }
+  return version || '-';
+}
 
 function honoreeName(collection) {
   const n = collection && collection.honoree_name ? String(collection.honoree_name).trim() : '';
@@ -231,24 +259,26 @@ function amountLines(order, options, label) {
   const charged = options && Number.isFinite(options.amountCharged) ? options.amountCharged : null;
   const amount = charged != null ? charged : order.total != null ? order.total : null;
   if (amount == null) return [];
-  if (amount <= 0) return [label + ': 0 ₪ (קופון 100%)'];
-  return [label + ': ' + amount + ' ₪'];
+  const f = fieldLabels();
+  if (amount <= 0) return [label + ': 0 ' + f.currency + ' (' + f.freeCoupon + ')'];
+  return [label + ': ' + amount + ' ' + f.currency];
 }
 
 // Shared body lines (order details) used by both messages. `options` may carry
 // `amountCharged` (the real charged amount) — see amountLines.
 function orderLines(collection, baseUrl, options) {
   const lines = [];
+  const f = fieldLabels();
   const order = (collection && collection.order) || null;
   if (order) {
-    const label = VERSION_LABELS[order.version] || order.version || '-';
-    lines.push('גרסה: ' + label);
-    lines.push(...amountLines(order, options, 'סכום'));
+    const label = versionLabelFor(order.version);
+    lines.push(f.version + ': ' + label);
+    lines.push(...amountLines(order, options, f.amount));
   }
   const wc = wordCount(collection);
-  if (wc != null) lines.push('מספר מילים: ' + wc);
+  if (wc != null) lines.push(f.wordCount + ': ' + wc);
   const link = ownerLink(collection, baseUrl);
-  if (link) lines.push('קישור לניהול: ' + link);
+  if (link) lines.push(f.ownerLink + ': ' + link);
   return lines;
 }
 
@@ -258,9 +288,11 @@ function orderLines(collection, baseUrl, options) {
 // Returns {subject,text}.
 function buildPaidMessage(collection, baseUrl, options) {
   const name = honoreeName(collection);
-  const subject = 'דוגרי · התקבל תשלום — ' + name;
+  const tpl = emailTpl('order_paid');
+  const values = { honoree: name };
+  const subject = interpolate(tpl.subject, values);
   const text = [
-    'התקבל תשלום עבור ההזמנה של ' + name + '.',
+    ...interpolate(tpl.body, values).split('\n'),
     '',
     ...orderLines(collection, baseUrl, options),
   ].join('\n');
@@ -275,10 +307,11 @@ function buildPaidMessage(collection, baseUrl, options) {
 // Returns {subject, text} — same shape as the other builders.
 function buildCustomOrderAlert(collection, baseUrl, options) {
   const name = honoreeName(collection);
-  const subject = 'דוגרי · הזמנה בהתאמה אישית — צריך עיצוב ידני · ' + name;
+  const tpl = emailTpl('custom_order_alert');
+  const values = { honoree: name };
+  const subject = interpolate(tpl.subject, values);
   const text = [
-    'התקבלה הזמנת עיצוב אישי (מותאם אישית) עבור ' + name + '.',
-    'ההזמנה דורשת עיצוב ידני — אין תבנית מוכנה, יש להכין עיצוב בהתאמה מלאה.',
+    ...interpolate(tpl.body, values).split('\n'),
     '',
     ...orderLines(collection, baseUrl, options),
   ].join('\n');
@@ -295,21 +328,21 @@ function buildCustomOrderAlert(collection, baseUrl, options) {
 // order, the discounted amount for a partial coupon).
 function buildBuyerConfirmation(collection, baseUrl, options) {
   const name = honoreeName(collection);
-  const subject = 'דוגרי · ההזמנה שלכם התקבלה — ' + name;
-  const lines = [
-    'תודה רבה על ההזמנה!',
-    'קיבלנו את התשלום עבור המשחק של ' + name + '.',
-    '',
-    'פרטי ההזמנה:',
-  ];
+  const tpl = emailTpl('buyer_confirmation');
+  const f = fieldLabels();
+  const cta = ctaLabels();
+  const ft = footer();
+  const values = { honoree: name };
+  const subject = interpolate(tpl.subject, values);
+  const lines = interpolate(tpl.body, values).split('\n');
   const order = (collection && collection.order) || null;
   if (order) {
-    const label = VERSION_LABELS[order.version] || order.version || '-';
-    lines.push('· חבילה: ' + label);
-    lines.push(...amountLines(order, options, '· מחיר'));
+    const label = versionLabelFor(order.version);
+    lines.push(f.buyerPackage + ': ' + label);
+    lines.push(...amountLines(order, options, f.buyerPrice));
   }
-  if (collection && collection.design) lines.push('· עיצוב: ' + collection.design);
-  if (collection && collection.color) lines.push('· צבע: ' + collection.color);
+  if (collection && collection.design) lines.push(f.buyerDesign + ': ' + collection.design);
+  if (collection && collection.color) lines.push(f.buyerColor + ': ' + collection.color);
   const link = ownerLink(collection, baseUrl);
   // Branded HTML mirrors the plain-text body but drops the raw URL line — the
   // link becomes the CTA button. Everything above the link is reused as-is.
@@ -322,12 +355,12 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
     htmlLines.push('נשאר רק שלב אחד: הוסיפו את 100+ המילים על בעל/ת השמחה.');
   }
   lines.push('');
-  lines.push('נתראה על הלוח,');
-  lines.push('צוות דוגרי');
+  lines.push(ft.line1);
+  lines.push(ft.line2);
   const html = renderEmailHtml({
     title: 'ההזמנה שלכם התקבלה — ' + name,
     bodyLines: htmlLines,
-    cta: link ? { label: 'להוספת המילים', url: link } : null,
+    cta: link ? { label: cta.addWords, url: link } : null,
     baseUrl,
   });
   return { subject, text: lines.join('\n'), html };
@@ -339,20 +372,24 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
 // Returns {subject, text, html}. The same body is sent to the client and to Dugri.
 function buildPdfReadyMessage(collection, link, baseUrl) {
   const name = honoreeName(collection);
-  const subject = 'דוגרי · הקובץ שלכם מוכן — ' + name;
-  const intro = 'הקובץ המוכן להדפסה של המשחק עבור ' + name + ' מוכן!';
-  const lines = [intro, ''];
+  const tpl = emailTpl('pdf_ready');
+  const cta = ctaLabels();
+  const ft = footer();
+  const values = { honoree: name, downloadLink: link || '' };
+  const subject = interpolate(tpl.subject, values);
+  const bodyLines = interpolate(tpl.body, values).split('\n');
+  const lines = [...bodyLines, ''];
   if (link) {
     lines.push('להורדת ה-PDF:');
     lines.push(link);
     lines.push('');
   }
-  lines.push('נתראה על הלוח,');
-  lines.push('צוות דוגרי');
+  lines.push(ft.line1);
+  lines.push(ft.line2);
   const html = renderEmailHtml({
     title: 'הקובץ שלכם מוכן — ' + name,
-    bodyLines: [intro],
-    cta: link ? { label: 'להורדת הקובץ', url: link } : null,
+    bodyLines,
+    cta: link ? { label: cta.downloadFile, url: link } : null,
     baseUrl,
   });
   return { subject, text: lines.join('\n'), html };
@@ -361,9 +398,11 @@ function buildPdfReadyMessage(collection, link, baseUrl) {
 // Pure builder: the "order finished / ready to produce" email.
 function buildFinishedMessage(collection, baseUrl) {
   const name = honoreeName(collection);
-  const subject = 'דוגרי · הזמנה מוכנה להפקה — ' + name;
+  const tpl = emailTpl('order_finished');
+  const values = { honoree: name };
+  const subject = interpolate(tpl.subject, values);
   const text = [
-    'ההזמנה של ' + name + ' נסגרה ומוכנה להפקה.',
+    ...interpolate(tpl.body, values).split('\n'),
     '',
     ...orderLines(collection, baseUrl),
   ].join('\n');
@@ -377,24 +416,28 @@ function buildFinishedMessage(collection, baseUrl) {
 // Returns {subject, text} — same shape as the other builders.
 function buildProductionError(collection, baseUrl, problems) {
   const name = honoreeName(collection);
-  const subject = 'דוגרי · צריך תיקון לפני הפקה — ' + name;
-  const intro = 'לא הצלחנו להפיק את הקובץ של ' + name + ' — יש לתקן את הנקודות הבאות:';
+  const tpl = emailTpl('production_error');
+  const cta = ctaLabels();
+  const ft = footer();
+  const values = { honoree: name };
+  const subject = interpolate(tpl.subject, values);
+  const bodyLines = interpolate(tpl.body, values).split('\n');
   const items = (Array.isArray(problems) ? problems : []).map((p) => '· ' + p);
-  const lines = [intro, '', ...items];
+  const lines = [...bodyLines, '', ...items];
   const link = ownerLink(collection, baseUrl);
   // HTML mirrors the same intro + problem list; the owner link becomes the CTA.
-  const htmlLines = [intro, '', ...items];
+  const htmlLines = [...bodyLines, '', ...items];
   if (link) {
     lines.push('');
     lines.push('לעדכון ההזמנה:');
     lines.push(link);
   }
   lines.push('');
-  lines.push('צוות דוגרי');
+  lines.push(ft.line2);
   const html = renderEmailHtml({
     title: 'צריך תיקון לפני הפקה — ' + name,
     bodyLines: htmlLines,
-    cta: link ? { label: 'לעדכון ההזמנה', url: link } : null,
+    cta: link ? { label: cta.updateOrder, url: link } : null,
     baseUrl,
   });
   return { subject, text: lines.join('\n'), html };
@@ -407,10 +450,13 @@ function buildProductionError(collection, baseUrl, problems) {
 // Returns {subject, text, html} — the plain text is the fallback.
 function buildWordsReminder(collection, baseUrl) {
   const name = honoreeName(collection);
-  const subject = 'דוגרי · עוד לא הוספתם מילים — ' + name;
-  const intro = 'עוד לא קיבלנו את רשימת המילים עבור המשחק של ' + name + '.';
-  const nudge = 'ברגע שתוסיפו את המילים נתחיל להכין את הקובץ — זה לוקח כמה דקות בלבד.';
-  const lines = [intro, '', nudge];
+  const tpl = emailTpl('words_reminder');
+  const cta = ctaLabels();
+  const ft = footer();
+  const values = { honoree: name };
+  const subject = interpolate(tpl.subject, values);
+  const bodyLines = interpolate(tpl.body, values).split('\n');
+  const lines = bodyLines.slice();
   const link = ownerLink(collection, baseUrl);
   if (link) {
     lines.push('');
@@ -418,12 +464,12 @@ function buildWordsReminder(collection, baseUrl) {
     lines.push(link);
   }
   lines.push('');
-  lines.push('נתראה על הלוח,');
-  lines.push('צוות דוגרי');
+  lines.push(ft.line1);
+  lines.push(ft.line2);
   const html = renderEmailHtml({
     title: 'עוד לא הוספתם מילים — ' + name,
-    bodyLines: [intro, '', nudge],
-    cta: link ? { label: 'להוספת המילים', url: link } : null,
+    bodyLines,
+    cta: link ? { label: cta.addWords, url: link } : null,
     baseUrl,
   });
   return { subject, text: lines.join('\n'), html };
