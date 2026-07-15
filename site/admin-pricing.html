@@ -2,10 +2,10 @@
 <html lang="he" dir="rtl">
   <head>
     <meta charset="utf-8" />
-    <meta name="dugri:page" content="admin-features.html" />
+    <meta name="dugri:page" content="admin-pricing.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>פיצ׳רים — דוגרי (ניהול)</title>
+    <title>מחירים — דוגרי (ניהול)</title>
     <style>
       :root {
         --bg: #ffffff;
@@ -99,6 +99,17 @@
         direction: ltr;
         unicode-bidi: embed;
       }
+      .section-group {
+        margin: 30px 0 10px;
+      }
+      .section-title {
+        font-size: 13px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--pink-deep);
+        font-weight: 800;
+        margin: 0 0 12px;
+      }
       .card {
         border: 1px solid var(--line);
         border-radius: var(--radius);
@@ -113,7 +124,7 @@
         display: flex;
         align-items: baseline;
         gap: 10px;
-        margin-bottom: 12px;
+        margin-bottom: 10px;
         flex-wrap: wrap;
       }
       .card-title {
@@ -129,63 +140,46 @@
         unicode-bidi: embed;
         font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
       }
-      /* An accessible on/off switch built on a native checkbox. */
-      .switch {
+      label.fld {
+        display: block;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--muted);
+        margin: 10px 0 4px;
+      }
+      input[type='number'] {
+        width: 140px;
+        font: inherit;
+        font-size: 15px;
+        color: var(--ink);
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      input:focus {
+        outline: none;
+        border-color: var(--pink);
+      }
+      .toggle {
         display: inline-flex;
         align-items: center;
-        gap: 10px;
-        font-size: 15px;
+        gap: 8px;
+        font-size: 14px;
         font-weight: 700;
         color: var(--ink);
-        cursor: pointer;
-      }
-      .switch input {
-        appearance: none;
-        -webkit-appearance: none;
-        position: relative;
-        width: 46px;
-        height: 26px;
-        margin: 0;
-        border-radius: 99px;
-        background: #d7d2c8;
-        border: none;
-        cursor: pointer;
-        flex: 0 0 auto;
-        transition: background 0.15s;
-      }
-      .switch input::after {
-        content: '';
-        position: absolute;
-        top: 3px;
-        right: 3px;
-        width: 20px;
-        height: 20px;
-        border-radius: 50%;
-        background: #fff;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-        transition: transform 0.15s;
-      }
-      .switch input:checked {
-        background: var(--pink);
-      }
-      .switch input:checked::after {
-        transform: translateX(-20px);
-      }
-      .switch input:focus-visible {
-        outline: 2px solid var(--pink-deep);
-        outline-offset: 2px;
       }
       .hint {
-        font-size: 12.5px;
+        font-size: 12px;
         color: var(--muted);
-        margin: 10px 0 0;
+        margin: 6px 0 0;
       }
       .actions {
         display: flex;
         gap: 10px;
         align-items: center;
         flex-wrap: wrap;
-        margin-top: 16px;
+        margin-top: 14px;
       }
       button {
         font: inherit;
@@ -248,15 +242,14 @@
         <a data-page="admin-designs.html">עיצובים</a>
         <a data-page="admin-playbook.html">פלייבוק</a>
         <a data-page="admin-texts.html">הודעות וטקסטים</a>
-        <a data-page="admin-features.html" class="active">פיצ׳רים</a>
-        <a data-page="admin-pricing.html">מחירים</a>
+        <a data-page="admin-features.html">פיצ׳רים</a>
+        <a data-page="admin-pricing.html" class="active">מחירים</a>
       </nav>
       <header>
-        <p class="kicker">Internal · פיצ׳רים בטופס ההזמנה</p>
-        <h1>פיצ׳רים</h1>
+        <p class="kicker">Internal · מחירים ואפשרויות תשלום</p>
+        <h1>מחירים</h1>
         <p>
-          הדלקה/כיבוי של יכולות בטופס ההזמנה. פיצ׳ר כבוי מוסתר לגמרי מהלקוח/ה — הטופס ממשיך לעבוד עם
-          ברירת המחדל. כל שינוי נשמר בשרת ומשפיע מיד (רענון הטופס).
+          מחיר החנות ואפשרויות התשלום בקופה. כל שינוי נשמר בשרת ומשפיע מיד — בלי צורך בפריסה מחדש.
         </p>
       </header>
 
@@ -266,7 +259,14 @@
       <div id="loadErr" class="msg" hidden></div>
 
       <div id="app" hidden>
-        <div id="flagCards"></div>
+        <div class="section-group">
+          <p class="section-title">מחיר בחנות</p>
+          <div id="storeCards"></div>
+        </div>
+        <div class="section-group">
+          <p class="section-title">אפשרויות תשלום בקופה</p>
+          <div id="versionCards"></div>
+        </div>
       </div>
 
       <footer>נשמר בשרת (DATA_DIR) · גלוי רק עם מפתח הניהול · לא מקושר מהאתר.</footer>
@@ -290,8 +290,9 @@
           body: body ? JSON.stringify(body) : undefined,
         });
         if (!r.ok) {
-          // Surface the server's {error} reason so the owner sees WHY. Fall back to
-          // the status if the body isn't JSON.
+          // Surface the server's {error} reason (e.g. "value must be a
+          // non-negative integer") so the owner sees WHY. Fall back to the status
+          // if the body isn't JSON.
           let msg = 'HTTP ' + r.status;
           try {
             const j = await r.json();
@@ -309,56 +310,74 @@
           (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
         );
       }
-      // Stable, HTML-id-safe slug from section+key ('features-font_choice' -> ...).
-      function slug(section, k) {
-        return (section + '-' + k).replace(/[^a-z0-9]+/gi, '-');
-      }
 
-      // Friendly Hebrew names for each flag. Unknown keys (a flag added in code
-      // later) fall back to the raw id, so the list stays fully dynamic.
-      const LABELS = {
-        color_picking: 'בחירת צבע',
-        chasers_choice: 'צ׳ייסרים (עם/בלי)',
-        font_choice: 'בחירת גופן',
-        name_preview: 'תצוגה מקדימה עם שם',
-      };
-      function labelFor(k) {
-        return LABELS[k] || k;
-      }
-      // A per-flag note. font_choice depends on name_preview (the picker is nested
-      // in the preview panel), so it only takes effect when name-preview is on too.
-      const NOTES = {
-        font_choice: 'דורש שגם "תצוגה מקדימה עם שם" תהיה מופעלת — אחרת בחירת הגופן לא תוצג.',
-      };
+      // The four checkout versions, in display order, with their Hebrew labels.
+      const VERSIONS = [
+        { id: 'pdf', label: 'דיגיטלי (PDF)' },
+        { id: 'pickup', label: 'איסוף עצמי' },
+        { id: 'delivery', label: 'משלוח עד הבית' },
+        { id: 'custom', label: 'עיצוב אישי בהתאמה מלאה' },
+      ];
 
       let state = null; // last full settings.all() response
 
-      // --- one toggle card per feature flag ------------------------------------
-      function flagCardHtml(k, eff) {
-        const id = slug('features', k);
-        const on = !!eff;
-        const note = NOTES[k] ? '<p class="hint">' + esc(NOTES[k]) + '</p>' : '';
+      // --- a single price (number) field ----------------------------------------
+      function priceFieldHtml(k, label, value) {
+        return (
+          '<label class="fld">' +
+          esc(label) +
+          ' (₪)</label>' +
+          '<input type="number" min="0" step="1" inputmode="numeric" data-price="' +
+          esc(k) +
+          '" value="' +
+          esc(value) +
+          '" />'
+        );
+      }
+
+      // --- store price card (store_now + store_was) ------------------------------
+      function storeCardHtml(eff) {
+        return (
+          '<div class="card" data-card="store" data-keys="store_now,store_was">' +
+          '<div class="card-head"><h3 class="card-title">מחיר בחנות</h3>' +
+          '<span class="card-id">pricing.store</span></div>' +
+          priceFieldHtml('store_now', 'מחיר מוצג', eff.store_now) +
+          priceFieldHtml('store_was', 'מחיר לפני (מחוק)', eff.store_was) +
+          '<p class="hint">המחיר שמופיע בעמודי החנות והמוצר; המחיר "לפני" מוצג עם קו חוצה.</p>' +
+          '<div class="actions">' +
+          '<button class="primary" data-save type="button">שמירה</button>' +
+          '<button class="danger" data-reset type="button">אפס לברירת מחדל</button>' +
+          '<span class="meta status" role="status" aria-live="polite"></span>' +
+          '</div></div>'
+        );
+      }
+
+      // --- one checkout-version card (enable flag + price) -----------------------
+      function versionCardHtml(v, eff) {
+        const enabledKey = v.id + '_enabled';
+        const priceKey = v.id + '_price';
+        const enabled = !!eff[enabledKey];
         return (
           '<div class="card' +
-          (on ? '' : ' off') +
-          '" data-section="features" data-key="' +
-          esc(k) +
-          '" data-kind="flag" id="card-' +
-          id +
+          (enabled ? '' : ' off') +
+          '" data-card="' +
+          esc(v.id) +
+          '" data-keys="' +
+          esc(enabledKey) +
+          ',' +
+          esc(priceKey) +
           '">' +
           '<div class="card-head"><h3 class="card-title">' +
-          esc(labelFor(k)) +
-          '</h3><span class="card-id">features.' +
-          esc(k) +
+          esc(v.label) +
+          '</h3><span class="card-id">pricing.' +
+          esc(v.id) +
           '</span></div>' +
-          '<label class="switch"><input type="checkbox" data-section="features" data-key="' +
-          esc(k) +
-          '" data-kind="flag" data-testid="flag-' +
-          esc(k) +
+          '<label class="toggle"><input type="checkbox" data-flag="' +
+          esc(enabledKey) +
           '"' +
-          (on ? ' checked' : '') +
-          ' /> <span>מוצג בטופס ההזמנה</span></label>' +
-          note +
+          (enabled ? ' checked' : '') +
+          ' /> מוצג בקופה</label>' +
+          priceFieldHtml(priceKey, 'מחיר', eff[priceKey]) +
           '<div class="actions">' +
           '<button class="primary" data-save type="button">שמירה</button>' +
           '<button class="danger" data-reset type="button">אפס לברירת מחדל</button>' +
@@ -368,15 +387,9 @@
       }
 
       function render() {
-        const { registry, effective } = state;
-        qs('flagCards').innerHTML = Object.keys(registry.features)
-          .map((k) => flagCardHtml(k, effective.features[k]))
-          .join('');
-      }
-
-      // The override VALUE for a flag card is the bare boolean checkbox state.
-      function readValue(card) {
-        return card.querySelector('input[type="checkbox"]').checked;
+        const eff = state.effective.pricing;
+        qs('storeCards').innerHTML = storeCardHtml(eff);
+        qs('versionCards').innerHTML = VERSIONS.map((v) => versionCardHtml(v, eff)).join('');
       }
 
       function setStatus(card, text, cls) {
@@ -386,53 +399,79 @@
         if (cls === 'ok') setTimeout(() => (s.textContent = ''), 2200);
       }
 
-      // Write the effective value the server returned back into the store and
-      // re-render that one card, so the UI reflects the saved state.
-      function applyEffective(section, k, effective) {
-        state.effective[section][k] = effective;
-        const card = qs('card-' + slug(section, k));
-        card.outerHTML = flagCardHtml(k, effective);
+      // Re-render one card in place from the current state.effective.pricing.
+      function rerenderCard(card) {
+        const id = card.dataset.card;
+        const eff = state.effective.pricing;
+        const html = id === 'store' ? storeCardHtml(eff) : versionCardHtml(byId(id), eff);
+        card.outerHTML = html;
+      }
+      function byId(id) {
+        return VERSIONS.find((v) => v.id === id);
+      }
+
+      // Read a card's { key: value } payload. price → integer from the number
+      // input; flag → checkbox boolean. Returns { values } or { error } on a bad
+      // (empty / non-integer / negative) price.
+      function readCard(card) {
+        const values = {};
+        for (const inp of card.querySelectorAll('[data-price]')) {
+          const raw = inp.value.trim();
+          const n = Number(raw);
+          if (raw === '' || !Number.isInteger(n) || n < 0) {
+            return { error: 'כל מחיר חייב להיות מספר שלם 0 ומעלה' };
+          }
+          values[inp.dataset.price] = n;
+        }
+        for (const inp of card.querySelectorAll('[data-flag]')) {
+          values[inp.dataset.flag] = inp.checked;
+        }
+        return { values };
       }
 
       async function saveCard(card) {
-        const section = card.dataset.section;
-        const k = card.dataset.key;
+        const parsed = readCard(card);
+        if (parsed.error) return setStatus(card, parsed.error, 'err');
         setStatus(card, 'שומר…');
         try {
-          const { effective } = await api('POST', '/api/admin/settings', {
-            section,
-            key: k,
-            value: readValue(card),
-          });
-          applyEffective(section, k, effective);
-          setStatus(qs('card-' + slug(section, k)), 'נשמר ✓', 'ok');
+          // One POST per key (the settings API stores a single override at a time).
+          for (const [k, value] of Object.entries(parsed.values)) {
+            const { effective } = await api('POST', '/api/admin/settings', {
+              section: 'pricing',
+              key: k,
+              value,
+            });
+            state.effective.pricing[k] = effective;
+          }
+          rerenderCard(card);
+          const fresh = qs('app').querySelector('[data-card="' + card.dataset.card + '"]');
+          setStatus(fresh, 'נשמר ✓', 'ok');
         } catch (e) {
           setStatus(card, 'שמירה נכשלה: ' + e.message, 'err');
         }
       }
 
       async function resetCard(card) {
-        const section = card.dataset.section;
-        const k = card.dataset.key;
-        if (!confirm('לאפס לברירת המחדל (כבוי)?')) return;
+        if (!confirm('לאפס לברירת המחדל?')) return;
         setStatus(card, 'מאפס…');
+        const keys = (card.dataset.keys || '').split(',').filter(Boolean);
         try {
-          // DELETE bodies are often dropped in transit; the settings key travels as
-          // `settingKey` (the `key` query param is reserved for the admin secret).
-          const url =
-            '/api/admin/settings?section=' +
-            encodeURIComponent(section) +
-            '&settingKey=' +
-            encodeURIComponent(k);
-          const { effective } = await api('DELETE', url);
-          applyEffective(section, k, effective);
-          setStatus(qs('card-' + slug(section, k)), 'אופס ✓', 'ok');
+          for (const k of keys) {
+            // DELETE bodies are often dropped in transit; the settings key travels
+            // as `settingKey` (the `key` query param is reserved for the admin
+            // secret used by requireAdmin).
+            const url = '/api/admin/settings?section=pricing&settingKey=' + encodeURIComponent(k);
+            const { effective } = await api('DELETE', url);
+            state.effective.pricing[k] = effective;
+          }
+          rerenderCard(card);
+          const fresh = qs('app').querySelector('[data-card="' + card.dataset.card + '"]');
+          setStatus(fresh, 'אופס ✓', 'ok');
         } catch (e) {
           setStatus(card, 'איפוס נכשל: ' + e.message, 'err');
         }
       }
 
-      // Toggling the switch greys the card immediately (visual only until saved).
       // Save / reset via event delegation on the app container.
       qs('app').addEventListener('click', (e) => {
         const btn = e.target.closest('button');
@@ -442,8 +481,9 @@
         if (btn.hasAttribute('data-save')) saveCard(card);
         else if (btn.hasAttribute('data-reset')) resetCard(card);
       });
+      // Toggling the enable checkbox greys the card immediately (visual only).
       qs('app').addEventListener('change', (e) => {
-        if (e.target.matches('input[type="checkbox"][data-kind="flag"]')) {
+        if (e.target.matches('[data-flag]')) {
           e.target.closest('.card').classList.toggle('off', !e.target.checked);
         }
       });

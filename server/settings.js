@@ -67,6 +67,8 @@ function interpolate(template, values, opts) {
 //   'map'    — a flat { key: label } object of short editable label strings.
 //   'footer' — the shared two-line email sign-off.
 //   'trigger'— a WhatsApp trigger { enabled, text, timing? }.
+//   'price'  — a non-negative integer NIS amount (store price / per-version price).
+//   'flag'   — a boolean on/off switch (a checkout version's enabled state).
 const REGISTRY = {
   email: {
     order_paid: {
@@ -261,6 +263,25 @@ const REGISTRY = {
     font_choice: { kind: 'flag', tokens: [], default: false },
     name_preview: { kind: 'flag', tokens: [], default: false },
   },
+  // --- Pricing (owner-editable, no deploy) -----------------------------------
+  // The storefront display price (`store_now` shown, `store_was` struck through)
+  // and, per checkout version, an `<v>_enabled` flag + an `<v>_price` (NIS). The
+  // DEFAULTS below ARE the launch state: the store shows 199 (struck 239) and
+  // checkout offers ONLY self-pickup (pickup) at 199 — every other version is
+  // disabled until the owner turns it on from the admin page. server/db.js reads
+  // these as the authoritative charge (fail-safe fallback to the same numbers).
+  pricing: {
+    store_now: { kind: 'price', tokens: [], default: 199 },
+    store_was: { kind: 'price', tokens: [], default: 239 },
+    pdf_enabled: { kind: 'flag', tokens: [], default: false },
+    pdf_price: { kind: 'price', tokens: [], default: 79 },
+    pickup_enabled: { kind: 'flag', tokens: [], default: true },
+    pickup_price: { kind: 'price', tokens: [], default: 199 },
+    delivery_enabled: { kind: 'flag', tokens: [], default: false },
+    delivery_price: { kind: 'price', tokens: [], default: 199 },
+    custom_enabled: { kind: 'flag', tokens: [], default: false },
+    custom_price: { kind: 'price', tokens: [], default: 599 },
+  },
 };
 
 // --- small object helpers -----------------------------------------------------
@@ -409,6 +430,12 @@ function validateValue(section, key, value) {
   }
   if (kind === 'map' || kind === 'footer') {
     if (!isPlainObject(value)) return 'value must be an object';
+    return null;
+  }
+  if (kind === 'price') {
+    // A NIS amount: an integer >= 0. Rejects strings ('199'), floats (1.5),
+    // negatives and null so a bad write can never reach the charge path.
+    if (!Number.isInteger(value) || value < 0) return 'value must be a non-negative integer';
     return null;
   }
   if (kind === 'trigger') {

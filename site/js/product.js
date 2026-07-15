@@ -22,9 +22,13 @@
 
 import { PUBLIC_DESIGNS } from './designs.js';
 import { initCarousel } from './carousel.js';
+import { fetchPricing } from './pricing.js';
 
-const PRICE = 79;
-const WAS = 129;
+// Owner-editable store price. Seeded with the launch defaults so first paint is
+// correct even before /api/pricing answers (boot re-stamps these once the
+// timeout-bounded fetch resolves; a failure keeps the defaults).
+let PRICE = 199;
+let WAS = 239;
 
 // ---- per-design "about" copy --------------------------------------------
 // Placeholder Hebrew descriptions, keyed by design id. Generic-but-on-brand;
@@ -434,6 +438,27 @@ function boot() {
   // THEN overlay the per-design overrides when they resolve (reusing the editor's
   // fetch). Fail-soft: loadOverrides never rejects.
   loadOverrides().then((ov) => applyOverridesToPage(d, ov));
+
+  // Overlay the owner-editable store price when it resolves (timeout-bounded,
+  // fail-safe). First paint already showed the launch default, so a slow/failed
+  // fetch simply leaves that in place.
+  fetchPricing().then((p) => {
+    PRICE = p.store.now;
+    WAS = p.store.was;
+    restampPrices();
+  });
+}
+
+// Re-stamp every rendered store price (the PDP now/was + each related card) from
+// the current PRICE/WAS. Safe to call before or after related renders.
+function restampPrices() {
+  const now = document.getElementById('pdpPriceNow');
+  if (now) now.textContent = `מ-${PRICE} ₪`;
+  const was = document.getElementById('pdpPriceWas');
+  if (was) was.textContent = `${WAS} ₪`;
+  for (const el of document.querySelectorAll('.pdp-rel-price')) {
+    el.textContent = `מ-${PRICE} ₪`;
+  }
 }
 
 // Auto-boot only on the real page (a #galleryTrack exists). A bare test import of

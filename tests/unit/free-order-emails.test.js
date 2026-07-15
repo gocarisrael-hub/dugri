@@ -48,6 +48,12 @@ beforeAll(async () => {
   for (const f of ['db.js', 'pelecard.js', 'notify.js', 'index.js']) {
     delete require.cache[require.resolve(path.join(serverDir, f))];
   }
+  // Charge path gates on per-version enable flags (only pickup on by default);
+  // these tests pay for pdf, so enable every version for this data dir.
+  delete require.cache[require.resolve(path.join(serverDir, 'settings.js'))];
+  const settings = require(path.join(serverDir, 'settings.js'));
+  for (const v of ['pdf', 'pickup', 'delivery', 'custom'])
+    settings.set('pricing', v + '_enabled', true);
   db = require(path.join(serverDir, 'db.js'));
   app = require(path.join(serverDir, 'index.js'));
 

@@ -1886,6 +1886,42 @@ app.get('/api/features', (req, res) => {
   res.json(out);
 });
 
+// Public, UNAUTHENTICATED: the effective pricing the storefront + checkout read
+// (the owner edits it from admin-pricing.html, no deploy). A WHITELISTED
+// projection of only the `pricing` settings section — the store display price and
+// each checkout version's { enabled, price }. No other settings section leaks
+// here. Mirrors GET /api/content (public overrides projection).
+app.get('/api/pricing', (req, res) => {
+  // Read ONLY the pricing section, iterating its registry keys (so a price/
+  // version added later is exposed automatically) — never settings.all(), which
+  // would clone every section (incl. non-pricing settings) on this
+  // unauthenticated hot path. Each key is read once; a failed read falls back to
+  // the registry default we already hold, so this can't throw or leak secrets.
+  const pricingReg = (settings.REGISTRY && settings.REGISTRY.pricing) || {};
+  const eff = {};
+  for (const key of Object.keys(pricingReg)) {
+    let v = pricingReg[key].default;
+    try {
+      v = settings.get('pricing', key);
+    } catch {
+      /* keep the registry default */
+    }
+    eff[key] = v;
+  }
+  const int = (v, fallback) => (Number.isInteger(v) ? v : fallback);
+  const versions = {};
+  for (const key of Object.keys(eff)) {
+    const m = /^(.+)_enabled$/.exec(key);
+    if (!m) continue;
+    const name = m[1];
+    versions[name] = { enabled: eff[key] === true, price: int(eff[name + '_price'], 0) };
+  }
+  res.json({
+    store: { now: int(eff.store_now, 199), was: int(eff.store_was, 239) },
+    versions,
+  });
+});
+
 // Unknown API routes -> JSON 404 (must come before static/catch-all).
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
 

@@ -31,11 +31,50 @@ const MAX_SESSIONS = Number(process.env.PELECARD_MAX_SESSIONS || 50);
 
 const DEFAULTS = { collections: [], words: [], coupons: [], design_codes: [] };
 
-// Single source of truth for order pricing (NIS).
+// Owner-editable pricing lives in server/settings.js (the `pricing` section) so
+// the store price + per-version enable/price change with NO deploy. This module
+// reads it as the AUTHORITATIVE charge. settings.js requires nothing from db, so
+// this import is cycle-free; it's wrapped so a broken settings module can never
+// take the charge path down (we fall back to the built-in defaults below).
+let settings = null;
+try {
+  settings = require('./settings');
+} catch {
+  settings = null;
+}
+
+// Built-in fallback pricing (NIS) + the set of known versions. These MUST mirror
+// the settings.js `pricing` DEFAULTS (store 199/239; pdf 79, pickup 199,
+// delivery 199, custom 599; only pickup enabled). Used verbatim when settings is
+// unavailable, and as the price fallback for a version whose settings read fails.
 // pdf = digital PDF; pickup = printed + pickup at גלאור; delivery = door-to-door;
-// custom = a "hand-designed just for you" bespoke game (design is TBD — the
-// customer buys the custom slot and we design it by hand afterwards).
-const ORDER_PRICES = { pdf: 79, pickup: 149, delivery: 199, custom: 599 };
+// custom = a "hand-designed just for you" bespoke game we design by hand.
+const ORDER_PRICES = { pdf: 79, pickup: 199, delivery: 199, custom: 599 };
+// Launch-default enabled state (the fail-safe fallback for versionEnabled).
+const DEFAULT_ENABLED = { pdf: false, pickup: true, delivery: false, custom: false };
+
+// Is a version currently offered? Reads the `<v>_enabled` flag from settings,
+// falling back to the built-in launch default if settings is unavailable.
+function versionEnabled(version) {
+  if (!Object.prototype.hasOwnProperty.call(ORDER_PRICES, version)) return false;
+  try {
+    return settings.get('pricing', version + '_enabled') === true;
+  } catch {
+    return DEFAULT_ENABLED[version] === true;
+  }
+}
+
+// The NIS charge for a version. Reads `<v>_price` from settings (must be a
+// non-negative integer), falling back to the built-in default otherwise.
+function versionPrice(version) {
+  try {
+    const p = settings.get('pricing', version + '_price');
+    if (Number.isInteger(p) && p >= 0) return p;
+  } catch {
+    /* settings unavailable — use the built-in default below */
+  }
+  return ORDER_PRICES[version];
+}
 
 function loadDb() {
   try {
@@ -366,6 +405,12 @@ const db = {
     if (!Object.prototype.hasOwnProperty.call(ORDER_PRICES, version)) {
       return { error: 'bad version' };
     }
+    // Reject a version the owner has turned OFF in admin (settings) exactly like
+    // an unknown one — the route maps either to 400 — so a disabled option can
+    // never be charged even if a client POSTs it directly.
+    if (!versionEnabled(version)) {
+      return { error: 'version unavailable' };
+    }
     let addr = null;
     if (version === 'delivery') {
       const a = address || {};
@@ -387,7 +432,7 @@ const db = {
     const prevPelecard = c.order && !c.order.paid ? c.order.pelecard || null : null;
     c.order = {
       version,
-      total: ORDER_PRICES[version],
+      total: versionPrice(version),
       address: addr,
       ordered_at: nowIso(),
       paid: false,

@@ -506,9 +506,13 @@
          which hosts the multi-photo gallery. -->
     <script type="module">
       import { PUBLIC_DESIGNS as DESIGNS } from './js/designs.js';
+      import { fetchPricing } from './js/pricing.js';
 
-      const PRICE = 79;
-      const WAS = 129;
+      // Owner-editable store price (fetched, timeout-bounded; falls back to the
+      // launch defaults 199 / struck 239 if the endpoint is slow or fails).
+      const pricing = await fetchPricing();
+      const PRICE = pricing.store.now;
+      const WAS = pricing.store.was;
       const grid = document.getElementById('storeGrid');
 
       // ---- one product card ---------------------------------------------------

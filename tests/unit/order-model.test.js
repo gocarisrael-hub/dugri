@@ -16,6 +16,16 @@ let ORDER_PRICES;
 
 beforeAll(() => {
   process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-order-'));
+  // The charge path now reads per-version enable flags from settings; only
+  // pickup is enabled by default. This suite exercises pdf/delivery/custom, so
+  // enable every version for this test's data dir first (fresh settings bound to
+  // the temp DATA_DIR, then persisted so db.js reads them).
+  const settingsPath = path.join(__dirname, '..', '..', 'server', 'settings.js');
+  delete require.cache[require.resolve(settingsPath)];
+  const settings = require(settingsPath);
+  for (const v of ['pdf', 'pickup', 'delivery', 'custom']) {
+    settings.set('pricing', v + '_enabled', true);
+  }
   db = require(serverDbPath);
   ORDER_PRICES = db.ORDER_PRICES;
 });
@@ -25,16 +35,17 @@ function freshCollection() {
 }
 
 describe('setOrder', () => {
-  it('exports ORDER_PRICES with the agreed totals', () => {
-    expect(ORDER_PRICES).toEqual({ pdf: 79, pickup: 149, delivery: 199, custom: 599 });
+  it('exports ORDER_PRICES with the built-in fallback totals', () => {
+    // These mirror the settings.js pricing DEFAULTS (pickup is 199 at launch).
+    expect(ORDER_PRICES).toEqual({ pdf: 79, pickup: 199, delivery: 199, custom: 599 });
   });
 
-  it('prices pdf/pickup/delivery from ORDER_PRICES', () => {
+  it('prices pdf/pickup/delivery from the effective settings price', () => {
     const c1 = freshCollection();
     expect(db.setOrder(c1.id, c1.owner_token, { version: 'pdf' }).total).toBe(79);
 
     const c2 = freshCollection();
-    expect(db.setOrder(c2.id, c2.owner_token, { version: 'pickup' }).total).toBe(149);
+    expect(db.setOrder(c2.id, c2.owner_token, { version: 'pickup' }).total).toBe(199);
 
     const c3 = freshCollection();
     const o3 = db.setOrder(c3.id, c3.owner_token, {

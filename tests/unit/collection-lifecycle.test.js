@@ -17,6 +17,13 @@ let db;
 
 beforeAll(() => {
   process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-lifecycle-'));
+  // The charge path gates on per-version enable flags (only pickup on by
+  // default); this suite sets a pdf order, so enable every version here.
+  const settingsPath = path.join(__dirname, '..', '..', 'server', 'settings.js');
+  delete require.cache[require.resolve(settingsPath)];
+  const settings = require(settingsPath);
+  for (const v of ['pdf', 'pickup', 'delivery', 'custom'])
+    settings.set('pricing', v + '_enabled', true);
   db = require(serverDbPath);
 });
 

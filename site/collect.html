@@ -1970,10 +1970,58 @@
         if (paidCloseBtn) paidCloseBtn.onclick = closeCollection;
       }
       // ---- owner: pay panel ----
-      const PAY_PRICES = { pdf: 79, pickup: 149, delivery: 199, custom: 599 };
+      // Checkout pricing is owner-editable (server settings) and fetched from
+      // /api/pricing on load. Until it arrives we use the LAUNCH DEFAULTS below
+      // (store 199/239; ONLY self-pickup enabled at 199) so the panel is correct
+      // and interactive even if the endpoint is slow or fails.
+      const VERSION_ORDER = ['pdf', 'pickup', 'delivery', 'custom'];
+      const PRICING_DEFAULT = {
+        store: { now: 199, was: 239 },
+        versions: {
+          pdf: { enabled: false, price: 79 },
+          pickup: { enabled: true, price: 199 },
+          delivery: { enabled: false, price: 199 },
+          custom: { enabled: false, price: 599 },
+        },
+      };
+      let pricing = PRICING_DEFAULT;
+      // Fetch effective pricing, timeout-bounded so a hung endpoint never blocks
+      // page init; any failure keeps the launch defaults.
+      async function fetchPricing() {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 2500);
+        try {
+          const r = await fetch('/api/pricing', { signal: ctrl.signal });
+          if (!r.ok) throw new Error('http ' + r.status);
+          const j = await r.json();
+          if (j && j.store && j.versions) pricing = j;
+        } catch {
+          pricing = PRICING_DEFAULT;
+        } finally {
+          clearTimeout(timer);
+        }
+        return pricing;
+      }
+      function priceFor(v) {
+        const info = pricing.versions && pricing.versions[v];
+        if (info && Number.isInteger(info.price)) return info.price;
+        const def = PRICING_DEFAULT.versions[v];
+        return def ? def.price : 0;
+      }
+      function isEnabled(v) {
+        const info = pricing.versions && pricing.versions[v];
+        return !!(info && info.enabled);
+      }
+      function firstEnabledVersion() {
+        return VERSION_ORDER.find((v) => isEnabled(v)) || 'pickup';
+      }
+      // The version to charge: the checked radio when it's still an enabled
+      // option, else the first enabled one (never a hidden/disabled version).
       function selectedVersion() {
         const checked = document.querySelector('input[name="payVersion"]:checked');
-        return (checked && checked.value) || 'pdf';
+        const v = checked && checked.value;
+        if (v && isEnabled(v)) return v;
+        return firstEnabledVersion();
       }
       function setupPayPanel() {
         const payPanel = $('#payPanel');
@@ -1995,7 +2043,7 @@
         // when one is active: the full price shows struck-through (₪ on both) next
         // to the discounted price, matching the site's existing struck-price style.
         function renderTotal() {
-          const base = PAY_PRICES[selectedVersion()];
+          const base = priceFor(selectedVersion());
           const was = $('#payWas');
           if (appliedCoupon) {
             const discounted = Math.round(base * (1 - appliedCoupon.discount_pct / 100));
@@ -2016,10 +2064,52 @@
           renderTotal();
           payErr.style.display = 'none';
         }
-        document
-          .querySelectorAll('input[name="payVersion"]')
-          .forEach((r) => r.addEventListener('change', refreshPay));
-        refreshPay();
+
+        // Whether the owner has manually picked a version. Until they do, each
+        // applyPricing() re-selects the FIRST enabled option for the current
+        // pricing — so when the endpoint answers with a different set than the
+        // launch default (e.g. pdf re-enabled), the default selection follows it
+        // instead of sticking on the interim pick. Once the owner chooses, we
+        // never override their choice.
+        let userPicked = false;
+
+        // Apply the (fetched or default) pricing to the option list: show ONLY
+        // enabled versions, stamp each price from the endpoint, and keep a valid
+        // (enabled) radio selected. Hidden options are also `disabled` so they
+        // can't be selected or submitted; re-enabling one in admin brings it back.
+        function applyPricing() {
+          for (const label of opts) {
+            const radio = label.querySelector('input[name="payVersion"]');
+            if (!radio) continue;
+            const v = radio.value;
+            const enabled = isEnabled(v);
+            // Inline display (not the `hidden` attr) — `.pay-opt { display: … }`
+            // would otherwise override the UA [hidden] rule and keep it visible.
+            label.style.display = enabled ? '' : 'none';
+            radio.disabled = !enabled;
+            const priceEl = label.querySelector('.opt-price');
+            if (priceEl) priceEl.textContent = '₪' + priceFor(v);
+          }
+          const cur = document.querySelector('input[name="payVersion"]:checked');
+          if (!cur || cur.disabled || !userPicked) {
+            const first = document.querySelector(
+              'input[name="payVersion"][value="' + firstEnabledVersion() + '"]'
+            );
+            if (first) first.checked = true;
+          }
+          refreshPay();
+        }
+
+        document.querySelectorAll('input[name="payVersion"]').forEach((r) =>
+          r.addEventListener('change', () => {
+            userPicked = true;
+            refreshPay();
+          })
+        );
+        // Render immediately with the launch defaults (never blank), then refine
+        // once the endpoint answers.
+        applyPricing();
+        fetchPricing().then(applyPricing);
 
         // ---- coupon: preview + apply/remove ----
         const couponInput = $('#couponInput');

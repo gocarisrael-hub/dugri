@@ -22,6 +22,12 @@ describe('custom product — db pricing + flag', () => {
 
   beforeAll(() => {
     process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-custom-'));
+    // The charge path gates on per-version enable flags (only pickup on by
+    // default); this suite orders the custom version, so enable every version.
+    delete require.cache[require.resolve(path.join(serverDir, 'settings.js'))];
+    const settings = require(path.join(serverDir, 'settings.js'));
+    for (const v of ['pdf', 'pickup', 'delivery', 'custom'])
+      settings.set('pricing', v + '_enabled', true);
     delete require.cache[require.resolve(path.join(serverDir, 'db.js'))];
     db = require(path.join(serverDir, 'db.js'));
     ORDER_PRICES = db.ORDER_PRICES;
@@ -137,6 +143,12 @@ describe('custom product — server routes', () => {
     for (const f of ['db.js', 'pelecard.js', 'notify.js', 'index.js']) {
       delete require.cache[require.resolve(path.join(serverDir, f))];
     }
+    // Charge path gates on per-version enable flags (only pickup on by default);
+    // these routes order the custom version, so enable every version here.
+    delete require.cache[require.resolve(path.join(serverDir, 'settings.js'))];
+    const settings = require(path.join(serverDir, 'settings.js'));
+    for (const v of ['pdf', 'pickup', 'delivery', 'custom'])
+      settings.set('pricing', v + '_enabled', true);
     db = require(path.join(serverDir, 'db.js'));
     app = require(path.join(serverDir, 'index.js'));
 

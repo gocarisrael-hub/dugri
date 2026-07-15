@@ -51,7 +51,7 @@ test('stat bar + filter tabs narrow the rows', async ({ page, request }) => {
     email: 'paid@example.com',
     phone: '0501112222',
     words: ['א', 'ב', 'ג'],
-    version: 'pdf',
+    version: 'pickup', // pickup is the enabled-by-default checkout version
     paid: true,
   });
   await seed(request, { name: leadName, email: 'lead@example.com', phone: '0541234567' });
@@ -156,7 +156,7 @@ test('order table fits the viewport width — no horizontal scroll', async ({ pa
     email: 'a-really-long-admin-address-that-could-overflow@some-long-domain-name.example.com',
     phone: '0521234567',
     words: ['מילהארוכהמאודמאודמאודללארווחים', 'עוד', 'מילים', 'רבות'],
-    version: 'pdf',
+    version: 'pickup', // pickup is the enabled-by-default checkout version
   });
 
   const noOverflow = () =>
