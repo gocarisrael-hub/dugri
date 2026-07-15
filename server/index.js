@@ -14,6 +14,7 @@ const validate = require('./validate');
 const templates = require('./templates');
 const playbook = require('./playbook');
 const content = require('./content');
+const settings = require('./settings');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -1330,6 +1331,34 @@ const ORDERS_COUNT_BASE = (() => {
 })();
 app.get('/api/stats/orders', (req, res) => {
   res.json({ count: ORDERS_COUNT_BASE + db.countPaidOrders() });
+});
+
+// Admin: owner-editable message templates + settings. The email subject/body
+// templates, the editable label maps and the WhatsApp trigger catalog all live
+// in server/settings.js (a DATA_DIR store overlaying the registry defaults). The
+// GET returns defaults + overrides + effective values + the registry (tokens +
+// kind per key) so the admin page can render an editor; POST stores one override,
+// DELETE resets one key back to its default. All behind the admin key.
+app.get('/api/admin/settings', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json(settings.all());
+});
+app.post('/api/admin/settings', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { section, key, value } = req.body || {};
+  if (!settings.hasKey(section, key)) {
+    return res.status(400).json({ error: 'unknown section/key' });
+  }
+  if (value === undefined) return res.status(400).json({ error: 'value required' });
+  res.json({ effective: settings.set(section, key, value) });
+});
+app.delete('/api/admin/settings', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { section, key } = req.body || {};
+  if (!settings.hasKey(section, key)) {
+    return res.status(400).json({ error: 'unknown section/key' });
+  }
+  res.json({ effective: settings.reset(section, key) });
 });
 
 // Unknown API routes -> JSON 404 (must come before static/catch-all).
