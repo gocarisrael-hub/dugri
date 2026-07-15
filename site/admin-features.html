@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="dugri:page" content="admin-features.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>פיצ׳רים — דוגרי (ניהול)</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --ink: #1a1a1a;
+        --muted: #6b6b6b;
+        --line: #ececec;
+        --section: #fdf2f5;
+        --pink: #e85a97;
+        --pink-deep: #c53f79;
+        --radius: 10px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          'Heebo',
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Arial,
+          sans-serif;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 820px;
+        margin: 0 auto;
+        padding: 0 18px 100px;
+      }
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 22px 0 0;
+      }
+      .nav a {
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid #e4ddd0;
+        background: #fff;
+        color: #5c7357;
+        border-radius: 99px;
+        padding: 6px 14px;
+      }
+      .nav a.active {
+        background: #8ca287;
+        border-color: #8ca287;
+        color: #fff;
+      }
+      header {
+        padding: 34px 0 18px;
+        border-bottom: 3px solid var(--pink);
+        margin-bottom: 18px;
+      }
+      .kicker {
+        font-size: 12px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--pink-deep);
+        margin: 0 0 6px;
+        font-weight: 700;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: clamp(24px, 5.5vw, 34px);
+        font-weight: 800;
+      }
+      header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14.5px;
+      }
+      .msg {
+        background: var(--section);
+        border: 1px solid #f3d9e4;
+        border-radius: var(--radius);
+        padding: 16px 18px;
+        margin: 18px 0;
+        font-size: 15px;
+      }
+      .msg code {
+        background: #fff;
+        border: 1px solid #f3d9e4;
+        border-radius: 5px;
+        padding: 1px 6px;
+        direction: ltr;
+        unicode-bidi: embed;
+      }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 16px;
+        margin-bottom: 16px;
+        background: #fff;
+      }
+      .card.off {
+        background: #fafafa;
+      }
+      .card-head {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+      .card-title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 800;
+        flex: 1 1 auto;
+      }
+      .card-id {
+        font-size: 11.5px;
+        color: var(--muted);
+        direction: ltr;
+        unicode-bidi: embed;
+        font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+      }
+      /* An accessible on/off switch built on a native checkbox. */
+      .switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .switch input {
+        appearance: none;
+        -webkit-appearance: none;
+        position: relative;
+        width: 46px;
+        height: 26px;
+        margin: 0;
+        border-radius: 99px;
+        background: #d7d2c8;
+        border: none;
+        cursor: pointer;
+        flex: 0 0 auto;
+        transition: background 0.15s;
+      }
+      .switch input::after {
+        content: '';
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+        transition: transform 0.15s;
+      }
+      .switch input:checked {
+        background: var(--pink);
+      }
+      .switch input:checked::after {
+        transform: translateX(-20px);
+      }
+      .switch input:focus-visible {
+        outline: 2px solid var(--pink-deep);
+        outline-offset: 2px;
+      }
+      .hint {
+        font-size: 12.5px;
+        color: var(--muted);
+        margin: 10px 0 0;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 16px;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        padding: 9px 16px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      button.primary {
+        background: var(--pink);
+        border-color: var(--pink);
+        color: #fff;
+      }
+      button.primary:hover {
+        background: var(--pink-deep);
+      }
+      button.danger {
+        color: #b12a4b;
+        border-color: #f0cdd8;
+      }
+      button.danger:hover {
+        background: #fdecf2;
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .meta.ok {
+        color: #2e7d4f;
+        font-weight: 700;
+      }
+      .meta.err {
+        color: #b12a4b;
+        font-weight: 700;
+      }
+      footer {
+        margin-top: 34px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="nav" id="nav">
+        <a data-page="dashboard.html">לוח בקרה</a>
+        <a data-page="admin.html">ניהול הזמנות</a>
+        <a data-page="coupons.html">ניהול קופונים</a>
+        <a data-page="design-codes.html">קודי עיצוב</a>
+        <a data-page="admin-templates.html">תבנית חדשה</a>
+        <a data-page="admin-designs.html">עיצובים</a>
+        <a data-page="admin-playbook.html">פלייבוק</a>
+        <a data-page="admin-texts.html">הודעות וטקסטים</a>
+        <a data-page="admin-features.html" class="active">פיצ׳רים</a>
+      </nav>
+      <header>
+        <p class="kicker">Internal · פיצ׳רים בטופס ההזמנה</p>
+        <h1>פיצ׳רים</h1>
+        <p>
+          הדלקה/כיבוי של יכולות בטופס ההזמנה. פיצ׳ר כבוי מוסתר לגמרי מהלקוח/ה — הטופס ממשיך לעבוד עם
+          ברירת המחדל. כל שינוי נשמר בשרת ומשפיע מיד (רענון הטופס).
+        </p>
+      </header>
+
+      <div id="noKey" class="msg" hidden>
+        חסר מפתח גישה. פתחו את הדף עם <code>?key=…</code> בכתובת.
+      </div>
+      <div id="loadErr" class="msg" hidden></div>
+
+      <div id="app" hidden>
+        <div id="flagCards"></div>
+      </div>
+
+      <footer>נשמר בשרת (DATA_DIR) · גלוי רק עם מפתח הניהול · לא מקושר מהאתר.</footer>
+    </div>
+
+    <script>
+      const key = new URLSearchParams(location.search).get('key') || '';
+      const qs = (id) => document.getElementById(id);
+      // Carry the admin key across the linked admin pages.
+      for (const a of document.querySelectorAll('#nav a')) {
+        a.href = a.dataset.page + (key ? '?key=' + encodeURIComponent(key) : '');
+      }
+
+      function withKey(url) {
+        return url + (url.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key);
+      }
+      async function api(method, path, body) {
+        const r = await fetch(withKey(path), {
+          method,
+          headers: body ? { 'Content-Type': 'application/json' } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        if (!r.ok) {
+          // Surface the server's {error} reason so the owner sees WHY. Fall back to
+          // the status if the body isn't JSON.
+          let msg = 'HTTP ' + r.status;
+          try {
+            const j = await r.json();
+            if (j && j.error) msg = j.error;
+          } catch {
+            /* non-JSON body — keep the status */
+          }
+          throw new Error(msg);
+        }
+        return r.status === 204 ? null : r.json();
+      }
+      function esc(s) {
+        return String(s == null ? '' : s).replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+        );
+      }
+      // Stable, HTML-id-safe slug from section+key ('features-font_choice' -> ...).
+      function slug(section, k) {
+        return (section + '-' + k).replace(/[^a-z0-9]+/gi, '-');
+      }
+
+      // Friendly Hebrew names for each flag. Unknown keys (a flag added in code
+      // later) fall back to the raw id, so the list stays fully dynamic.
+      const LABELS = {
+        color_picking: 'בחירת צבע',
+        chasers_choice: 'צ׳ייסרים (עם/בלי)',
+        font_choice: 'בחירת גופן',
+        name_preview: 'תצוגה מקדימה עם שם',
+      };
+      function labelFor(k) {
+        return LABELS[k] || k;
+      }
+      // A per-flag note. font_choice depends on name_preview (the picker is nested
+      // in the preview panel), so it only takes effect when name-preview is on too.
+      const NOTES = {
+        font_choice: 'דורש שגם "תצוגה מקדימה עם שם" תהיה מופעלת — אחרת בחירת הגופן לא תוצג.',
+      };
+
+      let state = null; // last full settings.all() response
+
+      // --- one toggle card per feature flag ------------------------------------
+      function flagCardHtml(k, eff) {
+        const id = slug('features', k);
+        const on = !!eff;
+        const note = NOTES[k] ? '<p class="hint">' + esc(NOTES[k]) + '</p>' : '';
+        return (
+          '<div class="card' +
+          (on ? '' : ' off') +
+          '" data-section="features" data-key="' +
+          esc(k) +
+          '" data-kind="flag" id="card-' +
+          id +
+          '">' +
+          '<div class="card-head"><h3 class="card-title">' +
+          esc(labelFor(k)) +
+          '</h3><span class="card-id">features.' +
+          esc(k) +
+          '</span></div>' +
+          '<label class="switch"><input type="checkbox" data-section="features" data-key="' +
+          esc(k) +
+          '" data-kind="flag" data-testid="flag-' +
+          esc(k) +
+          '"' +
+          (on ? ' checked' : '') +
+          ' /> <span>מוצג בטופס ההזמנה</span></label>' +
+          note +
+          '<div class="actions">' +
+          '<button class="primary" data-save type="button">שמירה</button>' +
+          '<button class="danger" data-reset type="button">אפס לברירת מחדל</button>' +
+          '<span class="meta status" role="status" aria-live="polite"></span>' +
+          '</div></div>'
+        );
+      }
+
+      function render() {
+        const { registry, effective } = state;
+        qs('flagCards').innerHTML = Object.keys(registry.features)
+          .map((k) => flagCardHtml(k, effective.features[k]))
+          .join('');
+      }
+
+      // The override VALUE for a flag card is the bare boolean checkbox state.
+      function readValue(card) {
+        return card.querySelector('input[type="checkbox"]').checked;
+      }
+
+      function setStatus(card, text, cls) {
+        const s = card.querySelector('.status');
+        s.textContent = text;
+        s.className = 'meta status' + (cls ? ' ' + cls : '');
+        if (cls === 'ok') setTimeout(() => (s.textContent = ''), 2200);
+      }
+
+      // Write the effective value the server returned back into the store and
+      // re-render that one card, so the UI reflects the saved state.
+      function applyEffective(section, k, effective) {
+        state.effective[section][k] = effective;
+        const card = qs('card-' + slug(section, k));
+        card.outerHTML = flagCardHtml(k, effective);
+      }
+
+      async function saveCard(card) {
+        const section = card.dataset.section;
+        const k = card.dataset.key;
+        setStatus(card, 'שומר…');
+        try {
+          const { effective } = await api('POST', '/api/admin/settings', {
+            section,
+            key: k,
+            value: readValue(card),
+          });
+          applyEffective(section, k, effective);
+          setStatus(qs('card-' + slug(section, k)), 'נשמר ✓', 'ok');
+        } catch (e) {
+          setStatus(card, 'שמירה נכשלה: ' + e.message, 'err');
+        }
+      }
+
+      async function resetCard(card) {
+        const section = card.dataset.section;
+        const k = card.dataset.key;
+        if (!confirm('לאפס לברירת המחדל (כבוי)?')) return;
+        setStatus(card, 'מאפס…');
+        try {
+          // DELETE bodies are often dropped in transit; the settings key travels as
+          // `settingKey` (the `key` query param is reserved for the admin secret).
+          const url =
+            '/api/admin/settings?section=' +
+            encodeURIComponent(section) +
+            '&settingKey=' +
+            encodeURIComponent(k);
+          const { effective } = await api('DELETE', url);
+          applyEffective(section, k, effective);
+          setStatus(qs('card-' + slug(section, k)), 'אופס ✓', 'ok');
+        } catch (e) {
+          setStatus(card, 'איפוס נכשל: ' + e.message, 'err');
+        }
+      }
+
+      // Toggling the switch greys the card immediately (visual only until saved).
+      // Save / reset via event delegation on the app container.
+      qs('app').addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const card = btn.closest('.card');
+        if (!card) return;
+        if (btn.hasAttribute('data-save')) saveCard(card);
+        else if (btn.hasAttribute('data-reset')) resetCard(card);
+      });
+      qs('app').addEventListener('change', (e) => {
+        if (e.target.matches('input[type="checkbox"][data-kind="flag"]')) {
+          e.target.closest('.card').classList.toggle('off', !e.target.checked);
+        }
+      });
+
+      async function load() {
+        try {
+          state = await api('GET', '/api/admin/settings');
+          render();
+        } catch (e) {
+          qs('loadErr').textContent = 'טעינה נכשלה: ' + e.message + ' (מפתח שגוי?)';
+          qs('loadErr').hidden = false;
+        }
+      }
+
+      if (!key) {
+        qs('noKey').hidden = false;
+      } else {
+        qs('app').hidden = false;
+        load();
+      }
+    </script>
+  </body>
+</html>

@@ -1762,6 +1762,22 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
+// Public: the buyer-wizard feature flags. Unauthenticated on purpose — every
+// visitor's wizard must know which of the four gated features to show. Returns
+// ONLY a whitelisted flat projection of the features section's effective
+// booleans (never other settings sections or secrets, even as the registry
+// grows). Mirrors the public GET /api/content. All writes stay behind the admin
+// key via /api/admin/settings.
+app.get('/api/features', (req, res) => {
+  const f = (settings.all().effective && settings.all().effective.features) || {};
+  res.json({
+    color_picking: !!f.color_picking,
+    chasers_choice: !!f.chasers_choice,
+    font_choice: !!f.font_choice,
+    name_preview: !!f.name_preview,
+  });
+});
+
 // Unknown API routes -> JSON 404 (must come before static/catch-all).
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
 

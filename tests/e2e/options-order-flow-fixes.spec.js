@@ -1,4 +1,13 @@
 import { test, expect } from '@playwright/test';
+import { ALL_ON, stubFeatures } from './feature-flags.js';
+
+// The e2e server defaults every buyer-wizard feature flag OFF; this spec relies
+// on the (now gated) wizard features, so stub GET /api/features to ALL_ON — the
+// pre-flag behaviour. Declared first so the route is registered before any
+// navigation in this file's other hooks/tests.
+test.beforeEach(async ({ page }) => {
+  await stubFeatures(page, ALL_ON);
+});
 
 // Cover for two order-flow fixes on options.html:
 //   B4 — a RASTER board preview must fill the panel width like the SVG cards

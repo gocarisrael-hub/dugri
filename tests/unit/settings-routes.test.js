@@ -177,3 +177,65 @@ describe('DELETE /api/admin/settings', () => {
     expect(gb.overrides.email).toBeUndefined();
   });
 });
+
+describe('GET /api/features (public feature flags)', () => {
+  it('needs no admin key and returns EXACTLY the four boolean flags', async () => {
+    const res = await fetch(url('/api/features'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Exactly the four whitelisted keys — no other section leaks through.
+    expect(Object.keys(body).sort()).toEqual([
+      'chasers_choice',
+      'color_picking',
+      'font_choice',
+      'name_preview',
+    ]);
+    for (const k of Object.keys(body)) expect(typeof body[k]).toBe('boolean');
+    // No email/wa section keys leak into the projection.
+    expect(body).not.toHaveProperty('email');
+    expect(body).not.toHaveProperty('wa');
+    expect(body).not.toHaveProperty('order_paid');
+    expect(body).not.toHaveProperty('trigger.group_opened');
+    // All default OFF.
+    expect(body).toEqual({
+      color_picking: false,
+      chasers_choice: false,
+      font_choice: false,
+      name_preview: false,
+    });
+  });
+
+  it('reflects an admin POST that flips one flag on', async () => {
+    const post = await fetch(url('/api/admin/settings?key=' + ADMIN_KEY), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ section: 'features', key: 'color_picking', value: true }),
+    });
+    expect(post.status).toBe(200);
+    const res = await fetch(url('/api/features'));
+    const body = await res.json();
+    expect(body.color_picking).toBe(true);
+    // The others stay off.
+    expect(body.chasers_choice).toBe(false);
+    // Clean up so the store is left as we found it.
+    await fetch(
+      url('/api/admin/settings?key=' + ADMIN_KEY + '&section=features&settingKey=color_picking'),
+      {
+        method: 'DELETE',
+      }
+    );
+  });
+
+  it('rejects a non-boolean flag value with 400', async () => {
+    const res = await fetch(url('/api/admin/settings?key=' + ADMIN_KEY), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ section: 'features', key: 'color_picking', value: 'true' }),
+    });
+    expect(res.status).toBe(400);
+    // And nothing leaked into the public projection.
+    const pub = await fetch(url('/api/features'));
+    const body = await pub.json();
+    expect(body.color_picking).toBe(false);
+  });
+});
