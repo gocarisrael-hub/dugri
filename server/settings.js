@@ -248,6 +248,19 @@ const REGISTRY = {
       },
     },
   },
+  // --- Buyer-wizard feature flags -------------------------------------------
+  // Owner-controlled on/off switches for four buyer-facing wizard features that
+  // aren't polished enough to ship. Each is a bare boolean (kind: 'flag') that
+  // defaults OFF (the feature is hidden entirely); the owner flips it on from
+  // the admin panel when it's ready — no code deploy. When a flag is off the
+  // wizard falls back to the built-in default (color "מקורי", chasers false,
+  // word_font null, no live name preview), so no server order-logic changes.
+  features: {
+    color_picking: { kind: 'flag', tokens: [], default: false },
+    chasers_choice: { kind: 'flag', tokens: [], default: false },
+    font_choice: { kind: 'flag', tokens: [], default: false },
+    name_preview: { kind: 'flag', tokens: [], default: false },
+  },
 };
 
 // --- small object helpers -----------------------------------------------------
@@ -411,6 +424,13 @@ function validateValue(section, key, value) {
       const timingErr = validateTiming(section, key, value.timing);
       if (timingErr) return timingErr;
     }
+    return null;
+  }
+  if (kind === 'flag') {
+    // A feature flag is a bare boolean. Reject anything else (a string 'true',
+    // 1/0, null, {}, []) so the wizard's gate condition is never truthy-by-
+    // accident from a mis-typed override.
+    if (typeof value !== 'boolean') return 'value must be a boolean';
     return null;
   }
   // Generic fallback: an object default requires an object override.

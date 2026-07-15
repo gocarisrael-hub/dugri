@@ -237,6 +237,50 @@ describe('set() rolls back the in-memory change when save() fails', () => {
   });
 });
 
+describe('feature flags (kind: flag)', () => {
+  it('get returns the boolean default (false) when there is no override', () => {
+    const s = loadFresh();
+    expect(s.get('features', 'color_picking')).toBe(false);
+    expect(s.get('features', 'chasers_choice')).toBe(false);
+    expect(s.get('features', 'font_choice')).toBe(false);
+    expect(s.get('features', 'name_preview')).toBe(false);
+  });
+
+  it('set stores + persists a flag, and reset restores the default', () => {
+    const s = loadFresh();
+    expect(s.set('features', 'color_picking', true)).toBe(true);
+    expect(s.get('features', 'color_picking')).toBe(true);
+    // Persisted to disk: a freshly loaded copy sees the override.
+    const reloaded = loadFresh();
+    expect(reloaded.get('features', 'color_picking')).toBe(true);
+    // reset drops the override and restores the default (false).
+    expect(reloaded.reset('features', 'color_picking')).toBe(false);
+    expect(reloaded.all().overrides).toEqual({});
+  });
+
+  it('validateValue accepts booleans and rejects everything else', () => {
+    const s = loadFresh();
+    for (const good of [true, false]) {
+      expect(s.validateValue('features', 'name_preview', good)).toBeNull();
+    }
+    for (const bad of ['true', 'false', 1, 0, null, {}, [], undefined]) {
+      expect(s.validateValue('features', 'name_preview', bad)).toBeTruthy();
+      expect(() => s.set('features', 'name_preview', bad)).toThrow();
+    }
+    // No bad override leaked into the store or onto disk.
+    expect(s.all().overrides).toEqual({});
+    expect(fs.existsSync(path.join(dataDir, 'settings.json'))).toBe(false);
+  });
+
+  it('all().registry.features advertises the flag kind for every key', () => {
+    const s = loadFresh();
+    const reg = s.all().registry.features;
+    for (const k of ['color_picking', 'chasers_choice', 'font_choice', 'name_preview']) {
+      expect(reg[k]).toEqual({ tokens: [], kind: 'flag' });
+    }
+  });
+});
+
 describe('all()', () => {
   it('exposes defaults, overrides, effective and the registry (tokens + kind)', () => {
     const s = loadFresh();
