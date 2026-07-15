@@ -314,18 +314,18 @@ function collectImagePaths(store) {
 }
 
 // Copy the current content-overrides.json to a timestamped backup on the volume,
-// BEFORE a destructive mirror overwrites it — a recovery point. Returns the backup
-// path, or null when there is nothing to back up / the copy failed (best-effort).
+// BEFORE a destructive mirror overwrites it — a recovery point. Signals three cases
+// so the caller can tell "safe to proceed" from "the recovery point failed":
+//   • no existing overrides file → returns null (nothing to back up; safe to proceed);
+//   • copy succeeds → returns the backup path;
+//   • the file EXISTS but the copy fails (full/failing volume) → THROWS, so the
+//     caller must NOT overwrite an existing store with no recovery point.
 function backup() {
-  try {
-    if (!fs.existsSync(FILE)) return null;
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    const dest = path.join(DATA_DIR, `content-overrides.backup-${Date.now()}.json`);
-    fs.copyFileSync(FILE, dest);
-    return dest;
-  } catch {
-    return null; // best-effort — never throw
-  }
+  if (!fs.existsSync(FILE)) return null; // nothing to back up
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const dest = path.join(DATA_DIR, `content-overrides.backup-${Date.now()}.json`);
+  fs.copyFileSync(FILE, dest); // throws on a real copy failure — caller must abort
+  return dest;
 }
 
 // Replace the ENTIRE store with a mirror of `raw` (sanitized) and persist it. Used

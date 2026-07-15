@@ -218,4 +218,168 @@ describe('content import from staging', () => {
     expect(store.getPage('index.html').k.text).toBe('keepme');
     expect(store.getPage('index.html')['index-hero-bg']).toBeUndefined();
   });
+
+  it('REFUSES an empty staging store (a reset staging volume must never wipe prod)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    const imp = await loadImport();
+    // Prod has real content; staging's overrides come back EMPTY (e.g. its volume was
+    // reset on redeploy → getAll() returns {}). Mirroring {} would wipe every prod
+    // text + image — so the import must refuse and leave prod untouched.
+    store.setText('index.html', 'hero', 'תוכן אמיתי');
+    store.setImg('index.html', 'hero-bg', '/content-uploads/aaaaaaaaaaaaaaaa.png');
+
+    const result = await imp.importFromStaging({
+      stagingUrl: 'https://staging.example',
+      ownOrigins: ['https://prod.example'],
+      adminKey: 'x',
+      content: store,
+      fetchImpl: makeFetch({}, {}, null), // /all → { overrides: {} }
+    });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(400);
+    expect(result.error).toMatch(/no content to import/i);
+    // Prod is exactly as it was — nothing overwritten.
+    expect(store.getPage('index.html').hero.text).toBe('תוכן אמיתי');
+    expect(store.getPage('index.html')['hero-bg'].img).toBe(
+      '/content-uploads/aaaaaaaaaaaaaaaa.png'
+    );
+  });
+
+  it('ABORTS when the backup FAILS and prod had content (never overwrite without a recovery point)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    const imp = await loadImport();
+    // Prod already has content → an overrides file exists on disk, so backup() would
+    // normally copy it. Simulate a real backup failure (full/failing volume) by making
+    // backup() throw. The import must abort WITHOUT overwriting, and leave no image
+    // orphan behind (the staging image it fetched before the backup step is reclaimed).
+    store.setText('index.html', 'k', 'keepme');
+    const png = pngWith('image-fetched-before-backup');
+    const imgPath = pathFor(png);
+    const overrides = { 'index.html': { 'index-hero-bg': { img: imgPath } } };
+
+    const contentWithBadBackup = Object.assign({}, store, {
+      backup() {
+        throw new Error('ENOSPC: no space left on device');
+      },
+    });
+
+    const result = await imp.importFromStaging({
+      stagingUrl: 'https://staging.example',
+      ownOrigins: ['https://prod.example'],
+      adminKey: 'x',
+      content: contentWithBadBackup,
+      fetchImpl: makeFetch(overrides, { [imgPath]: png }, null),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(500);
+    expect(result.error).toMatch(/back ?up/i);
+    // Prod store untouched (not overwritten with staging's single override) …
+    expect(store.getPage('index.html').k.text).toBe('keepme');
+    expect(store.getPage('index.html')['index-hero-bg']).toBeUndefined();
+    // … and the image fetched before the backup step was cleaned back off the volume.
+    const onDisk = path.join(dir, 'content-uploads', imgPath.split('/').pop());
+    expect(fs.existsSync(onDisk)).toBe(false);
+  });
+
+  it('leaves NO orphan image on the volume when a mid-import image fetch fails', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    const imp = await loadImport();
+    store.setText('index.html', 'k', 'keepme');
+
+    // Two distinct images: staging serves the first, 404s the second. The first is
+    // saved to the volume during the (concurrent) fetch; when the second fails the
+    // import aborts — and the already-written first image must be reclaimed so the
+    // volume ends exactly as it started (no orphan).
+    const good = pngWith('served-ok');
+    const bad = pngWith('never-served');
+    const goodPath = pathFor(good);
+    const badPath = pathFor(bad);
+    const overrides = {
+      'product.html': {
+        'product-neon-photos': { imgs: [goodPath, badPath] },
+      },
+    };
+    const result = await imp.importFromStaging({
+      stagingUrl: 'https://staging.example',
+      ownOrigins: ['https://prod.example'],
+      adminKey: 'x',
+      content: store,
+      fetchImpl: makeFetch(overrides, { [goodPath]: good }, null), // badPath 404s
+    });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(502);
+    // Store untouched …
+    expect(store.getPage('index.html').k.text).toBe('keepme');
+    expect(store.getPhotos('product.html', 'product-neon-photos')).toEqual([]);
+    // … and NEITHER image file lingers on the volume (the successful one was reclaimed).
+    expect(fs.existsSync(path.join(dir, 'content-uploads', goodPath.split('/').pop()))).toBe(false);
+    expect(fs.existsSync(path.join(dir, 'content-uploads', badPath.split('/').pop()))).toBe(false);
+  });
+
+  it('does NOT reclaim a shared image the live prod store already references', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    const imp = await loadImport();
+
+    // A shared image already lives on prod and is referenced by the live store. Staging
+    // references the SAME (content-addressed) image plus one that 404s → the import
+    // aborts. Cleanup must NOT delete the shared file, since the live store still uses it.
+    const shared = pngWith('shared-across-both');
+    const sharedPath = store.saveImageBytes(shared); // now on disk AND referenced below
+    store.setImg('index.html', 'hero-bg', sharedPath);
+    const bad = pngWith('missing');
+    const badPath = pathFor(bad);
+    const overrides = {
+      'index.html': { 'hero-bg': { img: sharedPath }, other: { img: badPath } },
+    };
+
+    const result = await imp.importFromStaging({
+      stagingUrl: 'https://staging.example',
+      ownOrigins: ['https://prod.example'],
+      adminKey: 'x',
+      content: store,
+      fetchImpl: makeFetch(overrides, { [sharedPath]: shared }, null), // badPath 404s
+    });
+    expect(result.ok).toBe(false);
+    // The shared image is still on disk — the live store references it, so cleanup skipped it.
+    expect(fs.existsSync(path.join(dir, 'content-uploads', sharedPath.split('/').pop()))).toBe(
+      true
+    );
+    expect(store.getPage('index.html')['hero-bg'].img).toBe(sharedPath);
+  });
+
+  it('refuses self-import for :443 / www / apex spellings of the prod origin', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    const imp = await loadImport();
+
+    // Direct helper checks: default-port, www/apex, and trailing-slash spellings of the
+    // prod host all count as "self"; a genuinely different host does not.
+    expect(imp.isSelfOrigin('https://prod.example:443', ['https://prod.example'])).toBe(true);
+    expect(imp.isSelfOrigin('https://www.prod.example', ['https://prod.example'])).toBe(true);
+    expect(imp.isSelfOrigin('https://prod.example/', ['https://www.prod.example'])).toBe(true);
+    expect(imp.isSelfOrigin('https://staging.example', ['https://prod.example'])).toBe(false);
+
+    // …and end-to-end: an explicit :443 spelling is refused without any fetch.
+    const result = await imp.importFromStaging({
+      stagingUrl: 'https://prod.example:443/',
+      ownOrigins: ['https://prod.example'],
+      adminKey: 'x',
+      content: store,
+      fetchImpl: () => {
+        throw new Error('should not fetch on a self-import');
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(400);
+    expect(result.error).toMatch(/self-import/i);
+  });
 });
