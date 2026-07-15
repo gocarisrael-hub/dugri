@@ -1350,11 +1350,24 @@ app.post('/api/admin/settings', (req, res) => {
     return res.status(400).json({ error: 'unknown section/key' });
   }
   if (value === undefined) return res.status(400).json({ error: 'value required' });
+  // Reject a value whose SHAPE doesn't match the registry default (null/array/
+  // string for an object key, a non-string subject/body, etc.) BEFORE it can
+  // reach the store — a bad override would break live email rendering. The store
+  // is left untouched on a rejected write.
+  const shapeError = settings.validateValue(section, key, value);
+  if (shapeError) return res.status(400).json({ error: shapeError });
   res.json({ effective: settings.set(section, key, value) });
 });
 app.delete('/api/admin/settings', (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const { section, key } = req.body || {};
+  // section/key come from the body, but fall back to the query string: many HTTP
+  // clients/proxies drop a DELETE request body, which would otherwise make reset
+  // silently 400 and leave a broken override un-clearable. NOTE: the `key` query
+  // param is reserved for the admin secret (requireAdmin), so the settings key
+  // uses `settingKey` to avoid a collision.
+  const body = req.body || {};
+  const section = body.section != null ? body.section : req.query.section;
+  const key = body.key != null ? body.key : req.query.settingKey;
   if (!settings.hasKey(section, key)) {
     return res.status(400).json({ error: 'unknown section/key' });
   }

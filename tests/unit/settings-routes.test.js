@@ -84,6 +84,24 @@ describe('POST /api/admin/settings', () => {
     expect(res.status).toBe(400);
   });
 
+  it('400 on a null/string/array value for an object-typed key, and the store is unchanged', async () => {
+    for (const bad of [null, 'oops', ['a']]) {
+      const res = await fetch(url('/api/admin/settings?key=' + ADMIN_KEY), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section: 'email', key: 'buyer_confirmation', value: bad }),
+      });
+      expect(res.status).toBe(400);
+    }
+    // No override leaked through — buyer_confirmation still resolves to its default.
+    const get = await fetch(url('/api/admin/settings?key=' + ADMIN_KEY));
+    const gb = await get.json();
+    expect(gb.overrides.email && gb.overrides.email.buyer_confirmation).toBeFalsy();
+    expect(gb.effective.email.buyer_confirmation.subject).toBe(
+      'דוגרי · ההזמנה שלכם התקבלה — {honoree}'
+    );
+  });
+
   it('sets an override and persists it to disk', async () => {
     const value = { subject: 'שולם — {honoree}', body: 'תודה {honoree}' };
     const res = await fetch(url('/api/admin/settings?key=' + ADMIN_KEY), {
@@ -122,6 +140,26 @@ describe('DELETE /api/admin/settings', () => {
       body: JSON.stringify({ section: 'bogus', key: 'order_paid' }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it('resets via the query string (no request body) — clients that drop a DELETE body still work', async () => {
+    // Set an override, then clear it with query params only (settingKey avoids
+    // colliding with the admin `key` param).
+    await fetch(url('/api/admin/settings?key=' + ADMIN_KEY), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ section: 'email', key: 'footer', value: { line1: 'x', line2: 'y' } }),
+    });
+    const res = await fetch(
+      url('/api/admin/settings?key=' + ADMIN_KEY + '&section=email&settingKey=footer'),
+      { method: 'DELETE' }
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.effective).toEqual({ line1: 'נתראה על הלוח,', line2: 'צוות דוגרי' });
+    const get = await fetch(url('/api/admin/settings?key=' + ADMIN_KEY));
+    const gb = await get.json();
+    expect(gb.overrides.email && gb.overrides.email.footer).toBeFalsy();
   });
 
   it('resets a key back to its default', async () => {

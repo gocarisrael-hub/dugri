@@ -2,7 +2,7 @@
 // The owner-editable settings store (server/settings.js). It reads DATA_DIR at
 // require time, so each test points DATA_DIR at a fresh temp dir BEFORE loading a
 // clean copy of the module (fresh-require pattern).
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -91,6 +91,98 @@ describe('get / set / reset', () => {
     expect(() => s.get('email', 'nope')).toThrow();
     expect(() => s.set('email', 'nope', { x: 1 })).toThrow();
     expect(() => s.reset('bogus', 'order_paid')).toThrow();
+  });
+});
+
+describe('value-shape validation (set + validateValue)', () => {
+  it('rejects a null/string/array/number override for an object-typed key and leaves the store unchanged', () => {
+    const s = loadFresh();
+    for (const bad of [null, 'oops', ['a'], 42]) {
+      expect(s.validateValue('email', 'order_paid', bad)).toBeTruthy();
+      expect(() => s.set('email', 'order_paid', bad)).toThrow();
+    }
+    // No override was written, and the default is intact.
+    expect(s.all().overrides).toEqual({});
+    expect(s.get('email', 'order_paid').subject).toBe('דוגרי · התקבל תשלום — {honoree}');
+    // Nothing persisted to disk either.
+    expect(fs.existsSync(path.join(dataDir, 'settings.json'))).toBe(false);
+  });
+
+  it('rejects a template object missing a string subject/body', () => {
+    const s = loadFresh();
+    expect(s.validateValue('email', 'order_paid', { subject: 'x' })).toBeTruthy(); // no body
+    expect(s.validateValue('email', 'order_paid', { subject: 1, body: 'y' })).toBeTruthy();
+    expect(() => s.set('email', 'order_paid', { body: 'only body' })).toThrow();
+    expect(s.all().overrides).toEqual({});
+  });
+
+  it('rejects a trigger with a wrong-typed field but accepts a valid partial', () => {
+    const s = loadFresh();
+    expect(s.validateValue('wa', 'trigger.daily_morning', { enabled: 'yes' })).toBeTruthy();
+    expect(s.validateValue('wa', 'trigger.daily_morning', { timing: 'soon' })).toBeTruthy();
+    expect(s.validateValue('wa', 'trigger.daily_morning', { enabled: false })).toBeNull();
+  });
+
+  it('accepts a valid override', () => {
+    const s = loadFresh();
+    expect(s.validateValue('email', 'order_paid', { subject: 'a', body: 'b' })).toBeNull();
+    const eff = s.set('email', 'order_paid', { subject: 'a', body: 'b' });
+    expect(eff).toEqual({ subject: 'a', body: 'b' });
+  });
+});
+
+describe('get() is a defensive backstop', () => {
+  it('returns the complete default when a bad-typed override is on disk (bypassing set)', () => {
+    // Write a broken override DIRECTLY to the store file (simulating corruption
+    // or a write that bypassed validateValue), then load fresh.
+    fs.writeFileSync(
+      path.join(dataDir, 'settings.json'),
+      JSON.stringify({ email: { field_labels: null, order_paid: 'nonsense' } }),
+      'utf8'
+    );
+    const s = loadFresh();
+    // field_labels default is fully restored — currency etc. are never undefined.
+    const f = s.get('email', 'field_labels');
+    expect(f.currency).toBe('₪');
+    expect(f.version).toBe('גרסה');
+    // order_paid returns the complete template, not the bad string.
+    expect(s.get('email', 'order_paid')).toEqual({
+      subject: 'דוגרי · התקבל תשלום — {honoree}',
+      body: 'התקבל תשלום עבור ההזמנה של {honoree}.',
+    });
+  });
+});
+
+describe('set() rolls back the in-memory change when save() fails', () => {
+  it('leaves the prior value intact and does not persist a failed write', () => {
+    const s = loadFresh();
+    // Establish a good prior override.
+    s.set('email', 'order_paid', { subject: 'good', body: 'good body' });
+    // Now force the atomic write to fail on the next save.
+    const spy = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+      throw new Error('ENOSPC: disk full');
+    });
+    expect(() => s.set('email', 'order_paid', { subject: 'new', body: 'new body' })).toThrow(
+      /disk full/
+    );
+    spy.mockRestore();
+    // Memory still holds the PRIOR value — not the failed new one.
+    expect(s.get('email', 'order_paid')).toEqual({ subject: 'good', body: 'good body' });
+    // And disk was never updated to the new value.
+    const onDisk = JSON.parse(fs.readFileSync(path.join(dataDir, 'settings.json'), 'utf8'));
+    expect(onDisk.email.order_paid).toEqual({ subject: 'good', body: 'good body' });
+  });
+
+  it('rolls back to NO override when the very first save fails', () => {
+    const s = loadFresh();
+    const spy = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+      throw new Error('EACCES: read-only fs');
+    });
+    expect(() => s.set('email', 'footer', { line1: 'x', line2: 'y' })).toThrow();
+    spy.mockRestore();
+    // The section/key was never left dangling in memory.
+    expect(s.all().overrides).toEqual({});
+    expect(s.get('email', 'footer')).toEqual({ line1: 'נתראה על הלוח,', line2: 'צוות דוגרי' });
   });
 });
 

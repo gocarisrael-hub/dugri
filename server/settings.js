@@ -326,19 +326,85 @@ function get(section, key) {
   const def = defaultFor(section, key);
   const ov = overrideFor(section, key);
   if (ov === undefined) return clone(def);
-  if (isPlainObject(def) && isPlainObject(ov)) return deepMerge(def, ov);
+  if (isPlainObject(def)) {
+    // Defensive backstop: only a plain-object override may deep-merge over an
+    // object default. A wrong-typed override (null/array/string/number) would
+    // strip fields notify depends on (a missing subject -> TypeError, a missing
+    // field_labels.currency -> "0 undefined"), so fall back to the complete,
+    // well-typed default instead of handing the caller a broken value. This
+    // holds even if set()'s shape validation was somehow bypassed.
+    return isPlainObject(ov) ? deepMerge(def, ov) : clone(def);
+  }
   return clone(ov);
 }
 
-// Store an override for (section, key). Rejects an unknown key. Returns the new
+// Validate an override VALUE's shape against the registry default for
+// (section, key). Returns an error message string, or null when the value is
+// acceptable. Object defaults require an object override (partial objects are
+// fine — they deep-merge on read); wrong-typed overrides are rejected so a bad
+// write can never reach notify. Kept in this module (single source of truth) and
+// called by both set() and the admin route.
+function validateValue(section, key, value) {
+  if (!hasKey(section, key)) return 'unknown section/key';
+  const kind = REGISTRY[section][key].kind;
+  const has = (k) => Object.prototype.hasOwnProperty.call(value, k);
+  if (kind === 'email') {
+    if (!isPlainObject(value)) return 'value must be an object with { subject, body }';
+    if (typeof value.subject !== 'string') return 'subject must be a string';
+    if (typeof value.body !== 'string') return 'body must be a string';
+    return null;
+  }
+  if (kind === 'map' || kind === 'footer') {
+    if (!isPlainObject(value)) return 'value must be an object';
+    return null;
+  }
+  if (kind === 'trigger') {
+    if (!isPlainObject(value)) return 'value must be an object';
+    if (has('enabled') && typeof value.enabled !== 'boolean') return 'enabled must be a boolean';
+    if (has('text') && typeof value.text !== 'string') return 'text must be a string';
+    if (has('timing') && !isPlainObject(value.timing)) return 'timing must be an object';
+    return null;
+  }
+  // Generic fallback: an object default requires an object override.
+  if (isPlainObject(defaultFor(section, key)) && !isPlainObject(value)) {
+    return 'value must be an object';
+  }
+  return null;
+}
+
+// Store an override for (section, key). Rejects an unknown key or a value whose
+// shape doesn't match the registry default. The in-memory write is attempted
+// BEFORE save(), so a save() failure (disk full / read-only fs) is ROLLED BACK —
+// memory and disk never disagree, and the caller sees the error. Returns the new
 // effective value.
 function set(section, key, value) {
   if (!hasKey(section, key)) {
     throw new Error('unknown settings key: ' + section + '.' + key);
   }
-  if (!Object.prototype.hasOwnProperty.call(_overrides, section)) _overrides[section] = {};
+  const err = validateValue(section, key, value);
+  if (err) {
+    throw new Error('invalid settings value for ' + section + '.' + key + ': ' + err);
+  }
+  // Snapshot the prior state so a failed save can be undone exactly.
+  const sectionExisted = Object.prototype.hasOwnProperty.call(_overrides, section);
+  const keyExisted =
+    sectionExisted && Object.prototype.hasOwnProperty.call(_overrides[section], key);
+  const prevValue = keyExisted ? _overrides[section][key] : undefined;
+  if (!sectionExisted) _overrides[section] = {};
   _overrides[section][key] = clone(value);
-  save();
+  try {
+    save();
+  } catch (e) {
+    // Roll the in-memory change back to exactly what it was before.
+    if (keyExisted) {
+      _overrides[section][key] = prevValue;
+    } else if (sectionExisted) {
+      delete _overrides[section][key];
+    } else {
+      delete _overrides[section];
+    }
+    throw e;
+  }
   return get(section, key);
 }
 
@@ -386,6 +452,7 @@ module.exports = {
   reset,
   all,
   hasKey,
+  validateValue,
   interpolate,
   REGISTRY,
   _file: FILE,
