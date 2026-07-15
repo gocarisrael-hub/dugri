@@ -223,8 +223,11 @@ function normalizeParticipant(p) {
 // several messages AND a participant-add in the same body. Returns:
 //   { events: [ ...NormalizedEvent ] }
 // where each NormalizedEvent is one of:
-//   { kind:'participants_added', groupId, added:[{id,name}] }  // a friend joined
-//   { kind:'message', groupId, from, fromName, text }          // a GROUP text msg
+//   { kind:'participants_added', groupId, added:[{id,name}], id }  // a friend joined
+//   { kind:'message', groupId, from, fromName, text, id }          // a GROUP text msg
+// `id` is a stable event id used by the handler for at-least-once de-dupe (the
+// Whapi message id; for a participant add, Whapi's id or a synthesized one). It
+// may be '' when the payload omits it — such events are simply not deduped.
 // Anything not actionable is simply omitted (never emitted as an event), so an
 // empty/unknown/self-only body yields { events: [] }. Guarantees for the handler:
 //   • WhatsApp-specific filtering happens HERE, once — the handler just switches
@@ -253,7 +256,11 @@ function parseWebhook(body) {
     const raw = Array.isArray(ev.participants) ? ev.participants : [];
     const added = raw.map(normalizeParticipant).filter(Boolean);
     if (!added.length) continue;
-    events.push({ kind: 'participants_added', groupId, added });
+    // A stable event id for at-least-once de-dupe. Prefer Whapi's own id; else
+    // synthesize one from the group + the added participant ids so a redelivery of
+    // the SAME add batch is recognised and dropped by the handler.
+    const id = String(ev.id || '') || 'padd:' + groupId + ':' + added.map((a) => a.id).join('|');
+    events.push({ kind: 'participants_added', groupId, added, id });
   }
 
   // Message events: EVERY genuine inbound GROUP text message in the batch.
@@ -273,6 +280,10 @@ function parseWebhook(body) {
       from: String(m.from || '').trim(),
       fromName: String(m.from_name || ''),
       text,
+      // Whapi message id, for at-least-once de-dupe by the handler. '' when the
+      // payload omits it (older test fixtures) — such events are simply never
+      // deduped rather than mis-deduped as a shared empty id.
+      id: String(m.id || ''),
     });
   }
 

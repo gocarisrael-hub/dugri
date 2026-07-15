@@ -29,6 +29,13 @@ const FILE = path.join(DATA_DIR, 'whatsapp-state.json');
 // already fire THIS slot?", so retaining the most recent few is plenty.
 const NUDGE_SLOTS_CAP = 6;
 
+// Keep the per-group processed-event id list bounded. Whapi is at-least-once and
+// can redeliver a batch, so we remember recently-processed message/participant
+// event ids to drop the duplicate — but only the most recent few matter (a
+// redelivery arrives right after the original), so cap it so a long-lived group
+// can't grow the file without bound.
+const PROCESSED_EVENTS_CAP = 50;
+
 // Keys that would poison Object.prototype (or clobber the map's own machinery)
 // if written as an own property. Rejected on BOTH the read and write paths so a
 // hostile/garbage groupId or collectionId can never touch the prototype —
@@ -83,7 +90,7 @@ function toIso(at) {
 }
 
 function emptyStore() {
-  return { version: 1, groups: {}, by_collection: {} };
+  return { version: 1, groups: {}, by_collection: {}, pending: {} };
 }
 
 let _store = load();
@@ -95,6 +102,7 @@ function load() {
       // undefined even if an older/partial file is loaded.
       if (!raw.groups || typeof raw.groups !== 'object') raw.groups = {};
       if (!raw.by_collection || typeof raw.by_collection !== 'object') raw.by_collection = {};
+      if (!raw.pending || typeof raw.pending !== 'object') raw.pending = {};
       if (raw.version == null) raw.version = 1;
       return raw;
     }
@@ -187,6 +195,67 @@ function linkGroup(groupId, collectionId, ownerWa, initialMembers = [], at) {
   if (cid) _store.by_collection[cid] = id;
   save();
   return clone(entry);
+}
+
+// Synchronous "intent to create a group for this collection" latch. Closes the
+// check-then-await-then-link TOCTOU in openWhatsappGroup: two concurrent paid
+// events for one collection would both pass the groupForCollection() check and
+// both createGroup before either linkGroup ran. reserveCollection records the
+// intent atomically (no await inside) BEFORE the caller's first await, so the
+// second call sees it and backs off — only one group is ever created. Returns
+// true for the FIRST caller (intent granted), false if a group already exists for
+// the collection OR another call already reserved it. Never throws; a bad id is a
+// safe false. releaseCollection clears the marker (call it once the create has
+// finished, success or fail, so a later paid event can retry after a failure).
+function reserveCollection(collectionId) {
+  const cid = safeKey(collectionId);
+  if (!cid) return false;
+  // A real group already exists -> nothing to reserve (caller no-ops anyway).
+  if (Object.prototype.hasOwnProperty.call(_store.by_collection, cid)) return false;
+  if (!_store.pending || typeof _store.pending !== 'object') _store.pending = {};
+  if (Object.prototype.hasOwnProperty.call(_store.pending, cid)) return false; // already reserved
+  _store.pending[cid] = true;
+  save();
+  return true;
+}
+
+function releaseCollection(collectionId) {
+  const cid = safeKey(collectionId);
+  if (!cid) return;
+  if (_store.pending && Object.prototype.hasOwnProperty.call(_store.pending, cid)) {
+    delete _store.pending[cid];
+    save();
+  }
+}
+
+// Per-group event de-dupe (Whapi at-least-once redelivery). wasEventProcessed
+// reports whether we've already handled this message/participant event id for the
+// group; markEventProcessed records it (and prunes to the most recent
+// PROCESSED_EVENTS_CAP ids so the file stays bounded). A missing group or empty id
+// is a safe no-op / false — only mapped groups (linked via linkGroup) carry the
+// list, which is exactly where re-greeting / re-acking must be prevented.
+function wasEventProcessed(groupId, eventId) {
+  const entry = getGroup(groupId);
+  if (!entry) return false;
+  const key = String(eventId || '');
+  if (!key) return false;
+  return Array.isArray(entry.processed_events) && entry.processed_events.indexOf(key) !== -1;
+}
+
+function markEventProcessed(groupId, eventId) {
+  const entry = getGroup(groupId);
+  if (!entry) return;
+  const key = String(eventId || '');
+  if (!key) return;
+  if (!Array.isArray(entry.processed_events)) entry.processed_events = [];
+  if (entry.processed_events.indexOf(key) !== -1) return; // already recorded
+  entry.processed_events.push(key);
+  if (entry.processed_events.length > PROCESSED_EVENTS_CAP) {
+    entry.processed_events = entry.processed_events.slice(
+      entry.processed_events.length - PROCESSED_EVENTS_CAP
+    );
+  }
+  save();
 }
 
 // Reverse lookup: which group backs this collection? Returns the groupId string
@@ -307,6 +376,10 @@ function activeGroups() {
 
 module.exports = {
   linkGroup,
+  reserveCollection,
+  releaseCollection,
+  wasEventProcessed,
+  markEventProcessed,
   groupForCollection,
   collectionForGroup,
   isInitialMember,
@@ -320,4 +393,5 @@ module.exports = {
   activeGroups,
   _file: FILE,
   NUDGE_SLOTS_CAP,
+  PROCESSED_EVENTS_CAP,
 };

@@ -31,6 +31,10 @@ let base;
 // Buyer + bot WhatsApp ids used across the paid-hook tests.
 const BUYER_WA = '972521234567';
 const BOT_WA = '972500000000';
+// The owner's own WhatsApp number (WHAPI_OWNER_WA below) and its normalized id —
+// the escalation channel used when email is unavailable.
+const OWNER_PHONE = '0521111111';
+const OWNER_WA = '972521111111';
 
 // Mutable per-test control of the spied Whapi responses + captured calls.
 let sendResult;
@@ -57,6 +61,7 @@ beforeAll(async () => {
   process.env.WHAPI_BASE_URL = 'https://gate.example.test';
   process.env.WHAPI_WEBHOOK_SECRET = 'hook-secret';
   process.env.WHAPI_BOT_WA = BOT_WA;
+  process.env.WHAPI_OWNER_WA = OWNER_PHONE;
   process.env.PUBLIC_BASE_URL = 'https://test.dugri.example';
 
   for (const f of ['db.js', 'settings.js', 'wa-state.js', 'whatsapp.js', 'notify.js', 'index.js']) {
@@ -110,7 +115,10 @@ beforeEach(() => {
   createCalls = [];
   inviteCalls = [];
   sendResult = { ok: true, sent: true, messageId: 'm1' };
-  createResult = { ok: true, groupId: 'g-new@g.us', data: {} };
+  // A successful create that POSITIVELY confirms the buyer among the added
+  // participants — buyerLandedInGroup is conservative and only skips the invite
+  // fallback on a positive confirmation.
+  createResult = { ok: true, groupId: 'g-new@g.us', data: { participants: [{ id: BUYER_WA }] } };
   inviteResult = { ok: true, inviteCode: 'INV', inviteLink: 'https://chat.whatsapp.com/INV' };
   // Reset the trigger catalog to defaults so a settings override in one test
   // never leaks into another.
@@ -128,8 +136,10 @@ async function webhook(body, secret = 'hook-secret') {
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
-function msgEvent(groupId, text, { from = '972999888', from_name = 'דנה' } = {}) {
-  return { chat_id: groupId, from, from_name, type: 'text', text: { body: text } };
+function msgEvent(groupId, text, { from = '972999888', from_name = 'דנה', id } = {}) {
+  const m = { chat_id: groupId, from, from_name, type: 'text', text: { body: text } };
+  if (id != null) m.id = id;
+  return m;
 }
 
 describe('POST /api/whatsapp/webhook — secret + dormancy gate', () => {
@@ -202,6 +212,36 @@ describe('POST /api/whatsapp/webhook — messages', () => {
     const r = await webhook({ messages: [msgEvent('gC2@g.us', 'סיום', { from: '972777' })] });
     expect(r.status).toBe(200);
     expect(db.effectiveStatus(db.getCollection(c.id))).toBe('open');
+  });
+
+  it('de-dupes a redelivered message id — words added once, not twice', async () => {
+    const c = db.createCollection('עומר', { phone: '0521234567' });
+    waState.linkGroup('gDup@g.us', c.id, BUYER_WA, [BUYER_WA, BOT_WA]);
+    const body = { messages: [msgEvent('gDup@g.us', 'אלף, בית', { id: 'wamid.ABC' })] };
+    await webhook(body); // first delivery
+    expect(db.listWords(c.id)).toHaveLength(2);
+    // Whapi redelivers the exact same event (same id). The handler must skip it.
+    await webhook(body);
+    expect(db.listWords(c.id)).toHaveLength(2); // unchanged — no re-processing
+  });
+
+  it('de-dupes a redelivered participants-add — greets once, not twice', async () => {
+    const c = db.createCollection('רותם', { phone: '0521234567' });
+    waState.linkGroup('gDupJoin@g.us', c.id, BUYER_WA, [BUYER_WA, BOT_WA]);
+    const body = {
+      groups_participants: [
+        {
+          action: 'add',
+          group_id: 'gDupJoin@g.us',
+          participants: [{ id: '972111999@s.whatsapp.net', name: 'חבר' }],
+        },
+      ],
+    };
+    await webhook(body);
+    expect(sendCalls).toHaveLength(1); // member_joined greeted once
+    sendCalls = [];
+    await webhook(body); // redelivered identical add batch
+    expect(sendCalls).toHaveLength(0); // not greeted again
   });
 
   it('posts the closed note ONCE for an already-closed collection', async () => {
@@ -349,6 +389,105 @@ describe('paid hook — openWhatsappGroup', () => {
     await app.openWhatsappGroup(c, base);
     expect(createCalls).toHaveLength(0);
     expect(waState.groupForCollection(c.id)).toBeNull();
+  });
+
+  it('runs the invite fallback on an UNRECOGNIZED create response (not optimistic)', async () => {
+    // No failure entry, but no recognisable participant list either. The old code
+    // optimistically assumed "added"; the conservative code must NOT — it runs the
+    // invite DM so the buyer is never silently left out.
+    createResult = { ok: true, groupId: 'g-amb@g.us', data: { some_unknown_shape: true } };
+    const c = db.createCollection('עדי', { phone: '0521234567' });
+    await app.openWhatsappGroup(c, base);
+    const groupId = waState.groupForCollection(c.id);
+    expect(inviteCalls).toEqual([groupId]); // invite fetched -> fallback ran
+    const dm = sendCalls.find((s) => s.to === BUYER_WA);
+    expect(dm).toBeTruthy();
+    expect(dm.text).toContain('https://chat.whatsapp.com/INV');
+  });
+
+  it('escalates to an owner WhatsApp DM when email is unavailable', async () => {
+    createResult = {
+      ok: true,
+      groupId: 'g-esc-wa@g.us',
+      data: { failed_participants: [{ id: BUYER_WA }] },
+    };
+    // Every send fails: the group_opened DM to the buyer fails, so the escalation
+    // path runs. Email escalation is unavailable (sendSystemAlert -> false), so the
+    // owner must be reached by a WhatsApp DM to their OWN number instead.
+    sendResult = { ok: false, error: 'blocked' };
+    const alertSpy = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(false);
+    const c = db.createCollection('שיר', { phone: '0521234567' });
+    await app.openWhatsappGroup(c, base);
+    expect(alertSpy).toHaveBeenCalledTimes(1); // email attempted (returned false)
+    const ownerDm = sendCalls.find((s) => s.to === OWNER_WA);
+    expect(ownerDm).toBeTruthy(); // owner reached over WhatsApp despite email off
+    expect(ownerDm.text).toContain('צריך צירוף ידני');
+    alertSpy.mockRestore();
+  });
+
+  it('does NOT owner-DM when the email escalation succeeds (no double alert)', async () => {
+    createResult = {
+      ok: true,
+      groupId: 'g-esc-em@g.us',
+      data: { failed_participants: [{ id: BUYER_WA }] },
+    };
+    sendResult = { ok: false, error: 'blocked' };
+    const alertSpy = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true); // email OK
+    const c = db.createCollection('טל', { phone: '0521234567' });
+    await app.openWhatsappGroup(c, base);
+    expect(alertSpy).toHaveBeenCalledTimes(1);
+    expect(sendCalls.find((s) => s.to === OWNER_WA)).toBeFalsy(); // no WA fallback
+    alertSpy.mockRestore();
+  });
+
+  it('two concurrent opens for one collection create exactly ONE group', async () => {
+    const c = db.createCollection('כפיל', { phone: '0521234567' });
+    // Both start before either links the group — the reservation latch must let
+    // only one through to createGroup.
+    await Promise.all([app.openWhatsappGroup(c, base), app.openWhatsappGroup(c, base)]);
+    expect(createCalls).toHaveLength(1);
+    expect(waState.groupForCollection(c.id)).toBe('g-new@g.us');
+  });
+});
+
+describe('ilPhoneToWaId — robust IL-mobile normalization', () => {
+  it('normalizes a local 05x number', () => {
+    expect(app.ilPhoneToWaId('0521234567')).toBe('972521234567');
+    expect(app.ilPhoneToWaId('052-123-4567')).toBe('972521234567');
+  });
+  it('keeps an already-972-prefixed number', () => {
+    expect(app.ilPhoneToWaId('972521234567')).toBe('972521234567');
+    expect(app.ilPhoneToWaId('+972 52 123 4567')).toBe('972521234567');
+    // a redundant 0 after the country code is dropped
+    expect(app.ilPhoneToWaId('9720521234567')).toBe('972521234567');
+  });
+  it('strips a 00 international prefix WITHOUT doubling the country code', () => {
+    // The pre-fix bug turned this into "972972521234567".
+    expect(app.ilPhoneToWaId('00972521234567')).toBe('972521234567');
+    expect(app.ilPhoneToWaId('+00972521234567')).toBe('972521234567');
+  });
+  it('soft-fails junk / non-mobile to empty string', () => {
+    expect(app.ilPhoneToWaId('hello')).toBe('');
+    expect(app.ilPhoneToWaId('')).toBe('');
+    expect(app.ilPhoneToWaId(null)).toBe('');
+    expect(app.ilPhoneToWaId('123')).toBe('');
+    // an IL landline (02x) is not a mobile -> rejected
+    expect(app.ilPhoneToWaId('021234567')).toBe('');
+  });
+});
+
+describe('waIdDigits — JID normalization', () => {
+  it('strips the @host suffix', () => {
+    expect(app.waIdDigits('972521234567@s.whatsapp.net')).toBe('972521234567');
+  });
+  it('strips a :device multi-device JID suffix (no trailing device digits)', () => {
+    // Before the fix this produced "97254657771512" (device id concatenated), so
+    // the buyer check failed and the close command was never recognised.
+    expect(app.waIdDigits('972546577715:12@s.whatsapp.net')).toBe('972546577715');
+  });
+  it('handles bare + / dashes / spaces', () => {
+    expect(app.waIdDigits('+972-52-123 4567')).toBe('972521234567');
+    expect(app.waIdDigits(null)).toBe('');
   });
 });
 

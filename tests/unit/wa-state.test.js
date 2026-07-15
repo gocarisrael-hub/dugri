@@ -310,3 +310,57 @@ describe('never-throw on save failure (in-memory stays authoritative)', () => {
     rSpy.mockRestore();
   });
 });
+
+describe('reserveCollection / releaseCollection (TOCTOU latch)', () => {
+  it('grants the FIRST caller and refuses a second until released', () => {
+    expect(wa.reserveCollection('col-res')).toBe(true);
+    // A second reserve for the same collection is refused while the first holds it.
+    expect(wa.reserveCollection('col-res')).toBe(false);
+    wa.releaseCollection('col-res');
+    // After release, it can be reserved again (retry after a failed create).
+    expect(wa.reserveCollection('col-res')).toBe(true);
+    wa.releaseCollection('col-res');
+  });
+
+  it('refuses reservation when a group already backs the collection', () => {
+    wa.linkGroup('gres@g.us', 'col-linked', 'o@c.us', ['o@c.us'], AT);
+    expect(wa.reserveCollection('col-linked')).toBe(false);
+  });
+
+  it('is a safe no-op for a bad/empty id', () => {
+    expect(wa.reserveCollection('')).toBe(false);
+    expect(wa.reserveCollection('__proto__')).toBe(false);
+    expect(() => wa.releaseCollection('')).not.toThrow();
+  });
+});
+
+describe('wasEventProcessed / markEventProcessed (at-least-once de-dupe)', () => {
+  it('records then recognises a processed event id for a group', () => {
+    wa.linkGroup('gev@g.us', 'col-ev', 'o@c.us', ['o@c.us'], AT);
+    expect(wa.wasEventProcessed('gev@g.us', 'e1')).toBe(false);
+    wa.markEventProcessed('gev@g.us', 'e1');
+    expect(wa.wasEventProcessed('gev@g.us', 'e1')).toBe(true);
+    // A different id is still unseen.
+    expect(wa.wasEventProcessed('gev@g.us', 'e2')).toBe(false);
+  });
+
+  it('no-ops for an unmapped group or empty id', () => {
+    expect(wa.wasEventProcessed('nogroup@g.us', 'x')).toBe(false);
+    expect(() => wa.markEventProcessed('nogroup@g.us', 'x')).not.toThrow();
+    wa.linkGroup('gev2@g.us', 'col-ev2', 'o@c.us', ['o@c.us'], AT);
+    expect(wa.wasEventProcessed('gev2@g.us', '')).toBe(false);
+    wa.markEventProcessed('gev2@g.us', ''); // ignored
+    expect(wa.wasEventProcessed('gev2@g.us', '')).toBe(false);
+  });
+
+  it('caps the processed-event list (bounded growth)', () => {
+    wa.linkGroup('gcap@g.us', 'col-cap', 'o@c.us', ['o@c.us'], AT);
+    const cap = wa.PROCESSED_EVENTS_CAP;
+    for (let i = 0; i < cap + 20; i++) wa.markEventProcessed('gcap@g.us', 'ev' + i);
+    // The oldest ids were pruned; the most recent cap ids are retained.
+    expect(wa.wasEventProcessed('gcap@g.us', 'ev0')).toBe(false);
+    expect(wa.wasEventProcessed('gcap@g.us', 'ev' + (cap + 19))).toBe(true);
+    const entry = wa.collectionForGroup('gcap@g.us');
+    expect(entry.processed_events.length).toBeLessThanOrEqual(cap);
+  });
+});
