@@ -16,6 +16,8 @@ const playbook = require('./playbook');
 const content = require('./content');
 const contentImport = require('./content-import');
 const settings = require('./settings');
+const whatsapp = require('./whatsapp');
+const waState = require('./wa-state');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -889,6 +891,263 @@ function sendPaidNotifications(collectionId, base, amountCharged) {
   if (c.order && c.order.version === 'custom') {
     notify.sendCustomOrderAlert(enriched, base, options).catch(() => {});
   }
+  // WhatsApp bot (DORMANT until armed): open a word-collection group for the
+  // buyer. Fire-and-forget and fully gated on whatsapp.isConfigured() so this is a
+  // pure no-op — no network, no state — until the bot's env is set. It must NEVER
+  // block or break the payment/email flow, so the promise is wrapped.
+  if (whatsapp.isConfigured()) {
+    openWhatsappGroup(c, base).catch((e) => {
+      console.warn('[whatsapp] group open failed:', e && e.message ? e.message : e);
+    });
+  }
+}
+
+// =========================================================================
+// WhatsApp bot (Phase B) — inbound webhook, paid-order group creation, and the
+// nudge scheduler. EVERYTHING below is gated on whatsapp.isConfigured(): with the
+// WHAPI_* / WHATSAPP_ENABLED env unset the module is inert (no fetch, no state),
+// so merging this changes nothing in production until the owner arms the bot.
+// Every outgoing message text comes from the owner-editable trigger catalog in
+// settings.js (via whatsapp.buildTriggerMessage) — a disabled trigger is silent.
+// =========================================================================
+
+// The buyer's in-group "finish the list" command. Editable via env; a distinct
+// short phrase so ordinary group chatter never closes a list by accident. Matched
+// case-insensitively against the trimmed message text.
+const WA_CLOSE_COMMAND = (process.env.WHAPI_CLOSE_COMMAND || 'סיום').trim();
+// The bot's OWN WhatsApp id (optional). Recorded as an initial member at group
+// creation so the bot never greets itself as a joining friend.
+const WHAPI_BOT_WA = process.env.WHAPI_BOT_WA || '';
+
+// Reduce a WhatsApp id / phone to its bare international digits for comparison
+// ("972521234567@s.whatsapp.net" -> "972521234567"). Strips any "@…" chat-suffix
+// and every non-digit, so ids captured in different shapes still compare equal.
+function waIdDigits(x) {
+  return String(x == null ? '' : x)
+    .split('@')[0]
+    .replace(/[^\d]/g, '');
+}
+
+// Convert an Israeli mobile number to a WhatsApp id (bare international digits,
+// e.g. "052-123-4567" / "+972 52 123 4567" -> "972521234567"). Returns '' when it
+// can't produce a plausible IL number, so the caller simply skips the bot for
+// that order. A local leading 0 becomes the 972 country code; an existing 972 is
+// kept (dropping a redundant 0 after it).
+function ilPhoneToWaId(phone) {
+  let s = waIdDigits(phone);
+  if (!s) return '';
+  if (s.startsWith('972')) s = '972' + s.slice(3).replace(/^0+/, '');
+  else if (s.startsWith('0')) s = '972' + s.replace(/^0+/, '');
+  else s = '972' + s;
+  // A full IL mobile is 972 + 9 digits (12). Allow a little slack, reject junk.
+  if (s.length < 11 || s.length > 15) return '';
+  return s;
+}
+
+// The interpolation values shared by every group-scoped trigger: the honoree's
+// name and the public "add words" (friends) collect link — NOT the owner link, so
+// the token is never shared into a group. `base` is the normalized public origin.
+function waGroupValues(collection, base) {
+  const honoree = (collection && collection.honoree_name) || 'בעל/ת השמחה';
+  const link = base && collection && collection.id ? base + '/collect.html?c=' + collection.id : '';
+  return { honoree, link };
+}
+
+// Send ONE trigger's message to a chat, if that trigger is enabled. Text comes
+// from the owner-editable catalog via whatsapp.buildTriggerMessage (a disabled or
+// unknown trigger yields no text and sends nothing). Fail-soft: a Whapi send
+// failure never throws. Returns true only when a message was actually sent.
+async function sendWaTrigger(to, triggerId, values) {
+  const msg = whatsapp.buildTriggerMessage(triggerId, values);
+  if (!msg || !msg.enabled || !msg.text) return false;
+  const r = await whatsapp.sendMessage(to, msg.text);
+  return !!(r && r.ok);
+}
+
+// Did the buyer actually land in the freshly-created group? WhatsApp may silently
+// refuse to add a number for privacy. Inspect the createGroup response: an
+// explicit failure entry means NOT added; otherwise, when Whapi reports the added
+// participants, require the buyer among them; with no participant info at all we
+// optimistically assume added (the group exists either way).
+function participantIds(list) {
+  return (Array.isArray(list) ? list : [])
+    .map((p) => (typeof p === 'string' ? p : (p && (p.id || p.wa_id)) || ''))
+    .map(waIdDigits)
+    .filter(Boolean);
+}
+function buyerLandedInGroup(created, buyerWa) {
+  const data = (created && created.data) || {};
+  const want = waIdDigits(buyerWa);
+  const failed = participantIds(data.failed_participants || data.not_added || data.failed);
+  if (failed.includes(want)) return false;
+  const added = participantIds(
+    data.participants || data.added_participants || data.participants_added
+  );
+  if (added.length) return added.includes(want);
+  return true;
+}
+
+// Paid-order hook: open a WhatsApp word-collection group for the buyer. Idempotent
+// (never opens a second group for a collection) and fully fail-soft. Steps:
+//   1. derive the buyer's WhatsApp id from the collection's owner_phone;
+//   2. createGroup(subject, [buyer]); on success link the group ↔ collection with
+//      the buyer + bot recorded as initial members (so they're never greeted as
+//      joining friends), and announce with the `group_opened` trigger;
+//   3. privacy-block fallback — if the buyer wasn't added, DM them an invite link
+//      (group_opened text, link = the group invite) and record it; if that DM also
+//      fails, escalate to the owner via notify.sendSystemAlert so a human can act.
+async function openWhatsappGroup(collection, base) {
+  if (!collection || !collection.id) return;
+  if (waState.groupForCollection(collection.id)) return; // already have a group — no-op
+  const buyerWa = ilPhoneToWaId(collection.owner_phone);
+  if (!buyerWa) return; // no usable buyer number
+  const honoree = collection.honoree_name || '';
+  const subject = 'דוגרי · מילים על ' + (honoree || 'בעל/ת השמחה');
+
+  const created = await whatsapp.createGroup(subject, [buyerWa]);
+  if (!created || !created.ok || !created.groupId) return;
+  const groupId = created.groupId;
+
+  const botId = WHAPI_BOT_WA ? waIdDigits(WHAPI_BOT_WA) : '';
+  const initialMembers = botId ? [buyerWa, botId] : [buyerWa];
+  waState.linkGroup(groupId, collection.id, buyerWa, initialMembers);
+
+  // Announce the group is open (to the group).
+  await sendWaTrigger(groupId, 'group_opened', waGroupValues(collection, base));
+
+  // Privacy-block fallback: the buyer couldn't be added by number.
+  if (!buyerLandedInGroup(created, buyerWa)) {
+    const invite = await whatsapp.getInviteLink(groupId);
+    const inviteLink = invite && invite.ok ? invite.inviteLink : null;
+    let dmSent = false;
+    if (inviteLink) {
+      dmSent = await sendWaTrigger(buyerWa, 'group_opened', { honoree, link: inviteLink });
+      if (dmSent) waState.setInviteDmSent(groupId);
+    }
+    if (!dmSent) {
+      await notify.sendSystemAlert('קבוצת וואטסאפ — צריך צירוף ידני', [
+        'נפתחה קבוצה לאיסוף מילים אבל לא הצלחנו לצרף את הלקוח/ה אוטומטית.',
+        'שם בעל/ת השמחה: ' + (honoree || '—'),
+        'טלפון הלקוח/ה: ' + (collection.owner_phone || '—'),
+        'מזהה קבוצה: ' + groupId,
+        inviteLink ? 'קישור הצטרפות: ' + inviteLink : 'לא הצלחנו להפיק קישור הצטרפות.',
+      ]);
+    }
+  }
+}
+
+// Handle ONE normalized webhook event (from whatsapp.parseWebhook). Fail-soft is
+// the CALLER's job (each event is wrapped) — this focuses on the logic.
+async function handleWaEvent(ev, base) {
+  if (!ev) return;
+  if (ev.kind === 'participants_added') {
+    const entry = waState.collectionForGroup(ev.groupId);
+    const collection = entry && entry.collection_id ? db.getCollection(entry.collection_id) : null;
+    const gv = waGroupValues(collection, base);
+    for (const m of ev.added || []) {
+      // Skip the buyer + bot recorded at group creation — greet only NEW friends.
+      if (waState.isInitialMember(ev.groupId, m.id)) continue;
+      await sendWaTrigger(ev.groupId, 'member_joined', {
+        name: (m && m.name) || '',
+        honoree: gv.honoree,
+        link: gv.link,
+      });
+    }
+    return;
+  }
+  if (ev.kind === 'message') {
+    const entry = waState.collectionForGroup(ev.groupId);
+    if (!entry) return; // unmapped group — ignore
+    const cid = entry.collection_id;
+    const collection = cid ? db.getCollection(cid) : null;
+    if (!collection) return;
+    const gv = waGroupValues(collection, base);
+    const isBuyer = entry.owner_wa && ev.from && waIdDigits(entry.owner_wa) === waIdDigits(ev.from);
+    const text = String(ev.text || '').trim();
+
+    // Buyer's "finish the list" command: close the collection + announce.
+    if (isBuyer && text.toLowerCase() === WA_CLOSE_COMMAND.toLowerCase()) {
+      const closed = db.closeCollection(cid, collection.owner_token);
+      waState.markClosed(ev.groupId);
+      if (closed && closed.changed) {
+        await sendWaTrigger(ev.groupId, 'list_closed', {
+          honoree: gv.honoree,
+          wordCount: db.listWords(cid).length,
+        });
+      }
+      return;
+    }
+
+    // Collection already closed: post the "list closed" note ONCE (state-deduped
+    // via the group's `closed` flag) and stop — no words are collected.
+    if (db.effectiveStatus(collection) !== 'open') {
+      if (!entry.closed) {
+        waState.markClosed(ev.groupId);
+        await sendWaTrigger(ev.groupId, 'list_closed', {
+          honoree: gv.honoree,
+          wordCount: db.listWords(cid).length,
+        });
+      }
+      return;
+    }
+
+    // Normal traffic: harvest words from the message, stamp activity, and fire the
+    // (default-disabled, so usually silent) `word_added` ack.
+    const words = whatsapp.splitWords(ev.text);
+    if (words.length) {
+      db.addWords(cid, words, ev.fromName);
+      waState.touchActivity(ev.groupId);
+      await sendWaTrigger(ev.groupId, 'word_added', {
+        honoree: gv.honoree,
+        count: db.listWords(cid).length,
+        link: gv.link,
+      });
+    }
+    return;
+  }
+}
+
+// One nudge-scan pass over every active group. Exposed (app.runWaNudgeScan) so a
+// test can run a single pass with an injected `now` instead of waiting on the
+// interval. No-ops (returns 0) when the bot is unconfigured. For each active
+// group: if its collection is gone / no longer open, close the group and skip;
+// otherwise ask whatsapp.groupsDueForNudge which time triggers are due now, send
+// each (from the catalog), and record the send (daily_* → markNudged by slot,
+// quiet_reminder → recordQuietReminder). Disabled triggers never appear in the
+// due list, so they stay silent. Fail-soft per group; never throws.
+async function runWaNudgeScan(now = Date.now()) {
+  if (!whatsapp.isConfigured()) return 0;
+  const base = paymentBaseUrl();
+  let sent = 0;
+  let groups = [];
+  try {
+    groups = waState.activeGroups();
+  } catch {
+    return 0;
+  }
+  for (const g of groups) {
+    try {
+      const cid = g.collection_id;
+      const collection = cid ? db.getCollection(cid) : null;
+      if (!collection || db.effectiveStatus(collection) !== 'open') {
+        waState.markClosed(g.groupId);
+        continue;
+      }
+      const due = whatsapp.groupsDueForNudge([g], { now });
+      if (!due.length) continue;
+      const values = waGroupValues(collection, base);
+      for (const d of due) {
+        const ok = await sendWaTrigger(d.groupId, d.triggerId, values);
+        if (!ok) continue; // send failed — don't record, so the next tick retries
+        if (d.triggerId === 'quiet_reminder') waState.recordQuietReminder(d.groupId, now);
+        else if (d.slotKey) waState.markNudged(d.groupId, d.slotKey);
+        sent += 1;
+      }
+    } catch (e) {
+      console.warn('[whatsapp] nudge failed for group:', e && e.message ? e.message : e);
+    }
+  }
+  return sent;
 }
 
 // Owner-only: start a PeleCard card payment for this collection's order.
@@ -1418,6 +1677,35 @@ app.delete('/api/admin/settings', (req, res) => {
   res.json({ effective: settings.reset(section, key) });
 });
 
+// WhatsApp bot inbound webhook (Whapi Cloud). Point Whapi's webhook at
+// /api/whatsapp/webhook?secret=<WHAPI_WEBHOOK_SECRET>. DORMANT until armed:
+// verifies the shared secret (timing-safe) first — a missing/mismatched secret,
+// or a bot with no secret configured, is rejected 403 with no work; when the bot
+// isn't fully armed we accept but do nothing. Otherwise every parsed event is
+// handled fail-soft (a bad event or a Whapi send failure never throws out of the
+// route and never breaks the rest of the batch), and we ALWAYS answer 200 so
+// Whapi doesn't retry-storm.
+app.post('/api/whatsapp/webhook', async (req, res) => {
+  if (!whatsapp.verifyWebhookSecret(req.query && req.query.secret)) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  if (!whatsapp.isConfigured()) return res.status(200).json({ ok: true });
+  const base = paymentBaseUrl();
+  try {
+    const { events } = whatsapp.parseWebhook(req.body);
+    for (const ev of events) {
+      try {
+        await handleWaEvent(ev, base);
+      } catch (e) {
+        console.warn('[whatsapp] event failed:', e && e.message ? e.message : e);
+      }
+    }
+  } catch (e) {
+    console.warn('[whatsapp] webhook failed:', e && e.message ? e.message : e);
+  }
+  res.status(200).json({ ok: true });
+});
+
 // Unknown API routes -> JSON 404 (must come before static/catch-all).
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
 
@@ -1459,6 +1747,10 @@ app.get('*', (req, res) => {
 // waiting on the interval. Fully wrapped and no-ops when email is unconfigured;
 // it never throws into the caller.
 const REMINDER_SCAN_INTERVAL_MS = Number(process.env.REMINDER_SCAN_INTERVAL_MS || 60 * 60 * 1000);
+// The WhatsApp nudge scan runs on the same hourly cadence (the daily triggers
+// catch up the same day once past their hour; quiet reminders are spaced by
+// idle_hours), and stays dormant unless the bot is armed.
+const WA_NUDGE_SCAN_INTERVAL_MS = Number(process.env.WA_NUDGE_SCAN_INTERVAL_MS || 60 * 60 * 1000);
 
 async function runReminderScan(now = Date.now()) {
   if (!notify.isConfigured()) return 0;
@@ -1497,7 +1789,21 @@ if (require.main === module) {
     }, REMINDER_SCAN_INTERVAL_MS);
     if (timer.unref) timer.unref();
   }
+  // Hourly WhatsApp nudge scan — only when the bot is armed. unref() so it never
+  // keeps the process alive on its own; fire-and-forget so a failing pass can't
+  // crash the process. Gated inside require.main so tests never auto-start it.
+  if (whatsapp.isConfigured()) {
+    const waTimer = setInterval(() => {
+      runWaNudgeScan().catch(() => {});
+    }, WA_NUDGE_SCAN_INTERVAL_MS);
+    if (waTimer.unref) waTimer.unref();
+  }
 }
 
 module.exports = app;
+// Exposed for tests + the scheduler: a single WhatsApp nudge pass, and the
+// paid-order group-open hook. Attached to the app export (which stays the default
+// export) so a test can drive them with injected inputs, hermetically.
+module.exports.runWaNudgeScan = runWaNudgeScan;
+module.exports.openWhatsappGroup = openWhatsappGroup;
 module.exports.runReminderScan = runReminderScan;

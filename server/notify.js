@@ -526,6 +526,31 @@ async function send({ subject, text, html, to }) {
   }
 }
 
+// Pure builder: a generic owner "system alert" (Hebrew). Used for operational
+// escalations that need a human — e.g. a paid WhatsApp order whose buyer could
+// neither be added to their word-collection group nor DM'd an invite, so the
+// owner must step in manually. `subject` is a short Hebrew summary; `lines` is a
+// string or an array of Hebrew body lines. Returns {subject, text} — the same
+// shape as the other builders. Never throws.
+function buildSystemAlert(subject, lines) {
+  const subj = 'דוגרי · ' + String(subject == null || subject === '' ? 'התראת מערכת' : subject);
+  const body = (Array.isArray(lines) ? lines : [lines])
+    .map((l) => String(l == null ? '' : l))
+    .join('\n');
+  return { subject: subj, text: body };
+}
+
+// Fire a generic owner system alert to NOTIFY_TO. Dormant (returns false) when
+// Resend is unconfigured, like every other send. Fully wrapped — never throws.
+async function sendSystemAlert(subject, lines) {
+  try {
+    return await send(buildSystemAlert(subject, lines));
+  } catch (e) {
+    console.warn('[notify] sendSystemAlert failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
 // Fire the "order paid" notification. `baseUrl` is the normalized public origin
 // (optional). `options` may carry `amountCharged` (the amount actually paid).
 // Never throws.
@@ -649,6 +674,8 @@ module.exports = {
   buildPdfReadyMessage,
   buildProductionError,
   buildWordsReminder,
+  buildSystemAlert,
+  sendSystemAlert,
   sendOrderPaid,
   sendCustomOrderAlert,
   sendBuyerConfirmation,
