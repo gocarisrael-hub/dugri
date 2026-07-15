@@ -338,6 +338,46 @@ function get(section, key) {
   return clone(ov);
 }
 
+const isIntInRange = (n, lo, hi) => Number.isInteger(n) && n >= lo && n <= hi;
+
+// Range-validate a trigger's timing object. The EXPECTED shape is derived from
+// the registry default timing (so new triggers need no changes here):
+//   default has `hour`      -> daily_* : integer hour 0..23
+//   default has idle_hours/window -> quiet: integer idle_hours>=1, integer
+//                              max>=1, window a 2-int array [start,end], each
+//                              0..23, start < end.
+//   default has no timing    -> an event trigger: it accepts no timing.
+// Returns an error message string, or null when the timing is acceptable.
+function validateTiming(section, key, timing) {
+  const def = defaultFor(section, key);
+  const defTiming = isPlainObject(def) ? def.timing : undefined;
+  if (!isPlainObject(defTiming)) return 'this trigger does not accept timing';
+  // A partial timing override deep-merges over the default on read, so range-
+  // check the EFFECTIVE (merged) timing — the value the scheduler will actually
+  // use — not the raw (possibly partial) override.
+  const t = deepMerge(defTiming, timing);
+  if ('hour' in defTiming) {
+    if (!isIntInRange(t.hour, 0, 23)) return 'timing.hour must be an integer 0..23';
+    return null;
+  }
+  // quiet shape (idle_hours / max / window)
+  if (!(Number.isInteger(t.idle_hours) && t.idle_hours >= 1)) {
+    return 'timing.idle_hours must be an integer >= 1';
+  }
+  if (!(Number.isInteger(t.max) && t.max >= 1)) {
+    return 'timing.max must be an integer >= 1';
+  }
+  if (!Array.isArray(t.window) || t.window.length !== 2) {
+    return 'timing.window must be a 2-element array';
+  }
+  const [start, end] = t.window;
+  if (!isIntInRange(start, 0, 23) || !isIntInRange(end, 0, 23)) {
+    return 'timing.window hours must be integers 0..23';
+  }
+  if (start >= end) return 'timing.window start must be before end';
+  return null;
+}
+
 // Validate an override VALUE's shape against the registry default for
 // (section, key). Returns an error message string, or null when the value is
 // acceptable. Object defaults require an object override (partial objects are
@@ -362,7 +402,15 @@ function validateValue(section, key, value) {
     if (!isPlainObject(value)) return 'value must be an object';
     if (has('enabled') && typeof value.enabled !== 'boolean') return 'enabled must be a boolean';
     if (has('text') && typeof value.text !== 'string') return 'text must be a string';
-    if (has('timing') && !isPlainObject(value.timing)) return 'timing must be an object';
+    if (has('timing')) {
+      if (!isPlainObject(value.timing)) return 'timing must be an object';
+      // Range-check the timing numbers so a bad override can never be stored (a
+      // saved {hour:25} / {hour:0-from-blank} / window:[0,0] would make the
+      // reminder scheduler misfire). The expected shape is keyed off the
+      // registry DEFAULT timing so it stays generic as triggers are added.
+      const timingErr = validateTiming(section, key, value.timing);
+      if (timingErr) return timingErr;
+    }
     return null;
   }
   // Generic fallback: an object default requires an object override.
