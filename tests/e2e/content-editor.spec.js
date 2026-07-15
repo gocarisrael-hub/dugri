@@ -438,6 +438,76 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     // The picker lists every editable page and starts on the current one.
     await expect(select.locator('option')).toHaveCount(7);
     await expect(select).toHaveValue('index.html?edit=1&key=dugri-admin');
+    // The "reset to default" button was REMOVED; the import-from-staging button is present.
+    await expect(page.locator('[data-role="reset"]')).toHaveCount(0);
+    await expect(page.locator('[data-role="import-staging"]')).toHaveText('ייבוא תוכן מהסטייג׳ינג');
+  });
+
+  test('the import-from-staging button is owner-gated: absent for a normal visitor', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    // No ?edit=1 → a normal visitor. No toolbar and no import button at all.
+    await page.goto('/index.html');
+    await expect(page.locator('.dugri-editbar')).toHaveCount(0);
+    await expect(page.locator('[data-role="import-staging"]')).toHaveCount(0);
+  });
+
+  test('import-from-staging: confirms, POSTs with the admin key, then shows the summary', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+
+    let importUrl = null;
+    let importMethod = null;
+    await page.route('**/api/admin/content/import-from-staging*', (route) => {
+      importUrl = route.request().url();
+      importMethod = route.request().method();
+      return route.fulfill({ json: { ok: true, pages: 2, fields: 5, images: 3 } });
+    });
+
+    // Two dialogs fire: the destructive confirm (accept it) and the success alert.
+    const dialogs = [];
+    page.on('dialog', (d) => {
+      dialogs.push(d.message());
+      return d.accept();
+    });
+
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    await page.locator('[data-role="import-staging"]').click();
+
+    // The endpoint was POSTed, carrying the admin key.
+    await expect.poll(() => importUrl).toContain('/api/admin/content/import-from-staging');
+    expect(importMethod).toBe('POST');
+    expect(importUrl).toContain('key=dugri-admin');
+
+    // The owner saw the destructive-warning confirm and then the success summary.
+    await expect.poll(() => dialogs.length).toBeGreaterThanOrEqual(2);
+    expect(dialogs[0]).toContain('תדרוס'); // "overwrite" warning
+    expect(dialogs[1]).toContain('3'); // summary mentions the imported image count
+  });
+
+  test('import-from-staging: a server error is surfaced, not silently swallowed', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/admin/content/import-from-staging*', (route) =>
+      route.fulfill({ status: 400, json: { error: 'STAGING_URL is not set on this service' } })
+    );
+    page.on('dialog', (d) => d.accept()); // accept the destructive confirm
+
+    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    await page.locator('[data-role="import-staging"]').click();
+    // The server's Hebrew/plain error message is shown in the toolbar status.
+    await expect(page.locator('.dugri-editbar__status')).toHaveText(
+      'STAGING_URL is not set on this service'
+    );
+    // Still in edit mode (no reload happened on failure).
+    await expect(page.locator('.dugri-editbar')).toBeVisible();
   });
 
   test('the page picker navigates to another page STILL in edit mode', async ({ page }) => {

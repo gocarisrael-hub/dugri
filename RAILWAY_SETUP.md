@@ -161,6 +161,33 @@ The private orders page is at `/admin.html?key=YOUR_ADMIN_KEY`. Set a strong
 **`ADMIN_KEY`** env var on the Railway service; only that key can open the page
 or call `/api/admin/collections`. (Locally it defaults to `dugri-admin`.)
 
+## Content import from staging (production service only)
+
+The inline content editor's toolbar has an **"ייבוא תוכן מהסטייג׳ינג"** (import content
+from staging) button. Staging and production are separate services with **separate
+volumes**, so content edited on staging does not appear on production. This button lets
+the owner review/perfect the site's copy and photos on staging, then mirror the entire
+content-overrides store onto production in one click (`POST
+/api/admin/content/import-from-staging`). The server backs up production's current
+`content-overrides.json` before overwriting, and re-fetches every referenced image (the
+filenames are content-addressed, so the stored paths stay valid).
+
+Set these env vars **on the PRODUCTION service only** (staging never imports from
+itself — the endpoint refuses a self-import):
+
+- **`STAGING_URL`** — the staging base URL, e.g.
+  `https://dugri-staging.up.railway.app` (same domain as the `STAGING_BASE_URL`
+  repo variable). If it's unset, or equal to production's own origin, the import
+  refuses with a clear error.
+- **`STAGING_ADMIN_KEY`** — staging's `ADMIN_KEY`. Production needs it because the
+  full-overrides endpoint it reads on staging (`GET /api/admin/content/all`) is
+  admin-gated, and the two services use **different** admin keys (see "Variables
+  that MUST differ in staging" above). If the keys ever match you may omit this —
+  the import falls back to production's own `ADMIN_KEY` — but keeping them distinct
+  is the recommended setup, so set `STAGING_ADMIN_KEY` on production explicitly.
+  (This is the SAME value as the `STAGING_ADMIN_KEY` GitHub secret used by the smoke
+  step; here it is a **Railway env var on the production service**, not a repo secret.)
+
 ## Card payment (PeleCard)
 
 Online credit-card payment via the PeleCard Iframe is **off until you set the

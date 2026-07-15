@@ -14,6 +14,7 @@ const validate = require('./validate');
 const templates = require('./templates');
 const playbook = require('./playbook');
 const content = require('./content');
+const contentImport = require('./content-import');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -1330,6 +1331,47 @@ const ORDERS_COUNT_BASE = (() => {
 })();
 app.get('/api/stats/orders', (req, res) => {
   res.json({ count: ORDERS_COUNT_BASE + db.countPaidOrders() });
+});
+
+// Admin: the FULL overrides object (every page). The public GET /api/content
+// returns only ONE page; this admin-gated route returns the whole store so the
+// cross-service import below can mirror it. Gated by requireAdmin (unlike the
+// public per-page GET) since it exposes every page's overrides in one shot.
+app.get('/api/admin/content/all', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ overrides: content.getAll() });
+});
+
+// Admin: one-click import — mirror ALL content overrides from the STAGING service
+// onto THIS one. Staging and prod have SEPARATE volumes, so edits made in staging's
+// editor never reach prod otherwise. Config (PRODUCTION service only — see
+// RAILWAY_SETUP.md): STAGING_URL = the staging base URL; STAGING_ADMIN_KEY = staging's
+// admin key (the two services use DIFFERENT keys, so prod's own ADMIN_KEY can't
+// authenticate against staging — falls back to ADMIN_KEY only when they happen to
+// match). Refuses a self-import (STAGING_URL == this origin) and a missing STAGING_URL;
+// backs up the current store before overwriting; fetches + re-saves every referenced
+// image. Fail-soft: any error leaves the live store intact.
+app.post('/api/admin/content/import-from-staging', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const ownOrigins = [];
+  if (process.env.PUBLIC_BASE_URL) ownOrigins.push(process.env.PUBLIC_BASE_URL);
+  try {
+    ownOrigins.push(req.protocol + '://' + req.get('host'));
+  } catch {
+    /* no Host header — PUBLIC_BASE_URL still guards the self-import check */
+  }
+  let result;
+  try {
+    result = await contentImport.importFromStaging({
+      stagingUrl: process.env.STAGING_URL || '',
+      ownOrigins,
+      adminKey: process.env.STAGING_ADMIN_KEY || ADMIN_KEY || '',
+    });
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+  res.json(result);
 });
 
 // Unknown API routes -> JSON 404 (must come before static/catch-all).
