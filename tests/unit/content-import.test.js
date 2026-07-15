@@ -66,6 +66,7 @@ describe('content import from staging', () => {
   const dirs = [];
   const ORIGINAL_DATA_DIR = process.env.DATA_DIR;
   afterEach(() => {
+    vi.restoreAllMocks();
     if (ORIGINAL_DATA_DIR === undefined) delete process.env.DATA_DIR;
     else process.env.DATA_DIR = ORIGINAL_DATA_DIR;
     for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
@@ -332,7 +333,7 @@ describe('content import from staging', () => {
     // references the SAME (content-addressed) image plus one that 404s → the import
     // aborts. Cleanup must NOT delete the shared file, since the live store still uses it.
     const shared = pngWith('shared-across-both');
-    const sharedPath = store.saveImageBytes(shared); // now on disk AND referenced below
+    const sharedPath = store.saveImageBytes(shared).path; // now on disk AND referenced below
     store.setImg('index.html', 'hero-bg', sharedPath);
     const bad = pngWith('missing');
     const badPath = pathFor(bad);
@@ -353,6 +354,86 @@ describe('content import from staging', () => {
       true
     );
     expect(store.getPage('index.html')['hero-bg'].img).toBe(sharedPath);
+  });
+
+  it('fails soft on a commit (replaceAll) save failure: OLD content stays live AND images this import wrote are reclaimed', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    const imp = await loadImport();
+
+    // Prod (live) holds OLD content, persisted cleanly.
+    store.setText('index.html', 'hero', 'תוכן ישן של פרוד');
+    const png = pngWith('commit-fail-image');
+    const imgPath = pathFor(png);
+    const overrides = { 'about.html': { 'about-title': { img: imgPath } } };
+
+    // Everything up to the commit succeeds; the FINAL overrides persist (replaceAll →
+    // save) fails as a full volume would. Fail ONLY the content-overrides write, so the
+    // image save + the backup copy still go through and we exercise the real commit.
+    const realWrite = fs.writeFileSync.bind(fs);
+    vi.spyOn(fs, 'writeFileSync').mockImplementation((p, ...rest) => {
+      if (String(p).includes('content-overrides.json')) throw new Error('ENOSPC at commit');
+      return realWrite(p, ...rest);
+    });
+
+    const result = await imp.importFromStaging({
+      stagingUrl: 'https://staging.example',
+      ownOrigins: ['https://prod.example'],
+      adminKey: 'x',
+      content: store,
+      fetchImpl: makeFetch(overrides, { [imgPath]: png }, null),
+    });
+    vi.restoreAllMocks();
+
+    // The import reports a clean failure (not a thrown crash) …
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(500);
+    expect(result.error).toMatch(/persist/i);
+    // … the live store still serves the OLD content — the staging mirror never became
+    // visible (replaceAll rolled memory back). Memory == disk == old.
+    expect(store.getPage('index.html').hero.text).toBe('תוכן ישן של פרוד');
+    expect(store.getPage('about.html')).toEqual({});
+    // … and the image THIS import wrote before the failed commit is reclaimed, so a
+    // failed import leaves the volume exactly as it found it (no orphan).
+    const onDisk = path.join(dir, 'content-uploads', imgPath.split('/').pop());
+    expect(fs.existsSync(onDisk)).toBe(false);
+  });
+
+  it('does NOT reclaim a pre-existing orphan whose hash a staging image matches (cleanup only removes files THIS import created)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    const imp = await loadImport();
+
+    // Prod has some text, and an unreferenced ORPHAN image already sits on the volume
+    // from before this import (isImageReferenced is false for it).
+    store.setText('index.html', 'k', 'keepme');
+    const orphan = pngWith('pre-existing-orphan');
+    const orphanPath = store.saveImageBytes(orphan).path; // on disk, referenced by nothing
+    const onDisk = path.join(dir, 'content-uploads', orphanPath.split('/').pop());
+    expect(fs.existsSync(onDisk)).toBe(true);
+    expect(store.isImageReferenced(orphanPath)).toBe(false);
+
+    // Staging references that SAME content-addressed path plus one that 404s → abort.
+    const bad = pngWith('never-served');
+    const badPath = pathFor(bad);
+    const overrides = {
+      'index.html': { 'hero-bg': { img: orphanPath }, other: { img: badPath } },
+    };
+    const result = await imp.importFromStaging({
+      stagingUrl: 'https://staging.example',
+      ownOrigins: ['https://prod.example'],
+      adminKey: 'x',
+      content: store,
+      fetchImpl: makeFetch(overrides, { [orphanPath]: orphan }, null), // badPath 404s
+    });
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(502);
+    // The orphan predates this import: when the import re-fetched it, saveImageBytes
+    // reported created:false, so it was never tracked for cleanup — its bytes survive
+    // the abort even though the live store does not reference it.
+    expect(fs.existsSync(onDisk)).toBe(true);
   });
 
   it('refuses self-import for :443 / www / apex spellings of the prod origin', async () => {

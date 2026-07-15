@@ -1242,7 +1242,7 @@ app.post(
     }
     let img;
     try {
-      img = content.saveImageBytes(file.data);
+      img = content.saveImageBytes(file.data).path;
     } catch (e) {
       return res.status(400).json({ error: String((e && e.message) || e) });
     }
@@ -1278,24 +1278,26 @@ app.post(
       return res.status(400).json({ error: 'no image file part' });
     }
     const before = content.getPhotos(page, key);
-    let img;
+    let img, created;
     try {
-      img = content.saveImageBytes(file.data);
+      ({ path: img, created } = content.saveImageBytes(file.data));
     } catch (e) {
       return res.status(400).json({ error: String((e && e.message) || e) });
     }
     const imgs = content.addPhoto(page, key, img);
     if (imgs == null) {
-      // Bad page/key AFTER the file was written — reclaim the orphan if unreferenced.
-      if (!content.isImageReferenced(img)) content.deleteUpload(img);
+      // Bad page/key AFTER the file was written — reclaim the orphan, but ONLY if THIS
+      // request created it (content-addressed: created:false means the bytes already
+      // existed on the volume before us — a pre-existing file we must never delete).
+      if (created && !content.isImageReferenced(img)) content.deleteUpload(img);
       return res.status(400).json({ error: 'bad page or key' });
     }
     // The upload was DROPPED (array already at PHOTO_CAP, or a content-hash
     // duplicate) → the array didn't grow. Don't report a false success: delete the
-    // just-written orphan (only when nothing else references this shared, content-
-    // addressed file) and return a clear 409 the owner sees.
+    // just-written orphan — but only when THIS request created the file (created:true)
+    // AND nothing else references this shared, content-addressed file.
     if (imgs.length <= before.length) {
-      if (!content.isImageReferenced(img)) content.deleteUpload(img);
+      if (created && !content.isImageReferenced(img)) content.deleteUpload(img);
       const atCap = before.length >= content.PHOTO_CAP;
       const error = atCap ? `הגעת למקסימום ${content.PHOTO_CAP} תמונות` : 'התמונה כבר קיימת בגלריה';
       return res.status(409).json({ error, imgs });

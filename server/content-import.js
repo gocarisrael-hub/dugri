@@ -144,9 +144,12 @@ async function importFromStaging(opts) {
     };
   }
 
-  // Track the image paths THIS import newly saved so a later abort can remove them —
-  // a failed import must leave the volume exactly as it found it. Content-addressed,
-  // so cleanup NEVER deletes a hash the live (pre-overwrite) store still references.
+  // Track the image paths THIS import NEWLY CREATED so a later abort can remove them —
+  // a failed import must leave the volume exactly as it found it. We record ONLY paths
+  // saveImageBytes reports it actually wrote (created:true): a content-addressed re-save
+  // of bytes already on the volume returns created:false, and cleaning that up would
+  // destroy a pre-existing file (an orphan, or one the live store references) that
+  // predates this import. So cleanup only ever reclaims files this import created.
   const written = [];
   function cleanupWritten() {
     for (const p of written) {
@@ -170,8 +173,11 @@ async function importFromStaging(opts) {
       );
     }
     const ab = await r.arrayBuffer();
-    const saved = content.saveImageBytes(Buffer.from(ab));
-    written.push(saved); // track even a mismatch so cleanup reclaims it
+    const { path: saved, created } = content.saveImageBytes(Buffer.from(ab));
+    // Only reclaim files THIS import created; a created:false path already existed on
+    // the volume before us and must survive an abort. Track a mismatch we created too,
+    // so a wrongly-named new file is still cleaned up.
+    if (created) written.push(saved);
     if (saved !== p) {
       throw new Error('image content mismatch for ' + p + ' (re-saved as ' + saved + ')');
     }
@@ -198,8 +204,22 @@ async function importFromStaging(opts) {
     };
   }
 
-  // 4. Commit: mirror staging's overrides onto this service's store.
-  content.replaceAll(staged);
+  // 4. Commit: mirror staging's overrides onto this service's store. The final
+  // persist can still fail (e.g. ENOSPC at the last write). replaceAll rolls the
+  // in-memory store back on failure so memory == disk == OLD — but the images THIS
+  // import wrote are now orphaned, so reclaim them (the same abort discipline as the
+  // earlier steps) before failing, keeping the "a failed import leaves the volume
+  // exactly as it found it" contract.
+  try {
+    content.replaceAll(staged);
+  } catch (e) {
+    cleanupWritten();
+    return {
+      ok: false,
+      status: 500,
+      error: 'could not persist the imported content: ' + msg(e),
+    };
+  }
 
   return {
     ok: true,

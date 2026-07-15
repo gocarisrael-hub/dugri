@@ -325,21 +325,66 @@ function backup() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const dest = path.join(DATA_DIR, `content-overrides.backup-${Date.now()}.json`);
   fs.copyFileSync(FILE, dest); // throws on a real copy failure — caller must abort
+  pruneBackups(); // reclaim old backups so the volume can't fill over many imports
   return dest;
+}
+
+// Every import writes a fresh timestamped backup; without pruning they accumulate
+// on the Railway volume until it fills. Keep only the most recent BACKUP_KEEP by the
+// timestamp embedded in the filename, deleting the rest. Best-effort on purpose: a
+// prune failure must NEVER break the import (the backup itself already succeeded).
+const BACKUP_KEEP = 10;
+const BACKUP_RE = /^content-overrides\.backup-(\d+)\.json$/;
+function pruneBackups() {
+  try {
+    const backups = fs
+      .readdirSync(DATA_DIR)
+      .map((name) => {
+        const m = BACKUP_RE.exec(name);
+        return m ? { name, ts: Number(m[1]) } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.ts - a.ts); // newest first
+    for (const b of backups.slice(BACKUP_KEEP)) {
+      try {
+        fs.unlinkSync(path.join(DATA_DIR, b.name));
+      } catch {
+        /* one stubborn file must not abort pruning the rest */
+      }
+    }
+  } catch {
+    /* best-effort — pruning must never break the import */
+  }
 }
 
 // Replace the ENTIRE store with a mirror of `raw` (sanitized) and persist it. Used
 // only by the cross-service import, AFTER backup(). Returns the sanitized store.
+// Snapshot-and-rollback (same shape as settings.set): if save() throws (e.g. the
+// volume fills at the import commit) roll _store back to the previous store and
+// rethrow, so a failed persist leaves memory == disk == OLD content. Without this,
+// _store would already hold the staging mirror while disk still held the old store —
+// every visitor would see staging, and a restart would revert to old (memory/disk
+// divergence).
 function replaceAll(raw) {
+  const prev = _store;
   _store = sanitizeStore(raw);
-  save();
+  try {
+    save();
+  } catch (e) {
+    _store = prev; // roll back so memory == disk == old content
+    throw e;
+  }
   return _store;
 }
 
-// Persist raw image bytes under DATA_DIR/content-uploads and return the public
-// "/content-uploads/<name>" path. The name is a content hash + the sniffed
-// extension, so identical bytes de-dupe and the extension can't be spoofed.
-// Throws on an oversized upload or an unrecognized image type.
+// Persist raw image bytes under DATA_DIR/content-uploads and return
+// { path, created }: the public "/content-uploads/<name>" path plus whether THIS
+// call actually wrote the file. The name is a content hash + the sniffed extension,
+// so identical bytes de-dupe (content-addressed) — a second save of the same bytes
+// is a no-op and reports created:false. Callers that need to reclaim only what they
+// wrote (the import's abort cleanup) rely on `created` so they never delete a file
+// that already existed on the volume before them. Throws on an oversized upload or
+// an unrecognized image type.
 function saveImageBytes(buf) {
   if (!Buffer.isBuffer(buf) || buf.length === 0) throw new Error('empty upload');
   if (buf.length > IMAGE_CAP) throw new Error('image too large');
@@ -348,12 +393,12 @@ function saveImageBytes(buf) {
   const name = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16) + ext;
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
   const dest = path.join(UPLOAD_DIR, name);
-  if (!fs.existsSync(dest)) {
-    const tmp = `${dest}.tmp`;
-    fs.writeFileSync(tmp, buf);
-    fs.renameSync(tmp, dest);
-  }
-  return '/content-uploads/' + name;
+  const publicPath = '/content-uploads/' + name;
+  if (fs.existsSync(dest)) return { path: publicPath, created: false };
+  const tmp = `${dest}.tmp`;
+  fs.writeFileSync(tmp, buf);
+  fs.renameSync(tmp, dest);
+  return { path: publicPath, created: true };
 }
 
 module.exports = {
