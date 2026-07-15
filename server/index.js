@@ -1242,7 +1242,7 @@ app.post(
     }
     let img;
     try {
-      img = content.saveImageBytes(file.data);
+      img = content.saveImageBytes(file.data).path;
     } catch (e) {
       return res.status(400).json({ error: String((e && e.message) || e) });
     }
@@ -1280,7 +1280,7 @@ app.post(
     const before = content.getPhotos(page, key);
     let img;
     try {
-      img = content.saveImageBytes(file.data);
+      img = content.saveImageBytes(file.data).path;
     } catch (e) {
       return res.status(400).json({ error: String((e && e.message) || e) });
     }

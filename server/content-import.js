@@ -144,9 +144,12 @@ async function importFromStaging(opts) {
     };
   }
 
-  // Track the image paths THIS import newly saved so a later abort can remove them —
-  // a failed import must leave the volume exactly as it found it. Content-addressed,
-  // so cleanup NEVER deletes a hash the live (pre-overwrite) store still references.
+  // Track the image paths THIS import NEWLY CREATED so a later abort can remove them —
+  // a failed import must leave the volume exactly as it found it. We record ONLY paths
+  // saveImageBytes reports it actually wrote (created:true): a content-addressed re-save
+  // of bytes already on the volume returns created:false, and cleaning that up would
+  // destroy a pre-existing file (an orphan, or one the live store references) that
+  // predates this import. So cleanup only ever reclaims files this import created.
   const written = [];
   function cleanupWritten() {
     for (const p of written) {
@@ -170,8 +173,11 @@ async function importFromStaging(opts) {
       );
     }
     const ab = await r.arrayBuffer();
-    const saved = content.saveImageBytes(Buffer.from(ab));
-    written.push(saved); // track even a mismatch so cleanup reclaims it
+    const { path: saved, created } = content.saveImageBytes(Buffer.from(ab));
+    // Only reclaim files THIS import created; a created:false path already existed on
+    // the volume before us and must survive an abort. Track a mismatch we created too,
+    // so a wrongly-named new file is still cleaned up.
+    if (created) written.push(saved);
     if (saved !== p) {
       throw new Error('image content mismatch for ' + p + ' (re-saved as ' + saved + ')');
     }

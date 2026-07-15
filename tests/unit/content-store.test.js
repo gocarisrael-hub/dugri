@@ -96,16 +96,19 @@ describe('content store', () => {
     const dir = freshTmpDir();
     dirs.push(dir);
     const store = await loadStore(dir);
-    const p1 = store.saveImageBytes(PNG);
-    expect(p1).toMatch(/^\/content-uploads\/[a-f0-9]{16}\.png$/);
-    // identical bytes -> identical name (content-addressed de-dupe)
-    expect(store.saveImageBytes(PNG)).toBe(p1);
+    const first = store.saveImageBytes(PNG);
+    expect(first.path).toMatch(/^\/content-uploads\/[a-f0-9]{16}\.png$/);
+    expect(first.created).toBe(true); // this call actually wrote the file
+    // identical bytes -> identical name (content-addressed de-dupe), and no re-write
+    const again = store.saveImageBytes(PNG);
+    expect(again.path).toBe(first.path);
+    expect(again.created).toBe(false); // already on disk → not created again
     // the file really landed on disk under DATA_DIR/content-uploads
-    const onDisk = path.join(dir, 'content-uploads', p1.split('/').pop());
+    const onDisk = path.join(dir, 'content-uploads', first.path.split('/').pop());
     expect(fs.existsSync(onDisk)).toBe(true);
     expect(fs.readFileSync(onDisk).equals(PNG)).toBe(true);
     // a different format gets a .jpg name
-    expect(store.saveImageBytes(JPG)).toMatch(/\.jpg$/);
+    expect(store.saveImageBytes(JPG).path).toMatch(/\.jpg$/);
   });
 
   it('rejects oversized and unrecognized image uploads', async () => {
@@ -240,14 +243,14 @@ describe('content store — per-key photo array (a product carousel)', () => {
     const paths = [];
     for (let i = 0; i < store.PHOTO_CAP; i++) {
       const bytes = Buffer.concat([PNG, Buffer.from([i])]); // distinct bytes → distinct hash
-      paths.push(store.saveImageBytes(bytes));
+      paths.push(store.saveImageBytes(bytes).path);
     }
     for (const p of paths) store.addPhoto('product.html', 'product-neon-photos', p);
     expect(store.getPhotos('product.html', 'product-neon-photos')).toHaveLength(store.PHOTO_CAP);
 
     // A NEW upload beyond the cap: the file is written, but addPhoto drops it (the
     // array does not grow) → the route treats it as a drop and reclaims the orphan.
-    const overflow = store.saveImageBytes(Buffer.concat([PNG, Buffer.from([99])]));
+    const overflow = store.saveImageBytes(Buffer.concat([PNG, Buffer.from([99])])).path;
     const before = store.getPhotos('product.html', 'product-neon-photos');
     const after = store.addPhoto('product.html', 'product-neon-photos', overflow);
     expect(after.length).toBe(before.length); // dropped (still at cap)
@@ -262,7 +265,7 @@ describe('content store — per-key photo array (a product carousel)', () => {
     // A DUPLICATE upload (same bytes → same content-hash as an existing entry) is
     // also dropped, but its file MUST be kept — it is still referenced in the array.
     const dupBytes = Buffer.concat([PNG, Buffer.from([0])]); // same as paths[0]
-    const dupPath = store.saveImageBytes(dupBytes);
+    const dupPath = store.saveImageBytes(dupBytes).path;
     expect(dupPath).toBe(paths[0]); // content-addressed → same path
     const afterDup = store.addPhoto('product.html', 'product-neon-photos', dupPath);
     expect(afterDup.length).toBe(store.PHOTO_CAP); // no growth (already present)
@@ -299,5 +302,76 @@ describe('content store — per-key photo array (a product carousel)', () => {
     // remove() reverts that carousel entirely (back to the shipped defaults)
     store.remove('product.html', 'product-birthday-photos');
     expect(store.getPhotos('product.html', 'product-birthday-photos')).toEqual([]);
+  });
+});
+
+// Full-store mirror helpers used by the cross-service import: replaceAll must never
+// let memory diverge from disk on a persist failure, and backup() must not let old
+// backups pile up on the volume forever.
+describe('content store — full-store mirror (import support)', () => {
+  const dirs = [];
+  const ORIGINAL_DATA_DIR = process.env.DATA_DIR;
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (ORIGINAL_DATA_DIR === undefined) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = ORIGINAL_DATA_DIR;
+    for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+    dirs.length = 0;
+  });
+
+  it('replaceAll rolls memory back to the OLD store when the commit save() fails (no memory/disk divergence)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    // Seed OLD content and let it persist cleanly.
+    store.setText('index.html', 'hero', 'תוכן ישן');
+    const file = path.join(dir, 'content-overrides.json');
+    const oldDisk = fs.readFileSync(file, 'utf8');
+
+    // Make the NEXT overrides persist (the replaceAll commit) fail, as a full volume
+    // would — but only the content-overrides write, so nothing else is disturbed.
+    const realWrite = fs.writeFileSync.bind(fs);
+    vi.spyOn(fs, 'writeFileSync').mockImplementation((p, ...rest) => {
+      if (String(p).includes('content-overrides.json')) {
+        throw new Error('ENOSPC: no space left on device');
+      }
+      return realWrite(p, ...rest);
+    });
+
+    const staging = { 'about.html': { 'about-title': { text: 'סטייג׳ינג' } } };
+    expect(() => store.replaceAll(staging)).toThrow(/ENOSPC/);
+
+    // Memory rolled back to the OLD content (NOT the staging mirror) …
+    expect(store.getAll()).toEqual({ 'index.html': { hero: { text: 'תוכן ישן' } } });
+    expect(store.getPage('index.html').hero.text).toBe('תוכן ישן');
+    expect(store.getPage('about.html')).toEqual({});
+    // … and disk is byte-for-byte the OLD content (never overwritten).
+    vi.restoreAllMocks();
+    expect(fs.readFileSync(file, 'utf8')).toBe(oldDisk);
+  });
+
+  it('backup() prunes old backups, keeping only the most recent 10', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    store.setText('index.html', 'hero', 'x'); // create the overrides file to back up
+
+    // Drive 15 backups with strictly increasing timestamps (a real Date.now() could
+    // collide within one millisecond and overwrite same-named files).
+    let t = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => ++t);
+    const made = [];
+    for (let i = 0; i < 15; i++) made.push(store.backup());
+    vi.restoreAllMocks();
+
+    const remaining = fs
+      .readdirSync(dir)
+      .filter((n) => /^content-overrides\.backup-\d+\.json$/.test(n));
+    expect(remaining).toHaveLength(10); // capped at BACKUP_KEEP
+
+    // The 10 kept are the NEWEST; the 5 oldest were pruned.
+    const kept = new Set(remaining.map((n) => path.join(dir, n)));
+    for (const p of made.slice(0, 5)) expect(kept.has(p)).toBe(false); // 5 oldest gone
+    for (const p of made.slice(5)) expect(kept.has(p)).toBe(true); // 10 newest kept
   });
 });
