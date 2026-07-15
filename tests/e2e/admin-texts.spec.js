@@ -5,12 +5,20 @@ import { test, expect } from '@playwright/test';
 // DATA_DIR=.e2e-data (throwaway), so overrides written here never touch real data.
 const KEY = 'dugri-admin';
 
-// Read the effective value of one settings key straight from the admin API.
-async function effective(request, section, k) {
-  const r = await request.get(`/api/admin/settings?key=${KEY}`);
-  expect(r.ok()).toBeTruthy();
-  const body = await r.json();
-  return body.effective[section][k];
+// The three device projects run the SAME spec in parallel against ONE server
+// (shared DATA_DIR), so a re-fetch of `effective` for a fixed settings key can
+// observe another worker's concurrent write. To keep round-trip assertions
+// race-free we click Save/Reset and read the page's OWN response: the Node
+// server is single-threaded, so each POST/DELETE returns the effective value as
+// of that request's own write, with no interleaving. Cross-worker overwrites of
+// the shared key are then irrelevant to the assertion.
+function matchSettings(method) {
+  return (r) => r.url().includes('/api/admin/settings') && r.request().method() === method;
+}
+async function clickAndRead(page, locator, method) {
+  const [resp] = await Promise.all([page.waitForResponse(matchSettings(method)), locator.click()]);
+  expect(resp.ok()).toBeTruthy();
+  return (await resp.json()).effective;
 }
 // Restore a key to its default so tests don't leak overrides into a reused dev
 // server (settingKey — the `key` query param is reserved for the admin secret).
@@ -67,7 +75,7 @@ test.describe('admin texts editor', () => {
     await expect(page.locator('#card-email-order-paid .hint')).toContainText('{honoree}');
   });
 
-  test('saving a trigger POSTs the override and the effective value updates', async ({
+  test('saving an event trigger POSTs the override and returns the new effective value', async ({
     page,
     request,
   }) => {
@@ -77,37 +85,101 @@ test.describe('admin texts editor', () => {
     const unique = 'בדיקה ' + Date.now();
     const card = page.locator('#card-wa-trigger-list-closed');
     await card.locator('textarea[data-field="text"]').fill(unique);
-    await card.locator('button[data-save]').click();
+    const eff = await clickAndRead(page, card.locator('button[data-save]'), 'POST');
     await expect(card.locator('.status')).toHaveText(/נשמר/);
 
-    // the server now returns the new effective text
-    const eff = await effective(request, 'wa', 'trigger.list_closed');
-    expect(eff.text).toBe(unique);
-    expect(eff.enabled).toBe(true); // shape preserved
+    // event trigger: no timing key, shape preserved
+    expect(eff).toEqual({ enabled: true, text: unique });
 
     await resetKey(request, 'wa', 'trigger.list_closed');
   });
 
-  test('reset issues a DELETE and restores the default value', async ({ page, request }) => {
-    // seed an override via the API, then reset it through the UI button
-    const seed = await request.post(`/api/admin/settings?key=${KEY}`, {
-      data: { section: 'email', key: 'order_paid', value: { subject: 'X', body: 'Y' } },
-    });
-    expect(seed.ok()).toBeTruthy();
+  test('saving a daily_* trigger round-trips the hour timing', async ({ page, request }) => {
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const card = page.locator('#card-wa-trigger-daily-morning');
+    await expect(card).toBeVisible();
 
+    const unique = 'בוקר ' + Date.now();
+    await card.locator('textarea[data-field="text"]').fill(unique);
+    await card.locator('.timing[data-timing="hour"] [data-t="hour"]').fill('6');
+    const eff = await clickAndRead(page, card.locator('button[data-save]'), 'POST');
+    await expect(card.locator('.status')).toHaveText(/נשמר/);
+
+    expect(eff).toEqual({ enabled: true, text: unique, timing: { hour: 6 } });
+
+    await resetKey(request, 'wa', 'trigger.daily_morning');
+  });
+
+  test('saving quiet_reminder round-trips idle_hours/max/window in order', async ({
+    page,
+    request,
+  }) => {
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const card = page.locator('#card-wa-trigger-quiet-reminder');
+    await expect(card).toBeVisible();
+
+    const unique = 'שקט ' + Date.now();
+    await card.locator('textarea[data-field="text"]').fill(unique);
+    const timing = card.locator('.timing[data-timing="quiet"]');
+    await timing.locator('[data-t="idle_hours"]').fill('30');
+    await timing.locator('[data-t="max"]').fill('5');
+    await timing.locator('[data-t="win_start"]').fill('8');
+    await timing.locator('[data-t="win_end"]').fill('22');
+    const eff = await clickAndRead(page, card.locator('button[data-save]'), 'POST');
+    await expect(card.locator('.status')).toHaveText(/נשמר/);
+
+    // window stays a 2-element array in [start, end] order, values intact
+    expect(eff).toEqual({
+      enabled: true,
+      text: unique,
+      timing: { idle_hours: 30, max: 5, window: [8, 22] },
+    });
+    expect(Array.isArray(eff.timing.window)).toBe(true);
+
+    await resetKey(request, 'wa', 'trigger.quiet_reminder');
+  });
+
+  test('saving a footer label map keeps the full object with sibling keys intact', async ({
+    page,
+    request,
+  }) => {
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const card = page.locator('#card-email-footer');
+    await expect(card).toBeVisible();
+
+    // read the sibling (line2) straight off the page so the assertion is
+    // self-contained (no shared re-fetch)
+    const line2 = await card.locator('[data-mapkey="line2"]').inputValue();
+    const unique = 'חתימה ' + Date.now();
+    await card.locator('[data-mapkey="line1"]').fill(unique);
+    const eff = await clickAndRead(page, card.locator('button[data-save]'), 'POST');
+    await expect(card.locator('.status')).toHaveText(/נשמר/);
+
+    // full plain object: the edited key applied, the sibling NOT dropped/flattened
+    expect(eff).toEqual({ line1: unique, line2 });
+
+    await resetKey(request, 'email', 'footer');
+  });
+
+  test('reset issues a DELETE and restores the default value', async ({ page, request }) => {
     page.on('dialog', (d) => d.accept()); // reset asks for confirmation
     await page.goto(`/admin-texts.html?key=${KEY}`);
     const card = page.locator('#card-email-order-paid');
-    await expect(card.locator('[data-field="subject"]')).toHaveValue('X');
+    await expect(card).toBeVisible();
 
-    await card.locator('button[data-reset]').click();
+    // first override it through the UI, then reset it back
+    await card.locator('[data-field="subject"]').fill('X');
+    await card.locator('[data-field="body"]').fill('Y');
+    const saved = await clickAndRead(page, card.locator('button[data-save]'), 'POST');
+    expect(saved).toEqual({ subject: 'X', body: 'Y' });
+
+    const eff = await clickAndRead(page, card.locator('button[data-reset]'), 'DELETE');
     await expect(card.locator('.status')).toHaveText(/אופס/);
+    // back to the registry default (which still interpolates {honoree})
+    expect(eff.subject).not.toBe('X');
+    expect(eff.subject).toContain('{honoree}');
 
-    // back to the registry default (which interpolates {honoree})
-    const r = await request.get(`/api/admin/settings?key=${KEY}`);
-    const body = await r.json();
-    expect(body.effective.email.order_paid).toEqual(body.defaults.email.order_paid);
-    expect(body.effective.email.order_paid.subject).toContain('{honoree}');
+    await resetKey(request, 'email', 'order_paid');
   });
 
   test('opens from the orders-management page nav, carrying the key', async ({ page }) => {
