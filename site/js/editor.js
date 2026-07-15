@@ -291,11 +291,10 @@
     injectStyles();
     var toolbar = buildToolbar(page, key);
     var status = toolbar.querySelector('[data-role="status"]');
-    var resetBtn = toolbar.querySelector('[data-role="reset"]');
     var saveBtn = toolbar.querySelector('[data-role="save"]');
     var exitBtn = toolbar.querySelector('[data-role="exit"]');
     var pageSelect = toolbar.querySelector('[data-role="pageselect"]');
-    var current = null; // the element the reset action targets
+    var importBtn = toolbar.querySelector('[data-role="import-staging"]');
 
     // Per-field save state + the representative DOM node per text key (same-key
     // clones stay in sync, so any one node reflects the field's current value). One
@@ -308,10 +307,6 @@
 
     function setStatus(txt) {
       if (status) status.textContent = txt;
-    }
-    function focusTarget(el) {
-      current = el;
-      if (resetBtn) resetBtn.disabled = !el;
     }
 
     // Save one text field: POST its CURRENT value; on SUCCESS record it as the last
@@ -515,9 +510,6 @@
       var fieldKey = el.getAttribute('data-edit');
       if (!(fieldKey in textNodeByKey)) textNodeByKey[fieldKey] = el;
       state.initText(fieldKey, el.textContent);
-      el.addEventListener('focus', function () {
-        focusTarget(el);
-      });
       el.addEventListener('blur', function (e) {
         var next = el.textContent;
         if (next.length > TEXT_CAP) {
@@ -554,7 +546,6 @@
       var editKey = el.getAttribute('data-edit-img') || el.getAttribute('data-edit-bg');
       var isBg = el.hasAttribute('data-edit-bg');
       function pick() {
-        focusTarget(el);
         openImagePicker(
           page,
           key,
@@ -766,24 +757,32 @@
     _rebind = rebindEditable;
     _editActive = true;
 
-    // Reset the focused element to its shipped default (DELETE + reload so the
-    // fresh HTML — the default — is served again with no override applied).
-    if (resetBtn) {
-      resetBtn.disabled = true;
-      resetBtn.addEventListener('click', function () {
-        if (!current) return;
-        var editKey =
-          current.getAttribute('data-edit') ||
-          current.getAttribute('data-edit-img') ||
-          current.getAttribute('data-edit-bg');
-        setStatus('מאפס…');
-        deleteOverride(page, key, editKey)
-          .then(function () {
+    // Import ALL content from the STAGING service, overwriting every live override
+    // on THIS service (staging + prod have separate volumes). Confirm first (this is
+    // destructive), then on success show the summary + reload; on failure show the
+    // server's error. The server backs up the current store before overwriting.
+    if (importBtn) {
+      importBtn.addEventListener('click', function () {
+        if (
+          !window.confirm(
+            'פעולה זו תדרוס את כל התוכן החי באתר ותחליף אותו בתוכן מהסטייג׳ינג. להמשיך?'
+          )
+        ) {
+          return;
+        }
+        setStatus('מייבא…');
+        postImportFromStaging(key).then(
+          function (data) {
+            var summary =
+              'הייבוא הושלם: ' + (data.fields || 0) + ' שדות, ' + (data.images || 0) + ' תמונות';
+            setStatus(summary);
+            window.alert(summary);
             location.reload();
-          })
-          .catch(function () {
-            setStatus('שגיאה באיפוס');
-          });
+          },
+          function (err) {
+            setStatus((err && err.userMessage) || 'שגיאה בייבוא');
+          }
+        );
       });
     }
 
@@ -926,13 +925,39 @@
       return adminResult(r, 'save failed', key);
     });
   }
-  function deleteOverride(page, key, editKey) {
-    return fetch(adminUrl('/api/admin/content', key), {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ page: page, key: editKey }),
+  // Trigger the cross-service "import content from staging" on the server. Resolves
+  // to the server's summary { pages, fields, images, backup }; rejects with an Error
+  // whose userMessage carries the server's Hebrew reason so the toolbar can show WHY
+  // (missing STAGING_URL, self-import, staging unreachable, …). A 403 self-heals the
+  // remembered key, exactly like adminResult, so a rotated key doesn't lock edit mode.
+  function postImportFromStaging(key) {
+    return fetch(adminUrl('/api/admin/content/import-from-staging', key), {
+      method: 'POST',
     }).then(function (r) {
-      return adminResult(r, 'reset failed', key);
+      if (r.status === 403) {
+        try {
+          if (window.localStorage.getItem(LS_KEY) === key) {
+            window.localStorage.removeItem(LS_KEY);
+          }
+        } catch {
+          /* storage blocked — nothing to clear */
+        }
+      }
+      return r.json().then(
+        function (data) {
+          if (!r.ok) {
+            var e = new Error((data && data.error) || 'import failed');
+            e.userMessage = (data && data.error) || 'שגיאה בייבוא';
+            throw e;
+          }
+          return data;
+        },
+        function () {
+          var e = new Error('import failed');
+          e.userMessage = 'שגיאה בייבוא';
+          throw e;
+        }
+      );
     });
   }
   function postImage(page, key, editKey, file) {
@@ -1013,7 +1038,7 @@
       options +
       '</select></label>' +
       '<span class="dugri-editbar__status" data-role="status" aria-live="polite"></span>' +
-      '<button type="button" class="dugri-editbar__btn" data-role="reset">אפס לברירת מחדל</button>' +
+      '<button type="button" class="dugri-editbar__btn" data-role="import-staging">ייבוא תוכן מהסטייג׳ינג</button>' +
       '<button type="button" class="dugri-editbar__btn" data-role="save">שמור</button>' +
       '<button type="button" class="dugri-editbar__btn dugri-editbar__btn--exit" data-role="exit">שמירה ויציאה</button>';
     // The picker's change handler is wired in enableEditMode (it must save-then-nav,

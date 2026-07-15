@@ -245,6 +245,97 @@ function deleteUpload(imgPath) {
   return false;
 }
 
+// ---- full-store read / mirror (cross-service import) -----------------------
+// Used by the one-click "import content from staging" flow (server/content-import.js
+// + POST /api/admin/content/import-from-staging): read the WHOLE store to copy it,
+// and replace this store with a staging one — after backing the current one up.
+
+// The whole override store (every page), returned BY REFERENCE for cheap
+// serialization by the sole admin-gated caller (GET /api/admin/content/all). res.json
+// makes its own copy, so this never deep-clones. Callers must treat it as read-only.
+function getAll() {
+  return _store;
+}
+
+// Produce a CLEAN copy of an arbitrary store-shaped object, keeping only valid
+// pages/keys and, per entry, a capped `text`, an our-own `img` upload path, and a
+// sanitized `imgs` array. Anything malformed or off-origin is dropped. This is the
+// "validate/stage before commit" guard: a corrupt/hostile staging payload can never
+// poison this store, and an `img`/`imgs` can only ever be an our-own upload path.
+function sanitizeStore(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const page of Object.keys(raw)) {
+    const p = pageOk(page);
+    if (!p) continue;
+    const bag = raw[page];
+    if (!bag || typeof bag !== 'object' || Array.isArray(bag)) continue;
+    const cleanBag = {};
+    for (const key of Object.keys(bag)) {
+      const k = keyOk(key);
+      if (!k) continue;
+      const entry = bag[key];
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+      const cleanEntry = {};
+      if (typeof entry.text === 'string') cleanEntry.text = entry.text.slice(0, TEXT_CAP);
+      if (typeof entry.img === 'string' && UPLOAD_PATH_RE.test(entry.img))
+        cleanEntry.img = entry.img;
+      if (Array.isArray(entry.imgs)) {
+        const imgs = sanitizePhotos(entry.imgs);
+        if (imgs.length) cleanEntry.imgs = imgs;
+      }
+      if (Object.keys(cleanEntry).length) cleanBag[k] = cleanEntry;
+    }
+    if (Object.keys(cleanBag).length) out[p] = cleanBag;
+  }
+  return out;
+}
+
+// Every distinct our-own upload path referenced by a store (single `img` or an
+// `imgs` array), so the importer knows which image files to fetch + re-save.
+function collectImagePaths(store) {
+  const set = new Set();
+  if (!store || typeof store !== 'object') return [];
+  for (const page of Object.keys(store)) {
+    const bag = store[page];
+    if (!bag || typeof bag !== 'object') continue;
+    for (const key of Object.keys(bag)) {
+      const entry = bag[key] || {};
+      if (typeof entry.img === 'string' && UPLOAD_PATH_RE.test(entry.img)) set.add(entry.img);
+      if (Array.isArray(entry.imgs)) {
+        for (const im of entry.imgs) {
+          const s = String(im || '');
+          if (UPLOAD_PATH_RE.test(s)) set.add(s);
+        }
+      }
+    }
+  }
+  return Array.from(set);
+}
+
+// Copy the current content-overrides.json to a timestamped backup on the volume,
+// BEFORE a destructive mirror overwrites it — a recovery point. Signals three cases
+// so the caller can tell "safe to proceed" from "the recovery point failed":
+//   • no existing overrides file → returns null (nothing to back up; safe to proceed);
+//   • copy succeeds → returns the backup path;
+//   • the file EXISTS but the copy fails (full/failing volume) → THROWS, so the
+//     caller must NOT overwrite an existing store with no recovery point.
+function backup() {
+  if (!fs.existsSync(FILE)) return null; // nothing to back up
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const dest = path.join(DATA_DIR, `content-overrides.backup-${Date.now()}.json`);
+  fs.copyFileSync(FILE, dest); // throws on a real copy failure — caller must abort
+  return dest;
+}
+
+// Replace the ENTIRE store with a mirror of `raw` (sanitized) and persist it. Used
+// only by the cross-service import, AFTER backup(). Returns the sanitized store.
+function replaceAll(raw) {
+  _store = sanitizeStore(raw);
+  save();
+  return _store;
+}
+
 // Persist raw image bytes under DATA_DIR/content-uploads and return the public
 // "/content-uploads/<name>" path. The name is a content hash + the sniffed
 // extension, so identical bytes de-dupe and the extension can't be spoofed.
@@ -276,6 +367,11 @@ module.exports = {
   isImageReferenced,
   deleteUpload,
   remove,
+  getAll,
+  sanitizeStore,
+  collectImagePaths,
+  backup,
+  replaceAll,
   saveImageBytes,
   extFromMagic,
   pageOk,

@@ -197,11 +197,16 @@ describe('buildToolbar — Save/Save&Exit buttons + page picker', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders the Save, Save&Exit, and Reset buttons', () => {
+  it('renders Save, Save&Exit, and Import-from-staging buttons — and NO reset button', () => {
     const bar = editor.buildToolbar('index.html', 'secret');
     expect(bar.querySelector('[data-role="save"]').textContent).toBe('שמור');
     expect(bar.querySelector('[data-role="exit"]').textContent).toBe('שמירה ויציאה');
-    expect(bar.querySelector('[data-role="reset"]').textContent).toBe('אפס לברירת מחדל');
+    // The "reset to default" button was removed.
+    expect(bar.querySelector('[data-role="reset"]')).toBeNull();
+    // The cross-service import button is present.
+    expect(bar.querySelector('[data-role="import-staging"]').textContent).toBe(
+      'ייבוא תוכן מהסטייג׳ינג'
+    );
     expect(bar.querySelector('[data-role="status"]')).toBeTruthy();
   });
 
