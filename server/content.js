@@ -29,6 +29,14 @@ const KEY_RE = /^[a-z0-9][a-z0-9-]{0,60}$/;
 const TEXT_CAP = 5000;
 // Hard cap on a single uploaded image (bytes).
 const IMAGE_CAP = 4 * 1024 * 1024;
+// Max photos in a per-key photo array (a product carousel). Generous but bounded
+// so a runaway client can't grow the store without limit.
+const PHOTO_CAP = 12;
+// A stored photo path must be EXACTLY one this server produced (saveImageBytes:
+// a 16-hex content hash + a raster ext). Validating the array on write means the
+// owner can only ever reference our own uploaded images — never an arbitrary URL
+// — so the photo array can't become an off-origin / stored-XSS vector.
+const UPLOAD_PATH_RE = /^\/content-uploads\/[a-f0-9]{16}\.(webp|jpe?g|png)$/;
 
 function pageOk(page) {
   const base = path.basename(String(page || ''));
@@ -123,6 +131,64 @@ function setImg(page, key, imgPath) {
   return setField(page, key, 'img', String(imgPath || ''));
 }
 
+// ---- per-key photo ARRAY (a product carousel) ------------------------------
+// Some editable surfaces are a LIST of photos (the per-product gallery on
+// product.html), not a single image. These live under the same page/key store
+// as everything else, in an `imgs` array of "/content-uploads/<name>" paths. A
+// key with a non-empty `imgs` array is the source of truth for that carousel;
+// an empty/absent array falls back to the shipped default photos on the client.
+
+// Keep only valid, distinct, our-own upload paths, capped at PHOTO_CAP, order
+// preserved. Never trusts a client-supplied string beyond the exact shape
+// saveImageBytes produces.
+function sanitizePhotos(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of arr) {
+    const p = String(raw || '');
+    if (!UPLOAD_PATH_RE.test(p) || seen.has(p)) continue;
+    seen.add(p);
+    out.push(p);
+    if (out.length >= PHOTO_CAP) break;
+  }
+  return out;
+}
+
+// The photo array for page/key (a fresh copy so callers can't mutate the store).
+function getPhotos(page, key) {
+  const p = pageOk(page);
+  const k = keyOk(key);
+  if (!p || !k || !_store[p] || !_store[p][k]) return [];
+  const imgs = _store[p][k].imgs;
+  return Array.isArray(imgs) ? imgs.slice() : [];
+}
+
+// Append one uploaded photo path to page/key's array (deduped, capped). Returns
+// the new array, or null on a bad page/key/path. A no-op-append (dup or at cap)
+// still returns the current array so the client stays in sync.
+function addPhoto(page, key, imgPath) {
+  const p = pageOk(page);
+  const k = keyOk(key);
+  if (!p || !k || !UPLOAD_PATH_RE.test(String(imgPath || ''))) return null;
+  const next = sanitizePhotos(getPhotos(p, k).concat(String(imgPath)));
+  setField(p, k, 'imgs', next);
+  return next;
+}
+
+// Replace page/key's whole photo array (used for remove + reorder — the client
+// sends the desired full order). Returns the sanitized array, or null on a bad
+// page/key. An empty result stores `imgs: []` (the client then falls back to the
+// shipped defaults); a full reset uses remove() instead.
+function setPhotos(page, key, arr) {
+  const p = pageOk(page);
+  const k = keyOk(key);
+  if (!p || !k) return null;
+  const next = sanitizePhotos(arr);
+  setField(p, k, 'imgs', next);
+  return next;
+}
+
 // Remove a page/key override entirely (revert to the shipped default). Prunes an
 // empty page bag so the store stays tidy.
 function remove(page, key) {
@@ -134,6 +200,49 @@ function remove(page, key) {
   if (Object.keys(_store[p]).length === 0) delete _store[p];
   save();
   return true;
+}
+
+// Is `imgPath` referenced by ANY page/key in the store (as a single `img` or in an
+// `imgs` array)? Uploads are content-addressed and shared across the whole store,
+// so a file must NOT be deleted while any override still points at it — this guard
+// makes orphan cleanup (a dropped photo upload) safe. Own-property only, so a key
+// literally named "__proto__" can't smuggle in a prototype hit.
+function isImageReferenced(imgPath) {
+  const target = String(imgPath || '');
+  if (!target) return false;
+  for (const page of Object.keys(_store)) {
+    const bag = _store[page];
+    if (!bag) continue;
+    for (const k of Object.keys(bag)) {
+      const entry = bag[k] || {};
+      if (entry.img === target) return true;
+      if (Array.isArray(entry.imgs) && entry.imgs.indexOf(target) !== -1) return true;
+    }
+  }
+  return false;
+}
+
+// Delete an uploaded file by its "/content-uploads/<name>" path. Used to reclaim an
+// ORPHAN — a just-written upload that was then dropped (photo array at cap, or a
+// content-hash duplicate that isn't the one being referenced). The name is
+// re-validated to the exact hash+ext shape so this can never touch anything else.
+// Returns true if a file was removed. Callers MUST first confirm the path is not
+// referenced anywhere (isImageReferenced) — content-addressed files are shared.
+function deleteUpload(imgPath) {
+  const name = String(imgPath || '')
+    .split('/')
+    .pop();
+  if (!/^[a-f0-9]{16}\.(webp|jpe?g|png)$/.test(name)) return false;
+  const file = path.join(UPLOAD_DIR, name);
+  try {
+    if (fs.existsSync(file)) {
+      fs.unlinkSync(file);
+      return true;
+    }
+  } catch {
+    /* best-effort cleanup — a failure just leaves the file, never throws */
+  }
+  return false;
 }
 
 // Persist raw image bytes under DATA_DIR/content-uploads and return the public
@@ -160,6 +269,12 @@ module.exports = {
   getPage,
   setText,
   setImg,
+  getPhotos,
+  addPhoto,
+  setPhotos,
+  sanitizePhotos,
+  isImageReferenced,
+  deleteUpload,
   remove,
   saveImageBytes,
   extFromMagic,
@@ -169,4 +284,5 @@ module.exports = {
   _uploadDir: UPLOAD_DIR,
   IMAGE_CAP,
   TEXT_CAP,
+  PHOTO_CAP,
 };

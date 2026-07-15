@@ -162,3 +162,142 @@ describe('content store', () => {
     expect(store.remove('how.html', 'how-hero-heading')).toBe(false); // already gone
   });
 });
+
+// Two valid our-own upload paths (16-hex hash + raster ext).
+const P1 = '/content-uploads/aaaaaaaaaaaaaaaa.png';
+const P2 = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
+const P3 = '/content-uploads/cccccccccccccccc.jpg';
+
+describe('content store — per-key photo array (a product carousel)', () => {
+  const dirs = [];
+  const ORIGINAL_DATA_DIR = process.env.DATA_DIR;
+  afterEach(() => {
+    if (ORIGINAL_DATA_DIR === undefined) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = ORIGINAL_DATA_DIR;
+    for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+    dirs.length = 0;
+  });
+
+  it('sanitizePhotos keeps only distinct our-own upload paths, in order, capped', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    // arbitrary URLs, off-origin paths and dupes are dropped; order preserved.
+    expect(
+      store.sanitizePhotos([P2, 'https://evil.example/x.png', P1, P2, '/content-uploads/nope.gif'])
+    ).toEqual([P2, P1]);
+    expect(store.sanitizePhotos('not an array')).toEqual([]);
+    // capped at PHOTO_CAP
+    const many = Array.from(
+      { length: store.PHOTO_CAP + 5 },
+      (_, i) => `/content-uploads/${String(i).padStart(16, '0')}.png`
+    );
+    expect(store.sanitizePhotos(many)).toHaveLength(store.PHOTO_CAP);
+  });
+
+  it('addPhoto appends (deduped, validated) and getPhotos returns a copy', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    expect(store.getPhotos('product.html', 'product-neon-photos')).toEqual([]);
+    expect(store.addPhoto('product.html', 'product-neon-photos', P1)).toEqual([P1]);
+    expect(store.addPhoto('product.html', 'product-neon-photos', P2)).toEqual([P1, P2]);
+    // a duplicate is a no-op-append that still returns the current array
+    expect(store.addPhoto('product.html', 'product-neon-photos', P1)).toEqual([P1, P2]);
+    // an off-origin/garbage path is rejected (null), array untouched
+    expect(store.addPhoto('product.html', 'product-neon-photos', 'https://x/y.png')).toBe(null);
+    expect(store.getPhotos('product.html', 'product-neon-photos')).toEqual([P1, P2]);
+    // getPhotos returns a copy — mutating it can't corrupt the store
+    const got = store.getPhotos('product.html', 'product-neon-photos');
+    got.push(P3);
+    expect(store.getPhotos('product.html', 'product-neon-photos')).toEqual([P1, P2]);
+  });
+
+  it('setPhotos replaces the whole array (remove + reorder), sanitized', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    store.addPhoto('product.html', 'product-kids-photos', P1);
+    store.addPhoto('product.html', 'product-kids-photos', P2);
+    // reorder + drop garbage in one PUT
+    expect(store.setPhotos('product.html', 'product-kids-photos', [P2, P1, 'bad'])).toEqual([
+      P2,
+      P1,
+    ]);
+    // empty array is valid (client then falls back to the shipped defaults)
+    expect(store.setPhotos('product.html', 'product-kids-photos', [])).toEqual([]);
+    expect(store.getPhotos('product.html', 'product-kids-photos')).toEqual([]);
+    // bad page/key → null (no write)
+    expect(store.setPhotos('bad page', 'k', [P1])).toBe(null);
+    expect(store.addPhoto('product.html', 'Bad Key', P1)).toBe(null);
+  });
+
+  it('drops an append at the cap / a duplicate, and orphan cleanup is reference-safe', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    // Fill a key to PHOTO_CAP with real (content-hashed) uploads.
+    const paths = [];
+    for (let i = 0; i < store.PHOTO_CAP; i++) {
+      const bytes = Buffer.concat([PNG, Buffer.from([i])]); // distinct bytes → distinct hash
+      paths.push(store.saveImageBytes(bytes));
+    }
+    for (const p of paths) store.addPhoto('product.html', 'product-neon-photos', p);
+    expect(store.getPhotos('product.html', 'product-neon-photos')).toHaveLength(store.PHOTO_CAP);
+
+    // A NEW upload beyond the cap: the file is written, but addPhoto drops it (the
+    // array does not grow) → the route treats it as a drop and reclaims the orphan.
+    const overflow = store.saveImageBytes(Buffer.concat([PNG, Buffer.from([99])]));
+    const before = store.getPhotos('product.html', 'product-neon-photos');
+    const after = store.addPhoto('product.html', 'product-neon-photos', overflow);
+    expect(after.length).toBe(before.length); // dropped (still at cap)
+    expect(after).not.toContain(overflow);
+    // The overflow file is unreferenced anywhere → safe to delete (orphan cleanup).
+    expect(store.isImageReferenced(overflow)).toBe(false);
+    const onDisk = path.join(dir, 'content-uploads', overflow.split('/').pop());
+    expect(fs.existsSync(onDisk)).toBe(true);
+    expect(store.deleteUpload(overflow)).toBe(true);
+    expect(fs.existsSync(onDisk)).toBe(false);
+
+    // A DUPLICATE upload (same bytes → same content-hash as an existing entry) is
+    // also dropped, but its file MUST be kept — it is still referenced in the array.
+    const dupBytes = Buffer.concat([PNG, Buffer.from([0])]); // same as paths[0]
+    const dupPath = store.saveImageBytes(dupBytes);
+    expect(dupPath).toBe(paths[0]); // content-addressed → same path
+    const afterDup = store.addPhoto('product.html', 'product-neon-photos', dupPath);
+    expect(afterDup.length).toBe(store.PHOTO_CAP); // no growth (already present)
+    expect(store.isImageReferenced(dupPath)).toBe(true); // still in use → never delete
+    expect(fs.existsSync(path.join(dir, 'content-uploads', dupPath.split('/').pop()))).toBe(true);
+  });
+
+  it('isImageReferenced finds single-img and array references; deleteUpload validates the name', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    store.setImg('index.html', 'index-hero-1', P1); // single-image override
+    store.addPhoto('product.html', 'product-kids-photos', P2); // array override
+    expect(store.isImageReferenced(P1)).toBe(true);
+    expect(store.isImageReferenced(P2)).toBe(true);
+    expect(store.isImageReferenced(P3)).toBe(false);
+    // deleteUpload only touches valid hash+ext names (no traversal / arbitrary path)
+    expect(store.deleteUpload('/content-uploads/not-a-hash.png')).toBe(false);
+    expect(store.deleteUpload('../../etc/passwd')).toBe(false);
+  });
+
+  it('persists a photo array atomically and reloads it from disk (round-trip)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    let store = await loadStore(dir);
+    store.addPhoto('product.html', 'product-birthday-photos', P1);
+    store.addPhoto('product.html', 'product-birthday-photos', P2);
+    const file = path.join(dir, 'content-overrides.json');
+    expect(fs.existsSync(file)).toBe(true);
+    expect(fs.existsSync(`${file}.tmp`)).toBe(false);
+    // a fresh module instance (same DATA_DIR) loads the persisted array
+    store = await loadStore(dir);
+    expect(store.getPage('product.html')['product-birthday-photos'].imgs).toEqual([P1, P2]);
+    // remove() reverts that carousel entirely (back to the shipped defaults)
+    store.remove('product.html', 'product-birthday-photos');
+    expect(store.getPhotos('product.html', 'product-birthday-photos')).toEqual([]);
+  });
+});

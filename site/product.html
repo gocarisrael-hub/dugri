@@ -316,11 +316,15 @@
       }
 
       /* ---- gallery: enlarge affordance ---- */
+      /* Pinned to the PHYSICAL top-left corner (top/left, not logical inset-*) so
+         it lands in the same corner on this RTL page — matching the wizard's
+         enlarge icon in options.html (.preview-zoom-btn), which was deliberately
+         moved to the physical top-left for consistency. */
       .pdp-gallery-zoom {
         position: absolute;
         z-index: 3;
-        inset-block-start: 10px;
-        inset-inline-end: 10px;
+        top: 10px;
+        left: 10px;
         width: 42px;
         height: 42px;
         display: inline-flex;
