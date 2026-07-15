@@ -129,6 +129,57 @@ describe('value-shape validation (set + validateValue)', () => {
     const eff = s.set('email', 'order_paid', { subject: 'a', body: 'b' });
     expect(eff).toEqual({ subject: 'a', body: 'b' });
   });
+
+  it('range-validates a daily_* trigger hour (0..23 integer)', () => {
+    const s = loadFresh();
+    const k = 'trigger.daily_morning';
+    // out of range / non-integer / wrong-typed hours are rejected
+    for (const bad of [25, -1, 24, 7.5, NaN, '7', null]) {
+      expect(s.validateValue('wa', k, { timing: { hour: bad } })).toBeTruthy();
+      expect(() => s.set('wa', k, { enabled: true, text: 't', timing: { hour: bad } })).toThrow();
+    }
+    // valid hours (including the boundaries 0 and 23) are accepted
+    for (const good of [0, 7, 23]) {
+      expect(s.validateValue('wa', k, { timing: { hour: good } })).toBeNull();
+    }
+    const eff = s.set('wa', k, { enabled: true, text: 't', timing: { hour: 6 } });
+    expect(eff.timing).toEqual({ hour: 6 });
+    // nothing bad leaked into the store
+    expect(s.all().effective.wa[k].timing).toEqual({ hour: 6 });
+  });
+
+  it('range-validates quiet_reminder timing (idle_hours/max/window)', () => {
+    const s = loadFresh();
+    const k = 'trigger.quiet_reminder';
+    const base = { idle_hours: 24, max: 3, window: [9, 21] };
+    const bad = [
+      { ...base, idle_hours: 0 }, // must be >= 1
+      { ...base, max: 0 }, // must be >= 1
+      { ...base, window: [0, 0] }, // start must be < end
+      { ...base, window: [21, 9] }, // out of order
+      { ...base, window: [9] }, // wrong length
+      { ...base, window: [9, 24] }, // hour out of range
+      { ...base, window: [-1, 9] }, // hour out of range
+      { ...base, idle_hours: 2.5 }, // non-integer
+    ];
+    for (const t of bad) {
+      expect(s.validateValue('wa', k, { timing: t })).toBeTruthy();
+      expect(() => s.set('wa', k, { enabled: true, text: 't', timing: t })).toThrow();
+    }
+    expect(s.validateValue('wa', k, { timing: base })).toBeNull();
+    const eff = s.set('wa', k, { enabled: true, text: 't', timing: base });
+    expect(eff.timing).toEqual(base);
+    expect(Array.isArray(eff.timing.window)).toBe(true);
+    expect(s.all().overrides).toHaveProperty(['wa', k]);
+  });
+
+  it('rejects timing on an event trigger that has no default timing', () => {
+    const s = loadFresh();
+    // list_closed is an event trigger — its default has no timing
+    expect(s.validateValue('wa', 'trigger.list_closed', { timing: { hour: 7 } })).toBeTruthy();
+    // but a valid timing-free override is fine
+    expect(s.validateValue('wa', 'trigger.list_closed', { enabled: false, text: 'x' })).toBeNull();
+  });
 });
 
 describe('get() is a defensive backstop', () => {

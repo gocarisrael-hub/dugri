@@ -182,6 +182,64 @@ test.describe('admin texts editor', () => {
     await resetKey(request, 'email', 'order_paid');
   });
 
+  test('client refuses to save a trigger with an out-of-range or empty hour', async ({ page }) => {
+    let posted = false;
+    page.on('request', (req) => {
+      if (req.url().includes('/api/admin/settings') && req.method() === 'POST') posted = true;
+    });
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const card = page.locator('#card-wa-trigger-daily-morning');
+    const hour = card.locator('.timing[data-timing="hour"] [data-t="hour"]');
+
+    // out of range -> refused inline, no POST
+    await hour.fill('25');
+    await card.locator('button[data-save]').click();
+    await expect(card.locator('.status')).toHaveText(/0.*23/);
+    // cleared field must NOT be coerced to 0 and saved
+    await hour.fill('');
+    await card.locator('button[data-save]').click();
+    await expect(card.locator('.status')).toHaveText(/0.*23/);
+
+    expect(posted).toBe(false);
+  });
+
+  test('client refuses quiet_reminder with an out-of-order window', async ({ page }) => {
+    let posted = false;
+    page.on('request', (req) => {
+      if (req.url().includes('/api/admin/settings') && req.method() === 'POST') posted = true;
+    });
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const card = page.locator('#card-wa-trigger-quiet-reminder');
+    const timing = card.locator('.timing[data-timing="quiet"]');
+    await timing.locator('[data-t="win_start"]').fill('21');
+    await timing.locator('[data-t="win_end"]').fill('9');
+    await card.locator('button[data-save]').click();
+    await expect(card.locator('.status')).toHaveText(/לפני/);
+    expect(posted).toBe(false);
+  });
+
+  test('a server-rejected save surfaces the server error message', async ({ page }) => {
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    await expect(page.locator('#app')).toBeVisible();
+    // Make the API reject the POST with a specific reason; the inline status must
+    // show that reason (not a bare "HTTP 400").
+    await page.route('**/api/admin/settings**', (route) => {
+      if (route.request().method() === 'POST') {
+        return route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'timing.hour must be an integer 0..23' }),
+        });
+      }
+      return route.continue();
+    });
+    const card = page.locator('#card-wa-trigger-daily-morning');
+    // a client-valid value so the request actually reaches the (mocked) server
+    await card.locator('.timing[data-timing="hour"] [data-t="hour"]').fill('7');
+    await card.locator('button[data-save]').click();
+    await expect(card.locator('.status')).toContainText('timing.hour must be an integer 0..23');
+  });
+
   test('opens from the orders-management page nav, carrying the key', async ({ page }) => {
     await page.goto(`/admin.html?key=${KEY}`);
     const link = page.locator('#nav a[data-page="admin-texts.html"]');

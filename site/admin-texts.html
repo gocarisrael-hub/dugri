@@ -323,7 +323,19 @@
           headers: body ? { 'Content-Type': 'application/json' } : undefined,
           body: body ? JSON.stringify(body) : undefined,
         });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (!r.ok) {
+          // Surface the server's {error} reason (e.g. "timing.hour must be
+          // 0..23") so the owner sees WHY. Fall back to the status if the body
+          // isn't JSON.
+          let msg = 'HTTP ' + r.status;
+          try {
+            const j = await r.json();
+            if (j && j.error) msg = j.error;
+          } catch {
+            /* non-JSON body — keep the status */
+          }
+          throw new Error(msg);
+        }
         return r.status === 204 ? null : r.json();
       }
       function esc(s) {
@@ -369,6 +381,37 @@
       };
       function labelFor(section, k) {
         return LABELS[section + '.' + k] || k;
+      }
+
+      // Hebrew labels for the sub-keys of the label maps / footer (the owner is
+      // Hebrew-only). Unknown sub-keys fall back to the raw key.
+      const SUBLABELS = {
+        // version_labels
+        pdf: 'דיגיטלי (PDF)',
+        pickup: 'איסוף עצמי',
+        delivery: 'משלוח עד הבית',
+        custom: 'עיצוב אישי',
+        // field_labels
+        version: 'גרסה',
+        amount: 'סכום',
+        wordCount: 'מספר מילים',
+        ownerLink: 'קישור לניהול',
+        currency: 'מטבע',
+        freeCoupon: 'קופון 100%',
+        buyerPackage: 'חבילה (ללקוח)',
+        buyerPrice: 'מחיר (ללקוח)',
+        buyerDesign: 'עיצוב (ללקוח)',
+        buyerColor: 'צבע (ללקוח)',
+        // cta_labels
+        addWords: 'כפתור: הוספת מילים',
+        downloadFile: 'כפתור: הורדת הקובץ',
+        updateOrder: 'כפתור: עדכון הזמנה',
+        // footer
+        line1: 'שורה ראשונה',
+        line2: 'שורה שנייה',
+      };
+      function subLabel(sub) {
+        return SUBLABELS[sub] || sub;
       }
 
       let state = null; // last full settings.all() response
@@ -417,6 +460,41 @@
         }
         return '';
       }
+      // Validate a trigger card's timing inputs BEFORE saving. Returns a Hebrew
+      // error message to show inline, or null when the timing is acceptable.
+      // Empty fields are refused (not silently coerced to 0), and each number is
+      // range-checked to match the server's validateValue.
+      function timingError(card) {
+        const box = card.querySelector('.timing');
+        if (!box) return null;
+        const raw = (sel) => box.querySelector(sel).value.trim();
+        const isIntIn = (s, lo, hi) => {
+          if (s === '') return false;
+          const n = Number(s);
+          return Number.isInteger(n) && n >= lo && n <= hi;
+        };
+        const isIntMin = (s, lo) => {
+          if (s === '') return false;
+          const n = Number(s);
+          return Number.isInteger(n) && n >= lo;
+        };
+        if (box.dataset.timing === 'hour') {
+          if (!isIntIn(raw('[data-t="hour"]'), 0, 23))
+            return 'השעה חייבת להיות מספר שלם בין 0 ל-23';
+          return null;
+        }
+        if (!isIntMin(raw('[data-t="idle_hours"]'), 1))
+          return 'שעות שקט חייבות להיות מספר שלם 1 ומעלה';
+        if (!isIntMin(raw('[data-t="max"]'), 1))
+          return 'מקסימום שליחות חייב להיות מספר שלם 1 ומעלה';
+        const ws = raw('[data-t="win_start"]');
+        const we = raw('[data-t="win_end"]');
+        if (!isIntIn(ws, 0, 23) || !isIntIn(we, 0, 23))
+          return 'שעות החלון חייבות להיות מספרים שלמים בין 0 ל-23';
+        if (Number(ws) >= Number(we)) return 'שעת ההתחלה של החלון חייבת להיות לפני שעת הסיום';
+        return null;
+      }
+
       // Read timing inputs from a card back into a {..} value, or null when the
       // trigger has no timing.
       function readTiming(card) {
@@ -486,7 +564,7 @@
             .map(
               (sub) =>
                 '<label class="fld">' +
-                esc(sub) +
+                esc(subLabel(sub)) +
                 '</label><input type="text" data-mapkey="' +
                 esc(sub) +
                 '" value="' +
@@ -575,6 +653,10 @@
       async function saveCard(card) {
         const section = card.dataset.section;
         const k = card.dataset.key;
+        if (card.dataset.kind === 'trigger') {
+          const terr = timingError(card);
+          if (terr) return setStatus(card, terr, 'err');
+        }
         setStatus(card, 'שומר…');
         try {
           const { effective } = await api('POST', '/api/admin/settings', {
