@@ -549,6 +549,31 @@ function renameTemplate({ root, key, displayName }) {
   return { key, display_he: v.value, slug: entry.slug || key };
 }
 
+// Build the PUBLIC { <designId>: displayName } map the storefront uses to show a
+// current, owner-renamable name. Each orderable design (from site/js/designs.js,
+// passed in as [{ id, theme }]) is resolved to its generator theme, and that
+// theme's current themes.json `display_he` becomes the design's display name —
+// so an admin "rename template" (which edits display_he) propagates to
+// products.html / the product page without a rebuild. This is the slug↔product-id
+// BRIDGE: designs carry `theme` (the themes.json key), so no separate mapping is
+// needed. A design whose theme is unmapped, missing, or has no `display_he` is
+// OMITTED (the page keeps its built-in catalog name). Pure (no fs/network) and
+// exposes ONLY names — never any other theme field — so it is safe to serialize
+// to any visitor and trivial to unit-test. `ownTheme` guards the theme lookup
+// against prototype-pollution keys.
+function designDisplayNames(themes, designs) {
+  const out = {};
+  if (!themes || typeof themes !== 'object') return out;
+  const list = Array.isArray(designs) ? designs : [];
+  for (const d of list) {
+    if (!d || typeof d.id !== 'string' || typeof d.theme !== 'string') continue;
+    const entry = ownTheme(themes, d.theme);
+    const name = entry && typeof entry.display_he === 'string' ? entry.display_he.trim() : '';
+    if (name) out[d.id] = name;
+  }
+  return out;
+}
+
 // Replace a SINGLE asset file of an existing template in place. The role must be
 // on the whitelist (so the write target is a fixed path inside the template dir —
 // no traversal, and the other onboarded assets are untouched). SVG roles are
@@ -708,4 +733,5 @@ module.exports = {
   validateDisplayName,
   renameTemplate,
   replaceAsset,
+  designDisplayNames,
 };

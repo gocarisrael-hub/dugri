@@ -505,7 +505,7 @@
          image and links to the design's detail page (product.html?design=<id>),
          which hosts the multi-photo gallery. -->
     <script type="module">
-      import { PUBLIC_DESIGNS as DESIGNS } from './js/designs.js';
+      import { PUBLIC_DESIGNS as DESIGNS, fetchDesignNames } from './js/designs.js';
 
       const PRICE = 79;
       const WAS = 129;
@@ -570,6 +570,26 @@
         }
         if (!frag.childNodes.length) throw new Error('no cards rendered');
         grid.replaceChildren(frag);
+
+        // Overlay owner-editable names (admin template rename → themes.json
+        // display_he). The grid already shows the built-in names, so this only
+        // ever UPGRADES a card's name; a slow/failed/timed-out fetch resolves to
+        // {} (see fetchDesignNames) and the built-in names simply stand.
+        fetchDesignNames()
+          .then((names) => {
+            if (!names || !Object.keys(names).length) return;
+            for (const article of grid.querySelectorAll('[data-design-id]')) {
+              const nm = names[article.getAttribute('data-design-id')];
+              if (!nm) continue;
+              const nameEl = article.querySelector('.product-name');
+              if (nameEl) nameEl.textContent = nm;
+              const link = article.querySelector('.product-card__link');
+              if (link) link.setAttribute('aria-label', nm);
+              const img = article.querySelector('[data-testid="product-image"]');
+              if (img) img.alt = nm;
+            }
+          })
+          .catch(() => {});
       } catch (err) {
         // Graceful degradation: never leave a blank page — offer the wizard.
         grid.innerHTML =

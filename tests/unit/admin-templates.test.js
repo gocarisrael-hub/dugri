@@ -886,3 +886,61 @@ describe('POST /api/admin/templates', () => {
     expect({}.display_he).toBeUndefined();
   });
 });
+
+// The pure slug↔product-id bridge that carries an admin rename to the storefront:
+// design (id + theme) × themes.json -> { id: display_he }. Exposes ONLY names.
+describe('templates.designDisplayNames — the storefront name bridge', () => {
+  let templates;
+  beforeAll(() => {
+    delete require.cache[require.resolve(path.join(serverDir, 'templates.js'))];
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  const themes = {
+    bachelorette: { slug: 'bachelorette', display_he: 'דוגרי רווקות', title_font: 'secret.ttf' },
+    anniversary: { slug: 'anniversary', display_he: 'דוגרי יום נישואין' },
+    'birthday-girls': { slug: 'birthday-girls', display_he: '  יום הולדת בנות  ' },
+    'no-name': { slug: 'no-name' }, // no display_he
+  };
+  const designs = [
+    { id: 'bachelorette', theme: 'bachelorette' },
+    { id: 'marriage', theme: 'anniversary' },
+    { id: 'birthday', theme: 'birthday-girls' },
+    { id: 'ghost', theme: 'unmapped-theme' }, // theme absent from themes.json
+    { id: 'blank', theme: 'no-name' }, // theme present but no display_he
+  ];
+
+  it('maps each design id to its theme display_he (trimmed), omitting unmapped/blank', () => {
+    const names = templates.designDisplayNames(themes, designs);
+    expect(names).toEqual({
+      bachelorette: 'דוגרי רווקות',
+      marriage: 'דוגרי יום נישואין',
+      birthday: 'יום הולדת בנות', // trimmed
+    });
+    // unmapped theme + a theme with no display_he are omitted (page keeps built-in)
+    expect('ghost' in names).toBe(false);
+    expect('blank' in names).toBe(false);
+  });
+
+  it('exposes ONLY names — no other theme field (slug/fonts) leaks', () => {
+    const names = templates.designDisplayNames(themes, designs);
+    const serialized = JSON.stringify(names);
+    expect(serialized).not.toContain('secret.ttf');
+    expect(serialized).not.toContain('slug');
+    for (const v of Object.values(names)) expect(typeof v).toBe('string');
+  });
+
+  it('a renamed theme flows straight through to the design name', () => {
+    const renamed = { ...themes, bachelorette: { ...themes.bachelorette, display_he: 'שם חדש' } };
+    expect(templates.designDisplayNames(renamed, designs).bachelorette).toBe('שם חדש');
+  });
+
+  it('is defensive: bad themes/designs and prototype-pollution keys yield {}', () => {
+    expect(templates.designDisplayNames(null, designs)).toEqual({});
+    expect(templates.designDisplayNames(themes, null)).toEqual({});
+    expect(templates.designDisplayNames(themes, 'nope')).toEqual({});
+    // a design pointing at a dangerous key resolves to nothing (ownTheme guard)
+    expect(templates.designDisplayNames(themes, [{ id: 'x', theme: '__proto__' }])).toEqual({});
+    expect(templates.designDisplayNames(themes, [{ id: 'x', theme: 'constructor' }])).toEqual({});
+  });
+});

@@ -20,7 +20,7 @@
 // public design and never throws. Private designs aren't in PUBLIC_DESIGNS so
 // they can't be deep-linked here.
 
-import { PUBLIC_DESIGNS } from './designs.js';
+import { PUBLIC_DESIGNS, fetchDesignNames } from './designs.js';
 import { initCarousel } from './carousel.js';
 
 const PRICE = 79;
@@ -318,6 +318,7 @@ function renderRelated(current) {
     const card = el('a', 'pdp-rel-card', {
       href: `product.html?design=${encodeURIComponent(d.id)}`,
       'data-label': d.name,
+      'data-design-id': d.id,
     });
     if (d.id === current.id) card.setAttribute('aria-current', 'true');
 
@@ -380,6 +381,31 @@ function applyTextOverrides(d, overrides) {
   if (about && aboutOv != null) about.textContent = aboutOv;
 }
 
+// Overlay the owner-editable display names (GET /api/design-names — an admin
+// template rename → themes.json display_he) as the BASE name layer: the main
+// title, the browser tab, and every related-rail card. This runs BEFORE the
+// per-design inline content override (product-<id>-name), so that manual edit
+// still WINS on top (applyTextOverrides only sets a title when its override is
+// present, so it overrides this base; where it is absent, this base stands).
+// Fail-soft: an empty map leaves every built-in catalog name untouched.
+function applyDesignNames(d, names) {
+  const map = names || {};
+  const main = map[d.id];
+  if (main) {
+    const title = document.getElementById('pdpTitle');
+    if (title) title.textContent = main;
+    document.title = `${main} · דוגרי`;
+  }
+  // Related rail: upgrade each card's visible name from the map (built-in stands
+  // for any id the map omits).
+  for (const card of document.querySelectorAll('.pdp-rel-card[data-design-id]')) {
+    const nm = map[card.getAttribute('data-design-id')];
+    if (!nm) continue;
+    const nameEl = card.querySelector('.pdp-rel-name');
+    if (nameEl) nameEl.textContent = nm;
+  }
+}
+
 // Overlay the per-design overrides once they resolve: swap in saved name/about
 // text and, if the owner curated custom photos, rebuild the carousels. Then hand
 // off to the editor so edit mode binds the freshly-injected nodes. Runs even with
@@ -431,9 +457,15 @@ function boot() {
   markPhotosEditable(d);
   document.addEventListener('dugri:photos-changed', onPhotosChanged);
 
-  // THEN overlay the per-design overrides when they resolve (reusing the editor's
-  // fetch). Fail-soft: loadOverrides never rejects.
-  loadOverrides().then((ov) => applyOverridesToPage(d, ov));
+  // THEN overlay the owner-editable names + per-design overrides. Two independent,
+  // fail-soft fetches (neither rejects). Apply the admin-renamed display names
+  // (base) BEFORE the content overrides so an inline product-<id>-name edit still
+  // wins over the admin rename. fetchDesignNames caps itself at ~2.5s and falls
+  // back to {} on timeout/error, so the built-in names always stand.
+  Promise.all([fetchDesignNames(), loadOverrides()]).then(([names, ov]) => {
+    applyDesignNames(d, names);
+    applyOverridesToPage(d, ov);
+  });
 }
 
 // Auto-boot only on the real page (a #galleryTrack exists). A bare test import of
