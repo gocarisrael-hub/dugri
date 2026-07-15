@@ -1763,19 +1763,23 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
 });
 
 // Public: the buyer-wizard feature flags. Unauthenticated on purpose — every
-// visitor's wizard must know which of the four gated features to show. Returns
-// ONLY a whitelisted flat projection of the features section's effective
-// booleans (never other settings sections or secrets, even as the registry
-// grows). Mirrors the public GET /api/content. All writes stay behind the admin
-// key via /api/admin/settings.
+// visitor's wizard must know which of the gated features to show. Returns ONLY a
+// flat projection of the features section's effective booleans (never other
+// settings sections or secrets). The keys are derived from the registry's
+// `features` section so a flag added there is projected automatically — while
+// the projection is scoped to that ONE section, so nothing else can ever leak.
+// Mirrors the public GET /api/content. All writes stay behind the admin key via
+// /api/admin/settings.
 app.get('/api/features', (req, res) => {
-  const f = (settings.all().effective && settings.all().effective.features) || {};
-  res.json({
-    color_picking: !!f.color_picking,
-    chasers_choice: !!f.chasers_choice,
-    font_choice: !!f.font_choice,
-    name_preview: !!f.name_preview,
-  });
+  // Deep-clones the whole settings tree — call it ONCE (this is an unauthenticated
+  // hot path hit on every wizard load).
+  const all = settings.all();
+  const eff = (all.effective && all.effective.features) || {};
+  const out = {};
+  for (const k of Object.keys((all.registry && all.registry.features) || {})) {
+    out[k] = !!eff[k];
+  }
+  res.json(out);
 });
 
 // Unknown API routes -> JSON 404 (must come before static/catch-all).

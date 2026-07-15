@@ -2663,9 +2663,12 @@
       // wizard builds its steps/nav, so a gated-off feature is never painted and
       // then yanked (no flash-of-visible-then-hidden). The blocking top-level
       // await costs one round-trip before first paint (accepted). ANY failure —
-      // network error, non-2xx, malformed JSON — falls back to ALL FALSE (every
-      // gated feature hidden), matching the registry defaults, so a blip can
-      // never reveal a rough feature. Each flag is `!!`-coerced.
+      // network error, non-2xx, malformed JSON, OR a slow/hung endpoint (bounded
+      // by a 2.5s AbortController timeout, e.g. during a redeploy) — falls back to
+      // ALL FALSE (every gated feature hidden), matching the registry defaults.
+      // The timeout is what guarantees module init can never hang here, so the
+      // wizard always builds and stays interactive; a blip never reveals a rough
+      // feature. Each flag is `!!`-coerced.
       const FEATURES = await (async () => {
         const off = {
           color_picking: false,
@@ -2673,8 +2676,10 @@
           font_choice: false,
           name_preview: false,
         };
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 2500);
         try {
-          const r = await fetch('/api/features');
+          const r = await fetch('/api/features', { signal: ctrl.signal });
           if (!r.ok) return off;
           const j = await r.json();
           return {
@@ -2684,7 +2689,10 @@
             name_preview: !!j.name_preview,
           };
         } catch {
+          // network error, aborted-by-timeout, or malformed JSON — fail closed.
           return off;
+        } finally {
+          clearTimeout(timer);
         }
       })();
       // Font choice is nested in the name-preview panel, so it only takes effect

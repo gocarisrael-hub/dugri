@@ -117,6 +117,31 @@ test.describe('buyer wizard feature flags', () => {
     await expectAllHiddenAndStep2Skipped(page);
   });
 
+  test('a slow/hung /api/features never blocks the wizard (client aborts, falls back)', async ({
+    page,
+  }) => {
+    // Simulate a hung endpoint (e.g. mid-redeploy): respond only LONG after the
+    // client's 2.5s AbortController timeout, and with ALL flags ON — proving the
+    // timeout wins (the wizard builds all-hidden and interactive on its own, and
+    // the late all-ON reply is ignored). Without the timeout this would hang the
+    // module init and leave the wizard blank.
+    await page.route('**/api/features', async (route) => {
+      await new Promise((r) => setTimeout(r, 6000));
+      // The client already aborted at ~2.5s (and the page may be closing as the
+      // test ends), so this late fulfill can reject — swallow it.
+      await route
+        .fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ALL_ON) })
+        .catch(() => {});
+    });
+
+    // The wizard still builds (bounded by the ~2.5s timeout) — hidden + step-2 skip.
+    await expectAllHiddenAndStep2Skipped(page);
+
+    // …and it is fully interactive: advancing the wizard works.
+    await page.getByTestId('next-btn').click(); // step 1 -> step 3 (step 2 skipped)
+    await expect(page.getByTestId('step-3')).toBeVisible();
+  });
+
   test('all ON: the four regions are visible and step 2 is present', async ({ page }) => {
     await stubFeatures(page, ALL_ON);
     await mockPreview(page);
