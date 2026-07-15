@@ -204,8 +204,22 @@ async function importFromStaging(opts) {
     };
   }
 
-  // 4. Commit: mirror staging's overrides onto this service's store.
-  content.replaceAll(staged);
+  // 4. Commit: mirror staging's overrides onto this service's store. The final
+  // persist can still fail (e.g. ENOSPC at the last write). replaceAll rolls the
+  // in-memory store back on failure so memory == disk == OLD — but the images THIS
+  // import wrote are now orphaned, so reclaim them (the same abort discipline as the
+  // earlier steps) before failing, keeping the "a failed import leaves the volume
+  // exactly as it found it" contract.
+  try {
+    content.replaceAll(staged);
+  } catch (e) {
+    cleanupWritten();
+    return {
+      ok: false,
+      status: 500,
+      error: 'could not persist the imported content: ' + msg(e),
+    };
+  }
 
   return {
     ok: true,

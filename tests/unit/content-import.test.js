@@ -356,7 +356,7 @@ describe('content import from staging', () => {
     expect(store.getPage('index.html')['hero-bg'].img).toBe(sharedPath);
   });
 
-  it('propagates a commit (replaceAll) save failure and keeps serving the OLD content, not the staging mirror', async () => {
+  it('fails soft on a commit (replaceAll) save failure: OLD content stays live AND images this import wrote are reclaimed', async () => {
     const dir = freshTmpDir();
     dirs.push(dir);
     const store = await loadStore(dir);
@@ -377,21 +377,27 @@ describe('content import from staging', () => {
       return realWrite(p, ...rest);
     });
 
-    await expect(
-      imp.importFromStaging({
-        stagingUrl: 'https://staging.example',
-        ownOrigins: ['https://prod.example'],
-        adminKey: 'x',
-        content: store,
-        fetchImpl: makeFetch(overrides, { [imgPath]: png }, null),
-      })
-    ).rejects.toThrow(/ENOSPC/);
+    const result = await imp.importFromStaging({
+      stagingUrl: 'https://staging.example',
+      ownOrigins: ['https://prod.example'],
+      adminKey: 'x',
+      content: store,
+      fetchImpl: makeFetch(overrides, { [imgPath]: png }, null),
+    });
     vi.restoreAllMocks();
 
-    // The live store still serves the OLD content — the staging mirror never became
+    // The import reports a clean failure (not a thrown crash) …
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(500);
+    expect(result.error).toMatch(/persist/i);
+    // … the live store still serves the OLD content — the staging mirror never became
     // visible (replaceAll rolled memory back). Memory == disk == old.
     expect(store.getPage('index.html').hero.text).toBe('תוכן ישן של פרוד');
     expect(store.getPage('about.html')).toEqual({});
+    // … and the image THIS import wrote before the failed commit is reclaimed, so a
+    // failed import leaves the volume exactly as it found it (no orphan).
+    const onDisk = path.join(dir, 'content-uploads', imgPath.split('/').pop());
+    expect(fs.existsSync(onDisk)).toBe(false);
   });
 
   it('does NOT reclaim a pre-existing orphan whose hash a staging image matches (cleanup only removes files THIS import created)', async () => {
