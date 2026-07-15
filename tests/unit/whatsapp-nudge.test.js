@@ -106,6 +106,14 @@ describe('runWaNudgeScan — daily triggers', () => {
     expect(sendCalls).toHaveLength(0);
   });
 
+  it('scans MULTIPLE active groups in a single pass', async () => {
+    linkedGroup('שירה', 'ndm1@g.us', NOW);
+    linkedGroup('דנה', 'ndm2@g.us', NOW);
+    const sent = await app.runWaNudgeScan(NOW);
+    expect(sent).toBe(2);
+    expect(sendCalls.map((s) => s.to).sort()).toEqual(['ndm1@g.us', 'ndm2@g.us']);
+  });
+
   it('a disabled trigger stays silent', async () => {
     linkedGroup('נועה', 'nd2@g.us', NOW);
     for (const id of WA_TRIGGERS) settings.set('wa', 'trigger.' + id, { enabled: false });

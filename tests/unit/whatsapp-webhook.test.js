@@ -176,12 +176,24 @@ describe('POST /api/whatsapp/webhook — messages', () => {
     const c = db.createCollection('רון', { phone: '0521234567' });
     db.addWords(c.id, ['a', 'b', 'c'], 'x');
     waState.linkGroup('gC@g.us', c.id, BUYER_WA, [BUYER_WA, BOT_WA]);
-    const r = await webhook({ messages: [msgEvent('gC@g.us', 'סיום', { from: BUYER_WA })] });
+    // The close is the primary completion path — it must fire the owner "ready to
+    // produce" email exactly like the web /close route (only when email is on).
+    const cfgSpy = vi.spyOn(notify, 'isConfigured').mockReturnValue(true);
+    const finSpy = vi.spyOn(notify, 'sendOrderFinished').mockResolvedValue(true);
+    // The buyer's id arrives as a JID; the message-path buyer check normalizes it.
+    const r = await webhook({
+      messages: [msgEvent('gC@g.us', 'סיום', { from: BUYER_WA + '@s.whatsapp.net' })],
+    });
     expect(r.status).toBe(200);
     expect(db.effectiveStatus(db.getCollection(c.id))).toBe('closed');
     expect(sendCalls).toHaveLength(1);
     expect(sendCalls[0].to).toBe('gC@g.us');
     expect(sendCalls[0].text).toContain('רון'); // list_closed interpolates {honoree}
+    // Owner "list ready to produce" email fired for THIS collection.
+    expect(finSpy).toHaveBeenCalledTimes(1);
+    expect(finSpy.mock.calls[0][0].id).toBe(c.id);
+    cfgSpy.mockRestore();
+    finSpy.mockRestore();
   });
 
   it('a non-buyer typing the close command does NOT close (words are collected)', async () => {
@@ -213,20 +225,42 @@ describe('POST /api/whatsapp/webhook — participants_added', () => {
     return { groups_participants: [{ action: 'add', group_id: groupId, participants }] };
   }
 
-  it('greets a NEW friend but not the buyer or the bot', async () => {
+  it('greets a NEW friend but not the buyer or the bot (JID-form ids)', async () => {
     const c = db.createCollection('תמר', { phone: '0521234567' });
+    // initial_members are stored as BARE digits...
     waState.linkGroup('gE@g.us', c.id, BUYER_WA, [BUYER_WA, BOT_WA]);
+    // ...but Whapi delivers participant ids as JIDs. The buyer + bot must still be
+    // recognised (and skipped) after normalization; only the new friend is greeted.
     const r = await webhook(
       joinEvent('gE@g.us', [
-        { id: '972111', name: 'רון' },
-        { id: BUYER_WA, name: 'קונה' },
-        { id: BOT_WA, name: 'בוט' },
+        { id: '972111444@s.whatsapp.net', name: 'רון' },
+        { id: BUYER_WA + '@s.whatsapp.net', name: 'קונה' },
+        { id: BOT_WA + '@s.whatsapp.net', name: 'בוט' },
       ])
     );
     expect(r.status).toBe(200);
     expect(sendCalls).toHaveLength(1);
     expect(sendCalls[0].to).toBe('gE@g.us');
     expect(sendCalls[0].text).toContain('תמר'); // member_joined interpolates {honoree}
+  });
+
+  it('does NOT greet into an unmapped group the bot does not own', async () => {
+    const r = await webhook(
+      joinEvent('foreign@g.us', [{ id: '972111000@s.whatsapp.net', name: 'זר' }])
+    );
+    expect(r.status).toBe(200);
+    expect(sendCalls).toHaveLength(0);
+  });
+
+  it('does NOT greet a friend who joins after the list is closed', async () => {
+    const c = db.createCollection('ניצן', { phone: '0521234567' });
+    db.closeCollection(c.id, c.owner_token);
+    waState.linkGroup('gClosedJoin@g.us', c.id, BUYER_WA, [BUYER_WA, BOT_WA]);
+    const r = await webhook(
+      joinEvent('gClosedJoin@g.us', [{ id: '972111222@s.whatsapp.net', name: 'חבר' }])
+    );
+    expect(r.status).toBe(200);
+    expect(sendCalls).toHaveLength(0);
   });
 
   it('interpolates {name} with the joining member name', async () => {
@@ -315,5 +349,26 @@ describe('paid hook — openWhatsappGroup', () => {
     await app.openWhatsappGroup(c, base);
     expect(createCalls).toHaveLength(0);
     expect(waState.groupForCollection(c.id)).toBeNull();
+  });
+});
+
+describe('onOrderPaid — WhatsApp is decoupled from email config', () => {
+  it('opens the group + fires group_opened even when email is OFF', async () => {
+    // Email is unconfigured in this suite (no Resend env) -> notify.isConfigured()
+    // is false. The bot is armed. A paid order must STILL open the WhatsApp group.
+    expect(notify.isConfigured()).toBe(false);
+    const paidSpy = vi.spyOn(notify, 'sendOrderPaid').mockResolvedValue(true);
+    const c = db.createCollection('עמית', { phone: '0521234567' });
+
+    app.onOrderPaid(c.id, base, 0);
+    // openWhatsappGroup is fire-and-forget; let its microtasks run.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(createCalls).toHaveLength(1); // group created
+    const groupId = waState.groupForCollection(c.id);
+    expect(groupId).toBe('g-new@g.us');
+    expect(sendCalls.some((s) => s.to === groupId)).toBe(true); // group_opened fired
+    expect(paidSpy).not.toHaveBeenCalled(); // email side stayed dormant
+    paidSpy.mockRestore();
   });
 });

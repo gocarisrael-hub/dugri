@@ -875,7 +875,7 @@ function newPayToken() {
 // notifications. `amountCharged` is what the customer ACTUALLY paid (0 for a
 // fully-free order, the discounted amount for a partial coupon); the emails show
 // that rather than the pre-coupon package price. Fire-and-forget: the payment
-// must succeed even if a send fails. The caller guards this with
+// must succeed even if a send fails. Called via onOrderPaid, which guards it with
 // notify.isConfigured() so the word-count work is skipped when email is dormant.
 function sendPaidNotifications(collectionId, base, amountCharged) {
   const c = db.getCollection(collectionId);
@@ -891,14 +891,30 @@ function sendPaidNotifications(collectionId, base, amountCharged) {
   if (c.order && c.order.version === 'custom') {
     notify.sendCustomOrderAlert(enriched, base, options).catch(() => {});
   }
+}
+
+// Everything that must happen when an order transitions to PAID, from BOTH paid
+// paths (the free 100%-coupon path and the PeleCard callback). The two side
+// effects are INDEPENDENTLY gated so they never couple: email owner/buyer
+// notifications fire only when notify is configured, and the WhatsApp
+// word-collection group opens only when the bot is armed (whatsapp.isConfigured())
+// — an armed bot must open the group whether or not email is set up, and vice
+// versa. Both are fire-and-forget and idempotent; neither can block or break the
+// payment flow.
+function onOrderPaid(collectionId, base, amountCharged) {
+  if (notify.isConfigured()) sendPaidNotifications(collectionId, base, amountCharged);
   // WhatsApp bot (DORMANT until armed): open a word-collection group for the
-  // buyer. Fire-and-forget and fully gated on whatsapp.isConfigured() so this is a
-  // pure no-op — no network, no state — until the bot's env is set. It must NEVER
-  // block or break the payment/email flow, so the promise is wrapped.
+  // buyer. Gated ONLY on whatsapp.isConfigured() — decoupled from email — so it's
+  // a pure no-op until the bot's env is set, and runs on every paid order once the
+  // bot is armed. openWhatsappGroup is itself idempotent (one group per
+  // collection) and fail-soft, so the wrapped promise never affects payment.
   if (whatsapp.isConfigured()) {
-    openWhatsappGroup(c, base).catch((e) => {
-      console.warn('[whatsapp] group open failed:', e && e.message ? e.message : e);
-    });
+    const c = db.getCollection(collectionId);
+    if (c) {
+      openWhatsappGroup(c, base).catch((e) => {
+        console.warn('[whatsapp] group open failed:', e && e.message ? e.message : e);
+      });
+    }
   }
 }
 
@@ -1042,11 +1058,19 @@ async function handleWaEvent(ev, base) {
   if (!ev) return;
   if (ev.kind === 'participants_added') {
     const entry = waState.collectionForGroup(ev.groupId);
-    const collection = entry && entry.collection_id ? db.getCollection(entry.collection_id) : null;
+    if (!entry) return; // group the bot doesn't own — never greet into a foreign chat
+    const collection = entry.collection_id ? db.getCollection(entry.collection_id) : null;
+    if (!collection) return;
+    // A friend who joins after the list is closed/expired must NOT be invited to
+    // add words — consistent with the message path, which checks status first.
+    if (db.effectiveStatus(collection) !== 'open') return;
     const gv = waGroupValues(collection, base);
+    // Compare on bare digits: initial_members are stored as digits ("9725…") but
+    // Whapi sends participant ids as JIDs ("9725…@s.whatsapp.net"). Without
+    // normalizing BOTH sides the buyer + bot would be mis-greeted as new friends.
+    const initial = new Set((entry.initial_members || []).map(waIdDigits));
     for (const m of ev.added || []) {
-      // Skip the buyer + bot recorded at group creation — greet only NEW friends.
-      if (waState.isInitialMember(ev.groupId, m.id)) continue;
+      if (initial.has(waIdDigits(m && m.id))) continue; // skip the buyer + bot
       await sendWaTrigger(ev.groupId, 'member_joined', {
         name: (m && m.name) || '',
         honoree: gv.honoree,
@@ -1072,8 +1096,19 @@ async function handleWaEvent(ev, base) {
       if (closed && closed.changed) {
         await sendWaTrigger(ev.groupId, 'list_closed', {
           honoree: gv.honoree,
-          wordCount: db.listWords(cid).length,
+          wordCount: db.countWords(cid),
         });
+        // This IS the primary completion path: the list is done and ready to
+        // produce. Fire the owner "ready to produce" email exactly like the web
+        // /close route — otherwise no PDF is ever made and the customer waits
+        // forever. Only on the real open->closed transition, gated on email being
+        // configured, fire-and-forget so a send failure never escapes the webhook.
+        if (notify.isConfigured()) {
+          const fresh = db.getCollection(cid);
+          if (fresh) {
+            notify.sendOrderFinished({ ...fresh, count: db.countWords(cid) }, base).catch(() => {});
+          }
+        }
       }
       return;
     }
@@ -1085,7 +1120,7 @@ async function handleWaEvent(ev, base) {
         waState.markClosed(ev.groupId);
         await sendWaTrigger(ev.groupId, 'list_closed', {
           honoree: gv.honoree,
-          wordCount: db.listWords(cid).length,
+          wordCount: db.countWords(cid),
         });
       }
       return;
@@ -1099,7 +1134,7 @@ async function handleWaEvent(ev, base) {
       waState.touchActivity(ev.groupId);
       await sendWaTrigger(ev.groupId, 'word_added', {
         honoree: gv.honoree,
-        count: db.listWords(cid).length,
+        count: db.countWords(cid),
         link: gv.link,
       });
     }
@@ -1125,6 +1160,11 @@ async function runWaNudgeScan(now = Date.now()) {
   } catch {
     return 0;
   }
+  // First pass: resolve each group's collection once. Retire (close) any group
+  // whose collection is gone or no longer open; keep the rest — with their
+  // collection — for a SINGLE batched due-check below.
+  const open = [];
+  const collectionByGroup = new Map();
   for (const g of groups) {
     try {
       const cid = g.collection_id;
@@ -1133,18 +1173,34 @@ async function runWaNudgeScan(now = Date.now()) {
         waState.markClosed(g.groupId);
         continue;
       }
-      const due = whatsapp.groupsDueForNudge([g], { now });
-      if (!due.length) continue;
-      const values = waGroupValues(collection, base);
-      for (const d of due) {
-        const ok = await sendWaTrigger(d.groupId, d.triggerId, values);
-        if (!ok) continue; // send failed — don't record, so the next tick retries
-        if (d.triggerId === 'quiet_reminder') waState.recordQuietReminder(d.groupId, now);
-        else if (d.slotKey) waState.markNudged(d.groupId, d.slotKey);
-        sent += 1;
-      }
+      open.push(g);
+      collectionByGroup.set(g.groupId, collection);
     } catch (e) {
-      console.warn('[whatsapp] nudge failed for group:', e && e.message ? e.message : e);
+      console.warn('[whatsapp] nudge prep failed for group:', e && e.message ? e.message : e);
+    }
+  }
+  if (!open.length) return 0;
+  // ONE call for the whole list: groupsDueForNudge builds Intl.DateTimeFormat and
+  // reads the trigger catalog once per call, so batching avoids doing that per
+  // group.
+  let due = [];
+  try {
+    due = whatsapp.groupsDueForNudge(open, { now });
+  } catch (e) {
+    console.warn('[whatsapp] groupsDueForNudge failed:', e && e.message ? e.message : e);
+    return 0;
+  }
+  for (const d of due) {
+    try {
+      const collection = collectionByGroup.get(d.groupId);
+      if (!collection) continue;
+      const ok = await sendWaTrigger(d.groupId, d.triggerId, waGroupValues(collection, base));
+      if (!ok) continue; // send failed — don't record, so the next tick retries
+      if (d.triggerId === 'quiet_reminder') waState.recordQuietReminder(d.groupId, now);
+      else if (d.slotKey) waState.markNudged(d.groupId, d.slotKey);
+      sent += 1;
+    } catch (e) {
+      console.warn('[whatsapp] nudge send failed for group:', e && e.message ? e.message : e);
     }
   }
   return sent;
@@ -1209,9 +1265,10 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       discount_pct: couponCode ? discountPct : null,
     });
     if (couponCode) db.incrementCouponUses(couponCode);
-    // A free (100%-coupon) order is now paid — fire the same owner + buyer
-    // emails as the PeleCard callback, showing the real charged amount (0).
-    if (notify.isConfigured()) sendPaidNotifications(req.params.id, base, 0);
+    // A free (100%-coupon) order is now paid — fire the same paid-order side
+    // effects as the PeleCard callback (owner/buyer emails when email is on, the
+    // WhatsApp group when the bot is armed), showing the real charged amount (0).
+    onOrderPaid(req.params.id, base, 0);
     return res.json({ free: true, paid: true, total: 0 });
   }
 
@@ -1300,12 +1357,11 @@ app.post('/api/payment/callback', async (req, res) => {
     });
     // Count the coupon use once, on the real unpaid->paid transition.
     if (session.coupon) db.incrementCouponUses(session.coupon);
-    // Notify owner + buyer a payment came in, showing the amount ACTUALLY
-    // charged for THIS session (never the pre-coupon order.total). Skip the
-    // word-count work entirely when email is unconfigured (the dormant default).
-    if (notify.isConfigured()) {
-      sendPaidNotifications(c.id, paymentBaseUrl(), session.charged_total);
-    }
+    // Fire the paid-order side effects, showing the amount ACTUALLY charged for
+    // THIS session (never the pre-coupon order.total). Email owner/buyer
+    // notifications and the WhatsApp group-open are INDEPENDENTLY gated inside
+    // onOrderPaid — each stays dormant until its own service is configured.
+    onOrderPaid(c.id, paymentBaseUrl(), session.charged_total);
   }
   res.json({ ok: true });
 });
@@ -1806,4 +1862,5 @@ module.exports = app;
 // export) so a test can drive them with injected inputs, hermetically.
 module.exports.runWaNudgeScan = runWaNudgeScan;
 module.exports.openWhatsappGroup = openWhatsappGroup;
+module.exports.onOrderPaid = onOrderPaid;
 module.exports.runReminderScan = runReminderScan;

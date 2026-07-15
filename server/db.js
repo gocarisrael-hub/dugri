@@ -210,6 +210,15 @@ const db = {
       .sort((a, b) => a.created_at.localeCompare(b.created_at));
   },
 
+  // Cheap word count for a collection: a single O(n) pass with NO array build and
+  // NO sort, for hot paths (the inbound WhatsApp message handler) that only need
+  // the number, not the ordered list. Prefer this over listWords(id).length there.
+  countWords(id) {
+    let n = 0;
+    for (const w of _db.words) if (w.collection_id === id) n += 1;
+    return n;
+  },
+
   // Add a batch of words. Dedupes (case/space-insensitive) within the
   // collection. Returns {added, skipped} or {closed:true} if not open.
   addWords(id, words, addedBy) {
