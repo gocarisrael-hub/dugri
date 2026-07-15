@@ -256,10 +256,15 @@ function parseWebhook(body) {
     const raw = Array.isArray(ev.participants) ? ev.participants : [];
     const added = raw.map(normalizeParticipant).filter(Boolean);
     if (!added.length) continue;
-    // A stable event id for at-least-once de-dupe. Prefer Whapi's own id; else
-    // synthesize one from the group + the added participant ids so a redelivery of
-    // the SAME add batch is recognised and dropped by the handler.
-    const id = String(ev.id || '') || 'padd:' + groupId + ':' + added.map((a) => a.id).join('|');
+    // A stable event id for at-least-once de-dupe. Prefer Whapi's own event id.
+    // When synthesizing (no id), include the event TIMESTAMP as well as the group +
+    // participant ids: a true redelivery carries the SAME timestamp (so it dedups),
+    // but a genuine LATER re-join of the same person carries a different timestamp
+    // (so it is NOT false-deduped and is greeted). Falls back to the participant
+    // ids alone only when no timestamp is present either.
+    const ts = ev.timestamp != null ? ev.timestamp : ev.time != null ? ev.time : '';
+    const id =
+      String(ev.id || '') || 'padd:' + groupId + ':' + ts + ':' + added.map((a) => a.id).join('|');
     events.push({ kind: 'participants_added', groupId, added, id });
   }
 

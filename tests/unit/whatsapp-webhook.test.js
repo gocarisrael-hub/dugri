@@ -115,10 +115,14 @@ beforeEach(() => {
   createCalls = [];
   inviteCalls = [];
   sendResult = { ok: true, sent: true, messageId: 'm1' };
-  // A successful create that POSITIVELY confirms the buyer among the added
-  // participants — buyerLandedInGroup is conservative and only skips the invite
-  // fallback on a positive confirmation.
-  createResult = { ok: true, groupId: 'g-new@g.us', data: { participants: [{ id: BUYER_WA }] } };
+  // Whapi's REAL success response is { group_id, invite_code } with NO participants
+  // array. buyerLandedInGroup treats this as "added" (no failure signal), so the
+  // invite fallback does NOT fire — a normal paid order must not DM/escalate.
+  createResult = {
+    ok: true,
+    groupId: 'g-new@g.us',
+    data: { group_id: 'g-new@g.us', invite_code: 'XYZ' },
+  };
   inviteResult = { ok: true, inviteCode: 'INV', inviteLink: 'https://chat.whatsapp.com/INV' };
   // Reset the trigger catalog to defaults so a settings override in one test
   // never leaks into another.
@@ -225,23 +229,28 @@ describe('POST /api/whatsapp/webhook — messages', () => {
     expect(db.listWords(c.id)).toHaveLength(2); // unchanged — no re-processing
   });
 
-  it('de-dupes a redelivered participants-add — greets once, not twice', async () => {
+  it('de-dupes a redelivered participants-add but greets a genuine LATER re-join', async () => {
     const c = db.createCollection('רותם', { phone: '0521234567' });
     waState.linkGroup('gDupJoin@g.us', c.id, BUYER_WA, [BUYER_WA, BOT_WA]);
-    const body = {
+    // Synthesized id includes the event timestamp, so a redelivery (same timestamp)
+    // dedups while a distinct later re-join (different timestamp) does not.
+    const join = (ts) => ({
       groups_participants: [
         {
           action: 'add',
           group_id: 'gDupJoin@g.us',
+          timestamp: ts,
           participants: [{ id: '972111999@s.whatsapp.net', name: 'חבר' }],
         },
       ],
-    };
-    await webhook(body);
+    });
+    await webhook(join(1000));
     expect(sendCalls).toHaveLength(1); // member_joined greeted once
     sendCalls = [];
-    await webhook(body); // redelivered identical add batch
-    expect(sendCalls).toHaveLength(0); // not greeted again
+    await webhook(join(1000)); // exact redelivery (same timestamp) -> deduped
+    expect(sendCalls).toHaveLength(0);
+    await webhook(join(2000)); // genuine later re-join (new timestamp) -> greeted
+    expect(sendCalls).toHaveLength(1);
   });
 
   it('posts the closed note ONCE for an already-closed collection', async () => {
@@ -391,12 +400,34 @@ describe('paid hook — openWhatsappGroup', () => {
     expect(waState.groupForCollection(c.id)).toBeNull();
   });
 
-  it('runs the invite fallback on an UNRECOGNIZED create response (not optimistic)', async () => {
-    // No failure entry, but no recognisable participant list either. The old code
-    // optimistically assumed "added"; the conservative code must NOT — it runs the
-    // invite DM so the buyer is never silently left out.
-    createResult = { ok: true, groupId: 'g-amb@g.us', data: { some_unknown_shape: true } };
+  it('does NOT escalate on a realistic {group_id, invite_code} success (no participants)', async () => {
+    // Whapi's normal success is silent about participants. That must NOT be read as
+    // a failure — no invite DM, no owner escalation on a normal paid order.
+    createResult = {
+      ok: true,
+      groupId: 'g-ok@g.us',
+      data: { group_id: 'g-ok@g.us', invite_code: 'XYZ' },
+    };
+    const alertSpy = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
     const c = db.createCollection('עדי', { phone: '0521234567' });
+    await app.openWhatsappGroup(c, base);
+    expect(inviteCalls).toHaveLength(0); // no invite-link fetch -> fallback did NOT run
+    expect(sendCalls.find((s) => s.to === BUYER_WA)).toBeFalsy(); // no invite DM to buyer
+    expect(alertSpy).not.toHaveBeenCalled(); // no owner escalation
+    // Only the in-group group_opened announcement was sent.
+    expect(sendCalls).toHaveLength(1);
+    expect(sendCalls[0].to).toBe('g-ok@g.us');
+    alertSpy.mockRestore();
+  });
+
+  it('DOES escalate when the buyer is EXPLICITLY in the failed set', async () => {
+    // A positive failure signal (buyer in failed_participants) -> invite + escalate.
+    createResult = {
+      ok: true,
+      groupId: 'g-fail@g.us',
+      data: { failed_participants: [{ id: BUYER_WA }] },
+    };
+    const c = db.createCollection('נעה', { phone: '0521234567' });
     await app.openWhatsappGroup(c, base);
     const groupId = waState.groupForCollection(c.id);
     expect(inviteCalls).toEqual([groupId]); // invite fetched -> fallback ran

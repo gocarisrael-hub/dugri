@@ -90,8 +90,17 @@ function toIso(at) {
 }
 
 function emptyStore() {
-  return { version: 1, groups: {}, by_collection: {}, pending: {} };
+  return { version: 1, groups: {}, by_collection: {} };
 }
+
+// IN-MEMORY ONLY concurrency latch for openWhatsappGroup — deliberately NOT part
+// of _store and NEVER written to disk. It guards two near-simultaneous in-process
+// onOrderPaid calls from both creating a group for one collection. Persisting it
+// would be a BUG: a crash/restart between reserve and its in-process release would
+// strand the marker on disk forever, so that collection could NEVER get its group
+// with no recovery. A restart clears this Set; the DURABLE idempotency guard is
+// the persisted by_collection map (set via linkGroup after createGroup succeeds).
+const _pendingReservations = new Set();
 
 let _store = load();
 function load() {
@@ -102,7 +111,6 @@ function load() {
       // undefined even if an older/partial file is loaded.
       if (!raw.groups || typeof raw.groups !== 'object') raw.groups = {};
       if (!raw.by_collection || typeof raw.by_collection !== 'object') raw.by_collection = {};
-      if (!raw.pending || typeof raw.pending !== 'object') raw.pending = {};
       if (raw.version == null) raw.version = 1;
       return raw;
     }
@@ -197,35 +205,33 @@ function linkGroup(groupId, collectionId, ownerWa, initialMembers = [], at) {
   return clone(entry);
 }
 
-// Synchronous "intent to create a group for this collection" latch. Closes the
-// check-then-await-then-link TOCTOU in openWhatsappGroup: two concurrent paid
-// events for one collection would both pass the groupForCollection() check and
-// both createGroup before either linkGroup ran. reserveCollection records the
-// intent atomically (no await inside) BEFORE the caller's first await, so the
-// second call sees it and backs off — only one group is ever created. Returns
-// true for the FIRST caller (intent granted), false if a group already exists for
-// the collection OR another call already reserved it. Never throws; a bad id is a
-// safe false. releaseCollection clears the marker (call it once the create has
+// Synchronous "intent to create a group for this collection" latch, backed by the
+// IN-MEMORY _pendingReservations Set (NOT persisted — see its declaration).
+// Closes the check-then-await-then-link TOCTOU in openWhatsappGroup: two
+// concurrent in-process paid events for one collection would both pass the
+// groupForCollection() check and both createGroup before either linkGroup ran.
+// reserveCollection records the intent atomically (no await inside) BEFORE the
+// caller's first await, so the second call sees it and backs off — only one group
+// is created. Returns true for the FIRST caller, false if a group already exists
+// for the collection OR another in-flight call already reserved it. A restart
+// clears the Set, so a reservation can never strand the collection; the durable
+// idempotency guard is the persisted by_collection map. Never throws; a bad id is
+// a safe false. releaseCollection clears the marker (call it once the create has
 // finished, success or fail, so a later paid event can retry after a failure).
 function reserveCollection(collectionId) {
   const cid = safeKey(collectionId);
   if (!cid) return false;
   // A real group already exists -> nothing to reserve (caller no-ops anyway).
   if (Object.prototype.hasOwnProperty.call(_store.by_collection, cid)) return false;
-  if (!_store.pending || typeof _store.pending !== 'object') _store.pending = {};
-  if (Object.prototype.hasOwnProperty.call(_store.pending, cid)) return false; // already reserved
-  _store.pending[cid] = true;
-  save();
+  if (_pendingReservations.has(cid)) return false; // another in-flight call holds it
+  _pendingReservations.add(cid);
   return true;
 }
 
 function releaseCollection(collectionId) {
   const cid = safeKey(collectionId);
   if (!cid) return;
-  if (_store.pending && Object.prototype.hasOwnProperty.call(_store.pending, cid)) {
-    delete _store.pending[cid];
-    save();
-  }
+  _pendingReservations.delete(cid);
 }
 
 // Per-group event de-dupe (Whapi at-least-once redelivery). wasEventProcessed
@@ -234,6 +240,17 @@ function releaseCollection(collectionId) {
 // PROCESSED_EVENTS_CAP ids so the file stays bounded). A missing group or empty id
 // is a safe no-op / false — only mapped groups (linked via linkGroup) carry the
 // list, which is exactly where re-greeting / re-acking must be prevented.
+function _pushProcessedEvent(entry, key) {
+  if (!Array.isArray(entry.processed_events)) entry.processed_events = [];
+  if (entry.processed_events.indexOf(key) !== -1) return; // already recorded
+  entry.processed_events.push(key);
+  if (entry.processed_events.length > PROCESSED_EVENTS_CAP) {
+    entry.processed_events = entry.processed_events.slice(
+      entry.processed_events.length - PROCESSED_EVENTS_CAP
+    );
+  }
+}
+
 function wasEventProcessed(groupId, eventId) {
   const entry = getGroup(groupId);
   if (!entry) return false;
@@ -247,14 +264,21 @@ function markEventProcessed(groupId, eventId) {
   if (!entry) return;
   const key = String(eventId || '');
   if (!key) return;
-  if (!Array.isArray(entry.processed_events)) entry.processed_events = [];
-  if (entry.processed_events.indexOf(key) !== -1) return; // already recorded
-  entry.processed_events.push(key);
-  if (entry.processed_events.length > PROCESSED_EVENTS_CAP) {
-    entry.processed_events = entry.processed_events.slice(
-      entry.processed_events.length - PROCESSED_EVENTS_CAP
-    );
-  }
+  _pushProcessedEvent(entry, key);
+  save();
+}
+
+// Hot-path combiner for the inbound WORD message: stamp last_activity_at AND
+// record the processed event id (dedupe) in a SINGLE persist, instead of the two
+// separate synchronous whole-store writes touchActivity + markEventProcessed would
+// each do. `at` optional -> now; eventId optional (empty -> only activity stamped).
+// Never throws.
+function touchActivityWithEvent(groupId, eventId, at) {
+  const entry = getGroup(groupId);
+  if (!entry) return;
+  entry.last_activity_at = toIso(at);
+  const key = String(eventId || '');
+  if (key) _pushProcessedEvent(entry, key);
   save();
 }
 
@@ -380,6 +404,7 @@ module.exports = {
   releaseCollection,
   wasEventProcessed,
   markEventProcessed,
+  touchActivityWithEvent,
   groupForCollection,
   collectionForGroup,
   isInitialMember,

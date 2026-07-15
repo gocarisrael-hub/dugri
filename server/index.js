@@ -999,13 +999,15 @@ async function sendWaTrigger(to, triggerId, values) {
 }
 
 // Did the buyer actually land in the freshly-created group? WhatsApp may silently
-// refuse to add a number for privacy. CONSERVATIVE by design: only report "added"
-// when the createGroup response POSITIVELY confirms the buyer among the added
-// participants. An explicit failure entry means NOT added; an unrecognized /
-// ambiguous shape (no participant list we understand, or the buyer simply isn't
-// in it) is treated as NOT confirmed — so the invite-DM + escalation fallback
-// runs. A redundant invite DM is far safer than a buyer silently stuck outside
-// their own word-collection group.
+// refuse to add a number for privacy. Whapi's real POST /groups success response
+// is typically { group_id, invite_code } with NO participants array, so absence of
+// participant info must NOT be read as failure — doing so would DM/escalate on
+// EVERY order. The rule: the buyer is ADDED whenever the group was created,
+// UNLESS the response EXPLICITLY lists the buyer in a failed / not-added set. Only
+// a POSITIVE failure signal returns false (→ invite DM + escalation); a response
+// silent about participants means "assume added" (don't spam). The failed-field
+// key variants (failed_participants / not_added / failed) cover Whapi's documented
+// shapes.
 function participantIds(list) {
   return (Array.isArray(list) ? list : [])
     .map((p) => (typeof p === 'string' ? p : (p && (p.id || p.wa_id)) || ''))
@@ -1015,17 +1017,11 @@ function participantIds(list) {
 function buyerLandedInGroup(created, buyerWa) {
   const data = (created && created.data) || {};
   const want = waIdDigits(buyerWa);
-  if (!want) return false; // no buyer id to confirm -> can't be sure -> not added
-  // Explicit failure entry (documented Whapi key variants) -> definitely NOT added.
+  if (!want) return true; // no buyer id to check — group exists, don't spam
+  // A POSITIVE failure signal (buyer explicitly in a failed/not-added set) is the
+  // ONLY thing that means "not added". Anything else = assume added.
   const failed = participantIds(data.failed_participants || data.not_added || data.failed);
-  if (failed.includes(want)) return false;
-  // Positive confirmation: the buyer appears among the added participants.
-  const added = participantIds(
-    data.participants || data.added_participants || data.participants_added
-  );
-  if (added.includes(want)) return true;
-  // Unrecognized / ambiguous shape -> NOT confirmed (run the fallback).
-  return false;
+  return !failed.includes(want);
 }
 
 // The owner's own WhatsApp id for escalations, derived from WHAPI_OWNER_WA (a
@@ -1152,11 +1148,12 @@ async function handleWaEvent(ev, base) {
   // De-dupe redelivered events. Whapi is at-least-once and can redeliver a whole
   // batch (a network blip, a slow 200), which would otherwise re-greet a joining
   // friend and re-ack the same words. Skip an event whose id we've already
-  // processed for this group, then record it. Unmapped groups aren't in state, so
-  // wasEventProcessed/markEventProcessed are no-ops for them (they return early
-  // below anyway); events with no id (older test payloads) are never deduped.
+  // processed for this group. We RECORD the id only AFTER handling it (per branch),
+  // batched with that branch's own state write where possible (the hot word path
+  // persists activity + the id in ONE write). Unmapped groups aren't in state, so
+  // this is a no-op for them (they return early below anyway); events with no id
+  // (older test payloads) are never deduped.
   if (ev.id && waState.wasEventProcessed(ev.groupId, ev.id)) return;
-  if (ev.id) waState.markEventProcessed(ev.groupId, ev.id);
   if (ev.kind === 'participants_added') {
     const entry = waState.collectionForGroup(ev.groupId);
     if (!entry) return; // group the bot doesn't own — never greet into a foreign chat
@@ -1178,6 +1175,7 @@ async function handleWaEvent(ev, base) {
         link: gv.link,
       });
     }
+    if (ev.id) waState.markEventProcessed(ev.groupId, ev.id);
     return;
   }
   if (ev.kind === 'message') {
@@ -1211,6 +1209,7 @@ async function handleWaEvent(ev, base) {
           }
         }
       }
+      if (ev.id) waState.markEventProcessed(ev.groupId, ev.id);
       return;
     }
 
@@ -1224,20 +1223,24 @@ async function handleWaEvent(ev, base) {
           wordCount: db.countWords(cid),
         });
       }
+      if (ev.id) waState.markEventProcessed(ev.groupId, ev.id);
       return;
     }
 
     // Normal traffic: harvest words from the message, stamp activity, and fire the
-    // (default-disabled, so usually silent) `word_added` ack.
+    // (default-disabled, so usually silent) `word_added` ack. The activity stamp
+    // and the dedupe-id record are batched into a SINGLE persist.
     const words = whatsapp.splitWords(ev.text);
     if (words.length) {
       db.addWords(cid, words, ev.fromName);
-      waState.touchActivity(ev.groupId);
+      waState.touchActivityWithEvent(ev.groupId, ev.id);
       await sendWaTrigger(ev.groupId, 'word_added', {
         honoree: gv.honoree,
         count: db.countWords(cid),
         link: gv.link,
       });
+    } else if (ev.id) {
+      waState.markEventProcessed(ev.groupId, ev.id);
     }
     return;
   }

@@ -332,6 +332,18 @@ describe('reserveCollection / releaseCollection (TOCTOU latch)', () => {
     expect(wa.reserveCollection('__proto__')).toBe(false);
     expect(() => wa.releaseCollection('')).not.toThrow();
   });
+
+  it('is IN-MEMORY only — a restart (fresh require) clears a stale reservation', () => {
+    // Reserve but NEVER release (simulates a crash between reserve and release).
+    expect(wa.reserveCollection('col-crash')).toBe(true);
+    // The on-disk file must NOT carry the reservation. A reload (process restart)
+    // starts with an empty latch, so the collection can be reserved again — it is
+    // never permanently stranded and unable to get its group.
+    const persisted = JSON.parse(fs.readFileSync(wa._file, 'utf8'));
+    expect(persisted.pending).toBeUndefined();
+    const wa2 = freshRequire();
+    expect(wa2.reserveCollection('col-crash')).toBe(true);
+  });
 });
 
 describe('wasEventProcessed / markEventProcessed (at-least-once de-dupe)', () => {
@@ -362,5 +374,26 @@ describe('wasEventProcessed / markEventProcessed (at-least-once de-dupe)', () =>
     expect(wa.wasEventProcessed('gcap@g.us', 'ev' + (cap + 19))).toBe(true);
     const entry = wa.collectionForGroup('gcap@g.us');
     expect(entry.processed_events.length).toBeLessThanOrEqual(cap);
+  });
+
+  it('touchActivityWithEvent stamps activity AND records the id in ONE persist', () => {
+    wa.linkGroup('gtwe@g.us', 'col-twe', 'o@c.us', ['o@c.us'], AT);
+    const later = '2026-07-20T08:00:00.000Z';
+    // Spy the disk write to prove a SINGLE persist covers both mutations.
+    const wSpy = vi.spyOn(fs, 'writeFileSync');
+    wa.touchActivityWithEvent('gtwe@g.us', 'evX', later);
+    expect(wSpy).toHaveBeenCalledTimes(1); // one write, not two
+    wSpy.mockRestore();
+    expect(wa.collectionForGroup('gtwe@g.us').last_activity_at).toBe(later);
+    expect(wa.wasEventProcessed('gtwe@g.us', 'evX')).toBe(true);
+  });
+
+  it('touchActivityWithEvent with no id only stamps activity', () => {
+    wa.linkGroup('gtwe2@g.us', 'col-twe2', 'o@c.us', ['o@c.us'], AT);
+    const later = '2026-07-21T08:00:00.000Z';
+    wa.touchActivityWithEvent('gtwe2@g.us', '', later);
+    expect(wa.collectionForGroup('gtwe2@g.us').last_activity_at).toBe(later);
+    const entry = wa.collectionForGroup('gtwe2@g.us');
+    expect(entry.processed_events == null || entry.processed_events.length === 0).toBe(true);
   });
 });
