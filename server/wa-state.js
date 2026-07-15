@@ -15,7 +15,9 @@
 //     by_collection: { "<collection_id>": "<groupId>" } }
 //
 // Every helper is SYNCHRONOUS and must NEVER throw — the bot's inbound-message
-// path calls these on the hot path and a thrown error would drop a message.
+// path calls these on the hot path and a thrown error would drop a message. The
+// in-memory store is authoritative: a failed disk write is swallowed (best
+// effort) and the mutation still takes effect in memory.
 const fs = require('fs');
 const path = require('path');
 
@@ -27,12 +29,39 @@ const FILE = path.join(DATA_DIR, 'whatsapp-state.json');
 // already fire THIS slot?", so retaining the most recent few is plenty.
 const NUDGE_SLOTS_CAP = 6;
 
+// Keys that would poison Object.prototype (or clobber the map's own machinery)
+// if written as an own property. Rejected on BOTH the read and write paths so a
+// hostile/garbage groupId or collectionId can never touch the prototype —
+// `_store.groups['__proto__'] = entry` would invoke the __proto__ SETTER and
+// silently drop the link rather than store it. A rejected key is a safe no-op.
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+function safeKey(k) {
+  const s = String(k == null ? '' : k);
+  if (!s || UNSAFE_KEYS.has(s)) return null;
+  return s;
+}
+
+// Deep copy so public getters never hand back a live reference into the store.
+// Consumers must go through the mutator helpers (which persist) to change state;
+// a copy means an in-place tweak (entry.quiet.count++, initial_members.push(...))
+// can't silently diverge from disk. structuredClone is built in on Node 20.
+function clone(obj) {
+  try {
+    return structuredClone(obj);
+  } catch {
+    return JSON.parse(JSON.stringify(obj));
+  }
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
 
-// Normalize the caller-supplied timestamp. Accepts an ISO string, a Date, or an
-// epoch-ms number; falls back to "now" for anything unusable. Never throws.
+// Normalize the caller-supplied timestamp to a VALID ISO string. Accepts an ISO
+// string, a Date, or an epoch-ms number; falls back to "now" for anything
+// unusable — INCLUDING an unparseable string. The return value is ALWAYS a valid
+// ISO string, never raw junk, so downstream Date.parse-based nudge/quiet
+// scheduling can trust created_at / last_activity_at. Never throws.
 function toIso(at) {
   try {
     if (at == null) return nowIso();
@@ -43,7 +72,9 @@ function toIso(at) {
     if (typeof at === 'number' && Number.isFinite(at)) return new Date(at).toISOString();
     if (typeof at === 'string' && at) {
       const t = Date.parse(at);
-      return Number.isNaN(t) ? at : new Date(t).toISOString();
+      // Unparseable -> now (NOT the raw string): storing junk here would break
+      // every downstream Date.parse of created_at / last_activity_at.
+      return Number.isNaN(t) ? nowIso() : new Date(t).toISOString();
     }
   } catch {
     /* fall through to now */
@@ -77,7 +108,8 @@ function save() {
   // Ensure the data dir exists before the atomic tmp-write+rename — otherwise
   // writeFileSync throws ENOENT on the first save when DATA_DIR hasn't been
   // created yet (content.js + playbook.js do the same guard). Wrapped so a
-  // failing write (read-only fs in tests) never propagates out of a helper.
+  // failing write (read-only fs, full disk, tests) never propagates out of a
+  // helper: the in-memory store stays authoritative.
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const tmp = `${FILE}.tmp`;
@@ -89,59 +121,90 @@ function save() {
 }
 
 // Own-property lookup for a group entry, guarding prototype pollution (a group
-// id literally named "__proto__" must not resolve to Object.prototype).
+// id of "__proto__"/"constructor"/"prototype" must not resolve to a prototype
+// object). Returns the LIVE entry — internal callers only; public getters clone.
 function getGroup(groupId) {
-  const id = String(groupId || '');
+  const id = safeKey(groupId);
   if (!id) return null;
   if (!Object.prototype.hasOwnProperty.call(_store.groups, id)) return null;
   return _store.groups[id];
 }
 
-// Create the group entry + reverse index. `at` is the caller-provided time
-// (ISO/Date/epoch-ms) used for created_at and last_activity_at so tests are
-// deterministic; omitted -> now. Idempotent-ish: re-linking the same group
-// overwrites the entry. Returns the stored entry, or null on a bad groupId.
+// Create (or re-link) a group entry + reverse index. `at` is the caller-provided
+// time (ISO/Date/epoch-ms) used for created_at + last_activity_at so tests are
+// deterministic; omitted -> now. Returns a CLONE of the stored entry, or null on
+// a bad groupId.
+//
+// IDEMPOTENT: re-linking an EXISTING group PRESERVES its progress fields
+// (created_at, welcome_sent, invite_dm_sent, last_activity_at, closed,
+// nudge_slots, quiet) so the bot never re-sends the welcome or re-fires a
+// delivered nudge. Only the linkage fields (collection_id, owner_wa,
+// initial_members) are refreshed from the arguments. If the group is re-linked
+// to a DIFFERENT collection, the stale reverse-index entry is deleted first so
+// the forward map (groups[g].collection_id) and reverse map (by_collection)
+// never desync.
 function linkGroup(groupId, collectionId, ownerWa, initialMembers = [], at) {
-  const id = String(groupId || '');
+  const id = safeKey(groupId);
   if (!id) return null;
-  const cid = String(collectionId || '');
-  const ts = toIso(at);
+  const cid = safeKey(collectionId); // null if empty/unsafe -> stored as ''
   const members = Array.isArray(initialMembers)
     ? initialMembers.map((m) => String(m || '')).filter((m) => m)
     : [];
-  const entry = {
-    collection_id: cid,
-    owner_wa: String(ownerWa || ''),
-    created_at: ts,
-    initial_members: members,
-    welcome_sent: false,
-    invite_dm_sent: false,
-    last_activity_at: ts,
-    closed: false,
-    nudge_slots: {},
-    quiet: { count: 0, last_at: null },
-  };
-  _store.groups[id] = entry;
+  const existing = getGroup(id);
+  let entry;
+  if (existing) {
+    // Re-link: drop a stale reverse-index pointer when the collection changes,
+    // so by_collection never keeps a dangling id for the old collection.
+    const oldCid = existing.collection_id;
+    if (
+      oldCid &&
+      oldCid !== (cid || '') &&
+      Object.prototype.hasOwnProperty.call(_store.by_collection, oldCid)
+    ) {
+      delete _store.by_collection[oldCid];
+    }
+    existing.collection_id = cid || '';
+    existing.owner_wa = String(ownerWa || '');
+    existing.initial_members = members;
+    // created_at + every progress field intentionally left untouched.
+    entry = existing;
+  } else {
+    const ts = toIso(at);
+    entry = {
+      collection_id: cid || '',
+      owner_wa: String(ownerWa || ''),
+      created_at: ts,
+      initial_members: members,
+      welcome_sent: false,
+      invite_dm_sent: false,
+      last_activity_at: ts,
+      closed: false,
+      nudge_slots: {},
+      quiet: { count: 0, last_at: null },
+    };
+    _store.groups[id] = entry;
+  }
   if (cid) _store.by_collection[cid] = id;
   save();
-  return entry;
+  return clone(entry);
 }
 
 // Reverse lookup: which group backs this collection? Returns the groupId string
 // or null.
 function groupForCollection(collectionId) {
-  const cid = String(collectionId || '');
+  const cid = safeKey(collectionId);
   if (!cid) return null;
   if (!Object.prototype.hasOwnProperty.call(_store.by_collection, cid)) return null;
   return _store.by_collection[cid] || null;
 }
 
-// Forward lookup: the full entry for a group, with its groupId folded in, or
-// null when the group is unknown.
+// Forward lookup: a DEEP COPY of the entry for a group, with its groupId folded
+// in, or null when the group is unknown. A copy (not the live object) so a caller
+// that mutates a nested field can't bypass save() and diverge from disk.
 function collectionForGroup(groupId) {
   const entry = getGroup(groupId);
   if (!entry) return null;
-  return Object.assign({ groupId: String(groupId) }, entry);
+  return Object.assign({ groupId: safeKey(groupId) }, clone(entry));
 }
 
 // Was this WhatsApp id recorded as an initial member at group creation (the
@@ -155,6 +218,9 @@ function isInitialMember(groupId, wa) {
 }
 
 // Stamp last_activity_at (any inbound group traffic). `at` optional -> now.
+// NOTE: this performs a full synchronous whole-store write on every inbound
+// message. Acceptable at the expected volume (a handful of small live groups);
+// revisit with a debounce / dirty-flag if group traffic ever grows large.
 function touchActivity(groupId, at) {
   const entry = getGroup(groupId);
   if (!entry) return;
@@ -195,8 +261,11 @@ function markNudged(groupId, slotKey) {
   if (!key) return;
   if (!entry.nudge_slots || typeof entry.nudge_slots !== 'object') entry.nudge_slots = {};
   entry.nudge_slots[key] = true;
-  // Prune to the most recent keys (insertion order is preserved for string
-  // keys) so a long-lived group can't grow the file without bound.
+  // Prune to the most recent keys so a long-lived group can't grow the file
+  // without bound. This relies on Object.keys returning keys in INSERTION order,
+  // which holds because slot keys always contain a ':' (a date:label separator)
+  // and are therefore non-integer strings — integer-like keys would instead be
+  // enumerated in ascending numeric order and break the "oldest first" drop.
   const keys = Object.keys(entry.nudge_slots);
   if (keys.length > NUDGE_SLOTS_CAP) {
     const drop = keys.slice(0, keys.length - NUDGE_SLOTS_CAP);
@@ -225,13 +294,13 @@ function markClosed(groupId) {
   save();
 }
 
-// All groups the bot should still service (not closed), each with its groupId
-// folded in.
+// All groups the bot should still service (not closed), each a DEEP COPY with
+// its groupId folded in (a copy so a caller can't mutate the store in place).
 function activeGroups() {
   const out = [];
   for (const id of Object.keys(_store.groups)) {
     const entry = _store.groups[id];
-    if (entry && !entry.closed) out.push(Object.assign({ groupId: id }, entry));
+    if (entry && !entry.closed) out.push(Object.assign({ groupId: id }, clone(entry)));
   }
   return out;
 }

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -30,6 +30,16 @@ beforeAll(() => {
 });
 
 const AT = '2026-07-15T10:00:00.000Z';
+
+// Restore any fs spies a test installs so later suites keep writing normally.
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+// A value is a valid ISO-8601 instant iff Date.parse round-trips it exactly.
+function isIso(v) {
+  return typeof v === 'string' && !Number.isNaN(Date.parse(v)) && new Date(v).toISOString() === v;
+}
 
 describe('linkGroup + lookups', () => {
   it('links a group and resolves both directions', () => {
@@ -180,5 +190,123 @@ describe('persistence (atomic write survives a restart)', () => {
 
     // Rebind the shared handle so later suites (if reordered) use the live one.
     wa = wa2;
+  });
+});
+
+describe('toIso normalization (via linkGroup timestamps)', () => {
+  it('stores a valid ISO created_at even when given an unparseable time', () => {
+    const entry = wa.linkGroup('gt@g.us', 'col-t', 'o@c.us', [], 'not-a-real-date');
+    // Never the raw junk string; always a valid ISO instant (falls back to now).
+    expect(entry.created_at).not.toBe('not-a-real-date');
+    expect(isIso(entry.created_at)).toBe(true);
+    expect(isIso(entry.last_activity_at)).toBe(true);
+    // touchActivity with junk also normalizes to a valid ISO.
+    wa.touchActivity('gt@g.us', 'garbage');
+    expect(isIso(wa.collectionForGroup('gt@g.us').last_activity_at)).toBe(true);
+  });
+
+  it('accepts a Date and an epoch-ms number, normalizing to ISO', () => {
+    const d = new Date('2026-07-20T09:00:00.000Z');
+    const a = wa.linkGroup('gd@g.us', 'col-d', 'o@c.us', [], d);
+    expect(a.created_at).toBe('2026-07-20T09:00:00.000Z');
+    const b = wa.linkGroup('gn@g.us', 'col-n', 'o@c.us', [], Date.parse(AT));
+    expect(b.created_at).toBe(AT);
+  });
+});
+
+describe('linkGroup idempotence + reverse-index integrity', () => {
+  it('re-linking the same group PRESERVES progress fields', () => {
+    wa.linkGroup('gi@g.us', 'col-i', 'o@c.us', ['o@c.us'], AT);
+    wa.markWelcomeSent('gi@g.us');
+    wa.setInviteDmSent('gi@g.us');
+    wa.markNudged('gi@g.us', '2026-07-15:daily_morning');
+    wa.recordQuietReminder('gi@g.us', AT);
+    wa.touchActivity('gi@g.us', '2026-07-18T00:00:00.000Z');
+
+    // Re-link the SAME collection with a fresh (later) timestamp.
+    const re = wa.linkGroup('gi@g.us', 'col-i', 'o@c.us', ['o@c.us'], '2026-07-30T00:00:00.000Z');
+    // Progress survived — the bot must not re-send the welcome or re-fire nudges.
+    expect(re.welcome_sent).toBe(true);
+    expect(re.invite_dm_sent).toBe(true);
+    expect(re.quiet.count).toBe(1);
+    expect(re.created_at).toBe(AT); // NOT reset to the new timestamp
+    expect(re.last_activity_at).toBe('2026-07-18T00:00:00.000Z');
+    expect(wa.wasNudged('gi@g.us', '2026-07-15:daily_morning')).toBe(true);
+  });
+
+  it('re-linking to a DIFFERENT collection cleans up the stale reverse index', () => {
+    wa.linkGroup('gx@g.us', 'col-old', 'o@c.us', [], AT);
+    expect(wa.groupForCollection('col-old')).toBe('gx@g.us');
+
+    wa.linkGroup('gx@g.us', 'col-new', 'o@c.us', [], AT);
+    // Forward + reverse maps stay in sync: old pointer gone, new one set.
+    expect(wa.groupForCollection('col-old')).toBe(null);
+    expect(wa.groupForCollection('col-new')).toBe('gx@g.us');
+    expect(wa.collectionForGroup('gx@g.us').collection_id).toBe('col-new');
+  });
+});
+
+describe('prototype-pollution safety', () => {
+  it('rejects dangerous keys on the write path without throwing or polluting', () => {
+    for (const bad of ['__proto__', 'constructor', 'prototype']) {
+      expect(() => wa.linkGroup(bad, 'col-z', 'o@c.us', [], AT)).not.toThrow();
+      // No usable entry was created, and the prototype was not touched.
+      expect(wa.collectionForGroup(bad)).toBe(null);
+    }
+    // Object.prototype is intact — no property leaked onto it.
+    expect({}.collection_id).toBeUndefined();
+    expect(Object.prototype.collection_id).toBeUndefined();
+    // A dangerous collectionId is also rejected (no reverse-index entry).
+    wa.linkGroup('gsafe@g.us', '__proto__', 'o@c.us', [], AT);
+    expect(wa.groupForCollection('__proto__')).toBe(null);
+  });
+});
+
+describe('returned state is a deep copy (mutation cannot bypass save)', () => {
+  it('mutating a nested field on the returned object does not change the store', () => {
+    wa.linkGroup('gc@g.us', 'col-c', 'o@c.us', ['a@c.us'], AT);
+
+    const snap = wa.collectionForGroup('gc@g.us');
+    snap.initial_members.push('intruder@c.us');
+    snap.quiet.count = 999;
+    snap.welcome_sent = true;
+
+    const fresh = wa.collectionForGroup('gc@g.us');
+    expect(fresh.initial_members).toEqual(['a@c.us']);
+    expect(fresh.quiet.count).toBe(0);
+    expect(fresh.welcome_sent).toBe(false);
+
+    // Same for activeGroups() entries.
+    const live = wa.activeGroups().find((g) => g.groupId === 'gc@g.us');
+    live.quiet.count = 42;
+    expect(wa.collectionForGroup('gc@g.us').quiet.count).toBe(0);
+  });
+});
+
+describe('never-throw on save failure (in-memory stays authoritative)', () => {
+  it('linkGroup + touchActivity still update memory and return when disk writes throw', () => {
+    // Force the atomic write to blow up.
+    const wSpy = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+      throw new Error('disk full');
+    });
+    const rSpy = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw new Error('rename failed');
+    });
+
+    let entry;
+    expect(() => {
+      entry = wa.linkGroup('gf@g.us', 'col-f', 'o@c.us', ['o@c.us'], AT);
+    }).not.toThrow();
+    // Returned a real entry, and the in-memory store reflects it.
+    expect(entry).not.toBe(null);
+    expect(entry.collection_id).toBe('col-f');
+    expect(wa.collectionForGroup('gf@g.us').collection_id).toBe('col-f');
+
+    const later = '2026-07-19T00:00:00.000Z';
+    expect(() => wa.touchActivity('gf@g.us', later)).not.toThrow();
+    expect(wa.collectionForGroup('gf@g.us').last_activity_at).toBe(later);
+
+    wSpy.mockRestore();
+    rSpy.mockRestore();
   });
 });
