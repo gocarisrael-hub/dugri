@@ -408,6 +408,18 @@
         justify-content: center;
         margin-bottom: 16px;
       }
+      /* The colour step (the stable data-step id 2) carries its own swipeable
+         colour-carousel preview, which makes the shared front/back/board tab
+         buttons redundant there — but ONLY when the carousel is actually shown.
+         goStep adds body.is-step-color exactly when currentStep === 2 AND
+         FEATURES.color_picking is on (the carousel is hidden when colour is off,
+         e.g. step 2 active for chasers alone — then the tabs must stay). Hidden
+         at every width. The tablist markup stays in the DOM, so every other step
+         keeps its tabs. NB: keyed on the literal data-step id 2 — renumbering the
+         step means updating goStep's currentStep === 2 check too. */
+      body.is-step-color .preview-card .tabs {
+        display: none;
+      }
       .tab {
         font-family: var(--display);
         font-weight: 800;
@@ -4144,11 +4156,15 @@
         const collapsed = currentStep >= 3; // name/contact steps shrink the preview
         previewCard.classList.toggle('is-collapsed', collapsed);
         previewChip.hidden = !collapsed;
-        // the colour step carries its own swipe preview carousel: mark the body so
-        // the phone layout shrinks the shared preview to make room, and build the
-        // carousel lazily on first entry / after a design switch.
-        document.body.classList.toggle('is-step-color', currentStep === 2);
-        if (currentStep === 2) ensureColorCarousel();
+        // the colour step carries its own swipe preview carousel — but ONLY when
+        // colour picking is on (with colour off + chasers on, step 2 is still
+        // active yet the carousel is hidden by applyFeatureFlags). Mark the body
+        // only when the carousel is actually shown, so the phone layout shrinks
+        // the shared preview and the face tabs hide ONLY when the carousel
+        // replaces them. When step 2 is active for chasers alone, the tabs stay.
+        const onColorCarouselStep = currentStep === 2 && FEATURES.color_picking;
+        document.body.classList.toggle('is-step-color', onColorCarouselStep);
+        if (onColorCarouselStep) ensureColorCarousel();
         stepNow.textContent = String(stepPos(currentStep));
         barFill.style.width = Math.round((stepPos(currentStep) / activeSteps.length) * 100) + '%';
         refreshControls();
