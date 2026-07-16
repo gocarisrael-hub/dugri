@@ -28,6 +28,24 @@ export function overrideFor(map, id, slot) {
   return typeof p === 'string' && UPLOAD_PATH_RE.test(p) ? p : null;
 }
 
+/** The owner's extra store-tile carousel pictures for design `id`, as a validated
+ *  array of our-own upload paths (order preserved). Any off-origin / malformed
+ *  entry is dropped; a missing/garbage map or absent array → []. The tile shows
+ *  [store image, …these] as a fast seamless carousel when this is non-empty. */
+export function carouselFor(map, id) {
+  if (!map || typeof map !== 'object') return [];
+  const bag = map[id];
+  if (!bag || typeof bag !== 'object') return [];
+  const arr = bag.carousel;
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  for (const raw of arr) {
+    const p = String(raw || '');
+    if (UPLOAD_PATH_RE.test(p)) out.push(p);
+  }
+  return out;
+}
+
 /** Fetch the whole override map { designId: { slot: path } }. NEVER rejects:
  *  a network error, non-OK status, timeout, or non-JSON body all resolve to {}
  *  so callers keep the shipped static assets. */

@@ -15,6 +15,8 @@ const PNG = Buffer.from(
 );
 const STORE_OVERRIDE = '/content-uploads/0123456789abcdef.webp';
 const BOARD_OVERRIDE = '/content-uploads/fedcba9876543210.webp';
+const CAR1 = '/content-uploads/1111111111111111.webp';
+const CAR2 = '/content-uploads/2222222222222222.webp';
 
 function stubUploads(page) {
   return page.route('**/content-uploads/*', (route) =>
@@ -79,6 +81,84 @@ test.describe('products.html — store-tile override', () => {
     // First it swaps to the override, then onerror falls back to the static asset.
     await expect
       .poll(() => birthdayImg.getAttribute('src'))
+      .toMatch(/assets\/designs\/birthday\/store\.webp$/);
+  });
+});
+
+test.describe('products.html — store-tile carousel', () => {
+  test('a design WITH carousel pictures becomes a fast seamless fade carousel of [store, ...added]', async ({
+    page,
+  }) => {
+    await stubUploads(page);
+    await page.route('**/api/design-images*', (route) =>
+      route.fulfill({ json: { images: { birthday: { carousel: [CAR1, CAR2] } } } })
+    );
+
+    await page.goto('/products.html');
+
+    const media = page.locator('.product-card[data-design-id="birthday"] .product-card__media');
+    // The shared fade carousel engine initialised on the tile.
+    await expect(media).toHaveClass(/carousel--fade/);
+    await expect(media).toHaveAttribute('aria-roledescription', 'carousel');
+
+    // Frames = [store image] + the two added pictures, in order.
+    const frames = media.locator('.tile-frame');
+    await expect(frames).toHaveCount(3);
+    // Frame 0 is the store image (keeps the product-image testid + static src).
+    await expect(media.locator('[data-testid="product-image"]')).toHaveAttribute(
+      'src',
+      /assets\/designs\/birthday\/store\.webp$/
+    );
+    // The added carousel frames point at the owner's uploads.
+    await expect
+      .poll(() =>
+        media.locator('[data-testid="carousel-frame"]').evaluateAll((els) => els.map((i) => i.src))
+      )
+      .toEqual([expect.stringContaining(CAR1), expect.stringContaining(CAR2)]);
+  });
+
+  test('a design WITHOUT carousel pictures stays a single static image (no carousel)', async ({
+    page,
+  }) => {
+    await stubUploads(page);
+    await page.route('**/api/design-images*', (route) =>
+      route.fulfill({ json: { images: { birthday: { carousel: [CAR1] } } } })
+    );
+
+    await page.goto('/products.html');
+
+    const neon = page.locator('.product-card[data-design-id="neon"] .product-card__media');
+    await expect(neon.locator('[data-testid="product-image"]')).toHaveAttribute(
+      'src',
+      /assets\/designs\/neon\/store\.webp$/
+    );
+    await expect(neon).not.toHaveClass(/carousel--fade/);
+    await expect(neon.locator('.tile-frame')).toHaveCount(0);
+  });
+
+  test('a 404 carousel picture degrades to the store image without breaking the tile', async ({
+    page,
+  }) => {
+    // The carousel path is set but its file 404s (NOT stubbed) → the frame's
+    // onerror must fall back to the store image; the grid still renders in full.
+    await page.route('**/api/design-images*', (route) =>
+      route.fulfill({ json: { images: { birthday: { carousel: [CAR1] } } } })
+    );
+
+    await page.goto('/products.html');
+
+    await expect(page.getByTestId('store-grid')).toBeVisible();
+    await expect(page.getByTestId('product-card')).toHaveCount(7);
+
+    const media = page.locator('.product-card[data-design-id="birthday"] .product-card__media');
+    // The store frame is intact.
+    await expect(media.locator('[data-testid="product-image"]')).toHaveAttribute(
+      'src',
+      /assets\/designs\/birthday\/store\.webp$/
+    );
+    // The broken carousel frame fell back to the static store image.
+    await expect
+      .poll(() => media.locator('[data-testid="carousel-frame"]').getAttribute('src'))
       .toMatch(/assets\/designs\/birthday\/store\.webp$/);
   });
 });

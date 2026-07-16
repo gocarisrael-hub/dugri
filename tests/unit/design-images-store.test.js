@@ -152,3 +152,158 @@ describe('design-images store', () => {
     expect(store.get('birthday', 'store')).toBe(P2);
   });
 });
+
+const P3 = '/content-uploads/cccccccccccccccc.jpg';
+
+describe('design-images store — per-design carousel array', () => {
+  const dirs = [];
+  const ORIGINAL_DATA_DIR = process.env.DATA_DIR;
+  afterEach(() => {
+    if (ORIGINAL_DATA_DIR === undefined) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = ORIGINAL_DATA_DIR;
+    for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+    dirs.length = 0;
+  });
+
+  it('appends our-own upload paths in order and getCarousel reads a COPY', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    expect(store.getCarousel('birthday')).toEqual([]);
+    expect(store.addCarouselImage('birthday', P1)).toEqual([P1]);
+    expect(store.addCarouselImage('birthday', P2)).toEqual([P1, P2]);
+    expect(store.getCarousel('birthday')).toEqual([P1, P2]);
+    // Mutating the returned copy can't corrupt the store.
+    const got = store.getCarousel('birthday');
+    got.push('tampered');
+    expect(store.getCarousel('birthday')).toEqual([P1, P2]);
+  });
+
+  it('dedupes an already-present path (no growth, order preserved)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    store.addCarouselImage('neon', P1);
+    store.addCarouselImage('neon', P2);
+    expect(store.addCarouselImage('neon', P1)).toEqual([P1, P2]); // dup ignored
+    expect(store.getCarousel('neon')).toEqual([P1, P2]);
+  });
+
+  it('caps the carousel at CAROUSEL_CAP', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    const cap = store.CAROUSEL_CAP;
+    expect(cap).toBeGreaterThan(0);
+    let last;
+    for (let i = 0; i < cap + 4; i++) {
+      const hex = i.toString(16).padStart(16, '0').slice(0, 16);
+      last = store.addCarouselImage('kids', `/content-uploads/${hex}.png`);
+    }
+    expect(last.length).toBe(cap);
+    expect(store.getCarousel('kids').length).toBe(cap);
+  });
+
+  it('rejects a bad design id / off-origin path (returns null, no write)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    expect(store.addCarouselImage('Bad Id', P1)).toBe(null);
+    expect(store.addCarouselImage('neon', 'https://evil.example/x.png')).toBe(null);
+    expect(store.addCarouselImage('neon', '/content-uploads/not-a-hash.png')).toBe(null);
+    expect(store.getAll()).toEqual({});
+  });
+
+  it('remove takes out one entry from ONLY that design; prunes an emptied carousel + bag', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    store.addCarouselImage('birthday', P1);
+    store.addCarouselImage('birthday', P2);
+    store.addCarouselImage('neon', P1); // same path, DIFFERENT design
+    expect(store.removeCarouselImage('birthday', P1)).toEqual([P2]);
+    expect(store.getCarousel('birthday')).toEqual([P2]); // only birthday's P1 gone
+    expect(store.getCarousel('neon')).toEqual([P1]); // neon untouched
+    // Removing the last entry prunes the carousel key AND the (otherwise empty) bag.
+    expect(store.removeCarouselImage('birthday', P2)).toEqual([]);
+    expect(store.getAll().birthday).toBeUndefined();
+    // A no-op remove of an absent path returns the unchanged array.
+    expect(store.removeCarouselImage('neon', P3)).toEqual([P1]);
+    expect(store.removeCarouselImage('Bad Id', P1)).toBe(null); // bad design → null
+  });
+
+  it('carousel survives a per-slot reset (independent of the slot overrides)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    store.set('posttrip', 'store', P1);
+    store.addCarouselImage('posttrip', P2);
+    store.reset('posttrip', 'store'); // clears the slot only
+    expect(store.get('posttrip', 'store')).toBe(null);
+    expect(store.getCarousel('posttrip')).toEqual([P2]); // carousel kept
+    expect(store.getAll().posttrip).toEqual({ carousel: [P2] }); // bag not pruned
+  });
+
+  it('isImageReferenced finds a path inside a carousel array (orphan-reclaim guard)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    store.addCarouselImage('birthday', P1);
+    store.set('neon', 'store', P2); // slot path still detected too
+    expect(store.isImageReferenced(P1)).toBe(true);
+    expect(store.isImageReferenced(P2)).toBe(true);
+    expect(store.isImageReferenced(P3)).toBe(false);
+    store.removeCarouselImage('birthday', P1);
+    expect(store.isImageReferenced(P1)).toBe(false); // last reference gone → reclaimable
+  });
+
+  it('persists the carousel array and reloads it from disk (round-trip)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    let store = await loadStore(dir);
+    store.addCarouselImage('birthday', P1);
+    store.addCarouselImage('birthday', P2);
+    store = await loadStore(dir); // fresh instance, same DATA_DIR
+    expect(store.getCarousel('birthday')).toEqual([P1, P2]);
+  });
+
+  it('getForDesign returns an INDEPENDENT carousel copy (mutating it cannot corrupt the store)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    store.set('birthday', 'store', P1);
+    store.addCarouselImage('birthday', P2);
+    store.addCarouselImage('birthday', P3);
+    const got = store.getForDesign('birthday');
+    expect(got).toEqual({ store: P1, carousel: [P2, P3] });
+    // Mutating the returned object AND its nested carousel array must not leak back.
+    got.store = 'tampered';
+    got.carousel.push('tampered');
+    got.carousel.sort();
+    expect(store.getForDesign('birthday')).toEqual({ store: P1, carousel: [P2, P3] });
+    expect(store.getCarousel('birthday')).toEqual([P2, P3]);
+  });
+
+  it('a no-op append (duplicate) does NOT rewrite the store file', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    store.addCarouselImage('neon', P1);
+    const file = path.join(dir, 'design-images.json');
+    const mtime1 = fs.statSync(file).mtimeMs;
+    // A duplicate append returns the unchanged array WITHOUT touching disk.
+    expect(store.addCarouselImage('neon', P1)).toEqual([P1]);
+    const mtime2 = fs.statSync(file).mtimeMs;
+    expect(mtime2).toBe(mtime1); // no serialize/tmp-write/rename happened
+  });
+
+  it('sanitizeCarousel keeps valid distinct paths, drops junk, caps length', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    expect(
+      store.sanitizeCarousel([P1, P2, P1, 'https://evil/x.png', '/content-uploads/x.png'])
+    ).toEqual([P1, P2]);
+    expect(store.sanitizeCarousel('nope')).toEqual([]);
+  });
+});

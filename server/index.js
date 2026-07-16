@@ -1886,6 +1886,89 @@ app.delete('/api/admin/design-images', (req, res) => {
   res.json({ ok: true, images: designImages.getForDesign(id) });
 });
 
+// ---- per-design store-tile CAROUSEL ----------------------------------------
+// A design's products-grid tile can cycle EXTRA owner-added pictures after its
+// store image. The owner appends/deletes them here; the array is exposed on the
+// same public GET /api/design-images map (per-design `carousel`). Storage reuses
+// content.saveImageBytes + the same multipart parser + magic-byte typing as the
+// slot-override upload above; the array holds only the resulting /content-uploads
+// paths (see server/design-images.js). Writes are behind requireAdmin.
+
+// Admin: APPEND a picture to a design's carousel array (multipart: designId + a
+// file part). Mirrors POST /api/admin/content/photos — same reclaim-on-drop guard
+// (a dropped duplicate / at-cap upload must not leak an orphan file, and only a
+// file THIS request created and nothing references may be reclaimed). Auth runs
+// BEFORE buffering up to several MB.
+app.post(
+  '/api/admin/design-images/carousel',
+  (req, res, next) => {
+    if (!requireAdmin(req, res)) return;
+    next();
+  },
+  express.raw({ type: () => true, limit: CONTENT_IMAGE_UPLOAD_LIMIT }),
+  (req, res) => {
+    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
+    if (!boundary || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ error: 'expected multipart/form-data upload' });
+    }
+    const { fields, files } = templates.parseMultipart(req.body, boundary);
+    const designId = fields.designId || fields.design;
+    if (!designImages.designOk(designId)) {
+      return res.status(400).json({ error: 'bad design' });
+    }
+    const file = files.file || files.image || Object.values(files)[0];
+    if (!file || !Buffer.isBuffer(file.data)) {
+      return res.status(400).json({ error: 'no image file part' });
+    }
+    const before = designImages.getCarousel(designId);
+    let img, created;
+    try {
+      ({ path: img, created } = content.saveImageBytes(file.data));
+    } catch (e) {
+      return res.status(400).json({ error: String((e && e.message) || e) });
+    }
+    const carousel = designImages.addCarouselImage(designId, img);
+    if (carousel == null) {
+      // Bad design AFTER the file was written — reclaim the orphan, but only when THIS
+      // request created it and neither store references the shared, content-addressed file.
+      if (created && !content.isImageReferenced(img) && !designImages.isImageReferenced(img)) {
+        content.deleteUpload(img);
+      }
+      return res.status(400).json({ error: 'bad design' });
+    }
+    // The upload was DROPPED (already at CAROUSEL_CAP, or a content-hash duplicate) →
+    // the array didn't grow. Don't report a false success: reclaim the just-written
+    // orphan, but only when THIS request created it AND nothing else references it.
+    if (carousel.length <= before.length) {
+      if (created && !content.isImageReferenced(img) && !designImages.isImageReferenced(img)) {
+        content.deleteUpload(img);
+      }
+      const atCap = before.length >= designImages.CAROUSEL_CAP;
+      const error = atCap
+        ? `הגעת למקסימום ${designImages.CAROUSEL_CAP} תמונות`
+        : 'התמונה כבר קיימת בקרוסלה';
+      return res.status(409).json({ error, carousel });
+    }
+    res.json({ ok: true, img, carousel });
+  }
+);
+
+// Admin: REMOVE one picture from a design's carousel by its path (JSON body:
+// designId + img). Reclaims the now-orphaned upload file only when NEITHER store
+// still references it (cross-store-safe, same guard as a slot reset).
+app.delete('/api/admin/design-images/carousel', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { designId, design, img } = req.body || {};
+  const id = designId || design;
+  if (!designImages.designOk(id)) {
+    return res.status(400).json({ error: 'bad design' });
+  }
+  const carousel = designImages.removeCarouselImage(id, img);
+  if (carousel == null) return res.status(400).json({ error: 'bad design' });
+  reclaimDesignImageOrphan(img, null); // best-effort; no-op if still referenced
+  res.json({ ok: true, carousel });
+});
+
 // Public social-proof "celebrations" counter for the homepage. Returns ONLY an
 // aggregate number: a fixed base plus the count of paid orders — never any order
 // detail. Unauthenticated on purpose (every visitor renders it). The base is a

@@ -193,6 +193,62 @@
       .status.err {
         color: #c0293f;
       }
+      /* store-tile carousel manager (per design) */
+      .carousel-admin {
+        margin-top: 14px;
+        border: 1px dashed #e6cdd8;
+        border-radius: var(--radius);
+        padding: 12px 14px;
+        background: #fffafc;
+      }
+      .carousel-admin h3 {
+        margin: 0 0 4px;
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .carousel-admin h3 small {
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .carousel-admin .cnote {
+        margin: 0 0 10px;
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      .carousel-thumbs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .cthumb {
+        width: 108px;
+      }
+      .cthumb img {
+        width: 108px;
+        height: 72px;
+        object-fit: cover;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        display: block;
+        background: #faf7f2;
+      }
+      .cthumb button {
+        margin-top: 6px;
+        width: 100%;
+        flex: none;
+      }
+      .cempty {
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      .carousel-admin .row {
+        display: flex;
+        gap: 8px;
+      }
+      .carousel-admin .row button {
+        flex: none;
+      }
       footer {
         margin-top: 34px;
         padding-top: 16px;
@@ -258,6 +314,10 @@
         );
       }
 
+      // Max pictures in a design's store-tile carousel (mirrors the server's
+      // designImages.CAROUSEL_CAP — kept in sync so the UI disables "add" at cap).
+      const CAROUSEL_CAP = 12;
+
       const SLOT_LABELS = {
         store: 'תמונת חנות',
         front: 'קלף',
@@ -299,6 +359,44 @@
           </div>`;
       }
 
+      // The store-tile carousel manager for one design: current pictures as
+      // thumbnails (each with a delete button) + an add-upload control. These
+      // pictures cycle in the store grid tile AFTER the store image.
+      function carouselList(d) {
+        const bag = images[d.id];
+        return (bag && Array.isArray(bag.carousel) && bag.carousel) || [];
+      }
+      function carouselHtml(d) {
+        const list = carouselList(d);
+        const thumbs = list
+          .map(
+            (p) => `
+              <div class="cthumb">
+                <img src="${esc(p)}" alt="" onerror="this.style.visibility='hidden'" />
+                <button class="ghost" data-act="carousel-del" data-img="${esc(p)}">מחק</button>
+              </div>`
+          )
+          .join('');
+        const body =
+          thumbs ||
+          '<span class="cempty">אין תמונות בקרוסלה — הכרטיס מציג רק את תמונת החנות.</span>';
+        return `
+          <div class="carousel-admin" data-design="${esc(d.id)}">
+            <h3>קרוסלת תמונות בכרטיס <small>(${list.length}/${CAROUSEL_CAP})</small></h3>
+            <p class="cnote">
+              התמונות האלה מתחלפות בכרטיס העיצוב בחנות, אחרי תמונת החנות. סדר: תמונת החנות ואז אלה.
+            </p>
+            <div class="carousel-thumbs">${body}</div>
+            <div class="row">
+              <button data-act="carousel-add" ${list.length >= CAROUSEL_CAP ? 'disabled' : ''}>
+                הוסף תמונה לקרוסלה
+              </button>
+            </div>
+            <input type="file" accept="image/png,image/jpeg,image/webp" data-carousel hidden />
+            <div class="status"></div>
+          </div>`;
+      }
+
       function render() {
         qs('app').innerHTML = DESIGNS.map(
           (d) => `
@@ -307,6 +405,7 @@
             <div class="slots">${slotsFor(d)
               .map((slot) => slotHtml(d, slot))
               .join('')}</div>
+            ${carouselHtml(d)}
           </section>`
         ).join('');
       }
@@ -365,20 +464,78 @@
         }
       }
 
+      // Store a design's returned carousel array back into the in-memory map,
+      // pruning an empty carousel key (and an empty design bag) so the next render
+      // is accurate.
+      function applyCarousel(designId, carousel) {
+        const bag = images[designId] || (images[designId] = {});
+        if (Array.isArray(carousel) && carousel.length) bag.carousel = carousel;
+        else delete bag.carousel;
+        if (!Object.keys(bag).length) delete images[designId];
+      }
+
+      async function carouselUpload(el, file) {
+        const designId = el.dataset.design;
+        const fd = new FormData();
+        fd.append('designId', designId);
+        fd.append('file', file);
+        setStatus(el, 'מעלה…', '');
+        try {
+          const r = await fetch(withKey('/api/admin/design-images/carousel'), {
+            method: 'POST',
+            body: fd,
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+          applyCarousel(designId, j.carousel);
+          render();
+          const again = qs('app').querySelector(
+            `.carousel-admin[data-design="${CSS.escape(designId)}"]`
+          );
+          if (again) setStatus(again, 'נוספה ✓', 'ok');
+        } catch (e) {
+          setStatus(el, 'העלאה נכשלה: ' + e.message, 'err');
+        }
+      }
+
+      async function carouselDelete(el, img) {
+        const designId = el.dataset.design;
+        setStatus(el, 'מוחק…', '');
+        try {
+          const r = await fetch(withKey('/api/admin/design-images/carousel'), {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ designId, img }),
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+          applyCarousel(designId, j.carousel);
+          render();
+        } catch (e) {
+          setStatus(el, 'מחיקה נכשלה: ' + e.message, 'err');
+        }
+      }
+
       qs('app').addEventListener('click', (e) => {
         const btn = e.target.closest('button');
         if (!btn) return;
-        const slotEl = btn.closest('.slot');
-        if (!slotEl) return;
-        if (btn.dataset.act === 'upload') slotEl.querySelector('input[type=file]').click();
-        else if (btn.dataset.act === 'reset') reset(slotEl);
+        const act = btn.dataset.act;
+        if (act === 'upload') btn.closest('.slot').querySelector('input[type=file]').click();
+        else if (act === 'reset') reset(btn.closest('.slot'));
+        else if (act === 'carousel-add')
+          btn.closest('.carousel-admin').querySelector('input[type=file]').click();
+        else if (act === 'carousel-del')
+          carouselDelete(btn.closest('.carousel-admin'), btn.dataset.img);
       });
       qs('app').addEventListener('change', (e) => {
-        if (e.target.matches('input[type=file]')) {
-          const file = e.target.files && e.target.files[0];
-          if (file) upload(e.target.closest('.slot'), file);
-          e.target.value = '';
+        if (!e.target.matches('input[type=file]')) return;
+        const file = e.target.files && e.target.files[0];
+        if (file) {
+          if (e.target.hasAttribute('data-carousel'))
+            carouselUpload(e.target.closest('.carousel-admin'), file);
+          else upload(e.target.closest('.slot'), file);
         }
+        e.target.value = '';
       });
 
       async function load() {
