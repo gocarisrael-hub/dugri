@@ -1498,8 +1498,11 @@ app.get('/api/design-names', async (req, res) => {
   let names = {};
   try {
     const mod = await import(pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js')));
-    const themes = templates.loadThemes(templates.themesPathFor(TEMPLATE_ROOT));
-    names = templates.designDisplayNames(themes, mod.DESIGNS || []);
+    // PUBLIC subset only — a private/access-gated design's name must never leak to
+    // anonymous visitors. themes.json is read through an mtime cache so this hot
+    // endpoint doesn't hit disk on every products.html / product.html load.
+    const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT));
+    names = templates.designDisplayNames(themes, mod.PUBLIC_DESIGNS || []);
   } catch {
     names = {};
   }

@@ -935,6 +935,26 @@ describe('templates.designDisplayNames — the storefront name bridge', () => {
     expect(templates.designDisplayNames(renamed, designs).bachelorette).toBe('שם חדש');
   });
 
+  it('the endpoint feeds the PUBLIC subset, so a private design name never leaks', () => {
+    const t = {
+      pubtheme: { display_he: 'PUBLIC NAME' },
+      privtheme: { display_he: 'PRIVATE SECRET NAME' },
+    };
+    const full = [
+      { id: 'pub', theme: 'pubtheme', public: true },
+      { id: 'priv', theme: 'privtheme', public: false },
+    ];
+    // GET /api/design-names passes PUBLIC_DESIGNS (the public subset) — mirror that
+    // filter here: the private design is dropped before mapping, so its name is
+    // never produced.
+    const names = templates.designDisplayNames(
+      t,
+      full.filter((d) => d.public)
+    );
+    expect(names).toEqual({ pub: 'PUBLIC NAME' });
+    expect(JSON.stringify(names)).not.toContain('PRIVATE SECRET NAME');
+  });
+
   it('is defensive: bad themes/designs and prototype-pollution keys yield {}', () => {
     expect(templates.designDisplayNames(null, designs)).toEqual({});
     expect(templates.designDisplayNames(themes, null)).toEqual({});

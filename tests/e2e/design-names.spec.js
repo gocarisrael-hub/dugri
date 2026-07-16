@@ -46,10 +46,65 @@ test.describe('design-name propagation to the storefront', () => {
 
     await expect(page.locator('#pdpTitle')).toHaveText(CUSTOM);
     await expect(page).toHaveTitle(new RegExp(CUSTOM));
-    // Related-rail card for the same design is upgraded as well.
+    // Related-rail card for the same design is upgraded — BOTH the visible name and
+    // its data-label (hover caption) stay consistent.
+    const relCard = page.locator('.pdp-rel-card[data-design-id="bachelorette"]');
+    await expect(relCard.locator('.pdp-rel-name')).toHaveText(CUSTOM);
+    await expect(relCard).toHaveAttribute('data-label', CUSTOM);
+  });
+
+  test('grid and detail show the SAME name when both overrides are set (inline edit wins)', async ({
+    page,
+  }) => {
+    const ADMIN = 'שם אדמין';
+    const INLINE = 'שם אינליין';
+    await stubNames(page, { bachelorette: ADMIN });
+    // The inline content-edit name override (product-<id>-name, saved on the
+    // product.html page) is served on every /api/content read.
+    await page.route('**/api/content**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ overrides: { 'product-bachelorette-name': { text: INLINE } } }),
+      })
+    );
+
+    await page.goto('/products.html');
     await expect(
-      page.locator('.pdp-rel-card[data-design-id="bachelorette"] .pdp-rel-name')
-    ).toHaveText(CUSTOM);
+      page.locator('.product-card[data-design-id="bachelorette"] .product-name')
+    ).toHaveText(INLINE);
+
+    await page.goto('/product.html?design=bachelorette');
+    await expect(page.locator('#pdpTitle')).toHaveText(INLINE);
+  });
+
+  test('a slow /api/design-names does NOT delay content overrides / editor binding', async ({
+    page,
+  }) => {
+    // design-names hangs well past the client's ~2.5s timeout; the content override
+    // must still apply immediately (decoupled fetches), not wait on it.
+    await page.route('**/api/design-names', async (route) => {
+      await new Promise((r) => setTimeout(r, 4000));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ names: {} }),
+      });
+    });
+    await page.route('**/api/content**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          overrides: { 'product-bachelorette-about': { text: 'תיאור מותאם' } },
+        }),
+      })
+    );
+
+    await page.goto('/product.html?design=bachelorette');
+    // The ABOUT override lands fast (independent of the hung names fetch). If the
+    // two were chained, this would not appear until the ~2.5s names timeout.
+    await expect(page.locator('#pdpAbout')).toHaveText('תיאור מותאם', { timeout: 2000 });
   });
 
   test('a failed /api/design-names falls back to the built-in name and still renders', async ({

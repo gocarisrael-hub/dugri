@@ -24,10 +24,12 @@ describe('GET /api/design-names — public storefront name map', () => {
   let app;
   let server;
   let base;
+  let themesFile;
 
   beforeAll(async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-dn-root-'));
     fs.mkdirSync(path.join(root, 'generator'), { recursive: true });
+    themesFile = path.join(root, 'generator', 'themes.json');
     // A crafted themes.json: real design ids map bachelorette->bachelorette and
     // marriage->anniversary (see site/js/designs.js THEME_BY_DESIGN). We rename
     // both and stash a SECRET field to prove it is never exposed. Other designs'
@@ -41,11 +43,7 @@ describe('GET /api/design-names — public storefront name map', () => {
       },
       anniversary: { slug: 'anniversary', display_he: '  RENAMED-ANNIV  ' },
     };
-    fs.writeFileSync(
-      path.join(root, 'generator', 'themes.json'),
-      JSON.stringify(themes, null, 1) + '\n',
-      'utf8'
-    );
+    fs.writeFileSync(themesFile, JSON.stringify(themes, null, 1) + '\n', 'utf8');
 
     process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-dn-data-'));
     process.env.ADMIN_KEY = 'dn-admin-key';
@@ -90,6 +88,33 @@ describe('GET /api/design-names — public storefront name map', () => {
     expect(raw).not.toContain('title_font');
     expect(raw).not.toContain('wordlist');
     expect(raw).not.toContain('slug');
+  });
+
+  it('returns names ONLY for public designs (built from PUBLIC_DESIGNS)', async () => {
+    const { PUBLIC_DESIGNS, DESIGNS } = await import('../../site/js/designs.js');
+    const publicIds = new Set(PUBLIC_DESIGNS.map((d) => d.id));
+    const privateIds = DESIGNS.filter((d) => !d.public).map((d) => d.id);
+    const body = await (await fetch(base + '/api/design-names')).json();
+    for (const id of Object.keys(body.names)) expect(publicIds.has(id)).toBe(true);
+    // Any private design id must never appear (guards against a switch back to DESIGNS).
+    for (const id of privateIds) expect(id in body.names).toBe(false);
+  });
+
+  it('reflects a themes.json rename without a restart (mtime cache invalidates)', async () => {
+    // Warm the cache.
+    let body = await (await fetch(base + '/api/design-names')).json();
+    expect(body.names.bachelorette).toBe('RENAMED-BACH');
+    // Rewrite themes.json out-of-band and bump its mtime so the read-side cache
+    // (keyed by mtime) reloads — the endpoint must serve the new name.
+    const next = {
+      bachelorette: { slug: 'bachelorette', display_he: 'RENAMED-AGAIN' },
+      anniversary: { slug: 'anniversary', display_he: 'RENAMED-ANNIV' },
+    };
+    fs.writeFileSync(themesFile, JSON.stringify(next, null, 1) + '\n', 'utf8');
+    const future = new Date(Date.now() + 5000);
+    fs.utimesSync(themesFile, future, future);
+    body = await (await fetch(base + '/api/design-names')).json();
+    expect(body.names.bachelorette).toBe('RENAMED-AGAIN');
   });
 });
 

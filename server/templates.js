@@ -141,11 +141,42 @@ function appendThemeEntry(themesPath, key, entry) {
 // rename) so a crash mid-write can never leave a truncated themes.json. Preserves
 // the file's 1-space indent so the diff against the hand-maintained file stays
 // minimal. Shared by appendThemeEntry (onboarding) + renameTemplate/replaceAsset.
+// After the rename it refreshes the loadThemesCached() cache to the just-written
+// mapping so the hot public GET /api/design-names sees a rename immediately
+// without re-reading disk.
 function writeThemesFile(themesPath, themes) {
   const dir = path.dirname(themesPath);
   const tmp = path.join(dir, `.themes.${process.pid}.${Date.now()}.tmp`);
   fs.writeFileSync(tmp, JSON.stringify(themes, null, 1) + '\n', 'utf8');
   fs.renameSync(tmp, themesPath);
+  try {
+    _themesCache.set(themesPath, { mtimeMs: fs.statSync(themesPath).mtimeMs, themes });
+  } catch {
+    _themesCache.delete(themesPath);
+  }
+}
+
+// mtime-keyed parse cache for themes.json, so a hot READ-ONLY caller (the public
+// GET /api/design-names, hit on every products.html + product.html load) doesn't
+// re-read + re-parse the file on every request. Keyed by path so a test root and
+// the real root never collide. Invalidated implicitly by an mtime change (an
+// external write, e.g. a test) and explicitly by writeThemesFile (our own writes).
+// The MUTATING paths (renameTemplate/appendThemeEntry/replaceAsset) deliberately
+// keep using the uncached loadThemes() so they always read fresh disk state before
+// mutating — the cache is a read-side optimization only.
+const _themesCache = new Map();
+function loadThemesCached(themesPath) {
+  let st;
+  try {
+    st = fs.statSync(themesPath);
+  } catch {
+    return loadThemes(themesPath); // missing file: fall through to the {} path
+  }
+  const cached = _themesCache.get(themesPath);
+  if (cached && cached.mtimeMs === st.mtimeMs) return cached.themes;
+  const themes = loadThemes(themesPath);
+  _themesCache.set(themesPath, { mtimeMs: st.mtimeMs, themes });
+  return themes;
 }
 
 // Write the uploaded SVGs + fonts into resources/canva/templates/<slug>/.
@@ -712,6 +743,7 @@ module.exports = {
   buildThemeEntry,
   appendThemeEntry,
   loadThemes,
+  loadThemesCached,
   writeTemplateFiles,
   runRecipeDiff,
   normalizeOnboarding,

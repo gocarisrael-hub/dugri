@@ -383,24 +383,33 @@ function applyTextOverrides(d, overrides) {
 
 // Overlay the owner-editable display names (GET /api/design-names — an admin
 // template rename → themes.json display_he) as the BASE name layer: the main
-// title, the browser tab, and every related-rail card. This runs BEFORE the
-// per-design inline content override (product-<id>-name), so that manual edit
-// still WINS on top (applyTextOverrides only sets a title when its override is
-// present, so it overrides this base; where it is absent, this base stands).
-// Fail-soft: an empty map leaves every built-in catalog name untouched.
+// title, the browser tab, and every related-rail card. Runs INDEPENDENTLY of the
+// content-override fetch (so a slow /api/design-names never delays content
+// overrides / the editor), yet the per-design inline content override
+// (product-<id>-name) still WINS: the main title is only set here when NO content
+// name override is currently applied, and applyTextOverrides (content) overrides
+// this base whenever it runs with an override present — so the outcome is the same
+// regardless of which fetch resolves first. Fail-soft: an empty map leaves every
+// built-in catalog name untouched.
 function applyDesignNames(d, names) {
   const map = names || {};
   const main = map[d.id];
-  if (main) {
+  // Respect an already-applied inline content name override (it wins over the
+  // admin rename); currentOverrides is {} until /api/content resolves, so when
+  // this runs first the title takes the rename and applyTextOverrides later
+  // re-asserts the content override on top.
+  const contentName = overrideText(currentOverrides, overrideKeys(d.id).name);
+  if (main && contentName == null) {
     const title = document.getElementById('pdpTitle');
     if (title) title.textContent = main;
     document.title = `${main} · דוגרי`;
   }
-  // Related rail: upgrade each card's visible name from the map (built-in stands
-  // for any id the map omits).
+  // Related rail: upgrade each card's visible name AND its data-label (the hover
+  // caption) so they stay consistent; built-in stands for any id the map omits.
   for (const card of document.querySelectorAll('.pdp-rel-card[data-design-id]')) {
     const nm = map[card.getAttribute('data-design-id')];
     if (!nm) continue;
+    card.setAttribute('data-label', nm);
     const nameEl = card.querySelector('.pdp-rel-name');
     if (nameEl) nameEl.textContent = nm;
   }
@@ -457,15 +466,15 @@ function boot() {
   markPhotosEditable(d);
   document.addEventListener('dugri:photos-changed', onPhotosChanged);
 
-  // THEN overlay the owner-editable names + per-design overrides. Two independent,
-  // fail-soft fetches (neither rejects). Apply the admin-renamed display names
-  // (base) BEFORE the content overrides so an inline product-<id>-name edit still
-  // wins over the admin rename. fetchDesignNames caps itself at ~2.5s and falls
-  // back to {} on timeout/error, so the built-in names always stand.
-  Promise.all([fetchDesignNames(), loadOverrides()]).then(([names, ov]) => {
-    applyDesignNames(d, names);
-    applyOverridesToPage(d, ov);
-  });
+  // THEN overlay the per-design content overrides + the owner-editable names as
+  // TWO INDEPENDENT, fail-soft fetches — never chained. The content-override path
+  // (name/about text, curated photos, and the editor binding via notifyInjected)
+  // applies the instant /api/content resolves, exactly as before this feature, so
+  // a slow/down /api/design-names can NEVER delay it. The design-name overlay
+  // applies whenever fetchDesignNames resolves (capped ~2.5s, {} on timeout/error);
+  // it defers to a content name override so precedence holds either resolve order.
+  loadOverrides().then((ov) => applyOverridesToPage(d, ov));
+  fetchDesignNames().then((names) => applyDesignNames(d, names));
 }
 
 // Auto-boot only on the real page (a #galleryTrack exists). A bare test import of
