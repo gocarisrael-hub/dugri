@@ -84,4 +84,13 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
     // The phone field is the last input; it must not sit behind the create bar.
     await assertStepFits(page, '[data-testid="owner-phone"]');
   });
+
+  test('step 5 (optional pawn photos): the skip control clears the sticky bar', async ({
+    page,
+  }) => {
+    await page.goto('/options.html?step=5');
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
+    // The skip link is the last control below the 4 photo slots.
+    await assertStepFits(page, '[data-testid="pawn-skip"]');
+  });
 });

@@ -355,6 +355,9 @@ test.describe('order wizard', () => {
     await expect(next).toBeEnabled();
     await page.getByTestId('gender-female').check();
     await next.click();
+    // optional pawn-photos step sits between the name and details steps
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
+    await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-4')).toBeVisible();
   });
 
@@ -363,6 +366,8 @@ test.describe('order wizard', () => {
     await page.goto('/options.html?step=3');
     await page.fill('#honoreeInput', 'Shira');
     await page.getByTestId('gender-female').check(); // gender is required to advance
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-4')).toBeVisible();
 
@@ -406,6 +411,8 @@ test.describe('order wizard', () => {
     await page.goto('/options.html?step=3');
     await page.fill('#honoreeInput', 'Shira');
     await page.getByTestId('gender-female').check();
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-4')).toBeVisible();
     await page.fill('#ownerEmail', 'owner@example.com');

@@ -116,7 +116,7 @@ test.describe('preview tabs hidden on the colour step', () => {
 
     // step 2 is present in the flow (chasers keeps it), and step 1 has its tabs.
     await expect(page.getByTestId('step-1')).toBeVisible();
-    await expect(page.getByTestId('step-total')).toHaveText('4');
+    await expect(page.getByTestId('step-total')).toHaveText('5');
     await expectTabsVisible(page);
 
     // Next -> step 2: the carousel is hidden, the chasers add-on shows, and the

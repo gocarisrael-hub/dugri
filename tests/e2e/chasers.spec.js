@@ -64,6 +64,8 @@ test('chasers add-on flows from the wizard into the order and admin', async ({ p
   await page.fill('#honoreeInput', honoree);
   await page.getByTestId('gender-female').check(); // gender is required to advance
   await page.getByTestId('next-btn').click();
+  await expect(page.getByTestId('step-pawns')).toBeVisible(); // optional pawn step
+  await page.getByTestId('next-btn').click();
   await page.fill('#ownerEmail', 'chasers-test@example.com');
   await page.fill('#ownerPhone', '0521234567');
   await page.getByTestId('next-btn').click();

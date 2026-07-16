@@ -330,7 +330,9 @@
         text-decoration: line-through;
         opacity: 0.55;
         font-weight: 700;
-        margin-inline-end: 5px;
+        /* struck old price now trails the current price (renders to its LEFT in
+           RTL), so the gap sits on the start side. */
+        margin-inline-start: 5px;
         font-size: 0.85em;
       }
       .plan-pill {
@@ -1148,10 +1150,16 @@
       .wiz-err {
         display: block;
         color: #c0143c;
-        font-size: 13.5px;
+        font-size: 14px;
         font-weight: 700;
         margin-top: 7px;
         text-align: center;
+        /* Read as a clear blocking alert (not a subtle grey hint), so the buyer
+           understands exactly why "הבא" is disabled. */
+        background: rgba(192, 20, 60, 0.08);
+        border: 1px solid rgba(192, 20, 60, 0.35);
+        border-radius: var(--radius);
+        padding: 7px 10px;
       }
       .wiz-err[hidden] {
         display: none;
@@ -1164,8 +1172,9 @@
         margin-top: 7px;
         text-align: center;
       }
-      /* display:block above overrides the UA [hidden] rule — restore it so the
-         couple-theme guard (nameHint.hidden = true) actually hides the hint. */
+      /* display:block above overrides the UA [hidden] rule — restore it so any
+         hint that toggles its [hidden] attribute (e.g. the custom-title warning)
+         actually hides. */
       .wiz-hint[hidden] {
         display: none;
       }
@@ -1804,8 +1813,8 @@
     <main class="wrap" data-testid="configurator">
       <div class="cfg-head">
         <div class="plan-pill" data-testid="plan-pill">
-          החל מ- <s class="was" id="planWas">239 ₪</s>
-          <span id="planPrice" data-testid="plan-price">199</span> ₪
+          החל מ- <span id="planPrice" data-testid="plan-price">199</span> ₪
+          <s class="was" id="planWas">239 ₪</s>
         </div>
         <div class="wiz-progress">
           <div class="wiz-steplabel">
@@ -1979,13 +1988,6 @@
           maxlength="60"
           autocomplete="name"
         />
-        <!-- Always-visible default guidance the owner can edit ([data-edit]). Kept
-             SEPARATE from #nameErr below, whose textContent refreshNameError()
-             rewrites live (format vs. language message) — tagging that node would
-             fight the JS, so the editable hint is its own permanent element. -->
-        <span class="wiz-hint" id="nameHint" data-testid="name-hint" data-edit="options-name-hint"
-          >טיפ: שם אחד בלבד, באותיות עברית או אנגלית.</span
-        >
         <span class="wiz-err" id="nameErr" data-testid="name-err" hidden
           >אפשר להזין שם אחד בלבד באותיות (עברית או אנגלית), ללא רווחים - מותר מקף (-) וגרש
           (').</span
@@ -2082,7 +2084,7 @@
              The title auto-fits, so a long one just prints smaller — the live
              preview below shows the exact result so the buyer can self-correct. -->
         <label class="wiz-field" id="customTitleField" data-testid="custom-title-field">
-          <span class="wiz-lbl">כותרת משלכם (רשות)</span>
+          <span class="wiz-lbl">מוזמנים להזין כותרת אחרת לגמרי!</span>
           <textarea
             class="wiz-input"
             id="customTitleInput"
@@ -2429,6 +2431,180 @@
         </style>
       </section>
 
+      <!-- STEP 5 (NEW stable id) — OPTIONAL pawn photos. Sits between the name step
+           (3) and the details step (4) in the active order. Up to 4 images the buyer
+           can add; skippable. Files are held CLIENT-SIDE here (object URLs) and only
+           uploaded AFTER the collection is created (POST /api/collections/:id/pawns),
+           since the collection id + owner_token don't exist until then. -->
+      <section class="wiz-step" data-step="5" data-testid="step-pawns">
+        <h2 class="wiz-title">העלו עד 4 תמונות (רשות)</h2>
+        <p class="wiz-sub">התמונות יהפכו לחיילים (פיונים) במשחק. תמונות פנים עובדות הכי טוב.</p>
+        <div class="pawn-grid" id="pawnGrid" data-testid="pawn-grid">
+          <!-- 4 fixed slots; each wraps a hidden file input + a small preview. -->
+          <label class="pawn-slot" data-idx="0">
+            <input
+              class="pawn-input"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              data-testid="pawn-input-0"
+              data-idx="0"
+              aria-label="תמונה 1"
+            />
+            <span class="pawn-plus" aria-hidden="true">+</span>
+            <img class="pawn-thumb" alt="" hidden />
+            <button
+              class="pawn-remove"
+              type="button"
+              data-idx="0"
+              data-testid="pawn-remove-0"
+              aria-label="הסירו תמונה"
+              hidden
+            >
+              ×
+            </button>
+          </label>
+          <label class="pawn-slot" data-idx="1">
+            <input
+              class="pawn-input"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              data-testid="pawn-input-1"
+              data-idx="1"
+              aria-label="תמונה 2"
+            />
+            <span class="pawn-plus" aria-hidden="true">+</span>
+            <img class="pawn-thumb" alt="" hidden />
+            <button
+              class="pawn-remove"
+              type="button"
+              data-idx="1"
+              data-testid="pawn-remove-1"
+              aria-label="הסירו תמונה"
+              hidden
+            >
+              ×
+            </button>
+          </label>
+          <label class="pawn-slot" data-idx="2">
+            <input
+              class="pawn-input"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              data-testid="pawn-input-2"
+              data-idx="2"
+              aria-label="תמונה 3"
+            />
+            <span class="pawn-plus" aria-hidden="true">+</span>
+            <img class="pawn-thumb" alt="" hidden />
+            <button
+              class="pawn-remove"
+              type="button"
+              data-idx="2"
+              data-testid="pawn-remove-2"
+              aria-label="הסירו תמונה"
+              hidden
+            >
+              ×
+            </button>
+          </label>
+          <label class="pawn-slot" data-idx="3">
+            <input
+              class="pawn-input"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              data-testid="pawn-input-3"
+              data-idx="3"
+              aria-label="תמונה 4"
+            />
+            <span class="pawn-plus" aria-hidden="true">+</span>
+            <img class="pawn-thumb" alt="" hidden />
+            <button
+              class="pawn-remove"
+              type="button"
+              data-idx="3"
+              data-testid="pawn-remove-3"
+              aria-label="הסירו תמונה"
+              hidden
+            >
+              ×
+            </button>
+          </label>
+        </div>
+        <p class="wiz-err" id="pawnErr" data-testid="pawn-err" hidden></p>
+        <button class="pawn-skip" type="button" id="pawnSkip" data-testid="pawn-skip">דלגו</button>
+        <style>
+          .pawn-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin: 6px 0 12px;
+          }
+          .pawn-slot {
+            position: relative;
+            aspect-ratio: 1 / 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1.5px dashed var(--line);
+            border-radius: var(--radius);
+            background: var(--section);
+            cursor: pointer;
+            overflow: hidden;
+          }
+          .pawn-slot .pawn-input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+          }
+          .pawn-plus {
+            font-size: 26px;
+            font-weight: 700;
+            color: var(--muted);
+            line-height: 1;
+          }
+          .pawn-thumb {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+          }
+          .pawn-remove {
+            position: absolute;
+            top: 3px;
+            inset-inline-end: 3px;
+            width: 20px;
+            height: 20px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            font-size: 14px;
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+          }
+          .pawn-slot.is-filled .pawn-plus {
+            display: none;
+          }
+          .pawn-skip {
+            display: block;
+            margin: 0 auto;
+            background: none;
+            border: none;
+            color: var(--muted);
+            font: inherit;
+            text-decoration: underline;
+            cursor: pointer;
+            padding: 6px;
+          }
+        </style>
+      </section>
+
       <!-- STEP 4 — your details -->
       <section class="wiz-step" data-step="4" data-testid="step-4">
         <h2 class="wiz-title">הפרטים שלכם</h2>
@@ -2535,15 +2711,6 @@
             >נא להזין מספר נייד תקין (לדוגמה 0521234567).</span
           >
         </label>
-        <p
-          class="wiz-consent"
-          id="waConsent"
-          data-testid="wa-consent"
-          dir="rtl"
-          style="margin: 8px 2px 0; font-size: 12px; line-height: 1.5; color: var(--muted, #6b6b7b)"
-        >
-          לאחר התשלום נפתח קבוצת וואטסאפ ונצרף את המספר הזה כדי לאסוף מילים. אתם תוסיפו את החברים.
-        </p>
         <p class="wiz-err" id="createErr" data-testid="create-err" hidden></p>
       </section>
     </main>
@@ -3311,7 +3478,7 @@
          The design/color/preview/chasers machinery above is reused as-is; this
          only governs which step is shown and whether Next is enabled.
          ==================================================================== */
-      const TOTAL_STEPS = 4;
+      const TOTAL_STEPS = 5;
       const stepSections = Array.from(document.querySelectorAll('.wiz-step'));
 
       // --- feature-gated step skipping -------------------------------------
@@ -3320,10 +3487,13 @@
       // nothing to show, so it drops out of the flow entirely. Steps 1/3/4 always
       // carry controls. We keep the data-step ids STABLE (never renumber) so every
       // `currentStep === 3/4` and `PREVIEW_STEP === 3` check stays valid; only the
-      // sequence of ACTIVE steps changes.
+      // sequence of ACTIVE steps changes. The optional pawn-photos step carries the
+      // NEW stable id 5 but SITS between the name step (3) and the details step (4)
+      // in the active order, so its display position is 4th while step 4 (details)
+      // stays LAST — lastActive is still 4, and `currentStep === 4` checks are intact.
       const STEP2_ACTIVE = FEATURES.color_picking || FEATURES.chasers_choice;
-      const activeSteps = STEP2_ACTIVE ? [1, 2, 3, 4] : [1, 3, 4];
-      const lastActive = activeSteps[activeSteps.length - 1]; // always 4
+      const activeSteps = STEP2_ACTIVE ? [1, 2, 3, 5, 4] : [1, 3, 5, 4];
+      const lastActive = activeSteps[activeSteps.length - 1]; // always 4 (details)
       const stepPos = (n) => activeSteps.indexOf(n) + 1; // 1-based display position
       function normalizeStep(n) {
         n = n | 0;
@@ -3432,11 +3602,6 @@
         // two NAME fields ARE the ask — no redundant "name, then two names".
         const couple = isCoupleTheme();
         nameInput.hidden = couple;
-        // The single-name hint is guidance for the ONE name field — hide it on a
-        // couple design (which shows the two partner-name fields instead), so it
-        // never contradicts the step with "enter a single name".
-        const nameHintEl = document.getElementById('nameHint');
-        if (nameHintEl) nameHintEl.hidden = couple;
         if (genderGroup) genderGroup.hidden = couple;
         if (nameStepTitle) {
           nameStepTitle.textContent = couple ? 'שמות בני הזוג' : 'שם בעל/ת השמחה';
@@ -3984,6 +4149,8 @@
             (isCoupleTheme() || isValidHonoreeName(nameInput.value, currentLanguage())) &&
             extraFieldsValid()
           );
+        // pawn photos are OPTIONAL and free — the step is always skippable.
+        if (n === 5) return true;
         if (n === 4)
           return isValidEmail(emailInput.value.trim()) && isValidIlMobile(phoneInput.value.trim());
         return true;
@@ -3994,12 +4161,13 @@
       const NAME_FORMAT_ERR =
         "אפשר להזין שם אחד בלבד באותיות (עברית או אנגלית), ללא רווחים - מותר מקף (-) וגרש (').";
 
-      // Inline name error on step 3: shown once the user has typed a value that
-      // isn't a valid single-word name in the design's language. Empty just
-      // disables Next without a scary error, mirroring the step-4 pattern. Couple
-      // themes hide the single name box, so there's nothing to validate here. The
-      // message distinguishes a wrong SCRIPT (right format, wrong language) from a
-      // general format problem so the hint tells the user exactly what to fix.
+      // Inline name error on step 3: the ONLY thing on this step that explains why
+      // "הבא" is disabled (there is no longer a static hint), so it must surface for
+      // EVERY blocking case — empty, wrong format, or wrong language. Couple themes
+      // hide the single name box (their two names are validated as extra fields), so
+      // there's nothing to validate here. The message distinguishes an EMPTY field,
+      // a wrong SCRIPT (right format, wrong language), and a general format problem,
+      // so the buyer knows exactly what to fix.
       function refreshNameError() {
         if (isCoupleTheme()) {
           nameErr.hidden = true;
@@ -4007,16 +4175,19 @@
         }
         const v = nameInput.value.trim();
         const lang = currentLanguage();
-        if (!v.length || isValidHonoreeName(v, lang)) {
+        if (isValidHonoreeName(v, lang)) {
           nameErr.hidden = true;
           return;
         }
-        if (isValidHonoreeName(v)) {
+        if (!v.length) {
+          // empty — say plainly that a name is required to continue
+          nameErr.textContent = 'כתבו את שם בעל/ת השמחה כדי להמשיך';
+        } else if (isValidHonoreeName(v)) {
           // format is fine → the only failing rule is the design's language
           nameErr.textContent =
             lang === 'english'
-              ? 'העיצוב הזה דורש שם באנגלית - הזינו את השם באותיות לטיניות.'
-              : 'העיצוב הזה דורש שם בעברית - הזינו את השם באותיות עבריות.';
+              ? 'העיצוב הזה דורש שם באותיות אנגלית'
+              : 'העיצוב הזה דורש שם באותיות עברית';
         } else {
           nameErr.textContent = NAME_FORMAT_ERR;
         }
@@ -4273,6 +4444,111 @@
         goStep(Number.isNaN(n) ? 1 : n, { fromPop: true });
       });
 
+      /* ====================================================================
+         OPTIONAL PAWN PHOTOS (step 5). Up to 4 image files, held client-side as
+         object URLs during the wizard and uploaded only after the collection is
+         created. Skippable — no validation gates the step. Each slot keeps its own
+         File in `pawnFiles[idx]` (null when empty); the compact list sent to the
+         server is `pawnFiles.filter(Boolean)`.
+         ==================================================================== */
+      const PAWN_MAX = 4;
+      const PAWN_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+      const PAWN_MAX_BYTES = 4 * 1024 * 1024; // mirror the server IMAGE_CAP
+      const pawnFiles = new Array(PAWN_MAX).fill(null);
+      const pawnObjectUrls = new Array(PAWN_MAX).fill(null);
+      const pawnSlots = Array.from(document.querySelectorAll('.pawn-slot'));
+
+      function renderPawnSlot(idx) {
+        const slot = pawnSlots[idx];
+        if (!slot) return;
+        const img = slot.querySelector('.pawn-thumb');
+        const removeBtn = slot.querySelector('.pawn-remove');
+        const file = pawnFiles[idx];
+        if (file) {
+          if (pawnObjectUrls[idx]) URL.revokeObjectURL(pawnObjectUrls[idx]);
+          pawnObjectUrls[idx] = URL.createObjectURL(file);
+          img.src = pawnObjectUrls[idx];
+          img.hidden = false;
+          removeBtn.hidden = false;
+          slot.classList.add('is-filled');
+        } else {
+          if (pawnObjectUrls[idx]) {
+            URL.revokeObjectURL(pawnObjectUrls[idx]);
+            pawnObjectUrls[idx] = null;
+          }
+          img.removeAttribute('src');
+          img.hidden = true;
+          removeBtn.hidden = true;
+          slot.classList.remove('is-filled');
+        }
+      }
+
+      const pawnErr = document.getElementById('pawnErr');
+      function showPawnError(msg) {
+        if (!pawnErr) return;
+        pawnErr.textContent = msg;
+        pawnErr.hidden = false;
+      }
+      function hidePawnError() {
+        if (pawnErr) pawnErr.hidden = true;
+      }
+
+      pawnSlots.forEach((slot) => {
+        const idx = Number(slot.dataset.idx);
+        const input = slot.querySelector('.pawn-input');
+        const removeBtn = slot.querySelector('.pawn-remove');
+        input.addEventListener('change', () => {
+          const file = input.files && input.files[0];
+          if (!file) return;
+          // Reject a wrong type or an oversized file (the server would reject it too),
+          // and TELL the buyer why nothing happened — otherwise the pick silently
+          // vanishes on this optional step. Reset the input so they can retry.
+          if (!PAWN_TYPES.includes(file.type)) {
+            input.value = '';
+            showPawnError('סוג הקובץ אינו נתמך - בחרו תמונת JPG, PNG או WEBP');
+            return;
+          }
+          if (file.size > PAWN_MAX_BYTES) {
+            input.value = '';
+            showPawnError('הקובץ גדול מדי (עד 4MB)');
+            return;
+          }
+          hidePawnError();
+          pawnFiles[idx] = file;
+          renderPawnSlot(idx);
+        });
+        // The × sits inside the slot's <label>, so stop the click from re-opening
+        // the file picker; just clear the slot.
+        removeBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          pawnFiles[idx] = null;
+          input.value = '';
+          renderPawnSlot(idx);
+        });
+      });
+
+      const pawnSkipBtn = document.getElementById('pawnSkip');
+      if (pawnSkipBtn) pawnSkipBtn.addEventListener('click', () => goStep(nextActive(currentStep)));
+
+      // POST the selected pawn files to the owner-token-gated route. Fail-soft:
+      // resolves even on error/network failure so the caller always redirects.
+      async function uploadPawns(id, ownerToken) {
+        const files = pawnFiles.filter(Boolean);
+        if (!files.length) return;
+        try {
+          const fd = new FormData();
+          files.forEach((f, i) => fd.append('pawn' + i, f, f.name || 'pawn' + i));
+          await fetch('/api/collections/' + id + '/pawns?k=' + encodeURIComponent(ownerToken), {
+            method: 'POST',
+            body: fd,
+          });
+        } catch (e) {
+          // nice-to-have — never block the order on a failed photo upload
+          console.warn('pawn upload failed', e);
+        }
+      }
+
       // Final step: create the shared collection, then go collect words + pay.
       async function createCollection() {
         const name = honoreeNameValue();
@@ -4348,6 +4624,10 @@
           const data = await r.json();
           if (!r.ok) throw new Error(data.error || 'failed');
           track('collection_created', { has_email: !!email, has_phone: !!phone });
+          // Upload any optional pawn photos now that we have {id, owner_token}.
+          // Fail-soft: a pawn-upload failure must NEVER block the order — the
+          // pictures are a nice-to-have, so we log and continue to the redirect.
+          await uploadPawns(data.id, data.owner_token);
           location.href = 'collect.html?c=' + data.id + '&k=' + data.owner_token;
         } catch (e) {
           createErr.textContent = 'משהו השתבש ביצירת הקישור. נסו שוב.';

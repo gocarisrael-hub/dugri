@@ -523,7 +523,7 @@
         }
         const table = document.createElement('table');
         table.innerHTML =
-          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>הפקה</th><th>נוצר</th><th>מעקב</th><th>ניהול</th></tr></thead>';
+          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>פיונים</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>הפקה</th><th>נוצר</th><th>מעקב</th><th>ניהול</th></tr></thead>';
         const tb = document.createElement('tbody');
         for (const c of cols) {
           const tr = document.createElement('tr');
@@ -560,6 +560,26 @@
 
           const tdColor = document.createElement('td');
           tdColor.textContent = c.color || '—';
+
+          // Optional customer photos ("פיונים"): thumbnails linking to the full
+          // image. These are our own /content-uploads/ paths, so they're safe.
+          const tdPawns = document.createElement('td');
+          if (Array.isArray(c.pawn_images) && c.pawn_images.length) {
+            for (const p of c.pawn_images) {
+              const a = document.createElement('a');
+              a.href = p;
+              a.target = '_blank';
+              const img = document.createElement('img');
+              img.src = p;
+              img.style.cssText =
+                'width:34px;height:34px;object-fit:cover;border-radius:4px;border:1px solid #ddd;margin:2px';
+              a.appendChild(img);
+              tdPawns.appendChild(a);
+            }
+          } else {
+            tdPawns.className = 'muted';
+            tdPawns.textContent = '—';
+          }
 
           // Optional drinking-game add-on: show a small badge when chosen.
           const tdChasers = document.createElement('td');
@@ -671,6 +691,7 @@
           tr.appendChild(tdStatus);
           tr.appendChild(tdDesign);
           tr.appendChild(tdColor);
+          tr.appendChild(tdPawns);
           tr.appendChild(tdChasers);
           tr.appendChild(tdVersion);
           tr.appendChild(tdTotal);
@@ -900,6 +921,7 @@
             'סטטוס',
             'עיצוב',
             'צבע',
+            'פיונים',
             'צ׳ייסרים',
             'גרסה',
             'סכום',

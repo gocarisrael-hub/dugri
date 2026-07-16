@@ -247,6 +247,10 @@ const db = {
       // Optional drinking-game add-on ("צ'ייסרים") - free; the owner builds the
       // board with special "drink" tiles when this is on.
       chasers: !!contact.chasers,
+      // Up to 4 optional customer photos ("פיונים") attached to the collection,
+      // stored as public "/content-uploads/<hash>.<ext>" path strings. Appended
+      // via addPawnImages (owner-token gated). Empty on a fresh collection.
+      pawn_images: [],
       // Optional free-form custom title (F7) overriding the theme's derived title
       // on the cards + board. Sanitized/capped; null when empty so the theme
       // default is used. The generator receives this via its --title CLI arg.
@@ -398,6 +402,33 @@ const db = {
       saveDb();
     }
     return { changed: !alreadyClosed };
+  },
+
+  // Append up to N pawn images (customer pieces) to a collection, owner-token gated.
+  // Caps the stored array at 4 total, and DE-DUPES incoming paths both against what's
+  // already stored and within the batch — the paths are content-addressed, so the
+  // same photo picked into two slots yields the same /content-uploads/<hash> and must
+  // not appear twice. Returns the updated array, or null on a bad/absent owner token
+  // or unknown collection.
+  addPawnImages(id, ownerToken, paths) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return null;
+    if (!Array.isArray(c.pawn_images)) c.pawn_images = [];
+    const seen = new Set(c.pawn_images);
+    const incoming = [];
+    for (const raw of Array.isArray(paths) ? paths : []) {
+      const p = String(raw);
+      if (!p || seen.has(p)) continue; // skip empties + duplicates (existing OR batch)
+      seen.add(p);
+      incoming.push(p);
+    }
+    if (!incoming.length) return c.pawn_images;
+    const room = Math.max(0, 4 - c.pawn_images.length);
+    if (room > 0) {
+      c.pawn_images.push(...incoming.slice(0, room));
+      saveDb();
+    }
+    return c.pawn_images;
   },
 
   // Admin: soft-cancel a collection (reversible). With undo=true it restores
