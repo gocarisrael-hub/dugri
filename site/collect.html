@@ -747,11 +747,6 @@
         flex-wrap: wrap;
       }
       .pay-opt .opt-price {
-        /* Flex row (RTL): current price first (right), struck was-price to its
-           LEFT — deterministic vs bidi-reordered adjacent number runs. */
-        display: inline-flex;
-        align-items: baseline;
-        gap: 5px;
         color: var(--sage-deep);
         font-weight: 900;
         white-space: nowrap;
@@ -1142,8 +1137,7 @@
             <input type="radio" name="payVersion" value="pdf" checked />
             <span class="opt-body">
               <span class="opt-title"
-                ><span>דיגיטלי (PDF)</span
-                ><span class="opt-price">₪79<s class="was">₪129</s></span></span
+                ><span>דיגיטלי (PDF)</span><span class="opt-price">₪79</span></span
               >
               <span class="opt-note">מורידים, מדפיסים לבד, ומתפוצצים מצחוק 🎉</span>
             </span>

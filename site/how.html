@@ -851,9 +851,8 @@
         text-decoration: line-through;
         opacity: 0.55;
         font-weight: 700;
-        /* struck price sits to the LEFT of the current price; gap goes on its
-           inline-start (right side in RTL), facing the current price. */
-        margin-inline-start: 5px;
+        /* No inline margin: the CTA .btn is inline-flex with gap:9px, so the
+           struck price already gets a uniform 9px gap from the current price. */
         font-size: 0.85em;
       }
       .price {
