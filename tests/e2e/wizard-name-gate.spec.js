@@ -10,9 +10,10 @@ test.beforeEach(async ({ page }) => {
 });
 
 // Two order-wizard rules on the name step (step 4):
-//  1. The create/next button is GATED on the live name-preview: it stays disabled
-//     until the preview has rendered on screen (or a 20s backstop elapses), so the
-//     game is never created before the customer has seen a preview.
+//  1. The create/next button is GATED on the live name-preview — but the preview
+//     now draws an INSTANT in-browser card the moment a valid name is entered, so
+//     the gate opens immediately WITHOUT waiting on the (slow/failable) server
+//     render. A valid name is never stuck behind the network.
 //  2. The honoree name must be a SINGLE word in the design's LANGUAGE — an English
 //     design rejects a Hebrew name and a name with a space, a Hebrew design rejects
 //     a Latin name — each with a clear inline error that blocks advancing.
@@ -31,11 +32,11 @@ const previewBody = JSON.stringify({
 });
 
 test.describe('create-button preview gate (step 4)', () => {
-  test('the button stays disabled until the name-preview renders, then unlocks', async ({
+  test('the INSTANT draw opens the gate immediately — no wait on the server render', async ({
     page,
   }) => {
-    // Hold the preview response until we release it, so we can observe the button
-    // gated while the preview is pending and unlocking once it renders.
+    // Hold the server render indefinitely: the gate must open anyway, driven by the
+    // instant in-browser card. The exact PNG then swaps in only once we release it.
     let releasePreview;
     const pending = new Promise((r) => (releasePreview = r));
     await page.route('**/api/preview', async (route) => {
@@ -47,24 +48,24 @@ test.describe('create-button preview gate (step 4)', () => {
     await expect(page.getByTestId('step-3')).toBeVisible();
 
     const next = page.getByTestId('next-btn');
-    // A single valid English name → fields are valid, but the preview hasn't shown
-    // yet, so the button is held disabled purely by the gate.
+    // A single valid English name → the instant card draws immediately and opens
+    // the gate, even though the server render is still pending.
     await page.fill('#honoreeInput', 'Shira');
     await expect(page.getByTestId('name-err')).toBeHidden();
-    await expect(next).toBeDisabled();
-    // give the debounced request time to fire and sit pending — still gated.
-    await page.waitForTimeout(700);
-    await expect(next).toBeDisabled();
+    await expect(page.getByTestId('name-preview-instant-card')).toBeVisible();
+    await expect(next).toBeEnabled();
 
-    // Release the preview → the card renders and the gate opens.
+    // Release the server render → the exact PNG swaps in over the instant card.
     releasePreview();
     await expect(page.getByTestId('name-preview-card')).toHaveAttribute('src', /^data:image\/png/);
     await expect(next).toBeEnabled();
   });
 
-  test('a FAILED preview still unlocks the button (never permanently stuck)', async ({ page }) => {
-    // The Python render is unavailable → /api/preview always 500s. The UI settles
-    // on its graceful fallback, and the gate opens so a valid client isn't stuck.
+  test('a FAILED server render never blocks the button (instant card carries it)', async ({
+    page,
+  }) => {
+    // The Python render is unavailable → /api/preview always 500s. The instant card
+    // still shows and the gate opens — the failure is invisible, no error UI.
     await page.route('**/api/preview', (route) =>
       route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
     );
@@ -72,22 +73,22 @@ test.describe('create-button preview gate (step 4)', () => {
     await expect(page.getByTestId('step-3')).toBeVisible();
 
     await page.fill('#honoreeInput', 'Shira');
-    // the graceful fallback shows the name, and the button becomes enabled.
-    await expect(page.getByTestId('name-preview-fallback')).toBeVisible({ timeout: 5000 });
+    // the instant card is on screen and the button becomes enabled…
+    await expect(page.getByTestId('name-preview-instant-card')).toBeVisible({ timeout: 5000 });
     await expect(page.getByTestId('next-btn')).toBeEnabled({ timeout: 5000 });
+    // …and NO error fallback is shown (the instant draw covers the failure).
+    await expect(page.getByTestId('name-preview-fallback')).toBeHidden();
   });
 
-  test('editing the name after a preview RE-CLOSES the gate until the new preview renders', async ({
-    page,
-  }) => {
-    // Hold the 2nd+ preview so we can observe the gate re-close after a name edit
-    // (the create button must not stay unlocked from the previous name's preview).
+  test('editing to a new valid name keeps the gate open via the instant draw', async ({ page }) => {
+    // Hold the 2nd+ server render forever: editing to a new valid name must keep the
+    // button enabled (the instant card redraws immediately), never re-gating on the
+    // pending network render.
     let calls = 0;
-    let releaseSecond;
-    const second = new Promise((r) => (releaseSecond = r));
+    const second = new Promise(() => {}); // never resolves
     await page.route('**/api/preview', async (route) => {
       calls += 1;
-      if (calls >= 2) await second;
+      if (calls >= 2) await second; // 2nd render hangs
       await route.fulfill({ status: 200, contentType: 'application/json', body: previewBody });
     });
 
@@ -95,19 +96,17 @@ test.describe('create-button preview gate (step 4)', () => {
     await expect(page.getByTestId('step-3')).toBeVisible();
     const next = page.getByTestId('next-btn');
 
-    // name A renders → gate opens
+    // name A → exact render swaps in, gate open
     await page.fill('#honoreeInput', 'David');
     await expect(page.getByTestId('name-preview-card')).toHaveAttribute('src', /^data:image\/png/);
     await expect(next).toBeEnabled();
 
-    // edit to name B → gate must re-close while B's preview is pending
+    // edit to name B → the instant card redraws with B; the button STAYS enabled
+    // even though B's server render never resolves.
     await page.fill('#honoreeInput', 'Sarah');
-    await expect(next).toBeDisabled();
-    await page.waitForTimeout(700); // debounce fired, request held → still gated
-    await expect(next).toBeDisabled();
-
-    // B's preview renders → gate re-opens
-    releaseSecond();
+    await expect(page.getByTestId('name-preview-instant-card')).toBeVisible();
+    await expect(next).toBeEnabled();
+    await page.waitForTimeout(700);
     await expect(next).toBeEnabled();
   });
 });

@@ -26,9 +26,10 @@ let base;
 beforeAll(async () => {
   process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-preview-'));
   process.env.ADMIN_KEY = 'test-admin-key';
-  // Give the shared per-IP limiter plenty of headroom for the functional tests;
-  // the dedicated rate-limit test below fires enough to exceed it regardless.
-  process.env.COUPON_RATE_LIMIT = '40';
+  // Preview has its OWN rate-limit bucket now (separate from coupons). Give it
+  // enough headroom for the functional tests but a low enough cap that the
+  // dedicated burst test below (unique, cache-missing names) trips it quickly.
+  process.env.PREVIEW_RATE_LIMIT = '30';
 
   const fakeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-fakeprev-'));
   const fake = path.join(fakeDir, 'fake-preview.sh');
@@ -174,17 +175,27 @@ describe('POST /api/preview', () => {
   });
 });
 
-describe('rate limiting (per client IP, like the coupon route)', () => {
-  it('eventually 429s under a burst', async () => {
+describe('rate limiting (preview has its own per-IP bucket)', () => {
+  it('eventually 429s under a burst of distinct (cache-missing) renders', async () => {
+    // Distinct names so every request is a cache MISS that actually spawns a
+    // render and counts against the limit — cache HITS are free (see below).
     let sawLimited = false;
     for (let i = 0; i < 60; i++) {
-      const r = await post('/api/preview', { theme: 'trip comeback', name: 'OZ' });
+      const r = await post('/api/preview', { theme: 'trip comeback', name: 'BURST' + i });
       if (r.status === 429) {
         sawLimited = true;
         break;
       }
     }
     expect(sawLimited).toBe(true);
+  });
+
+  it('a repeated identical name is served from cache and does NOT 429', async () => {
+    // Even after the burst above exhausted the limiter, an already-cached render
+    // returns 200 instantly (it never touches the rate limiter).
+    const r = await post('/api/preview', { theme: 'trip comeback', name: 'BURST0' });
+    expect(r.status).toBe(200);
+    expect(r.body.card).toMatch(/^data:image\/png;base64,/);
   });
 });
 

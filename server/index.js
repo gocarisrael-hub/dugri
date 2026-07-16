@@ -19,6 +19,7 @@ const designImages = require('./design-images');
 const settings = require('./settings');
 const whatsapp = require('./whatsapp');
 const waState = require('./wa-state');
+const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -138,6 +139,20 @@ const WORD_FONTS_DIR = path.join(REPO_ROOT, 'generator', 'word-fonts');
 // keep the cap short so a public request can't tie up the box. The child is
 // SIGKILLed past this and the request 504s.
 const PREVIEW_TIMEOUT_MS = Number(process.env.PREVIEW_TIMEOUT_MS || 40000);
+
+// Preview gets its OWN rate-limit bucket (separate limit + map) from the coupon
+// oracle, and an LRU/TTL result cache so repeated identical names return without
+// spawning Chrome. Cache hits bypass the limiter entirely (they're free), so an
+// eager typer revisiting names never 429s — and never touches the pay/coupon flow.
+const previewRate = makeRateLimiter({
+  limit: Number(process.env.PREVIEW_RATE_LIMIT || 60),
+  windowMs: 60 * 1000,
+  maxKeys: Number(process.env.COUPON_RATE_MAX_KEYS || 10000),
+});
+const previewCache = makePreviewCache({
+  max: Number(process.env.PREVIEW_CACHE_MAX || 200),
+  ttlMs: Number(process.env.PREVIEW_CACHE_TTL_MS || 10 * 60 * 1000),
+});
 
 // The shared word-font choices ([{label,file}]), read fresh (tiny file). Returns
 // [] when missing/unparseable so a bad file never crashes a preview request.
@@ -829,9 +844,6 @@ app.post(
 // a `warning` when the name doesn't fit the theme's script, plus the shared
 // word-font options so the client can render the picker.
 app.post('/api/preview', async (req, res) => {
-  if (!couponRateOk('preview:' + clientKey(req))) {
-    return res.status(429).json({ error: 'too many attempts' });
-  }
   const b = req.body || {};
   const theme = String(b.theme || '').trim();
   const name = String(b.name || '').trim();
@@ -860,21 +872,35 @@ app.post('/api/preview', async (req, res) => {
   // Surfaced to the customer immediately (doesn't block rendering the preview).
   const warning = validate.checkNameLanguage(name, themeConfig);
 
+  // theme_word_font = the design's OWN original word font (from themes.json), so
+  // the picker can mark the "מקורי" (original) choice and clients can tell it apart.
+  const meta = {
+    warning,
+    word_font: wordFont,
+    word_font_options: options,
+    theme_word_font: themeConfig.word_font || null,
+  };
+
+  // 1) CACHE: a previously rendered identical request returns instantly — no
+  // Chrome, and it does NOT consume the rate-limit budget (it's free).
+  const cacheKey = previewCache.key({ theme, name, wordFont, extraFields, chasers, customTitle });
+  const cached = previewCache.get(cacheKey);
+  if (cached) return res.json({ ...cached, ...meta });
+
+  // 2) RATE LIMIT: only the EXPENSIVE (uncached) render is throttled, on preview's
+  // OWN bucket — a typer never 429s the coupon/pay flow.
+  if (!previewRate.ok('preview:' + clientKey(req))) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
+
   try {
     // A SINGLE preview.py run renders card + board + the design's real card back
     // together (one Python process, no second Chrome). runPreview rejects on
     // failure (→ handled below); board/back are simply absent when the theme has
     // no such artwork, so a missing back never fails the request.
     const imgs = await runPreview({ theme, name, wordFont, extraFields, chasers, customTitle });
-    // theme_word_font = the design's OWN original word font (from themes.json), so
-    // the picker can mark the "מקורי" (original) choice and clients can tell it apart.
-    res.json({
-      ...imgs,
-      warning,
-      word_font: wordFont,
-      word_font_options: options,
-      theme_word_font: themeConfig.word_font || null,
-    });
+    previewCache.set(cacheKey, imgs);
+    res.json({ ...imgs, ...meta });
   } catch (e) {
     const detail = String((e && e.message) || e);
     const status = /not calibrated|unknown theme/i.test(detail) ? 400 : 500;

@@ -221,10 +221,14 @@ describe('server threads the custom title to the generator', () => {
 
   it('POST /api/preview omits --title for a whitespace-only title', async () => {
     const before = readArgvLog().length;
-    await post('/api/preview', { theme: 'trip comeback', name: 'Shira', title: '   ' });
+    // A distinct name so this is a cache MISS that actually spawns the generator
+    // (a whitespace title sanitizes to none — identical to the no-title render, so
+    // reusing that name would be served from cache and never invoke the script).
+    await post('/api/preview', { theme: 'trip comeback', name: 'ShiraWS', title: '   ' });
     const prev = readArgvLog()
       .slice(before)
       .find((a) => a[0].includes('preview.py'));
+    expect(prev).toBeTruthy();
     expect(hasTitleArg(prev)).toBe(false);
   });
 
