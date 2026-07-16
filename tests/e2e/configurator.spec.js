@@ -73,6 +73,21 @@ test.describe('order wizard', () => {
     await page.getByTestId('design-1').click();
     await expect(page.getByTestId('design-1')).toHaveAttribute('aria-pressed', 'true');
 
+    // Capture the board face's ORIGINAL --c0 on the design step (tabs are shown
+    // here) so the recolor check below can prove it CHANGED after the swatch pick.
+    const boardPanel = page.getByTestId('preview-board');
+    const readBoardC0 = async () =>
+      boardPanel
+        .locator('svg')
+        .first()
+        .evaluate((svg) => getComputedStyle(svg).getPropertyValue('--c0').trim());
+    await page.getByTestId('tab-board').click();
+    await expect(boardPanel).toHaveAttribute('data-active', 'true');
+    const boardBefore = await readBoardC0();
+    expect(boardBefore.length).toBeGreaterThan(0);
+    // Restore the front face before advancing (the front recolor is read below).
+    await page.getByTestId('tab-front').click();
+
     // Advance to the color step; Back is now available.
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-2')).toBeVisible();
@@ -96,17 +111,13 @@ test.describe('order wizard', () => {
     // The face tabs are hidden ON the colour step (its swipe carousel replaces
     // them — see options-color-step-tabs.spec.js), so step back to the design
     // step where the tabs are shown and switch to the board face there; the
-    // picked colour persists across the nav.
+    // picked colour persists across the nav. Assert the board --c0 actually
+    // CHANGED from its pre-pick value (not merely that some --c0 exists).
     await page.getByTestId('back-btn').click();
     await expect(page.getByTestId('step-1')).toBeVisible();
     await page.getByTestId('tab-board').click();
-    const boardPanel = page.getByTestId('preview-board');
     await expect(boardPanel).toHaveAttribute('data-active', 'true');
-    const boardC0 = await boardPanel
-      .locator('svg')
-      .first()
-      .evaluate((svg) => getComputedStyle(svg).getPropertyValue('--c0').trim());
-    expect(boardC0.length).toBeGreaterThan(0);
+    await expect.poll(async () => readBoardC0()).not.toBe(boardBefore);
   });
 
   test('front and back previews paint their original background (never transparent/black)', async ({
