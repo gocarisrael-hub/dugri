@@ -43,7 +43,8 @@ test.describe('order wizard', () => {
 
     // Step 1 is the design step: preview visible, plan price reflects base.
     await expect(page.getByTestId('preview')).toBeVisible();
-    await expect(page.getByTestId('plan-price')).toHaveText('79');
+    // The pill sources the store price from /api/pricing (launch default 199).
+    await expect(page.getByTestId('plan-price')).toHaveText('199');
     await expect(page.getByTestId('step-1')).toBeVisible();
     await expect(page.getByTestId('step-now')).toHaveText('1');
     // On the first step Back is not hidden: it's a "return to store" control
@@ -202,6 +203,30 @@ test.describe('order wizard', () => {
     // Lands on the name step.
     await expect(page.getByTestId('step-3')).toBeVisible();
     await expect(page.getByTestId('step-now')).toHaveText('3');
+  });
+
+  // The plan pill sources the store price from the owner-editable /api/pricing
+  // (same shared helper as the storefront), so an admin-set price shows in the
+  // wizard too — never a stale hardcoded number.
+  test('plan pill reflects an admin-set store price (now + struck was)', async ({ page }) => {
+    await page.route('**/api/pricing', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          store: { now: 259, was: 299 },
+          versions: {
+            pdf: { enabled: false, price: 79 },
+            pickup: { enabled: true, price: 259 },
+            delivery: { enabled: false, price: 199 },
+            custom: { enabled: false, price: 599 },
+          },
+        }),
+      })
+    );
+    await page.goto('/options.html?plan=base');
+    await expect(page.getByTestId('plan-price')).toHaveText('259');
+    await expect(page.locator('#planWas')).toHaveText('299 ₪');
   });
 
   // Buy-now deep-link (#8a): the product page links every design to
