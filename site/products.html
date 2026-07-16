@@ -506,11 +506,30 @@
          which hosts the multi-photo gallery. -->
     <script type="module">
       import { PUBLIC_DESIGNS as DESIGNS, fetchDesignNames } from './js/designs.js';
+      import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
       import { loadDesignImages, overrideFor } from './js/design-images.js';
+      // Reuse the detail page's override helpers so the grid and PDP can never
+      // diverge on how a saved (possibly blank) name override is resolved.
+      // product.js only auto-boots when a #galleryTrack exists (PDP only), so
+      // importing it here for the pure helpers has no side effects.
+      import { overrideKeys, overrideText } from './js/product.js';
 
-      const PRICE = 79;
-      const WAS = 129;
+      // Owner-editable store price. The grid renders IMMEDIATELY with the launch
+      // defaults (never blank / never blocked), then a timeout-bounded fetch
+      // overlays the live price in a non-blocking .then() — a slow or cold endpoint
+      // never delays the store.
+      let PRICE = PRICING_FALLBACK.store.now;
+      let WAS = PRICING_FALLBACK.store.was;
       const grid = document.getElementById('storeGrid');
+
+      // Stamp a `.product-price` node: a struck WAS then "מ-PRICE ₪".
+      function stampPrice(el) {
+        el.textContent = '';
+        const was = document.createElement('s');
+        was.textContent = `${WAS} ₪`;
+        el.appendChild(was);
+        el.append(` מ-${PRICE} ₪`);
+      }
 
       // ---- one product card ---------------------------------------------------
       function card(d) {
@@ -546,13 +565,10 @@
         name.textContent = d.name;
         link.appendChild(name);
 
-        // Price: ₪79 with a struck ₪129.
+        // Price: the struck WAS beside "מ-<now> ₪".
         const price = document.createElement('span');
         price.className = 'product-price';
-        const was = document.createElement('s');
-        was.textContent = `${WAS} ₪`;
-        price.appendChild(was);
-        price.append(` מ-${PRICE} ₪`);
+        stampPrice(price);
         link.appendChild(price);
 
         article.appendChild(link);
@@ -580,11 +596,8 @@
         // (/api/design-names → themes.json display_he), which in turn wins over the
         // built-in catalog name. The grid already shows the built-in names, so this
         // only ever upgrades them; every fetch is fail-soft (grid stands on error).
-        const contentNameOverride = (overrides, id) => {
-          // Mirror product.js overrideText: a saved { text } wins (even ''), else null.
-          const e = overrides && overrides['product-' + id + '-name'];
-          return e && typeof e.text === 'string' ? e.text : null;
-        };
+        const contentNameOverride = (overrides, id) =>
+          overrideText(overrides, overrideKeys(id).name);
         const loadContentNames = fetch('/api/content?page=product.html')
           .then((r) => (r.ok ? r.json() : { overrides: {} }))
           .then((data) => (data && data.overrides) || {})
@@ -644,6 +657,14 @@
           '<a class="btn" href="options.html">להזמנה ובחירת עיצוב ›</a></div>';
         console.error('store grid failed to render:', err);
       }
+
+      // Overlay the live owner-editable price once it resolves (non-blocking;
+      // fail-safe — on a slow/failed fetch the seeded launch defaults stay).
+      fetchPricing().then((p) => {
+        PRICE = p.store.now;
+        WAS = p.store.was;
+        for (const el of document.querySelectorAll('.product-price')) stampPrice(el);
+      });
     </script>
   </body>
 </html>

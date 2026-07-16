@@ -1079,6 +1079,7 @@
     <script type="module">
       import { initCarousel } from './js/carousel.js';
       import { PUBLIC_DESIGNS } from './js/designs.js';
+      import { fetchPricing } from './js/pricing.js';
       import { loadDesignImages, overrideFor } from './js/design-images.js';
 
       // ---- HERO: full-bleed auto-rotating slideshow ----
@@ -1097,7 +1098,10 @@
       }
 
       // ---- PRODUCTS RAIL: one card per public design → product.html?design=<id> ----
-      const PRICE = 79;
+      // Owner-editable store price. Seeded with the launch default so the rail is
+      // never blank; re-stamped once /api/pricing resolves (timeout-bounded,
+      // fail-safe — a slow/failed fetch keeps the default).
+      let PRICE = 199;
       // Short label: the design name trimmed to ≤3 words.
       const shortLabel = (name) =>
         String(name || '')
@@ -1169,6 +1173,18 @@
             /* fail-safe: static store.webp stays */
           });
       }
+
+      // Overlay the owner-editable store price onto the rail cards once it
+      // resolves. Fail-safe: on a slow/failed fetch the seeded default stays. This
+      // is the page's SINGLE /api/pricing fetch — it also feeds the (dormant) plan
+      // sum used by the classic CONFIG script below, via the window hook it exposes.
+      fetchPricing().then((p) => {
+        PRICE = p.store.now;
+        for (const el of document.querySelectorAll('.home-prod-price')) {
+          el.textContent = `${PRICE} ₪`;
+        }
+        if (typeof window.dugriSetPlanSum === 'function') window.dugriSetPlanSum(p.store.now);
+      });
 
       // ---- CELEBRATIONS COUNTER: exact order count from the public stats API ----
       // The box ships with the real default (23) baked into the HTML, so it is
@@ -1513,8 +1529,15 @@
         // Where Tranzila returns the customer after a successful payment:
         successUrl: 'https://YOUR-DOMAIN/',
         plans: {
-          base: { sum: 79, desc: 'דוגרי - חבילת בסיס' },
+          base: { sum: 199, desc: 'דוגרי - חבילת בסיס' },
         },
+      };
+
+      // The base plan sum (used only by the dormant Tranzila/WhatsApp fallback in
+      // pay() below) is fed by the module script's SINGLE /api/pricing fetch — no
+      // duplicate request here. Until it resolves the seeded default (199) stays.
+      window.dugriSetPlanSum = (n) => {
+        if (Number.isInteger(n)) CONFIG.plans.base.sum = n;
       };
 
       const waBase = 'https://wa.me/' + CONFIG.whatsapp;

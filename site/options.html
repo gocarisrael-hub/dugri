@@ -1792,7 +1792,8 @@
     <main class="wrap" data-testid="configurator">
       <div class="cfg-head">
         <div class="plan-pill" data-testid="plan-pill">
-          החל מ- <s class="was">129 ₪</s> <span id="planPrice" data-testid="plan-price">79</span> ₪
+          החל מ- <s class="was" id="planWas">239 ₪</s>
+          <span id="planPrice" data-testid="plan-price">199</span> ₪
         </div>
         <div class="wiz-progress">
           <div class="wiz-steplabel">
@@ -2658,6 +2659,7 @@
       } from './js/configurator.js';
       import { track } from './js/analytics.js';
       import { initCarousel } from './js/carousel.js';
+      import { fetchPricing } from './js/pricing.js';
 
       // Owner-controlled buyer-wizard feature flags. Fetched once, BEFORE the
       // wizard builds its steps/nav, so a gated-off feature is never painted and
@@ -2723,16 +2725,32 @@
       })();
 
       /* ---- plan from query ---- */
+      // Owner-editable store price. Baked-in launch defaults (199 now / 239 was)
+      // so the pill is never blank, even before /api/pricing answers or if it
+      // fails. The live price is overlaid via the SHARED fetchPricing helper
+      // (timeout-bounded + fail-soft) — no inline fetch is reimplemented here.
       const PLANS = {
-        base: { name: 'החבילה המלאה', price: 79 },
+        base: { name: 'החבילה המלאה', price: 199, was: 239 },
       };
       const params = new URLSearchParams(location.search);
       let plan = 'base';
 
       function paintPlan() {
         document.getElementById('planPrice').textContent = PLANS[plan].price;
+        const wasEl = document.getElementById('planWas');
+        if (wasEl) wasEl.textContent = PLANS[plan].was + ' ₪';
       }
       paintPlan();
+
+      // Overlay the owner's live store price once it resolves; a slow/failing
+      // fetch keeps the baked-in defaults (fetchPricing already falls back).
+      fetchPricing().then((p) => {
+        if (p && p.store) {
+          if (Number.isInteger(p.store.now)) PLANS.base.price = p.store.now;
+          if (Number.isInteger(p.store.was)) PLANS.base.was = p.store.was;
+          paintPlan();
+        }
+      });
 
       /* ---- state ---- */
       let designIndex = 0;

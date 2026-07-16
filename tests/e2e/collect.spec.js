@@ -44,6 +44,27 @@ async function createCollection(page, name) {
   await page.waitForURL(/collect\.html\?c=.+&k=.+/);
 }
 
+// Pin /api/pricing so the pay-panel tests exercise a KNOWN set of versions/prices
+// regardless of the server's launch defaults (which are pickup-only). The legacy
+// spread — all four versions enabled, pdf first at 79 — keeps the historical
+// per-version assertions meaningful. Call BEFORE createCollection so the route is
+// registered before collect.html fetches it. (Only affects browser fetches;
+// page.request.* calls bypass page.route and hit the real server.)
+async function stubPricing(page, pricing) {
+  const body = pricing || {
+    store: { now: 79, was: 129 },
+    versions: {
+      pdf: { enabled: true, price: 79 },
+      pickup: { enabled: true, price: 149 },
+      delivery: { enabled: true, price: 199 },
+      custom: { enabled: true, price: 599 },
+    },
+  };
+  await page.route('**/api/pricing', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+  );
+}
+
 test('create → add words (one-by-one + paste, deduped) → idea generator → close', async ({
   page,
 }) => {
@@ -316,6 +337,7 @@ test('add-word failure surfaces an error and keeps the typed word', async ({ pag
 });
 
 test('owner pay panel: select delivery → address fields appear + total 199', async ({ page }) => {
+  await stubPricing(page);
   await createCollection(page, 'Shira');
 
   // Owner sees the pay panel; it's collapsed by default — open it first.
@@ -427,12 +449,204 @@ test('over the 416 cap: counter shows 416 max (no fraction over cap), bar full',
   expect(parseFloat(width)).toBe(100); // bar full
 });
 
-test('struck old price carries the ₪ sign alongside the new price', async ({ page }) => {
+test('each option price is rendered from the pricing endpoint', async ({ page }) => {
+  // Per-option prices now come from /api/pricing (not baked into the label HTML).
+  await stubPricing(page);
   await createCollection(page, 'Shira');
   await page.locator('#payPanel summary').click();
-  const was = page.locator('#payPanel s.was');
-  await expect(was).toHaveText('₪129');
+  // pdf is first + enabled in the stub → ₪79; pickup shows the stubbed ₪149.
   await expect(page.locator('#payPanel .opt-price').first()).toContainText('₪79');
+  await expect(page.locator('#payPanel')).toContainText('₪149');
+});
+
+test('launch defaults: checkout offers ONLY self-pickup at ₪199', async ({ page }) => {
+  // The out-of-the-box settings: pickup-only. The other versions must be hidden
+  // and not selectable, and the total is the pickup price.
+  await stubPricing(page, {
+    store: { now: 199, was: 239 },
+    versions: {
+      pdf: { enabled: false, price: 79 },
+      pickup: { enabled: true, price: 199 },
+      delivery: { enabled: false, price: 199 },
+      custom: { enabled: false, price: 599 },
+    },
+  });
+  await createCollection(page, 'Shira');
+  await page.locator('#payPanel summary').click();
+
+  const label = (v) => page.locator(`.pay-opt:has(input[value="${v}"])`);
+  await expect(label('pickup')).toBeVisible();
+  for (const v of ['pdf', 'delivery', 'custom']) {
+    await expect(label(v)).toBeHidden();
+    await expect(page.locator(`input[name="payVersion"][value="${v}"]`)).toBeDisabled();
+  }
+  // pickup is auto-selected and the total is its price.
+  await expect(page.locator('input[name="payVersion"][value="pickup"]')).toBeChecked();
+  await expect(page.locator('#payTotal')).toHaveText('199');
+  await expect(page.locator('#payPanel')).toContainText('₪199');
+});
+
+test('an admin custom order LOCKS checkout to custom @599 — no client downgrade', async ({
+  page,
+}) => {
+  // Regression: a pending admin-created custom order (599₪) paid after `custom`
+  // was hidden must NOT be re-priced as pickup (199₪). Checkout locks to the
+  // order's version + stored total.
+  await enableCardButton(page); // makes the pay button visible so we can assert it
+  await stubPricing(page); // all versions "enabled" — the LOCK must override this
+  await createCollection(page, 'Shira');
+  const c = new URL(page.url()).searchParams.get('c');
+  // Admin creates the bespoke custom order on this collection.
+  const res = await page.request.post(`/api/admin/collections/${c}/custom?key=dugri-admin`);
+  expect(res.ok()).toBeTruthy();
+
+  await page.reload();
+  await page.locator('#payPanel summary').click();
+  const label = (v) => page.locator(`.pay-opt:has(input[value="${v}"])`);
+  // Only the custom option is shown, at its stored 599 — no cheaper option.
+  await expect(label('custom')).toBeVisible();
+  for (const v of ['pdf', 'pickup', 'delivery']) {
+    await expect(label(v)).toBeHidden();
+  }
+  await expect(page.locator('#payTotal')).toHaveText('599');
+  await expect(page.locator('#payPanel')).toContainText('₪599');
+  // The order stays payable (it's a valid persisted order).
+  await expect(page.locator('#cardPayBtn')).toBeEnabled();
+});
+
+test('pricing fetch failure disables pay and offers a refresh (never a guessed price)', async ({
+  page,
+}) => {
+  await enableCardButton(page);
+  // The pricing endpoint is down — the checkout must not offer to charge a guess.
+  await page.route('**/api/pricing', (route) =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
+  );
+  await createCollection(page, 'Shira');
+  await page.locator('#payPanel summary').click();
+
+  await expect(page.locator('#priceLoadErr')).toBeVisible();
+  await expect(page.locator('#priceLoadErr [data-role="retry"]')).toBeVisible();
+  await expect(page.locator('#payOpts')).toBeHidden();
+  await expect(page.locator('#cardPayBtn')).toBeDisabled();
+  // Fix #2: the total line must NOT show the PRICING_FALLBACK ₪199 beside the
+  // "couldn't load prices" message — no guessed number at all.
+  await expect(page.locator('#payTotal')).toHaveText('—');
+  await expect(page.locator('.pay-total')).not.toContainText('199');
+});
+
+test('pay stays disabled (no guessed total) until pricing RESOLVES, then enables at the live price', async ({
+  page,
+}) => {
+  // Fix #3: during the in-flight /api/pricing window the seeded launch defaults
+  // must NOT be presented as payable — a fast click could otherwise charge the
+  // live (server-authoritative) price the buyer never saw. Hold the response.
+  await enableCardButton(page);
+  let release;
+  const gate = new Promise((r) => (release = r));
+  await page.route('**/api/pricing', async (route) => {
+    await gate;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        store: { now: 249, was: 299 },
+        versions: {
+          pdf: { enabled: false, price: 79 },
+          pickup: { enabled: true, price: 249 },
+          delivery: { enabled: false, price: 199 },
+          custom: { enabled: false, price: 599 },
+        },
+      }),
+    });
+  });
+  await createCollection(page, 'Shira');
+  await page.locator('#payPanel summary').click();
+
+  // Before pricing resolves: pay disabled, a "loading prices" note, no number.
+  await expect(page.locator('#cardPayBtn')).toBeDisabled();
+  await expect(page.locator('#payTotal')).toHaveText('—');
+  await expect(page.locator('#priceLoadErr')).toContainText('טוענים');
+
+  // Let pricing resolve — now pay enables at the confirmed live price (249).
+  release();
+  await expect(page.locator('#cardPayBtn')).toBeEnabled();
+  await expect(page.locator('#payTotal')).toHaveText('249');
+  await expect(page.locator('#priceLoadErr')).toBeHidden();
+});
+
+test('no version enabled → checkout shows "orders closed", no pay button, no total', async ({
+  page,
+}) => {
+  await enableCardButton(page);
+  await stubPricing(page, {
+    store: { now: 199, was: 239 },
+    versions: {
+      pdf: { enabled: false, price: 79 },
+      pickup: { enabled: false, price: 199 },
+      delivery: { enabled: false, price: 199 },
+      custom: { enabled: false, price: 599 },
+    },
+  });
+  await createCollection(page, 'Shira');
+  await page.locator('#payPanel summary').click();
+
+  await expect(page.locator('#priceLoadErr')).toBeVisible();
+  await expect(page.locator('#priceLoadErr')).toContainText('סגור');
+  // No retry (this isn't a load failure), no option list, pay disabled.
+  await expect(page.locator('#priceLoadErr [data-role="retry"]')).toBeHidden();
+  await expect(page.locator('#payOpts')).toBeHidden();
+  await expect(page.locator('#cardPayBtn')).toBeDisabled();
+});
+
+test("a stored delivery address prefills the checkout form so the buyer isn't forced to re-type it", async ({
+  page,
+}) => {
+  // Fix #4: an order with a stored delivery address (owner reload) must prefill
+  // the form — collectAddress() otherwise blocks pay until street/city/zip are
+  // re-entered. Enable delivery server-side, place a delivery order with an
+  // address, reload as the owner, and assert the fields come back filled.
+  await enableCardButton(page);
+  await page.request.post('/api/admin/settings?key=dugri-admin', {
+    data: { section: 'pricing', key: 'delivery_enabled', value: true },
+  });
+  try {
+    await stubPricing(page, {
+      store: { now: 199, was: 239 },
+      versions: {
+        pdf: { enabled: false, price: 79 },
+        pickup: { enabled: true, price: 199 },
+        delivery: { enabled: true, price: 220 },
+        custom: { enabled: false, price: 599 },
+      },
+    });
+    await createCollection(page, 'Shira');
+    const url = new URL(page.url());
+    const c = url.searchParams.get('c');
+    const k = url.searchParams.get('k');
+    // Place a delivery order WITH an address directly (bypasses the card iframe).
+    const res = await page.request.post(`/api/collections/${c}/order`, {
+      data: {
+        owner_token: k,
+        version: 'delivery',
+        address: { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' },
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+
+    await page.reload();
+    await page.locator('#payPanel summary').click();
+    // Re-select delivery; the stored address is prefilled (no re-typing to pay).
+    await page.locator('.pay-opt input[value="delivery"]').check();
+    await expect(page.locator('#addrStreet')).toHaveValue('הרצל 1');
+    await expect(page.locator('#addrCity')).toHaveValue('תל אביב');
+    await expect(page.locator('#addrPostal')).toHaveValue('6100000');
+  } finally {
+    // Restore the launch default so this global server setting can't leak.
+    await page.request.delete(
+      '/api/admin/settings?key=dugri-admin&section=pricing&settingKey=delivery_enabled'
+    );
+  }
 });
 
 test('after payment: pay panel + reminder disappear, סיום card takes over', async ({ page }) => {
@@ -442,8 +656,10 @@ test('after payment: pay panel + reminder disappear, סיום card takes over', 
   const k = url.searchParams.get('k');
 
   // Place an order, then mark it paid via the admin endpoint (E2E ADMIN_KEY).
+  // pickup is the enabled-by-default version (this is a real API POST that
+  // bypasses page.route, so it must use a version the server actually offers).
   await page.request.post(`/api/collections/${c}/order`, {
-    data: { owner_token: k, version: 'pdf' },
+    data: { owner_token: k, version: 'pickup' },
   });
   const paidRes = await page.request.post(`/api/admin/collections/${c}/paid?key=dugri-admin`);
   expect(paidRes.ok()).toBeTruthy();
@@ -464,6 +680,7 @@ test('after payment: pay panel + reminder disappear, סיום card takes over', 
 });
 
 test('pay panel shows the new version names and prices', async ({ page }) => {
+  await stubPricing(page);
   await createCollection(page, 'Shira');
   const panel = page.locator('#payPanel');
   await expect(panel).toContainText('דיגיטלי (PDF)');
@@ -513,6 +730,7 @@ async function enableCardButton(page) {
 test('owner applies a valid coupon → discounted total with the struck full price', async ({
   page,
 }) => {
+  await stubPricing(page);
   await seedCoupon(page, 'TEST25', 25);
   await createCollection(page, 'Shira');
 
@@ -547,6 +765,7 @@ test('owner applies a valid coupon → discounted total with the struck full pri
 test('unknown coupon code shows a not-found message and leaves the total full', async ({
   page,
 }) => {
+  await stubPricing(page);
   await createCollection(page, 'Shira');
   await page.locator('#payPanel summary').click();
   await expect(page.locator('#payTotal')).toHaveText('79');
@@ -608,6 +827,7 @@ test('free coupon: pay/init free:true skips the iframe, shows paid UI, clears th
 test('pay/init coupon errors: 400 clears the coupon, 409 and 429 show their messages', async ({
   page,
 }) => {
+  await stubPricing(page);
   await seedCoupon(page, 'TEST25', 25);
   await enableCardButton(page);
   let payMode = '400';

@@ -22,6 +22,10 @@ describe('custom product — db pricing + flag', () => {
 
   beforeAll(() => {
     process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-custom-'));
+    // NOTE: versions are LEFT at their launch defaults (custom disabled). `custom`
+    // is an admin-only product, so custom orders are created with the admin bypass
+    // ({ admin: true }) — the same path the /admin/.../custom route uses.
+    delete require.cache[require.resolve(path.join(serverDir, 'settings.js'))];
     delete require.cache[require.resolve(path.join(serverDir, 'db.js'))];
     db = require(path.join(serverDir, 'db.js'));
     ORDER_PRICES = db.ORDER_PRICES;
@@ -35,9 +39,14 @@ describe('custom product — db pricing + flag', () => {
     expect(ORDER_PRICES.custom).toBe(599);
   });
 
-  it('setOrder with version:custom sets total 599 and needs no address', () => {
+  it('a PUBLIC setOrder for the hidden custom version is rejected; the admin bypass works', () => {
     const c = fresh();
-    const o = db.setOrder(c.id, c.owner_token, { version: 'custom' });
+    // custom is disabled at launch → a public caller can't order it.
+    expect(db.setOrder(c.id, c.owner_token, { version: 'custom' }).error).toBe(
+      'version unavailable'
+    );
+    // The admin bypass creates it anyway (bespoke order).
+    const o = db.setOrder(c.id, c.owner_token, { version: 'custom' }, { admin: true });
     expect(o.error).toBeUndefined();
     expect(o.version).toBe('custom');
     expect(o.total).toBe(599);
@@ -45,9 +54,22 @@ describe('custom product — db pricing + flag', () => {
     expect(o.paid).toBe(false);
   });
 
+  it('an existing (admin) custom order is version-LOCKED — a public downgrade is rejected', () => {
+    const c = fresh();
+    db.setOrder(c.id, c.owner_token, { version: 'custom' }, { admin: true });
+    // A public caller trying to switch it to a cheaper enabled version is refused.
+    expect(db.setOrder(c.id, c.owner_token, { version: 'pickup' }).error).toBe('version locked');
+    // Re-submitting the SAME (locked) version is allowed and keeps the 599 total,
+    // so the buyer can pay the bespoke order even though `custom` is hidden.
+    const same = db.setOrder(c.id, c.owner_token, { version: 'custom' });
+    expect(same.error).toBeUndefined();
+    expect(same.total).toBe(599);
+    expect(db.getCollection(c.id).order.version).toBe('custom');
+  });
+
   it('flags a paid custom order for hand-design via a production sub-state', () => {
     const c = fresh();
-    db.setOrder(c.id, c.owner_token, { version: 'custom' });
+    db.setOrder(c.id, c.owner_token, { version: 'custom' }, { admin: true });
     expect(db.markPaid(c.id, { method: 'coupon' })).toBe(true);
     const stored = db.getCollection(c.id);
     // The order is a custom order (the flag) ...
@@ -61,7 +83,8 @@ describe('custom product — db pricing + flag', () => {
 
   it('does NOT flag a non-custom paid order for hand-design', () => {
     const c = fresh();
-    db.setOrder(c.id, c.owner_token, { version: 'pdf' });
+    // pickup is enabled at launch — a normal, non-custom order.
+    db.setOrder(c.id, c.owner_token, { version: 'pickup' });
     db.markPaid(c.id, { method: 'coupon' });
     const stored = db.getCollection(c.id);
     expect(stored.order.production).toBeUndefined();
@@ -70,7 +93,7 @@ describe('custom product — db pricing + flag', () => {
 
   it('never clobbers an already-recorded production state', () => {
     const c = fresh();
-    db.setOrder(c.id, c.owner_token, { version: 'custom' });
+    db.setOrder(c.id, c.owner_token, { version: 'custom' }, { admin: true });
     db.setProduction(c.id, { state: 'generated', pdf_file: 'x.pdf' });
     db.markPaid(c.id, { method: 'coupon' });
     expect(db.getCollection(c.id).order.production.state).toBe('generated');
@@ -137,6 +160,9 @@ describe('custom product — server routes', () => {
     for (const f of ['db.js', 'pelecard.js', 'notify.js', 'index.js']) {
       delete require.cache[require.resolve(path.join(serverDir, f))];
     }
+    // Versions LEFT at launch defaults (custom disabled) — these routes exercise
+    // the admin bespoke path + the buyer paying that locked custom order.
+    delete require.cache[require.resolve(path.join(serverDir, 'settings.js'))];
     db = require(path.join(serverDir, 'db.js'));
     app = require(path.join(serverDir, 'index.js'));
 
@@ -178,8 +204,42 @@ describe('custom product — server routes', () => {
     return { status: res.status, body: await res.json().catch(() => ({})) };
   }
 
-  it('pay/init CARD path accepts version:custom and charges 599', async () => {
-    const c = db.createCollection('כרטיס מותאם');
+  // Set up an admin-created bespoke custom order on a fresh collection.
+  async function adminCustomOrder(name) {
+    const c = db.createCollection(name);
+    const r = await post('/api/admin/collections/' + c.id + '/custom?key=admin-secret', {});
+    expect(r.status).toBe(200);
+    return c;
+  }
+
+  it('admin bespoke route sets version:custom (with custom DISABLED for the public) and returns a pay link', async () => {
+    const c = db.createCollection('בהתאמה מנהל');
+    const r = await post('/api/admin/collections/' + c.id + '/custom?key=admin-secret', {});
+    expect(r.status).toBe(200);
+    expect(r.body.order.version).toBe('custom');
+    expect(r.body.order.total).toBe(599);
+    expect(r.body.pay_link).toContain('/collect.html?c=' + c.id);
+    expect(db.getCollection(c.id).order.version).toBe('custom');
+  });
+
+  it('a PUBLIC buyer POSTing the hidden custom version is rejected 400', async () => {
+    const c = db.createCollection('קנייה ציבורית');
+    const order = await post('/api/collections/' + c.id + '/order', {
+      owner_token: c.owner_token,
+      version: 'custom',
+    });
+    expect(order.status).toBe(400);
+    expect(order.body.error).toBe('version unavailable');
+    const pay = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'custom',
+    });
+    expect(pay.status).toBe(400);
+    expect(db.getCollection(c.id).order).toBe(null);
+  });
+
+  it('pay/init CARD path pays an admin-created custom order at 599 (locked version)', async () => {
+    const c = await adminCustomOrder('כרטיס מותאם');
     const r = await post('/api/collections/' + c.id + '/pay/init', {
       owner_token: c.owner_token,
       version: 'custom',
@@ -191,10 +251,24 @@ describe('custom product — server routes', () => {
     expect(db.getCollection(c.id).order.version).toBe('custom');
   });
 
-  it('pay/init FREE (100% coupon) path accepts version:custom and marks it paid', async () => {
+  it('pay/init cannot DOWNGRADE an admin custom order to a cheaper version', async () => {
+    const c = await adminCustomOrder('נעילת גרסה');
+    const r = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pickup',
+    });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('version locked');
+    // The order is untouched — still custom @599.
+    const order = db.getCollection(c.id).order;
+    expect(order.version).toBe('custom');
+    expect(order.total).toBe(599);
+  });
+
+  it('pay/init FREE (100% coupon) pays an admin-created custom order and marks it paid', async () => {
     const coupon = db.createCoupon({ code: 'FREECUSTOM', discount_pct: 100 });
     expect(coupon.error).toBeUndefined();
-    const c = db.createCollection('קופון מותאם');
+    const c = await adminCustomOrder('קופון מותאם');
     const r = await post('/api/collections/' + c.id + '/pay/init', {
       owner_token: c.owner_token,
       version: 'custom',
@@ -208,16 +282,6 @@ describe('custom product — server routes', () => {
     expect(order.version).toBe('custom');
     // Paid custom order is flagged for hand-design.
     expect(order.production).toMatchObject({ state: 'needs_design', custom: true });
-  });
-
-  it('admin bespoke route sets version:custom and returns a pay link', async () => {
-    const c = db.createCollection('בהתאמה מנהל');
-    const r = await post('/api/admin/collections/' + c.id + '/custom?key=admin-secret', {});
-    expect(r.status).toBe(200);
-    expect(r.body.order.version).toBe('custom');
-    expect(r.body.order.total).toBe(599);
-    expect(r.body.pay_link).toContain('/collect.html?c=' + c.id);
-    expect(db.getCollection(c.id).order.version).toBe('custom');
   });
 
   it('admin bespoke route rejects a missing admin key', async () => {

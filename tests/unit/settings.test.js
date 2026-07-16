@@ -182,6 +182,96 @@ describe('value-shape validation (set + validateValue)', () => {
   });
 });
 
+describe('pricing section (price + flag kinds)', () => {
+  it('ships the launch defaults (store 199/239; only pickup enabled)', () => {
+    const s = loadFresh();
+    expect(s.get('pricing', 'store_now')).toBe(199);
+    expect(s.get('pricing', 'store_was')).toBe(239);
+    expect(s.get('pricing', 'pdf_enabled')).toBe(false);
+    expect(s.get('pricing', 'pdf_price')).toBe(79);
+    expect(s.get('pricing', 'pickup_enabled')).toBe(true);
+    expect(s.get('pricing', 'pickup_price')).toBe(199);
+    expect(s.get('pricing', 'delivery_enabled')).toBe(false);
+    expect(s.get('pricing', 'delivery_price')).toBe(199);
+    expect(s.get('pricing', 'custom_enabled')).toBe(false);
+    expect(s.get('pricing', 'custom_price')).toBe(599);
+  });
+
+  it('validates a price as a non-negative integer', () => {
+    const s = loadFresh();
+    const msg = 'value must be a non-negative integer';
+    // Rejected: strings (even numeric), floats, negatives, null, NaN, booleans.
+    for (const bad of ['199', 1.5, -1, null, NaN, true]) {
+      expect(s.validateValue('pricing', 'store_now', bad)).toBe(msg);
+      expect(() => s.set('pricing', 'store_now', bad)).toThrow();
+    }
+    // Accepted: zero and positive integers.
+    for (const good of [0, 1, 79, 249]) {
+      expect(s.validateValue('pricing', 'store_now', good)).toBeNull();
+    }
+    // No bad write leaked; the default is intact.
+    expect(s.all().overrides).toEqual({});
+    expect(s.get('pricing', 'store_now')).toBe(199);
+  });
+
+  it('rejects 0 for a version price (must be a POSITIVE integer) but allows 0 for a store price', () => {
+    const s = loadFresh();
+    // A charged version price can never be 0 (a 0 total would be treated as a
+    // free/paid order downstream) — min is 1.
+    for (const key of ['pdf_price', 'pickup_price', 'delivery_price', 'custom_price']) {
+      expect(s.validateValue('pricing', key, 0)).toBe('value must be a positive integer');
+      expect(s.validateValue('pricing', key, -1)).toBe('value must be a positive integer');
+      expect(() => s.set('pricing', key, 0)).toThrow();
+      // 1 and up are fine.
+      expect(s.validateValue('pricing', key, 1)).toBeNull();
+      expect(s.validateValue('pricing', key, 249)).toBeNull();
+    }
+    // Store display prices are never charged, so 0 is allowed.
+    expect(s.validateValue('pricing', 'store_now', 0)).toBeNull();
+    expect(s.validateValue('pricing', 'store_was', 0)).toBeNull();
+    // Nothing bad was written.
+    expect(s.all().overrides).toEqual({});
+  });
+
+  it('validates a flag as a boolean', () => {
+    const s = loadFresh();
+    for (const bad of ['true', 1, 0, null, {}]) {
+      expect(s.validateValue('pricing', 'pdf_enabled', bad)).toBe('value must be a boolean');
+      expect(() => s.set('pricing', 'pdf_enabled', bad)).toThrow();
+    }
+    expect(s.validateValue('pricing', 'pdf_enabled', true)).toBeNull();
+    expect(s.validateValue('pricing', 'pdf_enabled', false)).toBeNull();
+  });
+
+  it('sets, persists and resets a pricing key', () => {
+    const s = loadFresh();
+    expect(s.set('pricing', 'pickup_price', 249)).toBe(249);
+    expect(s.set('pricing', 'pdf_enabled', true)).toBe(true);
+    // Persisted: a freshly loaded copy sees the overrides.
+    const reloaded = loadFresh();
+    expect(reloaded.get('pricing', 'pickup_price')).toBe(249);
+    expect(reloaded.get('pricing', 'pdf_enabled')).toBe(true);
+    // Reset restores the default and drops the override.
+    expect(reloaded.reset('pricing', 'pickup_price')).toBe(199);
+    expect(reloaded.reset('pricing', 'pdf_enabled')).toBe(false);
+    expect(reloaded.all().overrides.pricing).toBeUndefined();
+  });
+
+  it('all().registry.pricing advertises kind per key with no tokens', () => {
+    const s = loadFresh();
+    const reg = s.all().registry.pricing;
+    expect(reg.store_now).toEqual({ tokens: [], kind: 'price' });
+    expect(reg.store_was).toEqual({ tokens: [], kind: 'price' });
+    expect(reg.pdf_enabled).toEqual({ tokens: [], kind: 'flag' });
+    expect(reg.pickup_price).toEqual({ tokens: [], kind: 'price' });
+    // Every version has both an _enabled flag and a _price.
+    for (const v of ['pdf', 'pickup', 'delivery', 'custom']) {
+      expect(reg[v + '_enabled'].kind).toBe('flag');
+      expect(reg[v + '_price'].kind).toBe('price');
+    }
+  });
+});
+
 describe('get() is a defensive backstop', () => {
   it('returns the complete default when a bad-typed override is on disk (bypassing set)', () => {
     // Write a broken override DIRECTLY to the store file (simulating corruption

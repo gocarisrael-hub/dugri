@@ -31,11 +31,97 @@ const MAX_SESSIONS = Number(process.env.PELECARD_MAX_SESSIONS || 50);
 
 const DEFAULTS = { collections: [], words: [], coupons: [], design_codes: [] };
 
-// Single source of truth for order pricing (NIS).
+// Owner-editable pricing lives in server/settings.js (the `pricing` section) so
+// the store price + per-version enable/price change with NO deploy. This module
+// reads it as the AUTHORITATIVE charge. settings.js requires nothing from db, so
+// this import is cycle-free; it's wrapped so a broken settings module can never
+// take the charge path down (we fall back to the built-in defaults below).
+let settings = null;
+try {
+  settings = require('./settings');
+} catch {
+  settings = null;
+}
+
+// The built-in fallback pricing is DERIVED from the settings.js registry defaults
+// (single source of truth — no pricing number is hardcoded here). `ORDER_PRICES`
+// is also the canonical set of known versions. These are used when a runtime
+// settings read fails; if the settings module itself failed to load the maps are
+// empty and setOrder fails closed (rejects every version) rather than mischarge.
 // pdf = digital PDF; pickup = printed + pickup at גלאור; delivery = door-to-door;
-// custom = a "hand-designed just for you" bespoke game (design is TBD — the
-// customer buys the custom slot and we design it by hand afterwards).
-const ORDER_PRICES = { pdf: 79, pickup: 149, delivery: 199, custom: 599 };
+// custom = a "hand-designed just for you" bespoke game we design by hand.
+function pricingDefaults() {
+  const reg = (settings && settings.REGISTRY && settings.REGISTRY.pricing) || {};
+  const prices = {};
+  const enabled = {};
+  const store = {};
+  for (const key of Object.keys(reg)) {
+    const d = reg[key].default;
+    let m;
+    if ((m = /^(.+)_price$/.exec(key))) prices[m[1]] = d;
+    else if ((m = /^(.+)_enabled$/.exec(key))) enabled[m[1]] = d === true;
+    else if (key === 'store_now' || key === 'store_was') store[key] = d;
+  }
+  return { prices, enabled, store };
+}
+const { prices: ORDER_PRICES, enabled: DEFAULT_ENABLED, store: STORE_DEFAULTS } = pricingDefaults();
+
+// Is a version currently offered? Reads the `<v>_enabled` flag from settings,
+// falling back to the built-in launch default if a settings read fails.
+function versionEnabled(version) {
+  if (!Object.prototype.hasOwnProperty.call(ORDER_PRICES, version)) return false;
+  try {
+    return settings.get('pricing', version + '_enabled') === true;
+  } catch {
+    return DEFAULT_ENABLED[version] === true;
+  }
+}
+
+// The NIS charge for a version — the AUTHORITATIVE amount. Reads `<v>_price` from
+// settings; only a POSITIVE integer (>= 1) is honoured, otherwise it falls back to
+// the built-in default (which is itself >= 1). This guarantees a base version
+// total is never 0/negative even if a corrupt override slipped past validation.
+function versionPrice(version) {
+  try {
+    const p = settings.get('pricing', version + '_price');
+    if (Number.isInteger(p) && p >= 1) return p;
+  } catch {
+    /* settings unavailable — use the built-in default below */
+  }
+  return ORDER_PRICES[version];
+}
+
+// Last-resort baked store display defaults, used only if the settings module
+// itself failed to load (so the registry-derived STORE_DEFAULTS are empty). This
+// guarantees the public projection never emits an `undefined` store price that
+// would render as "undefined ₪" on the storefront.
+const BAKED_STORE = { store_now: 199, store_was: 239 };
+
+// The effective store display price for `store_now`/`store_was`. Display-only
+// (never charged), so 0 is allowed; a corrupt/non-integer override falls back to
+// the registry default, and to the baked default if even that is unavailable.
+function storeValue(key) {
+  try {
+    const v = settings.get('pricing', key);
+    if (Number.isInteger(v) && v >= 0) return v;
+  } catch {
+    /* settings unavailable — use the built-in default below */
+  }
+  const d = STORE_DEFAULTS[key];
+  return Number.isInteger(d) ? d : BAKED_STORE[key];
+}
+
+// The single source for the PUBLIC /api/pricing projection AND the charge path:
+// both read these same functions, so what the buyer is SHOWN can never disagree
+// with what the server CHARGES. Shape: { store:{now,was}, versions:{<v>:{enabled,
+// price}} }.
+function effectivePricing() {
+  const versions = {};
+  for (const v of Object.keys(ORDER_PRICES)) {
+    versions[v] = { enabled: versionEnabled(v), price: versionPrice(v) };
+  }
+  return { store: { now: storeValue('store_now'), was: storeValue('store_was') }, versions };
+}
 
 function loadDb() {
   try {
@@ -360,11 +446,48 @@ const db = {
 
   // Owner-only: attach/replace the order on a collection.
   // Returns the stored order, or an {error} object on bad input/auth.
-  setOrder(id, ownerToken, { version, address } = {}) {
+  //
+  // opts.admin — an internal/admin call (e.g. the bespoke custom-order route). It
+  //   BYPASSES the public version-enable gate + the version-lock, so the owner can
+  //   hand-create a custom (599₪) order even while `custom` is hidden from public
+  //   buyers. Public routes (/order, /pay/init) never pass it.
+  setOrder(id, ownerToken, { version, address } = {}, opts = {}) {
+    const admin = !!(opts && opts.admin);
     const c = this.getCollection(id);
     if (!c || c.owner_token !== ownerToken) return { error: 'forbidden' };
     if (!Object.prototype.hasOwnProperty.call(ORDER_PRICES, version)) {
       return { error: 'bad version' };
+    }
+    // Version-lock policy for PUBLIC callers (an admin call bypasses all of this):
+    //   • A PAID order is immutable — a completed purchase is never re-charged or
+    //     downgraded, whatever version is POSTed.
+    //   • An ADMIN-CREATED order (source==='admin', e.g. a bespoke 599₪ custom
+    //     quote) is LOCKED to its version: the buyer may re-submit the SAME version
+    //     to pay it, but can never switch it to a cheaper one. This is the backstop
+    //     against a client downgrading a 599₪ custom order to pickup (199₪).
+    //   • An ordinary UNPAID public order is NOT locked — the buyer may still
+    //     freely switch to any ENABLED version (re-priced from settings). A buyer
+    //     who abandons a card session for one version must be able to order another.
+    const cur = c.order || null;
+    const curPaid = !!(cur && cur.paid);
+    const curAdmin = !!(cur && cur.source === 'admin');
+    const sameVersion = !!(cur && cur.version === version);
+    if (!admin) {
+      if (curPaid) return { error: 'version locked' };
+      if (curAdmin && !sameVersion) return { error: 'version locked' };
+    }
+    // An existing UNPAID order preserves its stored total + pending PeleCard
+    // handshake when the SAME version is re-submitted (e.g. paying an admin custom
+    // quote, or updating a delivery address without changing the version).
+    const existing = cur && !curPaid ? cur : null;
+    const sameAsExisting = !!(existing && existing.version === version);
+    // Reject a version the owner has turned OFF in admin (settings) exactly like an
+    // unknown one — a disabled option can never be charged even if a client POSTs
+    // it directly. EXEMPT: an admin call, or re-submitting the order's own locked
+    // version (a buyer must be able to pay an admin-created custom order even
+    // though `custom` is hidden from the public checkout).
+    if (!admin && !sameAsExisting && !versionEnabled(version)) {
+      return { error: 'version unavailable' };
     }
     let addr = null;
     if (version === 'delivery') {
@@ -387,11 +510,19 @@ const db = {
     const prevPelecard = c.order && !c.order.paid ? c.order.pelecard || null : null;
     c.order = {
       version,
-      total: ORDER_PRICES[version],
+      // Re-submitting the SAME version keeps the order's stored total (honours the
+      // price it was created at — e.g. an admin custom quote — even if settings
+      // later changed); a brand-new order is priced from settings now.
+      total: sameAsExisting ? existing.total : versionPrice(version),
       address: addr,
       ordered_at: nowIso(),
       paid: false,
       paid_at: null,
+      // Provenance. 'admin' marks a hand-created order (e.g. a custom quote); it
+      // is version-locked for public callers (see the lock policy above). A buyer
+      // re-submitting an admin order's own version PRESERVES the flag so it stays
+      // locked; a brand-new public order is 'public' and freely switchable.
+      source: admin ? 'admin' : (existing && existing.source) || 'public',
       // Pending card-payment handshake (PeleCard); null until pay/init runs.
       pelecard: prevPelecard,
     };
@@ -744,3 +875,6 @@ const db = {
 
 module.exports = db;
 module.exports.ORDER_PRICES = ORDER_PRICES;
+// The effective pricing projection (store + per-version enabled/price), read by
+// the public GET /api/pricing so the DISPLAY always matches the CHARGE path.
+module.exports.effectivePricing = effectivePricing;

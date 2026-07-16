@@ -225,8 +225,16 @@ function runPreview({ theme, name, wordFont, extraFields, chasers, customTitle }
   });
 }
 
-function publicView(c) {
+function publicView(c, { owner = false } = {}) {
   const words = db.listWords(c.id);
+  const order = c.order;
+  // A public caller may only re-submit an admin-created or paid order's own
+  // version (see db.setOrder's lock policy). `locked` tells collect.html to show
+  // ONLY that version; an ordinary unpaid public order is unlocked (all enabled
+  // options shown). The delivery address is exposed ONLY to the owner (owner_token
+  // matched) so an owner reloading a locked delivery order can prefill it without
+  // re-typing — it is never leaked to the public/contributor view.
+  const locked = !!(order && (order.paid || order.source === 'admin'));
   return {
     id: c.id,
     honoree_name: c.honoree_name,
@@ -242,6 +250,22 @@ function publicView(c) {
     // PeleCard callback). Drives the pay-to-unlock prompts on collect.html.
     // The address is NOT exposed.
     paid: !!(c.order && c.order.paid),
+    // The placed order's version + stored total (+ a `locked` flag; the delivery
+    // address only when the owner is authenticated). collect.html LOCKS checkout
+    // to a locked (admin-created / paid) order so it is paid at its own version/
+    // total and can never be downgraded client-side to a cheaper version. An
+    // ordinary unpaid public order is NOT locked. null when no order placed yet.
+    order: order
+      ? {
+          version: order.version,
+          total: order.total,
+          paid: !!order.paid,
+          locked,
+          ...(owner && order.version === 'delivery' && order.address
+            ? { address: order.address }
+            : {}),
+        }
+      : null,
     // Whether online card payment is available (PeleCard credentials present).
     // Lets collect.html show the credit-card button only when it will work.
     card_enabled: pelecard.isConfigured(),
@@ -357,7 +381,9 @@ app.post('/api/admin/collections/:id/custom', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const c = db.getCollection(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
-  const order = db.setOrder(req.params.id, c.owner_token, { version: 'custom' });
+  // admin:true bypasses the public version-enable gate so a bespoke custom order
+  // can be created even while `custom` is hidden from public buyers (launch state).
+  const order = db.setOrder(req.params.id, c.owner_token, { version: 'custom' }, { admin: true });
   if (order && order.error) return res.status(400).json({ error: order.error });
   const base = paymentBaseUrl();
   const payLink = base ? base + '/collect.html?c=' + c.id + '&k=' + c.owner_token : null;
@@ -789,11 +815,14 @@ app.post('/api/preview', async (req, res) => {
   }
 });
 
-// Public read: anyone with the link can see the words.
+// Public read: anyone with the link can see the words. The owner (owner_token
+// passed as ?k=) additionally gets the stored delivery address back, so a locked
+// delivery order can be prefilled on reload — never exposed to the public view.
 app.get('/api/collections/:id', (req, res) => {
   const c = db.getCollection(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
-  res.json(publicView(c));
+  const owner = !!(req.query.k && req.query.k === c.owner_token);
+  res.json(publicView(c, { owner }));
 });
 
 // Add words (rejected when closed/expired).
@@ -1355,10 +1384,19 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   // charged_total is ALWAYS a real number — the full total when no coupon.
   const charged = Math.round(order.total * (1 - discountPct / 100));
 
-  // Free order (100%-off, or the charge rounds to <= 0): skip PeleCard entirely,
-  // mark it paid now, count the coupon use, and tell the client it's paid.
-  // BUT NOT while a real (non-free) card session is still in flight — otherwise
-  // the customer could complete that charge and be billed for a "free" order.
+  // A base order total can never be 0 (version prices validate as >= 1 and the
+  // charge falls back to a positive default), so charged<=0 is ONLY reachable via
+  // a coupon that discounts to zero. Guard defensively: if the charge rounds to 0
+  // with NO coupon, something is wrong — refuse rather than mark a paid-at-₪0
+  // order. Only a real coupon may take the free/skip-PeleCard path.
+  if (charged <= 0 && !couponCode) {
+    return res.status(400).json({ error: 'invalid order total' });
+  }
+
+  // Free order (a coupon discounts it to <= 0): skip PeleCard entirely, mark it
+  // paid now, count the coupon use, and tell the client it's paid. BUT NOT while a
+  // real (non-free) card session is still in flight — otherwise the customer could
+  // complete that charge and be billed for a "free" order.
   if (charged <= 0) {
     if (db.hasInFlightRealSession(order)) {
       return res.status(409).json({ error: 'יש תשלום פתוח — סגרו את חלון התשלום לפני החלת קופון' });
@@ -1991,6 +2029,20 @@ app.get('/api/features', (req, res) => {
     out[k] = !!eff[k];
   }
   res.json(out);
+});
+
+// Public, UNAUTHENTICATED: the effective pricing the storefront + checkout read
+// (the owner edits it from admin-pricing.html, no deploy). A WHITELISTED
+// projection of only the `pricing` settings section — the store display price and
+// each checkout version's { enabled, price }. No other settings section leaks
+// here. Mirrors GET /api/content (public overrides projection).
+app.get('/api/pricing', (req, res) => {
+  // db.effectivePricing() is the SINGLE source shared with the charge path (it
+  // reads the same versionEnabled/versionPrice/storeValue helpers), so the price
+  // a buyer is shown can never disagree with the price the server charges — and a
+  // corrupt override falls back to the same built-in default the charge uses (not
+  // a misleading 0). Only the whitelisted { store, versions } is exposed here.
+  res.json(db.effectivePricing());
 });
 
 // Unknown API routes -> JSON 404 (must come before static/catch-all).

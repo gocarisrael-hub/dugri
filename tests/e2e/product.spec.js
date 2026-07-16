@@ -7,17 +7,38 @@ import { test, expect } from '@playwright/test';
 
 const DESIGN_IDS = ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'neon', 'kids'];
 
+// Pin the owner-editable store price so the price assertions are hermetic (the
+// shared e2e server's settings could be mutated by the admin-pricing spec).
+async function stubPricing(page, now = 199, was = 239) {
+  await page.route('**/api/pricing', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        store: { now, was },
+        versions: {
+          pdf: { enabled: false, price: 79 },
+          pickup: { enabled: true, price: 199 },
+          delivery: { enabled: false, price: 199 },
+          custom: { enabled: false, price: 599 },
+        },
+      }),
+    })
+  );
+}
+
 test.describe('product detail page', () => {
   test('renders the gallery, title, price and a buy button into the order flow', async ({
     page,
   }) => {
+    await stubPricing(page);
     await page.goto('/product.html?design=bachelorette');
 
     await expect(page.getByTestId('pdp-gallery')).toBeVisible();
     await expect(page.locator('#pdpTitle')).not.toHaveText('');
-    // The now-price is an anchor: "from ₪79" (מ-79) with the crossed-out was.
-    await expect(page.locator('#pdpPriceNow')).toContainText('מ-79 ₪');
-    await expect(page.locator('#pdpPriceWas')).toContainText('129 ₪');
+    // The now-price is an anchor: "from ₪199" (מ-199) with the crossed-out was.
+    await expect(page.locator('#pdpPriceNow')).toContainText('מ-199 ₪');
+    await expect(page.locator('#pdpPriceWas')).toContainText('239 ₪');
 
     // Buy now carries the chosen design into the order flow and jumps straight
     // to the colour + add-ons step (step 2).
@@ -245,12 +266,13 @@ test.describe('per-product photo carousel + editable content', () => {
     await page.route('**/api/content*', async () => {
       await new Promise(() => {}); // never fulfilled
     });
+    await stubPricing(page);
     await page.goto('/product.html?design=bachelorette', { waitUntil: 'commit' });
 
     // Gallery (default renders), price and buy CTA are all present + correct.
     await expect(page.locator('#galleryTrack .pdp-gallery-slide img').first()).toBeVisible();
     await expect(page.locator('#pdpTitle')).not.toHaveText('');
-    await expect(page.locator('#pdpPriceNow')).toContainText('מ-79 ₪');
+    await expect(page.locator('#pdpPriceNow')).toContainText('מ-199 ₪');
     await expect(page.getByTestId('pdp-buy')).toHaveAttribute(
       'href',
       'options.html?design=bachelorette&step=2'

@@ -16,6 +16,16 @@ let ORDER_PRICES;
 
 beforeAll(() => {
   process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-order-'));
+  // The charge path now reads per-version enable flags from settings; only
+  // pickup is enabled by default. This suite exercises pdf/delivery/custom, so
+  // enable every version for this test's data dir first (fresh settings bound to
+  // the temp DATA_DIR, then persisted so db.js reads them).
+  const settingsPath = path.join(__dirname, '..', '..', 'server', 'settings.js');
+  delete require.cache[require.resolve(settingsPath)];
+  const settings = require(settingsPath);
+  for (const v of ['pdf', 'pickup', 'delivery', 'custom']) {
+    settings.set('pricing', v + '_enabled', true);
+  }
   db = require(serverDbPath);
   ORDER_PRICES = db.ORDER_PRICES;
 });
@@ -25,16 +35,17 @@ function freshCollection() {
 }
 
 describe('setOrder', () => {
-  it('exports ORDER_PRICES with the agreed totals', () => {
-    expect(ORDER_PRICES).toEqual({ pdf: 79, pickup: 149, delivery: 199, custom: 599 });
+  it('exports ORDER_PRICES with the built-in fallback totals', () => {
+    // These mirror the settings.js pricing DEFAULTS (pickup is 199 at launch).
+    expect(ORDER_PRICES).toEqual({ pdf: 79, pickup: 199, delivery: 199, custom: 599 });
   });
 
-  it('prices pdf/pickup/delivery from ORDER_PRICES', () => {
+  it('prices pdf/pickup/delivery from the effective settings price', () => {
     const c1 = freshCollection();
     expect(db.setOrder(c1.id, c1.owner_token, { version: 'pdf' }).total).toBe(79);
 
     const c2 = freshCollection();
-    expect(db.setOrder(c2.id, c2.owner_token, { version: 'pickup' }).total).toBe(149);
+    expect(db.setOrder(c2.id, c2.owner_token, { version: 'pickup' }).total).toBe(199);
 
     const c3 = freshCollection();
     const o3 = db.setOrder(c3.id, c3.owner_token, {
@@ -88,6 +99,55 @@ describe('setOrder', () => {
     });
     expect(o.address.apartment).toBe('4');
     expect(o.address.floor).toBe('2');
+  });
+});
+
+// The version-lock policy (fix: the lock must NOT be so broad that it traps an
+// ordinary buyer who abandoned a card session for one version and now wants
+// another). All versions are enabled in this suite's settings.
+describe('setOrder version-lock policy', () => {
+  it('an ordinary UNPAID public order can switch to another enabled version (re-priced)', () => {
+    const c = freshCollection();
+    // A buyer starts a pickup order (e.g. clicked card-pay, then abandoned it).
+    const first = db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    expect(first.total).toBe(199);
+    expect(first.source).toBe('public');
+    // They must be free to switch to delivery — NOT trapped on pickup.
+    const switched = db.setOrder(c.id, c.owner_token, {
+      version: 'delivery',
+      address: { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' },
+    });
+    expect(switched.error).toBeUndefined();
+    expect(switched.version).toBe('delivery');
+    expect(switched.total).toBe(199); // re-derived from settings, not the old total
+    expect(db.getCollection(c.id).order.version).toBe('delivery');
+  });
+
+  it('an ADMIN-created order stays LOCKED to its version for a public caller', () => {
+    const c = freshCollection();
+    const admin = db.setOrder(c.id, c.owner_token, { version: 'custom' }, { admin: true });
+    expect(admin.source).toBe('admin');
+    // A public downgrade is refused even though pickup is enabled.
+    expect(db.setOrder(c.id, c.owner_token, { version: 'pickup' }).error).toBe('version locked');
+    // Re-submitting the SAME version keeps the 599 total AND preserves source=admin
+    // (so it can never be unlocked by re-POSTing its own version once, then switching).
+    const same = db.setOrder(c.id, c.owner_token, { version: 'custom' });
+    expect(same.total).toBe(599);
+    expect(same.source).toBe('admin');
+    expect(db.setOrder(c.id, c.owner_token, { version: 'pickup' }).error).toBe('version locked');
+  });
+
+  it('a PAID order is immutable to a public caller (never re-charged/downgraded)', () => {
+    const c = freshCollection();
+    db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    db.markPaid(c.id, { method: 'coupon' });
+    // No public re-set is allowed once paid — not even the same version.
+    expect(db.setOrder(c.id, c.owner_token, { version: 'pickup' }).error).toBe('version locked');
+    expect(db.setOrder(c.id, c.owner_token, { version: 'delivery' }).error).toBe('version locked');
+    // The stored order is untouched.
+    const stored = db.getCollection(c.id).order;
+    expect(stored.version).toBe('pickup');
+    expect(stored.paid).toBe(true);
   });
 });
 

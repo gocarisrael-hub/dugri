@@ -67,6 +67,8 @@ function interpolate(template, values, opts) {
 //   'map'    — a flat { key: label } object of short editable label strings.
 //   'footer' — the shared two-line email sign-off.
 //   'trigger'— a WhatsApp trigger { enabled, text, timing? }.
+//   'price'  — a non-negative integer NIS amount (store price / per-version price).
+//   'flag'   — a boolean on/off switch (a checkout version's enabled state).
 const REGISTRY = {
   email: {
     order_paid: {
@@ -261,6 +263,29 @@ const REGISTRY = {
     font_choice: { kind: 'flag', tokens: [], default: false },
     name_preview: { kind: 'flag', tokens: [], default: false },
   },
+  // --- Pricing (owner-editable, no deploy) -----------------------------------
+  // The storefront display price (`store_now` shown, `store_was` struck through)
+  // and, per checkout version, an `<v>_enabled` flag + an `<v>_price` (NIS). The
+  // DEFAULTS below ARE the launch state: the store shows 199 (struck 239) and
+  // checkout offers ONLY self-pickup (pickup) at 199 — every other version is
+  // disabled until the owner turns it on from the admin page. server/db.js reads
+  // these as the authoritative charge (fail-safe fallback to the same numbers).
+  // A per-version `<v>_price` carries `min: 1` — a CHARGED amount can never be 0
+  // (the pay path treats a 0 total as a free/already-paid order, so a 0 base price
+  // would mark every order for that version paid at ₪0). The store display prices
+  // may be 0 (default min 0) since they are never charged.
+  pricing: {
+    store_now: { kind: 'price', tokens: [], default: 199 },
+    store_was: { kind: 'price', tokens: [], default: 239 },
+    pdf_enabled: { kind: 'flag', tokens: [], default: false },
+    pdf_price: { kind: 'price', min: 1, tokens: [], default: 79 },
+    pickup_enabled: { kind: 'flag', tokens: [], default: true },
+    pickup_price: { kind: 'price', min: 1, tokens: [], default: 199 },
+    delivery_enabled: { kind: 'flag', tokens: [], default: false },
+    delivery_price: { kind: 'price', min: 1, tokens: [], default: 199 },
+    custom_enabled: { kind: 'flag', tokens: [], default: false },
+    custom_price: { kind: 'price', min: 1, tokens: [], default: 599 },
+  },
 };
 
 // --- small object helpers -----------------------------------------------------
@@ -399,7 +424,8 @@ function validateTiming(section, key, timing) {
 // called by both set() and the admin route.
 function validateValue(section, key, value) {
   if (!hasKey(section, key)) return 'unknown section/key';
-  const kind = REGISTRY[section][key].kind;
+  const spec = REGISTRY[section][key];
+  const kind = spec.kind;
   const has = (k) => Object.prototype.hasOwnProperty.call(value, k);
   if (kind === 'email') {
     if (!isPlainObject(value)) return 'value must be an object with { subject, body }';
@@ -409,6 +435,17 @@ function validateValue(section, key, value) {
   }
   if (kind === 'map' || kind === 'footer') {
     if (!isPlainObject(value)) return 'value must be an object';
+    return null;
+  }
+  if (kind === 'price') {
+    // A NIS amount: an integer >= the key's `min` (default 0). Version `*_price`
+    // keys carry min:1 — a CHARGED price can never be 0 (a 0 total is treated as a
+    // free/paid order downstream). Rejects strings ('199'), floats (1.5), values
+    // below min, and null so a bad write can never reach the charge path.
+    const min = Number.isInteger(spec.min) ? spec.min : 0;
+    if (!Number.isInteger(value) || value < min) {
+      return min > 0 ? 'value must be a positive integer' : 'value must be a non-negative integer';
+    }
     return null;
   }
   if (kind === 'trigger') {

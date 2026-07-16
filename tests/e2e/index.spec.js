@@ -145,6 +145,23 @@ test.describe('shared sticky header', () => {
 
 test.describe('home product rail', () => {
   test('one card per public design, each opening its detail page', async ({ page }) => {
+    // Pin the owner-editable store price so the rail-price assertion is hermetic
+    // (the shared e2e server's settings could be mutated by the admin-pricing spec).
+    await page.route('**/api/pricing', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          store: { now: 199, was: 239 },
+          versions: {
+            pdf: { enabled: false, price: 79 },
+            pickup: { enabled: true, price: 199 },
+            delivery: { enabled: false, price: 199 },
+            custom: { enabled: false, price: 599 },
+          },
+        }),
+      })
+    );
     await page.goto('/index.html');
 
     const rail = page.getByTestId('home-products');
@@ -157,7 +174,7 @@ test.describe('home product rail', () => {
     const hrefs = await cards.evaluateAll((els) => els.map((a) => a.getAttribute('href')));
     for (const href of hrefs) expect(href).toMatch(/^product\.html\?design=[a-z]+$/);
     await expect(cards.first().locator('.home-prod-name')).not.toHaveText('');
-    await expect(cards.first().locator('.home-prod-price')).toContainText('79 ₪');
+    await expect(cards.first().locator('.home-prod-price')).toContainText('199 ₪');
 
     // The "מעבר אל החנות" button opens the store.
     await expect(rail.locator('.home-products-cta a')).toHaveAttribute('href', 'products.html');

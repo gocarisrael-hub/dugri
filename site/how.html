@@ -1438,8 +1438,8 @@
         </p>
         <div class="hero-cta">
           <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="how-hero"
-            >בונים את המשחק · <s class="was">129 ₪</s
-            ><span style="white-space: nowrap">79 ₪</span></a
+            >בונים את המשחק · <s class="was" data-price-was>239 ₪</s
+            ><span style="white-space: nowrap" data-price-now>199 ₪</span></a
           >
           <a class="btn ghost" href="index.html" data-edit="how-hero-back">חזרה לעמוד הבית</a>
         </div>
@@ -1525,7 +1525,7 @@
             </div>
           </div>
         </div>
-        <p class="delivery-note" data-edit="how-delivery-note">הכל כלול בקובץ אחד - ב-79 ₪.</p>
+        <p class="delivery-note" data-edit="how-delivery-note">הכל כלול בקובץ אחד - ב-199 ₪.</p>
       </div>
     </section>
 
@@ -1537,8 +1537,8 @@
         </p>
         <div class="hero-cta">
           <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="final"
-            >בונים את המשחק · <s class="was">129 ₪</s
-            ><span style="white-space: nowrap">79 ₪</span></a
+            >בונים את המשחק · <s class="was" data-price-was>239 ₪</s
+            ><span style="white-space: nowrap" data-price-now>199 ₪</span></a
           >
           <a
             class="btn wa"
@@ -1630,7 +1630,8 @@
         href="products.html"
         data-ga="order_started"
         data-ga-cta="sticky"
-        >מזמינים · <s class="was">129 ₪</s><span style="white-space: nowrap">79 ₪</span></a
+        >מזמינים · <s class="was" data-price-was>239 ₪</s
+        ><span style="white-space: nowrap" data-price-now>199 ₪</span></a
       >
       <a
         class="btn wa"
@@ -1745,9 +1746,37 @@
         // Where Tranzila returns the customer after a successful payment:
         successUrl: 'https://YOUR-DOMAIN/',
         plans: {
-          base: { sum: 79, desc: 'דוגרי - חבילת בסיס' },
+          base: { sum: 199, desc: 'דוגרי - חבילת בסיס' },
         },
       };
+
+      // Owner-editable store price → the CTA price labels + the dormant plan sum.
+      // Timeout-bounded + fail-safe: on a slow/failed fetch the seeded defaults
+      // (199 / struck 239) stay in place.
+      (function refreshPricing() {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 2500);
+        fetch('/api/pricing', { signal: ctrl.signal })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((p) => {
+            if (!p || !p.store) return;
+            if (Number.isInteger(p.store.now)) {
+              CONFIG.plans.base.sum = p.store.now;
+              document
+                .querySelectorAll('[data-price-now]')
+                .forEach((el) => (el.textContent = p.store.now + ' ₪'));
+            }
+            if (Number.isInteger(p.store.was)) {
+              document
+                .querySelectorAll('[data-price-was]')
+                .forEach((el) => (el.textContent = p.store.was + ' ₪'));
+            }
+          })
+          .catch(() => {
+            /* fail soft — the seeded defaults stay */
+          })
+          .finally(() => clearTimeout(timer));
+      })();
 
       const waBase = 'https://wa.me/' + CONFIG.whatsapp;
       const waMsg = encodeURIComponent('היי! אני רוצה להזמין משחק דוגרי');

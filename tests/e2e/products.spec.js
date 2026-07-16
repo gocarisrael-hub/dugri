@@ -8,8 +8,29 @@ import { test, expect } from '@playwright/test';
 // The catalog ships 7 designs (single source of truth: js/designs.js).
 const DESIGN_IDS = ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'neon', 'kids'];
 
+// Pin the owner-editable store price so the card-price assertion is hermetic (the
+// shared e2e server's settings could be mutated by the admin-pricing spec).
+async function stubPricing(page, now = 199, was = 239) {
+  await page.route('**/api/pricing', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        store: { now, was },
+        versions: {
+          pdf: { enabled: false, price: 79 },
+          pickup: { enabled: true, price: 199 },
+          delivery: { enabled: false, price: 199 },
+          custom: { enabled: false, price: 599 },
+        },
+      }),
+    })
+  );
+}
+
 test.describe('store grid (products.html)', () => {
   test('renders exactly one card per design, each linking to its detail page', async ({ page }) => {
+    await stubPricing(page);
     await page.goto('/products.html');
 
     await expect(page.getByTestId('store-grid')).toBeVisible();
@@ -31,7 +52,7 @@ test.describe('store grid (products.html)', () => {
         /assets\/designs\/.+\/store\.webp$/
       );
       await expect(card.locator('.product-name')).not.toHaveText('');
-      await expect(card.locator('.product-price')).toContainText('79 ₪');
+      await expect(card.locator('.product-price')).toContainText('199 ₪');
     }
   });
 
