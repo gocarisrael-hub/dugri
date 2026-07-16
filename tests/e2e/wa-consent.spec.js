@@ -30,20 +30,20 @@ async function mockPreview(page) {
   );
 }
 
-// The WhatsApp consent line must be present and visible at the phone-number
-// (contact) step, so the buyer knows a group will be opened and their number
-// added after payment.
-test('the WhatsApp consent line is shown at the phone step', async ({ page }) => {
+// The WhatsApp consent line was removed from the details step. It must no longer
+// appear anywhere in the wizard (the phone field itself still shows).
+test('the WhatsApp consent line is gone from the phone step', async ({ page }) => {
   await mockPreview(page);
   await page.goto('/options.html?step=3');
   await page.fill('#honoreeInput', 'Shira');
   await page.getByTestId('gender-female').check(); // gender is required to advance
   await page.getByTestId('next-btn').click();
+  // name → optional pawn-photos step → details
+  await expect(page.getByTestId('step-pawns')).toBeVisible();
+  await page.getByTestId('next-btn').click();
   await expect(page.getByTestId('step-4')).toBeVisible();
 
-  const consent = page.getByTestId('wa-consent');
-  await expect(consent).toBeVisible();
-  await expect(consent).toContainText('וואטסאפ');
-  // It sits by the phone field.
+  await expect(page.getByTestId('wa-consent')).toHaveCount(0);
+  // The phone field is still there.
   await expect(page.getByTestId('owner-phone')).toBeVisible();
 });

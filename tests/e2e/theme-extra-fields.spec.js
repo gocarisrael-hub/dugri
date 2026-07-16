@@ -92,6 +92,8 @@ test.describe('theme extra fields on the name step', () => {
     await page.getByTestId('honoree-input').fill('Shira');
     await page.getByTestId('gender-female').check();
     await page.getByTestId('extra-age').fill('30');
+    await page.getByTestId('next-btn').click(); // -> pawn step
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
     await page.getByTestId('next-btn').click(); // -> step 4 (contact)
     await page.getByTestId('owner-email').fill('a@b.com');
     await page.getByTestId('owner-phone').fill('0521234567');
@@ -133,6 +135,8 @@ test.describe('anniversary (couple) name step', () => {
     // Advancing must NOT pop the gender prompt (couples have no single gender).
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('gender-modal')).toBeHidden();
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
+    await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-4')).toBeVisible();
   });
 
@@ -142,6 +146,8 @@ test.describe('anniversary (couple) name step', () => {
     await page.getByTestId('extra-name1').fill('דנה');
     await page.getByTestId('extra-name2').fill('יוסי');
     await page.getByTestId('extra-years').fill('25');
+    await page.getByTestId('next-btn').click(); // -> pawn step
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
     await page.getByTestId('next-btn').click(); // -> step 4 (contact)
     await page.getByTestId('owner-email').fill('a@b.com');
     await page.getByTestId('owner-phone').fill('0521234567');

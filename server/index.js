@@ -55,6 +55,9 @@ const TEMPLATE_UPLOAD_LIMIT = process.env.TEMPLATE_UPLOAD_LIMIT || '30mb';
 // image itself at ~4MB (server/content.js IMAGE_CAP); this leaves headroom for the
 // multipart envelope so a valid image is never rejected at the body-parser layer.
 const CONTENT_IMAGE_UPLOAD_LIMIT = process.env.CONTENT_IMAGE_UPLOAD_LIMIT || '6mb';
+// Max multipart body for a pawn-images upload: up to 4 customer photos, each
+// capped at ~4MB by the store (server/content.js IMAGE_CAP), plus envelope room.
+const PAWN_UPLOAD_LIMIT = process.env.PAWN_UPLOAD_LIMIT || '20mb';
 // Hard cap on a single generation run (Chrome renders one page at a time, so a
 // large deck is slow); the child is SIGKILLed past this and the request 504s.
 const GENERATE_TIMEOUT_MS = Number(process.env.GENERATE_TIMEOUT_MS || 120000);
@@ -754,6 +757,44 @@ app.post('/api/collections/:id/coupon/validate', (req, res) => {
   if (!r.valid) return res.json({ valid: false, reason: r.reason });
   res.json({ valid: true, discount_pct: r.coupon.discount_pct });
 });
+
+// OWNER-SCOPED pawn-images upload: attach up to 4 optional customer photos
+// ("פיונים") to a collection. Owner-token gated via ?k= (a query param, so we can
+// authenticate BEFORE express.raw buffers the body — an unauthenticated client
+// can't force a large allocation). Multipart, same magic-byte typing + 4MB/image
+// cap as the content-photo route (content.saveImageBytes). Pictures are a
+// nice-to-have: a single bad/oversized image part is SKIPPED, not fatal, so a
+// partial batch still succeeds. The stored array is hard-capped at 4 in the DB.
+app.post(
+  '/api/collections/:id/pawns',
+  (req, res, next) => {
+    const c = db.getCollection(req.params.id);
+    if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
+    next();
+  },
+  express.raw({ type: () => true, limit: PAWN_UPLOAD_LIMIT }),
+  (req, res) => {
+    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
+    if (!boundary || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ error: 'expected multipart/form-data upload' });
+    }
+    const { files } = templates.parseMultipart(req.body, boundary);
+    const parts = Object.values(files)
+      .filter((f) => f && Buffer.isBuffer(f.data))
+      .slice(0, 4);
+    const paths = [];
+    for (const f of parts) {
+      try {
+        paths.push(content.saveImageBytes(f.data).path);
+      } catch {
+        // Oversized/unsupported image — skip this file, keep the rest (fail-soft).
+      }
+    }
+    const stored = db.addPawnImages(req.params.id, req.query.k, paths);
+    if (stored == null) return res.status(403).json({ error: 'forbidden' });
+    res.json({ ok: true, pawn_images: stored });
+  }
+);
 
 // Public order PREVIEW: render a REAL sample card + board for a theme with the
 // honoree name (and an optional word-font pick), so the customer sees their card

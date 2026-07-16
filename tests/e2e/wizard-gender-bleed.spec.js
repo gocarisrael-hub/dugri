@@ -88,6 +88,8 @@ test.describe('honoree gender', () => {
     await expect(page.getByTestId('gender-modal')).toBeHidden();
     await page.getByTestId('gender-female').check();
     await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
+    await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-4')).toBeVisible();
   });
 
@@ -109,6 +111,8 @@ test.describe('honoree gender', () => {
     await page.getByTestId('honoree-input').fill('Shira');
     await page.getByTestId('gender-female').check();
     await expect(page.getByTestId('gender-female')).toBeChecked();
+    await page.getByTestId('next-btn').click(); // -> pawn step
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
     await page.getByTestId('next-btn').click(); // -> step 4 (contact)
     await page.getByTestId('owner-email').fill('a@b.com');
     await page.getByTestId('owner-phone').fill('0521234567');
@@ -123,6 +127,8 @@ test.describe('honoree gender', () => {
     await page.getByTestId('honoree-input').fill('Danny');
     await page.getByTestId('gender-male').check();
     await expect(page.getByTestId('gender-male')).toBeChecked();
+    await page.getByTestId('next-btn').click(); // -> pawn step
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
     await page.getByTestId('next-btn').click(); // -> step 4
     await page.getByTestId('owner-email').fill('a@b.com');
     await page.getByTestId('owner-phone').fill('0521234567');

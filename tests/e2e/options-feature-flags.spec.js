@@ -50,8 +50,8 @@ async function expectAllHiddenAndStep2Skipped(page) {
   await page.goto('/options.html?plan=base');
   await expect(page.getByTestId('step-1')).toBeVisible();
 
-  // progress reads "מתוך 3" — only three active steps.
-  await expect(page.getByTestId('step-total')).toHaveText('3');
+  // progress reads "מתוך 4" — steps 1, 3, the optional pawn step (5) and 4.
+  await expect(page.getByTestId('step-total')).toHaveText('4');
   await expect(page.getByTestId('step-now')).toHaveText('1');
 
   // the four gated regions are hidden.
@@ -92,7 +92,9 @@ test.describe('buyer wizard feature flags', () => {
     await expect(page.getByTestId('step-3')).toBeVisible();
     await page.fill('#honoreeInput', 'Shira');
     await page.getByTestId('gender-female').check();
-    await page.getByTestId('next-btn').click(); // step 3 -> step 4
+    await page.getByTestId('next-btn').click(); // step 3 -> pawn step
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
+    await page.getByTestId('next-btn').click(); // pawn step -> step 4
     await expect(page.getByTestId('step-4')).toBeVisible();
 
     await page.fill('#ownerEmail', 'owner@example.com');
@@ -147,8 +149,8 @@ test.describe('buyer wizard feature flags', () => {
     await mockPreview(page);
     await page.goto('/options.html?plan=base');
 
-    // progress reads "מתוך 4" — step 2 is back in the flow.
-    await expect(page.getByTestId('step-total')).toHaveText('4');
+    // progress reads "מתוך 5" — step 2 is back in the flow (plus the pawn step).
+    await expect(page.getByTestId('step-total')).toHaveText('5');
 
     // Step 2 shows the colour picker + carousel + chasers add-on.
     await page.getByTestId('next-btn').click();
