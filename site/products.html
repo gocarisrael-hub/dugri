@@ -506,14 +506,24 @@
          which hosts the multi-photo gallery. -->
     <script type="module">
       import { PUBLIC_DESIGNS as DESIGNS } from './js/designs.js';
-      import { fetchPricing } from './js/pricing.js';
+      import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
 
-      // Owner-editable store price (fetched, timeout-bounded; falls back to the
-      // launch defaults 199 / struck 239 if the endpoint is slow or fails).
-      const pricing = await fetchPricing();
-      const PRICE = pricing.store.now;
-      const WAS = pricing.store.was;
+      // Owner-editable store price. The grid renders IMMEDIATELY with the launch
+      // defaults (never blank / never blocked), then a timeout-bounded fetch
+      // overlays the live price in a non-blocking .then() — a slow or cold endpoint
+      // never delays the store.
+      let PRICE = PRICING_FALLBACK.store.now;
+      let WAS = PRICING_FALLBACK.store.was;
       const grid = document.getElementById('storeGrid');
+
+      // Stamp a `.product-price` node: a struck WAS then "מ-PRICE ₪".
+      function stampPrice(el) {
+        el.textContent = '';
+        const was = document.createElement('s');
+        was.textContent = `${WAS} ₪`;
+        el.appendChild(was);
+        el.append(` מ-${PRICE} ₪`);
+      }
 
       // ---- one product card ---------------------------------------------------
       function card(d) {
@@ -548,13 +558,10 @@
         name.textContent = d.name;
         link.appendChild(name);
 
-        // Price: ₪79 with a struck ₪129.
+        // Price: the struck WAS beside "מ-<now> ₪".
         const price = document.createElement('span');
         price.className = 'product-price';
-        const was = document.createElement('s');
-        was.textContent = `${WAS} ₪`;
-        price.appendChild(was);
-        price.append(` מ-${PRICE} ₪`);
+        stampPrice(price);
         link.appendChild(price);
 
         article.appendChild(link);
@@ -581,6 +588,14 @@
           '<a class="btn" href="options.html">להזמנה ובחירת עיצוב ›</a></div>';
         console.error('store grid failed to render:', err);
       }
+
+      // Overlay the live owner-editable price once it resolves (non-blocking;
+      // fail-safe — on a slow/failed fetch the seeded launch defaults stay).
+      fetchPricing().then((p) => {
+        PRICE = p.store.now;
+        WAS = p.store.was;
+        for (const el of document.querySelectorAll('.product-price')) stampPrice(el);
+      });
     </script>
   </body>
 </html>

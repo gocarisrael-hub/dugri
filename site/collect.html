@@ -1175,6 +1175,14 @@
           </label>
         </div>
 
+        <!-- Shown instead of the option list when prices can't be loaded (never
+             charge a guessed price) or when no version is offered (orders closed).
+             The pay button is disabled in both states. -->
+        <div class="price-load-err hidden" id="priceLoadErr" role="alert">
+          <span data-role="msg"></span>
+          <button type="button" class="ghost hidden" data-role="retry">רענון מחירים</button>
+        </div>
+
         <div id="addressForm" class="hidden">
           <label class="fld" for="addrStreet">רחוב ומספר</label>
           <input type="text" id="addrStreet" autocomplete="street-address" />
@@ -1287,6 +1295,7 @@
       import { categoriesForTheme, promptsForTheme, renderQuestion } from './js/word-prompts.js';
       import { parseWordText, newestFirst } from './js/collect.js';
       import { track } from './js/analytics.js';
+      import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
 
       const params = new URLSearchParams(location.search);
       const id = params.get('c');
@@ -1552,6 +1561,10 @@
           // dead CTA so the owner isn't stuck with no way to pay.
           const soon = $('#cardSoonNote');
           if (soon) soon.classList.toggle('hidden', !(!cardEnabled && !paid));
+          // Re-apply the checkout state now that the collection (and any placed
+          // order) has loaded — engages the LOCKED state for a persisted order and
+          // keeps the pay button's payable/disabled state in sync.
+          if (applyPricingRef) applyPricingRef();
         } else {
           $('#ownerControls').classList.add('hidden');
         }
@@ -1975,49 +1988,45 @@
       // (store 199/239; ONLY self-pickup enabled at 199) so the panel is correct
       // and interactive even if the endpoint is slow or fails.
       const VERSION_ORDER = ['pdf', 'pickup', 'delivery', 'custom'];
-      const PRICING_DEFAULT = {
-        store: { now: 199, was: 239 },
-        versions: {
-          pdf: { enabled: false, price: 79 },
-          pickup: { enabled: true, price: 199 },
-          delivery: { enabled: false, price: 199 },
-          custom: { enabled: false, price: 599 },
-        },
+      // Effective pricing from /api/pricing (via the shared js/pricing.js helper —
+      // PRICING_FALLBACK is the single client default source). `pricingOk` is false
+      // when the fetch failed, so the charge path never offers a guessed price.
+      let pricing = {
+        store: { ...PRICING_FALLBACK.store },
+        versions: JSON.parse(JSON.stringify(PRICING_FALLBACK.versions)),
       };
-      let pricing = PRICING_DEFAULT;
-      // Fetch effective pricing, timeout-bounded so a hung endpoint never blocks
-      // page init; any failure keeps the launch defaults.
-      async function fetchPricing() {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 2500);
-        try {
-          const r = await fetch('/api/pricing', { signal: ctrl.signal });
-          if (!r.ok) throw new Error('http ' + r.status);
-          const j = await r.json();
-          if (j && j.store && j.versions) pricing = j;
-        } catch {
-          pricing = PRICING_DEFAULT;
-        } finally {
-          clearTimeout(timer);
-        }
-        return pricing;
-      }
+      let pricingOk = true;
+      // When the collection already has an UNPAID order, checkout is LOCKED to it:
+      // the buyer pays that exact version at its stored (server-authoritative)
+      // total and can never downgrade it to a cheaper version (e.g. an admin custom
+      // 599₪ order can't be paid as pickup 199₪). Set from state.order in
+      // applyPricing on every render.
+      let lockVersion = null;
+      let lockTotal = null;
+      // Set by setupPayPanel so render() can re-apply the checkout state (esp. the
+      // LOCKED state) each time the collection reloads.
+      let applyPricingRef = null;
       function priceFor(v) {
+        if (lockVersion && v === lockVersion && Number.isInteger(lockTotal)) return lockTotal;
         const info = pricing.versions && pricing.versions[v];
         if (info && Number.isInteger(info.price)) return info.price;
-        const def = PRICING_DEFAULT.versions[v];
+        const def = PRICING_FALLBACK.versions[v];
         return def ? def.price : 0;
       }
       function isEnabled(v) {
         const info = pricing.versions && pricing.versions[v];
         return !!(info && info.enabled);
       }
+      // The first enabled version in display order, or null when NONE is enabled —
+      // orders are effectively closed and the checkout must offer no pay button.
       function firstEnabledVersion() {
-        return VERSION_ORDER.find((v) => isEnabled(v)) || 'pickup';
+        return VERSION_ORDER.find((v) => isEnabled(v)) || null;
       }
-      // The version to charge: the checked radio when it's still an enabled
-      // option, else the first enabled one (never a hidden/disabled version).
+      // The version to charge: a locked (already-placed) order's version wins; else
+      // the checked radio when still enabled; else the first enabled one (which may
+      // be null → nothing is payable).
       function selectedVersion() {
+        if (lockVersion) return lockVersion;
         const checked = document.querySelector('input[name="payVersion"]:checked');
         const v = checked && checked.value;
         if (v && isEnabled(v)) return v;
@@ -2031,8 +2040,37 @@
           payPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
         });
         const opts = Array.from(document.querySelectorAll('.pay-opt'));
+        const optsBox = $('#payOpts');
         const addressForm = $('#addressForm');
         const payErr = $('#payErr');
+        const priceErr = $('#priceLoadErr');
+        const cardBtn0 = $('#cardPayBtn');
+        // Whether the checkout may currently take a payment. False when the pricing
+        // fetch failed (we won't guess a price the server might not agree with) or
+        // when no version is enabled (orders closed). render()/the click handler
+        // both honour it so a wrong/zero charge can't be initiated.
+        let payable = true;
+        function setPayable(ok) {
+          payable = ok;
+          if (cardBtn0) cardBtn0.disabled = !ok;
+        }
+        // Show the price-load / orders-closed panel in place of the option list.
+        function showPriceErr(kind) {
+          if (!priceErr) return;
+          priceErr.classList.remove('hidden');
+          const msg = priceErr.querySelector('[data-role="msg"]');
+          const retry = priceErr.querySelector('[data-role="retry"]');
+          if (kind === 'load') {
+            if (msg) msg.textContent = 'לא הצלחנו לטעון את המחירים כרגע. רעננו ונסו שוב.';
+            if (retry) retry.classList.remove('hidden');
+          } else {
+            if (msg) msg.textContent = 'התשלום סגור כרגע. נסו שוב מאוחר יותר.';
+            if (retry) retry.classList.add('hidden');
+          }
+        }
+        function hidePriceErr() {
+          if (priceErr) priceErr.classList.add('hidden');
+        }
 
         // Applied coupon (owner previewed + accepted). null = no coupon. Kept in
         // state so the discounted price is re-derived when the version changes and
@@ -2043,8 +2081,16 @@
         // when one is active: the full price shows struck-through (₪ on both) next
         // to the discounted price, matching the site's existing struck-price style.
         function renderTotal() {
-          const base = priceFor(selectedVersion());
+          const v = selectedVersion();
           const was = $('#payWas');
+          if (!v) {
+            // Nothing payable (orders closed / prices unavailable) — no number.
+            was.textContent = '';
+            was.classList.add('hidden');
+            $('#payTotal').textContent = '—';
+            return;
+          }
+          const base = priceFor(v);
           if (appliedCoupon) {
             const discounted = Math.round(base * (1 - appliedCoupon.discount_pct / 100));
             was.textContent = '₪' + base;
@@ -2073,11 +2119,61 @@
         // never override their choice.
         let userPicked = false;
 
-        // Apply the (fetched or default) pricing to the option list: show ONLY
-        // enabled versions, stamp each price from the endpoint, and keep a valid
-        // (enabled) radio selected. Hidden options are also `disabled` so they
-        // can't be selected or submitted; re-enabling one in admin brings it back.
+        // The checkout state machine — recomputed on every render (so it reflects
+        // the latest collection state) and after each pricing fetch:
+        //   1. LOCKED: an unpaid order already exists → pay THAT version at its
+        //      stored total; no switching, no downgrade (even if now disabled).
+        //   2. PRICE-UNAVAILABLE: the /api/pricing fetch failed → no pay button, a
+        //      "refresh" prompt (never charge a guessed price).
+        //   3. CLOSED: no version is enabled → no pay button, "orders closed".
+        //   4. NORMAL: show the enabled versions at their endpoint prices.
         function applyPricing() {
+          const lockedOrder =
+            state && state.order && state.order.version && !state.order.paid ? state.order : null;
+          lockVersion = lockedOrder ? lockedOrder.version : null;
+          lockTotal = lockedOrder ? lockedOrder.total : null;
+
+          // 1. LOCKED — show only the order's version at its stored total.
+          if (lockedOrder) {
+            hidePriceErr();
+            if (optsBox) optsBox.style.display = '';
+            for (const label of opts) {
+              const radio = label.querySelector('input[name="payVersion"]');
+              if (!radio) continue;
+              const isLock = radio.value === lockVersion;
+              label.style.display = isLock ? '' : 'none';
+              radio.disabled = !isLock;
+              radio.checked = isLock;
+              const priceEl = label.querySelector('.opt-price');
+              if (priceEl && isLock) priceEl.textContent = '₪' + lockTotal;
+            }
+            setPayable(true);
+            refreshPay();
+            return;
+          }
+
+          // 2. PRICE-UNAVAILABLE — the fetch failed; do not offer a guessed price.
+          if (!pricingOk) {
+            if (optsBox) optsBox.style.display = 'none';
+            setPayable(false);
+            showPriceErr('load');
+            refreshPay();
+            return;
+          }
+
+          // 3. CLOSED — no version enabled.
+          if (!firstEnabledVersion()) {
+            if (optsBox) optsBox.style.display = 'none';
+            setPayable(false);
+            showPriceErr('closed');
+            refreshPay();
+            return;
+          }
+
+          // 4. NORMAL — show only enabled versions, stamped from the endpoint.
+          hidePriceErr();
+          if (optsBox) optsBox.style.display = '';
+          setPayable(true);
           for (const label of opts) {
             const radio = label.querySelector('input[name="payVersion"]');
             if (!radio) continue;
@@ -2099,6 +2195,20 @@
           }
           refreshPay();
         }
+        // Expose applyPricing so render() re-runs it once the collection (and its
+        // order) has loaded, engaging the LOCKED state for a persisted order.
+        applyPricingRef = applyPricing;
+
+        // (Re)load pricing from the shared endpoint helper and re-render.
+        function loadPricing() {
+          return fetchPricing().then((p) => {
+            pricing = { store: p.store, versions: p.versions };
+            pricingOk = p.ok;
+            applyPricing();
+          });
+        }
+        const retryBtn = priceErr && priceErr.querySelector('[data-role="retry"]');
+        if (retryBtn) retryBtn.addEventListener('click', loadPricing);
 
         document.querySelectorAll('input[name="payVersion"]').forEach((r) =>
           r.addEventListener('change', () => {
@@ -2107,9 +2217,10 @@
           })
         );
         // Render immediately with the launch defaults (never blank), then refine
-        // once the endpoint answers.
+        // once the endpoint answers (which also flips to the no-pay state on a
+        // failed fetch).
         applyPricing();
-        fetchPricing().then(applyPricing);
+        loadPricing();
 
         // ---- coupon: preview + apply/remove ----
         const couponInput = $('#couponInput');
@@ -2209,7 +2320,12 @@
         }
 
         cardBtn.addEventListener('click', async () => {
+          // Never start a charge when the checkout isn't payable (prices failed to
+          // load, or no version is offered) — the button is disabled in those
+          // states, this is the defensive backstop.
+          if (!payable) return;
           const version = selectedVersion();
+          if (!version) return;
           let address = null;
           if (version === 'delivery') {
             address = collectAddress();

@@ -162,6 +162,19 @@ describe('GET /api/pricing (public)', () => {
     expect(body.store.was).toBe(239);
     expect(body.versions.pickup).toEqual({ enabled: true, price: 199 });
   });
+
+  it('the admin API refuses to set a version price to 0 (a 0 total would be a free order)', async () => {
+    const r = await post(adminUrl('/api/admin/settings'), {
+      section: 'pricing',
+      key: 'pickup_price',
+      value: 0,
+    });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('value must be a positive integer');
+    // The endpoint still shows (and the server still charges) the real price.
+    const { body } = await get('/api/pricing');
+    expect(body.versions.pickup.price).toBe(199);
+  });
 });
 
 describe('charge path reads settings (db.setOrder + /order route)', () => {
@@ -231,5 +244,41 @@ describe('charge path reads settings (db.setOrder + /order route)', () => {
     expect(r.body.charged).toBe(100);
     // The amount actually sent to the gateway (agorot) matches the discount.
     expect(lastInitTotal).toBe(10000);
+  });
+
+  it('the free/skip-charge path is reachable ONLY via a coupon (a 100% coupon), never a base price', async () => {
+    // A 100% coupon zeroes the charge → the free path marks it paid, no PeleCard.
+    db.createCoupon({ code: 'ALLFREE', discount_pct: 100 });
+    const c = freshCollection();
+    const free = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pickup',
+      coupon: 'ALLFREE',
+    });
+    expect(free.status).toBe(200);
+    expect(free.body).toEqual({ free: true, paid: true, total: 0 });
+    // Without a coupon the base pickup total is 199 (never 0) — a real charge.
+    const c2 = freshCollection();
+    const paid = await post('/api/collections/' + c2.id + '/pay/init', {
+      owner_token: c2.owner_token,
+      version: 'pickup',
+    });
+    expect(paid.status).toBe(200);
+    expect(paid.body.charged).toBe(199);
+    expect(paid.body.free).toBeUndefined();
+  });
+
+  it('setOrder admin bypass creates a disabled version; a public downgrade of it is locked', async () => {
+    // custom is disabled by default. The admin bypass creates it anyway...
+    const c = freshCollection();
+    expect(db.setOrder(c.id, c.owner_token, { version: 'custom' }).error).toBe(
+      'version unavailable'
+    );
+    const created = db.setOrder(c.id, c.owner_token, { version: 'custom' }, { admin: true });
+    expect(created.version).toBe('custom');
+    expect(created.total).toBe(599);
+    // ...and a public caller can't downgrade the locked order to a cheaper version.
+    expect(db.setOrder(c.id, c.owner_token, { version: 'pickup' }).error).toBe('version locked');
+    expect(db.getCollection(c.id).order.total).toBe(599);
   });
 });

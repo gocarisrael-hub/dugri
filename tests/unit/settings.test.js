@@ -214,6 +214,25 @@ describe('pricing section (price + flag kinds)', () => {
     expect(s.get('pricing', 'store_now')).toBe(199);
   });
 
+  it('rejects 0 for a version price (must be a POSITIVE integer) but allows 0 for a store price', () => {
+    const s = loadFresh();
+    // A charged version price can never be 0 (a 0 total would be treated as a
+    // free/paid order downstream) — min is 1.
+    for (const key of ['pdf_price', 'pickup_price', 'delivery_price', 'custom_price']) {
+      expect(s.validateValue('pricing', key, 0)).toBe('value must be a positive integer');
+      expect(s.validateValue('pricing', key, -1)).toBe('value must be a positive integer');
+      expect(() => s.set('pricing', key, 0)).toThrow();
+      // 1 and up are fine.
+      expect(s.validateValue('pricing', key, 1)).toBeNull();
+      expect(s.validateValue('pricing', key, 249)).toBeNull();
+    }
+    // Store display prices are never charged, so 0 is allowed.
+    expect(s.validateValue('pricing', 'store_now', 0)).toBeNull();
+    expect(s.validateValue('pricing', 'store_was', 0)).toBeNull();
+    // Nothing bad was written.
+    expect(s.all().overrides).toEqual({});
+  });
+
   it('validates a flag as a boolean', () => {
     const s = loadFresh();
     for (const bad of ['true', 1, 0, null, {}]) {

@@ -486,6 +486,75 @@ test('launch defaults: checkout offers ONLY self-pickup at ₪199', async ({ pag
   await expect(page.locator('#payPanel')).toContainText('₪199');
 });
 
+test('an admin custom order LOCKS checkout to custom @599 — no client downgrade', async ({
+  page,
+}) => {
+  // Regression: a pending admin-created custom order (599₪) paid after `custom`
+  // was hidden must NOT be re-priced as pickup (199₪). Checkout locks to the
+  // order's version + stored total.
+  await enableCardButton(page); // makes the pay button visible so we can assert it
+  await stubPricing(page); // all versions "enabled" — the LOCK must override this
+  await createCollection(page, 'Shira');
+  const c = new URL(page.url()).searchParams.get('c');
+  // Admin creates the bespoke custom order on this collection.
+  const res = await page.request.post(`/api/admin/collections/${c}/custom?key=dugri-admin`);
+  expect(res.ok()).toBeTruthy();
+
+  await page.reload();
+  await page.locator('#payPanel summary').click();
+  const label = (v) => page.locator(`.pay-opt:has(input[value="${v}"])`);
+  // Only the custom option is shown, at its stored 599 — no cheaper option.
+  await expect(label('custom')).toBeVisible();
+  for (const v of ['pdf', 'pickup', 'delivery']) {
+    await expect(label(v)).toBeHidden();
+  }
+  await expect(page.locator('#payTotal')).toHaveText('599');
+  await expect(page.locator('#payPanel')).toContainText('₪599');
+  // The order stays payable (it's a valid persisted order).
+  await expect(page.locator('#cardPayBtn')).toBeEnabled();
+});
+
+test('pricing fetch failure disables pay and offers a refresh (never a guessed price)', async ({
+  page,
+}) => {
+  await enableCardButton(page);
+  // The pricing endpoint is down — the checkout must not offer to charge a guess.
+  await page.route('**/api/pricing', (route) =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
+  );
+  await createCollection(page, 'Shira');
+  await page.locator('#payPanel summary').click();
+
+  await expect(page.locator('#priceLoadErr')).toBeVisible();
+  await expect(page.locator('#priceLoadErr [data-role="retry"]')).toBeVisible();
+  await expect(page.locator('#payOpts')).toBeHidden();
+  await expect(page.locator('#cardPayBtn')).toBeDisabled();
+});
+
+test('no version enabled → checkout shows "orders closed", no pay button, no total', async ({
+  page,
+}) => {
+  await enableCardButton(page);
+  await stubPricing(page, {
+    store: { now: 199, was: 239 },
+    versions: {
+      pdf: { enabled: false, price: 79 },
+      pickup: { enabled: false, price: 199 },
+      delivery: { enabled: false, price: 199 },
+      custom: { enabled: false, price: 599 },
+    },
+  });
+  await createCollection(page, 'Shira');
+  await page.locator('#payPanel summary').click();
+
+  await expect(page.locator('#priceLoadErr')).toBeVisible();
+  await expect(page.locator('#priceLoadErr')).toContainText('סגור');
+  // No retry (this isn't a load failure), no option list, pay disabled.
+  await expect(page.locator('#priceLoadErr [data-role="retry"]')).toBeHidden();
+  await expect(page.locator('#payOpts')).toBeHidden();
+  await expect(page.locator('#cardPayBtn')).toBeDisabled();
+});
+
 test('after payment: pay panel + reminder disappear, סיום card takes over', async ({ page }) => {
   await createCollection(page, 'Shira');
   const url = new URL(page.url());

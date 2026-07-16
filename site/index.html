@@ -1145,12 +1145,15 @@
       }
 
       // Overlay the owner-editable store price onto the rail cards once it
-      // resolves. Fail-safe: on a slow/failed fetch the seeded default stays.
+      // resolves. Fail-safe: on a slow/failed fetch the seeded default stays. This
+      // is the page's SINGLE /api/pricing fetch — it also feeds the (dormant) plan
+      // sum used by the classic CONFIG script below, via the window hook it exposes.
       fetchPricing().then((p) => {
         PRICE = p.store.now;
         for (const el of document.querySelectorAll('.home-prod-price')) {
           el.textContent = `${PRICE} ₪`;
         }
+        if (typeof window.dugriSetPlanSum === 'function') window.dugriSetPlanSum(p.store.now);
       });
 
       // ---- CELEBRATIONS COUNTER: exact order count from the public stats API ----
@@ -1500,22 +1503,12 @@
         },
       };
 
-      // Refresh the base plan sum from the owner-editable store price (used only
-      // in the dormant Tranzila/WhatsApp fallback below). Timeout-bounded + fail
-      // safe: on a slow/failed fetch the seeded default (199) stays.
-      (function refreshPlanSum() {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 2500);
-        fetch('/api/pricing', { signal: ctrl.signal })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((p) => {
-            if (p && p.store && Number.isInteger(p.store.now)) CONFIG.plans.base.sum = p.store.now;
-          })
-          .catch(() => {
-            /* fail soft — the seeded default stays */
-          })
-          .finally(() => clearTimeout(timer));
-      })();
+      // The base plan sum (used only by the dormant Tranzila/WhatsApp fallback in
+      // pay() below) is fed by the module script's SINGLE /api/pricing fetch — no
+      // duplicate request here. Until it resolves the seeded default (199) stays.
+      window.dugriSetPlanSum = (n) => {
+        if (Number.isInteger(n)) CONFIG.plans.base.sum = n;
+      };
 
       const waBase = 'https://wa.me/' + CONFIG.whatsapp;
       const waMsg = encodeURIComponent('היי! אני רוצה להזמין משחק דוגרי');

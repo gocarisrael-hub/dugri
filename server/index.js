@@ -241,6 +241,13 @@ function publicView(c) {
     // PeleCard callback). Drives the pay-to-unlock prompts on collect.html.
     // The address is NOT exposed.
     paid: !!(c.order && c.order.paid),
+    // The placed order's version + stored total (NOT the address). collect.html
+    // LOCKS checkout to this so a persisted order (e.g. an admin-created custom at
+    // 599₪) is paid at its own version/total and can never be downgraded client-
+    // side to a cheaper version. null when no order has been placed yet.
+    order: c.order
+      ? { version: c.order.version, total: c.order.total, paid: !!c.order.paid }
+      : null,
     // Whether online card payment is available (PeleCard credentials present).
     // Lets collect.html show the credit-card button only when it will work.
     card_enabled: pelecard.isConfigured(),
@@ -356,7 +363,9 @@ app.post('/api/admin/collections/:id/custom', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const c = db.getCollection(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
-  const order = db.setOrder(req.params.id, c.owner_token, { version: 'custom' });
+  // admin:true bypasses the public version-enable gate so a bespoke custom order
+  // can be created even while `custom` is hidden from public buyers (launch state).
+  const order = db.setOrder(req.params.id, c.owner_token, { version: 'custom' }, { admin: true });
   if (order && order.error) return res.status(400).json({ error: order.error });
   const base = paymentBaseUrl();
   const payLink = base ? base + '/collect.html?c=' + c.id + '&k=' + c.owner_token : null;
@@ -1354,10 +1363,19 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   // charged_total is ALWAYS a real number — the full total when no coupon.
   const charged = Math.round(order.total * (1 - discountPct / 100));
 
-  // Free order (100%-off, or the charge rounds to <= 0): skip PeleCard entirely,
-  // mark it paid now, count the coupon use, and tell the client it's paid.
-  // BUT NOT while a real (non-free) card session is still in flight — otherwise
-  // the customer could complete that charge and be billed for a "free" order.
+  // A base order total can never be 0 (version prices validate as >= 1 and the
+  // charge falls back to a positive default), so charged<=0 is ONLY reachable via
+  // a coupon that discounts to zero. Guard defensively: if the charge rounds to 0
+  // with NO coupon, something is wrong — refuse rather than mark a paid-at-₪0
+  // order. Only a real coupon may take the free/skip-PeleCard path.
+  if (charged <= 0 && !couponCode) {
+    return res.status(400).json({ error: 'invalid order total' });
+  }
+
+  // Free order (a coupon discounts it to <= 0): skip PeleCard entirely, mark it
+  // paid now, count the coupon use, and tell the client it's paid. BUT NOT while a
+  // real (non-free) card session is still in flight — otherwise the customer could
+  // complete that charge and be billed for a "free" order.
   if (charged <= 0) {
     if (db.hasInFlightRealSession(order)) {
       return res.status(409).json({ error: 'יש תשלום פתוח — סגרו את חלון התשלום לפני החלת קופון' });
@@ -1892,34 +1910,12 @@ app.get('/api/features', (req, res) => {
 // each checkout version's { enabled, price }. No other settings section leaks
 // here. Mirrors GET /api/content (public overrides projection).
 app.get('/api/pricing', (req, res) => {
-  // Read ONLY the pricing section, iterating its registry keys (so a price/
-  // version added later is exposed automatically) — never settings.all(), which
-  // would clone every section (incl. non-pricing settings) on this
-  // unauthenticated hot path. Each key is read once; a failed read falls back to
-  // the registry default we already hold, so this can't throw or leak secrets.
-  const pricingReg = (settings.REGISTRY && settings.REGISTRY.pricing) || {};
-  const eff = {};
-  for (const key of Object.keys(pricingReg)) {
-    let v = pricingReg[key].default;
-    try {
-      v = settings.get('pricing', key);
-    } catch {
-      /* keep the registry default */
-    }
-    eff[key] = v;
-  }
-  const int = (v, fallback) => (Number.isInteger(v) ? v : fallback);
-  const versions = {};
-  for (const key of Object.keys(eff)) {
-    const m = /^(.+)_enabled$/.exec(key);
-    if (!m) continue;
-    const name = m[1];
-    versions[name] = { enabled: eff[key] === true, price: int(eff[name + '_price'], 0) };
-  }
-  res.json({
-    store: { now: int(eff.store_now, 199), was: int(eff.store_was, 239) },
-    versions,
-  });
+  // db.effectivePricing() is the SINGLE source shared with the charge path (it
+  // reads the same versionEnabled/versionPrice/storeValue helpers), so the price
+  // a buyer is shown can never disagree with the price the server charges — and a
+  // corrupt override falls back to the same built-in default the charge uses (not
+  // a misleading 0). Only the whitelisted { store, versions } is exposed here.
+  res.json(db.effectivePricing());
 });
 
 // Unknown API routes -> JSON 404 (must come before static/catch-all).

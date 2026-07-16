@@ -3,9 +3,17 @@
 // version's { enabled, price } are edited by the owner from admin-pricing.html
 // with no deploy; every storefront surface reads them through this helper.
 //
-// The fetch is TIMEOUT-BOUNDED (AbortController) and fail-safe: a slow, failing,
-// non-2xx or malformed response resolves to PRICING_FALLBACK (the launch
-// defaults) so a price is never blank and page init never blocks on the network.
+// The fetch is TIMEOUT-BOUNDED (AbortController) and fail-safe. It always resolves
+// to { store, versions, ok }: on a slow/failing/non-2xx/malformed response it
+// returns the PRICING_FALLBACK launch defaults with `ok: false`; on success the
+// live pricing with `ok: true`. Display-only surfaces (store price on
+// products/index/product) can ignore `ok` and just show the numbers. The CHARGE
+// path (collect.html checkout) MUST honour `ok` — when false it must NOT offer to
+// pay at a guessed price, because the server would charge the live settings price
+// the client couldn't read.
+//
+// PRICING_FALLBACK is the SINGLE client-side source of the launch defaults —
+// imported everywhere a fallback is needed (never re-declared per page).
 
 export const PRICING_FALLBACK = {
   store: { now: 199, was: 239 },
@@ -24,10 +32,14 @@ export async function fetchPricing(timeoutMs = 2500) {
     const r = await fetch('/api/pricing', { signal: ctrl.signal });
     if (!r.ok) throw new Error('http ' + r.status);
     const j = await r.json();
-    if (j && j.store && j.versions) return j;
-    return PRICING_FALLBACK;
+    if (j && j.store && j.versions) return { store: j.store, versions: j.versions, ok: true };
+    throw new Error('bad shape');
   } catch {
-    return PRICING_FALLBACK;
+    return {
+      store: { ...PRICING_FALLBACK.store },
+      versions: JSON.parse(JSON.stringify(PRICING_FALLBACK.versions)),
+      ok: false,
+    };
   } finally {
     clearTimeout(timer);
   }
