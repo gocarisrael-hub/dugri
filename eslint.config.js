@@ -22,6 +22,8 @@ const browserGlobals = {
   cancelAnimationFrame: 'readonly',
   URL: 'readonly',
   URLSearchParams: 'readonly',
+  AbortController: 'readonly',
+  FormData: 'readonly',
   CustomEvent: 'readonly',
   Event: 'readonly',
   getComputedStyle: 'readonly',

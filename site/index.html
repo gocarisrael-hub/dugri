@@ -1079,6 +1079,7 @@
     <script type="module">
       import { initCarousel } from './js/carousel.js';
       import { PUBLIC_DESIGNS } from './js/designs.js';
+      import { loadDesignImages, overrideFor } from './js/design-images.js';
 
       // ---- HERO: full-bleed auto-rotating slideshow ----
       const heroTrack = document.querySelector('.hero-track');
@@ -1111,6 +1112,7 @@
           card.className = 'home-prod-card';
           card.href = `product.html?design=${encodeURIComponent(d.id)}`;
           card.dataset.label = d.name;
+          card.setAttribute('data-design-id', d.id);
           card.setAttribute('data-ga', 'order_started');
           card.setAttribute('data-ga-cta', 'home-products');
 
@@ -1118,6 +1120,7 @@
           thumb.className = 'home-prod-thumb';
           const img = document.createElement('img');
           img.src = `assets/designs/${d.id}/store.webp`;
+          img.setAttribute('data-store-default', img.src);
           img.alt = d.name;
           img.loading = 'lazy';
           img.decoding = 'async';
@@ -1138,6 +1141,33 @@
         // versa) instead of hitting an edge. The cards are layer-promoted in CSS
         // so the seamless-loop recenter is a cheap reposition, not a repaint.
         initCarousel(productsTrack, { mode: 'scroller', loop: true, dots: false });
+
+        // Overlay the owner's per-design STORE-tile overrides so the homepage rail
+        // shows the SAME picture as /products (else one design would show two
+        // different images). Runs after the rail (incl. any loop clones) is built.
+        // Timeout-bounded + fail-safe (js/design-images.js): a slow/failed fetch
+        // leaves the static store.webp in place; a broken override file degrades to
+        // the static default via the onerror below.
+        loadDesignImages()
+          .then((map) => {
+            for (const img of productsTrack.querySelectorAll('.home-prod-thumb img')) {
+              const id = img.closest('[data-design-id]')?.getAttribute('data-design-id');
+              const override = overrideFor(map, id, 'store');
+              if (!override) continue;
+              img.addEventListener(
+                'error',
+                () => {
+                  const fallback = img.getAttribute('data-store-default');
+                  if (fallback && img.src !== fallback) img.src = fallback;
+                },
+                { once: true }
+              );
+              img.src = override;
+            }
+          })
+          .catch(() => {
+            /* fail-safe: static store.webp stays */
+          });
       }
 
       // ---- CELEBRATIONS COUNTER: exact order count from the public stats API ----

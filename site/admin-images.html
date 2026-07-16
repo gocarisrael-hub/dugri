@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="dugri:page" content="admin-images.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>תמונות מוצר — דוגרי (ניהול)</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --ink: #1a1a1a;
+        --muted: #6b6b6b;
+        --line: #ececec;
+        --section: #fdf2f5;
+        --pink: #e85a97;
+        --pink-deep: #c53f79;
+        --radius: 10px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          'Heebo',
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Arial,
+          sans-serif;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 0 18px 100px;
+      }
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 22px 0 0;
+      }
+      .nav a {
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid #e4ddd0;
+        background: #fff;
+        color: #5c7357;
+        border-radius: 99px;
+        padding: 6px 14px;
+      }
+      .nav a.active {
+        background: #8ca287;
+        border-color: #8ca287;
+        color: #fff;
+      }
+      header {
+        padding: 34px 0 18px;
+        border-bottom: 3px solid var(--pink);
+        margin-bottom: 18px;
+      }
+      .kicker {
+        font-size: 12px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--pink-deep);
+        margin: 0 0 6px;
+        font-weight: 700;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: clamp(24px, 5.5vw, 34px);
+        font-weight: 800;
+      }
+      header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14.5px;
+      }
+      .msg {
+        background: var(--section);
+        border: 1px solid #f3d9e4;
+        border-radius: var(--radius);
+        padding: 16px 18px;
+        margin: 18px 0;
+        font-size: 15px;
+      }
+      .msg code {
+        background: #fff;
+        border: 1px solid #f3d9e4;
+        border-radius: 5px;
+        padding: 1px 6px;
+        direction: ltr;
+        unicode-bidi: embed;
+      }
+      .design {
+        margin: 26px 0 10px;
+      }
+      .design-title {
+        font-size: 15px;
+        font-weight: 800;
+        color: var(--pink-deep);
+        margin: 0 0 12px;
+      }
+      .design-title small {
+        color: var(--muted);
+        font-weight: 600;
+        direction: ltr;
+        unicode-bidi: embed;
+      }
+      .slots {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+        gap: 14px;
+      }
+      .slot {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 12px;
+        background: #fff;
+      }
+      .slot h3 {
+        margin: 0 0 8px;
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .slot .badge {
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 99px;
+        padding: 1px 8px;
+        margin-inline-start: 6px;
+        vertical-align: middle;
+      }
+      .badge.custom {
+        background: #eafaef;
+        color: #1c7a3e;
+        border: 1px solid #bde8ca;
+      }
+      .badge.default {
+        background: #f4f4f4;
+        color: #777;
+        border: 1px solid #e3e3e3;
+      }
+      .preview {
+        width: 100%;
+        aspect-ratio: 3 / 2;
+        object-fit: contain;
+        background: #faf7f2;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        display: block;
+      }
+      .slot .row {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      button {
+        font: inherit;
+        font-weight: 700;
+        font-size: 13px;
+        border-radius: 8px;
+        padding: 7px 12px;
+        cursor: pointer;
+        border: 1px solid var(--pink);
+        background: var(--pink);
+        color: #fff;
+        flex: 1;
+      }
+      button.ghost {
+        background: #fff;
+        color: var(--pink-deep);
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .slot .status {
+        font-size: 12px;
+        margin-top: 8px;
+        min-height: 16px;
+      }
+      .status.ok {
+        color: #1c7a3e;
+      }
+      .status.err {
+        color: #c0293f;
+      }
+      footer {
+        margin-top: 34px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="nav" id="nav">
+        <a data-page="dashboard.html">לוח בקרה</a>
+        <a data-page="admin.html">ניהול הזמנות</a>
+        <a data-page="coupons.html">ניהול קופונים</a>
+        <a data-page="design-codes.html">קודי עיצוב</a>
+        <a data-page="admin-templates.html">תבנית חדשה</a>
+        <a data-page="admin-designs.html">עיצובים</a>
+        <a data-page="admin-playbook.html">פלייבוק</a>
+        <a data-page="admin-texts.html">הודעות וטקסטים</a>
+        <a data-page="admin-features.html">פיצ׳רים</a>
+        <a data-page="admin-images.html" class="active">תמונות מוצר</a>
+      </nav>
+      <header>
+        <p class="kicker">Internal · תמונות מוצר</p>
+        <h1>תמונות מוצר</h1>
+        <p>
+          החליפו את תמונת החנות ותמונות הגלריה של כל עיצוב בתמונה משלכם — נשמר בשרת ומופיע מיד לכל
+          המבקרים, בלי צורך בדפלוי. אפשר תמיד לחזור לתמונת ברירת המחדל.
+        </p>
+      </header>
+
+      <div id="noKey" class="msg" hidden>
+        חסר מפתח גישה. פתחו את הדף עם <code>?key=…</code> בכתובת.
+      </div>
+      <div id="loadErr" class="msg" hidden></div>
+
+      <div id="app" hidden></div>
+
+      <footer>נשמר בשרת (DATA_DIR) · גלוי רק עם מפתח הניהול · לא מקושר מהאתר.</footer>
+    </div>
+
+    <script type="module">
+      import { DESIGNS } from './js/designs.js';
+
+      const key = new URLSearchParams(location.search).get('key') || '';
+      const qs = (id) => document.getElementById(id);
+      // Carry the admin key across the linked admin pages.
+      for (const a of document.querySelectorAll('#nav a')) {
+        a.href = a.dataset.page + (key ? '?key=' + encodeURIComponent(key) : '');
+      }
+      function withKey(url) {
+        return url + (url.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key);
+      }
+      function esc(s) {
+        return String(s == null ? '' : s).replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+        );
+      }
+
+      const SLOT_LABELS = {
+        store: 'תמונת חנות',
+        front: 'קלף',
+        back: 'גב הקלף',
+        board: 'לוח המשחק',
+      };
+      // The four slots per design; board only when the design ships a board.
+      function slotsFor(d) {
+        const s = ['store', 'front', 'back'];
+        if (d.products && d.products.board) s.push('board');
+        return s;
+      }
+      // The shipped static asset path for a design/slot (the fallback picture).
+      function defaultSrc(d, slot) {
+        return slot === 'store'
+          ? `assets/designs/${d.id}/store.webp`
+          : `assets/designs/${d.id}/gallery-${slot}.webp`;
+      }
+
+      let images = {}; // { designId: { slot: "/content-uploads/…" } }
+
+      function slotHtml(d, slot) {
+        const override = images[d.id] && images[d.id][slot];
+        const src = override || defaultSrc(d, slot);
+        const badge = override
+          ? '<span class="badge custom">מותאם</span>'
+          : '<span class="badge default">ברירת מחדל</span>';
+        return `
+          <div class="slot" data-design="${esc(d.id)}" data-slot="${esc(slot)}">
+            <h3>${esc(SLOT_LABELS[slot] || slot)}${badge}</h3>
+            <img class="preview" alt="${esc(SLOT_LABELS[slot] || slot)}" src="${esc(src)}"
+                 onerror="this.style.visibility='hidden'" />
+            <div class="row">
+              <button data-act="upload">החלף תמונה</button>
+              <button class="ghost" data-act="reset" ${override ? '' : 'disabled'}>איפוס</button>
+            </div>
+            <input type="file" accept="image/png,image/jpeg,image/webp" hidden />
+            <div class="status"></div>
+          </div>`;
+      }
+
+      function render() {
+        qs('app').innerHTML = DESIGNS.map(
+          (d) => `
+          <section class="design">
+            <p class="design-title">${esc(d.name)} <small>(${esc(d.id)})</small></p>
+            <div class="slots">${slotsFor(d)
+              .map((slot) => slotHtml(d, slot))
+              .join('')}</div>
+          </section>`
+        ).join('');
+      }
+
+      function setStatus(slotEl, text, kind) {
+        const s = slotEl.querySelector('.status');
+        s.textContent = text;
+        s.className = 'status' + (kind ? ' ' + kind : '');
+      }
+
+      async function upload(slotEl, file) {
+        const designId = slotEl.dataset.design;
+        const slot = slotEl.dataset.slot;
+        const fd = new FormData();
+        fd.append('designId', designId);
+        fd.append('slot', slot);
+        fd.append('file', file);
+        setStatus(slotEl, 'מעלה…', '');
+        try {
+          const r = await fetch(withKey('/api/admin/design-images/image'), {
+            method: 'POST',
+            body: fd,
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+          images[designId] = j.images || Object.assign(images[designId] || {}, { [slot]: j.img });
+          render();
+          const again = qs('app').querySelector(
+            `.slot[data-design="${CSS.escape(designId)}"][data-slot="${CSS.escape(slot)}"]`
+          );
+          if (again) setStatus(again, 'הוחלף ✓', 'ok');
+        } catch (e) {
+          setStatus(slotEl, 'העלאה נכשלה: ' + e.message, 'err');
+        }
+      }
+
+      async function reset(slotEl) {
+        const designId = slotEl.dataset.design;
+        const slot = slotEl.dataset.slot;
+        setStatus(slotEl, 'מאפס…', '');
+        try {
+          const r = await fetch(withKey('/api/admin/design-images'), {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ designId, slot }),
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+          if (images[designId]) {
+            delete images[designId][slot];
+            if (!Object.keys(images[designId]).length) delete images[designId];
+          }
+          render();
+        } catch (e) {
+          setStatus(slotEl, 'איפוס נכשל: ' + e.message, 'err');
+        }
+      }
+
+      qs('app').addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const slotEl = btn.closest('.slot');
+        if (!slotEl) return;
+        if (btn.dataset.act === 'upload') slotEl.querySelector('input[type=file]').click();
+        else if (btn.dataset.act === 'reset') reset(slotEl);
+      });
+      qs('app').addEventListener('change', (e) => {
+        if (e.target.matches('input[type=file]')) {
+          const file = e.target.files && e.target.files[0];
+          if (file) upload(e.target.closest('.slot'), file);
+          e.target.value = '';
+        }
+      });
+
+      async function load() {
+        try {
+          const r = await fetch(withKey('/api/design-images'));
+          const j = await r.json().catch(() => ({}));
+          images = (j && j.images && typeof j.images === 'object' && j.images) || {};
+          render();
+        } catch (e) {
+          qs('loadErr').textContent = 'טעינה נכשלה: ' + e.message;
+          qs('loadErr').hidden = false;
+        }
+      }
+
+      if (!key) {
+        qs('noKey').hidden = false;
+      } else {
+        qs('app').hidden = false;
+        load();
+      }
+    </script>
+  </body>
+</html>
