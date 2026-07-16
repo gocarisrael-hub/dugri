@@ -507,6 +507,7 @@
     <script type="module">
       import { PUBLIC_DESIGNS as DESIGNS, fetchDesignNames } from './js/designs.js';
       import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
+      import { loadDesignImages, overrideFor } from './js/design-images.js';
 
       // Owner-editable store price. The grid renders IMMEDIATELY with the launch
       // defaults (never blank / never blocked), then a timeout-bounded fetch
@@ -549,6 +550,7 @@
         img.src = `assets/designs/${d.id}/store.webp`;
         img.alt = d.name;
         img.setAttribute('data-testid', 'product-image');
+        img.setAttribute('data-store-default', img.src);
         media.appendChild(img);
         link.appendChild(media);
 
@@ -618,6 +620,34 @@
             }
           })
           .catch(() => {});
+
+        // Overlay the owner's per-design STORE-tile overrides. First paint already
+        // shows the static store.webp; this swaps in an uploaded picture where one
+        // exists. Timeout-bounded + fail-safe (js/design-images.js): a slow/failed
+        // fetch leaves every static default untouched.
+        loadDesignImages()
+          .then((map) => {
+            for (const img of grid.querySelectorAll('[data-testid="product-image"]')) {
+              const id = img.closest('[data-design-id]')?.getAttribute('data-design-id');
+              const override = overrideFor(map, id, 'store');
+              if (!override) continue;
+              // If the override file is missing/broken, degrade to the shipped
+              // static store.webp (captured in data-store-default). `once` guards
+              // against a loop if the static asset itself somehow fails.
+              img.addEventListener(
+                'error',
+                () => {
+                  const fallback = img.getAttribute('data-store-default');
+                  if (fallback && img.src !== fallback) img.src = fallback;
+                },
+                { once: true }
+              );
+              img.src = override;
+            }
+          })
+          .catch(() => {
+            /* fail-safe: static store.webp stays */
+          });
       } catch (err) {
         // Graceful degradation: never leave a blank page — offer the wizard.
         grid.innerHTML =

@@ -23,6 +23,7 @@
 import { PUBLIC_DESIGNS, fetchDesignNames } from './designs.js';
 import { initCarousel } from './carousel.js';
 import { fetchPricing } from './pricing.js';
+import { loadDesignImages, overrideFor } from './design-images.js';
 
 // Owner-editable store price. Seeded with the launch defaults so first paint is
 // correct even before /api/pricing answers (boot re-stamps these once the
@@ -99,29 +100,38 @@ function resolveDesign() {
 /** The design's DEFAULT gallery photos: front/back/board, board skipped when the
  *  design ships without one (e.g. kids). Each is a {src, label}. Sources the crisp
  *  hi-res renders (assets/designs/<id>/gallery-*.webp) rather than the tiny picker
- *  thumbs (thumb-*.webp), which upscale blurry full-width. */
-function defaultShots(d) {
+ *  thumbs (thumb-*.webp), which upscale blurry full-width.
+ *
+ *  `designImages` is the owner's per-design override map (js/design-images.js):
+ *  a per-slot uploaded picture wins over the shipped static render, falling back
+ *  to the static asset whenever no valid override is set for that slot. */
+function defaultShots(d, designImages) {
   const thumbs = d.thumbs || {};
   const KIND = { front: 'קלף', back: 'גב הקלף', board: 'לוח המשחק' };
   const shots = ['front', 'back', 'board']
     .filter((k) => thumbs[k])
-    .map((k) => ({
-      src: `assets/designs/${d.id}/gallery-${k}.webp`,
-      label: `${d.name} · ${KIND[k]}`,
-    }));
+    .map((k) => {
+      const staticSrc = `assets/designs/${d.id}/gallery-${k}.webp`;
+      const override = overrideFor(designImages, d.id, k);
+      // When an override is used, carry the shipped static render as `fallback` so a
+      // missing/broken override file degrades to it (fillTrack wires the onerror).
+      return override
+        ? { src: override, label: `${d.name} · ${KIND[k]}`, fallback: staticSrc }
+        : { src: staticSrc, label: `${d.name} · ${KIND[k]}` };
+    });
   // Never render an empty gallery: fall back to the single picker thumb.
   if (!shots.length && d.thumb) shots.push({ src: d.thumb, label: d.name });
   return shots;
 }
 
 /** The gallery photos to show: the owner's CUSTOM photos when present, otherwise
- *  the design's default renders (fail-soft fallback). */
-export function galleryShots(d, overrides) {
+ *  the design's default renders (with per-slot overrides). Fail-soft fallback. */
+export function galleryShots(d, overrides, designImages) {
   const custom = photosFromOverride(overrides, d.id);
   if (custom.length) {
     return custom.map((src, i) => ({ src, label: `${d.name} · תמונה ${i + 1}` }));
   }
-  return defaultShots(d);
+  return defaultShots(d, designImages);
 }
 
 function el(tag, cls, attrs) {
@@ -139,6 +149,7 @@ function el(tag, cls, attrs) {
 // when the owner adds / removes / reorders photos.
 let currentDesign = null;
 let currentOverrides = {};
+let currentDesignImages = {}; // owner's per-design store/gallery image overrides
 let galleryApi = null;
 let zoomApi = null;
 
@@ -156,6 +167,19 @@ function fillTrack(trackId, slideClass, shots) {
       loading: 'lazy',
       decoding: 'async',
     });
+    // A shot sourced from an owner OVERRIDE carries the shipped static render as
+    // `fallback`. If the override file is missing/broken, swap to the static asset
+    // once (so a broken upload never shows a broken slide). Guarded by `once` so a
+    // failing fallback can't loop.
+    if (shot.fallback && shot.fallback !== shot.src) {
+      img.addEventListener(
+        'error',
+        () => {
+          img.src = shot.fallback;
+        },
+        { once: true }
+      );
+    }
     slide.appendChild(img);
     track.appendChild(slide);
   }
@@ -367,7 +391,7 @@ function onPhotosChanged(e) {
   currentOverrides[e.detail.key] = Object.assign({}, currentOverrides[e.detail.key], {
     imgs: e.detail.imgs,
   });
-  rebuildCarousels(galleryShots(currentDesign, currentOverrides));
+  rebuildCarousels(galleryShots(currentDesign, currentOverrides, currentDesignImages));
 }
 
 // Apply the per-design NAME/ABOUT text overrides onto the already-rendered nodes
@@ -427,11 +451,24 @@ function applyOverridesToPage(d, overrides) {
   currentOverrides = overrides || {};
   applyTextOverrides(d, currentOverrides);
   if (photosFromOverride(currentOverrides, d.id).length) {
-    rebuildCarousels(galleryShots(d, currentOverrides));
+    rebuildCarousels(galleryShots(d, currentOverrides, currentDesignImages));
   }
   if (window.dugriEditor && typeof window.dugriEditor.notifyInjected === 'function') {
     window.dugriEditor.notifyInjected();
   }
+}
+
+// Overlay the owner's per-design image overrides once the map resolves. Custom
+// curated photos (content editor) still win; otherwise rebuild the gallery so any
+// per-slot override picture replaces its static render. Fail-soft: a missing map
+// just leaves the static assets in place. Skipped when custom photos are present.
+function applyDesignImagesToPage(d, imagesMap) {
+  currentDesignImages = imagesMap || {};
+  if (photosFromOverride(currentOverrides, d.id).length) return; // curated photos win
+  const hasOverride = ['front', 'back', 'board'].some((k) =>
+    overrideFor(currentDesignImages, d.id, k)
+  );
+  if (hasOverride) rebuildCarousels(galleryShots(d, currentOverrides, currentDesignImages));
 }
 
 // Get this page's content overrides. Preferred path REUSES the editor's single
@@ -460,7 +497,7 @@ function boot() {
   // title, price, buy CTA, related) SYNCHRONOUSLY from the bundled catalog. A
   // slow / failed /api/content then only affects the per-design overrides, never
   // the shopper's ability to see the product and buy.
-  const shots = galleryShots(d, currentOverrides); // defaults (no overrides yet)
+  const shots = galleryShots(d, currentOverrides, currentDesignImages); // defaults (no overrides yet)
   renderInfo(d, currentOverrides); // tags nodes + default name/about + price + buy
   renderGallery(shots);
   renderZoomSlides(shots);
@@ -491,6 +528,11 @@ function boot() {
   // Overlay the owner-editable design names (independent, fail-soft) — see the
   // note above; a name override applied here defers to a content name override.
   fetchDesignNames().then((names) => applyDesignNames(d, names));
+
+  // Independently overlay the owner's per-design image overrides (store/gallery
+  // pictures). Timeout-bounded + fail-safe: a slow/failed fetch never blocks the
+  // first paint and just leaves the static gallery renders in place.
+  loadDesignImages().then((map) => applyDesignImagesToPage(d, map));
 }
 
 // Re-stamp every rendered store price (the PDP now/was + each related card) from
