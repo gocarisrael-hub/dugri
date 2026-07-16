@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 // #galleryTrack element exists, which a bare test import has no reason to create),
 // so these exercise the exported helpers directly.
 import {
+  fieldKey,
   overrideKeys,
   overrideText,
   photosFromOverride,
@@ -14,6 +15,56 @@ import {
 const P1 = '/content-uploads/aaaaaaaaaaaaaaaa.png';
 const P2 = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
 
+// The fixed-section fields tagged data-edit-pd in product.html, namespaced per
+// design so each product page persists its OWN copy (not one shared value).
+const PD_FIELDS = [
+  'about-heading',
+  'inside-1',
+  'inside-2',
+  'inside-3',
+  'inside-4',
+  'inside-5',
+  'buy-cta',
+  'buy-note',
+  'related-heading',
+  'related-sub',
+];
+
+describe('fieldKey — per-design content-override key derivation', () => {
+  it('encodes both the design id and the field into the key', () => {
+    expect(fieldKey('japanese', 'about-heading')).toBe('product-japanese-about-heading');
+    expect(fieldKey('marriage', 'buy-cta')).toBe('product-marriage-buy-cta');
+  });
+
+  it('gives a DISTINCT key per design for the same field (no cross-product leak)', () => {
+    const keys = [
+      'bachelorette',
+      'marriage',
+      'birthday',
+      'japanese',
+      'posttrip',
+      'neon',
+      'kids',
+    ].map((id) => fieldKey(id, 'buy-cta'));
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('every design × field key stays within the server key shape (alnum start, kebab, ≤61)', () => {
+    const KEY_RE = /^[a-z0-9][a-z0-9-]{0,60}$/;
+    for (const id of [
+      'bachelorette',
+      'marriage',
+      'birthday',
+      'japanese',
+      'posttrip',
+      'neon',
+      'kids',
+    ]) {
+      for (const field of PD_FIELDS) expect(KEY_RE.test(fieldKey(id, field))).toBe(true);
+    }
+  });
+});
+
 describe('overrideKeys — per-design content-override keys', () => {
   it('encodes the design id into name/about/photos keys (kebab, page-shared)', () => {
     expect(overrideKeys('bachelorette')).toEqual({
@@ -21,6 +72,8 @@ describe('overrideKeys — per-design content-override keys', () => {
       about: 'product-bachelorette-about',
       photos: 'product-bachelorette-photos',
     });
+    // derived from fieldKey, so name/about/photos match the field derivation
+    expect(overrideKeys('neon').about).toBe(fieldKey('neon', 'about'));
     // every key stays within the server's key shape (alnum start, kebab, ≤61)
     const KEY_RE = /^[a-z0-9][a-z0-9-]{0,60}$/;
     for (const id of ['bachelorette', 'marriage', 'kids', 'posttrip']) {

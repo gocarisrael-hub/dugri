@@ -359,6 +359,81 @@ test.describe('per-product photo carousel + editable content', () => {
     await expect(page.locator('.dugri-editbar')).toHaveCount(0);
   });
 
+  // Per-design FIXED section copy (the "about" heading, "what's inside" list, buy
+  // CTA/note, related-rail headings — tagged data-edit-pd in product.html). These
+  // USED to be one shared, design-agnostic key, so an edit on any product page
+  // leaked to every other. They are now namespaced per design, so a NON-default
+  // design (japanese) is editable independently and saves under its own key.
+  test('a non-bachelorette fixed field is editable and saves under its per-design key', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    let body = null;
+    await page.route('**/api/admin/content*', (route) => {
+      const req = route.request();
+      // Only the text POST is exactly '/api/admin/content' (not '/content/photos|image').
+      if (req.method() === 'POST' && !req.url().includes('/content/')) body = req.postDataJSON();
+      return route.fulfill({ json: { ok: true } });
+    });
+
+    await page.goto('/product.html?design=japanese&edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const heading = page.locator('[data-edit-pd="about-heading"]');
+    // The fixed field is stamped with the JAPANESE per-design key, not a shared one.
+    await expect(heading).toHaveAttribute('data-edit', 'product-japanese-about-heading');
+    await expect(heading).toHaveAttribute('contenteditable', /plaintext-only|true/);
+    await heading.evaluate((n) => {
+      n.focus();
+      n.textContent = 'על העיצוב היפני';
+      n.dispatchEvent(new Event('blur'));
+    });
+
+    await expect.poll(() => body).toBeTruthy();
+    expect(body).toEqual({
+      page: 'product.html',
+      key: 'product-japanese-about-heading',
+      text: 'על העיצוב היפני',
+    });
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('נשמר');
+  });
+
+  test('a saved fixed-field override is per-design: shows on its design, NOT on another', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) =>
+      route.fulfill({
+        json: { overrides: { 'product-japanese-about-heading': { text: 'כותרת יפנית' } } },
+      })
+    );
+
+    // The japanese page shows its own saved heading…
+    await page.goto('/product.html?design=japanese');
+    await expect(page.locator('[data-edit-pd="about-heading"]')).toHaveText('כותרת יפנית');
+
+    // …while a DIFFERENT product (marriage) shows the shipped default — the edit
+    // does NOT leak across products (the bug: one shared key showed everywhere).
+    await page.goto('/product.html?design=marriage');
+    await expect(page.locator('[data-edit-pd="about-heading"]')).toHaveText('על העיצוב');
+  });
+
+  test('the default design migrates a legacy design-agnostic override (no lost edit)', async ({
+    page,
+  }) => {
+    // A pre-namespacing edit lives under the shared "product-about-heading" key.
+    await page.route('**/api/content*', (route) =>
+      route.fulfill({ json: { overrides: { 'product-about-heading': { text: 'כותרת מהעבר' } } } })
+    );
+
+    // The DEFAULT design (bachelorette) still reads the legacy key → nothing lost.
+    await page.goto('/product.html?design=bachelorette');
+    await expect(page.locator('[data-edit-pd="about-heading"]')).toHaveText('כותרת מהעבר');
+
+    // A non-default design does NOT inherit the legacy value (it is bachelorette's).
+    await page.goto('/product.html?design=japanese');
+    await expect(page.locator('[data-edit-pd="about-heading"]')).toHaveText('על העיצוב');
+  });
+
   // Item 3 (edit mode): the owner ADDS a photo; it persists and shows to a normal
   // visitor. The server store is simulated by a mutable `saved` array reflected by
   // the mocked GET, so nothing is written to real storage.

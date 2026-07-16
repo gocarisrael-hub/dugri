@@ -8,7 +8,9 @@
 //   3. an "about this design" blurb (per-design placeholder copy)
 //   4. a related-products rail (initCarousel scroller, peek of next card)
 //
-// The per-design NAME, ABOUT text and PHOTO carousel are OWNER-EDITABLE: each is
+// The per-design NAME, ABOUT text, PHOTO carousel AND the fixed section copy (the
+// "about" heading, the "what's inside" list, the buy CTA + note, the related-rail
+// headings — tagged data-edit-pd in product.html) are OWNER-EDITABLE: each is
 // tagged with a per-design override key so the inline editor (js/editor.js) can
 // overlay a saved value for every visitor and, in edit mode, let the owner change
 // it. Because these nodes are injected here — AFTER the editor's initial scan — we
@@ -59,13 +61,26 @@ const UPLOAD_PATH_RE = /^\/content-uploads\/[a-f0-9]{16}\.(webp|jpe?g|png)$/;
 // ---- per-design override keys (shared with the editor + server) ----------
 // All product pages share page="product.html", so the DESIGN id is encoded into
 // the key. Keep in sync with editor.js/content.js key validation (kebab, ≤61).
+export function fieldKey(id, field) {
+  return `product-${id}-${field}`;
+}
 export function overrideKeys(id) {
   return {
-    name: `product-${id}-name`,
-    about: `product-${id}-about`,
-    photos: `product-${id}-photos`,
+    name: fieldKey(id, 'name'),
+    about: fieldKey(id, 'about'),
+    photos: fieldKey(id, 'photos'),
   };
 }
+
+// The FIRST/default public design. product.html's fixed section copy (the "about"
+// heading, the "what's inside" list, the buy CTA + note, the related-rail
+// headings) USED to ship as a single design-agnostic data-edit="product-<field>"
+// key, so any edit the owner already saved lives under that legacy key. Those
+// fields are now namespaced PER DESIGN (each element is tagged data-edit-pd in the
+// HTML). To lose nothing, the default design still READS the legacy key as a
+// fallback when it has no per-design override yet — so an existing edit keeps
+// showing (and is re-saved under the per-design key the next time it's edited).
+const LEGACY_DESIGN = 'bachelorette';
 
 /** The saved text override for `key`, or null when none. */
 export function overrideText(overrides, key) {
@@ -409,6 +424,27 @@ function applyTextOverrides(d, overrides) {
   if (about && aboutOv != null) about.textContent = aboutOv;
 }
 
+// Namespace product.html's FIXED text sections PER DESIGN. Each such element is
+// tagged in the HTML with data-edit-pd="<field>" (design-agnostic); here we stamp
+// its per-design override key onto data-edit ("product-<id>-<field>") so the editor
+// binds + saves it under a key unique to THIS design, and overlay the saved text
+// when present. The shipped HTML text stays the default (first paint is correct);
+// the DEFAULT design additionally falls back to the pre-namespacing legacy key so
+// an edit the owner already made is never lost. Idempotent — safe to call to TAG
+// (overrides={}) on first paint and again to APPLY once overrides resolve.
+function applyPerDesignFields(d, overrides) {
+  document.querySelectorAll('[data-edit-pd]').forEach((elm) => {
+    const field = elm.getAttribute('data-edit-pd');
+    if (!field) return;
+    const key = fieldKey(d.id, field);
+    elm.setAttribute('data-edit', key);
+    let ov = overrideText(overrides, key);
+    // Migration: the default design inherits any surviving legacy shared override.
+    if (ov == null && d.id === LEGACY_DESIGN) ov = overrideText(overrides, `product-${field}`);
+    if (ov != null) elm.textContent = ov;
+  });
+}
+
 // Overlay the owner-editable display names (GET /api/design-names — an admin
 // template rename → themes.json display_he) as the BASE name layer: the main
 // title, the browser tab, and every related-rail card. Runs INDEPENDENTLY of the
@@ -450,6 +486,7 @@ function applyDesignNames(d, names) {
 function applyOverridesToPage(d, overrides) {
   currentOverrides = overrides || {};
   applyTextOverrides(d, currentOverrides);
+  applyPerDesignFields(d, currentOverrides);
   if (photosFromOverride(currentOverrides, d.id).length) {
     rebuildCarousels(galleryShots(d, currentOverrides, currentDesignImages));
   }
@@ -499,6 +536,7 @@ function boot() {
   // the shopper's ability to see the product and buy.
   const shots = galleryShots(d, currentOverrides, currentDesignImages); // defaults (no overrides yet)
   renderInfo(d, currentOverrides); // tags nodes + default name/about + price + buy
+  applyPerDesignFields(d, currentOverrides); // stamp per-design keys on the fixed fields
   renderGallery(shots);
   renderZoomSlides(shots);
   wireZoom();
