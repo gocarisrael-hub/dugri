@@ -69,7 +69,7 @@ function previewCacheKey(parts = {}) {
  * its recency) or null when missing/expired; `set` stores a value and evicts the
  * oldest entries past `max`. TTL-bounded via `ttlMs`.
  */
-function makePreviewCache({ max = 200, ttlMs = 10 * 60 * 1000, now = Date.now } = {}) {
+function makePreviewCache({ max = 40, ttlMs = 5 * 60 * 1000, now = Date.now } = {}) {
   const store = new Map();
   function get(key) {
     const hit = store.get(key);

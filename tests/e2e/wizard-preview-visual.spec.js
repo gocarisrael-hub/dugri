@@ -297,16 +297,22 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
     expect(await trackIndex(page)).toBe(0);
   });
 
-  test('with no back/board the swipe set is card-only (dots hidden)', async ({ page }) => {
+  test('when the server omits back/board, the client-drawn approximations remain', async ({
+    page,
+  }) => {
+    // bachelorette ships back + board, so the instant draw renders all three. Even
+    // when the server render returns card-only, the client-drawn back/board must NOT
+    // vanish — swapServerView keeps the instant art for a view the response lacks,
+    // so the swipe set stays card → back → board.
     await mockPreview(page, { card: PORTRAIT_CARD, back: null, board: null });
     await toNameStep(page);
     await page.getByTestId('honoree-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
-    // only the card view exists → nothing to navigate, dots stay hidden
-    await expect(page.getByTestId('name-preview-dots')).toBeHidden();
-    await expect(page.getByTestId('name-preview-dot-back')).toHaveCount(0);
-    await expect(page.getByTestId('name-preview-dot-board')).toHaveCount(0);
+    // all three views remain navigable (dots present for back + board)
+    await expect(page.getByTestId('name-preview-dots')).toBeVisible();
+    await expect(page.getByTestId('name-preview-dot-back')).toBeVisible();
+    await expect(page.getByTestId('name-preview-dot-board')).toBeVisible();
   });
 
   test('a plain tap (no drag) does NOT open a fullscreen zoom', async ({ page }) => {

@@ -149,9 +149,13 @@ const previewRate = makeRateLimiter({
   windowMs: 60 * 1000,
   maxKeys: Number(process.env.COUPON_RATE_MAX_KEYS || 10000),
 });
+// Each entry holds base64 data-URLs for card + board + back, so cap the count LOW
+// and the TTL SHORT: ~40 entries keeps the steady-state footprint modest (tens of
+// MB) on a memory-constrained Railway instance while still absorbing a typer's
+// repeats. Eviction stays bounded regardless.
 const previewCache = makePreviewCache({
-  max: Number(process.env.PREVIEW_CACHE_MAX || 200),
-  ttlMs: Number(process.env.PREVIEW_CACHE_TTL_MS || 10 * 60 * 1000),
+  max: Number(process.env.PREVIEW_CACHE_MAX || 40),
+  ttlMs: Number(process.env.PREVIEW_CACHE_TTL_MS || 5 * 60 * 1000),
 });
 
 // The shared word-font choices ([{label,file}]), read fresh (tiny file). Returns
@@ -847,18 +851,13 @@ app.post('/api/preview', async (req, res) => {
   const b = req.body || {};
   const theme = String(b.theme || '').trim();
   const name = String(b.name || '').trim();
+  // Cheap, in-memory validation FIRST — reject bad requests before any work.
   const themeConfig = validate.getTheme(theme);
   if (!themeConfig) return res.status(400).json({ error: 'unknown theme' });
   if (!name) return res.status(400).json({ error: 'name required' });
 
-  const options = wordFontOptions();
-  // Only ever spawn with a word_font that is one of the offered options — never
-  // an arbitrary client-supplied filename.
-  let wordFont = null;
-  if (b.word_font) {
-    const wanted = String(b.word_font).trim();
-    if (options.some((o) => o.file === wanted)) wordFont = wanted;
-  }
+  // Cheap, in-memory parsing of the remaining render inputs (no fs, no spawn).
+  const rawWordFont = b.word_font ? String(b.word_font).trim() : '';
   const extraFields =
     b.extra_fields && typeof b.extra_fields === 'object' && !Array.isArray(b.extra_fields)
       ? b.extra_fields
@@ -871,28 +870,43 @@ app.post('/api/preview', async (req, res) => {
   const customTitle = db.sanitizeCustomTitle(b.title);
   // Surfaced to the customer immediately (doesn't block rendering the preview).
   const warning = validate.checkNameLanguage(name, themeConfig);
+  const themeWordFont = themeConfig.word_font || null;
 
-  // theme_word_font = the design's OWN original word font (from themes.json), so
-  // the picker can mark the "מקורי" (original) choice and clients can tell it apart.
-  const meta = {
-    warning,
-    word_font: wordFont,
-    word_font_options: options,
-    theme_word_font: themeConfig.word_font || null,
-  };
-
-  // 1) CACHE: a previously rendered identical request returns instantly — no
-  // Chrome, and it does NOT consume the rate-limit budget (it's free).
-  const cacheKey = previewCache.key({ theme, name, wordFont, extraFields, chasers, customTitle });
+  // 1) CACHE lookup FIRST, keyed by the raw inputs (identical requests map to the
+  // same render). A hit returns instantly with no Chrome and WITHOUT consuming the
+  // rate-limit budget. `options` (a tiny fs read) is needed only to build the meta.
+  const cacheKey = previewCache.key({
+    theme,
+    name,
+    wordFont: rawWordFont,
+    extraFields,
+    chasers,
+    customTitle,
+  });
   const cached = previewCache.get(cacheKey);
-  if (cached) return res.json({ ...cached, ...meta });
+  if (cached) {
+    const options = wordFontOptions();
+    const wordFont = options.some((o) => o.file === rawWordFont) ? rawWordFont : null;
+    return res.json({
+      ...cached,
+      warning,
+      word_font: wordFont,
+      word_font_options: options,
+      theme_word_font: themeWordFont,
+    });
+  }
 
-  // 2) RATE LIMIT: only the EXPENSIVE (uncached) render is throttled, on preview's
-  // OWN bucket — a typer never 429s the coupon/pay flow.
+  // 2) RATE LIMIT on a MISS, BEFORE any expensive per-request work (the font-options
+  // fs read + the Chrome render), on preview's OWN bucket — a flood is 429'd early
+  // and a typer never eats into the coupon/pay budget.
   if (!previewRate.ok('preview:' + clientKey(req))) {
     return res.status(429).json({ error: 'too many attempts' });
   }
 
+  // Only ever spawn with a word_font that is one of the offered options — never an
+  // arbitrary client-supplied filename.
+  const options = wordFontOptions();
+  const wordFont = options.some((o) => o.file === rawWordFont) ? rawWordFont : null;
   try {
     // A SINGLE preview.py run renders card + board + the design's real card back
     // together (one Python process, no second Chrome). runPreview rejects on
@@ -900,7 +914,13 @@ app.post('/api/preview', async (req, res) => {
     // no such artwork, so a missing back never fails the request.
     const imgs = await runPreview({ theme, name, wordFont, extraFields, chasers, customTitle });
     previewCache.set(cacheKey, imgs);
-    res.json({ ...imgs, ...meta });
+    res.json({
+      ...imgs,
+      warning,
+      word_font: wordFont,
+      word_font_options: options,
+      theme_word_font: themeWordFont,
+    });
   } catch (e) {
     const detail = String((e && e.message) || e);
     const status = /not calibrated|unknown theme/i.test(detail) ? 400 : 500;

@@ -3007,7 +3007,6 @@
       import { fetchPricing } from './js/pricing.js';
       import {
         CARD_CELL,
-        cellBox,
         cropSvgToCell,
         fluidSvg,
         fitNameFontPx,
@@ -3919,7 +3918,17 @@
       // "מקורי" chip's sample in the authentic look when the CSS is known.
       let themeWordFont = null;
       let fontPickerBuilt = false;
-      let previewEpoch = 0; // guards against out-of-order preview responses
+      // ONE monotonic sequence for the whole preview subsystem, bumped on EVERY
+      // change to the previewed inputs (each keystroke / param change via
+      // requestPreview). BOTH the instant draw and the debounced server render
+      // capture it at start and refuse to mutate the DOM once it is stale — so a
+      // superseded in-flight server render can never swap its old-name PNG over a
+      // newer instant draw, and a slow instant draw can't clobber the current card.
+      let previewSeq = 0;
+      // Per-view: the seq whose EXACT server PNG has already swapped into that view.
+      // A late instant draw for the same seq must not re-hide an exact PNG that is
+      // already showing (server won the race), so it checks this first.
+      const serverShown = { card: -1, back: -1, board: -1 };
       let previewTimer = null; // debounce handle
 
       // Best-effort CSS family per word-font file so each chip PREVIEWS the look.
@@ -4081,10 +4090,6 @@
          fall back to the neutral CSS placeholder. The exact server PNG then swaps
          in on top when POST /api/preview eventually returns (see doPreview). */
 
-      // Bumped on every instant draw so a slow (heavy-SVG) draw that resolves after
-      // a newer keystroke is discarded instead of clobbering the current card.
-      let instantSeq = 0;
-
       function showRefining() {
         if (namePreviewRefining) namePreviewRefining.hidden = false;
       }
@@ -4092,12 +4097,20 @@
         if (namePreviewRefining) namePreviewRefining.hidden = true;
       }
 
-      // Reveal the instant approximation for a view and hide its server img — a
-      // stale PNG (from a previous name) must not linger over the fresh instant art.
-      function showInstantView(view) {
+      // Reveal the instant approximation for a view (and hide its server img so a
+      // stale PNG can't linger over the fresh art) — UNLESS the exact server PNG for
+      // this same seq has already swapped in (serverShown), in which case the server
+      // won the race and we must NOT override it with the approximation. Also fits
+      // the overlaid name now that the layer is measurable.
+      function showInstantView(view, seq) {
+        if (seq !== previewSeq) return; // superseded
+        if (serverShown[view] === seq) return; // exact PNG already showing this name
         const inst = npInstant[view];
         const img = npImg[view];
-        if (inst) inst.hidden = false;
+        if (inst) {
+          inst.hidden = false;
+          fitInstantName(inst);
+        }
         if (img) img.hidden = true;
       }
       function hideInstantView(view) {
@@ -4105,10 +4118,20 @@
         if (inst) inst.hidden = true;
       }
 
-      // Swap the EXACT server render into a view, replacing the instant approx. A
-      // null src (server has no such view) drops both the img and the instant art
-      // so the view isn't presented in the carousel.
-      function swapServerView(view, src) {
+      // Auto-fit the overlaid name to the (now-visible) instant layer's width.
+      function fitInstantName(el) {
+        const nameEl = el.querySelector('.npi-name');
+        if (!nameEl) return;
+        const name = nameEl.textContent || '';
+        const boxW = nameEl.clientWidth || (el.clientWidth || 340) * 0.86;
+        nameEl.style.fontSize = fitNameFontPx(name, boxW) + 'px';
+      }
+
+      // Swap the EXACT server render into a view, replacing the instant approx, and
+      // record that the server has shown this view for `seq`. When the server render
+      // LACKS a view (null src — e.g. a partial render), KEEP whatever the instant
+      // draw produced for it: never blank a view the browser already drew.
+      function swapServerView(view, src, seq) {
         const img = npImg[view];
         const inst = npInstant[view];
         if (!img) return;
@@ -4116,10 +4139,11 @@
           img.src = src;
           img.hidden = false;
           if (inst) inst.hidden = true;
+          serverShown[view] = seq;
         } else {
+          // Drop only the (stale) server img; leave the instant approximation as-is.
           img.hidden = true;
           img.removeAttribute('src');
-          if (inst) inst.hidden = true;
         }
       }
 
@@ -4138,10 +4162,17 @@
         namePreviewFallback.hidden = false;
       }
 
-      // Draw ONE view's instant approximation. Returns 'ok' | 'fail' | 'stale' |
-      // 'skip'. The (heavy) product SVG is re-inlined only when the design/colour
-      // signature changes — a keystroke that only changes the name just re-fits the
-      // overlaid name, never re-parses the artwork.
+      // Inline ONE view's instant approximation (art + name TEXT), but do NOT show
+      // it — showInstantView reveals it (guarding the server-race). Returns
+      // 'ok' | 'fail' | 'stale' | 'skip'. The (heavy) product SVG is re-inlined only
+      // when the design/view signature changes; a keystroke that only changes the
+      // name just updates the overlay text.
+      //
+      // Colours: the instant draw uses the design's ORIGINAL palette (applyOriginal)
+      // — NOT the buyer's picked colour — because the server preview render is
+      // colour-agnostic (/api/preview receives no colour and renders the theme's
+      // original colours). Recolouring the approximation would make the picked
+      // colour visibly VANISH on swap; keeping both original makes them consistent.
       async function drawInstantView(seq, view, { path, crop }) {
         const el = npInstant[view];
         if (!el) return 'skip';
@@ -4150,9 +4181,7 @@
         const nameEl = el.querySelector('.npi-name');
         const d = DESIGNS[designIndex];
         const anchors = d.anchors || [];
-        const ci = isFixedDesign() ? -1 : colorIndex;
-        const colorHex = ci < 0 ? null : (MAIN_COLORS[ci] || {}).hex;
-        const sig = d.id + '|' + ci + '|' + view;
+        const sig = d.id + '|' + view;
 
         if (art.dataset.sig !== sig) {
           let raw;
@@ -4161,7 +4190,7 @@
           } catch {
             return 'fail';
           }
-          if (seq !== instantSeq) return 'stale';
+          if (seq !== previewSeq) return 'stale';
           let svg = crop ? cropSvgToCell(raw, CARD_CELL) : fluidSvg(raw);
           if (!svg) return 'fail';
           // Recolour tokens (var(--cN)) resolve from the --cN vars we set on `el`,
@@ -4170,21 +4199,13 @@
           if (anchors.length) svg = paintSvg(svg, anchors);
           art.innerHTML = svg;
           art.dataset.sig = sig;
-          if (anchors.length) {
-            if (colorHex) applyPalette(el, colorHex, anchors);
-            else applyOriginal(el, anchors);
-          }
+          if (anchors.length) applyOriginal(el, anchors);
         }
 
-        // Overlay + auto-fit the typed name (card + back carry a .npi-name; the
-        // board shows artwork only).
-        el.hidden = false;
-        if (nameEl) {
-          const name = honoreeNameValue();
-          nameEl.textContent = name;
-          const boxW = nameEl.clientWidth || (el.clientWidth || 340) * 0.86;
-          nameEl.style.fontSize = fitNameFontPx(name, boxW) + 'px';
-        }
+        // Set the overlay name TEXT (card + back carry a .npi-name; the board shows
+        // artwork only). The font-size fit happens in showInstantView, once the
+        // layer is actually visible and measurable.
+        if (nameEl) nameEl.textContent = honoreeNameValue();
         return 'ok';
       }
 
@@ -4200,32 +4221,34 @@
         });
         if (cardRes === 'stale') return 'stale';
         if (cardRes !== 'ok') return 'fail';
-        showInstantView('card');
+        showInstantView('card', seq);
         const rest = [
           { view: 'back', path: d.products.back, crop: true },
           { view: 'board', path: d.products.board, crop: false },
         ];
         for (const s of rest) {
           const res = await drawInstantView(seq, s.view, s);
-          if (seq !== instantSeq) return 'stale';
-          if (res === 'ok') showInstantView(s.view);
+          if (seq !== previewSeq) return 'stale';
+          if (res === 'ok') showInstantView(s.view, seq);
           else hideInstantView(s.view);
         }
         return 'ok';
       }
 
-      // Fire an instant draw. Runs on EVERY input (no debounce — it's local) and
-      // reconciles the create gate + carousel when it settles.
-      async function kickInstant() {
-        const seq = ++instantSeq;
+      // Fire an instant draw for `seq`. Runs on EVERY input (no debounce — it's
+      // local) and reconciles the create gate + carousel when it settles. The
+      // refining indicator shows for the duration so even the INITIAL (uncached,
+      // multi-MB SVG) draw never presents a blank box with no affordance.
+      async function kickInstant(seq) {
         namePreview.hidden = false;
+        showRefining();
         let res = 'fail';
         try {
           res = await drawInstantPreview(seq);
         } catch {
           res = 'fail';
         }
-        if (seq !== instantSeq) return; // a newer draw superseded this one
+        if (seq !== previewSeq) return; // a newer draw superseded this one
         if (res === 'stale') return;
         if (res === 'ok') {
           instantShown = true;
@@ -4251,13 +4274,12 @@
       // we simply keep it (no error UI) — the whole point of the instant approach.
       // Only when even the instant art is unavailable do we surface the graceful
       // CSS fallback + manual retry.
-      async function doPreview(attempt = 0) {
+      async function doPreview(attempt = 0, seq = previewSeq) {
         const theme = currentTheme();
         const name = honoreeNameValue();
-        const epoch = ++previewEpoch;
         namePreview.hidden = false;
         if (attempt === 0) {
-          // The instant draw is already on screen — show the "refining…" indicator
+          // The instant draw is already on screen — keep the "refining…" indicator
           // over it while the exact render is in flight. Arm the 20s backstop only
           // for the edge case where there's no instant art (it no-ops otherwise).
           showRefining();
@@ -4281,7 +4303,7 @@
             }),
           });
           const data = await r.json();
-          if (epoch !== previewEpoch) return; // a newer request superseded this one
+          if (seq !== previewSeq) return; // a newer name/param superseded this one
           if (!r.ok) throw new Error(data.error || 'failed');
           if (data.theme_word_font) themeWordFont = data.theme_word_font;
           buildFontPicker(data.word_font_options);
@@ -4290,9 +4312,9 @@
           // precise PNGs in over the instant approximation per view.
           namePreviewFallback.hidden = true;
           namePreviewImgs.hidden = false;
-          swapServerView('card', data.card);
-          swapServerView('back', data.back);
-          swapServerView('board', data.board);
+          swapServerView('card', data.card, seq);
+          swapServerView('back', data.back, seq);
+          swapServerView('board', data.board, seq);
           if (data.warning) {
             namePreviewWarn.textContent = data.warning;
             namePreviewWarn.hidden = false;
@@ -4301,21 +4323,21 @@
           }
           namePreviewEmpty.hidden = true;
           hideRefining();
-          // the exact render is now authoritative (the instant draw is hidden)
+          // the exact card is now authoritative (its instant layer is hidden)
           instantShown = false;
           // rebuild the swipe/dots for the views that actually rendered
           syncNamePreviewCarousel();
           // the preview rendered on screen → keep the create-button gate open
           markPreviewShown();
         } catch (e) {
-          if (epoch !== previewEpoch) return;
+          if (seq !== previewSeq) return;
           if (attempt === 0) {
             // One automatic BACKGROUND retry — self-heals a transient hiccup. The
             // instant approximation (and the refining bar) stay on screen; with no
             // instant art, surface the graceful fallback meanwhile.
             if (!instantShown) showClientFallback(name, true);
             setTimeout(() => {
-              if (epoch === previewEpoch) doPreview(1);
+              if (seq === previewSeq) doPreview(1, seq);
             }, 900);
             return;
           }
@@ -4342,6 +4364,7 @@
         if (!FEATURES.name_preview) {
           namePreview.hidden = true;
           instantShown = false;
+          previewSeq++; // reject any in-flight render for the previous inputs
           refreshControls();
           return;
         }
@@ -4351,18 +4374,30 @@
           namePreview.hidden = true;
           instantShown = false;
           resetPreviewGate();
+          previewSeq++; // reject any in-flight render for the previous inputs
           refreshControls();
           return;
         }
+        // The previewed inputs changed → a NEW sequence. Everything below (the
+        // instant draw + the server render + all their DOM writes) is tagged with
+        // this seq; any earlier seq's in-flight work becomes inert.
+        const seq = ++previewSeq;
+        // Re-gate for the CURRENT name only: clear the previous name's open latch so
+        // previewGateOpen() reflects THIS name — it re-opens when this name's instant
+        // draw succeeds (or the backstop fires), never by inheriting the old state.
+        instantShown = false;
+        resetPreviewGate();
+        serverShown.card = serverShown.back = serverShown.board = -1;
         // INSTANT: draw the in-browser approximation NOW. It opens the create gate
-        // immediately and never spins — a valid name is never stuck on the network.
-        kickInstant();
+        // as soon as it lands, without waiting on the network — a valid name is
+        // never stuck on the slow/failing server render.
+        kickInstant(seq);
         // EXACT: fetch the real render (debounced) to swap in when it lands.
         clearTimeout(previewTimer);
         if (opts.immediate) {
-          doPreview();
+          doPreview(0, seq);
         } else {
-          previewTimer = setTimeout(() => doPreview(), 450);
+          previewTimer = setTimeout(() => doPreview(0, seq), 450);
         }
         refreshControls();
       }
