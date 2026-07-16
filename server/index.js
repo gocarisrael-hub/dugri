@@ -804,7 +804,7 @@ app.post('/api/collections/:id/words', (req, res) => {
   if (words.length > 500) return res.status(400).json({ error: 'too many words at once' });
   const r = db.addWords(req.params.id, words, req.body && req.body.added_by);
   if (r && r.closed) return res.status(409).json({ error: 'collection closed' });
-  res.json({ added: r.added, skipped: r.skipped, count: db.listWords(req.params.id).length });
+  res.json({ added: r.added, skipped: r.skipped, count: db.countWords(req.params.id) });
 });
 
 // Owner-only: close collection.
@@ -820,7 +820,7 @@ app.post('/api/collections/:id/close', (req, res) => {
     const c = db.getCollection(req.params.id);
     if (c) {
       notify
-        .sendOrderFinished({ ...c, count: db.listWords(c.id).length }, paymentBaseUrl())
+        .sendOrderFinished({ ...c, count: db.countWords(c.id) }, paymentBaseUrl())
         .catch(() => {});
     }
   }
@@ -934,29 +934,47 @@ const WA_CLOSE_COMMAND = (process.env.WHAPI_CLOSE_COMMAND || 'סיום').trim();
 // The bot's OWN WhatsApp id (optional). Recorded as an initial member at group
 // creation so the bot never greets itself as a joining friend.
 const WHAPI_BOT_WA = process.env.WHAPI_BOT_WA || '';
+// The owner's OWN WhatsApp number (optional). Used as the escalation channel that
+// survives an email-dormant deployment: when an operational alert can't be emailed
+// (Resend unconfigured), it's DM'd to this number instead. A phone or a wa id.
+const WHAPI_OWNER_WA = process.env.WHAPI_OWNER_WA || '';
 
 // Reduce a WhatsApp id / phone to its bare international digits for comparison
-// ("972521234567@s.whatsapp.net" -> "972521234567"). Strips any "@…" chat-suffix
-// and every non-digit, so ids captured in different shapes still compare equal.
+// ("972521234567@s.whatsapp.net" -> "972521234567"). Strips the "@…" chat-suffix,
+// the ":<device>" multi-device JID suffix ("972…:12@s.whatsapp.net"), and every
+// non-digit, so ids captured in different shapes still compare equal. Without the
+// ":device" strip a multi-device sender's id would carry the device number as
+// extra trailing digits and never match the buyer/initial-member ids.
 function waIdDigits(x) {
   return String(x == null ? '' : x)
     .split('@')[0]
+    .split(':')[0]
     .replace(/[^\d]/g, '');
 }
 
 // Convert an Israeli mobile number to a WhatsApp id (bare international digits,
-// e.g. "052-123-4567" / "+972 52 123 4567" -> "972521234567"). Returns '' when it
-// can't produce a plausible IL number, so the caller simply skips the bot for
-// that order. A local leading 0 becomes the 972 country code; an existing 972 is
-// kept (dropping a redundant 0 after it).
+// e.g. "052-123-4567" / "+972 52 123 4567" / "00972521234567" -> "972521234567").
+// Returns '' when it can't produce a plausible IL mobile, so the caller simply
+// skips the bot for that order. Normalizes robustly to the 972 international form:
+//   • strip a leading "00" international dialing prefix (00972… -> 972…) so it is
+//     NOT mistaken for a local "0" and double-prefixed into "972972…";
+//   • an already-972-prefixed number is kept (dropping a redundant local 0 after
+//     the code);
+//   • a local "0XXXXXXXXX" becomes "972XXXXXXXXX";
+//   • a bare national number gets the 972 country code.
+// The result must be a plausible IL MOBILE — 972 + a 9-digit national part that
+// starts with 5 — otherwise it's rejected (soft-fail) rather than returned as a
+// malformed / doubled-code id.
 function ilPhoneToWaId(phone) {
   let s = waIdDigits(phone);
   if (!s) return '';
+  if (s.startsWith('00')) s = s.slice(2); // drop the 00 international prefix first
   if (s.startsWith('972')) s = '972' + s.slice(3).replace(/^0+/, '');
   else if (s.startsWith('0')) s = '972' + s.replace(/^0+/, '');
   else s = '972' + s;
-  // A full IL mobile is 972 + 9 digits (12). Allow a little slack, reject junk.
-  if (s.length < 11 || s.length > 15) return '';
+  // Plausible IL mobile only: 972 + "5" + 8 more digits (12 total). Anything else
+  // (landline, junk, a doubled code) soft-fails to '' so we never emit a bad id.
+  if (!/^9725\d{8}$/.test(s)) return '';
   return s;
 }
 
@@ -981,10 +999,15 @@ async function sendWaTrigger(to, triggerId, values) {
 }
 
 // Did the buyer actually land in the freshly-created group? WhatsApp may silently
-// refuse to add a number for privacy. Inspect the createGroup response: an
-// explicit failure entry means NOT added; otherwise, when Whapi reports the added
-// participants, require the buyer among them; with no participant info at all we
-// optimistically assume added (the group exists either way).
+// refuse to add a number for privacy. Whapi's real POST /groups success response
+// is typically { group_id, invite_code } with NO participants array, so absence of
+// participant info must NOT be read as failure — doing so would DM/escalate on
+// EVERY order. The rule: the buyer is ADDED whenever the group was created,
+// UNLESS the response EXPLICITLY lists the buyer in a failed / not-added set. Only
+// a POSITIVE failure signal returns false (→ invite DM + escalation); a response
+// silent about participants means "assume added" (don't spam). The failed-field
+// key variants (failed_participants / not_added / failed) cover Whapi's documented
+// shapes.
 function participantIds(list) {
   return (Array.isArray(list) ? list : [])
     .map((p) => (typeof p === 'string' ? p : (p && (p.id || p.wa_id)) || ''))
@@ -994,61 +1017,127 @@ function participantIds(list) {
 function buyerLandedInGroup(created, buyerWa) {
   const data = (created && created.data) || {};
   const want = waIdDigits(buyerWa);
+  if (!want) return true; // no buyer id to check — group exists, don't spam
+  // A POSITIVE failure signal (buyer explicitly in a failed/not-added set) is the
+  // ONLY thing that means "not added". Anything else = assume added.
   const failed = participantIds(data.failed_participants || data.not_added || data.failed);
-  if (failed.includes(want)) return false;
-  const added = participantIds(
-    data.participants || data.added_participants || data.participants_added
-  );
-  if (added.length) return added.includes(want);
-  return true;
+  return !failed.includes(want);
+}
+
+// The owner's own WhatsApp id for escalations, derived from WHAPI_OWNER_WA (a
+// phone or a raw wa id). '' when unset.
+function ownerWaId() {
+  if (!WHAPI_OWNER_WA) return '';
+  return ilPhoneToWaId(WHAPI_OWNER_WA) || waIdDigits(WHAPI_OWNER_WA);
+}
+
+// Escalate an operational alert to the OWNER over WhatsApp — a DM to the owner's
+// own number. This is the escalation channel that survives an email-dormant
+// deployment: the owner has WhatsApp even when Resend is unconfigured, so a paid
+// order whose buyer couldn't be added still reaches a human. Fail-soft: NEVER
+// throws. When no owner WA number is configured we can't DM, so we emit a
+// prominent server-side ERROR log instead, so the lost escalation is at least
+// diagnosable rather than silent. Returns true only when the DM actually sent.
+async function alertOwnerViaWhatsApp(subject, lines) {
+  const text = [String(subject == null ? '' : subject)]
+    .concat(Array.isArray(lines) ? lines : [lines])
+    .map((l) => String(l == null ? '' : l))
+    .join('\n');
+  try {
+    const to = ownerWaId();
+    if (!to) {
+      console.error(
+        '[whatsapp] OWNER ESCALATION NOT DELIVERED — no WHAPI_OWNER_WA configured ' +
+          'and email is unavailable. Set WHAPI_OWNER_WA to receive these. Alert: ' +
+          text.replace(/\n/g, ' | ')
+      );
+      return false;
+    }
+    const r = await whatsapp.sendMessage(to, text);
+    if (!r || !r.ok) {
+      console.error(
+        '[whatsapp] OWNER ESCALATION DM FAILED — intervene manually. Alert: ' +
+          text.replace(/\n/g, ' | ')
+      );
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('[whatsapp] alertOwnerViaWhatsApp threw:', e && e.message ? e.message : e);
+    return false;
+  }
 }
 
 // Paid-order hook: open a WhatsApp word-collection group for the buyer. Idempotent
-// (never opens a second group for a collection) and fully fail-soft. Steps:
-//   1. derive the buyer's WhatsApp id from the collection's owner_phone;
-//   2. createGroup(subject, [buyer]); on success link the group ↔ collection with
+// (never opens a second group for a collection — even under two concurrent paid
+// events, thanks to the synchronous wa-state reservation below) and fully
+// fail-soft. Steps:
+//   1. reserve the collection synchronously (before any await) so a concurrent
+//      second call backs off — closing the check-then-create TOCTOU;
+//   2. derive the buyer's WhatsApp id from the collection's owner_phone;
+//   3. createGroup(subject, [buyer]); on success link the group ↔ collection with
 //      the buyer + bot recorded as initial members (so they're never greeted as
 //      joining friends), and announce with the `group_opened` trigger;
-//   3. privacy-block fallback — if the buyer wasn't added, DM them an invite link
+//   4. privacy-block fallback — if the buyer wasn't added, DM them an invite link
 //      (group_opened text, link = the group invite) and record it; if that DM also
-//      fails, escalate to the owner via notify.sendSystemAlert so a human can act.
+//      fails, escalate to the owner — by email (notify.sendSystemAlert) AND, when
+//      email is unavailable, by a WhatsApp DM to the owner's own number — so a
+//      human is always reached even on an email-off deployment.
 async function openWhatsappGroup(collection, base) {
   if (!collection || !collection.id) return;
   if (waState.groupForCollection(collection.id)) return; // already have a group — no-op
-  const buyerWa = ilPhoneToWaId(collection.owner_phone);
-  if (!buyerWa) return; // no usable buyer number
-  const honoree = collection.honoree_name || '';
-  const subject = 'דוגרי · מילים על ' + (honoree || 'בעל/ת השמחה');
+  // Reserve the intent to create BEFORE the first await. Two concurrent paid
+  // events for one collection would otherwise both pass the check above and both
+  // createGroup; the loser here backs off, so exactly one group is ever created.
+  if (!waState.reserveCollection(collection.id)) return;
+  try {
+    const buyerWa = ilPhoneToWaId(collection.owner_phone);
+    if (!buyerWa) return; // no usable buyer number
+    const honoree = collection.honoree_name || '';
+    const subject = 'דוגרי · מילים על ' + (honoree || 'בעל/ת השמחה');
 
-  const created = await whatsapp.createGroup(subject, [buyerWa]);
-  if (!created || !created.ok || !created.groupId) return;
-  const groupId = created.groupId;
+    const created = await whatsapp.createGroup(subject, [buyerWa]);
+    if (!created || !created.ok || !created.groupId) return;
+    const groupId = created.groupId;
 
-  const botId = WHAPI_BOT_WA ? waIdDigits(WHAPI_BOT_WA) : '';
-  const initialMembers = botId ? [buyerWa, botId] : [buyerWa];
-  waState.linkGroup(groupId, collection.id, buyerWa, initialMembers);
+    const botId = WHAPI_BOT_WA ? waIdDigits(WHAPI_BOT_WA) : '';
+    const initialMembers = botId ? [buyerWa, botId] : [buyerWa];
+    waState.linkGroup(groupId, collection.id, buyerWa, initialMembers);
 
-  // Announce the group is open (to the group).
-  await sendWaTrigger(groupId, 'group_opened', waGroupValues(collection, base));
+    // Announce the group is open (to the group).
+    await sendWaTrigger(groupId, 'group_opened', waGroupValues(collection, base));
 
-  // Privacy-block fallback: the buyer couldn't be added by number.
-  if (!buyerLandedInGroup(created, buyerWa)) {
-    const invite = await whatsapp.getInviteLink(groupId);
-    const inviteLink = invite && invite.ok ? invite.inviteLink : null;
-    let dmSent = false;
-    if (inviteLink) {
-      dmSent = await sendWaTrigger(buyerWa, 'group_opened', { honoree, link: inviteLink });
-      if (dmSent) waState.setInviteDmSent(groupId);
+    // Privacy-block fallback: the buyer couldn't be added by number.
+    if (!buyerLandedInGroup(created, buyerWa)) {
+      const invite = await whatsapp.getInviteLink(groupId);
+      const inviteLink = invite && invite.ok ? invite.inviteLink : null;
+      let dmSent = false;
+      if (inviteLink) {
+        dmSent = await sendWaTrigger(buyerWa, 'group_opened', { honoree, link: inviteLink });
+        if (dmSent) waState.setInviteDmSent(groupId);
+      }
+      if (!dmSent) {
+        const alertSubject = 'קבוצת וואטסאפ — צריך צירוף ידני';
+        const alertLines = [
+          'נפתחה קבוצה לאיסוף מילים אבל לא הצלחנו לצרף את הלקוח/ה אוטומטית.',
+          'שם בעל/ת השמחה: ' + (honoree || '—'),
+          'טלפון הלקוח/ה: ' + (collection.owner_phone || '—'),
+          'מזהה קבוצה: ' + groupId,
+          inviteLink ? 'קישור הצטרפות: ' + inviteLink : 'לא הצלחנו להפיק קישור הצטרפות.',
+        ];
+        // Email escalation is a no-op (returns false) when Resend is dormant. The
+        // owner still has WhatsApp, so fall back to a DM to the owner's own number
+        // — otherwise an armed-bot + email-off deployment loses this "intervene
+        // manually" alert entirely.
+        const emailed = await notify.sendSystemAlert(alertSubject, alertLines);
+        if (!emailed) await alertOwnerViaWhatsApp(alertSubject, alertLines);
+      }
     }
-    if (!dmSent) {
-      await notify.sendSystemAlert('קבוצת וואטסאפ — צריך צירוף ידני', [
-        'נפתחה קבוצה לאיסוף מילים אבל לא הצלחנו לצרף את הלקוח/ה אוטומטית.',
-        'שם בעל/ת השמחה: ' + (honoree || '—'),
-        'טלפון הלקוח/ה: ' + (collection.owner_phone || '—'),
-        'מזהה קבוצה: ' + groupId,
-        inviteLink ? 'קישור הצטרפות: ' + inviteLink : 'לא הצלחנו להפיק קישור הצטרפות.',
-      ]);
-    }
+  } finally {
+    // Release the reservation whether we succeeded or bailed. On success the group
+    // is now in by_collection (so a later call is a no-op via the top guard); on
+    // failure the release lets a subsequent paid event retry.
+    waState.releaseCollection(collection.id);
   }
 }
 
@@ -1056,6 +1145,15 @@ async function openWhatsappGroup(collection, base) {
 // the CALLER's job (each event is wrapped) — this focuses on the logic.
 async function handleWaEvent(ev, base) {
   if (!ev) return;
+  // De-dupe redelivered events. Whapi is at-least-once and can redeliver a whole
+  // batch (a network blip, a slow 200), which would otherwise re-greet a joining
+  // friend and re-ack the same words. Skip an event whose id we've already
+  // processed for this group. We RECORD the id only AFTER handling it (per branch),
+  // batched with that branch's own state write where possible (the hot word path
+  // persists activity + the id in ONE write). Unmapped groups aren't in state, so
+  // this is a no-op for them (they return early below anyway); events with no id
+  // (older test payloads) are never deduped.
+  if (ev.id && waState.wasEventProcessed(ev.groupId, ev.id)) return;
   if (ev.kind === 'participants_added') {
     const entry = waState.collectionForGroup(ev.groupId);
     if (!entry) return; // group the bot doesn't own — never greet into a foreign chat
@@ -1077,6 +1175,7 @@ async function handleWaEvent(ev, base) {
         link: gv.link,
       });
     }
+    if (ev.id) waState.markEventProcessed(ev.groupId, ev.id);
     return;
   }
   if (ev.kind === 'message') {
@@ -1110,6 +1209,7 @@ async function handleWaEvent(ev, base) {
           }
         }
       }
+      if (ev.id) waState.markEventProcessed(ev.groupId, ev.id);
       return;
     }
 
@@ -1123,20 +1223,24 @@ async function handleWaEvent(ev, base) {
           wordCount: db.countWords(cid),
         });
       }
+      if (ev.id) waState.markEventProcessed(ev.groupId, ev.id);
       return;
     }
 
     // Normal traffic: harvest words from the message, stamp activity, and fire the
-    // (default-disabled, so usually silent) `word_added` ack.
+    // (default-disabled, so usually silent) `word_added` ack. The activity stamp
+    // and the dedupe-id record are batched into a SINGLE persist.
     const words = whatsapp.splitWords(ev.text);
     if (words.length) {
       db.addWords(cid, words, ev.fromName);
-      waState.touchActivity(ev.groupId);
+      waState.touchActivityWithEvent(ev.groupId, ev.id);
       await sendWaTrigger(ev.groupId, 'word_added', {
         honoree: gv.honoree,
         count: db.countWords(cid),
         link: gv.link,
       });
+    } else if (ev.id) {
+      waState.markEventProcessed(ev.groupId, ev.id);
     }
     return;
   }
@@ -1884,3 +1988,8 @@ module.exports.runWaNudgeScan = runWaNudgeScan;
 module.exports.openWhatsappGroup = openWhatsappGroup;
 module.exports.onOrderPaid = onOrderPaid;
 module.exports.runReminderScan = runReminderScan;
+// Pure WA id/phone normalizers + the createGroup-response reader — exposed for
+// unit tests (no network, no state).
+module.exports.ilPhoneToWaId = ilPhoneToWaId;
+module.exports.waIdDigits = waIdDigits;
+module.exports.buyerLandedInGroup = buyerLandedInGroup;

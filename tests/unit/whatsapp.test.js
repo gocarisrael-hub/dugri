@@ -294,6 +294,7 @@ describe('parseWebhook', () => {
         from: '972500000000',
         fromName: 'דנה',
         text: 'שלום, עולם',
+        id: 'm1',
       },
     ]);
   });
@@ -336,7 +337,7 @@ describe('parseWebhook', () => {
       ],
       event: { type: 'groups', event: 'put' },
     });
-    expect(events).toEqual([
+    expect(events).toMatchObject([
       {
         kind: 'participants_added',
         groupId: '120363@g.us',
@@ -346,6 +347,9 @@ describe('parseWebhook', () => {
         ],
       },
     ]);
+    // A stable, non-empty event id is attached for at-least-once de-dupe.
+    expect(typeof events[0].id).toBe('string');
+    expect(events[0].id.length).toBeGreaterThan(0);
   });
 
   it('drops a 1:1 DM (chat id not @g.us) — not group word input', () => {
@@ -372,7 +376,7 @@ describe('parseWebhook', () => {
       ],
     });
     expect(events).toEqual([
-      { kind: 'message', groupId: '9@g.us', from: 'a', fromName: '', text: 'w' },
+      { kind: 'message', groupId: '9@g.us', from: 'a', fromName: '', text: 'w', id: '' },
     ]);
   });
 

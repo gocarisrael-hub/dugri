@@ -29,6 +29,13 @@ const FILE = path.join(DATA_DIR, 'whatsapp-state.json');
 // already fire THIS slot?", so retaining the most recent few is plenty.
 const NUDGE_SLOTS_CAP = 6;
 
+// Keep the per-group processed-event id list bounded. Whapi is at-least-once and
+// can redeliver a batch, so we remember recently-processed message/participant
+// event ids to drop the duplicate — but only the most recent few matter (a
+// redelivery arrives right after the original), so cap it so a long-lived group
+// can't grow the file without bound.
+const PROCESSED_EVENTS_CAP = 50;
+
 // Keys that would poison Object.prototype (or clobber the map's own machinery)
 // if written as an own property. Rejected on BOTH the read and write paths so a
 // hostile/garbage groupId or collectionId can never touch the prototype —
@@ -85,6 +92,15 @@ function toIso(at) {
 function emptyStore() {
   return { version: 1, groups: {}, by_collection: {} };
 }
+
+// IN-MEMORY ONLY concurrency latch for openWhatsappGroup — deliberately NOT part
+// of _store and NEVER written to disk. It guards two near-simultaneous in-process
+// onOrderPaid calls from both creating a group for one collection. Persisting it
+// would be a BUG: a crash/restart between reserve and its in-process release would
+// strand the marker on disk forever, so that collection could NEVER get its group
+// with no recovery. A restart clears this Set; the DURABLE idempotency guard is
+// the persisted by_collection map (set via linkGroup after createGroup succeeds).
+const _pendingReservations = new Set();
 
 let _store = load();
 function load() {
@@ -187,6 +203,83 @@ function linkGroup(groupId, collectionId, ownerWa, initialMembers = [], at) {
   if (cid) _store.by_collection[cid] = id;
   save();
   return clone(entry);
+}
+
+// Synchronous "intent to create a group for this collection" latch, backed by the
+// IN-MEMORY _pendingReservations Set (NOT persisted — see its declaration).
+// Closes the check-then-await-then-link TOCTOU in openWhatsappGroup: two
+// concurrent in-process paid events for one collection would both pass the
+// groupForCollection() check and both createGroup before either linkGroup ran.
+// reserveCollection records the intent atomically (no await inside) BEFORE the
+// caller's first await, so the second call sees it and backs off — only one group
+// is created. Returns true for the FIRST caller, false if a group already exists
+// for the collection OR another in-flight call already reserved it. A restart
+// clears the Set, so a reservation can never strand the collection; the durable
+// idempotency guard is the persisted by_collection map. Never throws; a bad id is
+// a safe false. releaseCollection clears the marker (call it once the create has
+// finished, success or fail, so a later paid event can retry after a failure).
+function reserveCollection(collectionId) {
+  const cid = safeKey(collectionId);
+  if (!cid) return false;
+  // A real group already exists -> nothing to reserve (caller no-ops anyway).
+  if (Object.prototype.hasOwnProperty.call(_store.by_collection, cid)) return false;
+  if (_pendingReservations.has(cid)) return false; // another in-flight call holds it
+  _pendingReservations.add(cid);
+  return true;
+}
+
+function releaseCollection(collectionId) {
+  const cid = safeKey(collectionId);
+  if (!cid) return;
+  _pendingReservations.delete(cid);
+}
+
+// Per-group event de-dupe (Whapi at-least-once redelivery). wasEventProcessed
+// reports whether we've already handled this message/participant event id for the
+// group; markEventProcessed records it (and prunes to the most recent
+// PROCESSED_EVENTS_CAP ids so the file stays bounded). A missing group or empty id
+// is a safe no-op / false — only mapped groups (linked via linkGroup) carry the
+// list, which is exactly where re-greeting / re-acking must be prevented.
+function _pushProcessedEvent(entry, key) {
+  if (!Array.isArray(entry.processed_events)) entry.processed_events = [];
+  if (entry.processed_events.indexOf(key) !== -1) return; // already recorded
+  entry.processed_events.push(key);
+  if (entry.processed_events.length > PROCESSED_EVENTS_CAP) {
+    entry.processed_events = entry.processed_events.slice(
+      entry.processed_events.length - PROCESSED_EVENTS_CAP
+    );
+  }
+}
+
+function wasEventProcessed(groupId, eventId) {
+  const entry = getGroup(groupId);
+  if (!entry) return false;
+  const key = String(eventId || '');
+  if (!key) return false;
+  return Array.isArray(entry.processed_events) && entry.processed_events.indexOf(key) !== -1;
+}
+
+function markEventProcessed(groupId, eventId) {
+  const entry = getGroup(groupId);
+  if (!entry) return;
+  const key = String(eventId || '');
+  if (!key) return;
+  _pushProcessedEvent(entry, key);
+  save();
+}
+
+// Hot-path combiner for the inbound WORD message: stamp last_activity_at AND
+// record the processed event id (dedupe) in a SINGLE persist, instead of the two
+// separate synchronous whole-store writes touchActivity + markEventProcessed would
+// each do. `at` optional -> now; eventId optional (empty -> only activity stamped).
+// Never throws.
+function touchActivityWithEvent(groupId, eventId, at) {
+  const entry = getGroup(groupId);
+  if (!entry) return;
+  entry.last_activity_at = toIso(at);
+  const key = String(eventId || '');
+  if (key) _pushProcessedEvent(entry, key);
+  save();
 }
 
 // Reverse lookup: which group backs this collection? Returns the groupId string
@@ -307,6 +400,11 @@ function activeGroups() {
 
 module.exports = {
   linkGroup,
+  reserveCollection,
+  releaseCollection,
+  wasEventProcessed,
+  markEventProcessed,
+  touchActivityWithEvent,
   groupForCollection,
   collectionForGroup,
   isInitialMember,
@@ -320,4 +418,5 @@ module.exports = {
   activeGroups,
   _file: FILE,
   NUDGE_SLOTS_CAP,
+  PROCESSED_EVENTS_CAP,
 };
