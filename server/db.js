@@ -91,9 +91,15 @@ function versionPrice(version) {
   return ORDER_PRICES[version];
 }
 
+// Last-resort baked store display defaults, used only if the settings module
+// itself failed to load (so the registry-derived STORE_DEFAULTS are empty). This
+// guarantees the public projection never emits an `undefined` store price that
+// would render as "undefined ₪" on the storefront.
+const BAKED_STORE = { store_now: 199, store_was: 239 };
+
 // The effective store display price for `store_now`/`store_was`. Display-only
 // (never charged), so 0 is allowed; a corrupt/non-integer override falls back to
-// the registry default.
+// the registry default, and to the baked default if even that is unavailable.
 function storeValue(key) {
   try {
     const v = settings.get('pricing', key);
@@ -101,7 +107,8 @@ function storeValue(key) {
   } catch {
     /* settings unavailable — use the built-in default below */
   }
-  return STORE_DEFAULTS[key];
+  const d = STORE_DEFAULTS[key];
+  return Number.isInteger(d) ? d : BAKED_STORE[key];
 }
 
 // The single source for the PUBLIC /api/pricing projection AND the charge path:
@@ -451,17 +458,29 @@ const db = {
     if (!Object.prototype.hasOwnProperty.call(ORDER_PRICES, version)) {
       return { error: 'bad version' };
     }
-    // An already-placed, still-unpaid order LOCKS its version. A public caller may
-    // only re-submit the SAME version (to pay it, or update a delivery address) —
-    // never switch it to a different/cheaper one. This is the backstop against a
-    // client downgrading an admin-created custom order (599₪) to pickup (199₪):
-    // the buyer's checkout is locked to the order's version, and even a hand-forged
-    // POST with a different version is rejected here.
-    const existing = c.order && !c.order.paid ? c.order : null;
-    const sameAsExisting = !!(existing && existing.version === version);
-    if (!admin && existing && !sameAsExisting) {
-      return { error: 'version locked' };
+    // Version-lock policy for PUBLIC callers (an admin call bypasses all of this):
+    //   • A PAID order is immutable — a completed purchase is never re-charged or
+    //     downgraded, whatever version is POSTed.
+    //   • An ADMIN-CREATED order (source==='admin', e.g. a bespoke 599₪ custom
+    //     quote) is LOCKED to its version: the buyer may re-submit the SAME version
+    //     to pay it, but can never switch it to a cheaper one. This is the backstop
+    //     against a client downgrading a 599₪ custom order to pickup (199₪).
+    //   • An ordinary UNPAID public order is NOT locked — the buyer may still
+    //     freely switch to any ENABLED version (re-priced from settings). A buyer
+    //     who abandons a card session for one version must be able to order another.
+    const cur = c.order || null;
+    const curPaid = !!(cur && cur.paid);
+    const curAdmin = !!(cur && cur.source === 'admin');
+    const sameVersion = !!(cur && cur.version === version);
+    if (!admin) {
+      if (curPaid) return { error: 'version locked' };
+      if (curAdmin && !sameVersion) return { error: 'version locked' };
     }
+    // An existing UNPAID order preserves its stored total + pending PeleCard
+    // handshake when the SAME version is re-submitted (e.g. paying an admin custom
+    // quote, or updating a delivery address without changing the version).
+    const existing = cur && !curPaid ? cur : null;
+    const sameAsExisting = !!(existing && existing.version === version);
     // Reject a version the owner has turned OFF in admin (settings) exactly like an
     // unknown one — a disabled option can never be charged even if a client POSTs
     // it directly. EXEMPT: an admin call, or re-submitting the order's own locked
@@ -499,6 +518,11 @@ const db = {
       ordered_at: nowIso(),
       paid: false,
       paid_at: null,
+      // Provenance. 'admin' marks a hand-created order (e.g. a custom quote); it
+      // is version-locked for public callers (see the lock policy above). A buyer
+      // re-submitting an admin order's own version PRESERVES the flag so it stays
+      // locked; a brand-new public order is 'public' and freely switchable.
+      source: admin ? 'admin' : (existing && existing.source) || 'public',
       // Pending card-payment handshake (PeleCard); null until pay/init runs.
       pelecard: prevPelecard,
     };

@@ -225,8 +225,16 @@ function runPreview({ theme, name, wordFont, extraFields, chasers, customTitle }
   });
 }
 
-function publicView(c) {
+function publicView(c, { owner = false } = {}) {
   const words = db.listWords(c.id);
+  const order = c.order;
+  // A public caller may only re-submit an admin-created or paid order's own
+  // version (see db.setOrder's lock policy). `locked` tells collect.html to show
+  // ONLY that version; an ordinary unpaid public order is unlocked (all enabled
+  // options shown). The delivery address is exposed ONLY to the owner (owner_token
+  // matched) so an owner reloading a locked delivery order can prefill it without
+  // re-typing — it is never leaked to the public/contributor view.
+  const locked = !!(order && (order.paid || order.source === 'admin'));
   return {
     id: c.id,
     honoree_name: c.honoree_name,
@@ -242,12 +250,21 @@ function publicView(c) {
     // PeleCard callback). Drives the pay-to-unlock prompts on collect.html.
     // The address is NOT exposed.
     paid: !!(c.order && c.order.paid),
-    // The placed order's version + stored total (NOT the address). collect.html
-    // LOCKS checkout to this so a persisted order (e.g. an admin-created custom at
-    // 599₪) is paid at its own version/total and can never be downgraded client-
-    // side to a cheaper version. null when no order has been placed yet.
-    order: c.order
-      ? { version: c.order.version, total: c.order.total, paid: !!c.order.paid }
+    // The placed order's version + stored total (+ a `locked` flag; the delivery
+    // address only when the owner is authenticated). collect.html LOCKS checkout
+    // to a locked (admin-created / paid) order so it is paid at its own version/
+    // total and can never be downgraded client-side to a cheaper version. An
+    // ordinary unpaid public order is NOT locked. null when no order placed yet.
+    order: order
+      ? {
+          version: order.version,
+          total: order.total,
+          paid: !!order.paid,
+          locked,
+          ...(owner && order.version === 'delivery' && order.address
+            ? { address: order.address }
+            : {}),
+        }
       : null,
     // Whether online card payment is available (PeleCard credentials present).
     // Lets collect.html show the credit-card button only when it will work.
@@ -798,11 +815,14 @@ app.post('/api/preview', async (req, res) => {
   }
 });
 
-// Public read: anyone with the link can see the words.
+// Public read: anyone with the link can see the words. The owner (owner_token
+// passed as ?k=) additionally gets the stored delivery address back, so a locked
+// delivery order can be prefilled on reload — never exposed to the public view.
 app.get('/api/collections/:id', (req, res) => {
   const c = db.getCollection(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
-  res.json(publicView(c));
+  const owner = !!(req.query.k && req.query.k === c.owner_token);
+  res.json(publicView(c, { owner }));
 });
 
 // Add words (rejected when closed/expired).

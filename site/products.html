@@ -508,6 +508,11 @@
       import { PUBLIC_DESIGNS as DESIGNS, fetchDesignNames } from './js/designs.js';
       import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
       import { loadDesignImages, overrideFor } from './js/design-images.js';
+      // Reuse the detail page's override helpers so the grid and PDP can never
+      // diverge on how a saved (possibly blank) name override is resolved.
+      // product.js only auto-boots when a #galleryTrack exists (PDP only), so
+      // importing it here for the pure helpers has no side effects.
+      import { overrideKeys, overrideText } from './js/product.js';
 
       // Owner-editable store price. The grid renders IMMEDIATELY with the launch
       // defaults (never blank / never blocked), then a timeout-bounded fetch
@@ -591,11 +596,8 @@
         // (/api/design-names → themes.json display_he), which in turn wins over the
         // built-in catalog name. The grid already shows the built-in names, so this
         // only ever upgrades them; every fetch is fail-soft (grid stands on error).
-        const contentNameOverride = (overrides, id) => {
-          // Mirror product.js overrideText: a saved { text } wins (even ''), else null.
-          const e = overrides && overrides['product-' + id + '-name'];
-          return e && typeof e.text === 'string' ? e.text : null;
-        };
+        const contentNameOverride = (overrides, id) =>
+          overrideText(overrides, overrideKeys(id).name);
         const loadContentNames = fetch('/api/content?page=product.html')
           .then((r) => (r.ok ? r.json() : { overrides: {} }))
           .then((data) => (data && data.overrides) || {})

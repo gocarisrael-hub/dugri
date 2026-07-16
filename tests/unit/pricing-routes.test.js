@@ -282,3 +282,43 @@ describe('charge path reads settings (db.setOrder + /order route)', () => {
     expect(db.getCollection(c.id).order.total).toBe(599);
   });
 });
+
+// The public collection view drives collect.html's checkout: a `locked` flag +
+// (owner-only) the delivery address so a locked order can be prefilled on reload.
+describe('GET /api/collections/:id — order projection (locked + owner address)', () => {
+  it('marks an admin-created order locked; an ordinary unpaid public order is NOT locked', async () => {
+    const admin = freshCollection();
+    db.setOrder(admin.id, admin.owner_token, { version: 'custom' }, { admin: true });
+    const av = await get('/api/collections/' + admin.id);
+    expect(av.body.order.locked).toBe(true);
+
+    const pub = freshCollection();
+    db.setOrder(pub.id, pub.owner_token, { version: 'pickup' });
+    const pv = await get('/api/collections/' + pub.id);
+    expect(pv.body.order.locked).toBe(false);
+  });
+
+  it('returns the delivery address ONLY to the owner (owner_token), never to the public view', async () => {
+    settings.set('pricing', 'delivery_enabled', true);
+    const c = freshCollection();
+    const address = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
+    db.setOrder(c.id, c.owner_token, { version: 'delivery', address });
+
+    // Public (no key): address withheld.
+    const pub = await get('/api/collections/' + c.id);
+    expect(pub.body.order.version).toBe('delivery');
+    expect(pub.body.order.address).toBeUndefined();
+
+    // Owner (correct key): address returned so the form can prefill.
+    const owner = await get('/api/collections/' + c.id + '?k=' + c.owner_token);
+    expect(owner.body.order.address).toMatchObject({
+      street: 'הרצל 1',
+      city: 'תל אביב',
+      postal: '6100000',
+    });
+
+    // A WRONG key is treated as public — no address leak.
+    const wrong = await get('/api/collections/' + c.id + '?k=not-the-token');
+    expect(wrong.body.order.address).toBeUndefined();
+  });
+});

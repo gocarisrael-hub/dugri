@@ -529,6 +529,50 @@ test('pricing fetch failure disables pay and offers a refresh (never a guessed p
   await expect(page.locator('#priceLoadErr [data-role="retry"]')).toBeVisible();
   await expect(page.locator('#payOpts')).toBeHidden();
   await expect(page.locator('#cardPayBtn')).toBeDisabled();
+  // Fix #2: the total line must NOT show the PRICING_FALLBACK ₪199 beside the
+  // "couldn't load prices" message — no guessed number at all.
+  await expect(page.locator('#payTotal')).toHaveText('—');
+  await expect(page.locator('.pay-total')).not.toContainText('199');
+});
+
+test('pay stays disabled (no guessed total) until pricing RESOLVES, then enables at the live price', async ({
+  page,
+}) => {
+  // Fix #3: during the in-flight /api/pricing window the seeded launch defaults
+  // must NOT be presented as payable — a fast click could otherwise charge the
+  // live (server-authoritative) price the buyer never saw. Hold the response.
+  await enableCardButton(page);
+  let release;
+  const gate = new Promise((r) => (release = r));
+  await page.route('**/api/pricing', async (route) => {
+    await gate;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        store: { now: 249, was: 299 },
+        versions: {
+          pdf: { enabled: false, price: 79 },
+          pickup: { enabled: true, price: 249 },
+          delivery: { enabled: false, price: 199 },
+          custom: { enabled: false, price: 599 },
+        },
+      }),
+    });
+  });
+  await createCollection(page, 'Shira');
+  await page.locator('#payPanel summary').click();
+
+  // Before pricing resolves: pay disabled, a "loading prices" note, no number.
+  await expect(page.locator('#cardPayBtn')).toBeDisabled();
+  await expect(page.locator('#payTotal')).toHaveText('—');
+  await expect(page.locator('#priceLoadErr')).toContainText('טוענים');
+
+  // Let pricing resolve — now pay enables at the confirmed live price (249).
+  release();
+  await expect(page.locator('#cardPayBtn')).toBeEnabled();
+  await expect(page.locator('#payTotal')).toHaveText('249');
+  await expect(page.locator('#priceLoadErr')).toBeHidden();
 });
 
 test('no version enabled → checkout shows "orders closed", no pay button, no total', async ({
@@ -553,6 +597,56 @@ test('no version enabled → checkout shows "orders closed", no pay button, no t
   await expect(page.locator('#priceLoadErr [data-role="retry"]')).toBeHidden();
   await expect(page.locator('#payOpts')).toBeHidden();
   await expect(page.locator('#cardPayBtn')).toBeDisabled();
+});
+
+test("a stored delivery address prefills the checkout form so the buyer isn't forced to re-type it", async ({
+  page,
+}) => {
+  // Fix #4: an order with a stored delivery address (owner reload) must prefill
+  // the form — collectAddress() otherwise blocks pay until street/city/zip are
+  // re-entered. Enable delivery server-side, place a delivery order with an
+  // address, reload as the owner, and assert the fields come back filled.
+  await enableCardButton(page);
+  await page.request.post('/api/admin/settings?key=dugri-admin', {
+    data: { section: 'pricing', key: 'delivery_enabled', value: true },
+  });
+  try {
+    await stubPricing(page, {
+      store: { now: 199, was: 239 },
+      versions: {
+        pdf: { enabled: false, price: 79 },
+        pickup: { enabled: true, price: 199 },
+        delivery: { enabled: true, price: 220 },
+        custom: { enabled: false, price: 599 },
+      },
+    });
+    await createCollection(page, 'Shira');
+    const url = new URL(page.url());
+    const c = url.searchParams.get('c');
+    const k = url.searchParams.get('k');
+    // Place a delivery order WITH an address directly (bypasses the card iframe).
+    const res = await page.request.post(`/api/collections/${c}/order`, {
+      data: {
+        owner_token: k,
+        version: 'delivery',
+        address: { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' },
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+
+    await page.reload();
+    await page.locator('#payPanel summary').click();
+    // Re-select delivery; the stored address is prefilled (no re-typing to pay).
+    await page.locator('.pay-opt input[value="delivery"]').check();
+    await expect(page.locator('#addrStreet')).toHaveValue('הרצל 1');
+    await expect(page.locator('#addrCity')).toHaveValue('תל אביב');
+    await expect(page.locator('#addrPostal')).toHaveValue('6100000');
+  } finally {
+    // Restore the launch default so this global server setting can't leak.
+    await page.request.delete(
+      '/api/admin/settings?key=dugri-admin&section=pricing&settingKey=delivery_enabled'
+    );
+  }
 });
 
 test('after payment: pay panel + reminder disappear, סיום card takes over', async ({ page }) => {

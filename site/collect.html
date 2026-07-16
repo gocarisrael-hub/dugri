@@ -1572,7 +1572,10 @@
 
       async function refresh() {
         try {
-          state = await api('');
+          // The owner passes ?k=<owner_token> so the server returns the stored
+          // delivery address (owner-only), letting a locked delivery order prefill
+          // without re-typing. Contributors fetch the plain public view.
+          state = await api(isOwner ? '?k=' + encodeURIComponent(ownerToken) : '');
           render();
         } catch (e) {
           if (e.status === 404) {
@@ -1996,6 +1999,12 @@
         versions: JSON.parse(JSON.stringify(PRICING_FALLBACK.versions)),
       };
       let pricingOk = true;
+      // False until the FIRST /api/pricing fetch resolves. Until then the seeded
+      // values are only launch DEFAULTS, which may differ from the owner's live
+      // (server-authoritative) price — so a non-locked order must NOT present a
+      // payable price during the in-flight window. A locked order is exempt: its
+      // total comes from the stored order, not from /api/pricing.
+      let pricingResolved = false;
       // When the collection already has an UNPAID order, checkout is LOCKED to it:
       // the buyer pays that exact version at its stored (server-authoritative)
       // total and can never downgrade it to a cheaper version (e.g. an admin custom
@@ -2063,6 +2072,11 @@
           if (kind === 'load') {
             if (msg) msg.textContent = 'לא הצלחנו לטעון את המחירים כרגע. רעננו ונסו שוב.';
             if (retry) retry.classList.remove('hidden');
+          } else if (kind === 'loading') {
+            // Brief pre-resolve state: pricing hasn't arrived yet, so pay is held
+            // disabled until the confirmed (server-authoritative) price loads.
+            if (msg) msg.textContent = 'טוענים מחירים…';
+            if (retry) retry.classList.add('hidden');
           } else {
             if (msg) msg.textContent = 'התשלום סגור כרגע. נסו שוב מאוחר יותר.';
             if (retry) retry.classList.add('hidden');
@@ -2083,8 +2097,11 @@
         function renderTotal() {
           const v = selectedVersion();
           const was = $('#payWas');
-          if (!v) {
-            // Nothing payable (orders closed / prices unavailable) — no number.
+          // When the checkout isn't payable — prices failed to load, orders are
+          // closed, or pricing hasn't resolved yet — show NO number. Otherwise the
+          // PRICING_FALLBACK would render a guessed "₪199" beside the "couldn't
+          // load prices" notice, or a price the server might not charge.
+          if (!payable || !v) {
             was.textContent = '';
             was.classList.add('hidden');
             $('#payTotal').textContent = '—';
@@ -2107,6 +2124,13 @@
           const v = selectedVersion();
           opts.forEach((o) => o.classList.toggle('active', o.querySelector('input').value === v));
           addressForm.classList.toggle('hidden', v !== 'delivery');
+          // When the delivery form is showing and the server returned a stored
+          // address (owner-only, e.g. a locked delivery order or one the buyer
+          // started earlier), prefill it so they aren't forced to re-type it just
+          // to pay. prefillAddress only fills BLANK inputs, so live edits persist.
+          if (v === 'delivery' && state && state.order && state.order.address) {
+            prefillAddress(state.order.address);
+          }
           renderTotal();
           payErr.style.display = 'none';
         }
@@ -2121,15 +2145,20 @@
 
         // The checkout state machine — recomputed on every render (so it reflects
         // the latest collection state) and after each pricing fetch:
-        //   1. LOCKED: an unpaid order already exists → pay THAT version at its
+        //   1. LOCKED: an admin-created/paid order exists → pay THAT version at its
         //      stored total; no switching, no downgrade (even if now disabled).
-        //   2. PRICE-UNAVAILABLE: the /api/pricing fetch failed → no pay button, a
+        //   2. PRICE-UNRESOLVED: the first /api/pricing fetch is still in flight →
+        //      pay held disabled (never charge a launch-default the owner changed).
+        //   3. PRICE-UNAVAILABLE: the /api/pricing fetch failed → no pay button, a
         //      "refresh" prompt (never charge a guessed price).
-        //   3. CLOSED: no version is enabled → no pay button, "orders closed".
-        //   4. NORMAL: show the enabled versions at their endpoint prices.
+        //   4. CLOSED: no version is enabled → no pay button, "orders closed".
+        //   5. NORMAL: show the enabled versions at their endpoint prices.
         function applyPricing() {
+          // Only an admin-created / paid order LOCKS checkout (server `locked`
+          // flag). An ordinary UNPAID public order is NOT locked — the buyer keeps
+          // the full enabled menu and can switch versions (re-priced server-side).
           const lockedOrder =
-            state && state.order && state.order.version && !state.order.paid ? state.order : null;
+            state && state.order && state.order.locked && !state.order.paid ? state.order : null;
           lockVersion = lockedOrder ? lockedOrder.version : null;
           lockTotal = lockedOrder ? lockedOrder.total : null;
 
@@ -2152,7 +2181,19 @@
             return;
           }
 
-          // 2. PRICE-UNAVAILABLE — the fetch failed; do not offer a guessed price.
+          // 2. PRICE-UNRESOLVED — the first fetch hasn't answered yet. The seeded
+          //    values are only launch defaults; hold pay disabled until the live
+          //    (server-authoritative) price confirms, so a fast click can't charge
+          //    a price the buyer never actually saw.
+          if (!pricingResolved) {
+            if (optsBox) optsBox.style.display = 'none';
+            setPayable(false);
+            showPriceErr('loading');
+            refreshPay();
+            return;
+          }
+
+          // 3. PRICE-UNAVAILABLE — the fetch failed; do not offer a guessed price.
           if (!pricingOk) {
             if (optsBox) optsBox.style.display = 'none';
             setPayable(false);
@@ -2161,7 +2202,7 @@
             return;
           }
 
-          // 3. CLOSED — no version enabled.
+          // 4. CLOSED — no version enabled.
           if (!firstEnabledVersion()) {
             if (optsBox) optsBox.style.display = 'none';
             setPayable(false);
@@ -2170,7 +2211,7 @@
             return;
           }
 
-          // 4. NORMAL — show only enabled versions, stamped from the endpoint.
+          // 5. NORMAL — show only enabled versions, stamped from the endpoint.
           hidePriceErr();
           if (optsBox) optsBox.style.display = '';
           setPayable(true);
@@ -2204,6 +2245,9 @@
           return fetchPricing().then((p) => {
             pricing = { store: p.store, versions: p.versions };
             pricingOk = p.ok;
+            // The first fetch has now resolved — the price shown is the confirmed
+            // (or, on failure, no) price, so pay may leave the held-disabled state.
+            pricingResolved = true;
             applyPricing();
           });
         }
@@ -2293,6 +2337,20 @@
             apartment: $('#addrApt').value.trim(),
             floor: $('#addrFloor').value.trim(),
           };
+        }
+        // Fill the address inputs from a stored order address (a locked delivery
+        // order). Only blank inputs are set, so re-running on each render can't
+        // clobber edits the buyer is making to the optional apartment/floor.
+        function prefillAddress(a) {
+          const set = (sel, val) => {
+            const el = $(sel);
+            if (el && !el.value.trim() && val) el.value = val;
+          };
+          set('#addrStreet', a.street);
+          set('#addrCity', a.city);
+          set('#addrPostal', a.postal);
+          set('#addrApt', a.apartment);
+          set('#addrFloor', a.floor);
         }
 
         // ---- credit-card payment (PeleCard iframe in a modal) ----

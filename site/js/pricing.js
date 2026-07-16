@@ -25,6 +25,21 @@ export const PRICING_FALLBACK = {
   },
 };
 
+// A well-formed pricing payload: store.now/was are integers AND every known
+// version carries an integer price + boolean enabled. A store object with no
+// integer now/was (e.g. an empty projection from a settings-load failure) is
+// REJECTED so the storefront never renders "undefined ₪" — the caller falls back
+// to PRICING_FALLBACK instead.
+function isValidPricing(j) {
+  if (!j || !j.store || !j.versions) return false;
+  if (!Number.isInteger(j.store.now) || !Number.isInteger(j.store.was)) return false;
+  for (const v of Object.keys(PRICING_FALLBACK.versions)) {
+    const info = j.versions[v];
+    if (!info || typeof info.enabled !== 'boolean' || !Number.isInteger(info.price)) return false;
+  }
+  return true;
+}
+
 export async function fetchPricing(timeoutMs = 2500) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -32,7 +47,7 @@ export async function fetchPricing(timeoutMs = 2500) {
     const r = await fetch('/api/pricing', { signal: ctrl.signal });
     if (!r.ok) throw new Error('http ' + r.status);
     const j = await r.json();
-    if (j && j.store && j.versions) return { store: j.store, versions: j.versions, ok: true };
+    if (isValidPricing(j)) return { store: j.store, versions: j.versions, ok: true };
     throw new Error('bad shape');
   } catch {
     return {
