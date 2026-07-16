@@ -41,6 +41,12 @@ test.describe('admin images page', () => {
 
     // The nav pill for this page is the active one.
     await expect(page.locator('.nav a.active[data-page="admin-images.html"]')).toHaveCount(1);
+
+    // The nav cross-links to the other owner-editable admin sections so the
+    // owner can reach features/pricing/images from any of them (they were once
+    // missing each other — regression guard).
+    await expect(page.locator('.nav a[data-page="admin-features.html"]')).toHaveCount(1);
+    await expect(page.locator('.nav a[data-page="admin-pricing.html"]')).toHaveCount(1);
   });
 
   test('uploading a picture flips the slot to "custom" and enables reset', async ({ page }) => {
