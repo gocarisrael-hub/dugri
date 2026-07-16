@@ -7,6 +7,8 @@ import { test, expect } from '@playwright/test';
 const KEY = 'dugri-admin';
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 const UPLOADED = '/content-uploads/0123456789abcdef.png';
+const CAR1 = '/content-uploads/1111111111111111.png';
+const CAR2 = '/content-uploads/2222222222222222.png';
 
 test.describe('admin images page', () => {
   test('without a key the page reveals nothing and asks for ?key=', async ({ page }) => {
@@ -83,5 +85,65 @@ test.describe('admin images page', () => {
     await expect(after.locator('.badge.custom')).toBeVisible();
     await expect(after.locator('img.preview')).toHaveAttribute('src', UPLOADED);
     await expect(after.locator('button[data-act="reset"]')).toBeEnabled();
+  });
+
+  test('lists a design’s existing carousel pictures with a delete button each', async ({
+    page,
+  }) => {
+    await page.route('**/api/design-images*', (route) =>
+      route.fulfill({ json: { images: { birthday: { carousel: [CAR1, CAR2] } } } })
+    );
+    await page.route('**/content-uploads/*', (route) =>
+      route.fulfill({ contentType: 'image/png', body: PNG })
+    );
+    await page.goto(`/admin-images.html?key=${KEY}`);
+
+    const car = page.locator('.carousel-admin[data-design="birthday"]');
+    await expect(car).toBeVisible();
+    await expect(car.locator('.cthumb')).toHaveCount(2);
+    await expect(car.locator('button[data-act="carousel-del"]')).toHaveCount(2);
+    // A design with no carousel shows the empty hint.
+    const neon = page.locator('.carousel-admin[data-design="neon"]');
+    await expect(neon.locator('.cthumb')).toHaveCount(0);
+    await expect(neon.locator('.cempty')).toBeVisible();
+  });
+
+  test('adding a carousel picture appends a thumbnail; deleting removes it', async ({ page }) => {
+    // Start with one carousel picture; the POST appends a second, the DELETE removes one.
+    await page.route('**/api/design-images*', (route) => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({ json: { images: { birthday: { carousel: [CAR1] } } } });
+      }
+      return route.continue();
+    });
+    await page.route('**/api/admin/design-images/carousel*', (route) => {
+      const m = route.request().method();
+      if (m === 'POST') {
+        return route.fulfill({ json: { ok: true, img: CAR2, carousel: [CAR1, CAR2] } });
+      }
+      if (m === 'DELETE') {
+        return route.fulfill({ json: { ok: true, carousel: [CAR2] } });
+      }
+      return route.continue();
+    });
+    await page.route('**/content-uploads/*', (route) =>
+      route.fulfill({ contentType: 'image/png', body: PNG })
+    );
+
+    await page.goto(`/admin-images.html?key=${KEY}`);
+    const car = page.locator('.carousel-admin[data-design="birthday"]');
+    await expect(car.locator('.cthumb')).toHaveCount(1);
+
+    // Add: set the file on the hidden carousel input (fires the upload).
+    await car.locator('input[type=file][data-carousel]').setInputFiles({
+      name: 'c.png',
+      mimeType: 'image/png',
+      buffer: PNG,
+    });
+    await expect(car.locator('.cthumb')).toHaveCount(2);
+
+    // Delete: remove the first picture → the DELETE mock returns the shorter array.
+    await car.locator('button[data-act="carousel-del"]').first().click();
+    await expect(car.locator('.cthumb')).toHaveCount(1);
   });
 });

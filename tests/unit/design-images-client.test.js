@@ -3,9 +3,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 // Unit tests for the buyer-facing override reader (site/js/design-images.js):
 // overrideFor validation and loadDesignImages fail-safe behaviour (a failed,
 // non-OK, or malformed fetch must resolve to {} so the static assets stand).
-import { overrideFor, loadDesignImages } from '../../site/js/design-images.js';
+import { overrideFor, loadDesignImages, carouselFor } from '../../site/js/design-images.js';
 
 const P1 = '/content-uploads/aaaaaaaaaaaaaaaa.png';
+const P2 = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
 
 describe('overrideFor — validated per-design slot lookup', () => {
   it('returns the path for a valid our-own upload, else null', () => {
@@ -22,6 +23,26 @@ describe('overrideFor — validated per-design slot lookup', () => {
     expect(overrideFor(null, 'x', 'store')).toBe(null);
     expect(overrideFor({ x: 'not-an-object' }, 'x', 'store')).toBe(null);
     expect(overrideFor({}, 'x', 'store')).toBe(null);
+  });
+});
+
+describe('carouselFor — validated per-design store-tile carousel array', () => {
+  it('returns the ordered array of valid our-own upload paths', () => {
+    const map = { birthday: { carousel: [P1, P2] } };
+    expect(carouselFor(map, 'birthday')).toEqual([P1, P2]);
+  });
+  it('drops off-origin / malformed entries but keeps the valid ones', () => {
+    const map = {
+      x: { carousel: [P1, 'https://evil.example/a.png', '/content-uploads/not-a-hash.png', P2] },
+    };
+    expect(carouselFor(map, 'x')).toEqual([P1, P2]);
+  });
+  it('returns [] for a missing design, a non-array, or a garbage map', () => {
+    expect(carouselFor({ birthday: { store: P1 } }, 'birthday')).toEqual([]); // no carousel key
+    expect(carouselFor({ x: { carousel: 'nope' } }, 'x')).toEqual([]);
+    expect(carouselFor({}, 'x')).toEqual([]);
+    expect(carouselFor(null, 'x')).toEqual([]);
+    expect(carouselFor({ x: 'not-an-object' }, 'x')).toEqual([]);
   });
 });
 

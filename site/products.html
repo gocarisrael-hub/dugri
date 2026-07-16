@@ -29,6 +29,7 @@
     <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/header.css" />
+    <link rel="stylesheet" href="/css/carousel.css" />
     <script src="js/header.js" defer></script>
     <style>
       * {
@@ -235,6 +236,15 @@
         height: 100%;
         object-fit: cover;
         display: block;
+      }
+      /* A tile that cycles pictures: the store image + the owner's carousel
+         pictures become stacked frames the shared fade carousel cross-fades
+         between (js/carousel.js, mode:'fade'). Each frame fills the media box
+         exactly like the single image; the carousel engine positions them. */
+      .product-card__media .tile-frame {
+        display: block;
+        width: 100%;
+        height: 100%;
       }
       .product-name {
         display: block;
@@ -507,7 +517,8 @@
     <script type="module">
       import { PUBLIC_DESIGNS as DESIGNS, fetchDesignNames } from './js/designs.js';
       import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
-      import { loadDesignImages, overrideFor } from './js/design-images.js';
+      import { loadDesignImages, overrideFor, carouselFor } from './js/design-images.js';
+      import { initCarousel } from './js/carousel.js';
       // Reuse the detail page's override helpers so the grid and PDP can never
       // diverge on how a saved (possibly blank) name override is resolved.
       // product.js only auto-boots when a #galleryTrack exists (PDP only), so
@@ -575,6 +586,58 @@
         return article;
       }
 
+      // How fast the tile carousel cross-fades between pictures. Short + snappy
+      // ("fast", per the store's other carousels) — the fade transition itself is
+      // ~0.8s (js/carousel.js FADE_MS), so this is the hold between fades.
+      const TILE_CAROUSEL_INTERVAL = 2500;
+
+      // Turn a tile's single store image into a fast, seamless, auto-advancing
+      // carousel of [store image, ...owner-added pictures]. Reuses the site's
+      // shared fade carousel (the same engine the homepage hero uses): it stacks
+      // the frames and cross-fades between them endlessly — no scroll, no clones,
+      // so it can't break the grid cell. Under reduced motion it just rests on the
+      // store image. `storeImg` is the existing (possibly store-overridden) tile
+      // image; `paths` are the extra validated upload paths; `fallback` is the
+      // shipped static store.webp a broken frame degrades to.
+      function buildTileCarousel(media, storeImg, paths, fallback) {
+        // Wrap the existing store image as the FIRST frame so it always shows and
+        // never breaks, then add one frame per owner-added picture.
+        const frame0 = document.createElement('span');
+        frame0.className = 'tile-frame';
+        media.insertBefore(frame0, storeImg);
+        frame0.appendChild(storeImg);
+        for (const p of paths) {
+          const frame = document.createElement('span');
+          frame.className = 'tile-frame';
+          const im = document.createElement('img');
+          im.loading = 'lazy';
+          im.decoding = 'async';
+          im.alt = storeImg.alt || '';
+          im.setAttribute('data-testid', 'carousel-frame');
+          // A broken/missing carousel picture degrades to the store image rather
+          // than a broken frame (`once` guards against a loop on a bad fallback).
+          im.addEventListener(
+            'error',
+            () => {
+              if (fallback && im.src !== fallback) im.src = fallback;
+            },
+            { once: true }
+          );
+          im.src = p;
+          frame.appendChild(im);
+          media.appendChild(frame);
+        }
+        // Keep the tile's single tab stop on the card link — don't let the carousel
+        // engine add a focusable track inside the anchor.
+        if (!media.hasAttribute('tabindex')) media.setAttribute('tabindex', '-1');
+        initCarousel(media, {
+          mode: 'fade',
+          interval: TILE_CAROUSEL_INTERVAL,
+          loop: true,
+          dots: false,
+        });
+      }
+
       try {
         if (!Array.isArray(DESIGNS) || !DESIGNS.length) throw new Error('empty catalog');
         const frag = document.createDocumentFragment();
@@ -631,20 +694,34 @@
           .then((map) => {
             for (const img of grid.querySelectorAll('[data-testid="product-image"]')) {
               const id = img.closest('[data-design-id]')?.getAttribute('data-design-id');
+              const staticDefault = img.getAttribute('data-store-default');
               const override = overrideFor(map, id, 'store');
-              if (!override) continue;
-              // If the override file is missing/broken, degrade to the shipped
-              // static store.webp (captured in data-store-default). `once` guards
-              // against a loop if the static asset itself somehow fails.
-              img.addEventListener(
-                'error',
-                () => {
-                  const fallback = img.getAttribute('data-store-default');
-                  if (fallback && img.src !== fallback) img.src = fallback;
-                },
-                { once: true }
-              );
-              img.src = override;
+              if (override) {
+                // If the override file is missing/broken, degrade to the shipped
+                // static store.webp (captured in data-store-default). `once` guards
+                // against a loop if the static asset itself somehow fails.
+                img.addEventListener(
+                  'error',
+                  () => {
+                    if (staticDefault && img.src !== staticDefault) img.src = staticDefault;
+                  },
+                  { once: true }
+                );
+                img.src = override;
+              }
+              // If the owner added carousel pictures, turn the tile into a fast
+              // seamless carousel of [store image, ...added pictures]. The store
+              // frame (above) is always frame 0, so the tile never breaks and a
+              // design with no carousel pictures stays a single static image.
+              const extra = carouselFor(map, id);
+              const media = img.closest('.product-card__media');
+              if (extra.length && media && !media.__carousel) {
+                try {
+                  buildTileCarousel(media, img, extra, staticDefault);
+                } catch (carErr) {
+                  console.error('tile carousel skipped:', id, carErr);
+                }
+              }
             }
           })
           .catch(() => {

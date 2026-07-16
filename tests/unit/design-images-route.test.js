@@ -239,4 +239,93 @@ describe('per-design image override routes', () => {
     expect(fs.existsSync(uploadFile(p))).toBe(true);
     content.remove('index.html', 'index-hero-1'); // cleanup
   });
+
+  // ---- store-tile carousel routes ------------------------------------------
+  async function addCarousel({ designId, bytes, key = ADMIN_KEY }) {
+    const boundary = '----dugriCar' + Math.random().toString(16).slice(2);
+    const parts = [];
+    if (designId != null) parts.push({ name: 'designId', value: designId });
+    if (bytes != null) parts.push({ name: 'file', filename: 'c.png', data: bytes });
+    const body = buildMultipart(boundary, parts);
+    const url = base + '/api/admin/design-images/carousel' + (key ? '?key=' + key : '');
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
+      body,
+    });
+    return { status: r.status, json: await r.json().catch(() => ({})) };
+  }
+  async function delCarousel({ designId, img, key = ADMIN_KEY }) {
+    const url = base + '/api/admin/design-images/carousel' + (key ? '?key=' + key : '');
+    const r = await fetch(url, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ designId, img }),
+    });
+    return { status: r.status, json: await r.json().catch(() => ({})) };
+  }
+
+  it('admin carousel append is exposed on the public GET (per-design `carousel`)', async () => {
+    const a = await addCarousel({ designId: 'kids', bytes: pngWith('kc1') });
+    expect(a.status).toBe(200);
+    expect(a.json.img).toMatch(/^\/content-uploads\/[a-f0-9]{16}\.png$/);
+    expect(a.json.carousel).toEqual([a.json.img]);
+    const b = await addCarousel({ designId: 'kids', bytes: pngWith('kc2') });
+    expect(b.json.carousel).toEqual([a.json.img, b.json.img]); // order preserved
+
+    const { json } = await getImages();
+    expect(json.images.kids.carousel).toEqual([a.json.img, b.json.img]);
+  });
+
+  it('rejects an unauthenticated carousel append (403) and never writes', async () => {
+    const a = await addCarousel({ designId: 'marriage', bytes: pngWith('nope'), key: '' });
+    expect(a.status).toBe(403);
+    const { json } = await getImages();
+    expect(json.images.marriage).toBeUndefined();
+  });
+
+  it('rejects a bad design (400) and a duplicate append (409, no growth)', async () => {
+    const bad = await addCarousel({ designId: 'Bad Id', bytes: pngWith('x') });
+    expect(bad.status).toBe(400);
+    const first = await addCarousel({ designId: 'neon', bytes: pngWith('dupe') });
+    expect(first.status).toBe(200);
+    const dup = await addCarousel({ designId: 'neon', bytes: pngWith('dupe') }); // same bytes
+    expect(dup.status).toBe(409);
+    expect(dup.json.carousel).toEqual([first.json.img]); // unchanged
+  });
+
+  it('DELETE removes ONE picture from that design and reclaims the orphan file', async () => {
+    const one = await addCarousel({ designId: 'japanese', bytes: pngWith('jc1') });
+    const two = await addCarousel({ designId: 'japanese', bytes: pngWith('jc2') });
+    expect(fs.existsSync(uploadFile(one.json.img))).toBe(true);
+
+    const del = await delCarousel({ designId: 'japanese', img: one.json.img });
+    expect(del.status).toBe(200);
+    expect(del.json.carousel).toEqual([two.json.img]); // only the deleted one gone
+    expect(fs.existsSync(uploadFile(one.json.img))).toBe(false); // reclaimed
+    expect(fs.existsSync(uploadFile(two.json.img))).toBe(true); // survivor kept
+
+    const { json } = await getImages();
+    expect(json.images.japanese.carousel).toEqual([two.json.img]);
+  });
+
+  it('DELETE does NOT reclaim a carousel file still referenced by ANOTHER design', async () => {
+    const shared = pngWith('shared-carousel');
+    const a = await addCarousel({ designId: 'birthday', bytes: shared });
+    const b = await addCarousel({ designId: 'posttrip', bytes: shared });
+    expect(b.json.img).toBe(a.json.img); // content-addressed dedupe → same file
+    await delCarousel({ designId: 'birthday', img: a.json.img });
+    expect(designImages.isImageReferenced(a.json.img)).toBe(true); // posttrip still uses it
+    expect(fs.existsSync(uploadFile(a.json.img))).toBe(true);
+  });
+
+  it('unauthenticated carousel DELETE is 403; both routes sit before the /api 404', async () => {
+    const noauth = await delCarousel({ designId: 'kids', img: 'x', key: '' });
+    expect(noauth.status).toBe(403); // gated (NOT a 404 from the catch-all)
+    // A bogus sub-path under the same prefix still hits the JSON /api 404 handler.
+    const r = await fetch(base + '/api/admin/design-images/nope?key=' + ADMIN_KEY, {
+      method: 'DELETE',
+    });
+    expect(r.status).toBe(404);
+  });
 });

@@ -13,9 +13,14 @@
 // "/content-uploads/<hash>.<ext>" PATH. So an override can only ever point at an
 // image THIS server produced — never an arbitrary/off-origin URL.
 //
-// Store shape: { [designId]: { [slot]: "/content-uploads/<name>" } }
+// Store shape: { [designId]: { [slot]: "/content-uploads/<name>",
+//                              carousel?: ["/content-uploads/<name>", …] } }
 //   designId = a catalog design id (kebab, e.g. "posttrip").
 //   slot     = one of store | board | front | back.
+//   carousel = an ORDERED array of the owner's extra store-tile pictures. The
+//              products-grid tile cycles [store image, …carousel] as a fast,
+//              seamless, auto-advancing carousel; an absent/empty array leaves the
+//              tile showing just the store image (no cycling).
 //
 // Persistence mirrors content.js/playbook.js: an in-memory object loaded at boot,
 // mutated through helpers, written to disk atomically (temp file + rename) on
@@ -35,6 +40,9 @@ const SLOT_SET = new Set(SLOTS);
 // content hash + a raster ext) — same shape content.js enforces. Validating on
 // write means an override can never become an off-origin / stored-XSS vector.
 const UPLOAD_PATH_RE = /^\/content-uploads\/[a-f0-9]{16}\.(webp|jpe?g|png)$/;
+// Max pictures in a design's store-tile CAROUSEL (mirrors content.js PHOTO_CAP).
+// Generous but bounded so a runaway client can't grow the store without limit.
+const CAROUSEL_CAP = 12;
 
 function designOk(id) {
   return DESIGN_RE.test(String(id || '')) ? String(id) : null;
@@ -110,18 +118,88 @@ function reset(id, slot) {
   return true;
 }
 
-// Is `imgPath` referenced by ANY design/slot in THIS store? Uploads are
-// content-addressed and shared (a file can back a content-editor override AND a
-// design-image override, or several slots), so a caller reclaiming an orphan must
-// confirm nothing here still points at it — combined with content.isImageReferenced
-// on the other store. Own-property scan only.
+// ---- per-design store-tile CAROUSEL (an ORDERED photo array) ---------------
+// Beyond the single per-slot overrides above, a design can carry a `carousel`
+// array of extra store-tile pictures. The products-grid tile cycles
+// [store image, …carousel] as a fast seamless carousel; an empty/absent array
+// leaves the tile as a single static picture. The array lives in the SAME design
+// bag as the slot overrides (so the public GET exposes it in one map) and holds
+// only our-own upload paths, validated on every write — never an off-origin URL.
+
+// Keep only valid, distinct, our-own upload paths, capped at CAROUSEL_CAP, order
+// preserved. Never trusts a client string beyond the exact saveImageBytes shape.
+function sanitizeCarousel(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of arr) {
+    const p = String(raw || '');
+    if (!UPLOAD_PATH_RE.test(p) || seen.has(p)) continue;
+    seen.add(p);
+    out.push(p);
+    if (out.length >= CAROUSEL_CAP) break;
+  }
+  return out;
+}
+
+// The carousel array for a design (a fresh copy so callers can't mutate the
+// store). Unknown/absent design or no array → [].
+function getCarousel(id) {
+  const d = designOk(id);
+  if (!d || !_store[d]) return [];
+  const arr = _store[d].carousel;
+  return Array.isArray(arr) ? arr.slice() : [];
+}
+
+// Append one uploaded picture to a design's carousel (deduped, capped, order
+// preserved). Returns the new array, or null on a bad design/path. A no-op append
+// (duplicate or already at cap) still returns the current array so the client
+// stays in sync — the route compares lengths to detect a dropped upload.
+function addCarouselImage(id, imgPath) {
+  const d = designOk(id);
+  if (!d || !UPLOAD_PATH_RE.test(String(imgPath || ''))) return null;
+  const next = sanitizeCarousel(getCarousel(d).concat(String(imgPath)));
+  const bag = _store[d] || (_store[d] = {});
+  bag.carousel = next;
+  save();
+  return next;
+}
+
+// Remove one picture from a design's carousel by its path. Prunes an emptied
+// carousel key (and an emptied design bag) so the store stays tidy. Returns the
+// new array (possibly []), or null on a bad design id. A no-op when the path is
+// absent (returns the unchanged array).
+function removeCarouselImage(id, imgPath) {
+  const d = designOk(id);
+  if (!d) return null;
+  if (!_store[d] || !Array.isArray(_store[d].carousel)) return [];
+  const target = String(imgPath || '');
+  const next = _store[d].carousel.filter((p) => p !== target);
+  if (next.length) {
+    _store[d].carousel = next;
+  } else {
+    delete _store[d].carousel;
+    if (Object.keys(_store[d]).length === 0) delete _store[d];
+  }
+  save();
+  return next;
+}
+
+// Is `imgPath` referenced by ANY design/slot in THIS store (a single slot path OR
+// an entry in a carousel array)? Uploads are content-addressed and shared (a file
+// can back a content-editor override AND a design-image override, several slots,
+// or a carousel), so a caller reclaiming an orphan must confirm nothing here still
+// points at it — combined with content.isImageReferenced on the other store.
+// Own-property scan only.
 function isImageReferenced(imgPath) {
   const target = String(imgPath || '');
   if (!target) return false;
   for (const id of Object.keys(_store)) {
     const bag = _store[id] || {};
-    for (const slot of Object.keys(bag)) {
-      if (bag[slot] === target) return true;
+    for (const key of Object.keys(bag)) {
+      const v = bag[key];
+      if (v === target) return true;
+      if (Array.isArray(v) && v.indexOf(target) !== -1) return true;
     }
   }
   return false;
@@ -133,10 +211,15 @@ module.exports = {
   get,
   set,
   reset,
+  getCarousel,
+  addCarouselImage,
+  removeCarouselImage,
+  sanitizeCarousel,
   isImageReferenced,
   designOk,
   slotOk,
   SLOTS,
+  CAROUSEL_CAP,
   UPLOAD_PATH_RE,
   _file: FILE,
 };
