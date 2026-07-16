@@ -257,8 +257,13 @@
         margin-top: 12px;
       }
       .product-price {
-        display: block;
-        text-align: center;
+        /* Flex row (RTL) so the current price is first (right) and the struck
+           was-price second (left) — deterministic, unlike bidi-reordered inline
+           number runs. */
+        display: flex;
+        justify-content: center;
+        align-items: baseline;
+        gap: 6px;
         margin-top: 3px;
         font-weight: 600;
         font-size: 14.5px;
@@ -267,7 +272,6 @@
       .product-price s {
         color: var(--muted);
         font-weight: 600;
-        margin-inline-start: 6px;
       }
 
       /* graceful fallback if the catalog module can't load */
@@ -533,13 +537,18 @@
       let WAS = PRICING_FALLBACK.store.was;
       const grid = document.getElementById('storeGrid');
 
-      // Stamp a `.product-price` node: a struck WAS then "מ-PRICE ₪".
+      // Stamp a `.product-price` flex row: a `.now` current price first, then a
+      // struck WAS. In this RTL row `.now` lands on the right and the struck WAS
+      // to its LEFT.
       function stampPrice(el) {
         el.textContent = '';
+        const now = document.createElement('span');
+        now.className = 'now';
+        now.textContent = `מ-${PRICE} ₪`;
+        el.appendChild(now);
         const was = document.createElement('s');
         was.textContent = `${WAS} ₪`;
         el.appendChild(was);
-        el.append(` מ-${PRICE} ₪`);
       }
 
       // ---- one product card ---------------------------------------------------

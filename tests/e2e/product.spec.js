@@ -46,6 +46,21 @@ test.describe('product detail page', () => {
     await expect(buy).toHaveAttribute('href', 'options.html?design=bachelorette&step=2');
   });
 
+  test('the struck was-price sits to the LEFT of the current price (RTL)', async ({ page }) => {
+    await stubPricing(page); // now 199, was 239
+    await page.goto('/product.html?design=bachelorette');
+
+    const now = page.locator('#pdpPriceNow');
+    const was = page.locator('#pdpPriceWas');
+    await expect(now).toContainText('מ-199 ₪');
+    await expect(was).toContainText('239 ₪');
+
+    const nb = await now.boundingBox();
+    const wb = await was.boundingBox();
+    // The struck price is fully to the LEFT of the current price.
+    expect(wb.x + wb.width).toBeLessThanOrEqual(nb.x + 1);
+  });
+
   test('the gallery sources crisp hi-res renders, not the tiny thumb-*.webp', async ({ page }) => {
     await page.goto('/product.html?design=bachelorette');
     const imgs = page.locator('#galleryTrack img');
