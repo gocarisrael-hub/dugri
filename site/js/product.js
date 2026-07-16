@@ -72,15 +72,17 @@ export function overrideKeys(id) {
   };
 }
 
-// The FIRST/default public design. product.html's fixed section copy (the "about"
-// heading, the "what's inside" list, the buy CTA + note, the related-rail
-// headings) USED to ship as a single design-agnostic data-edit="product-<field>"
-// key, so any edit the owner already saved lives under that legacy key. Those
-// fields are now namespaced PER DESIGN (each element is tagged data-edit-pd in the
-// HTML). To lose nothing, the default design still READS the legacy key as a
-// fallback when it has no per-design override yet — so an existing edit keeps
-// showing (and is re-saved under the per-design key the next time it's edited).
-const LEGACY_DESIGN = 'bachelorette';
+// product.html's fixed section copy (the "about" heading, the "what's inside"
+// list, the buy CTA + note, the related-rail headings) USED to ship as a single
+// design-agnostic data-edit="product-<field>" key, so an edit the owner already
+// saved shows on EVERY product page. Those fields are now namespaced PER DESIGN
+// (each is tagged data-edit-pd in the HTML). To lose nothing, every design reads
+// this legacy key as a FALLBACK when it has no per-design override yet — so the
+// previously-shared edit keeps showing on all pages until the owner re-edits that
+// design (which saves it under the per-design key). Design-independent on purpose.
+export function legacyFieldKey(field) {
+  return `product-${field}`;
+}
 
 /** The saved text override for `key`, or null when none. */
 export function overrideText(overrides, key) {
@@ -424,23 +426,26 @@ function applyTextOverrides(d, overrides) {
   if (about && aboutOv != null) about.textContent = aboutOv;
 }
 
-// Namespace product.html's FIXED text sections PER DESIGN. Each such element is
-// tagged in the HTML with data-edit-pd="<field>" (design-agnostic); here we stamp
-// its per-design override key onto data-edit ("product-<id>-<field>") so the editor
-// binds + saves it under a key unique to THIS design, and overlay the saved text
-// when present. The shipped HTML text stays the default (first paint is correct);
-// the DEFAULT design additionally falls back to the pre-namespacing legacy key so
-// an edit the owner already made is never lost. Idempotent — safe to call to TAG
-// (overrides={}) on first paint and again to APPLY once overrides resolve.
+// Namespace product.html's FIXED text sections. Each such element is tagged in the
+// HTML with data-edit-pd="<field>" (design-agnostic). Here we stamp its per-design
+// override key onto data-edit ("product-<id>-<field>") so the editor binds + saves
+// it under a key unique to THIS design, then overlay the text with this precedence:
+//   per-design override → legacy shared override (pre-namespacing) → shipped default
+// The legacy fallback applies to EVERY design (not only the default), so an edit
+// made before per-design namespacing keeps showing on ALL product pages until the
+// owner re-edits that specific design — nothing silently vanishes. When no design
+// resolves (d == null) the field keeps its legacy shared key, exactly matching the
+// pre-namespacing behavior. Idempotent — safe to call to TAG and again to APPLY.
 function applyPerDesignFields(d, overrides) {
   document.querySelectorAll('[data-edit-pd]').forEach((elm) => {
     const field = elm.getAttribute('data-edit-pd');
     if (!field) return;
-    const key = fieldKey(d.id, field);
+    const key = d ? fieldKey(d.id, field) : legacyFieldKey(field);
     elm.setAttribute('data-edit', key);
     let ov = overrideText(overrides, key);
-    // Migration: the default design inherits any surviving legacy shared override.
-    if (ov == null && d.id === LEGACY_DESIGN) ov = overrideText(overrides, `product-${field}`);
+    // Every design falls back to the surviving legacy shared override until it has
+    // its own per-design value (d == null already uses the legacy key above).
+    if (ov == null && d) ov = overrideText(overrides, legacyFieldKey(field));
     if (ov != null) elm.textContent = ov;
   });
 }
@@ -508,25 +513,39 @@ function applyDesignImagesToPage(d, imagesMap) {
   if (hasOverride) rebuildCarousels(galleryShots(d, currentOverrides, currentDesignImages));
 }
 
-// Get this page's content overrides. Preferred path REUSES the editor's single
-// /api/content fetch (window.dugriEditor.onReady) so the hottest endpoint isn't
-// hit twice per load. Only when the editor engine isn't present do we fetch
-// directly. Fail-soft: any error yields {} so the shipped defaults stand.
-function loadOverrides() {
+// Deliver this page's content overrides to `apply`. Preferred path REUSES the
+// editor's single /api/content fetch (window.dugriEditor.onReady) so the hottest
+// endpoint isn't hit twice per load — and CRUCIALLY runs `apply` SYNCHRONOUSLY the
+// moment the editor marks ready, which is BEFORE the editor enables edit mode and
+// captures each field's "last saved" baseline. That ordering is what lets a
+// legacy-migrated value be applied to the DOM before the baseline is read, so an
+// untouched, legacy-inherited field is never falsely dirty on entry. Only when the
+// editor engine isn't present do we fetch directly. Fail-soft: any error yields {}
+// so the shipped defaults stand.
+function loadOverrides(apply) {
   const ed = typeof window !== 'undefined' ? window.dugriEditor : null;
   if (ed && typeof ed.onReady === 'function') {
-    return new Promise((resolve) => ed.onReady((ov) => resolve(ov || {})));
+    ed.onReady((ov) => apply(ov || {}));
+    return;
   }
-  return fetch('/api/content?page=product.html')
+  fetch('/api/content?page=product.html')
     .then((r) => (r.ok ? r.json() : { overrides: {} }))
-    .then((data) => (data && data.overrides) || {})
-    .catch(() => ({}));
+    .then((data) => apply((data && data.overrides) || {}))
+    .catch(() => apply({}));
 }
 
 // ---- boot ---------------------------------------------------------------
 function boot() {
   const d = resolveDesign();
-  if (!d) return; // no public designs at all — leave the static shell as-is
+  if (!d) {
+    // No public design resolved (empty catalog / build error). Preserve the
+    // pre-namespacing behavior for the fixed fields: stamp them with their legacy
+    // SHARED key so editor.js still overlays any saved override for every visitor
+    // and binds them in edit mode. Done synchronously so the editor's own scan
+    // sees the data-edit before it runs.
+    applyPerDesignFields(null, {});
+    return;
+  }
   currentDesign = d;
   currentOverrides = {};
 
@@ -536,7 +555,6 @@ function boot() {
   // the shopper's ability to see the product and buy.
   const shots = galleryShots(d, currentOverrides, currentDesignImages); // defaults (no overrides yet)
   renderInfo(d, currentOverrides); // tags nodes + default name/about + price + buy
-  applyPerDesignFields(d, currentOverrides); // stamp per-design keys on the fixed fields
   renderGallery(shots);
   renderZoomSlides(shots);
   wireZoom();
@@ -552,7 +570,10 @@ function boot() {
   // a slow/down /api/design-names can NEVER delay it. The design-name overlay
   // applies whenever fetchDesignNames resolves (capped ~2.5s, {} on timeout/error);
   // it defers to a content name override so precedence holds either resolve order.
-  loadOverrides().then((ov) => applyOverridesToPage(d, ov));
+  // applyOverridesToPage runs SYNCHRONOUSLY when the editor marks ready (see
+  // loadOverrides), i.e. before edit mode captures per-field baselines — so a
+  // legacy-inherited value is in the DOM first and never reads as unsaved.
+  loadOverrides((ov) => applyOverridesToPage(d, ov));
 
   // Overlay the owner-editable store price when it resolves (timeout-bounded,
   // fail-safe). First paint already showed the launch default, so a slow/failed

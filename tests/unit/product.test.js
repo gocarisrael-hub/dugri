@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 // so these exercise the exported helpers directly.
 import {
   fieldKey,
+  legacyFieldKey,
   overrideKeys,
   overrideText,
   photosFromOverride,
@@ -62,6 +63,20 @@ describe('fieldKey — per-design content-override key derivation', () => {
     ]) {
       for (const field of PD_FIELDS) expect(KEY_RE.test(fieldKey(id, field))).toBe(true);
     }
+  });
+});
+
+describe('legacyFieldKey — the pre-namespacing design-agnostic shared key', () => {
+  it('is the design-independent "product-<field>" every design falls back to', () => {
+    expect(legacyFieldKey('about-heading')).toBe('product-about-heading');
+    expect(legacyFieldKey('buy-cta')).toBe('product-buy-cta');
+    // it is NOT any design's per-design key (so the fallback is unambiguous)
+    for (const id of ['bachelorette', 'japanese', 'marriage']) {
+      for (const field of PD_FIELDS) expect(legacyFieldKey(field)).not.toBe(fieldKey(id, field));
+    }
+    // and stays a valid server key
+    const KEY_RE = /^[a-z0-9][a-z0-9-]{0,60}$/;
+    for (const field of PD_FIELDS) expect(KEY_RE.test(legacyFieldKey(field))).toBe(true);
   });
 });
 

@@ -417,21 +417,82 @@ test.describe('per-product photo carousel + editable content', () => {
     await expect(page.locator('[data-edit-pd="about-heading"]')).toHaveText('על העיצוב');
   });
 
-  test('the default design migrates a legacy design-agnostic override (no lost edit)', async ({
+  // Migration regression: a pre-namespacing edit lived under ONE shared key and
+  // showed on every product page. After namespacing it must keep showing on EVERY
+  // design (default AND non-default) until that design gets its own value — nothing
+  // vanishes from 6-of-7 pages.
+  test('a legacy shared override is inherited by EVERY design until it gets its own', async ({
     page,
   }) => {
-    // A pre-namespacing edit lives under the shared "product-about-heading" key.
     await page.route('**/api/content*', (route) =>
       route.fulfill({ json: { overrides: { 'product-about-heading': { text: 'כותרת מהעבר' } } } })
     );
 
-    // The DEFAULT design (bachelorette) still reads the legacy key → nothing lost.
+    // The default design shows the legacy value…
     await page.goto('/product.html?design=bachelorette');
     await expect(page.locator('[data-edit-pd="about-heading"]')).toHaveText('כותרת מהעבר');
-
-    // A non-default design does NOT inherit the legacy value (it is bachelorette's).
+    // …and so does a NON-default design (the previously-shared edit does not vanish).
     await page.goto('/product.html?design=japanese');
-    await expect(page.locator('[data-edit-pd="about-heading"]')).toHaveText('על העיצוב');
+    await expect(page.locator('[data-edit-pd="about-heading"]')).toHaveText('כותרת מהעבר');
+    await page.goto('/product.html?design=marriage');
+    await expect(page.locator('[data-edit-pd="about-heading"]')).toHaveText('כותרת מהעבר');
+  });
+
+  test('a per-design override WINS over the legacy shared value', async ({ page }) => {
+    await page.route('**/api/content*', (route) =>
+      route.fulfill({
+        json: {
+          overrides: {
+            'product-about-heading': { text: 'כותרת מהעבר' },
+            'product-japanese-about-heading': { text: 'כותרת יפנית חדשה' },
+          },
+        },
+      })
+    );
+
+    // japanese has its OWN saved value → shows it, not the legacy…
+    await page.goto('/product.html?design=japanese');
+    await expect(page.locator('[data-edit-pd="about-heading"]')).toHaveText('כותרת יפנית חדשה');
+    // …while a design without its own value still inherits the legacy edit.
+    await page.goto('/product.html?design=marriage');
+    await expect(page.locator('[data-edit-pd="about-heading"]')).toHaveText('כותרת מהעבר');
+  });
+
+  // A legacy-inherited field must NOT read as unsaved on entering edit mode: the
+  // migrated value is applied to the DOM BEFORE the editor captures its baseline,
+  // so an untouched field is never dirty (no phantom POST, no false "save failed").
+  test('a legacy-inherited field is not falsely dirty on entering edit mode (no phantom save)', async ({
+    page,
+  }) => {
+    const posts = [];
+    await page.route('**/api/content*', (route) =>
+      route.fulfill({ json: { overrides: { 'product-about-heading': { text: 'כותרת מהעבר' } } } })
+    );
+    // Stub design-names to empty so the title isn't overlaid by the admin-rename
+    // path (a separate async source, unrelated to the legacy fixed-field baseline
+    // this test isolates); otherwise it could make #pdpTitle differ from baseline.
+    await page.route('**/api/design-names', (route) => route.fulfill({ json: { names: {} } }));
+    await page.route('**/api/admin/content*', (route) => {
+      const req = route.request();
+      if (req.method() === 'POST' && !req.url().includes('/content/'))
+        posts.push(req.postDataJSON());
+      return route.fulfill({ json: { ok: true } });
+    });
+
+    await page.goto('/product.html?design=japanese&edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const heading = page.locator('[data-edit-pd="about-heading"]');
+    // The legacy value shows on this NON-default design, stamped with its own key.
+    await expect(heading).toHaveText('כותרת מהעבר');
+    await expect(heading).toHaveAttribute('data-edit', 'product-japanese-about-heading');
+
+    // Save WITHOUT touching anything: nothing was dirty → no POST fires, and the
+    // toolbar confirms a clean state (not "שגיאה בשמירה").
+    await page.locator('[data-role="save"]').click();
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('נשמר');
+    await page.waitForTimeout(200);
+    expect(posts).toHaveLength(0);
   });
 
   // Item 3 (edit mode): the owner ADDS a photo; it persists and shows to a normal
