@@ -141,11 +141,42 @@ function appendThemeEntry(themesPath, key, entry) {
 // rename) so a crash mid-write can never leave a truncated themes.json. Preserves
 // the file's 1-space indent so the diff against the hand-maintained file stays
 // minimal. Shared by appendThemeEntry (onboarding) + renameTemplate/replaceAsset.
+// After the rename it refreshes the loadThemesCached() cache to the just-written
+// mapping so the hot public GET /api/design-names sees a rename immediately
+// without re-reading disk.
 function writeThemesFile(themesPath, themes) {
   const dir = path.dirname(themesPath);
   const tmp = path.join(dir, `.themes.${process.pid}.${Date.now()}.tmp`);
   fs.writeFileSync(tmp, JSON.stringify(themes, null, 1) + '\n', 'utf8');
   fs.renameSync(tmp, themesPath);
+  try {
+    _themesCache.set(themesPath, { mtimeMs: fs.statSync(themesPath).mtimeMs, themes });
+  } catch {
+    _themesCache.delete(themesPath);
+  }
+}
+
+// mtime-keyed parse cache for themes.json, so a hot READ-ONLY caller (the public
+// GET /api/design-names, hit on every products.html + product.html load) doesn't
+// re-read + re-parse the file on every request. Keyed by path so a test root and
+// the real root never collide. Invalidated implicitly by an mtime change (an
+// external write, e.g. a test) and explicitly by writeThemesFile (our own writes).
+// The MUTATING paths (renameTemplate/appendThemeEntry/replaceAsset) deliberately
+// keep using the uncached loadThemes() so they always read fresh disk state before
+// mutating — the cache is a read-side optimization only.
+const _themesCache = new Map();
+function loadThemesCached(themesPath) {
+  let st;
+  try {
+    st = fs.statSync(themesPath);
+  } catch {
+    return loadThemes(themesPath); // missing file: fall through to the {} path
+  }
+  const cached = _themesCache.get(themesPath);
+  if (cached && cached.mtimeMs === st.mtimeMs) return cached.themes;
+  const themes = loadThemes(themesPath);
+  _themesCache.set(themesPath, { mtimeMs: st.mtimeMs, themes });
+  return themes;
 }
 
 // Write the uploaded SVGs + fonts into resources/canva/templates/<slug>/.
@@ -549,6 +580,31 @@ function renameTemplate({ root, key, displayName }) {
   return { key, display_he: v.value, slug: entry.slug || key };
 }
 
+// Build the PUBLIC { <designId>: displayName } map the storefront uses to show a
+// current, owner-renamable name. Each orderable design (from site/js/designs.js,
+// passed in as [{ id, theme }]) is resolved to its generator theme, and that
+// theme's current themes.json `display_he` becomes the design's display name —
+// so an admin "rename template" (which edits display_he) propagates to
+// products.html / the product page without a rebuild. This is the slug↔product-id
+// BRIDGE: designs carry `theme` (the themes.json key), so no separate mapping is
+// needed. A design whose theme is unmapped, missing, or has no `display_he` is
+// OMITTED (the page keeps its built-in catalog name). Pure (no fs/network) and
+// exposes ONLY names — never any other theme field — so it is safe to serialize
+// to any visitor and trivial to unit-test. `ownTheme` guards the theme lookup
+// against prototype-pollution keys.
+function designDisplayNames(themes, designs) {
+  const out = {};
+  if (!themes || typeof themes !== 'object') return out;
+  const list = Array.isArray(designs) ? designs : [];
+  for (const d of list) {
+    if (!d || typeof d.id !== 'string' || typeof d.theme !== 'string') continue;
+    const entry = ownTheme(themes, d.theme);
+    const name = entry && typeof entry.display_he === 'string' ? entry.display_he.trim() : '';
+    if (name) out[d.id] = name;
+  }
+  return out;
+}
+
 // Replace a SINGLE asset file of an existing template in place. The role must be
 // on the whitelist (so the write target is a fixed path inside the template dir —
 // no traversal, and the other onboarded assets are untouched). SVG roles are
@@ -687,6 +743,7 @@ module.exports = {
   buildThemeEntry,
   appendThemeEntry,
   loadThemes,
+  loadThemesCached,
   writeTemplateFiles,
   runRecipeDiff,
   normalizeOnboarding,
@@ -708,4 +765,5 @@ module.exports = {
   validateDisplayName,
   renameTemplate,
   replaceAsset,
+  designDisplayNames,
 };

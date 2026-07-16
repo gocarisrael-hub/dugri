@@ -1607,6 +1607,30 @@ app.get('/api/content', (req, res) => {
   res.json({ overrides: content.getPage(req.query.page) });
 });
 
+// Public: the current display name per orderable design id, so an admin "rename
+// template" (which edits generator/themes.json display_he) reaches products.html
+// and the product page WITHOUT a rebuild. Each design carries its generator theme
+// (site/js/designs.js), so themes.json.display_he maps straight onto the design id
+// — no separate slug↔id table. Unauthenticated on purpose (every visitor needs the
+// current names) and exposes ONLY the { id: name } map, never any other theme
+// field. themes.json is read ONCE per request; any error (missing/corrupt config,
+// catalog import failure) resolves to {} so the pages fall back to their built-in
+// names and never break. The buyer-facing fetchers add their own timeout.
+app.get('/api/design-names', async (req, res) => {
+  let names = {};
+  try {
+    const mod = await import(pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js')));
+    // PUBLIC subset only — a private/access-gated design's name must never leak to
+    // anonymous visitors. themes.json is read through an mtime cache so this hot
+    // endpoint doesn't hit disk on every products.html / product.html load.
+    const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT));
+    names = templates.designDisplayNames(themes, mod.PUBLIC_DESIGNS || []);
+  } catch {
+    names = {};
+  }
+  res.json({ names });
+});
+
 // Serve an uploaded content image. The files live in DATA_DIR/content-uploads,
 // which is OUTSIDE SITE_DIR, so express.static never reaches them — this route is
 // the only way out. The name is validated to the exact shape saveImageBytes

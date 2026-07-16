@@ -173,3 +173,40 @@ export const DESIGNS = Object.entries(GENERATED).map(([id, g]) => ({
  * products.html gallery) render. Admin/order code paths use the full DESIGNS.
  */
 export const PUBLIC_DESIGNS = DESIGNS.filter((d) => d.public);
+
+/**
+ * Fetch the owner-editable display names (GET /api/design-names) — an admin
+ * "rename template" edits themes.json display_he, which this endpoint maps onto
+ * design ids. Returns a plain `{ <id>: name }` object of non-empty string names.
+ *
+ * BUYER-FACING, so it MUST never block or break a page: an AbortController caps
+ * the request at `timeoutMs` (~2.5s) and EVERY failure path — no fetch, network
+ * error, timeout/abort, non-OK status, or malformed/`{}` JSON — resolves to `{}`,
+ * letting the caller keep the built-in catalog names. Never rejects. `fetchImpl`
+ * is injectable for tests.
+ */
+export async function fetchDesignNames({ fetchImpl, timeoutMs = 2500 } = {}) {
+  const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return {};
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const res = await f(
+      '/api/design-names',
+      controller ? { signal: controller.signal } : undefined
+    );
+    if (!res || !res.ok) return {};
+    const data = await res.json();
+    const names = data && data.names;
+    if (!names || typeof names !== 'object') return {};
+    const out = {};
+    for (const [id, name] of Object.entries(names)) {
+      if (typeof id === 'string' && typeof name === 'string' && name.trim()) out[id] = name;
+    }
+    return out;
+  } catch {
+    return {};
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
