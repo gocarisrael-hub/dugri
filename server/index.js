@@ -764,7 +764,15 @@ app.post('/api/collections/:id/coupon/validate', (req, res) => {
 // can't force a large allocation). Multipart, same magic-byte typing + 4MB/image
 // cap as the content-photo route (content.saveImageBytes). Pictures are a
 // nice-to-have: a single bad/oversized image part is SKIPPED, not fatal, so a
-// partial batch still succeeds. The stored array is hard-capped at 4 in the DB.
+// partial batch still succeeds.
+//
+// The 4-image cap is enforced at WRITE time (POST /api/collections is public, so
+// anyone gets a valid {id, owner_token} and could hammer this route): we compute
+// how much ROOM is left for this collection and only ever write that many files, so
+// disk writes are bounded by the 4-per-collection cap and repeated over-cap posts
+// write nothing. Any file we DID write but that ends up unrecorded (a content-hash
+// duplicate the DB de-dupes away) is reclaimed — but only when THIS request created
+// it and nothing else references it (content-addressed files are shared).
 app.post(
   '/api/collections/:id/pawns',
   (req, res, next) => {
@@ -779,18 +787,36 @@ app.post(
       return res.status(400).json({ error: 'expected multipart/form-data upload' });
     }
     const { files } = templates.parseMultipart(req.body, boundary);
-    const parts = Object.values(files)
-      .filter((f) => f && Buffer.isBuffer(f.data))
-      .slice(0, 4);
-    const paths = [];
-    for (const f of parts) {
+    const parts = Object.values(files).filter((f) => f && Buffer.isBuffer(f.data));
+    // Reject an over-large batch UP FRONT so a single request can never write dozens
+    // of files before the cap check (the buyer UI only ever sends up to 4).
+    if (parts.length > 4) return res.status(400).json({ error: 'too many images (max 4)' });
+    // Only persist as many images as there is room for (4 total per collection). A
+    // full collection writes nothing at all — the DoS fix.
+    const c = db.getCollection(req.params.id);
+    const room = Math.max(0, 4 - (Array.isArray(c.pawn_images) ? c.pawn_images.length : 0));
+    const written = []; // { path, created } for every file THIS request actually wrote
+    for (const f of parts.slice(0, room)) {
       try {
-        paths.push(content.saveImageBytes(f.data).path);
+        written.push(content.saveImageBytes(f.data));
       } catch {
         // Oversized/unsupported image — skip this file, keep the rest (fail-soft).
       }
     }
-    const stored = db.addPawnImages(req.params.id, req.query.k, paths);
+    const stored = db.addPawnImages(
+      req.params.id,
+      req.query.k,
+      written.map((w) => w.path)
+    );
+    // Reclaim any file we wrote that DIDN'T get recorded (a duplicate the DB dropped,
+    // or the whole batch on a lost owner token) — but only files THIS request created
+    // AND that nothing else references, so a shared content-addressed file is safe.
+    const kept = new Set(stored || []);
+    for (const w of written) {
+      if (!kept.has(w.path) && w.created && !content.isImageReferenced(w.path)) {
+        content.deleteUpload(w.path);
+      }
+    }
     if (stored == null) return res.status(403).json({ error: 'forbidden' });
     res.json({ ok: true, pawn_images: stored });
   }

@@ -405,13 +405,23 @@ const db = {
   },
 
   // Append up to N pawn images (customer pieces) to a collection, owner-token gated.
-  // Caps the stored array at 4 total (extra paths are dropped). Returns the updated
-  // array, or null on a bad/absent owner token or unknown collection.
+  // Caps the stored array at 4 total, and DE-DUPES incoming paths both against what's
+  // already stored and within the batch — the paths are content-addressed, so the
+  // same photo picked into two slots yields the same /content-uploads/<hash> and must
+  // not appear twice. Returns the updated array, or null on a bad/absent owner token
+  // or unknown collection.
   addPawnImages(id, ownerToken, paths) {
     const c = this.getCollection(id);
     if (!c || c.owner_token !== ownerToken) return null;
     if (!Array.isArray(c.pawn_images)) c.pawn_images = [];
-    const incoming = (Array.isArray(paths) ? paths : []).map((p) => String(p)).filter(Boolean);
+    const seen = new Set(c.pawn_images);
+    const incoming = [];
+    for (const raw of Array.isArray(paths) ? paths : []) {
+      const p = String(raw);
+      if (!p || seen.has(p)) continue; // skip empties + duplicates (existing OR batch)
+      seen.add(p);
+      incoming.push(p);
+    }
     if (!incoming.length) return c.pawn_images;
     const room = Math.max(0, 4 - c.pawn_images.length);
     if (room > 0) {

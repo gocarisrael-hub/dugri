@@ -56,6 +56,7 @@ function buildMultipart(boundary, parts) {
 }
 
 let db;
+let content;
 let app;
 let server;
 let base;
@@ -71,6 +72,7 @@ beforeAll(async () => {
     if (require.cache[p]) delete require.cache[p];
   }
   db = require(path.join(serverDir, 'db.js'));
+  content = require(path.join(serverDir, 'content.js'));
   app = require(path.join(serverDir, 'index.js'));
   await new Promise((resolve) => {
     server = app.listen(0, () => {
@@ -127,6 +129,22 @@ describe('db.addPawnImages', () => {
   it('returns null on an unknown collection id', () => {
     expect(db.addPawnImages('no-such-id', 'whatever', ['/x.png'])).toBe(null);
   });
+
+  it('de-dupes identical paths within a batch AND against what is already stored', () => {
+    const c = db.createCollection('בדיקה', {});
+    // same path twice in one batch → stored once
+    const out1 = db.addPawnImages(c.id, c.owner_token, [
+      '/content-uploads/x.png',
+      '/content-uploads/x.png',
+    ]);
+    expect(out1).toEqual(['/content-uploads/x.png']);
+    // re-adding an already-stored path is a no-op; a new one appends
+    const out2 = db.addPawnImages(c.id, c.owner_token, [
+      '/content-uploads/x.png',
+      '/content-uploads/y.png',
+    ]);
+    expect(out2).toEqual(['/content-uploads/x.png', '/content-uploads/y.png']);
+  });
 });
 
 describe('POST /api/collections/:id/pawns', () => {
@@ -164,8 +182,9 @@ describe('POST /api/collections/:id/pawns', () => {
     expect(db.getCollection(c.id).pawn_images).toEqual(r.body.pawn_images);
   });
 
-  it('rejects more than 4 by only storing 4', async () => {
+  it('rejects a request with more than 4 image parts UP FRONT (400, nothing written)', async () => {
     const c = db.createCollection('בדיקה', {});
+    const before = fs.readdirSync(content._uploadDir).length;
     const r = await uploadPawns(c.id, c.owner_token, [
       { name: 'a', filename: 'a.png', data: pngWith('a') },
       { name: 'b', filename: 'b.png', data: pngWith('b') },
@@ -173,8 +192,48 @@ describe('POST /api/collections/:id/pawns', () => {
       { name: 'd', filename: 'd.png', data: pngWith('d') },
       { name: 'e', filename: 'e.png', data: pngWith('e') },
     ]);
+    expect(r.status).toBe(400);
+    expect(db.getCollection(c.id).pawn_images).toEqual([]);
+    // Not a single one of the 5 parts was written to disk.
+    expect(fs.readdirSync(content._uploadDir).length).toBe(before);
+  });
+
+  it('enforces the 4-image cap at WRITE time — over-cap posts write no orphan files', async () => {
+    const c = db.createCollection('בדיקה', {});
+    // Fill the cap with 4 distinct images.
+    const first = await uploadPawns(c.id, c.owner_token, [
+      { name: 'a', filename: 'a.png', data: pngWith('cap-a') },
+      { name: 'b', filename: 'b.png', data: pngWith('cap-b') },
+      { name: 'c', filename: 'c.png', data: pngWith('cap-c') },
+      { name: 'd', filename: 'd.png', data: pngWith('cap-d') },
+    ]);
+    expect(first.body.pawn_images).toHaveLength(4);
+    const onDisk = fs.readdirSync(content._uploadDir).length;
+    // A second request with 4 MORE distinct images: room is 0, so NOTHING is written.
+    const second = await uploadPawns(c.id, c.owner_token, [
+      { name: 'e', filename: 'e.png', data: pngWith('cap-e') },
+      { name: 'f', filename: 'f.png', data: pngWith('cap-f') },
+      { name: 'g', filename: 'g.png', data: pngWith('cap-g') },
+      { name: 'h', filename: 'h.png', data: pngWith('cap-h') },
+    ]);
+    expect(second.status).toBe(200);
+    expect(second.body.pawn_images).toHaveLength(4);
+    // No new files landed on the volume — the over-cap batch left no orphans.
+    expect(fs.readdirSync(content._uploadDir).length).toBe(onDisk);
+  });
+
+  it('stores an identical photo picked into two slots only once (and leaves no orphan)', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const same = pngWith('dup-photo');
+    const before = fs.readdirSync(content._uploadDir).length;
+    const r = await uploadPawns(c.id, c.owner_token, [
+      { name: 'p0', filename: 'a.png', data: same },
+      { name: 'p1', filename: 'b.png', data: same },
+    ]);
     expect(r.status).toBe(200);
-    expect(r.body.pawn_images).toHaveLength(4);
+    expect(r.body.pawn_images).toHaveLength(1);
+    // Content-addressed: the two identical parts collapse to ONE file on disk.
+    expect(fs.readdirSync(content._uploadDir).length).toBe(before + 1);
   });
 
   it('skips a non-image part (fail-soft) but still stores the valid one', async () => {

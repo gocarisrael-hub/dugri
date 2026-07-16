@@ -2530,6 +2530,7 @@
             </button>
           </label>
         </div>
+        <p class="wiz-err" id="pawnErr" data-testid="pawn-err" hidden></p>
         <button class="pawn-skip" type="button" id="pawnSkip" data-testid="pawn-skip">דלגו</button>
         <style>
           .pawn-grid {
@@ -4482,18 +4483,37 @@
         }
       }
 
+      const pawnErr = document.getElementById('pawnErr');
+      function showPawnError(msg) {
+        if (!pawnErr) return;
+        pawnErr.textContent = msg;
+        pawnErr.hidden = false;
+      }
+      function hidePawnError() {
+        if (pawnErr) pawnErr.hidden = true;
+      }
+
       pawnSlots.forEach((slot) => {
         const idx = Number(slot.dataset.idx);
         const input = slot.querySelector('.pawn-input');
         const removeBtn = slot.querySelector('.pawn-remove');
         input.addEventListener('change', () => {
           const file = input.files && input.files[0];
-          // Ignore an oversized or non-image pick (the server would reject it too);
-          // reset the input so the same file can be retried after fixing it.
-          if (!file || !PAWN_TYPES.includes(file.type) || file.size > PAWN_MAX_BYTES) {
+          if (!file) return;
+          // Reject a wrong type or an oversized file (the server would reject it too),
+          // and TELL the buyer why nothing happened — otherwise the pick silently
+          // vanishes on this optional step. Reset the input so they can retry.
+          if (!PAWN_TYPES.includes(file.type)) {
             input.value = '';
+            showPawnError('סוג הקובץ אינו נתמך - בחרו תמונת JPG, PNG או WEBP');
             return;
           }
+          if (file.size > PAWN_MAX_BYTES) {
+            input.value = '';
+            showPawnError('הקובץ גדול מדי (עד 4MB)');
+            return;
+          }
+          hidePawnError();
           pawnFiles[idx] = file;
           renderPawnSlot(idx);
         });

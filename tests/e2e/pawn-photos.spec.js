@@ -100,6 +100,28 @@ test.describe('optional pawn-photos step', () => {
     await expect(slot0.locator('.pawn-thumb')).toBeHidden();
   });
 
+  test('a rejected file (unsupported type) shows a clear inline message', async ({ page }) => {
+    await toPawnStep(page);
+    const err = page.getByTestId('pawn-err');
+    const slot0 = page.locator('.pawn-slot[data-idx="0"]');
+    await expect(err).toBeHidden();
+
+    // A non-image file is rejected with a message (not silently dropped).
+    await page
+      .getByTestId('pawn-input-0')
+      .setInputFiles({ name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.from('nope') });
+    await expect(err).toBeVisible();
+    await expect(err).toContainText('נתמך');
+    await expect(slot0).not.toHaveClass(/is-filled/);
+
+    // A valid pick clears the message and fills the slot.
+    await page
+      .getByTestId('pawn-input-0')
+      .setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: PNG_BYTES });
+    await expect(err).toBeHidden();
+    await expect(slot0).toHaveClass(/is-filled/);
+  });
+
   test('a selected photo is uploaded after the collection is created, then redirects', async ({
     page,
   }) => {
