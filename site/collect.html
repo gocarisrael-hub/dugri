@@ -760,7 +760,6 @@
         text-decoration: line-through;
         opacity: 0.55;
         font-weight: 700;
-        margin-inline-end: 5px;
         font-size: 0.85em;
       }
       #addressForm {
@@ -770,9 +769,14 @@
         margin-top: 10px;
       }
       .pay-total {
+        /* Flex row (RTL): label, then current price, then the struck full price
+           to the LEFT of the current price. */
+        display: flex;
+        justify-content: center;
+        align-items: baseline;
+        gap: 6px;
         font-weight: 900;
         font-size: 19px;
-        text-align: center;
         margin: 14px 0;
       }
       /* coupon code field (owner) — sits just above the total */
@@ -1133,8 +1137,7 @@
             <input type="radio" name="payVersion" value="pdf" checked />
             <span class="opt-body">
               <span class="opt-title"
-                ><span>דיגיטלי (PDF)</span
-                ><span class="opt-price"><s class="was">₪129</s>₪79</span></span
+                ><span>דיגיטלי (PDF)</span><span class="opt-price">₪79</span></span
               >
               <span class="opt-note">מורידים, מדפיסים לבד, ומתפוצצים מצחוק 🎉</span>
             </span>
@@ -1221,7 +1224,8 @@
         </div>
 
         <div class="pay-total">
-          לתשלום: <span class="was hidden" id="payWas"></span>₪<span id="payTotal">79</span>
+          לתשלום: <span class="pay-now">₪<span id="payTotal">79</span></span
+          ><span class="was hidden" id="payWas"></span>
         </div>
         <div class="pay-err" id="payErr"></div>
 

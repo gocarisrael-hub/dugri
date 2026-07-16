@@ -763,6 +763,26 @@ test('owner applies a valid coupon → discounted total with the struck full pri
   await expect(page.locator('#couponApplyBtn')).toBeVisible();
 });
 
+test('the struck full price sits to the LEFT of the discounted total (RTL)', async ({ page }) => {
+  await stubPricing(page);
+  await seedCoupon(page, 'TEST25', 25);
+  await createCollection(page, 'Shira');
+
+  await page.locator('#payPanel summary').click();
+  await page.fill('#couponInput', 'TEST25');
+  await page.click('#couponApplyBtn');
+
+  const was = page.locator('#payWas');
+  await expect(was).toBeVisible();
+  await expect(was).toHaveText('₪79');
+
+  const now = page.locator('.pay-total .pay-now');
+  const wb = await was.boundingBox();
+  const nb = await now.boundingBox();
+  // The struck full price is fully to the LEFT of the discounted current total.
+  expect(wb.x + wb.width).toBeLessThanOrEqual(nb.x + 1);
+});
+
 test('unknown coupon code shows a not-found message and leaves the total full', async ({
   page,
 }) => {

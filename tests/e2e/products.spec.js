@@ -56,6 +56,22 @@ test.describe('store grid (products.html)', () => {
     }
   });
 
+  test('the struck was-price sits to the LEFT of the current price (RTL)', async ({ page }) => {
+    await stubPricing(page); // now 199, was 239
+    await page.goto('/products.html');
+
+    const price = page.locator('.product-card .product-price').first();
+    const now = price.locator('.now');
+    const was = price.locator('s');
+    await expect(now).toHaveText('מ-199 ₪');
+    await expect(was).toHaveText('239 ₪');
+
+    const nb = await now.boundingBox();
+    const wb = await was.boundingBox();
+    // The struck price is fully to the LEFT of the current price.
+    expect(wb.x + wb.width).toBeLessThanOrEqual(nb.x + 1);
+  });
+
   test('has exactly one (visually-hidden) page heading for a11y/SEO', async ({ page }) => {
     await page.goto('/products.html');
     const h1 = page.locator('h1');

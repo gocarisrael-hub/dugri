@@ -851,7 +851,8 @@
         text-decoration: line-through;
         opacity: 0.55;
         font-weight: 700;
-        margin-inline-end: 5px;
+        /* No inline margin: the CTA .btn is inline-flex with gap:9px, so the
+           struck price already gets a uniform 9px gap from the current price. */
         font-size: 0.85em;
       }
       .price {
@@ -1438,8 +1439,8 @@
         </p>
         <div class="hero-cta">
           <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="how-hero"
-            >בונים את המשחק · <s class="was" data-price-was>239 ₪</s
-            ><span style="white-space: nowrap" data-price-now>199 ₪</span></a
+            >בונים את המשחק · <span style="white-space: nowrap" data-price-now>199 ₪</span
+            ><s class="was" data-price-was>239 ₪</s></a
           >
           <a class="btn ghost" href="index.html" data-edit="how-hero-back">חזרה לעמוד הבית</a>
         </div>
@@ -1537,8 +1538,8 @@
         </p>
         <div class="hero-cta">
           <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="final"
-            >בונים את המשחק · <s class="was" data-price-was>239 ₪</s
-            ><span style="white-space: nowrap" data-price-now>199 ₪</span></a
+            >בונים את המשחק · <span style="white-space: nowrap" data-price-now>199 ₪</span
+            ><s class="was" data-price-was>239 ₪</s></a
           >
           <a
             class="btn wa"
@@ -1630,8 +1631,8 @@
         href="products.html"
         data-ga="order_started"
         data-ga-cta="sticky"
-        >מזמינים · <s class="was" data-price-was>239 ₪</s
-        ><span style="white-space: nowrap" data-price-now>199 ₪</span></a
+        >מזמינים · <span style="white-space: nowrap" data-price-now>199 ₪</span
+        ><s class="was" data-price-was>239 ₪</s></a
       >
       <a
         class="btn wa"
