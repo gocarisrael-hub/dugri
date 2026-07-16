@@ -159,23 +159,43 @@ test.describe('name-step live preview + font picker', () => {
 });
 
 test.describe('name-step preview resilience', () => {
-  // When /api/preview keeps failing the UI must never look broken: it shows the
-  // friendly fallback (name in a script font) with a retry — after one automatic
-  // retry — instead of a stuck "טוען תצוגה…".
-  test('a failing preview falls back gracefully with a retry', async ({ page }) => {
+  // When /api/preview fails the UI must never look broken. Because the INSTANT
+  // in-browser card is already on screen, a failed server render is simply IGNORED
+  // — the instant card stays, with no error fallback. The graceful CSS fallback is
+  // reserved for when even the client artwork can't be drawn (see the next test).
+  test('a failing server render keeps the instant card (no error UI)', async ({ page }) => {
     await page.route('**/api/preview', (route) =>
       route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
     );
     await toNameStep(page);
     await page.getByTestId('honoree-input').fill('Shira');
 
-    // the fallback card shows the name — never a blank / stuck loader
-    await expect(page.getByTestId('name-preview-fallback')).toBeVisible();
-    await expect(page.locator('#npfName')).toHaveText('Shira');
+    // the instant card shows with the name overlaid — never a blank / stuck loader
+    await expect(page.getByTestId('name-preview-instant-card')).toBeVisible();
+    await expect(page.locator('#namePreviewImgs .npi-name').first()).toHaveText('Shira');
     await expect(page.getByTestId('name-preview-loading')).toBeHidden();
 
-    // after the single automatic retry also fails, a manual retry is offered
-    await expect(page.getByTestId('name-preview-retry')).toBeVisible({ timeout: 5000 });
+    // the exact render failed → no fallback, no retry (the instant card is enough)
+    await expect(page.getByTestId('name-preview-fallback')).toBeHidden();
+    await expect(page.getByTestId('name-preview-refining')).toBeHidden({ timeout: 5000 });
+  });
+
+  test('the graceful CSS fallback shows only when the artwork is ALSO unavailable', async ({
+    page,
+  }) => {
+    // Block the product-SVG fetch so the instant draw cannot render, AND fail the
+    // server render → the neutral CSS fallback (name in a script font) + a manual
+    // retry appear, so the buyer never sees a blank area.
+    await page.route('**/assets/designs/**/front.svg', (route) => route.abort());
+    await page.route('**/api/preview', (route) =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
+    );
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+
+    await expect(page.getByTestId('name-preview-fallback')).toBeVisible({ timeout: 6000 });
+    await expect(page.locator('#npfName')).toHaveText('Shira');
+    await expect(page.getByTestId('name-preview-retry')).toBeVisible({ timeout: 6000 });
   });
 
   test('an automatic retry self-heals a transient hiccup', async ({ page }) => {

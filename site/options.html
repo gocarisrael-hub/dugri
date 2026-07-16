@@ -2141,18 +2141,68 @@
           >
             <div class="name-preview-imgs" id="namePreviewImgs">
               <figure class="name-preview-fig" data-npview="card">
-                <img id="namePreviewCard" data-testid="name-preview-card" alt="תצוגת קלף" />
+                <div class="np-stage">
+                  <!-- INSTANT client draw: the recolored product artwork + the typed
+                       name, rendered in-browser with ZERO network latency. Shown
+                       until the exact server PNG below swaps in. -->
+                  <div
+                    class="np-instant"
+                    data-np-instant="card"
+                    data-testid="name-preview-instant-card"
+                    aria-hidden="true"
+                    hidden
+                  >
+                    <div class="npi-art"></div>
+                    <div class="npi-name"></div>
+                  </div>
+                  <img id="namePreviewCard" data-testid="name-preview-card" alt="תצוגת קלף" />
+                  <!-- "refining…" affordance: shown OVER the card while the exact
+                       server render is still in flight; cleared when it swaps in
+                       (or gives up). The instant draw is already visible beneath. -->
+                  <div
+                    class="np-refining"
+                    id="namePreviewRefining"
+                    data-testid="name-preview-refining"
+                    aria-hidden="true"
+                    hidden
+                  >
+                    <span class="npr-bar"></span>
+                  </div>
+                </div>
               </figure>
               <figure class="name-preview-fig" data-npview="back" hidden>
-                <img
-                  id="namePreviewBack"
-                  data-testid="name-preview-back"
-                  alt="תצוגת גב הקלף"
-                  hidden
-                />
+                <div class="np-stage">
+                  <div
+                    class="np-instant"
+                    data-np-instant="back"
+                    data-testid="name-preview-instant-back"
+                    aria-hidden="true"
+                    hidden
+                  >
+                    <div class="npi-art"></div>
+                    <div class="npi-name"></div>
+                  </div>
+                  <img
+                    id="namePreviewBack"
+                    data-testid="name-preview-back"
+                    alt="תצוגת גב הקלף"
+                    hidden
+                  />
+                </div>
               </figure>
               <figure class="name-preview-fig" data-npview="board">
-                <img id="namePreviewBoard" data-testid="name-preview-board" alt="תצוגת לוח" />
+                <div class="np-stage">
+                  <div
+                    class="np-instant"
+                    data-np-instant="board"
+                    data-testid="name-preview-instant-board"
+                    aria-hidden="true"
+                    hidden
+                  >
+                    <div class="npi-art"></div>
+                  </div>
+                  <img id="namePreviewBoard" data-testid="name-preview-board" alt="תצוגת לוח" />
+                </div>
               </figure>
             </div>
           </div>
@@ -2284,6 +2334,122 @@
           .name-preview-fig img:not([src]),
           .name-preview-fig img[hidden] {
             display: none;
+          }
+          /* ===== instant client-draw layers =====================================
+             Each figure holds the INSTANT in-browser approximation (.np-instant),
+             the exact server PNG (img), and — on the card — a "refining" indicator.
+             The instant layer and the img SWAP (one is [hidden] at a time): the
+             instant draw shows first, the exact PNG replaces it when it arrives. */
+          .np-stage {
+            position: relative;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+          }
+          .np-instant {
+            display: block;
+            width: 100%;
+            max-width: 400px;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: #fff;
+          }
+          .np-instant[hidden] {
+            display: none;
+          }
+          /* card + back share the single-card cell ratio (portrait ~5:7) so the
+             instant approximation frames the SAME card the server crop returns. */
+          .name-preview-fig[data-npview='card'] .np-instant,
+          .name-preview-fig[data-npview='back'] .np-instant {
+            aspect-ratio: 190.426 / 275.892;
+          }
+          /* the board is a landscape artboard — fill the (widened) board slide. */
+          .name-preview-fig[data-npview='board'] .np-instant {
+            max-width: 100%;
+            aspect-ratio: 842.25 / 595.5;
+          }
+          .npi-art {
+            position: absolute;
+            inset: 0;
+          }
+          .npi-art svg {
+            display: block;
+            width: 100%;
+            height: 100%;
+          }
+          /* the typed name overlaid on the instant card. Positioned in the card's
+             title band; dark ink with a white halo so it reads on any artwork.
+             Font-size is auto-fit in JS (fitNameFontPx) so long names shrink. */
+          .npi-name {
+            position: absolute;
+            left: 7%;
+            right: 7%;
+            top: 6%;
+            height: 17%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-family: var(--display);
+            font-weight: 800;
+            line-height: 1.05;
+            color: #1c1c1c;
+            text-shadow:
+              0 0 3px #fff,
+              0 1px 2px #fff,
+              0 0 7px rgba(255, 255, 255, 0.75);
+            white-space: nowrap;
+            overflow: hidden;
+            pointer-events: none;
+          }
+          /* the back prints the name centered on the card, not in a top band. */
+          .name-preview-fig[data-npview='back'] .npi-name {
+            top: 42%;
+            height: 16%;
+          }
+          /* "refining…" indicator over the card while the exact render is in flight:
+             a subtle accent bar sweeping across the top of the card. */
+          .np-refining {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            max-width: 400px;
+            pointer-events: none;
+          }
+          .np-refining[hidden] {
+            display: none;
+          }
+          .npr-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            border-radius: var(--radius) var(--radius) 0 0;
+            background: linear-gradient(90deg, transparent, var(--accent, #e85a97), transparent);
+            background-size: 42% 100%;
+            background-repeat: no-repeat;
+            animation: nprSlide 1.1s ease-in-out infinite;
+          }
+          @keyframes nprSlide {
+            0% {
+              background-position: -42% 0;
+            }
+            100% {
+              background-position: 142% 0;
+            }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .npr-bar {
+              animation: none;
+              background: var(--accent, #e85a97);
+              opacity: 0.55;
+            }
           }
           /* the dots row: one dot per present view, doubling as a desktop control.
              The filmstrip above is direction:ltr (card→back→board left-to-right),
@@ -2839,6 +3005,12 @@
       import { track } from './js/analytics.js';
       import { initCarousel } from './js/carousel.js';
       import { fetchPricing } from './js/pricing.js';
+      import {
+        CARD_CELL,
+        cropSvgToCell,
+        fluidSvg,
+        fitNameFontPx,
+      } from './js/name-preview-instant.js';
 
       // Owner-controlled buyer-wizard feature flags. Fetched once, BEFORE the
       // wizard builds its steps/nav, so a gated-off feature is never painted and
@@ -3681,6 +3853,21 @@
       const npfNote = document.getElementById('npfNote');
       const npfRetry = document.getElementById('npfRetry');
       const fontOpts = document.getElementById('fontOpts');
+      const namePreviewRefining = document.getElementById('namePreviewRefining');
+
+      // Per-view handles for the instant/exact swap. The instant layer holds the
+      // recolored artwork (.npi-art) + the name overlay (.npi-name); the img holds
+      // the exact server PNG. showInstant/showServer toggle which is on screen.
+      const npImg = {
+        card: namePreviewCard,
+        back: namePreviewBack,
+        board: namePreviewBoard,
+      };
+      const npInstant = {
+        card: document.querySelector('[data-np-instant="card"]'),
+        back: document.querySelector('[data-np-instant="back"]'),
+        board: document.querySelector('[data-np-instant="board"]'),
+      };
 
       /* ---- optional custom title (F7) --------------------------------------
          A free-form title the buyer can type to OVERRIDE the design's own title
@@ -3731,7 +3918,17 @@
       // "מקורי" chip's sample in the authentic look when the CSS is known.
       let themeWordFont = null;
       let fontPickerBuilt = false;
-      let previewEpoch = 0; // guards against out-of-order preview responses
+      // ONE monotonic sequence for the whole preview subsystem, bumped on EVERY
+      // change to the previewed inputs (each keystroke / param change via
+      // requestPreview). BOTH the instant draw and the debounced server render
+      // capture it at start and refuse to mutate the DOM once it is stale — so a
+      // superseded in-flight server render can never swap its old-name PNG over a
+      // newer instant draw, and a slow instant draw can't clobber the current card.
+      let previewSeq = 0;
+      // Per-view: the seq whose EXACT server PNG has already swapped into that view.
+      // A late instant draw for the same seq must not re-hide an exact PNG that is
+      // already showing (server won the race), so it checks this first.
+      const serverShown = { card: -1, back: -1, board: -1 };
       let previewTimer = null; // debounce handle
 
       // Best-effort CSS family per word-font file so each chip PREVIEWS the look.
@@ -3832,6 +4029,10 @@
       let previewShown = false;
       let previewFallbackFired = false;
       let previewFallbackTimer = null;
+      // An INSTANT in-browser card approximation is currently on screen. It renders
+      // with zero network latency, so it (not the slow server render) is what opens
+      // the create gate — a valid name is never left waiting on /api/preview.
+      let instantShown = false;
       // Arm the 20s backstop when a preview is triggered (attempt 0). No-op once
       // the preview has already shown or the backstop already fired.
       function armPreviewFallback() {
@@ -3859,9 +4060,11 @@
         previewFallbackFired = false;
         clearTimeout(previewFallbackTimer);
       }
-      // Whether the button may enable on the preview step.
+      // Whether the button may enable on the preview step. The INSTANT draw opens
+      // it immediately (no server round-trip); previewShown/backstop are the
+      // fallbacks for when even the instant art is unavailable.
       function previewGateOpen() {
-        return previewShown || previewFallbackFired;
+        return instantShown || previewShown || previewFallbackFired;
       }
 
       // A preview can be requested only on the name step, for a resolved theme,
@@ -3877,19 +4080,209 @@
         );
       }
 
-      // `attempt` drives a one-shot auto-retry: attempt 0 is the first try (shows
-      // the loader), attempt 1 is the single automatic retry fired ~0.9s after a
-      // transient failure. If the retry also fails we settle on the friendly
-      // fallback with a manual "נסו שוב" — never a blank / stuck "טוען…".
-      async function doPreview(attempt = 0) {
+      /* ============ INSTANT client-side card draw ============================
+         The name preview no longer waits on the (slow, occasionally failing)
+         server render before showing anything. We draw a plausible card in the
+         browser from artwork the client already has — the per-design product SVG,
+         cropped to the single sample card and recoloured with the live palette —
+         and overlay the typed name. It shows with ZERO network latency, opens the
+         create gate immediately, and NEVER spins: if the artwork can't be drawn we
+         fall back to the neutral CSS placeholder. The exact server PNG then swaps
+         in on top when POST /api/preview eventually returns (see doPreview). */
+
+      function showRefining() {
+        if (namePreviewRefining) namePreviewRefining.hidden = false;
+      }
+      function hideRefining() {
+        if (namePreviewRefining) namePreviewRefining.hidden = true;
+      }
+
+      // Reveal the instant approximation for a view (and hide its server img so a
+      // stale PNG can't linger over the fresh art) — UNLESS the exact server PNG for
+      // this same seq has already swapped in (serverShown), in which case the server
+      // won the race and we must NOT override it with the approximation. Also fits
+      // the overlaid name now that the layer is measurable.
+      function showInstantView(view, seq) {
+        if (seq !== previewSeq) return; // superseded
+        if (serverShown[view] === seq) return; // exact PNG already showing this name
+        const inst = npInstant[view];
+        const img = npImg[view];
+        if (inst) {
+          inst.hidden = false;
+          fitInstantName(inst);
+        }
+        if (img) img.hidden = true;
+      }
+      function hideInstantView(view) {
+        const inst = npInstant[view];
+        if (inst) inst.hidden = true;
+      }
+
+      // Auto-fit the overlaid name to the (now-visible) instant layer's width.
+      function fitInstantName(el) {
+        const nameEl = el.querySelector('.npi-name');
+        if (!nameEl) return;
+        const name = nameEl.textContent || '';
+        const boxW = nameEl.clientWidth || (el.clientWidth || 340) * 0.86;
+        nameEl.style.fontSize = fitNameFontPx(name, boxW) + 'px';
+      }
+
+      // Swap the EXACT server render into a view, replacing the instant approx, and
+      // record that the server has shown this view for `seq`. When the server render
+      // LACKS a view (null src — e.g. a partial render), KEEP whatever the instant
+      // draw produced for it: never blank a view the browser already drew.
+      function swapServerView(view, src, seq) {
+        const img = npImg[view];
+        const inst = npInstant[view];
+        if (!img) return;
+        if (src) {
+          img.src = src;
+          img.hidden = false;
+          if (inst) inst.hidden = true;
+          serverShown[view] = seq;
+        } else {
+          // Drop only the (stale) server img; leave the instant approximation as-is.
+          img.hidden = true;
+          img.removeAttribute('src');
+        }
+      }
+
+      // The graceful CSS fallback card (name in a script font) — used only when the
+      // instant art itself is unavailable AND the server render can't fill in.
+      function showClientFallback(name, retrying) {
+        namePreviewEmpty.hidden = true;
+        namePreviewWarn.hidden = true;
+        namePreviewImgs.hidden = true;
+        namePreviewDots.hidden = true;
+        npfName.textContent = name;
+        npfNote.textContent = retrying
+          ? 'לא הצלחנו לטעון תצוגה — מנסים שוב…'
+          : 'לא הצלחנו לטעון תצוגה מקדימה כרגע';
+        npfRetry.hidden = !!retrying;
+        namePreviewFallback.hidden = false;
+      }
+
+      // Inline ONE view's instant approximation (art + name TEXT), but do NOT show
+      // it — showInstantView reveals it (guarding the server-race). Returns
+      // 'ok' | 'fail' | 'stale' | 'skip'. The (heavy) product SVG is re-inlined only
+      // when the design/view signature changes; a keystroke that only changes the
+      // name just updates the overlay text.
+      //
+      // Colours: the instant draw uses the design's ORIGINAL palette (applyOriginal)
+      // — NOT the buyer's picked colour — because the server preview render is
+      // colour-agnostic (/api/preview receives no colour and renders the theme's
+      // original colours). Recolouring the approximation would make the picked
+      // colour visibly VANISH on swap; keeping both original makes them consistent.
+      async function drawInstantView(seq, view, { path, crop }) {
+        const el = npInstant[view];
+        if (!el) return 'skip';
+        if (!path) return 'skip';
+        const art = el.querySelector('.npi-art');
+        const nameEl = el.querySelector('.npi-name');
+        const d = DESIGNS[designIndex];
+        const anchors = d.anchors || [];
+        const sig = d.id + '|' + view;
+
+        if (art.dataset.sig !== sig) {
+          let raw;
+          try {
+            raw = await loadSvg(path);
+          } catch {
+            return 'fail';
+          }
+          if (seq !== previewSeq) return 'stale';
+          let svg = crop ? cropSvgToCell(raw, CARD_CELL) : fluidSvg(raw);
+          if (!svg) return 'fail';
+          // Recolour tokens (var(--cN)) resolve from the --cN vars we set on `el`,
+          // exactly like the step-1/2 preview panels — so a fill-property fallback
+          // paints the background even on engines that ignore var() in attributes.
+          if (anchors.length) svg = paintSvg(svg, anchors);
+          art.innerHTML = svg;
+          art.dataset.sig = sig;
+          if (anchors.length) applyOriginal(el, anchors);
+        }
+
+        // Set the overlay name TEXT (card + back carry a .npi-name; the board shows
+        // artwork only). The font-size fit happens in showInstantView, once the
+        // layer is actually visible and measurable.
+        if (nameEl) nameEl.textContent = honoreeNameValue();
+        return 'ok';
+      }
+
+      // Draw the whole instant preview (card + best-effort back/board). The CARD is
+      // required: if its artwork can't render we return 'fail' so the caller shows
+      // the CSS fallback. Returns 'ok' | 'fail' | 'stale'.
+      async function drawInstantPreview(seq) {
+        const d = DESIGNS[designIndex];
+        if (!d || !d.products) return 'fail';
+        const cardRes = await drawInstantView(seq, 'card', {
+          path: d.products.front,
+          crop: true,
+        });
+        if (cardRes === 'stale') return 'stale';
+        if (cardRes !== 'ok') return 'fail';
+        showInstantView('card', seq);
+        const rest = [
+          { view: 'back', path: d.products.back, crop: true },
+          { view: 'board', path: d.products.board, crop: false },
+        ];
+        for (const s of rest) {
+          const res = await drawInstantView(seq, s.view, s);
+          if (seq !== previewSeq) return 'stale';
+          if (res === 'ok') showInstantView(s.view, seq);
+          else hideInstantView(s.view);
+        }
+        return 'ok';
+      }
+
+      // Fire an instant draw for `seq`. Runs on EVERY input (no debounce — it's
+      // local) and reconciles the create gate + carousel when it settles. The
+      // refining indicator shows for the duration so even the INITIAL (uncached,
+      // multi-MB SVG) draw never presents a blank box with no affordance.
+      async function kickInstant(seq) {
+        namePreview.hidden = false;
+        showRefining();
+        let res = 'fail';
+        try {
+          res = await drawInstantPreview(seq);
+        } catch {
+          res = 'fail';
+        }
+        if (seq !== previewSeq) return; // a newer draw superseded this one
+        if (res === 'stale') return;
+        if (res === 'ok') {
+          instantShown = true;
+          namePreviewFallback.hidden = true;
+          namePreviewImgs.hidden = false;
+          namePreviewEmpty.hidden = true;
+          syncNamePreviewCarousel();
+          markPreviewShown(); // the instant card is on screen → open the create gate
+        } else {
+          // Artwork unavailable → the neutral CSS card is our floor. Keep the gate
+          // closed; the server render (or the 20s backstop) opens it.
+          instantShown = false;
+          showClientFallback(honoreeNameValue(), true);
+          armPreviewFallback();
+        }
+        refreshControls();
+      }
+
+      // Fetch the EXACT server render in the background and swap it in over the
+      // instant approximation when it arrives. `attempt` drives a one-shot auto-
+      // retry (attempt 1, ~0.9s after a transient failure). A failed/slow/429
+      // render is INVISIBLE to the buyer: as long as the instant draw is on screen
+      // we simply keep it (no error UI) — the whole point of the instant approach.
+      // Only when even the instant art is unavailable do we surface the graceful
+      // CSS fallback + manual retry.
+      async function doPreview(attempt = 0, seq = previewSeq) {
         const theme = currentTheme();
         const name = honoreeNameValue();
-        const epoch = ++previewEpoch;
         namePreview.hidden = false;
         if (attempt === 0) {
-          namePreviewFallback.hidden = true;
-          namePreviewEmpty.hidden = false;
-          // A preview was triggered — start the 20s backstop for the create gate.
+          // The instant draw is already on screen — keep the "refining…" indicator
+          // over it while the exact render is in flight. Arm the 20s backstop only
+          // for the edge case where there's no instant art (it no-ops otherwise).
+          showRefining();
           armPreviewFallback();
         }
         try {
@@ -3910,30 +4303,18 @@
             }),
           });
           const data = await r.json();
-          if (epoch !== previewEpoch) return; // a newer request superseded this one
+          if (seq !== previewSeq) return; // a newer name/param superseded this one
           if (!r.ok) throw new Error(data.error || 'failed');
           if (data.theme_word_font) themeWordFont = data.theme_word_font;
           buildFontPicker(data.word_font_options);
           markActiveFont();
-          // Real preview arrived — hide any prior fallback, show the images.
+          // Exact render arrived — hide any fallback, show the images, and swap the
+          // precise PNGs in over the instant approximation per view.
           namePreviewFallback.hidden = true;
           namePreviewImgs.hidden = false;
-          if (data.card) namePreviewCard.src = data.card;
-          // the design's real card back (best-effort server-side): show it between
-          // the card and the board when present, hide it otherwise.
-          if (data.back) {
-            namePreviewBack.src = data.back;
-            namePreviewBack.hidden = false;
-          } else {
-            namePreviewBack.hidden = true;
-            namePreviewBack.removeAttribute('src');
-          }
-          if (data.board) {
-            namePreviewBoard.src = data.board;
-            namePreviewBoard.hidden = false;
-          } else {
-            namePreviewBoard.hidden = true;
-          }
+          swapServerView('card', data.card, seq);
+          swapServerView('back', data.back, seq);
+          swapServerView('board', data.board, seq);
           if (data.warning) {
             namePreviewWarn.textContent = data.warning;
             namePreviewWarn.hidden = false;
@@ -3941,64 +4322,82 @@
             namePreviewWarn.hidden = true;
           }
           namePreviewEmpty.hidden = true;
+          hideRefining();
+          // the exact card is now authoritative (its instant layer is hidden)
+          instantShown = false;
           // rebuild the swipe/dots for the views that actually rendered
           syncNamePreviewCarousel();
-          // the preview rendered on screen → unlock the create-button gate
+          // the preview rendered on screen → keep the create-button gate open
           markPreviewShown();
         } catch (e) {
-          if (epoch !== previewEpoch) return;
-          // Server preview unavailable (network drop or non-OK response) — never
-          // leave a blank area. Show a neutral card-shaped placeholder with the
-          // name in a handwriting font, and a small note.
-          namePreviewEmpty.hidden = true;
-          namePreviewWarn.hidden = true;
-          namePreviewImgs.hidden = true;
-          namePreviewDots.hidden = true;
-          npfName.textContent = name;
+          if (seq !== previewSeq) return;
           if (attempt === 0) {
-            // one automatic retry — self-heals transient hiccups
-            npfNote.textContent = 'לא הצלחנו לטעון תצוגה — מנסים שוב…';
-            npfRetry.hidden = true;
-            namePreviewFallback.hidden = false;
+            // One automatic BACKGROUND retry — self-heals a transient hiccup. The
+            // instant approximation (and the refining bar) stay on screen; with no
+            // instant art, surface the graceful fallback meanwhile.
+            if (!instantShown) showClientFallback(name, true);
             setTimeout(() => {
-              if (epoch === previewEpoch) doPreview(1);
+              if (seq === previewSeq) doPreview(1, seq);
             }, 900);
             return;
           }
-          // retry also failed — settle with a manual retry button
-          npfNote.textContent = 'לא הצלחנו לטעון תצוגה מקדימה כרגע';
-          npfRetry.hidden = false;
-          namePreviewFallback.hidden = false;
-          // the preview settled on its graceful fallback (shown on screen) → unlock
-          // the create-button gate so a valid client isn't stuck behind a failure.
+          // Retry also failed.
+          hideRefining();
+          if (instantShown) {
+            // Keep the instant draw exactly as-is — the failure is invisible.
+            markPreviewShown();
+            return;
+          }
+          // No instant art either → settle on the graceful CSS fallback + retry.
+          showClientFallback(name, false);
           markPreviewShown();
         }
       }
 
-      // Debounced by default (collapses typing bursts); { immediate:true } skips
-      // the debounce for deliberate actions (font pick, entering the step).
+      // The INSTANT client draw fires on every input (it's local — no debounce);
+      // the EXACT server render is debounced ({ immediate:true } skips it for
+      // deliberate actions like a font pick or entering the step).
       function requestPreview(opts = {}) {
         // Owner flag: when the live name preview isn't shipped, no-op entirely —
         // keep #namePreview hidden and never POST /api/preview. The create gate in
         // refreshControls() drops its preview requirement in the same off state.
         if (!FEATURES.name_preview) {
           namePreview.hidden = true;
+          instantShown = false;
+          previewSeq++; // reject any in-flight render for the previous inputs
           refreshControls();
           return;
         }
-        // The inputs changed → the preview on screen is now stale; re-close the
-        // gate so the create button waits for the fresh preview (or the backstop).
-        resetPreviewGate();
         if (!previewReady()) {
+          // Nothing renderable (invalid/empty name, wrong step) → hide the preview
+          // and fully re-gate; validateStep also blocks Next on its own.
           namePreview.hidden = true;
+          instantShown = false;
+          resetPreviewGate();
+          previewSeq++; // reject any in-flight render for the previous inputs
           refreshControls();
           return;
         }
+        // The previewed inputs changed → a NEW sequence. Everything below (the
+        // instant draw + the server render + all their DOM writes) is tagged with
+        // this seq; any earlier seq's in-flight work becomes inert.
+        const seq = ++previewSeq;
+        // Re-gate for the CURRENT name only: clear the previous name's open latch so
+        // previewGateOpen() reflects THIS name — it re-opens when this name's instant
+        // draw succeeds (or the backstop fires), never by inheriting the old state.
+        instantShown = false;
+        resetPreviewGate();
+        serverShown.card = serverShown.back = serverShown.board = -1;
+        // INSTANT: draw the in-browser approximation NOW. It opens the create gate
+        // as soon as it lands, without waiting on the network — a valid name is
+        // never stuck on the slow/failing server render.
+        kickInstant(seq);
+        // EXACT: fetch the real render (debounced) to swap in when it lands.
         clearTimeout(previewTimer);
         if (opts.immediate) {
-          doPreview();
+          doPreview(0, seq);
         } else {
-          previewTimer = setTimeout(doPreview, 450);
+          previewTimer = setTimeout(() => doPreview(0, seq), 450);
         }
         refreshControls();
       }
@@ -4019,11 +4418,21 @@
       let npViews = []; // present view ids in track order, e.g. ['card','board']
       let npIndex = 0;
 
-      // Which views actually rendered — same rule (and order) the zoom overlay uses.
+      // Which views are on screen (card→back→board order) — a view counts when
+      // EITHER its instant approximation OR its exact server img is showing, so the
+      // carousel presents back/board from the moment the instant draw lands (not
+      // only after the server responds).
+      function viewOnScreen(view) {
+        const img = npImg[view];
+        const inst = npInstant[view];
+        const imgOn = img && !img.hidden && !!img.getAttribute('src');
+        const instOn = inst && !inst.hidden;
+        return !!(imgOn || instOn);
+      }
       function namePreviewPresentViews() {
         return previewViewList({
-          hasBack: !namePreviewBack.hidden && !!namePreviewBack.getAttribute('src'),
-          hasBoard: !namePreviewBoard.hidden && !!namePreviewBoard.getAttribute('src'),
+          hasBack: viewOnScreen('back'),
+          hasBoard: viewOnScreen('board'),
         });
       }
 
