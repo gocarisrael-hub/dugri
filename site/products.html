@@ -505,7 +505,7 @@
          image and links to the design's detail page (product.html?design=<id>),
          which hosts the multi-photo gallery. -->
     <script type="module">
-      import { PUBLIC_DESIGNS as DESIGNS } from './js/designs.js';
+      import { PUBLIC_DESIGNS as DESIGNS, fetchDesignNames } from './js/designs.js';
 
       const PRICE = 79;
       const WAS = 129;
@@ -570,6 +570,43 @@
         }
         if (!frag.childNodes.length) throw new Error('no cards rendered');
         grid.replaceChildren(frag);
+
+        // Overlay the owner-editable name onto each card, using the SAME precedence
+        // as the product detail page so a design's name is consistent across grid
+        // and detail: an inline content-edit override (product-<id>-name, saved on
+        // the product.html page) WINS over the admin template rename
+        // (/api/design-names → themes.json display_he), which in turn wins over the
+        // built-in catalog name. The grid already shows the built-in names, so this
+        // only ever upgrades them; every fetch is fail-soft (grid stands on error).
+        const contentNameOverride = (overrides, id) => {
+          // Mirror product.js overrideText: a saved { text } wins (even ''), else null.
+          const e = overrides && overrides['product-' + id + '-name'];
+          return e && typeof e.text === 'string' ? e.text : null;
+        };
+        const loadContentNames = fetch('/api/content?page=product.html')
+          .then((r) => (r.ok ? r.json() : { overrides: {} }))
+          .then((data) => (data && data.overrides) || {})
+          .catch(() => ({}));
+        Promise.all([fetchDesignNames(), loadContentNames])
+          .then(([names, contentOv]) => {
+            for (const article of grid.querySelectorAll('[data-design-id]')) {
+              const id = article.getAttribute('data-design-id');
+              const content = contentNameOverride(contentOv, id);
+              const eff = content != null ? content : names[id] != null ? names[id] : null;
+              if (eff == null) continue; // no override — keep the built-in name
+              const nameEl = article.querySelector('.product-name');
+              if (nameEl) nameEl.textContent = eff;
+              // Only push a NON-empty name into a11y attributes (a blanked override
+              // mirrors the detail page's visible title but must not empty alt/label).
+              if (eff) {
+                const link = article.querySelector('.product-card__link');
+                if (link) link.setAttribute('aria-label', eff);
+                const img = article.querySelector('[data-testid="product-image"]');
+                if (img) img.alt = eff;
+              }
+            }
+          })
+          .catch(() => {});
       } catch (err) {
         // Graceful degradation: never leave a blank page — offer the wizard.
         grid.innerHTML =

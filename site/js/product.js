@@ -20,7 +20,7 @@
 // public design and never throws. Private designs aren't in PUBLIC_DESIGNS so
 // they can't be deep-linked here.
 
-import { PUBLIC_DESIGNS } from './designs.js';
+import { PUBLIC_DESIGNS, fetchDesignNames } from './designs.js';
 import { initCarousel } from './carousel.js';
 
 const PRICE = 79;
@@ -318,6 +318,7 @@ function renderRelated(current) {
     const card = el('a', 'pdp-rel-card', {
       href: `product.html?design=${encodeURIComponent(d.id)}`,
       'data-label': d.name,
+      'data-design-id': d.id,
     });
     if (d.id === current.id) card.setAttribute('aria-current', 'true');
 
@@ -380,6 +381,40 @@ function applyTextOverrides(d, overrides) {
   if (about && aboutOv != null) about.textContent = aboutOv;
 }
 
+// Overlay the owner-editable display names (GET /api/design-names — an admin
+// template rename → themes.json display_he) as the BASE name layer: the main
+// title, the browser tab, and every related-rail card. Runs INDEPENDENTLY of the
+// content-override fetch (so a slow /api/design-names never delays content
+// overrides / the editor), yet the per-design inline content override
+// (product-<id>-name) still WINS: the main title is only set here when NO content
+// name override is currently applied, and applyTextOverrides (content) overrides
+// this base whenever it runs with an override present — so the outcome is the same
+// regardless of which fetch resolves first. Fail-soft: an empty map leaves every
+// built-in catalog name untouched.
+function applyDesignNames(d, names) {
+  const map = names || {};
+  const main = map[d.id];
+  // Respect an already-applied inline content name override (it wins over the
+  // admin rename); currentOverrides is {} until /api/content resolves, so when
+  // this runs first the title takes the rename and applyTextOverrides later
+  // re-asserts the content override on top.
+  const contentName = overrideText(currentOverrides, overrideKeys(d.id).name);
+  if (main && contentName == null) {
+    const title = document.getElementById('pdpTitle');
+    if (title) title.textContent = main;
+    document.title = `${main} · דוגרי`;
+  }
+  // Related rail: upgrade each card's visible name AND its data-label (the hover
+  // caption) so they stay consistent; built-in stands for any id the map omits.
+  for (const card of document.querySelectorAll('.pdp-rel-card[data-design-id]')) {
+    const nm = map[card.getAttribute('data-design-id')];
+    if (!nm) continue;
+    card.setAttribute('data-label', nm);
+    const nameEl = card.querySelector('.pdp-rel-name');
+    if (nameEl) nameEl.textContent = nm;
+  }
+}
+
 // Overlay the per-design overrides once they resolve: swap in saved name/about
 // text and, if the owner curated custom photos, rebuild the carousels. Then hand
 // off to the editor so edit mode binds the freshly-injected nodes. Runs even with
@@ -431,9 +466,15 @@ function boot() {
   markPhotosEditable(d);
   document.addEventListener('dugri:photos-changed', onPhotosChanged);
 
-  // THEN overlay the per-design overrides when they resolve (reusing the editor's
-  // fetch). Fail-soft: loadOverrides never rejects.
+  // THEN overlay the per-design content overrides + the owner-editable names as
+  // TWO INDEPENDENT, fail-soft fetches — never chained. The content-override path
+  // (name/about text, curated photos, and the editor binding via notifyInjected)
+  // applies the instant /api/content resolves, exactly as before this feature, so
+  // a slow/down /api/design-names can NEVER delay it. The design-name overlay
+  // applies whenever fetchDesignNames resolves (capped ~2.5s, {} on timeout/error);
+  // it defers to a content name override so precedence holds either resolve order.
   loadOverrides().then((ov) => applyOverridesToPage(d, ov));
+  fetchDesignNames().then((names) => applyDesignNames(d, names));
 }
 
 // Auto-boot only on the real page (a #galleryTrack exists). A bare test import of
