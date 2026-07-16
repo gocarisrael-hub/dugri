@@ -106,10 +106,15 @@ function defaultShots(d, designImages) {
   const KIND = { front: 'קלף', back: 'גב הקלף', board: 'לוח המשחק' };
   const shots = ['front', 'back', 'board']
     .filter((k) => thumbs[k])
-    .map((k) => ({
-      src: overrideFor(designImages, d.id, k) || `assets/designs/${d.id}/gallery-${k}.webp`,
-      label: `${d.name} · ${KIND[k]}`,
-    }));
+    .map((k) => {
+      const staticSrc = `assets/designs/${d.id}/gallery-${k}.webp`;
+      const override = overrideFor(designImages, d.id, k);
+      // When an override is used, carry the shipped static render as `fallback` so a
+      // missing/broken override file degrades to it (fillTrack wires the onerror).
+      return override
+        ? { src: override, label: `${d.name} · ${KIND[k]}`, fallback: staticSrc }
+        : { src: staticSrc, label: `${d.name} · ${KIND[k]}` };
+    });
   // Never render an empty gallery: fall back to the single picker thumb.
   if (!shots.length && d.thumb) shots.push({ src: d.thumb, label: d.name });
   return shots;
@@ -158,6 +163,19 @@ function fillTrack(trackId, slideClass, shots) {
       loading: 'lazy',
       decoding: 'async',
     });
+    // A shot sourced from an owner OVERRIDE carries the shipped static render as
+    // `fallback`. If the override file is missing/broken, swap to the static asset
+    // once (so a broken upload never shows a broken slide). Guarded by `once` so a
+    // failing fallback can't loop.
+    if (shot.fallback && shot.fallback !== shot.src) {
+      img.addEventListener(
+        'error',
+        () => {
+          img.src = shot.fallback;
+        },
+        { once: true }
+      );
+    }
     slide.appendChild(img);
     track.appendChild(slide);
   }

@@ -116,6 +116,24 @@ describe('design-images store', () => {
     expect(store.reset('Bad Id', 'store')).toBe(false);
   });
 
+  it('isImageReferenced finds a path in ANY design/slot (orphan-reclaim guard)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    store.set('posttrip', 'board', P1);
+    store.set('birthday', 'store', P1); // same file, another slot (shared/content-addressed)
+    store.set('neon', 'front', P2);
+    expect(store.isImageReferenced(P1)).toBe(true);
+    expect(store.isImageReferenced(P2)).toBe(true);
+    expect(store.isImageReferenced('/content-uploads/cccccccccccccccc.jpg')).toBe(false);
+    expect(store.isImageReferenced('')).toBe(false);
+    // Reset ONE of the two slots that share P1 → still referenced by the other.
+    store.reset('posttrip', 'board');
+    expect(store.isImageReferenced(P1)).toBe(true);
+    store.reset('birthday', 'store');
+    expect(store.isImageReferenced(P1)).toBe(false); // last reference gone → reclaimable
+  });
+
   it('persists overrides atomically and reloads them from disk (round-trip)', async () => {
     const dir = freshTmpDir();
     dirs.push(dir);

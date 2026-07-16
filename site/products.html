@@ -619,7 +619,19 @@
             for (const img of grid.querySelectorAll('[data-testid="product-image"]')) {
               const id = img.closest('[data-design-id]')?.getAttribute('data-design-id');
               const override = overrideFor(map, id, 'store');
-              if (override) img.src = override;
+              if (!override) continue;
+              // If the override file is missing/broken, degrade to the shipped
+              // static store.webp (captured in data-store-default). `once` guards
+              // against a loop if the static asset itself somehow fails.
+              img.addEventListener(
+                'error',
+                () => {
+                  const fallback = img.getAttribute('data-store-default');
+                  if (fallback && img.src !== fallback) img.src = fallback;
+                },
+                { once: true }
+              );
+              img.src = override;
             }
           })
           .catch(() => {

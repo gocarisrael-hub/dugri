@@ -19,10 +19,13 @@ const serverDir = path.join(__dirname, '..', '..', 'server');
 const ADMIN_KEY = 'test-admin-key';
 
 // Minimal valid PNG header + a distinguishing tail (magic-byte sniffed as .png).
+// Padded so even a short tag clears content.extFromMagic's 12-byte minimum; the
+// tag still makes the bytes (and thus the content-hash) unique.
 function pngWith(tag) {
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     Buffer.from(String(tag)),
+    Buffer.alloc(8),
   ]);
 }
 
@@ -55,7 +58,12 @@ function buildMultipart(boundary, parts) {
 }
 
 describe('per-design image override routes', () => {
-  let app, server, base, dataDir;
+  let app, server, base, dataDir, content, designImages;
+
+  // The on-disk file for a "/content-uploads/<name>" path.
+  function uploadFile(p) {
+    return path.join(dataDir, 'content-uploads', String(p).split('/').pop());
+  }
 
   beforeAll(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-dimg-route-'));
@@ -72,6 +80,10 @@ describe('per-design image override routes', () => {
       const p = require.resolve(path.join(serverDir, f));
       if (require.cache[p]) delete require.cache[p];
     }
+    // Require content + design-images FIRST so index.js resolves the SAME singletons
+    // we inspect here (cross-store reclaim test manipulates the content store).
+    content = require(path.join(serverDir, 'content.js'));
+    designImages = require(path.join(serverDir, 'design-images.js'));
     app = require(path.join(serverDir, 'index.js'));
     await new Promise((resolve) => {
       server = app.listen(0, () => {
@@ -163,5 +175,68 @@ describe('per-design image override routes', () => {
 
     ({ json } = await getImages());
     expect(json.images.neon).toBeUndefined(); // pruned back to nothing → static asset
+  });
+
+  async function resetSlot(designId, slot) {
+    return fetch(base + '/api/admin/design-images?key=' + ADMIN_KEY, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ designId, slot }),
+    });
+  }
+
+  it('replacing an override reclaims the displaced (now-orphan) upload file', async () => {
+    const first = await uploadImage({ designId: 'japanese', slot: 'board', bytes: pngWith('jb1') });
+    const oldPath = first.json.img;
+    expect(fs.existsSync(uploadFile(oldPath))).toBe(true);
+
+    // A DIFFERENT picture for the same slot displaces the old one.
+    const second = await uploadImage({
+      designId: 'japanese',
+      slot: 'board',
+      bytes: pngWith('jb2'),
+    });
+    const newPath = second.json.img;
+    expect(newPath).not.toBe(oldPath);
+    // The old file is gone (reclaimed); the new one is on disk.
+    expect(fs.existsSync(uploadFile(oldPath))).toBe(false);
+    expect(fs.existsSync(uploadFile(newPath))).toBe(true);
+  });
+
+  it('reset reclaims the cleared upload file', async () => {
+    const up = await uploadImage({ designId: 'marriage', slot: 'front', bytes: pngWith('mf1') });
+    const p = up.json.img;
+    expect(fs.existsSync(uploadFile(p))).toBe(true);
+    const r = await resetSlot('marriage', 'front');
+    expect(r.status).toBe(200);
+    expect(fs.existsSync(uploadFile(p))).toBe(false); // reclaimed
+  });
+
+  it('does NOT reclaim a file still referenced by ANOTHER design/slot (shared, content-addressed)', async () => {
+    // Same bytes → same content-hash path in two slots. Replacing one must keep the file.
+    const shared = pngWith('shared-bytes');
+    const a = await uploadImage({ designId: 'birthday', slot: 'front', bytes: shared });
+    const b = await uploadImage({ designId: 'birthday', slot: 'back', bytes: shared });
+    const sharedPath = a.json.img;
+    expect(b.json.img).toBe(sharedPath); // content-addressed dedupe
+
+    // Replace the `front` slot with a new picture → its old path (sharedPath) is
+    // STILL used by `back`, so the file must survive.
+    await uploadImage({ designId: 'birthday', slot: 'front', bytes: pngWith('new-front') });
+    expect(designImages.isImageReferenced(sharedPath)).toBe(true);
+    expect(fs.existsSync(uploadFile(sharedPath))).toBe(true);
+  });
+
+  it('does NOT reclaim a file still referenced by the CONTENT store (cross-store share)', async () => {
+    const up = await uploadImage({ designId: 'posttrip', slot: 'store', bytes: pngWith('cross') });
+    const p = up.json.img;
+    // The content-editor store also points at the SAME file (e.g. reused as a photo).
+    content.setImg('index.html', 'index-hero-1', p);
+    expect(content.isImageReferenced(p)).toBe(true);
+
+    // Reset the design-image slot → the file must NOT be deleted (content store needs it).
+    await resetSlot('posttrip', 'store');
+    expect(fs.existsSync(uploadFile(p))).toBe(true);
+    content.remove('index.html', 'index-hero-1'); // cleanup
   });
 });

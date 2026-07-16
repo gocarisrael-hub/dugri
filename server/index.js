@@ -1781,6 +1781,18 @@ app.get('/api/design-images', (req, res) => {
   res.json({ images: designImages.getAll() });
 });
 
+// Reclaim a NOW-ORPHANED content-upload file after a design-image override is
+// replaced/reset. Uploads are content-addressed and SHARED across both the
+// content-editor store and the design-images store, so only delete when NEITHER
+// store references the path any more. Best-effort (content.deleteUpload never
+// throws + re-validates the name shape). A no-op for a falsy/unchanged path.
+function reclaimDesignImageOrphan(oldPath, keepPath) {
+  const p = String(oldPath || '');
+  if (!p || p === keepPath) return;
+  if (content.isImageReferenced(p) || designImages.isImageReferenced(p)) return;
+  content.deleteUpload(p);
+}
+
 // Admin: upload + set the override for a design/slot. Multipart (fields
 // designId, slot + a file part), same parser + magic-byte typing as the content
 // image route. Auth runs BEFORE buffering up to several MB.
@@ -1812,8 +1824,12 @@ app.post(
     } catch (e) {
       return res.status(400).json({ error: String((e && e.message) || e) });
     }
+    // The path this slot pointed at BEFORE this write — reclaim it if the new
+    // upload displaces it and nothing else references it (no orphan file leak).
+    const prev = designImages.get(designId, slot);
     const bag = designImages.set(designId, slot, img);
     if (bag == null) return res.status(400).json({ error: 'bad design or slot' });
+    reclaimDesignImageOrphan(prev, img);
     res.json({ ok: true, img, images: bag });
   }
 );
@@ -1826,7 +1842,9 @@ app.delete('/api/admin/design-images', (req, res) => {
   if (!designImages.designOk(id) || !designImages.slotOk(slot)) {
     return res.status(400).json({ error: 'bad design or slot' });
   }
+  const prev = designImages.get(id, slot); // path being cleared → reclaim if orphaned
   designImages.reset(id, slot);
+  reclaimDesignImageOrphan(prev, null);
   res.json({ ok: true, images: designImages.getForDesign(id) });
 });
 

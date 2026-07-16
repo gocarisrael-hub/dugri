@@ -110,12 +110,30 @@ function reset(id, slot) {
   return true;
 }
 
+// Is `imgPath` referenced by ANY design/slot in THIS store? Uploads are
+// content-addressed and shared (a file can back a content-editor override AND a
+// design-image override, or several slots), so a caller reclaiming an orphan must
+// confirm nothing here still points at it — combined with content.isImageReferenced
+// on the other store. Own-property scan only.
+function isImageReferenced(imgPath) {
+  const target = String(imgPath || '');
+  if (!target) return false;
+  for (const id of Object.keys(_store)) {
+    const bag = _store[id] || {};
+    for (const slot of Object.keys(bag)) {
+      if (bag[slot] === target) return true;
+    }
+  }
+  return false;
+}
+
 module.exports = {
   getAll,
   getForDesign,
   get,
   set,
   reset,
+  isImageReferenced,
   designOk,
   slotOk,
   SLOTS,

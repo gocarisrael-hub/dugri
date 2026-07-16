@@ -25,6 +25,23 @@ describe('healMaskIds — repairs the id-overflow mask corruption', () => {
     expect(fixed).toContain('mask="url(#2175e85314)"');
   });
 
+  it('heals a collapsed mask def that carries TRAILING ATTRIBUTES after the id', () => {
+    // The detection regex tolerates attributes after id; the heal must too — a
+    // literal `<mask id="Infinity">` replace would silently no-op here and re-ship
+    // the black board.
+    const svg =
+      '<svg>' +
+      '<mask id="Infinity" maskUnits="userSpaceOnUse" x="0" y="0">' +
+      '<g><image href="x"/></g></mask>' +
+      '<g mask="url(#2175e85314)"><rect/></g>' +
+      '</svg>';
+    const { svg: fixed, healed } = healMaskIds(svg);
+    expect(healed).toEqual({ from: 'Infinity', to: '2175e85314' });
+    // The id is renamed AND the trailing attributes are preserved.
+    expect(fixed).toContain('<mask id="2175e85314" maskUnits="userSpaceOnUse" x="0" y="0">');
+    expect(fixed).not.toContain('id="Infinity"');
+  });
+
   it('is a no-op when there is no corruption (all mask refs resolve)', () => {
     const svg = '<svg><mask id="abc123"><g/></mask><g mask="url(#abc123)"><rect/></g></svg>';
     const { svg: out, healed } = healMaskIds(svg);

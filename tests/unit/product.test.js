@@ -107,6 +107,16 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     ]);
   });
 
+  it('an override shot carries the static render as `fallback` (broken-file degrade)', () => {
+    const map = { neon: { board: P1 } };
+    const shots = galleryShots(design, {}, map);
+    // The override slide points its onerror at the shipped static asset…
+    expect(shots[2]).toMatchObject({ src: P1, fallback: 'assets/designs/neon/gallery-board.webp' });
+    // …while a non-overridden slide has no fallback (it IS the static asset).
+    expect(shots[0].fallback).toBeUndefined();
+    expect(shots[1].fallback).toBeUndefined();
+  });
+
   it('ignores a malformed/off-origin override path and keeps the static asset', () => {
     const map = {
       neon: { front: 'https://evil.example/x.png', back: '/content-uploads/nope.gif' },

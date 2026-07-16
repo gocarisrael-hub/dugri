@@ -84,6 +84,9 @@ export function paintOriginal(svgText, anchors) {
 // reference and exactly one unreferenced mask def with an overflow id — rename
 // the def back to the dangling id. Anything ambiguous is left untouched.
 const OVERFLOW_IDS = new Set(['Infinity', '-Infinity', 'NaN']);
+function escapeRe(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 export function healMaskIds(svgText) {
   const defs = [...svgText.matchAll(/<mask id="([^"]+)"/g)].map((m) => m[1]);
   const refs = [...svgText.matchAll(/mask="url\(#([^)]+)\)"/g)].map((m) => m[1]);
@@ -94,10 +97,12 @@ export function healMaskIds(svgText) {
   if (dangling.length === 1 && orphanOverflow.length === 1) {
     const from = orphanOverflow[0];
     const to = dangling[0];
-    return {
-      svg: svgText.replace(`<mask id="${from}">`, `<mask id="${to}">`),
-      healed: { from, to },
-    };
+    // Replace ONLY the `<mask id="…"` prefix, keyed on the id via regex — never a
+    // literal `<mask id="…">`. The detection regex tolerates trailing attributes
+    // (`<mask id="Infinity" maskUnits="…">`); the heal must too, or it would detect
+    // but silently no-op on such a def and re-ship the black board.
+    const re = new RegExp('<mask id="' + escapeRe(from) + '"');
+    return { svg: svgText.replace(re, '<mask id="' + to + '"'), healed: { from, to } };
   }
   return { svg: svgText, healed: null };
 }
