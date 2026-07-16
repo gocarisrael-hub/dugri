@@ -88,7 +88,17 @@ test.describe('order wizard', () => {
     // The front preview's --c0 (or fill) changed from its initial value.
     await expect.poll(async () => readC0()).not.toBe(before);
 
-    // The board tab recolors too (the preview is live on the early steps).
+    // Selection + step are persisted to the URL (asserted on the colour step).
+    expect(page.url()).toContain('plan=base');
+    expect(page.url()).toContain('step=2');
+
+    // The board preview recolors too (the preview is live on the early steps).
+    // The face tabs are hidden ON the colour step (its swipe carousel replaces
+    // them — see options-color-step-tabs.spec.js), so step back to the design
+    // step where the tabs are shown and switch to the board face there; the
+    // picked colour persists across the nav.
+    await page.getByTestId('back-btn').click();
+    await expect(page.getByTestId('step-1')).toBeVisible();
     await page.getByTestId('tab-board').click();
     const boardPanel = page.getByTestId('preview-board');
     await expect(boardPanel).toHaveAttribute('data-active', 'true');
@@ -97,10 +107,6 @@ test.describe('order wizard', () => {
       .first()
       .evaluate((svg) => getComputedStyle(svg).getPropertyValue('--c0').trim());
     expect(boardC0.length).toBeGreaterThan(0);
-
-    // Selection + step are persisted to the URL.
-    expect(page.url()).toContain('plan=base');
-    expect(page.url()).toContain('step=2');
   });
 
   test('front and back previews paint their original background (never transparent/black)', async ({
