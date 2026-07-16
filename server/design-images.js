@@ -77,11 +77,20 @@ function getAll() {
   return _store;
 }
 
-// The slot→path overrides for one design (a fresh copy). Unknown/absent → {}.
+// The overrides for one design (a fresh, independent copy — callers can mutate it
+// without touching the store). Unknown/absent → {}. Array fields (the carousel)
+// are sliced too: a shallow spread would share the SAME array reference, so a
+// caller mutating the returned `.carousel` would silently mutate + persist the
+// store on the next save.
 function getForDesign(id) {
   const d = designOk(id);
   if (!d || !_store[d]) return {};
-  return { ..._store[d] };
+  const out = {};
+  for (const key of Object.keys(_store[d])) {
+    const v = _store[d][key];
+    out[key] = Array.isArray(v) ? v.slice() : v;
+  }
+  return out;
 }
 
 // The override path for design/slot, or null when none is set.
@@ -158,7 +167,12 @@ function getCarousel(id) {
 function addCarouselImage(id, imgPath) {
   const d = designOk(id);
   if (!d || !UPLOAD_PATH_RE.test(String(imgPath || ''))) return null;
-  const next = sanitizeCarousel(getCarousel(d).concat(String(imgPath)));
+  const cur = getCarousel(d);
+  const next = sanitizeCarousel(cur.concat(String(imgPath)));
+  // No-op append (a content-hash duplicate, or dropped because already at cap):
+  // the sanitized array is identical, so skip the JSON serialize + tmp-write +
+  // rename entirely and just return it — the route then reports a 409.
+  if (next.length === cur.length && next.every((p, i) => p === cur[i])) return next;
   const bag = _store[d] || (_store[d] = {});
   bag.carousel = next;
   save();

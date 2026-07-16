@@ -267,6 +267,36 @@ describe('design-images store — per-design carousel array', () => {
     expect(store.getCarousel('birthday')).toEqual([P1, P2]);
   });
 
+  it('getForDesign returns an INDEPENDENT carousel copy (mutating it cannot corrupt the store)', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    store.set('birthday', 'store', P1);
+    store.addCarouselImage('birthday', P2);
+    store.addCarouselImage('birthday', P3);
+    const got = store.getForDesign('birthday');
+    expect(got).toEqual({ store: P1, carousel: [P2, P3] });
+    // Mutating the returned object AND its nested carousel array must not leak back.
+    got.store = 'tampered';
+    got.carousel.push('tampered');
+    got.carousel.sort();
+    expect(store.getForDesign('birthday')).toEqual({ store: P1, carousel: [P2, P3] });
+    expect(store.getCarousel('birthday')).toEqual([P2, P3]);
+  });
+
+  it('a no-op append (duplicate) does NOT rewrite the store file', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    store.addCarouselImage('neon', P1);
+    const file = path.join(dir, 'design-images.json');
+    const mtime1 = fs.statSync(file).mtimeMs;
+    // A duplicate append returns the unchanged array WITHOUT touching disk.
+    expect(store.addCarouselImage('neon', P1)).toEqual([P1]);
+    const mtime2 = fs.statSync(file).mtimeMs;
+    expect(mtime2).toBe(mtime1); // no serialize/tmp-write/rename happened
+  });
+
   it('sanitizeCarousel keeps valid distinct paths, drops junk, caps length', async () => {
     const dir = freshTmpDir();
     dirs.push(dir);

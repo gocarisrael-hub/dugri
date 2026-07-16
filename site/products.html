@@ -591,6 +591,28 @@
       // ~0.8s (js/carousel.js FADE_MS), so this is the hold between fades.
       const TILE_CAROUSEL_INTERVAL = 2500;
 
+      // Only auto-advance tiles that are actually on screen. Each tile carousel is
+      // a forever setInterval + GPU opacity transitions; a grid of them running
+      // off-screen is pure wasted CPU/battery. One shared IntersectionObserver
+      // pauses a carousel when its tile scrolls out of view and resumes it when it
+      // returns (via the shared engine's pause()/play()). Degrades gracefully: with
+      // no IntersectionObserver the carousels just run as before.
+      const tileVisibility =
+        typeof IntersectionObserver === 'function'
+          ? new IntersectionObserver(
+              (entries) => {
+                for (const e of entries) {
+                  const api = e.target.__carousel;
+                  if (!api) continue;
+                  if (e.isIntersecting) api.play();
+                  else api.pause();
+                }
+              },
+              // A small margin so a tile resumes just before it scrolls into view.
+              { rootMargin: '150px 0px' }
+            )
+          : null;
+
       // Turn a tile's single store image into a fast, seamless, auto-advancing
       // carousel of [store image, ...owner-added pictures]. Reuses the site's
       // shared fade carousel (the same engine the homepage hero uses): it stacks
@@ -630,12 +652,19 @@
         // Keep the tile's single tab stop on the card link — don't let the carousel
         // engine add a focusable track inside the anchor.
         if (!media.hasAttribute('tabindex')) media.setAttribute('tabindex', '-1');
-        initCarousel(media, {
+        const api = initCarousel(media, {
           mode: 'fade',
           interval: TILE_CAROUSEL_INTERVAL,
           loop: true,
           dots: false,
         });
+        // Pause immediately and let the observer resume it only while on screen
+        // (the observer fires an initial callback for every observed target). With
+        // no IntersectionObserver, leave it playing as the engine started it.
+        if (tileVisibility) {
+          api.pause();
+          tileVisibility.observe(media);
+        }
       }
 
       try {
