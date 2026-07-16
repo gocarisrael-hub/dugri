@@ -140,4 +140,13 @@ test.describe('admin pricing editor', () => {
     await expect(page).toHaveURL(/admin-pricing\.html\?key=/);
     await expect(page.locator('#app')).toBeVisible();
   });
+
+  test('nav cross-links to the other owner-editable admin sections', async ({ page }) => {
+    // The pricing page must let the owner reach features + images from its own
+    // nav (admin-images was once missing here — regression guard).
+    await page.goto(`/admin-pricing.html?key=${KEY}`);
+    await expect(page.locator('#nav a.active[data-page="admin-pricing.html"]')).toHaveCount(1);
+    await expect(page.locator('#nav a[data-page="admin-features.html"]')).toHaveCount(1);
+    await expect(page.locator('#nav a[data-page="admin-images.html"]')).toHaveCount(1);
+  });
 });
