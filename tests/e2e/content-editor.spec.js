@@ -756,3 +756,55 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     expect(await page.evaluate(() => localStorage.getItem('dugri_admin_key'))).toBe('K1VALID');
   });
 });
+
+// Regression coverage for the site-wide editability pass (feat/site-editability):
+// prove a NEWLY-tagged key on a NON-index page (the order wizard, options.html)
+// behaves like the rest of the system — shipped default for a normal visitor, a
+// mocked override rendered for everyone, and an owner edit POSTed with that page/key.
+test.describe('newly-editable copy on options.html (order wizard)', () => {
+  test('a normal visitor sees the SHIPPED default when there is no override', async ({ page }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.goto('/options.html');
+    // Step 1 title is a newly-tagged, static (no-id) node → its shipped default renders.
+    await expect(page.locator('[data-edit="options-step1-title"]')).toHaveText('בחרו עיצוב');
+    await expect(page.locator('.dugri-editbar')).toHaveCount(0); // no owner affordance
+  });
+
+  test('a mocked override replaces the shipped wizard copy for every visitor', async ({ page }) => {
+    await page.route('**/api/content*', (route) =>
+      route.fulfill({ json: { overrides: { 'options-step1-title': { text: 'בחרו סגנון' } } } })
+    );
+    await page.goto('/options.html');
+    await expect(page.locator('[data-edit="options-step1-title"]')).toHaveText('בחרו סגנון');
+  });
+
+  test('in edit mode an owner edit POSTs the right options.html page/key/text', async ({
+    page,
+  }) => {
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    let resolveBody;
+    const bodyPromise = new Promise((resolve) => (resolveBody = resolve));
+    await page.route('**/api/admin/content*', (route) => {
+      if (route.request().method() === 'POST') resolveBody(route.request().postDataJSON());
+      return route.fulfill({ json: { ok: true } });
+    });
+
+    await page.goto('/options.html?edit=1&key=dugri-admin');
+    await expect(page.getByText('מצב עריכה')).toBeVisible();
+
+    const title = page.locator('[data-edit="options-step1-title"]');
+    await expect(title).toHaveAttribute('contenteditable', /plaintext-only|true/);
+    await title.evaluate((node) => {
+      node.focus();
+      node.textContent = 'בחרו את העיצוב שלכם';
+      node.dispatchEvent(new Event('blur'));
+    });
+
+    expect(await bodyPromise).toEqual({
+      page: 'options.html',
+      key: 'options-step1-title',
+      text: 'בחרו את העיצוב שלכם',
+    });
+    await expect(page.locator('.dugri-editbar__status')).toHaveText('נשמר');
+  });
+});
