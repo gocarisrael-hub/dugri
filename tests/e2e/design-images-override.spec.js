@@ -24,6 +24,15 @@ function stubUploads(page) {
   );
 }
 
+// Index of the visible frame in a fade tile carousel. The engine lights the
+// active frame by REMOVING aria-hidden (inactive frames get aria-hidden="true"),
+// so the active frame is the only .tile-frame without that attribute.
+function activeFrameIndex(media) {
+  return media
+    .locator('.tile-frame')
+    .evaluateAll((frames) => frames.findIndex((f) => !f.hasAttribute('aria-hidden')));
+}
+
 test.describe('products.html — store-tile override', () => {
   test('uses the overridden store picture when present, static store.webp when not', async ({
     page,
@@ -96,7 +105,8 @@ test.describe('products.html — store-tile carousel', () => {
 
     await page.goto('/products.html');
 
-    const media = page.locator('.product-card[data-design-id="birthday"] .product-card__media');
+    const card = page.locator('.product-card[data-design-id="birthday"]');
+    const media = card.locator('.product-card__media');
     // The shared fade carousel engine initialised on the tile.
     await expect(media).toHaveClass(/carousel--fade/);
     await expect(media).toHaveAttribute('aria-roledescription', 'carousel');
@@ -115,9 +125,147 @@ test.describe('products.html — store-tile carousel', () => {
         media.locator('[data-testid="carousel-frame"]').evaluateAll((els) => els.map((i) => i.src))
       )
       .toEqual([expect.stringContaining(CAR1), expect.stringContaining(CAR2)]);
+
+    // The pictures are shown in FULL, never cropped: object-fit is contain (not
+    // the old cover), for both the store frame and the added frames.
+    await expect(media.locator('[data-testid="product-image"]')).toHaveCSS('object-fit', 'contain');
+    await expect(media.locator('[data-testid="carousel-frame"]').first()).toHaveCSS(
+      'object-fit',
+      'contain'
+    );
+
+    // A ≥2-frame tile gets one manual dot per frame (the shopper's controls).
+    await expect(card.locator('.tile-dots .carousel-dot')).toHaveCount(3);
+
+    // The dots live OUTSIDE the card link (a sibling of the anchor), NOT nested
+    // inside it: interactive buttons in an <a> are invalid HTML and add stray tab
+    // stops. Assert no dot is a descendant of .product-card__link, and the strip
+    // is a direct child of the .product-card article.
+    await expect(card.locator('.product-card__link .carousel-dot')).toHaveCount(0);
+    await expect(card.locator('.product-card__link .tile-dots')).toHaveCount(0);
+    expect(await card.evaluate((el) => el.querySelector('.tile-dots')?.parentElement === el)).toBe(
+      true
+    );
   });
 
-  test('a design WITHOUT carousel pictures stays a single static image (no carousel)', async ({
+  test('the tile does NOT auto-advance — it rests on the store frame until the shopper acts', async ({
+    page,
+  }) => {
+    await stubUploads(page);
+    await page.route('**/api/design-images*', (route) =>
+      route.fulfill({ json: { images: { birthday: { carousel: [CAR1, CAR2] } } } })
+    );
+
+    await page.goto('/products.html');
+
+    const media = page.locator('.product-card[data-design-id="birthday"] .product-card__media');
+    await expect(media).toHaveClass(/carousel--fade/);
+    // Starts on frame 0 (the store image).
+    await expect.poll(() => activeFrameIndex(media)).toBe(0);
+
+    // Wait well past the old 2500ms auto-advance interval with NO interaction —
+    // the active frame must not have moved (autoplay is off).
+    await page.waitForTimeout(3200);
+    expect(await activeFrameIndex(media)).toBe(0);
+  });
+
+  test('clicking a dot changes the picture WITHOUT navigating away from the store', async ({
+    page,
+  }) => {
+    await stubUploads(page);
+    await page.route('**/api/design-images*', (route) =>
+      route.fulfill({ json: { images: { birthday: { carousel: [CAR1, CAR2] } } } })
+    );
+
+    await page.goto('/products.html');
+
+    const card = page.locator('.product-card[data-design-id="birthday"]');
+    const media = card.locator('.product-card__media');
+    const dots = card.locator('.tile-dots .carousel-dot');
+    await expect(dots).toHaveCount(3);
+    await expect.poll(() => activeFrameIndex(media)).toBe(0);
+
+    // Clicking the 2nd dot advances to frame 1 and does NOT follow the card link.
+    await dots.nth(1).click();
+    await expect.poll(() => activeFrameIndex(media)).toBe(1);
+    await expect(page).toHaveURL(/\/products\.html$/);
+
+    // A different dot jumps straight to that frame — still no navigation.
+    await dots.nth(2).click();
+    await expect.poll(() => activeFrameIndex(media)).toBe(2);
+    await expect(page).toHaveURL(/\/products\.html$/);
+  });
+
+  test('a many-picture tile shows every dot below the card, unclipped and each selecting its frame', async ({
+    page,
+  }) => {
+    await stubUploads(page);
+    // Six uploads + the store frame = SEVEN frames — a dot row far wider than the
+    // tile. The OLD overlay rendered the dots in a nowrap flex row inside the
+    // overflow:hidden media box, so the outermost dots were clipped off and
+    // unclickable. Below-the-card + wrap must make every dot reachable.
+    const CARS = [
+      '/content-uploads/1111111111111111.webp',
+      '/content-uploads/2222222222222222.webp',
+      '/content-uploads/3333333333333333.webp',
+      '/content-uploads/4444444444444444.webp',
+      '/content-uploads/5555555555555555.webp',
+      '/content-uploads/6666666666666666.webp',
+    ];
+    await page.route('**/api/design-images*', (route) =>
+      route.fulfill({ json: { images: { birthday: { carousel: CARS } } } })
+    );
+
+    await page.goto('/products.html');
+
+    const card = page.locator('.product-card[data-design-id="birthday"]');
+    const media = card.locator('.product-card__media');
+    await expect(media).toHaveClass(/carousel--fade/);
+
+    // 7 frames (store + 6 uploads) → 7 dots, one per frame.
+    await expect(media.locator('.tile-frame')).toHaveCount(7);
+    const dots = card.locator('.tile-dots .carousel-dot');
+    await expect(dots).toHaveCount(7);
+
+    // The dots are NOT inside the overflow:hidden media box (they can't be clipped)
+    // and NOT inside the card link (no invalid nesting / stray tab stop).
+    await expect(media.locator('.tile-dots')).toHaveCount(0);
+    await expect(card.locator('.product-card__link .carousel-dot')).toHaveCount(0);
+
+    // Every dot is rendered with a real, non-zero hit area.
+    const n = await dots.count();
+    for (let i = 0; i < n; i++) {
+      const box = await dots.nth(i).boundingBox();
+      expect(box && box.width > 0 && box.height > 0).toBe(true);
+    }
+
+    // Walk EVERY dot (last→first, so we finish on frame 0): each is reachable
+    // (Playwright's click fails on a clipped / covered target), selects exactly its
+    // frame, and never follows the card link. This exercises the outermost dots —
+    // the store frame and the last upload — that the old overlay clipped away.
+    for (let i = n - 1; i >= 0; i--) {
+      await dots.nth(i).click();
+      await expect.poll(() => activeFrameIndex(media)).toBe(i);
+      await expect(page).toHaveURL(/\/products\.html$/);
+    }
+  });
+
+  test('tapping the picture still opens the product detail page', async ({ page }) => {
+    await stubUploads(page);
+    await page.route('**/api/design-images*', (route) =>
+      route.fulfill({ json: { images: { birthday: { carousel: [CAR1, CAR2] } } } })
+    );
+
+    await page.goto('/products.html');
+
+    const media = page.locator('.product-card[data-design-id="birthday"] .product-card__media');
+    await expect(media).toHaveClass(/carousel--fade/);
+    // The visible (active) store frame is the picture; tapping it navigates.
+    await media.locator('[data-testid="product-image"]').click();
+    await expect(page).toHaveURL(/\/product\.html\?design=birthday/);
+  });
+
+  test('a design WITHOUT carousel pictures stays a single static image (no carousel, no dots)', async ({
     page,
   }) => {
     await stubUploads(page);
@@ -127,13 +275,17 @@ test.describe('products.html — store-tile carousel', () => {
 
     await page.goto('/products.html');
 
-    const neon = page.locator('.product-card[data-design-id="neon"] .product-card__media');
+    const neonCard = page.locator('.product-card[data-design-id="neon"]');
+    const neon = neonCard.locator('.product-card__media');
     await expect(neon.locator('[data-testid="product-image"]')).toHaveAttribute(
       'src',
       /assets\/designs\/neon\/store\.webp$/
     );
     await expect(neon).not.toHaveClass(/carousel--fade/);
     await expect(neon.locator('.tile-frame')).toHaveCount(0);
+    // A single-picture tile shows no manual controls (no dots strip anywhere).
+    await expect(neonCard.locator('.tile-dots')).toHaveCount(0);
+    await expect(neonCard.locator('.carousel-dot')).toHaveCount(0);
   });
 
   test('a 404 carousel picture degrades to the store image without breaking the tile', async ({

@@ -550,7 +550,13 @@ export function initCarousel(root, opts = {}) {
     };
     scrollRaf = raf ? raf(commit) : (commit(), 0);
   }
-  on(root, 'scroll', onScroll, { passive: true });
+  // Fade mode has no scroll track: every slide is stacked at the same rect, so
+  // nearestIndex() would always resolve to 0 and a stray scroll event could reset
+  // the active dot away from the goTo()-chosen slide. The active index is driven
+  // solely by goTo()/showFade() there, so never wire scroll-sync for fade. (The
+  // homepage hero is also fade and never scrolls, so this changes nothing for it —
+  // it only removes a latent desync.)
+  if (mode !== 'fade') on(root, 'scroll', onScroll, { passive: true });
 
   // ---- keyboard (visual mapping, RTL-aware) ------------------------------
   function onKey(e) {
