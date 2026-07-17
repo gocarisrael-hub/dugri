@@ -310,7 +310,7 @@
     </div>
 
     <script type="module">
-      import { DESIGNS } from './js/designs.js';
+      import { DESIGNS, designShipsBoard } from './js/designs.js';
 
       const key = new URLSearchParams(location.search).get('key') || '';
       const qs = (id) => document.getElementById(id);
@@ -347,9 +347,12 @@
       // Does this design SHIP a static asset for `slot` (so there's a default
       // picture to preview / fall back to)? store/front/back always ship; a board
       // only when the design carries one. A boardless design's board slot has no
-      // shipped picture — it starts empty until the owner uploads one.
+      // shipped picture — it starts empty until the owner uploads one. The board
+      // case uses the SHARED designShipsBoard(d) (thumbs.board) — the same single
+      // source of truth the product gallery (js/product.js shouldShowBoard) keys
+      // off — so the admin and the product page never disagree about a board.
       function shipsSlot(d, slot) {
-        if (slot === 'board') return !!(d.products && d.products.board);
+        if (slot === 'board') return designShipsBoard(d);
         return slot === 'store' || slot === 'front' || slot === 'back';
       }
       // The shipped static asset path for a design/slot (the fallback picture).
@@ -435,7 +438,7 @@
           (d) => `
           <section class="design">
             <p class="design-title">${esc(d.name)} <small>(${esc(d.id)})</small></p>
-            <div class="slots">${slotsFor(d)
+            <div class="slots">${slotsFor()
               .map((slot) => slotHtml(d, slot))
               .join('')}</div>
             ${carouselHtml(d)}
