@@ -19,6 +19,15 @@ CHROME = os.environ.get(
     "CHROME", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# Headless Chrome screenshots a large SVG BEFORE its base64 data:-URL @font-face
+# fonts finish loading, so the word/title text silently falls back to a default
+# heavy Hebrew face instead of the theme font (Cafe, Mr Dafoe, …). Advancing a
+# virtual clock forces Chrome to wait for the fonts (and all resources) to settle
+# before capturing, so the calibrated fonts actually render. Kept as a shared
+# constant so every production render path stays in lock-step. Verified: without
+# it Cafe renders as a bold fallback; with it the real Cafe face renders.
+CHROME_FONT_WAIT = "--virtual-time-budget=15000"
+
 
 def dims(svg):
     head = open(svg, encoding="utf-8").read(2000)
@@ -88,6 +97,66 @@ def escape(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+# Fraction constants shared with word_text() so the fit calculation and the
+# actual render stay in lock-step: the marker (digit+period) renders at 0.9x the
+# word size, and a 0.30x gap separates the marker from the word.
+_MARKER_SCALE = 0.9
+_WORD_GAP = 0.30
+
+
+def _line_width_at(font, ref, num, word):
+    """Full numbered-line width (marker + gap + word) at the metric ``ref`` size.
+    Everything scales linearly with the font size, so a width measured at ``ref``
+    converts to any render size S by multiplying by S/ref."""
+    _, _, marker_w = _marker_geometry(font, ref, num, ref * _MARKER_SCALE)
+    return marker_w + ref * _WORD_GAP + font.getlength(word)
+
+
+# The origin template renders every word on a card at ONE font size (Canva Bulk
+# Create fills a fixed-size text box). The recipe's per-slot boxes are just where
+# that single size landed on the ORIGIN words, so their heights encode the origin
+# size: a slot's box height ~= the ink height of a full Hebrew line (letters +
+# number, incl. the odd ascender/descender) at the origin size. Empirically the
+# origin size ~= median(box height) x 1.3 for the calibrated Hebrew word face.
+_WORD_SIZE_K = float(os.environ.get("DUGRI_WORD_K", "1.3"))
+
+
+def _word_sizes(slots, words, font, ref, cell=None):
+    """One UNIFORM font size for all the card's words (matching the origin's
+    single-size look), with a per-word shrink guard so an unusually long word can
+    never spill past the card edge into the neighbouring artwork.
+
+    The uniform size comes from the recipe box heights (see ``_WORD_SIZE_K``),
+    NOT from fitting each word to its own box — fitting per box would reproduce
+    the ORIGIN word lengths (a short word in a wide origin slot would balloon, a
+    long word in a narrow slot would shrink), destroying the uniform look. The
+    only per-word adjustment is a downward clamp: a numbered line is right-
+    anchored at its slot's right edge and flows LEFT, so a very long word could
+    reach past the card's left edge; we shrink just that word to keep it inside
+    the card cell. Empty/missing slots return ``None``.
+    """
+    import statistics
+    heights = [s["y1"] - s["y0"] for s in slots]
+    if not heights:
+        return [None] * len(slots)
+    uniform = statistics.median(heights) * _WORD_SIZE_K
+    left_bound = cell[0] + (cell[2] - cell[0]) * 0.02 if cell else None
+    out = []
+    for wi, slot in enumerate(slots):
+        word = words[wi] if wi < len(words) else ""
+        if not word:
+            out.append(None)
+            continue
+        wsize = uniform
+        if left_bound is not None:
+            line_w_ref = _line_width_at(font, ref, wi + 1, word)
+            avail = slot["x1"] - left_bound
+            if line_w_ref > 0 and avail > 0:
+                wsize = min(wsize, avail * ref / line_w_ref)
+        out.append(wsize)
+    return out
+
+
 @functools.lru_cache(maxsize=8)
 def _title_metrics(font_path, ref=200):
     from PIL import ImageFont
@@ -95,6 +164,30 @@ def _title_metrics(font_path, ref=200):
 
 
 _TITLE_UID = [0]
+
+
+def _title_ink_stack(f, ref, lines):
+    """Total stacked title-ink height at the metric ``ref`` size.
+
+    Measured over ALL lines, not just the first and last: a 3+ line title can
+    carry its tallest ascender or deepest descender on a MIDDLE line, so the
+    extreme ink extent is taken across every line (a first/last-only measure would
+    under-count and let the middle line spill). (Finding #6.) The middle gaps are
+    the ``0.78*size`` baseline spacing used by the renderer below.
+    """
+    asc, _desc = f.getmetrics()
+    ink_above = asc - min(f.getbbox(ln)[1] for ln in lines)  # tallest ink above baseline
+    ink_below = max(f.getbbox(ln)[3] for ln in lines) - asc  # deepest ink below baseline
+    return ink_above + 0.78 * ref * (len(lines) - 1) + ink_below
+
+
+# How far a title's real glyph ink may overrun its calibrated box height before we
+# stop trusting the original ``old_cap`` size and shrink to the metric ink-fit.
+# The recipe title boxes are approximate regions (the origin's own ink/outline
+# overrun them by ~10%), so anything up to this tolerance keeps the origin-matching
+# size; only a genuine display face whose ink is FAR taller (japanese/neon-class,
+# ~2x) crosses it and gets shrunk to fit. (Finding #1.)
+_TITLE_OVERFLOW_TOL = float(os.environ.get("DUGRI_TITLE_OVERFLOW_TOL", "0.25"))
 
 
 def title_is_rtl(cfg):
@@ -119,11 +212,53 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     x0, y0, x1, y1 = box["x0"], box["y0"], box["x1"], box["y1"]
     cx = (x0 + x1) / 2
     bw, bh = x1 - x0, y1 - y0
+    # Drop empty / whitespace-only lines up front: an UNFILLED title (e.g. a
+    # template whose only placeholder couldn't be substituted, so a line resolves
+    # to "" or "   ") must degrade to nothing instead of crashing the whole order
+    # on ``max([])`` / ``getlength('')==0`` / a zero-width ink stack. Normal titles
+    # (every line non-blank) are unaffected. (Finding #3.)
+    lines = [ln for ln in lines if ln and ln.strip()]
+    if not lines:
+        return ""
     f, ref = _title_metrics(font_path)
     ratios = [f.getlength(ln) / ref for ln in lines]      # width per unit size
     n = len(lines)
-    # size to fill the width; cap so the stacked lines still fit the box height
-    size = min(bw * 0.89 / max(ratios), bh / (0.80 * n) * 1.02)
+    # size to fill the WIDTH, capped so the stacked lines still fit the box HEIGHT.
+    # The height cap comes from the REAL font metrics, not a fixed per-line
+    # fraction: some display title faces (e.g. the japanese/neon fonts) draw
+    # glyphs far taller than their em, so a stacked title could spill well past its
+    # calibrated box. Measure the actual ink stack and scale it to fill the box.
+    #
+    # Measure the ink extent over ALL lines, not just the first/last: a 3+ line
+    # title can carry its tallest ascender or deepest descender on a MIDDLE line,
+    # which the first/last-only measure under-counts. (Finding #6.)
+    stack = _title_ink_stack(f, ref, lines)               # full stacked ink at ref
+    # The PAINTED title is taller than its raw ink: a dark outline RING of
+    # size*outline_w rings every glyph (top & bottom), and (when enabled) the drop
+    # shadow drops a further size*0.06 below. Reserve that headroom so the whole
+    # painted footprint (ink + outline + shadow) stays inside the calibrated box on
+    # a height-bound title, instead of the ink filling the box and the ring/shadow
+    # spilling onto the neighbouring artwork. (Finding #5.)
+    pad = 2 * outline_w + (0.06 if shadow else 0.0)
+    denom_h = stack + pad * ref
+    ink_fit = bh * ref / denom_h if denom_h > 0 else bh
+    # Height cap. ``old_cap`` is the ORIGINAL calibrated cap (``bh/(0.80*n)*1.02``)
+    # that matched every shipped origin: the recipe title boxes are approximate
+    # regions, not hard clips, so a normal face whose real ink runs ~10% past the
+    # box at ``old_cap`` still looks right (the origin's own ink/outline overrun
+    # the same box). Keep ``old_cap`` — so previously-correct titles are neither
+    # enlarged (the ink-fit-only regression that grew MrDafoe/bachelorette) nor
+    # shrunk (ink-fit under-sized CooperLtBT/birthday etc.). Fall to the metric
+    # ``ink_fit`` ONLY when the ink overflows ``old_cap`` by more than a wide
+    # tolerance — i.e. a genuine display face (japanese/neon-class) whose glyphs
+    # are far taller than their em and would otherwise spill dramatically. The
+    # tolerance is well above every shipped theme's ~10% overrun and well below a
+    # real display face's ~100%, so current themes render exactly as the origin
+    # while an extreme future face is still reined in. (Findings #1, #5, #6.)
+    old_cap = bh / (0.80 * n) * 1.02
+    size_h = old_cap if old_cap <= ink_fit * (1 + _TITLE_OVERFLOW_TOL) else ink_fit
+    denom_w = max(ratios)
+    size = min(bw * 0.89 / denom_w, size_h) if denom_w > 0 else size_h
     gap = size * 0.78
     total = gap * (n - 1)
     top = (y0 + y1) / 2 - total / 2
@@ -204,39 +339,16 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
                                        rtl=title_is_rtl(cfg)))
         words = words_by_card[ci] if ci < len(words_by_card) else []
         # A card may carry a title but no word slots (its title was drawn above);
-        # skip the word pass so statistics.median([]) can't crash the whole page.
+        # skip the word pass so the sizing below can't crash the whole page.
         if not card["words"]:
             continue
-        # ONE uniform word size per card (like the real card); per-word ink
-        # heights vary by letters, so fit from the median, not each slot.
-        import statistics
-        heights = [s["y1"] - s["y0"] for s in card["words"]]
-        size = statistics.median(heights) * 1.4
-        # Card's left edge (cell = [x0,y0,x1,y1]) with a small inner margin, so the
-        # bounds guard below has something to clamp against. A card may have no cell
-        # in older recipes — fall back to no clamp (guard becomes a no-op).
-        cell = card.get("cell")
         wf_metrics, wf_ref = _word_metrics(word_font)
+        sizes = _word_sizes(card["words"], words, wf_metrics, wf_ref,
+                            cell=card.get("cell"))
         for wi, slot in enumerate(card["words"]):
-            if wi >= len(words) or not words[wi]:
+            wsize = sizes[wi]
+            if wsize is None:
                 continue
-            wsize = size
-            # SAFETY GUARD: a word is right-anchored near slot x1 and flows LEFT, so
-            # an unusually long (real-order) word could spill PAST the card's left
-            # edge. Shrink just that word's font so it always stays inside the card.
-            # This is a no-op for every word that already fits (all current designs
-            # render byte-identically), so it can't disturb a good layout — it only
-            # rescues a word that would otherwise overflow the card bounds. It does
-            # NOT push words away from foreground ARTWORK inside the card; that is a
-            # per-design recipe concern (see report), not a safe global change.
-            if cell:
-                left_bound = cell[0] + (cell[2] - cell[0]) * 0.02
-                _, _, marker_w = _marker_geometry(wf_metrics, wf_ref, wi + 1, wsize * 0.9)
-                word_right = slot["x1"] - marker_w - wsize * 0.30
-                avail = word_right - left_bound
-                word_w = wf_metrics.getlength(words[wi]) / wf_ref * wsize
-                if avail > 0 and word_w > avail:
-                    wsize = wsize * (avail / word_w)
             baseline = (slot["y0"] + slot["y1"]) / 2 + wsize * 0.34
             overlay.append(word_text(slot["x1"], baseline, wsize, slot["color"],
                                      wi + 1, words[wi], word_font))
@@ -250,7 +362,7 @@ def render(theme, clean_svg, words_by_card, title_lines, out_png, word_font=None
     open(svg_path, "w", encoding="utf-8").write(svg)
     w, h = dims(clean_svg)
     subprocess.run([CHROME, "--headless", "--no-sandbox",
-                    "--disable-dev-shm-usage", "--disable-gpu",
+                    "--disable-dev-shm-usage", "--disable-gpu", CHROME_FONT_WAIT,
                     "--force-device-scale-factor=2", f"--screenshot={out_png}",
                     f"--window-size={w},{h}", svg_path],
                    check=True, stderr=subprocess.DEVNULL)

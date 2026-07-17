@@ -36,7 +36,7 @@ def svg_dims(svg):
 def render_svg(svg_text, w, h, out_png):
     p = out_png.replace(".png", ".svg")
     open(p, "w", encoding="utf-8").write(svg_text)
-    subprocess.run([CHROME, "--headless", "--disable-gpu",
+    subprocess.run([CHROME, "--headless", "--disable-gpu", rp.CHROME_FONT_WAIT,
                     "--force-device-scale-factor=2", f"--screenshot={out_png}",
                     f"--window-size={w},{h}", p], check=True, stderr=subprocess.DEVNULL)
     return out_png
