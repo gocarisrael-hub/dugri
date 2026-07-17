@@ -166,6 +166,30 @@ def _title_metrics(font_path, ref=200):
 _TITLE_UID = [0]
 
 
+def _title_ink_stack(f, ref, lines):
+    """Total stacked title-ink height at the metric ``ref`` size.
+
+    Measured over ALL lines, not just the first and last: a 3+ line title can
+    carry its tallest ascender or deepest descender on a MIDDLE line, so the
+    extreme ink extent is taken across every line (a first/last-only measure would
+    under-count and let the middle line spill). (Finding #6.) The middle gaps are
+    the ``0.78*size`` baseline spacing used by the renderer below.
+    """
+    asc, _desc = f.getmetrics()
+    ink_above = asc - min(f.getbbox(ln)[1] for ln in lines)  # tallest ink above baseline
+    ink_below = max(f.getbbox(ln)[3] for ln in lines) - asc  # deepest ink below baseline
+    return ink_above + 0.78 * ref * (len(lines) - 1) + ink_below
+
+
+# How far a title's real glyph ink may overrun its calibrated box height before we
+# stop trusting the original ``old_cap`` size and shrink to the metric ink-fit.
+# The recipe title boxes are approximate regions (the origin's own ink/outline
+# overrun them by ~10%), so anything up to this tolerance keeps the origin-matching
+# size; only a genuine display face whose ink is FAR taller (japanese/neon-class,
+# ~2x) crosses it and gets shrunk to fit. (Finding #1.)
+_TITLE_OVERFLOW_TOL = float(os.environ.get("DUGRI_TITLE_OVERFLOW_TOL", "0.25"))
+
+
 def title_is_rtl(cfg):
     # A title is right-to-left when the theme's language is Hebrew. RTL matters
     # for any title that mixes digits with Hebrew (e.g. anniversary "30 שנה
@@ -188,25 +212,53 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     x0, y0, x1, y1 = box["x0"], box["y0"], box["x1"], box["y1"]
     cx = (x0 + x1) / 2
     bw, bh = x1 - x0, y1 - y0
+    # Drop empty / whitespace-only lines up front: an UNFILLED title (e.g. a
+    # template whose only placeholder couldn't be substituted, so a line resolves
+    # to "" or "   ") must degrade to nothing instead of crashing the whole order
+    # on ``max([])`` / ``getlength('')==0`` / a zero-width ink stack. Normal titles
+    # (every line non-blank) are unaffected. (Finding #3.)
+    lines = [ln for ln in lines if ln and ln.strip()]
+    if not lines:
+        return ""
     f, ref = _title_metrics(font_path)
     ratios = [f.getlength(ln) / ref for ln in lines]      # width per unit size
     n = len(lines)
     # size to fill the WIDTH, capped so the stacked lines still fit the box HEIGHT.
     # The height cap comes from the REAL font metrics, not a fixed per-line
     # fraction: some display title faces (e.g. the japanese/neon fonts) draw
-    # glyphs far taller than their em, so the old ``bh/(0.80*n)`` heuristic let a
-    # stacked title spill well past its calibrated box (title rendered ~2x too
-    # tall). Measure the actual ink stack — the top line's ink above its baseline
-    # + the 0.78*size baseline gaps + the bottom line's ink below its baseline —
-    # and scale it to fill the box height exactly. Width-bound titles (script /
-    # graffiti names that fill the box width first) are untouched: their width
-    # term is the smaller of the two, so ``min`` still selects it.
-    asc, _desc = f.getmetrics()
-    ink_above = asc - f.getbbox(lines[0])[1]              # line0 ink above baseline
-    ink_below = f.getbbox(lines[-1])[3] - asc            # last line ink below baseline
-    stack = ink_above + 0.78 * ref * (n - 1) + ink_below  # full stacked ink at ref
-    size_h = bh * ref / stack if stack > 0 else bh
-    size = min(bw * 0.89 / max(ratios), size_h)
+    # glyphs far taller than their em, so a stacked title could spill well past its
+    # calibrated box. Measure the actual ink stack and scale it to fill the box.
+    #
+    # Measure the ink extent over ALL lines, not just the first/last: a 3+ line
+    # title can carry its tallest ascender or deepest descender on a MIDDLE line,
+    # which the first/last-only measure under-counts. (Finding #6.)
+    stack = _title_ink_stack(f, ref, lines)               # full stacked ink at ref
+    # The PAINTED title is taller than its raw ink: a dark outline RING of
+    # size*outline_w rings every glyph (top & bottom), and (when enabled) the drop
+    # shadow drops a further size*0.06 below. Reserve that headroom so the whole
+    # painted footprint (ink + outline + shadow) stays inside the calibrated box on
+    # a height-bound title, instead of the ink filling the box and the ring/shadow
+    # spilling onto the neighbouring artwork. (Finding #5.)
+    pad = 2 * outline_w + (0.06 if shadow else 0.0)
+    denom_h = stack + pad * ref
+    ink_fit = bh * ref / denom_h if denom_h > 0 else bh
+    # Height cap. ``old_cap`` is the ORIGINAL calibrated cap (``bh/(0.80*n)*1.02``)
+    # that matched every shipped origin: the recipe title boxes are approximate
+    # regions, not hard clips, so a normal face whose real ink runs ~10% past the
+    # box at ``old_cap`` still looks right (the origin's own ink/outline overrun
+    # the same box). Keep ``old_cap`` — so previously-correct titles are neither
+    # enlarged (the ink-fit-only regression that grew MrDafoe/bachelorette) nor
+    # shrunk (ink-fit under-sized CooperLtBT/birthday etc.). Fall to the metric
+    # ``ink_fit`` ONLY when the ink overflows ``old_cap`` by more than a wide
+    # tolerance — i.e. a genuine display face (japanese/neon-class) whose glyphs
+    # are far taller than their em and would otherwise spill dramatically. The
+    # tolerance is well above every shipped theme's ~10% overrun and well below a
+    # real display face's ~100%, so current themes render exactly as the origin
+    # while an extreme future face is still reined in. (Findings #1, #5, #6.)
+    old_cap = bh / (0.80 * n) * 1.02
+    size_h = old_cap if old_cap <= ink_fit * (1 + _TITLE_OVERFLOW_TOL) else ink_fit
+    denom_w = max(ratios)
+    size = min(bw * 0.89 / denom_w, size_h) if denom_w > 0 else size_h
     gap = size * 0.78
     total = gap * (n - 1)
     top = (y0 + y1) / 2 - total / 2

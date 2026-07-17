@@ -20,7 +20,7 @@ Run: python3 generator/test_render_page.py   (or via pytest)
 import os
 import re
 
-from PIL import ImageFont
+from PIL import Image, ImageFont
 
 import config
 import render_page as rp
@@ -151,9 +151,21 @@ def test_title_fits_box_height_for_tall_glyph_display_font():
     assert stack <= bh + 0.5, f"title stack {stack:.1f} overflows box height {bh:.1f}"
 
 
-def test_wide_name_title_stays_width_bound():
-    # A wide script name (bachelorette) is limited by the box WIDTH, not height —
-    # the metrics-based height cap must not shrink it below the width fit.
+def _pre_pr_size(fp, lines, box):
+    """The ORIGINAL (pre-fidelity-PR) title size: the smaller of the width fit and
+    the old height cap ``bh/(0.80*n)*1.02``. This is the shipped/calibrated size
+    every previously-correct title must keep."""
+    f = ImageFont.truetype(fp, 200)
+    bw, bh, n = box["x1"] - box["x0"], box["y1"] - box["y0"], len(lines)
+    width_fit = bw * 0.89 / max(f.getlength(ln) / 200 for ln in lines)
+    old_cap = bh / (0.80 * n) * 1.02
+    return min(width_fit, old_cap), width_fit, old_cap
+
+
+def test_wide_script_title_not_enlarged():
+    # A wide MrDafoe script name must render at its pre-PR size (min of width fit
+    # and the old height cap) — the ink-fit-only rewrite grew it ~4% by dropping
+    # the old height cap. Finding #1: previously-correct titles must NOT grow.
     cfg = config.theme("bachelorette")
     fp = config.font_path("bachelorette", cfg["title_font"])
     ts = cfg["title_style"]
@@ -162,11 +174,162 @@ def test_wide_name_title_stays_width_bound():
     svg = rp.title_block(box, lines, ts["fill"], ts["outline"], fp,
                          ts["outline_w"], ts["arch"], ts["shadow"])
     size = _title_size(svg)
+    pre, width_fit, old_cap = _pre_pr_size(fp, lines, box)
+    assert abs(size - pre) < 0.3, "wide script title must keep its pre-PR size"
+    # here old_cap < width_fit, so it is capped by height and NOT enlarged to the
+    # width fit the ink-fit-only code would have used.
+    assert old_cap < width_fit
+    assert size <= old_cap + 0.3, "title must be capped by the old height, not enlarged"
+
+
+def test_shipped_normal_title_not_enlarged_or_shrunk():
+    # birthday-girls (CooperLtBTBold) is a NORMAL-height face whose real ink runs
+    # ~10% past its approximate recipe box; the ink-fit-only rewrite SHRANK it ~10%
+    # below its calibrated size. It must render at the original pre-PR size.
+    # Finding #1: a title that already fit keeps its prior size.
+    cfg = config.theme("birthday-girls")
+    fp = config.font_path("birthday-girls", cfg["title_font"])
+    ts = cfg["title_style"]
+    box = {"x0": 65.6, "y0": 28.9, "x1": 139.1, "y1": 47.2}
+    lines = ["Alma's", "B-day"]
+    svg = rp.title_block(box, lines, ts["fill"], ts["outline"], fp,
+                         ts["outline_w"], ts["arch"], ts["shadow"])
+    size = _title_size(svg)
+    pre, width_fit, old_cap = _pre_pr_size(fp, lines, box)
+    assert abs(size - pre) < 0.3, "normal-height title must keep its pre-PR size"
+    # it is height-bound here (old_cap < width_fit); the ~10% ink overrun is within
+    # the box-approximation tolerance, so it is NOT shrunk to the metric ink-fit.
+    assert size > old_cap - 0.3
+
+
+def test_extreme_tall_face_shrinks_to_fit_when_overflow_exceeds_tolerance():
+    # The metric ink-fit safety net must still engage for a genuinely too-tall
+    # title: with the overrun tolerance forced to 0 (any overflow triggers it), a
+    # face whose ink exceeds the old cap shrinks below old_cap so the painted stack
+    # fits the box. Proves the ink-fit path is live, not dead code. (Findings #1/#5.)
+    cfg = config.theme("birthday-girls")
+    fp = config.font_path("birthday-girls", cfg["title_font"])
+    ts = cfg["title_style"]
+    box = {"x0": 65.6, "y0": 28.9, "x1": 139.1, "y1": 47.2}
+    lines = ["Alma's", "B-day"]
+    saved = rp._TITLE_OVERFLOW_TOL
+    rp._TITLE_OVERFLOW_TOL = 0.0
+    try:
+        svg = rp.title_block(box, lines, ts["fill"], ts["outline"], fp,
+                             ts["outline_w"], ts["arch"], ts["shadow"])
+    finally:
+        rp._TITLE_OVERFLOW_TOL = saved
+    size = _title_size(svg)
+    _pre, _wf, old_cap = _pre_pr_size(fp, lines, box)
+    assert size < old_cap - 0.2, "ink-fit safety net must shrink a too-tall title"
+    # and the painted stack (ink + outline + shadow headroom) fits the box height.
     f = ImageFont.truetype(fp, 200)
-    widest = max(f.getlength(ln) / 200 for ln in lines)
-    bw = box["x1"] - box["x0"]
-    # width-bound size == bw*0.89/widest; assert we're at (not below) that fit.
-    assert abs(size - bw * 0.89 / widest) < 0.5, "wide title must be width-bound"
+    stack = rp._title_ink_stack(f, 200, lines) / 200 * size
+    pad = (2 * ts["outline_w"] + (0.06 if ts["shadow"] else 0.0)) * size
+    bh = box["y1"] - box["y0"]
+    assert stack + pad <= bh + 0.5, "painted footprint must stay within the box"
+
+
+def test_title_ink_stack_includes_middle_line():
+    # Finding #6: the stacked-ink extent must be measured over ALL lines. A 3-line
+    # title whose tallest/deepest ink is on the MIDDLE line must measure the same
+    # extent as when that ink is on an end line (max over all lines is symmetric),
+    # and strictly more than a title with no tall line — the old first/last-only
+    # measure would under-count the middle line.
+    f, ref = _cafe()
+    tall = "לקץ"          # ascender-tall lamed + deep final-tsadi descender
+    short = "מם"
+    mid_tall = [short, tall, short]
+    end_tall = [tall, short, short]
+    plain = [short, short, short]
+    s_mid = rp._title_ink_stack(f, ref, mid_tall)
+    s_end = rp._title_ink_stack(f, ref, end_tall)
+    s_plain = rp._title_ink_stack(f, ref, plain)
+    assert abs(s_mid - s_end) < 1e-9, "a tall MIDDLE line must be measured like an end line"
+    assert s_mid > s_plain + 1.0, "the tall line's ink must enlarge the measured stack"
+
+
+def test_empty_title_degrades_to_nothing():
+    # Finding #3: an unfilled title (every line empty/whitespace) must return "" —
+    # never crash on max([]) / getlength('') / a zero-width ink stack.
+    cfg = config.theme("bachelorette")
+    fp = config.font_path("bachelorette", cfg["title_font"])
+    ts = cfg["title_style"]
+    box = {"x0": 80.0, "y0": 29.0, "x1": 186.0, "y1": 60.0}
+    for empty in ([""], ["   "], ["", "  ", "\t"]):
+        assert rp.title_block(box, empty, ts["fill"], ts["outline"], fp,
+                              ts["outline_w"], ts["arch"], ts["shadow"]) == ""
+    # a blank line mixed with a real line is dropped, not rendered/crashed.
+    svg = rp.title_block(box, ["Shira", ""], ts["fill"], ts["outline"], fp,
+                         ts["outline_w"], ts["arch"], ts["shadow"])
+    assert svg and "Shira" in svg
+
+
+# --- 5. the calibrated font actually renders through headless Chrome -----------
+
+def _chrome_render_glyph(font_path, family, text, size, out_png, embed=True):
+    """Render one line of ``text`` in an embedded @font-face through the SAME
+    headless-Chrome path + font-load wait the generator uses, and return the
+    binarized ink cropped to its bounding box. ``embed=False`` omits the font so
+    Chrome falls back to a system face (the failure mode the font-wait guards)."""
+    import subprocess
+    W, H = 1200, 320
+    style = "<style>" + rp.font_face(family, font_path) + "</style>" if embed else ""
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
+           f'viewBox="0 0 {W} {H}">{style}<rect width="{W}" height="{H}" fill="white"/>'
+           f'<text x="20" y="200" font-family="{family}" font-size="{size}" '
+           f'fill="black">{text}</text></svg>')
+    sp = out_png.replace(".png", ".svg")
+    open(sp, "w", encoding="utf-8").write(svg)
+    subprocess.run([rp.CHROME, "--headless", "--no-sandbox", "--disable-gpu",
+                    rp.CHROME_FONT_WAIT, "--force-device-scale-factor=1",
+                    f"--screenshot={out_png}", f"--window-size={W},{H}", sp],
+                   check=True, stderr=subprocess.DEVNULL)
+    import numpy as np
+    a = np.asarray(Image.open(out_png).convert("L")) < 128
+    ys, xs = np.where(a)
+    crop = a[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    return crop
+
+
+def _ink_iou(crop, font_path, text, N=128):
+    """IoU between a rendered ink crop and a PIL rasterization of ``text`` in the
+    given font, both normalized to an N×N ink-bbox mask. High IoU == the render
+    used THIS font's glyph shapes; a fallback face scores far lower."""
+    import numpy as np
+    from PIL import ImageDraw
+    ref = Image.new("L", (2000, 500), 255)
+    ImageDraw.Draw(ref).text((10, 10), text, font=ImageFont.truetype(font_path, 160), fill=0)
+    ra = np.asarray(ref) < 128
+    ys, xs = np.where(ra)
+    rc = ra[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+
+    def norm(m):
+        return np.asarray(Image.fromarray((m * 255).astype("uint8")).resize((N, N),
+                          Image.LANCZOS)) > 128
+    a, b = norm(crop), norm(rc)
+    return (a & b).sum() / max(1, (a | b).sum())
+
+
+def test_calibrated_font_renders_through_chrome():
+    # Finding #2: prove the embedded @font-face actually paints (the font-load wait
+    # works) by rendering through real headless Chrome and matching the ink to the
+    # font's own glyph shapes. MrDafoe is a distinctive script: its shape IoU is
+    # ~0.88 when the calibrated font renders and ~0.24 when Chrome falls back to a
+    # system sans — a wide, machine-independent margin.
+    fp = config.font_path("bachelorette", config.theme("bachelorette")["title_font"])
+    word = "Bachelorette"
+    import tempfile
+    d = tempfile.mkdtemp(prefix="dugri-fonttest-")
+    good = _chrome_render_glyph(fp, "TitleFont", word, 90, os.path.join(d, "g.png"), embed=True)
+    fallback = _chrome_render_glyph(fp, "TitleFont", word, 90, os.path.join(d, "f.png"), embed=False)
+    iou_good = _ink_iou(good, fp, word)
+    iou_fallback = _ink_iou(fallback, fp, word)
+    assert iou_good >= 0.6, (
+        f"calibrated font did not render (IoU {iou_good:.2f}); font-load wait broken?")
+    # control: the metric genuinely discriminates — a fallback face scores far lower.
+    assert iou_fallback <= 0.45, f"fallback control unexpectedly high (IoU {iou_fallback:.2f})"
+    assert iou_good - iou_fallback > 0.25
 
 
 if __name__ == "__main__":
