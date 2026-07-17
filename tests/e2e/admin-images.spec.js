@@ -22,7 +22,7 @@ test.describe('admin images page', () => {
     expect(hitAdmin).toBe(false);
   });
 
-  test('with the key it lists designs and their slots (board only where it exists)', async ({
+  test('with the key it lists every design with all four slots (board incl. boardless designs)', async ({
     page,
   }) => {
     await page.route('**/api/design-images*', (route) => route.fulfill({ json: { images: {} } }));
@@ -32,14 +32,24 @@ test.describe('admin images page', () => {
     // One card per catalog design (all 7 are public).
     await expect(page.locator('.design')).toHaveCount(7);
 
-    // posttrip ships a board → its board slot is present.
+    // posttrip ships a board → its board slot shows the shipped default picture.
     const posttrip = page.locator('.slot[data-design="posttrip"]');
     await expect(posttrip).toHaveCount(4); // store, front, back, board
-    await expect(page.locator('.slot[data-design="posttrip"][data-slot="board"]')).toHaveCount(1);
+    const posttripBoard = page.locator('.slot[data-design="posttrip"][data-slot="board"]');
+    await expect(posttripBoard).toHaveCount(1);
+    await expect(posttripBoard.locator('img.preview')).toBeVisible();
+    await expect(posttripBoard.locator('.preview-empty')).toHaveCount(0);
 
-    // kids has NO board → only store, front, back.
-    await expect(page.locator('.slot[data-design="kids"]')).toHaveCount(3);
-    await expect(page.locator('.slot[data-design="kids"][data-slot="board"]')).toHaveCount(0);
+    // kids ships NO board, but the board slot is STILL offered so the owner can
+    // upload one — it renders in an EMPTY state (placeholder, no broken <img>).
+    await expect(page.locator('.slot[data-design="kids"]')).toHaveCount(4);
+    const kidsBoard = page.locator('.slot[data-design="kids"][data-slot="board"]');
+    await expect(kidsBoard).toHaveCount(1);
+    await expect(kidsBoard.locator('.preview-empty')).toBeVisible();
+    await expect(kidsBoard.locator('img.preview')).toHaveCount(0);
+    await expect(kidsBoard.locator('.badge.default')).toHaveText('אין תמונה');
+    await expect(kidsBoard.locator('button[data-act="upload"]')).toHaveText('העלה תמונה');
+    await expect(kidsBoard.locator('button[data-act="reset"]')).toBeDisabled();
 
     // The nav pill for this page is the active one.
     await expect(page.locator('.nav a.active[data-page="admin-images.html"]')).toHaveCount(1);
@@ -83,6 +93,45 @@ test.describe('admin images page', () => {
     // After: the slot re-renders as custom, preview points at the upload, reset enabled.
     const after = page.locator('.slot[data-design="posttrip"][data-slot="board"]');
     await expect(after.locator('.badge.custom')).toBeVisible();
+    await expect(after.locator('img.preview')).toHaveAttribute('src', UPLOADED);
+    await expect(after.locator('button[data-act="reset"]')).toBeEnabled();
+  });
+
+  test('uploading a board to a BOARDLESS design (kids) flips its empty slot to custom', async ({
+    page,
+  }) => {
+    await page.route('**/api/design-images*', (route) => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({ json: { images: {} } });
+      }
+      return route.continue();
+    });
+    await page.route('**/api/admin/design-images/image*', (route) =>
+      route.fulfill({ json: { ok: true, img: UPLOADED, images: { board: UPLOADED } } })
+    );
+    await page.route('**/content-uploads/*', (route) =>
+      route.fulfill({ contentType: 'image/png', body: PNG })
+    );
+
+    await page.goto(`/admin-images.html?key=${KEY}`);
+    const slot = page.locator('.slot[data-design="kids"][data-slot="board"]');
+    await expect(slot).toBeVisible();
+    // Before: empty state — placeholder, no image, "upload" label, reset disabled.
+    await expect(slot.locator('.preview-empty')).toBeVisible();
+    await expect(slot.locator('img.preview')).toHaveCount(0);
+    await expect(slot.locator('button[data-act="reset"]')).toBeDisabled();
+
+    // Upload a board via the hidden file input.
+    await slot.locator('input[type=file]').setInputFiles({
+      name: 'board.png',
+      mimeType: 'image/png',
+      buffer: PNG,
+    });
+
+    // After: the empty state is gone; a real preview shows the upload, reset enabled.
+    const after = page.locator('.slot[data-design="kids"][data-slot="board"]');
+    await expect(after.locator('.badge.custom')).toBeVisible();
+    await expect(after.locator('.preview-empty')).toHaveCount(0);
     await expect(after.locator('img.preview')).toHaveAttribute('src', UPLOADED);
     await expect(after.locator('button[data-act="reset"]')).toBeEnabled();
   });

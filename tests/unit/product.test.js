@@ -11,6 +11,7 @@ import {
   overrideText,
   photosFromOverride,
   galleryShots,
+  shouldShowBoard,
 } from '../../site/js/product.js';
 
 const P1 = '/content-uploads/aaaaaaaaaaaaaaaa.png';
@@ -155,13 +156,28 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     for (const s of shots) expect(s.src).not.toMatch(/thumb-(front|back|board)\.webp$/);
   });
 
-  it('skips the board render for a boardless design', () => {
+  it('skips the board render for a boardless design (no board override)', () => {
     const kids = { id: 'kids', name: 'ילדים', thumbs: { front: 'f', back: 'b' } };
     const shots = galleryShots(kids, {});
     expect(shots.map((s) => s.src)).toEqual([
       'assets/designs/kids/gallery-front.webp',
       'assets/designs/kids/gallery-back.webp',
     ]);
+  });
+
+  it('surfaces a board slide for a boardless design when the owner uploaded a board', () => {
+    // kids ships NO board (thumbs has only front/back) but the owner uploaded one.
+    const kids = { id: 'kids', name: 'ילדים', thumbs: { front: 'f', back: 'b' } };
+    const map = { kids: { board: P1 } };
+    const shots = galleryShots(kids, {}, map);
+    expect(shots.map((s) => s.src)).toEqual([
+      'assets/designs/kids/gallery-front.webp',
+      'assets/designs/kids/gallery-back.webp',
+      P1, // owner's uploaded board picture — appears from the override alone
+    ]);
+    // No shipped gallery-board.webp exists, so the board slide carries NO fallback
+    // (a fallback would 404). front/back keep their static renders / no fallback.
+    expect(shots[2].fallback).toBeUndefined();
   });
 
   it('prefers a per-design SLOT override over the static render, else falls back per-slot', () => {
@@ -201,5 +217,33 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     const map = { neon: { front: P1, back: P2, board: P1 } };
     const shots = galleryShots(design, { 'product-neon-photos': { imgs: [P2] } }, map);
     expect(shots.map((s) => s.src)).toEqual([P2]); // the curated carousel wins
+  });
+});
+
+describe('shouldShowBoard — board slide visibility', () => {
+  const shipsBoard = { id: 'neon', thumbs: { front: 'f', back: 'b', board: 'brd' } };
+  const boardless = { id: 'kids', thumbs: { front: 'f', back: 'b' } };
+
+  it('is true for a design that ships a board (regardless of overrides)', () => {
+    expect(shouldShowBoard(shipsBoard, {})).toBe(true);
+    expect(shouldShowBoard(shipsBoard, { neon: { board: P1 } })).toBe(true);
+  });
+
+  it('is true for a boardless design once a valid board override exists', () => {
+    expect(shouldShowBoard(boardless, { kids: { board: P1 } })).toBe(true);
+  });
+
+  it('is false for a boardless design with no board override', () => {
+    expect(shouldShowBoard(boardless, {})).toBe(false);
+    expect(shouldShowBoard(boardless, { kids: { front: P1 } })).toBe(false);
+  });
+
+  it('ignores a malformed/off-origin board override for a boardless design', () => {
+    expect(shouldShowBoard(boardless, { kids: { board: 'https://evil.example/x.png' } })).toBe(
+      false
+    );
+    expect(shouldShowBoard(boardless, { kids: { board: '/content-uploads/nope.gif' } })).toBe(
+      false
+    );
   });
 });

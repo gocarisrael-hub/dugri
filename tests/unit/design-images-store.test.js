@@ -69,6 +69,24 @@ describe('design-images store', () => {
     expect(store.getAll()).toEqual({ posttrip: { board: P1, store: P2 } });
   });
 
+  it('accepts + returns a board override for a BOARDLESS design id (e.g. kids)', async () => {
+    // Slots are NOT gated per-design server-side (board ∈ SLOTS), so a design that
+    // ships no board (kids) can still carry a board override — this is what lets the
+    // owner upload a board for it and the product page surface the slide.
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const store = await loadStore(dir);
+    expect(store.get('kids', 'board')).toBe(null); // nothing yet
+    expect(store.set('kids', 'board', P1)).toEqual({ board: P1 });
+    expect(store.get('kids', 'board')).toBe(P1);
+    expect(store.getForDesign('kids')).toEqual({ board: P1 });
+    expect(store.getAll()).toEqual({ kids: { board: P1 } });
+    // And it can be reset back like any other slot.
+    expect(store.reset('kids', 'board')).toBe(true);
+    expect(store.get('kids', 'board')).toBe(null);
+    expect(store.getAll()).toEqual({});
+  });
+
   it('set REJECTS an off-origin / malformed path and a bad design/slot (returns null, no write)', async () => {
     const dir = freshTmpDir();
     dirs.push(dir);
