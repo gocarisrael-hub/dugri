@@ -222,10 +222,9 @@
          (no rounding that would clip the art), no border / background / shadow.
          object-fit:contain shows the WHOLE picture, never cropped (the shopper
          asked to see the full art); any letterbox falls back to the tile's
-         --surface background. position:relative anchors the dot controls that a
-         carousel tile overlays on the lower edge of the frame. */
+         --surface background. The dot controls live OUTSIDE this box (below the
+         card, a sibling of the link) so overflow:hidden never clips them. */
       .product-card__media {
-        position: relative;
         display: block;
         width: 100%;
         aspect-ratio: 841.92 / 595.5;
@@ -248,27 +247,53 @@
         width: 100%;
         height: 100%;
       }
-      /* Manual picture controls: the shared engine's dots, overlaid on the
-         lower edge of the frame so the shopper can change pictures (there is no
-         auto-advance). The host passes pointer events through except on the dot
-         plate; a subtle --surface wash keeps the dots legible on any photo. Sits
-         above the stacked frames (active frame z-index:1). RTL: the dots inherit
-         the media's direction so dot 1 (the store image) sits on the right. */
-      .product-card__media .tile-dots {
-        position: absolute;
-        inset-inline: 0;
-        bottom: 6px;
-        z-index: 2;
+      /* Manual picture controls: the shared engine's dots, rendered into a strip
+         that is a SIBLING of the card link — never inside the anchor (so no
+         invalid nesting / stray tab stop) and never over the overflow:hidden
+         picture (so no dot is clipped and there is no dead click zone on the
+         photo). Sits below the tile, centred, and wraps to fit any number of
+         pictures. Only present on tiles with >=2 frames. products.html doesn't
+         load css/carousel.css, so the dot appearance is defined here. RTL: the
+         dots inherit the tile's direction so dot 1 (the store image) sits on the
+         right, tracking the physical frame order. */
+      .tile-dots {
         display: flex;
         justify-content: center;
-        pointer-events: none;
+        margin-top: 8px;
       }
-      .product-card__media .tile-dots .carousel-dots {
-        padding: 5px 8px;
+      .tile-dots .carousel-dots {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
         gap: 6px;
-        pointer-events: auto;
-        background: rgba(255, 255, 255, 0.78);
-        background: color-mix(in srgb, var(--surface) 78%, transparent);
+        padding: 0;
+        max-width: 100%;
+      }
+      .tile-dots .carousel-dot {
+        width: 8px;
+        height: 8px;
+        padding: 0;
+        border: 0;
+        border-radius: var(--radius-pill, 999px);
+        background: var(--line, #e6e6e6);
+        cursor: pointer;
+        transition:
+          background 0.25s ease,
+          width 0.25s ease;
+      }
+      .tile-dots .carousel-dot:hover {
+        background: var(--sage, #141414);
+      }
+      .tile-dots .carousel-dot.is-active,
+      .tile-dots .carousel-dot[aria-current='true'] {
+        width: 22px;
+        background: var(--sage-deep, #000);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .tile-dots .carousel-dot {
+          transition: none;
+        }
       }
       .product-name {
         display: block;
@@ -662,22 +687,23 @@
         // Keep the tile's single tab stop on the card link — don't let the carousel
         // engine make the frame TRACK a focusable tab stop inside the anchor.
         if (!media.hasAttribute('tabindex')) media.setAttribute('tabindex', '-1');
-        // Dots host: created DETACHED so the engine renders the dots into it without
-        // it being captured as a slide (initCarousel snapshots media.children). The
-        // tile is a link — a dot click must change the picture, NOT navigate to the
-        // product page — so swallow the click here (stopPropagation cancels bubbling
-        // to the anchor, preventDefault cancels its navigation) while a tap on the
-        // picture still opens the product. Buttons only ever appear when there are
-        // ≥2 frames, which is always true here (frame 0 + ≥1 owner picture), so a
-        // single-picture tile — which never calls this — shows no dots.
+        // Dots host: a SIBLING of the card link (appended to the .product-card
+        // article, AFTER the anchor), NOT inside it. This keeps the dot <button>s
+        // out of the anchor — valid HTML, no stray tab stop inside the link, and a
+        // dot click can't follow the card link (it isn't a descendant of the
+        // anchor), so a dot changes the picture while a tap on the picture still
+        // opens the product page. Below the overflow:hidden media box the dots are
+        // never clipped and can wrap to any number of pictures. The buttons only
+        // appear when there are ≥2 frames, which is always true here (frame 0 + ≥1
+        // owner picture), so a single-picture tile — which never calls this — shows
+        // no dots. Fall back to media if the article wrapper is somehow absent.
+        const card = media.closest('.product-card') || media.parentNode || media;
         const dotsHost = document.createElement('div');
         dotsHost.className = 'tile-dots';
-        dotsHost.addEventListener('click', (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-        });
         // Manual only: autoplay:false → the engine starts no timer, so nothing
-        // moves without the shopper. dots:true renders the picture controls.
+        // moves without the shopper. dots:true renders the picture controls into
+        // dotsHost (dotsInto), so they are NOT captured as slides (initCarousel
+        // snapshots media.children before we attach the host).
         initCarousel(media, {
           mode: 'fade',
           autoplay: false,
@@ -686,8 +712,8 @@
           arrows: false,
           dotsInto: dotsHost,
         });
-        // Attach the dots AFTER init (never a slide) — overlaid on the frame.
-        media.appendChild(dotsHost);
+        // Attach the dots strip below the card, outside the anchor.
+        card.appendChild(dotsHost);
       }
 
       try {
