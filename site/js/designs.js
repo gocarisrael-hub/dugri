@@ -138,6 +138,19 @@ export function isPublicDesign(id, visibilityByTheme = VISIBILITY_BY_THEME) {
 }
 
 /**
+ * Whether a design SHIPS a board render. `thumbs.board` (the per-product raster
+ * the galleries flip through, and the picture the admin image manager previews)
+ * is the SINGLE canonical board-render indicator: the product detail gallery
+ * (js/product.js shouldShowBoard) and the admin board slot (admin-images.html
+ * shipsSlot) both key off THIS helper, so they can never disagree about whether a
+ * design ships a board. `products.board` is only the SVG generation source and is
+ * deliberately NOT consulted here — nothing must render off it.
+ */
+export function designShipsBoard(d) {
+  return !!(d && d.thumbs && d.thumbs.board);
+}
+
+/**
  * Full design list: id, display name, anchors, recolor mode, product SVGs.
  * `recolor` is 'slider' (the colour slider recolors it) or 'fixed' (locked to its
  * original colours — a baked-in raster glow can't be recoloured). `products.board`

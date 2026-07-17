@@ -157,6 +157,20 @@
         border-radius: 8px;
         display: block;
       }
+      /* Board slot on a design that ships no board: no default picture to show, so
+         the preview is an empty "upload a board" placeholder instead of a broken
+         image. Once the owner uploads a board it renders as a normal preview. */
+      .preview-empty {
+        border-style: dashed;
+        border-color: #e6cdd8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 10px;
+        color: var(--muted);
+        font-size: 12.5px;
+      }
       .slot .row {
         display: flex;
         gap: 8px;
@@ -296,7 +310,7 @@
     </div>
 
     <script type="module">
-      import { DESIGNS } from './js/designs.js';
+      import { DESIGNS, designShipsBoard } from './js/designs.js';
 
       const key = new URLSearchParams(location.search).get('key') || '';
       const qs = (id) => document.getElementById(id);
@@ -324,13 +338,25 @@
         back: 'גב הקלף',
         board: 'לוח המשחק',
       };
-      // The four slots per design; board only when the design ships a board.
-      function slotsFor(d) {
-        const s = ['store', 'front', 'back'];
-        if (d.products && d.products.board) s.push('board');
-        return s;
+      // All four slots for EVERY design. The board slot is now offered even for a
+      // design that ships no board (e.g. kids) so the owner can upload one — it
+      // just renders in an empty "upload a board" state until they do.
+      function slotsFor() {
+        return ['store', 'front', 'back', 'board'];
+      }
+      // Does this design SHIP a static asset for `slot` (so there's a default
+      // picture to preview / fall back to)? store/front/back always ship; a board
+      // only when the design carries one. A boardless design's board slot has no
+      // shipped picture — it starts empty until the owner uploads one. The board
+      // case uses the SHARED designShipsBoard(d) (thumbs.board) — the same single
+      // source of truth the product gallery (js/product.js shouldShowBoard) keys
+      // off — so the admin and the product page never disagree about a board.
+      function shipsSlot(d, slot) {
+        if (slot === 'board') return designShipsBoard(d);
+        return slot === 'store' || slot === 'front' || slot === 'back';
       }
       // The shipped static asset path for a design/slot (the fallback picture).
+      // Only meaningful when shipsSlot(d, slot) is true; a boardless board has none.
       function defaultSrc(d, slot) {
         return slot === 'store'
           ? `assets/designs/${d.id}/store.webp`
@@ -341,17 +367,27 @@
 
       function slotHtml(d, slot) {
         const override = images[d.id] && images[d.id][slot];
-        const src = override || defaultSrc(d, slot);
+        const ships = shipsSlot(d, slot);
+        // EMPTY: no upload yet AND the design ships no default for this slot (a
+        // boardless design's board). Show an "upload a board" placeholder instead
+        // of an <img> pointed at a non-existent file that would 404.
+        const isEmpty = !override && !ships;
         const badge = override
           ? '<span class="badge custom">מותאם</span>'
-          : '<span class="badge default">ברירת מחדל</span>';
+          : isEmpty
+            ? '<span class="badge default">אין תמונה</span>'
+            : '<span class="badge default">ברירת מחדל</span>';
+        const label = esc(SLOT_LABELS[slot] || slot);
+        const preview = isEmpty
+          ? `<div class="preview preview-empty">עדיין אין לוח לעיצוב הזה — העלו תמונת לוח.</div>`
+          : `<img class="preview" alt="${label}" src="${esc(override || defaultSrc(d, slot))}"
+                 onerror="this.style.visibility='hidden'" />`;
         return `
           <div class="slot" data-design="${esc(d.id)}" data-slot="${esc(slot)}">
-            <h3>${esc(SLOT_LABELS[slot] || slot)}${badge}</h3>
-            <img class="preview" alt="${esc(SLOT_LABELS[slot] || slot)}" src="${esc(src)}"
-                 onerror="this.style.visibility='hidden'" />
+            <h3>${label}${badge}</h3>
+            ${preview}
             <div class="row">
-              <button data-act="upload">החלף תמונה</button>
+              <button data-act="upload">${isEmpty ? 'העלה תמונה' : 'החלף תמונה'}</button>
               <button class="ghost" data-act="reset" ${override ? '' : 'disabled'}>איפוס</button>
             </div>
             <input type="file" accept="image/png,image/jpeg,image/webp" hidden />
@@ -402,7 +438,7 @@
           (d) => `
           <section class="design">
             <p class="design-title">${esc(d.name)} <small>(${esc(d.id)})</small></p>
-            <div class="slots">${slotsFor(d)
+            <div class="slots">${slotsFor()
               .map((slot) => slotHtml(d, slot))
               .join('')}</div>
             ${carouselHtml(d)}

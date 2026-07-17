@@ -245,3 +245,75 @@ test.describe('product.html — gallery slot override', () => {
       ]);
   });
 });
+
+test.describe('product.html — boardless design (kids) board override', () => {
+  test('surfaces an uploaded board as a gallery slide even though kids ships no board', async ({
+    page,
+  }) => {
+    await stubUploads(page);
+    // kids ships NO board render, but the owner uploaded one.
+    await page.route('**/api/design-images*', (route) =>
+      route.fulfill({ json: { images: { kids: { board: BOARD_OVERRIDE } } } })
+    );
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+
+    await page.goto('/product.html?design=kids');
+
+    const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
+    // First paint shows only front/back (no override yet); once the map resolves the
+    // uploaded board is appended as a third slide.
+    await expect
+      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .toEqual([
+        'assets/designs/kids/gallery-front.webp',
+        'assets/designs/kids/gallery-back.webp',
+        BOARD_OVERRIDE, // owner's uploaded board — sourced from the override alone
+      ]);
+  });
+
+  test('a 404 board override for kids DROPS the slide (no broken image, dots + zoom stay in sync)', async ({
+    page,
+  }) => {
+    // The override is set but its file 404s (NOT stubbed). A boardless design has no
+    // shipped gallery-board.webp to fall back to, so the override-only board slide
+    // must be REMOVED entirely — not left as a broken image with a phantom dot. The
+    // gallery settles back to front/back with exactly two dots, and the fullscreen
+    // zoom is rebuilt in lockstep.
+    await page.route('**/api/design-images*', (route) =>
+      route.fulfill({ json: { images: { kids: { board: BOARD_OVERRIDE } } } })
+    );
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+
+    await page.goto('/product.html?design=kids');
+
+    const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
+    // The transient third (board) slide is dropped once its image errors → back to 2.
+    await expect(slides).toHaveCount(2);
+    await expect
+      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .toEqual(['assets/designs/kids/gallery-front.webp', 'assets/designs/kids/gallery-back.webp']);
+    // Dots track the real slide count — no phantom third dot left behind.
+    await expect(page.locator('#galleryDots .carousel-dot')).toHaveCount(2);
+    // The fullscreen zoom carousel is rebuilt from the same shots (also two slides).
+    await expect(page.locator('#pdpZoomTrack .pdp-zoom-slide img')).toHaveCount(2);
+  });
+
+  test('with NO board override, kids shows no board slide and nothing is broken', async ({
+    page,
+  }) => {
+    await stubUploads(page);
+    await page.route('**/api/design-images*', (route) => route.fulfill({ json: { images: {} } }));
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+
+    await page.goto('/product.html?design=kids');
+
+    await expect(page.getByTestId('pdp-gallery')).toBeVisible();
+    const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
+    // Exactly two slides (front, back) — the board slide is omitted, and no slide
+    // points at the non-existent gallery-board.webp (no broken/404 image).
+    await expect(slides).toHaveCount(2);
+    await expect
+      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .toEqual(['assets/designs/kids/gallery-front.webp', 'assets/designs/kids/gallery-back.webp']);
+  });
+});

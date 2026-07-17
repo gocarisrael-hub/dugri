@@ -11,7 +11,9 @@ import {
   overrideText,
   photosFromOverride,
   galleryShots,
+  shouldShowBoard,
 } from '../../site/js/product.js';
+import { designShipsBoard } from '../../site/js/designs.js';
 
 const P1 = '/content-uploads/aaaaaaaaaaaaaaaa.png';
 const P2 = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
@@ -155,13 +157,48 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     for (const s of shots) expect(s.src).not.toMatch(/thumb-(front|back|board)\.webp$/);
   });
 
-  it('skips the board render for a boardless design', () => {
+  it('skips the board render for a boardless design (no board override)', () => {
     const kids = { id: 'kids', name: 'ילדים', thumbs: { front: 'f', back: 'b' } };
     const shots = galleryShots(kids, {});
     expect(shots.map((s) => s.src)).toEqual([
       'assets/designs/kids/gallery-front.webp',
       'assets/designs/kids/gallery-back.webp',
     ]);
+  });
+
+  it('surfaces a board slide for a boardless design when the owner uploaded a board', () => {
+    // kids ships NO board (thumbs has only front/back) but the owner uploaded one.
+    const kids = { id: 'kids', name: 'ילדים', thumbs: { front: 'f', back: 'b' } };
+    const map = { kids: { board: P1 } };
+    const shots = galleryShots(kids, {}, map);
+    expect(shots.map((s) => s.src)).toEqual([
+      'assets/designs/kids/gallery-front.webp',
+      'assets/designs/kids/gallery-back.webp',
+      P1, // owner's uploaded board picture — appears from the override alone
+    ]);
+    // No shipped gallery-board.webp exists, so the board slide carries NO fallback
+    // (a fallback would 404). front/back keep their static renders / no fallback.
+    expect(shots[2].fallback).toBeUndefined();
+  });
+
+  it('tags a boardless design’s override-only board slide `droppable` (no 404 fallback)', () => {
+    // kids ships NO board → its board slide (from the override alone) has no shipped
+    // gallery-board.webp to degrade to, so it must NOT carry a fallback (that would
+    // 404). Instead it is tagged `droppable` so fillTrack removes the whole slide +
+    // its dot on a load error rather than showing a broken image.
+    const kids = { id: 'kids', name: 'ילדים', thumbs: { front: 'f', back: 'b' } };
+    const shots = galleryShots(kids, {}, { kids: { board: P1 } });
+    expect(shots[2]).toMatchObject({ src: P1, droppable: true });
+    expect(shots[2].fallback).toBeUndefined();
+    // A design that SHIPS a board keeps its static fallback and is NOT droppable
+    // (it degrades to the shipped render, never dropped).
+    const neon = { id: 'neon', name: 'ניאון', thumbs: { front: 'f', back: 'b', board: 'brd' } };
+    const shipShots = galleryShots(neon, {}, { neon: { board: P1 } });
+    expect(shipShots[2]).toMatchObject({
+      src: P1,
+      fallback: 'assets/designs/neon/gallery-board.webp',
+    });
+    expect(shipShots[2].droppable).toBeUndefined();
   });
 
   it('prefers a per-design SLOT override over the static render, else falls back per-slot', () => {
@@ -201,5 +238,82 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     const map = { neon: { front: P1, back: P2, board: P1 } };
     const shots = galleryShots(design, { 'product-neon-photos': { imgs: [P2] } }, map);
     expect(shots.map((s) => s.src)).toEqual([P2]); // the curated carousel wins
+  });
+});
+
+describe('shouldShowBoard — board slide visibility', () => {
+  const shipsBoard = { id: 'neon', thumbs: { front: 'f', back: 'b', board: 'brd' } };
+  const boardless = { id: 'kids', thumbs: { front: 'f', back: 'b' } };
+
+  it('is true for a design that ships a board (regardless of overrides)', () => {
+    expect(shouldShowBoard(shipsBoard, {})).toBe(true);
+    expect(shouldShowBoard(shipsBoard, { neon: { board: P1 } })).toBe(true);
+  });
+
+  it('is true for a boardless design once a valid board override exists', () => {
+    expect(shouldShowBoard(boardless, { kids: { board: P1 } })).toBe(true);
+  });
+
+  it('is false for a boardless design with no board override', () => {
+    expect(shouldShowBoard(boardless, {})).toBe(false);
+    expect(shouldShowBoard(boardless, { kids: { front: P1 } })).toBe(false);
+  });
+
+  it('ignores a malformed/off-origin board override for a boardless design', () => {
+    expect(shouldShowBoard(boardless, { kids: { board: 'https://evil.example/x.png' } })).toBe(
+      false
+    );
+    expect(shouldShowBoard(boardless, { kids: { board: '/content-uploads/nope.gif' } })).toBe(
+      false
+    );
+  });
+});
+
+// The admin image manager (admin-images.html shipsSlot) and the product gallery
+// (product.js shouldShowBoard / defaultShots) once read TWO different fields to
+// decide "this design ships a board" — admin `products.board`, product
+// `thumbs.board`. They agree in the generated catalog today but nothing enforced
+// it. Both now key off the SHARED designShipsBoard(d) (thumbs.board), so they can
+// never disagree. These guard that single source of truth.
+describe('board "ships a board" is ONE shared field (admin ↔ product agree)', () => {
+  // admin shipsSlot(d,'board') === designShipsBoard(d); product shouldShowBoard uses it.
+  const shipsBoard = {
+    id: 'neon',
+    thumbs: { front: 'f', back: 'b', board: 'brd' },
+    products: { front: 'f', back: 'b', board: 'b' },
+  };
+  const boardless = {
+    id: 'kids',
+    thumbs: { front: 'f', back: 'b' },
+    products: { front: 'f', back: 'b' },
+  };
+
+  it('boardless design (no override): admin "ships board" and product "shows board" are BOTH false', () => {
+    expect(designShipsBoard(boardless)).toBe(false);
+    expect(shouldShowBoard(boardless, {})).toBe(false);
+  });
+
+  it('board-shipping design: admin "ships board" and product "shows board" are BOTH true', () => {
+    expect(designShipsBoard(shipsBoard)).toBe(true);
+    expect(shouldShowBoard(shipsBoard, {})).toBe(true);
+  });
+
+  it('the exact old divergence (products.board present, thumbs.board absent) now agrees — both false', () => {
+    // Under the old code admin (products.board) said "ships" while product
+    // (thumbs.board) said "boardless". Nothing keys off products.board anymore, so
+    // both treat it as boardless — the two pages can no longer disagree.
+    const divergent = {
+      id: 'x',
+      thumbs: { front: 'f', back: 'b' },
+      products: { board: 'only-svg' },
+    };
+    expect(designShipsBoard(divergent)).toBe(false);
+    expect(shouldShowBoard(divergent, {})).toBe(false);
+  });
+
+  it('designShipsBoard guards nullish inputs (never throws)', () => {
+    expect(designShipsBoard(null)).toBe(false);
+    expect(designShipsBoard({})).toBe(false);
+    expect(designShipsBoard({ thumbs: null })).toBe(false);
   });
 });

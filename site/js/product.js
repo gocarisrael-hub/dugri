@@ -22,7 +22,7 @@
 // public design and never throws. Private designs aren't in PUBLIC_DESIGNS so
 // they can't be deep-linked here.
 
-import { PUBLIC_DESIGNS, fetchDesignNames } from './designs.js';
+import { PUBLIC_DESIGNS, fetchDesignNames, designShipsBoard } from './designs.js';
 import { initCarousel } from './carousel.js';
 import { fetchPricing } from './pricing.js';
 import { loadDesignImages, overrideFor } from './design-images.js';
@@ -114,10 +114,24 @@ function resolveDesign() {
   return match || first;
 }
 
-/** The design's DEFAULT gallery photos: front/back/board, board skipped when the
- *  design ships without one (e.g. kids). Each is a {src, label}. Sources the crisp
- *  hi-res renders (assets/designs/<id>/gallery-*.webp) rather than the tiny picker
- *  thumbs (thumb-*.webp), which upscale blurry full-width.
+/** Whether the board gallery slide should appear for this design: true when the
+ *  design SHIPS a board render (thumbs.board) OR the owner has uploaded a board
+ *  override for it. A boardless design (e.g. kids) that gains a board override
+ *  surfaces the slide from the override alone — no shipped gallery-board.webp
+ *  exists for it, so nothing must depend on that static file. */
+export function shouldShowBoard(d, designImages) {
+  // Ships a board? Uses the SHARED designShipsBoard(d) (thumbs.board) so this and
+  // the admin image manager (admin-images.html shipsSlot) agree on the one field.
+  if (designShipsBoard(d)) return true;
+  return !!overrideFor(designImages, d && d.id, 'board');
+}
+
+/** The design's DEFAULT gallery photos: front/back/board. The board slide is
+ *  omitted only when the design ships no board AND has no board override
+ *  (shouldShowBoard); a boardless design the owner uploaded a board for still
+ *  shows it. Each is a {src, label}. Sources the crisp hi-res renders
+ *  (assets/designs/<id>/gallery-*.webp) rather than the tiny picker thumbs
+ *  (thumb-*.webp), which upscale blurry full-width.
  *
  *  `designImages` is the owner's per-design override map (js/design-images.js):
  *  a per-slot uploaded picture wins over the shipped static render, falling back
@@ -126,15 +140,25 @@ function defaultShots(d, designImages) {
   const thumbs = d.thumbs || {};
   const KIND = { front: 'קלף', back: 'גב הקלף', board: 'לוח המשחק' };
   const shots = ['front', 'back', 'board']
-    .filter((k) => thumbs[k])
+    .filter((k) => (k === 'board' ? shouldShowBoard(d, designImages) : !!thumbs[k]))
     .map((k) => {
       const staticSrc = `assets/designs/${d.id}/gallery-${k}.webp`;
       const override = overrideFor(designImages, d.id, k);
-      // When an override is used, carry the shipped static render as `fallback` so a
-      // missing/broken override file degrades to it (fillTrack wires the onerror).
-      return override
-        ? { src: override, label: `${d.name} · ${KIND[k]}`, fallback: staticSrc }
-        : { src: staticSrc, label: `${d.name} · ${KIND[k]}` };
+      // Does the design SHIP a static render for this slot? A boardless design has
+      // no gallery-board.webp, so its board slide (present only via an override)
+      // must NOT carry that non-existent file as a fallback — that would 404.
+      const ships = !!thumbs[k];
+      if (override) {
+        // When a shipped render exists, carry it as `fallback` so a missing/broken
+        // override file degrades to it (fillTrack wires the onerror). With no
+        // shipped render (a boardless board), the override is the SOLE source: it
+        // gets no fallback and is tagged `droppable` so fillTrack removes the whole
+        // slide (and its dot) on error instead of showing a broken image.
+        return ships
+          ? { src: override, label: `${d.name} · ${KIND[k]}`, fallback: staticSrc }
+          : { src: override, label: `${d.name} · ${KIND[k]}`, droppable: true };
+      }
+      return { src: staticSrc, label: `${d.name} · ${KIND[k]}` };
     });
   // Never render an empty gallery: fall back to the single picker thumb.
   if (!shots.length && d.thumb) shots.push({ src: d.thumb, label: d.name });
@@ -169,6 +193,11 @@ let currentOverrides = {};
 let currentDesignImages = {}; // owner's per-design store/gallery image overrides
 let galleryApi = null;
 let zoomApi = null;
+// True once a boardless design's OVERRIDE-ONLY board slide (no shipped render to
+// fall back to) failed to load and was dropped, so we don't drop/rebuild twice
+// (the gallery and zoom tracks each render — and error on — that image). Reset
+// whenever the gallery is rebuilt from a fresh source (a new override may load).
+let boardOverrideDropped = false;
 
 // Fill a track with slides. Shared by the inline gallery and the fullscreen zoom
 // overlay (same shots, different presentation). Returns the track (or null).
@@ -196,6 +225,14 @@ function fillTrack(trackId, slideClass, shots) {
         },
         { once: true }
       );
+    } else if (shot.droppable) {
+      // A `droppable` shot is a boardless design's override-only board slide: there
+      // is NO shipped render to fall back to. If the uploaded file is missing/broken
+      // (e.g. the entry exists in design-images.json but the upload isn't present on
+      // this instance), DROP the whole slide + its dot rather than show a broken
+      // image — removing it is the only non-404 degradation. `once` + the module
+      // guard keep it to a single rebuild across both tracks.
+      img.addEventListener('error', dropBoardSlide, { once: true });
     }
     slide.appendChild(img);
     track.appendChild(slide);
@@ -295,6 +332,20 @@ function rebuildCarousels(shots) {
   }
   renderGallery(shots);
   renderZoomSlides(shots);
+}
+
+// A boardless design's override-only board slide failed to load (no shipped render
+// to degrade to). Drop that slide entirely and rebuild both carousels from the
+// remaining shots, so the gallery's dots + the fullscreen zoom stay consistent (no
+// broken image, no phantom navigable dot). Guarded so the twin gallery/zoom image
+// errors only trigger ONE rebuild.
+function dropBoardSlide() {
+  if (boardOverrideDropped || !currentDesign) return;
+  boardOverrideDropped = true;
+  const shots = galleryShots(currentDesign, currentOverrides, currentDesignImages).filter(
+    (s) => !s.droppable
+  );
+  rebuildCarousels(shots);
 }
 
 // Back-to-store: prefer a real history.back() when the shopper arrived from
@@ -408,6 +459,7 @@ function onPhotosChanged(e) {
   currentOverrides[e.detail.key] = Object.assign({}, currentOverrides[e.detail.key], {
     imgs: e.detail.imgs,
   });
+  boardOverrideDropped = false; // fresh source: re-attempt any override-only board
   rebuildCarousels(galleryShots(currentDesign, currentOverrides, currentDesignImages));
 }
 
@@ -493,6 +545,7 @@ function applyOverridesToPage(d, overrides) {
   applyTextOverrides(d, currentOverrides);
   applyPerDesignFields(d, currentOverrides);
   if (photosFromOverride(currentOverrides, d.id).length) {
+    boardOverrideDropped = false; // fresh source: re-attempt any override-only board
     rebuildCarousels(galleryShots(d, currentOverrides, currentDesignImages));
   }
   if (window.dugriEditor && typeof window.dugriEditor.notifyInjected === 'function') {
@@ -510,7 +563,10 @@ function applyDesignImagesToPage(d, imagesMap) {
   const hasOverride = ['front', 'back', 'board'].some((k) =>
     overrideFor(currentDesignImages, d.id, k)
   );
-  if (hasOverride) rebuildCarousels(galleryShots(d, currentOverrides, currentDesignImages));
+  if (hasOverride) {
+    boardOverrideDropped = false; // fresh source: re-attempt any override-only board
+    rebuildCarousels(galleryShots(d, currentOverrides, currentDesignImages));
+  }
 }
 
 // Deliver this page's content overrides to `apply`. Preferred path REUSES the
