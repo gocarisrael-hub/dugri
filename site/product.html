@@ -755,7 +755,7 @@
                 stroke-linejoin="round"
               />
             </svg>
-            <span>לחנות</span>
+            <span data-edit="product-back-label">לחנות</span>
           </a>
           <button
             class="hdr-toggle"
@@ -792,11 +792,11 @@
         role="menu"
         aria-label="תפריט ניווט"
       >
-        <a href="products.html" role="menuitem">החנות</a>
-        <a href="index.html#reviews" role="menuitem">המלצות</a>
-        <a href="index.html#story" role="menuitem">הסיפור שלנו</a>
-        <a href="index.html#faq" role="menuitem">שאלות</a>
-        <a href="timer.html" role="menuitem">טיימר</a>
+        <a href="products.html" role="menuitem" data-edit="product-nav-shop">החנות</a>
+        <a href="index.html#reviews" role="menuitem" data-edit="product-nav-reviews">המלצות</a>
+        <a href="index.html#story" role="menuitem" data-edit="product-nav-story">הסיפור שלנו</a>
+        <a href="index.html#faq" role="menuitem" data-edit="product-nav-faq">שאלות</a>
+        <a href="timer.html" role="menuitem" data-edit="product-nav-timer">טיימר</a>
       </nav>
     </header>
 
@@ -914,7 +914,9 @@
             <!-- related cards injected by js/product.js -->
           </div>
           <div class="pdp-store-cta">
-            <a class="btn ghost" href="products.html">מעבר אל החנות ›</a>
+            <a class="btn ghost" href="products.html" data-edit="product-store-cta"
+              >מעבר אל החנות ›</a
+            >
           </div>
         </div>
       </section>
@@ -922,7 +924,7 @@
 
     <footer>
       <div class="wrap">
-        <p>דוגרי</p>
+        <p data-edit="product-footer-brand">דוגרי</p>
         <div class="foot-icons">
           <a
             class="foot-icon fi-wa"
@@ -977,9 +979,12 @@
           </a>
         </div>
         <div class="foot-contact">
-          <span><span class="fc-label">וואטסאפ / טלפון:</span> 0546577715</span>
           <span
-            ><span class="fc-label">מייל:</span>
+            ><span class="fc-label" data-edit="product-footer-wa-label">וואטסאפ / טלפון:</span>
+            0546577715</span
+          >
+          <span
+            ><span class="fc-label" data-edit="product-footer-mail-label">מייל:</span>
             <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
           >
         </div>

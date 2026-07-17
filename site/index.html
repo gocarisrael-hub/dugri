@@ -874,6 +874,7 @@
           data-testid="order-now"
           data-ga="order_started"
           data-ga-cta="nav"
+          data-edit="index-nav-order"
           >הזמינו עכשיו</a
         >
       </div>
@@ -890,13 +891,14 @@
           data-testid="nav-order-flow"
           data-ga="order_started"
           data-ga-cta="nav-menu"
+          data-edit="index-nav-orderflow"
           >להזמנה</a
         >
-        <a href="products.html" role="menuitem">החנות</a>
-        <a href="index.html#reviews" role="menuitem">המלצות</a>
-        <a href="index.html#story" role="menuitem">הסיפור שלנו</a>
-        <a href="index.html#faq" role="menuitem">שאלות</a>
-        <a href="timer.html" role="menuitem">טיימר</a>
+        <a href="products.html" role="menuitem" data-edit="index-nav-shop">החנות</a>
+        <a href="index.html#reviews" role="menuitem" data-edit="index-nav-reviews">המלצות</a>
+        <a href="index.html#story" role="menuitem" data-edit="index-nav-story">הסיפור שלנו</a>
+        <a href="index.html#faq" role="menuitem" data-edit="index-nav-faq">שאלות</a>
+        <a href="timer.html" role="menuitem" data-edit="index-nav-timer">טיימר</a>
       </nav>
     </header>
 
@@ -1417,7 +1419,7 @@
 
     <footer>
       <div class="wrap">
-        <p class="foot-brand">דוגרי</p>
+        <p class="foot-brand" data-edit="index-footer-brand">דוגרי</p>
         <div class="foot-icons">
           <a
             class="foot-icon fi-wa"
@@ -1472,9 +1474,12 @@
           </a>
         </div>
         <div class="foot-contact">
-          <span><span class="fc-label">וואטסאפ / טלפון:</span> 0546577715</span>
           <span
-            ><span class="fc-label">מייל:</span>
+            ><span class="fc-label" data-edit="index-footer-wa-label">וואטסאפ / טלפון:</span>
+            0546577715</span
+          >
+          <span
+            ><span class="fc-label" data-edit="index-footer-mail-label">מייל:</span>
             <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
           >
         </div>

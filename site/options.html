@@ -1800,12 +1800,12 @@
           <span></span>
         </button>
         <div class="nav-links" id="navLinks" data-testid="nav-links">
-          <a href="products.html">העיצובים שלנו</a>
-          <a href="how.html">איך זה עובד?</a>
-          <a href="index.html#gallery">הצצה</a>
-          <a href="index.html#proof">המלצות</a>
-          <a href="timer.html">טיימר</a>
-          <a class="nav-cta" href="products.html">הזמנה</a>
+          <a href="products.html" data-edit="options-nav-designs">העיצובים שלנו</a>
+          <a href="how.html" data-edit="options-nav-how">איך זה עובד?</a>
+          <a href="index.html#gallery" data-edit="options-nav-peek">הצצה</a>
+          <a href="index.html#proof" data-edit="options-nav-reviews">המלצות</a>
+          <a href="timer.html" data-edit="options-nav-timer">טיימר</a>
+          <a class="nav-cta" href="products.html" data-edit="options-nav-order">הזמנה</a>
         </div>
       </div>
     </nav>
@@ -1888,8 +1888,10 @@
 
       <!-- STEP 1 — design -->
       <section class="wiz-step" data-step="1" data-testid="step-1">
-        <h2 class="wiz-title">בחרו עיצוב</h2>
-        <p class="wiz-sub">זה הסגנון של הקלפים והלוח. אפשר להחליף בכל רגע.</p>
+        <h2 class="wiz-title" data-edit="options-step1-title">בחרו עיצוב</h2>
+        <p class="wiz-sub" data-edit="options-step1-sub">
+          זה הסגנון של הקלפים והלוח. אפשר להחליף בכל רגע.
+        </p>
         <div
           class="designs"
           id="designList"
@@ -1900,7 +1902,7 @@
         <!-- Access code for a PRIVATE design: a client given a code unlocks their
              hidden design and orders it at standard pricing. -->
         <details class="code-box" data-testid="design-code-box">
-          <summary>יש לך קוד?</summary>
+          <summary data-edit="options-code-summary">יש לך קוד?</summary>
           <div class="code-row">
             <input
               type="text"
@@ -1921,8 +1923,10 @@
 
       <!-- STEP 2 — color + add-ons -->
       <section class="wiz-step" data-step="2" data-testid="step-2">
-        <h2 class="wiz-title">צבע ותוספות</h2>
-        <p class="wiz-sub">בחרו צבע ראשי - התצוגה מתעדכנת מיד. התוספת למטה לא חובה.</p>
+        <h2 class="wiz-title" data-edit="options-step2-title">צבע ותוספות</h2>
+        <p class="wiz-sub" data-edit="options-step2-sub">
+          בחרו צבע ראשי - התצוגה מתעדכנת מיד. התוספת למטה לא חובה.
+        </p>
         <!-- Swipeable front / back / board preview of the CURRENT design in the
              CURRENT colour, on the shared carousel engine (js/carousel.js). Its
              slides are built from the same design.products + palette that drive
@@ -1954,10 +1958,10 @@
           />
           <span class="addon-body">
             <span class="addon-title">
-              הוסיפו צ'ייסרים למשחק
-              <span class="addon-free">נכלל בחינם</span>
+              <span data-edit="options-chasers-title">הוסיפו צ'ייסרים למשחק</span>
+              <span class="addon-free" data-edit="options-chasers-free">נכלל בחינם</span>
             </span>
-            <span class="addon-desc">
+            <span class="addon-desc" data-edit="options-chasers-desc">
               מוסיפים ללוח תאים מיוחדים של משחק שתייה - מי שנוחת עליהם, מרים כוסית! 🍻
             </span>
           </span>
@@ -2084,7 +2088,9 @@
              The title auto-fits, so a long one just prints smaller — the live
              preview below shows the exact result so the buyer can self-correct. -->
         <label class="wiz-field" id="customTitleField" data-testid="custom-title-field">
-          <span class="wiz-lbl">מוזמנים להזין כותרת אחרת לגמרי!</span>
+          <span class="wiz-lbl" data-edit="options-customtitle-label"
+            >מוזמנים להזין כותרת אחרת לגמרי!</span
+          >
           <textarea
             class="wiz-input"
             id="customTitleInput"
@@ -2094,7 +2100,10 @@
             placeholder="למשל: ליאת חוגגת 40"
             aria-label="כותרת מותאמת אישית (רשות)"
           ></textarea>
-          <span class="wiz-hint" data-testid="custom-title-hint"
+          <span
+            class="wiz-hint"
+            data-testid="custom-title-hint"
+            data-edit="options-customtitle-hint"
             >משאירים ריק - והכותרת של העיצוב תופיע. אפשר לכתוב כותרת משלכם והיא תחליף אותה.</span
           >
           <span
@@ -2110,7 +2119,7 @@
              the name, plus a Hebrew word-font picker. Best-effort — any failure
              just hides the panel and never blocks the wizard. -->
         <div class="name-preview" id="namePreview" data-testid="name-preview" hidden>
-          <p class="name-preview-lbl">כך זה ייראה עם השם:</p>
+          <p class="name-preview-lbl" data-edit="options-namepreview-label">כך זה ייראה עם השם:</p>
           <p
             class="name-preview-warn"
             id="namePreviewWarn"
@@ -2120,7 +2129,7 @@
           <!-- Font picker sits ABOVE the rendered images: pick a font here and
                see it applied on the card + board below. -->
           <div class="wiz-fontpicker">
-            <span class="wiz-lbl">גופן המילים</span>
+            <span class="wiz-lbl" data-edit="options-fontpicker-label">גופן המילים</span>
             <div
               class="font-opts"
               id="fontOpts"
@@ -2603,8 +2612,10 @@
            uploaded AFTER the collection is created (POST /api/collections/:id/pawns),
            since the collection id + owner_token don't exist until then. -->
       <section class="wiz-step" data-step="5" data-testid="step-pawns">
-        <h2 class="wiz-title">העלו עד 4 תמונות (רשות)</h2>
-        <p class="wiz-sub">התמונות יהפכו לחיילים (פיונים) במשחק. תמונות פנים עובדות הכי טוב.</p>
+        <h2 class="wiz-title" data-edit="options-photos-title">העלו עד 4 תמונות (רשות)</h2>
+        <p class="wiz-sub" data-edit="options-photos-sub">
+          התמונות יהפכו לחיילים (פיונים) במשחק. תמונות פנים עובדות הכי טוב.
+        </p>
         <div class="pawn-grid" id="pawnGrid" data-testid="pawn-grid">
           <!-- 4 fixed slots; each wraps a hidden file input + a small preview. -->
           <label class="pawn-slot" data-idx="0">
@@ -2773,8 +2784,8 @@
 
       <!-- STEP 4 — your details -->
       <section class="wiz-step" data-step="4" data-testid="step-4">
-        <h2 class="wiz-title">הפרטים שלכם</h2>
-        <p class="wiz-sub">לשליחת קישור הניהול והקובץ המוכן.</p>
+        <h2 class="wiz-title" data-edit="options-step4-title">הפרטים שלכם</h2>
+        <p class="wiz-sub" data-edit="options-step4-sub">לשליחת קישור הניהול והקובץ המוכן.</p>
         <!-- compact recap of everything picked, so the details step confirms the
              order visually (thumbnail of the chosen card + chips). Populated by
              paintStep5Summary() whenever the details step is shown. -->
@@ -2848,7 +2859,7 @@
           }
         </style>
         <label class="wiz-field">
-          <span class="wiz-lbl">מייל</span>
+          <span class="wiz-lbl" data-edit="options-email-label">מייל</span>
           <input
             class="wiz-input"
             type="email"
@@ -2863,7 +2874,7 @@
           >
         </label>
         <label class="wiz-field">
-          <span class="wiz-lbl">טלפון נייד</span>
+          <span class="wiz-lbl" data-edit="options-phone-label">טלפון נייד</span>
           <input
             class="wiz-input"
             type="tel"
