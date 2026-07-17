@@ -220,10 +220,12 @@
       }
       /* the product image — the only visual weight in the card. Sharp corners
          (no rounding that would clip the art), no border / background / shadow.
-         object-fit:cover lets the landscape cover photo fill the frame cleanly
-         (matching the home rail); the frame's aspect-ratio is close to the
-         photo's (~1.5) so the crop is minimal. */
+         object-fit:contain shows the WHOLE picture, never cropped (the shopper
+         asked to see the full art); any letterbox falls back to the tile's
+         --surface background. position:relative anchors the dot controls that a
+         carousel tile overlays on the lower edge of the frame. */
       .product-card__media {
+        position: relative;
         display: block;
         width: 100%;
         aspect-ratio: 841.92 / 595.5;
@@ -234,7 +236,7 @@
       .product-card__media img {
         width: 100%;
         height: 100%;
-        object-fit: cover;
+        object-fit: contain;
         display: block;
       }
       /* A tile that cycles pictures: the store image + the owner's carousel
@@ -245,6 +247,28 @@
         display: block;
         width: 100%;
         height: 100%;
+      }
+      /* Manual picture controls: the shared engine's dots, overlaid on the
+         lower edge of the frame so the shopper can change pictures (there is no
+         auto-advance). The host passes pointer events through except on the dot
+         plate; a subtle --surface wash keeps the dots legible on any photo. Sits
+         above the stacked frames (active frame z-index:1). RTL: the dots inherit
+         the media's direction so dot 1 (the store image) sits on the right. */
+      .product-card__media .tile-dots {
+        position: absolute;
+        inset-inline: 0;
+        bottom: 6px;
+        z-index: 2;
+        display: flex;
+        justify-content: center;
+        pointer-events: none;
+      }
+      .product-card__media .tile-dots .carousel-dots {
+        padding: 5px 8px;
+        gap: 6px;
+        pointer-events: auto;
+        background: rgba(255, 255, 255, 0.78);
+        background: color-mix(in srgb, var(--surface) 78%, transparent);
       }
       .product-name {
         display: block;
@@ -598,41 +622,15 @@
         return article;
       }
 
-      // How fast the tile carousel cross-fades between pictures. Short + snappy
-      // ("fast", per the store's other carousels) — the fade transition itself is
-      // ~0.8s (js/carousel.js FADE_MS), so this is the hold between fades.
-      const TILE_CAROUSEL_INTERVAL = 2500;
-
-      // Only auto-advance tiles that are actually on screen. Each tile carousel is
-      // a forever setInterval + GPU opacity transitions; a grid of them running
-      // off-screen is pure wasted CPU/battery. One shared IntersectionObserver
-      // pauses a carousel when its tile scrolls out of view and resumes it when it
-      // returns (via the shared engine's pause()/play()). Degrades gracefully: with
-      // no IntersectionObserver the carousels just run as before.
-      const tileVisibility =
-        typeof IntersectionObserver === 'function'
-          ? new IntersectionObserver(
-              (entries) => {
-                for (const e of entries) {
-                  const api = e.target.__carousel;
-                  if (!api) continue;
-                  if (e.isIntersecting) api.play();
-                  else api.pause();
-                }
-              },
-              // A small margin so a tile resumes just before it scrolls into view.
-              { rootMargin: '150px 0px' }
-            )
-          : null;
-
-      // Turn a tile's single store image into a fast, seamless, auto-advancing
-      // carousel of [store image, ...owner-added pictures]. Reuses the site's
-      // shared fade carousel (the same engine the homepage hero uses): it stacks
-      // the frames and cross-fades between them endlessly — no scroll, no clones,
-      // so it can't break the grid cell. Under reduced motion it just rests on the
-      // store image. `storeImg` is the existing (possibly store-overridden) tile
-      // image; `paths` are the extra validated upload paths; `fallback` is the
-      // shipped static store.webp a broken frame degrades to.
+      // Turn a tile's single store image into a MANUAL carousel of [store image,
+      // ...owner-added pictures]. Reuses the site's shared fade carousel (the same
+      // engine the homepage hero uses): it stacks the frames and cross-fades
+      // between them — no scroll, no clones, so it can't break the grid cell. There
+      // is NO auto-advance: the shopper drives it with the dots. Under reduced
+      // motion the cross-fade is an instant swap (engine-handled). `storeImg` is the
+      // existing (possibly store-overridden) tile image; `paths` are the extra
+      // validated upload paths; `fallback` is the shipped static store.webp a broken
+      // frame degrades to.
       function buildTileCarousel(media, storeImg, paths, fallback) {
         // Wrap the existing store image as the FIRST frame so it always shows and
         // never breaks, then add one frame per owner-added picture.
@@ -662,21 +660,34 @@
           media.appendChild(frame);
         }
         // Keep the tile's single tab stop on the card link — don't let the carousel
-        // engine add a focusable track inside the anchor.
+        // engine make the frame TRACK a focusable tab stop inside the anchor.
         if (!media.hasAttribute('tabindex')) media.setAttribute('tabindex', '-1');
-        const api = initCarousel(media, {
-          mode: 'fade',
-          interval: TILE_CAROUSEL_INTERVAL,
-          loop: true,
-          dots: false,
+        // Dots host: created DETACHED so the engine renders the dots into it without
+        // it being captured as a slide (initCarousel snapshots media.children). The
+        // tile is a link — a dot click must change the picture, NOT navigate to the
+        // product page — so swallow the click here (stopPropagation cancels bubbling
+        // to the anchor, preventDefault cancels its navigation) while a tap on the
+        // picture still opens the product. Buttons only ever appear when there are
+        // ≥2 frames, which is always true here (frame 0 + ≥1 owner picture), so a
+        // single-picture tile — which never calls this — shows no dots.
+        const dotsHost = document.createElement('div');
+        dotsHost.className = 'tile-dots';
+        dotsHost.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
         });
-        // Pause immediately and let the observer resume it only while on screen
-        // (the observer fires an initial callback for every observed target). With
-        // no IntersectionObserver, leave it playing as the engine started it.
-        if (tileVisibility) {
-          api.pause();
-          tileVisibility.observe(media);
-        }
+        // Manual only: autoplay:false → the engine starts no timer, so nothing
+        // moves without the shopper. dots:true renders the picture controls.
+        initCarousel(media, {
+          mode: 'fade',
+          autoplay: false,
+          loop: true,
+          dots: true,
+          arrows: false,
+          dotsInto: dotsHost,
+        });
+        // Attach the dots AFTER init (never a slide) — overlaid on the frame.
+        media.appendChild(dotsHost);
       }
 
       try {

@@ -24,6 +24,15 @@ function stubUploads(page) {
   );
 }
 
+// Index of the visible frame in a fade tile carousel. The engine lights the
+// active frame by REMOVING aria-hidden (inactive frames get aria-hidden="true"),
+// so the active frame is the only .tile-frame without that attribute.
+function activeFrameIndex(media) {
+  return media
+    .locator('.tile-frame')
+    .evaluateAll((frames) => frames.findIndex((f) => !f.hasAttribute('aria-hidden')));
+}
+
 test.describe('products.html — store-tile override', () => {
   test('uses the overridden store picture when present, static store.webp when not', async ({
     page,
@@ -115,9 +124,82 @@ test.describe('products.html — store-tile carousel', () => {
         media.locator('[data-testid="carousel-frame"]').evaluateAll((els) => els.map((i) => i.src))
       )
       .toEqual([expect.stringContaining(CAR1), expect.stringContaining(CAR2)]);
+
+    // The pictures are shown in FULL, never cropped: object-fit is contain (not
+    // the old cover), for both the store frame and the added frames.
+    await expect(media.locator('[data-testid="product-image"]')).toHaveCSS('object-fit', 'contain');
+    await expect(media.locator('[data-testid="carousel-frame"]').first()).toHaveCSS(
+      'object-fit',
+      'contain'
+    );
+
+    // A ≥2-frame tile gets one manual dot per frame (the shopper's controls).
+    await expect(media.locator('.tile-dots .carousel-dot')).toHaveCount(3);
   });
 
-  test('a design WITHOUT carousel pictures stays a single static image (no carousel)', async ({
+  test('the tile does NOT auto-advance — it rests on the store frame until the shopper acts', async ({
+    page,
+  }) => {
+    await stubUploads(page);
+    await page.route('**/api/design-images*', (route) =>
+      route.fulfill({ json: { images: { birthday: { carousel: [CAR1, CAR2] } } } })
+    );
+
+    await page.goto('/products.html');
+
+    const media = page.locator('.product-card[data-design-id="birthday"] .product-card__media');
+    await expect(media).toHaveClass(/carousel--fade/);
+    // Starts on frame 0 (the store image).
+    await expect.poll(() => activeFrameIndex(media)).toBe(0);
+
+    // Wait well past the old 2500ms auto-advance interval with NO interaction —
+    // the active frame must not have moved (autoplay is off).
+    await page.waitForTimeout(3200);
+    expect(await activeFrameIndex(media)).toBe(0);
+  });
+
+  test('clicking a dot changes the picture WITHOUT navigating away from the store', async ({
+    page,
+  }) => {
+    await stubUploads(page);
+    await page.route('**/api/design-images*', (route) =>
+      route.fulfill({ json: { images: { birthday: { carousel: [CAR1, CAR2] } } } })
+    );
+
+    await page.goto('/products.html');
+
+    const media = page.locator('.product-card[data-design-id="birthday"] .product-card__media');
+    const dots = media.locator('.tile-dots .carousel-dot');
+    await expect(dots).toHaveCount(3);
+    await expect.poll(() => activeFrameIndex(media)).toBe(0);
+
+    // Clicking the 2nd dot advances to frame 1 and does NOT follow the card link.
+    await dots.nth(1).click();
+    await expect.poll(() => activeFrameIndex(media)).toBe(1);
+    await expect(page).toHaveURL(/\/products\.html$/);
+
+    // A different dot jumps straight to that frame — still no navigation.
+    await dots.nth(2).click();
+    await expect.poll(() => activeFrameIndex(media)).toBe(2);
+    await expect(page).toHaveURL(/\/products\.html$/);
+  });
+
+  test('tapping the picture still opens the product detail page', async ({ page }) => {
+    await stubUploads(page);
+    await page.route('**/api/design-images*', (route) =>
+      route.fulfill({ json: { images: { birthday: { carousel: [CAR1, CAR2] } } } })
+    );
+
+    await page.goto('/products.html');
+
+    const media = page.locator('.product-card[data-design-id="birthday"] .product-card__media');
+    await expect(media).toHaveClass(/carousel--fade/);
+    // The visible (active) store frame is the picture; tapping it navigates.
+    await media.locator('[data-testid="product-image"]').click();
+    await expect(page).toHaveURL(/\/product\.html\?design=birthday/);
+  });
+
+  test('a design WITHOUT carousel pictures stays a single static image (no carousel, no dots)', async ({
     page,
   }) => {
     await stubUploads(page);
@@ -134,6 +216,9 @@ test.describe('products.html — store-tile carousel', () => {
     );
     await expect(neon).not.toHaveClass(/carousel--fade/);
     await expect(neon.locator('.tile-frame')).toHaveCount(0);
+    // A single-picture tile shows no manual controls.
+    await expect(neon.locator('.tile-dots')).toHaveCount(0);
+    await expect(neon.locator('.carousel-dot')).toHaveCount(0);
   });
 
   test('a 404 carousel picture degrades to the store image without breaking the tile', async ({
