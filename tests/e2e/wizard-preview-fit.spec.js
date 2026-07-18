@@ -148,7 +148,7 @@ test.describe('every product tab is a readable landscape page', () => {
   });
 });
 
-// ---- the preview fills the card width on a PHONE (iPhone 14 + Pixel 7) ----
+// ---- the preview fills the card width on a PHONE (iPhone 14) ----
 test.describe('the live sheet fills the card width on a phone', () => {
   test.beforeEach(({}, testInfo) => {
     test.skip(testInfo.project.name === 'Desktop Chrome', 'phone width-fill check');

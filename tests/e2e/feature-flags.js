@@ -5,7 +5,7 @@
 // that exercises colour picking, the chasers add-on, the word-font picker or the
 // live name preview must stub the endpoint ON. We stub PER PAGE (page.route)
 // rather than seeding settings.json: a reused dev server won't re-read a seeded
-// file, and the three device projects share one server — a live endpoint would
+// file, and the two device projects share one server — a live endpoint would
 // race the admin-features spec's writes. A per-page route is isolated and
 // race-free, and each spec declares exactly the flag state it needs.
 

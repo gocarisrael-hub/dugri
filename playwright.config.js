@@ -21,11 +21,14 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
 
-  // Run spec files on all three device profiles.
+  // Run spec files on two device profiles: a desktop and a phone. These are the
+  // only profiles with device-gated specs (mobile-only checks run on iPhone 14;
+  // several layout/measurement specs are Desktop-Chrome-only), so together they
+  // exercise every merge-gating test. Pixel 7 was dropped — it was a redundant
+  // chromium-mobile profile with no unique specs, so it only added CI minutes.
   projects: [
     { name: 'Desktop Chrome', use: { ...devices['Desktop Chrome'] } },
     { name: 'iPhone 14', use: { ...devices['iPhone 14'], browserName: 'chromium' } },
-    { name: 'Pixel 7', use: { ...devices['Pixel 7'] } },
   ],
 
   // Start the Node server (static site + /api). Data goes to a throwaway dir, and
