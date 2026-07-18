@@ -237,6 +237,39 @@ function runRecipeDiff({ root, slug, pythonBin = 'python3', timeoutMs = 120000, 
   };
 }
 
+// Best-effort: downsample raster images embedded in an uploaded SVG so an
+// image-heavy Canva export (each photo baked in as a full-res base64 blob)
+// doesn't blow past the upload limit and stays light on disk / at render time.
+// Shells out to generator/shrink_svg_images.py (Python + Pillow, already in the
+// image) the same way runRecipeDiff does. Skips vector-only or already-small
+// SVGs, and returns the ORIGINAL buffer on ANY failure — a missing/broken Python
+// must never block an upload. Deterministic, so a clean/filled pair that shares a
+// background still diffs to zero there (recipe_diff stays reliable). `runner` is
+// injectable for tests.
+const SHRINK_MIN_BYTES = Number(process.env.TEMPLATE_IMAGE_SHRINK_MIN_BYTES || 300 * 1024);
+function shrinkSvgImages(buf, { root = REPO_ROOT, pythonBin = 'python3', runner } = {}) {
+  if (!Buffer.isBuffer(buf) || buf.length < SHRINK_MIN_BYTES) return buf;
+  if (!buf.includes('data:image/')) return buf; // nothing to shrink
+  const script = path.join(root, 'generator', 'shrink_svg_images.py');
+  try {
+    const run = runner || spawnSync;
+    const result = run(pythonBin, [script], {
+      input: buf,
+      timeout: 120000,
+      maxBuffer: 512 * 1024 * 1024,
+    });
+    const out = result && result.status === 0 ? result.stdout : null;
+    const outBuf = Buffer.isBuffer(out) ? out : out != null ? Buffer.from(out) : null;
+    // Accept only a smaller, still-SVG-looking result; otherwise keep the original.
+    if (outBuf && outBuf.length > 0 && outBuf.length < buf.length && looksLikeSvg(outBuf)) {
+      return outBuf;
+    }
+  } catch {
+    // fall through to the original buffer
+  }
+  return buf;
+}
+
 // Validate + collect the parsed fields/files for onboarding. Returns
 // { error } on the first problem, or a normalized descriptor on success.
 function normalizeOnboarding({ root, fields, files }) {
@@ -322,6 +355,19 @@ function onboardTemplate(opts) {
   const root = opts.root || REPO_ROOT;
   const norm = normalizeOnboarding({ root, fields: opts.fields, files: opts.files });
   if (norm.error) return { error: norm.error, httpStatus: 400 };
+
+  // Shrink oversized embedded images BEFORE writing, so both the stored files and
+  // the recipe_diff (which reads the written fronts) use the lightened SVGs.
+  // Best-effort per file; unless disabled with shrinkImages:false (pure-write test).
+  if (opts.shrinkImages !== false) {
+    const sh = (b) =>
+      shrinkSvgImages(b, { root, pythonBin: opts.pythonBin, runner: opts.shrinkRunner });
+    for (const role of SVG_ROLES) {
+      norm.clean[role] = sh(norm.clean[role]);
+      norm.filled[role] = sh(norm.filled[role]);
+    }
+    if (norm.clean.board_chasers) norm.clean.board_chasers = sh(norm.clean.board_chasers);
+  }
 
   const written = writeTemplateFiles({
     root,
@@ -746,6 +792,7 @@ module.exports = {
   loadThemesCached,
   writeTemplateFiles,
   runRecipeDiff,
+  shrinkSvgImages,
   normalizeOnboarding,
   onboardTemplate,
   parseMultipart,

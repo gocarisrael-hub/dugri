@@ -1019,3 +1019,113 @@ describe('POST /api/admin/templates — oversized upload', () => {
     expect(String(data.detail)).toMatch(/size limit/i);
   });
 });
+
+// -- embedded-image shrinking -------------------------------------------------
+const { spawnSync: nodeSpawnSync } = require('node:child_process');
+const shrinkRepoRoot = path.join(serverDir, '..');
+// A buffer big enough to clear SHRINK_MIN_BYTES and containing an embedded image,
+// so the real code path (spawn the shrinker) is exercised via an injected runner.
+const BIG_IMG_SVG = Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/png;base64,' +
+    'A'.repeat(400 * 1024) +
+    '"/></svg>'
+);
+
+describe('templates.shrinkSvgImages (best-effort, injected runner)', () => {
+  let templates;
+  beforeAll(() => {
+    delete require.cache[require.resolve(path.join(serverDir, 'templates.js'))];
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  it('uses the shrunk output when it is smaller and still an SVG', () => {
+    const small = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg">tiny</svg>');
+    const out = templates.shrinkSvgImages(BIG_IMG_SVG, {
+      runner: () => ({ status: 0, stdout: small }),
+    });
+    expect(out).toBe(small);
+  });
+
+  it('keeps the original when the runner exits non-zero', () => {
+    const runner = () => ({ status: 1, stdout: Buffer.from('<svg>x</svg>'), stderr: 'boom' });
+    expect(templates.shrinkSvgImages(BIG_IMG_SVG, { runner })).toBe(BIG_IMG_SVG);
+  });
+
+  it('keeps the original when the output is not smaller', () => {
+    const bigger = Buffer.concat([BIG_IMG_SVG, Buffer.from('xxxx')]);
+    expect(
+      templates.shrinkSvgImages(BIG_IMG_SVG, { runner: () => ({ status: 0, stdout: bigger }) })
+    ).toBe(BIG_IMG_SVG);
+  });
+
+  it('keeps the original when the output does not look like an SVG', () => {
+    const runner = () => ({ status: 0, stdout: Buffer.from('not-an-svg-at-all') });
+    expect(templates.shrinkSvgImages(BIG_IMG_SVG, { runner })).toBe(BIG_IMG_SVG);
+  });
+
+  it('keeps the original when the runner throws', () => {
+    const runner = () => {
+      throw new Error('spawn failed');
+    };
+    expect(templates.shrinkSvgImages(BIG_IMG_SVG, { runner })).toBe(BIG_IMG_SVG);
+  });
+
+  it('never spawns for a small buffer or a vector-only SVG', () => {
+    let called = 0;
+    const runner = () => {
+      called += 1;
+      return { status: 0, stdout: Buffer.from('<svg>x</svg>') };
+    };
+    const small = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg">data:image/png;base64,AAAA</svg>'
+    );
+    const vectorOnly = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg">' + 'p'.repeat(400 * 1024) + '</svg>'
+    );
+    expect(templates.shrinkSvgImages(small, { runner })).toBe(small);
+    expect(templates.shrinkSvgImages(vectorOnly, { runner })).toBe(vectorOnly);
+    expect(called).toBe(0);
+  });
+});
+
+describe('templates.shrinkSvgImages with real Python (skipped without Pillow)', () => {
+  const hasPillow =
+    nodeSpawnSync('python3', ['-c', 'import PIL'], { encoding: 'utf8' }).status === 0;
+  let templates;
+  beforeAll(() => {
+    delete require.cache[require.resolve(path.join(serverDir, 'templates.js'))];
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  it.runIf(hasPillow)('downsizes a large embedded image end-to-end', () => {
+    // Build an SVG holding a big NOISY (incompressible) 1200px PNG via Pillow.
+    const gen = nodeSpawnSync(
+      'python3',
+      [
+        '-c',
+        'import io,base64,os;from PIL import Image;' +
+          'im=Image.frombytes("RGB",(1200,1200),os.urandom(1200*1200*3));' +
+          'b=io.BytesIO();im.save(b,format="PNG");' +
+          'print(base64.b64encode(b.getvalue()).decode())',
+      ],
+      { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }
+    );
+    const b64 = String(gen.stdout || '').trim();
+    const svg = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">' +
+        '<image xlink:href="data:image/png;base64,' +
+        b64 +
+        '"/></svg>'
+    );
+    const prev = process.env.TEMPLATE_IMAGE_MAXPX;
+    process.env.TEMPLATE_IMAGE_MAXPX = '600'; // force a downsize from 1200px
+    try {
+      const out = templates.shrinkSvgImages(svg, { root: shrinkRepoRoot, pythonBin: 'python3' });
+      expect(out.length).toBeLessThan(svg.length);
+      expect(templates.looksLikeSvg(out)).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.TEMPLATE_IMAGE_MAXPX;
+      else process.env.TEMPLATE_IMAGE_MAXPX = prev;
+    }
+  });
+});
