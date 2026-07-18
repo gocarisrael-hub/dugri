@@ -762,11 +762,27 @@
         font-weight: 700;
         font-size: 0.85em;
       }
+      /* Delivery address — a two-column grid so short, related fields pair up
+         (city + postal, apartment + floor) instead of stacking one box under
+         another. The street line spans the full width. Works in RTL as-is:
+         the grid follows the writing direction, so column 1 is the right one. */
       #addressForm {
-        margin: 4px 0 12px;
+        margin: 8px 0 12px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px 10px;
       }
-      #addressForm .fld {
-        margin-top: 10px;
+      #addressForm .addr-field {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      #addressForm .addr-field .fld {
+        margin: 0 0 5px;
+      }
+      /* Street + house number is the longest field — give it the whole row. */
+      #addressForm .addr-street {
+        grid-column: 1 / -1;
       }
       .pay-total {
         /* Flex row (RTL): label, then current price, then the struck full price
@@ -1187,16 +1203,38 @@
         </div>
 
         <div id="addressForm" class="hidden">
-          <label class="fld" for="addrStreet">רחוב ומספר</label>
-          <input type="text" id="addrStreet" autocomplete="street-address" />
-          <label class="fld" for="addrCity">עיר</label>
-          <input type="text" id="addrCity" autocomplete="address-level2" />
-          <label class="fld" for="addrPostal">מיקוד</label>
-          <input type="text" id="addrPostal" autocomplete="postal-code" inputmode="numeric" />
-          <label class="fld" for="addrApt">דירה (לא חובה)</label>
-          <input type="text" id="addrApt" />
-          <label class="fld" for="addrFloor">קומה (לא חובה)</label>
-          <input type="text" id="addrFloor" />
+          <div class="addr-field addr-street">
+            <label class="fld" for="addrStreet">רחוב ומספר</label>
+            <input
+              type="text"
+              id="addrStreet"
+              autocomplete="street-address"
+              placeholder="הרצל 12"
+            />
+          </div>
+          <div class="addr-field addr-city">
+            <label class="fld" for="addrCity">עיר</label>
+            <input type="text" id="addrCity" autocomplete="address-level2" placeholder="תל אביב" />
+          </div>
+          <div class="addr-field addr-postal">
+            <label class="fld" for="addrPostal">מיקוד</label>
+            <input
+              type="text"
+              id="addrPostal"
+              autocomplete="postal-code"
+              inputmode="numeric"
+              maxlength="7"
+              placeholder="6100000"
+            />
+          </div>
+          <div class="addr-field addr-apt">
+            <label class="fld" for="addrApt">דירה (לא חובה)</label>
+            <input type="text" id="addrApt" />
+          </div>
+          <div class="addr-field addr-floor">
+            <label class="fld" for="addrFloor">קומה (לא חובה)</label>
+            <input type="text" id="addrFloor" inputmode="numeric" />
+          </div>
         </div>
 
         <div class="coupon-box">
