@@ -964,3 +964,58 @@ describe('templates.designDisplayNames — the storefront name bridge', () => {
     expect(templates.designDisplayNames(themes, [{ id: 'x', theme: 'constructor' }])).toEqual({});
   });
 });
+
+// An over-sized upload is rejected by body-parser (express.raw) with a 413 BEFORE
+// the route handler runs. Boot the app with a deliberately TINY limit and confirm
+// the error middleware turns that into a legible JSON message (not a bare 413) so
+// the admin UI can explain what happened. See TEMPLATE_UPLOAD_LIMIT in index.js.
+describe('POST /api/admin/templates — oversized upload', () => {
+  let app;
+  let server;
+  let base;
+  let prevLimit;
+
+  beforeAll(async () => {
+    const root = makeScaffold();
+    process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-tpl-413-data-'));
+    process.env.GENERATED_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-tpl-413-gen-'));
+    process.env.ADMIN_KEY = ADMIN_KEY;
+    process.env.TEMPLATE_ROOT = root;
+    prevLimit = process.env.TEMPLATE_UPLOAD_LIMIT;
+    process.env.TEMPLATE_UPLOAD_LIMIT = '2kb'; // tiny, so a small body trips it
+
+    delete require.cache[require.resolve(path.join(serverDir, 'index.js'))];
+    app = require(path.join(serverDir, 'index.js'));
+    await new Promise((resolve) => {
+      server = app.listen(0, () => {
+        base = 'http://127.0.0.1:' + server.address().port;
+        resolve();
+      });
+    });
+  });
+
+  afterAll(() => {
+    if (server) server.close();
+    if (prevLimit === undefined) delete process.env.TEMPLATE_UPLOAD_LIMIT;
+    else process.env.TEMPLATE_UPLOAD_LIMIT = prevLimit;
+    // Reload index.js on the real limit so later suites (if any) aren't affected.
+    delete require.cache[require.resolve(path.join(serverDir, 'index.js'))];
+  });
+
+  it('returns a legible 413 (not a bare status) when the body exceeds the limit', async () => {
+    const boundary = '----dugri413' + Math.random().toString(16).slice(2);
+    const big = Buffer.alloc(10 * 1024, 0x41); // 10kb > 2kb limit
+    const body = buildMultipart(boundary, [
+      { name: 'clean_fronts', filename: 'big.svg', data: big },
+    ]);
+    const res = await fetch(base + '/api/admin/templates?key=' + ADMIN_KEY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
+      body,
+    });
+    expect(res.status).toBe(413);
+    const data = await res.json().catch(() => ({}));
+    expect(data.error).toBeTruthy();
+    expect(String(data.detail)).toMatch(/size limit/i);
+  });
+});
