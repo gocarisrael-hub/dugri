@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 // DATA_DIR=.e2e-data (throwaway), so overrides written here never touch real data.
 const KEY = 'dugri-admin';
 
-// The three device projects run this spec in parallel against ONE server (shared
+// The two device projects run this spec in parallel against ONE server (shared
 // DATA_DIR). To keep assertions race-free we read each save/reset from the page's
 // OWN re-rendered inputs (populated by that request's own single-threaded
 // response), never a shared re-fetch. Every test resets the keys it touched so no

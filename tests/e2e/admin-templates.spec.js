@@ -86,8 +86,8 @@ test.describe('admin templates — status view (read-only)', () => {
 test.describe('admin templates — mutations (fixture only, single project)', () => {
   test.describe.configure({ mode: 'serial' });
   // Run the mutating tests on ONE project only — skipped BEFORE the browser page
-  // fixture is created on the others, so the full 3-device matrix never launches
-  // three concurrent browsers here (and only one project ever writes the file).
+  // fixture is created on the others, so the device matrix never launches
+  // concurrent browsers here (and only one project ever writes the file).
   // THEN refuse to run at all unless the live server lists the fixture-only
   // sentinel theme — proof it is the test-owned server honoring the throwaway
   // TEMPLATE_ROOT. If a dev already had `node server/index.js` on :4321 (which
