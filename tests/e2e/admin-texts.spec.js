@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 // DATA_DIR=.e2e-data (throwaway), so overrides written here never touch real data.
 const KEY = 'dugri-admin';
 
-// The three device projects run the SAME spec in parallel against ONE server
+// The two device projects run the SAME spec in parallel against ONE server
 // (shared DATA_DIR), so a re-fetch of `effective` for a fixed settings key can
 // observe another worker's concurrent write. To keep round-trip assertions
 // race-free we click Save/Reset and read the page's OWN response: the Node

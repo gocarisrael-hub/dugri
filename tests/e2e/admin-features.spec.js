@@ -7,7 +7,7 @@ import { test, expect } from '@playwright/test';
 const KEY = 'dugri-admin';
 const FLAGS = ['color_picking', 'chasers_choice', 'font_choice', 'name_preview'];
 
-// This spec WRITES the shared live features store. The three device projects
+// This spec WRITES the shared live features store. The two device projects
 // share one server (one DATA_DIR), so running it on all three would race the
 // same keys (toggle vs. reload vs. reset). It asserts UI wiring, not device
 // layout, so run it once on a single project — no cross-worker interleaving.
