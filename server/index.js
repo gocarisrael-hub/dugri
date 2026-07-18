@@ -51,7 +51,11 @@ const PYTHON_BIN = process.env.PYTHON || 'python3';
 // the real repo. Max multipart upload size for that endpoint (several SVGs + two
 // fonts).
 const TEMPLATE_ROOT = process.env.TEMPLATE_ROOT || REPO_ROOT;
-const TEMPLATE_UPLOAD_LIMIT = process.env.TEMPLATE_UPLOAD_LIMIT || '30mb';
+// Raised from 30mb: a full template is several SVGs + two fonts in ONE multipart
+// request, and Canva-exported SVGs that embed raster images get large fast, so a
+// legitimate upload was hitting the body-parser limit and coming back as a bare
+// 413. Still env-overridable for an unusually heavy template.
+const TEMPLATE_UPLOAD_LIMIT = process.env.TEMPLATE_UPLOAD_LIMIT || '100mb';
 // Max multipart body for a single content-editor photo upload. The store caps the
 // image itself at ~4MB (server/content.js IMAGE_CAP); this leaves headroom for the
 // multipart envelope so a valid image is never rejected at the body-parser layer.
@@ -2312,6 +2316,23 @@ async function runReminderScan(now = Date.now()) {
   }
   return sent;
 }
+
+// An over-sized upload is rejected by body-parser with a 413 (entity.too.large)
+// BEFORE the route runs, so the route's own handler never sees it. Without this
+// error middleware the client only gets a bare "413" with no body; translate it
+// into a clear JSON message the admin UI can show. Registered last so it catches
+// errors from every route. Must keep 4 args for Express to treat it as an error
+// handler; _req is unused (argsIgnorePattern '^_').
+app.use((err, _req, res, next) => {
+  if (err && (err.type === 'entity.too.large' || err.status === 413 || err.statusCode === 413)) {
+    return res.status(413).json({
+      error: 'הקובץ גדול מדי',
+      detail:
+        'the upload exceeds the size limit — export the SVGs without embedded images, or raise TEMPLATE_UPLOAD_LIMIT',
+    });
+  }
+  return next(err);
+});
 
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
