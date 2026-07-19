@@ -358,6 +358,45 @@ test('owner pay panel: select delivery → address fields appear + total 199', a
   await expect(page.locator('#payPanel')).not.toContainText('ביט');
 });
 
+test('owner pay panel: delivery address uses a two-column layout, not stacked boxes', async ({
+  page,
+}) => {
+  await stubPricing(page);
+  await createCollection(page, 'Shira');
+
+  await page.locator('#payPanel summary').click();
+  await page.check('input[name="payVersion"][value="delivery"]');
+  await expect(page.locator('#addressForm')).toBeVisible();
+
+  const box = async (sel) => {
+    const b = await page.locator(sel).boundingBox();
+    if (!b) throw new Error('no box for ' + sel);
+    return b;
+  };
+  const [street, city, postal, apt, floor] = await Promise.all([
+    box('#addrStreet'),
+    box('#addrCity'),
+    box('#addrPostal'),
+    box('#addrApt'),
+    box('#addrFloor'),
+  ]);
+  const sameRow = (a, b) => Math.abs(a.y - b.y) < 5;
+
+  // Street spans its own full-width row, above the paired fields.
+  expect(street.y).toBeLessThan(city.y - 5);
+  expect(street.width).toBeGreaterThan(city.width + 20);
+
+  // City + postal share a row; apartment + floor share a row (side by side,
+  // at distinct horizontal positions — the whole point of the fix).
+  expect(sameRow(city, postal)).toBe(true);
+  expect(sameRow(apt, floor)).toBe(true);
+  expect(Math.abs(city.x - postal.x)).toBeGreaterThan(20);
+  expect(Math.abs(apt.x - floor.x)).toBeGreaterThan(20);
+
+  // The two rows are distinct — the apt/floor row sits below the city/postal row.
+  expect(apt.y).toBeGreaterThan(city.y + 5);
+});
+
 test('owner pay panel is collapsed by default and opens on the summary button', async ({
   page,
 }) => {
