@@ -4,10 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// Unit tests for the per-design product-image override store
-// (server/design-images.js): design/slot validation, set/get/reset, the public
-// full-map read, and atomic persistence round-trip. Mirrors the loadStore pattern
-// in content-store.test.js. server/ is CommonJS, so a dynamic import resolves to
+// Unit tests for the per-design GALLERY store (server/design-images.js): design/
+// slot validation, base-slot override set/reset, per-surface visibility flags,
+// extra named photos (add/update/remove), ordering, the reclaim guard, and atomic
+// persistence round-trip. server/ is CommonJS, so a dynamic import resolves to
 // module.exports on `.default`.
 
 function freshTmpDir() {
@@ -27,8 +27,9 @@ async function loadStore(dir) {
 // Valid our-own upload paths (16-hex hash + raster ext) — the only shape allowed.
 const P1 = '/content-uploads/aaaaaaaaaaaaaaaa.png';
 const P2 = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
+const P3 = '/content-uploads/cccccccccccccccc.jpg';
 
-describe('design-images store', () => {
+describe('design-images gallery store', () => {
   const dirs = [];
   const ORIGINAL_DATA_DIR = process.env.DATA_DIR;
   afterEach(() => {
@@ -37,291 +38,192 @@ describe('design-images store', () => {
     for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
     dirs.length = 0;
   });
-
-  it('validates design ids (alnum start, kebab) and the four slots', async () => {
+  async function store() {
     const dir = freshTmpDir();
     dirs.push(dir);
-    const store = await loadStore(dir);
-    expect(store.designOk('posttrip')).toBe('posttrip');
-    expect(store.designOk('kids-2')).toBe('kids-2');
-    expect(store.designOk('-bad')).toBe(null);
-    expect(store.designOk('Bad Id')).toBe(null);
-    expect(store.designOk('')).toBe(null);
-    for (const s of ['store', 'board', 'front', 'back']) expect(store.slotOk(s)).toBe(s);
-    expect(store.slotOk('cover')).toBe(null);
-    expect(store.slotOk('')).toBe(null);
+    return loadStore(dir);
+  }
+
+  it('validates design ids (alnum start, kebab) and the four base slots', async () => {
+    const s = await store();
+    expect(s.designOk('posttrip')).toBe('posttrip');
+    expect(s.designOk('kids-2')).toBe('kids-2');
+    expect(s.designOk('-bad')).toBe(null);
+    expect(s.designOk('Bad Id')).toBe(null);
+    expect(s.designOk('')).toBe(null);
+    for (const slot of ['store', 'front', 'back', 'board']) expect(s.slotOk(slot)).toBe(slot);
+    expect(s.slotOk('cover')).toBe(null);
+    expect(s.slotOk('')).toBe(null);
   });
 
-  it('set stores an our-own upload path; get/getForDesign read it back; getAll reflects it', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    // Nothing set yet → public read is blank.
-    expect(store.get('posttrip', 'board')).toBe(null);
-    expect(store.getForDesign('posttrip')).toEqual({});
-    expect(store.getAll()).toEqual({});
+  it('setBaseImg stores an our-own upload path; getForDesign/getAll reflect it', async () => {
+    const s = await store();
+    expect(s.getForDesign('posttrip')).toEqual({});
+    expect(s.getAll()).toEqual({});
 
-    expect(store.set('posttrip', 'board', P1)).toEqual({ board: P1 });
-    expect(store.set('posttrip', 'store', P2)).toEqual({ board: P1, store: P2 });
-    expect(store.get('posttrip', 'board')).toBe(P1);
-    expect(store.get('posttrip', 'store')).toBe(P2);
-    expect(store.getForDesign('posttrip')).toEqual({ board: P1, store: P2 });
-    expect(store.getAll()).toEqual({ posttrip: { board: P1, store: P2 } });
+    expect(s.setBaseImg('posttrip', 'board', P1)).toEqual({ ok: true, prev: null });
+    expect(s.getForDesign('posttrip')).toEqual({ base: { board: { img: P1 } } });
+    // Replacing returns the displaced path so the route can reclaim it.
+    expect(s.setBaseImg('posttrip', 'board', P2)).toEqual({ ok: true, prev: P1 });
+    expect(s.getForDesign('posttrip')).toEqual({ base: { board: { img: P2 } } });
+    expect(s.getAll()).toEqual({ posttrip: { base: { board: { img: P2 } } } });
   });
 
-  it('accepts + returns a board override for a BOARDLESS design id (e.g. kids)', async () => {
-    // Slots are NOT gated per-design server-side (board ∈ SLOTS), so a design that
-    // ships no board (kids) can still carry a board override — this is what lets the
-    // owner upload a board for it and the product page surface the slide.
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    expect(store.get('kids', 'board')).toBe(null); // nothing yet
-    expect(store.set('kids', 'board', P1)).toEqual({ board: P1 });
-    expect(store.get('kids', 'board')).toBe(P1);
-    expect(store.getForDesign('kids')).toEqual({ board: P1 });
-    expect(store.getAll()).toEqual({ kids: { board: P1 } });
-    // And it can be reset back like any other slot.
-    expect(store.reset('kids', 'board')).toBe(true);
-    expect(store.get('kids', 'board')).toBe(null);
-    expect(store.getAll()).toEqual({});
+  it('setBaseImg REJECTS off-origin / malformed paths and bad design/slot (no write)', async () => {
+    const s = await store();
+    expect(s.setBaseImg('posttrip', 'board', 'https://evil.example/x.png')).toEqual({
+      ok: false,
+      prev: null,
+    });
+    expect(s.setBaseImg('posttrip', 'board', '/content-uploads/not-a-hash.png').ok).toBe(false);
+    expect(s.setBaseImg('posttrip', 'board', '/content-uploads/aaaaaaaaaaaaaaaa.gif').ok).toBe(
+      false
+    );
+    expect(s.setBaseImg('Bad Id', 'board', P1).ok).toBe(false);
+    expect(s.setBaseImg('posttrip', 'cover', P1).ok).toBe(false);
+    expect(s.getAll()).toEqual({});
   });
 
-  it('set REJECTS an off-origin / malformed path and a bad design/slot (returns null, no write)', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    expect(store.set('posttrip', 'board', 'https://evil.example/x.png')).toBe(null);
-    expect(store.set('posttrip', 'board', '/content-uploads/not-a-hash.png')).toBe(null);
-    expect(store.set('posttrip', 'board', '/content-uploads/aaaaaaaaaaaaaaaa.gif')).toBe(null);
-    expect(store.set('Bad Id', 'board', P1)).toBe(null);
-    expect(store.set('posttrip', 'cover', P1)).toBe(null);
-    expect(store.getAll()).toEqual({}); // nothing persisted
+  it('resetBaseImg clears only the override img, prunes an empty bag, no-op when gone', async () => {
+    const s = await store();
+    s.setBaseImg('posttrip', 'board', P1);
+    expect(s.resetBaseImg('posttrip', 'board')).toEqual({ ok: true, prev: P1 });
+    expect(s.getForDesign('posttrip')).toEqual({});
+    expect(s.getAll()).toEqual({}); // pruned
+    expect(s.resetBaseImg('posttrip', 'board')).toEqual({ ok: false, prev: null });
   });
 
-  it('get returns null for a slot that was never set (fallback to static asset)', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    store.set('posttrip', 'board', P1);
-    expect(store.get('posttrip', 'front')).toBe(null); // unset slot
-    expect(store.get('birthday', 'board')).toBe(null); // unset design
+  it('setBaseFlags stores only DEVIATIONS from the slot default', async () => {
+    const s = await store();
+    s.setBaseFlags('neon', 'store', { onProducts: false });
+    expect(s.getForDesign('neon')).toEqual({ base: { store: { onProducts: false } } });
+    // Re-enabling clears the deviation and prunes the bag.
+    s.setBaseFlags('neon', 'store', { onProducts: true });
+    expect(s.getAll()).toEqual({});
+    // store is hidden on the product page BY DEFAULT: onProduct:false stores nothing,
+    // while opting it IN (onProduct:true) is the deviation that persists.
+    s.setBaseFlags('neon', 'store', { onProduct: false });
+    expect(s.getAll()).toEqual({});
+    s.setBaseFlags('neon', 'store', { onProduct: true });
+    expect(s.getForDesign('neon')).toEqual({ base: { store: { onProduct: true } } });
+    // A hide + an override img coexist on the same slot (front hidden on product page).
+    s.setBaseImg('neon', 'front', P1);
+    s.setBaseFlags('neon', 'front', { onProduct: false });
+    expect(s.getForDesign('neon').base.front).toEqual({ img: P1, onProduct: false });
   });
 
-  it('getForDesign returns a COPY (mutating it cannot corrupt the store)', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    store.set('neon', 'store', P1);
-    const got = store.getForDesign('neon');
-    got.store = 'tampered';
-    got.board = 'tampered';
-    expect(store.getForDesign('neon')).toEqual({ store: P1 });
+  it('addPhoto appends a named extra photo with default-on visibility and a stable id', async () => {
+    const s = await store();
+    const a = s.addPhoto('posttrip', P1, '  וריאציה ראשונה  ');
+    expect(a).toMatchObject({
+      id: 'p1',
+      img: P1,
+      name: 'וריאציה ראשונה',
+      onProducts: true,
+      onProduct: true,
+    });
+    const b = s.addPhoto('posttrip', P2, '');
+    expect(b.id).toBe('p2');
+    expect(s.getForDesign('posttrip').photos.map((p) => p.id)).toEqual(['p1', 'p2']);
+    // Bad design / path → null, no write.
+    expect(s.addPhoto('Bad Id', P3)).toBe(null);
+    expect(s.addPhoto('posttrip', 'https://evil/x.png')).toBe(null);
   });
 
-  it('reset removes one slot, prunes an empty design bag, and is a no-op when already gone', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    store.set('posttrip', 'board', P1);
-    store.set('posttrip', 'store', P2);
-    expect(store.reset('posttrip', 'board')).toBe(true);
-    expect(store.getForDesign('posttrip')).toEqual({ store: P2 });
-    expect(store.reset('posttrip', 'store')).toBe(true);
-    expect(store.getForDesign('posttrip')).toEqual({});
-    expect(store.getAll()).toEqual({}); // design bag pruned when empty
-    expect(store.reset('posttrip', 'store')).toBe(false); // already gone
-    expect(store.reset('Bad Id', 'store')).toBe(false);
+  it('updatePhoto patches name + visibility; removePhoto returns the freed path', async () => {
+    const s = await store();
+    const a = s.addPhoto('posttrip', P1, 'first');
+    const up = s.updatePhoto('posttrip', a.id, { name: 'renamed', onProducts: false });
+    expect(up).toMatchObject({ id: a.id, name: 'renamed', onProducts: false, onProduct: true });
+    expect(s.updatePhoto('posttrip', 'nope', { name: 'x' })).toBe(null);
+    expect(s.removePhoto('posttrip', a.id)).toBe(P1);
+    expect(s.getForDesign('posttrip')).toEqual({});
+    expect(s.removePhoto('posttrip', a.id)).toBe(null);
   });
 
-  it('isImageReferenced finds a path in ANY design/slot (orphan-reclaim guard)', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    store.set('posttrip', 'board', P1);
-    store.set('birthday', 'store', P1); // same file, another slot (shared/content-addressed)
-    store.set('neon', 'front', P2);
-    expect(store.isImageReferenced(P1)).toBe(true);
-    expect(store.isImageReferenced(P2)).toBe(true);
-    expect(store.isImageReferenced('/content-uploads/cccccccccccccccc.jpg')).toBe(false);
-    expect(store.isImageReferenced('')).toBe(false);
-    // Reset ONE of the two slots that share P1 → still referenced by the other.
-    store.reset('posttrip', 'board');
-    expect(store.isImageReferenced(P1)).toBe(true);
-    store.reset('birthday', 'store');
-    expect(store.isImageReferenced(P1)).toBe(false); // last reference gone → reclaimable
+  it('setOrder keeps only known keys (base slots + photo ids), dedups, and prunes empty', async () => {
+    const s = await store();
+    const a = s.addPhoto('posttrip', P1, 'x');
+    const out = s.setOrder('posttrip', ['board', a.id, 'front', 'bogus', 'board', 'store']);
+    expect(out).toEqual(['board', a.id, 'front', 'store']);
+    expect(s.getForDesign('posttrip').order).toEqual(['board', a.id, 'front', 'store']);
+    // Removing the photo drops it from the order too.
+    s.removePhoto('posttrip', a.id);
+    expect(s.getForDesign('posttrip').order).toEqual(['board', 'front', 'store']);
+    // An empty order prunes.
+    s.setOrder('posttrip', []);
+    expect(s.getAll()).toEqual({});
   });
 
-  it('persists overrides atomically and reloads them from disk (round-trip)', async () => {
+  it('isImageReferenced finds a path in any base override OR extra photo', async () => {
+    const s = await store();
+    s.setBaseImg('posttrip', 'board', P1);
+    s.addPhoto('birthday', P1, 'shared'); // same file, another design (content-addressed)
+    s.addPhoto('neon', P2, 'y');
+    expect(s.isImageReferenced(P1)).toBe(true);
+    expect(s.isImageReferenced(P2)).toBe(true);
+    expect(s.isImageReferenced(P3)).toBe(false);
+    expect(s.isImageReferenced('')).toBe(false);
+    // Reset ONE of the two references to P1 → still referenced by the other.
+    s.resetBaseImg('posttrip', 'board');
+    expect(s.isImageReferenced(P1)).toBe(true);
+  });
+
+  it('getForDesign returns a deep COPY (mutating it cannot corrupt the store)', async () => {
+    const s = await store();
+    s.addPhoto('neon', P1, 'a');
+    const got = s.getForDesign('neon');
+    got.photos[0].name = 'tampered';
+    got.photos.push({ id: 'pX' });
+    expect(s.getForDesign('neon').photos).toEqual([
+      { id: 'p1', img: P1, name: 'a', onProducts: true, onProduct: true },
+    ]);
+  });
+
+  it('persists atomically and reloads from disk (round-trip)', async () => {
     const dir = freshTmpDir();
     dirs.push(dir);
-    let store = await loadStore(dir);
-    expect(fs.existsSync(dir)).toBe(false); // DATA_DIR does not exist yet
-    store.set('posttrip', 'board', P1);
-    store.set('birthday', 'store', P2);
+    let s = await loadStore(dir);
+    expect(fs.existsSync(dir)).toBe(false);
+    s.setBaseImg('posttrip', 'board', P1);
+    s.addPhoto('birthday', P2, 'named');
 
     const file = path.join(dir, 'design-images.json');
     expect(fs.existsSync(file)).toBe(true);
-    expect(fs.existsSync(`${file}.tmp`)).toBe(false); // no leftover temp
+    expect(fs.existsSync(`${file}.tmp`)).toBe(false);
 
-    // A fresh module instance (same DATA_DIR) loads what was persisted.
-    store = await loadStore(dir);
-    expect(store.get('posttrip', 'board')).toBe(P1);
-    expect(store.get('birthday', 'store')).toBe(P2);
-  });
-});
-
-const P3 = '/content-uploads/cccccccccccccccc.jpg';
-
-describe('design-images store — per-design carousel array', () => {
-  const dirs = [];
-  const ORIGINAL_DATA_DIR = process.env.DATA_DIR;
-  afterEach(() => {
-    if (ORIGINAL_DATA_DIR === undefined) delete process.env.DATA_DIR;
-    else process.env.DATA_DIR = ORIGINAL_DATA_DIR;
-    for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
-    dirs.length = 0;
+    s = await loadStore(dir);
+    expect(s.getForDesign('posttrip')).toEqual({ base: { board: { img: P1 } } });
+    expect(s.getForDesign('birthday').photos[0]).toMatchObject({ img: P2, name: 'named' });
   });
 
-  it('appends our-own upload paths in order and getCarousel reads a COPY', async () => {
+  it('sanitizes a corrupt / hand-edited file on load (drops garbage, keeps valid)', async () => {
     const dir = freshTmpDir();
     dirs.push(dir);
-    const store = await loadStore(dir);
-    expect(store.getCarousel('birthday')).toEqual([]);
-    expect(store.addCarouselImage('birthday', P1)).toEqual([P1]);
-    expect(store.addCarouselImage('birthday', P2)).toEqual([P1, P2]);
-    expect(store.getCarousel('birthday')).toEqual([P1, P2]);
-    // Mutating the returned copy can't corrupt the store.
-    const got = store.getCarousel('birthday');
-    got.push('tampered');
-    expect(store.getCarousel('birthday')).toEqual([P1, P2]);
-  });
-
-  it('dedupes an already-present path (no growth, order preserved)', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    store.addCarouselImage('neon', P1);
-    store.addCarouselImage('neon', P2);
-    expect(store.addCarouselImage('neon', P1)).toEqual([P1, P2]); // dup ignored
-    expect(store.getCarousel('neon')).toEqual([P1, P2]);
-  });
-
-  it('caps the carousel at CAROUSEL_CAP', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    const cap = store.CAROUSEL_CAP;
-    expect(cap).toBeGreaterThan(0);
-    let last;
-    for (let i = 0; i < cap + 4; i++) {
-      const hex = i.toString(16).padStart(16, '0').slice(0, 16);
-      last = store.addCarouselImage('kids', `/content-uploads/${hex}.png`);
-    }
-    expect(last.length).toBe(cap);
-    expect(store.getCarousel('kids').length).toBe(cap);
-  });
-
-  it('rejects a bad design id / off-origin path (returns null, no write)', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    expect(store.addCarouselImage('Bad Id', P1)).toBe(null);
-    expect(store.addCarouselImage('neon', 'https://evil.example/x.png')).toBe(null);
-    expect(store.addCarouselImage('neon', '/content-uploads/not-a-hash.png')).toBe(null);
-    expect(store.getAll()).toEqual({});
-  });
-
-  it('remove takes out one entry from ONLY that design; prunes an emptied carousel + bag', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    store.addCarouselImage('birthday', P1);
-    store.addCarouselImage('birthday', P2);
-    store.addCarouselImage('neon', P1); // same path, DIFFERENT design
-    expect(store.removeCarouselImage('birthday', P1)).toEqual([P2]);
-    expect(store.getCarousel('birthday')).toEqual([P2]); // only birthday's P1 gone
-    expect(store.getCarousel('neon')).toEqual([P1]); // neon untouched
-    // Removing the last entry prunes the carousel key AND the (otherwise empty) bag.
-    expect(store.removeCarouselImage('birthday', P2)).toEqual([]);
-    expect(store.getAll().birthday).toBeUndefined();
-    // A no-op remove of an absent path returns the unchanged array.
-    expect(store.removeCarouselImage('neon', P3)).toEqual([P1]);
-    expect(store.removeCarouselImage('Bad Id', P1)).toBe(null); // bad design → null
-  });
-
-  it('carousel survives a per-slot reset (independent of the slot overrides)', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    store.set('posttrip', 'store', P1);
-    store.addCarouselImage('posttrip', P2);
-    store.reset('posttrip', 'store'); // clears the slot only
-    expect(store.get('posttrip', 'store')).toBe(null);
-    expect(store.getCarousel('posttrip')).toEqual([P2]); // carousel kept
-    expect(store.getAll().posttrip).toEqual({ carousel: [P2] }); // bag not pruned
-  });
-
-  it('isImageReferenced finds a path inside a carousel array (orphan-reclaim guard)', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    store.addCarouselImage('birthday', P1);
-    store.set('neon', 'store', P2); // slot path still detected too
-    expect(store.isImageReferenced(P1)).toBe(true);
-    expect(store.isImageReferenced(P2)).toBe(true);
-    expect(store.isImageReferenced(P3)).toBe(false);
-    store.removeCarouselImage('birthday', P1);
-    expect(store.isImageReferenced(P1)).toBe(false); // last reference gone → reclaimable
-  });
-
-  it('persists the carousel array and reloads it from disk (round-trip)', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    let store = await loadStore(dir);
-    store.addCarouselImage('birthday', P1);
-    store.addCarouselImage('birthday', P2);
-    store = await loadStore(dir); // fresh instance, same DATA_DIR
-    expect(store.getCarousel('birthday')).toEqual([P1, P2]);
-  });
-
-  it('getForDesign returns an INDEPENDENT carousel copy (mutating it cannot corrupt the store)', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    store.set('birthday', 'store', P1);
-    store.addCarouselImage('birthday', P2);
-    store.addCarouselImage('birthday', P3);
-    const got = store.getForDesign('birthday');
-    expect(got).toEqual({ store: P1, carousel: [P2, P3] });
-    // Mutating the returned object AND its nested carousel array must not leak back.
-    got.store = 'tampered';
-    got.carousel.push('tampered');
-    got.carousel.sort();
-    expect(store.getForDesign('birthday')).toEqual({ store: P1, carousel: [P2, P3] });
-    expect(store.getCarousel('birthday')).toEqual([P2, P3]);
-  });
-
-  it('a no-op append (duplicate) does NOT rewrite the store file', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    store.addCarouselImage('neon', P1);
-    const file = path.join(dir, 'design-images.json');
-    const mtime1 = fs.statSync(file).mtimeMs;
-    // A duplicate append returns the unchanged array WITHOUT touching disk.
-    expect(store.addCarouselImage('neon', P1)).toEqual([P1]);
-    const mtime2 = fs.statSync(file).mtimeMs;
-    expect(mtime2).toBe(mtime1); // no serialize/tmp-write/rename happened
-  });
-
-  it('sanitizeCarousel keeps valid distinct paths, drops junk, caps length', async () => {
-    const dir = freshTmpDir();
-    dirs.push(dir);
-    const store = await loadStore(dir);
-    expect(
-      store.sanitizeCarousel([P1, P2, P1, 'https://evil/x.png', '/content-uploads/x.png'])
-    ).toEqual([P1, P2]);
-    expect(store.sanitizeCarousel('nope')).toEqual([]);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'design-images.json'),
+      JSON.stringify({
+        'Bad Id': { base: { front: { img: P1 } } }, // bad design id → dropped
+        posttrip: {
+          base: { front: { img: P1 }, cover: { img: P2 } }, // 'cover' not a slot → dropped
+          photos: [
+            { id: 'p1', img: P2, name: 'ok' },
+            { id: 'bad', img: P3 }, // bad id shape → dropped
+            { id: 'p2', img: 'https://evil/x.png' }, // off-origin → dropped
+          ],
+          order: ['front', 'p1', 'ghost'], // unknown key dropped
+        },
+      }),
+      'utf8'
+    );
+    const s = await loadStore(dir);
+    expect(s.getAll()).toEqual({
+      posttrip: {
+        base: { front: { img: P1 } },
+        photos: [{ id: 'p1', img: P2, name: 'ok', onProducts: true, onProduct: true }],
+        order: ['front', 'p1'],
+      },
+    });
   });
 });

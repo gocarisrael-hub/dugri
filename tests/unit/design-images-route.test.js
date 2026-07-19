@@ -7,20 +7,24 @@ import os from 'node:os';
 import fs from 'node:fs';
 import { Buffer } from 'node:buffer';
 
-// Boots the real Express app to exercise the per-design image override routes:
-//   GET    /api/design-images            (public read)
-//   POST   /api/admin/design-images/image (admin upload → sets an override)
-//   DELETE /api/admin/design-images       (admin reset → back to static)
-// Same boot + multipart helpers as content-photos-route.test.js. server/ is
-// CommonJS, so we require it through createRequire.
+// Boots the real Express app to exercise the per-design GALLERY routes:
+//   GET    /api/design-images                       (public read)
+//   POST   /api/admin/design-images/base/image      (replace a base render)
+//   DELETE /api/admin/design-images/base            (revert a base render)
+//   POST   /api/admin/design-images/base/flags      (base visibility)
+//   POST   /api/admin/design-images/photo           (add a named extra photo)
+//   POST   /api/admin/design-images/photo/update    (patch name/visibility)
+//   DELETE /api/admin/design-images/photo           (remove an extra photo)
+//   POST   /api/admin/design-images/order           (reorder)
+// server/ is CommonJS, so we require it through createRequire.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
 const ADMIN_KEY = 'test-admin-key';
 
-// Minimal valid PNG header + a distinguishing tail (magic-byte sniffed as .png).
-// Padded so even a short tag clears content.extFromMagic's 12-byte minimum; the
-// tag still makes the bytes (and thus the content-hash) unique.
+// Minimal valid PNG header + a distinguishing tail (magic-byte sniffed as .png),
+// padded past content.extFromMagic's 12-byte minimum; the tag makes the bytes
+// (and thus the content-hash) unique.
 function pngWith(tag) {
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -57,10 +61,9 @@ function buildMultipart(boundary, parts) {
   return Buffer.concat(chunks);
 }
 
-describe('per-design image override routes', () => {
+describe('per-design gallery routes', () => {
   let app, server, base, dataDir, content, designImages;
 
-  // The on-disk file for a "/content-uploads/<name>" path.
   function uploadFile(p) {
     return path.join(dataDir, 'content-uploads', String(p).split('/').pop());
   }
@@ -98,45 +101,65 @@ describe('per-design image override routes', () => {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  async function uploadImage({ designId, slot, bytes, key = ADMIN_KEY }) {
+  function upUrl(kind, key = ADMIN_KEY) {
+    return base + '/api/admin/design-images/' + kind + (key ? '?key=' + key : '');
+  }
+  async function uploadBase({ designId, slot, bytes, key = ADMIN_KEY }) {
     const boundary = '----dugriDimg' + Math.random().toString(16).slice(2);
     const parts = [];
     if (designId != null) parts.push({ name: 'designId', value: designId });
     if (slot != null) parts.push({ name: 'slot', value: slot });
     if (bytes != null) parts.push({ name: 'file', filename: 'x.png', data: bytes });
-    const body = buildMultipart(boundary, parts);
-    const url = base + '/api/admin/design-images/image' + (key ? '?key=' + key : '');
-    const r = await fetch(url, {
+    const r = await fetch(upUrl('base/image', key), {
       method: 'POST',
       headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
-      body,
+      body: buildMultipart(boundary, parts),
     });
     return { status: r.status, json: await r.json().catch(() => ({})) };
   }
-
+  async function uploadPhoto({ designId, name, bytes, key = ADMIN_KEY }) {
+    const boundary = '----dugriDimg' + Math.random().toString(16).slice(2);
+    const parts = [];
+    if (designId != null) parts.push({ name: 'designId', value: designId });
+    if (name != null) parts.push({ name: 'name', value: name });
+    if (bytes != null) parts.push({ name: 'file', filename: 'x.png', data: bytes });
+    const r = await fetch(upUrl('photo', key), {
+      method: 'POST',
+      headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
+      body: buildMultipart(boundary, parts),
+    });
+    return { status: r.status, json: await r.json().catch(() => ({})) };
+  }
+  async function jsonReq(method, kind, body, key = ADMIN_KEY) {
+    const r = await fetch(base + '/api/admin/design-images/' + kind + (key ? '?key=' + key : ''), {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { status: r.status, json: await r.json().catch(() => ({})) };
+  }
   async function getImages() {
     const r = await fetch(base + '/api/design-images');
     return { status: r.status, json: await r.json().catch(() => ({})) };
   }
 
-  it('public GET returns an empty map before anything is overridden', async () => {
+  it('public GET returns an empty map before anything is curated', async () => {
     const { status, json } = await getImages();
     expect(status).toBe(200);
     expect(json.images).toEqual({});
   });
 
-  it('admin upload sets an override that the public GET then reports', async () => {
-    const up = await uploadImage({ designId: 'posttrip', slot: 'board', bytes: pngWith('board1') });
+  it('replacing a base render sets an override the public GET reports', async () => {
+    const up = await uploadBase({ designId: 'posttrip', slot: 'board', bytes: pngWith('board1') });
     expect(up.status).toBe(200);
     expect(up.json.img).toMatch(/^\/content-uploads\/[a-f0-9]{16}\.png$/);
-    expect(up.json.images.board).toBe(up.json.img);
-
+    expect(up.json.gallery.base.board.img).toBe(up.json.img);
     const { json } = await getImages();
-    expect(json.images.posttrip.board).toBe(up.json.img);
+    expect(json.images.posttrip.base.board.img).toBe(up.json.img);
   });
 
   it('rejects an unauthenticated upload (403) and never mutates the store', async () => {
-    const up = await uploadImage({
+    const up = await uploadBase({
       designId: 'birthday',
       slot: 'store',
       bytes: pngWith('x'),
@@ -147,185 +170,129 @@ describe('per-design image override routes', () => {
     expect(json.images.birthday).toBeUndefined();
   });
 
-  it('rejects a bad slot (400) and reuses content.js image validation for garbage bytes (400)', async () => {
-    const badSlot = await uploadImage({ designId: 'posttrip', slot: 'cover', bytes: pngWith('y') });
+  it('rejects a bad slot (400) and garbage bytes (400, via content.saveImageBytes)', async () => {
+    const badSlot = await uploadBase({ designId: 'posttrip', slot: 'cover', bytes: pngWith('y') });
     expect(badSlot.status).toBe(400);
-    // Not an image (fails content.saveImageBytes magic-byte check) → 400, no override.
-    const badBytes = await uploadImage({
+    const badBytes = await uploadBase({
       designId: 'posttrip',
       slot: 'front',
       bytes: Buffer.from('this is not an image'),
     });
     expect(badBytes.status).toBe(400);
     const { json } = await getImages();
-    expect(json.images.posttrip.front).toBeUndefined();
+    expect(json.images.posttrip.base.front).toBeUndefined();
   });
 
-  it('admin reset reverts a slot to its static default', async () => {
-    await uploadImage({ designId: 'neon', slot: 'store', bytes: pngWith('neon1') });
+  it('#163: an oversized upload is rejected by the shared content.js storage cap', async () => {
+    // Gallery uploads reuse content.saveImageBytes, which enforces a size cap
+    // (IMAGE_CAP, ~4MB) — a bigger file is rejected (400), never stored. This is the
+    // same storage guard the content editor + template uploads rely on.
+    const oversized = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.alloc(5 * 1024 * 1024),
+    ]);
+    const up = await uploadBase({ designId: 'posttrip', slot: 'store', bytes: oversized });
+    expect(up.status).toBe(400);
+    const { json } = await getImages();
+    expect(
+      json.images.posttrip && json.images.posttrip.base && json.images.posttrip.base.store
+    ).toBeUndefined();
+  });
+
+  it('base flags + delete revert a slot to its shipped render', async () => {
+    await uploadBase({ designId: 'neon', slot: 'store', bytes: pngWith('neon1') });
     let { json } = await getImages();
-    expect(json.images.neon.store).toBeDefined();
+    expect(json.images.neon.base.store.img).toBeDefined();
 
-    const r = await fetch(base + '/api/admin/design-images?key=' + ADMIN_KEY, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ designId: 'neon', slot: 'store' }),
-    });
-    expect(r.status).toBe(200);
-
+    const del = await jsonReq('DELETE', 'base', { designId: 'neon', slot: 'store' });
+    expect(del.status).toBe(200);
     ({ json } = await getImages());
-    expect(json.images.neon).toBeUndefined(); // pruned back to nothing → static asset
+    expect(json.images.neon).toBeUndefined(); // pruned → static asset
+
+    // A hide flag persists on its own.
+    const flags = await jsonReq('POST', 'base/flags', {
+      designId: 'neon',
+      slot: 'store',
+      onProducts: false,
+    });
+    expect(flags.status).toBe(200);
+    ({ json } = await getImages());
+    expect(json.images.neon.base.store).toEqual({ onProducts: false });
   });
 
-  async function resetSlot(designId, slot) {
-    return fetch(base + '/api/admin/design-images?key=' + ADMIN_KEY, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ designId, slot }),
+  it('adds a named extra photo, patches it, reorders, and removes it', async () => {
+    const add = await uploadPhoto({ designId: 'japanese', name: 'וריאציה', bytes: pngWith('jp1') });
+    expect(add.status).toBe(200);
+    expect(add.json.photo).toMatchObject({
+      id: 'p1',
+      name: 'וריאציה',
+      onProducts: true,
+      onProduct: true,
     });
-  }
 
-  it('replacing an override reclaims the displaced (now-orphan) upload file', async () => {
-    const first = await uploadImage({ designId: 'japanese', slot: 'board', bytes: pngWith('jb1') });
+    const patch = await jsonReq('POST', 'photo/update', {
+      designId: 'japanese',
+      photoId: 'p1',
+      name: 'חדש',
+      onProduct: false,
+    });
+    expect(patch.status).toBe(200);
+    expect(patch.json.photo).toMatchObject({ name: 'חדש', onProduct: false });
+
+    const order = await jsonReq('POST', 'order', {
+      designId: 'japanese',
+      order: ['p1', 'front', 'back'],
+    });
+    expect(order.status).toBe(200);
+    expect(order.json.gallery.order).toEqual(['p1', 'front', 'back']);
+
+    const del = await jsonReq('DELETE', 'photo', { designId: 'japanese', photoId: 'p1' });
+    expect(del.status).toBe(200);
+    const { json } = await getImages();
+    expect(json.images.japanese && json.images.japanese.photos).toBeUndefined();
+  });
+
+  it('replacing a base override reclaims the displaced (now-orphan) upload file', async () => {
+    const first = await uploadBase({ designId: 'marriage', slot: 'board', bytes: pngWith('m1') });
     const oldPath = first.json.img;
     expect(fs.existsSync(uploadFile(oldPath))).toBe(true);
 
-    // A DIFFERENT picture for the same slot displaces the old one.
-    const second = await uploadImage({
-      designId: 'japanese',
-      slot: 'board',
-      bytes: pngWith('jb2'),
-    });
+    const second = await uploadBase({ designId: 'marriage', slot: 'board', bytes: pngWith('m2') });
     const newPath = second.json.img;
     expect(newPath).not.toBe(oldPath);
-    // The old file is gone (reclaimed); the new one is on disk.
-    expect(fs.existsSync(uploadFile(oldPath))).toBe(false);
+    expect(fs.existsSync(uploadFile(oldPath))).toBe(false); // reclaimed
     expect(fs.existsSync(uploadFile(newPath))).toBe(true);
   });
 
-  it('reset reclaims the cleared upload file', async () => {
-    const up = await uploadImage({ designId: 'marriage', slot: 'front', bytes: pngWith('mf1') });
-    const p = up.json.img;
+  it('removing a photo reclaims its upload file', async () => {
+    const add = await uploadPhoto({ designId: 'graduation', name: 'x', bytes: pngWith('grad1') });
+    const p = add.json.photo.img;
     expect(fs.existsSync(uploadFile(p))).toBe(true);
-    const r = await resetSlot('marriage', 'front');
-    expect(r.status).toBe(200);
+    await jsonReq('DELETE', 'photo', { designId: 'graduation', photoId: add.json.photo.id });
     expect(fs.existsSync(uploadFile(p))).toBe(false); // reclaimed
   });
 
-  it('does NOT reclaim a file still referenced by ANOTHER design/slot (shared, content-addressed)', async () => {
-    // Same bytes → same content-hash path in two slots. Replacing one must keep the file.
+  it('does NOT reclaim a file still referenced by ANOTHER design (shared, content-addressed)', async () => {
     const shared = pngWith('shared-bytes');
-    const a = await uploadImage({ designId: 'birthday', slot: 'front', bytes: shared });
-    const b = await uploadImage({ designId: 'birthday', slot: 'back', bytes: shared });
-    const sharedPath = a.json.img;
+    const a = await uploadPhoto({ designId: 'birthday', name: 'a', bytes: shared });
+    const b = await uploadBase({ designId: 'kids', slot: 'front', bytes: shared });
+    const sharedPath = a.json.photo.img;
     expect(b.json.img).toBe(sharedPath); // content-addressed dedupe
 
-    // Replace the `front` slot with a new picture → its old path (sharedPath) is
-    // STILL used by `back`, so the file must survive.
-    await uploadImage({ designId: 'birthday', slot: 'front', bytes: pngWith('new-front') });
+    // Remove the birthday photo → the file is STILL used by kids/front, so it survives.
+    await jsonReq('DELETE', 'photo', { designId: 'birthday', photoId: a.json.photo.id });
     expect(designImages.isImageReferenced(sharedPath)).toBe(true);
     expect(fs.existsSync(uploadFile(sharedPath))).toBe(true);
   });
 
   it('does NOT reclaim a file still referenced by the CONTENT store (cross-store share)', async () => {
-    const up = await uploadImage({ designId: 'posttrip', slot: 'store', bytes: pngWith('cross') });
+    const up = await uploadBase({ designId: 'retirement', slot: 'store', bytes: pngWith('cross') });
     const p = up.json.img;
-    // The content-editor store also points at the SAME file (e.g. reused as a photo).
     content.setImg('index.html', 'index-hero-1', p);
     expect(content.isImageReferenced(p)).toBe(true);
 
-    // Reset the design-image slot → the file must NOT be deleted (content store needs it).
-    await resetSlot('posttrip', 'store');
-    expect(fs.existsSync(uploadFile(p))).toBe(true);
-    content.remove('index.html', 'index-hero-1'); // cleanup
-  });
-
-  // ---- store-tile carousel routes ------------------------------------------
-  async function addCarousel({ designId, bytes, key = ADMIN_KEY }) {
-    const boundary = '----dugriCar' + Math.random().toString(16).slice(2);
-    const parts = [];
-    if (designId != null) parts.push({ name: 'designId', value: designId });
-    if (bytes != null) parts.push({ name: 'file', filename: 'c.png', data: bytes });
-    const body = buildMultipart(boundary, parts);
-    const url = base + '/api/admin/design-images/carousel' + (key ? '?key=' + key : '');
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
-      body,
-    });
-    return { status: r.status, json: await r.json().catch(() => ({})) };
-  }
-  async function delCarousel({ designId, img, key = ADMIN_KEY }) {
-    const url = base + '/api/admin/design-images/carousel' + (key ? '?key=' + key : '');
-    const r = await fetch(url, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ designId, img }),
-    });
-    return { status: r.status, json: await r.json().catch(() => ({})) };
-  }
-
-  it('admin carousel append is exposed on the public GET (per-design `carousel`)', async () => {
-    const a = await addCarousel({ designId: 'kids', bytes: pngWith('kc1') });
-    expect(a.status).toBe(200);
-    expect(a.json.img).toMatch(/^\/content-uploads\/[a-f0-9]{16}\.png$/);
-    expect(a.json.carousel).toEqual([a.json.img]);
-    const b = await addCarousel({ designId: 'kids', bytes: pngWith('kc2') });
-    expect(b.json.carousel).toEqual([a.json.img, b.json.img]); // order preserved
-
-    const { json } = await getImages();
-    expect(json.images.kids.carousel).toEqual([a.json.img, b.json.img]);
-  });
-
-  it('rejects an unauthenticated carousel append (403) and never writes', async () => {
-    const a = await addCarousel({ designId: 'marriage', bytes: pngWith('nope'), key: '' });
-    expect(a.status).toBe(403);
-    const { json } = await getImages();
-    expect(json.images.marriage).toBeUndefined();
-  });
-
-  it('rejects a bad design (400) and a duplicate append (409, no growth)', async () => {
-    const bad = await addCarousel({ designId: 'Bad Id', bytes: pngWith('x') });
-    expect(bad.status).toBe(400);
-    const first = await addCarousel({ designId: 'neon', bytes: pngWith('dupe') });
-    expect(first.status).toBe(200);
-    const dup = await addCarousel({ designId: 'neon', bytes: pngWith('dupe') }); // same bytes
-    expect(dup.status).toBe(409);
-    expect(dup.json.carousel).toEqual([first.json.img]); // unchanged
-  });
-
-  it('DELETE removes ONE picture from that design and reclaims the orphan file', async () => {
-    const one = await addCarousel({ designId: 'japanese', bytes: pngWith('jc1') });
-    const two = await addCarousel({ designId: 'japanese', bytes: pngWith('jc2') });
-    expect(fs.existsSync(uploadFile(one.json.img))).toBe(true);
-
-    const del = await delCarousel({ designId: 'japanese', img: one.json.img });
-    expect(del.status).toBe(200);
-    expect(del.json.carousel).toEqual([two.json.img]); // only the deleted one gone
-    expect(fs.existsSync(uploadFile(one.json.img))).toBe(false); // reclaimed
-    expect(fs.existsSync(uploadFile(two.json.img))).toBe(true); // survivor kept
-
-    const { json } = await getImages();
-    expect(json.images.japanese.carousel).toEqual([two.json.img]);
-  });
-
-  it('DELETE does NOT reclaim a carousel file still referenced by ANOTHER design', async () => {
-    const shared = pngWith('shared-carousel');
-    const a = await addCarousel({ designId: 'birthday', bytes: shared });
-    const b = await addCarousel({ designId: 'posttrip', bytes: shared });
-    expect(b.json.img).toBe(a.json.img); // content-addressed dedupe → same file
-    await delCarousel({ designId: 'birthday', img: a.json.img });
-    expect(designImages.isImageReferenced(a.json.img)).toBe(true); // posttrip still uses it
-    expect(fs.existsSync(uploadFile(a.json.img))).toBe(true);
-  });
-
-  it('unauthenticated carousel DELETE is 403; both routes sit before the /api 404', async () => {
-    const noauth = await delCarousel({ designId: 'kids', img: 'x', key: '' });
-    expect(noauth.status).toBe(403); // gated (NOT a 404 from the catch-all)
-    // A bogus sub-path under the same prefix still hits the JSON /api 404 handler.
-    const r = await fetch(base + '/api/admin/design-images/nope?key=' + ADMIN_KEY, {
-      method: 'DELETE',
-    });
-    expect(r.status).toBe(404);
+    await jsonReq('DELETE', 'base', { designId: 'retirement', slot: 'store' });
+    expect(fs.existsSync(uploadFile(p))).toBe(true); // content store still needs it
+    content.remove('index.html', 'index-hero-1');
   });
 });

@@ -198,102 +198,71 @@
         }
       }
 
-      /* a single product card = one link, no chrome */
+      /* a single product card = a swipeable picture carousel + a caption link */
       .product-card {
         display: block;
       }
-      .product-card__link {
-        display: flex;
-        flex-direction: column;
-        text-decoration: none;
-        color: inherit;
-        border-radius: var(--radius);
-        transition: transform 0.2s ease;
-      }
-      .product-card__link:hover {
-        transform: translateY(-4px);
-      }
-      .product-card__link:focus-visible {
-        outline: 3px solid var(--sage);
-        outline-offset: 4px;
-        border-radius: var(--radius);
-      }
-      /* the product image — the only visual weight in the card. Sharp corners
-         (no rounding that would clip the art), no border / background / shadow.
-         object-fit:contain shows the WHOLE picture, never cropped (the shopper
-         asked to see the full art); any letterbox falls back to the tile's
-         --surface background. The dot controls live OUTSIDE this box (below the
-         card, a sibling of the link) so overflow:hidden never clips them. */
+      /* the picture box. object-fit:contain shows the WHOLE picture, never cropped;
+         any letterbox falls back to the tile's --surface background. */
       .product-card__media {
+        position: relative;
         display: block;
         width: 100%;
         aspect-ratio: 841.92 / 595.5;
         border-radius: var(--radius);
         overflow: hidden;
         background: var(--surface);
+        transition: transform 0.2s ease;
+      }
+      .product-card:hover .product-card__media {
+        transform: translateY(-4px);
+      }
+      /* the per-card image carousel: one picture per view, native swipe (the
+         shared carousel engine owns the mechanics via .carousel-track). Slides are
+         flush (no gap) so each snaps cleanly full-frame. */
+      .product-card__track {
+        height: 100%;
+        --carousel-gap: 0;
+      }
+      .product-card__slide {
+        flex: 0 0 100%;
+        display: block;
+        height: 100%;
+        text-decoration: none;
       }
       .product-card__media img {
         width: 100%;
         height: 100%;
         object-fit: contain;
         display: block;
+        -webkit-user-drag: none;
+        user-select: none;
       }
-      /* A tile that cycles pictures: the store image + the owner's carousel
-         pictures become stacked frames the shared fade carousel cross-fades
-         between (js/carousel.js, mode:'fade'). Each frame fills the media box
-         exactly like the single image; the carousel engine positions them. */
-      .product-card__media .tile-frame {
-        display: block;
-        width: 100%;
-        height: 100%;
-      }
-      /* Manual picture controls: the shared engine's dots, rendered into a strip
-         that is a SIBLING of the card link — never inside the anchor (so no
-         invalid nesting / stray tab stop) and never over the overflow:hidden
-         picture (so no dot is clipped and there is no dead click zone on the
-         photo). Sits below the tile, centred, and wraps to fit any number of
-         pictures. Only present on tiles with >=2 frames. products.html doesn't
-         load css/carousel.css, so the dot appearance is defined here. RTL: the
-         dots inherit the tile's direction so dot 1 (the store image) sits on the
-         right, tracking the physical frame order. */
-      .tile-dots {
+      /* dots strip: a SIBLING below the media (never inside a slide link, never
+         over the overflow:hidden picture). Hidden for single-picture cards. Dot
+         appearance comes from css/carousel.css; this only positions the strip. */
+      .product-card__dots {
         display: flex;
         justify-content: center;
         margin-top: 8px;
       }
-      .tile-dots .carousel-dots {
-        display: flex;
+      .product-card__dots:empty {
+        display: none;
+      }
+      .product-card__dots .carousel-dots {
         flex-wrap: wrap;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
         padding: 0;
         max-width: 100%;
       }
-      .tile-dots .carousel-dot {
-        width: 8px;
-        height: 8px;
-        padding: 0;
-        border: 0;
-        border-radius: var(--radius-pill, 999px);
-        background: var(--line, #e6e6e6);
-        cursor: pointer;
-        transition:
-          background 0.25s ease,
-          width 0.25s ease;
+      .product-card__caption {
+        display: block;
+        text-decoration: none;
+        color: inherit;
       }
-      .tile-dots .carousel-dot:hover {
-        background: var(--sage, #141414);
-      }
-      .tile-dots .carousel-dot.is-active,
-      .tile-dots .carousel-dot[aria-current='true'] {
-        width: 22px;
-        background: var(--sage-deep, #000);
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .tile-dots .carousel-dot {
-          transition: none;
-        }
+      .product-card__caption:focus-visible {
+        outline: 3px solid var(--sage);
+        outline-offset: 4px;
+        border-radius: var(--radius);
       }
       .product-name {
         display: block;
@@ -571,27 +540,35 @@
          image and links to the design's detail page (product.html?design=<id>),
          which hosts the multi-photo gallery. -->
     <script type="module">
+      import { initCarousel } from './js/carousel.js';
       import { PUBLIC_DESIGNS as DESIGNS, fetchDesignNames } from './js/designs.js';
       import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
-      import { loadDesignImages, overrideFor, carouselFor } from './js/design-images.js';
-      import { initCarousel } from './js/carousel.js';
+      import { loadDesignImages, galleryFor } from './js/design-images.js';
       // Reuse the detail page's override helpers so the grid and PDP can never
-      // diverge on how a saved (possibly blank) name override is resolved.
-      // product.js only auto-boots when a #galleryTrack exists (PDP only), so
-      // importing it here for the pure helpers has no side effects.
+      // diverge on how a saved (possibly blank) name override is resolved. product.js
+      // only auto-boots when a #galleryTrack exists (PDP only), so importing it here
+      // for the pure helpers has no side effects.
       import { overrideKeys, overrideText } from './js/product.js';
 
       // Owner-editable store price. The grid renders IMMEDIATELY with the launch
-      // defaults (never blank / never blocked), then a timeout-bounded fetch
-      // overlays the live price in a non-blocking .then() — a slow or cold endpoint
-      // never delays the store.
+      // defaults (never blank / never blocked), then a timeout-bounded fetch overlays
+      // the live price in a non-blocking .then().
       let PRICE = PRICING_FALLBACK.store.now;
       let WAS = PRICING_FALLBACK.store.was;
       const grid = document.getElementById('storeGrid');
 
+      // Storefront names by precedence: the owner's inline content-edit name
+      // (product-<id>-name) WINS over the admin template rename (/api/design-names →
+      // themes.json display_he), which wins over the built-in catalog name. Both maps
+      // fill in async (fail-safe {} on error) — the grid ships with built-in names.
+      let designNames = {}; // admin design-names
+      let nameOverrides = {}; // inline content-edit names (non-empty)
+      function resolvedName(d) {
+        return nameOverrides[d.id] || designNames[d.id] || d.name;
+      }
+
       // Stamp a `.product-price` flex row: a `.now` current price first, then a
-      // struck WAS. In this RTL row `.now` lands on the right and the struck WAS
-      // to its LEFT.
+      // struck WAS. In this RTL row `.now` lands on the right and the struck WAS left.
       function stampPrice(el) {
         el.textContent = '';
         const now = document.createElement('span');
@@ -603,215 +580,170 @@
         el.appendChild(was);
       }
 
+      // A broken override degrades to its shipped fallback (once); a picture with no
+      // shipped fallback (droppable) is left as-is on the grid (rare — a missing
+      // upload) rather than desyncing the fixed dot count.
+      function onImgError(e) {
+        const img = e.currentTarget;
+        const fb = img.dataset.fallback;
+        if (fb && img.getAttribute('src') !== fb) img.src = fb;
+      }
+
       // ---- one product card ---------------------------------------------------
-      function card(d) {
+      // `map` is the resolved gallery-config map ({} before it loads / on failure).
+      function card(d, map) {
         const article = document.createElement('article');
         article.className = 'product-card';
         article.setAttribute('data-testid', 'product-card');
         article.setAttribute('data-design-id', d.id);
 
-        // The whole card is a single link to the design's detail page.
-        const link = document.createElement('a');
-        link.className = 'product-card__link';
-        link.href = `product.html?design=${encodeURIComponent(d.id)}`;
-        link.setAttribute('data-testid', 'product-link');
-        link.setAttribute('aria-label', d.name);
+        const detail = `product.html?design=${encodeURIComponent(d.id)}`;
+        const dName = resolvedName(d);
 
-        // Product image (no border / background / shadow — "just the picture").
-        // Real store cover photo: deck + game board on a table, per design.
-        const media = document.createElement('span');
+        // The picture area: a swipeable carousel of the design's products-surface
+        // gallery. Each slide links to the detail page — a TAP opens the product, a
+        // horizontal DRAG swipes the pictures (the browser owns the gesture).
+        const media = document.createElement('div');
         media.className = 'product-card__media';
-        const img = document.createElement('img');
-        img.loading = 'lazy';
-        img.decoding = 'async';
-        img.src = `assets/designs/${d.id}/store.webp`;
-        img.alt = d.name;
-        img.setAttribute('data-testid', 'product-image');
-        img.setAttribute('data-store-default', img.src);
-        media.appendChild(img);
-        link.appendChild(media);
+        const track = document.createElement('div');
+        track.className = 'product-card__track';
+        const shots = galleryFor(map, d, 'products');
+        shots.forEach((shot, i) => {
+          const slide = document.createElement('a');
+          slide.className = 'product-card__slide';
+          slide.href = detail;
+          slide.setAttribute('aria-label', dName);
+          slide.dataset.label = shot.name || `${dName} — ${i + 1}`;
+          const img = document.createElement('img');
+          img.loading = 'lazy';
+          img.decoding = 'async';
+          img.draggable = false;
+          img.src = shot.src;
+          img.alt = shot.name || dName;
+          img.dataset.fallback = shot.fallback || '';
+          // The FIRST slide keeps the product-image test hook + the store fallback.
+          if (i === 0) {
+            img.setAttribute('data-testid', 'product-image');
+            img.setAttribute('data-store-default', shot.fallback || shot.src);
+          }
+          img.addEventListener('error', onImgError);
+          slide.appendChild(img);
+          track.appendChild(slide);
+        });
+        media.appendChild(track);
+        article.appendChild(media);
 
-        // Hebrew design name.
+        // Dots (rendered by the carousel engine) sit just under the picture.
+        const dots = document.createElement('div');
+        dots.className = 'product-card__dots';
+        article.appendChild(dots);
+
+        // Caption: Hebrew name + price, linking to the detail page.
+        const cap = document.createElement('a');
+        cap.className = 'product-card__caption';
+        cap.href = detail;
+        cap.setAttribute('data-testid', 'product-link');
+        cap.setAttribute('aria-label', dName);
         const name = document.createElement('span');
         name.className = 'product-name';
-        name.textContent = d.name;
-        link.appendChild(name);
-
-        // Price: the struck WAS beside "מ-<now> ₪".
+        name.textContent = dName;
         const price = document.createElement('span');
         price.className = 'product-price';
         stampPrice(price);
-        link.appendChild(price);
+        cap.append(name, price);
+        article.appendChild(cap);
 
-        article.appendChild(link);
+        // Wire the swipe carousel only when there's more than one picture — the same
+        // one-per-view snap swipe + dots as the product-detail gallery. loop:false
+        // (no clones) keeps the card DOM lean across the whole grid.
+        if (shots.length > 1) {
+          initCarousel(track, { mode: 'slideshow', loop: false, dots: true, dotsInto: dots });
+        }
         return article;
       }
 
-      // Turn a tile's single store image into a MANUAL carousel of [store image,
-      // ...owner-added pictures]. Reuses the site's shared fade carousel (the same
-      // engine the homepage hero uses): it stacks the frames and cross-fades
-      // between them — no scroll, no clones, so it can't break the grid cell. There
-      // is NO auto-advance: the shopper drives it with the dots. Under reduced
-      // motion the cross-fade is an instant swap (engine-handled). `storeImg` is the
-      // existing (possibly store-overridden) tile image; `paths` are the extra
-      // validated upload paths; `fallback` is the shipped static store.webp a broken
-      // frame degrades to.
-      function buildTileCarousel(media, storeImg, paths, fallback) {
-        // Wrap the existing store image as the FIRST frame so it always shows and
-        // never breaks, then add one frame per owner-added picture.
-        const frame0 = document.createElement('span');
-        frame0.className = 'tile-frame';
-        media.insertBefore(frame0, storeImg);
-        frame0.appendChild(storeImg);
-        for (const p of paths) {
-          const frame = document.createElement('span');
-          frame.className = 'tile-frame';
-          const im = document.createElement('img');
-          im.loading = 'lazy';
-          im.decoding = 'async';
-          im.alt = storeImg.alt || '';
-          im.setAttribute('data-testid', 'carousel-frame');
-          // A broken/missing carousel picture degrades to the store image rather
-          // than a broken frame (`once` guards against a loop on a bad fallback).
-          im.addEventListener(
-            'error',
-            () => {
-              if (fallback && im.src !== fallback) im.src = fallback;
-            },
-            { once: true }
-          );
-          im.src = p;
-          frame.appendChild(im);
-          media.appendChild(frame);
+      function renderGrid(map) {
+        try {
+          if (!Array.isArray(DESIGNS) || !DESIGNS.length) throw new Error('empty catalog');
+          const frag = document.createDocumentFragment();
+          for (const d of DESIGNS) {
+            // Isolate each card so one bad design skips only itself, not the grid.
+            try {
+              frag.appendChild(card(d, map));
+            } catch (cardErr) {
+              console.error('skipping product card:', d && d.id, cardErr);
+            }
+          }
+          if (!frag.childNodes.length) throw new Error('no cards rendered');
+          grid.replaceChildren(frag);
+        } catch (err) {
+          // Graceful degradation: never leave a blank page — offer the wizard.
+          grid.innerHTML =
+            '<div class="store-fallback"><p>לא הצלחנו לטעון את גלריית העיצובים כרגע.</p>' +
+            '<a class="btn" href="options.html">להזמנה ובחירת עיצוב ›</a></div>';
+          console.error('store grid failed to render:', err);
         }
-        // Keep the tile's single tab stop on the card link — don't let the carousel
-        // engine make the frame TRACK a focusable tab stop inside the anchor.
-        if (!media.hasAttribute('tabindex')) media.setAttribute('tabindex', '-1');
-        // Dots host: a SIBLING of the card link (appended to the .product-card
-        // article, AFTER the anchor), NOT inside it. This keeps the dot <button>s
-        // out of the anchor — valid HTML, no stray tab stop inside the link, and a
-        // dot click can't follow the card link (it isn't a descendant of the
-        // anchor), so a dot changes the picture while a tap on the picture still
-        // opens the product page. Below the overflow:hidden media box the dots are
-        // never clipped and can wrap to any number of pictures. The buttons only
-        // appear when there are ≥2 frames, which is always true here (frame 0 + ≥1
-        // owner picture), so a single-picture tile — which never calls this — shows
-        // no dots. Fall back to media if the article wrapper is somehow absent.
-        const card = media.closest('.product-card') || media.parentNode || media;
-        const dotsHost = document.createElement('div');
-        dotsHost.className = 'tile-dots';
-        // Manual only: autoplay:false → the engine starts no timer, so nothing
-        // moves without the shopper. dots:true renders the picture controls into
-        // dotsHost (dotsInto), so they are NOT captured as slides (initCarousel
-        // snapshots media.children before we attach the host).
-        initCarousel(media, {
-          mode: 'fade',
-          autoplay: false,
-          loop: true,
-          dots: true,
-          arrows: false,
-          dotsInto: dotsHost,
-        });
-        // Attach the dots strip below the card, outside the anchor.
-        card.appendChild(dotsHost);
       }
 
-      try {
-        if (!Array.isArray(DESIGNS) || !DESIGNS.length) throw new Error('empty catalog');
-        const frag = document.createDocumentFragment();
+      // Re-apply the resolved name to each already-rendered card in place (visible
+      // name + the caption link's aria-label + each slide's aria-label) — no rebuild,
+      // so the carousels are untouched.
+      function applyNames() {
         for (const d of DESIGNS) {
-          // Isolate each card so one bad design skips only itself, not the grid.
-          try {
-            frag.appendChild(card(d));
-          } catch (cardErr) {
-            console.error('skipping product card:', d && d.id, cardErr);
+          const cardEl = grid.querySelector(`.product-card[data-design-id="${d.id}"]`);
+          if (!cardEl) continue;
+          const nm = resolvedName(d);
+          const nameEl = cardEl.querySelector('.product-name');
+          if (nameEl) nameEl.textContent = nm;
+          // Only push a NON-empty name into a11y attributes (a blanked override must
+          // not empty the link label / slide labels).
+          if (nm) {
+            const cap = cardEl.querySelector('.product-card__caption');
+            if (cap) cap.setAttribute('aria-label', nm);
+            cardEl
+              .querySelectorAll('.product-card__slide')
+              .forEach((slide) => slide.setAttribute('aria-label', nm));
           }
         }
-        if (!frag.childNodes.length) throw new Error('no cards rendered');
-        grid.replaceChildren(frag);
-
-        // Overlay the owner-editable name onto each card, using the SAME precedence
-        // as the product detail page so a design's name is consistent across grid
-        // and detail: an inline content-edit override (product-<id>-name, saved on
-        // the product.html page) WINS over the admin template rename
-        // (/api/design-names → themes.json display_he), which in turn wins over the
-        // built-in catalog name. The grid already shows the built-in names, so this
-        // only ever upgrades them; every fetch is fail-soft (grid stands on error).
-        const contentNameOverride = (overrides, id) =>
-          overrideText(overrides, overrideKeys(id).name);
-        const loadContentNames = fetch('/api/content?page=product.html')
-          .then((r) => (r.ok ? r.json() : { overrides: {} }))
-          .then((data) => (data && data.overrides) || {})
-          .catch(() => ({}));
-        Promise.all([fetchDesignNames(), loadContentNames])
-          .then(([names, contentOv]) => {
-            for (const article of grid.querySelectorAll('[data-design-id]')) {
-              const id = article.getAttribute('data-design-id');
-              const content = contentNameOverride(contentOv, id);
-              const eff = content != null ? content : names[id] != null ? names[id] : null;
-              if (eff == null) continue; // no override — keep the built-in name
-              const nameEl = article.querySelector('.product-name');
-              if (nameEl) nameEl.textContent = eff;
-              // Only push a NON-empty name into a11y attributes (a blanked override
-              // mirrors the detail page's visible title but must not empty alt/label).
-              if (eff) {
-                const link = article.querySelector('.product-card__link');
-                if (link) link.setAttribute('aria-label', eff);
-                const img = article.querySelector('[data-testid="product-image"]');
-                if (img) img.alt = eff;
-              }
-            }
-          })
-          .catch(() => {});
-
-        // Overlay the owner's per-design STORE-tile overrides. First paint already
-        // shows the static store.webp; this swaps in an uploaded picture where one
-        // exists. Timeout-bounded + fail-safe (js/design-images.js): a slow/failed
-        // fetch leaves every static default untouched.
-        loadDesignImages()
-          .then((map) => {
-            for (const img of grid.querySelectorAll('[data-testid="product-image"]')) {
-              const id = img.closest('[data-design-id]')?.getAttribute('data-design-id');
-              const staticDefault = img.getAttribute('data-store-default');
-              const override = overrideFor(map, id, 'store');
-              if (override) {
-                // If the override file is missing/broken, degrade to the shipped
-                // static store.webp (captured in data-store-default). `once` guards
-                // against a loop if the static asset itself somehow fails.
-                img.addEventListener(
-                  'error',
-                  () => {
-                    if (staticDefault && img.src !== staticDefault) img.src = staticDefault;
-                  },
-                  { once: true }
-                );
-                img.src = override;
-              }
-              // If the owner added carousel pictures, turn the tile into a fast
-              // seamless carousel of [store image, ...added pictures]. The store
-              // frame (above) is always frame 0, so the tile never breaks and a
-              // design with no carousel pictures stays a single static image.
-              const extra = carouselFor(map, id);
-              const media = img.closest('.product-card__media');
-              if (extra.length && media && !media.__carousel) {
-                try {
-                  buildTileCarousel(media, img, extra, staticDefault);
-                } catch (carErr) {
-                  console.error('tile carousel skipped:', id, carErr);
-                }
-              }
-            }
-          })
-          .catch(() => {
-            /* fail-safe: static store.webp stays */
-          });
-      } catch (err) {
-        // Graceful degradation: never leave a blank page — offer the wizard.
-        grid.innerHTML =
-          '<div class="store-fallback"><p>לא הצלחנו לטעון את גלריית העיצובים כרגע.</p>' +
-          '<a class="btn" href="options.html">להזמנה ובחירת עיצוב ›</a></div>';
-        console.error('store grid failed to render:', err);
       }
+
+      // The owner's inline content-edit names live on the product.html content page
+      // (product-<id>-name). Fetch that page's overrides so a name edited on a detail
+      // page also renames the grid card. Fail-safe: {} on any error.
+      const loadContentNames = fetch('/api/content?page=product.html')
+        .then((r) => (r.ok ? r.json() : { overrides: {} }))
+        .then((data) => (data && data.overrides) || {})
+        .catch(() => ({}));
+
+      // First paint from the shipped renders + built-in names — never blocks on the
+      // network, so the grid always renders.
+      renderGrid({});
+
+      // Overlay the owner-editable names (content override > admin name), fail-soft.
+      Promise.all([fetchDesignNames(), loadContentNames])
+        .then(([names, contentOv]) => {
+          designNames = names || {};
+          const ov = {};
+          for (const d of DESIGNS) {
+            const c = overrideText(contentOv, overrideKeys(d.id).name);
+            if (c != null && String(c).trim() !== '') ov[d.id] = c;
+          }
+          nameOverrides = ov;
+          if (Object.keys(designNames).length || Object.keys(nameOverrides).length) applyNames();
+        })
+        .catch(() => {});
+
+      // Reconcile with the owner's curated gallery (design-images) as it loads: a
+      // rebuild swaps in per-slot overrides + extra pictures + ordering. Fail-safe
+      // (js/design-images.js): a slow/failed fetch leaves the shipped renders.
+      loadDesignImages()
+        .then((map) => {
+          if (map && Object.keys(map).length) {
+            renderGrid(map);
+            applyNames(); // re-apply names onto the rebuilt cards
+          }
+        })
+        .catch(() => {});
 
       // Overlay the live owner-editable price once it resolves (non-blocking;
       // fail-safe — on a slow/failed fetch the seeded launch defaults stay).

@@ -25,7 +25,7 @@
 import { PUBLIC_DESIGNS, fetchDesignNames, designShipsBoard } from './designs.js';
 import { initCarousel } from './carousel.js';
 import { fetchPricing } from './pricing.js';
-import { loadDesignImages, overrideFor } from './design-images.js';
+import { loadDesignImages, galleryFor } from './design-images.js';
 
 // Owner-editable store price. Seeded with the launch defaults so first paint is
 // correct even before /api/pricing answers (boot re-stamps these once the
@@ -123,7 +123,20 @@ export function shouldShowBoard(d, designImages) {
   // Ships a board? Uses the SHARED designShipsBoard(d) (thumbs.board) so this and
   // the admin image manager (admin-images.html shipsSlot) agree on the one field.
   if (designShipsBoard(d)) return true;
-  return !!overrideFor(designImages, d && d.id, 'board');
+  // Else: a boardless design surfaces a board slide only from an owner board
+  // OVERRIDE (design-images gallery config: base.board.img).
+  const cfg = designImages && designImages[d && d.id];
+  const img = cfg && cfg.base && cfg.base.board && cfg.base.board.img;
+  return typeof img === 'string' && UPLOAD_PATH_RE.test(img);
+}
+
+// Human label for a resolved gallery item: the owner's photo name, else the base
+// slot's kind, else the design name.
+const SLOT_KIND = { store: 'תמונת חנות', front: 'קלף', back: 'גב הקלף', board: 'לוח המשחק' };
+function labelFor(d, item) {
+  if (item.name) return item.name;
+  if (SLOT_KIND[item.key]) return `${d.name} · ${SLOT_KIND[item.key]}`;
+  return d.name;
 }
 
 /** The design's DEFAULT gallery photos: front/back/board. The board slide is
@@ -137,36 +150,24 @@ export function shouldShowBoard(d, designImages) {
  *  a per-slot uploaded picture wins over the shipped static render, falling back
  *  to the static asset whenever no valid override is set for that slot. */
 function defaultShots(d, designImages) {
-  const thumbs = d.thumbs || {};
-  const KIND = { front: 'קלף', back: 'גב הקלף', board: 'לוח המשחק' };
-  const shots = ['front', 'back', 'board']
-    .filter((k) => (k === 'board' ? shouldShowBoard(d, designImages) : !!thumbs[k]))
-    .map((k) => {
-      const staticSrc = `assets/designs/${d.id}/gallery-${k}.webp`;
-      const override = overrideFor(designImages, d.id, k);
-      // Does the design SHIP a static render for this slot? A boardless design has
-      // no gallery-board.webp, so its board slide (present only via an override)
-      // must NOT carry that non-existent file as a fallback — that would 404.
-      const ships = !!thumbs[k];
-      if (override) {
-        // When a shipped render exists, carry it as `fallback` so a missing/broken
-        // override file degrades to it (fillTrack wires the onerror). With no
-        // shipped render (a boardless board), the override is the SOLE source: it
-        // gets no fallback and is tagged `droppable` so fillTrack removes the whole
-        // slide (and its dot) on error instead of showing a broken image.
-        return ships
-          ? { src: override, label: `${d.name} · ${KIND[k]}`, fallback: staticSrc }
-          : { src: override, label: `${d.name} · ${KIND[k]}`, droppable: true };
-      }
-      return { src: staticSrc, label: `${d.name} · ${KIND[k]}` };
-    });
+  // The owner's curated 'product'-surface gallery (design-images config): base
+  // renders + per-slot overrides + named extra photos, ordered + visibility-
+  // filtered. Each resolved item carries a shipped `fallback` (broken override →
+  // static) or, when it has no shipped render (a boardless board / an extra photo),
+  // `droppable` so fillTrack removes the slide on error instead of 404-ing.
+  const shots = galleryFor(designImages, d, 'product').map((it) => {
+    const shot = { src: it.src, label: labelFor(d, it) };
+    if (it.fallback && it.fallback !== it.src) shot.fallback = it.fallback;
+    else if (it.droppable) shot.droppable = true;
+    return shot;
+  });
   // Never render an empty gallery: fall back to the single picker thumb.
   if (!shots.length && d.thumb) shots.push({ src: d.thumb, label: d.name });
   return shots;
 }
 
-/** The gallery photos to show: the owner's CUSTOM photos when present, otherwise
- *  the design's default renders (with per-slot overrides). Fail-soft fallback. */
+/** The gallery photos to show: the owner's CUSTOM inline-editor photos when
+ *  present, otherwise the curated design-images gallery. Fail-soft fallback. */
 export function galleryShots(d, overrides, designImages) {
   const custom = photosFromOverride(overrides, d.id);
   if (custom.length) {
@@ -560,10 +561,9 @@ function applyOverridesToPage(d, overrides) {
 function applyDesignImagesToPage(d, imagesMap) {
   currentDesignImages = imagesMap || {};
   if (photosFromOverride(currentOverrides, d.id).length) return; // curated photos win
-  const hasOverride = ['front', 'back', 'board'].some((k) =>
-    overrideFor(currentDesignImages, d.id, k)
-  );
-  if (hasOverride) {
+  // Any curated config for this design (base overrides, hidden slots, extra photos,
+  // or a custom order) can change the resolved gallery → rebuild from it.
+  if (currentDesignImages[d.id]) {
     boardOverrideDropped = false; // fresh source: re-attempt any override-only board
     rebuildCarousels(galleryShots(d, currentOverrides, currentDesignImages));
   }

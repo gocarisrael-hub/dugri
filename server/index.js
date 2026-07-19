@@ -1968,169 +1968,173 @@ app.put('/api/admin/content/photos', (req, res) => {
   res.json({ ok: true, imgs: next });
 });
 
-// ---- per-design product-image overrides ------------------------------------
-// The owner can REPLACE a design's static store/gallery pictures (store, board,
-// front, back) with their own uploaded photo, per design + slot, WITHOUT a
-// deploy. Storage reuses content.saveImageBytes (magic-byte typed, size-capped,
-// content-addressed); the map holds only the resulting /content-uploads path
-// (see server/design-images.js). Public GET is unauthenticated (every visitor
-// must resolve the current picture); writes are behind requireAdmin.
+// --- Per-design GALLERY (server/design-images.js) ----------------------------
+// The owner CURATES each design's gallery WITHOUT a deploy — same self-serve
+// pattern as the content editor: REPLACE a base render (store|front|back|board),
+// ADD named extra photos, toggle each picture's visibility per surface (products
+// grid / product detail), and reorder. Storage is REUSED from content.js: a
+// picture only ever holds a "/content-uploads/<hash>.<ext>" path THIS server
+// produced (magic-byte typed, size-capped), so it can never point off-origin.
+// Uploads are content-addressed and SHARED across the design-images store AND the
+// content store, so before reclaiming a displaced file we confirm NEITHER store
+// still references it.
 
-// Public: the WHOLE override map { designId: { slot: "/content-uploads/…" } }.
-// products.html + js/product.js read this and prefer an override over the shipped
-// static asset; a missing/failed fetch just leaves the static default in place.
+// Reclaim a now-orphaned upload: delete it only when no design-image picture and
+// no content override still points at it (content-addressed files are shared).
+function reclaimDesignImage(imgPath) {
+  if (!imgPath) return;
+  if (designImages.isImageReferenced(imgPath)) return;
+  if (content.isImageReferenced(imgPath)) return;
+  content.deleteUpload(imgPath);
+}
+
+// Save the multipart file part as an our-own upload, or send a 400. Returns the
+// "/content-uploads/<name>" path on success, or null after responding on failure.
+function saveGalleryUpload(req, res) {
+  const boundary = templates.boundaryFromContentType(req.headers['content-type']);
+  if (!boundary || !Buffer.isBuffer(req.body)) {
+    res.status(400).json({ error: 'expected multipart/form-data upload' });
+    return null;
+  }
+  const { fields, files } = templates.parseMultipart(req.body, boundary);
+  const file = files.file || files.image || Object.values(files)[0];
+  if (!file || !Buffer.isBuffer(file.data)) {
+    res.status(400).json({ error: 'no image file part' });
+    return null;
+  }
+  let img;
+  try {
+    img = content.saveImageBytes(file.data).path;
+  } catch (e) {
+    res.status(400).json({ error: String((e && e.message) || e) });
+    return null;
+  }
+  return { img, fields };
+}
+
+// Public: the whole gallery-config map. Unauthenticated on purpose — every
+// visitor's grid + product page needs it to render the owner's curated gallery
+// (see site/js/design-images.js). Read-only; res.json copies.
 app.get('/api/design-images', (req, res) => {
   res.json({ images: designImages.getAll() });
 });
 
-// Reclaim a NOW-ORPHANED content-upload file after a design-image override is
-// replaced/reset. Uploads are content-addressed and SHARED across both the
-// content-editor store and the design-images store, so only delete when NEITHER
-// store references the path any more. Best-effort (content.deleteUpload never
-// throws + re-validates the name shape). A no-op for a falsy/unchanged path.
-function reclaimDesignImageOrphan(oldPath, keepPath) {
-  const p = String(oldPath || '');
-  if (!p || p === keepPath) return;
-  if (content.isImageReferenced(p) || designImages.isImageReferenced(p)) return;
-  content.deleteUpload(p);
-}
-
-// Admin: upload + set the override for a design/slot. Multipart (fields
-// designId, slot + a file part), same parser + magic-byte typing as the content
-// image route. Auth runs BEFORE buffering up to several MB.
+// Admin: REPLACE a base render (store|front|back|board) with an uploaded picture.
+// Multipart (fields designId, slot + a file part). A displaced prior override is
+// reclaimed. Auth runs on ?key= BEFORE buffering megabytes.
 app.post(
-  '/api/admin/design-images/image',
+  '/api/admin/design-images/base/image',
   (req, res, next) => {
     if (!requireAdmin(req, res)) return;
     next();
   },
   express.raw({ type: () => true, limit: CONTENT_IMAGE_UPLOAD_LIMIT }),
   (req, res) => {
-    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
-    if (!boundary || !Buffer.isBuffer(req.body)) {
-      return res.status(400).json({ error: 'expected multipart/form-data upload' });
+    const saved = saveGalleryUpload(req, res);
+    if (!saved) return;
+    const designId = designImages.designOk(saved.fields.designId);
+    const slot = designImages.slotOk(saved.fields.slot);
+    if (!designId || !slot) {
+      // Reclaim the just-written orphan (nothing references it yet).
+      reclaimDesignImage(saved.img);
+      return res.status(400).json({ error: 'bad designId or slot' });
     }
-    const { fields, files } = templates.parseMultipart(req.body, boundary);
-    const designId = fields.designId || fields.design;
-    const slot = fields.slot;
-    if (!designImages.designOk(designId) || !designImages.slotOk(slot)) {
-      return res.status(400).json({ error: 'bad design or slot' });
-    }
-    const file = files.file || files.image || Object.values(files)[0];
-    if (!file || !Buffer.isBuffer(file.data)) {
-      return res.status(400).json({ error: 'no image file part' });
-    }
-    let img;
-    try {
-      img = content.saveImageBytes(file.data).path;
-    } catch (e) {
-      return res.status(400).json({ error: String((e && e.message) || e) });
-    }
-    // The path this slot pointed at BEFORE this write — reclaim it if the new
-    // upload displaces it and nothing else references it (no orphan file leak).
-    const prev = designImages.get(designId, slot);
-    const bag = designImages.set(designId, slot, img);
-    if (bag == null) return res.status(400).json({ error: 'bad design or slot' });
-    reclaimDesignImageOrphan(prev, img);
-    res.json({ ok: true, img, images: bag });
+    const { prev } = designImages.setBaseImg(designId, slot, saved.img);
+    if (prev) reclaimDesignImage(prev);
+    res.json({ ok: true, img: saved.img, gallery: designImages.getForDesign(designId) });
   }
 );
 
-// Admin: reset a design/slot back to its shipped static asset (JSON body).
-app.delete('/api/admin/design-images', (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  const { designId, design, slot } = req.body || {};
-  const id = designId || design;
-  if (!designImages.designOk(id) || !designImages.slotOk(slot)) {
-    return res.status(400).json({ error: 'bad design or slot' });
+// Admin: ADD a named extra photo to a design's gallery. Multipart (fields
+// designId, name? + a file part).
+app.post(
+  '/api/admin/design-images/photo',
+  (req, res, next) => {
+    if (!requireAdmin(req, res)) return;
+    next();
+  },
+  express.raw({ type: () => true, limit: CONTENT_IMAGE_UPLOAD_LIMIT }),
+  (req, res) => {
+    const saved = saveGalleryUpload(req, res);
+    if (!saved) return;
+    const designId = designImages.designOk(saved.fields.designId);
+    if (!designId) {
+      reclaimDesignImage(saved.img);
+      return res.status(400).json({ error: 'bad designId' });
+    }
+    const photo = designImages.addPhoto(designId, saved.img, saved.fields.name);
+    res.json({ ok: true, photo, gallery: designImages.getForDesign(designId) });
   }
-  const prev = designImages.get(id, slot); // path being cleared → reclaim if orphaned
-  designImages.reset(id, slot);
-  reclaimDesignImageOrphan(prev, null);
-  res.json({ ok: true, images: designImages.getForDesign(id) });
+);
+
+// Admin: revert a base slot to its shipped render. JSON { designId, slot }.
+app.delete('/api/admin/design-images/base', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { designId, slot } = req.body || {};
+  if (!designImages.designOk(designId) || !designImages.slotOk(slot)) {
+    return res.status(400).json({ error: 'bad designId or slot' });
+  }
+  const { prev } = designImages.resetBaseImg(designId, slot);
+  if (prev) reclaimDesignImage(prev);
+  res.json({ ok: true, gallery: designImages.getForDesign(designId) });
 });
 
-// ---- per-design store-tile CAROUSEL ----------------------------------------
-// A design's products-grid tile can cycle EXTRA owner-added pictures after its
-// store image. The owner appends/deletes them here; the array is exposed on the
-// same public GET /api/design-images map (per-design `carousel`). Storage reuses
-// content.saveImageBytes + the same multipart parser + magic-byte typing as the
-// slot-override upload above; the array holds only the resulting /content-uploads
-// paths (see server/design-images.js). Writes are behind requireAdmin.
-
-// Admin: APPEND a picture to a design's carousel array (multipart: designId + a
-// file part). Mirrors POST /api/admin/content/photos — same reclaim-on-drop guard
-// (a dropped duplicate / at-cap upload must not leak an orphan file, and only a
-// file THIS request created and nothing references may be reclaimed). Auth runs
-// BEFORE buffering up to several MB.
-app.post(
-  '/api/admin/design-images/carousel',
-  (req, res, next) => {
-    if (!requireAdmin(req, res)) return;
-    next();
-  },
-  express.raw({ type: () => true, limit: CONTENT_IMAGE_UPLOAD_LIMIT }),
-  (req, res) => {
-    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
-    if (!boundary || !Buffer.isBuffer(req.body)) {
-      return res.status(400).json({ error: 'expected multipart/form-data upload' });
-    }
-    const { fields, files } = templates.parseMultipart(req.body, boundary);
-    const designId = fields.designId || fields.design;
-    if (!designImages.designOk(designId)) {
-      return res.status(400).json({ error: 'bad design' });
-    }
-    const file = files.file || files.image || Object.values(files)[0];
-    if (!file || !Buffer.isBuffer(file.data)) {
-      return res.status(400).json({ error: 'no image file part' });
-    }
-    const before = designImages.getCarousel(designId);
-    let img, created;
-    try {
-      ({ path: img, created } = content.saveImageBytes(file.data));
-    } catch (e) {
-      return res.status(400).json({ error: String((e && e.message) || e) });
-    }
-    const carousel = designImages.addCarouselImage(designId, img);
-    if (carousel == null) {
-      // Bad design AFTER the file was written — reclaim the orphan, but only when THIS
-      // request created it and neither store references the shared, content-addressed file.
-      if (created && !content.isImageReferenced(img) && !designImages.isImageReferenced(img)) {
-        content.deleteUpload(img);
-      }
-      return res.status(400).json({ error: 'bad design' });
-    }
-    // The upload was DROPPED (already at CAROUSEL_CAP, or a content-hash duplicate) →
-    // the array didn't grow. Don't report a false success: reclaim the just-written
-    // orphan, but only when THIS request created it AND nothing else references it.
-    if (carousel.length <= before.length) {
-      if (created && !content.isImageReferenced(img) && !designImages.isImageReferenced(img)) {
-        content.deleteUpload(img);
-      }
-      const atCap = before.length >= designImages.CAROUSEL_CAP;
-      const error = atCap
-        ? `הגעת למקסימום ${designImages.CAROUSEL_CAP} תמונות`
-        : 'התמונה כבר קיימת בקרוסלה';
-      return res.status(409).json({ error, carousel });
-    }
-    res.json({ ok: true, img, carousel });
-  }
-);
-
-// Admin: REMOVE one picture from a design's carousel by its path (JSON body:
-// designId + img). Reclaims the now-orphaned upload file only when NEITHER store
-// still references it (cross-store-safe, same guard as a slot reset).
-app.delete('/api/admin/design-images/carousel', (req, res) => {
+// Admin: set a base slot's per-surface visibility. JSON { designId, slot,
+// onProducts?, onProduct? }.
+app.post('/api/admin/design-images/base/flags', (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const { designId, design, img } = req.body || {};
-  const id = designId || design;
-  if (!designImages.designOk(id)) {
-    return res.status(400).json({ error: 'bad design' });
+  const { designId, slot, onProducts, onProduct } = req.body || {};
+  if (!designImages.designOk(designId) || !designImages.slotOk(slot)) {
+    return res.status(400).json({ error: 'bad designId or slot' });
   }
-  const carousel = designImages.removeCarouselImage(id, img);
-  if (carousel == null) return res.status(400).json({ error: 'bad design' });
-  reclaimDesignImageOrphan(img, null); // best-effort; no-op if still referenced
-  res.json({ ok: true, carousel });
+  const flags = {};
+  if (onProducts !== undefined) flags.onProducts = !!onProducts;
+  if (onProduct !== undefined) flags.onProduct = !!onProduct;
+  designImages.setBaseFlags(designId, slot, flags);
+  res.json({ ok: true, gallery: designImages.getForDesign(designId) });
+});
+
+// Admin: patch an extra photo's name / visibility. JSON { designId, photoId,
+// name?, onProducts?, onProduct? }.
+app.post('/api/admin/design-images/photo/update', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { designId, photoId, name, onProducts, onProduct } = req.body || {};
+  if (!designImages.designOk(designId)) {
+    return res.status(400).json({ error: 'bad designId' });
+  }
+  const patch = {};
+  if (name !== undefined) patch.name = name;
+  if (onProducts !== undefined) patch.onProducts = !!onProducts;
+  if (onProduct !== undefined) patch.onProduct = !!onProduct;
+  const photo = designImages.updatePhoto(designId, photoId, patch);
+  if (!photo) return res.status(404).json({ error: 'photo not found' });
+  res.json({ ok: true, photo, gallery: designImages.getForDesign(designId) });
+});
+
+// Admin: remove an extra photo. JSON { designId, photoId }. Reclaims its file.
+app.delete('/api/admin/design-images/photo', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { designId, photoId } = req.body || {};
+  if (!designImages.designOk(designId)) {
+    return res.status(400).json({ error: 'bad designId' });
+  }
+  const removed = designImages.removePhoto(designId, photoId);
+  if (removed == null) return res.status(404).json({ error: 'photo not found' });
+  reclaimDesignImage(removed);
+  res.json({ ok: true, gallery: designImages.getForDesign(designId) });
+});
+
+// Admin: set the gallery display order. JSON { designId, order: [key,...] }
+// (keys = base slots + photo ids).
+app.post('/api/admin/design-images/order', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { designId, order } = req.body || {};
+  if (!designImages.designOk(designId)) {
+    return res.status(400).json({ error: 'bad designId' });
+  }
+  const next = designImages.setOrder(designId, order);
+  if (next == null) return res.status(400).json({ error: 'order must be an array' });
+  res.json({ ok: true, gallery: designImages.getForDesign(designId) });
 });
 
 // Public social-proof "celebrations" counter for the homepage. Returns ONLY an

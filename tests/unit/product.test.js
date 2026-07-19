@@ -169,7 +169,7 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
   it('surfaces a board slide for a boardless design when the owner uploaded a board', () => {
     // kids ships NO board (thumbs has only front/back) but the owner uploaded one.
     const kids = { id: 'kids', name: 'ילדים', thumbs: { front: 'f', back: 'b' } };
-    const map = { kids: { board: P1 } };
+    const map = { kids: { base: { board: { img: P1 } } } };
     const shots = galleryShots(kids, {}, map);
     expect(shots.map((s) => s.src)).toEqual([
       'assets/designs/kids/gallery-front.webp',
@@ -187,13 +187,13 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     // 404). Instead it is tagged `droppable` so fillTrack removes the whole slide +
     // its dot on a load error rather than showing a broken image.
     const kids = { id: 'kids', name: 'ילדים', thumbs: { front: 'f', back: 'b' } };
-    const shots = galleryShots(kids, {}, { kids: { board: P1 } });
+    const shots = galleryShots(kids, {}, { kids: { base: { board: { img: P1 } } } });
     expect(shots[2]).toMatchObject({ src: P1, droppable: true });
     expect(shots[2].fallback).toBeUndefined();
     // A design that SHIPS a board keeps its static fallback and is NOT droppable
     // (it degrades to the shipped render, never dropped).
     const neon = { id: 'neon', name: 'ניאון', thumbs: { front: 'f', back: 'b', board: 'brd' } };
-    const shipShots = galleryShots(neon, {}, { neon: { board: P1 } });
+    const shipShots = galleryShots(neon, {}, { neon: { base: { board: { img: P1 } } } });
     expect(shipShots[2]).toMatchObject({
       src: P1,
       fallback: 'assets/designs/neon/gallery-board.webp',
@@ -203,7 +203,7 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
 
   it('prefers a per-design SLOT override over the static render, else falls back per-slot', () => {
     // Only the board slot is overridden → front/back keep their static renders.
-    const map = { neon: { board: P1 } };
+    const map = { neon: { base: { board: { img: P1 } } } };
     const shots = galleryShots(design, {}, map);
     expect(shots.map((s) => s.src)).toEqual([
       'assets/designs/neon/gallery-front.webp',
@@ -213,7 +213,7 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
   });
 
   it('an override shot carries the static render as `fallback` (broken-file degrade)', () => {
-    const map = { neon: { board: P1 } };
+    const map = { neon: { base: { board: { img: P1 } } } };
     const shots = galleryShots(design, {}, map);
     // The override slide points its onerror at the shipped static asset…
     expect(shots[2]).toMatchObject({ src: P1, fallback: 'assets/designs/neon/gallery-board.webp' });
@@ -224,7 +224,12 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
 
   it('ignores a malformed/off-origin override path and keeps the static asset', () => {
     const map = {
-      neon: { front: 'https://evil.example/x.png', back: '/content-uploads/nope.gif' },
+      neon: {
+        base: {
+          front: { img: 'https://evil.example/x.png' },
+          back: { img: '/content-uploads/nope.gif' },
+        },
+      },
     };
     const shots = galleryShots(design, {}, map);
     expect(shots.map((s) => s.src)).toEqual([
@@ -235,7 +240,7 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
   });
 
   it('curated custom photos still win over per-slot overrides', () => {
-    const map = { neon: { front: P1, back: P2, board: P1 } };
+    const map = { neon: { base: { front: { img: P1 }, back: { img: P2 }, board: { img: P1 } } } };
     const shots = galleryShots(design, { 'product-neon-photos': { imgs: [P2] } }, map);
     expect(shots.map((s) => s.src)).toEqual([P2]); // the curated carousel wins
   });
@@ -247,25 +252,29 @@ describe('shouldShowBoard — board slide visibility', () => {
 
   it('is true for a design that ships a board (regardless of overrides)', () => {
     expect(shouldShowBoard(shipsBoard, {})).toBe(true);
-    expect(shouldShowBoard(shipsBoard, { neon: { board: P1 } })).toBe(true);
+    expect(shouldShowBoard(shipsBoard, { neon: { base: { board: { img: P1 } } } })).toBe(true);
   });
 
   it('is true for a boardless design once a valid board override exists', () => {
-    expect(shouldShowBoard(boardless, { kids: { board: P1 } })).toBe(true);
+    expect(shouldShowBoard(boardless, { kids: { base: { board: { img: P1 } } } })).toBe(true);
   });
 
   it('is false for a boardless design with no board override', () => {
     expect(shouldShowBoard(boardless, {})).toBe(false);
-    expect(shouldShowBoard(boardless, { kids: { front: P1 } })).toBe(false);
+    expect(shouldShowBoard(boardless, { kids: { base: { front: { img: P1 } } } })).toBe(false);
   });
 
   it('ignores a malformed/off-origin board override for a boardless design', () => {
-    expect(shouldShowBoard(boardless, { kids: { board: 'https://evil.example/x.png' } })).toBe(
-      false
-    );
-    expect(shouldShowBoard(boardless, { kids: { board: '/content-uploads/nope.gif' } })).toBe(
-      false
-    );
+    expect(
+      shouldShowBoard(boardless, {
+        kids: { base: { board: { img: 'https://evil.example/x.png' } } },
+      })
+    ).toBe(false);
+    expect(
+      shouldShowBoard(boardless, {
+        kids: { base: { board: { img: '/content-uploads/nope.gif' } } },
+      })
+    ).toBe(false);
   });
 });
 

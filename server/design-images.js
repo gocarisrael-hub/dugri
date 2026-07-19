@@ -1,30 +1,35 @@
-// design-images.js — per-design product-image OVERRIDES.
+// design-images.js — per-design GALLERY configuration (owner self-serve).
 //
-// Each design ships static "beauty" pictures under site/assets/designs/<id>/:
-//   store.webp  — the tile shown on the products listing + homepage
-//   gallery-{front,back,board}.webp — the product-detail gallery slides
-// Those are baked into the repo. This store lets the owner REPLACE any one of
-// them with their own uploaded photo, per design + slot, WITHOUT a deploy — the
-// same self-serve pattern as the inline content editor (server/content.js).
+// Each design ships three required "base" renders under site/assets/designs/<id>/:
+//   gallery-front.webp  — the card front
+//   gallery-back.webp   — the card back
+//   gallery-board.webp   — the game board (only designs that ship a board)
+// plus a store cover (store.webp). Those are baked into the repo and are the
+// DEFAULT gallery. This store lets the owner CURATE each design's gallery WITHOUT
+// a deploy:
+//   • REPLACE any base render with an uploaded picture (per slot).
+//   • ADD extra photos (any number), each with an optional name.
+//   • CHOOSE, per picture, whether it shows on the products page (the grid card
+//     carousel) and/or the product page (the detail gallery).
+//   • ORDER the pictures.
 //
-// It deliberately REUSES content.js for image storage: an upload is saved by
+// It REUSES content.js for image storage: an upload is saved by
 // content.saveImageBytes (magic-byte typed, size-capped, content-addressed under
 // DATA_DIR/content-uploads) and this store only ever holds the resulting
-// "/content-uploads/<hash>.<ext>" PATH. So an override can only ever point at an
-// image THIS server produced — never an arbitrary/off-origin URL.
+// "/content-uploads/<hash>.<ext>" PATH. So a picture can only ever be one THIS
+// server produced — never an arbitrary / off-origin URL.
 //
-// Store shape: { [designId]: { [slot]: "/content-uploads/<name>",
-//                              carousel?: ["/content-uploads/<name>", …] } }
-//   designId = a catalog design id (kebab, e.g. "posttrip").
-//   slot     = one of store | board | front | back.
-//   carousel = an ORDERED array of the owner's extra store-tile pictures. The
-//              products-grid tile cycles [store image, …carousel] as a fast,
-//              seamless, auto-advancing carousel; an absent/empty array leaves the
-//              tile showing just the store image (no cycling).
+// Persisted store shape — only DEVIATIONS from the defaults are kept, so a design
+// the owner never touched is simply absent (the client applies full defaults):
+//   { [designId]: {
+//       base:   { [slot]: { img?, onProducts?, onProduct? } },  // slot: store|front|back|board
+//       photos: [ { id, img, name, onProducts, onProduct } ],   // owner extras
+//       order:  [ key, ... ]   // display order; keys = base slots + photo ids
+//   } }
 //
 // Persistence mirrors content.js/playbook.js: an in-memory object loaded at boot,
-// mutated through helpers, written to disk atomically (temp file + rename) on
-// every change, under DATA_DIR so it survives redeploys.
+// mutated through helpers, written atomically (temp file + rename) on every change,
+// under DATA_DIR so it survives redeploys.
 const fs = require('fs');
 const path = require('path');
 
@@ -33,34 +38,117 @@ const FILE = path.join(DATA_DIR, 'design-images.json');
 
 // A design id: starts alphanumeric, then kebab, ≤41 chars (matches the catalog).
 const DESIGN_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
-// The four overridable image slots.
-const SLOTS = ['store', 'board', 'front', 'back'];
-const SLOT_SET = new Set(SLOTS);
+// The four base (shipped-render) slots, in their default display order.
+const BASE_SLOTS = ['store', 'front', 'back', 'board'];
+const BASE_SLOT_SET = new Set(BASE_SLOTS);
 // A stored path must be EXACTLY one content.saveImageBytes produced (16-hex
-// content hash + a raster ext) — same shape content.js enforces. Validating on
-// write means an override can never become an off-origin / stored-XSS vector.
+// content hash + a raster ext). Validating on write means a picture can never
+// become an off-origin / stored-XSS vector.
 const UPLOAD_PATH_RE = /^\/content-uploads\/[a-f0-9]{16}\.(webp|jpe?g|png)$/;
-// Max pictures in a design's store-tile CAROUSEL (mirrors content.js PHOTO_CAP).
-// Generous but bounded so a runaway client can't grow the store without limit.
-const CAROUSEL_CAP = 12;
+// Cap an owner-supplied photo name so the store can't be bloated with a huge string.
+const NAME_MAX = 60;
 
 function designOk(id) {
   return DESIGN_RE.test(String(id || '')) ? String(id) : null;
 }
 function slotOk(slot) {
-  return SLOT_SET.has(String(slot || '')) ? String(slot) : null;
+  return BASE_SLOT_SET.has(String(slot || '')) ? String(slot) : null;
+}
+function pathOk(p) {
+  return UPLOAD_PATH_RE.test(String(p || '')) ? String(p) : null;
+}
+function cleanName(name) {
+  return String(name == null ? '' : name)
+    .replace(/[\r\n\t]+/g, ' ')
+    .trim()
+    .slice(0, NAME_MAX);
+}
+function boolOr(v, dflt) {
+  return typeof v === 'boolean' ? v : dflt;
+}
+
+// Default per-surface visibility of a BASE slot when the owner has set no explicit
+// flag. Everything shows by default EXCEPT the store cover on the product-detail
+// page (that page's gallery leads with the card renders, not the shop cover). The
+// CLIENT reader (site/js/design-images.js) applies the SAME rule — keep them in
+// sync. The store keeps only DEVIATIONS from this default, so it stays lean.
+function baseDefault(slot, flag) {
+  return !(slot === 'store' && flag === 'onProduct');
 }
 
 let _store = load();
 function load() {
   try {
     const raw = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return sanitize(raw);
   } catch {
     /* missing / unreadable — start empty */
   }
   return {};
 }
+
+// Coerce an arbitrary parsed object into the store shape, dropping anything
+// malformed or off-origin. A corrupt / hand-edited file can never poison the store.
+function sanitize(raw) {
+  const out = {};
+  for (const id of Object.keys(raw)) {
+    if (!designOk(id)) continue;
+    const g = normalizeDesign(raw[id]);
+    if (g) out[id] = g;
+  }
+  return out;
+}
+function normalizeDesign(g) {
+  if (!g || typeof g !== 'object' || Array.isArray(g)) return null;
+  const base = {};
+  if (g.base && typeof g.base === 'object') {
+    for (const slot of Object.keys(g.base)) {
+      if (!slotOk(slot)) continue;
+      const s = g.base[slot];
+      if (!s || typeof s !== 'object') continue;
+      const cfg = {};
+      const img = pathOk(s.img);
+      if (img) cfg.img = img;
+      // Keep a flag only when it deviates from the slot's default (lean store).
+      for (const flag of ['onProducts', 'onProduct']) {
+        if (typeof s[flag] === 'boolean' && s[flag] !== baseDefault(slot, flag))
+          cfg[flag] = s[flag];
+      }
+      if (Object.keys(cfg).length) base[slot] = cfg;
+    }
+  }
+  const photos = [];
+  const seenIds = new Set();
+  if (Array.isArray(g.photos)) {
+    for (const p of g.photos) {
+      if (!p || typeof p !== 'object') continue;
+      const img = pathOk(p.img);
+      const id = typeof p.id === 'string' && /^p[0-9]+$/.test(p.id) ? p.id : null;
+      if (!img || !id || seenIds.has(id)) continue;
+      seenIds.add(id);
+      photos.push({
+        id,
+        img,
+        name: cleanName(p.name),
+        onProducts: boolOr(p.onProducts, true),
+        onProduct: boolOr(p.onProduct, true),
+      });
+    }
+  }
+  const known = new Set([...BASE_SLOTS, ...photos.map((p) => p.id)]);
+  let order = [];
+  if (Array.isArray(g.order)) {
+    for (const k of g.order) {
+      if (known.has(k) && order.indexOf(k) === -1) order.push(k);
+    }
+  }
+  const g2 = {};
+  if (Object.keys(base).length) g2.base = base;
+  if (photos.length) g2.photos = photos;
+  if (order.length) g2.order = order;
+  return Object.keys(g2).length ? g2 : null;
+}
+
 function save() {
   // Ensure the data dir exists before the atomic tmp-write+rename (same guard as
   // content.js/db.js) — otherwise the first write throws ENOENT.
@@ -70,150 +158,217 @@ function save() {
   fs.renameSync(tmp, FILE);
 }
 
-// The WHOLE override map (every design), returned BY REFERENCE for cheap
-// serialization by the public GET /api/design-images (res.json copies it). The
-// map is small (a handful of designs × 4 slots). Callers treat it as read-only.
+// Drop a design bag that no longer holds any deviation, so the store stays tidy
+// (an untouched design = absent → client applies full defaults).
+function prune(id) {
+  const g = _store[id];
+  if (!g) return;
+  if (
+    !(g.base && Object.keys(g.base).length) &&
+    !(g.photos && g.photos.length) &&
+    !(g.order && g.order.length)
+  ) {
+    delete _store[id];
+  }
+}
+function ensure(id) {
+  return _store[id] || (_store[id] = {});
+}
+
+// ---- reads ----------------------------------------------------------------
+
+// The WHOLE config map (every configured design), returned BY REFERENCE for cheap
+// serialization by the public GET /api/design-images (res.json copies it). Small
+// (a few designs). Callers treat it as read-only.
 function getAll() {
   return _store;
 }
 
-// The overrides for one design (a fresh, independent copy — callers can mutate it
-// without touching the store). Unknown/absent → {}. Array fields (the carousel)
-// are sliced too: a shallow spread would share the SAME array reference, so a
-// caller mutating the returned `.carousel` would silently mutate + persist the
-// store on the next save.
+// One design's stored config (a deep copy). Absent/untouched design → {}.
 function getForDesign(id) {
   const d = designOk(id);
   if (!d || !_store[d]) return {};
-  const out = {};
-  for (const key of Object.keys(_store[d])) {
-    const v = _store[d][key];
-    out[key] = Array.isArray(v) ? v.slice() : v;
-  }
-  return out;
+  return JSON.parse(JSON.stringify(_store[d]));
 }
 
-// The override path for design/slot, or null when none is set.
+// The base-slot OVERRIDE path for a design/slot, or null when none is set (or the
+// stored value is malformed). Compatibility accessor for server-side consumers
+// that only need "did the owner replace this base render?" — notably the paid-order
+// email product-photo lookup (get(id,'store') || get(id,'front')).
 function get(id, slot) {
   const d = designOk(id);
   const s = slotOk(slot);
-  if (!d || !s || !_store[d]) return null;
-  const p = _store[d][s];
+  if (!d || !s || !_store[d] || !_store[d].base || !_store[d].base[s]) return null;
+  const p = _store[d].base[s].img;
   return UPLOAD_PATH_RE.test(String(p || '')) ? p : null;
 }
 
-// Set the override for design/slot to an our-own "/content-uploads/<name>" path.
-// Returns the design's updated slot map, or null on a bad design/slot/path.
-function set(id, slot, imgPath) {
+// ---- base-slot overrides ---------------------------------------------------
+
+// Replace a base slot's shipped render with an our-own upload. Returns the
+// DISPLACED previous override path (or null) so the caller can reclaim its file.
+function setBaseImg(id, slot, imgPath) {
   const d = designOk(id);
   const s = slotOk(slot);
-  if (!d || !s || !UPLOAD_PATH_RE.test(String(imgPath || ''))) return null;
-  const bag = _store[d] || (_store[d] = {});
-  bag[s] = String(imgPath);
+  const p = pathOk(imgPath);
+  if (!d || !s || !p) return { ok: false, prev: null };
+  const g = ensure(d);
+  const base = g.base || (g.base = {});
+  const cfg = base[s] || (base[s] = {});
+  const prev = cfg.img || null;
+  if (prev === p) return { ok: true, prev: null };
+  cfg.img = p;
   save();
-  return { ...bag };
+  return { ok: true, prev };
 }
 
-// Remove the override for design/slot (revert to the shipped static asset). Prunes
-// an empty design bag so the store stays tidy. Returns true if something changed.
-function reset(id, slot) {
+// Revert a base slot to its shipped render (clears only the img override, keeps
+// any visibility deviation). Returns the cleared path (or null).
+function resetBaseImg(id, slot) {
   const d = designOk(id);
   const s = slotOk(slot);
-  if (!d || !s) return false;
-  if (!_store[d] || !(s in _store[d])) return false;
-  delete _store[d][s];
-  if (Object.keys(_store[d]).length === 0) delete _store[d];
+  if (!d || !s || !_store[d] || !_store[d].base || !_store[d].base[s]) {
+    return { ok: false, prev: null };
+  }
+  const cfg = _store[d].base[s];
+  const prev = cfg.img || null;
+  delete cfg.img;
+  if (Object.keys(cfg).length === 0) delete _store[d].base[s];
+  if (Object.keys(_store[d].base).length === 0) delete _store[d].base;
+  prune(d);
+  save();
+  return { ok: true, prev };
+}
+
+// Set a base slot's per-surface visibility. `flags` may carry onProducts and/or
+// onProduct; a value of true (the default) is stored as the ABSENCE of a
+// deviation, so only real hides persist.
+function setBaseFlags(id, slot, flags) {
+  const d = designOk(id);
+  const s = slotOk(slot);
+  if (!d || !s || !flags || typeof flags !== 'object') return false;
+  const g = ensure(d);
+  const base = g.base || (g.base = {});
+  const cfg = base[s] || (base[s] = {});
+  for (const f of ['onProducts', 'onProduct']) {
+    if (f in flags) {
+      // Store only a DEVIATION from the slot default; a value equal to the default
+      // is the absence of a deviation (keeps the store lean + reversible).
+      if (!!flags[f] !== baseDefault(s, f)) cfg[f] = !!flags[f];
+      else delete cfg[f];
+    }
+  }
+  if (Object.keys(cfg).length === 0) delete base[s];
+  if (Object.keys(base).length === 0) delete g.base;
+  prune(d);
   save();
   return true;
 }
 
-// ---- per-design store-tile CAROUSEL (an ORDERED photo array) ---------------
-// Beyond the single per-slot overrides above, a design can carry a `carousel`
-// array of extra store-tile pictures. The products-grid tile cycles
-// [store image, …carousel] as a fast seamless carousel; an empty/absent array
-// leaves the tile as a single static picture. The array lives in the SAME design
-// bag as the slot overrides (so the public GET exposes it in one map) and holds
-// only our-own upload paths, validated on every write — never an off-origin URL.
+// ---- extra photos ----------------------------------------------------------
 
-// Keep only valid, distinct, our-own upload paths, capped at CAROUSEL_CAP, order
-// preserved. Never trusts a client string beyond the exact saveImageBytes shape.
-function sanitizeCarousel(arr) {
-  if (!Array.isArray(arr)) return [];
-  const out = [];
-  const seen = new Set();
-  for (const raw of arr) {
-    const p = String(raw || '');
-    if (!UPLOAD_PATH_RE.test(p) || seen.has(p)) continue;
-    seen.add(p);
-    out.push(p);
-    if (out.length >= CAROUSEL_CAP) break;
+function nextPhotoId(g) {
+  let max = 0;
+  for (const p of g.photos || []) {
+    const m = /^p([0-9]+)$/.exec(p.id);
+    if (m) max = Math.max(max, Number(m[1]));
   }
+  return 'p' + (max + 1);
+}
+
+// Append an extra photo (an our-own upload path + optional name). Returns the
+// created photo, or null on a bad design/path.
+function addPhoto(id, imgPath, name) {
+  const d = designOk(id);
+  const p = pathOk(imgPath);
+  if (!d || !p) return null;
+  const g = ensure(d);
+  const photos = g.photos || (g.photos = []);
+  const photo = {
+    id: nextPhotoId(g),
+    img: p,
+    name: cleanName(name),
+    onProducts: true,
+    onProduct: true,
+  };
+  photos.push(photo);
+  if (g.order && g.order.indexOf(photo.id) === -1) g.order.push(photo.id);
+  save();
+  return { ...photo };
+}
+
+// Patch an extra photo's name / visibility. Returns the updated photo or null.
+function updatePhoto(id, photoId, patch) {
+  const d = designOk(id);
+  if (!d || !_store[d] || !Array.isArray(_store[d].photos) || !patch || typeof patch !== 'object') {
+    return null;
+  }
+  const photo = _store[d].photos.find((p) => p.id === photoId);
+  if (!photo) return null;
+  if ('name' in patch) photo.name = cleanName(patch.name);
+  if ('onProducts' in patch) photo.onProducts = !!patch.onProducts;
+  if ('onProduct' in patch) photo.onProduct = !!patch.onProduct;
+  save();
+  return { ...photo };
+}
+
+// Remove an extra photo (and its order entry). Returns the removed img path (so
+// the caller can reclaim the file) or null when nothing was removed.
+function removePhoto(id, photoId) {
+  const d = designOk(id);
+  if (!d || !_store[d] || !Array.isArray(_store[d].photos)) return null;
+  const idx = _store[d].photos.findIndex((p) => p.id === photoId);
+  if (idx === -1) return null;
+  const [removed] = _store[d].photos.splice(idx, 1);
+  if (_store[d].photos.length === 0) delete _store[d].photos;
+  if (_store[d].order) {
+    _store[d].order = _store[d].order.filter((k) => k !== photoId);
+    if (_store[d].order.length === 0) delete _store[d].order;
+  }
+  prune(d);
+  save();
+  return removed.img;
+}
+
+// ---- ordering --------------------------------------------------------------
+
+// Set the display order. `keys` may name base slots and existing photo ids in any
+// arrangement; unknown / duplicate keys are dropped. Returns the stored order or
+// null on a bad design.
+function setOrder(id, keys) {
+  const d = designOk(id);
+  if (!d || !Array.isArray(keys)) return null;
+  const g = ensure(d);
+  const knownPhotos = new Set((g.photos || []).map((p) => p.id));
+  const out = [];
+  for (const k of keys) {
+    if ((BASE_SLOT_SET.has(k) || knownPhotos.has(k)) && out.indexOf(k) === -1) out.push(k);
+  }
+  if (out.length) g.order = out;
+  else delete g.order;
+  prune(d);
+  save();
   return out;
 }
 
-// The carousel array for a design (a fresh copy so callers can't mutate the
-// store). Unknown/absent design or no array → [].
-function getCarousel(id) {
-  const d = designOk(id);
-  if (!d || !_store[d]) return [];
-  const arr = _store[d].carousel;
-  return Array.isArray(arr) ? arr.slice() : [];
-}
+// ---- reclaim guard ---------------------------------------------------------
 
-// Append one uploaded picture to a design's carousel (deduped, capped, order
-// preserved). Returns the new array, or null on a bad design/path. A no-op append
-// (duplicate or already at cap) still returns the current array so the client
-// stays in sync — the route compares lengths to detect a dropped upload.
-function addCarouselImage(id, imgPath) {
-  const d = designOk(id);
-  if (!d || !UPLOAD_PATH_RE.test(String(imgPath || ''))) return null;
-  const cur = getCarousel(d);
-  const next = sanitizeCarousel(cur.concat(String(imgPath)));
-  // No-op append (a content-hash duplicate, or dropped because already at cap):
-  // the sanitized array is identical, so skip the JSON serialize + tmp-write +
-  // rename entirely and just return it — the route then reports a 409.
-  if (next.length === cur.length && next.every((p, i) => p === cur[i])) return next;
-  const bag = _store[d] || (_store[d] = {});
-  bag.carousel = next;
-  save();
-  return next;
-}
-
-// Remove one picture from a design's carousel by its path. Prunes an emptied
-// carousel key (and an emptied design bag) so the store stays tidy. Returns the
-// new array (possibly []), or null on a bad design id. A no-op when the path is
-// absent (returns the unchanged array).
-function removeCarouselImage(id, imgPath) {
-  const d = designOk(id);
-  if (!d) return null;
-  if (!_store[d] || !Array.isArray(_store[d].carousel)) return [];
-  const target = String(imgPath || '');
-  const next = _store[d].carousel.filter((p) => p !== target);
-  if (next.length) {
-    _store[d].carousel = next;
-  } else {
-    delete _store[d].carousel;
-    if (Object.keys(_store[d]).length === 0) delete _store[d];
-  }
-  save();
-  return next;
-}
-
-// Is `imgPath` referenced by ANY design/slot in THIS store (a single slot path OR
-// an entry in a carousel array)? Uploads are content-addressed and shared (a file
-// can back a content-editor override AND a design-image override, several slots,
-// or a carousel), so a caller reclaiming an orphan must confirm nothing here still
-// points at it — combined with content.isImageReferenced on the other store.
-// Own-property scan only.
+// Is `imgPath` referenced by ANY design (as a base override OR an extra photo)?
+// Uploads are content-addressed and shared, so a caller reclaiming an orphan must
+// confirm nothing here still points at it (combined with content.isImageReferenced
+// on the other store). Own-property scan only.
 function isImageReferenced(imgPath) {
   const target = String(imgPath || '');
   if (!target) return false;
   for (const id of Object.keys(_store)) {
-    const bag = _store[id] || {};
-    for (const key of Object.keys(bag)) {
-      const v = bag[key];
-      if (v === target) return true;
-      if (Array.isArray(v) && v.indexOf(target) !== -1) return true;
+    const g = _store[id] || {};
+    if (g.base) {
+      for (const slot of Object.keys(g.base)) {
+        if (g.base[slot] && g.base[slot].img === target) return true;
+      }
+    }
+    if (Array.isArray(g.photos)) {
+      for (const p of g.photos) if (p.img === target) return true;
     }
   }
   return false;
@@ -223,17 +378,18 @@ module.exports = {
   getAll,
   getForDesign,
   get,
-  set,
-  reset,
-  getCarousel,
-  addCarouselImage,
-  removeCarouselImage,
-  sanitizeCarousel,
+  setBaseImg,
+  resetBaseImg,
+  setBaseFlags,
+  addPhoto,
+  updatePhoto,
+  removePhoto,
+  setOrder,
   isImageReferenced,
   designOk,
   slotOk,
-  SLOTS,
-  CAROUSEL_CAP,
+  BASE_SLOTS,
   UPLOAD_PATH_RE,
+  NAME_MAX,
   _file: FILE,
 };

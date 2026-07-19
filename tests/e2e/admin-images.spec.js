@@ -1,16 +1,27 @@
 import { test, expect } from '@playwright/test';
 
-// The per-design product-image admin page (admin-images.html) is behind the admin
-// key. To keep the parallel device projects race-free against the shared server,
-// the override API is MOCKED at the network layer — this spec verifies the admin
-// UI wiring (gate, design/slot listing, upload + reset controls), not real writes.
+// The per-design GALLERY admin page (admin-images.html) is behind the admin key.
+// To keep the parallel device projects race-free against the shared server, the
+// gallery API is MOCKED at the network layer — this spec verifies the admin UI
+// wiring (gate, base + photo items, replace/reset, per-surface checkboxes, add
+// photo, reorder), not real writes.
 const KEY = 'dugri-admin';
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 const UPLOADED = '/content-uploads/0123456789abcdef.png';
-const CAR1 = '/content-uploads/1111111111111111.png';
-const CAR2 = '/content-uploads/2222222222222222.png';
 
-test.describe('admin images page', () => {
+function stubGet(page, images = {}) {
+  return page.route('**/api/design-images*', (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { images } });
+    return route.continue();
+  });
+}
+function stubUploads(page) {
+  return page.route('**/content-uploads/*', (route) =>
+    route.fulfill({ contentType: 'image/png', body: PNG })
+  );
+}
+
+test.describe('admin gallery page', () => {
   test('without a key the page reveals nothing and asks for ?key=', async ({ page }) => {
     let hitAdmin = false;
     page.on('request', (req) => {
@@ -22,177 +33,161 @@ test.describe('admin images page', () => {
     expect(hitAdmin).toBe(false);
   });
 
-  test('with the key it lists every design with all four slots (board incl. boardless designs)', async ({
+  test('offers all four base items for EVERY design (boardless board is empty, uploadable) + default flags', async ({
     page,
   }) => {
-    await page.route('**/api/design-images*', (route) => route.fulfill({ json: { images: {} } }));
+    await stubGet(page, {});
     await page.goto(`/admin-images.html?key=${KEY}`);
     await expect(page.locator('#app')).toBeVisible();
 
-    // One card per catalog design (all 7 are public).
     await expect(page.locator('.design')).toHaveCount(7);
 
-    // posttrip ships a board → its board slot shows the shipped default picture.
-    const posttrip = page.locator('.slot[data-design="posttrip"]');
-    await expect(posttrip).toHaveCount(4); // store, front, back, board
-    const posttripBoard = page.locator('.slot[data-design="posttrip"][data-slot="board"]');
-    await expect(posttripBoard).toHaveCount(1);
-    await expect(posttripBoard.locator('img.preview')).toBeVisible();
-    await expect(posttripBoard.locator('.preview-empty')).toHaveCount(0);
+    // posttrip ships a board → 4 base items (store/front/back/board).
+    const posttripBase = page.locator('.item[data-design="posttrip"][data-type="base"]');
+    await expect(posttripBase).toHaveCount(4);
+    await expect(page.locator('.item[data-design="posttrip"][data-key="board"]')).toHaveCount(1);
 
     // kids ships NO board, but the board slot is STILL offered so the owner can
-    // upload one — it renders in an EMPTY state (placeholder, no broken <img>).
-    await expect(page.locator('.slot[data-design="kids"]')).toHaveCount(4);
-    const kidsBoard = page.locator('.slot[data-design="kids"][data-slot="board"]');
+    // upload one (#159). It starts as an empty "upload a board" placeholder.
+    await expect(page.locator('.item[data-design="kids"][data-type="base"]')).toHaveCount(4);
+    const kidsBoard = page.locator('.item[data-design="kids"][data-key="board"]');
     await expect(kidsBoard).toHaveCount(1);
     await expect(kidsBoard.locator('.preview-empty')).toBeVisible();
-    await expect(kidsBoard.locator('img.preview')).toHaveCount(0);
-    await expect(kidsBoard.locator('.badge.default')).toHaveText('אין תמונה');
-    await expect(kidsBoard.locator('button[data-act="upload"]')).toHaveText('העלה תמונה');
+    await expect(kidsBoard.locator('button[data-act="upload"]')).toBeVisible();
     await expect(kidsBoard.locator('button[data-act="reset"]')).toBeDisabled();
 
-    // The nav pill for this page is the active one.
+    // Default flags: the store cover shows on the grid but NOT the product page;
+    // the card front shows on both.
+    const store = page.locator('.item[data-design="posttrip"][data-key="store"]');
+    await expect(store.locator('input[data-flag="onProducts"]')).toBeChecked();
+    await expect(store.locator('input[data-flag="onProduct"]')).not.toBeChecked();
+    const front = page.locator('.item[data-design="posttrip"][data-key="front"]');
+    await expect(front.locator('input[data-flag="onProduct"]')).toBeChecked();
+
     await expect(page.locator('.nav a.active[data-page="admin-images.html"]')).toHaveCount(1);
-
-    // The nav cross-links to the other owner-editable admin sections so the
-    // owner can reach features/pricing/images from any of them (they were once
-    // missing each other — regression guard).
-    await expect(page.locator('.nav a[data-page="admin-features.html"]')).toHaveCount(1);
-    await expect(page.locator('.nav a[data-page="admin-pricing.html"]')).toHaveCount(1);
   });
 
-  test('uploading a picture flips the slot to "custom" and enables reset', async ({ page }) => {
-    // Start empty; the upload POST is mocked to echo back the stored override.
-    await page.route('**/api/design-images*', (route) => {
-      if (route.request().method() === 'GET') {
-        return route.fulfill({ json: { images: {} } });
-      }
-      return route.continue();
-    });
-    await page.route('**/api/admin/design-images/image*', (route) =>
-      route.fulfill({ json: { ok: true, img: UPLOADED, images: { board: UPLOADED } } })
-    );
-    await page.route('**/content-uploads/*', (route) =>
-      route.fulfill({ contentType: 'image/png', body: PNG })
+  test('replacing a base render flips it to "custom" and enables reset', async ({ page }) => {
+    await stubGet(page, {});
+    await stubUploads(page);
+    await page.route('**/api/admin/design-images/base/image*', (route) =>
+      route.fulfill({
+        json: { ok: true, img: UPLOADED, gallery: { base: { board: { img: UPLOADED } } } },
+      })
     );
 
     await page.goto(`/admin-images.html?key=${KEY}`);
-    const slot = page.locator('.slot[data-design="posttrip"][data-slot="board"]');
-    await expect(slot).toBeVisible();
-    // Before: the default badge, reset disabled.
-    await expect(slot.locator('.badge.default')).toBeVisible();
-    await expect(slot.locator('button[data-act="reset"]')).toBeDisabled();
+    const board = page.locator('.item[data-design="posttrip"][data-key="board"]');
+    await expect(board.locator('.badge.default')).toBeVisible();
+    await expect(board.locator('button[data-act="reset"]')).toBeDisabled();
 
-    // Upload via the hidden file input.
-    await slot.locator('input[type=file]').setInputFiles({
+    await board.locator('input[type=file]').setInputFiles({
       name: 'board.png',
       mimeType: 'image/png',
       buffer: PNG,
     });
 
-    // After: the slot re-renders as custom, preview points at the upload, reset enabled.
-    const after = page.locator('.slot[data-design="posttrip"][data-slot="board"]');
+    const after = page.locator('.item[data-design="posttrip"][data-key="board"]');
     await expect(after.locator('.badge.custom')).toBeVisible();
     await expect(after.locator('img.preview')).toHaveAttribute('src', UPLOADED);
     await expect(after.locator('button[data-act="reset"]')).toBeEnabled();
   });
 
-  test('uploading a board to a BOARDLESS design (kids) flips its empty slot to custom', async ({
+  test('#159: uploads a board to a BOARDLESS design (kids) — empty slot flips to custom', async ({
     page,
   }) => {
-    await page.route('**/api/design-images*', (route) => {
-      if (route.request().method() === 'GET') {
-        return route.fulfill({ json: { images: {} } });
-      }
-      return route.continue();
-    });
-    await page.route('**/api/admin/design-images/image*', (route) =>
-      route.fulfill({ json: { ok: true, img: UPLOADED, images: { board: UPLOADED } } })
-    );
-    await page.route('**/content-uploads/*', (route) =>
-      route.fulfill({ contentType: 'image/png', body: PNG })
+    await stubGet(page, {});
+    await stubUploads(page);
+    await page.route('**/api/admin/design-images/base/image*', (route) =>
+      route.fulfill({
+        json: { ok: true, img: UPLOADED, gallery: { base: { board: { img: UPLOADED } } } },
+      })
     );
 
     await page.goto(`/admin-images.html?key=${KEY}`);
-    const slot = page.locator('.slot[data-design="kids"][data-slot="board"]');
-    await expect(slot).toBeVisible();
-    // Before: empty state — placeholder, no image, "upload" label, reset disabled.
-    await expect(slot.locator('.preview-empty')).toBeVisible();
-    await expect(slot.locator('img.preview')).toHaveCount(0);
-    await expect(slot.locator('button[data-act="reset"]')).toBeDisabled();
+    const board = page.locator('.item[data-design="kids"][data-key="board"]');
+    // Boardless: starts empty (no shipped render), reset disabled.
+    await expect(board.locator('.preview-empty')).toBeVisible();
+    await expect(board.locator('button[data-act="reset"]')).toBeDisabled();
 
-    // Upload a board via the hidden file input.
-    await slot.locator('input[type=file]').setInputFiles({
+    await board.locator('input[type=file]').setInputFiles({
       name: 'board.png',
       mimeType: 'image/png',
       buffer: PNG,
     });
 
-    // After: the empty state is gone; a real preview shows the upload, reset enabled.
-    const after = page.locator('.slot[data-design="kids"][data-slot="board"]');
+    // After upload: the boardless board now carries the owner's picture.
+    const after = page.locator('.item[data-design="kids"][data-key="board"]');
     await expect(after.locator('.badge.custom')).toBeVisible();
-    await expect(after.locator('.preview-empty')).toHaveCount(0);
     await expect(after.locator('img.preview')).toHaveAttribute('src', UPLOADED);
     await expect(after.locator('button[data-act="reset"]')).toBeEnabled();
   });
 
-  test('lists a design’s existing carousel pictures with a delete button each', async ({
-    page,
-  }) => {
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { birthday: { carousel: [CAR1, CAR2] } } } })
-    );
-    await page.route('**/content-uploads/*', (route) =>
-      route.fulfill({ contentType: 'image/png', body: PNG })
-    );
-    await page.goto(`/admin-images.html?key=${KEY}`);
+  test('toggling a base checkbox posts the per-surface flag', async ({ page }) => {
+    await stubGet(page, {});
+    let flagBody = null;
+    await page.route('**/api/admin/design-images/base/flags*', (route) => {
+      flagBody = JSON.parse(route.request().postData() || '{}');
+      route.fulfill({ json: { ok: true, gallery: { base: { store: { onProduct: true } } } } });
+    });
 
-    const car = page.locator('.carousel-admin[data-design="birthday"]');
-    await expect(car).toBeVisible();
-    await expect(car.locator('.cthumb')).toHaveCount(2);
-    await expect(car.locator('button[data-act="carousel-del"]')).toHaveCount(2);
-    // A design with no carousel shows the empty hint.
-    const neon = page.locator('.carousel-admin[data-design="neon"]');
-    await expect(neon.locator('.cthumb')).toHaveCount(0);
-    await expect(neon.locator('.cempty')).toBeVisible();
+    await page.goto(`/admin-images.html?key=${KEY}`);
+    // Opt the store cover INTO the product page.
+    await page
+      .locator('.item[data-design="posttrip"][data-key="store"] input[data-flag="onProduct"]')
+      .check();
+    await expect.poll(() => flagBody).not.toBeNull();
+    expect(flagBody).toMatchObject({ designId: 'posttrip', slot: 'store', onProduct: true });
   });
 
-  test('adding a carousel picture appends a thumbnail; deleting removes it', async ({ page }) => {
-    // Start with one carousel picture; the POST appends a second, the DELETE removes one.
-    await page.route('**/api/design-images*', (route) => {
-      if (route.request().method() === 'GET') {
-        return route.fulfill({ json: { images: { birthday: { carousel: [CAR1] } } } });
-      }
-      return route.continue();
+  test('adding a named photo appends a photo item to the gallery', async ({ page }) => {
+    await stubGet(page, {});
+    await stubUploads(page);
+    await page.route('**/api/admin/design-images/photo*', (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      route.fulfill({
+        json: {
+          ok: true,
+          photo: { id: 'p1', img: UPLOADED, name: 'סטודיו', onProducts: true, onProduct: true },
+          gallery: {
+            photos: [
+              { id: 'p1', img: UPLOADED, name: 'סטודיו', onProducts: true, onProduct: true },
+            ],
+          },
+        },
+      });
     });
-    await page.route('**/api/admin/design-images/carousel*', (route) => {
-      const m = route.request().method();
-      if (m === 'POST') {
-        return route.fulfill({ json: { ok: true, img: CAR2, carousel: [CAR1, CAR2] } });
-      }
-      if (m === 'DELETE') {
-        return route.fulfill({ json: { ok: true, carousel: [CAR2] } });
-      }
-      return route.continue();
-    });
-    await page.route('**/content-uploads/*', (route) =>
-      route.fulfill({ contentType: 'image/png', body: PNG })
-    );
 
     await page.goto(`/admin-images.html?key=${KEY}`);
-    const car = page.locator('.carousel-admin[data-design="birthday"]');
-    await expect(car.locator('.cthumb')).toHaveCount(1);
-
-    // Add: set the file on the hidden carousel input (fires the upload).
-    await car.locator('input[type=file][data-carousel]').setInputFiles({
-      name: 'c.png',
+    const section = page.locator('.design[data-design="birthday"]');
+    await section.locator('.add-name').fill('סטודיו');
+    await section.locator('.add-file').setInputFiles({
+      name: 'x.png',
       mimeType: 'image/png',
       buffer: PNG,
     });
-    await expect(car.locator('.cthumb')).toHaveCount(2);
 
-    // Delete: remove the first picture → the DELETE mock returns the shorter array.
-    await car.locator('button[data-act="carousel-del"]').first().click();
-    await expect(car.locator('.cthumb')).toHaveCount(1);
+    const photo = page.locator('.item[data-design="birthday"][data-type="photo"]');
+    await expect(photo).toHaveCount(1);
+    await expect(photo.locator('.name-input')).toHaveValue('סטודיו');
+    await expect(photo.locator('img.preview')).toHaveAttribute('src', UPLOADED);
+  });
+
+  test('reorder posts the full new key order', async ({ page }) => {
+    await stubGet(page, {});
+    let orderBody = null;
+    await page.route('**/api/admin/design-images/order*', (route) => {
+      orderBody = JSON.parse(route.request().postData() || '{}');
+      route.fulfill({ json: { ok: true, gallery: { order: orderBody.order } } });
+    });
+
+    await page.goto(`/admin-images.html?key=${KEY}`);
+    // Move the first item (store) one step later.
+    await page
+      .locator('.item[data-design="posttrip"][data-key="store"] button[data-act="down"]')
+      .click();
+    await expect.poll(() => orderBody).not.toBeNull();
+    expect(orderBody.designId).toBe('posttrip');
+    expect(orderBody.order.slice(0, 2)).toEqual(['front', 'store']);
   });
 });

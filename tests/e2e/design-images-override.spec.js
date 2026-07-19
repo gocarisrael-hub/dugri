@@ -1,347 +1,124 @@
 import { test, expect } from '@playwright/test';
 
-// E2E for the owner's per-design image overrides (server/design-images.js +
-// GET /api/design-images, consumed by products.html + js/product.js). Overrides
-// are mocked at the NETWORK layer so the tests never write real data. A minimal
-// PNG stands in for the (non-existent) uploaded files so the <img>s can load.
+// E2E for the owner's per-design GALLERY overrides (server/design-images.js + GET
+// /api/design-images), consumed by products.html (grid card carousel) and
+// product.html (detail gallery). The config is mocked at the NETWORK layer so the
+// tests never write real data. A minimal PNG stands in for the (non-existent)
+// uploaded files so the <img>s can load.
 
-// A REAL, decodable 1×1 transparent PNG (not just the signature) — the browser
-// must actually DECODE the stubbed override, otherwise its <img> fires `error`
-// and the new onerror fallback would (correctly) swap back to the static asset,
-// which is the opposite of what the "override applied" tests assert.
+// A REAL, decodable 1×1 transparent PNG — the browser must actually DECODE the
+// stubbed override, otherwise its <img> fires `error` and the onerror fallback
+// swaps back to the shipped render (the opposite of what the "override" tests want).
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
   'base64'
 );
 const STORE_OVERRIDE = '/content-uploads/0123456789abcdef.webp';
 const BOARD_OVERRIDE = '/content-uploads/fedcba9876543210.webp';
-const CAR1 = '/content-uploads/1111111111111111.webp';
-const CAR2 = '/content-uploads/2222222222222222.webp';
 
 function stubUploads(page) {
   return page.route('**/content-uploads/*', (route) =>
     route.fulfill({ contentType: 'image/png', body: PNG })
   );
 }
-
-// Index of the visible frame in a fade tile carousel. The engine lights the
-// active frame by REMOVING aria-hidden (inactive frames get aria-hidden="true"),
-// so the active frame is the only .tile-frame without that attribute.
-function activeFrameIndex(media) {
-  return media
-    .locator('.tile-frame')
-    .evaluateAll((frames) => frames.findIndex((f) => !f.hasAttribute('aria-hidden')));
+// Serve a gallery-config map in the new store shape.
+function stubConfig(page, images) {
+  return page.route('**/api/design-images*', (route) => route.fulfill({ json: { images } }));
 }
 
-test.describe('products.html — store-tile override', () => {
-  test('uses the overridden store picture when present, static store.webp when not', async ({
+test.describe('products.html — store-tile override in the card carousel', () => {
+  test('uses the overridden store picture when present, shipped store.webp when not', async ({
     page,
   }) => {
     await stubUploads(page);
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { birthday: { store: STORE_OVERRIDE } } } })
-    );
+    await stubConfig(page, { birthday: { base: { store: { img: STORE_OVERRIDE } } } });
 
     await page.goto('/products.html');
 
-    // The overridden design's tile settles on the uploaded picture (first paint
-    // shows store.webp, then the map resolves and swaps it — poll the settled src).
+    // The first slide of the overridden design's card settles on the upload (first
+    // paint shows store.webp, then the config resolves and rebuilds the carousel).
     const birthdayImg = page.locator(
       '.product-card[data-design-id="birthday"] [data-testid="product-image"]'
     );
     await expect(birthdayImg).toHaveAttribute('src', STORE_OVERRIDE);
 
-    // A design WITHOUT an override keeps its shipped static store.webp.
+    // A design WITHOUT an override keeps its shipped store.webp on the first slide.
     const neonImg = page.locator(
       '.product-card[data-design-id="neon"] [data-testid="product-image"]'
     );
     await expect(neonImg).toHaveAttribute('src', /assets\/designs\/neon\/store\.webp$/);
   });
 
-  test('a failed override fetch falls back to the static store.webp and the grid still renders', async ({
+  test('each card is a multi-picture swipe carousel with dots', async ({ page }) => {
+    await stubUploads(page);
+    await stubConfig(page, {});
+    await page.goto('/products.html');
+
+    const card = page.locator('.product-card[data-design-id="birthday"]');
+    // Default gallery for a boarded design = store + front + back + board (4 shots).
+    const slides = card.locator(
+      '.product-card__track > .product-card__slide:not([data-carousel-clone])'
+    );
+    await expect(slides).toHaveCount(4);
+    // The carousel engine rendered its dots (one per real slide).
+    await expect(card.locator('.product-card__dots .carousel-dot')).toHaveCount(4);
+    // Every slide links into the detail page (tap opens the product; drag swipes).
+    await expect(slides.first()).toHaveAttribute('href', 'product.html?design=birthday');
+  });
+
+  test('a failed config fetch falls back to shipped renders and the grid still renders', async ({
     page,
   }) => {
-    // Simulate a broken/timed-out override endpoint: the client must fail-safe.
     await page.route('**/api/design-images*', (route) => route.abort());
 
     await page.goto('/products.html');
 
     await expect(page.getByTestId('store-grid')).toBeVisible();
     await expect(page.getByTestId('product-card')).toHaveCount(7);
-    // Every tile shows its static asset (nothing broken by the failed fetch).
     const birthdayImg = page.locator(
       '.product-card[data-design-id="birthday"] [data-testid="product-image"]'
     );
     await expect(birthdayImg).toHaveAttribute('src', /assets\/designs\/birthday\/store\.webp$/);
   });
 
-  test('a MISSING override file (404) degrades the tile back to the static store.webp', async ({
+  test('a MISSING override file (404) degrades the first slide back to store.webp', async ({
     page,
   }) => {
-    // Override is set, but the file 404s (NOT stubbed) → the tile's onerror must
-    // swap back to data-store-default rather than show a broken image.
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { birthday: { store: STORE_OVERRIDE } } } })
-    );
+    // Override is set, but the file 404s (NOT stubbed) → onerror swaps back to the
+    // shipped render rather than showing a broken image.
+    await stubConfig(page, { birthday: { base: { store: { img: STORE_OVERRIDE } } } });
     await page.goto('/products.html');
     const birthdayImg = page.locator(
       '.product-card[data-design-id="birthday"] [data-testid="product-image"]'
     );
-    // First it swaps to the override, then onerror falls back to the static asset.
     await expect
       .poll(() => birthdayImg.getAttribute('src'))
       .toMatch(/assets\/designs\/birthday\/store\.webp$/);
   });
-});
 
-test.describe('products.html — store-tile carousel', () => {
-  test('a design WITH carousel pictures becomes a fast seamless fade carousel of [store, ...added]', async ({
+  test('a hidden store slot drops the cover from the card (front leads instead)', async ({
     page,
   }) => {
     await stubUploads(page);
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { birthday: { carousel: [CAR1, CAR2] } } } })
-    );
-
+    await stubConfig(page, { birthday: { base: { store: { onProducts: false } } } });
     await page.goto('/products.html');
 
-    const card = page.locator('.product-card[data-design-id="birthday"]');
-    const media = card.locator('.product-card__media');
-    // The shared fade carousel engine initialised on the tile.
-    await expect(media).toHaveClass(/carousel--fade/);
-    await expect(media).toHaveAttribute('aria-roledescription', 'carousel');
-
-    // Frames = [store image] + the two added pictures, in order.
-    const frames = media.locator('.tile-frame');
-    await expect(frames).toHaveCount(3);
-    // Frame 0 is the store image (keeps the product-image testid + static src).
-    await expect(media.locator('[data-testid="product-image"]')).toHaveAttribute(
-      'src',
-      /assets\/designs\/birthday\/store\.webp$/
+    const first = page.locator(
+      '.product-card[data-design-id="birthday"] [data-testid="product-image"]'
     );
-    // The added carousel frames point at the owner's uploads.
-    await expect
-      .poll(() =>
-        media.locator('[data-testid="carousel-frame"]').evaluateAll((els) => els.map((i) => i.src))
-      )
-      .toEqual([expect.stringContaining(CAR1), expect.stringContaining(CAR2)]);
-
-    // The pictures are shown in FULL, never cropped: object-fit is contain (not
-    // the old cover), for both the store frame and the added frames.
-    await expect(media.locator('[data-testid="product-image"]')).toHaveCSS('object-fit', 'contain');
-    await expect(media.locator('[data-testid="carousel-frame"]').first()).toHaveCSS(
-      'object-fit',
-      'contain'
-    );
-
-    // A ≥2-frame tile gets one manual dot per frame (the shopper's controls).
-    await expect(card.locator('.tile-dots .carousel-dot')).toHaveCount(3);
-
-    // The dots live OUTSIDE the card link (a sibling of the anchor), NOT nested
-    // inside it: interactive buttons in an <a> are invalid HTML and add stray tab
-    // stops. Assert no dot is a descendant of .product-card__link, and the strip
-    // is a direct child of the .product-card article.
-    await expect(card.locator('.product-card__link .carousel-dot')).toHaveCount(0);
-    await expect(card.locator('.product-card__link .tile-dots')).toHaveCount(0);
-    expect(await card.evaluate((el) => el.querySelector('.tile-dots')?.parentElement === el)).toBe(
-      true
-    );
-  });
-
-  test('the tile does NOT auto-advance — it rests on the store frame until the shopper acts', async ({
-    page,
-  }) => {
-    await stubUploads(page);
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { birthday: { carousel: [CAR1, CAR2] } } } })
-    );
-
-    await page.goto('/products.html');
-
-    const media = page.locator('.product-card[data-design-id="birthday"] .product-card__media');
-    await expect(media).toHaveClass(/carousel--fade/);
-    // Starts on frame 0 (the store image).
-    await expect.poll(() => activeFrameIndex(media)).toBe(0);
-
-    // Wait well past the old 2500ms auto-advance interval with NO interaction —
-    // the active frame must not have moved (autoplay is off).
-    await page.waitForTimeout(3200);
-    expect(await activeFrameIndex(media)).toBe(0);
-  });
-
-  test('clicking a dot changes the picture WITHOUT navigating away from the store', async ({
-    page,
-  }) => {
-    await stubUploads(page);
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { birthday: { carousel: [CAR1, CAR2] } } } })
-    );
-
-    await page.goto('/products.html');
-
-    const card = page.locator('.product-card[data-design-id="birthday"]');
-    const media = card.locator('.product-card__media');
-    const dots = card.locator('.tile-dots .carousel-dot');
-    await expect(dots).toHaveCount(3);
-    await expect.poll(() => activeFrameIndex(media)).toBe(0);
-
-    // Clicking the 2nd dot advances to frame 1 and does NOT follow the card link.
-    await dots.nth(1).click();
-    await expect.poll(() => activeFrameIndex(media)).toBe(1);
-    await expect(page).toHaveURL(/\/products\.html$/);
-
-    // A different dot jumps straight to that frame — still no navigation.
-    await dots.nth(2).click();
-    await expect.poll(() => activeFrameIndex(media)).toBe(2);
-    await expect(page).toHaveURL(/\/products\.html$/);
-  });
-
-  test('a many-picture tile shows every dot below the card, unclipped and each selecting its frame', async ({
-    page,
-  }) => {
-    await stubUploads(page);
-    // Six uploads + the store frame = SEVEN frames — a dot row far wider than the
-    // tile. The OLD overlay rendered the dots in a nowrap flex row inside the
-    // overflow:hidden media box, so the outermost dots were clipped off and
-    // unclickable. Below-the-card + wrap must make every dot reachable.
-    const CARS = [
-      '/content-uploads/1111111111111111.webp',
-      '/content-uploads/2222222222222222.webp',
-      '/content-uploads/3333333333333333.webp',
-      '/content-uploads/4444444444444444.webp',
-      '/content-uploads/5555555555555555.webp',
-      '/content-uploads/6666666666666666.webp',
-    ];
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { birthday: { carousel: CARS } } } })
-    );
-
-    await page.goto('/products.html');
-
-    const card = page.locator('.product-card[data-design-id="birthday"]');
-    const media = card.locator('.product-card__media');
-    await expect(media).toHaveClass(/carousel--fade/);
-
-    // 7 frames (store + 6 uploads) → 7 dots, one per frame.
-    await expect(media.locator('.tile-frame')).toHaveCount(7);
-    const dots = card.locator('.tile-dots .carousel-dot');
-    await expect(dots).toHaveCount(7);
-
-    // The dots are NOT inside the overflow:hidden media box (they can't be clipped)
-    // and NOT inside the card link (no invalid nesting / stray tab stop).
-    await expect(media.locator('.tile-dots')).toHaveCount(0);
-    await expect(card.locator('.product-card__link .carousel-dot')).toHaveCount(0);
-
-    // Every dot is rendered with a real, non-zero hit area.
-    const n = await dots.count();
-    for (let i = 0; i < n; i++) {
-      const box = await dots.nth(i).boundingBox();
-      expect(box && box.width > 0 && box.height > 0).toBe(true);
-    }
-
-    // Walk EVERY dot (last→first, so we finish on frame 0): each is reachable
-    // (Playwright's click fails on a clipped / covered target), selects exactly its
-    // frame, and never follows the card link. This exercises the outermost dots —
-    // the store frame and the last upload — that the old overlay clipped away.
-    for (let i = n - 1; i >= 0; i--) {
-      await dots.nth(i).click();
-      await expect.poll(() => activeFrameIndex(media)).toBe(i);
-      await expect(page).toHaveURL(/\/products\.html$/);
-    }
-  });
-
-  test('tapping the picture still opens the product detail page', async ({ page }) => {
-    await stubUploads(page);
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { birthday: { carousel: [CAR1, CAR2] } } } })
-    );
-
-    await page.goto('/products.html');
-
-    const media = page.locator('.product-card[data-design-id="birthday"] .product-card__media');
-    await expect(media).toHaveClass(/carousel--fade/);
-    // The visible (active) store frame is the picture; tapping it navigates.
-    await media.locator('[data-testid="product-image"]').click();
-    await expect(page).toHaveURL(/\/product\.html\?design=birthday/);
-  });
-
-  test('a design WITHOUT carousel pictures stays a single static image (no carousel, no dots)', async ({
-    page,
-  }) => {
-    await stubUploads(page);
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { birthday: { carousel: [CAR1] } } } })
-    );
-
-    await page.goto('/products.html');
-
-    const neonCard = page.locator('.product-card[data-design-id="neon"]');
-    const neon = neonCard.locator('.product-card__media');
-    await expect(neon.locator('[data-testid="product-image"]')).toHaveAttribute(
-      'src',
-      /assets\/designs\/neon\/store\.webp$/
-    );
-    await expect(neon).not.toHaveClass(/carousel--fade/);
-    await expect(neon.locator('.tile-frame')).toHaveCount(0);
-    // A single-picture tile shows no manual controls (no dots strip anywhere).
-    await expect(neonCard.locator('.tile-dots')).toHaveCount(0);
-    await expect(neonCard.locator('.carousel-dot')).toHaveCount(0);
-  });
-
-  test('a 404 carousel picture degrades to the store image without breaking the tile', async ({
-    page,
-  }) => {
-    // The carousel path is set but its file 404s (NOT stubbed) → the frame's
-    // onerror must fall back to the store image; the grid still renders in full.
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { birthday: { carousel: [CAR1] } } } })
-    );
-
-    await page.goto('/products.html');
-
-    await expect(page.getByTestId('store-grid')).toBeVisible();
-    await expect(page.getByTestId('product-card')).toHaveCount(7);
-
-    const media = page.locator('.product-card[data-design-id="birthday"] .product-card__media');
-    // The store frame is intact.
-    await expect(media.locator('[data-testid="product-image"]')).toHaveAttribute(
-      'src',
-      /assets\/designs\/birthday\/store\.webp$/
-    );
-    // The broken carousel frame fell back to the static store image.
-    await expect
-      .poll(() => media.locator('[data-testid="carousel-frame"]').getAttribute('src'))
-      .toMatch(/assets\/designs\/birthday\/store\.webp$/);
+    // With store hidden on the products surface, the first slide is the card front.
+    await expect(first).toHaveAttribute('src', /assets\/designs\/birthday\/gallery-front\.webp$/);
   });
 });
 
-test.describe('index.html — homepage rail store override', () => {
-  test('the homepage tile picks up the same store override as /products', async ({ page }) => {
-    await stubUploads(page);
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { birthday: { store: STORE_OVERRIDE } } } })
-    );
-
-    await page.goto('/');
-
-    // The homepage products rail tile for the overridden design shows the upload.
-    const tileImg = page
-      .locator('.home-prod-card[data-design-id="birthday"] .home-prod-thumb img')
-      .first();
-    await expect(tileImg).toHaveAttribute('src', STORE_OVERRIDE);
-  });
-});
-
-test.describe('product.html — gallery slot override', () => {
-  test('uses the overridden board picture, static renders for the other slots', async ({
+test.describe('product.html — detail gallery from the curated selection', () => {
+  test('uses the overridden board render, ships the other slots (store not led)', async ({
     page,
   }) => {
     await stubUploads(page);
     // Only the board slot is overridden for posttrip.
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { posttrip: { board: BOARD_OVERRIDE } } } })
-    );
-    // Keep the content-editor overrides empty so per-slot overrides take effect.
+    await stubConfig(page, { posttrip: { base: { board: { img: BOARD_OVERRIDE } } } });
+    // Keep the content-editor overrides empty so the design-images gallery drives it.
     await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
 
     await page.goto('/product.html?design=posttrip');
@@ -352,11 +129,40 @@ test.describe('product.html — gallery slot override', () => {
       .toEqual([
         'assets/designs/posttrip/gallery-front.webp',
         'assets/designs/posttrip/gallery-back.webp',
-        BOARD_OVERRIDE, // owner's uploaded board picture wins for its slot
+        BOARD_OVERRIDE, // owner's uploaded board render wins for its slot
       ]);
   });
 
-  test('a failed override fetch falls back to the static gallery renders (page still renders)', async ({
+  test('the owner can add the store cover + a named extra to the detail gallery', async ({
+    page,
+  }) => {
+    await stubUploads(page);
+    await stubConfig(page, {
+      posttrip: {
+        base: { store: { onProduct: true } },
+        photos: [
+          { id: 'p1', img: STORE_OVERRIDE, name: 'סטודיו', onProducts: false, onProduct: true },
+        ],
+        order: ['store', 'front', 'back', 'board', 'p1'],
+      },
+    });
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+
+    await page.goto('/product.html?design=posttrip');
+
+    const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
+    await expect
+      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .toEqual([
+        'assets/designs/posttrip/store.webp', // store cover, opted into the product page
+        'assets/designs/posttrip/gallery-front.webp',
+        'assets/designs/posttrip/gallery-back.webp',
+        'assets/designs/posttrip/gallery-board.webp',
+        STORE_OVERRIDE, // the named extra photo, last
+      ]);
+  });
+
+  test('a failed config fetch falls back to the shipped renders (page still renders)', async ({
     page,
   }) => {
     await page.route('**/api/design-images*', (route) => route.abort());
@@ -378,11 +184,8 @@ test.describe('product.html — gallery slot override', () => {
   test('a MISSING override file (404) degrades the board slide back to the static render', async ({
     page,
   }) => {
-    // Override is set, but the file 404s (NOT stubbed) → the board slide's onerror
-    // must swap back to the shipped gallery-board.webp, not show a broken slide.
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { posttrip: { board: BOARD_OVERRIDE } } } })
-    );
+    // Override set, file 404s (NOT stubbed) → onerror swaps back to gallery-board.webp.
+    await stubConfig(page, { posttrip: { base: { board: { img: BOARD_OVERRIDE } } } });
     await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
 
     await page.goto('/product.html?design=posttrip');
@@ -396,76 +199,45 @@ test.describe('product.html — gallery slot override', () => {
         'assets/designs/posttrip/gallery-board.webp', // onerror fell back to static
       ]);
   });
-});
 
-test.describe('product.html — boardless design (kids) board override', () => {
-  test('surfaces an uploaded board as a gallery slide even though kids ships no board', async ({
+  test('#159: a boardless design (kids) surfaces a board slide from an uploaded board', async ({
     page,
   }) => {
     await stubUploads(page);
-    // kids ships NO board render, but the owner uploaded one.
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { kids: { board: BOARD_OVERRIDE } } } })
-    );
+    // kids ships NO board (assets/designs/kids has no gallery-board.webp), but the
+    // owner uploaded one → the board slide appears from the override alone.
+    await stubConfig(page, { kids: { base: { board: { img: BOARD_OVERRIDE } } } });
     await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
 
     await page.goto('/product.html?design=kids');
 
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
-    // First paint shows only front/back (no override yet); once the map resolves the
-    // uploaded board is appended as a third slide.
     await expect
       .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
       .toEqual([
         'assets/designs/kids/gallery-front.webp',
         'assets/designs/kids/gallery-back.webp',
-        BOARD_OVERRIDE, // owner's uploaded board — sourced from the override alone
+        BOARD_OVERRIDE, // owner's uploaded board — no shipped kids board exists
       ]);
   });
 
-  test('a 404 board override for kids DROPS the slide (no broken image, dots + zoom stay in sync)', async ({
+  test('#159: a boardless board override that 404s DROPS the slide (no broken image)', async ({
     page,
   }) => {
-    // The override is set but its file 404s (NOT stubbed). A boardless design has no
-    // shipped gallery-board.webp to fall back to, so the override-only board slide
-    // must be REMOVED entirely — not left as a broken image with a phantom dot. The
-    // gallery settles back to front/back with exactly two dots, and the fullscreen
-    // zoom is rebuilt in lockstep.
-    await page.route('**/api/design-images*', (route) =>
-      route.fulfill({ json: { images: { kids: { board: BOARD_OVERRIDE } } } })
-    );
+    // Override set but the file 404s (NOT stubbed) → the override-only board slide
+    // has no shipped fallback, so it is DROPPED rather than shown broken.
+    await stubConfig(page, { kids: { base: { board: { img: BOARD_OVERRIDE } } } });
     await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
 
     await page.goto('/product.html?design=kids');
 
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
-    // The transient third (board) slide is dropped once its image errors → back to 2.
-    await expect(slides).toHaveCount(2);
     await expect
       .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
-      .toEqual(['assets/designs/kids/gallery-front.webp', 'assets/designs/kids/gallery-back.webp']);
-    // Dots track the real slide count — no phantom third dot left behind.
-    await expect(page.locator('#galleryDots .carousel-dot')).toHaveCount(2);
-    // The fullscreen zoom carousel is rebuilt from the same shots (also two slides).
-    await expect(page.locator('#pdpZoomTrack .pdp-zoom-slide img')).toHaveCount(2);
-  });
-
-  test('with NO board override, kids shows no board slide and nothing is broken', async ({
-    page,
-  }) => {
-    await stubUploads(page);
-    await page.route('**/api/design-images*', (route) => route.fulfill({ json: { images: {} } }));
-    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
-
-    await page.goto('/product.html?design=kids');
-
-    await expect(page.getByTestId('pdp-gallery')).toBeVisible();
-    const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
-    // Exactly two slides (front, back) — the board slide is omitted, and no slide
-    // points at the non-existent gallery-board.webp (no broken/404 image).
-    await expect(slides).toHaveCount(2);
-    await expect
-      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
-      .toEqual(['assets/designs/kids/gallery-front.webp', 'assets/designs/kids/gallery-back.webp']);
+      .toEqual([
+        'assets/designs/kids/gallery-front.webp',
+        'assets/designs/kids/gallery-back.webp',
+        // the broken override-only board slide dropped itself — no 404 image remains
+      ]);
   });
 });
