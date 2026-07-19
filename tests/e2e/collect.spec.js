@@ -357,6 +357,47 @@ test('owner pay panel: select delivery → address fields appear + total 199', a
   await expect(page.locator('#payPanel')).not.toContainText('ביט');
 });
 
+// Bug #2: when the owner switches OFF every checkout option, the client used to
+// force-select a disabled 'pickup' and let the buyer hit a rejected charge. It
+// now shows a clear "sales paused" notice instead of a dead-end.
+test('owner pay panel: all options disabled → paused notice, not a dead-end button', async ({
+  page,
+}) => {
+  await stubPricing(page, {
+    store: { now: 199, was: 239 },
+    versions: {
+      pdf: { enabled: false, price: 79 },
+      pickup: { enabled: false, price: 199 },
+      delivery: { enabled: false, price: 199 },
+      custom: { enabled: false, price: 599 },
+    },
+  });
+  await createCollection(page, 'Shira');
+
+  await page.locator('#payPanel summary').click();
+  // The paused notice replaces the actionable area: options + pay button hidden.
+  await expect(page.locator('#paySoldOutNote')).toBeVisible();
+  await expect(page.locator('#payOpts')).toBeHidden();
+  await expect(page.locator('#cardPayBtn')).toBeHidden();
+  // No radio is left checked at a disabled version (no dead-end selection).
+  await expect(page.locator('input[name="payVersion"]:checked')).toHaveCount(0);
+});
+
+// Bug #5: applyPricing overwrote each option's price via textContent, deleting
+// the struck "was" discount anchor (<s class="was">). The now-price must update
+// while the struck anchor survives.
+test('owner pay panel: the discounted option keeps its struck "was" price', async ({ page }) => {
+  await stubPricing(page); // default: all enabled, pdf = 79 with a struck ₪129
+  await createCollection(page, 'Shira');
+
+  await page.locator('#payPanel summary').click();
+  const pdfPrice = page.locator('.pay-opt:has(input[value="pdf"]) .opt-price');
+  // The struck anchor is still present, and the live now-price shows next to it.
+  await expect(pdfPrice.locator('s.was')).toBeVisible();
+  await expect(pdfPrice.locator('s.was')).toHaveText('₪129');
+  await expect(pdfPrice).toContainText('₪79');
+});
+
 test('owner pay panel is collapsed by default and opens on the summary button', async ({
   page,
 }) => {

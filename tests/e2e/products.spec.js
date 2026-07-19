@@ -113,4 +113,25 @@ test.describe('store grid (products.html)', () => {
       'https://instagram.com/dugri_israel'
     );
   });
+
+  // Bug #4: the grid used to be built AFTER `await fetchPricing()`, so a slow or
+  // hanging /api/pricing left the whole store blank for up to the 2.5s timeout.
+  // It must now paint immediately with launch-default prices and overlay later.
+  test('renders the grid immediately even when /api/pricing hangs (no blank store)', async ({
+    page,
+  }) => {
+    // Pricing endpoint never answers — the page must not wait on it.
+    await page.route('**/api/pricing', () => {
+      /* deliberately left pending */
+    });
+    await page.goto('/products.html');
+
+    // Cards are visible well before the 2.5s pricing timeout would elapse; the
+    // old blocking code would only render at ~2500ms, so a 2000ms bound catches
+    // the regression while staying comfortably above instant client render.
+    await expect(page.getByTestId('product-card').first()).toBeVisible({ timeout: 2000 });
+    await expect(page.getByTestId('product-card')).toHaveCount(7);
+    // Shown with the launch-default store price (199 / struck 239), not blank.
+    await expect(page.locator('.product-price').first()).toContainText('199 ₪');
+  });
 });

@@ -408,7 +408,13 @@ const db = {
     // Reject a version the owner has turned OFF in admin (settings) exactly like
     // an unknown one — the route maps either to 400 — so a disabled option can
     // never be charged even if a client POSTs it directly.
-    if (!versionEnabled(version)) {
+    // EXCEPTION: re-setting the SAME version on an existing UNPAID order (the
+    // owner re-opening the pay modal; /order or /pay/init re-invoking setOrder).
+    // A buyer who already committed to an option must still be able to complete
+    // that in-flight payment even if the owner disables the option meanwhile —
+    // the enable-gate blocks NEW selections, not finishing an already-placed order.
+    const reconfirming = !!(c.order && !c.order.paid && c.order.version === version);
+    if (!versionEnabled(version) && !reconfirming) {
       return { error: 'version unavailable' };
     }
     let addr = null;

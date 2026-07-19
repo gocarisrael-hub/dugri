@@ -506,13 +506,14 @@
          which hosts the multi-photo gallery. -->
     <script type="module">
       import { PUBLIC_DESIGNS as DESIGNS } from './js/designs.js';
-      import { fetchPricing } from './js/pricing.js';
+      import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
 
-      // Owner-editable store price (fetched, timeout-bounded; falls back to the
-      // launch defaults 199 / struck 239 if the endpoint is slow or fails).
-      const pricing = await fetchPricing();
-      const PRICE = pricing.store.now;
-      const WAS = pricing.store.was;
+      // Owner-editable store price. Render the grid IMMEDIATELY with the launch
+      // defaults (never blank), then overlay the live price once the fetch
+      // answers — do NOT block the whole listing behind the (up to 2.5s) network
+      // call, which left the store empty on a slow/cold connection.
+      let PRICE = PRICING_FALLBACK.store.now;
+      let WAS = PRICING_FALLBACK.store.was;
       const grid = document.getElementById('storeGrid');
 
       // ---- one product card ---------------------------------------------------
@@ -561,26 +562,39 @@
         return article;
       }
 
-      try {
-        if (!Array.isArray(DESIGNS) || !DESIGNS.length) throw new Error('empty catalog');
-        const frag = document.createDocumentFragment();
-        for (const d of DESIGNS) {
-          // Isolate each card so one bad design skips only itself, not the grid.
-          try {
-            frag.appendChild(card(d));
-          } catch (cardErr) {
-            console.error('skipping product card:', d && d.id, cardErr);
+      function renderGrid() {
+        try {
+          if (!Array.isArray(DESIGNS) || !DESIGNS.length) throw new Error('empty catalog');
+          const frag = document.createDocumentFragment();
+          for (const d of DESIGNS) {
+            // Isolate each card so one bad design skips only itself, not the grid.
+            try {
+              frag.appendChild(card(d));
+            } catch (cardErr) {
+              console.error('skipping product card:', d && d.id, cardErr);
+            }
           }
+          if (!frag.childNodes.length) throw new Error('no cards rendered');
+          grid.replaceChildren(frag);
+        } catch (err) {
+          // Graceful degradation: never leave a blank page — offer the wizard.
+          grid.innerHTML =
+            '<div class="store-fallback"><p>לא הצלחנו לטעון את גלריית העיצובים כרגע.</p>' +
+            '<a class="btn" href="options.html">להזמנה ובחירת עיצוב ›</a></div>';
+          console.error('store grid failed to render:', err);
         }
-        if (!frag.childNodes.length) throw new Error('no cards rendered');
-        grid.replaceChildren(frag);
-      } catch (err) {
-        // Graceful degradation: never leave a blank page — offer the wizard.
-        grid.innerHTML =
-          '<div class="store-fallback"><p>לא הצלחנו לטעון את גלריית העיצובים כרגע.</p>' +
-          '<a class="btn" href="options.html">להזמנה ובחירת עיצוב ›</a></div>';
-        console.error('store grid failed to render:', err);
       }
+
+      // Paint the grid now with launch-default prices, then re-paint only if the
+      // owner's live price differs — the listing is visible instantly either way.
+      renderGrid();
+      fetchPricing().then((p) => {
+        if (p.store.now !== PRICE || p.store.was !== WAS) {
+          PRICE = p.store.now;
+          WAS = p.store.was;
+          renderGrid();
+        }
+      });
     </script>
   </body>
 </html>

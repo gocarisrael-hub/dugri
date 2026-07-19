@@ -357,7 +357,16 @@ app.post('/api/admin/collections/:id/custom', (req, res) => {
   const c = db.getCollection(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
   const order = db.setOrder(req.params.id, c.owner_token, { version: 'custom' });
-  if (order && order.error) return res.status(400).json({ error: order.error });
+  if (order && order.error) {
+    // The 'custom' version is OFF by default in pricing settings, and setOrder's
+    // enable-gate rejects it. That reads as a cryptic failure here, so tell the
+    // owner exactly what to do: turn the option on in the pricing editor first.
+    const message =
+      order.error === 'version unavailable'
+        ? 'האפשרות "עיצוב אישי (בהתאמה)" כבויה. הפעילו אותה בעורך התמחור (admin-pricing) לפני יצירת הזמנה בהתאמה.'
+        : order.error;
+    return res.status(400).json({ error: order.error, message });
+  }
   const base = paymentBaseUrl();
   const payLink = base ? base + '/collect.html?c=' + c.id + '&k=' + c.owner_token : null;
   res.json({ order, pay_link: payLink });
