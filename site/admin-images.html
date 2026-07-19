@@ -5,7 +5,7 @@
     <meta name="dugri:page" content="admin-images.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>תמונות מוצר — דוגרי (ניהול)</title>
+    <title>גלריית מוצר — דוגרי (ניהול)</title>
     <style>
       :root {
         --bg: #ffffff;
@@ -35,7 +35,7 @@
         -webkit-font-smoothing: antialiased;
       }
       .wrap {
-        max-width: 900px;
+        max-width: 980px;
         margin: 0 auto;
         padding: 0 18px 100px;
       }
@@ -100,7 +100,9 @@
         unicode-bidi: embed;
       }
       .design {
-        margin: 26px 0 10px;
+        margin: 28px 0 10px;
+        padding-top: 8px;
+        border-top: 1px solid var(--line);
       }
       .design-title {
         font-size: 15px;
@@ -114,28 +116,32 @@
         direction: ltr;
         unicode-bidi: embed;
       }
-      .slots {
+      .items {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
         gap: 14px;
       }
-      .slot {
+      .item {
         border: 1px solid var(--line);
         border-radius: var(--radius);
         padding: 12px;
         background: #fff;
+        display: flex;
+        flex-direction: column;
       }
-      .slot h3 {
+      .item h3 {
         margin: 0 0 8px;
         font-size: 13px;
         font-weight: 800;
+        display: flex;
+        align-items: center;
+        gap: 6px;
       }
-      .slot .badge {
+      .badge {
         font-size: 11px;
         font-weight: 700;
         border-radius: 99px;
         padding: 1px 8px;
-        margin-inline-start: 6px;
         vertical-align: middle;
       }
       .badge.custom {
@@ -148,6 +154,11 @@
         color: #777;
         border: 1px solid #e3e3e3;
       }
+      .badge.photo {
+        background: #fdf2f5;
+        color: var(--pink-deep);
+        border: 1px solid #f3d9e4;
+      }
       .preview {
         width: 100%;
         aspect-ratio: 3 / 2;
@@ -157,46 +168,92 @@
         border-radius: 8px;
         display: block;
       }
-      /* Board slot on a design that ships no board: no default picture to show, so
-         the preview is an empty "upload a board" placeholder instead of a broken
-         image. Once the owner uploads a board it renders as a normal preview. */
       .preview-empty {
-        border-style: dashed;
-        border-color: #e6cdd8;
         display: flex;
         align-items: center;
         justify-content: center;
         text-align: center;
-        padding: 10px;
         color: var(--muted);
         font-size: 12.5px;
+        padding: 8px;
+        border-style: dashed;
       }
-      .slot .row {
+      .name-input {
+        width: 100%;
+        margin-top: 8px;
+        font: inherit;
+        font-size: 13px;
+        padding: 6px 8px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+      }
+      .flags {
+        margin-top: 8px;
         display: flex;
-        gap: 8px;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .flags label {
+        font-size: 12.5px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+      }
+      .row {
+        display: flex;
+        gap: 6px;
         margin-top: 10px;
       }
       button {
         font: inherit;
         font-weight: 700;
-        font-size: 13px;
+        font-size: 12.5px;
         border-radius: 8px;
-        padding: 7px 12px;
+        padding: 6px 10px;
         cursor: pointer;
         border: 1px solid var(--pink);
         background: var(--pink);
         color: #fff;
+      }
+      .row button {
         flex: 1;
       }
       button.ghost {
         background: #fff;
         color: var(--pink-deep);
       }
+      button.icon {
+        flex: 0 0 auto;
+        padding: 6px 9px;
+        border-color: var(--line);
+        background: #fff;
+        color: var(--ink);
+      }
       button:disabled {
-        opacity: 0.45;
+        opacity: 0.4;
         cursor: not-allowed;
       }
-      .slot .status {
+      .reorder {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .add-photo {
+        margin-top: 14px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .add-photo input.name-input {
+        width: auto;
+        flex: 1;
+        min-width: 160px;
+        margin-top: 0;
+      }
+      .status {
         font-size: 12px;
         margin-top: 8px;
         min-height: 16px;
@@ -206,62 +263,6 @@
       }
       .status.err {
         color: #c0293f;
-      }
-      /* store-tile carousel manager (per design) */
-      .carousel-admin {
-        margin-top: 14px;
-        border: 1px dashed #e6cdd8;
-        border-radius: var(--radius);
-        padding: 12px 14px;
-        background: #fffafc;
-      }
-      .carousel-admin h3 {
-        margin: 0 0 4px;
-        font-size: 13px;
-        font-weight: 800;
-      }
-      .carousel-admin h3 small {
-        color: var(--muted);
-        font-weight: 600;
-      }
-      .carousel-admin .cnote {
-        margin: 0 0 10px;
-        color: var(--muted);
-        font-size: 12.5px;
-      }
-      .carousel-thumbs {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-bottom: 10px;
-      }
-      .cthumb {
-        width: 108px;
-      }
-      .cthumb img {
-        width: 108px;
-        height: 72px;
-        object-fit: cover;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        display: block;
-        background: #faf7f2;
-      }
-      .cthumb button {
-        margin-top: 6px;
-        width: 100%;
-        flex: none;
-      }
-      .cempty {
-        color: var(--muted);
-        font-size: 12.5px;
-      }
-      .carousel-admin .row {
-        display: flex;
-        gap: 8px;
-      }
-      .carousel-admin .row button {
-        flex: none;
       }
       footer {
         margin-top: 34px;
@@ -287,15 +288,15 @@
         <a data-page="admin-playbook.html">פלייבוק</a>
         <a data-page="admin-texts.html">הודעות וטקסטים</a>
         <a data-page="admin-features.html">פיצ׳רים</a>
-        <a data-page="admin-pricing.html">מחירים</a>
-        <a data-page="admin-images.html" class="active">תמונות מוצר</a>
+        <a data-page="admin-images.html" class="active">גלריית מוצר</a>
       </nav>
       <header>
-        <p class="kicker">Internal · תמונות מוצר</p>
-        <h1>תמונות מוצר</h1>
+        <p class="kicker">Internal · גלריית מוצר</p>
+        <h1>גלריית מוצר</h1>
         <p>
-          החליפו את תמונת החנות ותמונות הגלריה של כל עיצוב בתמונה משלכם — נשמר בשרת ומופיע מיד לכל
-          המבקרים, בלי צורך בדפלוי. אפשר תמיד לחזור לתמונת ברירת המחדל.
+          כל עיצוב מגיע עם שלוש תמונות קבועות — קלף, גב הקלף ולוח — ותמונת חנות. אפשר להחליף כל
+          תמונה בתמונה משלכם, להוסיף תמונות נוספות עם שם, לבחור לכל תמונה אם תופיע בעמוד החנות ו/או
+          בעמוד המוצר, ולשנות את הסדר. הכול נשמר בשרת ומופיע מיד לכל המבקרים, בלי דפלוי.
         </p>
       </header>
 
@@ -314,7 +315,6 @@
 
       const key = new URLSearchParams(location.search).get('key') || '';
       const qs = (id) => document.getElementById(id);
-      // Carry the admin key across the linked admin pages.
       for (const a of document.querySelectorAll('#nav a')) {
         a.href = a.dataset.page + (key ? '?key=' + encodeURIComponent(key) : '');
       }
@@ -328,257 +328,341 @@
         );
       }
 
-      // Max pictures in a design's store-tile carousel (mirrors the server's
-      // designImages.CAROUSEL_CAP — kept in sync so the UI disables "add" at cap).
-      const CAROUSEL_CAP = 12;
-
       const SLOT_LABELS = {
         store: 'תמונת חנות',
         front: 'קלף',
         back: 'גב הקלף',
         board: 'לוח המשחק',
       };
-      // All four slots for EVERY design. The board slot is now offered even for a
-      // design that ships no board (e.g. kids) so the owner can upload one — it
-      // just renders in an empty "upload a board" state until they do.
-      function slotsFor() {
+      const DESIGN_BY_ID = {};
+      for (const d of DESIGNS) DESIGN_BY_ID[d.id] = d;
+
+      // The base slots a design OFFERS in the manager: store/front/back/board for
+      // EVERY design. The board slot is always offered so a boardless design (e.g.
+      // kids) can still have a board picture UPLOADED (#159) — it just starts empty.
+      function availBase() {
         return ['store', 'front', 'back', 'board'];
       }
-      // Does this design SHIP a static asset for `slot` (so there's a default
-      // picture to preview / fall back to)? store/front/back always ship; a board
-      // only when the design carries one. A boardless design's board slot has no
-      // shipped picture — it starts empty until the owner uploads one. The board
-      // case uses the SHARED designShipsBoard(d) (thumbs.board) — the same single
-      // source of truth the product gallery (js/product.js shouldShowBoard) keys
-      // off — so the admin and the product page never disagree about a board.
-      function shipsSlot(d, slot) {
-        if (slot === 'board') return designShipsBoard(d);
-        return slot === 'store' || slot === 'front' || slot === 'back';
+      // Whether the design SHIPS a static render for a base slot (store/front/back
+      // always; board only via designShipsBoard). A slot that doesn't ship has no
+      // default preview — it shows an empty "upload a picture" state until overridden.
+      function shipsBase(d, slot) {
+        return slot === 'board' ? designShipsBoard(d) : true;
       }
-      // The shipped static asset path for a design/slot (the fallback picture).
-      // Only meaningful when shipsSlot(d, slot) is true; a boardless board has none.
+      // Default per-surface visibility of a base slot (store hidden on the product
+      // page by default; everything else shown). Matches the server + reader rule.
+      function baseDefault(slot, flag) {
+        return !(slot === 'store' && flag === 'onProduct');
+      }
+      function baseFlag(g, slot, flag) {
+        const c = g.base && g.base[slot];
+        return c && typeof c[flag] === 'boolean' ? c[flag] : baseDefault(slot, flag);
+      }
       function defaultSrc(d, slot) {
         return slot === 'store'
           ? `assets/designs/${d.id}/store.webp`
           : `assets/designs/${d.id}/gallery-${slot}.webp`;
       }
 
-      let images = {}; // { designId: { slot: "/content-uploads/…" } }
+      // The full ordered key list for a design (base slots + photo ids), reconciling
+      // the owner's stored order with any keys it predates. Mirrors the reader.
+      function orderedKeys(d, g) {
+        const avail = availBase();
+        const photos = (g.photos || []).map((p) => p.id);
+        const known = [...avail, ...photos];
+        const knownSet = new Set(known);
+        const out = [];
+        const seen = new Set();
+        const place = (k) => {
+          if (knownSet.has(k) && !seen.has(k)) {
+            seen.add(k);
+            out.push(k);
+          }
+        };
+        (g.order || []).forEach(place);
+        known.forEach(place);
+        return out;
+      }
 
-      function slotHtml(d, slot) {
-        const override = images[d.id] && images[d.id][slot];
-        const ships = shipsSlot(d, slot);
-        // EMPTY: no upload yet AND the design ships no default for this slot (a
-        // boardless design's board). Show an "upload a board" placeholder instead
-        // of an <img> pointed at a non-existent file that would 404.
-        const isEmpty = !override && !ships;
-        const badge = override
-          ? '<span class="badge custom">מותאם</span>'
-          : isEmpty
-            ? '<span class="badge default">אין תמונה</span>'
-            : '<span class="badge default">ברירת מחדל</span>';
-        const label = esc(SLOT_LABELS[slot] || slot);
-        const preview = isEmpty
-          ? `<div class="preview preview-empty">עדיין אין לוח לעיצוב הזה — העלו תמונת לוח.</div>`
-          : `<img class="preview" alt="${label}" src="${esc(override || defaultSrc(d, slot))}"
-                 onerror="this.style.visibility='hidden'" />`;
+      // state[designId] = lean gallery config from the server ({} = untouched).
+      const state = {};
+
+      function itemHtml(d, g, keyName, pos, total) {
+        const isBase = availBase().includes(keyName);
+        const up = pos > 0;
+        const down = pos < total - 1;
+        if (isBase) {
+          const override = g.base && g.base[keyName] && g.base[keyName].img;
+          const ships = shipsBase(d, keyName);
+          // A boardless design's board slot has no shipped render: it starts EMPTY
+          // (an "upload a board" placeholder) until the owner uploads one (#159).
+          const src = override || (ships ? defaultSrc(d, keyName) : '');
+          const badge = override
+            ? '<span class="badge custom">מותאם</span>'
+            : ships
+              ? '<span class="badge default">ברירת מחדל</span>'
+              : '<span class="badge default">אין תמונה</span>';
+          const preview = src
+            ? `<img class="preview" alt="${esc(SLOT_LABELS[keyName] || keyName)}" src="${esc(src)}" onerror="this.style.visibility='hidden'" />`
+            : `<div class="preview preview-empty">אפשר להעלות לוח משלכם</div>`;
+          const uploadLabel = src ? 'החלף תמונה' : 'העלה תמונה';
+          return `
+            <div class="item" data-design="${esc(d.id)}" data-key="${esc(keyName)}" data-type="base">
+              <h3>${esc(SLOT_LABELS[keyName] || keyName)} ${badge}</h3>
+              ${preview}
+              <div class="flags">
+                <label><input type="checkbox" data-flag="onProducts" ${baseFlag(g, keyName, 'onProducts') ? 'checked' : ''} /> בעמוד החנות</label>
+                <label><input type="checkbox" data-flag="onProduct" ${baseFlag(g, keyName, 'onProduct') ? 'checked' : ''} /> בעמוד המוצר</label>
+              </div>
+              <div class="reorder">
+                <button class="icon" data-act="up" ${up ? '' : 'disabled'} aria-label="הזז אחורה">▶</button>
+                <button class="icon" data-act="down" ${down ? '' : 'disabled'} aria-label="הזז קדימה">◀</button>
+              </div>
+              <div class="row">
+                <button data-act="upload">${uploadLabel}</button>
+                <button class="ghost" data-act="reset" ${override ? '' : 'disabled'}>איפוס</button>
+              </div>
+              <input type="file" accept="image/png,image/jpeg,image/webp" hidden />
+              <div class="status"></div>
+            </div>`;
+        }
+        const photo = (g.photos || []).find((p) => p.id === keyName) || {};
         return `
-          <div class="slot" data-design="${esc(d.id)}" data-slot="${esc(slot)}">
-            <h3>${label}${badge}</h3>
-            ${preview}
-            <div class="row">
-              <button data-act="upload">${isEmpty ? 'העלה תמונה' : 'החלף תמונה'}</button>
-              <button class="ghost" data-act="reset" ${override ? '' : 'disabled'}>איפוס</button>
+          <div class="item" data-design="${esc(d.id)}" data-key="${esc(keyName)}" data-type="photo">
+            <h3><span class="badge photo">תמונה נוספת</span></h3>
+            <img class="preview" alt="${esc(photo.name || '')}" src="${esc(photo.img || '')}"
+                 onerror="this.style.visibility='hidden'" />
+            <input class="name-input" type="text" maxlength="60" placeholder="שם לתמונה (לא חובה)" value="${esc(photo.name || '')}" />
+            <div class="flags">
+              <label><input type="checkbox" data-flag="onProducts" ${photo.onProducts !== false ? 'checked' : ''} /> בעמוד החנות</label>
+              <label><input type="checkbox" data-flag="onProduct" ${photo.onProduct !== false ? 'checked' : ''} /> בעמוד המוצר</label>
             </div>
-            <input type="file" accept="image/png,image/jpeg,image/webp" hidden />
+            <div class="reorder">
+              <button class="icon" data-act="up" ${up ? '' : 'disabled'} aria-label="הזז אחורה">▶</button>
+              <button class="icon" data-act="down" ${down ? '' : 'disabled'} aria-label="הזז קדימה">◀</button>
+            </div>
+            <div class="row">
+              <button class="ghost" data-act="remove">הסרה</button>
+            </div>
             <div class="status"></div>
           </div>`;
       }
 
-      // The store-tile carousel manager for one design: current pictures as
-      // thumbnails (each with a delete button) + an add-upload control. These
-      // pictures cycle in the store grid tile AFTER the store image.
-      function carouselList(d) {
-        const bag = images[d.id];
-        return (bag && Array.isArray(bag.carousel) && bag.carousel) || [];
-      }
-      function carouselHtml(d) {
-        const list = carouselList(d);
-        const thumbs = list
-          .map(
-            (p) => `
-              <div class="cthumb">
-                <img src="${esc(p)}" alt="" onerror="this.style.visibility='hidden'" />
-                <button class="ghost" data-act="carousel-del" data-img="${esc(p)}">מחק</button>
-              </div>`
-          )
-          .join('');
-        const body =
-          thumbs ||
-          '<span class="cempty">אין תמונות בקרוסלה — הכרטיס מציג רק את תמונת החנות.</span>';
+      function designHtml(d) {
+        const g = state[d.id] || {};
+        const keysList = orderedKeys(d, g);
+        const items = keysList.map((k, i) => itemHtml(d, g, k, i, keysList.length)).join('');
         return `
-          <div class="carousel-admin" data-design="${esc(d.id)}">
-            <h3>קרוסלת תמונות בכרטיס <small>(${list.length}/${CAROUSEL_CAP})</small></h3>
-            <p class="cnote">
-              התמונות האלה מתחלפות בכרטיס העיצוב בחנות, אחרי תמונת החנות. סדר: תמונת החנות ואז אלה.
-            </p>
-            <div class="carousel-thumbs">${body}</div>
-            <div class="row">
-              <button data-act="carousel-add" ${list.length >= CAROUSEL_CAP ? 'disabled' : ''}>
-                הוסף תמונה לקרוסלה
-              </button>
+          <section class="design" data-design="${esc(d.id)}">
+            <p class="design-title">${esc(d.name)} <small>(${esc(d.id)})</small></p>
+            <div class="items">${items}</div>
+            <div class="add-photo" data-design="${esc(d.id)}">
+              <button data-act="add-photo">+ הוספת תמונה</button>
+              <input class="name-input add-name" type="text" maxlength="60" placeholder="שם לתמונה החדשה (לא חובה)" />
+              <input type="file" class="add-file" accept="image/png,image/jpeg,image/webp" hidden />
+              <div class="status add-status"></div>
             </div>
-            <input type="file" accept="image/png,image/jpeg,image/webp" data-carousel hidden />
-            <div class="status"></div>
-          </div>`;
+          </section>`;
       }
 
       function render() {
-        qs('app').innerHTML = DESIGNS.map(
-          (d) => `
-          <section class="design">
-            <p class="design-title">${esc(d.name)} <small>(${esc(d.id)})</small></p>
-            <div class="slots">${slotsFor()
-              .map((slot) => slotHtml(d, slot))
-              .join('')}</div>
-            ${carouselHtml(d)}
-          </section>`
-        ).join('');
+        qs('app').innerHTML = DESIGNS.map(designHtml).join('');
+      }
+      function rerenderDesign(designId) {
+        const cur = qs('app').querySelector(`.design[data-design="${CSS.escape(designId)}"]`);
+        if (!cur) return render();
+        const tmp = document.createElement('div');
+        tmp.innerHTML = designHtml(DESIGN_BY_ID[designId]);
+        cur.replaceWith(tmp.firstElementChild);
       }
 
-      function setStatus(slotEl, text, kind) {
-        const s = slotEl.querySelector('.status');
-        s.textContent = text;
-        s.className = 'status' + (kind ? ' ' + kind : '');
+      function setStatus(el, text, kind) {
+        if (!el) return;
+        el.textContent = text;
+        el.className =
+          (el.classList.contains('add-status') ? 'status add-status' : 'status') +
+          (kind ? ' ' + kind : '');
       }
 
-      async function upload(slotEl, file) {
-        const designId = slotEl.dataset.design;
-        const slot = slotEl.dataset.slot;
+      async function api(url, opts) {
+        const r = await fetch(withKey(url), opts);
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+        return j;
+      }
+
+      async function uploadBase(itemEl, file) {
+        const designId = itemEl.dataset.design;
+        const slot = itemEl.dataset.key;
         const fd = new FormData();
         fd.append('designId', designId);
         fd.append('slot', slot);
         fd.append('file', file);
-        setStatus(slotEl, 'מעלה…', '');
+        setStatus(itemEl.querySelector('.status'), 'מעלה…', '');
         try {
-          const r = await fetch(withKey('/api/admin/design-images/image'), {
-            method: 'POST',
-            body: fd,
-          });
-          const j = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
-          images[designId] = j.images || Object.assign(images[designId] || {}, { [slot]: j.img });
-          render();
-          const again = qs('app').querySelector(
-            `.slot[data-design="${CSS.escape(designId)}"][data-slot="${CSS.escape(slot)}"]`
-          );
-          if (again) setStatus(again, 'הוחלף ✓', 'ok');
+          const j = await api('/api/admin/design-images/base/image', { method: 'POST', body: fd });
+          state[designId] = j.gallery || {};
+          rerenderDesign(designId);
         } catch (e) {
-          setStatus(slotEl, 'העלאה נכשלה: ' + e.message, 'err');
+          setStatus(itemEl.querySelector('.status'), 'העלאה נכשלה: ' + e.message, 'err');
         }
       }
 
-      async function reset(slotEl) {
-        const designId = slotEl.dataset.design;
-        const slot = slotEl.dataset.slot;
-        setStatus(slotEl, 'מאפס…', '');
+      async function resetBase(itemEl) {
+        const designId = itemEl.dataset.design;
+        const slot = itemEl.dataset.key;
         try {
-          const r = await fetch(withKey('/api/admin/design-images'), {
+          const j = await api('/api/admin/design-images/base', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ designId, slot }),
           });
-          const j = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
-          if (images[designId]) {
-            delete images[designId][slot];
-            if (!Object.keys(images[designId]).length) delete images[designId];
+          state[designId] = j.gallery || {};
+          rerenderDesign(designId);
+        } catch (e) {
+          setStatus(itemEl.querySelector('.status'), 'איפוס נכשל: ' + e.message, 'err');
+        }
+      }
+
+      async function setFlag(itemEl, flag, value) {
+        const designId = itemEl.dataset.design;
+        const type = itemEl.dataset.type;
+        const key = itemEl.dataset.key;
+        try {
+          let j;
+          if (type === 'base') {
+            j = await api('/api/admin/design-images/base/flags', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ designId, slot: key, [flag]: value }),
+            });
+          } else {
+            j = await api('/api/admin/design-images/photo/update', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ designId, photoId: key, [flag]: value }),
+            });
           }
-          render();
+          state[designId] = j.gallery || {};
         } catch (e) {
-          setStatus(slotEl, 'איפוס נכשל: ' + e.message, 'err');
+          setStatus(itemEl.querySelector('.status'), 'שמירה נכשלה: ' + e.message, 'err');
         }
       }
 
-      // Store a design's returned carousel array back into the in-memory map,
-      // pruning an empty carousel key (and an empty design bag) so the next render
-      // is accurate.
-      function applyCarousel(designId, carousel) {
-        const bag = images[designId] || (images[designId] = {});
-        if (Array.isArray(carousel) && carousel.length) bag.carousel = carousel;
-        else delete bag.carousel;
-        if (!Object.keys(bag).length) delete images[designId];
-      }
-
-      async function carouselUpload(el, file) {
-        const designId = el.dataset.design;
-        const fd = new FormData();
-        fd.append('designId', designId);
-        fd.append('file', file);
-        setStatus(el, 'מעלה…', '');
+      async function renamePhoto(itemEl, name) {
+        const designId = itemEl.dataset.design;
         try {
-          const r = await fetch(withKey('/api/admin/design-images/carousel'), {
+          const j = await api('/api/admin/design-images/photo/update', {
             method: 'POST',
-            body: fd,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ designId, photoId: itemEl.dataset.key, name }),
           });
-          const j = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
-          applyCarousel(designId, j.carousel);
-          render();
-          const again = qs('app').querySelector(
-            `.carousel-admin[data-design="${CSS.escape(designId)}"]`
-          );
-          if (again) setStatus(again, 'נוספה ✓', 'ok');
+          state[designId] = j.gallery || {};
         } catch (e) {
-          setStatus(el, 'העלאה נכשלה: ' + e.message, 'err');
+          setStatus(itemEl.querySelector('.status'), 'שמירה נכשלה: ' + e.message, 'err');
         }
       }
 
-      async function carouselDelete(el, img) {
-        const designId = el.dataset.design;
-        setStatus(el, 'מוחק…', '');
+      async function removePhoto(itemEl) {
+        const designId = itemEl.dataset.design;
         try {
-          const r = await fetch(withKey('/api/admin/design-images/carousel'), {
+          const j = await api('/api/admin/design-images/photo', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ designId, img }),
+            body: JSON.stringify({ designId, photoId: itemEl.dataset.key }),
           });
-          const j = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
-          applyCarousel(designId, j.carousel);
-          render();
+          state[designId] = j.gallery || {};
+          rerenderDesign(designId);
         } catch (e) {
-          setStatus(el, 'מחיקה נכשלה: ' + e.message, 'err');
+          setStatus(itemEl.querySelector('.status'), 'הסרה נכשלה: ' + e.message, 'err');
         }
       }
 
+      async function reorder(itemEl, dir) {
+        const designId = itemEl.dataset.design;
+        const d = DESIGN_BY_ID[designId];
+        const g = state[designId] || {};
+        const keysList = orderedKeys(d, g);
+        const i = keysList.indexOf(itemEl.dataset.key);
+        const j2 = dir === 'up' ? i - 1 : i + 1;
+        if (i < 0 || j2 < 0 || j2 >= keysList.length) return;
+        [keysList[i], keysList[j2]] = [keysList[j2], keysList[i]];
+        try {
+          const j = await api('/api/admin/design-images/order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ designId, order: keysList }),
+          });
+          state[designId] = j.gallery || {};
+          rerenderDesign(designId);
+        } catch (e) {
+          setStatus(itemEl.querySelector('.status'), 'שינוי הסדר נכשל: ' + e.message, 'err');
+        }
+      }
+
+      async function addPhoto(sectionEl, file) {
+        const designId = sectionEl.dataset.design;
+        const name = sectionEl.querySelector('.add-name').value || '';
+        const fd = new FormData();
+        fd.append('designId', designId);
+        fd.append('name', name);
+        fd.append('file', file);
+        setStatus(sectionEl.querySelector('.add-status'), 'מעלה…', '');
+        try {
+          const j = await api('/api/admin/design-images/photo', { method: 'POST', body: fd });
+          state[designId] = j.gallery || {};
+          rerenderDesign(designId);
+        } catch (e) {
+          setStatus(sectionEl.querySelector('.add-status'), 'העלאה נכשלה: ' + e.message, 'err');
+        }
+      }
+
+      // ---- event delegation ----
       qs('app').addEventListener('click', (e) => {
         const btn = e.target.closest('button');
         if (!btn) return;
         const act = btn.dataset.act;
-        if (act === 'upload') btn.closest('.slot').querySelector('input[type=file]').click();
-        else if (act === 'reset') reset(btn.closest('.slot'));
-        else if (act === 'carousel-add')
-          btn.closest('.carousel-admin').querySelector('input[type=file]').click();
-        else if (act === 'carousel-del')
-          carouselDelete(btn.closest('.carousel-admin'), btn.dataset.img);
+        const itemEl = btn.closest('.item');
+        const sectionEl = btn.closest('.add-photo');
+        if (act === 'upload') itemEl.querySelector('input[type=file]').click();
+        else if (act === 'reset') resetBase(itemEl);
+        else if (act === 'remove') removePhoto(itemEl);
+        else if (act === 'up') reorder(itemEl, 'up');
+        else if (act === 'down') reorder(itemEl, 'down');
+        else if (act === 'add-photo') sectionEl.querySelector('.add-file').click();
       });
       qs('app').addEventListener('change', (e) => {
-        if (!e.target.matches('input[type=file]')) return;
-        const file = e.target.files && e.target.files[0];
-        if (file) {
-          if (e.target.hasAttribute('data-carousel'))
-            carouselUpload(e.target.closest('.carousel-admin'), file);
-          else upload(e.target.closest('.slot'), file);
+        if (e.target.matches('.item input[type=file]')) {
+          const file = e.target.files && e.target.files[0];
+          if (file) uploadBase(e.target.closest('.item'), file);
+          e.target.value = '';
+        } else if (e.target.matches('.add-file')) {
+          const file = e.target.files && e.target.files[0];
+          if (file) addPhoto(e.target.closest('.add-photo'), file);
+          e.target.value = '';
+        } else if (e.target.matches('input[data-flag]')) {
+          setFlag(e.target.closest('.item'), e.target.dataset.flag, e.target.checked);
         }
-        e.target.value = '';
+      });
+      // Save a photo name when its input loses focus (or Enter).
+      qs('app').addEventListener(
+        'blur',
+        (e) => {
+          if (e.target.matches('.item .name-input'))
+            renamePhoto(e.target.closest('.item'), e.target.value);
+        },
+        true
+      );
+      qs('app').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.matches('.item .name-input')) e.target.blur();
       });
 
       async function load() {
         try {
           const r = await fetch(withKey('/api/design-images'));
           const j = await r.json().catch(() => ({}));
-          images = (j && j.images && typeof j.images === 'object' && j.images) || {};
+          const images = (j && j.images && typeof j.images === 'object' && j.images) || {};
+          for (const d of DESIGNS) state[d.id] = images[d.id] || {};
           render();
         } catch (e) {
           qs('loadErr').textContent = 'טעינה נכשלה: ' + e.message;
