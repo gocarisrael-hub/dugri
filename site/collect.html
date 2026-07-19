@@ -784,6 +784,25 @@
       #addressForm .addr-street {
         grid-column: 1 / -1;
       }
+      /* Sales paused (every checkout option switched off): hide the whole
+         actionable pay area and show only the paused notice — never a dead-end
+         checkout with a disabled option force-selected. */
+      #paySoldOutNote {
+        display: none;
+      }
+      #payPanel.sales-paused #payOpts,
+      #payPanel.sales-paused #addressForm,
+      #payPanel.sales-paused .coupon-box,
+      #payPanel.sales-paused .pay-total,
+      #payPanel.sales-paused .pay-trust,
+      #payPanel.sales-paused #payErr,
+      #payPanel.sales-paused #cardPayBtn,
+      #payPanel.sales-paused #cardSoonNote {
+        display: none !important;
+      }
+      #payPanel.sales-paused #paySoldOutNote {
+        display: block;
+      }
       .pay-total {
         /* Flex row (RTL): label, then current price, then the struck full price
            to the LEFT of the current price. */
@@ -1283,6 +1302,11 @@
         <p class="pay-soon-note hidden" id="cardSoonNote" data-edit="collect-pay-soon">
           התשלום בכרטיס אשראי ייפתח בקרוב
         </p>
+        <!-- Shown (via #payPanel.sales-paused) when the owner has switched off
+             every checkout option, in place of the whole actionable pay area. -->
+        <p class="pay-soon-note" id="paySoldOutNote" data-edit="collect-pay-paused">
+          המכירות סגורות כרגע — נחזור בקרוב 🙌
+        </p>
       </details>
 
       <!-- Tailored order CTA at the bottom of the content. Wording is set in JS
@@ -1604,8 +1628,10 @@
           const soon = $('#cardSoonNote');
           if (soon) soon.classList.toggle('hidden', !(!cardEnabled && !paid));
           // Re-apply the checkout state now that the collection (and any placed
-          // order) has loaded — engages the LOCKED state for a persisted order and
-          // keeps the pay button's payable/disabled state in sync.
+          // order) has loaded — engages the LOCKED state for a persisted order,
+          // keeps the pay button's payable/disabled state in sync, and (via the
+          // state machine's CLOSED/NORMAL branches) toggles the "sales paused"
+          // notice when the owner has switched off every option.
           if (applyPricingRef) applyPricingRef();
         } else {
           $('#ownerControls').classList.add('hidden');
@@ -2068,8 +2094,14 @@
         const info = pricing.versions && pricing.versions[v];
         return !!(info && info.enabled);
       }
+      function anyVersionEnabled() {
+        return VERSION_ORDER.some((v) => isEnabled(v));
+      }
       // The first enabled version in display order, or null when NONE is enabled —
       // orders are effectively closed and the checkout must offer no pay button.
+      // Callers MUST handle null and never fall back to a disabled default — doing
+      // so offered a dead-end checkout (a disabled version force-selected, then
+      // rejected by the server at pay time).
       function firstEnabledVersion() {
         return VERSION_ORDER.find((v) => isEnabled(v)) || null;
       }
@@ -2082,6 +2114,25 @@
         const v = checked && checked.value;
         if (v && isEnabled(v)) return v;
         return firstEnabledVersion();
+      }
+      // Sales are "paused" when every checkout option is off. Toggling this class
+      // hides the whole actionable area (options, total, coupon, pay button) and
+      // reveals a clear notice instead of a dead-end. Called from applyPricing
+      // (pricing changed) and render (state changed) so they never fight.
+      function syncSalesPaused() {
+        const panel = document.getElementById('payPanel');
+        if (!panel) return;
+        const paused = !anyVersionEnabled();
+        panel.classList.toggle('sales-paused', paused);
+        // When paused, no option must stay selected (the pdf radio ships `checked`
+        // in the HTML) — otherwise a disabled version would remain the "selection"
+        // and could be charged. Clear any checked radio so pay is never attempted
+        // at a dead price.
+        if (paused) {
+          document
+            .querySelectorAll('input[name="payVersion"]:checked')
+            .forEach((r) => (r.checked = false));
+        }
       }
       function setupPayPanel() {
         const payPanel = $('#payPanel');
@@ -2244,11 +2295,14 @@
             return;
           }
 
-          // 4. CLOSED — no version enabled.
+          // 4. CLOSED — no version enabled. Show the "orders closed" panel AND the
+          //    "sales paused" notice, and (via syncSalesPaused) clear any checked
+          //    disabled radio so no dead-end selection can be charged.
           if (!firstEnabledVersion()) {
             if (optsBox) optsBox.style.display = 'none';
             setPayable(false);
             showPriceErr('closed');
+            syncSalesPaused();
             refreshPay();
             return;
           }
@@ -2266,16 +2320,31 @@
             // would otherwise override the UA [hidden] rule and keep it visible.
             label.style.display = enabled ? '' : 'none';
             radio.disabled = !enabled;
+            // A disabled option must never stay selected (the pdf radio ships
+            // `checked` in the HTML) — otherwise, with everything off, a hidden
+            // disabled version would remain the "selection" and get charged.
+            if (!enabled) radio.checked = false;
             const priceEl = label.querySelector('.opt-price');
-            if (priceEl) priceEl.textContent = '₪' + priceFor(v);
+            if (priceEl) {
+              // Stamp the live "now" price but PRESERVE any struck "was" anchor
+              // (e.g. <s class="was">₪129</s>) that ships in the option's HTML —
+              // overwriting textContent would delete it and lose the discount cue.
+              const was = priceEl.querySelector('.was');
+              priceEl.textContent = '';
+              if (was) priceEl.appendChild(was);
+              priceEl.appendChild(document.createTextNode('₪' + priceFor(v)));
+            }
           }
+          // Keep a valid (enabled) radio selected — but only if something is on
+          // sale. When every option is off, firstEnabledVersion() is null; leave
+          // no disabled option checked so pay is never attempted at a dead price.
+          const first = firstEnabledVersion();
           const cur = document.querySelector('input[name="payVersion"]:checked');
-          if (!cur || cur.disabled || !userPicked) {
-            const first = document.querySelector(
-              'input[name="payVersion"][value="' + firstEnabledVersion() + '"]'
-            );
-            if (first) first.checked = true;
+          if (first && (!cur || cur.disabled || !userPicked)) {
+            const el = document.querySelector('input[name="payVersion"][value="' + first + '"]');
+            if (el) el.checked = true;
           }
+          syncSalesPaused();
           refreshPay();
         }
         // Expose applyPricing so render() re-runs it once the collection (and its
@@ -2425,7 +2494,14 @@
           // states, this is the defensive backstop.
           if (!payable) return;
           const version = selectedVersion();
-          if (!version) return;
+          // No enabled option → sales are paused. The button is hidden/disabled in
+          // this state, but guard anyway so a stray click gives a clear message
+          // rather than a rejected charge with a cryptic payment error.
+          if (!version) {
+            payErr.textContent = 'המכירות סגורות כרגע. נסו שוב מאוחר יותר.';
+            payErr.style.display = 'block';
+            return;
+          }
           let address = null;
           if (version === 'delivery') {
             address = collectAddress();

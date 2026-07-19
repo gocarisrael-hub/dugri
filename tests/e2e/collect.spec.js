@@ -397,6 +397,82 @@ test('owner pay panel: delivery address uses a two-column layout, not stacked bo
   expect(apt.y).toBeGreaterThan(city.y + 5);
 });
 
+// Bug #2: when the owner switches OFF every checkout option, the client used to
+// force-select a disabled 'pickup' and let the buyer hit a rejected charge. It
+// now shows a clear "sales paused" notice instead of a dead-end.
+test('owner pay panel: all options disabled → paused notice, not a dead-end button', async ({
+  page,
+}) => {
+  await stubPricing(page, {
+    store: { now: 199, was: 239 },
+    versions: {
+      pdf: { enabled: false, price: 79 },
+      pickup: { enabled: false, price: 199 },
+      delivery: { enabled: false, price: 199 },
+      custom: { enabled: false, price: 599 },
+    },
+  });
+  await createCollection(page, 'Shira');
+
+  await page.locator('#payPanel summary').click();
+  // The paused notice replaces the actionable area: options + pay button hidden.
+  await expect(page.locator('#paySoldOutNote')).toBeVisible();
+  await expect(page.locator('#payOpts')).toBeHidden();
+  await expect(page.locator('#cardPayBtn')).toBeHidden();
+  // No radio is left checked at a disabled version (no dead-end selection).
+  await expect(page.locator('input[name="payVersion"]:checked')).toHaveCount(0);
+});
+
+// Bug #5: applyPricing stamps each option's live "now" price into `.opt-price`.
+// It must do so WITHOUT deleting a struck "was" discount anchor (<s class="was">)
+// present in the option — overwriting the whole node via textContent would drop
+// it and lose the discount cue. The shipped options carry no struck price today,
+// so inject one BEFORE the price stamp runs (while pricing is still loading) and
+// assert applyPricing preserves it when it stamps the now-price over the option.
+test('owner pay panel: applyPricing preserves an option\'s struck "was" anchor when it stamps the price', async ({
+  page,
+}) => {
+  await enableCardButton(page);
+  let release;
+  const gate = new Promise((r) => (release = r));
+  await page.route('**/api/pricing', async (route) => {
+    await gate;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        store: { now: 199, was: 239 },
+        versions: {
+          pdf: { enabled: true, price: 79 },
+          pickup: { enabled: true, price: 149 },
+          delivery: { enabled: true, price: 199 },
+          custom: { enabled: false, price: 599 },
+        },
+      }),
+    });
+  });
+  await createCollection(page, 'Shira');
+  await page.locator('#payPanel summary').click();
+
+  // While pricing is still loading (applyPricing has NOT stamped the options yet),
+  // inject a struck "was" anchor into the pdf option, as a discounted option would
+  // ship it.
+  const pdfPrice = page.locator('.pay-opt:has(input[value="pdf"]) .opt-price');
+  await pdfPrice.evaluate((el) => {
+    const s = document.createElement('s');
+    s.className = 'was';
+    s.textContent = '₪129';
+    el.prepend(s);
+  });
+
+  // Release pricing → applyPricing stamps the live now-price over the option.
+  release();
+
+  // The struck anchor survives the stamp, and the live now-price shows next to it.
+  await expect(pdfPrice.locator('s.was')).toHaveText('₪129');
+  await expect(pdfPrice).toContainText('₪79');
+});
+
 test('owner pay panel is collapsed by default and opens on the summary button', async ({
   page,
 }) => {
