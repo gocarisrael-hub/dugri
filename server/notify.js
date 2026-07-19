@@ -126,9 +126,12 @@ function escapeHtml(value) {
 // paragraphs (an empty string becomes vertical spacing). `cta` is an optional
 // { label, url } rendered as a rounded brand-pink button. `baseUrl` (the
 // normalized public origin) is where the hosted logo is loaded from; without it
-// the header falls back to the brand wordmark so the email still renders.
-// Returns a full, email-client-safe HTML document (RTL, inline CSS, tables).
-function renderEmailHtml({ title, bodyLines, cta, baseUrl } = {}) {
+// the header falls back to the brand wordmark so the email still renders. `image`
+// is an optional absolute URL for a hero product photo shown under the heading
+// (with `imageAlt` as its alt text — so a client that can't render the format,
+// e.g. WebP in Outlook desktop, still shows the design name). Returns a full,
+// email-client-safe HTML document (RTL, inline CSS, tables).
+function renderEmailHtml({ title, bodyLines, cta, baseUrl, image, imageAlt } = {}) {
   const logo = baseUrl
     ? `<img src="${escapeHtml(baseUrl + LOGO_PATH)}" width="120" alt="דוגרי" style="display:block;border:0;outline:none;text-decoration:none;height:auto;margin:0 auto;" />`
     : `<div style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:1px;">דוגרי</div>`;
@@ -137,6 +140,24 @@ function renderEmailHtml({ title, bodyLines, cta, baseUrl } = {}) {
     ? `<tr><td style="padding:0 32px 8px;text-align:center;font-size:22px;font-weight:800;color:${INK};">${escapeHtml(
         title
       )}</td></tr>`
+    : '';
+
+  // Optional hero product photo, centered and rounded. Alt text carries the
+  // design name so a client that can't decode the image still conveys it.
+  const hero = image
+    ? `<tr><td style="padding:16px 32px 4px;text-align:center;"><img src="${escapeHtml(
+        image
+      )}" alt="${escapeHtml(
+        imageAlt || 'דוגרי'
+      )}" width="320" style="display:block;max-width:100%;height:auto;border:0;border-radius:12px;margin:0 auto;" /></td></tr>`
+    : '';
+
+  // Small logo icon above the sign-off (the branded "signature"). Rendered only
+  // when we have a public origin to host it from.
+  const footerLogo = baseUrl
+    ? `<img src="${escapeHtml(
+        baseUrl + LOGO_PATH
+      )}" width="72" alt="דוגרי" style="display:block;border:0;outline:none;text-decoration:none;height:auto;margin:0 auto 10px;" />`
     : '';
 
   const paragraphs = (Array.isArray(bodyLines) ? bodyLines : [])
@@ -167,12 +188,15 @@ function renderEmailHtml({ title, bodyLines, cta, baseUrl } = {}) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(title || 'דוגרי')}</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&display=swap');
+    </style>
   </head>
   <body style="margin:0;padding:0;background:#f4f4f7;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f7;padding:24px 0;">
       <tr>
         <td align="center">
-          <table role="presentation" width="600" cellpadding="0" cellspacing="0" dir="rtl" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;font-family:'Heebo',Arial,Helvetica,sans-serif;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" dir="rtl" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;font-family:'Assistant','Heebo',Arial,Helvetica,sans-serif;">
             <tr>
               <td style="background:linear-gradient(135deg,${BRAND_PINK_LIGHT},${BRAND_PINK});padding:28px 32px;text-align:center;">
                 ${logo}
@@ -180,12 +204,13 @@ function renderEmailHtml({ title, bodyLines, cta, baseUrl } = {}) {
             </tr>
             <tr><td style="height:20px;line-height:20px;font-size:20px;">&nbsp;</td></tr>
             ${heading}
+            ${hero}
             ${paragraphs}
             ${button}
             <tr><td style="height:16px;line-height:16px;font-size:16px;">&nbsp;</td></tr>
             <tr>
               <td style="padding:20px 32px;border-top:1px solid #eee;text-align:center;font-size:13px;line-height:1.6;color:${MUTED};">
-                נתראה על הלוח,<br />צוות דוגרי
+                ${footerLogo}נתראה על הלוח,<br />צוות דוגרי
               </td>
             </tr>
           </table>
@@ -212,6 +237,60 @@ function ctaLabels() {
 }
 function footer() {
   return settings.get('email', 'footer');
+}
+function productInfo() {
+  return settings.get('email', 'product_info');
+}
+function deliveryInfo() {
+  return settings.get('email', 'delivery_info');
+}
+function pickupInfo() {
+  return settings.get('email', 'pickup_info');
+}
+
+// One-line description of the product for a version, or '' when none is set.
+function productLine(version) {
+  const map = productInfo();
+  if (version && Object.prototype.hasOwnProperty.call(map, version) && map[version]) {
+    return map[version];
+  }
+  return '';
+}
+
+// Format a stored delivery address object ({ street, city, postal, apartment,
+// floor }) into a single readable Hebrew line, or '' when absent. Only the parts
+// that are present are included, in a natural order.
+function formatAddress(addr) {
+  if (!addr || typeof addr !== 'object') return '';
+  const seg = [];
+  if (addr.street) seg.push(String(addr.street).trim());
+  if (addr.apartment) seg.push('דירה ' + String(addr.apartment).trim());
+  if (addr.floor) seg.push('קומה ' + String(addr.floor).trim());
+  if (addr.city) seg.push(String(addr.city).trim());
+  if (addr.postal) seg.push(String(addr.postal).trim());
+  return seg.filter(Boolean).join(', ');
+}
+
+// The buyer-facing fulfilment block for an order: a delivery block (approx time +
+// shipping address) for a `delivery` order, or a self-pickup block (we'll email
+// when ready + approx prep time + pickup address) for a `pickup` order. Returns
+// [] for pdf/custom or a missing order. Every string is owner-editable via
+// settings (delivery_info / pickup_info); the address comes from the order.
+function fulfilmentLines(order) {
+  if (!order) return [];
+  const lines = [];
+  if (order.version === 'delivery') {
+    const d = deliveryInfo();
+    if (d.eta) lines.push(d.eta);
+    const addr = formatAddress(order.address);
+    if (addr) lines.push((d.address_label ? d.address_label + ': ' : '') + addr);
+  } else if (order.version === 'pickup') {
+    const p = pickupInfo();
+    if (p.ready) lines.push(p.ready);
+    if (p.eta) lines.push(p.eta);
+    if (p.address) lines.push((p.address_label ? p.address_label + ': ' : '') + p.address);
+  }
+  return lines;
 }
 
 // Hebrew display name for one order version — the mapped label, else the raw
@@ -270,16 +349,41 @@ function orderLines(collection, baseUrl, options) {
   const lines = [];
   const f = fieldLabels();
   const order = (collection && collection.order) || null;
+  if (collection && collection.id) lines.push(f.orderId + ': ' + collection.id);
   if (order) {
     const label = versionLabelFor(order.version);
     lines.push(f.version + ': ' + label);
     lines.push(...amountLines(order, options, f.amount));
+    // A delivery order carries a shipping address — surface it so the owner can
+    // fulfil without opening the panel.
+    if (order.version === 'delivery') {
+      const addr = formatAddress(order.address);
+      if (addr) lines.push('כתובת למשלוח: ' + addr);
+    }
   }
   const wc = wordCount(collection);
   if (wc != null) lines.push(f.wordCount + ': ' + wc);
   const link = ownerLink(collection, baseUrl);
   if (link) lines.push(f.ownerLink + ': ' + link);
+  // One-click link to the admin orders panel (built by the caller with the admin
+  // key; the mail module never sees the secret). Present only when passed.
+  const adminLink = options && options.adminLink ? String(options.adminLink) : '';
+  if (adminLink) lines.push(f.adminOrder + ': ' + adminLink);
   return lines;
+}
+
+// Interpolation values for the owner emails. Beyond {honoree}, exposes the
+// {orderId}, {link} (collect/management link) and {adminLink} (admin orders
+// panel) tokens the owner can drop anywhere in the subject/body. Missing values
+// resolve to '' (not null) so an unavailable token vanishes rather than rendering
+// literally as "{adminLink}".
+function ownerTokenValues(collection, baseUrl, options, name) {
+  return {
+    honoree: name,
+    orderId: collection && collection.id ? String(collection.id) : '',
+    link: ownerLink(collection, baseUrl) || '',
+    adminLink: options && options.adminLink ? String(options.adminLink) : '',
+  };
 }
 
 // Pure builder: the "order paid" email. `baseUrl` is the normalized public
@@ -289,7 +393,7 @@ function orderLines(collection, baseUrl, options) {
 function buildPaidMessage(collection, baseUrl, options) {
   const name = honoreeName(collection);
   const tpl = emailTpl('order_paid');
-  const values = { honoree: name };
+  const values = ownerTokenValues(collection, baseUrl, options, name);
   const subject = interpolate(tpl.subject, values);
   const text = [
     ...interpolate(tpl.body, values).split('\n'),
@@ -308,7 +412,7 @@ function buildPaidMessage(collection, baseUrl, options) {
 function buildCustomOrderAlert(collection, baseUrl, options) {
   const name = honoreeName(collection);
   const tpl = emailTpl('custom_order_alert');
-  const values = { honoree: name };
+  const values = ownerTokenValues(collection, baseUrl, options, name);
   const subject = interpolate(tpl.subject, values);
   const text = [
     ...interpolate(tpl.body, values).split('\n'),
@@ -332,18 +436,30 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
   const f = fieldLabels();
   const cta = ctaLabels();
   const ft = footer();
-  const values = { honoree: name };
+  const link = ownerLink(collection, baseUrl);
+  // {link} is available to the owner inside the template body; '' when absent so
+  // it vanishes rather than rendering literally.
+  const values = { honoree: name, link: link || '' };
   const subject = interpolate(tpl.subject, values);
   const lines = interpolate(tpl.body, values).split('\n');
   const order = (collection && collection.order) || null;
   if (order) {
     const label = versionLabelFor(order.version);
     lines.push(f.buyerPackage + ': ' + label);
+    // What they bought — a one-line description of the version (owner-editable).
+    const desc = productLine(order.version);
+    if (desc) lines.push(desc);
     lines.push(...amountLines(order, options, f.buyerPrice));
   }
   if (collection && collection.design) lines.push(f.buyerDesign + ': ' + collection.design);
   if (collection && collection.color) lines.push(f.buyerColor + ': ' + collection.color);
-  const link = ownerLink(collection, baseUrl);
+  // Delivery / self-pickup block: approx time + address (delivery) or the
+  // "we'll email when ready" + prep time + pickup address (pickup).
+  const fulfil = fulfilmentLines(order);
+  if (fulfil.length) {
+    lines.push('');
+    lines.push(...fulfil);
+  }
   // Branded HTML mirrors the plain-text body but drops the raw URL line — the
   // link becomes the CTA button. Everything above the link is reused as-is.
   const htmlLines = lines.slice();
@@ -362,6 +478,10 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
     bodyLines: htmlLines,
     cta: link ? { label: cta.addWords, url: link } : null,
     baseUrl,
+    // The template product photo (owner override or catalog thumbnail), resolved
+    // by the caller and passed through options; alt text is the chosen design.
+    image: options && options.productImageUrl ? String(options.productImageUrl) : null,
+    imageAlt: collection && collection.design ? String(collection.design) : name,
   });
   return { subject, text: lines.join('\n'), html };
 }

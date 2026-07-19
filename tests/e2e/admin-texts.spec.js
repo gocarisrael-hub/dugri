@@ -71,8 +71,15 @@ test.describe('admin texts editor', () => {
     await expect(page.locator('#card-email-order-paid [data-field="subject"]')).toBeVisible();
     await expect(page.locator('#card-email-order-paid [data-field="body"]')).toBeVisible();
     await expect(page.locator('#card-email-version-labels [data-mapkey="pdf"]')).toBeVisible();
-    // token hint is shown
+    // token hint is shown, including the new insertable tokens on the owner email
     await expect(page.locator('#card-email-order-paid .hint')).toContainText('{honoree}');
+    await expect(page.locator('#card-email-order-paid .hint')).toContainText('{orderId}');
+    await expect(page.locator('#card-email-order-paid .hint')).toContainText('{adminLink}');
+
+    // The new owner-editable content maps render as label rows.
+    await expect(page.locator('#card-email-product-info [data-mapkey="delivery"]')).toBeVisible();
+    await expect(page.locator('#card-email-delivery-info [data-mapkey="eta"]')).toBeVisible();
+    await expect(page.locator('#card-email-pickup-info [data-mapkey="address"]')).toBeVisible();
   });
 
   test('saving an event trigger POSTs the override and returns the new effective value', async ({
