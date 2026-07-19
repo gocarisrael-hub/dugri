@@ -1067,17 +1067,23 @@ async function sendPaidNotifications(collectionId, base, amountCharged) {
   // server/notify.js never sees ADMIN_KEY.
   const adminLink =
     base && ADMIN_KEY ? base + '/admin.html?key=' + encodeURIComponent(ADMIN_KEY) : null;
-  const productImageUrl = await resolveProductImageUrl(c, base);
-  const options = { amountCharged, adminLink, productImageUrl };
-  notify.sendOrderPaid(enriched, base, options).catch(() => {});
-  // Also confirm to the BUYER (their own email), with the product photo, the
-  // collect link, and delivery/pickup details. Skips gracefully if no buyer email.
-  notify.sendBuyerConfirmation(enriched, base, options).catch(() => {});
+  const ownerOptions = { amountCharged, adminLink };
+  // Fire the OWNER emails IMMEDIATELY (synchronously) — they carry no product
+  // image, so they must NOT wait on the async image resolution below. Deferring
+  // them would delay the send past the HTTP response (and change observable send
+  // ordering the callers rely on).
+  notify.sendOrderPaid(enriched, base, ownerOptions).catch(() => {});
   // A bespoke "custom" order (599₪, no template) needs hand-design after payment.
   // Fire an EXTRA Dugri-only alert so it stands out from the normal paid emails.
   if (c.order && c.order.version === 'custom') {
-    notify.sendCustomOrderAlert(enriched, base, options).catch(() => {});
+    notify.sendCustomOrderAlert(enriched, base, ownerOptions).catch(() => {});
   }
+  // The BUYER confirmation embeds the template product photo, which needs an async
+  // catalog lookup — resolve it, then send. Skips gracefully if no buyer email.
+  const productImageUrl = await resolveProductImageUrl(c, base);
+  notify
+    .sendBuyerConfirmation(enriched, base, { amountCharged, adminLink, productImageUrl })
+    .catch(() => {});
 }
 
 // Everything that must happen when an order transitions to PAID, from BOTH paid
