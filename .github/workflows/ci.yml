@@ -36,33 +36,29 @@ jobs:
       - name: Unit tests (Vitest)
         run: npm run test:unit
 
-      # --- E2E scope by event, to keep GitHub Actions minutes down ---
-      # The Playwright suite across device profiles is the expensive part.
-      #   PR / manual  -> iPhone 14 + Desktop Chrome. These are the only two
-      #                   profiles with device-gated specs (mobile-only checks run
-      #                   on iPhone 14; several layout/measurement specs are
-      #                   Desktop-Chrome-only), so together they execute every
-      #                   merge-gating test.
-      #   push:main    -> NO E2E. The merged commit is a squash of a PR that
-      #                   already ran iPhone + Desktop E2E under review; running it
-      #                   again on main just doubles every feature's minutes.
-      #                   Prettier/ESLint/Vitest above still run on main as a fast
-      #                   post-merge sanity check.
-      # Cache the Chromium binary so non-push runs don't re-download it each time
-      # (keyed on the resolved Playwright version). On a cache hit, `install`
-      # skips the download; `install-deps` still installs the system libs (fast).
+      # --- E2E: iPhone 14 + Desktop Chrome, on BOTH pull_request AND push:main ---
+      # These two profiles carry every device-gated spec (mobile-only checks run on
+      # iPhone 14; layout/measurement specs are Desktop-Chrome-only), so together
+      # they execute every merge-gating test.
+      #
+      # push:main runs E2E too — deliberately. It used to be skipped to save minutes,
+      # on the assumption "the squashed PR already ran E2E green under review." That
+      # assumption fails the moment a PR is merged PAST a red E2E check: main then has
+      # no E2E net and a real break ships silently — which happened (#167 shipped a
+      # broken home page; main's push CI was green only because E2E didn't run there).
+      # One E2E run per merge is cheap insurance against that.
+      # Cache the Chromium binary so runs don't re-download it each time (keyed on the
+      # resolved Playwright version). On a cache hit `install` skips the download;
+      # `install-deps` still installs the system libs (fast).
       - name: Cache Playwright browsers
-        if: github.event_name != 'push'
         id: playwright-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
       - name: Install Playwright browsers
-        if: github.event_name != 'push'
         run: |
           npx playwright install-deps chromium
           npx playwright install chromium
       - name: E2E tests (iPhone 14 + Desktop Chrome)
-        if: github.event_name != 'push'
         run: npx playwright test --project="iPhone 14" --project="Desktop Chrome"
