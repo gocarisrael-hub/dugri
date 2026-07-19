@@ -383,7 +383,10 @@ describe('all()', () => {
     // effective is the merged value.
     expect(a.effective.email.order_finished.subject).toBe('מוכן');
     // registry advertises tokens + kind per key so the UI can render an editor.
-    expect(a.registry.email.order_paid).toEqual({ tokens: ['honoree'], kind: 'email' });
+    expect(a.registry.email.order_paid).toEqual({
+      tokens: ['honoree', 'orderId', 'link', 'adminLink'],
+      kind: 'email',
+    });
     expect(a.registry.wa['trigger.word_added'].kind).toBe('trigger');
     expect(a.registry.wa['trigger.word_added'].tokens).toContain('count');
   });

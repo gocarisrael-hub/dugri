@@ -1024,14 +1024,54 @@ function newPayToken() {
 // that rather than the pre-coupon package price. Fire-and-forget: the payment
 // must succeed even if a send fails. Called via onOrderPaid, which guards it with
 // notify.isConfigured() so the word-count work is skipped when email is dormant.
-function sendPaidNotifications(collectionId, base, amountCharged) {
+// Resolve the template/product photo URL for a paid collection's chosen design,
+// for the buyer confirmation email. Prefers the owner's uploaded photo
+// (design-images 'store', else 'front' override), else the shipped static
+// store.webp — matched to the design by the order's stable `theme` key (or the
+// Hebrew design name as a fallback). Returns an absolute URL under `base`, or null
+// when nothing resolves. Fail-soft: any error -> null (the email just omits the
+// image). The design catalog is the ESM site/js/designs.js, dynamically imported
+// (and Node-cached) exactly as /api/admin/designs does.
+async function resolveProductImageUrl(collection, base) {
+  if (!base || !collection) return null;
+  try {
+    const mod = await import(pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js')));
+    const catalog = mod.DESIGNS || [];
+    const theme = collection.theme || null;
+    const designName = collection.design || null;
+    const d = catalog.find(
+      (x) => (theme && x.theme === theme) || (designName && x.name === designName)
+    );
+    if (!d) return null;
+    // Owner override (a validated /content-uploads/<hash> path) wins over the
+    // shipped static photo.
+    const override = designImages.get(d.id, 'store') || designImages.get(d.id, 'front');
+    if (override) return base + override;
+    // Static fallback — only when the file actually exists on disk, so the email
+    // never embeds a broken <img> (it would then just show the alt text).
+    const rel = 'assets/designs/' + d.id + '/store.webp';
+    if (!fs.existsSync(path.join(__dirname, '..', 'site', rel))) return null;
+    return base + '/' + rel;
+  } catch {
+    return null;
+  }
+}
+
+async function sendPaidNotifications(collectionId, base, amountCharged) {
   const c = db.getCollection(collectionId);
   if (!c) return;
   const enriched = { ...c, count: db.listWords(collectionId).length };
-  const options = { amountCharged };
+  // One-click admin orders panel link for the OWNER emails (goes to NOTIFY_TO
+  // only). Includes the admin key by design — the owner chose convenience, and
+  // the mail never reaches the buyer. The secret is built HERE and passed in;
+  // server/notify.js never sees ADMIN_KEY.
+  const adminLink =
+    base && ADMIN_KEY ? base + '/admin.html?key=' + encodeURIComponent(ADMIN_KEY) : null;
+  const productImageUrl = await resolveProductImageUrl(c, base);
+  const options = { amountCharged, adminLink, productImageUrl };
   notify.sendOrderPaid(enriched, base, options).catch(() => {});
-  // Also confirm to the BUYER (their own email), with the collect link so they
-  // can keep adding their words. Skips gracefully if no buyer email.
+  // Also confirm to the BUYER (their own email), with the product photo, the
+  // collect link, and delivery/pickup details. Skips gracefully if no buyer email.
   notify.sendBuyerConfirmation(enriched, base, options).catch(() => {});
   // A bespoke "custom" order (599₪, no template) needs hand-design after payment.
   // Fire an EXTRA Dugri-only alert so it stands out from the normal paid emails.
@@ -1049,7 +1089,8 @@ function sendPaidNotifications(collectionId, base, amountCharged) {
 // versa. Both are fire-and-forget and idempotent; neither can block or break the
 // payment flow.
 function onOrderPaid(collectionId, base, amountCharged) {
-  if (notify.isConfigured()) sendPaidNotifications(collectionId, base, amountCharged);
+  if (notify.isConfigured())
+    sendPaidNotifications(collectionId, base, amountCharged).catch(() => {});
   // WhatsApp bot (DORMANT until armed): open a word-collection group for the
   // buyer. Gated ONLY on whatsapp.isConfigured() — decoupled from email — so it's
   // a pure no-op until the bot's env is set, and runs on every paid order once the

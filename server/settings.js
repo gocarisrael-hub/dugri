@@ -73,7 +73,7 @@ const REGISTRY = {
   email: {
     order_paid: {
       kind: 'email',
-      tokens: ['honoree'],
+      tokens: ['honoree', 'orderId', 'link', 'adminLink'],
       default: {
         subject: 'דוגרי · התקבל תשלום — {honoree}',
         body: 'התקבל תשלום עבור ההזמנה של {honoree}.',
@@ -81,7 +81,7 @@ const REGISTRY = {
     },
     custom_order_alert: {
       kind: 'email',
-      tokens: ['honoree'],
+      tokens: ['honoree', 'orderId', 'link', 'adminLink'],
       default: {
         subject: 'דוגרי · הזמנה בהתאמה אישית — צריך עיצוב ידני · {honoree}',
         body:
@@ -91,7 +91,7 @@ const REGISTRY = {
     },
     buyer_confirmation: {
       kind: 'email',
-      tokens: ['honoree'],
+      tokens: ['honoree', 'link'],
       default: {
         subject: 'דוגרי · ההזמנה שלכם התקבלה — {honoree}',
         body:
@@ -163,6 +163,46 @@ const REGISTRY = {
         buyerPrice: '· מחיר', // buyer confirmation: "· מחיר: <n> ₪"
         buyerDesign: '· עיצוב', // buyer confirmation: "· עיצוב: <design>"
         buyerColor: '· צבע', // buyer confirmation: "· צבע: <color>"
+        orderId: 'מספר הזמנה', // owner order-detail: "מספר הזמנה: <id>"
+        adminOrder: 'ניהול ההזמנה', // owner order-detail: link to the admin orders panel
+      },
+    },
+    // What the buyer bought — a one-line description per order version, shown in
+    // the buyer's confirmation email under the package name. Owner-editable so the
+    // wording can change without a deploy. Keys mirror the version codes.
+    product_info: {
+      kind: 'map',
+      tokens: [],
+      default: {
+        pdf: 'קובץ דיגיטלי מוכן להדפסה — חפיסת קלפים, לוח משחק, דף חוקים והוראות הדפסה וגזירה.',
+        pickup: 'משחק מודפס ומוכן — חפיסת קלפים, לוח משחק ודף חוקים, מוכן לאיסוף עצמי.',
+        delivery: 'משחק מודפס ומוכן — חפיסת קלפים, לוח משחק ודף חוקים, שנשלח עד הבית.',
+        custom: 'עיצוב אישי בהתאמה מלאה — נעצב עבורך משחק ייחודי מאפס.',
+      },
+    },
+    // Delivery-order block in the buyer confirmation (shown only for a `delivery`
+    // order). `eta` is the approximate delivery time; `address_label` labels the
+    // shipping address, which is filled in automatically from the order.
+    delivery_info: {
+      kind: 'map',
+      tokens: [],
+      default: {
+        eta: 'המשחק יישלח אליך בדרך כלל תוך 5–7 ימי עסקים מרגע שרשימת המילים מוכנה.',
+        address_label: 'כתובת למשלוח',
+      },
+    },
+    // Self-pickup block in the buyer confirmation (shown only for a `pickup`
+    // order). `ready` reassures we email when it's ready; `eta` is the approximate
+    // prep time; `address` is the print-house pickup address (owner fills the full
+    // address); `address_label` labels it.
+    pickup_info: {
+      kind: 'map',
+      tokens: [],
+      default: {
+        ready: 'נעדכן אותך במייל ברגע שהמשחק מוכן לאיסוף.',
+        eta: 'המשחק מוכן בדרך כלל תוך 3–5 ימי עסקים מרגע שרשימת המילים מוכנה.',
+        address: 'בית הדפוס גלאור — עדכנו כאן את הכתובת המלאה לאיסוף.',
+        address_label: 'כתובת לאיסוף',
       },
     },
     // The CTA button labels on the branded HTML emails.

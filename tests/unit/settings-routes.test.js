@@ -60,7 +60,10 @@ describe('GET /api/admin/settings', () => {
     expect(body).toHaveProperty('effective');
     expect(body).toHaveProperty('registry');
     // Registry advertises tokens + kind per key.
-    expect(body.registry.email.order_paid).toEqual({ tokens: ['honoree'], kind: 'email' });
+    expect(body.registry.email.order_paid).toEqual({
+      tokens: ['honoree', 'orderId', 'link', 'adminLink'],
+      kind: 'email',
+    });
     expect(body.effective.email.order_paid.subject).toBe('דוגרי · התקבל תשלום — {honoree}');
   });
 });
