@@ -322,3 +322,65 @@ describe('GET /api/collections/:id — order projection (locked + owner address)
     expect(wrong.body.order.address).toBeUndefined();
   });
 });
+
+// Bug #1: the admin bespoke-order route must never dead-end the owner when the
+// 'custom' option is OFF (the launch default). The route calls setOrder with
+// admin:true, which BYPASSES the public version-enable gate, so a bespoke ₪599
+// custom order can be hand-created and its pay link sent even while 'custom' is
+// hidden from public buyers — no cryptic 400, no "enable it first" hoop.
+describe('admin custom-order route (bug #1: creates the order even when custom is off)', () => {
+  const customUrl = (c) => adminUrl('/api/admin/collections/' + c.id + '/custom');
+
+  it('creates the ₪599 custom order + pay link at launch defaults (custom OFF), via the admin bypass', async () => {
+    const c = freshCollection();
+    const r = await post(customUrl(c), {});
+    expect(r.status).toBe(200);
+    expect(r.body.order.version).toBe('custom');
+    expect(r.body.order.total).toBe(599);
+    expect(r.body.pay_link).toContain('/collect.html?c=' + c.id);
+  });
+
+  it('still creates the ₪599 custom order + pay link when the owner has enabled custom', async () => {
+    settings.set('pricing', 'custom_enabled', true);
+    const c = freshCollection();
+    const r = await post(customUrl(c), {});
+    expect(r.status).toBe(200);
+    expect(r.body.order.version).toBe('custom');
+    expect(r.body.order.total).toBe(599);
+    expect(r.body.pay_link).toContain('/collect.html?c=' + c.id);
+  });
+});
+
+// Bug #3: setOrder re-checked the enable-gate on EVERY call, so disabling a
+// version mid-checkout broke a buyer's in-flight payment for an order they had
+// already placed. The gate must block only NEW selections, not re-confirming an
+// existing unpaid order at its current version.
+describe('charge path: in-flight order survives the version being disabled (bug #3)', () => {
+  it('setOrder re-confirms an existing unpaid order even after its version is disabled', async () => {
+    const c = freshCollection();
+    expect(db.setOrder(c.id, c.owner_token, { version: 'pickup' }).total).toBe(199);
+    // Owner disables pickup while the buyer still has the pay modal open.
+    settings.set('pricing', 'pickup_enabled', false);
+    // A brand-new order at the now-disabled version is still refused...
+    const fresh = freshCollection();
+    expect(db.setOrder(fresh.id, fresh.owner_token, { version: 'pickup' }).error).toBe(
+      'version unavailable'
+    );
+    // ...but re-confirming the SAME already-placed order goes through.
+    const again = db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    expect(again.error).toBeUndefined();
+    expect(again.total).toBe(199);
+  });
+
+  it('pay/init completes for an already-placed order after the owner disables that version', async () => {
+    const c = freshCollection();
+    db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    settings.set('pricing', 'pickup_enabled', false);
+    const r = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pickup',
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.charged).toBe(199);
+  });
+});
