@@ -1082,7 +1082,7 @@
       import { initCarousel } from './js/carousel.js';
       import { PUBLIC_DESIGNS } from './js/designs.js';
       import { fetchPricing } from './js/pricing.js';
-      import { loadDesignImages, overrideFor } from './js/design-images.js';
+      import { loadDesignImages, galleryFor } from './js/design-images.js';
 
       // ---- HERO: full-bleed auto-rotating slideshow ----
       const heroTrack = document.querySelector('.hero-track');
@@ -1158,17 +1158,23 @@
           .then((map) => {
             for (const img of productsTrack.querySelectorAll('.home-prod-thumb img')) {
               const id = img.closest('[data-design-id]')?.getAttribute('data-design-id');
-              const override = overrideFor(map, id, 'store');
-              if (!override) continue;
+              const design = PUBLIC_DESIGNS.find((x) => x.id === id);
+              if (!design) continue;
+              // The store-tile COVER is the first picture of the products-surface
+              // gallery — the same image /products leads each card with. galleryFor
+              // returns the shipped render when the owner set no override, so only
+              // swap when it actually differs from the static store.webp already set.
+              const cover = galleryFor(map, design, 'products')[0];
+              const staticDefault = img.getAttribute('data-store-default');
+              if (!cover || !cover.src || cover.src === staticDefault) continue;
               img.addEventListener(
                 'error',
                 () => {
-                  const fallback = img.getAttribute('data-store-default');
-                  if (fallback && img.src !== fallback) img.src = fallback;
+                  if (staticDefault && img.src !== staticDefault) img.src = staticDefault;
                 },
                 { once: true }
               );
-              img.src = override;
+              img.src = cover.src;
             }
           })
           .catch(() => {
