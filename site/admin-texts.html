@@ -110,6 +110,39 @@
         font-weight: 800;
         margin: 0 0 12px;
       }
+      .wa-status {
+        border-radius: var(--radius);
+        padding: 12px 14px;
+        margin: 0 0 14px;
+        font-size: 14px;
+        font-weight: 600;
+        border: 1px solid var(--line);
+        background: #fafafa;
+      }
+      .wa-status .wa-state {
+        font-weight: 800;
+      }
+      .wa-status.ok {
+        background: #eaf7ef;
+        border-color: #bfe6cd;
+        color: #1e7a45;
+      }
+      .wa-status.warn {
+        background: #fdf6e3;
+        border-color: #f0e3b0;
+        color: #8a6d1a;
+      }
+      .wa-status.off {
+        background: #fbecef;
+        border-color: #f3d0d9;
+        color: #a23350;
+      }
+      .wa-status .wa-detail {
+        font-weight: 400;
+        color: var(--muted);
+        margin-top: 4px;
+        font-size: 12.5px;
+      }
       .card {
         border: 1px solid var(--line);
         border-radius: var(--radius);
@@ -298,6 +331,7 @@
       <div id="app" hidden>
         <div class="section-group">
           <p class="section-title">וואטסאפ · הודעות ותזמון</p>
+          <div id="waStatus" class="wa-status" role="status" aria-live="polite" hidden></div>
           <div id="waCards"></div>
         </div>
         <div class="section-group">
@@ -722,10 +756,61 @@
         }
       });
 
+      // WhatsApp arming banner: reads the non-secret status endpoint and shows
+      // whether the bot is live, dormant, or half-armed (send OK but no webhook
+      // secret -> can't receive words). Never shows secret values. A fetch failure
+      // just hides the banner (the editor still works).
+      async function renderWaStatus() {
+        const el = qs('waStatus');
+        let s;
+        try {
+          s = await api('GET', '/api/whatsapp/status');
+        } catch {
+          el.hidden = true;
+          return;
+        }
+        let cls, state, detail;
+        if (s.ready) {
+          cls = 'ok';
+          state = 'הבוט פעיל ✓';
+          detail = 'מחובר, יכול לשלוח הודעות ולקבל מילים.';
+        } else if (s.configured) {
+          cls = 'warn';
+          state = 'פעיל חלקית';
+          detail = 'יכול לשלוח, אבל חסר WHAPI_WEBHOOK_SECRET — לא יקבל מילים נכנסות.';
+        } else if (s.enabled || s.tokenPresent) {
+          cls = 'warn';
+          state = 'לא מוכן';
+          detail =
+            'חסר: ' +
+            [
+              !s.enabled ? 'WHATSAPP_ENABLED' : null,
+              !s.tokenPresent ? 'WHAPI_TOKEN' : null,
+              !s.webhookSecretPresent ? 'WHAPI_WEBHOOK_SECRET' : null,
+            ]
+              .filter(Boolean)
+              .join(', ') +
+            '.';
+        } else {
+          cls = 'off';
+          state = 'רדום';
+          detail = 'הבוט כבוי. הגדירו את משתני הסביבה ב-Railway כדי להפעיל.';
+        }
+        el.className = 'wa-status ' + cls;
+        el.innerHTML =
+          '<span class="wa-state">וואטסאפ: ' +
+          esc(state) +
+          '</span><div class="wa-detail">' +
+          esc(detail) +
+          '</div>';
+        el.hidden = false;
+      }
+
       async function load() {
         try {
           state = await api('GET', '/api/admin/settings');
           render();
+          renderWaStatus();
         } catch (e) {
           qs('loadErr').textContent = 'טעינה נכשלה: ' + e.message + ' (מפתח שגוי?)';
           qs('loadErr').hidden = false;

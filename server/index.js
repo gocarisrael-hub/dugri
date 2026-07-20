@@ -2262,6 +2262,18 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
+// Admin: WhatsApp arming status — a non-secret readout so the owner can confirm
+// the bot is live after setting the Railway env, instead of reading logs. Returns
+// only PRESENCE booleans (never the token/secret VALUES): { enabled, tokenPresent,
+// webhookSecretPresent, baseUrl, configured, ready }. `configured` = can send/open
+// groups; `ready` = configured AND a webhook secret is set = the full round-trip
+// (send + receive). Admin-gated because the arming state, while not a secret, is
+// operational and shouldn't be public.
+app.get('/api/whatsapp/status', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json(whatsapp.status());
+});
+
 // Public: the buyer-wizard feature flags. Unauthenticated on purpose — every
 // visitor's wizard must know which of the gated features to show. Returns ONLY a
 // flat projection of the features section's effective booleans (never other
