@@ -522,15 +522,16 @@ describe('waIdDigits — JID normalization', () => {
   });
 });
 
-describe('onOrderPaid — WhatsApp is decoupled from email config', () => {
+describe('onOrderCreated — WhatsApp is decoupled from email config', () => {
   it('opens the group + fires group_opened even when email is OFF', async () => {
     // Email is unconfigured in this suite (no Resend env) -> notify.isConfigured()
-    // is false. The bot is armed. A paid order must STILL open the WhatsApp group.
+    // is false. The bot is armed. Creating an order must STILL open the group.
     expect(notify.isConfigured()).toBe(false);
     const paidSpy = vi.spyOn(notify, 'sendOrderPaid').mockResolvedValue(true);
     const c = db.createCollection('עמית', { phone: '0521234567' });
+    db.setOrder(c.id, c.owner_token, { version: 'pdf' }, { admin: true });
 
-    app.onOrderPaid(c.id, base, 0);
+    app.onOrderCreated(c.id, base);
     // openWhatsappGroup is fire-and-forget; let its microtasks run.
     await new Promise((r) => setTimeout(r, 0));
 

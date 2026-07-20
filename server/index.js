@@ -413,6 +413,8 @@ app.post('/api/admin/collections/:id/custom', (req, res) => {
   if (order && order.error) return res.status(400).json({ error: order.error });
   const base = paymentBaseUrl();
   const payLink = base ? base + '/collect.html?c=' + c.id + '&k=' + c.owner_token : null;
+  // Order created -> fire the one-time owner/buyer emails + WhatsApp group.
+  onOrderCreated(req.params.id, base);
   res.json({ order, pay_link: payLink });
 });
 
@@ -983,6 +985,8 @@ app.post('/api/collections/:id/order', (req, res) => {
   });
   if (r && r.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
   if (r && r.error) return res.status(400).json({ error: r.error });
+  // Order created -> fire the one-time owner/buyer emails + WhatsApp group.
+  onOrderCreated(req.params.id, paymentBaseUrl());
   res.json({ version: r.version, total: r.total });
 });
 
@@ -1057,7 +1061,11 @@ async function resolveProductImageUrl(collection, base) {
   }
 }
 
-async function sendPaidNotifications(collectionId, base, amountCharged) {
+// Send the owner + buyer "order received" emails. Fired at ORDER CREATION, so
+// there is no charged amount yet — the emails show the order's package price
+// (order.total), and the free/coupon charge display is a payment concern that no
+// longer appears here. `base` is the normalized public origin.
+async function sendOrderNotifications(collectionId, base) {
   const c = db.getCollection(collectionId);
   if (!c) return;
   const enriched = { ...c, count: db.listWords(collectionId).length };
@@ -1067,50 +1075,46 @@ async function sendPaidNotifications(collectionId, base, amountCharged) {
   // server/notify.js never sees ADMIN_KEY.
   const adminLink =
     base && ADMIN_KEY ? base + '/admin.html?key=' + encodeURIComponent(ADMIN_KEY) : null;
-  const ownerOptions = { amountCharged, adminLink };
+  const ownerOptions = { adminLink };
   // Fire the OWNER emails IMMEDIATELY (synchronously) — they carry no product
-  // image, so they must NOT wait on the async image resolution below. Deferring
-  // them would delay the send past the HTTP response (and change observable send
-  // ordering the callers rely on).
+  // image, so they must NOT wait on the async image resolution below.
   notify.sendOrderPaid(enriched, base, ownerOptions).catch(() => {});
-  // A bespoke "custom" order (599₪, no template) needs hand-design after payment.
-  // Fire an EXTRA Dugri-only alert so it stands out from the normal paid emails.
+  // A bespoke "custom" order (no template) needs hand-design — fire an EXTRA
+  // Dugri-only alert so it stands out from the normal order emails.
   if (c.order && c.order.version === 'custom') {
     notify.sendCustomOrderAlert(enriched, base, ownerOptions).catch(() => {});
   }
   // The BUYER confirmation embeds the template product photo, which needs an async
   // catalog lookup — resolve it, then send. Skips gracefully if no buyer email.
   const productImageUrl = await resolveProductImageUrl(c, base);
-  notify
-    .sendBuyerConfirmation(enriched, base, { amountCharged, adminLink, productImageUrl })
-    .catch(() => {});
+  notify.sendBuyerConfirmation(enriched, base, { adminLink, productImageUrl }).catch(() => {});
 }
 
-// Everything that must happen when an order transitions to PAID, from BOTH paid
-// paths (the free 100%-coupon path and the PeleCard callback). The two side
-// effects are INDEPENDENTLY gated so they never couple: email owner/buyer
-// notifications fire only when notify is configured, and the WhatsApp
-// word-collection group opens only when the bot is armed (whatsapp.isConfigured())
-// — an armed bot must open the group whether or not email is set up, and vice
-// versa. Both are fire-and-forget and idempotent; neither can block or break the
-// payment flow.
-function onOrderPaid(collectionId, base, amountCharged) {
-  if (notify.isConfigured())
-    sendPaidNotifications(collectionId, base, amountCharged).catch(() => {});
-  // WhatsApp bot (DORMANT until armed): open a word-collection group for the
-  // buyer. Gated ONLY on whatsapp.isConfigured() — decoupled from email — so it's
-  // a pure no-op until the bot's env is set, and runs on every paid order once the
-  // bot is armed. openWhatsappGroup is itself idempotent (one group per
-  // collection) and fail-soft, so the wrapped promise never affects payment.
+// Everything that must happen when an order is first CREATED — the owner captures
+// the order and starts collecting words immediately, BEFORE/without a completed
+// card payment. Idempotent via db.markOrderNotified: only the first order creation
+// per collection notifies, so re-setting the version or re-opening the pay modal
+// never re-sends or re-opens a group. The two effects are INDEPENDENTLY gated
+// (email on notify.isConfigured(), the WhatsApp group on whatsapp.isConfigured())
+// and fully fire-and-forget, so neither can block or break the order/payment flow.
+function onOrderCreated(collectionId, base) {
+  const c = db.getCollection(collectionId);
+  if (!c || !c.order) return;
+  if (!db.markOrderNotified(collectionId)) return; // already notified — no-op
+  if (notify.isConfigured()) sendOrderNotifications(collectionId, base).catch(() => {});
   if (whatsapp.isConfigured()) {
-    const c = db.getCollection(collectionId);
-    if (c) {
-      openWhatsappGroup(c, base).catch((e) => {
-        console.warn('[whatsapp] group open failed:', e && e.message ? e.message : e);
-      });
-    }
+    openWhatsappGroup(c, base).catch((e) => {
+      console.warn('[whatsapp] group open failed:', e && e.message ? e.message : e);
+    });
   }
 }
+
+// Payment no longer triggers notifications — the owner wants the order captured
+// and words collected at ORDER CREATION (see onOrderCreated), before/without a
+// completed card payment. Kept as a no-op hook the paid transitions still call, so
+// a payment receipt can be reintroduced here later without re-touching the payment
+// paths.
+function onOrderPaid() {}
 
 // =========================================================================
 // WhatsApp bot (Phase B) — inbound webhook, paid-order group creation, and the
@@ -1531,6 +1535,10 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   });
   if (order && order.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
   if (order && order.error) return res.status(400).json({ error: order.error });
+  // Order created (checkout started) -> fire the one-time owner/buyer emails +
+  // WhatsApp group NOW, before the card payment. Idempotent, so re-opening the pay
+  // modal (or applying a coupon on a retry) never re-notifies.
+  onOrderCreated(req.params.id, base);
 
   // Optional discount coupon. Re-validate SERVER-SIDE (never trust a client
   // price). The effective charge is what we bill AND what the callback verifies.
@@ -2426,6 +2434,7 @@ module.exports = app;
 module.exports.runWaNudgeScan = runWaNudgeScan;
 module.exports.openWhatsappGroup = openWhatsappGroup;
 module.exports.onOrderPaid = onOrderPaid;
+module.exports.onOrderCreated = onOrderCreated;
 module.exports.runReminderScan = runReminderScan;
 // Pure WA id/phone normalizers + the createGroup-response reader — exposed for
 // unit tests (no network, no state).

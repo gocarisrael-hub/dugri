@@ -124,7 +124,7 @@ describe('order-detail email wiring (delivery order)', () => {
     expect(r.body).toEqual({ free: true, paid: true, total: 0 });
 
     const mails = await waitForMails(2);
-    const owner = mails.find((m) => m.subject.includes('התקבל תשלום'));
+    const owner = mails.find((m) => m.subject.includes('התקבלה הזמנה חדשה'));
     const buyer = mails.find((m) => m.subject.includes('ההזמנה שלכם התקבלה'));
     expect(owner).toBeTruthy();
     expect(buyer).toBeTruthy();

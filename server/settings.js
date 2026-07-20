@@ -75,8 +75,8 @@ const REGISTRY = {
       kind: 'email',
       tokens: ['honoree', 'orderId', 'link', 'adminLink'],
       default: {
-        subject: 'דוגרי · התקבל תשלום — {honoree}',
-        body: 'התקבל תשלום עבור ההזמנה של {honoree}.',
+        subject: 'דוגרי · התקבלה הזמנה חדשה — {honoree}',
+        body: 'התקבלה הזמנה חדשה עבור {honoree}.',
       },
     },
     custom_order_alert: {
@@ -96,7 +96,7 @@ const REGISTRY = {
         subject: 'דוגרי · ההזמנה שלכם התקבלה — {honoree}',
         body:
           'תודה רבה על ההזמנה!\n' +
-          'קיבלנו את התשלום עבור המשחק של {honoree}.\n' +
+          'קיבלנו את ההזמנה שלך למשחק של {honoree}.\n' +
           '\n' +
           'פרטי ההזמנה:',
       },

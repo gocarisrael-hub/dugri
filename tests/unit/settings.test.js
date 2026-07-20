@@ -33,8 +33,8 @@ describe('get / set / reset', () => {
   it('returns the registry default when there is no override', () => {
     const s = loadFresh();
     expect(s.get('email', 'order_paid')).toEqual({
-      subject: 'דוגרי · התקבל תשלום — {honoree}',
-      body: 'התקבל תשלום עבור ההזמנה של {honoree}.',
+      subject: 'דוגרי · התקבלה הזמנה חדשה — {honoree}',
+      body: 'התקבלה הזמנה חדשה עבור {honoree}.',
     });
   });
 
@@ -103,7 +103,7 @@ describe('value-shape validation (set + validateValue)', () => {
     }
     // No override was written, and the default is intact.
     expect(s.all().overrides).toEqual({});
-    expect(s.get('email', 'order_paid').subject).toBe('דוגרי · התקבל תשלום — {honoree}');
+    expect(s.get('email', 'order_paid').subject).toBe('דוגרי · התקבלה הזמנה חדשה — {honoree}');
     // Nothing persisted to disk either.
     expect(fs.existsSync(path.join(dataDir, 'settings.json'))).toBe(false);
   });
@@ -288,8 +288,8 @@ describe('get() is a defensive backstop', () => {
     expect(f.version).toBe('גרסה');
     // order_paid returns the complete template, not the bad string.
     expect(s.get('email', 'order_paid')).toEqual({
-      subject: 'דוגרי · התקבל תשלום — {honoree}',
-      body: 'התקבל תשלום עבור ההזמנה של {honoree}.',
+      subject: 'דוגרי · התקבלה הזמנה חדשה — {honoree}',
+      body: 'התקבלה הזמנה חדשה עבור {honoree}.',
     });
   });
 });
