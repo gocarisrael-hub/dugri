@@ -59,6 +59,26 @@ function isConfigured() {
   return Boolean(truthyEnv(WHATSAPP_ENABLED) && WHAPI_TOKEN && BASE_URL);
 }
 
+// A non-secret snapshot of the arming state for the admin UI, so the owner can
+// see at a glance whether the bot is live and — if not — WHICH env piece is
+// missing, without reading Railway logs. Reports only PRESENCE booleans, NEVER
+// the token/secret VALUES. `configured` mirrors isConfigured() (enabled + token +
+// base = can SEND / open groups); `webhookSecretPresent` gates RECEIVING inbound
+// words; `ready` is both together — armed for the full round-trip. `baseUrl` is
+// the gateway endpoint (public, not a secret).
+function status() {
+  const configured = isConfigured();
+  const webhookSecretPresent = !!WHAPI_WEBHOOK_SECRET;
+  return {
+    enabled: truthyEnv(WHATSAPP_ENABLED),
+    tokenPresent: !!WHAPI_TOKEN,
+    webhookSecretPresent,
+    baseUrl: BASE_URL,
+    configured,
+    ready: configured && webhookSecretPresent,
+  };
+}
+
 // Warn (once) at startup when the bot is armed for SENDING (enabled + token) but
 // WHAPI_WEBHOOK_SECRET is missing: verifyWebhookSecret then rejects every inbound
 // request, so words never flow in even though the bot looks configured — a silent
@@ -414,6 +434,7 @@ function groupsDueForNudge(groups, opts = {}) {
 
 module.exports = {
   isConfigured,
+  status,
   verifyWebhookSecret,
   createGroup,
   sendMessage,

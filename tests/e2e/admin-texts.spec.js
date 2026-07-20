@@ -52,6 +52,13 @@ test.describe('admin texts editor', () => {
     await expect(page.locator('.section-title', { hasText: 'וואטסאפ' })).toBeVisible();
     await expect(page.locator('.section-title', { hasText: 'מיילים' })).toBeVisible();
 
+    // WhatsApp arming banner — the e2e server runs with no WHAPI env, so the bot
+    // is dormant and the banner reads "רדום".
+    const waStatus = page.locator('#waStatus');
+    await expect(waStatus).toBeVisible();
+    await expect(waStatus).toHaveClass(/wa-status/);
+    await expect(waStatus).toContainText('רדום');
+
     // WhatsApp: an event trigger (no timing) and both time-trigger shapes render
     await expect(page.locator('#card-wa-trigger-list-closed')).toBeVisible();
     // daily_* -> a single `hour` input

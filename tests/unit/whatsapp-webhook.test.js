@@ -542,3 +542,37 @@ describe('onOrderPaid — WhatsApp is decoupled from email config', () => {
     paidSpy.mockRestore();
   });
 });
+
+// GET /api/whatsapp/status — admin-gated arming readout. The app here is booted
+// ARMED (WHATSAPP_ENABLED + token + base + webhook secret all set), so status must
+// report a fully-ready bot. ADMIN_KEY isn't set in this suite, so requireAdmin
+// falls back to the dev key 'dugri-admin'.
+describe('GET /api/whatsapp/status', () => {
+  async function getStatus(query) {
+    const res = await realFetch(base + '/api/whatsapp/status' + (query || ''), { method: 'GET' });
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  }
+
+  it('requires the admin key', async () => {
+    const r = await getStatus('');
+    expect(r.status).toBe(403);
+  });
+
+  it('with the key reports the armed bot as ready and leaks no secret values', async () => {
+    const r = await getStatus('?key=dugri-admin');
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({
+      enabled: true,
+      tokenPresent: true,
+      webhookSecretPresent: true,
+      baseUrl: 'https://gate.example.test',
+      configured: true,
+      ready: true,
+    });
+    // The token ('tok-secret') and webhook secret ('hook-secret') VALUES must
+    // never appear in the response.
+    const json = JSON.stringify(r.body);
+    expect(json).not.toContain('tok-secret');
+    expect(json).not.toContain('hook-secret');
+  });
+});
