@@ -2271,10 +2271,50 @@ app.delete('/api/admin/settings', (req, res) => {
 // handled fail-soft (a bad event or a Whapi send failure never throws out of the
 // route and never breaks the rest of the batch), and we ALWAYS answer 200 so
 // Whapi doesn't retry-storm.
+// Mirror (copy) an inbound WhatsApp webhook to ANOTHER environment's webhook, so a
+// group created there can also collect words — e.g. production forwards a copy to
+// staging. One Whapi channel delivers to ONE URL (production), but a group's
+// collection mapping lives only in the service that CREATED it; forwarding a copy
+// lets each environment act on its OWN groups (an unmapped group is already a
+// no-op, so a copy of prod's real traffic is silently ignored by staging and never
+// stored there). Fire-and-forget: never blocks or fails the webhook response. The
+// `mirror=1` marker on the forwarded URL stops the copy from being re-forwarded (no
+// ping-pong loops) — so set WHATSAPP_MIRROR_WEBHOOK_URL ONLY on the entry
+// environment (production), pointing at staging's webhook (with staging's secret).
+const WHATSAPP_MIRROR_WEBHOOK_URL = process.env.WHATSAPP_MIRROR_WEBHOOK_URL || '';
+function mirrorWebhook(req) {
+  try {
+    if (!WHATSAPP_MIRROR_WEBHOOK_URL) return;
+    const q = req.query || {};
+    if (q.mirror === '1' || q.mirror === 'true') return; // this IS a mirror — don't re-forward
+    const sep = WHATSAPP_MIRROR_WEBHOOK_URL.includes('?') ? '&' : '?';
+    const url = WHATSAPP_MIRROR_WEBHOOK_URL + sep + 'mirror=1';
+    const fetchImpl = typeof fetch !== 'undefined' ? fetch : null;
+    if (!fetchImpl) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    fetchImpl(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body || {}),
+      signal: controller.signal,
+    })
+      .catch(() => {})
+      .finally(() => clearTimeout(timer));
+  } catch {
+    /* a mirror failure must never break the webhook */
+  }
+}
+
 app.post('/api/whatsapp/webhook', async (req, res) => {
   if (!whatsapp.verifyWebhookSecret(req.query && req.query.secret)) {
     return res.status(403).json({ error: 'forbidden' });
   }
+  // Mirror a COPY of this inbound to another environment's webhook (prod ->
+  // staging), so a group created there can also collect its words. Fire-and-
+  // forget; never blocks the response. A no-op unless WHATSAPP_MIRROR_WEBHOOK_URL
+  // is set and this request isn't itself a mirror.
+  mirrorWebhook(req);
   if (!whatsapp.isConfigured()) return res.status(200).json({ ok: true });
   const base = paymentBaseUrl();
   try {
