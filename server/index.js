@@ -2388,6 +2388,79 @@ async function runReminderScan(now = Date.now()) {
   return sent;
 }
 
+// --- Payment-reminder scheduler -------------------------------------------
+// The current hour (0..23) in Israel time — for the payment reminder's daytime
+// window gate, so a nudge never fires in the middle of the night.
+function jerusalemHour(now) {
+  const s = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jerusalem',
+    hour: '2-digit',
+    hour12: false,
+  }).format(new Date(now));
+  const h = Number(s);
+  return h === 24 ? 0 : h;
+}
+
+// One pass of the payment reminder: a DM + email to the buyer when their order has
+// sat unpaid past the owner-configured delay. The payment_reminder WhatsApp
+// trigger is the MASTER switch (enabled) + schedule (timing.delay_hours + window)
+// for BOTH channels. When enabled and inside the window, each due collection gets
+// the email (if Resend is configured) and a WhatsApp DM to the buyer (if the bot
+// is armed), then is marked reminded so it's never nudged twice. Exposed as a
+// callable so a test can run one pass without the interval. Fully wrapped; never
+// throws into the caller.
+async function runPaymentReminderScan(now = Date.now()) {
+  const emailOn = notify.isConfigured();
+  const waOn = whatsapp.isConfigured();
+  if (!emailOn && !waOn) return 0;
+  let trig;
+  try {
+    trig = settings.get('wa', 'trigger.payment_reminder');
+  } catch {
+    return 0;
+  }
+  if (!trig || !trig.enabled) return 0; // master switch off
+  const timing = trig.timing || {};
+  const delayHours = Number.isFinite(timing.delay_hours) ? timing.delay_hours : 24;
+  const window = Array.isArray(timing.window) && timing.window.length === 2 ? timing.window : null;
+  if (window) {
+    const h = jerusalemHour(now);
+    if (!(h >= window[0] && h < window[1])) return 0; // outside the daytime window
+  }
+  const base = paymentBaseUrl();
+  let sent = 0;
+  try {
+    const due = db.collectionsDueForPaymentReminder(now, delayHours);
+    for (const c of due) {
+      try {
+        if (emailOn && c.owner_email) await notify.sendPaymentReminder(c, base);
+        if (waOn && c.owner_phone) {
+          const buyerWa = ilPhoneToWaId(c.owner_phone);
+          if (buyerWa) {
+            // The buyer's OWN pay link (their owner token) — safe in a 1:1 DM.
+            const link =
+              base && c.id && c.owner_token
+                ? base + '/collect.html?c=' + c.id + '&k=' + c.owner_token
+                : '';
+            await sendWaTrigger(buyerWa, 'payment_reminder', {
+              honoree: c.honoree_name || 'בעל/ת השמחה',
+              link,
+            });
+          }
+        }
+        // Mark regardless of send result — one payment reminder per order.
+        db.markPaymentReminded(c.id);
+        sent += 1;
+      } catch (e) {
+        console.warn('[payment-reminder] send failed:', e && e.message ? e.message : e);
+      }
+    }
+  } catch (e) {
+    console.warn('[payment-reminder] scan failed:', e && e.message ? e.message : e);
+  }
+  return sent;
+}
+
 // An over-sized upload is rejected by body-parser with a 413 (entity.too.large)
 // BEFORE the route runs, so the route's own handler never sees it. Without this
 // error middleware the client only gets a bare "413" with no body; translate it
@@ -2425,6 +2498,15 @@ if (require.main === module) {
     }, WA_NUDGE_SCAN_INTERVAL_MS);
     if (waTimer.unref) waTimer.unref();
   }
+  // Hourly payment-reminder scan — runs when EITHER channel is available (email or
+  // the WhatsApp bot); the payment_reminder trigger's own `enabled` gates whether
+  // anything is actually sent. unref()'d + fire-and-forget like the others.
+  if (notify.isConfigured() || whatsapp.isConfigured()) {
+    const payTimer = setInterval(() => {
+      runPaymentReminderScan().catch(() => {});
+    }, REMINDER_SCAN_INTERVAL_MS);
+    if (payTimer.unref) payTimer.unref();
+  }
 }
 
 module.exports = app;
@@ -2436,6 +2518,7 @@ module.exports.openWhatsappGroup = openWhatsappGroup;
 module.exports.onOrderPaid = onOrderPaid;
 module.exports.onOrderCreated = onOrderCreated;
 module.exports.runReminderScan = runReminderScan;
+module.exports.runPaymentReminderScan = runPaymentReminderScan;
 // Pure WA id/phone normalizers + the createGroup-response reader — exposed for
 // unit tests (no network, no state).
 module.exports.ilPhoneToWaId = ilPhoneToWaId;

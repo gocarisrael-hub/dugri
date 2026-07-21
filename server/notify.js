@@ -595,6 +595,38 @@ function buildWordsReminder(collection, baseUrl) {
   return { subject, text: lines.join('\n'), html };
 }
 
+// Pure builder: the "your order is still waiting for payment" reminder — sent to
+// the buyer when an order has sat unpaid past the configured delay. The CTA links
+// to the buyer's own pay page (the collect page with their owner token, which
+// carries the pay panel). `baseUrl` (optional) builds the link + hosted logo.
+// Returns {subject, text, html}.
+function buildPaymentReminder(collection, baseUrl) {
+  const name = honoreeName(collection);
+  const tpl = emailTpl('payment_reminder');
+  const cta = ctaLabels();
+  const ft = footer();
+  const values = { honoree: name };
+  const subject = interpolate(tpl.subject, values);
+  const bodyLines = interpolate(tpl.body, values).split('\n');
+  const lines = bodyLines.slice();
+  const link = ownerLink(collection, baseUrl);
+  if (link) {
+    lines.push('');
+    lines.push('להשלמת התשלום:');
+    lines.push(link);
+  }
+  lines.push('');
+  lines.push(ft.line1);
+  lines.push(ft.line2);
+  const html = renderEmailHtml({
+    title: 'ההזמנה שלך ממתינה לתשלום — ' + name,
+    bodyLines,
+    cta: link ? { label: cta.pay, url: link } : null,
+    baseUrl,
+  });
+  return { subject, text: lines.join('\n'), html };
+}
+
 // Send one message via the Resend HTTPS API. `to` overrides the recipient
 // (defaults to the owner's NOTIFY_TO — e.g. the buyer confirmation is sent to
 // the customer's address). Fully wrapped: a failure (a non-2xx response, a
@@ -727,6 +759,20 @@ async function sendWordsReminder(collection, baseUrl) {
   }
 }
 
+// Fire the "complete your payment" reminder to the buyer (owner_email). Skips
+// gracefully when that address is missing, and stays dormant when Resend is
+// unconfigured. `baseUrl` is the normalized public origin (optional). Never throws.
+async function sendPaymentReminder(collection, baseUrl) {
+  try {
+    const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
+    if (!to) return false;
+    return await send({ ...buildPaymentReminder(collection, baseUrl), to });
+  } catch (e) {
+    console.warn('[notify] sendPaymentReminder failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
 // Fire the "order finished" notification. `baseUrl` is the normalized public
 // origin (optional). Never throws.
 async function sendOrderFinished(collection, baseUrl) {
@@ -794,6 +840,7 @@ module.exports = {
   buildPdfReadyMessage,
   buildProductionError,
   buildWordsReminder,
+  buildPaymentReminder,
   buildSystemAlert,
   sendSystemAlert,
   sendOrderPaid,
@@ -803,4 +850,5 @@ module.exports = {
   sendPdfReady,
   sendProductionError,
   sendWordsReminder,
+  sendPaymentReminder,
 };
