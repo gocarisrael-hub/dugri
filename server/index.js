@@ -328,6 +328,10 @@ app.post('/api/collections', (req, res) => {
     custom_title: b.custom_title,
     gender: b.gender,
   });
+  // A new lead just STARTED — fire the owner + buyer emails and open the WhatsApp
+  // word-collection group now, so words start flowing before/without payment.
+  // Idempotent, so the later order/pay step won't notify again.
+  fireStartNotifications(c.id, paymentBaseUrl());
   res.status(201).json({ id: c.id, owner_token: c.owner_token, expires_at: c.expires_at });
 });
 
@@ -1097,9 +1101,18 @@ async function sendOrderNotifications(collectionId, base) {
 // never re-sends or re-opens a group. The two effects are INDEPENDENTLY gated
 // (email on notify.isConfigured(), the WhatsApp group on whatsapp.isConfigured())
 // and fully fire-and-forget, so neither can block or break the order/payment flow.
-function onOrderCreated(collectionId, base) {
+// Fire the one-time "new order" side effects for a collection: the owner + buyer
+// emails and the WhatsApp word-collection group. Fires the moment a customer
+// STARTS — a collection is created (honoree + contact + design) — so word
+// collection begins immediately, before/without payment (most starts never reach
+// the pay step). Idempotent per collection via db.markOrderNotified, so the later
+// order/pay step is a no-op. Works with or without an order yet: order details
+// (version/price) are simply omitted from the email until the buyer picks one.
+// Both effects are independently gated (email on notify.isConfigured(), the group
+// on whatsapp.isConfigured()) and fully fire-and-forget.
+function fireStartNotifications(collectionId, base) {
   const c = db.getCollection(collectionId);
-  if (!c || !c.order) return;
+  if (!c) return;
   if (!db.markOrderNotified(collectionId)) return; // already notified — no-op
   if (notify.isConfigured()) sendOrderNotifications(collectionId, base).catch(() => {});
   if (whatsapp.isConfigured()) {
@@ -1107,6 +1120,15 @@ function onOrderCreated(collectionId, base) {
       console.warn('[whatsapp] group open failed:', e && e.message ? e.message : e);
     });
   }
+}
+
+// Fired at the order-creation points (pay/init, POST /order, admin custom). Now a
+// thin wrapper over fireStartNotifications — the collection was almost always
+// already notified at creation, so this is usually a no-op; it stays as a safety
+// net for an order placed on a collection created before this behavior (or via a
+// path that skipped the start notification).
+function onOrderCreated(collectionId, base) {
+  fireStartNotifications(collectionId, base);
 }
 
 // Payment no longer triggers notifications — the owner wants the order captured
