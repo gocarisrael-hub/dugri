@@ -74,10 +74,18 @@ test.describe('admin texts editor', () => {
     // an event trigger carries no timing block
     await expect(page.locator('#card-wa-trigger-list-closed .timing')).toHaveCount(0);
 
+    // payment_reminder -> the `delay` timing shape (delay_hours + window)
+    const pay = page.locator('#card-wa-trigger-payment-reminder .timing[data-timing="delay"]');
+    await expect(pay.locator('[data-t="delay_hours"]')).toBeVisible();
+    await expect(pay.locator('[data-t="win_start"]')).toBeVisible();
+    await expect(pay.locator('[data-t="win_end"]')).toBeVisible();
+
     // Emails: a template (subject + body) and a label map render
     await expect(page.locator('#card-email-order-paid [data-field="subject"]')).toBeVisible();
     await expect(page.locator('#card-email-order-paid [data-field="body"]')).toBeVisible();
     await expect(page.locator('#card-email-version-labels [data-mapkey="pdf"]')).toBeVisible();
+    // the payment-reminder buyer email renders
+    await expect(page.locator('#card-email-payment-reminder [data-field="subject"]')).toBeVisible();
     // token hint is shown, including the new insertable tokens on the owner email
     await expect(page.locator('#card-email-order-paid .hint')).toContainText('{honoree}');
     await expect(page.locator('#card-email-order-paid .hint')).toContainText('{orderId}');

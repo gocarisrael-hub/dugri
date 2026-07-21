@@ -265,6 +265,10 @@ const db = {
       // the WhatsApp group fire once, when the order is first created — not on
       // payment). Null until markOrderNotified sets it.
       order_notified_at: null,
+      // One-time "complete your payment" reminder timestamp; null until sent. Set
+      // by markPaymentReminded once an unpaid order has sat past the configured
+      // delay (see collectionsDueForPaymentReminder).
+      payment_reminded_at: null,
       // Admin soft-cancel (reversible); a hard delete removes the row entirely.
       cancelled: false,
       cancelled_at: null,
@@ -842,6 +846,36 @@ const db = {
       const basisMs = Date.parse(basis);
       if (Number.isNaN(basisMs)) return false;
       return basisMs < cutoff;
+    });
+  },
+
+  // --- Payment reminder ----------------------------------------------------
+  // Mark a collection as having received its one-time "complete your payment"
+  // reminder. Idempotent guard for the payment-reminder scan.
+  markPaymentReminded(id) {
+    const c = this.getCollection(id);
+    if (!c) return false;
+    c.payment_reminded_at = nowIso();
+    saveDb();
+    return true;
+  },
+
+  // The collections DUE for the one-time payment reminder (read-only query): an
+  // order EXISTS, is NOT paid, the collection isn't cancelled, it has a buyer
+  // contact (email or phone), it hasn't already been payment-reminded, and the
+  // order was created at least `delayHours` ago. The delay comes from the caller
+  // (the owner-editable payment_reminder trigger timing) — db stays config-free.
+  collectionsDueForPaymentReminder(now = Date.now(), delayHours = 24) {
+    const cutoff = now - Math.max(1, Number(delayHours) || 24) * 60 * 60 * 1000;
+    return _db.collections.filter((c) => {
+      if (!c || c.cancelled) return false;
+      if (c.payment_reminded_at) return false;
+      const o = c.order;
+      if (!o || o.paid) return false;
+      if (!c.owner_email && !c.owner_phone) return false;
+      const orderedMs = Date.parse(o.ordered_at || c.created_at || '');
+      if (Number.isNaN(orderedMs)) return false;
+      return orderedMs < cutoff;
     });
   },
 

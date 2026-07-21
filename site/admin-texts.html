@@ -404,6 +404,7 @@
         'wa.trigger.daily_morning': 'תזכורת בוקר',
         'wa.trigger.daily_evening': 'תזכורת ערב',
         'wa.trigger.quiet_reminder': 'תזכורת בשקט',
+        'wa.trigger.payment_reminder': 'תזכורת תשלום (וואטסאפ)',
         'email.order_paid': 'התקבלה הזמנה (בעלים)',
         'email.custom_order_alert': 'הזמנת עיצוב אישי (בעלים)',
         'email.buyer_confirmation': 'אישור הזמנה ללקוח',
@@ -411,6 +412,7 @@
         'email.order_finished': 'הזמנה מוכנה להפקה',
         'email.production_error': 'שגיאת הפקה',
         'email.words_reminder': 'תזכורת להוספת מילים',
+        'email.payment_reminder': 'תזכורת תשלום (ללקוח)',
         'email.version_labels': 'תוויות גרסה',
         'email.field_labels': 'תוויות שדות',
         'email.cta_labels': 'תוויות כפתורים',
@@ -448,6 +450,7 @@
         addWords: 'כפתור: הוספת מילים',
         downloadFile: 'כפתור: הורדת הקובץ',
         updateOrder: 'כפתור: עדכון הזמנה',
+        pay: 'כפתור: השלמת תשלום',
         // delivery_info / pickup_info
         eta: 'זמן משוער',
         address_label: 'תווית כתובת',
@@ -469,6 +472,8 @@
       function timingType(timing) {
         if (!timing || typeof timing !== 'object') return '';
         if ('hour' in timing) return 'hour';
+        // delay MUST be checked before quiet: both carry `window`.
+        if ('delay_hours' in timing) return 'delay';
         if ('idle_hours' in timing || 'window' in timing || 'max' in timing) return 'quiet';
         return '';
       }
@@ -480,6 +485,24 @@
             '<div class="t-field"><label>שעה (0–23)</label>' +
             '<input type="number" min="0" max="23" data-t="hour" value="' +
             esc(timing.hour) +
+            '" /></div></div>'
+          );
+        }
+        if (type === 'delay') {
+          const w = Array.isArray(timing.window) ? timing.window : [];
+          return (
+            '<div class="timing" data-timing="delay">' +
+            '<div class="t-field"><label>שעות עד תזכורת</label>' +
+            '<input type="number" min="1" data-t="delay_hours" value="' +
+            esc(timing.delay_hours) +
+            '" /></div>' +
+            '<div class="t-field"><label>חלון — התחלה</label>' +
+            '<input type="number" min="0" max="23" data-t="win_start" value="' +
+            esc(w[0]) +
+            '" /></div>' +
+            '<div class="t-field"><label>חלון — סיום</label>' +
+            '<input type="number" min="0" max="23" data-t="win_end" value="' +
+            esc(w[1]) +
             '" /></div></div>'
           );
         }
@@ -530,6 +553,16 @@
             return 'השעה חייבת להיות מספר שלם בין 0 ל-23';
           return null;
         }
+        if (box.dataset.timing === 'delay') {
+          if (!isIntMin(raw('[data-t="delay_hours"]'), 1))
+            return 'שעות עד תזכורת חייבות להיות מספר שלם 1 ומעלה';
+          const ds = raw('[data-t="win_start"]');
+          const de = raw('[data-t="win_end"]');
+          if (!isIntIn(ds, 0, 23) || !isIntIn(de, 0, 23))
+            return 'שעות החלון חייבות להיות מספרים שלמים בין 0 ל-23';
+          if (Number(ds) >= Number(de)) return 'שעת ההתחלה של החלון חייבת להיות לפני שעת הסיום';
+          return null;
+        }
         if (!isIntMin(raw('[data-t="idle_hours"]'), 1))
           return 'שעות שקט חייבות להיות מספר שלם 1 ומעלה';
         if (!isIntMin(raw('[data-t="max"]'), 1))
@@ -549,6 +582,11 @@
         if (!box) return null;
         const num = (sel) => Number(box.querySelector(sel).value);
         if (box.dataset.timing === 'hour') return { hour: num('[data-t="hour"]') };
+        if (box.dataset.timing === 'delay')
+          return {
+            delay_hours: num('[data-t="delay_hours"]'),
+            window: [num('[data-t="win_start"]'), num('[data-t="win_end"]')],
+          };
         return {
           idle_hours: num('[data-t="idle_hours"]'),
           max: num('[data-t="max"]'),

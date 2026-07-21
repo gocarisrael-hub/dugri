@@ -136,6 +136,20 @@ const REGISTRY = {
           'ברגע שתוסיפו את המילים נתחיל להכין את הקובץ — זה לוקח כמה דקות בלבד.',
       },
     },
+    // The buyer "complete your payment" reminder — sent when an order has sat
+    // unpaid past the delay set on the payment_reminder WhatsApp trigger (that
+    // trigger's `enabled` is the master switch + schedule for BOTH channels).
+    payment_reminder: {
+      kind: 'email',
+      tokens: ['honoree'],
+      default: {
+        subject: 'דוגרי · ההזמנה שלך ממתינה לתשלום — {honoree}',
+        body:
+          'קיבלנו את ההזמנה שלך למשחק של {honoree}, אבל היא עדיין ממתינה לתשלום.\n' +
+          '\n' +
+          'כדי שנתחיל להכין את המשחק, יש להשלים את התשלום — זה לוקח רק כמה שניות.',
+      },
+    },
     // The Hebrew display label for each order version (used in every order-detail
     // block). An override of one key deep-merges, keeping the rest.
     version_labels: {
@@ -213,6 +227,7 @@ const REGISTRY = {
         addWords: 'להוספת המילים', // buyer confirmation + words reminder
         downloadFile: 'להורדת הקובץ', // PDF ready
         updateOrder: 'לעדכון ההזמנה', // production error
+        pay: 'להשלמת התשלום', // payment reminder
       },
     },
     // The shared two-line plain-text sign-off. (The branded HTML shell keeps its
@@ -287,6 +302,20 @@ const REGISTRY = {
         enabled: true,
         text: 'עדיין אפשר להוסיף מילים על {honoree} 🙂 {link}',
         timing: { idle_hours: 24, max: 3, window: [9, 21] },
+      },
+    },
+    // Payment reminder — a DM to the buyer when their order has sat unpaid for
+    // `delay_hours` (within the daytime `window`). This trigger's `enabled` is the
+    // MASTER switch for the whole payment reminder (email + WhatsApp), and its
+    // timing is the shared schedule. Sent to the buyer directly (not the group).
+    // {link} is the buyer's own pay link. Defaults OFF.
+    'trigger.payment_reminder': {
+      kind: 'trigger',
+      tokens: ['honoree', 'link'],
+      default: {
+        enabled: false,
+        text: 'היי! ההזמנה שלך למשחק על {honoree} ממתינה לתשלום. להשלמה: {link}',
+        timing: { delay_hours: 24, window: [9, 21] },
       },
     },
   },
@@ -436,6 +465,22 @@ function validateTiming(section, key, timing) {
   const t = deepMerge(defTiming, timing);
   if ('hour' in defTiming) {
     if (!isIntInRange(t.hour, 0, 23)) return 'timing.hour must be an integer 0..23';
+    return null;
+  }
+  // delay shape (delay_hours / window) — payment_reminder: fire delay_hours after
+  // an unpaid order, only inside the daytime window.
+  if ('delay_hours' in defTiming) {
+    if (!(Number.isInteger(t.delay_hours) && t.delay_hours >= 1)) {
+      return 'timing.delay_hours must be an integer >= 1';
+    }
+    if (!Array.isArray(t.window) || t.window.length !== 2) {
+      return 'timing.window must be a 2-element array';
+    }
+    const [ds, de] = t.window;
+    if (!isIntInRange(ds, 0, 23) || !isIntInRange(de, 0, 23)) {
+      return 'timing.window hours must be integers 0..23';
+    }
+    if (ds >= de) return 'timing.window start must be before end';
     return null;
   }
   // quiet shape (idle_hours / max / window)
