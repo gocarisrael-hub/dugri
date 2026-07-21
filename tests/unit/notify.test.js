@@ -144,8 +144,8 @@ describe('partial-config warning', () => {
 describe('buildPaidMessage', () => {
   it('includes the honoree name, version, total ₪ and word count in Hebrew', () => {
     const { subject, text } = loadFresh().buildPaidMessage(collection, 'https://dugri.example');
-    expect(subject).toBe('דוגרי · התקבל תשלום — שירה');
-    expect(text).toContain('התקבל תשלום');
+    expect(subject).toBe('דוגרי · התקבלה הזמנה חדשה — שירה');
+    expect(text).toContain('התקבלה הזמנה חדשה');
     expect(text).toContain('שירה');
     expect(text).toContain('199 ₪');
     expect(text).toContain('משלוח עד הבית');
@@ -158,7 +158,7 @@ describe('buildPaidMessage', () => {
     const { subject, text } = loadFresh().buildPaidMessage({
       order: { version: 'pdf', total: 79 },
     });
-    expect(subject).toBe('דוגרי · התקבל תשלום — ללא שם');
+    expect(subject).toBe('דוגרי · התקבלה הזמנה חדשה — ללא שם');
     expect(text).not.toContain('collect.html');
   });
 
@@ -294,8 +294,8 @@ describe('Resend transport (send)', () => {
     expect(msg.from).toBe('Dugri <orders@dugri.example>');
     // Recipient is sent as an array in the JSON body.
     expect(calls[0].body.to).toEqual(['owner@dugri.example']);
-    expect(msg.subject).toBe('דוגרי · התקבל תשלום — שירה');
-    expect(msg.text).toContain('התקבל תשלום');
+    expect(msg.subject).toBe('דוגרי · התקבלה הזמנה חדשה — שירה');
+    expect(msg.text).toContain('התקבלה הזמנה חדשה');
   });
 
   it('returns false and logs a warning (no throw) on a non-2xx response', async () => {
@@ -379,10 +379,10 @@ describe('non-prod test marker (RAILWAY_ENVIRONMENT_NAME)', () => {
     expect(ok).toBe(true);
     expect(sent.subject.startsWith('הזמנת בדיקה (staging) — ')).toBe(true);
     // The original subject is still present after the marker.
-    expect(sent.subject).toContain('דוגרי · התקבל תשלום — שירה');
+    expect(sent.subject).toContain('דוגרי · התקבלה הזמנה חדשה — שירה');
     // Banner is the first line of the body, followed by the normal content.
     expect(sent.text.startsWith('זו הזמנת בדיקה מסביבת staging — לא הזמנה אמיתית.\n\n')).toBe(true);
-    expect(sent.text).toContain('התקבל תשלום');
+    expect(sent.text).toContain('התקבלה הזמנה חדשה');
     // Plain text only — no HTML body is introduced.
     expect(sent.html).toBeUndefined();
   });
@@ -403,10 +403,10 @@ describe('non-prod test marker (RAILWAY_ENVIRONMENT_NAME)', () => {
   it('production: no marker — subject and body are unchanged', async () => {
     process.env.RAILWAY_ENVIRONMENT_NAME = 'production';
     const { sent } = await captureSend((n) => n.sendOrderPaid(collection, 'https://d.example'));
-    expect(sent.subject).toBe('דוגרי · התקבל תשלום — שירה');
+    expect(sent.subject).toBe('דוגרי · התקבלה הזמנה חדשה — שירה');
     expect(sent.subject).not.toContain('הזמנת בדיקה');
     expect(sent.text).not.toContain('הזמנת בדיקה');
-    expect(sent.text.startsWith('התקבל תשלום')).toBe(true);
+    expect(sent.text.startsWith('התקבלה הזמנה חדשה')).toBe(true);
     // No HTML body is introduced for the plain-text emails.
     expect(sent.html).toBeUndefined();
   });
@@ -414,14 +414,14 @@ describe('non-prod test marker (RAILWAY_ENVIRONMENT_NAME)', () => {
   it('Production (any casing): treated as prod — no marker', async () => {
     process.env.RAILWAY_ENVIRONMENT_NAME = 'Production';
     const { sent } = await captureSend((n) => n.sendOrderPaid(collection, 'https://d.example'));
-    expect(sent.subject).toBe('דוגרי · התקבל תשלום — שירה');
+    expect(sent.subject).toBe('דוגרי · התקבלה הזמנה חדשה — שירה');
     expect(sent.text).not.toContain('הזמנת בדיקה');
   });
 
   it('unset: no marker (local/tests behave like production)', async () => {
     delete process.env.RAILWAY_ENVIRONMENT_NAME;
     const { sent } = await captureSend((n) => n.sendOrderPaid(collection, 'https://d.example'));
-    expect(sent.subject).toBe('דוגרי · התקבל תשלום — שירה');
+    expect(sent.subject).toBe('דוגרי · התקבלה הזמנה חדשה — שירה');
     expect(sent.text).not.toContain('הזמנת בדיקה');
   });
 

@@ -261,6 +261,10 @@ const db = {
       closed_at: null,
       // One-time "you haven't added words yet" nudge timestamp; null until sent.
       reminded_at: null,
+      // One-time "order received" notification marker (owner + buyer emails and
+      // the WhatsApp group fire once, when the order is first created — not on
+      // payment). Null until markOrderNotified sets it.
+      order_notified_at: null,
       // Admin soft-cancel (reversible); a hard delete removes the row entirely.
       cancelled: false,
       cancelled_at: null,
@@ -804,6 +808,22 @@ const db = {
     const c = this.getCollection(id);
     if (!c) return false;
     c.reminded_at = nowIso();
+    saveDb();
+    return true;
+  },
+
+  // --- Order-created notification (idempotent) -----------------------------
+  // Atomically claim the one-time "order received" notification for a collection:
+  // returns true ONLY on the first call (and stamps order_notified_at), false
+  // every time after. Callers gate the owner/buyer emails + WhatsApp group on a
+  // true return, so re-setting the order version or re-opening the pay modal never
+  // re-notifies. The check-and-set is synchronous (single process), so two near-
+  // simultaneous order writes can't both win.
+  markOrderNotified(id) {
+    const c = this.getCollection(id);
+    if (!c) return false;
+    if (c.order_notified_at) return false;
+    c.order_notified_at = nowIso();
     saveDb();
     return true;
   },

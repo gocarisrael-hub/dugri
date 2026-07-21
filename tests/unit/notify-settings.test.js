@@ -62,8 +62,8 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
   it('buildPaidMessage', () => {
     const { notify } = loadFresh();
     expect(notify.buildPaidMessage(collection, BASE)).toEqual({
-      subject: 'דוגרי · התקבל תשלום — שירה',
-      text: ['התקבל תשלום עבור ההזמנה של שירה.', '', ...orderLines].join('\n'),
+      subject: 'דוגרי · התקבלה הזמנה חדשה — שירה',
+      text: ['התקבלה הזמנה חדשה עבור שירה.', '', ...orderLines].join('\n'),
     });
   });
 
@@ -87,7 +87,7 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
     expect(text).toBe(
       [
         'תודה רבה על ההזמנה!',
-        'קיבלנו את התשלום עבור המשחק של שירה.',
+        'קיבלנו את ההזמנה שלך למשחק של שירה.',
         '',
         'פרטי ההזמנה:',
         '· חבילה: משלוח עד הבית',

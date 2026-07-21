@@ -315,12 +315,19 @@ describe('POST /api/payment/callback', () => {
     expect(r.status).toBe(200);
   });
 
-  it('still marks paid + returns success even when the notify send rejects', async () => {
+  it('still creates the order + marks paid even when the notify send rejects', async () => {
     const c = db.createCollection('כשל מייל');
-    await post('/api/collections/' + c.id + '/pay/init', {
+    // Email is configured but the owner send REJECTS. Notifications now fire at
+    // ORDER CREATION (pay/init), fire-and-forget — both the order creation and the
+    // later payment must succeed regardless of the failing send.
+    const cfg = vi.spyOn(notify, 'isConfigured').mockReturnValue(true);
+    const spy = vi.spyOn(notify, 'sendOrderPaid').mockRejectedValue(new Error('smtp down'));
+    const initRes = await post('/api/collections/' + c.id + '/pay/init', {
       owner_token: c.owner_token,
       version: 'pdf',
     });
+    expect(initRes.status).toBe(200); // order created despite the rejecting send
+    expect(spy).toHaveBeenCalledTimes(1); // fired once, at order creation
     const token = tokenOf(c.id);
     nextGetTx = {
       StatusCode: '000',
@@ -331,14 +338,10 @@ describe('POST /api/payment/callback', () => {
         DebitTotal: 7900,
       },
     };
-    // Email is configured (so the route attempts a send) but the send rejects —
-    // the payment must succeed regardless.
-    const cfg = vi.spyOn(notify, 'isConfigured').mockReturnValue(true);
-    const spy = vi.spyOn(notify, 'sendOrderPaid').mockRejectedValue(new Error('smtp down'));
     const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-mail' } });
     expect(r.status).toBe(200);
     expect(db.getCollection(c.id).order.paid).toBe(true);
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledTimes(1); // NOT re-sent on payment
     spy.mockRestore();
     cfg.mockRestore();
   });

@@ -64,7 +64,7 @@ describe('GET /api/admin/settings', () => {
       tokens: ['honoree', 'orderId', 'link', 'adminLink'],
       kind: 'email',
     });
-    expect(body.effective.email.order_paid.subject).toBe('דוגרי · התקבל תשלום — {honoree}');
+    expect(body.effective.email.order_paid.subject).toBe('דוגרי · התקבלה הזמנה חדשה — {honoree}');
   });
 });
 
@@ -174,7 +174,7 @@ describe('DELETE /api/admin/settings', () => {
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.effective.subject).toBe('דוגרי · התקבל תשלום — {honoree}');
+    expect(body.effective.subject).toBe('דוגרי · התקבלה הזמנה חדשה — {honoree}');
     const get = await fetch(url('/api/admin/settings?key=' + ADMIN_KEY));
     const gb = await get.json();
     expect(gb.overrides.email).toBeUndefined();
