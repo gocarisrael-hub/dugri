@@ -74,11 +74,20 @@ test.describe('admin texts editor', () => {
     // an event trigger carries no timing block
     await expect(page.locator('#card-wa-trigger-list-closed .timing')).toHaveCount(0);
 
-    // payment_reminder -> the `delay` timing shape (delay_hours + window)
+    // payment_reminder -> the `delay` timing shape, with the delay as a preset
+    // dropdown (day options) rather than a raw hours input.
     const pay = page.locator('#card-wa-trigger-payment-reminder .timing[data-timing="delay"]');
-    await expect(pay.locator('[data-t="delay_hours"]')).toBeVisible();
+    await expect(pay.locator('select[data-t="delay_hours"]')).toBeVisible();
+    await expect(pay.locator('select[data-t="delay_hours"] option')).not.toHaveCount(0);
     await expect(pay.locator('[data-t="win_start"]')).toBeVisible();
     await expect(pay.locator('[data-t="win_end"]')).toBeVisible();
+
+    // Every message card explains WHEN/WHY it is sent.
+    await expect(page.locator('#card-wa-trigger-quiet-reminder .card-when')).toContainText('שקט');
+    await expect(page.locator('#card-wa-trigger-payment-reminder .card-when')).toContainText(
+      'שולמה'
+    );
+    await expect(page.locator('#card-email-order-paid .card-when')).toContainText('הזמנה');
 
     // Emails: a template (subject + body) and a label map render
     await expect(page.locator('#card-email-order-paid [data-field="subject"]')).toBeVisible();
@@ -159,6 +168,27 @@ test.describe('admin texts editor', () => {
     expect(Array.isArray(eff.timing.window)).toBe(true);
 
     await resetKey(request, 'wa', 'trigger.quiet_reminder');
+  });
+
+  test('saving payment_reminder round-trips the delay preset (dropdown) + window', async ({
+    page,
+    request,
+  }) => {
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const card = page.locator('#card-wa-trigger-payment-reminder');
+    await expect(card).toBeVisible();
+
+    const timing = card.locator('.timing[data-timing="delay"]');
+    // Pick "שבוע" (168h) from the preset dropdown, set a window, and save.
+    await timing.locator('select[data-t="delay_hours"]').selectOption('168');
+    await timing.locator('[data-t="win_start"]').fill('10');
+    await timing.locator('[data-t="win_end"]').fill('20');
+    const eff = await clickAndRead(page, card.locator('button[data-save]'), 'POST');
+    await expect(card.locator('.status')).toHaveText(/נשמר/);
+
+    expect(eff.timing).toEqual({ delay_hours: 168, window: [10, 20] });
+
+    await resetKey(request, 'wa', 'trigger.payment_reminder');
   });
 
   test('saving a footer label map keeps the full object with sibling keys intact', async ({
