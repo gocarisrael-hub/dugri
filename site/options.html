@@ -2243,8 +2243,26 @@
               נסו שוב
             </button>
           </div>
-          <div class="name-preview-empty" id="namePreviewEmpty" data-testid="name-preview-loading">
-            טוען תצוגה…
+          <!-- LOADING state: a card-shaped skeleton (shimmer + spinner) on the card
+               shape — deliberately NOT the honoree name, which would read like a
+               finished result while a preview is still in flight. Shown for the
+               initial load AND the retry-in-flight state (see showClientFallback). -->
+          <div
+            class="name-preview-empty"
+            id="namePreviewEmpty"
+            data-testid="name-preview-loading"
+            aria-live="polite"
+          >
+            <div
+              class="npl-card"
+              data-testid="name-preview-loading-card"
+              role="img"
+              aria-label="טוען תצוגה מקדימה"
+            >
+              <span class="npl-shimmer" aria-hidden="true"></span>
+              <span class="npl-spinner" aria-hidden="true"></span>
+            </div>
+            <p class="npl-note">טוען תצוגה…</p>
           </div>
         </div>
         <style>
@@ -2532,6 +2550,81 @@
           .name-preview-empty {
             color: var(--muted);
             padding: 10px 0;
+          }
+          .name-preview-empty[hidden] {
+            display: none;
+          }
+          /* Card-shaped loading skeleton — same 5/7 card footprint and sharp
+             corners as the fallback card, but a shimmer + spinner instead of the
+             name, so a load-in-flight never masquerades as a finished preview. */
+          .npl-card {
+            position: relative;
+            overflow: hidden;
+            width: 200px;
+            max-width: 60%;
+            aspect-ratio: 5 / 7;
+            margin: 0 auto;
+            background: #fff;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+          }
+          .npl-shimmer {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(
+              90deg,
+              transparent 0%,
+              var(--accent-tint, #ece3d5) 50%,
+              transparent 100%
+            );
+            background-size: 60% 100%;
+            background-repeat: no-repeat;
+            opacity: 0.7;
+            animation: nplShimmer 1.2s ease-in-out infinite;
+          }
+          .npl-spinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 28px;
+            height: 28px;
+            margin: -14px 0 0 -14px;
+            border: 2px solid var(--line);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: nplSpin 0.8s linear infinite;
+          }
+          @keyframes nplShimmer {
+            0% {
+              background-position: -60% 0;
+            }
+            100% {
+              background-position: 160% 0;
+            }
+          }
+          @keyframes nplSpin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+          .npl-note {
+            margin: 10px 0 0;
+            text-align: center;
+            color: var(--muted);
+            font-size: 14px;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            /* No spin/shimmer for reduced-motion users: a static, dimmed indicator. */
+            .npl-shimmer {
+              animation: none;
+              opacity: 0.45;
+              background-position: 50% 0;
+            }
+            .npl-spinner {
+              animation: none;
+              border-top-color: var(--accent);
+              opacity: 0.6;
+            }
           }
           .npf-retry {
             margin: 10px auto 0;
@@ -4161,15 +4254,24 @@
       // The graceful CSS fallback card (name in a script font) — used only when the
       // instant art itself is unavailable AND the server render can't fill in.
       function showClientFallback(name, retrying) {
-        namePreviewEmpty.hidden = true;
         namePreviewWarn.hidden = true;
         namePreviewImgs.hidden = true;
         namePreviewDots.hidden = true;
+        if (retrying) {
+          // Still LOADING (a render is in flight / auto-retrying): show the
+          // card-shaped loading skeleton, NOT the honoree name. Showing the big
+          // handwriting name here reads like a finished result even though nothing
+          // has rendered yet — the exact complaint we're fixing.
+          namePreviewFallback.hidden = true;
+          namePreviewEmpty.hidden = false;
+          return;
+        }
+        // TERMINAL failure (no retry pending): the graceful name card + note +
+        // manual retry are the intended final state, so the name DOES show here.
+        namePreviewEmpty.hidden = true;
         npfName.textContent = name;
-        npfNote.textContent = retrying
-          ? 'לא הצלחנו לטעון תצוגה — מנסים שוב…'
-          : 'לא הצלחנו לטעון תצוגה מקדימה כרגע';
-        npfRetry.hidden = !!retrying;
+        npfNote.textContent = 'לא הצלחנו לטעון תצוגה מקדימה כרגע';
+        npfRetry.hidden = false;
         namePreviewFallback.hidden = false;
       }
 
