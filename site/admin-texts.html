@@ -182,6 +182,7 @@
       }
       input[type='text'],
       input[type='number'],
+      select,
       textarea {
         width: 100%;
         font: inherit;
@@ -191,6 +192,15 @@
         border: 1px solid var(--line);
         border-radius: 8px;
         padding: 10px 12px;
+      }
+      .card-when {
+        margin: 0 0 10px;
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: var(--muted);
+        background: var(--section);
+        border-radius: 8px;
+        padding: 8px 10px;
       }
       input:focus,
       textarea:focus {
@@ -244,6 +254,10 @@
       }
       .timing input[type='number'] {
         width: 92px;
+      }
+      .timing select {
+        width: auto;
+        min-width: 120px;
       }
       .actions {
         display: flex;
@@ -425,6 +439,45 @@
         return LABELS[section + '.' + k] || k;
       }
 
+      // "When / why is this sent" — a plain Hebrew line shown on each card so the
+      // owner knows exactly what triggers every message. Timing-based triggers say
+      // where to tune the schedule ("למטה" = the fields below the text).
+      const WHEN = {
+        'wa.trigger.group_opened': 'נשלח לקבוצה מיד כשהיא נפתחת — ברגע שהלקוח/ה מתחיל/ה הזמנה.',
+        'wa.trigger.member_joined': 'נשלח כשמישהו/י חדש/ה מצטרף/ת לקבוצת האיסוף.',
+        'wa.trigger.word_added': 'נשלח לקבוצה אחרי כל הודעה שמוסיפה מילים (כבוי כברירת מחדל).',
+        'wa.trigger.list_closed':
+          'נשלח כשהרשימה נסגרת — הלקוח/ה שולח/ת "סיום" בקבוצה, או שסוגרים ידנית.',
+        'wa.trigger.daily_morning': 'תזכורת יומית קבועה בבוקר לכל קבוצה פתוחה, בשעה שנקבעת למטה.',
+        'wa.trigger.daily_evening': 'תזכורת יומית קבועה בערב לכל קבוצה פתוחה, בשעה שנקבעת למטה.',
+        'wa.trigger.quiet_reminder':
+          'נשלח כשקבוצה שקטה — כשאין פעילות במשך מספר השעות שנקבע למטה ("שעות שקט"). ' +
+          'נשלח עד "מקסימום שליחות" פעמים, ורק בתוך חלון השעות.',
+        'wa.trigger.payment_reminder':
+          'נשלח ללקוח/ה כשההזמנה נוצרה אך לא שולמה — אחרי הזמן שנקבע למטה. הטריגר הזה גם מפעיל את מייל תזכורת התשלום.',
+        'email.order_paid': 'לבעלים — נשלח כשנוצרת הזמנה חדשה (כשהלקוח/ה מתחיל/ה).',
+        'email.custom_order_alert': 'לבעלים — נשלח כשנוצרת הזמנת עיצוב אישי שדורשת עבודה ידנית.',
+        'email.buyer_confirmation': 'ללקוח/ה — נשלח כשנוצרת ההזמנה, עם הקישור לאיסוף המילים.',
+        'email.pdf_ready': 'ללקוח/ה ולבעלים — נשלח כשהקובץ המוכן להדפסה מוכן.',
+        'email.order_finished': 'לבעלים — נשלח כשהרשימה נסגרה ומוכנה להפקה.',
+        'email.production_error': 'ללקוח/ה ולבעלים — נשלח כשההפקה נחסמה ויש לתקן משהו לפני ההפקה.',
+        'email.words_reminder':
+          'ללקוח/ה — נשלח אוטומטית אם 3 ימים אחרי ההזמנה עדיין לא נוספו מילים.',
+        'email.payment_reminder':
+          'ללקוח/ה — נשלח יחד עם תזכורת התשלום בוואטסאפ (לפי הזמן שנקבע שם), כשהזמנה לא שולמה.',
+        'email.version_labels': 'תוויות (לא הודעה) — שמות הגרסאות שמופיעים בתוך המיילים.',
+        'email.field_labels': 'תוויות (לא הודעה) — שמות השדות בפירוט ההזמנה במיילים.',
+        'email.cta_labels': 'תוויות (לא הודעה) — הטקסט על כפתורי הפעולה במיילים.',
+        'email.product_info': 'טקסט (לא הודעה) — תיאור המוצר שמופיע במייל האישור ללקוח/ה.',
+        'email.delivery_info': 'טקסט (לא הודעה) — פרטי המשלוח במייל האישור (להזמנת משלוח).',
+        'email.pickup_info': 'טקסט (לא הודעה) — פרטי האיסוף העצמי במייל האישור.',
+        'email.footer': 'טקסט (לא הודעה) — שורות החתימה בתחתית המיילים.',
+      };
+      function whenHtml(section, k) {
+        const t = WHEN[section + '.' + k];
+        return t ? '<p class="card-when">' + esc(t) + '</p>' : '';
+      }
+
       // Hebrew labels for the sub-keys of the label maps / footer (the owner is
       // Hebrew-only). Unknown sub-keys fall back to the raw key.
       const SUBLABELS = {
@@ -490,12 +543,40 @@
         }
         if (type === 'delay') {
           const w = Array.isArray(timing.window) ? timing.window : [];
+          // Preset choices for "how long after an unpaid order" (value = hours).
+          const presets = [
+            [12, '12 שעות'],
+            [24, 'יום'],
+            [48, 'יומיים'],
+            [72, '3 ימים'],
+            [120, '5 ימים'],
+            [168, 'שבוע'],
+            [336, 'שבועיים'],
+          ];
+          const cur = Number(timing.delay_hours);
+          const known = presets.some((p) => p[0] === cur);
+          const opts =
+            (known || !Number.isFinite(cur)
+              ? ''
+              : '<option value="' + esc(cur) + '" selected>' + esc(cur) + ' שעות</option>') +
+            presets
+              .map(
+                (p) =>
+                  '<option value="' +
+                  p[0] +
+                  '"' +
+                  (p[0] === cur ? ' selected' : '') +
+                  '>' +
+                  p[1] +
+                  '</option>'
+              )
+              .join('');
           return (
             '<div class="timing" data-timing="delay">' +
-            '<div class="t-field"><label>שעות עד תזכורת</label>' +
-            '<input type="number" min="1" data-t="delay_hours" value="' +
-            esc(timing.delay_hours) +
-            '" /></div>' +
+            '<div class="t-field"><label>זמן עד תזכורת</label>' +
+            '<select data-t="delay_hours">' +
+            opts +
+            '</select></div>' +
             '<div class="t-field"><label>חלון — התחלה</label>' +
             '<input type="number" min="0" max="23" data-t="win_start" value="' +
             esc(w[0]) +
@@ -611,6 +692,7 @@
           '</h3><span class="card-id">wa.' +
           esc(k) +
           '</span></div>' +
+          whenHtml('wa', k) +
           '<label class="toggle"><input type="checkbox" data-field="enabled"' +
           (enabled ? ' checked' : '') +
           ' /> מופעל</label>' +
@@ -671,6 +753,7 @@
           '</h3><span class="card-id">email.' +
           esc(k) +
           '</span></div>' +
+          whenHtml('email', k) +
           fields +
           tokensHint(reg.tokens) +
           '<div class="actions">' +
