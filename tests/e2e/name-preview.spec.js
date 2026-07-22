@@ -198,6 +198,31 @@ test.describe('name-step preview resilience', () => {
     await expect(page.getByTestId('name-preview-retry')).toBeVisible({ timeout: 6000 });
   });
 
+  test('while LOADING/retrying the card shows a loading indicator, NOT the honoree name', async ({
+    page,
+  }) => {
+    // Reproduce the owner's complaint: block the instant artwork so the client
+    // must wait on the server render, and make /api/preview HANG so the wizard
+    // stays in the loading/retry state. In that state the card must show a
+    // card-shaped loading indicator — never the big handwriting name, which reads
+    // like a finished result while nothing has actually rendered yet.
+    await page.route('**/assets/designs/**/front.svg', (route) => route.abort());
+    await page.route('**/api/preview', () => {
+      /* never fulfilled → the request hangs, holding the loading state open */
+    });
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+
+    // the card-shaped loading indicator is visible...
+    await expect(page.getByTestId('name-preview-loading')).toBeVisible({ timeout: 6000 });
+    await expect(page.getByTestId('name-preview-loading-card')).toBeVisible();
+
+    // ...and the honoree name is NOT presented as a finished card: the name
+    // fallback card (which holds #npfName) stays hidden during loading.
+    await expect(page.getByTestId('name-preview-fallback')).toBeHidden();
+    await expect(page.locator('#npfName')).not.toHaveText('Shira');
+  });
+
   test('an automatic retry self-heals a transient hiccup', async ({ page }) => {
     const PNG =
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
