@@ -2530,7 +2530,9 @@ async function runPaymentReminderScan(now = Date.now()) {
   }
   if (!trig || !trig.enabled) return 0; // master switch off
   const timing = trig.timing || {};
-  const delayHours = Number.isFinite(timing.delay_hours) ? timing.delay_hours : 24;
+  // Milestones (hours after an unpaid order) at which to nudge — remind at each,
+  // once, until paid. Fall back to a single 24h reminder for a malformed value.
+  const delays = Array.isArray(timing.delays) && timing.delays.length ? timing.delays : [24];
   const window = Array.isArray(timing.window) && timing.window.length === 2 ? timing.window : null;
   if (window) {
     const h = jerusalemHour(now);
@@ -2539,7 +2541,7 @@ async function runPaymentReminderScan(now = Date.now()) {
   const base = paymentBaseUrl();
   let sent = 0;
   try {
-    const due = db.collectionsDueForPaymentReminder(now, delayHours);
+    const due = db.collectionsDueForPaymentReminder(now, delays);
     for (const c of due) {
       try {
         if (emailOn && c.owner_email) await notify.sendPaymentReminder(c, base);
@@ -2557,8 +2559,9 @@ async function runPaymentReminderScan(now = Date.now()) {
             });
           }
         }
-        // Mark regardless of send result — one payment reminder per order.
-        db.markPaymentReminded(c.id);
+        // Advance the stage counter regardless of send result — this milestone
+        // fires once; the next scan sends the next milestone when it comes due.
+        db.markPaymentReminderSent(c.id);
         sent += 1;
       } catch (e) {
         console.warn('[payment-reminder] send failed:', e && e.message ? e.message : e);

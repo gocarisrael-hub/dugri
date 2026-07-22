@@ -77,10 +77,10 @@ afterAll(() => {
 beforeEach(() => {
   sent.length = 0;
   dmCalls = [];
-  // Master switch ON with the default schedule for each test.
+  // Master switch ON, a SINGLE milestone for the once-per-order cases.
   settings.set('wa', 'trigger.payment_reminder', {
     enabled: true,
-    timing: { delay_hours: 24, window: [9, 21] },
+    timing: { delays: [24], window: [9, 21] },
   });
 });
 
@@ -127,7 +127,7 @@ describe('runPaymentReminderScan', () => {
     const n = await app.runPaymentReminderScan(NOW); // off -> short-circuits to 0
     expect(n).toBe(0);
     expect(db.getCollection(c.id).payment_reminded_at).toBeFalsy();
-    db.markPaymentReminded(c.id); // clean up so it can't pollute later scans
+    db.markPaymentReminderSent(c.id); // clean up so it can't pollute later scans
   });
 
   it('skips a PAID order (no email, no DM to its number, not marked)', async () => {
@@ -145,5 +145,30 @@ describe('runPaymentReminderScan', () => {
     const n = await app.runPaymentReminderScan(nightNow);
     expect(n).toBe(0);
     expect(dmCalls).toHaveLength(0);
+  });
+
+  it('MULTIPLE milestones: one reminder per scan, then stops (until paid)', async () => {
+    // Two milestones; NOW is past both, so both are due — but the scan sends ONE
+    // per pass and advances the stage, so the buyer gets one nudge per scan.
+    settings.set('wa', 'trigger.payment_reminder', {
+      enabled: true,
+      timing: { delays: [48, 120], window: [9, 21] },
+    });
+    const c = unpaidOrder('bmulti@example.com', '0521666666');
+    const buyerMails = () => sent.filter((m) => m.to === 'bmulti@example.com');
+
+    await app.runPaymentReminderScan(NOW);
+    expect(buyerMails()).toHaveLength(1); // milestone 1
+    expect(db.getCollection(c.id).payment_reminders_sent).toBe(1);
+
+    sent.length = 0;
+    await app.runPaymentReminderScan(NOW);
+    expect(buyerMails()).toHaveLength(1); // milestone 2
+    expect(db.getCollection(c.id).payment_reminders_sent).toBe(2);
+
+    sent.length = 0;
+    await app.runPaymentReminderScan(NOW);
+    expect(buyerMails()).toHaveLength(0); // no more milestones — done
+    expect(db.getCollection(c.id).payment_reminders_sent).toBe(2);
   });
 });

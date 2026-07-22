@@ -38,7 +38,7 @@ describe('db.collectionsDueForPaymentReminder', () => {
   it('an unpaid order becomes due only after the delay elapses', () => {
     const c = orderCollection();
     const now = Date.now();
-    const idsAt = (t) => db.collectionsDueForPaymentReminder(t, 24).map((x) => x.id);
+    const idsAt = (t) => db.collectionsDueForPaymentReminder(t, [24]).map((x) => x.id);
     expect(idsAt(now)).not.toContain(c.id); // just created — not yet due
     expect(idsAt(now + 25 * HOUR)).toContain(c.id); // 25h later — due
   });
@@ -50,9 +50,9 @@ describe('db.collectionsDueForPaymentReminder', () => {
     const cancelled = orderCollection();
     db.cancelCollection(cancelled.id);
     const reminded = orderCollection();
-    db.markPaymentReminded(reminded.id);
+    db.markPaymentReminderSent(reminded.id);
     const noContact = orderCollection({}); // no email, no phone
-    const due = db.collectionsDueForPaymentReminder(later, 24).map((x) => x.id);
+    const due = db.collectionsDueForPaymentReminder(later, [24]).map((x) => x.id);
     expect(due).not.toContain(paid.id);
     expect(due).not.toContain(cancelled.id);
     expect(due).not.toContain(reminded.id);
@@ -61,17 +61,36 @@ describe('db.collectionsDueForPaymentReminder', () => {
 
   it('a phone-only order (no email) is still due — WhatsApp can reach it', () => {
     const c = orderCollection({ phone: '0521234567' });
-    const due = db.collectionsDueForPaymentReminder(Date.now() + 25 * HOUR, 24).map((x) => x.id);
+    const due = db.collectionsDueForPaymentReminder(Date.now() + 25 * HOUR, [24]).map((x) => x.id);
     expect(due).toContain(c.id);
   });
 
-  it('markPaymentReminded stamps it and drops it from the due set (idempotent)', () => {
+  it('markPaymentReminderSent advances the stage + drops it from a single-delay due set', () => {
     const c = orderCollection();
     const later = Date.now() + 25 * HOUR;
-    expect(db.collectionsDueForPaymentReminder(later, 24).map((x) => x.id)).toContain(c.id);
-    expect(db.markPaymentReminded(c.id)).toBe(true);
-    expect(db.getCollection(c.id).payment_reminded_at).toBeTruthy();
-    expect(db.collectionsDueForPaymentReminder(later, 24).map((x) => x.id)).not.toContain(c.id);
+    expect(db.collectionsDueForPaymentReminder(later, [24]).map((x) => x.id)).toContain(c.id);
+    expect(db.markPaymentReminderSent(c.id)).toBe(true);
+    expect(db.getCollection(c.id).payment_reminders_sent).toBe(1);
+    expect(db.getCollection(c.id).payment_reminded_at).toBeTruthy(); // legacy stamp kept
+    expect(db.collectionsDueForPaymentReminder(later, [24]).map((x) => x.id)).not.toContain(c.id);
+  });
+
+  it('MULTIPLE delays: due again at each elapsed milestone, once per milestone', () => {
+    const c = orderCollection();
+    const delays = [48, 120, 168]; // 2 days, 5 days, 1 week
+    const at = (h) => Date.now() + h * HOUR;
+    const dueAt = (h) => db.collectionsDueForPaymentReminder(at(h), delays).map((x) => x.id);
+
+    expect(dueAt(24)).not.toContain(c.id); // before the first milestone
+    expect(dueAt(50)).toContain(c.id); // past 48h -> stage 1 due
+    db.markPaymentReminderSent(c.id);
+    expect(dueAt(50)).not.toContain(c.id); // stage 1 already sent
+    expect(dueAt(130)).toContain(c.id); // past 120h -> stage 2 due
+    db.markPaymentReminderSent(c.id);
+    expect(dueAt(130)).not.toContain(c.id);
+    expect(dueAt(200)).toContain(c.id); // past 168h -> stage 3 due
+    db.markPaymentReminderSent(c.id);
+    expect(dueAt(500)).not.toContain(c.id); // no more milestones -> done
   });
 });
 
@@ -80,18 +99,19 @@ describe('payment_reminder settings', () => {
     expect(settings.get('email', 'payment_reminder').subject).toContain('תשלום');
     const t = settings.get('wa', 'trigger.payment_reminder');
     expect(t.enabled).toBe(false);
-    expect(t.timing).toEqual({ delay_hours: 24, window: [9, 21] });
+    expect(t.timing).toEqual({ delays: [48, 120, 168], window: [9, 21] });
     expect(settings.get('email', 'cta_labels').pay).toBeTruthy();
   });
 
-  it('validates the delay timing shape', () => {
+  it('validates the delays timing shape', () => {
     const v = (timing) => settings.validateValue('wa', 'trigger.payment_reminder', { timing });
-    expect(v({ delay_hours: 12, window: [8, 20] })).toBeNull();
-    expect(v({ delay_hours: 12 })).toBeNull(); // partial merges over the default window
-    expect(v({ delay_hours: 0, window: [9, 21] })).toMatch(/delay_hours/);
-    expect(v({ delay_hours: 1.5, window: [9, 21] })).toMatch(/delay_hours/);
-    expect(v({ delay_hours: 12, window: [21, 9] })).toMatch(/before end/);
-    expect(v({ delay_hours: 12, window: [9, 25] })).toMatch(/0\.\.23/);
+    expect(v({ delays: [24, 72], window: [8, 20] })).toBeNull();
+    expect(v({ delays: [12] })).toBeNull(); // partial merges over the default window
+    expect(v({ delays: [], window: [9, 21] })).toMatch(/delays/);
+    expect(v({ delays: [0, 24], window: [9, 21] })).toMatch(/delays/);
+    expect(v({ delays: [1.5], window: [9, 21] })).toMatch(/delays/);
+    expect(v({ delays: [24], window: [21, 9] })).toMatch(/before end/);
+    expect(v({ delays: [24], window: [9, 25] })).toMatch(/0\.\.23/);
   });
 });
 

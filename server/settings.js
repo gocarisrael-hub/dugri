@@ -304,8 +304,10 @@ const REGISTRY = {
         timing: { idle_hours: 24, max: 3, window: [9, 21] },
       },
     },
-    // Payment reminder — a DM to the buyer when their order has sat unpaid for
-    // `delay_hours` (within the daytime `window`). This trigger's `enabled` is the
+    // Payment reminder — a DM to the buyer when their order has sat unpaid. Fires
+    // at EACH milestone in `delays` (hours after the order was created), one nudge
+    // per milestone, until paid — e.g. [48,120,168] = after 2 days, 5 days, then a
+    // week. Only inside the daytime `window`. This trigger's `enabled` is the
     // MASTER switch for the whole payment reminder (email + WhatsApp), and its
     // timing is the shared schedule. Sent to the buyer directly (not the group).
     // {link} is the buyer's own pay link. Defaults OFF.
@@ -315,7 +317,7 @@ const REGISTRY = {
       default: {
         enabled: false,
         text: 'היי! ההזמנה שלך למשחק על {honoree} ממתינה לתשלום. להשלמה:\n{link}',
-        timing: { delay_hours: 24, window: [9, 21] },
+        timing: { delays: [48, 120, 168], window: [9, 21] },
       },
     },
   },
@@ -467,11 +469,14 @@ function validateTiming(section, key, timing) {
     if (!isIntInRange(t.hour, 0, 23)) return 'timing.hour must be an integer 0..23';
     return null;
   }
-  // delay shape (delay_hours / window) — payment_reminder: fire delay_hours after
-  // an unpaid order, only inside the daytime window.
-  if ('delay_hours' in defTiming) {
-    if (!(Number.isInteger(t.delay_hours) && t.delay_hours >= 1)) {
-      return 'timing.delay_hours must be an integer >= 1';
+  // delays shape (delays[] / window) — payment_reminder: fire at EACH milestone in
+  // `delays` (hours after an unpaid order), only inside the daytime window.
+  if ('delays' in defTiming) {
+    if (!Array.isArray(t.delays) || t.delays.length === 0) {
+      return 'timing.delays must be a non-empty array';
+    }
+    if (!t.delays.every((d) => Number.isInteger(d) && d >= 1)) {
+      return 'timing.delays must be integers >= 1';
     }
     if (!Array.isArray(t.window) || t.window.length !== 2) {
       return 'timing.window must be a 2-element array';
