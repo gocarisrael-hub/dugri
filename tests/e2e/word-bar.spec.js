@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 // (POST /api/collections, POST /api/collections/:id/words) so the test doesn't
 // depend on options.html (which is changing under a separate PR).
 
-const WORD_GOAL = 100; // stage-1 target (the minimum)
+const WORD_GOAL = 70; // stage-1 target (the minimum)
 const MAX_WORDS = 416; // stage-2 target (the cap)
 
 // Create a collection and return { id, k } (owner token). Optionally seed it
@@ -30,7 +30,7 @@ async function barWidth(locator) {
   return parseFloat(await locator.evaluate((el) => el.style.width));
 }
 
-test('stage 1 (<100 words): bar is scaled to the 100-word minimum', async ({ page, request }) => {
+test('stage 1 (<70 words): bar is scaled to the 70-word minimum', async ({ page, request }) => {
   const { id, k } = await makeCollection(request, 'שירה', 40);
   await openCollect(page, id, k);
 
@@ -38,17 +38,17 @@ test('stage 1 (<100 words): bar is scaled to the 100-word minimum', async ({ pag
   // Stage-1 bar shown, stage-2 hidden.
   await expect(page.locator('#stage1')).toBeVisible();
   await expect(page.locator('#stage2')).toBeHidden();
-  // Pill frames the 100-word minimum, not the max.
+  // Pill frames the 70-word minimum, not the max.
   await expect(page.locator('#countMax')).toContainText('/ ' + WORD_GOAL);
   await expect(page.locator('#countMax')).toContainText('מינימום');
   await expect(page.locator('.count-pill')).not.toContainText(String(MAX_WORDS));
-  // 40 / 100 ≈ 40% on the stage-1 bar.
+  // 40 / 70 ≈ 57% on the stage-1 bar.
   const w = await barWidth(page.locator('#barFill1'));
-  expect(w).toBeGreaterThan(38);
-  expect(w).toBeLessThan(42);
+  expect(w).toBeGreaterThan(55);
+  expect(w).toBeLessThan(59);
 });
 
-test('crossing to exactly 100 words: stage-2 bar replaces stage-1, ~¼ full', async ({
+test('crossing to exactly 70 words: stage-2 bar replaces stage-1, ~⅙ full', async ({
   page,
   request,
 }) => {
@@ -59,20 +59,20 @@ test('crossing to exactly 100 words: stage-2 bar replaces stage-1, ~¼ full', as
   // The swap happened: stage-1 gone, the new stage-2 bar is shown.
   await expect(page.locator('#stage1')).toBeHidden();
   await expect(page.locator('#stage2')).toBeVisible();
-  // Label is render-driven and true across the whole 100→416 range.
+  // Label is render-driven and true across the whole 70→416 range.
   await expect(page.locator('#stage2Label')).toContainText('ממשיכים למקסימום');
   await expect(page.locator('#stage2Label')).toContainText(String(MAX_WORDS));
   // Pill now frames the max.
   await expect(page.locator('#countMax')).toContainText('/ ' + MAX_WORDS);
   await expect(page.locator('#countMax')).not.toContainText('מינימום');
-  // 100 / 416 ≈ 24% — the new bar starts already ~¼ filled.
+  // 70 / 416 ≈ 17% — the new bar starts already ~⅙ filled.
   const w = await barWidth(page.locator('#barFill2'));
-  expect(w).toBeGreaterThan(20);
-  expect(w).toBeLessThan(30);
+  expect(w).toBeGreaterThan(14);
+  expect(w).toBeLessThan(20);
 });
 
 test('bar fill is the warm-sand accent, not black', async ({ page, request }) => {
-  // Stage 1 (<100): #barFill1 is visible. Stage 2 (>=100): #barFill2. Check both.
+  // Stage 1 (<70): #barFill1 is visible. Stage 2 (>=70): #barFill2. Check both.
   const stage1 = await makeCollection(request, 'לירי', 40);
   await openCollect(page, stage1.id, stage1.k);
   await expect(page.locator('#stage1')).toBeVisible();

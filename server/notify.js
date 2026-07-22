@@ -465,10 +465,10 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
   const htmlLines = lines.slice();
   if (link) {
     lines.push('');
-    lines.push('נשאר רק שלב אחד: הוסיפו את 100+ המילים על בעל/ת השמחה כאן:');
+    lines.push('נשאר רק שלב אחד: הוסיפו את 70+ המילים על בעל/ת השמחה כאן:');
     lines.push(link);
     htmlLines.push('');
-    htmlLines.push('נשאר רק שלב אחד: הוסיפו את 100+ המילים על בעל/ת השמחה.');
+    htmlLines.push('נשאר רק שלב אחד: הוסיפו את 70+ המילים על בעל/ת השמחה.');
   }
   lines.push('');
   lines.push(ft.line1);
