@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Top up a customer's personal word list to a full deck.
 
-An order's personal words (usually 100+) are combined with the theme's own
+An order's personal words (usually 70+) are combined with the theme's own
 event word pool and the shared generic pool so the printed deck is always full
 (>= TARGET words). Every personal word is ALWAYS kept — the seed pools only fill
 the remainder. If the personal list alone already meets the target, no filler is

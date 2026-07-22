@@ -131,7 +131,7 @@
         transition: width 0.4s ease;
       }
       /* Stage 2 bar: a fresh, distinct track that replaces the stage-1 bar once
-         the 100-word minimum is passed. Taller with a soft accent tint so it
+         the 70-word minimum is passed. Taller with a soft accent tint so it
          reads as a new milestone, not the same bar continuing. */
       .stage2-label {
         font-size: 13px;
@@ -1023,7 +1023,7 @@
           <span class="sec-h" data-edit="collect-words-heading">המילים שכבר נאספו</span>
           <span class="count-pill"><b id="count">0</b><span id="countMax"> מילים</span></span>
         </div>
-        <!-- Two-stage progress. Stage 1 measures toward the 100-word minimum;
+        <!-- Two-stage progress. Stage 1 measures toward the 70-word minimum;
              once reached it is replaced by Stage 2, a new bar scaled to the max
              (so it starts ~¼ full) that grows toward MAX_WORDS. -->
         <div id="stage1">
@@ -1033,7 +1033,7 @@
           <div class="stage2-label" id="stage2Label"></div>
           <div class="bar bar-stage2"><i id="barFill2"></i></div>
         </div>
-        <small class="muted" id="countHint">היעד: לפחות 100 מילים</small>
+        <small class="muted" id="countHint">היעד: לפחות 70 מילים</small>
         <div class="words" id="wordsWrap" style="margin-top: 12px">
           <span class="muted" id="emptyWords">עוד אין מילים - היו הראשונים!</span>
         </div>
@@ -1054,8 +1054,8 @@
         <details class="howto">
           <summary data-edit="collect-howto-summary">איך אוספים מילים טובות 👇</summary>
           <p class="muted" style="margin: 10px 0" data-edit="collect-howto-body">
-            זה החלק הכי כיף - וגם הכי קל כשיש כיוון. עברו על הקטגוריות, כתבו כל מה שעולה. מינימום
-            100 מילים, וכמה שיותר יותר טוב.
+            זה החלק הכי כיף - וגם הכי קל כשיש כיוון. עברו על הקטגוריות, כתבו כל מה שעולה. מינימום 70
+            מילים, וכמה שיותר יותר טוב.
           </p>
           <div class="cats">
             <div class="cat">
@@ -1386,7 +1386,7 @@
       // The real product word cap (owner's decision). Single source of truth for
       // the counter pill, the hint copy, and the progress-bar math.
       const MAX_WORDS = 416;
-      const WORD_GOAL = 100; // the "meaningful minimum" milestone
+      const WORD_GOAL = 70; // the "meaningful minimum" milestone
 
       // small transient confirmation pop-up ("word added")
       let toastTimer = null;
@@ -1501,7 +1501,7 @@
         if (isOwner) updateShareInvite();
         const n = state.count;
         const atMax = n >= MAX_WORDS;
-        // Stage 2 kicks in once the 100-word minimum is met: the pill/hint reframe
+        // Stage 2 kicks in once the 70-word minimum is met: the pill/hint reframe
         // around the max and the bar swaps to one scaled to MAX_WORDS.
         const stage2 = n >= WORD_GOAL;
         // Never display a fraction over the cap: show the count capped at the max.
@@ -1530,9 +1530,9 @@
                 ' (אפשר עד ' +
                 MAX_WORDS +
                 ')';
-        // Two-stage bar. Stage 1 (n < WORD_GOAL) fills toward the 100-word
-        // minimum. At 100 it's replaced by Stage 2 — a new bar scaled to
-        // MAX_WORDS, so 100/416 ≈ ¼ already filled — that grows toward the cap.
+        // Two-stage bar. Stage 1 (n < WORD_GOAL) fills toward the 70-word
+        // minimum. At 70 it's replaced by Stage 2 — a new bar scaled to
+        // MAX_WORDS, so 70/416 ≈ ⅙ already filled — that grows toward the cap.
         $('#stage1').classList.toggle('hidden', stage2);
         $('#stage2').classList.toggle('hidden', !stage2);
         $('#barFill1').style.width = Math.min(100, (n / WORD_GOAL) * 100) + '%';
