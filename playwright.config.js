@@ -9,7 +9,15 @@ const baseURL = `http://localhost:${PORT}`;
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 30_000,
-  retries: 0,
+  // Retry a failed test twice ON CI ONLY. The whole suite hits ONE Node server on
+  // one port, so at full worker parallelism a busy runner occasionally starves a
+  // request and a test hits the 30s timeout — a DIFFERENT test each run, the
+  // signature of load contention rather than a real defect (these all pass in
+  // isolation). Retries run after the initial batch drains, when contention has
+  // eased, so a load-flake goes green while a genuine failure still fails all
+  // three attempts (nothing is masked). Locally retries stay 0 for fast feedback.
+  // `trace: 'on-first-retry'` (below) captures a trace when a retry happens.
+  retries: process.env.CI ? 2 : 0,
   reporter: 'list',
   // Builds .e2e-tpl-root (a throwaway copy of the template config + a couple of
   // template dirs) so the admin-templates rename/replace tests never touch the
