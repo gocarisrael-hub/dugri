@@ -250,7 +250,7 @@ const REGISTRY = {
       tokens: ['honoree', 'link'],
       default: {
         enabled: true,
-        text: 'שלום! פתחנו קבוצה לאיסוף מילים על {honoree} 🎉 הוסיפו כאן מילים: {link}',
+        text: 'שלום! פתחנו קבוצה לאיסוף מילים על {honoree} 🎉 הוסיפו כאן מילים:\n{link}',
       },
     },
     'trigger.member_joined': {
@@ -258,7 +258,7 @@ const REGISTRY = {
       tokens: ['honoree', 'link'],
       default: {
         enabled: true,
-        text: 'ברוכים הבאים! עוזרים לנו להכין משחק על {honoree}. הוסיפו מילים כאן: {link}',
+        text: 'ברוכים הבאים! עוזרים לנו להכין משחק על {honoree}. הוסיפו מילים כאן:\n{link}',
       },
     },
     'trigger.word_added': {
@@ -266,7 +266,7 @@ const REGISTRY = {
       tokens: ['honoree', 'count', 'link'],
       default: {
         enabled: false,
-        text: 'מעולה! כבר יש {count} מילים על {honoree}. אפשר להמשיך להוסיף: {link}',
+        text: 'מעולה! כבר יש {count} מילים על {honoree}. אפשר להמשיך להוסיף:\n{link}',
       },
     },
     'trigger.list_closed': {
@@ -282,7 +282,7 @@ const REGISTRY = {
       tokens: ['honoree', 'link'],
       default: {
         enabled: true,
-        text: 'בוקר טוב! יש עוד זמן להוסיף מילים על {honoree}: {link}',
+        text: 'בוקר טוב! יש עוד זמן להוסיף מילים על {honoree}:\n{link}',
         timing: { hour: 7 },
       },
     },
@@ -291,7 +291,7 @@ const REGISTRY = {
       tokens: ['honoree', 'link'],
       default: {
         enabled: true,
-        text: 'ערב טוב! אל תשכחו להוסיף עוד מילים על {honoree}: {link}',
+        text: 'ערב טוב! אל תשכחו להוסיף עוד מילים על {honoree}:\n{link}',
         timing: { hour: 19 },
       },
     },
@@ -300,7 +300,7 @@ const REGISTRY = {
       tokens: ['honoree', 'link'],
       default: {
         enabled: true,
-        text: 'עדיין אפשר להוסיף מילים על {honoree} 🙂 {link}',
+        text: 'עדיין אפשר להוסיף מילים על {honoree} 🙂\n{link}',
         timing: { idle_hours: 24, max: 3, window: [9, 21] },
       },
     },
@@ -314,7 +314,7 @@ const REGISTRY = {
       tokens: ['honoree', 'link'],
       default: {
         enabled: false,
-        text: 'היי! ההזמנה שלך למשחק על {honoree} ממתינה לתשלום. להשלמה: {link}',
+        text: 'היי! ההזמנה שלך למשחק על {honoree} ממתינה לתשלום. להשלמה:\n{link}',
         timing: { delay_hours: 24, window: [9, 21] },
       },
     },

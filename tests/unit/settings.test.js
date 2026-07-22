@@ -61,7 +61,7 @@ describe('get / set / reset', () => {
     const eff = s.get('wa', 'trigger.daily_morning');
     expect(eff.enabled).toBe(false);
     // text + timing survive from the default.
-    expect(eff.text).toBe('בוקר טוב! יש עוד זמן להוסיף מילים על {honoree}: {link}');
+    expect(eff.text).toBe('בוקר טוב! יש עוד זמן להוסיף מילים על {honoree}:\n{link}');
     expect(eff.timing).toEqual({ hour: 7 });
   });
 
