@@ -1,16 +1,21 @@
 import { test, expect } from '@playwright/test';
 import { ALL_ON, stubFeatures } from './feature-flags.js';
 
-// The step-3 name preview draws an INSTANT in-browser card the moment a valid name
-// is entered — the recolored product artwork with the typed name overlaid — and
-// swaps the EXACT server PNG in on top when POST /api/preview eventually returns.
-// This proves the four guarantees of that design:
-//   (a) the card + name appear (and Next enables) IMMEDIATELY, even when the server
-//       render is slow or failing — never a wait on the network;
-//   (b) the exact PNG swaps in once the server responds;
-//   (c) a failing / 429 server render leaves the instant card intact, no broken UI;
-//   (d) a "refining…" indicator shows while the server render is in flight, and
-//       clears once it settles.
+// Owner decision: the step-3 name preview no longer reveals the INSTANT in-browser
+// approximation (the recoloured product artwork with the typed name overlaid in a
+// plain display font — it read as an unfinished black name slapped on the card).
+// Instead the LOADING card holds until the EXACT server render (POST /api/preview)
+// arrives, then that is revealed. This proves the guarantees of that decision:
+//   (a) while the server render is in flight the LOADING card shows — never the
+//       instant approximation, and never the honoree name on the card;
+//   (b) the exact PNG swaps in once the server responds, and the create gate opens
+//       THEN (not off an instant draw);
+//   (c) a failing / 429 server render is NOT swallowed by an instant card anymore —
+//       after the auto-retry it settles on the graceful fallback (name + retry) and
+//       opens the gate, so the buyer is never stuck on the spinner forever;
+//   (d) the instant approximation layer stays hidden throughout, even after the
+//       exact PNG lands.
+// The instant-draw code is retained but gated off (REVEAL_INSTANT_PREVIEW = false).
 
 test.beforeEach(async ({ page }) => {
   await stubFeatures(page, ALL_ON);
@@ -38,41 +43,33 @@ async function toNameStep(page) {
   await expect(page.getByTestId('step-3')).toBeVisible();
 }
 
-const cardInstantName = (page) =>
-  page.locator('#namePreviewImgs [data-np-instant="card"] .npi-name');
-
-test.describe('(a) instant card appears without waiting on /api/preview', () => {
-  test('a slow server render does not delay the card, the name, or Next', async ({ page }) => {
-    // The server render hangs (never fulfilled) — the instant draw must carry the UI.
+test.describe('(a) the loading card holds while the server render is pending', () => {
+  test('a slow server render shows the loading card, NOT the instant approximation or the name', async ({
+    page,
+  }) => {
+    // The server render hangs (never fulfilled): the loading card must carry the UI,
+    // and the honoree name must NOT appear on the card in the interim.
     await page.route('**/api/preview', async () => {
       /* never resolves */
     });
     await toNameStep(page);
     await page.getByTestId('honoree-input').fill('Shira');
 
-    // instant card + overlaid name appear fast (well within the default 5s budget)
-    await expect(page.getByTestId('name-preview-instant-card')).toBeVisible();
-    await expect(cardInstantName(page)).toHaveText('Shira');
-    // and the create gate opens off the instant draw, with no server response
-    await expect(page.getByTestId('next-btn')).toBeEnabled();
-  });
-
-  test('the instant card carries the RIGHT artwork (an inlined, recolored SVG)', async ({
-    page,
-  }) => {
-    await page.route('**/api/preview', async () => {});
-    await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
-
-    // the instant layer inlines the design's product SVG (cropped to one card),
-    // recoloured via the live --cN palette — not a raster or a blank placeholder.
-    const art = page.locator('#namePreviewImgs [data-np-instant="card"] .npi-art svg');
-    await expect(art).toBeVisible();
+    // the card-shaped loading indicator (spinner skeleton) is on screen…
+    await expect(page.getByTestId('name-preview-loading')).toBeVisible();
+    await expect(page.getByTestId('name-preview-loading-card')).toBeVisible();
+    // …the instant approximation is NEVER revealed…
+    await expect(page.getByTestId('name-preview-instant-card')).toBeHidden();
+    // …and the honoree name is nowhere on the card (no overlay, no fallback name).
+    await expect(page.locator('#namePreviewImgs .npi-name').first()).toHaveText('');
+    await expect(page.locator('#npfName')).not.toHaveText('Shira');
+    // the create gate stays CLOSED until the exact render (or the backstop) lands.
+    await expect(page.getByTestId('next-btn')).toBeDisabled();
   });
 });
 
-test.describe('(b) the exact server PNG swaps in when it returns', () => {
-  test('the instant card is replaced by the server render', async ({ page }) => {
+test.describe('(b) the exact server PNG reveals and opens the gate', () => {
+  test('loading card first, then the server render swaps in and enables Next', async ({ page }) => {
     let release;
     const pending = new Promise((r) => (release = r));
     await page.route('**/api/preview', async (route) => {
@@ -82,21 +79,25 @@ test.describe('(b) the exact server PNG swaps in when it returns', () => {
     await toNameStep(page);
     await page.getByTestId('honoree-input').fill('Shira');
 
-    // instant first…
-    await expect(page.getByTestId('name-preview-instant-card')).toBeVisible();
+    // loading first — the server render is held, so the gate is still closed…
+    await expect(page.getByTestId('name-preview-loading')).toBeVisible();
     await expect(page.getByTestId('name-preview-card')).toBeHidden();
+    await expect(page.getByTestId('next-btn')).toBeDisabled();
 
-    // …then the exact PNG swaps in and the instant layer hides.
+    // …then the exact PNG swaps in, the loading card clears, and the gate opens.
     release();
     await expect(page.getByTestId('name-preview-card')).toHaveAttribute('src', /^data:image\/png/);
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
-    await expect(page.getByTestId('name-preview-instant-card')).toBeHidden();
+    await expect(page.getByTestId('name-preview-loading')).toBeHidden();
+    await expect(page.getByTestId('next-btn')).toBeEnabled();
   });
 });
 
-test.describe('(c) a failing / 429 server render leaves the instant card intact', () => {
+test.describe('(c) a failing / 429 server render settles on the graceful fallback', () => {
   for (const status of [500, 429]) {
-    test(`a ${status} response keeps the instant card and shows no error UI`, async ({ page }) => {
+    test(`a ${status} response ends on the fallback + retry and opens the gate (never stuck)`, async ({
+      page,
+    }) => {
       await page.route('**/api/preview', (route) =>
         route.fulfill({
           status,
@@ -107,70 +108,43 @@ test.describe('(c) a failing / 429 server render leaves the instant card intact'
       await toNameStep(page);
       await page.getByTestId('honoree-input').fill('Shira');
 
-      await expect(page.getByTestId('name-preview-instant-card')).toBeVisible();
-      await expect(cardInstantName(page)).toHaveText('Shira');
-      // no fallback, no stuck loader, and the refining bar clears
-      await expect(page.getByTestId('name-preview-fallback')).toBeHidden();
-      await expect(page.getByTestId('name-preview-loading')).toBeHidden();
-      await expect(page.getByTestId('name-preview-refining')).toBeHidden({ timeout: 5000 });
-      await expect(page.getByTestId('next-btn')).toBeEnabled();
+      // after the auto-retry both attempts fail → the graceful fallback (name in a
+      // script font + manual retry) is the terminal state, and the gate opens.
+      await expect(page.getByTestId('name-preview-fallback')).toBeVisible({ timeout: 8000 });
+      await expect(page.getByTestId('name-preview-retry')).toBeVisible();
+      await expect(page.locator('#npfName')).toHaveText('Shira');
+      await expect(page.getByTestId('next-btn')).toBeEnabled({ timeout: 8000 });
+      // the instant approximation is never revealed at any point.
+      await expect(page.getByTestId('name-preview-instant-card')).toBeHidden();
     });
   }
 });
 
-test.describe('(d) the refining indicator', () => {
-  test('shows while the server render is in flight and clears after it lands', async ({ page }) => {
-    let release;
-    const pending = new Promise((r) => (release = r));
-    await page.route('**/api/preview', async (route) => {
-      await pending;
-      await route.fulfill({ status: 200, contentType: 'application/json', body: previewBody });
-    });
+test.describe('(d) the instant approximation layer stays hidden even after the render lands', () => {
+  test('the exact PNG is authoritative; the instant card never shows', async ({ page }) => {
+    await page.route('**/api/preview', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: previewBody })
+    );
     await toNameStep(page);
     await page.getByTestId('honoree-input').fill('Shira');
 
-    // instant card up, server render pending → the refining indicator is visible
-    await expect(page.getByTestId('name-preview-instant-card')).toBeVisible();
-    await expect(page.getByTestId('name-preview-refining')).toBeVisible();
-
-    // server render lands → the indicator clears
-    release();
     await expect(page.getByTestId('name-preview-card')).toHaveAttribute('src', /^data:image\/png/);
-    await expect(page.getByTestId('name-preview-refining')).toBeHidden();
-  });
-
-  test('shows during the INITIAL (uncached) instant draw too — no blank box with no affordance', async ({
-    page,
-  }) => {
-    // Delay the product-SVG fetch so the instant draw itself is slow on first entry.
-    // The refining indicator must show during that draw (not only during the server
-    // fetch), so the buyer never faces a blank box with no loading affordance.
-    await page.route('**/assets/designs/**/front.svg', async (route) => {
-      await new Promise((r) => setTimeout(r, 1200));
-      await route.continue();
-    });
-    await page.route('**/api/preview', async () => {}); // hold the server too
-    await page.goto('/options.html?step=3');
-    await expect(page.getByTestId('step-3')).toBeVisible();
-    await page.getByTestId('honoree-input').fill('Shira');
-
-    // while the instant draw is still fetching its artwork, the affordance is up
-    await expect(page.getByTestId('name-preview-refining')).toBeVisible();
+    await expect(page.getByTestId('name-preview-card')).toBeVisible();
+    // the instant layer was never revealed, and its name overlay stays empty.
+    await expect(page.getByTestId('name-preview-instant-card')).toBeHidden();
+    await expect(page.locator('#namePreviewImgs [data-np-instant="card"] .npi-name')).toHaveText(
+      ''
+    );
   });
 });
 
-// ---- reconciliation between the non-debounced instant draw and the debounced,
-// cached server render (the core of the code-review fixes). One monotonic
-// previewSeq tags every name/param change; both draws honour it. ----
-test.describe('instant/server reconciliation', () => {
-  test('(#1) the gate re-closes on a name edit — never inherits the previous name state', async ({
-    page,
-  }) => {
-    // Force the INSTANT draw to always fail (block the product SVG) so only the
-    // SERVER render can open the gate. Name A's render succeeds (gate opens); after
-    // editing to B, B's render hangs → the gate MUST re-close (Next disabled), not
-    // stay open from A's now-stale previewShown latch.
-    await page.route('**/assets/designs/**/front.svg', (route) => route.abort());
+// ---- reconciliation: one monotonic previewSeq tags every name/param change; the
+// (debounced) server render honours it, so a superseded in-flight render can never
+// swap its stale card in, and an edit re-gates until the NEW render lands. ----
+test.describe('server-render reconciliation', () => {
+  test('(#1) the gate re-closes on a name edit until the new render lands', async ({ page }) => {
+    // Name A's render succeeds (gate opens); after editing to B, B's render hangs →
+    // the gate MUST re-close (Next disabled), not stay open on A's stale latch.
     let calls = 0;
     await page.route('**/api/preview', async (route) => {
       calls += 1;
@@ -184,18 +158,18 @@ test.describe('instant/server reconciliation', () => {
     await expect(page.getByTestId('step-3')).toBeVisible();
     const next = page.getByTestId('next-btn');
 
-    // name A: instant fails, server succeeds → gate opens
+    // name A: server render lands → gate opens
     await page.fill('#honoreeInput', 'David');
     await expect(next).toBeEnabled({ timeout: 6000 });
 
-    // edit to B: instant fails again, B's server hangs → gate must RE-CLOSE
+    // edit to B: B's render hangs → gate must RE-CLOSE and stay closed
     await page.fill('#honoreeInput', 'Sarah');
     await expect(next).toBeDisabled();
     await page.waitForTimeout(700);
     await expect(next).toBeDisabled();
   });
 
-  test('(#2) a superseded server render never overwrites the newer instant/exact card', async ({
+  test('(#2) a superseded server render never overwrites the newer exact card', async ({
     page,
   }) => {
     // Distinct card PNGs per name; name A's response is DELAYED so it returns AFTER
@@ -234,60 +208,5 @@ test.describe('instant/server reconciliation', () => {
     // wait long enough for A's DELAYED response to arrive and be (correctly) ignored
     await page.waitForTimeout(1500);
     await expect(page.getByTestId('name-preview-card')).toHaveAttribute('src', CARD_B);
-  });
-
-  test('(#3) a slow instant draw does not clobber an exact PNG that already swapped in', async ({
-    page,
-  }) => {
-    // Delay the product-SVG fetch so the instant draw resolves AFTER the (fast)
-    // server render has already swapped the exact PNG in. The late instant draw must
-    // NOT re-hide the exact PNG (serverShown guard).
-    await page.route('**/assets/designs/**/front.svg', async (route) => {
-      await new Promise((r) => setTimeout(r, 1500));
-      await route.continue();
-    });
-    await page.route('**/api/preview', (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: previewBody })
-    );
-    await page.goto('/options.html?step=3');
-    await expect(page.getByTestId('step-3')).toBeVisible();
-    await page.fill('#honoreeInput', 'Shira');
-
-    // the server render swaps in fast, before the delayed SVG resolves
-    await expect(page.getByTestId('name-preview-card')).toHaveAttribute('src', /^data:image\/png/);
-    await expect(page.getByTestId('name-preview-card')).toBeVisible();
-    await expect(page.getByTestId('name-preview-instant-card')).toBeHidden();
-
-    // wait past the SVG delay → the instant draw resolves but must not re-show
-    await page.waitForTimeout(1800);
-    await expect(page.getByTestId('name-preview-card')).toBeVisible();
-    await expect(page.getByTestId('name-preview-instant-card')).toBeHidden();
-  });
-
-  test('(#4) the instant draw uses the ORIGINAL palette (matches the colour-agnostic server)', async ({
-    page,
-  }) => {
-    // bachelorette's first anchor (site/js/designs.generated.js). applyOriginal sets
-    // the instant layer's --c0 to this verbatim — NOT a colour derived from a picked
-    // slider colour — because the server preview render is colour-agnostic, so both
-    // instant and exact show the same (original) colours and nothing vanishes on swap.
-    const ORIGINAL_C0 = '#1e263b';
-    await page.route('**/api/preview', async () => {}); // hold the server; inspect the instant draw only
-    await page.goto('/options.html?plan=base');
-    await expect(page.getByTestId('step-1')).toBeVisible();
-    await page.getByTestId('design-0').click();
-    await page.getByTestId('next-btn').click(); // -> step 2 (colour)
-    // pick a non-original slider colour
-    await page.getByTestId('color-3').click();
-    await expect(page.getByTestId('color-3')).toHaveAttribute('aria-pressed', 'true');
-    await page.getByTestId('next-btn').click(); // -> step 3 (name)
-    await page.getByTestId('honoree-input').fill('Shira');
-    await expect(page.getByTestId('name-preview-instant-card')).toBeVisible();
-
-    // the instant card is recoloured to the design's ORIGINAL palette, not the pick
-    const c0 = await page
-      .locator('[data-np-instant="card"]')
-      .evaluate((el) => el.style.getPropertyValue('--c0').trim());
-    expect(c0.toLowerCase()).toBe(ORIGINAL_C0);
   });
 });
