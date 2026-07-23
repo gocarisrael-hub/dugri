@@ -2306,6 +2306,41 @@ function mirrorWebhook(req) {
   }
 }
 
+// Should we log a 0-event webhook's shape? Scoped so routine traffic (status
+// receipts, our own from_me echoes, plain text) never spams — but a "member added"
+// is captured whether Whapi delivers it as a GROUP event OR as a system `messages`
+// action. True when the body has a group/participant key, OR carries an inbound
+// (not from_me) NON-text message that parseWebhook dropped (a system/action event).
+function isGroupWebhook(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+  if (Object.keys(body).some((k) => /group|participant/i.test(k))) return true;
+  if (Array.isArray(body.messages)) {
+    return body.messages.some((m) => m && !m.from_me && m.type && m.type !== 'text');
+  }
+  return false;
+}
+
+// Structure-only fingerprint of a webhook body for diagnostics: top-level keys ->
+// (for an array of objects) the keys of the first element, else the value's type.
+// Emits field NAMES only — never message text, phone numbers or names — so an
+// unhandled inbound reveals its shape without leaking any content.
+function webhookShape(body) {
+  if (!body || typeof body !== 'object') return typeof body;
+  const out = {};
+  for (const k of Object.keys(body)) {
+    const v = body[k];
+    if (Array.isArray(v)) {
+      out[k] =
+        v[0] && typeof v[0] === 'object' ? '[{' + Object.keys(v[0]).join(',') + '}]' : 'array';
+    } else if (v && typeof v === 'object') {
+      out[k] = '{' + Object.keys(v).join(',') + '}';
+    } else {
+      out[k] = typeof v;
+    }
+  }
+  return out;
+}
+
 app.post('/api/whatsapp/webhook', async (req, res) => {
   if (!whatsapp.verifyWebhookSecret(req.query && req.query.secret)) {
     return res.status(403).json({ error: 'forbidden' });
@@ -2319,6 +2354,18 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
   const base = paymentBaseUrl();
   try {
     const { events } = whatsapp.parseWebhook(req.body);
+    // Diagnostic: if we recognized NO events but this looks like an unhandled
+    // group/participant inbound (a join can arrive as a `groups`/PATCH event OR as
+    // a system `messages` action, neither of which parseWebhook matches yet), log
+    // the body's STRUCTURE — field names only, never content — so the real shape is
+    // visible and can be parsed. Scoped (isGroupWebhook) so routine status receipts
+    // and our own echoes don't spam the log.
+    if (events.length === 0 && isGroupWebhook(req.body)) {
+      console.warn(
+        '[whatsapp] unhandled group webhook shape:',
+        JSON.stringify(webhookShape(req.body))
+      );
+    }
     for (const ev of events) {
       try {
         await handleWaEvent(ev, base);
@@ -2581,6 +2628,8 @@ module.exports.onOrderPaid = onOrderPaid;
 module.exports.onOrderCreated = onOrderCreated;
 module.exports.runReminderScan = runReminderScan;
 module.exports.runPaymentReminderScan = runPaymentReminderScan;
+module.exports.webhookShape = webhookShape;
+module.exports.isGroupWebhook = isGroupWebhook;
 // Pure WA id/phone normalizers + the createGroup-response reader — exposed for
 // unit tests (no network, no state).
 module.exports.ilPhoneToWaId = ilPhoneToWaId;
