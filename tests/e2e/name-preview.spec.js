@@ -159,54 +159,51 @@ test.describe('name-step live preview + font picker', () => {
 });
 
 test.describe('name-step preview resilience', () => {
-  // When /api/preview fails the UI must never look broken. Because the INSTANT
-  // in-browser card is already on screen, a failed server render is simply IGNORED
-  // — the instant card stays, with no error fallback. The graceful CSS fallback is
-  // reserved for when even the client artwork can't be drawn (see the next test).
-  test('a failing server render keeps the instant card (no error UI)', async ({ page }) => {
-    await page.route('**/api/preview', (route) =>
-      route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
-    );
-    await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
-
-    // the instant card shows with the name overlaid — never a blank / stuck loader
-    await expect(page.getByTestId('name-preview-instant-card')).toBeVisible();
-    await expect(page.locator('#namePreviewImgs .npi-name').first()).toHaveText('Shira');
-    await expect(page.getByTestId('name-preview-loading')).toBeHidden();
-
-    // the exact render failed → no fallback, no retry (the instant card is enough)
-    await expect(page.getByTestId('name-preview-fallback')).toBeHidden();
-    await expect(page.getByTestId('name-preview-refining')).toBeHidden({ timeout: 5000 });
-  });
-
-  test('the graceful CSS fallback shows only when the artwork is ALSO unavailable', async ({
+  // The instant in-browser approximation is no longer revealed (the owner did not
+  // want the typed name shown on the card in a plain font before the real render).
+  // So a failing /api/preview is NOT swallowed by an instant card: after the auto-
+  // retry it settles on the graceful fallback (name in a script font + a manual
+  // retry), which is the intended terminal state — never a blank or stuck area.
+  test('a failing server render settles on the graceful fallback (name + retry)', async ({
     page,
   }) => {
-    // Block the product-SVG fetch so the instant draw cannot render, AND fail the
-    // server render → the neutral CSS fallback (name in a script font) + a manual
-    // retry appear, so the buyer never sees a blank area.
-    await page.route('**/assets/designs/**/front.svg', (route) => route.abort());
     await page.route('**/api/preview', (route) =>
       route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
     );
     await toNameStep(page);
     await page.getByTestId('honoree-input').fill('Shira');
 
-    await expect(page.getByTestId('name-preview-fallback')).toBeVisible({ timeout: 6000 });
+    // the instant approximation is never revealed…
+    await expect(page.getByTestId('name-preview-instant-card')).toBeHidden();
+    // …and after the retry the graceful fallback (name + manual retry) is the
+    // terminal state — never a blank / stuck loader.
+    await expect(page.getByTestId('name-preview-fallback')).toBeVisible({ timeout: 8000 });
     await expect(page.locator('#npfName')).toHaveText('Shira');
-    await expect(page.getByTestId('name-preview-retry')).toBeVisible({ timeout: 6000 });
+    await expect(page.getByTestId('name-preview-retry')).toBeVisible();
   });
 
-  test('while LOADING/retrying the card shows a loading indicator, NOT the honoree name', async ({
+  test('the graceful CSS fallback shows on a terminal server failure', async ({ page }) => {
+    // A server render that keeps failing → the neutral CSS fallback (name in a
+    // script font) + a manual retry appear, so the buyer never sees a blank area.
+    // (With the instant approximation suppressed, this is now the fallback path for
+    // ANY terminal render failure — no longer only when client artwork is missing.)
+    await page.route('**/api/preview', (route) =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
+    );
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+
+    await expect(page.getByTestId('name-preview-fallback')).toBeVisible({ timeout: 8000 });
+    await expect(page.locator('#npfName')).toHaveText('Shira');
+    await expect(page.getByTestId('name-preview-retry')).toBeVisible();
+  });
+
+  test('while LOADING the card shows a loading indicator, NOT the honoree name', async ({
     page,
   }) => {
-    // Reproduce the owner's complaint: block the instant artwork so the client
-    // must wait on the server render, and make /api/preview HANG so the wizard
-    // stays in the loading/retry state. In that state the card must show a
-    // card-shaped loading indicator — never the big handwriting name, which reads
-    // like a finished result while nothing has actually rendered yet.
-    await page.route('**/assets/designs/**/front.svg', (route) => route.abort());
+    // The core of the owner's complaint: while the exact server render is in flight
+    // the card must show a card-shaped loading indicator — never the honoree name,
+    // which reads like a finished result while nothing has actually rendered yet.
     await page.route('**/api/preview', () => {
       /* never fulfilled → the request hangs, holding the loading state open */
     });
@@ -217,9 +214,13 @@ test.describe('name-step preview resilience', () => {
     await expect(page.getByTestId('name-preview-loading')).toBeVisible({ timeout: 6000 });
     await expect(page.getByTestId('name-preview-loading-card')).toBeVisible();
 
-    // ...and the honoree name is NOT presented as a finished card: the name
-    // fallback card (which holds #npfName) stays hidden during loading.
+    // ...the instant approximation is NOT revealed...
+    await expect(page.getByTestId('name-preview-instant-card')).toBeHidden();
+
+    // ...and the honoree name is NOT presented on the card: neither the instant
+    // overlay (kept empty) nor the fallback name (#npfName) shows during loading.
     await expect(page.getByTestId('name-preview-fallback')).toBeHidden();
+    await expect(page.locator('#namePreviewImgs .npi-name').first()).toHaveText('');
     await expect(page.locator('#npfName')).not.toHaveText('Shira');
   });
 

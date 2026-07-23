@@ -9,11 +9,12 @@ test.beforeEach(async ({ page }) => {
   await stubFeatures(page, ALL_ON);
 });
 
-// Two order-wizard rules on the name step (step 4):
-//  1. The create/next button is GATED on the live name-preview — but the preview
-//     now draws an INSTANT in-browser card the moment a valid name is entered, so
-//     the gate opens immediately WITHOUT waiting on the (slow/failable) server
-//     render. A valid name is never stuck behind the network.
+// Two order-wizard rules on the name step (step 3):
+//  1. The create/next button is GATED on the live name-preview. The instant in-
+//     browser approximation is no longer revealed (owner decision), so the gate
+//     opens when the EXACT server render lands (or its graceful fallback settles,
+//     or the 20s backstop fires) — NOT off an instant draw. A valid name is never
+//     permanently stuck behind a slow/failing render.
 //  2. The honoree name must be a SINGLE word in the design's LANGUAGE — an English
 //     design rejects a Hebrew name and a name with a space, a Hebrew design rejects
 //     a Latin name — each with a clear inline error that blocks advancing.
@@ -31,12 +32,13 @@ const previewBody = JSON.stringify({
   word_font_options: [],
 });
 
-test.describe('create-button preview gate (step 4)', () => {
-  test('the INSTANT draw opens the gate immediately — no wait on the server render', async ({
+test.describe('create-button preview gate (step 3)', () => {
+  test('the gate opens when the exact server render lands, not while it is pending', async ({
     page,
   }) => {
-    // Hold the server render indefinitely: the gate must open anyway, driven by the
-    // instant in-browser card. The exact PNG then swaps in only once we release it.
+    // Hold the server render: while it is pending the loading card shows and the
+    // gate stays CLOSED (no instant draw opens it anymore). Releasing the render
+    // swaps the exact PNG in and opens the gate.
     let releasePreview;
     const pending = new Promise((r) => (releasePreview = r));
     await page.route('**/api/preview', async (route) => {
@@ -48,24 +50,26 @@ test.describe('create-button preview gate (step 4)', () => {
     await expect(page.getByTestId('step-3')).toBeVisible();
 
     const next = page.getByTestId('next-btn');
-    // A single valid English name → the instant card draws immediately and opens
-    // the gate, even though the server render is still pending.
+    // A single valid English name → the loading card shows; with the server render
+    // still pending the gate is CLOSED and the instant approximation stays hidden.
     await page.fill('#honoreeInput', 'Shira');
     await expect(page.getByTestId('name-err')).toBeHidden();
-    await expect(page.getByTestId('name-preview-instant-card')).toBeVisible();
-    await expect(next).toBeEnabled();
+    await expect(page.getByTestId('name-preview-loading')).toBeVisible();
+    await expect(page.getByTestId('name-preview-instant-card')).toBeHidden();
+    await expect(next).toBeDisabled();
 
-    // Release the server render → the exact PNG swaps in over the instant card.
+    // Release the server render → the exact PNG swaps in and the gate opens.
     releasePreview();
     await expect(page.getByTestId('name-preview-card')).toHaveAttribute('src', /^data:image\/png/);
     await expect(next).toBeEnabled();
   });
 
-  test('a FAILED server render never blocks the button (instant card carries it)', async ({
+  test('a FAILED server render opens the gate via the graceful fallback (never stuck)', async ({
     page,
   }) => {
-    // The Python render is unavailable → /api/preview always 500s. The instant card
-    // still shows and the gate opens — the failure is invisible, no error UI.
+    // The Python render is unavailable → /api/preview always 500s. After the auto-
+    // retry the graceful fallback (name + manual retry) settles on screen and the
+    // gate opens — the buyer is never permanently stuck on the loading spinner.
     await page.route('**/api/preview', (route) =>
       route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
     );
@@ -73,17 +77,17 @@ test.describe('create-button preview gate (step 4)', () => {
     await expect(page.getByTestId('step-3')).toBeVisible();
 
     await page.fill('#honoreeInput', 'Shira');
-    // the instant card is on screen and the button becomes enabled…
-    await expect(page.getByTestId('name-preview-instant-card')).toBeVisible({ timeout: 5000 });
-    await expect(page.getByTestId('next-btn')).toBeEnabled({ timeout: 5000 });
-    // …and NO error fallback is shown (the instant draw covers the failure).
-    await expect(page.getByTestId('name-preview-fallback')).toBeHidden();
+    // the graceful fallback becomes the terminal state and the gate opens…
+    await expect(page.getByTestId('name-preview-fallback')).toBeVisible({ timeout: 8000 });
+    await expect(page.getByTestId('next-btn')).toBeEnabled({ timeout: 8000 });
+    // …and the instant approximation was never revealed.
+    await expect(page.getByTestId('name-preview-instant-card')).toBeHidden();
   });
 
-  test('editing to a new valid name keeps the gate open via the instant draw', async ({ page }) => {
-    // Hold the 2nd+ server render forever: editing to a new valid name must keep the
-    // button enabled (the instant card redraws immediately), never re-gating on the
-    // pending network render.
+  test('editing to a new valid name re-gates until the new render lands', async ({ page }) => {
+    // Hold the 2nd+ server render forever: editing to a new valid name must RE-CLOSE
+    // the gate (the loading card returns) and keep it closed until a render lands —
+    // it must never inherit the previous name's open latch.
     let calls = 0;
     const second = new Promise(() => {}); // never resolves
     await page.route('**/api/preview', async (route) => {
@@ -101,13 +105,13 @@ test.describe('create-button preview gate (step 4)', () => {
     await expect(page.getByTestId('name-preview-card')).toHaveAttribute('src', /^data:image\/png/);
     await expect(next).toBeEnabled();
 
-    // edit to name B → the instant card redraws with B; the button STAYS enabled
-    // even though B's server render never resolves.
+    // edit to name B → B's server render hangs → the loading card returns and the
+    // gate RE-CLOSES, staying disabled while the render is pending.
     await page.fill('#honoreeInput', 'Sarah');
-    await expect(page.getByTestId('name-preview-instant-card')).toBeVisible();
-    await expect(next).toBeEnabled();
+    await expect(page.getByTestId('name-preview-loading')).toBeVisible();
+    await expect(next).toBeDisabled();
     await page.waitForTimeout(700);
-    await expect(next).toBeEnabled();
+    await expect(next).toBeDisabled();
   });
 });
 
