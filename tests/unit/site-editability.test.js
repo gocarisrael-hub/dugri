@@ -72,6 +72,20 @@ describe('representative NEW owner-editable keys are present on each page', () =
       'product-store-cta',
       'product-footer-brand',
     ],
+    // Checkout version options (pickup/delivery/pdf/custom): each option's TITLE
+    // and NOTE are owner-editable text, priced separately in admin-pricing.
+    'collect.html': [
+      'collect-ver-pdf-title',
+      'collect-ver-pdf-note',
+      'collect-ver-pickup-title',
+      'collect-ver-pickup-note',
+      'collect-ver-delivery-title',
+      'collect-ver-delivery-note',
+      'collect-ver-delivery-note2',
+      'collect-ver-custom-title',
+      'collect-ver-custom-note',
+      'collect-ver-custom-note2',
+    ],
     'options.html': [
       'options-nav-designs',
       'options-step1-title',
@@ -114,5 +128,23 @@ describe('the client apply path overlays a new key onto the real markup', () => 
     expect(doc.querySelector('[data-edit="options-step1-title"]').textContent).toBe('כותרת חדשה');
     // a sibling new key with no override keeps its shipped default
     expect(doc.querySelector('[data-edit="options-step2-title"]').textContent).toBe(before);
+  });
+
+  it('a checkout version override replaces only that option, and never the price span', () => {
+    const doc = new window.DOMParser().parseFromString(read('collect.html'), 'text/html');
+    const pickupNote = doc.querySelector('[data-edit="collect-ver-pickup-note"]').textContent;
+    editor.applyOverrides(doc, { 'collect-ver-pdf-title': { text: 'הדיגיטלי החדש' } });
+    // the edited title changed…
+    expect(doc.querySelector('[data-edit="collect-ver-pdf-title"]').textContent).toBe(
+      'הדיגיטלי החדש'
+    );
+    // …a sibling option's note is untouched…
+    expect(doc.querySelector('[data-edit="collect-ver-pickup-note"]').textContent).toBe(pickupNote);
+    // …and the JS-stamped price span is NOT tagged, so it can never be flattened by
+    // a content override (it lives outside every data-edit node).
+    const pdfLabel = doc.querySelector('input[name="payVersion"][value="pdf"]').closest('.pay-opt');
+    const priceEl = pdfLabel.querySelector('.opt-price');
+    expect(priceEl.hasAttribute('data-edit')).toBe(false);
+    expect(priceEl.closest('[data-edit]')).toBe(null);
   });
 });
