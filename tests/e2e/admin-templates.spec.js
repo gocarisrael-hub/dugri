@@ -75,6 +75,14 @@ test.describe('admin templates — status view (read-only)', () => {
     // rename + per-asset replace affordances are rendered
     await expect(card.locator('.tpl-rename-btn')).toBeVisible();
     await expect(ch.locator('.repl-input')).toHaveCount(1);
+    // NEW: a delete button + a settings editor (visibility/language/name_form/extra_fields).
+    await expect(card.locator('.tpl-delete-btn')).toBeVisible();
+    await expect(card.locator('.tpl-settings select[data-field="visibility"]')).toHaveCount(1);
+    await expect(card.locator('.tpl-settings select[data-field="language"]')).toHaveCount(1);
+    await expect(card.locator('.tpl-settings input[data-field="extra_fields"]')).toHaveCount(1);
+    // The upload form offers a visibility choice (public default).
+    await expect(page.locator('#form select[name="visibility"]')).toHaveCount(1);
+    await expect(page.locator('#form select[name="visibility"]')).toHaveValue('public');
   });
 
   test('without a key the page shows the access-key notice', async ({ page }) => {
@@ -197,5 +205,44 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     await expect(now).toHaveClass(/on/);
     await expect(now.locator('.mark')).toHaveText('✓');
     expect(fs.existsSync(created)).toBe(true);
+  });
+
+  test('editing settings (visibility → private) persists and shows the private badge', async ({
+    page,
+  }) => {
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const card = page.locator('.tpl-card[data-key="bachelorette"]');
+    await expect(card).toBeVisible();
+
+    await card.locator('.tpl-settings summary').click();
+    await card.locator('select[data-field="visibility"]').selectOption('private');
+    await card.locator('.tpl-settings-save').click();
+
+    // Reloads: the fixture themes.json now has bachelorette private, and the card
+    // shows the "פרטית" badge.
+    await expect(page.locator('.tpl-card[data-key="bachelorette"] .tpl-badge.priv')).toBeVisible();
+    const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
+    expect(themes.bachelorette.visibility).toBe('private');
+    // identity untouched
+    expect(themes.bachelorette.slug).toBe('bachelorette');
+  });
+
+  test('deleting an IN-USE template is refused (guard) — the template survives', async ({
+    page,
+  }) => {
+    // bachelorette backs a live orderable design (THEME_BY_DESIGN), so the server
+    // refuses to delete it (409). The UI surfaces the error and the card stays.
+    page.on('dialog', (d) => d.accept()); // confirm the delete prompt
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const card = page.locator('.tpl-card[data-key="bachelorette"]');
+    await expect(card).toBeVisible();
+
+    await card.locator('.tpl-delete-btn').click();
+
+    await expect(card.locator('.tpl-msg.err')).toContainText('in use');
+    // Still present, still in themes.json.
+    await expect(page.locator('.tpl-card[data-key="bachelorette"]')).toBeVisible();
+    const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
+    expect(themes.bachelorette).toBeDefined();
   });
 });
