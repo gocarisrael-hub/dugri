@@ -114,7 +114,8 @@
    "outline": "#000000",
    "outline_w": 0.075,
    "arch": 0,
-   "shadow": false
+   "shadow": false,
+   "italic": true
   },
   "board": {
    "frac": {

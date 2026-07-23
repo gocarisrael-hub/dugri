@@ -82,7 +82,8 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
     style = "<style>" + rp.font_face("TitleFont", title_font) + "</style>"
     body = style + rp.title_block(box, title_lines, bd["fill"], bd["outline"],
                                   title_font, ts["outline_w"], ts["arch"], ts["shadow"],
-                                  rtl=rp.title_is_rtl(cfg))
+                                  rtl=rp.title_is_rtl(cfg),
+                                  italic=ts.get("italic", False))
     return render_svg(svg.replace("</svg>", body + "</svg>"), w, h, out_png)
 
 
@@ -109,7 +110,8 @@ def render_backs(theme, backs_clean, title_lines, out_png):
                "y0": cy0 + frac["y0"] * ch, "y1": cy0 + frac["y1"] * ch}
         body.append(rp.title_block(box, title_lines, bk["fill"], bk["outline"],
                                    title_font, ts["outline_w"], ts["arch"], ts["shadow"],
-                                   rtl=rp.title_is_rtl(cfg)))
+                                   rtl=rp.title_is_rtl(cfg),
+                                   italic=ts.get("italic", False)))
     return render_svg(svg.replace("</svg>", "".join(body) + "</svg>"), w, h, out_png)
 
 

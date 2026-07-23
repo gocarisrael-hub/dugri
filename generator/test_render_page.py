@@ -265,6 +265,71 @@ def test_empty_title_degrades_to_nothing():
     assert svg and "Shira" in svg
 
 
+# --- 4b. per-theme italic title flag -----------------------------------------
+
+def _birthday_italic_fixture():
+    """Shared box/lines/style for the birthday-girls italic-title tests."""
+    cfg = config.theme("birthday-girls")
+    fp = config.font_path("birthday-girls", cfg["title_font"])
+    ts = cfg["title_style"]
+    box = {"x0": 65.6, "y0": 28.9, "x1": 139.1, "y1": 47.2}
+    lines = ["Alma's", "B-day"]
+    return cfg, fp, ts, box, lines
+
+
+def test_title_block_emits_font_style_italic_when_italic_true():
+    # (a) italic=True must slant the title: every title <text> carries a plain
+    # font-style="italic" so headless Chrome synthesizes the oblique from the
+    # upright TitleFont (no separate italic font file).
+    _cfg, fp, ts, box, lines = _birthday_italic_fixture()
+    svg = rp.title_block(box, lines, ts["fill"], ts["outline"], fp,
+                         ts["outline_w"], ts["arch"], ts["shadow"], italic=True)
+    assert 'font-style="italic"' in svg
+    # the attribute rides on the title <text> element (before its <textPath>).
+    for chunk in svg.split("<text ")[1:]:
+        head = chunk.split(">", 1)[0]
+        assert 'font-style="italic"' in head, "each title <text> must be italic"
+
+
+def test_title_block_upright_by_default_has_no_italic():
+    # (b) default (italic omitted) and explicit italic=False must NOT slant.
+    _cfg, fp, ts, box, lines = _birthday_italic_fixture()
+    default_svg = rp.title_block(box, lines, ts["fill"], ts["outline"], fp,
+                                 ts["outline_w"], ts["arch"], ts["shadow"])
+    false_svg = rp.title_block(box, lines, ts["fill"], ts["outline"], fp,
+                               ts["outline_w"], ts["arch"], ts["shadow"], italic=False)
+    assert "font-style" not in default_svg
+    assert "font-style" not in false_svg
+
+
+def test_title_block_italic_only_adds_the_font_style_attr():
+    # (c) REGRESSION GUARD: toggling italic must change NOTHING about the output
+    # except adding font-style="italic" — stripping that attribute from the italic
+    # SVG must reproduce the non-italic SVG byte-for-byte. (Reset the title UID so
+    # both calls share the same generated path ids.)
+    _cfg, fp, ts, box, lines = _birthday_italic_fixture()
+    saved_uid = rp._TITLE_UID[0]
+    try:
+        rp._TITLE_UID[0] = 0
+        plain = rp.title_block(box, lines, ts["fill"], ts["outline"], fp,
+                               ts["outline_w"], ts["arch"], ts["shadow"], italic=False)
+        rp._TITLE_UID[0] = 0
+        ital = rp.title_block(box, lines, ts["fill"], ts["outline"], fp,
+                              ts["outline_w"], ts["arch"], ts["shadow"], italic=True)
+    finally:
+        rp._TITLE_UID[0] = saved_uid
+    assert ital != plain
+    assert ital.replace(' font-style="italic"', "") == plain, (
+        "italic must ONLY add the font-style attr; non-italic output is unchanged")
+
+
+def test_birthday_girls_theme_enables_italic_others_do_not():
+    # The flag lives in the theme config: birthday-girls opts in; a representative
+    # other theme (bachelorette) stays upright (defaults false).
+    assert config.theme("birthday-girls")["title_style"].get("italic") is True
+    assert config.theme("bachelorette")["title_style"].get("italic", False) is False
+
+
 # --- 5. the calibrated font actually renders through headless Chrome -----------
 
 def _chrome_render_glyph(font_path, family, text, size, out_png, embed=True):
