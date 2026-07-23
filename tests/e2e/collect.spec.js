@@ -1305,6 +1305,10 @@ test('newly-tagged collect copy + the logo image become editable in owner edit m
     'collect-coupon-label',
     'collect-card-pay-btn',
     'collect-wa-help-label',
+    // checkout version options (title + note), inside the owner-only pay panel
+    'collect-ver-pdf-title',
+    'collect-ver-delivery-note',
+    'collect-ver-custom-note2',
   ];
   for (const key of keys) {
     await expect(page.locator(`[data-edit="${key}"]`)).toHaveAttribute(
