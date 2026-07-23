@@ -74,11 +74,10 @@ test.describe('admin texts editor', () => {
     // an event trigger carries no timing block
     await expect(page.locator('#card-wa-trigger-list-closed .timing')).toHaveCount(0);
 
-    // payment_reminder -> the `delay` timing shape, with the delay as a preset
-    // dropdown (day options) rather than a raw hours input.
+    // payment_reminder -> the `delay` timing shape, a MULTI-select of milestone
+    // checkboxes (fire at each chosen time) rather than a single value.
     const pay = page.locator('#card-wa-trigger-payment-reminder .timing[data-timing="delay"]');
-    await expect(pay.locator('select[data-t="delay_hours"]')).toBeVisible();
-    await expect(pay.locator('select[data-t="delay_hours"] option')).not.toHaveCount(0);
+    await expect(pay.locator('.delay-opts input[type="checkbox"]')).not.toHaveCount(0);
     await expect(pay.locator('[data-t="win_start"]')).toBeVisible();
     await expect(pay.locator('[data-t="win_end"]')).toBeVisible();
 
@@ -170,7 +169,7 @@ test.describe('admin texts editor', () => {
     await resetKey(request, 'wa', 'trigger.quiet_reminder');
   });
 
-  test('saving payment_reminder round-trips the delay preset (dropdown) + window', async ({
+  test('saving payment_reminder round-trips the SELECTED milestones (checkboxes) + window', async ({
     page,
     request,
   }) => {
@@ -179,14 +178,15 @@ test.describe('admin texts editor', () => {
     await expect(card).toBeVisible();
 
     const timing = card.locator('.timing[data-timing="delay"]');
-    // Pick "שבוע" (168h) from the preset dropdown, set a window, and save.
-    await timing.locator('select[data-t="delay_hours"]').selectOption('168');
+    // Default milestones are 48/120/168 checked; drop the middle one -> [48,168].
+    await timing.locator('input[data-delay="120"]').uncheck();
     await timing.locator('[data-t="win_start"]').fill('10');
     await timing.locator('[data-t="win_end"]').fill('20');
     const eff = await clickAndRead(page, card.locator('button[data-save]'), 'POST');
     await expect(card.locator('.status')).toHaveText(/נשמר/);
 
-    expect(eff.timing).toEqual({ delay_hours: 168, window: [10, 20] });
+    expect(eff.timing).toEqual({ delays: [48, 168], window: [10, 20] });
+    expect(Array.isArray(eff.timing.delays)).toBe(true);
 
     await resetKey(request, 'wa', 'trigger.payment_reminder');
   });
