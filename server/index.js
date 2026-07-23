@@ -1317,7 +1317,18 @@ async function openWhatsappGroup(collection, base) {
     const subject = 'דוגרי · מילים על ' + (honoree || 'בעל/ת השמחה');
 
     const created = await whatsapp.createGroup(subject, [buyerWa]);
-    if (!created || !created.ok || !created.groupId) return;
+    if (!created || !created.ok || !created.groupId) {
+      // A `skipped` result is the intentional dormant path (bot off by design) —
+      // stay silent. But a REAL failure (dropped Whapi channel, HTTP error, or a
+      // 200 with no group id) otherwise fails here silently and the owner just sees
+      // "orders but no groups", so log WHY: reason + collection id only — never the
+      // buyer's phone or the honoree name.
+      if (created && !created.skipped) {
+        const why = created.error || 'http ' + (created.status || '?') + ' / no groupId';
+        console.warn('[whatsapp] createGroup failed for collection ' + collection.id + ': ' + why);
+      }
+      return;
+    }
     const groupId = created.groupId;
 
     const botId = WHAPI_BOT_WA ? waIdDigits(WHAPI_BOT_WA) : '';
@@ -2389,6 +2400,20 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
 app.get('/api/whatsapp/status', (req, res) => {
   if (!requireAdmin(req, res)) return;
   res.json(whatsapp.status());
+});
+
+// Live channel connection probe. Unlike /status (a pure env snapshot), this makes
+// a real Whapi call to check whether the linked phone is still paired — so the
+// admin banner can surface a dropped device ("QR"/disconnected) that otherwise
+// silently breaks group creation. Admin-gated, async, returns only the connection
+// tri-state + raw status text (never the token/secret). Fail-soft: never throws.
+app.get('/api/whatsapp/health', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    res.json(await whatsapp.health());
+  } catch (e) {
+    res.json({ ok: false, connection: 'error', error: (e && e.message) || String(e) });
+  }
 });
 
 // Public: the buyer-wizard feature flags. Unauthenticated on purpose — every

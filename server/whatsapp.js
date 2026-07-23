@@ -201,6 +201,69 @@ async function getInviteLink(groupId, opts = {}) {
   return { ok: true, inviteCode: code, inviteLink: link, data };
 }
 
+// Whapi channel health status texts (GET /health → status.text). The channel is
+// usable only while AUTHENTICATED; a "QR"/logout state means the linked phone
+// dropped and the owner must re-scan the pairing QR — otherwise createGroup and
+// every send silently fail. Matched case-insensitively; anything unrecognised is
+// reported as 'unknown' (with the raw text) rather than guessed either way, so the
+// banner never falsely tells the owner to re-scan a working channel.
+const WA_CONNECTED_STATES = [
+  'auth',
+  'authenticated',
+  'connected',
+  'ready',
+  'active',
+  'online',
+  'working',
+  'healthy',
+];
+const WA_DISCONNECTED_STATES = [
+  'qr',
+  'unpaired',
+  'logout',
+  'loggedout',
+  'disconnected',
+  'unauthorized',
+  'expired',
+  'conflict',
+  'banned',
+];
+
+// Live connection probe (a real network call, unlike status()). Asks Whapi whether
+// the linked phone is currently paired. Returns:
+//   { ok:false, skipped:true, connection:'off' }   — bot not configured (no call)
+//   { ok:false, connection:'error', error, httpStatus } — the probe itself failed
+//   { ok:true, connection:'connected'|'disconnected'|'unknown', state } — live
+// `state` is the raw (lowercased) status text so the UI can always show the truth
+// even when the heuristic can't classify it. NEVER returns the token/secret.
+async function health(opts = {}) {
+  if (!isConfigured()) {
+    return { ok: false, skipped: true, reason: 'not configured', connection: 'off' };
+  }
+  const r = await whapiRequest('GET', '/health', { fetchImpl: opts.fetchImpl });
+  if (!r.ok) {
+    return {
+      ok: false,
+      connection: 'error',
+      error: r.error || 'health check failed',
+      httpStatus: r.status || 0,
+    };
+  }
+  const data = r.data || {};
+  const statusObj = data.status;
+  const raw = statusObj && typeof statusObj === 'object' ? statusObj.text : statusObj;
+  const state = String(raw == null ? '' : raw)
+    .trim()
+    .toLowerCase();
+  // A populated account/user object is the strongest "paired" signal; otherwise
+  // classify by the status text, staying 'unknown' when neither list matches.
+  const hasUser = !!(data.user || data.account);
+  let connection = 'unknown';
+  if (hasUser || WA_CONNECTED_STATES.includes(state)) connection = 'connected';
+  else if (WA_DISCONNECTED_STATES.includes(state)) connection = 'disconnected';
+  return { ok: true, connection, state };
+}
+
 // --- pure helpers (no network) ------------------------------------------------
 
 // Split an inbound message into candidate words. Words are separated by NEWLINES
@@ -435,6 +498,7 @@ function groupsDueForNudge(groups, opts = {}) {
 module.exports = {
   isConfigured,
   status,
+  health,
   verifyWebhookSecret,
   createGroup,
   sendMessage,

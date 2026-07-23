@@ -400,6 +400,28 @@ describe('paid hook — openWhatsappGroup', () => {
     expect(waState.groupForCollection(c.id)).toBeNull();
   });
 
+  it('logs the reason (not the phone) and links no group when createGroup fails', async () => {
+    // A dropped Whapi channel makes createGroup return a soft HTTP failure. The
+    // hook must not link a phantom group or announce — and it must log WHY, with
+    // the collection id + failure reason but NEVER the buyer's phone number.
+    createResult = { ok: false, status: 401, error: 'whapi http 401' };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const c = db.createCollection('רותם', { phone: '0529998888' });
+    await app.openWhatsappGroup(c, base);
+    expect(waState.groupForCollection(c.id)).toBeNull();
+    expect(sendCalls).toHaveLength(0);
+    const line = warnSpy.mock.calls
+      .map((a) => a.join(' '))
+      .find((s) => s.includes('createGroup failed'));
+    expect(line).toBeTruthy();
+    expect(line).toContain(String(c.id));
+    expect(line).toContain('401');
+    // no phone leaks into the log (raw or normalized)
+    expect(line).not.toContain('0529998888');
+    expect(line).not.toContain('972529998888');
+    warnSpy.mockRestore();
+  });
+
   it('does NOT escalate on a realistic {group_id, invite_code} success (no participants)', async () => {
     // Whapi's normal success is silent about participants. That must NOT be read as
     // a failure — no invite DM, no owner escalation on a normal paid order.
@@ -575,5 +597,38 @@ describe('GET /api/whatsapp/status', () => {
     const json = JSON.stringify(r.body);
     expect(json).not.toContain('tok-secret');
     expect(json).not.toContain('hook-secret');
+  });
+});
+
+// GET /api/whatsapp/health — admin-gated LIVE connection probe. The route hands
+// back whatsapp.health()'s tri-state; here we spy health() so no real Whapi call
+// is needed and the pass-through + admin gate are what's under test.
+describe('GET /api/whatsapp/health', () => {
+  async function getHealth(query) {
+    const res = await realFetch(base + '/api/whatsapp/health' + (query || ''), { method: 'GET' });
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  }
+
+  it('requires the admin key', async () => {
+    const r = await getHealth('');
+    expect(r.status).toBe(403);
+  });
+
+  it('with the key passes through the live connection payload', async () => {
+    const spy = vi
+      .spyOn(whatsapp, 'health')
+      .mockResolvedValue({ ok: true, connection: 'disconnected', state: 'qr' });
+    const r = await getHealth('?key=dugri-admin');
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ ok: true, connection: 'disconnected', state: 'qr' });
+    spy.mockRestore();
+  });
+
+  it('never throws — a health() rejection is caught into connection:error', async () => {
+    const spy = vi.spyOn(whatsapp, 'health').mockRejectedValue(new Error('boom'));
+    const r = await getHealth('?key=dugri-admin');
+    expect(r.status).toBe(200);
+    expect(r.body.connection).toBe('error');
+    spy.mockRestore();
   });
 });
