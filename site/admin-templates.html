@@ -221,6 +221,40 @@
         border-radius: 99px;
         cursor: pointer;
       }
+      .tpl-delete-btn {
+        border-color: #e0a0a0;
+        color: #b23b3b;
+      }
+      .tpl-settings {
+        margin: 8px 0 4px;
+        font-size: 13px;
+      }
+      .tpl-settings summary {
+        cursor: pointer;
+        color: #5c7357;
+        font-weight: 700;
+      }
+      .tpl-settings-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 8px;
+        margin: 8px 0;
+      }
+      .set-field {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        font-size: 12px;
+        color: #6b6b6b;
+      }
+      .set-field select,
+      .set-field input {
+        font: inherit;
+        font-size: 13px;
+        padding: 5px 7px;
+        border: 1px solid #e0d6c8;
+        border-radius: 7px;
+      }
       .assets {
         list-style: none;
         margin: 12px 0 0;
@@ -367,6 +401,17 @@
               >מופרדים בפסיק, למשל <code>AGE</code> או <code>YEARS,NAME1,NAME2</code></span
             >
             <input type="text" name="extra_fields" dir="ltr" placeholder="AGE" />
+          </label>
+          <label
+            >נראות (visibility)
+            <span class="hint"
+              >ברירת מחדל: ציבורי — התבנית תופיע בחנות. בחרו "פרטי" רק אם היא מוסתרת עד קוד
+              גישה.</span
+            >
+            <select name="visibility">
+              <option value="public">ציבורי (public)</option>
+              <option value="private">פרטי (private)</option>
+            </select>
           </label>
         </fieldset>
 
@@ -536,8 +581,61 @@
             b.textContent = 'לא מכוילת';
             head.append(b);
           }
-          head.append(renameBtn);
+          const deleteBtn = document.createElement('button');
+          deleteBtn.type = 'button';
+          deleteBtn.className = 'link-btn tpl-delete-btn';
+          deleteBtn.textContent = 'מחק';
+          head.append(renameBtn, deleteBtn);
           card.append(head);
+
+          // Editable settings (language / name_form / extra_fields / visibility).
+          const settings = document.createElement('details');
+          settings.className = 'tpl-settings';
+          const summary = document.createElement('summary');
+          summary.textContent = 'הגדרות (שפה, שדות, נראות)';
+          settings.append(summary);
+
+          const grid = document.createElement('div');
+          grid.className = 'tpl-settings-grid';
+          const mkSelect = (field, options, current) => {
+            const wrap = document.createElement('label');
+            wrap.className = 'set-field';
+            wrap.append(document.createTextNode(field));
+            const sel = document.createElement('select');
+            sel.dataset.field = field;
+            for (const o of options) {
+              const opt = document.createElement('option');
+              opt.value = o;
+              opt.textContent = o;
+              if (o === current) opt.selected = true;
+              sel.append(opt);
+            }
+            wrap.append(sel);
+            return wrap;
+          };
+          grid.append(mkSelect('visibility', ['public', 'private'], t.visibility));
+          grid.append(mkSelect('language', ['hebrew', 'english'], t.language || ''));
+          grid.append(
+            mkSelect('name_form', ['hebrew', 'english', 'english-caps'], t.name_form || '')
+          );
+          const efWrap = document.createElement('label');
+          efWrap.className = 'set-field';
+          efWrap.append(document.createTextNode('extra_fields'));
+          const efInput = document.createElement('input');
+          efInput.type = 'text';
+          efInput.dir = 'ltr';
+          efInput.dataset.field = 'extra_fields';
+          efInput.value = (t.extra_fields || []).join(', ');
+          efInput.placeholder = 'AGE או YEARS,NAME1,NAME2';
+          efWrap.append(efInput);
+          grid.append(efWrap);
+          settings.append(grid);
+          const saveSettings = document.createElement('button');
+          saveSettings.type = 'button';
+          saveSettings.className = 'link-btn tpl-settings-save';
+          saveSettings.textContent = 'שמור הגדרות';
+          settings.append(saveSettings);
+          card.append(settings);
 
           const assets = document.createElement('ul');
           assets.className = 'assets';
@@ -650,6 +748,73 @@
             tplMsg(card, 'err', 'שגיאת רשת: ' + err);
             saveBtn.disabled = false;
           }
+          return;
+        }
+
+        // Save the editable settings (visibility / language / name_form / extra_fields).
+        const settingsBtn = e.target.closest('.tpl-settings-save');
+        if (settingsBtn) {
+          const card = settingsBtn.closest('.tpl-card');
+          const patch = {};
+          for (const el of card.querySelectorAll('.tpl-settings [data-field]')) {
+            patch[el.dataset.field] = el.value;
+          }
+          settingsBtn.disabled = true;
+          try {
+            const res = await fetch(
+              '/api/admin/templates/' +
+                encodeURIComponent(card.dataset.key) +
+                '/settings?key=' +
+                encodeURIComponent(key),
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(patch),
+              }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              tplMsg(card, 'err', 'שגיאה: ' + (data.error || res.status));
+              settingsBtn.disabled = false;
+              return;
+            }
+            tplMsg(card, 'ok', 'ההגדרות נשמרו.');
+            loadTemplates();
+          } catch (err) {
+            tplMsg(card, 'err', 'שגיאת רשת: ' + err);
+            settingsBtn.disabled = false;
+          }
+          return;
+        }
+
+        // Delete a template (with confirmation). A theme a live design uses is
+        // refused by the server (409) — the message surfaces that.
+        const deleteBtn = e.target.closest('.tpl-delete-btn');
+        if (deleteBtn) {
+          const card = deleteBtn.closest('.tpl-card');
+          const nm = (card.querySelector('.tpl-name') || {}).textContent || card.dataset.key;
+          if (!window.confirm('למחוק את התבנית "' + nm + '"? הפעולה בלתי הפיכה.')) return;
+          deleteBtn.disabled = true;
+          try {
+            const res = await fetch(
+              '/api/admin/templates/' +
+                encodeURIComponent(card.dataset.key) +
+                '?key=' +
+                encodeURIComponent(key),
+              { method: 'DELETE' }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              tplMsg(card, 'err', 'שגיאה: ' + (data.error || res.status));
+              deleteBtn.disabled = false;
+              return;
+            }
+            loadTemplates();
+          } catch (err) {
+            tplMsg(card, 'err', 'שגיאת רשת: ' + err);
+            deleteBtn.disabled = false;
+          }
+          return;
         }
       });
 

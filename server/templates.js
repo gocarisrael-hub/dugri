@@ -27,6 +27,10 @@ function isSafeSlug(slug) {
 
 // The name-casing rules a theme can use (matches config.py's _form_name).
 const NAME_FORMS = ['hebrew', 'english', 'english-caps'];
+// The two name-script languages a theme can require (themes.json `language`).
+const LANGUAGES = ['hebrew', 'english'];
+// The two storefront visibilities a theme can carry (themes.json `visibility`).
+const VISIBILITIES = ['public', 'private'];
 // The three SVG roles every template ships, for both the clean + filled pages.
 const SVG_ROLES = ['fronts', 'backs', 'board'];
 // Optional extra CLEAN-only board variant for the chasers (drinking-game) add-on,
@@ -90,6 +94,7 @@ function buildThemeEntry({
   language,
   nameForm,
   extraFields,
+  visibility,
 }) {
   const lines = String(titleText || '')
     .split('\n')
@@ -100,7 +105,10 @@ function buildThemeEntry({
     display_he: displayHe || slug,
     dir: 'resources/canva/templates/' + slug,
     recipe: slug,
-    visibility: 'private',
+    // The owner chooses visibility on upload; default PUBLIC (only an explicit
+    // 'private' hides it). Note this is independent of `calibrated`: a fresh
+    // template is still uncalibrated and needs a style pass before it renders.
+    visibility: visibility === 'private' ? 'private' : 'public',
     title_text: titleText || '',
     title_lines: lines.length ? lines : [titleText || ''],
     language: language || (nameForm === 'hebrew' ? 'hebrew' : 'english'),
@@ -299,6 +307,9 @@ function normalizeOnboarding({ root, fields, files }) {
     .split(/[\s,]+/)
     .map((s) => s.trim())
     .filter(Boolean);
+  // visibility: the owner's choice; default PUBLIC (only an explicit 'private' hides).
+  const visibility =
+    String((fields && fields.visibility) || '').trim() === 'private' ? 'private' : 'public';
 
   // Required uploads: clean + filled {fronts,backs,board} SVGs and both fonts.
   const clean = {};
@@ -338,6 +349,7 @@ function normalizeOnboarding({ root, fields, files }) {
     nameForm,
     language,
     extraFields,
+    visibility,
     clean,
     filled,
     fonts: {
@@ -386,6 +398,7 @@ function onboardTemplate(opts) {
     language: norm.language,
     nameForm: norm.nameForm,
     extraFields: norm.extraFields,
+    visibility: norm.visibility,
   });
   appendThemeEntry(themesPathFor(root), norm.slug, entry);
 
@@ -400,11 +413,12 @@ function onboardTemplate(opts) {
     });
   }
 
+  const visLabel = entry.visibility.toUpperCase();
   const note = recipe.ok
-    ? 'Template registered as PRIVATE and UNCALIBRATED. A title-style calibration pass ' +
+    ? `Template registered as ${visLabel} and UNCALIBRATED. A title-style calibration pass ` +
       '(fill title_style/board/back in themes.json and set calibrated:true) is still ' +
       'needed before it can render.'
-    : 'Template registered as PRIVATE and UNCALIBRATED, but recipe auto-detection did not ' +
+    : `Template registered as ${visLabel} and UNCALIBRATED, but recipe auto-detection did not ` +
       'run/succeed here — run `python3 generator/recipe_diff.py filled/fronts.svg clean/fronts.svg ' +
       norm.slug +
       '` on a machine with Chrome + Pillow, then calibrate the title style.';
@@ -413,7 +427,7 @@ function onboardTemplate(opts) {
     key: norm.slug,
     dir: 'resources/canva/templates/' + norm.slug,
     calibrated: false,
-    visibility: 'private',
+    visibility: entry.visibility,
     recipe: recipe.ok ? 'generated' : recipe.skipped ? 'skipped' : 'failed',
     recipe_detail: recipe.ok ? null : recipe.detail || null,
     note,
@@ -585,6 +599,10 @@ function computeTemplateStatus(root, key, entry) {
     display_he: (entry && entry.display_he) || key,
     dir: (entry && entry.dir) || 'resources/canva/templates/' + key,
     visibility: (entry && entry.visibility) || 'public',
+    // Editable settings surfaced so the admin UI can show + edit them in place.
+    language: (entry && entry.language) || null,
+    name_form: (entry && entry.name_form) || null,
+    extra_fields: Array.isArray(entry && entry.extra_fields) ? entry.extra_fields : [],
     calibrated: !!(entry && entry.calibrated),
     assets,
     chasersBoard: !!(chasers && chasers.present),
@@ -624,6 +642,119 @@ function renameTemplate({ root, key, displayName }) {
   entry.display_he = v.value;
   writeThemesFile(themesPath, themes);
   return { key, display_he: v.value, slug: entry.slug || key };
+}
+
+// Normalize an extra_fields input (an array, or a comma/whitespace string) into a
+// clean array of non-empty tokens. Used by the settings editor.
+function normalizeExtraFields(input) {
+  const raw = Array.isArray(input) ? input.join(',') : String(input == null ? '' : input);
+  return raw
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Editable theme SETTINGS the owner can change on an existing template AFTER
+// onboarding — the storefront/config knobs, never the identity (slug/dir/recipe)
+// or calibration/asset fields. Each provided key is validated; an invalid value
+// rejects the whole patch (no partial write). Atomic themes.json write. Returns
+// the changed settings, or { error, httpStatus }.
+function updateTemplateSettings({ root, key, patch }) {
+  const themesPath = themesPathFor(root);
+  const themes = loadThemes(themesPath);
+  const entry = ownTheme(themes, key);
+  if (!entry) return { error: 'template not found', httpStatus: 404 };
+  const p = patch && typeof patch === 'object' ? patch : {};
+  const changed = {};
+  if ('display_he' in p) {
+    const v = validateDisplayName(p.display_he);
+    if (v.error) return { error: v.error, httpStatus: 400 };
+    changed.display_he = v.value;
+  }
+  if ('language' in p) {
+    const lang = String(p.language || '').trim();
+    if (!LANGUAGES.includes(lang)) {
+      return { error: 'language must be one of: ' + LANGUAGES.join(', '), httpStatus: 400 };
+    }
+    changed.language = lang;
+  }
+  if ('name_form' in p) {
+    const nf = String(p.name_form || '').trim();
+    if (!NAME_FORMS.includes(nf)) {
+      return { error: 'name_form must be one of: ' + NAME_FORMS.join(', '), httpStatus: 400 };
+    }
+    changed.name_form = nf;
+  }
+  if ('visibility' in p) {
+    const vis = String(p.visibility || '').trim();
+    if (!VISIBILITIES.includes(vis)) {
+      return { error: 'visibility must be one of: ' + VISIBILITIES.join(', '), httpStatus: 400 };
+    }
+    changed.visibility = vis;
+  }
+  if ('extra_fields' in p) {
+    changed.extra_fields = normalizeExtraFields(p.extra_fields);
+  }
+  if (Object.keys(changed).length === 0) {
+    return { error: 'no valid settings to update', httpStatus: 400 };
+  }
+  Object.assign(entry, changed);
+  writeThemesFile(themesPath, themes);
+  return {
+    key,
+    slug: entry.slug || key,
+    settings: {
+      display_he: entry.display_he,
+      language: entry.language,
+      name_form: entry.name_form,
+      visibility: entry.visibility,
+      extra_fields: Array.isArray(entry.extra_fields) ? entry.extra_fields : [],
+    },
+  };
+}
+
+// Delete a template: remove its themes.json entry (atomic write), then best-effort
+// remove its on-disk dir (confined to the templates base) and recipe file. GUARDED:
+// a theme a LIVE orderable design maps to (its key ∈ `inUseThemes`) is refused
+// (409) — deleting it would break the storefront / an in-flight order's production.
+// Refuses to empty themes.json entirely. Returns { ok, key } or { error, httpStatus }.
+function deleteTemplate({ root, key, inUseThemes }) {
+  const themesPath = themesPathFor(root);
+  const themes = loadThemes(themesPath);
+  const entry = ownTheme(themes, key);
+  if (!entry) return { error: 'template not found', httpStatus: 404 };
+  const inUse =
+    inUseThemes instanceof Set
+      ? inUseThemes
+      : new Set(Array.isArray(inUseThemes) ? inUseThemes : []);
+  if (inUse.has(key)) {
+    return {
+      error: 'template is in use by a live design and cannot be deleted',
+      httpStatus: 409,
+      inUse: true,
+    };
+  }
+  delete themes[key];
+  if (Object.keys(themes).length === 0) {
+    return { error: 'refusing to empty themes.json (last template)', httpStatus: 409 };
+  }
+  writeThemesFile(themesPath, themes);
+  // Best-effort file cleanup — a failure just leaves files, never throws.
+  const dir = resolveTemplateDir(root, entry, key);
+  if (dir && dir !== templatesBaseDir(root)) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* leave the files */
+    }
+  }
+  try {
+    const recipe = path.join(recipesDirFor(root), (entry.slug || key) + '.json');
+    if (fs.existsSync(recipe)) fs.rmSync(recipe, { force: true });
+  } catch {
+    /* best-effort */
+  }
+  return { ok: true, key, deleted: true };
 }
 
 // Build the PUBLIC { <designId>: displayName } map the storefront uses to show a
@@ -811,6 +942,11 @@ module.exports = {
   listTemplateStatuses,
   validateDisplayName,
   renameTemplate,
+  updateTemplateSettings,
+  deleteTemplate,
+  normalizeExtraFields,
   replaceAsset,
   designDisplayNames,
+  LANGUAGES,
+  VISIBILITIES,
 };
