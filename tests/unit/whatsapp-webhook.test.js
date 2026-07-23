@@ -43,6 +43,7 @@ let inviteResult;
 let sendCalls;
 let createCalls;
 let inviteCalls;
+let pinCalls;
 
 const WA_TRIGGERS = [
   'group_opened',
@@ -95,6 +96,10 @@ beforeAll(async () => {
     inviteCalls.push(groupId);
     return inviteResult;
   });
+  vi.spyOn(whatsapp, 'pinMessage').mockImplementation(async (messageId) => {
+    pinCalls.push(messageId);
+    return { ok: true };
+  });
 
   await new Promise((resolve) => {
     server = app.listen(0, () => {
@@ -114,6 +119,7 @@ beforeEach(() => {
   sendCalls = [];
   createCalls = [];
   inviteCalls = [];
+  pinCalls = [];
   sendResult = { ok: true, sent: true, messageId: 'm1' };
   // Whapi's REAL success response is { group_id, invite_code } with NO participants
   // array. buyerLandedInGroup treats this as "added" (no failure signal), so the
@@ -539,6 +545,7 @@ describe('onOrderCreated — WhatsApp is decoupled from email config', () => {
     const groupId = waState.groupForCollection(c.id);
     expect(groupId).toBe('g-new@g.us');
     expect(sendCalls.some((s) => s.to === groupId)).toBe(true); // group_opened fired
+    expect(pinCalls).toEqual(['m1']); // the group-open message was pinned
     expect(paidSpy).not.toHaveBeenCalled(); // email side stayed dormant
     paidSpy.mockRestore();
   });

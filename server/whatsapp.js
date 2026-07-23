@@ -181,6 +181,24 @@ async function sendMessage(to, text, opts = {}) {
   return { ok: true, sent: data.sent !== false, messageId, data };
 }
 
+// Pin a message in its chat (Whapi POST /messages/{id}/pin). Used to keep the
+// group-open welcome (with the words link) visible at the top, so anyone who joins
+// the group LATER still sees how to add words — no per-join greeting needed.
+// `opts.duration` is the pin lifetime in seconds (default 30 days, WhatsApp's max;
+// the group is short-lived so it never really expires). Fail-soft + a no-op when
+// unconfigured, like every impure call — a failed pin never affects the send.
+async function pinMessage(messageId, opts = {}) {
+  if (!isConfigured()) return { ok: false, skipped: true, reason: 'not configured' };
+  const id = String(messageId == null ? '' : messageId).trim();
+  if (!id) return { ok: false, error: 'no message id' };
+  const duration = Number.isFinite(opts.duration) ? opts.duration : 30 * 24 * 60 * 60;
+  const r = await whapiRequest('POST', '/messages/' + id + '/pin', {
+    body: { duration },
+    fetchImpl: opts.fetchImpl,
+  });
+  return r.ok ? { ok: true, data: r.data } : r;
+}
+
 // Fetch a group's invite link. Whapi returns an invite_code (and sometimes a full
 // link); we always return a full inviteLink, building it from the code when
 // needed. Returns { ok:true, inviteCode, inviteLink, data } or a soft failure.
@@ -438,6 +456,7 @@ module.exports = {
   verifyWebhookSecret,
   createGroup,
   sendMessage,
+  pinMessage,
   getInviteLink,
   splitWords,
   parseWebhook,
