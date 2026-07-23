@@ -95,6 +95,35 @@ returns presence booleans only — never the token/secret values):
 }
 ```
 
+### Live connection (dropped-phone detection)
+
+`/status` only reports the **env** (is the bot armed?). It can't tell you whether
+the linked phone is still **paired** — a phone that drops its linked-device session
+(clock drift, "log out from all devices", 4-device limit) leaves the bot looking
+armed while every `createGroup`/send silently fails. That's the classic "orders
+but no groups" symptom.
+
+Two things surface it now:
+
+- **Banner line.** When the bot is configured, הודעות וטקסטים also shows a live
+  connection line. A dropped phone turns the whole banner **red** with
+  **"מנותק — סרקו QR מחדש"** and the instruction to re-scan the QR in Whapi.
+- **Server log.** A real `createGroup` failure logs
+  `[whatsapp] createGroup failed for collection <id>: <reason>` (reason + id only,
+  never the buyer's phone/name). The intentional dormant path stays silent.
+
+The probe is `GET /api/whatsapp/health?key=<ADMIN_KEY>` (admin-gated, one live Whapi
+call, returns the connection tri-state + raw status text, never the token/secret):
+
+```json
+{ "ok": true, "connection": "connected", "state": "auth" }
+```
+
+`connection` is `connected` (paired) · `disconnected` (needs a QR re-scan) ·
+`unknown` (status text not recognised — `state` shows the raw value) · `error`
+(the probe call failed) · `off` (bot not configured). It stays `unknown` rather
+than guessing, so the banner never tells you to re-scan a working channel.
+
 Then do a real end-to-end check: place a paid order → the bot should open a
 word-collection WhatsApp group for the buyer (the `group_opened` trigger fires).
 
