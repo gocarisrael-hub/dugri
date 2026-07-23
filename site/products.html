@@ -655,9 +655,17 @@
 
         // Wire the swipe carousel only when there's more than one picture — the same
         // one-per-view snap swipe + dots as the product-detail gallery. loop:false
-        // (no clones) keeps the card DOM lean across the whole grid.
+        // (no clones) keeps the card DOM lean across the whole grid. autoplay:false —
+        // the pictures change ONLY when the shopper swipes / taps a dot, never on a
+        // timer (a store tile quietly cycling on its own is distracting).
         if (shots.length > 1) {
-          initCarousel(track, { mode: 'slideshow', loop: false, dots: true, dotsInto: dots });
+          initCarousel(track, {
+            mode: 'slideshow',
+            autoplay: false,
+            loop: false,
+            dots: true,
+            dotsInto: dots,
+          });
         }
         return article;
       }

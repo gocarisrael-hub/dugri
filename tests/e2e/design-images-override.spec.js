@@ -66,6 +66,30 @@ test.describe('products.html — store-tile override in the card carousel', () =
     await expect(slides.first()).toHaveAttribute('href', 'product.html?design=birthday');
   });
 
+  test('the card carousel does NOT auto-advance — pictures change only on user input', async ({
+    page,
+  }) => {
+    await stubUploads(page);
+    await stubConfig(page, {});
+    await page.goto('/products.html');
+
+    const card = page.locator('.product-card[data-design-id="birthday"]');
+    const dots = card.locator('.product-card__dots .carousel-dot');
+    await expect(dots).toHaveCount(4);
+    // The first dot is active on load.
+    await expect(dots.nth(0)).toHaveClass(/is-active/);
+
+    // Wait well past the engine's 5s slideshow autoplay interval: with autoplay off,
+    // nothing moves on its own — the first picture is still the active one.
+    await page.waitForTimeout(5600);
+    await expect(dots.nth(0)).toHaveClass(/is-active/);
+    await expect(dots.nth(1)).not.toHaveClass(/is-active/);
+
+    // A user action (tapping dot 2) DOES change the picture — the carousel still works.
+    await dots.nth(1).click();
+    await expect(dots.nth(1)).toHaveClass(/is-active/);
+  });
+
   test('a failed config fetch falls back to shipped renders and the grid still renders', async ({
     page,
   }) => {
