@@ -200,7 +200,7 @@ def title_is_rtl(cfg):
 
 
 def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
-                rtl=False):
+                rtl=False, italic=False):
     _TITLE_UID[0] += 1
     uid = _TITLE_UID[0]
     """Graffiti-style stacked title: sized so the WIDEST line fills the box
@@ -288,11 +288,16 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # where the base direction IS honored. Verified via the real rasterizer in
     # test_title_block_rtl_reorders_digit_in_raster.)
     dir_attr = ' direction="rtl"' if rtl else ""
+    # Italic titles: emit a plain ``font-style="italic"`` on the title <text> so
+    # Chrome synthesizes the oblique slant from the upright TitleFont (no separate
+    # italic font file needed). Off by default, so non-italic themes are byte-for-
+    # byte unchanged. Opt-in per theme via title_style "italic": true.
+    italic_attr = ' font-style="italic"' if italic else ""
 
     def on_path(pid, fill_c, stroke_c, swv, line):
         return (f'<text font-family="TitleFont" font-size="{size:.2f}" fill="{fill_c}" '
                 f'stroke="{stroke_c}" stroke-width="{swv:.2f}" paint-order="stroke" '
-                f'stroke-linejoin="round" stroke-linecap="round"{dir_attr}>'
+                f'stroke-linejoin="round" stroke-linecap="round"{italic_attr}{dir_attr}>'
                 f'<textPath href="#{pid}" startOffset="50%" text-anchor="middle">'
                 f'{escape(line)}</textPath></text>')
 
@@ -336,7 +341,8 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
             overlay.append(title_block(card["title"][0], title_lines,
                                        ts["fill"], ts["outline"], title_font,
                                        ts["outline_w"], ts["arch"], ts["shadow"],
-                                       rtl=title_is_rtl(cfg)))
+                                       rtl=title_is_rtl(cfg),
+                                       italic=ts.get("italic", False)))
         words = words_by_card[ci] if ci < len(words_by_card) else []
         # A card may carry a title but no word slots (its title was drawn above);
         # skip the word pass so the sizing below can't crash the whole page.

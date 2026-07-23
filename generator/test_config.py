@@ -122,7 +122,7 @@ def test_board_and_backs_render_paths_wire_rtl():
     calls = []  # each captured rtl kwarg from a title_block call
 
     def spy_title_block(box, lines, fill, outline, font_path, outline_w, arch,
-                        shadow, rtl=False):
+                        shadow, rtl=False, italic=False):
         calls.append(rtl)
         return "<g/>"
 
