@@ -79,10 +79,13 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
     title_font = config.font_path(theme, cfg["title_font"])
     box = {k: (frac[k] * vb[2] if "x" in k else frac[k] * vb[3]) for k in frac}
     svg = board_svg
-    style = "<style>" + rp.font_face("TitleFont", title_font) + "</style>"
+    style = ("<style>" + rp.GEOMETRIC_TEXT_STYLE
+             + rp.font_face("TitleFont", title_font) + "</style>")
     body = style + rp.title_block(box, title_lines, bd["fill"], bd["outline"],
                                   title_font, ts["outline_w"], ts["arch"], ts["shadow"],
                                   rtl=rp.title_is_rtl(cfg),
+                                  fixed_size=ts.get("board_size"),
+                                  align=ts.get("align", "center"),
                                   italic=ts.get("italic", False))
     return render_svg(svg.replace("</svg>", body + "</svg>"), w, h, out_png)
 
@@ -100,7 +103,8 @@ def render_backs(theme, backs_clean, title_lines, out_png):
     title_font = config.font_path(theme, cfg["title_font"])
     recipe = json.load(open(os.path.join(HERE, "recipes", f"{cfg['recipe']}.json")))
     svg = open(backs_clean, encoding="utf-8").read()
-    body = ["<style>" + rp.font_face("TitleFont", title_font) + "</style>"]
+    body = ["<style>" + rp.GEOMETRIC_TEXT_STYLE
+            + rp.font_face("TitleFont", title_font) + "</style>"]
     for card in recipe["cards"]:
         if not card:
             continue
@@ -111,6 +115,8 @@ def render_backs(theme, backs_clean, title_lines, out_png):
         body.append(rp.title_block(box, title_lines, bk["fill"], bk["outline"],
                                    title_font, ts["outline_w"], ts["arch"], ts["shadow"],
                                    rtl=rp.title_is_rtl(cfg),
+                                   fixed_size=ts.get("back_size") or ts.get("size"),
+                                   align=ts.get("align", "center"),
                                    italic=ts.get("italic", False)))
     return render_svg(svg.replace("</svg>", "".join(body) + "</svg>"), w, h, out_png)
 

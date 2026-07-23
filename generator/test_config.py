@@ -122,7 +122,9 @@ def test_board_and_backs_render_paths_wire_rtl():
     calls = []  # each captured rtl kwarg from a title_block call
 
     def spy_title_block(box, lines, fill, outline, font_path, outline_w, arch,
-                        shadow, rtl=False, italic=False):
+                        shadow, rtl=False, italic=False, **kw):
+        # render_board/render_backs also pass fixed_size=/align= now; accept and
+        # ignore them here — this spy only asserts the rtl kwarg is threaded.
         calls.append(rtl)
         return "<g/>"
 
@@ -238,7 +240,7 @@ def test_word_font_options_are_five_with_files():
 def test_resolve_word_font_default_is_theme_own():
     # no override -> the theme's configured word_font, inside the theme fonts dir
     p = config.resolve_word_font("trip comeback")
-    assert p.endswith("almoni-neue-aaa-bold-OFFICE.ttf")
+    assert p.endswith("aharoni/aharoniclm-book-webfont.ttf")
     assert "trip comeback/fonts" in p
 
 
