@@ -24,11 +24,22 @@ beforeAll(() => {
 });
 
 describe('isGroupWebhook', () => {
-  it('is true for group/participant keys, false for status/message-only bodies', () => {
+  it('is true for group/participant keys', () => {
     expect(app.isGroupWebhook({ groups: [] })).toBe(true);
     expect(app.isGroupWebhook({ groups_participants: [] })).toBe(true);
     expect(app.isGroupWebhook({ chat_participants: [] })).toBe(true);
+  });
+
+  it('is true for an inbound NON-text message (a system/action event we dropped)', () => {
+    // A "member added" delivered as a messages action — captured too.
+    expect(app.isGroupWebhook({ messages: [{ type: 'action', from_me: false }] })).toBe(true);
+    expect(app.isGroupWebhook({ messages: [{ type: 'notification', from_me: false }] })).toBe(true);
+  });
+
+  it('is false for routine traffic (statuses, our echoes, plain text)', () => {
     expect(app.isGroupWebhook({ statuses: [] })).toBe(false);
+    expect(app.isGroupWebhook({ messages: [{ type: 'text', from_me: false }] })).toBe(false);
+    expect(app.isGroupWebhook({ messages: [{ type: 'action', from_me: true }] })).toBe(false); // our echo
     expect(app.isGroupWebhook({ messages: [] })).toBe(false);
     expect(app.isGroupWebhook(null)).toBe(false);
     expect(app.isGroupWebhook([])).toBe(false);

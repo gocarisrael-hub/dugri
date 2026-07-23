@@ -2306,11 +2306,18 @@ function mirrorWebhook(req) {
   }
 }
 
-// True when a webhook body carries a GROUP/participant-related key — used to scope
-// the unhandled-shape diagnostic to joins/leaves (not routine status receipts).
+// Should we log a 0-event webhook's shape? Scoped so routine traffic (status
+// receipts, our own from_me echoes, plain text) never spams — but a "member added"
+// is captured whether Whapi delivers it as a GROUP event OR as a system `messages`
+// action. True when the body has a group/participant key, OR carries an inbound
+// (not from_me) NON-text message that parseWebhook dropped (a system/action event).
 function isGroupWebhook(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
-  return Object.keys(body).some((k) => /group|participant/i.test(k));
+  if (Object.keys(body).some((k) => /group|participant/i.test(k))) return true;
+  if (Array.isArray(body.messages)) {
+    return body.messages.some((m) => m && !m.from_me && m.type && m.type !== 'text');
+  }
+  return false;
 }
 
 // Structure-only fingerprint of a webhook body for diagnostics: top-level keys ->
@@ -2347,12 +2354,12 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
   const base = paymentBaseUrl();
   try {
     const { events } = whatsapp.parseWebhook(req.body);
-    // Diagnostic: if we recognized NO events but this is a GROUP-related inbound
-    // (a participant add/remove arrives as a group event, not a message), log the
-    // body's STRUCTURE — field names only, never content — so an unhandled shape
-    // (e.g. Whapi delivering a join as `groups`/PATCH rather than the expected
-    // `groups_participants`) is visible and can be parsed. Scoped to group keys so
-    // routine status receipts don't spam the log.
+    // Diagnostic: if we recognized NO events but this looks like an unhandled
+    // group/participant inbound (a join can arrive as a `groups`/PATCH event OR as
+    // a system `messages` action, neither of which parseWebhook matches yet), log
+    // the body's STRUCTURE — field names only, never content — so the real shape is
+    // visible and can be parsed. Scoped (isGroupWebhook) so routine status receipts
+    // and our own echoes don't spam the log.
     if (events.length === 0 && isGroupWebhook(req.body)) {
       console.warn(
         '[whatsapp] unhandled group webhook shape:',
