@@ -803,7 +803,10 @@ test('pay panel shows the new version names and prices', async ({ page }) => {
   await expect(panel).toContainText('מורידים, מדפיסים לבד');
   await expect(panel).toContainText('משחק מוכן · איסוף מבית דפוס גלאור, ת״א');
   await expect(panel).toContainText('₪149');
-  await expect(panel).toContainText('המפונקת 👑');
+  // Delivery option: the "המפונקת 👑" branding was dropped — just the plain
+  // door-to-door label remains.
+  await expect(panel).toContainText('משלוח עד הבית של המשחק המוכן');
+  await expect(panel).not.toContainText('המפונקת');
   await expect(panel).toContainText('₪199');
   await expect(panel).toContainText('אזורים מרוחקים בתיאום ובתוספת תשלום');
   // ready / delivery timing on the physical options

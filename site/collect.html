@@ -814,17 +814,28 @@
         font-size: 19px;
         margin: 14px 0;
       }
-      /* coupon code field (owner) — sits just above the total */
+      /* coupon code field (owner) — sits just above the total. Kept compact and
+         low-key: it's a secondary, occasional-use field, so it shouldn't compete
+         with the option list or the pay button for attention. */
       .coupon-box {
-        margin-top: 12px;
+        margin-top: 10px;
+      }
+      .coupon-box .fld {
+        font-size: 13px;
+        margin-bottom: 5px;
       }
       .coupon-box .row {
-        margin-top: 6px;
+        margin-top: 5px;
+      }
+      .coupon-box input[type='text'],
+      .coupon-box .ghost {
+        padding: 9px 12px;
+        font-size: 14px;
       }
       .coupon-msg {
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 700;
-        margin-top: 8px;
+        margin-top: 6px;
         min-height: 1px;
       }
       .coupon-msg.ok {
@@ -872,33 +883,69 @@
         font-weight: 600;
         margin: 4px 0 0;
       }
-      /* credit-card pay (PeleCard iframe) — the only payment path */
+      /* credit-card pay (PeleCard iframe) — the only payment path. This is the
+         primary CTA, so make it large, bold and high-contrast, with a soft
+         "breathing" pulse that draws the eye to it without nagging. */
       .card-pay-btn {
         width: 100%;
         /* breathing room so the button doesn't crowd the copy above it */
-        margin-top: 14px;
-        padding: 15px;
+        margin-top: 16px;
+        padding: 17px 18px;
         border: none;
         border-radius: var(--radius-pill);
         background: var(--sage);
         color: #fff;
         font: inherit;
-        font-weight: 800;
-        font-size: 17px;
+        font-weight: 900;
+        font-size: 18px;
+        letter-spacing: 0.2px;
         cursor: pointer;
-        box-shadow: var(--shadow-sm);
+        box-shadow:
+          0 8px 20px rgba(0, 0, 0, 0.16),
+          0 2px 5px rgba(0, 0, 0, 0.1);
         transition:
           background 0.2s var(--ease),
-          transform 0.2s var(--ease),
-          color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          transform 0.12s var(--ease),
+          box-shadow 0.2s var(--ease);
+        animation: payPulse 2.6s var(--ease) infinite;
+      }
+      /* Gentle rise + shadow bloom so the CTA quietly pulls focus. */
+      @keyframes payPulse {
+        0%,
+        100% {
+          transform: translateY(0);
+          box-shadow:
+            0 8px 20px rgba(0, 0, 0, 0.16),
+            0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        50% {
+          transform: translateY(-3px);
+          box-shadow:
+            0 14px 30px rgba(0, 0, 0, 0.22),
+            0 4px 8px rgba(0, 0, 0, 0.12);
+        }
       }
       .card-pay-btn:hover:not(:disabled) {
         background: var(--sage-deep);
-        transform: translateY(-1px);
+        transform: translateY(-3px);
+        /* pause the idle pulse while the user is actively engaging it */
+        animation-play-state: paused;
+      }
+      .card-pay-btn:active:not(:disabled) {
+        transform: translateY(0);
+        animation-play-state: paused;
       }
       .card-pay-btn:disabled {
         opacity: 0.6;
         cursor: default;
+        animation: none;
+        box-shadow: var(--shadow-sm);
+      }
+      /* Never animate for users who ask for reduced motion. */
+      @media (prefers-reduced-motion: reduce) {
+        .card-pay-btn {
+          animation: none;
+        }
       }
       .pay-modal {
         position: fixed;
@@ -1191,8 +1238,7 @@
             <input type="radio" name="payVersion" value="delivery" />
             <span class="opt-body">
               <span class="opt-title"
-                ><span>המפונקת 👑 · משלוח עד הבית של המשחק המוכן</span
-                ><span class="opt-price">₪199</span></span
+                ><span>משלוח עד הבית של המשחק המוכן</span><span class="opt-price">₪199</span></span
               >
               <span class="opt-note">משלוח עד הבית תוך כ-5 ימים</span>
               <span class="opt-note">אזורים מרוחקים בתיאום ובתוספת תשלום</span>
