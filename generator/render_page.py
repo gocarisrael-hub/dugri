@@ -28,6 +28,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # it Cafe renders as a bold fallback; with it the real Cafe face renders.
 CHROME_FONT_WAIT = "--virtual-time-budget=15000"
 
+# Chrome grid-fits/stem-darkens (hints) a live @font-face at the small on-card
+# render sizes, painting glyphs ~25% heavier than their true outline weight. The
+# Canva originals are OUTLINED paths (never hinted), so they stay thin — the
+# generator looked bold by comparison. Turning hinting off makes every glyph
+# paint at its true outline weight, matching the origin. Applied as ONE global
+# rule alongside the @font-face block on every render path (fronts, board, backs)
+# so titles and words stay in lock-step.
+GEOMETRIC_TEXT_STYLE = "text{text-rendering:geometricPrecision;}"
+
 
 def dims(svg):
     head = open(svg, encoding="utf-8").read(2000)
@@ -103,6 +112,25 @@ def escape(s):
 _MARKER_SCALE = 0.9
 _WORD_GAP = 0.30
 
+# House-style minimum right margin for a numbered line, as a fraction of the card
+# cell width. A numbered line is right-anchored: its DIGIT (rightmost glyph) is
+# pinned to the line's right edge. Recipe auto-detection normally records that
+# edge with a healthy inset, but on some templates (japanese, neon) it collapsed
+# the slot's right edge onto the CELL EDGE, so the digit rendered ON the border
+# and got clipped. Clamping every numbered line to at least this right margin
+# keeps the marker inside the card for ANY template — a no-op for already-inset
+# slots, a pull-in for an edge-pinned one. Generic, not per-template.
+_LINE_RIGHT_MARGIN = float(os.environ.get("DUGRI_LINE_RIGHT_MARGIN", "0.21"))
+
+
+def _line_right_edge(slot_x1, cell):
+    """Right anchor (digit right edge) for a numbered line, clamped inside the
+    card cell by ``_LINE_RIGHT_MARGIN`` so the marker never lands on the border.
+    ``cell`` is [x0,y0,x1,y1]; without it the raw ``slot_x1`` is returned."""
+    if not cell:
+        return slot_x1
+    return min(slot_x1, cell[2] - _LINE_RIGHT_MARGIN * (cell[2] - cell[0]))
+
 
 def _line_width_at(font, ref, num, word):
     """Full numbered-line width (marker + gap + word) at the metric ``ref`` size.
@@ -121,7 +149,7 @@ def _line_width_at(font, ref, num, word):
 _WORD_SIZE_K = float(os.environ.get("DUGRI_WORD_K", "1.3"))
 
 
-def _word_sizes(slots, words, font, ref, cell=None):
+def _word_sizes(slots, words, font, ref, cell=None, word_size=None):
     """One UNIFORM font size for all the card's words (matching the origin's
     single-size look), with a per-word shrink guard so an unusually long word can
     never spill past the card edge into the neighbouring artwork.
@@ -139,7 +167,10 @@ def _word_sizes(slots, words, font, ref, cell=None):
     heights = [s["y1"] - s["y0"] for s in slots]
     if not heights:
         return [None] * len(slots)
-    uniform = statistics.median(heights) * _WORD_SIZE_K
+    # A theme may PIN the uniform word size (the Canva point size, in recipe
+    # units) instead of deriving it from the recipe box heights — used where the
+    # detected boxes overshoot (e.g. bachelorette rendered ~26 vs the real 19).
+    uniform = word_size if word_size else statistics.median(heights) * _WORD_SIZE_K
     left_bound = cell[0] + (cell[2] - cell[0]) * 0.02 if cell else None
     out = []
     for wi, slot in enumerate(slots):
@@ -150,7 +181,7 @@ def _word_sizes(slots, words, font, ref, cell=None):
         wsize = uniform
         if left_bound is not None:
             line_w_ref = _line_width_at(font, ref, wi + 1, word)
-            avail = slot["x1"] - left_bound
+            avail = _line_right_edge(slot["x1"], cell) - left_bound
             if line_w_ref > 0 and avail > 0:
                 wsize = min(wsize, avail * ref / line_w_ref)
         out.append(wsize)
@@ -200,7 +231,7 @@ def title_is_rtl(cfg):
 
 
 def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
-                rtl=False, italic=False):
+                rtl=False, fixed_size=None, align="center", italic=False):
     _TITLE_UID[0] += 1
     uid = _TITLE_UID[0]
     """Graffiti-style stacked title: sized so the WIDEST line fills the box
@@ -259,6 +290,11 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     size_h = old_cap if old_cap <= ink_fit * (1 + _TITLE_OVERFLOW_TOL) else ink_fit
     denom_w = max(ratios)
     size = min(bw * 0.89 / denom_w, size_h) if denom_w > 0 else size_h
+    # A theme may pin the title to an EXACT size (the Canva point size, in the
+    # recipe's user units) instead of auto-fitting to the box — the box then only
+    # positions (centres) the title. Used where auto-fit over/under-shoots.
+    if fixed_size:
+        size = fixed_size
     gap = size * 0.78
     total = gap * (n - 1)
     top = (y0 + y1) / 2 - total / 2
@@ -267,7 +303,13 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # Boldness = a heavy dark OUTLINE ring (not fattened fill). Three stacked
     # layers per line on the arched path: shadow, dark dilated body (outline),
     # light fill on top -> the visible dark ring thickness equals T. (Agent B.)
-    w_fat = size * 0.005                                  # minimal body fatten
+    # Letters render at the font's TRUE outline weight (pure fill, like the word
+    # text) — no body-fatten stroke, which made titles read bolder than the
+    # outlined-vector originals. A visible (contrasting) outline is still drawn as
+    # a ring behind the fill; a same-colour "outline" (monochrome themes) is NOT
+    # drawn, since it would only fatten with no visible ring.
+    visible_outline = outline_w > 0 and outline != fill
+    w_fat = 0.0                                           # no body fatten (true weight)
     t_ring = size * outline_w                             # dark outline ring
     outer = w_fat + 2 * t_ring
     defs, out = [], []
@@ -288,34 +330,54 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # where the base direction IS honored. Verified via the real rasterizer in
     # test_title_block_rtl_reorders_digit_in_raster.)
     dir_attr = ' direction="rtl"' if rtl else ""
-    # Italic titles: emit a plain ``font-style="italic"`` on the title <text> so
-    # Chrome synthesizes the oblique slant from the upright TitleFont (no separate
-    # italic font file needed). Off by default, so non-italic themes are byte-for-
-    # byte unchanged. Opt-in per theme via title_style "italic": true.
+    # Title alignment. Default "center": each line on a centered arced textPath.
+    # "left" anchors every line to the box's left edge (x0) so multi-line titles
+    # share a left edge instead of centering each line independently (japanese).
+    left_align = align == "left"
+    right_align = align == "right"
+    if left_align:
+        path_anchor = 'startOffset="0" text-anchor="start"'
+    elif right_align:
+        path_anchor = 'startOffset="100%" text-anchor="end"'
+    else:
+        path_anchor = 'startOffset="50%" text-anchor="middle"'
+    # Synthetic italic: Chrome obliques the upright font when the theme's real
+    # face has no italic cut (e.g. Cooper). Opt-in via title_style "italic": true.
     italic_attr = ' font-style="italic"' if italic else ""
 
     def on_path(pid, fill_c, stroke_c, swv, line):
         return (f'<text font-family="TitleFont" font-size="{size:.2f}" fill="{fill_c}" '
                 f'stroke="{stroke_c}" stroke-width="{swv:.2f}" paint-order="stroke" '
                 f'stroke-linejoin="round" stroke-linecap="round"{italic_attr}{dir_attr}>'
-                f'<textPath href="#{pid}" startOffset="50%" text-anchor="middle">'
+                f'<textPath href="#{pid}" {path_anchor}>'
                 f'{escape(line)}</textPath></text>')
 
     for k, line in enumerate(lines):
         by = top + gap * k + size * 0.33
         wln = ratios[k] * size
-        xl, xr = cx - wln / 2 - size * 0.15, cx + wln / 2 + size * 0.15
+        if left_align:
+            # Anchor every line to the box's left edge; extend the path right so
+            # the left-anchored (possibly arched) run is never clipped.
+            xl, xr = x0, x0 + wln + size * 0.3
+        elif right_align:
+            # Mirror of left: anchor every line to the box's RIGHT edge; extend
+            # the path left so the right-anchored run is never clipped.
+            xl, xr = x1 - wln - size * 0.3, x1
+        else:
+            xl, xr = cx - wln / 2 - size * 0.15, cx + wln / 2 + size * 0.15
+        cxp = (xl + xr) / 2 if (left_align or right_align) else cx
 
         def arc(pid, ox, oy):
             defs.append(f'<path id="{pid}" fill="none" d="M {xl+ox:.1f} {by+oy:.1f} '
-                        f'Q {cx+ox:.1f} {by+oy-2*bulge:.1f} {xr+ox:.1f} {by+oy:.1f}"/>')
+                        f'Q {cxp+ox:.1f} {by+oy-2*bulge:.1f} {xr+ox:.1f} {by+oy:.1f}"/>')
 
         if shadow:
             arc(f"t{uid}s{k}", dx, dy)                    # shadow path
         arc(f"t{uid}m{k}", 0, 0)                          # main path
-        if shadow:
+        if shadow and visible_outline:
             out.append(on_path(f"t{uid}s{k}", outline, outline, outer, line))  # shadow
-        out.append(on_path(f"t{uid}m{k}", outline, outline, outer, line))   # outline
+        if visible_outline:
+            out.append(on_path(f"t{uid}m{k}", outline, outline, outer, line))  # outline
         out.append(on_path(f"t{uid}m{k}", fill, fill, w_fat, line))         # fill body
     return "<defs>" + "".join(defs) + "</defs>" + "".join(out)
 
@@ -331,17 +393,37 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
     title_font = config.font_path(theme, cfg["title_font"])
     ts = cfg["title_style"]
     svg = open(clean_svg, encoding="utf-8").read()
-    style = ("<style>" + font_face("HebWord", word_font)
+    style = ("<style>" + GEOMETRIC_TEXT_STYLE + font_face("HebWord", word_font)
              + font_face("TitleFont", title_font) + "</style>")
     overlay = [style]
     for ci, card in enumerate(recipe["cards"]):
         if not card:
             continue
         if card.get("title") and title_lines:
-            overlay.append(title_block(card["title"][0], title_lines,
+            # The recipe may record ONE box per title LINE (birthday-girls has 2).
+            # Fit the stacked title into the UNION of those boxes — using only
+            # card["title"][0] would cram every line into the first line's height
+            # (~half size). For a single-box title the union is that box (no-op).
+            tb = card["title"]
+            tbox = {"x0": min(b["x0"] for b in tb), "y0": min(b["y0"] for b in tb),
+                    "x1": max(b["x1"] for b in tb), "y1": max(b["y1"] for b in tb)}
+            # Optional per-theme title nudge, as [dx, dy] fractions of the card
+            # cell (positive = right / down). Used to seat a title that the
+            # detected box places into a corner (e.g. japanese, top-left) at the
+            # original's inset position. No-op when unset.
+            off = ts.get("offset")
+            cell = card.get("cell")
+            if off and cell:
+                dx = off[0] * (cell[2] - cell[0])
+                dy = off[1] * (cell[3] - cell[1])
+                tbox = {"x0": tbox["x0"] + dx, "x1": tbox["x1"] + dx,
+                        "y0": tbox["y0"] + dy, "y1": tbox["y1"] + dy}
+            overlay.append(title_block(tbox, title_lines,
                                        ts["fill"], ts["outline"], title_font,
                                        ts["outline_w"], ts["arch"], ts["shadow"],
                                        rtl=title_is_rtl(cfg),
+                                       fixed_size=ts.get("size"),
+                                       align=ts.get("align", "center"),
                                        italic=ts.get("italic", False)))
         words = words_by_card[ci] if ci < len(words_by_card) else []
         # A card may carry a title but no word slots (its title was drawn above);
@@ -350,13 +432,14 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
             continue
         wf_metrics, wf_ref = _word_metrics(word_font)
         sizes = _word_sizes(card["words"], words, wf_metrics, wf_ref,
-                            cell=card.get("cell"))
+                            cell=card.get("cell"), word_size=cfg.get("word_size"))
         for wi, slot in enumerate(card["words"]):
             wsize = sizes[wi]
             if wsize is None:
                 continue
             baseline = (slot["y0"] + slot["y1"]) / 2 + wsize * 0.34
-            overlay.append(word_text(slot["x1"], baseline, wsize, slot["color"],
+            x_right = _line_right_edge(slot["x1"], card.get("cell"))
+            overlay.append(word_text(x_right, baseline, wsize, slot["color"],
                                      wi + 1, words[wi], word_font))
     body = "".join(overlay)
     return svg.replace("</svg>", body + "</svg>")
