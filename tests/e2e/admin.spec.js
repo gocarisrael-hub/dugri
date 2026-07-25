@@ -8,9 +8,9 @@ const uniq = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 
 // Seed a collection straight through the API (faster + more controllable than
 // the wizard). Optionally attach words, an order, and mark it paid.
-async function seed(request, { name, email, phone, words, version, paid }) {
+async function seed(request, { name, email, phone, words, version, paid, extra_fields }) {
   const create = await request.post('/api/collections', {
-    data: { honoree_name: name, email, phone },
+    data: { honoree_name: name, email, phone, extra_fields },
   });
   const { id, owner_token } = await create.json();
   if (words && words.length) {
@@ -172,4 +172,37 @@ test('order table fits the viewport width — no horizontal scroll', async ({ pa
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.locator('tbody tr').first()).toBeVisible();
   expect(await noOverflow()).toBe(true);
+});
+
+test('per-order extra fields (age / anniversary years + names) show in the table', async ({
+  page,
+  request,
+}) => {
+  // Anniversary order: YEARS + NAME1 + NAME2 collected on the order.
+  const anniv = uniq('נישואין');
+  await seed(request, {
+    name: anniv,
+    email: 'anniv@example.com',
+    phone: '0521110000',
+    extra_fields: { YEARS: '25', NAME1: 'דנה', NAME2: 'יוסי' },
+  });
+  // Kids birthday order: AGE only.
+  const kid = uniq('גילה');
+  await seed(request, {
+    name: kid,
+    email: 'kid@example.com',
+    phone: '0522220000',
+    extra_fields: { AGE: '8' },
+  });
+
+  await page.goto(`/admin.html?key=${KEY}`);
+  await expect(page.locator('table')).toBeVisible();
+
+  const annivRow = page.locator('tbody tr').filter({ hasText: anniv });
+  await expect(annivRow).toContainText('שנות נישואין: 25');
+  await expect(annivRow).toContainText('שם 1: דנה');
+  await expect(annivRow).toContainText('שם 2: יוסי');
+
+  const kidRow = page.locator('tbody tr').filter({ hasText: kid });
+  await expect(kidRow).toContainText('גיל: 8');
 });
