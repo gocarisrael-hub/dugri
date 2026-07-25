@@ -173,3 +173,29 @@ test('order table fits the viewport width — no horizontal scroll', async ({ pa
   await expect(page.locator('tbody tr').first()).toBeVisible();
   expect(await noOverflow()).toBe(true);
 });
+
+test('the "פתח קבוצה" button POSTs open-group and reports the outcome', async ({
+  page,
+  request,
+}) => {
+  const name = uniq('קבוצה');
+  await seed(request, { name, email: 'grp@example.com', phone: '0521234567' });
+
+  await page.goto(`/admin.html?key=${KEY}`);
+  const row = page.locator('tbody tr').filter({ hasText: name });
+  const btn = row.getByRole('button', { name: 'פתח קבוצה' });
+  await expect(btn).toBeVisible();
+
+  // Capture where it POSTs + the alert it shows. The e2e server runs the bot
+  // DORMANT (no WHAPI env), so the real endpoint answers with the dormant message
+  // — a genuine round-trip through the new route, no mock.
+  const [resp, dialogMsg] = await Promise.all([
+    page.waitForResponse((r) => /\/open-group\?/.test(r.url()) && r.request().method() === 'POST'),
+    new Promise((resolve) => page.once('dialog', (d) => resolve(d.message()) || d.accept())),
+    btn.click(),
+  ]);
+  expect(resp.status()).toBe(200);
+  const body = await resp.json();
+  expect(body).toMatchObject({ ok: false, reason: 'dormant' });
+  expect(dialogMsg).toContain('בוט הוואטסאפ כבוי');
+});

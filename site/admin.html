@@ -891,6 +891,31 @@
             };
             td.appendChild(document.createTextNode(' '));
             td.appendChild(cancelBtn);
+
+            // Open (or retry) the word-collection WhatsApp group on demand. Use
+            // this when an order came in but no group opened automatically (e.g. a
+            // dropped Whapi channel). The server reports the outcome — incl. the
+            // failure reason — which we surface so a failure isn't silent.
+            const groupBtn = document.createElement('button');
+            groupBtn.textContent = 'פתח קבוצה';
+            groupBtn.onclick = async () => {
+              groupBtn.disabled = true;
+              try {
+                const r = await fetch(
+                  '/api/admin/collections/' + c.id + '/open-group?key=' + encodeURIComponent(key),
+                  { method: 'POST' }
+                );
+                const data = await r.json().catch(() => ({}));
+                alert(data.message || (r.ok ? 'בוצע' : 'פתיחת הקבוצה נכשלה.'));
+                if (r.ok && data.ok && !data.already) load();
+                else groupBtn.disabled = false;
+              } catch {
+                alert('פתיחת הקבוצה נכשלה (שגיאת רשת).');
+                groupBtn.disabled = false;
+              }
+            };
+            td.appendChild(document.createTextNode(' '));
+            td.appendChild(groupBtn);
           }
 
           const delBtn = document.createElement('button');

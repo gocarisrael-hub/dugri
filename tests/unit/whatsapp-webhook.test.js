@@ -395,9 +395,30 @@ describe('paid hook — openWhatsappGroup', () => {
 
   it('does nothing when the buyer has no usable phone', async () => {
     const c = db.createCollection('ללא טלפון'); // no phone
-    await app.openWhatsappGroup(c, base);
+    const r = await app.openWhatsappGroup(c, base);
     expect(createCalls).toHaveLength(0);
     expect(waState.groupForCollection(c.id)).toBeNull();
+    expect(r).toEqual({ ok: false, reason: 'no-phone' });
+  });
+
+  it('returns a typed result the on-demand button can report', async () => {
+    // success
+    const c = db.createCollection('תמר', { phone: '0521234567' });
+    const ok = await app.openWhatsappGroup(c, base);
+    expect(ok).toEqual({ ok: true, groupId: 'g-new@g.us' });
+    // a second call is idempotent and says so (already:true, no new create)
+    createCalls = [];
+    const again = await app.openWhatsappGroup(c, base);
+    expect(again).toEqual({ ok: true, already: true, groupId: 'g-new@g.us' });
+    expect(createCalls).toHaveLength(0);
+    // a real createGroup failure surfaces reason + detail (not just a log)
+    createResult = { ok: false, status: 401, error: 'whapi http 401' };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const c2 = db.createCollection('נועה', { phone: '0521234567' });
+    const fail = await app.openWhatsappGroup(c2, base);
+    expect(fail).toMatchObject({ ok: false, reason: 'create-failed' });
+    expect(fail.detail).toContain('401');
+    warnSpy.mockRestore();
   });
 
   it('logs the reason (not the phone) and links no group when createGroup fails', async () => {
@@ -630,5 +651,60 @@ describe('GET /api/whatsapp/health', () => {
     expect(r.status).toBe(200);
     expect(r.body.connection).toBe('error');
     spy.mockRestore();
+  });
+});
+
+// POST /api/admin/collections/:id/open-group — owner-triggered group open (the
+// "פתח קבוצה" button), so an order whose group didn't open automatically can be
+// retried by hand with the outcome reported inline.
+describe('POST /api/admin/collections/:id/open-group', () => {
+  async function openGroup(id, query) {
+    const res = await realFetch(
+      base + '/api/admin/collections/' + id + '/open-group' + (query || ''),
+      { method: 'POST' }
+    );
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  }
+
+  it('requires the admin key', async () => {
+    const c = db.createCollection('גל', { phone: '0521234567' });
+    const r = await openGroup(c.id, '');
+    expect(r.status).toBe(403);
+  });
+
+  it('404s for an unknown collection', async () => {
+    const r = await openGroup('no-such-id', '?key=dugri-admin');
+    expect(r.status).toBe(404);
+  });
+
+  it('opens the group and returns a success message', async () => {
+    const c = db.createCollection('שירן', { phone: '0521234567' });
+    const r = await openGroup(c.id, '?key=dugri-admin');
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, groupId: 'g-new@g.us' });
+    expect(r.body.message).toContain('נפתחה');
+    expect(waState.groupForCollection(c.id)).toBe('g-new@g.us');
+  });
+
+  it('reports "already exists" on a second click (idempotent, opens nothing)', async () => {
+    const c = db.createCollection('אורי', { phone: '0521234567' });
+    await openGroup(c.id, '?key=dugri-admin');
+    createCalls = [];
+    const r = await openGroup(c.id, '?key=dugri-admin');
+    expect(r.body).toMatchObject({ ok: true, already: true });
+    expect(createCalls).toHaveLength(0);
+    expect(r.body.message).toContain('כבר קיימת');
+  });
+
+  it('surfaces the failure reason when createGroup fails (dropped channel)', async () => {
+    createResult = { ok: false, status: 401, error: 'whapi http 401' };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const c = db.createCollection('דור', { phone: '0521234567' });
+    const r = await openGroup(c.id, '?key=dugri-admin');
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: false, reason: 'create-failed' });
+    expect(r.body.message).toContain('Whapi');
+    expect(waState.groupForCollection(c.id)).toBeNull();
+    warnSpy.mockRestore();
   });
 });

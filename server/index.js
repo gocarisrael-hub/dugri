@@ -677,6 +677,38 @@ app.delete('/api/admin/collections/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// Admin: open the word-collection WhatsApp group for a collection ON DEMAND. Same
+// path the automatic hook uses, but owner-triggered from a button — so a group
+// that failed to open automatically (dropped channel, transient Whapi error) can
+// be retried with one click, and the outcome (incl. the failure reason) is
+// reported back inline instead of only landing in the server log. Idempotent:
+// re-clicking an already-open collection returns `already:true` and opens nothing.
+const OPEN_GROUP_MSG = {
+  'no-collection': 'לא נמצאה הזמנה.',
+  'in-progress': 'פתיחת הקבוצה כבר בתהליך — נסו שוב עוד רגע.',
+  'no-phone': 'אין מספר טלפון תקין ללקוח/ה, אז אי אפשר לפתוח קבוצה.',
+  dormant: 'בוט הוואטסאפ כבוי (לא מוגדר בשרת).',
+  'create-failed': 'וואטסאפ סירב לפתוח קבוצה — ייתכן שהחיבור נותק. בדקו את החיבור ב-Whapi.',
+};
+app.post('/api/admin/collections/:id/open-group', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  let result;
+  try {
+    result = await openWhatsappGroup(c, paymentBaseUrl());
+  } catch (e) {
+    result = { ok: false, reason: 'create-failed', detail: (e && e.message) || String(e) };
+  }
+  result = result || { ok: false, reason: 'create-failed', detail: 'no result' };
+  const message = result.already
+    ? 'לקבוצה הזו כבר קיימת קבוצת וואטסאפ.'
+    : result.ok
+      ? 'הקבוצה נפתחה ✓'
+      : OPEN_GROUP_MSG[result.reason] || 'פתיחת הקבוצה נכשלה.';
+  res.json({ ...result, message });
+});
+
 // Admin: list all discount coupons.
 app.get('/api/admin/coupons', (req, res) => {
   if (!requireAdmin(req, res)) return;
@@ -1303,16 +1335,24 @@ async function alertOwnerViaWhatsApp(subject, lines) {
 //      fails, escalate to the owner — by email (notify.sendSystemAlert) AND, when
 //      email is unavailable, by a WhatsApp DM to the owner's own number — so a
 //      human is always reached even on an email-off deployment.
+// Returns a small typed result describing the outcome so an on-demand caller (the
+// admin "open group now" button) can report success/failure to the owner. The
+// automatic callers (fireStartNotifications) ignore the return. Shapes:
+//   { ok:true, groupId }              — group opened + linked
+//   { ok:true, already:true, groupId }— a group already exists (no-op)
+//   { ok:false, reason:'no-collection' | 'in-progress' | 'no-phone' | 'dormant' }
+//   { ok:false, reason:'create-failed', detail }  — Whapi createGroup failed
 async function openWhatsappGroup(collection, base) {
-  if (!collection || !collection.id) return;
-  if (waState.groupForCollection(collection.id)) return; // already have a group — no-op
+  if (!collection || !collection.id) return { ok: false, reason: 'no-collection' };
+  const existing = waState.groupForCollection(collection.id);
+  if (existing) return { ok: true, already: true, groupId: existing }; // already have a group
   // Reserve the intent to create BEFORE the first await. Two concurrent paid
   // events for one collection would otherwise both pass the check above and both
   // createGroup; the loser here backs off, so exactly one group is ever created.
-  if (!waState.reserveCollection(collection.id)) return;
+  if (!waState.reserveCollection(collection.id)) return { ok: false, reason: 'in-progress' };
   try {
     const buyerWa = ilPhoneToWaId(collection.owner_phone);
-    if (!buyerWa) return; // no usable buyer number
+    if (!buyerWa) return { ok: false, reason: 'no-phone' }; // no usable buyer number
     const honoree = collection.honoree_name || '';
     const subject = 'דוגרי · מילים על ' + (honoree || 'בעל/ת השמחה');
 
@@ -1323,11 +1363,12 @@ async function openWhatsappGroup(collection, base) {
       // 200 with no group id) otherwise fails here silently and the owner just sees
       // "orders but no groups", so log WHY: reason + collection id only — never the
       // buyer's phone or the honoree name.
-      if (created && !created.skipped) {
-        const why = created.error || 'http ' + (created.status || '?') + ' / no groupId';
-        console.warn('[whatsapp] createGroup failed for collection ' + collection.id + ': ' + why);
-      }
-      return;
+      if (created && created.skipped) return { ok: false, reason: 'dormant' };
+      const why =
+        (created && created.error) ||
+        'http ' + ((created && created.status) || '?') + ' / no groupId';
+      console.warn('[whatsapp] createGroup failed for collection ' + collection.id + ': ' + why);
+      return { ok: false, reason: 'create-failed', detail: why };
     }
     const groupId = created.groupId;
 
@@ -1364,6 +1405,7 @@ async function openWhatsappGroup(collection, base) {
         if (!emailed) await alertOwnerViaWhatsApp(alertSubject, alertLines);
       }
     }
+    return { ok: true, groupId };
   } finally {
     // Release the reservation whether we succeeded or bailed. On success the group
     // is now in by_collection (so a later call is a no-op via the top guard); on
