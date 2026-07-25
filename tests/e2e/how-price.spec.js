@@ -59,3 +59,17 @@ test('the sticky order CTA keeps the current price before the struck price in th
   });
   expect(order).toBe('now-first');
 });
+
+// how.html now reads the price through the shared fetchPricing helper (dynamic
+// import), which is fail-safe: a failing /api/pricing must leave the seeded
+// launch-default prices (199 / struck 239) in place, never a blank.
+test('a failing /api/pricing leaves the seeded default prices in place (fail-soft)', async ({
+  page,
+}) => {
+  await page.route('**/api/pricing', (route) => route.fulfill({ status: 500, body: '' }));
+  await page.goto('/how.html');
+
+  const cta = page.locator('.hero-cta a.btn').first();
+  await expect(cta.locator('[data-price-now]')).toHaveText('199 ₪');
+  await expect(cta.locator('[data-price-was]')).toHaveText('239 ₪');
+});
