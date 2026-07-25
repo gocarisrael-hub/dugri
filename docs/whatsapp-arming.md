@@ -50,7 +50,18 @@ https://<YOUR-DOMAIN>/api/whatsapp/webhook?secret=<YOUR_SECRET>
 - `<YOUR_SECRET>` = a strong random string **you invent** (e.g. `openssl rand -hex 24`).
   It is a password on the webhook so only real Whapi calls are accepted. The **same**
   value goes into `WHAPI_WEBHOOK_SECRET` below — they must match exactly.
-- Subscribe the webhook to **messages** and **group participant** events.
+- **Mode: Body.**
+- **Enable these webhook events (this exact set):**
+  - `messages` → **POST** — inbound words typed in the group.
+  - `groups` → **POST** — group created.
+  - `groups` → **PUT** — **a member is ADDED to the group.** REQUIRED for the
+    "member joined" welcome; without it Whapi sends nothing on a join and the bot
+    can't greet newcomers. (This one is easy to miss — the default is off.)
+  - `groups` → **PATCH** — group metadata updated.
+
+  Note: a member add arrives as a `groups`/**PUT** event carrying a
+  `groups_participants` array — which `server/whatsapp.js parseWebhook` already
+  handles. So enabling `groups:PUT` is all it takes; no code change.
 
 ### 5. Railway env (owner-only), then restart
 
