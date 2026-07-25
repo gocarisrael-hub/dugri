@@ -1168,47 +1168,65 @@
           <b>"מספיק! סיימנו"</b> האיסוף נשאר פתוח.
         </p>
         <div class="pay-opts" id="payOpts" role="radiogroup" aria-label="בחירת גרסה">
+          <!-- Each version's TITLE and NOTE(s) are owner-editable via the content
+               editor (data-edit on the label span + each note — NOT on .opt-title,
+               which also holds the JS-stamped .opt-price child). Prices stay
+               owner-editable separately in admin-pricing. -->
           <label class="pay-opt active">
             <input type="radio" name="payVersion" value="pdf" checked />
             <span class="opt-body">
               <span class="opt-title"
-                ><span>דיגיטלי (PDF)</span><span class="opt-price">₪79</span></span
+                ><span data-edit="collect-ver-pdf-title">דיגיטלי (PDF)</span
+                ><span class="opt-price">₪79</span></span
               >
-              <span class="opt-note">מורידים, מדפיסים לבד, ומתפוצצים מצחוק 🎉</span>
+              <span class="opt-note" data-edit="collect-ver-pdf-note"
+                >מורידים, מדפיסים לבד, ומתפוצצים מצחוק 🎉</span
+              >
             </span>
           </label>
           <label class="pay-opt">
             <input type="radio" name="payVersion" value="pickup" />
             <span class="opt-body">
               <span class="opt-title"
-                ><span>משחק מוכן · איסוף מבית דפוס גלאור, ת״א</span
+                ><span data-edit="collect-ver-pickup-title"
+                  >משחק מוכן · איסוף מבית דפוס גלאור, ת״א</span
                 ><span class="opt-price">₪149</span></span
               >
-              <span class="opt-note">מוכן לאיסוף תוך כ-48 שעות</span>
+              <span class="opt-note" data-edit="collect-ver-pickup-note"
+                >מוכן לאיסוף תוך כ-48 שעות</span
+              >
             </span>
           </label>
           <label class="pay-opt">
             <input type="radio" name="payVersion" value="delivery" />
             <span class="opt-body">
               <span class="opt-title"
-                ><span>המפונקת 👑 · משלוח עד הבית של המשחק המוכן</span
+                ><span data-edit="collect-ver-delivery-title"
+                  >המפונקת 👑 · משלוח עד הבית של המשחק המוכן</span
                 ><span class="opt-price">₪199</span></span
               >
-              <span class="opt-note">משלוח עד הבית תוך כ-5 ימים</span>
-              <span class="opt-note">אזורים מרוחקים בתיאום ובתוספת תשלום</span>
+              <span class="opt-note" data-edit="collect-ver-delivery-note"
+                >משלוח עד הבית תוך כ-5 ימים</span
+              >
+              <span class="opt-note" data-edit="collect-ver-delivery-note2"
+                >אזורים מרוחקים בתיאום ובתוספת תשלום</span
+              >
             </span>
           </label>
           <label class="pay-opt pay-opt-custom">
             <input type="radio" name="payVersion" value="custom" />
             <span class="opt-body">
               <span class="opt-title"
-                ><span>עיצוב אישי בהתאמה מלאה ✨ · מעוצב ביד במיוחד עבורכם</span
+                ><span data-edit="collect-ver-custom-title"
+                  >עיצוב אישי בהתאמה מלאה ✨ · מעוצב ביד במיוחד עבורכם</span
                 ><span class="opt-price">₪599</span></span
               >
-              <span class="opt-note"
+              <span class="opt-note" data-edit="collect-ver-custom-note"
                 >בלי תבנית מוכנה — עיצוב ייחודי שנבנה מאפס סביב הסיפור שלכם</span
               >
-              <span class="opt-note">ניצור קשר לאחר התשלום לתיאום העיצוב</span>
+              <span class="opt-note" data-edit="collect-ver-custom-note2"
+                >ניצור קשר לאחר התשלום לתיאום העיצוב</span
+              >
             </span>
           </label>
         </div>
