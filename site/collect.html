@@ -909,20 +909,21 @@
           box-shadow 0.2s var(--ease);
         animation: payPulse 2.6s var(--ease) infinite;
       }
-      /* Gentle rise + shadow bloom so the CTA quietly pulls focus. */
+      /* A soft shadow "glow" that blooms and recedes to pull focus. It animates
+         ONLY box-shadow — never transform/position — so the button's box stays
+         put: a perpetually-moving box is never a stable tap target (it jitters a
+         real tap and stalls automated click checks). Hover still lifts it. */
       @keyframes payPulse {
         0%,
         100% {
-          transform: translateY(0);
           box-shadow:
             0 8px 20px rgba(0, 0, 0, 0.16),
             0 2px 5px rgba(0, 0, 0, 0.1);
         }
         50% {
-          transform: translateY(-3px);
           box-shadow:
-            0 14px 30px rgba(0, 0, 0, 0.22),
-            0 4px 8px rgba(0, 0, 0, 0.12);
+            0 12px 32px rgba(0, 0, 0, 0.28),
+            0 3px 8px rgba(0, 0, 0, 0.14);
         }
       }
       .card-pay-btn:hover:not(:disabled) {
@@ -1248,8 +1249,7 @@
             <input type="radio" name="payVersion" value="delivery" />
             <span class="opt-body">
               <span class="opt-title"
-                ><span data-edit="collect-ver-delivery-title"
-                  >משלוח עד הבית של המשחק המוכן</span
+                ><span data-edit="collect-ver-delivery-title">משלוח עד הבית של המשחק המוכן</span
                 ><span class="opt-price">₪199</span></span
               >
               <span class="opt-note" data-edit="collect-ver-delivery-note"
