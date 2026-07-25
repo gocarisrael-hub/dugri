@@ -397,6 +397,209 @@ def test_calibrated_font_renders_through_chrome():
     assert iou_good - iou_fallback > 0.25
 
 
+# --- 6. title alignment (left / center / right) ------------------------------
+
+def _paths(svg):
+    """Every <path> d-string in the title SVG, as (start_x, end_x) pairs."""
+    out = []
+    for d in re.findall(r'd="M ([\d.]+) [\d.]+ Q [\d.-]+ [\d.-]+ ([\d.]+)', svg):
+        out.append((float(d[0]), float(d[1])))
+    return out
+
+
+def _birthday_fixture():
+    cfg = config.theme("birthday-girls")
+    fp = config.font_path("birthday-girls", cfg["title_font"])
+    ts = cfg["title_style"]
+    box = {"x0": 65.6, "y0": 28.9, "x1": 139.1, "y1": 47.2}
+    return fp, ts, box
+
+
+def test_title_align_left_anchors_lines_to_left_edge():
+    fp, ts, box = _birthday_fixture()
+    svg = rp.title_block(box, ["Alma's", "B-day"], ts["fill"], ts["outline"], fp,
+                         ts["outline_w"], ts["arch"], ts["shadow"], align="left")
+    assert 'startOffset="0" text-anchor="start"' in svg
+    assert 'text-anchor="middle"' not in svg
+    # every arced path begins at the box's LEFT edge (x0)
+    for start_x, _end_x in _paths(svg):
+        assert abs(start_x - box["x0"]) < 0.15, "left-aligned path must start at x0"
+
+
+def test_title_align_right_anchors_lines_to_right_edge():
+    fp, ts, box = _birthday_fixture()
+    svg = rp.title_block(box, ["Alma's", "B-day"], ts["fill"], ts["outline"], fp,
+                         ts["outline_w"], ts["arch"], ts["shadow"], align="right")
+    assert 'startOffset="100%" text-anchor="end"' in svg
+    assert 'text-anchor="middle"' not in svg
+    # every arced path ends at the box's RIGHT edge (x1)
+    for _start_x, end_x in _paths(svg):
+        assert abs(end_x - box["x1"]) < 0.15, "right-aligned path must end at x1"
+
+
+def test_title_align_center_is_default_and_symmetric():
+    fp, ts, box = _birthday_fixture()
+    default_svg = rp.title_block(box, ["Alma's", "B-day"], ts["fill"], ts["outline"],
+                                 fp, ts["outline_w"], ts["arch"], ts["shadow"])
+    center_svg = rp.title_block(box, ["Alma's", "B-day"], ts["fill"], ts["outline"],
+                                fp, ts["outline_w"], ts["arch"], ts["shadow"],
+                                align="center")
+    assert 'startOffset="50%" text-anchor="middle"' in default_svg
+    assert 'text-anchor="start"' not in default_svg and 'text-anchor="end"' not in default_svg
+    # default == explicit center; and each path is centred on the box mid-x
+    cx = (box["x0"] + box["x1"]) / 2
+    for start_x, end_x in _paths(center_svg):
+        assert abs((start_x + end_x) / 2 - cx) < 0.15, "centered path must straddle box mid-x"
+
+
+# --- 7. de-bold: monochrome title = pure fill, contrasting = outline ring -----
+
+def _stroke_widths(svg):
+    return [float(w) for w in re.findall(r'stroke-width="([\d.]+)"', svg)]
+
+
+def test_monochrome_title_emits_no_stroke_ring():
+    # outline == fill (a same-colour "outline", e.g. a monochrome theme): the ring
+    # would only fatten with no visible edge, so it must NOT be drawn — every run
+    # is pure fill (stroke-width 0). De-bold guarantee.
+    fp, ts, box = _birthday_fixture()
+    svg = rp.title_block(box, ["Alma's", "B-day"], "#101010", "#101010", fp,
+                         ts["outline_w"], ts["arch"], ts["shadow"])
+    sw = _stroke_widths(svg)
+    assert sw, "title must emit at least the fill run"
+    assert max(sw) == 0.0, "monochrome title (outline==fill) must have no non-zero stroke"
+
+
+def test_contrasting_title_keeps_its_outline_ring():
+    # outline != fill: the dark ring behind the light fill IS drawn (a positive
+    # stroke-width), so a contrasting title keeps its edge.
+    fp, ts, box = _birthday_fixture()
+    svg = rp.title_block(box, ["Alma's", "B-day"], "#a4e9ff", "#000000", fp,
+                         ts["outline_w"], ts["arch"], ts["shadow"])
+    sw = _stroke_widths(svg)
+    assert max(sw) > 0.0, "contrasting title must keep a non-zero outline ring"
+    # and the fill body itself is still pure fill (no body-fatten stroke)
+    assert 0.0 in sw, "fill body must render at true weight (stroke-width 0)"
+
+
+# --- 8. GEOMETRIC_TEXT_STYLE (de-bold) on every render path ------------------
+
+def test_geometric_text_style_on_all_render_paths():
+    import build
+    # (a) fronts: build_page bakes the style block into the page SVG.
+    fronts = config.clean_path("birthday-girls", "fronts")
+    page = rp.build_page("birthday-girls", fronts, [[] for _ in range(8)],
+                         ["Alma's", "B-day"])
+    assert rp.GEOMETRIC_TEXT_STYLE in page, "fronts render path missing geometric style"
+    # (b) board + (c) backs: capture the SVG each hands to render_svg.
+    captured = []
+    saved = build.render_svg
+    try:
+        build.render_svg = lambda svg_text, w, h, out_png: captured.append(svg_text) or out_png
+        board = config.clean_path("birthday-girls", "board")
+        backs = config.clean_path("birthday-girls", "backs")
+        build.render_board("birthday-girls", board, ["Alma's", "B-day"], "/tmp/b.png")
+        build.render_backs("birthday-girls", backs, ["Alma's", "B-day"], "/tmp/k.png")
+    finally:
+        build.render_svg = saved
+    assert len(captured) == 2
+    for svg_text in captured:
+        assert rp.GEOMETRIC_TEXT_STYLE in svg_text, "board/back render path missing geometric style"
+
+
+# --- 9. per-theme word_size pins the uniform word size -----------------------
+
+def test_word_size_pins_the_uniform_word_size():
+    font, ref = _cafe()
+    # tall boxes would derive a big median-based size; word_size must override it.
+    slots = _slots([(10, 10 + i * 60, 190, 54 + i * 60) for i in range(4)])
+    words = ["מסיבה", "חברים", "ריקודים", "צחוקים"]
+    derived = rp._word_sizes(slots, words, font, ref, cell=[5, 5, 195, 300])
+    pinned = rp._word_sizes(slots, words, font, ref, cell=[5, 5, 195, 300], word_size=17.0)
+    assert all(abs(s - 17.0) < 1e-9 for s in pinned), "word_size must pin every word to it"
+    assert derived[0] != 17.0, "sanity: the box-derived size differs from the pin"
+
+
+# --- 10. back_size overrides the back-title size -----------------------------
+
+def test_back_size_overrides_back_title_size():
+    # render_backs must pin each back title to the theme's back_size (not its
+    # front title `size`). birthday-girls: size=23, back_size=30.
+    import build
+    ts = config.theme("birthday-girls")["title_style"]
+    assert ts.get("back_size") and ts.get("back_size") != ts.get("size")
+    seen = []
+
+    def spy(box, lines, fill, outline, font_path, outline_w, arch, shadow,
+            rtl=False, italic=False, fixed_size=None, align="center"):
+        seen.append(fixed_size)
+        return ""
+
+    saved_tb, saved_rs = rp.title_block, build.render_svg
+    try:
+        rp.title_block = spy
+        build.render_svg = lambda svg_text, w, h, out_png: out_png
+        backs = config.clean_path("birthday-girls", "backs")
+        build.render_backs("birthday-girls", backs, ["Alma's", "B-day"], "/tmp/k.png")
+    finally:
+        rp.title_block, build.render_svg = saved_tb, saved_rs
+    assert seen, "render_backs must draw at least one back title"
+    assert all(fs == ts["back_size"] for fs in seen), (
+        f"back titles must use back_size {ts['back_size']}, got {seen}")
+
+
+# --- 11. word-marker right-edge clamp keeps a slot inside the cell ------------
+
+def test_line_right_edge_clamps_an_edge_pinned_slot_inside_the_cell():
+    cell = [10.0, 10.0, 210.0, 300.0]          # 200-wide cell
+    margin = rp._LINE_RIGHT_MARGIN * (cell[2] - cell[0])
+    # a slot whose right edge collapsed onto the CELL edge must be pulled in.
+    pinned = rp._line_right_edge(cell[2], cell)
+    assert pinned < cell[2], "edge-pinned slot must be clamped inside the cell"
+    assert abs(pinned - (cell[2] - margin)) < 1e-9
+    # a slot already well inside the margin is returned unchanged.
+    inset = cell[2] - margin - 20.0
+    assert rp._line_right_edge(inset, cell) == inset
+    # no cell -> raw right edge (back-compat).
+    assert rp._line_right_edge(cell[2], None) == cell[2]
+
+
+# --- 12. title-box union for a 2-box title -----------------------------------
+
+def test_title_box_union_for_two_box_title():
+    # birthday-girls records TWO title boxes (one per line). build_page must fit
+    # the title into their UNION (min/min .. max/max), not the first box alone.
+    import json
+    cfg = config.theme("birthday-girls")
+    recipe = json.load(open(os.path.join(rp.HERE, "recipes", f"{cfg['recipe']}.json")))
+    tb = next(c["title"] for c in recipe["cards"] if c and c.get("title"))
+    assert len(tb) == 2, "fixture expects a 2-box title"
+    expect = {"x0": min(b["x0"] for b in tb), "y0": min(b["y0"] for b in tb),
+              "x1": max(b["x1"] for b in tb), "y1": max(b["y1"] for b in tb)}
+    assert cfg["title_style"].get("offset") is None, "fixture assumes no title offset"
+    seen = []  # build_page draws a title per card; capture every box it passes
+
+    def spy(box, *a, **k):
+        seen.append(dict(box))
+        return ""
+
+    saved = rp.title_block
+    try:
+        rp.title_block = spy
+        fronts = config.clean_path("birthday-girls", "fronts")
+        rp.build_page("birthday-girls", fronts, [[] for _ in range(8)], ["Alma's", "B-day"])
+    finally:
+        rp.title_block = saved
+    assert seen, "build_page must draw the title"
+    # the first card's title must be fit into the UNION of ITS two boxes.
+    matched = any(all(abs(b[k] - expect[k]) < 1e-9 for k in ("x0", "y0", "x1", "y1"))
+                  for b in seen)
+    assert matched, f"no title box equals the 2-box union {expect}; got {seen}"
+    # the union is materially taller than the first box alone (guards a regression
+    # to card['title'][0] that would cram both lines into ~half the height).
+    assert expect["y1"] - expect["y0"] > (tb[0]["y1"] - tb[0]["y0"]) * 1.5
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

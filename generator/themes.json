@@ -16,13 +16,14 @@
   "name_form": "english-caps",
   "extra_fields": [],
   "title_font": "Sprite Graffiti.otf",
-  "word_font": "almoni-neue-aaa-bold-OFFICE.ttf",
+  "word_font": "aharoni/aharoniclm-book-webfont.ttf",
   "title_style": {
    "fill": "#97d8e6",
    "outline": "#0d3e43",
-   "outline_w": 0.098,
+   "outline_w": 0.05,
    "arch": 0.11,
-   "shadow": true
+   "shadow": true,
+   "size": 23.9
   },
   "board": {
    "frac": {
@@ -68,7 +69,8 @@
    "outline": "#b18b96",
    "outline_w": 0,
    "arch": 0,
-   "shadow": false
+   "shadow": false,
+   "size": 21.9
   },
   "board": {
    "frac": {
@@ -90,7 +92,8 @@
    "fill": "#ffc6d7",
    "outline": "#ffc6d7"
   },
-  "calibrated": true
+  "calibrated": true,
+  "word_size": 19
  },
  "birthday-girls": {
   "slug": "birthday-girls",
@@ -108,14 +111,16 @@
   "name_form": "english",
   "extra_fields": [],
   "title_font": "CooperLtBTBold.ttf",
-  "word_font": "Stigma Display Typeface.ttf",
+  "word_font": "comixno2/comixno2clm_medium-webfont.ttf",
   "title_style": {
    "fill": "#a4e9ff",
    "outline": "#000000",
-   "outline_w": 0.075,
+   "outline_w": 0.04,
    "arch": 0,
    "shadow": false,
-   "italic": true
+   "italic": true,
+   "size": 23.0,
+   "back_size": 30.0
   },
   "board": {
    "frac": {
@@ -159,9 +164,15 @@
   "title_style": {
    "fill": "#ffdff9",
    "outline": "#ff2ec4",
-   "outline_w": 0.11,
+   "outline_w": 0.03,
    "arch": 0,
-   "shadow": true
+   "shadow": true,
+   "size": 25.9,
+   "align": "right",
+   "offset": [
+    -0.09,
+    0.0
+   ]
   },
   "board": {
    "frac": {
@@ -283,13 +294,19 @@
    "AGE"
   ],
   "title_font": "Quick.ttf",
-  "word_font": "Fredoka-Medium.ttf",
+  "word_font": "Varela_Round/VarelaRound-Regular.ttf",
   "title_style": {
    "fill": "#d3292a",
    "outline": "#d3292a",
    "outline_w": 0.02,
    "arch": 0,
-   "shadow": false
+   "shadow": false,
+   "size": 23.9,
+   "align": "left",
+   "offset": [
+    0.06,
+    0.06
+   ]
   },
   "board": {
    "frac": {
