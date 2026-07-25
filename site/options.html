@@ -2083,6 +2083,14 @@
           </label>
         </div>
 
+        <!-- When the buyer sets their OWN custom title, the theme's extra fields
+             (AGE / wedding YEARS / partner NAMES) only ever fed the DEFAULT title,
+             so they are no longer needed. renderExtraFields() shows this note in
+             their place whenever a custom title is present on an extras-theme. -->
+        <p class="wiz-hint" id="extraFieldsSkipNote" data-testid="extra-fields-skip-note" hidden>
+          בחרת כותרת משלך - אין צורך למלא גיל / שנות נישואין / שמות (הם לא ישמשו בכותרת).
+        </p>
+
         <!-- OPTIONAL custom title (F7): overrides the design's own title on the
              cards + board. Empty = the design's default title (current behavior).
              The title auto-fits, so a long one just prints smaller — the live
@@ -3821,6 +3829,7 @@
       const nameStepTitle = document.getElementById('nameStepTitle');
       const nameStepSub = document.getElementById('nameStepSub');
       const genderGroup = document.getElementById('genderGroup');
+      const extraFieldsSkipNote = document.getElementById('extraFieldsSkipNote');
 
       // The generator theme key for the currently selected design (or null).
       function currentTheme() {
@@ -3843,10 +3852,23 @@
       function isCoupleTheme() {
         return currentTheme() === 'anniversary';
       }
+      // A non-empty free-form custom title (F7) makes the theme's extra fields
+      // (AGE / YEARS / NAME1 / NAME2) irrelevant — they only ever fed the DEFAULT
+      // title. When present we drop the required extras and, on the couple theme,
+      // fall back from the two-partner ask to the single honoree-name ask.
+      function hasCustomTitle() {
+        return customTitle.trim() !== '';
+      }
+      // EFFECTIVE couple mode: the anniversary theme drives the two-partner name
+      // step ONLY while the default title is in use. A custom title reverts it to
+      // the single-name ask (one order identity is still captured for emails/admin).
+      function coupleMode() {
+        return isCoupleTheme() && !hasCustomTitle();
+      }
       // The honoree name to send / preview: the two partners' names for a couple,
       // otherwise the single name box value.
       function honoreeNameValue() {
-        if (isCoupleTheme()) {
+        if (coupleMode()) {
           const a = (extraInput('NAME1') || {}).value || '';
           const b = (extraInput('NAME2') || {}).value || '';
           const n1 = a.trim();
@@ -3857,7 +3879,9 @@
         return nameInput.value.trim();
       }
       // The extra-field keys the current design's theme requires ([] if none).
+      // A custom title makes them unnecessary, so none are required in that case.
       function currentExtraFields() {
+        if (hasCustomTitle()) return [];
         const d = DESIGNS[designIndex] || {};
         return extraFieldsForDesign(d.id);
       }
@@ -3873,10 +3897,18 @@
           el.hidden = !need.has(el.dataset.extraField);
         });
         extraFieldsBox.hidden = needed.length === 0;
+        // A custom title makes the theme's extras (currently hidden above) pointless
+        // — surface a note in their place explaining why they aren't asked for.
+        if (extraFieldsSkipNote) {
+          const d = DESIGNS[designIndex] || {};
+          const designNeedsExtras = extraFieldsForDesign(d.id).length > 0;
+          extraFieldsSkipNote.hidden = !(hasCustomTitle() && designNeedsExtras);
+        }
         // Couple mode (anniversary): swap the single-name ask for the two partner
         // names. Hide the lone name box + gender picker and retitle the step so the
-        // two NAME fields ARE the ask — no redundant "name, then two names".
-        const couple = isCoupleTheme();
+        // two NAME fields ARE the ask — no redundant "name, then two names". A custom
+        // title reverts this to the single-name ask (coupleMode() is then false).
+        const couple = coupleMode();
         nameInput.hidden = couple;
         if (genderGroup) genderGroup.hidden = couple;
         if (nameStepTitle) {
@@ -4007,6 +4039,11 @@
         customTitleInput.addEventListener('input', () => {
           customTitle = customTitleInput.value;
           refreshCustomTitleWarn();
+          // A custom title relaxes the theme's extra fields + reverts couple mode to
+          // the single-name ask, so re-render the extra-fields area (and the skip
+          // note) and refresh Next live as the buyer types or clears the title.
+          // renderExtraFields() calls refreshControls() itself.
+          renderExtraFields();
           persist();
           // Re-render the live preview so the buyer sees the EXACT title (WYSIWYG).
           if (currentStep === 3) requestPreview();
@@ -4189,7 +4226,7 @@
         return (
           currentStep === 3 &&
           !!currentTheme() &&
-          (isCoupleTheme() || isValidHonoreeName(honoreeNameValue(), currentLanguage())) &&
+          (coupleMode() || isValidHonoreeName(honoreeNameValue(), currentLanguage())) &&
           extraFieldsValid()
         );
       }
@@ -4699,10 +4736,11 @@
         if (n <= 2) return true; // design / color+add-ons all have safe defaults
         // name step: require the name (in the design's language) AND any extra
         // fields the theme needs. Couple mode has no single-name box — the two
-        // NAME extra fields (validated in extraFieldsValid) cover it.
+        // NAME extra fields (validated in extraFieldsValid) cover it. A custom
+        // title reverts couple to the single-name ask, so require the name then.
         if (n === 3)
           return (
-            (isCoupleTheme() || isValidHonoreeName(nameInput.value, currentLanguage())) &&
+            (coupleMode() || isValidHonoreeName(nameInput.value, currentLanguage())) &&
             extraFieldsValid()
           );
         // pawn photos are OPTIONAL and free — the step is always skippable.
@@ -4725,7 +4763,7 @@
       // a wrong SCRIPT (right format, wrong language), and a general format problem,
       // so the buyer knows exactly what to fix.
       function refreshNameError() {
-        if (isCoupleTheme()) {
+        if (coupleMode()) {
           nameErr.hidden = true;
           return;
         }
@@ -4908,7 +4946,7 @@
         }
         if (currentStep === 3) {
           // couple mode hides the single-name box — focus the first partner name.
-          if (isCoupleTheme()) {
+          if (coupleMode()) {
             const first = extraInput('NAME1');
             if (first) first.focus();
           } else {
@@ -4947,7 +4985,7 @@
         if (!validateStep(currentStep)) return;
         // name step: block advancing until a gender is actively chosen (couple mode
         // has no single honoree, so no gender is asked)
-        if (currentStep === 3 && !isCoupleTheme() && !selectedGender()) {
+        if (currentStep === 3 && !coupleMode() && !selectedGender()) {
           openGenderModal();
           return;
         }
@@ -5120,13 +5158,13 @@
         // Reject a single honoree name that isn't letters/spaces/-/' (couple
         // themes have no single name box — their two names are validated as
         // extra fields).
-        if (!isCoupleTheme() && !isValidHonoreeName(nameInput.value, currentLanguage())) {
+        if (!coupleMode() && !isValidHonoreeName(nameInput.value, currentLanguage())) {
           goStep(3);
           refreshNameError();
           nameInput.focus();
           return;
         }
-        if (!isCoupleTheme() && !selectedGender()) {
+        if (!coupleMode() && !selectedGender()) {
           goStep(3);
           openGenderModal();
           return;

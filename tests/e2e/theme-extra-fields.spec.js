@@ -157,3 +157,66 @@ test.describe('anniversary (couple) name step', () => {
     expect(captured.body.extra_fields).toEqual({ YEARS: '25', NAME1: 'דנה', NAME2: 'יוסי' });
   });
 });
+
+// A custom title (F7) OVERRIDES the design's own title, so the theme extra fields
+// (AGE / wedding YEARS / partner NAMES) that only ever fed the DEFAULT title are
+// no longer needed. With a custom title set: the extras stop being required, a
+// note explains why, and the couple theme reverts to the single honoree-name ask.
+test.describe('custom title relaxes the theme extra fields', () => {
+  test('AGE stops being required + the skip note shows (and reverses on clear)', async ({
+    page,
+  }) => {
+    await toNameStepWithDesign(page, 'design-3'); // japanese -> AGE required
+    await expect(page.getByTestId('extra-age')).toBeVisible();
+    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('gender-female').check();
+    // baseline: age blank -> Next disabled, no skip note.
+    await expect(page.getByTestId('extra-fields-skip-note')).toBeHidden();
+    await expect(page.getByTestId('next-btn')).toBeDisabled();
+    // typing a custom title drops the age requirement + reveals the note.
+    await page.getByTestId('custom-title-input').fill('שירה חוגגת 40');
+    await expect(page.getByTestId('extra-fields-skip-note')).toBeVisible();
+    await expect(page.getByTestId('extra-age')).toBeHidden();
+    await expect(page.getByTestId('next-btn')).toBeEnabled();
+    // clearing it restores the original required-age behaviour.
+    await page.getByTestId('custom-title-input').fill('');
+    await expect(page.getByTestId('extra-fields-skip-note')).toBeHidden();
+    await expect(page.getByTestId('extra-age')).toBeVisible();
+    await expect(page.getByTestId('next-btn')).toBeDisabled();
+  });
+
+  test('anniversary + custom title shows the SINGLE name input, not the two partners', async ({
+    page,
+  }) => {
+    await toNameStepWithDesign(page, 'design-1'); // anniversary -> two partner names
+    // baseline couple mode: two partner names, no single box, no gender.
+    await expect(page.getByTestId('extra-name1')).toBeVisible();
+    await expect(page.getByTestId('honoree-input')).toBeHidden();
+    // a custom title reverts to the single honoree-name ask.
+    await page.getByTestId('custom-title-input').fill('דנה ויוסי חוגגים 25');
+    await expect(page.getByTestId('extra-fields-skip-note')).toBeVisible();
+    await expect(page.getByTestId('honoree-input')).toBeVisible();
+    await expect(page.getByTestId('extra-name1')).toBeHidden();
+    await expect(page.getByTestId('extra-name2')).toBeHidden();
+    await expect(page.getByTestId('gender-group')).toBeVisible();
+  });
+
+  test('anniversary + custom title sends one honoree name and NO extra fields', async ({
+    page,
+  }) => {
+    const captured = await captureCollectionPost(page);
+    await toNameStepWithDesign(page, 'design-1');
+    await page.getByTestId('custom-title-input').fill('דנה ויוסי');
+    await page.getByTestId('honoree-input').fill('דנה');
+    await page.getByTestId('gender-female').check();
+    await page.getByTestId('next-btn').click(); // -> pawn step
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
+    await page.getByTestId('next-btn').click(); // -> step 4 (contact)
+    await page.getByTestId('owner-email').fill('a@b.com');
+    await page.getByTestId('owner-phone').fill('0521234567');
+    await page.getByTestId('next-btn').click(); // create
+    await expect.poll(() => captured.body && captured.body.honoree_name).toBe('דנה');
+    expect(captured.body.extra_fields).toEqual({});
+    expect(captured.body.custom_title).toBe('דנה ויוסי');
+  });
+});

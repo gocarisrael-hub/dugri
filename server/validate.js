@@ -94,8 +94,13 @@ function validateOrderForProduction(collection, theme, words) {
   const langProblem = checkNameLanguage(name, theme);
   if (langProblem) problems.push(langProblem);
 
-  // 2) Every extra field the theme requires must be present.
-  const required = theme && Array.isArray(theme.extra_fields) ? theme.extra_fields : [];
+  // 2) Every extra field the theme requires must be present — UNLESS the buyer
+  // set their own custom title. The theme extras (AGE / YEARS / NAME1 / NAME2)
+  // only ever fed the DEFAULT title, so a custom-title order does not need them
+  // and must not be flagged for their absence.
+  const hasCustomTitle = String((collection && collection.custom_title) || '').trim() !== '';
+  const required =
+    !hasCustomTitle && theme && Array.isArray(theme.extra_fields) ? theme.extra_fields : [];
   for (const field of required) {
     if (!readExtraField(collection, field)) {
       const label = FIELD_LABEL[field] || field;
