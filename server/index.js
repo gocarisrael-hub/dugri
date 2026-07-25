@@ -1210,12 +1210,13 @@ function waGroupValues(collection, base) {
 // Send ONE trigger's message to a chat, if that trigger is enabled. Text comes
 // from the owner-editable catalog via whatsapp.buildTriggerMessage (a disabled or
 // unknown trigger yields no text and sends nothing). Fail-soft: a Whapi send
-// failure never throws. Returns true only when a message was actually sent.
+// failure never throws. Returns { ok, messageId } — ok is true only when a message
+// was actually sent; messageId (when present) lets the caller pin it.
 async function sendWaTrigger(to, triggerId, values) {
   const msg = whatsapp.buildTriggerMessage(triggerId, values);
-  if (!msg || !msg.enabled || !msg.text) return false;
+  if (!msg || !msg.enabled || !msg.text) return { ok: false, messageId: null };
   const r = await whatsapp.sendMessage(to, msg.text);
-  return !!(r && r.ok);
+  return { ok: !!(r && r.ok), messageId: (r && r.messageId) || null };
 }
 
 // Did the buyer actually land in the freshly-created group? WhatsApp may silently
@@ -1324,8 +1325,14 @@ async function openWhatsappGroup(collection, base) {
     const initialMembers = botId ? [buyerWa, botId] : [buyerWa];
     waState.linkGroup(groupId, collection.id, buyerWa, initialMembers);
 
-    // Announce the group is open (to the group).
-    await sendWaTrigger(groupId, 'group_opened', waGroupValues(collection, base));
+    // Announce the group is open (to the group), then PIN it so anyone who joins
+    // the group later still sees the welcome + words link at the top (WhatsApp
+    // doesn't reliably webhook member-joins, so we can't greet each joiner). The
+    // pin is fail-soft — a pin failure never affects the group flow.
+    const opened = await sendWaTrigger(groupId, 'group_opened', waGroupValues(collection, base));
+    if (opened.ok && opened.messageId) {
+      await whatsapp.pinMessage(opened.messageId).catch(() => {});
+    }
 
     // Privacy-block fallback: the buyer couldn't be added by number.
     if (!buyerLandedInGroup(created, buyerWa)) {
@@ -1333,7 +1340,7 @@ async function openWhatsappGroup(collection, base) {
       const inviteLink = invite && invite.ok ? invite.inviteLink : null;
       let dmSent = false;
       if (inviteLink) {
-        dmSent = await sendWaTrigger(buyerWa, 'group_opened', { honoree, link: inviteLink });
+        dmSent = (await sendWaTrigger(buyerWa, 'group_opened', { honoree, link: inviteLink })).ok;
         if (dmSent) waState.setInviteDmSent(groupId);
       }
       if (!dmSent) {
@@ -1518,7 +1525,7 @@ async function runWaNudgeScan(now = Date.now()) {
     try {
       const collection = collectionByGroup.get(d.groupId);
       if (!collection) continue;
-      const ok = await sendWaTrigger(d.groupId, d.triggerId, waGroupValues(collection, base));
+      const ok = (await sendWaTrigger(d.groupId, d.triggerId, waGroupValues(collection, base))).ok;
       if (!ok) continue; // send failed — don't record, so the next tick retries
       if (d.triggerId === 'quiet_reminder') waState.recordQuietReminder(d.groupId, now);
       else if (d.slotKey) waState.markNudged(d.groupId, d.slotKey);

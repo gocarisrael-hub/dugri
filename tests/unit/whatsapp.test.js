@@ -194,6 +194,43 @@ describe('sendMessage issues the right request', () => {
   });
 });
 
+describe('pinMessage issues the right request', () => {
+  it('POSTs /messages/{id}/pin with the given duration', async () => {
+    setEnv(true);
+    const fetchMock = vi.fn(async () => jsonRes({ success: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await loadFresh().pinMessage('MSG-9', { duration: 3600 });
+    expect(res.ok).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://gate.example.test/messages/MSG-9/pin');
+    expect(init.method).toBe('POST');
+    expect(init.headers.Authorization).toBe('Bearer tok-secret');
+    expect(JSON.parse(init.body)).toEqual({ duration: 3600 });
+  });
+
+  it('defaults to a 30-day pin', async () => {
+    setEnv(true);
+    const fetchMock = vi.fn(async () => jsonRes({ success: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    await loadFresh().pinMessage('X');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ duration: 2592000 });
+  });
+
+  it('is a no-op with no id, and when unconfigured (no fetch)', async () => {
+    setEnv(true);
+    const fetchMock = vi.fn(async () => jsonRes({ success: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect((await loadFresh().pinMessage('')).ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    setEnv(false);
+    const r = await loadFresh().pinMessage('X');
+    expect(r.skipped).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('getInviteLink issues the right request', () => {
   it('GETs /groups/{id}/invite and builds the full link from the code', async () => {
     setEnv(true);
