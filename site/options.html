@@ -4137,6 +4137,16 @@
       // with zero network latency, so it (not the slow server render) is what opens
       // the create gate — a valid name is never left waiting on /api/preview.
       let instantShown = false;
+      // Owner decision: do NOT reveal the instant approximation (recoloured SVG +
+      // the typed name overlaid in a plain display font). It reads as an unfinished
+      // black name slapped on the card. Instead we hold the LOADING card until the
+      // EXACT server render arrives, then reveal that. The instant-draw code is kept
+      // intact but never shown — showInstantView() and kickInstant() are gated on
+      // this flag. TRADEOFF: the preview once again waits on the (slow, sometimes
+      // 429/timeout) server render — the very latency the instant draw was built to
+      // hide. The 20s backstop + graceful fallback keep the buyer from being stuck
+      // on the spinner. Flip to true to restore the instant-approximation reveal.
+      const REVEAL_INSTANT_PREVIEW = false;
       // Arm the 20s backstop when a preview is triggered (attempt 0). No-op once
       // the preview has already shown or the backstop already fired.
       function armPreviewFallback() {
@@ -4207,6 +4217,7 @@
       // won the race and we must NOT override it with the approximation. Also fits
       // the overlaid name now that the layer is measurable.
       function showInstantView(view, seq) {
+        if (!REVEAL_INSTANT_PREVIEW) return; // owner: never reveal the approximation
         if (seq !== previewSeq) return; // superseded
         if (serverShown[view] === seq) return; // exact PNG already showing this name
         const inst = npInstant[view];
@@ -4354,6 +4365,23 @@
       // multi-MB SVG) draw never presents a blank box with no affordance.
       async function kickInstant(seq) {
         namePreview.hidden = false;
+        if (!REVEAL_INSTANT_PREVIEW) {
+          // Owner: do NOT reveal the instant approximation. Hold the LOADING card
+          // (spinner skeleton, NOT the honoree name) until the exact server render
+          // swaps in via doPreview. instantShown stays false, so the create gate
+          // stays closed until previewShown (server render / terminal fallback) or
+          // the 20s backstop fires — armed here so a hung render can never leave the
+          // buyer permanently stuck on the spinner.
+          instantShown = false;
+          namePreviewWarn.hidden = true;
+          namePreviewFallback.hidden = true;
+          namePreviewImgs.hidden = true;
+          namePreviewDots.hidden = true;
+          namePreviewEmpty.hidden = false;
+          armPreviewFallback();
+          refreshControls();
+          return;
+        }
         showRefining();
         let res = 'fail';
         try {
@@ -4517,7 +4545,13 @@
 
       // Manual retry from the fallback: start a fresh attempt (loader + one auto
       // retry again).
-      if (npfRetry) npfRetry.addEventListener('click', () => doPreview(0));
+      if (npfRetry)
+        npfRetry.addEventListener('click', () => {
+          // Swap the terminal fallback back to the LOADING card while the retry is
+          // in flight, so the buyer sees a fresh load — not the frozen failure card.
+          showClientFallback(honoreeNameValue(), true);
+          doPreview(0);
+        });
 
       /* ================= inline name-preview carousel =================
          The step-3 name preview shows ONE view at a time (card → back → board) and
