@@ -301,4 +301,60 @@ test.describe('admin texts editor', () => {
     await expect(page).toHaveURL(/admin-texts\.html\?key=/);
     await expect(page.locator('#app')).toBeVisible();
   });
+
+  test('a configured bot with a DISCONNECTED phone turns the banner red with a re-scan-QR instruction', async ({
+    page,
+  }) => {
+    // Simulate an armed bot whose linked phone dropped: status reports configured,
+    // but the live health probe says "disconnected" (state qr). The banner must
+    // escalate to red and tell the owner to re-scan the QR.
+    await page.route('**/api/whatsapp/status**', (route) =>
+      route.fulfill({
+        json: {
+          enabled: true,
+          tokenPresent: true,
+          webhookSecretPresent: true,
+          baseUrl: 'https://gate.whapi.cloud',
+          configured: true,
+          ready: true,
+        },
+      })
+    );
+    await page.route('**/api/whatsapp/health**', (route) =>
+      route.fulfill({ json: { ok: true, connection: 'disconnected', state: 'qr' } })
+    );
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const waStatus = page.locator('#waStatus');
+    await expect(waStatus).toBeVisible();
+    await expect(waStatus).toHaveClass(/\boff\b/);
+    await expect(waStatus).toContainText('מנותק');
+    await expect(waStatus).toContainText('QR');
+  });
+
+  test('a configured bot that is CONNECTED shows a live "מחובר" line without downgrading', async ({
+    page,
+  }) => {
+    await page.route('**/api/whatsapp/status**', (route) =>
+      route.fulfill({
+        json: {
+          enabled: true,
+          tokenPresent: true,
+          webhookSecretPresent: true,
+          baseUrl: 'https://gate.whapi.cloud',
+          configured: true,
+          ready: true,
+        },
+      })
+    );
+    await page.route('**/api/whatsapp/health**', (route) =>
+      route.fulfill({ json: { ok: true, connection: 'connected', state: 'auth' } })
+    );
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const waStatus = page.locator('#waStatus');
+    await expect(waStatus).toBeVisible();
+    // stays green/ready, plus the live connection line
+    await expect(waStatus).toHaveClass(/\bok\b/);
+    await expect(waStatus).toContainText('פעיל');
+    await expect(waStatus).toContainText('מחובר');
+  });
 });

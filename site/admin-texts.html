@@ -935,13 +935,43 @@
           state = 'רדום';
           detail = 'הבוט כבוי. הגדירו את משתני הסביבה ב-Railway כדי להפעיל.';
         }
+        // When the bot can send (configured), also probe the LIVE channel
+        // connection — a dropped/unpaired phone silently breaks group creation and
+        // sends even though the env still looks armed. A disconnect escalates the
+        // banner to red with a clear "re-scan QR" instruction; an inconclusive or
+        // failed probe is shown as an informational line without overriding arming.
+        let liveLine = '';
+        if (s.configured) {
+          let h = null;
+          try {
+            h = await api('GET', '/api/whatsapp/health');
+          } catch {
+            h = null;
+          }
+          if (h && h.connection === 'connected') {
+            liveLine = 'חיבור חי: מחובר ✓';
+          } else if (h && h.connection === 'disconnected') {
+            cls = 'off';
+            state = 'מנותק — סרקו QR מחדש';
+            detail =
+              'הטלפון המקושר התנתק מ-Whapi, לכן לא נפתחות קבוצות ולא נשלחות הודעות. ' +
+              'היכנסו ל-Whapi וסרקו מחדש את קוד ה-QR מהטלפון של העסק' +
+              (h.state ? ' (מצב: ' + h.state + ')' : '') +
+              '.';
+          } else if (h && h.connection === 'unknown') {
+            liveLine = 'חיבור חי: מצב לא מזוהה' + (h.state ? ' (' + h.state + ')' : '');
+          } else if (h && h.connection === 'error') {
+            liveLine = 'חיבור חי: לא הצלחנו לבדוק כרגע.';
+          }
+        }
         el.className = 'wa-status ' + cls;
         el.innerHTML =
           '<span class="wa-state">וואטסאפ: ' +
           esc(state) +
           '</span><div class="wa-detail">' +
           esc(detail) +
-          '</div>';
+          '</div>' +
+          (liveLine ? '<div class="wa-detail">' + esc(liveLine) + '</div>' : '');
         el.hidden = false;
       }
 

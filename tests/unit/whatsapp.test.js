@@ -162,6 +162,113 @@ describe('createGroup issues the right request', () => {
   });
 });
 
+describe('health probes the live channel connection', () => {
+  it('is a no-op (no fetch) when unconfigured', async () => {
+    setEnv(false);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const h = await loadFresh().health();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(h).toMatchObject({ ok: false, skipped: true, connection: 'off' });
+  });
+
+  it('GETs /health under the base URL with Bearer auth', async () => {
+    setEnv(true);
+    const fetchMock = vi.fn(async () => jsonRes({ status: { text: 'AUTH' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await loadFresh().health();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://gate.example.test/health');
+    expect(init.method).toBe('GET');
+    expect(init.headers.Authorization).toBe('Bearer tok-secret');
+  });
+
+  it('reports connected for an authenticated status text', async () => {
+    setEnv(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonRes({ status: { text: 'AUTH' } }))
+    );
+    const h = await loadFresh().health();
+    expect(h).toMatchObject({ ok: true, connection: 'connected', state: 'auth' });
+  });
+
+  it('reports connected when an account/user object is present regardless of text', async () => {
+    setEnv(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonRes({ status: { text: 'weird' }, user: { id: '9720@c.us' } }))
+    );
+    const h = await loadFresh().health();
+    expect(h.connection).toBe('connected');
+  });
+
+  it('reports disconnected for a QR status text (phone unpaired)', async () => {
+    setEnv(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonRes({ status: { text: 'QR' } }))
+    );
+    const h = await loadFresh().health();
+    expect(h).toMatchObject({ ok: true, connection: 'disconnected', state: 'qr' });
+  });
+
+  it('stays unknown (never guesses) for an unrecognised status text', async () => {
+    setEnv(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonRes({ status: { text: 'SYNCING' } }))
+    );
+    const h = await loadFresh().health();
+    expect(h).toMatchObject({ ok: true, connection: 'unknown', state: 'syncing' });
+  });
+
+  it('accepts a bare string status (not an object)', async () => {
+    setEnv(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonRes({ status: 'connected' }))
+    );
+    const h = await loadFresh().health();
+    expect(h.connection).toBe('connected');
+  });
+
+  it('reports connection:error (no throw) on a non-200', async () => {
+    setEnv(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonRes({}, { ok: false, status: 401 }))
+    );
+    const h = await loadFresh().health();
+    expect(h).toMatchObject({ ok: false, connection: 'error', httpStatus: 401 });
+  });
+
+  it('reports connection:error (no throw) on a network error', async () => {
+    setEnv(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('boom');
+      })
+    );
+    const h = await loadFresh().health();
+    expect(h).toMatchObject({ ok: false, connection: 'error' });
+    expect(h.error).toContain('boom');
+  });
+
+  it('never returns the token or secret in the payload', async () => {
+    setEnv(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonRes({ status: { text: 'AUTH' } }))
+    );
+    const h = await loadFresh().health();
+    const flat = JSON.stringify(h);
+    expect(flat).not.toContain('tok-secret');
+    expect(flat).not.toContain('hook-secret');
+  });
+});
+
 describe('sendMessage issues the right request', () => {
   it('POSTs /messages/text with { to, body } and parses the message id', async () => {
     setEnv(true);
