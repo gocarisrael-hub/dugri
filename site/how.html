@@ -1755,32 +1755,29 @@
       };
 
       // Owner-editable store price → the CTA price labels + the dormant plan sum.
-      // Timeout-bounded + fail-safe: on a slow/failed fetch the seeded defaults
-      // (199 / struck 239) stay in place.
-      (function refreshPricing() {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 2500);
-        fetch('/api/pricing', { signal: ctrl.signal })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((p) => {
-            if (!p || !p.store) return;
-            if (Number.isInteger(p.store.now)) {
-              CONFIG.plans.base.sum = p.store.now;
-              document
-                .querySelectorAll('[data-price-now]')
-                .forEach((el) => (el.textContent = p.store.now + ' ₪'));
-            }
-            if (Number.isInteger(p.store.was)) {
-              document
-                .querySelectorAll('[data-price-was]')
-                .forEach((el) => (el.textContent = p.store.was + ' ₪'));
-            }
-          })
-          .catch(() => {
-            /* fail soft — the seeded defaults stay */
-          })
-          .finally(() => clearTimeout(timer));
-      })();
+      // Reuses the shared, timeout-bounded + fail-safe fetchPricing helper
+      // (site/js/pricing.js) via dynamic import, so this classic script no longer
+      // hand-rolls its own AbortController fetch. fetchPricing always resolves to
+      // a valid store (the seeded launch defaults on a slow/failed fetch), so the
+      // CTA prices never blank.
+      import('./js/pricing.js')
+        .then(({ fetchPricing }) => fetchPricing())
+        .then((p) => {
+          if (Number.isInteger(p.store.now)) {
+            CONFIG.plans.base.sum = p.store.now;
+            document
+              .querySelectorAll('[data-price-now]')
+              .forEach((el) => (el.textContent = p.store.now + ' ₪'));
+          }
+          if (Number.isInteger(p.store.was)) {
+            document
+              .querySelectorAll('[data-price-was]')
+              .forEach((el) => (el.textContent = p.store.was + ' ₪'));
+          }
+        })
+        .catch(() => {
+          /* fail soft — the seeded defaults stay */
+        });
 
       const waBase = 'https://wa.me/' + CONFIG.whatsapp;
       const waMsg = encodeURIComponent('היי! אני רוצה להזמין משחק דוגרי');
