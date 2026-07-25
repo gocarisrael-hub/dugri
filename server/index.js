@@ -1774,6 +1774,58 @@ app.post('/api/admin/templates/:key/rename', (req, res) => {
   res.json({ ok: true, ...result });
 });
 
+// Admin: edit an existing template's SETTINGS (display_he, language, name_form,
+// extra_fields, visibility) — the storefront/config knobs, never the identity
+// (slug/dir/recipe) or assets. JSON body carries only the fields to change; each
+// is validated. e.g. flip an uploaded template public/private or fix its language.
+app.post('/api/admin/templates/:key/settings', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let result;
+  try {
+    result = templates.updateTemplateSettings({
+      root: TEMPLATE_ROOT,
+      key: req.params.key,
+      patch: req.body || {},
+    });
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
+  res.json({ ok: true, ...result });
+});
+
+// Admin: DELETE a template — remove its themes.json entry + on-disk files. GUARDED:
+// a theme a live orderable design maps to (its key is a THEME_BY_DESIGN value in
+// site/js/designs.js) is refused (409) so deleting can't break the storefront or an
+// in-flight order. The in-use set is derived from the catalog; if the catalog can't
+// be read we FAIL CLOSED (refuse) rather than risk deleting an in-use theme.
+app.delete('/api/admin/templates/:key', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let inUse;
+  try {
+    const mod = await import(pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js')));
+    inUse = new Set(Object.values(mod.THEME_BY_DESIGN || {}));
+  } catch (e) {
+    return res.status(500).json({
+      error:
+        'could not verify the template is safe to delete (catalog unavailable): ' +
+        String((e && e.message) || e),
+    });
+  }
+  let result;
+  try {
+    result = templates.deleteTemplate({
+      root: TEMPLATE_ROOT,
+      key: req.params.key,
+      inUseThemes: inUse,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
+  res.json({ ok: true, ...result });
+});
+
 // Admin: replace a SINGLE asset of an existing template in place. Multipart
 // upload of one file part; the role (whitelisted) comes from the URL so the write
 // target is a fixed path inside the template dir — no traversal, and the other

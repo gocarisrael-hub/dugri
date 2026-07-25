@@ -70,7 +70,7 @@ describe('templates.js pure logic', () => {
     expect(templates.isSafeSlug('')).toBe(false);
   });
 
-  it('buildThemeEntry produces a private, uncalibrated entry with null style/board/back', () => {
+  it('buildThemeEntry produces a PUBLIC-by-default, uncalibrated entry with null style/board/back', () => {
     const e = templates.buildThemeEntry({
       slug: 'demo',
       displayHe: 'דמו',
@@ -80,7 +80,7 @@ describe('templates.js pure logic', () => {
       nameForm: 'english',
       extraFields: ['AGE'],
     });
-    expect(e.visibility).toBe('private');
+    expect(e.visibility).toBe('public'); // default: not private
     expect(e.calibrated).toBe(false);
     expect(e.title_style).toBeNull();
     expect(e.board).toBeNull();
@@ -90,6 +90,19 @@ describe('templates.js pure logic', () => {
     expect(e.title_lines).toEqual(["{NAME}'S", 'B-DAY']);
     expect(e.extra_fields).toEqual(['AGE']);
     expect(e.language).toBe('english');
+  });
+
+  it('buildThemeEntry honors an explicit visibility (private on request)', () => {
+    const pub = templates.buildThemeEntry({ slug: 'a', nameForm: 'english' });
+    expect(pub.visibility).toBe('public');
+    const priv = templates.buildThemeEntry({
+      slug: 'b',
+      nameForm: 'english',
+      visibility: 'private',
+    });
+    expect(priv.visibility).toBe('private');
+    // Any non-'private' value (incl. junk) falls back to public.
+    expect(templates.buildThemeEntry({ slug: 'c', visibility: 'weird' }).visibility).toBe('public');
   });
 
   it('writeTemplateFiles lands the SVGs + fonts on disk', () => {
@@ -172,7 +185,7 @@ describe('templates.js pure logic', () => {
     expect(JSON.parse(fs.readFileSync(themesPath, 'utf8'))).toEqual({});
   });
 
-  it('onboardTemplate (runRecipe:false) writes files + a private uncalibrated theme entry', () => {
+  it('onboardTemplate (runRecipe:false) writes files + a PUBLIC-by-default uncalibrated theme entry', () => {
     const root = makeScaffold();
     const r = templates.onboardTemplate({
       root,
@@ -189,11 +202,11 @@ describe('templates.js pure logic', () => {
     expect(r.error).toBeUndefined();
     expect(r.key).toBe('party-x');
     expect(r.calibrated).toBe(false);
-    expect(r.visibility).toBe('private');
+    expect(r.visibility).toBe('public'); // uploads are public by default now
     expect(r.recipe).toBe('skipped');
 
     const themes = JSON.parse(fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8'));
-    expect(themes['party-x'].visibility).toBe('private');
+    expect(themes['party-x'].visibility).toBe('public');
     expect(themes['party-x'].calibrated).toBe(false);
     expect(themes['party-x'].name_form).toBe('english-caps');
     expect(themes['party-x'].extra_fields).toEqual(['AGE']);
@@ -391,6 +404,101 @@ describe('templates.js full editing (status / rename / replace)', () => {
     const nf = templates.renameTemplate({ root, key: 'ghost', displayName: 'ok' });
     expect(nf.error).toMatch(/not found/);
     expect(nf.httpStatus).toBe(404);
+  });
+
+  it('updateTemplateSettings edits language/name_form/visibility/extra_fields, keeps identity', () => {
+    const root = makeScaffold();
+    onboard(root, 'set-x');
+    const before = templates.loadThemes(templates.themesPathFor(root))['set-x'];
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'set-x',
+      patch: {
+        language: 'english',
+        name_form: 'english-caps',
+        visibility: 'private',
+        extra_fields: 'YEARS, NAME1  NAME2',
+        display_he: '  שם מוגדר  ',
+      },
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.settings).toEqual({
+      display_he: 'שם מוגדר',
+      language: 'english',
+      name_form: 'english-caps',
+      visibility: 'private',
+      extra_fields: ['YEARS', 'NAME1', 'NAME2'],
+    });
+    const after = templates.loadThemes(templates.themesPathFor(root))['set-x'];
+    expect(after.visibility).toBe('private');
+    expect(after.language).toBe('english');
+    expect(after.extra_fields).toEqual(['YEARS', 'NAME1', 'NAME2']);
+    expect(after.slug).toBe(before.slug); // identity untouched
+    expect(after.dir).toBe(before.dir);
+    expect(after.recipe).toBe(before.recipe);
+  });
+
+  it('updateTemplateSettings rejects invalid values and unknown keys (no partial write)', () => {
+    const root = makeScaffold();
+    onboard(root, 'set-v');
+    expect(
+      templates.updateTemplateSettings({ root, key: 'set-v', patch: { language: 'klingon' } }).error
+    ).toMatch(/language must be/);
+    expect(
+      templates.updateTemplateSettings({ root, key: 'set-v', patch: { visibility: 'secret' } })
+        .error
+    ).toMatch(/visibility must be/);
+    expect(
+      templates.updateTemplateSettings({ root, key: 'set-v', patch: { name_form: 'nope' } }).error
+    ).toMatch(/name_form must be/);
+    expect(templates.updateTemplateSettings({ root, key: 'set-v', patch: {} }).error).toMatch(
+      /no valid settings/
+    );
+    const nf = templates.updateTemplateSettings({
+      root,
+      key: 'ghost',
+      patch: { visibility: 'public' },
+    });
+    expect(nf.httpStatus).toBe(404);
+    // A bad value did not partially mutate the entry.
+    const after = templates.loadThemes(templates.themesPathFor(root))['set-v'];
+    expect(after.visibility).toBe('public'); // still the onboarding default
+  });
+
+  it('deleteTemplate removes the entry + files, refuses an in-use theme + the last theme', () => {
+    const root = makeScaffold();
+    onboard(root, 'del-x');
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'del-x');
+    fs.mkdirSync(path.join(root, 'generator', 'recipes'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'generator', 'recipes', 'del-x.json'), '{}');
+    expect(fs.existsSync(dir)).toBe(true);
+
+    // In-use guard: a theme a live design maps to is refused (409).
+    const guarded = templates.deleteTemplate({
+      root,
+      key: 'del-x',
+      inUseThemes: new Set(['del-x']),
+    });
+    expect(guarded.httpStatus).toBe(409);
+    expect(fs.existsSync(dir)).toBe(true); // nothing removed
+
+    // Not in use → deleted: entry gone, dir + recipe removed.
+    const ok = templates.deleteTemplate({
+      root,
+      key: 'del-x',
+      inUseThemes: new Set(['bachelorette']),
+    });
+    expect(ok.ok).toBe(true);
+    expect(templates.loadThemes(templates.themesPathFor(root))['del-x']).toBeUndefined();
+    expect(fs.existsSync(dir)).toBe(false);
+    expect(fs.existsSync(path.join(root, 'generator', 'recipes', 'del-x.json'))).toBe(false);
+    // seed-theme survives.
+    expect(templates.loadThemes(templates.themesPathFor(root))['seed-theme']).toBeDefined();
+
+    // Unknown key → 404.
+    expect(templates.deleteTemplate({ root, key: 'ghost' }).httpStatus).toBe(404);
+    // Refuses to empty themes.json (only seed-theme left).
+    expect(templates.deleteTemplate({ root, key: 'seed-theme' }).httpStatus).toBe(409);
   });
 
   it('replaceAsset writes the right SVG path, validates SVG, leaves other assets intact', () => {
@@ -746,7 +854,7 @@ describe('POST /api/admin/templates', () => {
     expect(r.body.ok).toBe(true);
     expect(r.body.key).toBe('endpoint-demo');
     expect(r.body.calibrated).toBe(false);
-    expect(r.body.visibility).toBe('private');
+    expect(r.body.visibility).toBe('public');
     expect(r.body.recipe).toBe('generated');
     expect(r.body.note).toMatch(/calibrat/i);
 
@@ -762,7 +870,7 @@ describe('POST /api/admin/templates', () => {
 
     // themes.json gained a private, uncalibrated entry
     const themes = JSON.parse(fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8'));
-    expect(themes['endpoint-demo'].visibility).toBe('private');
+    expect(themes['endpoint-demo'].visibility).toBe('public');
     expect(themes['endpoint-demo'].calibrated).toBe(false);
     expect(themes['endpoint-demo'].title_style).toBeNull();
     expect(themes['endpoint-demo'].extra_fields).toEqual(['AGE']);
@@ -884,6 +992,62 @@ describe('POST /api/admin/templates', () => {
     expect(rp.status).toBe(404);
     // Object.prototype was not polluted by the crafted keys.
     expect({}.display_he).toBeUndefined();
+  });
+
+  it('POST /:key/settings edits language/visibility/extra_fields; DELETE removes a template', async () => {
+    // 'endpoint-demo' was onboarded above (public, hebrew-ish defaults). Edit it.
+    const set = await fetch(base + '/api/admin/templates/endpoint-demo/settings?key=' + ADMIN_KEY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        visibility: 'private',
+        language: 'english',
+        extra_fields: 'AGE,YEARS',
+      }),
+    });
+    expect(set.status).toBe(200);
+    const setBody = await set.json();
+    expect(setBody.settings).toMatchObject({
+      visibility: 'private',
+      language: 'english',
+      extra_fields: ['AGE', 'YEARS'],
+    });
+    let themes = JSON.parse(fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8'));
+    expect(themes['endpoint-demo'].visibility).toBe('private');
+
+    // A bad value is rejected (400), no write.
+    const bad = await fetch(base + '/api/admin/templates/endpoint-demo/settings?key=' + ADMIN_KEY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language: 'klingon' }),
+    });
+    expect(bad.status).toBe(400);
+
+    // 403 without the admin key.
+    const noauth = await fetch(base + '/api/admin/templates/endpoint-demo/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visibility: 'public' }),
+    });
+    expect(noauth.status).toBe(403);
+
+    // DELETE removes the template (it isn't in THEME_BY_DESIGN, so not in use).
+    const del = await fetch(base + '/api/admin/templates/endpoint-demo?key=' + ADMIN_KEY, {
+      method: 'DELETE',
+    });
+    expect(del.status).toBe(200);
+    expect((await del.json()).deleted).toBe(true);
+    themes = JSON.parse(fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8'));
+    expect(themes['endpoint-demo']).toBeUndefined();
+    expect(fs.existsSync(path.join(root, 'resources', 'canva', 'templates', 'endpoint-demo'))).toBe(
+      false
+    );
+
+    // DELETE an unknown key → 404.
+    const gone = await fetch(base + '/api/admin/templates/nope-x?key=' + ADMIN_KEY, {
+      method: 'DELETE',
+    });
+    expect(gone.status).toBe(404);
   });
 });
 
