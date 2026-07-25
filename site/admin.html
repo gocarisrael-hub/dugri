@@ -536,6 +536,28 @@
           strong.textContent = c.honoree_name || '-';
           tdName.appendChild(strong);
 
+          // Per-order theme extra fields (kids AGE, or anniversary YEARS +
+          // NAME1 + NAME2). Shown as muted lines under the honoree name so the
+          // owner sees the child's age / the couple's years+names at a glance.
+          // Same stored-XSS rule as above: keys AND values are unsanitized user
+          // input, so both go through textContent, never innerHTML.
+          const extraLabels = {
+            AGE: 'גיל',
+            YEARS: 'שנות נישואין',
+            NAME1: 'שם 1',
+            NAME2: 'שם 2',
+          };
+          const ef = c.extra_fields;
+          if (ef && typeof ef === 'object') {
+            for (const [k, v] of Object.entries(ef)) {
+              if (typeof v !== 'string' || v.trim() === '') continue;
+              const line = document.createElement('div');
+              line.className = 'muted';
+              line.textContent = (extraLabels[k] || k) + ': ' + v;
+              tdName.appendChild(line);
+            }
+          }
+
           const tdContact = document.createElement('td');
           tdContact.className = 'contact';
           tdContact.textContent = contact;
