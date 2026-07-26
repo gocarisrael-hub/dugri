@@ -198,7 +198,9 @@ test.describe('custom title relaxes the theme extra fields', () => {
     await expect(page.getByTestId('honoree-input')).toBeVisible();
     await expect(page.getByTestId('extra-name1')).toBeHidden();
     await expect(page.getByTestId('extra-name2')).toBeHidden();
-    await expect(page.getByTestId('gender-group')).toBeVisible();
+    // Gender belongs to the EVENT type: an anniversary is a couple with no single
+    // gender even with a custom title, so the picker stays hidden.
+    await expect(page.getByTestId('gender-group')).toBeHidden();
   });
 
   test('anniversary + custom title sends one honoree name and NO extra fields', async ({
@@ -208,7 +210,7 @@ test.describe('custom title relaxes the theme extra fields', () => {
     await toNameStepWithDesign(page, 'design-1');
     await page.getByTestId('custom-title-input').fill('דנה ויוסי');
     await page.getByTestId('honoree-input').fill('דנה');
-    await page.getByTestId('gender-female').check();
+    // No gender is asked for a couple — the single name alone advances the step.
     await page.getByTestId('next-btn').click(); // -> pawn step
     await expect(page.getByTestId('step-pawns')).toBeVisible();
     await page.getByTestId('next-btn').click(); // -> step 4 (contact)

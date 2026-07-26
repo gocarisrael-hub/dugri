@@ -3910,7 +3910,10 @@
         // title reverts this to the single-name ask (coupleMode() is then false).
         const couple = coupleMode();
         nameInput.hidden = couple;
-        if (genderGroup) genderGroup.hidden = couple;
+        // Gender is a property of the EVENT type, not the title: an anniversary is a
+        // couple with no single gender whether or not a custom title is used, so the
+        // gender picker hides for ANY anniversary (theme check, not coupleMode()).
+        if (genderGroup) genderGroup.hidden = isCoupleTheme();
         if (nameStepTitle) {
           nameStepTitle.textContent = couple ? 'שמות בני הזוג' : 'שם בעל/ת השמחה';
         }
@@ -4983,9 +4986,10 @@
 
       function next() {
         if (!validateStep(currentStep)) return;
-        // name step: block advancing until a gender is actively chosen (couple mode
-        // has no single honoree, so no gender is asked)
-        if (currentStep === 3 && !coupleMode() && !selectedGender()) {
+        // name step: block advancing until a gender is actively chosen. An
+        // anniversary is a couple with no single gender (title or not), so gender is
+        // never asked for it — theme check, not coupleMode().
+        if (currentStep === 3 && !isCoupleTheme() && !selectedGender()) {
           openGenderModal();
           return;
         }
@@ -5164,7 +5168,7 @@
           nameInput.focus();
           return;
         }
-        if (!coupleMode() && !selectedGender()) {
+        if (!isCoupleTheme() && !selectedGender()) {
           goStep(3);
           openGenderModal();
           return;
