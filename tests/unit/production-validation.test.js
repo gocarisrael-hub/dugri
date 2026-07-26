@@ -46,6 +46,40 @@ describe('validateOrderForProduction', () => {
     expect(problems[0]).toContain('AGE');
   });
 
+  it('does NOT flag missing extra fields when a custom title is set', () => {
+    // The theme extras only fed the DEFAULT title; a custom title makes them
+    // irrelevant, so a missing AGE must NOT be reported.
+    const problems = validate.validateOrderForProduction(
+      { honoree_name: 'רון', custom_title: 'רון חוגג 40' }, // valid Hebrew name, no AGE
+      hebrewAgeTheme,
+      ['a']
+    );
+    expect(problems).toEqual([]);
+  });
+
+  it('still flags a missing extra field when the custom title is blank/whitespace', () => {
+    // A whitespace-only custom_title counts as absent -> extras stay required.
+    const problems = validate.validateOrderForProduction(
+      { honoree_name: 'רון', custom_title: '   ' },
+      hebrewAgeTheme,
+      ['a']
+    );
+    expect(problems.some((p) => p.includes('AGE'))).toBe(true);
+  });
+
+  it('still enforces name language + word count for a custom-title order', () => {
+    // Skipping the extras must NOT skip the other checks: a Latin name into a
+    // Hebrew theme with no words still yields the language + no-words problems.
+    const problems = validate.validateOrderForProduction(
+      { honoree_name: 'Shira', custom_title: 'Shira turns 40' },
+      hebrewAgeTheme,
+      []
+    );
+    expect(problems.some((p) => p.includes('עברית'))).toBe(true); // name language
+    expect(problems.some((p) => p.includes('מיל'))).toBe(true); // no words
+    expect(problems.some((p) => p.includes('AGE'))).toBe(false); // extras skipped
+  });
+
   it('reads a required extra field from order.extra_fields too', () => {
     const problems = validate.validateOrderForProduction(
       { honoree_name: 'רון', order: { extra_fields: { AGE: '40' } } },
