@@ -275,6 +275,14 @@
         font-size: 13px;
         padding: 3px 0;
       }
+      /* Keep each row a tight, connected unit: status mark, then label, then the
+         action link right beside it — not stranded at the far edge of the cell. */
+      .asset .mark {
+        order: -1;
+      }
+      .asset .repl {
+        order: 1;
+      }
       .asset .mark {
         font-weight: 900;
         width: 16px;
@@ -290,7 +298,7 @@
         color: #b9902a;
       }
       .asset .lbl {
-        flex: 1 1 auto;
+        flex: 0 1 auto;
       }
       .asset.chasers {
         grid-column: 1 / -1;
