@@ -412,3 +412,53 @@ describe('interpolate', () => {
     expect(s.interpolate('{honoree}', val, { html: true })).toBe('&lt;b&gt;a &amp; b&lt;/b&gt;');
   });
 });
+
+describe('reminders.list — owner-managed reminder array', () => {
+  const good = [
+    {
+      id: 'evening',
+      enabled: true,
+      text: 'ערב טוב {link}',
+      channels: { email: true, whatsapp: false },
+      every_days: 2,
+      weekdays: [0, 3],
+      only_if_idle_hours: null,
+      window: [17, 21],
+      max_total: 2,
+    },
+  ];
+
+  it('returns the seed default list when unset', () => {
+    const s = loadFresh();
+    const list = s.get('reminders', 'list');
+    expect(Array.isArray(list)).toBe(true);
+    expect(list.length).toBeGreaterThanOrEqual(1);
+    expect(list[0]).toHaveProperty('id');
+    expect(list[0]).toHaveProperty('channels');
+  });
+
+  it('stores a valid owner list (array REPLACES the default) and persists it', () => {
+    const s = loadFresh();
+    const saved = s.set('reminders', 'list', good);
+    expect(saved).toHaveLength(1);
+    expect(saved[0].id).toBe('evening');
+    // survives a reload from disk
+    const s2 = loadFresh();
+    expect(s2.get('reminders', 'list')[0].id).toBe('evening');
+  });
+
+  it('rejects an invalid list (no channel enabled) and keeps the prior value', () => {
+    const s = loadFresh();
+    expect(() =>
+      s.set('reminders', 'list', [{ ...good[0], channels: { email: false, whatsapp: false } }])
+    ).toThrow(/at least one channel/);
+    // unchanged — still the seed default
+    expect(s.get('reminders', 'list')[0].id).toBe('morning');
+  });
+
+  it('rejects a non-array and a bad schedule field', () => {
+    const s = loadFresh();
+    expect(() => s.set('reminders', 'list', { nope: true })).toThrow(/must be an array/);
+    expect(() => s.set('reminders', 'list', [{ ...good[0], every_days: 0 }])).toThrow(/every_days/);
+  });
+});
