@@ -22,6 +22,10 @@
 // of the HTML-escape helper rather than importing notify's.
 const fs = require('fs');
 const path = require('path');
+// The reminder list's default seed + shape validator live in the pure engine
+// module (server/reminders.js). reminders.js has NO deps, so requiring it here
+// creates no cycle (settings -> reminders only).
+const { DEFAULT_REMINDERS, validateReminders } = require('./reminders');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const FILE = path.join(DATA_DIR, 'settings.json');
@@ -357,6 +361,17 @@ const REGISTRY = {
     custom_enabled: { kind: 'flag', tokens: [], default: false },
     custom_price: { kind: 'price', min: 1, tokens: [], default: 599 },
   },
+  // --- Owner-managed reminder list (email + WhatsApp) -----------------------
+  // A flexible replacement for the fixed wa daily/quiet triggers: ONE key holding
+  // an ARRAY the owner can add to / delete from. Each item is {id, enabled, text,
+  // channels:{email,whatsapp}, every_days, weekdays, only_if_idle_hours, window,
+  // max_total}, scheduled + lifetime-capped independently by server/reminders.js.
+  // Arrays REPLACE on override (get() returns the owner's whole list, or the seed
+  // default), so add/delete is just saving the new array. Validated on write by
+  // reminders.validateReminders (wired into validateValue via kind:'reminders').
+  reminders: {
+    list: { kind: 'reminders', tokens: ['honoree', 'link'], default: DEFAULT_REMINDERS },
+  },
 };
 
 // --- small object helpers -----------------------------------------------------
@@ -559,6 +574,12 @@ function validateValue(section, key, value) {
     // accident from a mis-typed override.
     if (typeof value !== 'boolean') return 'value must be a boolean';
     return null;
+  }
+  if (kind === 'reminders') {
+    // The owner-managed reminder ARRAY. Full shape + range validation lives in the
+    // pure engine (single source of truth), so a bad list can never be stored and
+    // reach the scheduler.
+    return validateReminders(value);
   }
   // Generic fallback: an object default requires an object override.
   if (isPlainObject(defaultFor(section, key)) && !isPlainObject(value)) {
