@@ -114,6 +114,27 @@ describe('runWaNudgeScan — daily triggers', () => {
     expect(sendCalls.map((s) => s.to).sort()).toEqual(['ndm1@g.us', 'ndm2@g.us']);
   });
 
+  it('does NOT re-fire when a delivered send returns not-ok (restricted account)', async () => {
+    // Regression for the hourly-spam loop: a rate-limited/restricted WhatsApp
+    // account can DELIVER a message yet make Whapi return a non-ok response. The
+    // nudge must still be recorded (mark-on-attempt) so the next hourly scan does
+    // NOT re-send it — otherwise the daily nudge repeats every hour and deepens the
+    // restriction.
+    linkedGroup('תמר', 'ndfail@g.us', NOW);
+    whatsapp.sendMessage.mockImplementationOnce(async (to, text) => {
+      sendCalls.push({ to, text }); // it DID deliver…
+      return { ok: false, error: 'whapi http 429' }; // …but the response is not-ok
+    });
+    const first = await app.runWaNudgeScan(NOW);
+    expect(sendCalls).toHaveLength(1); // attempted once
+    expect(first).toBe(0); // not counted as a clean send
+    // The bug was: this second scan re-sent. It must now send nothing.
+    sendCalls = [];
+    const second = await app.runWaNudgeScan(NOW);
+    expect(second).toBe(0);
+    expect(sendCalls).toHaveLength(0);
+  });
+
   it('a disabled trigger stays silent', async () => {
     linkedGroup('נועה', 'nd2@g.us', NOW);
     for (const id of WA_TRIGGERS) settings.set('wa', 'trigger.' + id, { enabled: false });
@@ -148,6 +169,22 @@ describe('runWaNudgeScan — quiet reminders', () => {
     expect(await app.runWaNudgeScan(T0 + 75 * HOUR)).toBe(0);
     expect(sendCalls.filter((s) => s.to === 'nq1@g.us')).toHaveLength(3);
     for (const s of sendCalls) expect(s.text).toContain('רון');
+  });
+
+  it('a delivered-but-not-ok quiet send still counts — no hourly re-fire', async () => {
+    linkedGroup('ליה', 'nqfail@g.us', T0 - 100 * HOUR); // idle -> quiet due
+    whatsapp.sendMessage.mockImplementationOnce(async (to, text) => {
+      sendCalls.push({ to, text });
+      return { ok: false, error: 'whapi http 429' };
+    });
+    // Attempt at T0: delivered but not-ok. Recorded on attempt (last_at + count).
+    const first = await app.runWaNudgeScan(T0);
+    expect(sendCalls).toHaveLength(1);
+    expect(first).toBe(0);
+    // One hour later (< idle_hours spacing): must NOT re-fire.
+    sendCalls = [];
+    expect(await app.runWaNudgeScan(T0 + HOUR)).toBe(0);
+    expect(sendCalls).toHaveLength(0);
   });
 });
 
