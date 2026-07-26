@@ -223,3 +223,63 @@ export async function fetchDesignNames({ fetchImpl, timeoutMs = 2500 } = {}) {
     if (timer) clearTimeout(timer);
   }
 }
+
+// A stored template picture URL must be an our-own /api/template-image/<slug>/<slot>
+// path — defense in depth so a custom-design payload can never inject an off-origin
+// image URL into the storefront.
+const TEMPLATE_IMAGE_RE = /^\/api\/template-image\/[a-z0-9]+(?:-[a-z0-9]+)*\/(front|back|board)$/;
+// A safe design id / slug (lowercase kebab) — mirrors the server's isSafeSlug.
+const SAFE_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+// Buyer-facing fetch of the CUSTOM designs — uploaded templates that became
+// storefront products (GET /api/custom-designs). Each is normalized into the same
+// shape as a catalog design so products.html / product.html can render it beside
+// the built-in ones. `custom:true` marks it; its pictures are the template's SVGs
+// (img.{front,back,board}). Fully fail-safe + timeout-bounded: any error → [] so a
+// slow/failed/malformed response just leaves the built-in catalog. Off-origin or
+// malformed image URLs are dropped; a design with no usable picture is skipped.
+export async function loadCustomDesigns({ fetchImpl, timeoutMs = 2500 } = {}) {
+  const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return [];
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const res = await f(
+      '/api/custom-designs',
+      controller ? { signal: controller.signal } : undefined
+    );
+    if (!res || !res.ok) return [];
+    const data = await res.json();
+    const list = data && Array.isArray(data.designs) ? data.designs : [];
+    const out = [];
+    for (const d of list) {
+      if (!d || typeof d.id !== 'string' || !SAFE_SLUG_RE.test(d.id)) continue;
+      const src = d.img && typeof d.img === 'object' ? d.img : {};
+      const img = {};
+      for (const slot of ['front', 'back', 'board']) {
+        if (typeof src[slot] === 'string' && TEMPLATE_IMAGE_RE.test(src[slot]))
+          img[slot] = src[slot];
+      }
+      if (!img.front && !img.back && !img.board) continue; // nothing to show
+      const name = typeof d.name === 'string' && d.name.trim() ? d.name : d.id;
+      out.push({
+        id: d.id,
+        name,
+        theme: typeof d.theme === 'string' ? d.theme : d.id,
+        custom: true,
+        public: true,
+        recolor: 'fixed',
+        accent: null,
+        // thumbs mirrors the catalog shape so designShipsBoard(d) works uniformly.
+        thumb: img.front || img.back || img.board,
+        thumbs: { front: img.front, back: img.back, board: img.board },
+        img,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
