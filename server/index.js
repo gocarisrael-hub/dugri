@@ -1762,6 +1762,24 @@ app.post(
   }
 );
 
+// Admin: CREATE an EMPTY template shell from METADATA only (no files). Register the
+// themes.json entry + the empty dir, so a heavy template can be added by uploading
+// each asset SEPARATELY afterwards (via the per-asset replace route) instead of one
+// giant multipart POST that would exceed the body-size limit. JSON body carries the
+// same metadata fields the full upload form does (slug, display_he, title_text,
+// name_form, language, extra_fields, visibility).
+app.post('/api/admin/templates/create', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let result;
+  try {
+    result = templates.createTemplateShell({ root: TEMPLATE_ROOT, fields: req.body || {} });
+  } catch (e) {
+    return res.status(500).json({ error: 'create failed', detail: String((e && e.message) || e) });
+  }
+  if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
+  res.status(201).json({ ok: true, ...result });
+});
+
 // Admin: template STATUS view — READ-ONLY inventory of every registered template
 // and which of its assets exist vs are MISSING (front/back/board clean+filled,
 // the OPTIONAL chasers board, and both fonts). Powers the admin checklist so gaps
@@ -1876,6 +1894,7 @@ app.post(
         role: req.params.role,
         file,
         force,
+        pythonBin: PYTHON_BIN, // shrink embedded rasters on a per-file SVG upload too
       });
     } catch (e) {
       return res.status(500).json({ error: String((e && e.message) || e) });

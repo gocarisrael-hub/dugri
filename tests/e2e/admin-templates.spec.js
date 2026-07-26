@@ -245,4 +245,38 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
     expect(themes.bachelorette).toBeDefined();
   });
+
+  test('create an EMPTY template shell, then upload one asset separately', async ({ page }) => {
+    const slug = 'e2e-shell';
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    // Fill metadata only, then "create empty" (no files) — the way a heavy template
+    // is added: register the shell, then upload each asset one at a time.
+    await page.fill('#form input[name="slug"]', slug);
+    await page.fill('#form input[name="display_he"]', 'ריק E2E');
+    await page.fill('#form input[name="title_text"]', '{NAME}');
+    await page.click('#createShell');
+
+    // The shell appears in the list with its required assets MISSING.
+    const card = page.locator(`.tpl-card[data-key="${slug}"]`);
+    await expect(card).toBeVisible();
+    await expect(card.locator('.asset[data-role="clean-fronts"]')).toHaveClass(/off/);
+
+    // Upload ONE asset separately via the per-asset input — it lands (uncalibrated,
+    // first-time add → no confirm needed).
+    await card.locator('.asset[data-role="clean-fronts"] .repl-input').setInputFiles({
+      name: 'fronts.svg',
+      mimeType: 'image/svg+xml',
+      buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg">e2e-shell</svg>'),
+    });
+    await expect(
+      page.locator(`.tpl-card[data-key="${slug}"] .asset[data-role="clean-fronts"]`)
+    ).toHaveClass(/on/);
+
+    // Persisted to the FIXTURE themes.json (public, uncalibrated), files on disk.
+    const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
+    expect(themes[slug]).toBeDefined();
+    expect(themes[slug].visibility).toBe('public');
+    expect(themes[slug].calibrated).toBe(false);
+    expect(fs.existsSync(path.join(TPL_DIR, slug, 'clean', 'fronts.svg'))).toBe(true);
+  });
 });

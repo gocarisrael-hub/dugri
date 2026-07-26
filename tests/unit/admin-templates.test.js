@@ -529,6 +529,130 @@ describe('templates.js full editing (status / rename / replace)', () => {
     expect(bad.error).toMatch(/does not look like an SVG/);
   });
 
+  it('createTemplateShell registers metadata + an EMPTY dir (no files, public, uncalibrated)', () => {
+    const root = makeScaffold();
+    const r = templates.createTemplateShell({
+      root,
+      fields: {
+        slug: 'shell-x',
+        display_he: 'תבנית ריקה',
+        title_text: '{NAME}',
+        name_form: 'english',
+        extra_fields: 'AGE',
+        visibility: 'private',
+      },
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.shell).toBe(true);
+    expect(r.key).toBe('shell-x');
+    expect(r.visibility).toBe('private');
+    // themes.json gained the entry; NO fonts recorded yet; uncalibrated.
+    const themes = templates.loadThemes(templates.themesPathFor(root));
+    expect(themes['shell-x'].calibrated).toBe(false);
+    expect(themes['shell-x'].title_font).toBeUndefined();
+    expect(themes['shell-x'].extra_fields).toEqual(['AGE']);
+    // the dir exists with empty clean/filled/fonts subdirs and NO asset files.
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'shell-x');
+    expect(fs.existsSync(path.join(dir, 'clean'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'clean', 'fronts.svg'))).toBe(false);
+    // The shell shows in the status list with every required asset MISSING.
+    const st = templates.listTemplateStatuses(root).find((t) => t.key === 'shell-x');
+    expect(st.complete).toBe(false);
+    expect(st.assets.find((a) => a.role === 'clean-fronts').present).toBe(false);
+
+    // Bad metadata is rejected; a dup slug is refused.
+    expect(templates.createTemplateShell({ root, fields: { slug: 'BAD SLUG' } }).error).toMatch(
+      /slug/
+    );
+    expect(
+      templates.createTemplateShell({
+        root,
+        fields: { slug: 'shell-x', display_he: 'x', title_text: '{NAME}', name_form: 'english' },
+      }).httpStatus
+    ).toBe(400);
+  });
+
+  it('a shell + per-asset uploads builds a complete template (records the font too)', () => {
+    const root = makeScaffold();
+    templates.createTemplateShell({
+      root,
+      fields: { slug: 'shell-y', display_he: 'y', title_text: '{NAME}', name_form: 'english' },
+    });
+    // Upload each required SVG + both fonts separately.
+    for (const role of [
+      'clean-fronts',
+      'clean-backs',
+      'clean-board',
+      'filled-fronts',
+      'filled-backs',
+      'filled-board',
+    ]) {
+      const r = templates.replaceAsset({
+        root,
+        key: 'shell-y',
+        role,
+        file: { filename: 'x.svg', data: SVG(role) },
+      });
+      expect(r.error).toBeUndefined();
+    }
+    const tf = templates.replaceAsset({
+      root,
+      key: 'shell-y',
+      role: 'title-font',
+      file: { filename: 'MyTitle.ttf', data: FONT('T') },
+    });
+    expect(tf.error).toBeUndefined();
+    templates.replaceAsset({
+      root,
+      key: 'shell-y',
+      role: 'word-font',
+      file: { filename: 'MyWord.ttf', data: FONT('W') },
+    });
+    // The font filename is now recorded in themes.json so the generator can find it.
+    const themes = templates.loadThemes(templates.themesPathFor(root));
+    expect(themes['shell-y'].title_font).toBe('MyTitle.ttf');
+    expect(themes['shell-y'].word_font).toBe('MyWord.ttf');
+    // The template is now complete (all required assets present).
+    const st = templates.listTemplateStatuses(root).find((t) => t.key === 'shell-y');
+    expect(st.complete).toBe(true);
+  });
+
+  it('replaceAsset SHRINKS an oversized embedded-image SVG (best-effort, injected runner)', () => {
+    const root = makeScaffold();
+    onboard(root, 'shr-x');
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'shr-x');
+    // A >300KB SVG carrying a data:image — big enough to trip the shrink threshold.
+    const heavy = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/png;base64,' +
+        'A'.repeat(400 * 1024) +
+        '"/></svg>'
+    );
+    // Inject a fake shrinker that returns a much smaller still-SVG buffer.
+    const small = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg">shrunk</svg>');
+    const runner = () => ({ status: 0, stdout: small });
+    const r = templates.replaceAsset({
+      root,
+      key: 'shr-x',
+      role: 'clean-fronts',
+      file: { filename: 'big.svg', data: heavy },
+      shrinkRunner: runner,
+    });
+    expect(r.error).toBeUndefined();
+    const written = fs.readFileSync(path.join(dir, 'clean', 'fronts.svg'));
+    expect(written.length).toBeLessThan(heavy.length); // the shrunk buffer landed
+    expect(written.toString()).toContain('shrunk');
+    // shrinkImages:false writes the original bytes unchanged.
+    const r2 = templates.replaceAsset({
+      root,
+      key: 'shr-x',
+      role: 'clean-backs',
+      file: { filename: 'big.svg', data: heavy },
+      shrinkImages: false,
+    });
+    expect(r2.error).toBeUndefined();
+    expect(fs.readFileSync(path.join(dir, 'clean', 'backs.svg')).length).toBe(heavy.length);
+  });
+
   it('replaceAsset ADDS the optional chasers board where none existed', () => {
     const root = makeScaffold();
     onboard(root, 'rep-ch');
@@ -1048,6 +1172,61 @@ describe('POST /api/admin/templates', () => {
       method: 'DELETE',
     });
     expect(gone.status).toBe(404);
+  });
+
+  it('POST /create makes an empty shell, then a per-asset upload lands on it', async () => {
+    // Create the shell from METADATA ONLY (JSON, no files).
+    const create = await fetch(base + '/api/admin/templates/create?key=' + ADMIN_KEY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        slug: 'shell-ep',
+        display_he: 'ריק אנדפוינט',
+        title_text: '{NAME}',
+        name_form: 'english',
+        visibility: 'public',
+      }),
+    });
+    expect(create.status).toBe(201);
+    const cbody = await create.json();
+    expect(cbody.shell).toBe(true);
+    // It shows in the list with clean-fronts MISSING.
+    let list = await (await fetch(base + '/api/admin/templates?key=' + ADMIN_KEY)).json();
+    let st = list.templates.find((t) => t.key === 'shell-ep');
+    expect(st).toBeTruthy();
+    expect(st.assets.find((a) => a.role === 'clean-fronts').present).toBe(false);
+
+    // Upload ONE asset separately (multipart) — it lands, no giant combined POST.
+    const boundary = '----dugriShell' + Math.random().toString(16).slice(2);
+    const body = buildMultipart(boundary, [
+      { name: 'file', filename: 'fronts.svg', data: SVG('SHELL-FRONTS') },
+    ]);
+    const up = await fetch(
+      base + '/api/admin/templates/shell-ep/assets/clean-fronts?key=' + ADMIN_KEY,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
+        body,
+      }
+    );
+    expect(up.status).toBe(200);
+    list = await (await fetch(base + '/api/admin/templates?key=' + ADMIN_KEY)).json();
+    st = list.templates.find((t) => t.key === 'shell-ep');
+    expect(st.assets.find((a) => a.role === 'clean-fronts').present).toBe(true);
+
+    // Bad metadata → 400; 403 without the key.
+    const bad = await fetch(base + '/api/admin/templates/create?key=' + ADMIN_KEY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: 'BAD SLUG' }),
+    });
+    expect(bad.status).toBe(400);
+    const noauth = await fetch(base + '/api/admin/templates/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: 'x' }),
+    });
+    expect(noauth.status).toBe(403);
   });
 });
 

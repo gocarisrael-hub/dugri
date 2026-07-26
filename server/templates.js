@@ -278,9 +278,10 @@ function shrinkSvgImages(buf, { root = REPO_ROOT, pythonBin = 'python3', runner 
   return buf;
 }
 
-// Validate + collect the parsed fields/files for onboarding. Returns
-// { error } on the first problem, or a normalized descriptor on success.
-function normalizeOnboarding({ root, fields, files }) {
+// Validate the METADATA fields common to onboarding + shell creation (no files).
+// Returns { error } on the first problem, or the normalized metadata on success.
+// Shared so a full upload and a "create empty template" register identical config.
+function normalizeMetadata({ root, fields }) {
   const slug = String((fields && fields.slug) || '').trim();
   if (!isSafeSlug(slug)) {
     return { error: 'invalid slug: use lowercase letters, digits and hyphens (a-z, 0-9, -)' };
@@ -290,7 +291,6 @@ function normalizeOnboarding({ root, fields, files }) {
   if (fs.existsSync(templateDir(root, slug))) {
     return { error: 'a template directory with this slug already exists' };
   }
-
   const displayHe = String((fields && fields.display_he) || '').trim();
   if (!displayHe) return { error: 'display_he (Hebrew name) is required' };
   const titleText = String((fields && fields.title_text) || '').trim();
@@ -302,14 +302,21 @@ function normalizeOnboarding({ root, fields, files }) {
   const language =
     String((fields && fields.language) || '').trim() ||
     (nameForm === 'hebrew' ? 'hebrew' : 'english');
-  // extra_fields: comma/whitespace separated tokens (e.g. "AGE" or "YEARS,NAME1,NAME2").
   const extraFields = String((fields && fields.extra_fields) || '')
     .split(/[\s,]+/)
     .map((s) => s.trim())
     .filter(Boolean);
-  // visibility: the owner's choice; default PUBLIC (only an explicit 'private' hides).
   const visibility =
     String((fields && fields.visibility) || '').trim() === 'private' ? 'private' : 'public';
+  return { slug, displayHe, titleText, nameForm, language, extraFields, visibility };
+}
+
+// Validate + collect the parsed fields/files for onboarding. Returns
+// { error } on the first problem, or a normalized descriptor on success.
+function normalizeOnboarding({ root, fields, files }) {
+  const meta = normalizeMetadata({ root, fields });
+  if (meta.error) return meta;
+  const { slug, displayHe, titleText, nameForm, language, extraFields, visibility } = meta;
 
   // Required uploads: clean + filled {fronts,backs,board} SVGs and both fonts.
   const clean = {};
@@ -432,6 +439,46 @@ function onboardTemplate(opts) {
     recipe_detail: recipe.ok ? null : recipe.detail || null,
     note,
     theme: entry,
+  };
+}
+
+// Create an EMPTY template shell: register the themes.json entry + the (empty)
+// template dir from METADATA ONLY, with NO asset files. This lets the admin add a
+// heavy template (Canva SVGs with big embedded rasters) by uploading each asset
+// SEPARATELY afterwards via replaceAsset — so no single request has to carry all
+// of them at once (past the body-size limit). The fonts are left unrecorded until
+// their files are uploaded (replaceAsset records the filename then). Returns
+// { key, shell:true, ... } or { error, httpStatus }.
+function createTemplateShell({ root, fields }) {
+  const meta = normalizeMetadata({ root, fields });
+  if (meta.error) return { error: meta.error, httpStatus: 400 };
+  const dir = templateDir(root, meta.slug);
+  for (const sub of ['clean', 'filled', 'fonts']) {
+    fs.mkdirSync(path.join(dir, sub), { recursive: true });
+  }
+  const entry = buildThemeEntry({
+    slug: meta.slug,
+    displayHe: meta.displayHe,
+    titleText: meta.titleText,
+    titleFont: undefined, // recorded when the font file is uploaded
+    wordFont: undefined,
+    language: meta.language,
+    nameForm: meta.nameForm,
+    extraFields: meta.extraFields,
+    visibility: meta.visibility,
+  });
+  appendThemeEntry(themesPathFor(root), meta.slug, entry);
+  return {
+    key: meta.slug,
+    dir: 'resources/canva/templates/' + meta.slug,
+    calibrated: false,
+    visibility: entry.visibility,
+    shell: true,
+    theme: entry,
+    note:
+      `Empty template "${meta.slug}" created (${entry.visibility.toUpperCase()}). Upload each ` +
+      'asset (clean/filled fronts, backs, board + both fonts) separately from the template list ' +
+      'below, then calibrate.',
   };
 }
 
@@ -794,7 +841,16 @@ function designDisplayNames(themes, designs) {
 // For a font role with no filename on record, the uploaded basename is used and
 // recorded in themes.json so the generator can find it.
 // Returns { key, role, path } or { error, httpStatus, ... }.
-function replaceAsset({ root, key, role, file, force = false }) {
+function replaceAsset({
+  root,
+  key,
+  role,
+  file,
+  force = false,
+  pythonBin,
+  shrinkRunner,
+  shrinkImages,
+}) {
   const themesPath = themesPathFor(root);
   const themes = loadThemes(themesPath);
   const entry = ownTheme(themes, key);
@@ -859,8 +915,16 @@ function replaceAsset({ root, key, role, file, force = false }) {
     };
   }
 
+  // Shrink oversized embedded rasters in an uploaded SVG before writing, the same
+  // best-effort pass onboarding uses — so a per-file upload of a heavy Canva export
+  // lands light on disk too. Skipped for fonts / small SVGs / when disabled.
+  let data = file.data;
+  if (kind === 'svg' && shrinkImages !== false) {
+    data = shrinkSvgImages(file.data, { root, pythonBin, runner: shrinkRunner });
+  }
+
   fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, file.data);
+  fs.writeFileSync(abs, data);
 
   // A newly-named font needs its filename recorded so the generator finds it.
   if (recordFontField) {
@@ -924,8 +988,10 @@ module.exports = {
   writeTemplateFiles,
   runRecipeDiff,
   shrinkSvgImages,
+  normalizeMetadata,
   normalizeOnboarding,
   onboardTemplate,
+  createTemplateShell,
   parseMultipart,
   boundaryFromContentType,
   templateDir,

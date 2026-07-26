@@ -137,6 +137,12 @@
         opacity: 0.55;
         cursor: default;
       }
+      button.secondary {
+        background: #fff;
+        color: #5c7357;
+        border: 1px solid #8ca287;
+        margin-inline-start: 8px;
+      }
       .msg {
         margin-top: 16px;
         padding: 12px 14px;
@@ -471,7 +477,15 @@
           </div>
         </fieldset>
 
-        <button type="submit" id="submit">צור תבנית</button>
+        <button type="submit" id="submit">צור תבנית (העלאת הכול יחד)</button>
+        <button type="button" id="createShell" class="secondary">
+          צור תבנית ריקה — והעלו כל קובץ בנפרד
+        </button>
+        <p class="hint" style="margin-top: 8px">
+          תבנית כבדה (SVG של Canva עם תמונות מוטמעות) עלולה להיות גדולה מדי להעלאה אחת. בחרו "צור
+          תבנית ריקה" — היא נרשמת ללא קבצים, ואז מעלים כל קובץ בנפרד מרשימת התבניות למטה (כל קובץ
+          מתחת למגבלת הגודל).
+        </p>
         <div id="msg" hidden></div>
       </form>
     </div>
@@ -520,7 +534,9 @@
               'ok',
               'נוצרה תבנית: ' +
                 data.key +
-                '\nvisibility: private · calibrated: false\n' +
+                '\nvisibility: ' +
+                (data.visibility || 'public') +
+                ' · calibrated: false\n' +
                 recipeTxt +
                 '\n\n' +
                 (data.note || '')
@@ -531,6 +547,54 @@
           show('err', 'שגיאת רשת: ' + err);
         } finally {
           submitBtn.disabled = false;
+        }
+        loadTemplates();
+      });
+
+      // Create an EMPTY template shell from the METADATA fields only (no files), so
+      // a heavy template can be built by uploading each asset separately afterwards.
+      const createShellBtn = document.getElementById('createShell');
+      createShellBtn.addEventListener('click', async () => {
+        if (!key) {
+          show('err', 'חסר מפתח גישה. פתחו את העמוד עם ?key=… בכתובת.');
+          return;
+        }
+        const fd = new FormData(form);
+        const payload = {
+          slug: (fd.get('slug') || '').trim(),
+          display_he: (fd.get('display_he') || '').trim(),
+          title_text: (fd.get('title_text') || '').trim(),
+          name_form: fd.get('name_form') || '',
+          language: (fd.get('language') || '').trim(),
+          extra_fields: (fd.get('extra_fields') || '').trim(),
+          visibility: fd.get('visibility') || 'public',
+        };
+        if (!payload.slug || !payload.display_he || !payload.title_text) {
+          show('err', 'מלאו slug, שם (display_he) וטקסט כותרת (title_text) כדי ליצור תבנית ריקה.');
+          return;
+        }
+        createShellBtn.disabled = true;
+        show('ok', 'יוצר תבנית ריקה…');
+        try {
+          const res = await fetch('/api/admin/templates/create?key=' + encodeURIComponent(key), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            show('err', 'שגיאה: ' + (data.error || res.status));
+          } else {
+            show(
+              'ok',
+              (data.note || 'נוצרה תבנית ריקה: ' + data.key) + '\n\nהעלו כעת כל קובץ מהרשימה למטה.'
+            );
+            form.reset();
+          }
+        } catch (err) {
+          show('err', 'שגיאת רשת: ' + err);
+        } finally {
+          createShellBtn.disabled = false;
         }
         loadTemplates();
       });
