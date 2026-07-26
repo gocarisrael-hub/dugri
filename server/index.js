@@ -19,6 +19,7 @@ const designImages = require('./design-images');
 const settings = require('./settings');
 const whatsapp = require('./whatsapp');
 const waState = require('./wa-state');
+const reminders = require('./reminders');
 const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
 
 const app = express();
@@ -1484,80 +1485,69 @@ async function handleWaEvent(ev, base) {
   }
 }
 
-// One nudge-scan pass over every active group. Exposed (app.runWaNudgeScan) so a
-// test can run a single pass with an injected `now` instead of waiting on the
-// interval. No-ops (returns 0) when the bot is unconfigured. For each active
-// group: if its collection is gone / no longer open, close the group and skip;
-// otherwise ask whatsapp.groupsDueForNudge which time triggers are due now, send
-// each (from the catalog), and record the send (daily_* → markNudged by slot,
-// quiet_reminder → recordQuietReminder). Disabled triggers never appear in the
-// due list, so they stay silent. Fail-soft per group; never throws.
-async function runWaNudgeScan(now = Date.now()) {
-  if (!whatsapp.isConfigured()) return 0;
-  const base = paymentBaseUrl();
-  let sent = 0;
-  let groups = [];
+// One reminder-scan pass over every OPEN collection, driving the owner-managed
+// reminder list (server/reminders.js). Reminders are anchored to the COLLECTION,
+// so this delivers over BOTH channels: email (to the buyer) and WhatsApp (to the
+// collection's group, when one exists) — email works even with the bot disarmed.
+// Exposed (app.runReminderListScan) so a test can run one pass with an injected
+// `now`. Runs whenever email OR the bot is available; each reminder's own channels
+// + the engine's window / every_days / max_total / idle gates decide what actually
+// sends. Each due reminder is RECORDED BEFORE the send result (mark-on-attempt),
+// so a failed-looking send can never re-fire it — the fix for the hourly spam
+// loop. Fail-soft per collection; never throws.
+async function runReminderListScan(now = Date.now()) {
+  const emailOn = notify.isConfigured();
+  const waOn = whatsapp.isConfigured();
+  if (!emailOn && !waOn) return 0;
+  let list = [];
   try {
-    groups = waState.activeGroups();
+    list = settings.get('reminders', 'list');
   } catch {
     return 0;
   }
-  // First pass: resolve each group's collection once. Retire (close) any group
-  // whose collection is gone or no longer open; keep the rest — with their
-  // collection — for a SINGLE batched due-check below.
-  const open = [];
-  const collectionByGroup = new Map();
-  for (const g of groups) {
-    try {
-      const cid = g.collection_id;
-      const collection = cid ? db.getCollection(cid) : null;
-      if (!collection || db.effectiveStatus(collection) !== 'open') {
-        waState.markClosed(g.groupId);
-        continue;
-      }
-      open.push(g);
-      collectionByGroup.set(g.groupId, collection);
-    } catch (e) {
-      console.warn('[whatsapp] nudge prep failed for group:', e && e.message ? e.message : e);
-    }
-  }
-  if (!open.length) return 0;
-  // ONE call for the whole list: groupsDueForNudge builds Intl.DateTimeFormat and
-  // reads the trigger catalog once per call, so batching avoids doing that per
-  // group.
-  let due = [];
+  if (!Array.isArray(list) || !list.some((r) => r && r.enabled)) return 0;
+  const base = paymentBaseUrl();
+  let sent = 0;
+  let collections = [];
   try {
-    due = whatsapp.groupsDueForNudge(open, { now });
-  } catch (e) {
-    console.warn('[whatsapp] groupsDueForNudge failed:', e && e.message ? e.message : e);
+    collections = db.listAllCollections();
+  } catch {
     return 0;
   }
-  for (const d of due) {
+  for (const c of collections) {
     try {
-      const collection = collectionByGroup.get(d.groupId);
-      if (!collection) continue;
-      // Record the send as done BEFORE we look at the result. An ambient nudge is
-      // time-anchored — it must fire AT MOST ONCE per its window/day. Previously we
-      // only recorded on a successful Whapi response and "retried" otherwise, but
-      // when the WhatsApp account gets rate-limited/restricted a send can DELIVER
-      // yet return a non-ok response — so the nudge re-fired every hourly scan and
-      // spammed the group (which deepened the restriction). Missing a nudge is
-      // fine; repeating it is not. So mark-on-attempt, never retry an ambient nudge.
-      if (d.triggerId === 'quiet_reminder') waState.recordQuietReminder(d.groupId, now);
-      else if (d.slotKey) waState.markNudged(d.groupId, d.slotKey);
-      const ok = (await sendWaTrigger(d.groupId, d.triggerId, waGroupValues(collection, base))).ok;
-      if (!ok) {
-        console.warn(
-          '[whatsapp] nudge send failed (not retried — already recorded) for group ' +
-            d.groupId +
-            ' trigger ' +
-            d.triggerId
-        );
-        continue;
+      if (c.status !== 'open') continue; // "add more words" reminders only while open
+      const due = reminders.remindersDue({
+        reminders: list,
+        nowMs: now,
+        sentState: db.reminderState(c.id),
+        lastActivityMs: db.lastActivityMs(c.id),
+      });
+      if (!due.length) continue;
+      const groupId = waState.groupForCollection(c.id); // null when no group
+      const values = waGroupValues(c, base);
+      for (const d of due) {
+        // Record on attempt — an ambient reminder fires at most once per its
+        // window; never retry on a failed-looking send (that spammed the group).
+        db.markReminderSent(c.id, d.id, now);
+        let delivered = false;
+        if (d.channels.whatsapp && groupId && waOn) {
+          const text = settings.interpolate(d.text, values);
+          const r = await whatsapp.sendMessage(groupId, text);
+          if (r && r.ok) delivered = true;
+        }
+        if (d.channels.email && emailOn) {
+          if (await notify.sendReminderEmail(c, d.text, base)) delivered = true;
+        }
+        if (delivered) sent += 1;
+        else {
+          console.warn(
+            '[reminders] ' + d.id + ' not delivered for collection ' + c.id + ' (already recorded)'
+          );
+        }
       }
-      sent += 1;
     } catch (e) {
-      console.warn('[whatsapp] nudge send failed for group:', e && e.message ? e.message : e);
+      console.warn('[reminders] scan failed for a collection:', e && e.message ? e.message : e);
     }
   }
   return sent;
@@ -2700,14 +2690,16 @@ if (require.main === module) {
     }, REMINDER_SCAN_INTERVAL_MS);
     if (timer.unref) timer.unref();
   }
-  // Hourly WhatsApp nudge scan — only when the bot is armed. unref() so it never
-  // keeps the process alive on its own; fire-and-forget so a failing pass can't
-  // crash the process. Gated inside require.main so tests never auto-start it.
-  if (whatsapp.isConfigured()) {
-    const waTimer = setInterval(() => {
-      runWaNudgeScan().catch(() => {});
+  // Hourly owner-reminder-list scan (email + WhatsApp). Runs when EITHER channel
+  // is available (email works without the bot); the per-reminder channels + the
+  // engine gate what actually sends. unref() so it never keeps the process alive;
+  // fire-and-forget so a failing pass can't crash it. Inside require.main so tests
+  // never auto-start it.
+  if (notify.isConfigured() || whatsapp.isConfigured()) {
+    const remTimer = setInterval(() => {
+      runReminderListScan().catch(() => {});
     }, WA_NUDGE_SCAN_INTERVAL_MS);
-    if (waTimer.unref) waTimer.unref();
+    if (remTimer.unref) remTimer.unref();
   }
   // Hourly payment-reminder scan — runs when EITHER channel is available (email or
   // the WhatsApp bot); the payment_reminder trigger's own `enabled` gates whether
@@ -2724,7 +2716,7 @@ module.exports = app;
 // Exposed for tests + the scheduler: a single WhatsApp nudge pass, and the
 // paid-order group-open hook. Attached to the app export (which stays the default
 // export) so a test can drive them with injected inputs, hermetically.
-module.exports.runWaNudgeScan = runWaNudgeScan;
+module.exports.runReminderListScan = runReminderListScan;
 module.exports.openWhatsappGroup = openWhatsappGroup;
 module.exports.onOrderPaid = onOrderPaid;
 module.exports.onOrderCreated = onOrderCreated;

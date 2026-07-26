@@ -830,6 +830,49 @@ async function sendProductionError(collection, baseUrl, problems) {
   }
 }
 
+// Send ONE owner-list reminder over email. `rawText` is the reminder's own body
+// (from server/reminders.js), which may contain {honoree} and {link}. We
+// interpolate {honoree}, strip the {link} token from the body, and render the
+// collect link as a proper CTA button instead — so the email reads cleanly rather
+// than showing a raw URL mid-sentence. Sent to the buyer (owner_email). Fail-soft:
+// returns false (never throws) when email is off / no recipient / send fails.
+async function sendReminderEmail(collection, rawText, baseUrl) {
+  try {
+    const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
+    if (!to) return false;
+    const name = honoreeName(collection);
+    const link = ownerLink(collection, baseUrl);
+    let body = interpolate(String(rawText || ''), { honoree: name });
+    body = body
+      .replace(/\{link\}/g, '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    const bodyLines = body ? body.split('\n') : [];
+    const ft = footer();
+    const lines = bodyLines.slice();
+    if (link) {
+      lines.push('');
+      lines.push('להוספת המילים:');
+      lines.push(link);
+    }
+    lines.push('');
+    lines.push(ft.line1);
+    lines.push(ft.line2);
+    const html = renderEmailHtml({
+      title: 'תזכורת · ' + name,
+      bodyLines,
+      cta: link ? { label: ctaLabels().addWords, url: link } : null,
+      baseUrl,
+    });
+    const subject = 'דוגרי · תזכורת על ' + name;
+    return await send({ subject, text: lines.join('\n'), html, to });
+  } catch (e) {
+    console.warn('[notify] sendReminderEmail failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
 module.exports = {
   isConfigured,
   renderEmailHtml,
@@ -851,4 +894,5 @@ module.exports = {
   sendProductionError,
   sendWordsReminder,
   sendPaymentReminder,
+  sendReminderEmail,
 };

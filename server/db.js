@@ -261,6 +261,10 @@ const db = {
       closed_at: null,
       // One-time "you haven't added words yet" nudge timestamp; null until sent.
       reminded_at: null,
+      // Per-reminder send state for the owner reminder list (server/reminders.js):
+      // { <reminderId>: { count, last_at } }. Feeds the engine's max_total cap +
+      // every_days spacing. Empty until the first reminder fires (markReminderSent).
+      reminder_state: {},
       // One-time "order received" notification marker (owner + buyer emails and
       // the WhatsApp group fire once, when the order is first created — not on
       // payment). Null until markOrderNotified sets it.
@@ -815,6 +819,48 @@ const db = {
     c.reminded_at = nowIso();
     saveDb();
     return true;
+  },
+
+  // --- Owner reminder list send-state (server/reminders.js) ----------------
+  // Per-reminder { count, last_at } for one collection. Empty object when none
+  // sent yet. Read-only; the engine uses it for max_total + every_days.
+  reminderState(id) {
+    const c = this.getCollection(id);
+    return c && c.reminder_state && typeof c.reminder_state === 'object' ? c.reminder_state : {};
+  },
+
+  // Record that reminder `reminderId` was ATTEMPTED for this collection at `atMs`:
+  // bump its count + set last_at. Called BEFORE the send result is known (an
+  // ambient reminder must fire at most once per its window — never retry on a
+  // failed-looking send, which is what spammed the group before). Returns the new
+  // per-reminder state, or null for an unknown collection / empty id.
+  markReminderSent(id, reminderId, atMs) {
+    const c = this.getCollection(id);
+    const rid = String(reminderId || '');
+    if (!c || !rid) return null;
+    if (!c.reminder_state || typeof c.reminder_state !== 'object') c.reminder_state = {};
+    const cur = c.reminder_state[rid] || { count: 0, last_at: null };
+    cur.count = (Number(cur.count) || 0) + 1;
+    const ms = Number(atMs);
+    cur.last_at = new Date(Number.isFinite(ms) ? ms : Date.now()).toISOString();
+    c.reminder_state[rid] = cur;
+    saveDb();
+    return cur;
+  },
+
+  // Ms of the collection's LAST activity — the most recent word add, falling back
+  // to the collection's creation time. Feeds the engine's only_if_idle_hours.
+  // Returns NaN for an unknown collection (the engine then treats it as idle).
+  lastActivityMs(id) {
+    const c = this.getCollection(id);
+    if (!c) return NaN;
+    let last = Date.parse(c.created_at || '');
+    for (const w of _db.words) {
+      if (w.collection_id !== id) continue;
+      const t = Date.parse(w.created_at || '');
+      if (Number.isFinite(t) && (!Number.isFinite(last) || t > last)) last = t;
+    }
+    return last;
   },
 
   // --- Order-created notification (idempotent) -----------------------------

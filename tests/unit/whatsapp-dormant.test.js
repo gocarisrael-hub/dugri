@@ -94,10 +94,10 @@ it('the webhook rejects a missing secret with 403 (no fetch)', async () => {
   expect(fetchSpy).not.toHaveBeenCalled();
 });
 
-it('runWaNudgeScan is a no-op returning 0 (no fetch)', async () => {
+it('runReminderListScan is a no-op returning 0 (no fetch)', async () => {
   const c = db.createCollection('נועה', { phone: '0521234567' });
   waState.linkGroup('dorm2@g.us', c.id, '972521234567', ['972521234567']);
-  const sent = await app.runWaNudgeScan(Date.now());
+  const sent = await app.runReminderListScan(Date.now());
   expect(sent).toBe(0);
   expect(fetchSpy).not.toHaveBeenCalled();
 });
