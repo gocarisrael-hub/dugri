@@ -1536,10 +1536,25 @@ async function runWaNudgeScan(now = Date.now()) {
     try {
       const collection = collectionByGroup.get(d.groupId);
       if (!collection) continue;
-      const ok = (await sendWaTrigger(d.groupId, d.triggerId, waGroupValues(collection, base))).ok;
-      if (!ok) continue; // send failed — don't record, so the next tick retries
+      // Record the send as done BEFORE we look at the result. An ambient nudge is
+      // time-anchored — it must fire AT MOST ONCE per its window/day. Previously we
+      // only recorded on a successful Whapi response and "retried" otherwise, but
+      // when the WhatsApp account gets rate-limited/restricted a send can DELIVER
+      // yet return a non-ok response — so the nudge re-fired every hourly scan and
+      // spammed the group (which deepened the restriction). Missing a nudge is
+      // fine; repeating it is not. So mark-on-attempt, never retry an ambient nudge.
       if (d.triggerId === 'quiet_reminder') waState.recordQuietReminder(d.groupId, now);
       else if (d.slotKey) waState.markNudged(d.groupId, d.slotKey);
+      const ok = (await sendWaTrigger(d.groupId, d.triggerId, waGroupValues(collection, base))).ok;
+      if (!ok) {
+        console.warn(
+          '[whatsapp] nudge send failed (not retried — already recorded) for group ' +
+            d.groupId +
+            ' trigger ' +
+            d.triggerId
+        );
+        continue;
+      }
       sent += 1;
     } catch (e) {
       console.warn('[whatsapp] nudge send failed for group:', e && e.message ? e.message : e);
