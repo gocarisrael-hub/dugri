@@ -26,6 +26,13 @@ function stubConfig(page, images) {
   return page.route('**/api/design-images*', (route) => route.fulfill({ json: { images } }));
 }
 
+// These tests assert the BUILT-IN catalog grid + PDP. Stub /api/custom-designs
+// empty so an uploaded template (surfaced as an extra product card, covered in
+// custom-designs.spec) can't perturb the built-in card counts here.
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/custom-designs', (route) => route.fulfill({ json: { designs: [] } }));
+});
+
 test.describe('products.html — store-tile override in the card carousel', () => {
   test('uses the overridden store picture when present, shipped store.webp when not', async ({
     page,
