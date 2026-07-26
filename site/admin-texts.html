@@ -279,6 +279,33 @@
       .delay-opt input {
         width: auto;
       }
+      /* Reminder-list editor: channel + weekday checkbox rows, reused for the
+         owner-managed reminders section (email / WhatsApp). */
+      .wd-opts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 14px;
+        margin: 4px 0 2px;
+      }
+      .wd-opt {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 13px;
+        font-weight: 400;
+        color: var(--ink);
+        white-space: nowrap;
+      }
+      .wd-opt input {
+        width: auto;
+      }
+      .rem-card .card-head {
+        align-items: center;
+      }
+      .rem-card input[data-r='id'] {
+        font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 13px;
+      }
       .actions {
         display: flex;
         gap: 10px;
@@ -367,6 +394,21 @@
           <p class="section-title">וואטסאפ · הודעות ותזמון</p>
           <div id="waStatus" class="wa-status" role="status" aria-live="polite" hidden></div>
           <div id="waCards"></div>
+        </div>
+        <div class="section-group" id="remindersGroup">
+          <p class="section-title">תזכורות (מייל / וואטסאפ)</p>
+          <p class="card-when">
+            רשימת תזכורות אוטומטיות שנשלחות ללקוח/ה בזמן איסוף המילים — כל תזכורת יכולה לצאת במייל,
+            בוואטסאפ, או בשניהם. כל אחת מוגבלת ב"מקסימום שליחות" ומרווחת ב"כל כמה ימים", ונשלחת רק
+            בתוך חלון השעות. אפשר להוסיף, לערוך ולמחוק. השינויים נשמרים בלחיצה על "שמירת התזכורות".
+          </p>
+          <div id="reminderCards"></div>
+          <div class="actions">
+            <button id="addReminder" type="button">+ הוספת תזכורת</button>
+            <button id="saveReminders" class="primary" type="button">שמירת התזכורות</button>
+            <button id="resetReminders" class="danger" type="button">אפס לברירת מחדל</button>
+            <span id="remStatus" class="meta status" role="status" aria-live="polite"></span>
+          </div>
         </div>
         <div class="section-group">
           <p class="section-title">מיילים</p>
@@ -782,14 +824,243 @@
         );
       }
 
+      // The old fixed WhatsApp reminders (morning/evening/quiet) are SUPERSEDED by
+      // the owner-managed reminder list below, so their trigger cards are hidden
+      // here (the registry keys stay registered server-side, just not editable on
+      // this page). The event/payment triggers are kept.
+      const HIDDEN_WA = new Set([
+        'trigger.daily_morning',
+        'trigger.daily_evening',
+        'trigger.quiet_reminder',
+      ]);
       function render() {
         const { registry, effective } = state;
         qs('waCards').innerHTML = Object.keys(registry.wa)
+          .filter((k) => !HIDDEN_WA.has(k))
           .map((k) => waCardHtml(k, registry.wa[k], effective.wa[k]))
           .join('');
         qs('emailCards').innerHTML = Object.keys(registry.email)
           .map((k) => emailCardHtml(k, registry.email[k], effective.email[k]))
           .join('');
+        renderReminders();
+      }
+
+      // --- Owner-managed reminder list (email + WhatsApp) -----------------------
+      // ONE settings key `reminders.list` holds an ARRAY the owner edits as cards.
+      // The whole array is POSTed on save; server/reminders.validateReminders is the
+      // source of truth, but we mirror it here for friendly inline errors. Add/delete
+      // only touch the DOM — nothing persists until "שמירת התזכורות" saves the array.
+      let remUid = 0; // per-DOM card id, independent of the (editable) reminder id
+      const WEEKDAYS_HE = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']; // 0=Sun..6=Sat
+
+      function reminderCardHtml(r) {
+        const uid = ++remUid;
+        const ch = r && typeof r.channels === 'object' && r.channels ? r.channels : {};
+        const wd = new Set(Array.isArray(r.weekdays) ? r.weekdays.map(Number) : []);
+        const idleVal = r.only_if_idle_hours == null ? '' : r.only_if_idle_hours;
+        const win = Array.isArray(r.window) && r.window.length === 2 ? r.window : [8, 21];
+        const dayBoxes = WEEKDAYS_HE.map(
+          (d, i) =>
+            '<label class="wd-opt"><input type="checkbox" data-wd="' +
+            i +
+            '"' +
+            (wd.has(i) ? ' checked' : '') +
+            ' /> ' +
+            d +
+            '</label>'
+        ).join('');
+        return (
+          '<div class="card rem-card' +
+          (r.enabled ? '' : ' off') +
+          '" data-rem id="rem-card-' +
+          uid +
+          '">' +
+          '<div class="card-head">' +
+          '<label class="toggle"><input type="checkbox" data-r="enabled"' +
+          (r.enabled ? ' checked' : '') +
+          ' /> מופעל</label>' +
+          '<span style="flex:1 1 auto"></span>' +
+          '<button class="danger" data-rem-del type="button">מחיקה</button>' +
+          '</div>' +
+          '<label class="fld">מזהה (אנגלית קטנה / מספרים / מקפים)</label>' +
+          '<input type="text" data-r="id" dir="ltr" value="' +
+          esc(r.id) +
+          '" />' +
+          '<label class="fld">טקסט ההודעה</label>' +
+          '<textarea data-r="text">' +
+          esc(r.text) +
+          '</textarea>' +
+          '<p class="hint">אפשר להשתמש ב: <code>{honoree}</code> <code>{link}</code></p>' +
+          '<label class="fld">ערוצים (לפחות אחד)</label>' +
+          '<div class="wd-opts">' +
+          '<label class="wd-opt"><input type="checkbox" data-r="email"' +
+          (ch.email ? ' checked' : '') +
+          ' /> מייל</label>' +
+          '<label class="wd-opt"><input type="checkbox" data-r="whatsapp"' +
+          (ch.whatsapp ? ' checked' : '') +
+          ' /> וואטסאפ</label>' +
+          '</div>' +
+          '<label class="fld">ימים בשבוע (ללא סימון = כל יום)</label>' +
+          '<div class="wd-opts">' +
+          dayBoxes +
+          '</div>' +
+          '<div class="timing">' +
+          '<div class="t-field"><label>כל כמה ימים</label>' +
+          '<input type="number" min="1" data-r="every_days" value="' +
+          esc(r.every_days) +
+          '" /></div>' +
+          '<div class="t-field"><label>מקסימום שליחות</label>' +
+          '<input type="number" min="1" data-r="max_total" value="' +
+          esc(r.max_total) +
+          '" /></div>' +
+          '<div class="t-field"><label>רק אחרי שקט (שעות, ריק = תמיד)</label>' +
+          '<input type="number" min="1" data-r="idle" value="' +
+          esc(idleVal) +
+          '" /></div>' +
+          '<div class="t-field"><label>חלון — התחלה (0–23)</label>' +
+          '<input type="number" min="0" max="23" data-r="win_start" value="' +
+          esc(win[0]) +
+          '" /></div>' +
+          '<div class="t-field"><label>חלון — סיום (1–24)</label>' +
+          '<input type="number" min="1" max="24" data-r="win_end" value="' +
+          esc(win[1]) +
+          '" /></div>' +
+          '</div>' +
+          '</div>'
+        );
+      }
+
+      function renderReminders() {
+        const list =
+          state && state.effective.reminders && Array.isArray(state.effective.reminders.list)
+            ? state.effective.reminders.list
+            : [];
+        qs('reminderCards').innerHTML = list.map(reminderCardHtml).join('');
+      }
+
+      // Read one reminder card back into a value object matching validateReminders.
+      // Empty numeric fields become NaN (never coerced to 0) so client validation
+      // catches them; an empty "idle" field is the intended null (= always).
+      function readReminderCard(card) {
+        const val = (sel) => card.querySelector(sel).value.trim();
+        const checked = (sel) => card.querySelector(sel).checked;
+        const numOrNaN = (s) => (s === '' ? NaN : Number(s));
+        const weekdays = [...card.querySelectorAll('[data-wd]:checked')]
+          .map((el) => Number(el.dataset.wd))
+          .sort((a, b) => a - b);
+        const idleRaw = val('[data-r="idle"]');
+        return {
+          id: val('[data-r="id"]'),
+          enabled: checked('[data-r="enabled"]'),
+          text: card.querySelector('[data-r="text"]').value,
+          channels: {
+            email: checked('[data-r="email"]'),
+            whatsapp: checked('[data-r="whatsapp"]'),
+          },
+          every_days: numOrNaN(val('[data-r="every_days"]')),
+          weekdays: weekdays.length ? weekdays : null,
+          only_if_idle_hours: idleRaw === '' ? null : Number(idleRaw),
+          window: [numOrNaN(val('[data-r="win_start"]')), numOrNaN(val('[data-r="win_end"]'))],
+          max_total: numOrNaN(val('[data-r="max_total"]')),
+        };
+      }
+
+      // Mirror server validateReminders for one reminder. Returns a Hebrew message
+      // to show inline, or null when acceptable. The server stays the source of truth.
+      function reminderError(r) {
+        if (typeof r.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,30}$/.test(r.id)) {
+          return 'מזהה חייב להיות באנגלית קטנה / מספרים / מקפים (1–31 תווים)';
+        }
+        if (!r.text || !r.text.trim()) return 'טקסט ההודעה לא יכול להיות ריק';
+        if (!r.channels.email && !r.channels.whatsapp)
+          return 'יש לבחור לפחות ערוץ אחד (מייל / וואטסאפ)';
+        if (!Number.isInteger(r.every_days) || r.every_days < 1)
+          return '"כל כמה ימים" חייב להיות מספר שלם 1 ומעלה';
+        if (!Number.isInteger(r.max_total) || r.max_total < 1)
+          return '"מקסימום שליחות" חייב להיות מספר שלם 1 ומעלה';
+        const [s, e] = r.window;
+        if (!Number.isInteger(s) || s < 0 || s > 23) return 'שעת ההתחלה של החלון חייבת להיות 0–23';
+        if (!Number.isInteger(e) || e < 1 || e > 24) return 'שעת הסיום של החלון חייבת להיות 1–24';
+        if (s >= e) return 'שעת ההתחלה של החלון חייבת להיות לפני שעת הסיום';
+        if (
+          r.only_if_idle_hours != null &&
+          (!Number.isInteger(r.only_if_idle_hours) || r.only_if_idle_hours < 1)
+        ) {
+          return '"רק אחרי שקט" חייב להיות ריק או מספר שלם 1 ומעלה';
+        }
+        return null;
+      }
+
+      function setRemStatus(text, cls) {
+        const s = qs('remStatus');
+        s.textContent = text;
+        s.className = 'meta status' + (cls ? ' ' + cls : '');
+        if (cls === 'ok') setTimeout(() => (s.textContent = ''), 2200);
+      }
+
+      function addReminder() {
+        const existing = new Set(
+          [...qs('reminderCards').querySelectorAll('[data-r="id"]')].map((i) => i.value.trim())
+        );
+        let n = existing.size + 1;
+        let id = 'reminder-' + n;
+        while (existing.has(id)) id = 'reminder-' + ++n;
+        const def = {
+          id,
+          enabled: true,
+          text: 'יש עוד זמן להוסיף מילים על {honoree}:\n{link}',
+          channels: { email: false, whatsapp: true },
+          every_days: 1,
+          weekdays: null,
+          only_if_idle_hours: null,
+          window: [8, 21],
+          max_total: 3,
+        };
+        qs('reminderCards').insertAdjacentHTML('beforeend', reminderCardHtml(def));
+        setRemStatus('');
+      }
+
+      async function saveReminders() {
+        const cards = [...qs('reminderCards').querySelectorAll('[data-rem]')];
+        const list = cards.map(readReminderCard);
+        // Client validation first (friendly inline errors; edits stay in the DOM).
+        const seen = new Set();
+        for (let i = 0; i < list.length; i++) {
+          const err = reminderError(list[i]);
+          if (err) return setRemStatus('תזכורת ' + (i + 1) + ': ' + err, 'err');
+          if (seen.has(list[i].id)) return setRemStatus('מזהה כפול: ' + list[i].id, 'err');
+          seen.add(list[i].id);
+        }
+        setRemStatus('שומר…');
+        try {
+          const { effective } = await api('POST', '/api/admin/settings', {
+            section: 'reminders',
+            key: 'list',
+            value: list,
+          });
+          state.effective.reminders.list = effective;
+          renderReminders();
+          setRemStatus('נשמר ✓', 'ok');
+        } catch (e) {
+          // Server rejected the array — surface its reason, keep the user's edits.
+          setRemStatus('שמירה נכשלה: ' + e.message, 'err');
+        }
+      }
+
+      async function resetReminders() {
+        if (!confirm('לאפס את רשימת התזכורות לברירת המחדל?')) return;
+        setRemStatus('מאפס…');
+        try {
+          const { effective } = await api(
+            'DELETE',
+            '/api/admin/settings?section=reminders&settingKey=list'
+          );
+          state.effective.reminders.list = effective;
+          renderReminders();
+          setRemStatus('אופס ✓', 'ok');
+        } catch (e) {
+          setRemStatus('איפוס נכשל: ' + e.message, 'err');
+        }
       }
 
       // Build the override VALUE from a card's inputs, matching #139 validateValue.
@@ -892,6 +1163,24 @@
       qs('app').addEventListener('change', (e) => {
         if (e.target.matches('[data-field="enabled"]')) {
           e.target.closest('.card').classList.toggle('off', !e.target.checked);
+        }
+      });
+
+      // Reminder-list section wiring: add/save/reset are section-level buttons;
+      // delete + the per-card enable toggle live inside each reminder card.
+      qs('addReminder').addEventListener('click', addReminder);
+      qs('saveReminders').addEventListener('click', saveReminders);
+      qs('resetReminders').addEventListener('click', resetReminders);
+      qs('reminderCards').addEventListener('click', (e) => {
+        const del = e.target.closest('[data-rem-del]');
+        if (del) {
+          del.closest('[data-rem]').remove();
+          setRemStatus('');
+        }
+      });
+      qs('reminderCards').addEventListener('change', (e) => {
+        if (e.target.matches('[data-r="enabled"]')) {
+          e.target.closest('.rem-card').classList.toggle('off', !e.target.checked);
         }
       });
 

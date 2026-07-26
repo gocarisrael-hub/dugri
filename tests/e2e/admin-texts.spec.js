@@ -48,9 +48,11 @@ test.describe('admin texts editor', () => {
     await page.goto(`/admin-texts.html?key=${KEY}`);
     await expect(page.locator('#app')).toBeVisible();
 
-    // both group headings
-    await expect(page.locator('.section-title', { hasText: 'וואטסאפ' })).toBeVisible();
+    // group headings (WhatsApp heading text is matched specifically — the new
+    // reminders section title also contains "וואטסאפ")
+    await expect(page.locator('.section-title', { hasText: 'הודעות ותזמון' })).toBeVisible();
     await expect(page.locator('.section-title', { hasText: 'מיילים' })).toBeVisible();
+    await expect(page.locator('.section-title', { hasText: 'תזכורות' })).toBeVisible();
 
     // WhatsApp arming banner — the e2e server runs with no WHAPI env, so the bot
     // is dormant and the banner reads "רדום".
@@ -59,20 +61,15 @@ test.describe('admin texts editor', () => {
     await expect(waStatus).toHaveClass(/wa-status/);
     await expect(waStatus).toContainText('רדום');
 
-    // WhatsApp: an event trigger (no timing) and both time-trigger shapes render
+    // WhatsApp: an event trigger (no timing) renders...
     await expect(page.locator('#card-wa-trigger-list-closed')).toBeVisible();
-    // daily_* -> a single `hour` input
-    await expect(
-      page.locator('#card-wa-trigger-daily-morning .timing[data-timing="hour"] [data-t="hour"]')
-    ).toBeVisible();
-    // quiet_reminder -> idle_hours + max + window[start,end]
-    const quiet = page.locator('#card-wa-trigger-quiet-reminder .timing[data-timing="quiet"]');
-    await expect(quiet.locator('[data-t="idle_hours"]')).toBeVisible();
-    await expect(quiet.locator('[data-t="max"]')).toBeVisible();
-    await expect(quiet.locator('[data-t="win_start"]')).toBeVisible();
-    await expect(quiet.locator('[data-t="win_end"]')).toBeVisible();
-    // an event trigger carries no timing block
+    // ...and carries no timing block.
     await expect(page.locator('#card-wa-trigger-list-closed .timing')).toHaveCount(0);
+    // The old fixed morning/evening/quiet trigger cards are SUPERSEDED by the
+    // reminder-list section below, so they are no longer rendered here.
+    await expect(page.locator('#card-wa-trigger-daily-morning')).toHaveCount(0);
+    await expect(page.locator('#card-wa-trigger-daily-evening')).toHaveCount(0);
+    await expect(page.locator('#card-wa-trigger-quiet-reminder')).toHaveCount(0);
 
     // payment_reminder -> the `delay` timing shape, a MULTI-select of milestone
     // checkboxes (fire at each chosen time) rather than a single value.
@@ -82,7 +79,6 @@ test.describe('admin texts editor', () => {
     await expect(pay.locator('[data-t="win_end"]')).toBeVisible();
 
     // Every message card explains WHEN/WHY it is sent.
-    await expect(page.locator('#card-wa-trigger-quiet-reminder .card-when')).toContainText('שקט');
     await expect(page.locator('#card-wa-trigger-payment-reminder .card-when')).toContainText(
       'שולמה'
     );
@@ -122,51 +118,6 @@ test.describe('admin texts editor', () => {
     expect(eff).toEqual({ enabled: true, text: unique });
 
     await resetKey(request, 'wa', 'trigger.list_closed');
-  });
-
-  test('saving a daily_* trigger round-trips the hour timing', async ({ page, request }) => {
-    await page.goto(`/admin-texts.html?key=${KEY}`);
-    const card = page.locator('#card-wa-trigger-daily-morning');
-    await expect(card).toBeVisible();
-
-    const unique = 'בוקר ' + Date.now();
-    await card.locator('textarea[data-field="text"]').fill(unique);
-    await card.locator('.timing[data-timing="hour"] [data-t="hour"]').fill('6');
-    const eff = await clickAndRead(page, card.locator('button[data-save]'), 'POST');
-    await expect(card.locator('.status')).toHaveText(/נשמר/);
-
-    expect(eff).toEqual({ enabled: true, text: unique, timing: { hour: 6 } });
-
-    await resetKey(request, 'wa', 'trigger.daily_morning');
-  });
-
-  test('saving quiet_reminder round-trips idle_hours/max/window in order', async ({
-    page,
-    request,
-  }) => {
-    await page.goto(`/admin-texts.html?key=${KEY}`);
-    const card = page.locator('#card-wa-trigger-quiet-reminder');
-    await expect(card).toBeVisible();
-
-    const unique = 'שקט ' + Date.now();
-    await card.locator('textarea[data-field="text"]').fill(unique);
-    const timing = card.locator('.timing[data-timing="quiet"]');
-    await timing.locator('[data-t="idle_hours"]').fill('30');
-    await timing.locator('[data-t="max"]').fill('5');
-    await timing.locator('[data-t="win_start"]').fill('8');
-    await timing.locator('[data-t="win_end"]').fill('22');
-    const eff = await clickAndRead(page, card.locator('button[data-save]'), 'POST');
-    await expect(card.locator('.status')).toHaveText(/נשמר/);
-
-    // window stays a 2-element array in [start, end] order, values intact
-    expect(eff).toEqual({
-      enabled: true,
-      text: unique,
-      timing: { idle_hours: 30, max: 5, window: [8, 22] },
-    });
-    expect(Array.isArray(eff.timing.window)).toBe(true);
-
-    await resetKey(request, 'wa', 'trigger.quiet_reminder');
   });
 
   test('saving payment_reminder round-trips the SELECTED milestones (checkboxes) + window', async ({
@@ -234,35 +185,14 @@ test.describe('admin texts editor', () => {
     await resetKey(request, 'email', 'order_paid');
   });
 
-  test('client refuses to save a trigger with an out-of-range or empty hour', async ({ page }) => {
+  test('client refuses payment_reminder with an out-of-order window', async ({ page }) => {
     let posted = false;
     page.on('request', (req) => {
       if (req.url().includes('/api/admin/settings') && req.method() === 'POST') posted = true;
     });
     await page.goto(`/admin-texts.html?key=${KEY}`);
-    const card = page.locator('#card-wa-trigger-daily-morning');
-    const hour = card.locator('.timing[data-timing="hour"] [data-t="hour"]');
-
-    // out of range -> refused inline, no POST
-    await hour.fill('25');
-    await card.locator('button[data-save]').click();
-    await expect(card.locator('.status')).toHaveText(/0.*23/);
-    // cleared field must NOT be coerced to 0 and saved
-    await hour.fill('');
-    await card.locator('button[data-save]').click();
-    await expect(card.locator('.status')).toHaveText(/0.*23/);
-
-    expect(posted).toBe(false);
-  });
-
-  test('client refuses quiet_reminder with an out-of-order window', async ({ page }) => {
-    let posted = false;
-    page.on('request', (req) => {
-      if (req.url().includes('/api/admin/settings') && req.method() === 'POST') posted = true;
-    });
-    await page.goto(`/admin-texts.html?key=${KEY}`);
-    const card = page.locator('#card-wa-trigger-quiet-reminder');
-    const timing = card.locator('.timing[data-timing="quiet"]');
+    const card = page.locator('#card-wa-trigger-payment-reminder');
+    const timing = card.locator('.timing[data-timing="delay"]');
     await timing.locator('[data-t="win_start"]').fill('21');
     await timing.locator('[data-t="win_end"]').fill('9');
     await card.locator('button[data-save]').click();
@@ -280,16 +210,16 @@ test.describe('admin texts editor', () => {
         return route.fulfill({
           status: 400,
           contentType: 'application/json',
-          body: JSON.stringify({ error: 'timing.hour must be an integer 0..23' }),
+          body: JSON.stringify({ error: 'text must be a string' }),
         });
       }
       return route.continue();
     });
-    const card = page.locator('#card-wa-trigger-daily-morning');
-    // a client-valid value so the request actually reaches the (mocked) server
-    await card.locator('.timing[data-timing="hour"] [data-t="hour"]').fill('7');
+    const card = page.locator('#card-wa-trigger-list-closed');
+    // a client-valid edit so the request actually reaches the (mocked) server
+    await card.locator('textarea[data-field="text"]').fill('שלום');
     await card.locator('button[data-save]').click();
-    await expect(card.locator('.status')).toContainText('timing.hour must be an integer 0..23');
+    await expect(card.locator('.status')).toContainText('text must be a string');
   });
 
   test('opens from the orders-management page nav, carrying the key', async ({ page }) => {
@@ -356,5 +286,182 @@ test.describe('admin texts editor', () => {
     await expect(waStatus).toHaveClass(/\bok\b/);
     await expect(waStatus).toContainText('פעיל');
     await expect(waStatus).toContainText('מחובר');
+  });
+});
+
+// --- Owner-managed reminder list (email + WhatsApp) --------------------------
+// These tests MOCK /api/admin/settings so the reminder list content is fully
+// deterministic regardless of the two device-project workers writing the shared
+// real settings key concurrently. The GET returns a crafted payload (empty
+// wa/email registries so those sections render empty, plus a single seed
+// reminder); the POST echoes the posted value back as the new effective, unless
+// a test overrides it to assert a server error.
+const SEED = {
+  id: 'morning',
+  enabled: true,
+  text: 'בוקר טוב! יש עוד זמן להוסיף מילים על {honoree}:\n{link}',
+  channels: { email: false, whatsapp: true },
+  every_days: 1,
+  weekdays: null,
+  only_if_idle_hours: 20,
+  window: [8, 21],
+  max_total: 3,
+};
+function settingsPayload(list) {
+  return {
+    defaults: {},
+    overrides: {},
+    registry: {
+      wa: {},
+      email: {},
+      reminders: { list: { tokens: ['honoree', 'link'], kind: 'reminders' } },
+    },
+    effective: { wa: {}, email: {}, reminders: { list } },
+  };
+}
+// Mock the settings API: GET -> the crafted payload; POST -> echo value as
+// effective (server-accept). Set before page.goto so the initial GET is caught.
+async function mockReminders(page, list) {
+  await page.route('**/api/admin/settings**', (route) => {
+    const req = route.request();
+    if (req.method() === 'GET') return route.fulfill({ json: settingsPayload(list) });
+    if (req.method() === 'POST') {
+      const body = req.postDataJSON();
+      return route.fulfill({ json: { effective: body.value } });
+    }
+    return route.continue();
+  });
+}
+
+test.describe('admin texts — reminder list editor', () => {
+  test('renders the seed reminder with all of its fields', async ({ page }) => {
+    await mockReminders(page, [SEED]);
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    await expect(page.locator('#remindersGroup .section-title')).toContainText('תזכורות');
+
+    const cards = page.locator('#reminderCards [data-rem]');
+    await expect(cards).toHaveCount(1);
+    const c = cards.first();
+    await expect(c.locator('[data-r="id"]')).toHaveValue('morning');
+    await expect(c.locator('[data-r="text"]')).toHaveValue(/honoree/);
+    await expect(c.locator('[data-r="enabled"]')).toBeChecked();
+    await expect(c.locator('[data-r="whatsapp"]')).toBeChecked();
+    await expect(c.locator('[data-r="email"]')).not.toBeChecked();
+    await expect(c.locator('[data-r="every_days"]')).toHaveValue('1');
+    await expect(c.locator('[data-r="idle"]')).toHaveValue('20');
+    await expect(c.locator('[data-r="win_start"]')).toHaveValue('8');
+    await expect(c.locator('[data-r="win_end"]')).toHaveValue('21');
+    await expect(c.locator('[data-r="max_total"]')).toHaveValue('3');
+    // seven weekday checkboxes, none checked (= any day)
+    await expect(c.locator('[data-wd]')).toHaveCount(7);
+    await expect(c.locator('[data-wd]:checked')).toHaveCount(0);
+  });
+
+  test('"add reminder" appends a card with a unique id and sensible defaults', async ({ page }) => {
+    await mockReminders(page, [SEED]);
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const cards = page.locator('#reminderCards [data-rem]');
+    await expect(cards).toHaveCount(1);
+
+    await page.locator('#addReminder').click();
+    await expect(cards).toHaveCount(2);
+    const added = cards.nth(1);
+    await expect(added.locator('[data-r="id"]')).toHaveValue('reminder-2');
+    await expect(added.locator('[data-r="whatsapp"]')).toBeChecked();
+    await expect(added.locator('[data-r="win_start"]')).toHaveValue('8');
+  });
+
+  test('editing fields + Save POSTs the WHOLE array and shows a success state', async ({
+    page,
+  }) => {
+    await mockReminders(page, [SEED]);
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const c = page.locator('#reminderCards [data-rem]').first();
+    await c.locator('[data-r="text"]').fill('חדש {honoree} {link}');
+    await c.locator('[data-r="email"]').check();
+    await c.locator('[data-wd="1"]').check(); // Monday
+
+    const [req] = await Promise.all([
+      page.waitForRequest((r) => r.url().includes('/api/admin/settings') && r.method() === 'POST'),
+      page.locator('#saveReminders').click(),
+    ]);
+    const body = req.postDataJSON();
+    expect(body.section).toBe('reminders');
+    expect(body.key).toBe('list');
+    expect(Array.isArray(body.value)).toBe(true);
+    expect(body.value).toHaveLength(1);
+    expect(body.value[0].id).toBe('morning');
+    expect(body.value[0].text).toBe('חדש {honoree} {link}');
+    expect(body.value[0].channels).toEqual({ email: true, whatsapp: true });
+    expect(body.value[0].weekdays).toEqual([1]);
+    await expect(page.locator('#remStatus')).toHaveText(/נשמר/);
+  });
+
+  test('a client validation error (empty text) shows inline, does not POST, keeps edits', async ({
+    page,
+  }) => {
+    let posted = false;
+    page.on('request', (req) => {
+      if (req.url().includes('/api/admin/settings') && req.method() === 'POST') posted = true;
+    });
+    await mockReminders(page, [SEED]);
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const c = page.locator('#reminderCards [data-rem]').first();
+    await c.locator('[data-r="id"]').fill('my-reminder'); // an edit that must survive
+    await c.locator('[data-r="text"]').fill('   '); // whitespace only -> empty
+
+    await page.locator('#saveReminders').click();
+    await expect(page.locator('#remStatus')).toContainText('טקסט');
+    expect(posted).toBe(false);
+    // the user's edits are NOT wiped by the failed save
+    await expect(c.locator('[data-r="id"]')).toHaveValue('my-reminder');
+  });
+
+  test('a client validation error (no channel) is caught before POST', async ({ page }) => {
+    let posted = false;
+    page.on('request', (req) => {
+      if (req.url().includes('/api/admin/settings') && req.method() === 'POST') posted = true;
+    });
+    await mockReminders(page, [SEED]);
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const c = page.locator('#reminderCards [data-rem]').first();
+    await c.locator('[data-r="whatsapp"]').uncheck(); // now neither channel is on
+    await page.locator('#saveReminders').click();
+    await expect(page.locator('#remStatus')).toContainText('ערוץ');
+    expect(posted).toBe(false);
+  });
+
+  test('a server-rejected save surfaces the server error and keeps edits', async ({ page }) => {
+    await page.route('**/api/admin/settings**', (route) => {
+      const req = route.request();
+      if (req.method() === 'GET') return route.fulfill({ json: settingsPayload([SEED]) });
+      if (req.method() === 'POST') {
+        return route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'duplicate reminder id: morning' }),
+        });
+      }
+      return route.continue();
+    });
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const c = page.locator('#reminderCards [data-rem]').first();
+    await c.locator('[data-r="text"]').fill('עדכון {honoree}'); // client-valid, reaches server
+    await page.locator('#saveReminders').click();
+    await expect(page.locator('#remStatus')).toContainText('duplicate reminder id');
+    // edits preserved after the server rejection
+    await expect(c.locator('[data-r="text"]')).toHaveValue('עדכון {honoree}');
+  });
+
+  test('delete removes a reminder card', async ({ page }) => {
+    await mockReminders(page, [SEED]);
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const cards = page.locator('#reminderCards [data-rem]');
+    await page.locator('#addReminder').click();
+    await expect(cards).toHaveCount(2);
+
+    await cards.nth(1).locator('[data-rem-del]').click();
+    await expect(cards).toHaveCount(1);
+    await expect(cards.first().locator('[data-r="id"]')).toHaveValue('morning');
   });
 });
