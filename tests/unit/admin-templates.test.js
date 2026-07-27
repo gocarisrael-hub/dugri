@@ -428,6 +428,13 @@ describe('templates.js full editing (status / rename / replace)', () => {
       name_form: 'english-caps',
       visibility: 'private',
       extra_fields: ['YEARS', 'NAME1', 'NAME2'],
+      // A settings-only patch leaves the calibration look-pass untouched (this
+      // template is freshly onboarded → still uncalibrated).
+      title_style: null,
+      board: null,
+      back: null,
+      word_size: null,
+      calibrated: false,
     });
     const after = templates.loadThemes(templates.themesPathFor(root))['set-x'];
     expect(after.visibility).toBe('private');
@@ -463,6 +470,146 @@ describe('templates.js full editing (status / rename / replace)', () => {
     // A bad value did not partially mutate the entry.
     const after = templates.loadThemes(templates.themesPathFor(root))['set-v'];
     expect(after.visibility).toBe('public'); // still the onboarding default
+  });
+
+  // A full, valid calibration blob (mirrors the shipped "trip comeback" theme).
+  const CAL = {
+    title_style: {
+      fill: '#97d8e6',
+      outline: '#0d3e43',
+      outline_w: 0.05,
+      arch: 0.11,
+      shadow: true,
+      size: 23.9,
+      board_size: 20,
+      back_size: 18,
+      align: 'center',
+      italic: false,
+    },
+    board: {
+      frac: { x0: 0.02, y0: 0.883, x1: 0.135, y1: 0.985 },
+      fill: '#97d8e6',
+      outline: '#0d3e43',
+    },
+    back: {
+      frac: { x0: 0.227, y0: 0.333, x1: 0.738, y1: 0.544 },
+      fill: '#fff7cd',
+      outline: '#0c464c',
+    },
+    word_size: 12,
+  };
+
+  it('updateTemplateSettings writes the calibration look-pass and flips calibrated:true', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-set'); // onboarded → calibrated:false, title_style/board/back null
+    const before = templates.loadThemes(templates.themesPathFor(root))['cal-set'];
+    expect(before.calibrated).toBe(false);
+    expect(before.title_style).toBeNull();
+
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'cal-set',
+      patch: { ...CAL, calibrated: true },
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.settings.calibrated).toBe(true);
+    expect(r.settings.title_style).toEqual(CAL.title_style);
+    expect(r.settings.board).toEqual(CAL.board);
+    expect(r.settings.back).toEqual(CAL.back);
+    expect(r.settings.word_size).toBe(12);
+
+    const after = templates.loadThemes(templates.themesPathFor(root))['cal-set'];
+    expect(after.calibrated).toBe(true);
+    expect(after.title_style).toEqual(CAL.title_style);
+    expect(after.board).toEqual(CAL.board);
+    expect(after.back).toEqual(CAL.back);
+    expect(after.word_size).toBe(12);
+    // Identity untouched.
+    expect(after.slug).toBe(before.slug);
+    expect(after.dir).toBe(before.dir);
+  });
+
+  it('updateTemplateSettings REFUSES calibrated:true without a title_style (guards the renderer)', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-guard');
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'cal-guard',
+      patch: { calibrated: true },
+    });
+    expect(r.httpStatus).toBe(400);
+    expect(r.error).toMatch(/without a title_style/);
+    // Nothing was flipped.
+    expect(templates.loadThemes(templates.themesPathFor(root))['cal-guard'].calibrated).toBe(false);
+  });
+
+  it('updateTemplateSettings rejects malformed calibration values (no partial write)', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-bad');
+    const bad = [
+      { patch: { title_style: { ...CAL.title_style, fill: 'red' } }, re: /fill must be a hex/ },
+      { patch: { title_style: { ...CAL.title_style, outline_w: 2 } }, re: /outline_w must be/ },
+      { patch: { title_style: { ...CAL.title_style, align: 'top' } }, re: /align must be/ },
+      {
+        patch: {
+          board: { frac: { x0: 0.9, y0: 0, x1: 0.1, y1: 1 }, fill: '#fff', outline: '#000' },
+        },
+        re: /x0 must be < x1/,
+      },
+      {
+        patch: { back: { frac: { x0: 0, y0: 0, x1: 1, y1: 1 }, fill: 'nope', outline: '#000' } },
+        re: /back.fill must be a hex/,
+      },
+      { patch: { word_size: -3 }, re: /word_size must be/ },
+    ];
+    for (const c of bad) {
+      const r = templates.updateTemplateSettings({ root, key: 'cal-bad', patch: c.patch });
+      expect(r.httpStatus).toBe(400);
+      expect(r.error).toMatch(c.re);
+    }
+    // Still uncalibrated, no title_style leaked in.
+    const after = templates.loadThemes(templates.themesPathFor(root))['cal-bad'];
+    expect(after.calibrated).toBe(false);
+    expect(after.title_style).toBeNull();
+  });
+
+  it('updateTemplateSettings accepts board/back = null (no honoree name on that surface) + drops word_size:null', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-null');
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'cal-null',
+      patch: {
+        title_style: CAL.title_style,
+        board: null,
+        back: null,
+        word_size: null,
+        calibrated: true,
+      },
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.settings.board).toBeNull();
+    expect(r.settings.back).toBeNull();
+    expect(r.settings.word_size).toBeNull();
+    const after = templates.loadThemes(templates.themesPathFor(root))['cal-null'];
+    expect(after.calibrated).toBe(true);
+    expect(after.board).toBeNull();
+    expect('word_size' in after).toBe(false); // null dropped, matches shipped themes
+  });
+
+  it('validateCalibration accepts a full blob and rejects a missing title_style', () => {
+    expect(templates.validateCalibration(CAL).value).toMatchObject({
+      title_style: CAL.title_style,
+      board: CAL.board,
+      back: CAL.back,
+      word_size: 12,
+    });
+    expect(templates.validateCalibration({ board: CAL.board }).error).toMatch(/title_style/);
+    // Optional slots may be null; title_style alone is enough to preview.
+    const min = templates.validateCalibration({ title_style: CAL.title_style });
+    expect(min.error).toBeUndefined();
+    expect(min.value.board).toBeNull();
+    expect(min.value.word_size).toBeNull();
   });
 
   it('deleteTemplate removes the entry + files, refuses an in-use theme + the last theme', () => {

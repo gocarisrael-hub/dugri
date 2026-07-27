@@ -61,6 +61,11 @@ function previewCacheKey(parts = {}) {
     ef,
     !!parts.chasers,
     String(parts.customTitle || ''),
+    // Owner calibration-preview knobs (null for a normal buyer preview) — folded
+    // in so distinct knob sets never collide and a calibrated override is never
+    // served from (or into) a plain preview's slot. The blob is built in a fixed
+    // key order upstream, so this serialization is stable.
+    parts.calibration || null,
   ]);
 }
 

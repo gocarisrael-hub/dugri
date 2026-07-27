@@ -89,6 +89,32 @@ test.describe('admin templates — status view (read-only)', () => {
     await page.goto('/admin-templates.html');
     await expect(page.locator('#tpl-list')).toContainText('מפתח גישה');
   });
+
+  test('every card exposes a calibration panel (title look-knobs + board/back + preview/save)', async ({
+    page,
+  }) => {
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const card = page.locator('.tpl-card[data-key="anniversary"]');
+    await expect(card).toBeVisible();
+    const cal = card.locator('.tpl-cal');
+    await expect(cal).toHaveCount(1);
+    // title_style knobs (elements exist even when the <details> is collapsed).
+    await expect(cal.locator('[data-cal="ts.fill"]')).toHaveCount(1);
+    await expect(cal.locator('[data-cal="ts.outline"]')).toHaveCount(1);
+    await expect(cal.locator('[data-cal="ts.outline_w"]')).toHaveCount(1);
+    await expect(cal.locator('[data-cal="ts.arch"]')).toHaveCount(1);
+    await expect(cal.locator('[data-cal="ts.align"]')).toHaveCount(1);
+    await expect(cal.locator('[data-cal="ts.shadow"]')).toHaveCount(1);
+    await expect(cal.locator('[data-cal="ts.italic"]')).toHaveCount(1);
+    // board + back honoree-name slots + word_size.
+    await expect(cal.locator('[data-cal="board.enabled"]')).toHaveCount(1);
+    await expect(cal.locator('[data-cal="board.frac.x0"]')).toHaveCount(1);
+    await expect(cal.locator('[data-cal="back.frac.y1"]')).toHaveCount(1);
+    await expect(cal.locator('[data-cal="word_size"]')).toHaveCount(1);
+    // preview + save actions.
+    await expect(cal.locator('.cal-preview-btn')).toHaveCount(1);
+    await expect(cal.locator('.cal-save-btn')).toHaveCount(1);
+  });
 });
 
 test.describe('admin templates — mutations (fixture only, single project)', () => {
@@ -278,5 +304,64 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     expect(themes[slug].visibility).toBe('public');
     expect(themes[slug].calibrated).toBe(false);
     expect(fs.existsSync(path.join(TPL_DIR, slug, 'clean', 'fronts.svg'))).toBe(true);
+  });
+
+  test('calibrate a fresh shell: preview renders from the UNSAVED knobs, save flips calibrated:true', async ({
+    page,
+  }) => {
+    const slug = 'e2e-cal';
+    // Intercept the preview render (Chrome/Python heavy) — capture the request so
+    // we can prove it carries the UNSAVED knobs, and return a fake image so the
+    // panel displays something.
+    const PNG =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    let previewBody = null;
+    await page.route('**/api/preview**', async (route) => {
+      previewBody = route.request().postDataJSON();
+      await route.fulfill({ json: { card: PNG, board: PNG } });
+    });
+    page.on('dialog', (d) => d.accept()); // the save confirm
+
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    // Register an uncalibrated shell.
+    await page.fill('#form input[name="slug"]', slug);
+    await page.fill('#form input[name="display_he"]', 'כיול E2E');
+    await page.fill('#form input[name="title_text"]', '{NAME}');
+    await page.click('#createShell');
+
+    const card = page.locator(`.tpl-card[data-key="${slug}"]`);
+    await expect(card).toBeVisible();
+    await expect(card.locator('.tpl-badge.uncal')).toBeVisible(); // not yet calibrated
+    const cal = card.locator('.tpl-cal');
+
+    // Tweak title knobs + enable the board name slot with a position box.
+    await cal.locator('[data-cal="ts.outline_w"]').fill('0.05');
+    await cal.locator('[data-cal="ts.arch"]').fill('0.1');
+    await cal.locator('[data-cal="board.enabled"]').check();
+    await cal.locator('[data-cal="board.frac.x0"]').fill('0.02');
+    await cal.locator('[data-cal="board.frac.y0"]').fill('0.88');
+    await cal.locator('[data-cal="board.frac.x1"]').fill('0.14');
+    await cal.locator('[data-cal="board.frac.y1"]').fill('0.98');
+
+    // PREVIEW: renders with the unsaved knobs; the request body carries them.
+    await cal.locator('.cal-preview-btn').click();
+    await expect(cal.locator('.cal-preview img')).toHaveCount(2); // card + board
+    expect(previewBody.theme).toBe(slug);
+    expect(previewBody.name).toBeTruthy();
+    expect(previewBody.calibration.title_style.outline_w).toBe(0.05);
+    expect(previewBody.calibration.board.frac.x0).toBe(0.02);
+
+    // SAVE + calibrate.
+    await cal.locator('.cal-save-btn').click();
+
+    // The list reloads: the "not calibrated" badge is gone and themes.json now
+    // carries the title_style/board and calibrated:true.
+    await expect(page.locator(`.tpl-card[data-key="${slug}"] .tpl-badge.uncal`)).toHaveCount(0);
+    const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
+    expect(themes[slug].calibrated).toBe(true);
+    expect(themes[slug].title_style.outline_w).toBe(0.05);
+    expect(themes[slug].title_style.arch).toBe(0.1);
+    expect(themes[slug].board.frac.x0).toBe(0.02);
+    expect(themes[slug].board.frac.y1).toBe(0.98);
   });
 });

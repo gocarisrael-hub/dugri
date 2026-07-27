@@ -261,6 +261,96 @@
         border: 1px solid #e0d6c8;
         border-radius: 7px;
       }
+      /* Calibration (title/board/back look pass) */
+      .tpl-cal {
+        margin: 4px 0 8px;
+        font-size: 13px;
+      }
+      .tpl-cal > summary {
+        cursor: pointer;
+        color: #5c7357;
+        font-weight: 700;
+      }
+      .cal-body {
+        margin: 8px 0;
+      }
+      .cal-group {
+        border: 1px solid #e6ddcf;
+        border-radius: 9px;
+        padding: 8px 10px 10px;
+        margin: 8px 0;
+      }
+      .cal-group > legend {
+        font-size: 12px;
+        font-weight: 700;
+        color: #6b6b6b;
+        padding: 0 5px;
+      }
+      .cal-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 8px;
+      }
+      .cal-field {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        font-size: 12px;
+        color: #6b6b6b;
+      }
+      .cal-field.row {
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+      }
+      .cal-field input,
+      .cal-field select {
+        font: inherit;
+        font-size: 13px;
+        padding: 4px 6px;
+        border: 1px solid #e0d6c8;
+        border-radius: 7px;
+      }
+      .cal-field input[type='color'] {
+        padding: 2px;
+        height: 30px;
+      }
+      .cal-field input[type='checkbox'] {
+        width: 16px;
+        height: 16px;
+      }
+      .cal-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .cal-preview {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 10px;
+      }
+      .cal-preview figure {
+        margin: 0;
+        text-align: center;
+        font-size: 11px;
+        color: #8a8a8a;
+      }
+      .cal-preview img {
+        display: block;
+        max-width: 220px;
+        max-height: 300px;
+        border: 1px solid #ece3d4;
+        border-radius: 8px;
+        background: #fff;
+      }
+      .cal-save {
+        border-color: #9ec49a;
+        color: #2f6b2a;
+        font-weight: 700;
+      }
       .assets {
         list-style: none;
         margin: 12px 0 0;
@@ -617,6 +707,226 @@
         m.textContent = text;
       }
 
+      // Build the CALIBRATION panel: every title look-knob (title_style) + the
+      // board/back honoree-name slots + word_size, with a LIVE preview (POST
+      // /api/preview using the UNSAVED knobs) and a save that flips calibrated:true.
+      // The preview is the visual guide — the owner tweaks frac/colors, previews,
+      // sees the name land on the board/back, and only saves once it looks right.
+      function buildCalibrationPanel(t) {
+        const ts = t.title_style || {};
+        const details = document.createElement('details');
+        details.className = 'tpl-cal';
+        details.open = !t.calibrated; // fresh template → open the step by default
+        const summary = document.createElement('summary');
+        summary.textContent = t.calibrated
+          ? 'עריכת מראה (כותרת · לוח · גב)'
+          : 'כיול מראה (חובה) — כותרת · לוח · גב';
+        details.append(summary);
+        const body = document.createElement('div');
+        body.className = 'cal-body';
+        details.append(body);
+
+        const field = (labelText, input) => {
+          const l = document.createElement('label');
+          l.className = 'cal-field';
+          l.append(document.createTextNode(labelText), input);
+          return l;
+        };
+        const rowField = (labelText, input) => {
+          const l = document.createElement('label');
+          l.className = 'cal-field row';
+          l.append(input, document.createTextNode(labelText));
+          return l;
+        };
+        const color = (calName, val) => {
+          const i = document.createElement('input');
+          i.type = 'color';
+          i.dataset.cal = calName;
+          i.value = /^#[0-9a-fA-F]{6}$/.test(val || '') ? val : '#000000';
+          return i;
+        };
+        const num = (calName, val, step, placeholder) => {
+          const i = document.createElement('input');
+          i.type = 'number';
+          i.dir = 'ltr';
+          i.dataset.cal = calName;
+          if (step != null) i.step = String(step);
+          if (val != null && val !== '') i.value = String(val);
+          if (placeholder) i.placeholder = placeholder;
+          return i;
+        };
+        const check = (calName, on) => {
+          const i = document.createElement('input');
+          i.type = 'checkbox';
+          i.dataset.cal = calName;
+          i.checked = !!on;
+          return i;
+        };
+        const select = (calName, opts, val) => {
+          const s = document.createElement('select');
+          s.dataset.cal = calName;
+          for (const o of opts) {
+            const opt = document.createElement('option');
+            opt.value = o;
+            opt.textContent = o;
+            if (o === val) opt.selected = true;
+            s.append(opt);
+          }
+          return s;
+        };
+
+        // title_style
+        const titleG = document.createElement('fieldset');
+        titleG.className = 'cal-group';
+        const titleL = document.createElement('legend');
+        titleL.textContent = 'כותרת (title_style)';
+        titleG.append(titleL);
+        const titleGrid = document.createElement('div');
+        titleGrid.className = 'cal-grid';
+        titleGrid.append(
+          field('צבע מילוי', color('ts.fill', ts.fill)),
+          field('צבע מתאר', color('ts.outline', ts.outline)),
+          field(
+            'עובי מתאר (0-1)',
+            num('ts.outline_w', ts.outline_w == null ? 0 : ts.outline_w, 0.01, '0.05')
+          ),
+          field('קשת (0-1)', num('ts.arch', ts.arch == null ? 0 : ts.arch, 0.01, '0.11')),
+          field('גודל כותרת', num('ts.size', ts.size, 0.1, 'auto')),
+          field('גודל בלוח', num('ts.board_size', ts.board_size, 0.1, 'auto')),
+          field('גודל בגב', num('ts.back_size', ts.back_size, 0.1, 'auto')),
+          field('יישור', select('ts.align', ['center', 'left', 'right'], ts.align || 'center')),
+          field('היסט X', num('ts.offset_x', ts.offset ? ts.offset[0] : '', 0.01, '0')),
+          field('היסט Y', num('ts.offset_y', ts.offset ? ts.offset[1] : '', 0.01, '0')),
+          rowField('צל', check('ts.shadow', ts.shadow)),
+          rowField('נטוי', check('ts.italic', ts.italic))
+        );
+        titleG.append(titleGrid);
+        body.append(titleG);
+
+        // board + back name slots
+        const slotGroup = (prefix, legendText, slot) => {
+          const g = document.createElement('fieldset');
+          g.className = 'cal-group';
+          const lg = document.createElement('legend');
+          const enWrap = document.createElement('label');
+          enWrap.className = 'cal-field row';
+          enWrap.append(check(prefix + '.enabled', !!slot), document.createTextNode(legendText));
+          lg.append(enWrap);
+          g.append(lg);
+          const grid = document.createElement('div');
+          grid.className = 'cal-grid';
+          const f = (slot && slot.frac) || {};
+          grid.append(
+            field('x0', num(prefix + '.frac.x0', f.x0, 0.001, '0.02')),
+            field('y0', num(prefix + '.frac.y0', f.y0, 0.001, '0.88')),
+            field('x1', num(prefix + '.frac.x1', f.x1, 0.001, '0.14')),
+            field('y1', num(prefix + '.frac.y1', f.y1, 0.001, '0.98')),
+            field('fill', color(prefix + '.fill', slot && slot.fill)),
+            field('outline', color(prefix + '.outline', slot && slot.outline))
+          );
+          g.append(grid);
+          return g;
+        };
+        body.append(slotGroup('board', 'שם על הלוח (board)', t.board || null));
+        body.append(slotGroup('back', 'שם על גב הקלף (back)', t.back || null));
+
+        // word_size (theme-level; empty = auto-fit)
+        const wsG = document.createElement('div');
+        wsG.className = 'cal-grid';
+        wsG.append(
+          field('גודל מילים (word_size · ריק=אוטומטי)', num('word_size', t.word_size, 0.1, 'auto'))
+        );
+        body.append(wsG);
+
+        // actions: sample name + preview + save
+        const actions = document.createElement('div');
+        actions.className = 'cal-actions';
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'cal-name';
+        nameInput.value = t.language === 'english' ? 'DANIEL' : 'דניאל';
+        nameInput.placeholder = 'שם לדוגמה';
+        nameInput.style.maxWidth = '140px';
+        const previewBtn = document.createElement('button');
+        previewBtn.type = 'button';
+        previewBtn.className = 'link-btn cal-preview-btn';
+        previewBtn.textContent = 'תצוגה מקדימה';
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.className = 'link-btn cal-save cal-save-btn';
+        saveBtn.textContent = 'שמור וסמן מכויל';
+        actions.append(nameInput, previewBtn, saveBtn);
+        body.append(actions);
+
+        const preview = document.createElement('div');
+        preview.className = 'cal-preview';
+        body.append(preview);
+        return details;
+      }
+
+      // Read one calibration control by its data-cal name (scoped to the card).
+      function calEl(card, name) {
+        return card.querySelector('.tpl-cal [data-cal="' + name + '"]');
+      }
+      function calNum(card, name) {
+        const el = calEl(card, name);
+        if (!el || el.value === '' || el.value == null) return null;
+        const n = Number(el.value);
+        return Number.isFinite(n) ? n : null;
+      }
+      function calStr(card, name) {
+        const el = calEl(card, name);
+        return el ? el.value : null;
+      }
+      function calBool(card, name) {
+        const el = calEl(card, name);
+        return !!(el && el.checked);
+      }
+      // Assemble the generator-shaped calibration blob from the panel's controls.
+      // Optional numerics are OMITTED when blank (auto-fit); a disabled board/back
+      // slot serializes to null (no honoree name on that surface).
+      function collectCalibration(card) {
+        const title_style = {
+          fill: calStr(card, 'ts.fill'),
+          outline: calStr(card, 'ts.outline'),
+          outline_w: calNum(card, 'ts.outline_w') || 0,
+          arch: calNum(card, 'ts.arch') || 0,
+          shadow: calBool(card, 'ts.shadow'),
+          align: calStr(card, 'ts.align') || 'center',
+          italic: calBool(card, 'ts.italic'),
+        };
+        const size = calNum(card, 'ts.size');
+        if (size != null) title_style.size = size;
+        const bsz = calNum(card, 'ts.board_size');
+        if (bsz != null) title_style.board_size = bsz;
+        const bksz = calNum(card, 'ts.back_size');
+        if (bksz != null) title_style.back_size = bksz;
+        const ox = calNum(card, 'ts.offset_x');
+        const oy = calNum(card, 'ts.offset_y');
+        if ((ox != null && ox !== 0) || (oy != null && oy !== 0)) {
+          title_style.offset = [ox || 0, oy || 0];
+        }
+        const slot = (prefix) => {
+          if (!calBool(card, prefix + '.enabled')) return null;
+          return {
+            frac: {
+              x0: calNum(card, prefix + '.frac.x0'),
+              y0: calNum(card, prefix + '.frac.y0'),
+              x1: calNum(card, prefix + '.frac.x1'),
+              y1: calNum(card, prefix + '.frac.y1'),
+            },
+            fill: calStr(card, prefix + '.fill'),
+            outline: calStr(card, prefix + '.outline'),
+          };
+        };
+        return {
+          title_style,
+          board: slot('board'),
+          back: slot('back'),
+          word_size: calNum(card, 'word_size'),
+        };
+      }
+
       function renderTemplates(items) {
         listEl.textContent = '';
         if (!items.length) {
@@ -708,6 +1018,9 @@
           saveSettings.textContent = 'שמור הגדרות';
           settings.append(saveSettings);
           card.append(settings);
+
+          // Calibration look-pass (title/board/back) + live preview + save.
+          card.append(buildCalibrationPanel(t));
 
           const assets = document.createElement('ul');
           assets.className = 'assets';
@@ -855,6 +1168,95 @@
           } catch (err) {
             tplMsg(card, 'err', 'שגיאת רשת: ' + err);
             settingsBtn.disabled = false;
+          }
+          return;
+        }
+
+        // Live calibration PREVIEW: render the template with the UNSAVED knobs so
+        // the owner sees the exact result before flipping calibrated:true.
+        const calPreviewBtn = e.target.closest('.cal-preview-btn');
+        if (calPreviewBtn) {
+          const card = calPreviewBtn.closest('.tpl-card');
+          const calibration = collectCalibration(card);
+          const name = (card.querySelector('.cal-name') || {}).value || '';
+          const previewEl = card.querySelector('.tpl-cal .cal-preview');
+          calPreviewBtn.disabled = true;
+          previewEl.textContent = 'מרנדר…';
+          try {
+            const res = await fetch('/api/preview?key=' + encodeURIComponent(key), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ theme: card.dataset.key, name, calibration }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              previewEl.textContent = '';
+              tplMsg(
+                card,
+                'err',
+                'שגיאה בתצוגה: ' +
+                  (data.error || res.status) +
+                  (data.detail ? ' — ' + data.detail : '')
+              );
+              calPreviewBtn.disabled = false;
+              return;
+            }
+            previewEl.textContent = '';
+            for (const [k, label] of [
+              ['card', 'קלף'],
+              ['board', 'לוח'],
+              ['back', 'גב'],
+            ]) {
+              if (!data[k]) continue;
+              const fig = document.createElement('figure');
+              const img = document.createElement('img');
+              img.src = data[k];
+              img.alt = label;
+              const cap = document.createElement('figcaption');
+              cap.textContent = label;
+              fig.append(img, cap);
+              previewEl.append(fig);
+            }
+            tplMsg(card, 'ok', 'זו תצוגה מקדימה — בדקו ואז שמרו.');
+          } catch (err) {
+            previewEl.textContent = '';
+            tplMsg(card, 'err', 'שגיאת רשת: ' + err);
+          }
+          calPreviewBtn.disabled = false;
+          return;
+        }
+
+        // Save the calibration + flip calibrated:true (after the owner approved the
+        // preview). The server re-validates and refuses to flip without a title_style.
+        const calSaveBtn = e.target.closest('.cal-save-btn');
+        if (calSaveBtn) {
+          const card = calSaveBtn.closest('.tpl-card');
+          const cal = collectCalibration(card);
+          if (!window.confirm('לשמור את הכיול ולסמן את התבנית כמכוילת?')) return;
+          calSaveBtn.disabled = true;
+          try {
+            const res = await fetch(
+              '/api/admin/templates/' +
+                encodeURIComponent(card.dataset.key) +
+                '/settings?key=' +
+                encodeURIComponent(key),
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...cal, calibrated: true }),
+              }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              tplMsg(card, 'err', 'שגיאה: ' + (data.error || res.status));
+              calSaveBtn.disabled = false;
+              return;
+            }
+            tplMsg(card, 'ok', 'הכיול נשמר. התבנית מסומנת מכוילת ✓');
+            loadTemplates();
+          } catch (err) {
+            tplMsg(card, 'err', 'שגיאת רשת: ' + err);
+            calSaveBtn.disabled = false;
           }
           return;
         }
