@@ -334,8 +334,19 @@
       .cal-preview {
         display: flex;
         flex-wrap: wrap;
+        /* The renders set the row height. Without this every other item —
+           the dismiss button — stretches to match them. */
+        align-items: flex-start;
         gap: 10px;
         margin-top: 10px;
+      }
+      /* Dismiss control, sitting in the same strip as the renders: it has to opt
+         out of the flex sizing, or it turns into a full-height sliver of a pill
+         with its label broken one letter per line. */
+      .cal-preview-close {
+        flex: 0 0 auto;
+        white-space: nowrap;
+        align-self: flex-start;
       }
       .cal-preview figure {
         margin: 0;

@@ -257,15 +257,25 @@ test.describe('admin templates — status view (read-only)', () => {
       saveCalls += 1;
       await route.fulfill({ json: { ok: true } });
     });
-    await page.route('**/api/preview*', (route) =>
-      route.fulfill({ json: { card: 'data:image/png;base64,iVBORw0KGgo=' } })
-    );
+    // A render tall enough to stretch a flex sibling — a 1px placeholder would
+    // hide the layout bug this test also guards.
+    const TALL_RENDER =
+      'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjYwIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjI2MCIgZmlsbD0iI2NjYyIvPjwvc3ZnPg==';
+    await page.route('**/api/preview*', (route) => route.fulfill({ json: { card: TALL_RENDER } }));
 
     await page.goto(`/admin-templates.html?key=${KEY}`);
     const cal = page.locator('.tpl-card[data-key="close-x"] .tpl-cal');
     await cal.locator('[data-cal="ts.outline_w"]').fill('0.07');
     await cal.locator('.cal-preview-btn').click();
     await expect(cal.locator('.cal-preview img')).toHaveCount(1);
+
+    // It stays a button next to the render, not a full-height sliver of a pill
+    // with its label wrapped one letter per line.
+    const closeBox = await cal.locator('.cal-preview-close').boundingBox();
+    const imgBox = await cal.locator('.cal-preview img').boundingBox();
+    expect(imgBox.height).toBeGreaterThan(200);
+    expect(closeBox.height).toBeLessThan(40);
+    expect(closeBox.width).toBeGreaterThan(closeBox.height);
 
     await cal.locator('.cal-preview-close').click();
     await expect(cal.locator('.cal-preview img')).toHaveCount(0);
