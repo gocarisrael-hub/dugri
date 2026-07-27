@@ -1288,6 +1288,19 @@
           return;
         }
 
+        // Dismiss a rendered preview without saving. Clears the images only —
+        // every calibration input keeps its value, and nothing is written.
+        const calPreviewClose = e.target.closest('.cal-preview-close');
+        if (calPreviewClose) {
+          const card = calPreviewClose.closest('.tpl-card');
+          const previewEl = card.querySelector('.tpl-cal .cal-preview');
+          if (previewEl) previewEl.textContent = '';
+          // No kind: '.tpl-msg' is display:none, while '.ok' would force it
+          // visible and leave an empty green bar behind.
+          tplMsg(card, '', '');
+          return;
+        }
+
         // Live calibration PREVIEW: render the template with the UNSAVED knobs so
         // the owner sees the exact result before flipping calibrated:true.
         const calPreviewBtn = e.target.closest('.cal-preview-btn');
@@ -1332,6 +1345,17 @@
               return;
             }
             previewEl.textContent = '';
+            // Dismiss. A preview is a look, not a commitment — without this the
+            // only way out of a rendered preview is to save it or leave the page,
+            // which makes "just checking" feel like it needs a decision. Clearing
+            // the images changes NOTHING else: the knobs keep their values, so the
+            // owner can close, tweak and preview again.
+            const closeBtn = document.createElement('button');
+            closeBtn.type = 'button';
+            closeBtn.className = 'link-btn cal-preview-close';
+            closeBtn.textContent = 'סגור תצוגה';
+            closeBtn.title = 'סוגר את התצוגה בלבד — הערכים נשארים';
+            previewEl.append(closeBtn);
             for (const [k, label] of [
               ['card', 'קלף'],
               ['board', 'לוח'],
@@ -1347,7 +1371,7 @@
               fig.append(img, cap);
               previewEl.append(fig);
             }
-            tplMsg(card, 'ok', 'זו תצוגה מקדימה — בדקו ואז שמרו.');
+            tplMsg(card, 'ok', 'זו תצוגה מקדימה — בדקו ואז שמרו, או סגרו בלי לשמור.');
           } catch (err) {
             previewEl.textContent = '';
             tplMsg(card, 'err', 'שגיאת רשת: ' + err);

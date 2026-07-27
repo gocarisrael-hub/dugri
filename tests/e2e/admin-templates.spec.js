@@ -224,6 +224,58 @@ test.describe('admin templates — status view (read-only)', () => {
     await expect.poll(() => previewBody && previewBody.extra_fields).toEqual({});
   });
 
+  test('a rendered preview can be closed without saving, keeping the knobs', async ({ page }) => {
+    // A preview is a look, not a commitment. Without a way out, the only exits
+    // from a rendered preview are "save and mark calibrated" or leaving the page,
+    // which makes just checking feel like it needs a decision.
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({
+        json: {
+          templates: [
+            {
+              key: 'close-x',
+              slug: 'close-x',
+              display_he: 'סגירה',
+              visibility: 'public',
+              calibrated: false,
+              language: 'hebrew',
+              name_form: 'hebrew',
+              extra_fields: [],
+              assets: [],
+              title_style: { fill: '#000000', outline: '#ffffff' },
+              board: null,
+              back: null,
+            },
+          ],
+        },
+      })
+    );
+    let saveCalls = 0;
+    await page.route('**/api/admin/templates/**', async (route) => {
+      saveCalls += 1;
+      await route.fulfill({ json: { ok: true } });
+    });
+    await page.route('**/api/preview*', (route) =>
+      route.fulfill({ json: { card: 'data:image/png;base64,iVBORw0KGgo=' } })
+    );
+
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const cal = page.locator('.tpl-card[data-key="close-x"] .tpl-cal');
+    await cal.locator('[data-cal="ts.outline_w"]').fill('0.07');
+    await cal.locator('.cal-preview-btn').click();
+    await expect(cal.locator('.cal-preview img')).toHaveCount(1);
+
+    await cal.locator('.cal-preview-close').click();
+    await expect(cal.locator('.cal-preview img')).toHaveCount(0);
+    // Closing is not saving.
+    expect(saveCalls).toBe(0);
+    // ...and it discards nothing: the knob keeps its value, so the owner can
+    // close, tweak and preview again.
+    await expect(cal.locator('[data-cal="ts.outline_w"]')).toHaveValue('0.07');
+    // The status bar is hidden, not left as an empty coloured bar.
+    await expect(page.locator('.tpl-card[data-key="close-x"] .tpl-msg')).toBeHidden();
+  });
+
   test('every card exposes a calibration panel (title look-knobs + board/back + preview/save)', async ({
     page,
   }) => {
