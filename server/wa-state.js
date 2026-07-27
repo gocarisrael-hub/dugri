@@ -398,6 +398,20 @@ function activeGroups() {
   return out;
 }
 
+// EVERY group the bot has ever opened, closed ones included, each a DEEP COPY
+// with its groupId folded in. activeGroups() deliberately hides closed groups
+// because the nudge scanner must not message them; the admin view is the
+// opposite case — an order whose word list is already closed still has a real
+// group the owner may want to open and post in, so it must still be listed.
+function allGroups() {
+  const out = [];
+  for (const id of Object.keys(_store.groups)) {
+    const entry = _store.groups[id];
+    if (entry) out.push(Object.assign({ groupId: id }, clone(entry)));
+  }
+  return out;
+}
+
 module.exports = {
   linkGroup,
   reserveCollection,
@@ -416,6 +430,7 @@ module.exports = {
   recordQuietReminder,
   markClosed,
   activeGroups,
+  allGroups,
   _file: FILE,
   NUDGE_SLOTS_CAP,
   PROCESSED_EVENTS_CAP,
