@@ -1402,13 +1402,18 @@ async function openWhatsappGroup(collection, base) {
       // buyer's phone or the honoree name.
       if (created && !created.skipped) {
         const why = created.error || 'http ' + (created.status || '?') + ' / no groupId';
-        // Append Whapi's own error text. "whapi http 429" alone doesn't say
-        // WHICH limit was hit, and that is exactly the case where the owner has
-        // to decide between "wait it out" and "the number is blocked" — the
-        // body carries that. Only the message/error fields, never the whole
-        // payload: a group response can echo participant phone numbers.
+        // Append Whapi's own error text. "whapi http 429" alone doesn't say WHY,
+        // and the difference is everything: a 429 whose details read
+        // "account_reachout_restricted" means WhatsApp has restricted the bot
+        // NUMBER from contacting people (appeal in WhatsApp Business — no env or
+        // code change helps), while a plain rate limit just means wait. Whapi
+        // nests it as { error: { code, message, details } }, and `details` is the
+        // machine-readable part worth logging; `message` is the generic
+        // "too many requests". Only these fields, never the whole payload — a
+        // group response can echo participant phone numbers.
         const d = created.data || {};
-        const detail = typeof d === 'object' ? d.message || d.error || '' : '';
+        const err = d && typeof d.error === 'object' && d.error ? d.error : null;
+        const detail = err ? err.details || err.message || '' : d.message || d.error || '';
         const detailText = detail
           ? ' — ' + (typeof detail === 'string' ? detail : JSON.stringify(detail))
           : '';

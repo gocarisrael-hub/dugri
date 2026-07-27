@@ -193,6 +193,45 @@ describe('POST /api/admin/whatsapp/groups/:cid/open', () => {
     expect(data.connection).toBe('disconnected');
     expect(waState.groupForCollection(c.id)).toBeNull();
   });
+
+  // Regression for a real incident: group creation failed with a bare
+  // "whapi http 429", which reads as "rate limit, wait it out". The actual body
+  // said account_reachout_restricted — WhatsApp had restricted the bot NUMBER
+  // from contacting people, which no env or code change can fix. The log must
+  // carry that string or the next occurrence is diagnosed wrong again.
+  it("logs Whapi's nested error details, not just the status", async () => {
+    const c = makeCollection();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    whapiHandler = async (url) => {
+      if (url.includes('/health')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ status: { text: 'AUTH' } }),
+          text: async () => '',
+        };
+      }
+      return {
+        ok: false,
+        status: 429,
+        // Whapi's real shape, captured from the live API.
+        json: async () => ({
+          error: {
+            code: 429,
+            message: 'too many requests',
+            details: 'account_reachout_restricted',
+          },
+        }),
+        text: async () => '',
+      };
+    };
+    await realFetch(base + '/api/admin/whatsapp/groups/' + c.id + '/open' + qs, { method: 'POST' });
+    const logged = warn.mock.calls.map((a) => a.join(' ')).join('\n');
+    expect(logged).toContain('account_reachout_restricted');
+    // The generic wrapper must not displace the actionable part.
+    expect(logged).not.toContain('too many requests');
+    warn.mockRestore();
+  });
 });
 
 describe('GET /api/admin/whatsapp/groups/:cid/invite', () => {
