@@ -368,6 +368,8 @@
 
       // Last fetched list + current view state (client-side filter/sort).
       let allCols = [];
+      // collection id -> { groupId, closed }, refreshed with the collections.
+      let waGroups = {};
       let activeFilter = 'all';
       let sortBy = 'created';
 
@@ -523,7 +525,7 @@
         }
         const table = document.createElement('table');
         table.innerHTML =
-          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>פיונים</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>הפקה</th><th>נוצר</th><th>מעקב</th><th>ניהול</th></tr></thead>';
+          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>פיונים</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>הפקה</th><th>נוצר</th><th>מעקב</th><th>וואטסאפ</th><th>ניהול</th></tr></thead>';
         const tb = document.createElement('tbody');
         for (const c of cols) {
           const tr = document.createElement('tr');
@@ -741,6 +743,74 @@
           }
           tr.appendChild(tdFollow);
 
+          // WhatsApp group: either a link into the existing group, or a button
+          // that opens one via the bot. waGroups is loaded alongside the
+          // collections (see load()); until it arrives every row shows the
+          // neutral dash rather than a misleading "no group" button.
+          const tdWa = document.createElement('td');
+          const wa = waGroups[c.id];
+          if (wa && wa.groupId) {
+            const openBtn = document.createElement('button');
+            openBtn.textContent = wa.closed ? 'פתח קבוצה (סגורה)' : 'פתח קבוצה';
+            openBtn.title = 'פותח את הקבוצה בוואטסאפ דרך קישור הזמנה';
+            openBtn.onclick = async () => {
+              const orig = openBtn.textContent;
+              openBtn.disabled = true;
+              openBtn.textContent = 'טוען…';
+              try {
+                const r = await fetch(
+                  '/api/admin/whatsapp/groups/' + c.id + '/invite?key=' + encodeURIComponent(key)
+                );
+                const data = await r.json().catch(() => ({}));
+                if (r.ok && data.inviteLink) window.open(data.inviteLink, '_blank', 'noopener');
+                else alert('לא הצלחנו להביא קישור לקבוצה: ' + (data.error || r.status));
+              } catch {
+                alert('לא הצלחנו להביא קישור לקבוצה');
+              }
+              openBtn.textContent = orig;
+              openBtn.disabled = false;
+            };
+            tdWa.appendChild(openBtn);
+          } else {
+            const makeBtn = document.createElement('button');
+            makeBtn.textContent = 'פתח קבוצה בבוט';
+            makeBtn.onclick = async () => {
+              if (!confirm('לפתוח קבוצת וואטסאפ ללקוח/ה של ' + (c.honoree_name || '') + '?'))
+                return;
+              const orig = makeBtn.textContent;
+              makeBtn.disabled = true;
+              makeBtn.textContent = 'פותח…';
+              try {
+                const r = await fetch(
+                  '/api/admin/whatsapp/groups/' + c.id + '/open?key=' + encodeURIComponent(key),
+                  { method: 'POST' }
+                );
+                const data = await r.json().catch(() => ({}));
+                if (r.ok) {
+                  load();
+                  return;
+                }
+                // The recurring failure is a dropped channel, so name it instead
+                // of showing a bare "failed" the owner can't act on.
+                alert(
+                  data.connection === 'disconnected'
+                    ? 'הבוט מנותק מוואטסאפ — סרקו QR מחדש בפאנל של Whapi ונסו שוב.'
+                    : data.reason === 'bot_off'
+                      ? 'בוט הוואטסאפ כבוי.'
+                      : data.reason === 'bad_phone'
+                        ? 'אין מספר נייד תקין ללקוח/ה בהזמנה הזו.'
+                        : 'לא הצלחנו לפתוח קבוצה: ' + (data.error || r.status)
+                );
+              } catch {
+                alert('לא הצלחנו לפתוח קבוצה');
+              }
+              makeBtn.textContent = orig;
+              makeBtn.disabled = false;
+            };
+            tdWa.appendChild(makeBtn);
+          }
+          tr.appendChild(tdWa);
+
           const td = document.createElement('td');
           const copyBtn = document.createElement('button');
           copyBtn.textContent = 'העתק קישור ניהול';
@@ -934,6 +1004,7 @@
             'הפקה',
             'נוצר',
             'מעקב',
+            'וואטסאפ',
             'ניהול',
           ];
           tr.querySelectorAll('td').forEach((cell, i) => {
@@ -983,6 +1054,16 @@
           }
           const data = await r.json();
           allCols = data.collections || [];
+          // The WhatsApp group map is a SEPARATE, best-effort fetch: the orders
+          // table must still render when the WhatsApp side is dormant or
+          // erroring, so a failure here leaves waGroups empty rather than
+          // failing the whole load.
+          try {
+            const rg = await fetch('/api/admin/whatsapp/groups?key=' + encodeURIComponent(key));
+            waGroups = rg.ok ? (await rg.json()).groups || {} : {};
+          } catch {
+            waGroups = {};
+          }
           sub.textContent = allCols.length + ' הזמנות';
           controlsEl.hidden = false;
           renderAll();

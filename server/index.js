@@ -1402,7 +1402,19 @@ async function openWhatsappGroup(collection, base) {
       // buyer's phone or the honoree name.
       if (created && !created.skipped) {
         const why = created.error || 'http ' + (created.status || '?') + ' / no groupId';
-        console.warn('[whatsapp] createGroup failed for collection ' + collection.id + ': ' + why);
+        // Append Whapi's own error text. "whapi http 429" alone doesn't say
+        // WHICH limit was hit, and that is exactly the case where the owner has
+        // to decide between "wait it out" and "the number is blocked" — the
+        // body carries that. Only the message/error fields, never the whole
+        // payload: a group response can echo participant phone numbers.
+        const d = created.data || {};
+        const detail = typeof d === 'object' ? d.message || d.error || '' : '';
+        const detailText = detail
+          ? ' — ' + (typeof detail === 'string' ? detail : JSON.stringify(detail))
+          : '';
+        console.warn(
+          '[whatsapp] createGroup failed for collection ' + collection.id + ': ' + why + detailText
+        );
       }
       return;
     }
@@ -2653,6 +2665,90 @@ app.get('/api/whatsapp/health', async (req, res) => {
     res.json(await whatsapp.health());
   } catch (e) {
     res.json({ ok: false, connection: 'error', error: (e && e.message) || String(e) });
+  }
+});
+
+// Admin: which collections have a WhatsApp group. Pure local state (no Whapi
+// call), so it stays fast enough for the admin table's 15s refresh and still
+// answers while the channel is down. Keyed by collection id for a direct lookup
+// per row. Closed groups are INCLUDED (see wa-state.allGroups) — the owner may
+// still want to post in the group of a finished order. Returns ids only: no
+// buyer phone, no member list.
+app.get('/api/admin/whatsapp/groups', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const groups = {};
+  for (const g of waState.allGroups()) {
+    if (!g || !g.collection_id) continue;
+    groups[g.collection_id] = { groupId: g.groupId, closed: !!g.closed };
+  }
+  res.json({ groups });
+});
+
+// Admin: open a word-collection group for a collection that has none — the
+// manual equivalent of the automatic order-created hook, for orders that were
+// placed while the bot was dormant or disconnected. Deliberately reuses
+// openWhatsappGroup so a manually opened group is IDENTICAL to an automatic one
+// (same subject, same buyer add, same pinned group_opened announcement, same
+// wa-state link) rather than a second, subtly different code path.
+//
+// openWhatsappGroup is fail-soft and returns nothing, so success is decided by
+// re-reading wa-state after it runs. On failure we probe the channel health to
+// tell the owner WHICH failure it is — a disconnected channel (re-scan the QR)
+// reads completely differently from a bad buyer phone, and without this the
+// button would just say "failed" for the one problem that actually recurs.
+app.post('/api/admin/whatsapp/groups/:cid/open', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const collection = db.getCollection(req.params.cid);
+  if (!collection) return res.status(404).json({ error: 'collection not found' });
+  if (waState.groupForCollection(collection.id)) {
+    return res.status(409).json({ error: 'already has a group' });
+  }
+  if (!whatsapp.isConfigured()) {
+    return res.status(400).json({ error: 'not configured', reason: 'bot_off' });
+  }
+  // Checked here rather than left to createGroup because the buyer's number is
+  // what the group is built around; a collection with no usable IL mobile can
+  // never get a group and the owner should be told that, not "try again".
+  if (!ilPhoneToWaId(collection.owner_phone)) {
+    return res.status(400).json({ error: 'no usable buyer phone', reason: 'bad_phone' });
+  }
+  try {
+    await openWhatsappGroup(collection, paymentBaseUrl());
+  } catch (e) {
+    console.warn('[whatsapp] admin open failed:', e && e.message ? e.message : e);
+  }
+  // groupForCollection returns the groupId STRING (by_collection maps
+  // collection id -> groupId), not an entry object.
+  const groupId = waState.groupForCollection(collection.id);
+  if (groupId) return res.json({ ok: true, groupId });
+  let connection = 'unknown';
+  try {
+    const h = await whatsapp.health();
+    connection = (h && h.connection) || 'unknown';
+  } catch {
+    connection = 'error';
+  }
+  res.status(502).json({ error: 'could not create group', reason: 'whapi_failed', connection });
+});
+
+// Admin: a clickable link to an existing group. WhatsApp has no "open group by
+// id" URL, so the only way in is the group's invite link — which also works
+// when the owner's personal number isn't a member yet (the group is created by
+// the BOT number, so usually it isn't): the link offers to join, then opens it.
+// Live Whapi call, hence separate from the listing above rather than folded into
+// it — one call per click instead of one per row per refresh.
+app.get('/api/admin/whatsapp/groups/:cid/invite', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const groupId = waState.groupForCollection(req.params.cid);
+  if (!groupId) return res.status(404).json({ error: 'no group for this collection' });
+  try {
+    const r = await whatsapp.getInviteLink(groupId);
+    if (!r || !r.ok || !r.inviteLink) {
+      return res.status(502).json({ error: 'could not fetch invite link' });
+    }
+    res.json({ ok: true, groupId, inviteLink: r.inviteLink });
+  } catch (e) {
+    res.status(502).json({ error: (e && e.message) || String(e) });
   }
 });
 

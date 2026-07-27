@@ -224,3 +224,42 @@ test('per-order extra fields (age / anniversary years + names) show in the table
   const kidRow = page.locator('tbody tr').filter({ hasText: kid });
   await expect(kidRow).toContainText('גיל: 8');
 });
+
+// The WhatsApp column. The E2E server runs with the bot dormant, so no order has
+// a group and every row must offer the "open one via the bot" action. The group
+// map is served by a SEPARATE endpoint, so this also covers the two responses
+// being stitched together per row rather than the column silently going blank.
+test('WhatsApp column offers to open a group for an order that has none', async ({
+  page,
+  request,
+}) => {
+  const name = uniq('וואטס');
+  await seed(request, { name, email: 'wa-col@example.com', phone: '0521234567' });
+
+  await page.goto(`/admin.html?key=${KEY}`);
+  await expect(page.locator('table')).toBeVisible();
+  await expect(page.locator('thead')).toContainText('וואטסאפ');
+
+  const row = page.locator('tbody tr', { hasText: name });
+  await expect(row.getByRole('button', { name: 'פתח קבוצה בבוט' })).toBeVisible();
+  // No group exists, so the "open the existing group" action must NOT be offered
+  // — it would 404 and read as a broken button.
+  await expect(row.getByRole('button', { name: 'פתח קבוצה', exact: true })).toHaveCount(0);
+});
+
+// A row whose collection HAS a group flips to the link-into-the-group action.
+// The group map endpoint is stubbed because linking a real group needs a live
+// Whapi channel, which E2E deliberately does not have.
+test('WhatsApp column links into the group when one exists', async ({ page, request }) => {
+  const name = uniq('וואטסג');
+  const { id } = await seed(request, { name, email: 'wa-grp@example.com', phone: '0521234567' });
+
+  await page.route('**/api/admin/whatsapp/groups?*', async (route) =>
+    route.fulfill({ json: { groups: { [id]: { groupId: '120363001@g.us', closed: false } } } })
+  );
+
+  await page.goto(`/admin.html?key=${KEY}`);
+  const row = page.locator('tbody tr', { hasText: name });
+  await expect(row.getByRole('button', { name: 'פתח קבוצה', exact: true })).toBeVisible();
+  await expect(row.getByRole('button', { name: 'פתח קבוצה בבוט' })).toHaveCount(0);
+});
