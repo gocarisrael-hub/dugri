@@ -221,6 +221,119 @@ describe('templates.js pure logic', () => {
     expect(fs.existsSync(path.join(dir, 'clean', 'board-chasers.svg'))).toBe(false);
   });
 
+  // Auto-calibration on upload. generator/calibrate.py measures the title's slot
+  // and paints from the artwork; before this was wired it existed as a CLI that
+  // nothing called, so every freshly uploaded template opened its calibration
+  // panel completely empty and the owner typed every number by hand.
+  describe('onboardTemplate runs auto-calibration', () => {
+    const ok = () => ({ status: 0, stdout: '', stderr: '' });
+    // Stand-in for calibrate.py: writes the --out blob and exits 0.
+    const fakeCalibrate = (blob) => (_bin, args) => {
+      fs.writeFileSync(args[args.indexOf('--out') + 1], JSON.stringify(blob), 'utf8');
+      return ok();
+    };
+    const MEASURED = {
+      title_style: {
+        fill: '#97d8e6',
+        outline: '#0d3e43',
+        outline_w: 0.05,
+        arch: 0.1,
+        shadow: true,
+      },
+      board: {
+        frac: { x0: 0.02, y0: 0.88, x1: 0.14, y1: 0.98 },
+        fill: '#ffffff',
+        outline: '#000000',
+      },
+      back: null,
+      word_size: 12,
+      confidence: { 'title_style.fill': 'high', 'board.frac': 'low' },
+      notes: ['לא ניתן היה למדוד עובי מתאר'],
+    };
+    const readEntry = (root, slug) =>
+      JSON.parse(fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8'))[slug];
+
+    // recipe_diff.py writes generator/recipes/<slug>.json; this stands in for it.
+    const recipeRunnerFor = (root) => (_bin, args) => {
+      const dir = path.join(root, 'generator', 'recipes');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, args[args.length - 1] + '.json'), '{}', 'utf8');
+      return ok();
+    };
+
+    const onboard = (root, opts) =>
+      templates.onboardTemplate({
+        root,
+        recipeRunner: recipeRunnerFor(root),
+        fields: { slug: 'cal-x', display_he: 'כיול', title_text: '{NAME}', name_form: 'hebrew' },
+        files: validFiles(),
+        ...opts,
+      });
+
+    it('stores what it measured, and leaves calibrated FALSE for a human', () => {
+      const root = makeScaffold();
+      const r = onboard(root, { calibrateRunner: fakeCalibrate(MEASURED) });
+      expect(r.error).toBeUndefined();
+      expect(r.calibration).toBe('measured');
+
+      const entry = readEntry(root, 'cal-x');
+      expect(entry.title_style.fill).toBe('#97d8e6');
+      expect(entry.title_style.outline_w).toBe(0.05);
+      expect(entry.board.frac.x0).toBe(0.02);
+      expect(entry.word_size).toBe(12);
+      // Advisory fields the form renders as "check this one".
+      expect(entry.confidence['board.frac']).toBe('low');
+      expect(entry.notes[0]).toContain('עובי מתאר');
+      // Measuring is not approving: nothing is orderable until the owner saves.
+      expect(entry.calibrated).toBe(false);
+      expect(r.calibrated).toBe(false);
+    });
+
+    it('a template that cannot be measured is still registered, just unfilled', () => {
+      const root = makeScaffold();
+      const r = onboard(root, {
+        calibrateRunner: () => ({ status: 1, stdout: '', stderr: 'no ink found' }),
+      });
+      expect(r.error).toBeUndefined();
+      expect(r.key).toBe('cal-x');
+      expect(r.calibration).toBe('failed');
+      expect(r.calibration_detail).toContain('no ink');
+      expect(readEntry(root, 'cal-x').title_style).toBeNull(); // shell default, untouched
+    });
+
+    it('a value the detector could not measure is left ABSENT, not written as null', () => {
+      // calibrate.py omits what it cannot measure rather than guessing. Writing an
+      // omitted `board` as null would read like a deliberate "this design has no
+      // board title" and silently drop the name from the printed board.
+      const root = makeScaffold();
+      const withoutBoard = { ...MEASURED };
+      delete withoutBoard.board;
+      onboard(root, { calibrateRunner: fakeCalibrate(withoutBoard) });
+      const entry = readEntry(root, 'cal-x');
+      expect(entry.title_style.fill).toBe('#97d8e6'); // what WAS measured landed
+      expect(entry.board).toBeNull(); // still the shell default, not overwritten
+    });
+
+    it('skips calibration when the recipe failed — the back slot needs its cells', () => {
+      const root = makeScaffold();
+      let called = false;
+      const r = templates.onboardTemplate({
+        root,
+        recipeRunner: () => ({ status: 1, stdout: '', stderr: 'no grid' }),
+        calibrateRunner: () => {
+          called = true;
+          return ok();
+        },
+        fields: { slug: 'cal-y', display_he: 'x', title_text: '{NAME}', name_form: 'hebrew' },
+        files: validFiles(),
+      });
+      expect(r.recipe).toBe('failed');
+      expect(called).toBe(false);
+      expect(r.calibration).toBe('skipped');
+      expect(r.error).toBeUndefined(); // still registered
+    });
+  });
+
   it('onboardTemplate accepts an OPTIONAL chasers board and lands clean/board-chasers.svg', () => {
     const root = makeScaffold();
     const files = {
