@@ -541,7 +541,11 @@
          which hosts the multi-photo gallery. -->
     <script type="module">
       import { initCarousel } from './js/carousel.js';
-      import { PUBLIC_DESIGNS as DESIGNS, fetchDesignNames } from './js/designs.js';
+      import {
+        PUBLIC_DESIGNS as DESIGNS,
+        fetchDesignNames,
+        loadCustomDesigns,
+      } from './js/designs.js';
       import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
       import { loadDesignImages, galleryFor } from './js/design-images.js';
       // Reuse the detail page's override helpers so the grid and PDP can never
@@ -556,6 +560,20 @@
       let PRICE = PRICING_FALLBACK.store.now;
       let WAS = PRICING_FALLBACK.store.was;
       const grid = document.getElementById('storeGrid');
+
+      // The full grid list: the built-in catalog + any CUSTOM designs (uploaded
+      // templates that became products, appended once /api/custom-designs resolves).
+      const allDesigns = DESIGNS.slice();
+      let currentMap = {}; // last resolved design-images gallery config
+
+      // A custom design's pictures ARE the template's clean SVGs (front/back/board);
+      // build carousel shots straight from them (droppable — drop a slide only if the
+      // SVG somehow 404s).
+      function customShots(d) {
+        return ['front', 'back', 'board']
+          .filter((s) => d.img && d.img[s])
+          .map((s) => ({ key: s, src: d.img[s], fallback: '', name: '', droppable: true }));
+      }
 
       // Storefront names by precedence: the owner's inline content-edit name
       // (product-<id>-name) WINS over the admin template rename (/api/design-names →
@@ -607,7 +625,7 @@
         media.className = 'product-card__media';
         const track = document.createElement('div');
         track.className = 'product-card__track';
-        const shots = galleryFor(map, d, 'products');
+        const shots = d.custom ? customShots(d) : galleryFor(map, d, 'products');
         shots.forEach((shot, i) => {
           const slide = document.createElement('a');
           slide.className = 'product-card__slide';
@@ -672,9 +690,9 @@
 
       function renderGrid(map) {
         try {
-          if (!Array.isArray(DESIGNS) || !DESIGNS.length) throw new Error('empty catalog');
+          if (!Array.isArray(allDesigns) || !allDesigns.length) throw new Error('empty catalog');
           const frag = document.createDocumentFragment();
-          for (const d of DESIGNS) {
+          for (const d of allDesigns) {
             // Isolate each card so one bad design skips only itself, not the grid.
             try {
               frag.appendChild(card(d, map));
@@ -697,7 +715,7 @@
       // name + the caption link's aria-label + each slide's aria-label) — no rebuild,
       // so the carousels are untouched.
       function applyNames() {
-        for (const d of DESIGNS) {
+        for (const d of allDesigns) {
           const cardEl = grid.querySelector(`.product-card[data-design-id="${d.id}"]`);
           if (!cardEl) continue;
           const nm = resolvedName(d);
@@ -732,7 +750,7 @@
         .then(([names, contentOv]) => {
           designNames = names || {};
           const ov = {};
-          for (const d of DESIGNS) {
+          for (const d of allDesigns) {
             const c = overrideText(contentOv, overrideKeys(d.id).name);
             if (c != null && String(c).trim() !== '') ov[d.id] = c;
           }
@@ -746,9 +764,30 @@
       // (js/design-images.js): a slow/failed fetch leaves the shipped renders.
       loadDesignImages()
         .then((map) => {
-          if (map && Object.keys(map).length) {
-            renderGrid(map);
+          currentMap = map || {};
+          if (Object.keys(currentMap).length) {
+            renderGrid(currentMap);
             applyNames(); // re-apply names onto the rebuilt cards
+          }
+        })
+        .catch(() => {});
+
+      // Append CUSTOM designs — uploaded templates that became products — once they
+      // resolve. Fail-safe ([] on error): the grid just shows the built-in catalog.
+      loadCustomDesigns()
+        .then((customs) => {
+          if (!customs || !customs.length) return;
+          const known = new Set(allDesigns.map((d) => d.id));
+          let added = false;
+          for (const c of customs) {
+            if (!known.has(c.id)) {
+              allDesigns.push(c);
+              added = true;
+            }
+          }
+          if (added) {
+            renderGrid(currentMap);
+            applyNames();
           }
         })
         .catch(() => {});

@@ -22,7 +22,12 @@
 // public design and never throws. Private designs aren't in PUBLIC_DESIGNS so
 // they can't be deep-linked here.
 
-import { PUBLIC_DESIGNS, fetchDesignNames, designShipsBoard } from './designs.js';
+import {
+  PUBLIC_DESIGNS,
+  fetchDesignNames,
+  designShipsBoard,
+  loadCustomDesigns,
+} from './designs.js';
 import { initCarousel } from './carousel.js';
 import { fetchPricing } from './pricing.js';
 import { loadDesignImages, galleryFor } from './design-images.js';
@@ -166,9 +171,19 @@ function defaultShots(d, designImages) {
   return shots;
 }
 
-/** The gallery photos to show: the owner's CUSTOM inline-editor photos when
- *  present, otherwise the curated design-images gallery. Fail-soft fallback. */
+/** A CUSTOM design (uploaded template) shows its own template SVGs as the gallery —
+ *  front/back/board, droppable (drop a slide only if the SVG somehow 404s). */
+function customProductShots(d) {
+  return ['front', 'back', 'board']
+    .filter((s) => d.img && d.img[s])
+    .map((s) => ({ src: d.img[s], label: `${d.name} · ${SLOT_KIND[s]}`, droppable: true }));
+}
+
+/** The gallery photos to show: a custom design's template SVGs; else the owner's
+ *  CUSTOM inline-editor photos when present, otherwise the curated design-images
+ *  gallery. Fail-soft fallback. */
 export function galleryShots(d, overrides, designImages) {
+  if (d && d.custom) return customProductShots(d);
   const custom = photosFromOverride(overrides, d.id);
   if (custom.length) {
     return custom.map((src, i) => ({ src, label: `${d.name} · תמונה ${i + 1}` }));
@@ -648,6 +663,37 @@ function boot() {
   // pictures). Timeout-bounded + fail-safe: a slow/failed fetch never blocks the
   // first paint and just leaves the static gallery renders in place.
   loadDesignImages().then((map) => applyDesignImagesToPage(d, map));
+
+  // A CUSTOM design (uploaded template) isn't in the bundled catalog, so the first
+  // paint fell back to a built-in design. Resolve custom designs async and, if the
+  // URL points at one, re-render the page for it. Fail-safe ([] on error).
+  loadCustomDesigns().then((customs) => {
+    let id = '';
+    try {
+      id = new URLSearchParams(window.location.search).get('design') || '';
+    } catch {
+      id = '';
+    }
+    const custom = (customs || []).find((c) => c.id === id);
+    if (custom && custom.id !== currentDesign.id) switchToDesign(custom);
+  });
+}
+
+// Re-render the whole detail page for `d` (used when a custom design resolves after
+// first paint). Mirrors boot's synchronous render, then re-overlays the async bits.
+function switchToDesign(d) {
+  currentDesign = d;
+  currentOverrides = {};
+  currentDesignImages = {};
+  const shots = galleryShots(d, currentOverrides, currentDesignImages);
+  renderInfo(d, currentOverrides);
+  renderGallery(shots);
+  renderZoomSlides(shots);
+  renderRelated(d);
+  markPhotosEditable(d);
+  restampPrices();
+  loadOverrides((ov) => applyOverridesToPage(d, ov));
+  fetchDesignNames().then((names) => applyDesignNames(d, names));
 }
 
 // Re-stamp every rendered store price (the PDP now/was + each related card) from

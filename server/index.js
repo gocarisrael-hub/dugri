@@ -1940,6 +1940,88 @@ app.get('/api/design-names', async (req, res) => {
   res.json({ names });
 });
 
+// --- Custom designs: uploaded templates that become storefront products -------
+// A "custom design" is DERIVED (no separate store): a PUBLIC generator theme
+// (themes.json) that is NOT one of the built-in catalog designs' themes. So an
+// admin-uploaded template automatically becomes an orderable product, and deleting
+// the template removes it — no catalog rebuild. Its pictures are the template's own
+// FILLED SVGs (the sample-personalized art — a realistic product photo, unlike the
+// blank clean art), served by GET /api/template-image below. Uncalibrated templates
+// still appear (the owner controls visibility + the admin gates PDF generation).
+
+// The filled SVG role for a product picture slot.
+const CUSTOM_SLOT_ROLE = { front: 'fronts', back: 'backs', board: 'board' };
+// Does resources/canva/templates/<slug>/filled/<role>.svg exist?
+function customSvgExists(slug, role) {
+  if (!templates.isSafeSlug(slug)) return false;
+  return fs.existsSync(
+    path.join(TEMPLATE_ROOT, 'resources', 'canva', 'templates', slug, 'filled', role + '.svg')
+  );
+}
+
+// Public: the list of custom designs (uploaded templates that aren't built-in),
+// each shaped like a catalog design the storefront can render — id (=slug), name
+// (display_he), theme (=slug), custom:true, and img URLs for whichever of
+// front/back/board SVGs the template actually has on disk. Fail-safe: any error →
+// empty list so the storefront just shows the built-in catalog.
+app.get('/api/custom-designs', async (req, res) => {
+  let out = [];
+  try {
+    const mod = await import(pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js')));
+    const builtIn = new Set(Object.values(mod.THEME_BY_DESIGN || {}));
+    const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT));
+    for (const key of Object.keys(themes || {})) {
+      const t = themes[key] || {};
+      if (builtIn.has(key)) continue; // a built-in design's theme, not a custom product
+      if ((t.visibility || 'public') !== 'public') continue; // owner hid it
+      if (!templates.isSafeSlug(key)) continue;
+      const img = {};
+      for (const slot of Object.keys(CUSTOM_SLOT_ROLE)) {
+        if (customSvgExists(key, CUSTOM_SLOT_ROLE[slot])) {
+          img[slot] = '/api/template-image/' + encodeURIComponent(key) + '/' + slot;
+        }
+      }
+      // Skip a shell with no card art yet — nothing to show as a product.
+      if (!img.front && !img.back && !img.board) continue;
+      out.push({
+        id: key,
+        name: (typeof t.display_he === 'string' && t.display_he.trim()) || key,
+        theme: key,
+        custom: true,
+        public: true,
+        calibrated: !!t.calibrated,
+        hasBoard: !!img.board,
+        img,
+      });
+    }
+  } catch {
+    out = [];
+  }
+  res.json({ designs: out });
+});
+
+// Public: serve a custom design's picture — the template's FILLED <role>.svg (the
+// sample-personalized art, so the storefront shows a realistic example). slot is
+// front|back|board (mapped to the fronts/backs/board.svg role). The slug is
+// validated to the safe-slug shape and the path is confined to the templates dir,
+// so there is no traversal. Cached (the art changes only on a re-upload, which
+// changes the file). SVG only.
+app.get('/api/template-image/:slug/:slot', (req, res) => {
+  const slug = String(req.params.slug || '');
+  const role = CUSTOM_SLOT_ROLE[String(req.params.slot || '')];
+  if (!templates.isSafeSlug(slug) || !role) return res.status(404).type('txt').send('Not found');
+  const base = path.resolve(path.join(TEMPLATE_ROOT, 'resources', 'canva', 'templates'));
+  const file = path.resolve(base, slug, 'filled', role + '.svg');
+  if (file !== base && !file.startsWith(base + path.sep)) {
+    return res.status(404).type('txt').send('Not found');
+  }
+  if (!fs.existsSync(file)) return res.status(404).type('txt').send('Not found');
+  res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.sendFile(file);
+});
+
 // Serve an uploaded content image. The files live in DATA_DIR/content-uploads,
 // which is OUTSIDE SITE_DIR, so express.static never reaches them — this route is
 // the only way out. The name is validated to the exact shape saveImageBytes

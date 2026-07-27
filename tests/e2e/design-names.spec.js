@@ -20,6 +20,13 @@ function stubNames(page, names) {
   );
 }
 
+// These tests assert the BUILT-IN catalog grid. Stub /api/custom-designs empty so
+// an uploaded template surfaced as an extra product card (covered in
+// custom-designs.spec) can't perturb the built-in card count here.
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/custom-designs', (route) => route.fulfill({ json: { designs: [] } }));
+});
+
 test.describe('design-name propagation to the storefront', () => {
   test('products.html shows the renamed name on the matching card, built-in on the rest', async ({
     page,
