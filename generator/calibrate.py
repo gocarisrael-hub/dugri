@@ -42,6 +42,7 @@ human confirms them in the admin preview before the template can be ordered.
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -171,6 +172,128 @@ _MIN_CLUSTER_DIST = 60
 
 def _rgb_dist(a, b):
     return sum(abs(p - q) for p, q in zip(a, b))
+
+
+_FILL_ATTR_RE = re.compile(r'fill="(#[0-9a-fA-F]{3,6})"')
+
+
+def _svg_fill_counts(path):
+    """How many times each ``fill="#rrggbb"`` appears in an SVG."""
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            return Counter(m.lower() for m in _FILL_ATTR_RE.findall(f.read()))
+    except OSError:
+        return None
+
+
+def _hex_to_rgb(h):
+    h = h.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def candidate_paints(filled_svg, clean_svg, exclude=()):
+    """The paints the personalized text ADDS to a sheet, read from the vector.
+
+    Rasterizing loses this. On a small front-card title the ring covers the fill
+    so completely that the fill colour does not survive into the pixels at all —
+    on 'birthday-girls' it is absent from the render entirely, so no amount of
+    image analysis can recover it. The SVG source still carries it exactly, as a
+    ``fill`` attribute.
+
+    A plain set difference is not enough either: a title's colours usually also
+    appear elsewhere in the background artwork, so they are present in BOTH
+    sheets. What distinguishes the text is that the filled sheet uses those
+    colours MORE — each added glyph carries its own fill attribute. So compare
+    counts and keep what went up.
+
+    ``exclude`` drops known-irrelevant colours; on the fronts sheet that is the
+    recipe's word-slot colours, leaving the title's own paints. Returns
+    ``[(hex, count_delta), ...]`` most-added first, and an empty list when the
+    sheet encodes colour some other way (a style block, inherited group fills) —
+    in which case the caller falls back to reading pixels.
+    """
+    f = _svg_fill_counts(filled_svg)
+    c = _svg_fill_counts(clean_svg)
+    if not f or c is None:
+        return []
+    skip = {str(e).lower() for e in exclude}
+    out = []
+    for colour, n in f.items():
+        if colour in skip:
+            continue
+        delta = n - c.get(colour, 0)
+        if delta > 0:
+            out.append((colour, delta))
+    out.sort(key=lambda kv: -kv[1])
+    return out
+
+
+def assign_paints(candidates, image, mask, box):
+    """Decide which of two KNOWN paints is the fill and which is the outline.
+
+    ``candidates`` come from the SVG, so this only has to answer which is which
+    — a far easier question than recovering them from pixels. The ring is the
+    paint that borders the background; the fill is the one it encloses.
+
+    Prevalence deliberately is NOT the discriminator: which paint dominates
+    flips with the title's size (the ring covers the fill on a small front-card
+    title, while the fill dominates on a large board one), so counting pixels
+    would give opposite answers on the same design.
+
+    Returns ``(fill, outline)``; ``(colour, colour)`` for a single-paint title;
+    ``(None, None)`` when they cannot be told apart.
+    """
+    picks = [c for c, _ in candidates[:2]]
+    if not picks:
+        return None, None
+    if len(picks) == 1:
+        return picks[0], picks[0]
+    rgb = {p: _hex_to_rgb(p) for p in picks}
+    # Pad with background. ``box`` is the ink's tight bounding box, so a bare
+    # crop has ink flush against every edge and the title's true OUTER boundary
+    # — the thing that identifies the ring — falls outside the scan entirely.
+    pad = 2
+    bw, bh = box[2] - box[0], box[3] - box[1]
+    region = Image.new("L", (bw + 2 * pad, bh + 2 * pad), 0)
+    region.paste(mask.crop(box), (pad, pad))
+    crop = Image.new("RGB", region.size, (0, 0, 0))
+    crop.paste(image.crop(box), (pad, pad))
+    px, mp = crop.load(), region.load()
+    w, h = region.size
+    edge = {p: 0 for p in picks}
+    tot = {p: 0 for p in picks}
+    for y in range(1, h - 1):
+        for x in range(1, w - 1):
+            if not mp[x, y]:
+                continue
+            here = px[x, y]
+            near = min(picks, key=lambda p: _rgb_dist(rgb[p], here))
+            if _rgb_dist(rgb[near], here) > _MIN_CLUSTER_DIST:
+                continue
+            tot[near] += 1
+            if not (mp[x - 1, y] and mp[x + 1, y] and mp[x, y - 1] and mp[x, y + 1]):
+                edge[near] += 1
+    seen = [p for p in picks if tot[p]]
+    if not seen:
+        return None, None
+    if len(seen) == 1:
+        # Only one paint survives into the render; the other is fully covered.
+        # What covers is the ring, so the visible one is the outline.
+        other = [p for p in picks if p != seen[0]][0]
+        return other, seen[0]
+    # Count the ink's OUTER boundary by colour and take the majority owner as the
+    # ring. Deliberately an absolute count, not a per-paint ratio: a paint that is
+    # mostly covered contributes few pixels, so its ratio is computed over a tiny
+    # sample and swings wildly — that is what put 'birthday-girls' the wrong way
+    # round (its pale fill barely survives the render, and its handful of stray
+    # boundary pixels outscored the black ring that genuinely encloses it).
+    if edge[seen[0]] == edge[seen[1]]:
+        return None, None
+    outline = max(seen, key=lambda p: edge[p])
+    fill = min(seen, key=lambda p: edge[p])
+    return fill, outline
 
 
 def _fill_and_outline(image, mask, box):
@@ -476,9 +599,14 @@ def calibrate(theme_key, workdir=None):
                 if not box or not _plausible(box, region):
                     continue
                 cw, ch = cx1 - cx0, cy1 - cy0
-                fill, outline, _ = _fill_and_outline(image, mask, box)
+                # Prefer the paints named by the vector source; the backs sheet
+                # carries ONLY the title, so nothing needs excluding.
+                fill, outline = assign_paints(
+                    candidate_paints(kf, kc), image, mask, box)
+                if not (fill and outline):
+                    fill, outline, _ = _fill_and_outline(image, mask, box)
                 if fill and outline:
-                    confidence["back.colors"] = "high"
+                    confidence["back.colors"] = "high" if fill != outline else "low"
                 else:
                     fill = outline = fill or _dominant_color(image, mask, box)
                     notes.append("back: the title box is measured, but its two "
@@ -520,56 +648,53 @@ def calibrate(theme_key, workdir=None):
                        int(max(b["x1"] for b in t) * ppu),
                        int(max(b["y1"] for b in t) * ppu))
                 tight = _bbox(mask, box) or box
-                fill, outline, outline_w = _fill_and_outline(image, mask, tight)
                 ts = out["title_style"]
-                # A single-paint reading off the FRONT card is ambiguous: it means
-                # either the title genuinely has no ring, or its ring is thick
-                # enough at this small size to bury the fill entirely (which is
-                # what 'trip comeback' and 'birthday-girls' do — their fill colour
-                # does not survive into the front-card render at all). The board
-                # settles it: if the board title shows two distinct paints, this
-                # design HAS a ring and the single-paint reading is the ring alone,
-                # so it must not be taken at face value.
-                two_paints = fill and outline and fill != outline
-                board_has_ring = board_paints and board_paints[0] != board_paints[1]
-                if fill and outline and (two_paints or not board_has_ring):
-                    ts["fill"], ts["outline"] = fill, outline
-                    # ONLY a two-paint reading is self-verifying. A single-paint
-                    # one is never more than un-contradicted: "this design has no
-                    # ring" and "the ring covered the fill at this size" look
-                    # identical from the ink alone. Corroborating it against the
-                    # board does NOT settle it either — both surfaces can fail the
-                    # same way, which is exactly what 'birthday-girls' does (front
-                    # AND board both read as plain black, when the real title is a
-                    # pale blue fill inside a black ring). So a single paint is
-                    # always reported low, and always says why.
-                    verified = two_paints
-                    confidence["title_style.fill"] = "high" if verified else "low"
-                    confidence["title_style.outline"] = "high" if verified else "low"
-                    if not verified:
-                        notes.append("title: read a single paint on the front card "
-                                     "and there is no board title to cross-check "
-                                     "it against — if this design's title has an "
-                                     "outline, the colour below is the OUTLINE and "
-                                     "the fill still needs setting.")
-                elif board_paints:
-                    # The front title is small and heavily ringed, so its fill is
-                    # buried under the outline and unreadable here. Carry the
-                    # BOARD's paints across as a starting point — the same design
-                    # usually paints its title the same way on every surface — but
-                    # say so, and mark it low so the owner checks it.
-                    ts["fill"], ts["outline"] = board_paints[0], board_paints[1]
+                _, _, outline_w = _fill_and_outline(image, mask, tight)
+
+                # Read the title's paints from the VECTOR, not the pixels. The
+                # fronts sheet adds both the title and the words, so exclude the
+                # word colours the recipe already recorded — what is left is the
+                # title's own fill and ring.
+                word_colours = {
+                    (slot.get("color") or "").lower()
+                    for c in recipe["cards"] if c
+                    for slot in c.get("words", []) if slot.get("color")
+                }
+                cands = candidate_paints(ff, fc, exclude=word_colours)
+                fill, outline = assign_paints(cands, image, mask, tight)
+                source = "vector"
+                if not (fill and outline):
+                    # The sheet encodes colour some other way (style block,
+                    # inherited group fill). Fall back to reading the render.
+                    fill, outline, _ow = _fill_and_outline(image, mask, tight)
+                    source = "raster"
                     if outline_w is None:
-                        outline_w = board_paints[2]
-                    notes.append("title: the front-card title is too small to read "
-                                 "its fill (the outline covers it), so the BOARD's "
-                                 "colours were carried across — confirm them.")
-                    confidence["title_style.fill"] = "low"
-                    confidence["title_style.outline"] = "low"
+                        outline_w = _ow
+
+                if fill and outline:
+                    ts["fill"], ts["outline"] = fill, outline
+                    # A two-paint reading taken from the vector source is exact:
+                    # the only question it had to answer was which of two KNOWN
+                    # colours is the ring. A single-paint one is weaker — "this
+                    # title has no ring" and "the ring covered the fill" look the
+                    # same — and a raster-derived one weaker still, since on a
+                    # small title the fill may not survive into the pixels at all.
+                    if fill != outline and source == "vector":
+                        grade = "high"
+                    elif fill != outline:
+                        grade = "medium"
+                    else:
+                        grade = "low"
+                    confidence["title_style.fill"] = grade
+                    confidence["title_style.outline"] = grade
+                    if grade == "low":
+                        notes.append("title: only one paint was found for the front "
+                                     "title. If this design's title actually has an "
+                                     "outline, the colour below is that OUTLINE and "
+                                     "the fill still needs setting.")
                 else:
                     notes.append("title: could not read the front title's colours "
-                                 "and there is no board title to borrow them from "
-                                 "— set fill/outline by hand.")
+                                 "— set fill and outline by hand.")
                     confidence["title_style.fill"] = "none"
                     confidence["title_style.outline"] = "none"
                 if outline_w is not None:
