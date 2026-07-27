@@ -47,6 +47,11 @@ COPY site/ ./site/
 # excluded via .dockerignore, so this stays lean).
 COPY generator/ ./generator/
 COPY resources/canva/templates/ ./resources/canva/templates/
+# The seed word pools. generator/topup.py tops an order up to a full deck from
+# these, so EVERY order with fewer than TARGET personal words reads them — an
+# image without this directory dies with FileNotFoundError on
+# content/wordlists/generic-350.txt partway through generating a paid order.
+COPY content/ ./content/
 
 ENV NODE_ENV=production
 # CHROME -> the flag-injecting wrapper; PYTHON is what server/index.js spawns.
