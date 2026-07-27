@@ -1945,16 +1945,17 @@ app.get('/api/design-names', async (req, res) => {
 // (themes.json) that is NOT one of the built-in catalog designs' themes. So an
 // admin-uploaded template automatically becomes an orderable product, and deleting
 // the template removes it — no catalog rebuild. Its pictures are the template's own
-// clean SVGs, served by GET /api/template-image below. Uncalibrated templates still
-// appear (the owner controls visibility + the admin gates PDF generation).
+// FILLED SVGs (the sample-personalized art — a realistic product photo, unlike the
+// blank clean art), served by GET /api/template-image below. Uncalibrated templates
+// still appear (the owner controls visibility + the admin gates PDF generation).
 
-// The clean SVG role for a product picture slot.
+// The filled SVG role for a product picture slot.
 const CUSTOM_SLOT_ROLE = { front: 'fronts', back: 'backs', board: 'board' };
-// Does resources/canva/templates/<slug>/clean/<role>.svg exist?
+// Does resources/canva/templates/<slug>/filled/<role>.svg exist?
 function customSvgExists(slug, role) {
   if (!templates.isSafeSlug(slug)) return false;
   return fs.existsSync(
-    path.join(TEMPLATE_ROOT, 'resources', 'canva', 'templates', slug, 'clean', role + '.svg')
+    path.join(TEMPLATE_ROOT, 'resources', 'canva', 'templates', slug, 'filled', role + '.svg')
   );
 }
 
@@ -1999,8 +2000,9 @@ app.get('/api/custom-designs', async (req, res) => {
   res.json({ designs: out });
 });
 
-// Public: serve a custom design's picture — the template's clean/<role>.svg. slot
-// is front|back|board (mapped to the fronts/backs/board.svg role). The slug is
+// Public: serve a custom design's picture — the template's FILLED <role>.svg (the
+// sample-personalized art, so the storefront shows a realistic example). slot is
+// front|back|board (mapped to the fronts/backs/board.svg role). The slug is
 // validated to the safe-slug shape and the path is confined to the templates dir,
 // so there is no traversal. Cached (the art changes only on a re-upload, which
 // changes the file). SVG only.
@@ -2009,7 +2011,7 @@ app.get('/api/template-image/:slug/:slot', (req, res) => {
   const role = CUSTOM_SLOT_ROLE[String(req.params.slot || '')];
   if (!templates.isSafeSlug(slug) || !role) return res.status(404).type('txt').send('Not found');
   const base = path.resolve(path.join(TEMPLATE_ROOT, 'resources', 'canva', 'templates'));
-  const file = path.resolve(base, slug, 'clean', role + '.svg');
+  const file = path.resolve(base, slug, 'filled', role + '.svg');
   if (file !== base && !file.startsWith(base + path.sep)) {
     return res.status(404).type('txt').send('Not found');
   }

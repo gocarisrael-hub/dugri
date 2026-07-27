@@ -8,7 +8,7 @@ import fs from 'node:fs';
 
 // Boots the real Express app to exercise the custom-designs routes:
 //   GET /api/custom-designs              — uploaded templates that become products
-//   GET /api/template-image/:slug/:slot  — serve a custom design's clean SVG
+//   GET /api/template-image/:slug/:slot  — serve a custom design filled SVG
 // A "custom design" is DERIVED from themes.json: a PUBLIC theme that is NOT one of
 // the built-in catalog designs' themes (THEME_BY_DESIGN, from the REAL designs.js).
 const require = createRequire(import.meta.url);
@@ -20,8 +20,9 @@ const SVG = (label) => `<svg xmlns="http://www.w3.org/2000/svg">${label}</svg>`;
 describe('custom designs (uploaded templates as products)', () => {
   let app, server, base, root;
 
+  // The storefront pictures come from the FILLED SVGs (the sample-personalized art).
   function writeTemplate(slug, roles) {
-    const dir = path.join(root, 'resources', 'canva', 'templates', slug, 'clean');
+    const dir = path.join(root, 'resources', 'canva', 'templates', slug, 'filled');
     fs.mkdirSync(dir, { recursive: true });
     for (const role of roles)
       fs.writeFileSync(path.join(dir, role + '.svg'), SVG(slug + '-' + role));
@@ -53,7 +54,7 @@ describe('custom designs (uploaded templates as products)', () => {
     );
     writeTemplate('my-custom', ['fronts', 'backs', 'board']);
     writeTemplate('hidden-one', ['fronts', 'backs', 'board']);
-    // shell-one: registered but NO clean SVGs on disk.
+    // shell-one: registered but NO filled SVGs on disk.
 
     process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-custom-data-'));
     process.env.TEMPLATE_ROOT = root;
@@ -129,7 +130,7 @@ describe('custom designs (uploaded templates as products)', () => {
     expect(d.img.front).toBe('/api/template-image/no-board/front');
   });
 
-  it('serves a custom design picture as the template clean SVG', async () => {
+  it('serves a custom design picture as the template filled SVG', async () => {
     const r = await fetch(base + '/api/template-image/my-custom/front');
     expect(r.status).toBe(200);
     expect(r.headers.get('content-type')).toMatch(/image\/svg\+xml/);
