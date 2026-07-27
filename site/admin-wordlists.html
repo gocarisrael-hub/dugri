@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="dugri:page" content="admin-wordlists.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>רשימות מילים — דוגרי (ניהול)</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --ink: #1a1a1a;
+        --muted: #6b6b6b;
+        --line: #ececec;
+        --section: #fdf2f5;
+        --pink: #e85a97;
+        --pink-deep: #c53f79;
+        --radius: 10px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          'Heebo',
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Arial,
+          sans-serif;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 880px;
+        margin: 0 auto;
+        padding: 0 18px 100px;
+      }
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 22px 0 0;
+      }
+      .nav a {
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid #e4ddd0;
+        background: #fff;
+        color: #5c7357;
+        border-radius: 99px;
+        padding: 6px 14px;
+      }
+      .nav a.active {
+        background: #8ca287;
+        border-color: #8ca287;
+        color: #fff;
+      }
+      header {
+        padding: 34px 0 18px;
+        border-bottom: 3px solid var(--pink);
+        margin-bottom: 18px;
+      }
+      .kicker {
+        font-size: 12px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--pink-deep);
+        margin: 0 0 6px;
+        font-weight: 700;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: clamp(24px, 5.5vw, 34px);
+        font-weight: 800;
+      }
+      header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14.5px;
+      }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 16px;
+        font-weight: 800;
+      }
+      .msg {
+        background: var(--section);
+        border: 1px solid #f3d9e4;
+        border-radius: var(--radius);
+        padding: 16px 18px;
+        margin: 18px 0;
+        font-size: 15px;
+      }
+      .msg code {
+        background: #fff;
+        border: 1px solid #f3d9e4;
+        border-radius: 5px;
+        padding: 1px 6px;
+        direction: ltr;
+        unicode-bidi: embed;
+      }
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 16px;
+        margin-bottom: 22px;
+        background: #fff;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+      .row > * {
+        flex: 1 1 auto;
+      }
+      label.fld {
+        display: block;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--muted);
+        margin: 0 0 4px;
+      }
+      input[type='text'],
+      textarea {
+        width: 100%;
+        font: inherit;
+        font-size: 15px;
+        color: var(--ink);
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      input[type='text']:focus,
+      textarea:focus {
+        outline: none;
+        border-color: var(--pink);
+      }
+      textarea {
+        min-height: 220px;
+        resize: vertical;
+        direction: rtl;
+        font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 13.5px;
+        line-height: 1.7;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        padding: 9px 16px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      button.primary {
+        background: var(--pink);
+        border-color: var(--pink);
+        color: #fff;
+      }
+      button.primary:hover {
+        background: var(--pink-deep);
+      }
+      button.ghost {
+        background: transparent;
+      }
+      button.danger {
+        color: #b12a4b;
+        border-color: #f0cdd8;
+      }
+      button.danger:hover {
+        background: #fdecf2;
+      }
+      button[disabled] {
+        opacity: 0.5;
+        cursor: default;
+      }
+      /* list */
+      .list-item {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        background: #fff;
+      }
+      .list-item.open {
+        border-color: #f3c4d8;
+        box-shadow: 0 0 0 1px #fbe4ee inset;
+      }
+      .li-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .li-name {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 800;
+        direction: ltr;
+        unicode-bidi: embed;
+        flex: 1 1 auto;
+      }
+      .badge {
+        font-size: 11.5px;
+        font-weight: 700;
+        border-radius: 99px;
+        padding: 2px 10px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .badge.shipped {
+        background: #f4f6f4;
+        border-color: #dfe6df;
+        color: #5c7357;
+      }
+      .badge.override {
+        background: #fdf2f5;
+        border-color: #f3c4d8;
+        color: var(--pink-deep);
+      }
+      .badge.custom {
+        background: #fff8ec;
+        border-color: #f0dcbb;
+        color: #96702a;
+      }
+      .li-meta {
+        color: var(--muted);
+        font-size: 12.5px;
+        margin-top: 4px;
+      }
+      .chip {
+        display: inline-block;
+        font-size: 11.5px;
+        border: 1px solid var(--line);
+        border-radius: 99px;
+        padding: 1px 9px;
+        margin-inline-end: 4px;
+        color: #5c7357;
+        background: #f8faf8;
+      }
+      .li-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+        flex-wrap: wrap;
+      }
+      .li-actions button {
+        padding: 6px 12px;
+        font-size: 13px;
+      }
+      .editor {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px dashed var(--line);
+      }
+      .add-one {
+        display: flex;
+        gap: 8px;
+        margin: 10px 0;
+        flex-wrap: wrap;
+      }
+      .add-one input {
+        flex: 1 1 200px;
+      }
+      .add-one button {
+        flex: 0 0 auto;
+      }
+      .status {
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      .status.err {
+        color: #b12a4b;
+      }
+      .status.ok {
+        color: #2c7a4b;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13.5px;
+      }
+      th,
+      td {
+        text-align: right;
+        padding: 7px 6px;
+        border-bottom: 1px solid var(--line);
+      }
+      th {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      td.file {
+        direction: ltr;
+        unicode-bidi: embed;
+        text-align: left;
+      }
+      footer {
+        margin-top: 34px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="nav" id="nav">
+        <a data-page="dashboard.html">לוח בקרה</a>
+        <a data-page="admin.html">ניהול הזמנות</a>
+        <a data-page="coupons.html">ניהול קופונים</a>
+        <a data-page="design-codes.html">קודי עיצוב</a>
+        <a data-page="admin-templates.html">תבנית חדשה</a>
+        <a data-page="admin-designs.html">עיצובים</a>
+        <a data-page="admin-wordlists.html" class="active">רשימות מילים</a>
+        <a data-page="admin-playbook.html">פלייבוק</a>
+        <a data-page="admin-texts.html">הודעות וטקסטים</a>
+        <a data-page="admin-features.html">פיצ׳רים</a>
+        <a data-page="admin-pricing.html">מחירים</a>
+        <a data-page="admin-images.html">תמונות מוצר</a>
+      </nav>
+      <header>
+        <p class="kicker">Internal · מאגרי מילים</p>
+        <h1>רשימות מילים</h1>
+        <p>
+          המילים שמשלימות חפיסה כשהלקוחה שלחה פחות מ-416. אפשר לערוך רשימה קיימת, להדביק רשימה שלמה,
+          להוסיף מילה אחת, וליצור רשימה חדשה.
+        </p>
+      </header>
+
+      <div id="noKey" class="msg" hidden>
+        חסר מפתח גישה. פתחו את הדף עם <code>?key=…</code> בכתובת.
+      </div>
+      <div id="loadErr" class="msg" hidden></div>
+
+      <div id="app" hidden>
+        <div class="panel">
+          <h2>רשימה חדשה</h2>
+          <div class="row">
+            <div style="flex: 1 1 220px">
+              <label class="fld" for="newName">שם הקובץ</label>
+              <input type="text" id="newName" placeholder="לדוגמה: retirement-350" />
+            </div>
+          </div>
+          <label class="fld" for="newWords">מילים (שורה לכל מילה, או מופרדות בפסיקים)</label>
+          <textarea id="newWords" placeholder="חתונה&#10;ריקוד&#10;נסיעה…"></textarea>
+          <div class="actions" style="margin-top: 10px">
+            <button class="primary" id="createBtn" type="button">יצירת רשימה</button>
+            <span class="status" id="createMsg" role="status" aria-live="polite"></span>
+          </div>
+        </div>
+
+        <h2>כל הרשימות</h2>
+        <div id="lists"></div>
+
+        <div class="panel" style="margin-top: 26px">
+          <h2>איזה עיצוב משתמש באיזו רשימה</h2>
+          <p class="status" id="linkNote">
+            הקישור בין עיצוב לרשימה נקבע כרגע בקובץ ההגדרות של המחולל (themes.json) ולא ניתן לשינוי
+            מכאן.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>עיצוב</th>
+                <th>רשימה</th>
+              </tr>
+            </thead>
+            <tbody id="links"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <footer>
+        נשמר בנפח הקבוע של השרת (DATA_DIR) — עריכה נשמרת גם אחרי עלייה לאוויר. גלוי רק עם מפתח
+        הניהול.
+      </footer>
+    </div>
+
+    <script>
+      const key = new URLSearchParams(location.search).get('key') || '';
+      const qs = (id) => document.getElementById(id);
+      // Carry the admin key across the linked admin pages.
+      for (const a of document.querySelectorAll('#nav a')) {
+        a.href = a.dataset.page + (key ? '?key=' + encodeURIComponent(key) : '');
+      }
+
+      let openName = null; // the wordlist whose editor is expanded
+      let data = { wordlists: [], themes: [] };
+
+      function withKey(url) {
+        return url + (url.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key);
+      }
+      async function api(method, path, body) {
+        const r = await fetch(withKey(path), {
+          method,
+          headers: body ? { 'Content-Type': 'application/json' } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const payload = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(payload.error || 'HTTP ' + r.status);
+        return payload;
+      }
+      function esc(s) {
+        return String(s == null ? '' : s).replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+        );
+      }
+      const SOURCE_LABEL = {
+        shipped: 'מגיעה עם המערכת',
+        override: 'נערכה על ידך',
+        custom: 'נוצרה על ידך',
+      };
+
+      function render() {
+        qs('lists').innerHTML =
+          data.wordlists
+            .map((w) => {
+              const open = w.name === openName;
+              const chips = (w.themes || []).map((t) => '<span class="chip">' + esc(t) + '</span>');
+              return (
+                '<div class="list-item' +
+                (open ? ' open' : '') +
+                '" data-item="' +
+                esc(w.name) +
+                '">' +
+                '<div class="li-head"><p class="li-name">' +
+                esc(w.name) +
+                '</p><span class="badge ' +
+                esc(w.source) +
+                '">' +
+                esc(SOURCE_LABEL[w.source] || w.source) +
+                '</span></div>' +
+                '<div class="li-meta">' +
+                w.count +
+                ' מילים' +
+                (chips.length ? ' · בשימוש: ' + chips.join('') : ' · לא בשימוש באף עיצוב') +
+                '</div>' +
+                '<div class="li-actions">' +
+                '<button data-open="' +
+                esc(w.name) +
+                '" type="button">' +
+                (open ? 'סגירה' : 'עריכה') +
+                '</button>' +
+                (w.source === 'override'
+                  ? '<button data-revert="' + esc(w.name) + '" type="button">ביטול העריכות</button>'
+                  : '') +
+                '<button class="danger" data-del="' +
+                esc(w.name) +
+                '" type="button">מחיקה</button>' +
+                '<span class="status" data-msg="' +
+                esc(w.name) +
+                '"></span>' +
+                '</div>' +
+                (open ? editorHtml(w) : '') +
+                '</div>'
+              );
+            })
+            .join('') || '<p class="status">אין עדיין רשימות.</p>';
+
+        qs('links').innerHTML = data.themes
+          .map(
+            (t) =>
+              '<tr><td>' +
+              esc(t.display_he) +
+              '</td><td class="file">' +
+              esc(t.wordlist) +
+              (t.implicit ? ' <span class="badge">ברירת מחדל</span>' : '') +
+              '</td></tr>'
+          )
+          .join('');
+      }
+
+      function editorHtml(w) {
+        return (
+          '<div class="editor">' +
+          '<div class="add-one">' +
+          '<input type="text" id="addWord" placeholder="הוספת מילה אחת…" />' +
+          '<button id="addBtn" type="button">הוספה</button>' +
+          '</div>' +
+          '<label class="fld" for="editWords">כל המילים (שורה לכל מילה, או מופרדות בפסיקים)</label>' +
+          '<textarea id="editWords">' +
+          esc((w.words || []).join('\n')) +
+          '</textarea>' +
+          '<div class="actions" style="margin-top: 10px">' +
+          '<button class="primary" id="saveBtn" type="button">שמירה</button>' +
+          '<button class="ghost" id="closeBtn" type="button">סגירה</button>' +
+          '<span class="status" id="editMsg" role="status" aria-live="polite"></span>' +
+          '</div>' +
+          (w.source === 'shipped'
+            ? '<p class="status" style="margin-top: 8px">' +
+              'זו רשימה שמגיעה עם המערכת. שמירה יוצרת עותק אישי שגובר עליה — המקור נשמר ואפשר לחזור אליו.' +
+              '</p>'
+            : '') +
+          '</div>'
+        );
+      }
+
+      function setMsg(el, text, cls) {
+        if (!el) return;
+        el.textContent = text;
+        el.className = 'status' + (cls ? ' ' + cls : '');
+      }
+
+      async function load() {
+        try {
+          data = await api('GET', '/api/admin/wordlists');
+          if (openName) {
+            const full = await api('GET', '/api/admin/wordlists/' + encodeURIComponent(openName));
+            const i = data.wordlists.findIndex((w) => w.name === openName);
+            if (i >= 0) data.wordlists[i] = full;
+            else openName = null;
+          }
+          render();
+        } catch (e) {
+          qs('loadErr').textContent = 'טעינה נכשלה: ' + e.message + ' (מפתח שגוי?)';
+          qs('loadErr').hidden = false;
+        }
+      }
+
+      async function createList() {
+        const name = qs('newName').value.trim();
+        const text = qs('newWords').value;
+        if (!name) return setMsg(qs('createMsg'), 'צריך שם לרשימה', 'err');
+        qs('createBtn').disabled = true;
+        try {
+          await api('POST', '/api/admin/wordlists', { name, text });
+          qs('newName').value = '';
+          qs('newWords').value = '';
+          setMsg(qs('createMsg'), 'נוצר ✓', 'ok');
+          await load();
+        } catch (e) {
+          setMsg(qs('createMsg'), e.message, 'err');
+        } finally {
+          qs('createBtn').disabled = false;
+        }
+      }
+
+      async function saveOpen() {
+        const text = qs('editWords').value;
+        qs('saveBtn').disabled = true;
+        try {
+          await api('PUT', '/api/admin/wordlists/' + encodeURIComponent(openName), { text });
+          await load();
+          setMsg(qs('editMsg'), 'נשמר ✓', 'ok');
+        } catch (e) {
+          setMsg(qs('editMsg'), e.message, 'err');
+        } finally {
+          const b = qs('saveBtn');
+          if (b) b.disabled = false;
+        }
+      }
+
+      async function appendWord() {
+        const word = qs('addWord').value.trim();
+        if (!word) return;
+        try {
+          await api('PUT', '/api/admin/wordlists/' + encodeURIComponent(openName), {
+            append: word,
+          });
+          await load();
+          setMsg(qs('editMsg'), 'נוספה ✓', 'ok');
+        } catch (e) {
+          setMsg(qs('editMsg'), e.message, 'err');
+        }
+      }
+
+      qs('lists').addEventListener('click', async (e) => {
+        const t = e.target.closest('button');
+        if (!t) return;
+        if (t.id === 'saveBtn') return saveOpen();
+        if (t.id === 'addBtn') return appendWord();
+        if (t.id === 'closeBtn') {
+          openName = null;
+          return load();
+        }
+        if (t.dataset.open) {
+          openName = openName === t.dataset.open ? null : t.dataset.open;
+          return load();
+        }
+        if (t.dataset.revert) {
+          if (!confirm('לבטל את העריכות ולחזור לרשימה המקורית?')) return;
+          try {
+            await api(
+              'POST',
+              '/api/admin/wordlists/' + encodeURIComponent(t.dataset.revert) + '/revert'
+            );
+            await load();
+          } catch (err) {
+            setMsg(
+              document.querySelector('[data-msg="' + t.dataset.revert + '"]'),
+              err.message,
+              'err'
+            );
+          }
+          return;
+        }
+        if (t.dataset.del) {
+          if (!confirm('למחוק את הרשימה ' + t.dataset.del + '?')) return;
+          try {
+            await api('DELETE', '/api/admin/wordlists/' + encodeURIComponent(t.dataset.del));
+            if (openName === t.dataset.del) openName = null;
+            await load();
+          } catch (err) {
+            setMsg(
+              document.querySelector('[data-msg="' + t.dataset.del + '"]'),
+              err.message,
+              'err'
+            );
+          }
+          return;
+        }
+      });
+
+      qs('lists').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.id === 'addWord') {
+          e.preventDefault();
+          appendWord();
+        }
+      });
+
+      qs('createBtn').addEventListener('click', createList);
+
+      if (!key) {
+        qs('noKey').hidden = false;
+      } else {
+        qs('app').hidden = false;
+        load();
+      }
+    </script>
+  </body>
+</html>

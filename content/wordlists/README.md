@@ -6,6 +6,23 @@ customer's own personal words (people, inside jokes, habits) to reach the
 100+ words an order needs. A good Dugri word is **guessable, funny, and
 culturally relatable** — not obscure.
 
+## Editing a list (owner) — and why this folder is read-only in production
+
+The owner edits these from the admin screen at **`/admin-wordlists.html?key=…`**
+(list / open / paste a whole list / add one word / create / delete).
+
+This folder is **baked into the Docker image**, and the container filesystem is
+rebuilt on every deploy — so nothing may be written here at runtime. Every admin
+save instead lands under **`DATA_DIR/wordlists/`** (the persistent Railway
+volume) and **shadows** the shipped file of the same name. Editing one of the
+files below is therefore a copy-on-write: the original stays pristine and the
+admin screen can revert to it at any time.
+
+`generator/topup.py` resolves a pool the same way — `DATA_DIR/wordlists` first,
+this folder second — so the generator and the admin screen never disagree about
+which words are live. Files here remain the read-only baseline; edit them in git
+only to change what ships by default.
+
 ## Files
 
 ### Game database — 6 balanced lists of exactly 350 words each

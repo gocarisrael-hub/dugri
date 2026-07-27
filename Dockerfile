@@ -53,6 +53,13 @@ COPY resources/canva/templates/ ./resources/canva/templates/
 # content/wordlists/generic-350.txt partway through generating a paid order.
 COPY content/ ./content/
 
+# The seed word pools generator/topup.py fills a short deck from (a real order
+# ships ~100 personal words and is topped up to 416). Without these the order-PDF
+# run has no filler to read. READ-ONLY baseline: the container filesystem is
+# ephemeral, so the owner's edits are written to DATA_DIR/wordlists instead and
+# SHADOW these at read time (see server/wordlists.js + generator/topup.py).
+COPY content/ ./content/
+
 ENV NODE_ENV=production
 # CHROME -> the flag-injecting wrapper; PYTHON is what server/index.js spawns.
 ENV CHROME=/usr/local/bin/chrome-headless \

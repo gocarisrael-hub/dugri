@@ -20,6 +20,7 @@ const settings = require('./settings');
 const whatsapp = require('./whatsapp');
 const waState = require('./wa-state');
 const reminders = require('./reminders');
+const wordlists = require('./wordlists');
 const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
 
 const app = express();
@@ -1981,6 +1982,102 @@ app.post(
     res.json({ ok: true, ...result });
   }
 );
+
+// --- Seed word pools ("wordlists") — admin CRUD --------------------------
+// The pools generator/topup.py fills a short deck from. Until now they were
+// files in the repo only a developer could change; these routes put them behind
+// the admin key so the owner can edit them on the live site. Every WRITE lands
+// in DATA_DIR/wordlists (the persistent volume) — never in content/wordlists,
+// which is baked into the ephemeral image — so editing a shipped list is a
+// copy-on-write that survives redeploys. See server/wordlists.js for the full
+// design. The page shell is site/admin-wordlists.html.
+
+// Admin: every pool (shipped + owner-created) with its word count, source and
+// the themes using it, plus the READ-ONLY theme -> pool linkage from themes.json.
+app.get('/api/admin/wordlists', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    res.json({ wordlists: wordlists.list(), themes: wordlists.themeLinks() });
+  } catch (e) {
+    res.status(500).json({ error: String((e && e.message) || e) });
+  }
+});
+
+// Admin: one pool's full contents (the editor's load).
+app.get('/api/admin/wordlists/:name', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let rec;
+  try {
+    rec = wordlists.read(req.params.name);
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (!rec) return res.status(404).json({ error: 'הרשימה לא נמצאה.' });
+  res.json(rec);
+});
+
+// Admin: create a NEW pool on the volume. Body: { name, text? | words? }.
+app.post('/api/admin/wordlists', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const body = req.body || {};
+  let result;
+  try {
+    result = wordlists.create({ name: body.name, words: body.words, text: body.text });
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (result && result.error) return res.status(result.httpStatus || 400).json(result);
+  res.status(201).json({ ok: true, ...result });
+});
+
+// Admin: save a pool. Body is EITHER { text | words } (replace the whole list —
+// the pasted blob) or { append } (add one word / a few). A shipped pool is
+// copy-on-written into DATA_DIR here; the image's original is never touched.
+app.put('/api/admin/wordlists/:name', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const body = req.body || {};
+  let result;
+  try {
+    result = wordlists.update(req.params.name, {
+      words: body.words,
+      text: body.text,
+      append: body.append,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (result && result.error) return res.status(result.httpStatus || 400).json(result);
+  res.json({ ok: true, ...result });
+});
+
+// Admin: undo the edits to a SHIPPED pool — drop the volume override so the
+// version that ships with the system is live again.
+app.post('/api/admin/wordlists/:name/revert', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let result;
+  try {
+    result = wordlists.revert(req.params.name);
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (result && result.error) return res.status(result.httpStatus || 400).json(result);
+  res.json({ ok: true, ...result });
+});
+
+// Admin: delete a pool. Refused (409) when a theme still points at it (the
+// message names them) and refused for a SHIPPED pool, which lives in the image
+// and would simply reappear on the next deploy.
+app.delete('/api/admin/wordlists/:name', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let result;
+  try {
+    result = wordlists.remove(req.params.name);
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (result && result.error) return res.status(result.httpStatus || 400).json(result);
+  res.json({ ok: true, ...result });
+});
 
 // Inline content editor. The owner edits any tagged text/photo on the live site
 // in an admin-key-gated edit mode; the overrides persist under DATA_DIR (see
