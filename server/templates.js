@@ -12,6 +12,7 @@
 // back are null and calibrated:false, so it still needs a hand-tuned style pass
 // (mirroring how the shipped themes were calibrated) before it renders.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
@@ -245,6 +246,80 @@ function runRecipeDiff({ root, slug, pythonBin = 'python3', timeoutMs = 120000, 
   };
 }
 
+// Best-effort CALIBRATION auto-detection: run generator/calibrate.py, which
+// measures the title's slot on the board and card back and its paints, and
+// returns them as the same blob the admin calibration form edits. Mirrors
+// runRecipeDiff — same spawn shape, same best-effort contract: on any failure the
+// template is still registered, just with nothing pre-filled.
+//
+// Detection PROPOSES, a human DISPOSES: the measured values are stored so the
+// form opens pre-filled, but `calibrated` is deliberately left false, so nothing
+// can be ordered until the owner has looked at the preview and saved. The blob
+// also carries per-field `confidence` and `notes`, which the form already renders
+// as "check this one" flags — several values (arch, offset, pinned sizes) are not
+// measurable at all and are left for the owner by design.
+function runCalibrate({ root, slug, pythonBin = 'python3', timeoutMs = 180000, runner }) {
+  const script = path.join(root, 'generator', 'calibrate.py');
+  const out = path.join(os.tmpdir(), 'dugri-calibrate-' + Date.now() + '.json');
+  let result;
+  try {
+    const run = runner || spawnSync;
+    result = run(pythonBin, [script, slug, '--out', out], {
+      cwd: root,
+      timeout: timeoutMs,
+      encoding: 'utf8',
+    });
+  } catch (e) {
+    return { ok: false, detail: String((e && e.message) || e) };
+  }
+  if (!result || result.status !== 0 || !fs.existsSync(out)) {
+    return {
+      ok: false,
+      detail: String((result && (result.stderr || result.stdout)) || 'calibrate failed').slice(
+        0,
+        800
+      ),
+    };
+  }
+  try {
+    const blob = JSON.parse(fs.readFileSync(out, 'utf8'));
+    return { ok: true, blob };
+  } catch (e) {
+    return { ok: false, detail: String((e && e.message) || e) };
+  } finally {
+    try {
+      fs.unlinkSync(out);
+    } catch {
+      /* best-effort cleanup */
+    }
+  }
+}
+
+// Merge auto-detected calibration into a theme entry. Only the keys the detector
+// actually measured are written — it deliberately OMITS what it cannot measure
+// rather than guessing, so an absent key must stay absent instead of being
+// written as null and reading like a deliberate "no board title".
+// `calibrated` is never touched here.
+function applyCalibration(themesPath, key, blob) {
+  if (!blob || typeof blob !== 'object') return null;
+  const themes = loadThemes(themesPath);
+  const entry = themes[key];
+  if (!entry) return null;
+  const ts = validateTitleStyle(blob.title_style);
+  if (!ts.error) entry.title_style = ts.value;
+  for (const slot of ['board', 'back']) {
+    if (!(slot in blob)) continue;
+    const v = validateSlot(blob[slot], slot);
+    if (!v.error) entry[slot] = v.value;
+  }
+  if (typeof blob.word_size === 'number' && blob.word_size > 0) entry.word_size = blob.word_size;
+  // Advisory, for the form's "check this one" flags — not render inputs.
+  if (blob.confidence && typeof blob.confidence === 'object') entry.confidence = blob.confidence;
+  if (Array.isArray(blob.notes)) entry.notes = blob.notes.filter((s) => typeof s === 'string');
+  writeThemesFile(themesPath, themes);
+  return entry;
+}
+
 // Best-effort: downsample raster images embedded in an uploaded SVG so an
 // image-heavy Canva export (each photo baked in as a full-res base64 blob)
 // doesn't blow past the upload limit and stays light on disk / at render time.
@@ -420,15 +495,35 @@ function onboardTemplate(opts) {
     });
   }
 
+  // Auto-calibration, AFTER the recipe: the card-back slot is measured relative
+  // to the card cells the recipe defines, so calibrating first would have nothing
+  // to measure against. Only attempted when the recipe succeeded, and never fatal
+  // — a template that cannot be measured is still registered, just with an empty
+  // form for the owner to fill by hand exactly as before.
+  let calibration = { ok: false, skipped: true };
+  if (recipe.ok && opts.runCalibrate !== false) {
+    calibration = runCalibrate({
+      root,
+      slug: norm.slug,
+      pythonBin: opts.pythonBin,
+      timeoutMs: opts.calibrateTimeoutMs,
+      runner: opts.calibrateRunner,
+    });
+    if (calibration.ok) applyCalibration(themesPathFor(root), norm.slug, calibration.blob);
+  }
+
   const visLabel = entry.visibility.toUpperCase();
-  const note = recipe.ok
-    ? `Template registered as ${visLabel} and UNCALIBRATED. A title-style calibration pass ` +
-      '(fill title_style/board/back in themes.json and set calibrated:true) is still ' +
-      'needed before it can render.'
-    : `Template registered as ${visLabel} and UNCALIBRATED, but recipe auto-detection did not ` +
+  const note = !recipe.ok
+    ? `Template registered as ${visLabel} and UNCALIBRATED, but recipe auto-detection did not ` +
       'run/succeed here — run `python3 generator/recipe_diff.py filled/fronts.svg clean/fronts.svg ' +
       norm.slug +
-      '` on a machine with Chrome + Pillow, then calibrate the title style.';
+      '` on a machine with Chrome + Pillow, then calibrate the title style.'
+    : calibration.ok
+      ? `Template registered as ${visLabel} and UNCALIBRATED, with the title slot and colours ` +
+        'PRE-FILLED from the artwork. Open the calibration panel, check the flagged fields, ' +
+        'preview, and save to mark it calibrated.'
+      : `Template registered as ${visLabel} and UNCALIBRATED. Auto-calibration did not run/succeed ` +
+        'here, so the calibration panel opens empty — fill the title style by hand, preview, and save.';
 
   return {
     key: norm.slug,
@@ -437,8 +532,11 @@ function onboardTemplate(opts) {
     visibility: entry.visibility,
     recipe: recipe.ok ? 'generated' : recipe.skipped ? 'skipped' : 'failed',
     recipe_detail: recipe.ok ? null : recipe.detail || null,
+    calibration: calibration.ok ? 'measured' : calibration.skipped ? 'skipped' : 'failed',
+    calibration_detail: calibration.ok ? null : calibration.detail || null,
     note,
-    theme: entry,
+    // Re-read: applyCalibration wrote the measured values after `entry` was built.
+    theme: loadThemes(themesPathFor(root))[norm.slug] || entry,
   };
 }
 
@@ -1186,6 +1284,8 @@ module.exports = {
   loadThemesCached,
   writeTemplateFiles,
   runRecipeDiff,
+  runCalibrate,
+  applyCalibration,
   shrinkSvgImages,
   normalizeMetadata,
   normalizeOnboarding,
