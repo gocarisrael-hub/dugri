@@ -147,7 +147,7 @@ function parseWords(input) {
 function readFileWords(abs) {
   // utf-8-sig on the Python side: strip a leading BOM here too so a
   // Windows-exported list doesn't smuggle one into the first word.
-  const text = fs.readFileSync(abs, 'utf8').replace(/^﻿/, '');
+  const text = fs.readFileSync(abs, 'utf8').replace(/^\uFEFF/, '');
   return text.split(/\r?\n/).filter((w) => w.trim() !== '');
 }
 
