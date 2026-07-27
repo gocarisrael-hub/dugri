@@ -397,21 +397,10 @@ app.get('/api/admin/collections', (req, res) => {
   res.json({ collections: db.listAllCollections() });
 });
 
-// Admin: mark an order as paid. Fires the same payment receipts as a real card
-// payment — the owner marks paid when money actually arrived by another route
-// (transfer, cash), and the customer should get their receipt either way. Only a
-// genuine unpaid->paid transition notifies: db.markPaid returns true even for an
-// already-paid order, so the state is read BEFORE the write and re-clicking the
-// button can never re-send. No charged amount is known here, so the receipts fall
-// back to the order's own total.
-app.post('/api/admin/collections/:id/paid', (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  const before = db.getCollection(req.params.id);
-  const wasPaid = !!(before && before.order && before.order.paid);
-  if (!db.markPaid(req.params.id)) return res.status(404).json({ error: 'not found' });
-  if (!wasPaid) onOrderPaid(req.params.id, paymentBaseUrl(), null);
-  res.json({ ok: true });
-});
+// NOTE: there is deliberately NO admin "mark this order paid" route. An order
+// becomes paid only through a real money event — a verified PeleCard callback or
+// a 100%-coupon order — so `paid` always means the customer actually paid, and a
+// payment receipt can never be sent for a payment that did not happen.
 
 // Admin: create a bespoke "custom" (599₪) order on a collection and return the
 // owner pay link, so the admin can hand-set an order to version:'custom' and send
@@ -1157,21 +1146,23 @@ async function sendPaidNotifications(collectionId, base, amountCharged) {
   // the buyer's copy.
   const adminLink =
     base && ADMIN_KEY ? base + '/admin.html?key=' + encodeURIComponent(ADMIN_KEY) : null;
-  // A non-finite amount (e.g. a manual admin mark-paid, which knows no charge)
-  // is omitted so the emails fall back to the order's own total.
+  // Both callers pass a real charge, but a non-finite value is tolerated: it's
+  // omitted so the emails fall back to the order's own total rather than
+  // rendering a broken amount.
   const charged = Number.isFinite(amountCharged) ? { amountCharged } : {};
   notify.sendPaymentReceipt(enriched, base, { adminLink, ...charged }).catch(() => {});
   const productImageUrl = await resolveProductImageUrl(c, base);
   notify.sendBuyerReceipt(enriched, base, { productImageUrl, ...charged }).catch(() => {});
 }
 
-// Everything that must happen when a payment actually COMPLETES. Called from all
-// three unpaid->paid transitions — the PeleCard callback, the free (100%-coupon)
-// path, and the manual admin mark-paid — each of which guards the transition, so
-// this never fires twice for one order. Order creation has its own notifications
-// (onOrderCreated); this is purely the receipt pair. Gated on notify.isConfigured()
-// so the word-count/image work is skipped when email is dormant, and
-// fire-and-forget: a failed send must never fail the payment.
+// Everything that must happen when a payment actually COMPLETES. Called from BOTH
+// unpaid->paid transitions — the verified PeleCard callback and the free
+// (100%-coupon) path — each of which guards the transition, so this never fires
+// twice for one order. There is no third caller by design: nothing marks an order
+// paid by hand, so a receipt always follows real money. Order creation has its own
+// notifications (onOrderCreated); this is purely the receipt pair. Gated on
+// notify.isConfigured() so the word-count/image work is skipped when email is
+// dormant, and fire-and-forget: a failed send must never fail the payment.
 function onOrderPaid(collectionId, base, amountCharged) {
   if (!notify.isConfigured()) return;
   sendPaidNotifications(collectionId, base, amountCharged).catch(() => {});

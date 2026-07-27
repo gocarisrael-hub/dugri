@@ -109,9 +109,9 @@ const REGISTRY = {
       },
     },
     // --- payment receipts: fired at the real unpaid->paid transition ONLY -----
-    // (card callback, a free 100%-coupon order, or a manual admin mark-paid).
-    // Distinct from order_paid / buyer_confirmation above, which fire when the
-    // order is CREATED — before/without a completed payment.
+    // (a verified card callback, or a free 100%-coupon order — nothing marks an
+    // order paid by hand). Distinct from order_paid / buyer_confirmation above,
+    // which fire when the order is CREATED — before/without a completed payment.
     payment_received: {
       kind: 'email',
       tokens: ['honoree', 'orderId', 'link', 'adminLink'],

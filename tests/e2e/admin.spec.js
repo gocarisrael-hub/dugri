@@ -7,8 +7,14 @@ const KEY = 'dugri-admin';
 const uniq = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 
 // Seed a collection straight through the API (faster + more controllable than
-// the wizard). Optionally attach words, an order, and mark it paid.
-async function seed(request, { name, email, phone, words, version, paid, extra_fields }) {
+// the wizard). Optionally attach words and an order.
+//
+// It cannot seed a PAID order: there is no admin "mark as paid" route, because an
+// order may go paid only on a real money event (a verified card callback, or a
+// 100%-coupon order — and the E2E server runs without card credentials on
+// purpose). A test that needs a paid row injects the flag into the admin list
+// response instead — see markRowPaid.
+async function seed(request, { name, email, phone, words, version, extra_fields }) {
   const create = await request.post('/api/collections', {
     data: { honoree_name: name, email, phone, extra_fields },
   });
@@ -18,11 +24,23 @@ async function seed(request, { name, email, phone, words, version, paid, extra_f
   }
   if (version) {
     await request.post(`/api/collections/${id}/order`, { data: { owner_token, version } });
-    if (paid) {
-      await request.post(`/api/admin/collections/${id}/paid?key=${KEY}`);
-    }
   }
   return { id, owner_token };
+}
+
+// Report ONE seeded collection as paid to the admin page, by patching the admin
+// list response on its way to the browser. The server state is untouched — this
+// is for tests about how the page RENDERS a paid order (stat bar, filter tabs),
+// not about how an order becomes paid.
+async function markRowPaid(page, honoreeName) {
+  await page.route('**/api/admin/collections*', async (route) => {
+    const resp = await route.fetch();
+    const body = await resp.json();
+    for (const c of body.collections || []) {
+      if (c.honoree_name === honoreeName && c.order) c.order.paid = true;
+    }
+    return route.fulfill({ json: body });
+  });
 }
 
 test('admin lists created collections (with key) and rejects wrong key', async ({
@@ -52,9 +70,9 @@ test('stat bar + filter tabs narrow the rows', async ({ page, request }) => {
     phone: '0501112222',
     words: ['א', 'ב', 'ג'],
     version: 'pickup', // pickup is the enabled-by-default checkout version
-    paid: true,
   });
   await seed(request, { name: leadName, email: 'lead@example.com', phone: '0541234567' });
+  await markRowPaid(page, paidName);
 
   await page.goto(`/admin.html?key=${KEY}`);
 

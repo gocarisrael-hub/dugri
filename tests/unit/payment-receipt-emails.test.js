@@ -145,7 +145,7 @@ describe('payment receipt builders', () => {
   });
 });
 
-describe('a manual admin mark-paid fires the receipts exactly once', () => {
+describe('a real paid transition fires the receipts exactly once', () => {
   const ADMIN_KEY = 'test-admin-key';
   const realFetch = globalThis.fetch;
   const sent = [];
@@ -156,13 +156,18 @@ describe('a manual admin mark-paid fires the receipts exactly once', () => {
 
   beforeAll(async () => {
     process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-receipt-route-'));
+    // pay/init refuses (503) unless card payment is configured, even on the free
+    // coupon path — these creds are never used, no card call is made.
+    process.env.PELECARD_TERMINAL = '0962210';
+    process.env.PELECARD_USER = 'peletest';
+    process.env.PELECARD_PASSWORD = 'secret';
     process.env.PUBLIC_BASE_URL = 'https://test.dugri.example';
     process.env.ADMIN_KEY = ADMIN_KEY;
     process.env.RESEND_API_KEY = 're_test_key';
     process.env.NOTIFY_TO = 'owner@dugri.example';
     process.env.NOTIFY_FROM = 'Dugri <orders@dugri.example>';
 
-    for (const f of ['db.js', 'notify.js', 'settings.js', 'index.js']) {
+    for (const f of ['db.js', 'notify.js', 'settings.js', 'pelecard.js', 'index.js']) {
       delete require.cache[require.resolve(path.join(serverDir, f))];
     }
     db = require(path.join(serverDir, 'db.js'));
@@ -219,24 +224,49 @@ describe('a manual admin mark-paid fires the receipts exactly once', () => {
     await new Promise((r) => setTimeout(r, 150));
   }
 
-  it('sends one owner + one buyer receipt, and never re-sends on a second click', async () => {
-    const c = db.createCollection('סימון ידני', { email: 'manual@example.com' });
-    db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+  it('sends one owner + one buyer receipt, and never re-sends on a repeat call', async () => {
+    await post(`/api/admin/coupons?key=${ADMIN_KEY}`, { code: 'RECEIPT1', discount_pct: 100 });
+    const c = db.createCollection('קופון מלא', { email: 'paid@example.com' });
     sent.length = 0;
 
-    const r = await post(`/api/admin/collections/${c.id}/paid?key=${ADMIN_KEY}`);
+    // A 100%-coupon order is a REAL paid transition — no card, but real money
+    // logic: the order is created and marked paid in this one call.
+    const r = await post(`/api/collections/${c.id}/pay/init`, {
+      owner_token: c.owner_token,
+      version: 'pickup', // enabled by default
+      coupon: 'RECEIPT1',
+    });
     expect(r.status).toBe(200);
+    expect(r.body).toEqual({ free: true, paid: true, total: 0 });
     await settle();
 
     const first = receipts();
     expect(first.length).toBe(2);
     expect(first.find((m) => m.subject.includes('התקבל תשלום')).to).toBe('owner@dugri.example');
-    expect(first.find((m) => m.subject.includes('התשלום התקבל')).to).toBe('manual@example.com');
+    expect(first.find((m) => m.subject.includes('התשלום התקבל')).to).toBe('paid@example.com');
 
-    // Re-clicking "mark paid" on an already-paid order must stay silent.
-    const again = await post(`/api/admin/collections/${c.id}/paid?key=${ADMIN_KEY}`);
-    expect(again.status).toBe(200);
+    // Re-running pay/init on an already-paid order must stay silent.
+    const again = await post(`/api/collections/${c.id}/pay/init`, {
+      owner_token: c.owner_token,
+      version: 'pickup',
+      coupon: 'RECEIPT1',
+    });
+    expect(again.status).toBe(409); // already paid
     await new Promise((r2) => setTimeout(r2, 200));
     expect(receipts().length).toBe(2);
+  });
+
+  it('has no admin route that can mark an order paid by hand', async () => {
+    const c = db.createCollection('בלי סימון ידני', { email: 'nomanual@example.com' });
+    db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    sent.length = 0;
+
+    // The route is GONE — a receipt must never follow a payment that didn't
+    // happen, so there is nothing to flip `paid` outside a real money event.
+    const r = await post(`/api/admin/collections/${c.id}/paid?key=${ADMIN_KEY}`);
+    expect(r.status).toBe(404);
+    await new Promise((r2) => setTimeout(r2, 200));
+    expect(db.getCollection(c.id).order.paid).toBe(false);
+    expect(receipts().length).toBe(0);
   });
 });
