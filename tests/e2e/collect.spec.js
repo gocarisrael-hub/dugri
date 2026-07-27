@@ -1351,3 +1351,117 @@ test('contributor (no owner key) sees words but cannot add after close', async (
   await expect(friend.locator('#addCard')).toBeHidden();
   await expect(friend.locator('#banner')).toBeVisible();
 });
+
+// The delivery address inputs used to run edge-to-edge across the pay card:
+// #addressForm's own `margin` rule beat the panel's generic inline inset, so the
+// boxes were wider than the option cards sitting right above them and pressed
+// against the card border. They are now a titled sub-panel, inset on both sides.
+test('delivery address is an inset sub-panel, not boxes pressed to the card edge', async ({
+  page,
+}) => {
+  await stubPricing(page);
+  await createCollection(page, 'Shira');
+
+  await page.locator('#payPanel summary').click();
+  await page.check('input[name="payVersion"][value="delivery"]');
+  await expect(page.locator('#addressForm')).toBeVisible();
+
+  const box = async (sel) => {
+    const b = await page.locator(sel).boundingBox();
+    if (!b) throw new Error('no box for ' + sel);
+    return b;
+  };
+  const panel = await box('#payPanel');
+  const option = await page
+    .locator('label.pay-opt')
+    .filter({ has: page.locator('input[value="delivery"]') })
+    .boundingBox();
+  const form = await box('#addressForm');
+  const street = await box('#addrStreet');
+
+  // The address block is inset from the pay card on BOTH sides...
+  expect(form.x - panel.x).toBeGreaterThan(8);
+  expect(panel.x + panel.width - (form.x + form.width)).toBeGreaterThan(8);
+  // ...and lines up with the option cards above it rather than overflowing them.
+  expect(form.width).toBeLessThanOrEqual(option.width + 1);
+  // The inputs sit inside that block with padding around them, so no field
+  // touches a border.
+  expect(street.x - form.x).toBeGreaterThan(6);
+  expect(form.x + form.width - (street.x + street.width)).toBeGreaterThan(6);
+
+  // A heading names the block so the fields read as one group.
+  await expect(page.locator('#addressForm .addr-head')).toHaveText('כתובת למשלוח');
+});
+
+// The pay button is the primary CTA of the whole page — guard its weight so a
+// later tweak can't quietly flatten it back into an ordinary-looking button.
+test('the pay button reads as the primary CTA (large, heavy, full width)', async ({ page }) => {
+  await enableCardButton(page);
+  await stubPricing(page);
+  await createCollection(page, 'Shira');
+  await page.locator('#payPanel summary').click();
+
+  const btn = page.locator('#cardPayBtn');
+  await expect(btn).toBeVisible();
+  const css = await btn.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { size: parseFloat(s.fontSize), weight: s.fontWeight, color: s.color };
+  });
+  expect(css.size).toBeGreaterThanOrEqual(20);
+  expect(Number(css.weight)).toBeGreaterThanOrEqual(800);
+  expect(css.color).toBe('rgb(255, 255, 255)');
+
+  const b = await btn.boundingBox();
+  const panel = await page.locator('#payPanel').boundingBox();
+  expect(b.height).toBeGreaterThanOrEqual(58);
+  // Spans the panel's content width — nothing on the page is more prominent.
+  expect(b.width).toBeGreaterThan(panel.width - 40);
+});
+
+// After a card charge the modal simply closed and the page refreshed in place —
+// buyers couldn't tell whether the payment had gone through. A successful charge
+// now lands on a dedicated confirmation page, with a way back to adding words.
+test('a successful card payment lands on the confirmation page and back to the words', async ({
+  page,
+}) => {
+  await enableCardButton(page);
+  await stubPricing(page);
+  // Point the "payment window" at our own pay-done.html (what PeleCard redirects
+  // its iframe to on success) so the real success handshake runs.
+  await page.route('**/api/collections/*/pay/init', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ url: '/pay-done.html' }),
+    })
+  );
+
+  await createCollection(page, 'Shira');
+  const collectUrl = new URL(page.url());
+  await page.locator('#payPanel summary').click();
+  await page.click('#cardPayBtn');
+
+  // pay-done.html (in the iframe) reports success → we leave for the page that
+  // says so in plain words.
+  await page.waitForURL(/pay-success\.html/);
+  await expect(page.locator('h1')).toHaveText('התשלום התקבל');
+  await expect(page.locator('.mark svg')).toBeVisible();
+  await expect(page.locator('body')).toContainText('אישור בדרך למייל');
+
+  // The button goes back to THIS collection, owner key intact, ready to keep
+  // adding words.
+  const back = page.locator('#backBtn');
+  await expect(back).toBeVisible();
+  await back.click();
+  await page.waitForURL(/collect\.html/);
+  expect(new URL(page.url()).search).toBe(collectUrl.search);
+  await expect(page.locator('#wordInput')).toBeVisible();
+});
+
+// A crafted ?back= must not turn the confirmation page into an open redirect.
+test('pay-success ignores an off-site ?back= and keeps its default link', async ({ page }) => {
+  await page.goto('/pay-success.html?back=' + encodeURIComponent('https://evil.example/x'));
+  await expect(page.locator('#backBtn')).toHaveAttribute('href', '/');
+  await page.goto('/pay-success.html?back=' + encodeURIComponent('//evil.example/x'));
+  await expect(page.locator('#backBtn')).toHaveAttribute('href', '/');
+});

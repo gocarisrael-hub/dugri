@@ -762,15 +762,34 @@
         font-weight: 700;
         font-size: 0.85em;
       }
-      /* Delivery address — a two-column grid so short, related fields pair up
-         (city + postal, apartment + floor) instead of stacking one box under
-         another. The street line spans the full width. Works in RTL as-is:
-         the grid follows the writing direction, so column 1 is the right one. */
+      /* Delivery address — a titled sub-panel of the pay card, not bare inputs.
+         The inline margin is restated here on purpose: the generic
+         `.pay-collapse > :not(.pay-summary)` inset loses to this ID rule, and
+         without it the inputs ran edge-to-edge past the option cards above. */
       #addressForm {
-        margin: 8px 0 12px;
+        display: block;
+        margin: 16px 16px 4px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        background: #fafafa;
+      }
+      #addressForm .addr-head {
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 14px;
+        letter-spacing: 0.05em;
+        margin: 0 0 12px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      /* A two-column grid so short, related fields pair up (city + postal,
+         apartment + floor) instead of stacking one box under another. Works in
+         RTL as-is: the grid follows the writing direction, so column 1 is the
+         right one. */
+      #addressForm .addr-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 12px 10px;
+        gap: 14px 10px;
       }
       #addressForm .addr-field {
         display: flex;
@@ -778,7 +797,18 @@
         min-width: 0;
       }
       #addressForm .addr-field .fld {
-        margin: 0 0 5px;
+        font-size: 13px;
+        margin: 0 0 6px;
+      }
+      /* "not required" reads as a quiet aside next to the label, not as part of
+         the field name — so the eye skips it and lands on the real fields. */
+      #addressForm .opt-tag {
+        font-weight: 600;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      #addressForm input[type='text'] {
+        background: #fff;
       }
       /* Street + house number is the longest field — give it the whole row. */
       #addressForm .addr-street {
@@ -887,18 +917,20 @@
          primary CTA, so make it large, bold and high-contrast, with a soft
          "breathing" pulse that draws the eye to it without nagging. */
       .card-pay-btn {
+        position: relative;
+        overflow: hidden;
         width: 100%;
         /* breathing room so the button doesn't crowd the copy above it */
-        margin-top: 16px;
-        padding: 17px 18px;
+        margin-top: 18px;
+        padding: 21px 18px;
         border: none;
         border-radius: var(--radius-pill);
-        background: var(--sage);
+        background: linear-gradient(135deg, #262626, var(--sage-deep));
         color: #fff;
         font: inherit;
         font-weight: 900;
-        font-size: 18px;
-        letter-spacing: 0.2px;
+        font-size: 20px;
+        letter-spacing: 0.4px;
         cursor: pointer;
         box-shadow:
           0 8px 20px rgba(0, 0, 0, 0.16),
@@ -908,6 +940,30 @@
           transform 0.12s var(--ease),
           box-shadow 0.2s var(--ease);
         animation: payPulse 2.6s var(--ease) infinite;
+      }
+      /* A slow light sweep across the face. Pure paint (no layout, no transform
+         on the button itself), so the tap target stays exactly where it is. */
+      .card-pay-btn::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 45%;
+        background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.16), transparent);
+        animation: paySheen 3.6s var(--ease) infinite;
+        pointer-events: none;
+      }
+      @keyframes paySheen {
+        0% {
+          inset-inline-start: -50%;
+        }
+        55%,
+        100% {
+          inset-inline-start: 115%;
+        }
+      }
+      .card-pay-btn:disabled::after {
+        display: none;
       }
       /* A soft shadow "glow" that blooms and recedes to pull focus. It animates
          ONLY box-shadow — never transform/position — so the button's box stays
@@ -946,6 +1002,9 @@
       @media (prefers-reduced-motion: reduce) {
         .card-pay-btn {
           animation: none;
+        }
+        .card-pay-btn::after {
+          display: none;
         }
       }
       .pay-modal {
@@ -1286,38 +1345,49 @@
           <button type="button" class="ghost hidden" data-role="retry">רענון מחירים</button>
         </div>
 
+        <!-- The address block is a titled sub-panel, not loose inputs: it groups
+             the fields, keeps them off the panel's edges, and makes it obvious
+             they belong to the delivery option selected above. -->
         <div id="addressForm" class="hidden">
-          <div class="addr-field addr-street">
-            <label class="fld" for="addrStreet">רחוב ומספר</label>
-            <input
-              type="text"
-              id="addrStreet"
-              autocomplete="street-address"
-              placeholder="הרצל 12"
-            />
-          </div>
-          <div class="addr-field addr-city">
-            <label class="fld" for="addrCity">עיר</label>
-            <input type="text" id="addrCity" autocomplete="address-level2" placeholder="תל אביב" />
-          </div>
-          <div class="addr-field addr-postal">
-            <label class="fld" for="addrPostal">מיקוד</label>
-            <input
-              type="text"
-              id="addrPostal"
-              autocomplete="postal-code"
-              inputmode="numeric"
-              maxlength="7"
-              placeholder="6100000"
-            />
-          </div>
-          <div class="addr-field addr-apt">
-            <label class="fld" for="addrApt">דירה (לא חובה)</label>
-            <input type="text" id="addrApt" />
-          </div>
-          <div class="addr-field addr-floor">
-            <label class="fld" for="addrFloor">קומה (לא חובה)</label>
-            <input type="text" id="addrFloor" inputmode="numeric" />
+          <div class="addr-head" data-edit="collect-addr-head">כתובת למשלוח</div>
+          <div class="addr-grid">
+            <div class="addr-field addr-street">
+              <label class="fld" for="addrStreet">רחוב ומספר</label>
+              <input
+                type="text"
+                id="addrStreet"
+                autocomplete="street-address"
+                placeholder="הרצל 12"
+              />
+            </div>
+            <div class="addr-field addr-city">
+              <label class="fld" for="addrCity">עיר</label>
+              <input
+                type="text"
+                id="addrCity"
+                autocomplete="address-level2"
+                placeholder="תל אביב"
+              />
+            </div>
+            <div class="addr-field addr-postal">
+              <label class="fld" for="addrPostal">מיקוד</label>
+              <input
+                type="text"
+                id="addrPostal"
+                autocomplete="postal-code"
+                inputmode="numeric"
+                maxlength="7"
+                placeholder="6100000"
+              />
+            </div>
+            <div class="addr-field addr-apt">
+              <label class="fld" for="addrApt">דירה <span class="opt-tag">לא חובה</span></label>
+              <input type="text" id="addrApt" />
+            </div>
+            <div class="addr-field addr-floor">
+              <label class="fld" for="addrFloor">קומה <span class="opt-tag">לא חובה</span></label>
+              <input type="text" id="addrFloor" inputmode="numeric" />
+            </div>
           </div>
         </div>
 
@@ -2553,6 +2623,20 @@
           });
         }
 
+        // The card modal closing on its own read as "did that work?" — nothing
+        // on screen said the charge went through. Send the buyer to a real
+        // confirmation page instead, carrying this collection's URL so its
+        // button brings them straight back to adding words.
+        function goPaySuccess() {
+          const back = location.pathname + location.search;
+          try {
+            sessionStorage.setItem('dugri:payReturn', back);
+          } catch (e) {
+            /* private mode — the ?back= below still carries it */
+          }
+          location.href = 'pay-success.html?back=' + encodeURIComponent(back);
+        }
+
         cardBtn.addEventListener('click', async () => {
           // Never start a charge when the checkout isn't payable (prices failed to
           // load, or no version is offered) — the button is disabled in those
@@ -2599,6 +2683,14 @@
               pollPaid();
               return;
             }
+            // Remember where to come back to BEFORE handing over to PeleCard:
+            // if it ever redirects the whole tab instead of the iframe, the
+            // confirmation page can still offer the way back.
+            try {
+              sessionStorage.setItem('dugri:payReturn', location.pathname + location.search);
+            } catch (e) {
+              /* private mode — the in-iframe path passes ?back= explicitly */
+            }
             frame.src = res.url;
             modal.classList.remove('hidden');
           } catch (err) {
@@ -2633,7 +2725,7 @@
           closeModal();
           if (d.ok) {
             track('card_pay_done');
-            pollPaid();
+            goPaySuccess();
           }
         });
       }

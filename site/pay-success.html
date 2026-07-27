@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="dugri:page" content="pay-success.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>דוגרי · התשלום התקבל</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="robots" content="noindex" />
+    <link
+      rel="stylesheet"
+      href="/assets/fonts/fonts.css"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <style>
+      body {
+        margin: 0;
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--ink);
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 32px 20px calc(40px + env(safe-area-inset-bottom, 0px));
+      }
+      .done {
+        width: 100%;
+        max-width: 480px;
+        text-align: center;
+      }
+      /* The confirmation mark: a solid black disc with a white check that draws
+         itself in. It's the first thing on screen and the whole point of the
+         page — "the payment went through" has to be readable in one glance. */
+      .mark {
+        width: 108px;
+        height: 108px;
+        margin: 0 auto 26px;
+        border-radius: 50%;
+        background: var(--ink);
+        display: grid;
+        place-items: center;
+        animation: markIn 0.45s var(--ease) both;
+      }
+      .mark svg {
+        width: 56px;
+        height: 56px;
+      }
+      .mark path {
+        fill: none;
+        stroke: #fff;
+        stroke-width: 7;
+        stroke-linecap: square;
+        stroke-linejoin: miter;
+        stroke-dasharray: 60;
+        stroke-dashoffset: 60;
+        animation: checkDraw 0.5s var(--ease) 0.22s forwards;
+      }
+      @keyframes markIn {
+        from {
+          opacity: 0;
+          transform: scale(0.7);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      @keyframes checkDraw {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+      /* No motion for users who ask for none — the check is simply there. */
+      @media (prefers-reduced-motion: reduce) {
+        .mark,
+        .mark path {
+          animation: none;
+        }
+        .mark path {
+          stroke-dashoffset: 0;
+        }
+      }
+      h1 {
+        font-family: var(--display);
+        font-weight: var(--h-weight);
+        letter-spacing: var(--h-spacing);
+        font-size: clamp(28px, 7vw, 38px);
+        margin: 0 0 14px;
+      }
+      .lead {
+        font-size: 17px;
+        line-height: 1.65;
+        color: var(--muted);
+        margin: 0 auto 26px;
+        max-width: 30em;
+      }
+      /* The two facts the buyer wants confirmed, as a bordered receipt block so
+         they read as a record of what just happened, not as body copy. */
+      .facts {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        text-align: start;
+        margin: 0 0 28px;
+      }
+      .facts p {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        margin: 0;
+        padding: 14px 16px;
+        font-size: 15px;
+        line-height: 1.55;
+      }
+      .facts p + p {
+        border-top: 1px solid var(--line);
+      }
+      .facts b {
+        font-weight: 800;
+      }
+      .facts i {
+        font-style: normal;
+        flex: none;
+      }
+      .back {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 18px 20px;
+        border: none;
+        border-radius: var(--radius-pill);
+        background: var(--ink);
+        color: #fff;
+        font: inherit;
+        font-weight: 900;
+        font-size: 18px;
+        letter-spacing: 0.2px;
+        text-decoration: none;
+        cursor: pointer;
+        box-shadow: var(--shadow-md);
+        transition:
+          background 0.2s var(--ease),
+          transform 0.12s var(--ease);
+      }
+      .back:hover {
+        background: #000;
+        transform: translateY(-2px);
+      }
+      .back:active {
+        transform: translateY(0);
+      }
+      .note {
+        color: var(--muted);
+        font-size: 13.5px;
+        margin: 16px 0 0;
+      }
+    </style>
+    <script src="js/editor.js" defer></script>
+  </head>
+  <body>
+    <main class="done">
+      <div class="mark" aria-hidden="true">
+        <svg viewBox="0 0 64 64" role="presentation">
+          <path d="M15 33 L27 45 L49 21" />
+        </svg>
+      </div>
+      <h1 data-edit="paysuccess-title">התשלום התקבל</h1>
+      <p class="lead" data-edit="paysuccess-lead">
+        זהו, ההזמנה שלכם נקלטה אצלנו. אפשר להירגע — הכול תפוס.
+      </p>
+      <div class="facts">
+        <p>
+          <i aria-hidden="true">✉️</i>
+          <span data-edit="paysuccess-fact-mail"
+            ><b>אישור בדרך למייל.</b> אם הוא לא הגיע תוך כמה דקות, שווה להציץ גם בספאם.</span
+          >
+        </p>
+        <p>
+          <i aria-hidden="true">✍️</i>
+          <span data-edit="paysuccess-fact-words"
+            ><b>אפשר להמשיך להוסיף מילים.</b> האיסוף נשאר פתוח עד שתלחצו ‘מספיק! סיימנו’ — ורק אז
+            נתחיל להפיק.</span
+          >
+        </p>
+      </div>
+      <a class="back" id="backBtn" href="/" data-edit="paysuccess-back">חזרה להוספת מילים</a>
+      <p class="note" data-edit="paysuccess-note">שאלה? כתבו לנו בוואטסאפ ונחזור אליכם.</p>
+    </main>
+    <script>
+      // Where to send the buyer back to: the collect page they paid from.
+      // Sources, in order — an explicit ?back= (set by collect.html when it
+      // redirects here), then the URL stashed in sessionStorage before the
+      // payment window opened (covers a top-level PeleCard redirect, where no
+      // query survives). Only same-origin ABSOLUTE PATHS are accepted, so a
+      // crafted ?back= can't turn this page into an open redirect.
+      (function () {
+        function safePath(v) {
+          return typeof v === 'string' && /^\/[^/\\]/.test(v) ? v : null;
+        }
+        var back = safePath(new URLSearchParams(location.search).get('back'));
+        if (!back) {
+          try {
+            var stored = sessionStorage.getItem('dugri:payReturn');
+            back = safePath(stored);
+          } catch (e) {
+            /* private mode / storage disabled — fall through to the default */
+          }
+        }
+        if (back) document.getElementById('backBtn').href = back;
+      })();
+    </script>
+  </body>
+</html>

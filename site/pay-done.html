@@ -50,6 +50,13 @@
         color: var(--muted);
         font-size: 14px;
       }
+      .back {
+        display: none;
+        margin-top: 18px;
+        color: var(--ink);
+        font-weight: 800;
+        font-size: 15px;
+      }
     </style>
     <script src="js/editor.js" defer></script>
   </head>
@@ -57,11 +64,15 @@
     <div>
       <div class="msg" id="msg">מעבדים את התשלום…</div>
       <div class="sub" id="sub">רגע אחד</div>
+      <a class="back" id="back" href="/">חזרה להוספת מילים</a>
     </div>
     <script>
-      // This page is loaded inside the PeleCard payment iframe after the
-      // transaction completes (PeleCard's GoodURL/ErrorURL). Tell the parent
-      // collect.html page how it went so it can close the modal and refresh.
+      // This page is loaded by PeleCard when the transaction completes (its
+      // GoodURL/ErrorURL). Normally that happens inside our payment iframe, so
+      // we just tell the parent collect.html how it went and it takes over. If
+      // it ever lands at the TOP level instead, there is no parent to hand off
+      // to — so drive the buyer onward from here rather than dead-ending on a
+      // bare status line.
       (function () {
         var params = new URLSearchParams(location.search);
         var ok = !params.has('error');
@@ -69,12 +80,30 @@
         msgEl.className = 'msg ' + (ok ? 'ok' : 'err');
         msgEl.textContent = ok ? 'התשלום התקבל ✓' : 'התשלום לא הושלם';
         document.getElementById('sub').textContent = ok ? 'מעבירים אתכם בחזרה…' : 'אפשר לנסות שוב';
+        var inFrame = false;
         try {
-          if (window.parent && window.parent !== window) {
-            window.parent.postMessage({ type: 'dugri-pay', ok: ok }, location.origin);
-          }
+          inFrame = !!window.parent && window.parent !== window;
+          if (inFrame) window.parent.postMessage({ type: 'dugri-pay', ok: ok }, location.origin);
         } catch (e) {
           /* no-op */
+        }
+        if (inFrame) return;
+        if (ok) {
+          location.replace('pay-success.html');
+          return;
+        }
+        // Failed, top level: offer the way back to the collection they paid
+        // from. Only a same-origin absolute path is accepted.
+        try {
+          var back = sessionStorage.getItem('dugri:payReturn');
+          if (back && /^\/[^/\\]/.test(back)) {
+            var a = document.getElementById('back');
+            a.href = back;
+            a.textContent = 'חזרה לאיסוף המילים';
+            a.style.display = 'inline-block';
+          }
+        } catch (e) {
+          /* storage disabled — the status line still explains what happened */
         }
       })();
     </script>
