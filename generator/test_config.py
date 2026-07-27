@@ -767,6 +767,232 @@ def test_production_themes_are_unaffected_by_the_override_hook():
         config.ensure_calibrated(cfg)
 
 
+# ---- Owner template store overlay ------------------------------------------
+# Templates the owner uploads (and calibrations they save) are written at runtime
+# and only survive a deploy if they land on the DATA_DIR volume. These guard the
+# reader half: the merged view, who wins a clash, and — critically — that with
+# DATA_DIR UNSET everything resolves to the image exactly as it did before.
+
+
+def _with_store(fn, shipped=None):
+    """Run ``fn(store_root)`` against a temp DATA_DIR + a temp shipped themes.json.
+
+    Both halves are temporary so a test can assert on the merge without depending
+    on (or touching) the real catalog. DATA_DIR is restored afterwards, since it
+    is read from the environment on every lookup.
+    """
+    import json
+    import shutil
+    import tempfile
+
+    data_dir = tempfile.mkdtemp(prefix="dugri-test-store-")
+    store = os.path.join(data_dir, "templates")
+    os.makedirs(store, exist_ok=True)
+    saved_env = os.environ.get("DATA_DIR")
+    saved_themes = config.THEMES_JSON
+    shipped_file = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False,
+                                               encoding="utf-8")
+    json.dump(shipped if shipped is not None else {}, shipped_file)
+    shipped_file.close()
+    os.environ["DATA_DIR"] = data_dir
+    config.THEMES_JSON = shipped_file.name
+    try:
+        fn(store)
+    finally:
+        if saved_env is None:
+            os.environ.pop("DATA_DIR", None)
+        else:
+            os.environ["DATA_DIR"] = saved_env
+        config.THEMES_JSON = saved_themes
+        os.unlink(shipped_file.name)
+        shutil.rmtree(data_dir, ignore_errors=True)
+
+
+def _write_owner_themes(store, entries):
+    import json
+
+    with open(os.path.join(store, "themes.json"), "w", encoding="utf-8") as f:
+        json.dump(entries, f)
+
+
+def test_merged_themes_hold_shipped_plus_owner():
+    shipped = {"shipped-one": dict(_UNCAL, slug="shipped-one",
+                                   dir="resources/canva/templates/shipped-one")}
+
+    def check(store):
+        _write_owner_themes(store, {"owner-one": dict(_UNCAL, slug="owner-one")})
+        themes = config.load_themes()
+        assert set(themes) == {"shipped-one", "owner-one"}, themes
+        assert config.theme("owner-one")["slug"] == "owner-one"
+        assert config.theme("shipped-one")["slug"] == "shipped-one"
+
+    _with_store(check, shipped)
+
+
+def test_owner_entry_overrides_a_same_key_shipped_one():
+    # A whole-entry override, not a deep merge: the owner's saved calibration
+    # replaces the shipped entry outright rather than leaving half of each.
+    shipped = {"dup": dict(_UNCAL, slug="dup", display_he="ישן", calibrated=False,
+                           title_style=None, word_font="OLD.ttf")}
+
+    def check(store):
+        _write_owner_themes(store, {"dup": dict(_UNCAL, slug="dup",
+                                                display_he="חדש", calibrated=True,
+                                                title_style={"fill": "#fff"})})
+        cfg = config.theme("dup")
+        assert cfg["display_he"] == "חדש"
+        assert cfg["calibrated"] is True
+        assert cfg["title_style"] == {"fill": "#fff"}
+        # not a deep merge — the owner entry is taken whole
+        assert cfg["word_font"] == _UNCAL["word_font"]
+
+    _with_store(check, shipped)
+
+
+def test_theme_dir_prefers_the_volume_and_falls_back_to_the_image():
+    # An owner template's assets resolve to DATA_DIR/templates/<key>/; a shipped
+    # one still resolves through its own `dir` inside the image.
+    shipped = {"trip comeback": config.load_themes()["trip comeback"]}
+
+    def check(store):
+        _write_owner_themes(store, {"owner-one": dict(_UNCAL, slug="owner-one")})
+        os.makedirs(os.path.join(store, "owner-one", "clean"), exist_ok=True)
+        assert config.theme_dir("owner-one") == os.path.join(store, "owner-one")
+        shipped_dir = config.theme_dir("trip comeback")
+        assert shipped_dir == os.path.join(config.REPO,
+                                           "resources/canva/templates/trip comeback")
+        assert store not in shipped_dir
+        # assets under the volume dir are what clean_path/font_path now point at
+        assert config.clean_path("owner-one", "fronts").startswith(
+            os.path.join(store, "owner-one"))
+        assert config.font_path("owner-one", "X.ttf").startswith(
+            os.path.join(store, "owner-one"))
+
+    _with_store(check, shipped)
+
+
+def test_theme_dir_resolves_by_key_not_the_stored_dir_field():
+    # The server writes an owner entry whose `dir` names an IN-IMAGE path — the
+    # very location that does not survive a deploy. It must be ignored.
+    def check(store):
+        _write_owner_themes(store, {"owner-one": dict(
+            _UNCAL, slug="owner-one", dir="resources/canva/templates/anniversary")})
+        os.makedirs(os.path.join(store, "owner-one"), exist_ok=True)
+        assert config.theme_dir("owner-one") == os.path.join(store, "owner-one")
+        assert "anniversary" not in config.theme_dir("owner-one")
+
+    _with_store(check)
+
+
+def test_owner_entry_without_assets_fails_with_a_clear_error():
+    # Registered on the volume but its files are gone (the classic "uploaded into
+    # the container image, lost on deploy"). That must say so, not die on a bare
+    # FileNotFoundError deep inside a render.
+    def check(store):
+        _write_owner_themes(store, {"ghost": dict(_UNCAL, slug="ghost")})
+        try:
+            config.theme_dir("ghost")
+        except RuntimeError as e:
+            msg = str(e)
+            assert "ghost" in msg and "Re-upload" in msg, msg
+            assert store in msg, "the error must name where the assets were expected"
+        else:
+            raise AssertionError("a template with no assets anywhere must not "
+                                 "silently resolve to a path")
+
+    _with_store(check)
+
+
+def test_owner_entry_may_override_a_shipped_theme_and_keep_the_image_assets():
+    # Calibrating a SHIPPED design writes only the ENTRY to the volume; its art
+    # stays in the image. That combination must still resolve to the image dir.
+    shipped = {"trip comeback": config.load_themes()["trip comeback"]}
+
+    def check(store):
+        _write_owner_themes(store, {"trip comeback": dict(
+            config.load_themes()["trip comeback"], display_he="מכויל מחדש")})
+        assert config.theme("trip comeback")["display_he"] == "מכויל מחדש"
+        assert config.theme_dir("trip comeback") == os.path.join(
+            config.REPO, "resources/canva/templates/trip comeback")
+
+    _with_store(check, shipped)
+
+
+def test_recipe_resolves_owner_first_then_image():
+    import json
+
+    def check(store):
+        os.makedirs(os.path.join(store, "recipes"), exist_ok=True)
+        owned = os.path.join(store, "recipes", "owner-one.json")
+        with open(owned, "w", encoding="utf-8") as f:
+            json.dump({"viewBox": [0, 0, 10, 10], "cards": []}, f)
+        assert config.recipe_path("owner-one") == owned
+        assert config.load_recipe("owner-one")["viewBox"] == [0, 0, 10, 10]
+        # a recipe that exists only in the image still resolves there
+        assert config.recipe_path("trip") == os.path.join(config.HERE, "recipes",
+                                                          "trip.json")
+        assert os.path.exists(config.recipe_path("trip"))
+
+    _with_store(check)
+
+
+def test_missing_recipe_raises_an_actionable_error():
+    def check(store):
+        try:
+            config.load_recipe("nope-not-a-recipe")
+        except RuntimeError as e:
+            assert "nope-not-a-recipe" in str(e) and "recipe" in str(e)
+        else:
+            raise AssertionError("a missing recipe must raise a clear error")
+
+    _with_store(check)
+
+
+def test_corrupt_owner_store_raises_rather_than_silently_dropping_entries():
+    # Ignoring a corrupt store would silently render the SHIPPED design for any
+    # key the owner had overridden — the wrong artwork on a customer's PDF.
+    def check(store):
+        with open(os.path.join(store, "themes.json"), "w", encoding="utf-8") as f:
+            f.write("{not json")
+        try:
+            config.load_themes()
+        except RuntimeError as e:
+            assert "unreadable" in str(e) and store in str(e)
+        else:
+            raise AssertionError("a corrupt owner store must not be ignored")
+
+    _with_store(check)
+
+
+def test_display_path_keeps_repo_paths_relative_and_volume_paths_whole():
+    # Owner files live outside the repo, where a relpath is a meaningless ladder
+    # of "../.." — those are shown in full; in-repo paths read as they always did.
+    inside = os.path.join(config.REPO, "resources", "canva", "templates", "japanese")
+    assert config.display_path(inside) == "resources/canva/templates/japanese"
+    outside = "/data/templates/owner-one/clean/fronts.svg"
+    assert config.display_path(outside) == outside
+
+
+def test_without_data_dir_everything_resolves_to_the_image():
+    # The local-dev / test / CLI case: no store at all, so every lookup is exactly
+    # what it was before the overlay existed.
+    saved = os.environ.pop("DATA_DIR", None)
+    try:
+        assert config.owner_store() is None
+        assert config.owner_themes_path() is None
+        assert config.owner_themes() == {}
+        import json
+        with open(config.THEMES_JSON, encoding="utf-8") as f:
+            assert config.load_themes() == json.load(f)
+        for name, cfg in config.load_themes().items():
+            assert config.theme_dir(name) == os.path.join(config.REPO, cfg["dir"])
+            assert config.recipe_path(cfg["recipe"]) == os.path.join(
+                config.HERE, "recipes", cfg["recipe"] + ".json")
+    finally:
+        if saved is not None:
+            os.environ["DATA_DIR"] = saved
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

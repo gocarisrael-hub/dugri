@@ -202,7 +202,7 @@ def detect_recipe(theme_key, workdir):
     clean = os.path.join(tdir, "clean", "fronts.svg")
     for path in (filled, clean):
         if not os.path.exists(path):
-            return None, (f"missing {os.path.relpath(path, config.REPO)} — "
+            return None, (f"missing {config.display_path(path)} — "
                           f"detection subtracts the clean sheet from the filled "
                           f"one, so without both there is nothing to measure")
     try:
@@ -278,7 +278,7 @@ def empty_recipe_reason(cell_count, cards):
 def stored_recipe(theme_key):
     """``(recipe_dict_or_None, absolute_path)`` for the theme's stored recipe."""
     cfg = config.theme(theme_key)
-    path = os.path.join(HERE, "recipes", cfg["recipe"] + ".json")
+    path = config.recipe_path(cfg["recipe"])
     if not os.path.exists(path):
         return None, path
     try:
@@ -476,7 +476,7 @@ def redetect(theme_key, workdir=None, tol=GEOM_TOLERANCE, color_tol=COLOR_TOLERA
             "theme": theme_key,
             "tolerance": {"geometry": tol, "color": color_tol},
             "recipe": {
-                "path": os.path.relpath(recipe_path, config.REPO),
+                "path": config.display_path(recipe_path),
                 "stored": stored is not None,
                 "error": recipe_error,
                 "note": recipe_note,

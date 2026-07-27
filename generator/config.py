@@ -21,10 +21,90 @@ WORD_FONTS_DIR = os.path.join(HERE, "word-fonts")
 WORD_FONTS_JSON = os.path.join(WORD_FONTS_DIR, "options.json")
 
 
+# ---- Owner template store (persistent-volume overlay) ----------------------
+# WHY: templates the owner uploads — and the calibrations they save — are written
+# at RUNTIME. In production only the volume mounted at ``DATA_DIR`` survives a
+# deploy; anything written next to the code lives inside the container image and
+# is gone the moment a new container starts. So the catalog is split in two and
+# every read below merges them:
+#
+#   <image>/generator/themes.json           shipped entries, read-only
+#   <image>/resources/canva/templates/<k>/  shipped assets, read-only
+#   <image>/generator/recipes/<r>.json      shipped recipes, read-only
+#
+#   DATA_DIR/templates/themes.json          owner entries, same shape as a
+#                                           generator/themes.json entry
+#   DATA_DIR/templates/<key>/               owner assets: clean/ filled/ fonts/
+#   DATA_DIR/templates/recipes/<r>.json     owner recipes
+#
+# The generator is a PURE READER of that store: the server owns every write, so a
+# render can never corrupt the catalog it is rendering from.
+#
+# ``DATA_DIR`` unset (local dev, tests, CLI use) means "no owner store" — every
+# lookup short-circuits to the image paths and behaves exactly as it did before
+# the overlay existed. The env var is read on EACH call rather than captured at
+# import, so a test (or an embedding process) can point the store elsewhere
+# without re-importing the module, mirroring how ``THEMES_JSON`` is monkeypatched.
+OWNER_STORE_SUBDIR = "templates"
+
+
+def owner_store():
+    """Absolute path of the owner template store, or None when DATA_DIR is unset."""
+    data_dir = os.environ.get("DATA_DIR")
+    if not data_dir:
+        return None
+    return os.path.join(data_dir, OWNER_STORE_SUBDIR)
+
+
+def owner_themes_path():
+    """Absolute path of the owner themes.json, or None when there is no store."""
+    root = owner_store()
+    return os.path.join(root, "themes.json") if root else None
+
+
+def owner_themes():
+    """The owner's theme entries — ``{}`` when there is no store or no file yet.
+
+    A MISSING file is the normal state (nothing uploaded yet), so it reads as an
+    empty mapping. A CORRUPT one RAISES rather than being ignored: swallowing it
+    would drop the owner's templates and — worse — silently render the SHIPPED
+    design for any key the owner had overridden, i.e. the wrong artwork on a
+    paying customer's PDF. A loud error naming the file is the recoverable one.
+    """
+    path = owner_themes_path()
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(
+            f"the owner template store is unreadable: {path} ({exc}). It holds "
+            "every template uploaded after launch; fix or restore that file "
+            "before rendering."
+        ) from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(
+            f"the owner template store {path} must be a JSON object keyed by "
+            f"template name, got {type(data).__name__}."
+        )
+    return data
+
+
 def load_themes():
-    """Return the full themes mapping (key = template folder name)."""
+    """Return the full themes mapping (key = template folder name).
+
+    Shipped entries first, the owner's on top: a key present in BOTH resolves to
+    the OWNER's entry — a whole-entry override, not a deep merge, so a saved
+    calibration replaces the shipped one outright instead of leaving half of each
+    behind. With no owner store this is the shipped mapping, unchanged.
+    """
     with open(THEMES_JSON, encoding="utf-8") as f:
-        return json.load(f)
+        shipped = json.load(f)
+    owner = owner_themes()
+    if not owner:
+        return shipped
+    return {**shipped, **owner}
 
 
 # ---- Preview-only calibration overrides -----------------------------------
@@ -90,8 +170,43 @@ def theme(name):
 
 
 def theme_dir(name):
-    """Absolute path to the theme's template directory."""
-    return os.path.join(REPO, theme(name)["dir"])
+    """Absolute path to the theme's template directory.
+
+    An OWNER template is resolved BY KEY (the themes.json key is also the folder
+    name), never through the entry's ``dir`` field: the server writes that field
+    as an in-image ``resources/canva/templates/<key>`` path, which is exactly the
+    location that does not survive a deploy. So the volume copy wins whenever it
+    is there, and the image copy is the fallback.
+
+    A SHIPPED entry keeps using its own ``dir`` verbatim, so no shipped render
+    moves a byte. With no owner store this is the old one-liner.
+
+    The name is resolved through ``theme()`` FIRST, exactly as before: only a
+    REGISTERED key ever reaches the filesystem join, so an unknown one still
+    raises the familiar KeyError instead of being turned into a path.
+    """
+    cfg = theme(name)  # raises the usual KeyError for an unknown theme
+    root = owner_store()
+    if root:
+        owned = os.path.join(root, name)
+        if os.path.isdir(owned):
+            return owned
+    if root and name in owner_themes():
+        # Registered by the owner but with no assets on the volume. It may still
+        # be an override of a SHIPPED design (entry on the volume, art in the
+        # image) — that is legitimate, so try the image dir by key first.
+        shipped = os.path.join(REPO, "resources", "canva", "templates", name)
+        if os.path.isdir(shipped):
+            return shipped
+        raise RuntimeError(
+            f"template {name!r} is registered in the owner store "
+            f"({owner_themes_path()}) but its files are missing: expected "
+            f"{os.path.join(root, name)} on the persistent volume, and there is "
+            f"no shipped copy at {shipped}. Re-upload the template — its assets "
+            "were most likely written inside the container image and lost on a "
+            "deploy."
+        )
+    return os.path.join(REPO, cfg["dir"])
 
 
 def font_path(theme_name, filename):
@@ -137,6 +252,54 @@ def resolve_word_font(theme_name, filename=None):
     if os.path.exists(shared):
         return shared
     return default_path
+
+
+def display_path(path):
+    """A path as it should be SHOWN to a human: repo-relative, or absolute.
+
+    Reports used to say ``resources/canva/templates/x/clean/fronts.svg`` by taking
+    a relpath against the repo. An owner template's files live on the volume,
+    OUTSIDE the repo, where that produces a ladder of ``../..`` that names nothing
+    the reader recognises. So relativize only what is actually inside the repo and
+    show everything else in full. Purely cosmetic — no resolution depends on it.
+    """
+    rel = os.path.relpath(path, REPO)
+    return path if rel.startswith(os.pardir) else rel
+
+
+def recipe_path(recipe_name):
+    """Absolute path to a recipe JSON, owner store first, image second.
+
+    The same overlay as the assets: the recipe auto-detected for an owner-uploaded
+    template is written to ``DATA_DIR/templates/recipes/<name>.json``, while the
+    shipped recipes stay in ``generator/recipes/``. Not on the volume (or no store
+    configured) -> the image path, i.e. exactly today's behaviour. Returns the path
+    whether or not it exists, so existence checks stay with the caller.
+    """
+    root = owner_store()
+    if root:
+        owned = os.path.join(root, "recipes", f"{recipe_name}.json")
+        if os.path.exists(owned):
+            return owned
+    return os.path.join(HERE, "recipes", f"{recipe_name}.json")
+
+
+def load_recipe(recipe_name):
+    """Parse a theme's recipe through the overlay, with a clear error if absent.
+
+    A missing recipe used to surface as a bare FileNotFoundError from inside a
+    render; it means the template was never (or no longer is) fully onboarded, so
+    say that and name the path that was looked for.
+    """
+    path = recipe_path(recipe_name)
+    if not os.path.exists(path):
+        raise RuntimeError(
+            f"recipe {recipe_name!r} is missing — looked for {path}. A template's "
+            "recipe (its card/word slot geometry) is detected when the template is "
+            "uploaded; re-run detection for it before rendering."
+        )
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
 
 def clean_path(theme_name, which):

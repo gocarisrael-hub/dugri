@@ -6,7 +6,6 @@ at the recipe slots. No masking needed (background is already text-free).
 """
 import base64
 import functools
-import json
 import os
 import re
 import subprocess
@@ -385,7 +384,7 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
 def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    recipe = json.load(open(os.path.join(HERE, "recipes", f"{cfg['recipe']}.json")))
+    recipe = config.load_recipe(cfg["recipe"])
     # word_font optionally overrides the theme's card font (a filename); it
     # resolves against the theme's own fonts/ dir first, then the shared
     # word-fonts/ pool. No override -> the theme's configured word_font.
