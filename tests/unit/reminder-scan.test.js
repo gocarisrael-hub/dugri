@@ -198,3 +198,54 @@ describe('runReminderListScan — email delivery', () => {
     expect(emailSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+// Regression for a real outage: the bot's WhatsApp number was banned, every group
+// went dark, and the shipped default reminder (`morning`) is WhatsApp-ONLY. Because
+// the scan records on attempt BEFORE delivering, each such reminder was marked sent,
+// delivered nothing, and never retried — customers silently stopped being chased
+// while the admin state claimed they had been reminded.
+describe('runReminderListScan — email fallback when WhatsApp cannot deliver', () => {
+  it('falls back to email for a WhatsApp-only reminder when the collection has no group', async () => {
+    const c = seed('אורי', { email: 'ori@example.com' }); // no group
+    settings.set('reminders', 'list', [R]); // channels: { email: false, whatsapp: true }
+    const sent = await app.runReminderListScan(NOW);
+    expect(sent).toBe(1);
+    expect(sendCalls).toHaveLength(0); // nothing could go over WhatsApp
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+    expect(emailSpy.mock.calls[0][0].id).toBe(c.id);
+    expect(emailSpy.mock.calls[0][1]).toBe(R.text); // same channel-neutral text
+  });
+
+  it('does NOT fall back when the send was attempted but returned not-ok', async () => {
+    // A restricted account can DELIVER and still answer not-ok, so an email here
+    // would be a second copy of the same reminder.
+    seed('נועם', { groupId: 'gfail@g.us', email: 'noam@example.com' });
+    whatsapp.sendMessage.mockImplementation(async () => ({ ok: false, error: 'whapi http 429' }));
+    settings.set('reminders', 'list', [R]);
+    expect(await app.runReminderListScan(NOW)).toBe(0);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not claim delivery for a phone-only buyer with no email', async () => {
+    seed('רותם'); // no group, no email
+    settings.set('reminders', 'list', [R]);
+    expect(await app.runReminderListScan(NOW)).toBe(0);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT double-send: a successful WhatsApp delivery skips the fallback', async () => {
+    seed('יעל', { groupId: 'gok@g.us', email: 'yael@example.com' });
+    settings.set('reminders', 'list', [R]);
+    expect(await app.runReminderListScan(NOW)).toBe(1);
+    expect(sendCalls).toHaveLength(1);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+
+  it('an email-channel reminder still sends by email exactly once', async () => {
+    seed('טל', { groupId: 'gboth@g.us', email: 'tal@example.com' });
+    settings.set('reminders', 'list', [{ ...R, channels: { email: true, whatsapp: true } }]);
+    expect(await app.runReminderListScan(NOW)).toBe(1);
+    expect(sendCalls).toHaveLength(1);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+  });
+});
