@@ -179,7 +179,7 @@ function wordFontOptions() {
 // card back into a private temp dir; we read them back as base64 and always
 // remove the dir. Enforces a timeout and never leaks the child process. board
 // and back are present only when the theme has that artwork (card is required).
-function runPreview({ theme, name, wordFont, extraFields, chasers, customTitle }) {
+function runPreview({ theme, name, wordFont, extraFields, chasers, customTitle, calibration }) {
   return new Promise((resolve, reject) => {
     let outDir;
     try {
@@ -195,6 +195,20 @@ function runPreview({ theme, name, wordFont, extraFields, chasers, customTitle }
       }
     };
     const args = [PREVIEW_SCRIPT, theme, name, outDir];
+    // Owner calibration preview: render an UNCALIBRATED template from unsaved
+    // knobs. The blob is written to a temp file inside outDir and passed as
+    // --calibration; preview.py merges it into the theme cfg in-memory (no
+    // themes.json write) and skips its calibrated:false guard.
+    if (calibration && typeof calibration === 'object') {
+      try {
+        const calFile = path.join(outDir, 'calibration.json');
+        fs.writeFileSync(calFile, JSON.stringify(calibration), 'utf8');
+        args.push('--calibration', calFile);
+      } catch (e) {
+        cleanup();
+        return reject(e);
+      }
+    }
     if (wordFont) args.push('--word-font', wordFont);
     for (const [k, v] of Object.entries(extraFields || {})) {
       args.push('--field', `${k}=${v}`);
@@ -879,6 +893,19 @@ app.post('/api/preview', async (req, res) => {
   // Custom title (F7): the buyer's optional overriding title. Sanitized with the
   // SAME rule stored orders use, so the live preview is WYSIWYG for production.
   const customTitle = db.sanitizeCustomTitle(b.title);
+
+  // Owner CALIBRATION preview: when the admin form sends unsaved look-knobs
+  // (`calibration`), render the theme with those overrides so the owner sees the
+  // exact result BEFORE saving/flipping calibrated:true. This path is ADMIN-ONLY
+  // (it can render an otherwise-unrenderable uncalibrated template with arbitrary
+  // knobs) and is validated with the SAME rules the save route enforces.
+  let calibration = null;
+  if (b.calibration != null) {
+    if (!requireAdmin(req, res)) return;
+    const v = templates.validateCalibration(b.calibration);
+    if (v.error) return res.status(400).json({ error: v.error });
+    calibration = v.value;
+  }
   // Surfaced to the customer immediately (doesn't block rendering the preview).
   const warning = validate.checkNameLanguage(name, themeConfig);
   const themeWordFont = themeConfig.word_font || null;
@@ -893,6 +920,9 @@ app.post('/api/preview', async (req, res) => {
     extraFields,
     chasers,
     customTitle,
+    // Distinct knob sets must not collide, and a calibration preview must never
+    // be served a plain (uncalibrated) cache entry or vice-versa.
+    calibration,
   });
   const cached = previewCache.get(cacheKey);
   if (cached) {
@@ -923,7 +953,15 @@ app.post('/api/preview', async (req, res) => {
     // together (one Python process, no second Chrome). runPreview rejects on
     // failure (→ handled below); board/back are simply absent when the theme has
     // no such artwork, so a missing back never fails the request.
-    const imgs = await runPreview({ theme, name, wordFont, extraFields, chasers, customTitle });
+    const imgs = await runPreview({
+      theme,
+      name,
+      wordFont,
+      extraFields,
+      chasers,
+      customTitle,
+      calibration,
+    });
     previewCache.set(cacheKey, imgs);
     res.json({
       ...imgs,

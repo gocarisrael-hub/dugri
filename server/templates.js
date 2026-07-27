@@ -651,6 +651,19 @@ function computeTemplateStatus(root, key, entry) {
     name_form: (entry && entry.name_form) || null,
     extra_fields: Array.isArray(entry && entry.extra_fields) ? entry.extra_fields : [],
     calibrated: !!(entry && entry.calibrated),
+    // Current calibration look-pass values, so the admin form pre-fills on
+    // re-edit (null on a fresh, not-yet-calibrated template).
+    title_style: (entry && entry.title_style) || null,
+    board: (entry && entry.board) || null,
+    back: (entry && entry.back) || null,
+    word_size: entry && entry.word_size != null ? entry.word_size : null,
+    // Auto-calibration hints (populated when the upload measured the artwork):
+    // `confidence` maps a dotted field path → 'high'|'low'|'none', `notes` is a
+    // list of strings. Pass-through only (never validated/persisted by the save
+    // path) so the form can flag low-confidence pre-fills as "check this one".
+    confidence:
+      entry && entry.confidence && typeof entry.confidence === 'object' ? entry.confidence : null,
+    notes: Array.isArray(entry && entry.notes) ? entry.notes : null,
     assets,
     chasersBoard: !!(chasers && chasers.present),
     complete: missingRequired.length === 0,
@@ -701,11 +714,142 @@ function normalizeExtraFields(input) {
     .filter(Boolean);
 }
 
+// ---- Calibration knobs ----------------------------------------------------
+// The "look" pass that turns an uncalibrated (calibrated:false, title_style/board/
+// back=null) template into a renderable one. The owner supplies every value via
+// the admin form; these validators mirror the generator's schema EXACTLY so a
+// saved blob can never crash the renderer:
+//   title_style  render_page.title_block + build.py board/back (ts.get(...))
+//   board / back build.py — {frac:{x0,y0,x1,y1}, fill, outline} or null
+//   word_size    render_page — theme-level positive px, or null (auto-fit)
+
+// A hex color (#rgb / #rrggbb) — the only color form the shipped themes use; kept
+// strict so a bad value can never reach the generator's SVG paint attributes.
+const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+function isHexColor(v) {
+  return typeof v === 'string' && HEX_COLOR_RE.test(v.trim());
+}
+function isFiniteNum(v) {
+  return typeof v === 'number' && Number.isFinite(v);
+}
+// A fraction in [0,1] (a position/size expressed relative to the card/board box).
+function isFrac(v) {
+  return isFiniteNum(v) && v >= 0 && v <= 1;
+}
+const TITLE_ALIGNS = ['center', 'left', 'right'];
+
+// Validate a title_style blob. Required: fill, outline (hex), outline_w + arch
+// (0..1 fractions), shadow (bool). Optional: size / board_size / back_size
+// (positive px, absent = auto-fit), align (center/left/right), offset ([dx,dy]
+// fractions -1..1), italic (bool). Returns a FRESH, key-whitelisted object so no
+// stray field reaches themes.json. { value } | { error }.
+function validateTitleStyle(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { error: 'title_style must be an object' };
+  }
+  const out = {};
+  if (!isHexColor(input.fill)) return { error: 'title_style.fill must be a hex color' };
+  if (!isHexColor(input.outline)) return { error: 'title_style.outline must be a hex color' };
+  out.fill = input.fill.trim();
+  out.outline = input.outline.trim();
+  if (!isFrac(input.outline_w)) return { error: 'title_style.outline_w must be a fraction 0..1' };
+  out.outline_w = input.outline_w;
+  if (!isFrac(input.arch)) return { error: 'title_style.arch must be a fraction 0..1' };
+  out.arch = input.arch;
+  if (typeof input.shadow !== 'boolean') return { error: 'title_style.shadow must be a boolean' };
+  out.shadow = input.shadow;
+  for (const k of ['size', 'board_size', 'back_size']) {
+    if (input[k] == null) continue;
+    if (!isFiniteNum(input[k]) || input[k] <= 0 || input[k] > 400) {
+      return { error: 'title_style.' + k + ' must be a positive size' };
+    }
+    out[k] = input[k];
+  }
+  if (input.align != null) {
+    if (!TITLE_ALIGNS.includes(input.align)) {
+      return { error: 'title_style.align must be one of: ' + TITLE_ALIGNS.join(', ') };
+    }
+    out.align = input.align;
+  }
+  if (input.offset != null) {
+    const o = input.offset;
+    if (
+      !Array.isArray(o) ||
+      o.length !== 2 ||
+      !isFiniteNum(o[0]) ||
+      !isFiniteNum(o[1]) ||
+      Math.abs(o[0]) > 1 ||
+      Math.abs(o[1]) > 1
+    ) {
+      return { error: 'title_style.offset must be [dx,dy] fractions -1..1' };
+    }
+    out.offset = [o[0], o[1]];
+  }
+  if (input.italic != null) {
+    if (typeof input.italic !== 'boolean') return { error: 'title_style.italic must be a boolean' };
+    out.italic = input.italic;
+  }
+  return { value: out };
+}
+
+// Validate a board/back name slot: { frac:{x0,y0,x1,y1} in [0,1] with x0<x1,
+// y0<y1, fill, outline hex }. `null` is a valid value (no honoree name drawn on
+// that surface). { value } (may be null) | { error }.
+function validateSlot(input, label) {
+  if (input == null) return { value: null };
+  if (typeof input !== 'object' || Array.isArray(input)) {
+    return { error: label + ' must be an object or null' };
+  }
+  const f = input.frac;
+  if (!f || typeof f !== 'object' || Array.isArray(f))
+    return { error: label + '.frac is required' };
+  for (const k of ['x0', 'y0', 'x1', 'y1']) {
+    if (!isFrac(f[k])) return { error: label + '.frac.' + k + ' must be a fraction 0..1' };
+  }
+  if (!(f.x0 < f.x1)) return { error: label + '.frac x0 must be < x1' };
+  if (!(f.y0 < f.y1)) return { error: label + '.frac y0 must be < y1' };
+  if (!isHexColor(input.fill)) return { error: label + '.fill must be a hex color' };
+  if (!isHexColor(input.outline)) return { error: label + '.outline must be a hex color' };
+  return {
+    value: {
+      frac: { x0: f.x0, y0: f.y0, x1: f.x1, y1: f.y1 },
+      fill: input.fill.trim(),
+      outline: input.outline.trim(),
+    },
+  };
+}
+
+// Validate a full calibration blob { title_style, board, back, word_size } for
+// the LIVE PREVIEW path (title_style is REQUIRED — you can't render a title
+// without it; board/back/word_size may be null/absent). Returns a fresh,
+// generator-shaped object or { error }. Shared by /api/preview so the previewed
+// look uses the exact same validation the save path enforces.
+function validateCalibration(input) {
+  const b = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const ts = validateTitleStyle(b.title_style);
+  if (ts.error) return { error: ts.error };
+  const board = validateSlot(b.board, 'board');
+  if (board.error) return { error: board.error };
+  const back = validateSlot(b.back, 'back');
+  if (back.error) return { error: back.error };
+  let word_size = null;
+  if (b.word_size != null && b.word_size !== '') {
+    if (!isFiniteNum(b.word_size) || b.word_size <= 0 || b.word_size > 400) {
+      return { error: 'word_size must be a positive number or null' };
+    }
+    word_size = b.word_size;
+  }
+  return { value: { title_style: ts.value, board: board.value, back: back.value, word_size } };
+}
+
 // Editable theme SETTINGS the owner can change on an existing template AFTER
-// onboarding — the storefront/config knobs, never the identity (slug/dir/recipe)
-// or calibration/asset fields. Each provided key is validated; an invalid value
-// rejects the whole patch (no partial write). Atomic themes.json write. Returns
-// the changed settings, or { error, httpStatus }.
+// onboarding — the storefront/config knobs + the CALIBRATION look-pass
+// (title_style/board/back/word_size and the calibrated flip), never the identity
+// (slug/dir/recipe) or asset files. Each provided key is validated; an invalid
+// value rejects the whole patch (no partial write). A template can only be flipped
+// to calibrated:true once it has a valid title_style (else the generator would
+// crash on the first order). Atomic themes.json write. Returns the changed
+// settings, or { error, httpStatus }.
 function updateTemplateSettings({ root, key, patch }) {
   const themesPath = themesPathFor(root);
   const themes = loadThemes(themesPath);
@@ -742,10 +886,60 @@ function updateTemplateSettings({ root, key, patch }) {
   if ('extra_fields' in p) {
     changed.extra_fields = normalizeExtraFields(p.extra_fields);
   }
+  // Calibration look-pass: title_style / board / back / word_size, and the
+  // calibrated flip. Each may arrive alone (tweak one knob) or together (the
+  // form's "save + calibrate" action).
+  if ('title_style' in p) {
+    if (p.title_style === null) {
+      changed.title_style = null;
+    } else {
+      const v = validateTitleStyle(p.title_style);
+      if (v.error) return { error: v.error, httpStatus: 400 };
+      changed.title_style = v.value;
+    }
+  }
+  if ('board' in p) {
+    const v = validateSlot(p.board, 'board');
+    if (v.error) return { error: v.error, httpStatus: 400 };
+    changed.board = v.value;
+  }
+  if ('back' in p) {
+    const v = validateSlot(p.back, 'back');
+    if (v.error) return { error: v.error, httpStatus: 400 };
+    changed.back = v.value;
+  }
+  if ('word_size' in p) {
+    if (p.word_size === null || p.word_size === '') {
+      changed.word_size = null;
+    } else if (isFiniteNum(p.word_size) && p.word_size > 0 && p.word_size <= 400) {
+      changed.word_size = p.word_size;
+    } else {
+      return { error: 'word_size must be a positive number or null', httpStatus: 400 };
+    }
+  }
+  if ('calibrated' in p) {
+    if (typeof p.calibrated !== 'boolean') {
+      return { error: 'calibrated must be a boolean', httpStatus: 400 };
+    }
+    changed.calibrated = p.calibrated;
+  }
   if (Object.keys(changed).length === 0) {
     return { error: 'no valid settings to update', httpStatus: 400 };
   }
+  // A template may only be flipped calibrated:true when it actually HAS a
+  // title_style to render with (from this patch or already on the entry) —
+  // otherwise the first order would crash the generator.
+  const resultingCalibrated = 'calibrated' in changed ? changed.calibrated : !!entry.calibrated;
+  if (resultingCalibrated) {
+    const resultingStyle = 'title_style' in changed ? changed.title_style : entry.title_style;
+    if (!resultingStyle || typeof resultingStyle !== 'object') {
+      return { error: 'cannot set calibrated:true without a title_style', httpStatus: 400 };
+    }
+  }
   Object.assign(entry, changed);
+  // word_size:null means "auto" — same as absent; drop the key so themes.json
+  // stays as clean as the shipped themes (which simply omit it).
+  if ('word_size' in changed && changed.word_size === null) delete entry.word_size;
   writeThemesFile(themesPath, themes);
   return {
     key,
@@ -756,6 +950,11 @@ function updateTemplateSettings({ root, key, patch }) {
       name_form: entry.name_form,
       visibility: entry.visibility,
       extra_fields: Array.isArray(entry.extra_fields) ? entry.extra_fields : [],
+      title_style: entry.title_style || null,
+      board: entry.board || null,
+      back: entry.back || null,
+      word_size: entry.word_size == null ? null : entry.word_size,
+      calibrated: !!entry.calibrated,
     },
   };
 }
@@ -1009,6 +1208,7 @@ module.exports = {
   validateDisplayName,
   renameTemplate,
   updateTemplateSettings,
+  validateCalibration,
   deleteTemplate,
   normalizeExtraFields,
   replaceAsset,
