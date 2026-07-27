@@ -28,6 +28,12 @@ const FONT = (label = '') =>
 // entries; an EMPTY mapping is now treated as missing/corrupt and refused (so a
 // lone entry can't wipe the file), hence we seed one existing theme here so
 // onboarding always appends alongside it.
+//
+// NOTE ON DATA_DIR: with a persistent volume configured, the admin routes write
+// to the OWNER STORE (DATA_DIR/templates) and never into the image tree — see
+// server/template-store.js and templates-store.test.js. The pure-logic suites
+// below deliberately run with DATA_DIR UNSET, which is the "image paths only"
+// mode, so they assert the pre-store behaviour unchanged.
 function makeScaffold() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-tpl-root-'));
   fs.mkdirSync(path.join(root, 'generator'), { recursive: true });
@@ -56,6 +62,7 @@ function validFiles() {
 describe('templates.js pure logic', () => {
   let templates;
   beforeAll(() => {
+    delete process.env.DATA_DIR; // no owner store: image paths only, as before
     delete require.cache[require.resolve(path.join(serverDir, 'templates.js'))];
     templates = require(path.join(serverDir, 'templates.js'));
   });
@@ -448,6 +455,7 @@ describe('templates.js pure logic', () => {
 describe('templates.js full editing (status / rename / replace)', () => {
   let templates;
   beforeAll(() => {
+    delete process.env.DATA_DIR; // no owner store: image paths only, as before
     delete require.cache[require.resolve(path.join(serverDir, 'templates.js'))];
     templates = require(path.join(serverDir, 'templates.js'));
   });
@@ -1190,11 +1198,21 @@ function onboardParts() {
   ];
 }
 
+// This suite boots the REAL app with a DATA_DIR, i.e. the production shape: the
+// image tree (TEMPLATE_ROOT) is the read-only base and every write lands in the
+// persistent owner store at DATA_DIR/templates. Assertions therefore look at the
+// store, not at the scaffold — templates-store.test.js proves the image tree
+// stays untouched.
 describe('POST /api/admin/templates', () => {
   let app;
   let server;
   let base;
   let root;
+
+  // The owner store the routes write to (see server/template-store.js).
+  const storeDir = () => path.join(process.env.DATA_DIR, 'templates');
+  const ownerThemes = () =>
+    JSON.parse(fs.readFileSync(path.join(storeDir(), 'themes.json'), 'utf8'));
 
   beforeAll(async () => {
     root = makeScaffold();
@@ -1264,22 +1282,32 @@ describe('POST /api/admin/templates', () => {
     expect(r.body.recipe).toBe('generated');
     expect(r.body.note).toMatch(/calibrat/i);
 
-    // files landed under the throwaway TEMPLATE_ROOT
-    const dir = path.join(root, 'resources', 'canva', 'templates', 'endpoint-demo');
+    // files landed in the PERSISTENT owner store, not in the (ephemeral) image tree
+    const dir = path.join(storeDir(), 'endpoint-demo');
     expect(fs.existsSync(path.join(dir, 'clean', 'fronts.svg'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'filled', 'backs.svg'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'fonts', 'Title.ttf'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'fonts', 'Word.ttf'))).toBe(true);
+    expect(fs.existsSync(path.join(root, 'resources', 'canva', 'templates', 'endpoint-demo'))).toBe(
+      false
+    );
 
-    // recipe was produced by the fake python
+    // The recipe was produced. This fake python writes next to the script (the
+    // image layer); the real generator half writes into the owner store. The
+    // resolver accepts EITHER, which is what makes recipe:'generated' true here.
     expect(fs.existsSync(path.join(root, 'generator', 'recipes', 'endpoint-demo.json'))).toBe(true);
 
-    // themes.json gained a private, uncalibrated entry
-    const themes = JSON.parse(fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8'));
+    // the owner themes.json gained a public, uncalibrated entry; the image's
+    // themes.json is untouched
+    const themes = ownerThemes();
     expect(themes['endpoint-demo'].visibility).toBe('public');
     expect(themes['endpoint-demo'].calibrated).toBe(false);
     expect(themes['endpoint-demo'].title_style).toBeNull();
     expect(themes['endpoint-demo'].extra_fields).toEqual(['AGE']);
+    const shipped = JSON.parse(
+      fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8')
+    );
+    expect(shipped['endpoint-demo']).toBeUndefined();
   });
 
   it('409/400-style rejects a duplicate slug', async () => {
@@ -1336,7 +1364,7 @@ describe('POST /api/admin/templates', () => {
       body: JSON.stringify({ display_he: 'שם ערוך' }),
     });
     expect(ok.status).toBe(200);
-    const themes = JSON.parse(fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8'));
+    const themes = ownerThemes();
     expect(themes['endpoint-demo'].display_he).toBe('שם ערוך');
     expect(themes['endpoint-demo'].slug).toBe('endpoint-demo'); // slug stays stable
     const bad = await fetch(url + '?key=' + ADMIN_KEY, {
@@ -1369,7 +1397,7 @@ describe('POST /api/admin/templates', () => {
     const ok = await post('clean-fronts', true);
     expect(ok.status).toBe(200);
     const file = fs.readFileSync(
-      path.join(root, 'resources', 'canva', 'templates', 'endpoint-demo', 'clean', 'fronts.svg'),
+      path.join(storeDir(), 'endpoint-demo', 'clean', 'fronts.svg'),
       'utf8'
     );
     expect(file).toContain('REPLACED-BY-ENDPOINT');
@@ -1418,7 +1446,7 @@ describe('POST /api/admin/templates', () => {
       language: 'english',
       extra_fields: ['AGE', 'YEARS'],
     });
-    let themes = JSON.parse(fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8'));
+    let themes = ownerThemes();
     expect(themes['endpoint-demo'].visibility).toBe('private');
 
     // A bad value is rejected (400), no write.
@@ -1443,11 +1471,9 @@ describe('POST /api/admin/templates', () => {
     });
     expect(del.status).toBe(200);
     expect((await del.json()).deleted).toBe(true);
-    themes = JSON.parse(fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8'));
+    themes = ownerThemes();
     expect(themes['endpoint-demo']).toBeUndefined();
-    expect(fs.existsSync(path.join(root, 'resources', 'canva', 'templates', 'endpoint-demo'))).toBe(
-      false
-    );
+    expect(fs.existsSync(path.join(storeDir(), 'endpoint-demo'))).toBe(false);
 
     // DELETE an unknown key → 404.
     const gone = await fetch(base + '/api/admin/templates/nope-x?key=' + ADMIN_KEY, {

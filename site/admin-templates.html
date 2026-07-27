@@ -231,6 +231,11 @@
         border-color: #e0a0a0;
         color: #b23b3b;
       }
+      /* Shown only on a SHIPPED template that carries saved owner edits. */
+      .tpl-revert-btn {
+        border-color: #c9b98a;
+        color: #8a7433;
+      }
       .tpl-settings {
         margin: 8px 0 4px;
         font-size: 13px;
@@ -1085,6 +1090,16 @@
           deleteBtn.className = 'link-btn tpl-delete-btn';
           deleteBtn.textContent = 'מחק';
           head.append(renameBtn, deleteBtn);
+          // A SHIPPED template that has saved owner edits on top of it can be
+          // reset to the version that ships with the release. (It can never be
+          // deleted — it would just come back on the next deploy.)
+          if (t.shipped && t.owner) {
+            const revertBtn = document.createElement('button');
+            revertBtn.type = 'button';
+            revertBtn.className = 'link-btn tpl-revert-btn';
+            revertBtn.textContent = 'שחזור למקור';
+            head.append(revertBtn);
+          }
           card.append(head);
 
           // Editable settings (language / name_form / extra_fields / visibility).
@@ -1442,6 +1457,38 @@
           } catch (err) {
             tplMsg(card, 'err', 'שגיאת רשת: ' + err);
             deleteBtn.disabled = false;
+          }
+          return;
+        }
+
+        // Reset a SHIPPED template to the version that ships with the release:
+        // drops the saved owner edits (name, settings, calibration, swapped art).
+        const revertBtn = e.target.closest('.tpl-revert-btn');
+        if (revertBtn) {
+          const card = revertBtn.closest('.tpl-card');
+          const nm = (card.querySelector('.tpl-name') || {}).textContent || card.dataset.key;
+          if (!window.confirm('לשחזר את "' + nm + '" לגרסה המקורית? השינויים שנשמרו יימחקו.')) {
+            return;
+          }
+          revertBtn.disabled = true;
+          try {
+            const res = await fetch(
+              '/api/admin/templates/' +
+                encodeURIComponent(card.dataset.key) +
+                '/revert?key=' +
+                encodeURIComponent(key),
+              { method: 'POST' }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              tplMsg(card, 'err', 'שגיאה: ' + (data.error || res.status));
+              revertBtn.disabled = false;
+              return;
+            }
+            loadTemplates();
+          } catch (err) {
+            tplMsg(card, 'err', 'שגיאת רשת: ' + err);
+            revertBtn.disabled = false;
           }
           return;
         }

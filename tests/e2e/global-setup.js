@@ -1,6 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { REPO_ROOT, FIXTURE_ROOT, FIXTURE_TEMPLATES, FIXTURE_SENTINEL } from './tpl-fixture.js';
+import {
+  REPO_ROOT,
+  FIXTURE_ROOT,
+  FIXTURE_TEMPLATES,
+  FIXTURE_SENTINEL,
+  FIXTURE_STORE,
+} from './tpl-fixture.js';
 
 // Build a fresh THROWAWAY template root for the admin-templates e2e: a copy of
 // generator/themes.json plus the handful of template dirs the spec inspects and
@@ -13,6 +19,10 @@ import { REPO_ROOT, FIXTURE_ROOT, FIXTURE_TEMPLATES, FIXTURE_SENTINEL } from './
 // config) before they write anything.
 export default function globalSetup() {
   fs.rmSync(FIXTURE_ROOT, { recursive: true, force: true });
+  // The admin routes WRITE to the persistent owner store under DATA_DIR, not into
+  // the fixture (server/template-store.js). Wipe it too, so a previous run's
+  // renames/calibrations can't shadow the freshly-built fixture.
+  fs.rmSync(FIXTURE_STORE, { recursive: true, force: true });
   fs.mkdirSync(path.join(FIXTURE_ROOT, 'generator'), { recursive: true });
   const tplBase = path.join(FIXTURE_ROOT, 'resources', 'canva', 'templates');
   fs.mkdirSync(tplBase, { recursive: true });

@@ -7,19 +7,31 @@
 // generator's themes.json.
 const fs = require('fs');
 const path = require('path');
+const store = require('./template-store');
 
-// generator/themes.json, relative to this file (server/ -> ../generator/).
+// generator/themes.json, relative to this file (server/ -> ../generator/) — the
+// SHIPPED layer, which in production lives in the (ephemeral) Docker image.
 const THEMES_PATH = path.join(__dirname, '..', 'generator', 'themes.json');
 
-// Read + parse themes.json fresh each call (it is tiny and rarely changes, and
-// reading it live keeps tests from fighting a cached copy). Returns {} when the
-// file is missing/unparseable so a bad file never crashes a generation request.
-function loadThemes() {
+// Read + parse the themes fresh each call (they are tiny and rarely change, and
+// reading live keeps tests from fighting a cached copy). Returns the MERGED
+// overlay view — the image's shipped themes with the owner store's entries
+// (DATA_DIR/templates/themes.json) laid over them — so validating an order for
+// an OWNER-UPLOADED theme finds it instead of failing as "unknown theme". Each
+// layer is read defensively: a missing/unparseable file resolves to {} so a bad
+// file never crashes a generation request.
+function readJson(file) {
   try {
-    return JSON.parse(fs.readFileSync(THEMES_PATH, 'utf8'));
+    return JSON.parse(fs.readFileSync(file, 'utf8')) || {};
   } catch {
     return {};
   }
+}
+function loadThemes() {
+  const shipped = readJson(THEMES_PATH);
+  const ownerPath = store.ownerThemesPath();
+  const owner = ownerPath ? readJson(ownerPath) : {};
+  return { ...shipped, ...owner };
 }
 
 // The theme config object for a themes.json key, or null when unknown.

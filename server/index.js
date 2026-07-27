@@ -47,11 +47,14 @@ const SITE_DIR = path.join(__dirname, '..', 'site');
 const REPO_ROOT = path.join(__dirname, '..');
 const GENERATED_DIR = process.env.GENERATED_DIR || path.join(__dirname, 'generated');
 const PYTHON_BIN = process.env.PYTHON || 'python3';
-// Repo root the admin template-onboarding endpoint writes NEW private templates
-// into (resources/canva/templates/<slug>/ + generator/themes.json). Overridable
-// via TEMPLATE_ROOT so tests can point it at a throwaway scaffold and never touch
-// the real repo. Max multipart upload size for that endpoint (several SVGs + two
-// fonts).
+// Root of the SHIPPED template config (resources/canva/templates/<slug>/ +
+// generator/themes.json) — the read-only base layer. Overridable via
+// TEMPLATE_ROOT so tests can point it at a throwaway scaffold and never touch the
+// real repo. NOTE: the admin template routes no longer WRITE here when a
+// persistent volume is configured — every upload/rename/calibration goes to the
+// owner store under DATA_DIR/templates and overlays this base (see
+// server/template-store.js). In production this root is the Docker image, whose
+// filesystem resets on each deploy.
 const TEMPLATE_ROOT = process.env.TEMPLATE_ROOT || REPO_ROOT;
 // Raised from 30mb: a full template is several SVGs + two fonts in ONE multipart
 // request, and Canva-exported SVGs that embed raster images get large fast, so a
@@ -2096,6 +2099,24 @@ app.delete('/api/admin/wordlists/:name', (req, res) => {
   res.json({ ok: true, ...result });
 });
 
+// Admin: REVERT a shipped template to its shipped state — drop the owner-store
+// override (entry + copied assets + recipe) that a rename/calibration/asset swap
+// created, so the pristine version that ships with the release takes over again.
+// The counterpart to the DELETE route's refusal on a shipped template: a shipped
+// template can't be deleted (it would just come back on the next deploy), but the
+// edits layered on top of it can be thrown away.
+app.post('/api/admin/templates/:key/revert', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let result;
+  try {
+    result = templates.revertTemplate({ root: TEMPLATE_ROOT, key: req.params.key });
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
+  res.json({ ok: true, ...result });
+});
+
 // Inline content editor. The owner edits any tagged text/photo on the live site
 // in an admin-key-gated edit mode; the overrides persist under DATA_DIR (see
 // server/content.js) and overlay the shipped defaults for EVERY visitor. The
@@ -2140,12 +2161,13 @@ app.get('/api/design-names', async (req, res) => {
 
 // The filled SVG role for a product picture slot.
 const CUSTOM_SLOT_ROLE = { front: 'fronts', back: 'backs', board: 'board' };
-// Does resources/canva/templates/<slug>/filled/<role>.svg exist?
+// Does the template's filled/<role>.svg exist? Resolved through the persistent
+// overlay (server/template-store.js), so an OWNER-uploaded template — whose
+// assets live under DATA_DIR and not in the image — shows its product pictures.
 function customSvgExists(slug, role) {
   if (!templates.isSafeSlug(slug)) return false;
-  return fs.existsSync(
-    path.join(TEMPLATE_ROOT, 'resources', 'canva', 'templates', slug, 'filled', role + '.svg')
-  );
+  const file = templates.templateAssetPath(TEMPLATE_ROOT, slug, 'filled/' + role + '.svg');
+  return !!file && fs.existsSync(file);
 }
 
 // Public: the list of custom designs (uploaded templates that aren't built-in),
@@ -2199,12 +2221,11 @@ app.get('/api/template-image/:slug/:slot', (req, res) => {
   const slug = String(req.params.slug || '');
   const role = CUSTOM_SLOT_ROLE[String(req.params.slot || '')];
   if (!templates.isSafeSlug(slug) || !role) return res.status(404).type('txt').send('Not found');
-  const base = path.resolve(path.join(TEMPLATE_ROOT, 'resources', 'canva', 'templates'));
-  const file = path.resolve(base, slug, 'filled', role + '.svg');
-  if (file !== base && !file.startsWith(base + path.sep)) {
-    return res.status(404).type('txt').send('Not found');
-  }
-  if (!fs.existsSync(file)) return res.status(404).type('txt').send('Not found');
+  // Resolved through the persistent overlay and confined to the resolved template
+  // dir (templateAssetPath returns null on any escape), so an owner-uploaded
+  // template's art is served from DATA_DIR while there is still no traversal.
+  const file = templates.templateAssetPath(TEMPLATE_ROOT, slug, 'filled/' + role + '.svg');
+  if (!file || !fs.existsSync(file)) return res.status(404).type('txt').send('Not found');
   res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'public, max-age=300');

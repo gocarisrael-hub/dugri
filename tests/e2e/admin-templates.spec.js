@@ -1,20 +1,22 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { FIXTURE_ROOT, FIXTURE_SENTINEL } from './tpl-fixture.js';
+import { FIXTURE_SENTINEL, readThemes, templateDirFor } from './tpl-fixture.js';
 
 // The template status/edit center is behind the admin key. The e2e server points
 // TEMPLATE_ROOT at a THROWAWAY fixture (.e2e-tpl-root, built fresh by
 // global-setup.js from a copy of themes.json + the 'anniversary' and
 // 'bachelorette' template dirs), so rename/replace here never touch the
-// checked-in generator/themes.json or resources/. Read-only checks run on every
+// checked-in generator/themes.json or resources/. Note the fixture is only the
+// read-only "shipped" layer: every admin WRITE lands in the persistent owner
+// store under DATA_DIR (see server/template-store.js), which is why the on-disk
+// assertions go through readThemes()/templateDirFor() rather than reading the
+// fixture directly. Read-only checks run on every
 // device project; MUTATING checks run on ONE project (skipped before the browser
 // page is created on the others) and target 'bachelorette'; read-only assertions
 // target 'anniversary' so the two never overlap across concurrent projects.
 const KEY = 'dugri-admin';
 const ONLY = 'Desktop Chrome';
-const THEMES = path.join(FIXTURE_ROOT, 'generator', 'themes.json');
-const TPL_DIR = path.join(FIXTURE_ROOT, 'resources', 'canva', 'templates');
 
 test.describe('admin templates — status view (read-only)', () => {
   test('list / rename / replace endpoints reject a missing or wrong key', async ({ request }) => {
@@ -342,7 +344,7 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     ).toBe(slugBefore);
 
     // Persisted to the FIXTURE themes.json; the slug/identity is untouched.
-    const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
+    const themes = readThemes();
     expect(themes.bachelorette.display_he).toBe('שם מבחן E2E');
     expect(themes.bachelorette.slug).toBe('bachelorette');
   });
@@ -395,7 +397,6 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
   });
 
   test('confirming a calibrated SVG replace adds the missing chasers board', async ({ page }) => {
-    const created = path.join(TPL_DIR, 'bachelorette', 'clean', 'board-chasers.svg');
     // Accept the calibration confirm → the UI re-submits with force and the file
     // lands at the exact path the generator reads.
     page.on('dialog', (d) => d.accept());
@@ -416,7 +417,11 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     );
     await expect(now).toHaveClass(/on/);
     await expect(now.locator('.mark')).toHaveText('✓');
-    expect(fs.existsSync(created)).toBe(true);
+    // Resolved AFTER the write: the replace is copy-on-write, so this shipped
+    // template's dir has just moved into the persistent owner store.
+    expect(
+      fs.existsSync(path.join(templateDirFor('bachelorette'), 'clean', 'board-chasers.svg'))
+    ).toBe(true);
   });
 
   test('editing settings (visibility → private) persists and shows the private badge', async ({
@@ -433,7 +438,7 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     // Reloads: the fixture themes.json now has bachelorette private, and the card
     // shows the "פרטית" badge.
     await expect(page.locator('.tpl-card[data-key="bachelorette"] .tpl-badge.priv')).toBeVisible();
-    const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
+    const themes = readThemes();
     expect(themes.bachelorette.visibility).toBe('private');
     // identity untouched
     expect(themes.bachelorette.slug).toBe('bachelorette');
@@ -454,7 +459,7 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     await expect(card.locator('.tpl-msg.err')).toContainText('in use');
     // Still present, still in themes.json.
     await expect(page.locator('.tpl-card[data-key="bachelorette"]')).toBeVisible();
-    const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
+    const themes = readThemes();
     expect(themes.bachelorette).toBeDefined();
   });
 
@@ -485,11 +490,11 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     ).toHaveClass(/on/);
 
     // Persisted to the FIXTURE themes.json (public, uncalibrated), files on disk.
-    const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
+    const themes = readThemes();
     expect(themes[slug]).toBeDefined();
     expect(themes[slug].visibility).toBe('public');
     expect(themes[slug].calibrated).toBe(false);
-    expect(fs.existsSync(path.join(TPL_DIR, slug, 'clean', 'fronts.svg'))).toBe(true);
+    expect(fs.existsSync(path.join(templateDirFor(slug), 'clean', 'fronts.svg'))).toBe(true);
   });
 
   test('calibrate a fresh shell: preview renders from the UNSAVED knobs, save flips calibrated:true', async ({
@@ -543,7 +548,7 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     // The list reloads: the "not calibrated" badge is gone and themes.json now
     // carries the title_style/board and calibrated:true.
     await expect(page.locator(`.tpl-card[data-key="${slug}"] .tpl-badge.uncal`)).toHaveCount(0);
-    const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
+    const themes = readThemes();
     expect(themes[slug].calibrated).toBe(true);
     expect(themes[slug].title_style.outline_w).toBe(0.05);
     expect(themes[slug].title_style.arch).toBe(0.1);
