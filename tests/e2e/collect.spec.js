@@ -923,14 +923,14 @@ test('unknown coupon code shows a not-found message and leaves the total full', 
   await expect(page.locator('#couponRemoveBtn')).toBeHidden();
 });
 
-test('free coupon: pay/init free:true skips the iframe, shows paid UI, clears the stale error', async ({
+test('free coupon: pay/init free:true skips the iframe and still confirms on the success page', async ({
   page,
 }) => {
   const ctl = await enableCardButton(page);
   // First pay attempt is rate-limited (leaves a red error); the second returns a
   // free/paid order (100%-off coupon) — no iframe, order already paid.
   let payMode = 'error';
-  await page.route('**/api/collections/*/pay/init', (route) => {
+  await page.route('**/api/collections/*/pay/init', async (route) => {
     if (payMode === 'error') {
       return route.fulfill({
         status: 429,
@@ -939,6 +939,10 @@ test('free coupon: pay/init free:true skips the iframe, shows paid UI, clears th
       });
     }
     ctl.paid = true; // the free order is now paid server-side
+    // Answer slowly so the assertion below lands while the request is still in
+    // flight — that's the window where a stale error would show if the click
+    // handler stopped clearing it.
+    await new Promise((r) => setTimeout(r, 600));
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -947,6 +951,7 @@ test('free coupon: pay/init free:true skips the iframe, shows paid UI, clears th
   });
 
   await createCollection(page, 'Shira');
+  const collectUrl = new URL(page.url());
   await page.locator('#payPanel summary').click();
   await expect(page.locator('#cardPayBtn')).toBeVisible();
 
@@ -958,13 +963,52 @@ test('free coupon: pay/init free:true skips the iframe, shows paid UI, clears th
   // Attempt 2 → the free path succeeds.
   payMode = 'free';
   await page.click('#cardPayBtn');
+  // The stale error from attempt 1 is cleared the moment the retry starts.
+  await expect(page.locator('#payErr')).toBeHidden();
 
-  // No iframe modal opens; the paid state takes over the panel...
+  // No iframe modal opens — but a free order is still a placed order, so it
+  // gets the same confirmation as a card charge instead of quietly swapping the
+  // panel underneath the buyer.
+  await expect(page.locator('#payModal')).toBeHidden();
+  await page.waitForURL(/pay-success\.html/);
+  await expect(page.locator('h1')).toHaveText('התשלום התקבל');
+
+  // Back to the collection: paid state, checkout gone.
+  await page.locator('#backBtn').click();
+  await page.waitForURL(/collect\.html/);
+  expect(new URL(page.url()).search).toBe(collectUrl.search);
   await expect(page.locator('#paidCard')).toBeVisible();
   await expect(page.locator('#payPanel')).toBeHidden();
-  await expect(page.locator('#payModal')).toBeHidden();
-  // ...and the stale error from attempt 1 is cleared (finding 1).
-  await expect(page.locator('#payErr')).toBeHidden();
+});
+
+// The server callback that flips an order to paid can land a beat after the
+// buyer is already back from the confirmation page. Returning must not greet
+// them with the checkout they just paid — the page polls until paid instead of
+// waiting for the ordinary 5s refresh.
+test('returning from the confirmation page waits for the paid state, not the checkout', async ({
+  page,
+}) => {
+  const ctl = await enableCardButton(page);
+  await page.route('**/api/collections/*/pay/init', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ free: true, paid: true, total: 0 }),
+    })
+  );
+
+  await createCollection(page, 'Shira');
+  await page.locator('#payPanel summary').click();
+  await page.click('#cardPayBtn');
+  await page.waitForURL(/pay-success\.html/);
+
+  // The order only becomes paid server-side AFTER the buyer heads back.
+  await page.locator('#backBtn').click();
+  await page.waitForURL(/collect\.html/);
+  ctl.paid = true;
+
+  // The short poll (1.5s cadence) picks it up well inside the 5s refresh.
+  await expect(page.locator('#paidCard')).toBeVisible({ timeout: 4000 });
 });
 
 test('pay/init coupon errors: 400 clears the coupon, 409 and 429 show their messages', async ({

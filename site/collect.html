@@ -2600,6 +2600,9 @@
         }
 
         // ---- credit-card payment (PeleCard iframe in a modal) ----
+        // Marks "this tab just completed a payment and went to the confirmation
+        // page", so the return trip knows to wait for the paid state.
+        const PAID_FLAG = 'dugri:payJustDone';
         const cardBtn = $('#cardPayBtn');
         const modal = $('#payModal');
         const frame = $('#payFrame');
@@ -2611,10 +2614,11 @@
         // Backdrop-click + Escape close, shared with the message dialog.
         wireModalDismiss(modal, closeModal);
 
-        // After PeleCard confirms, our server callback flips the order to paid.
-        // That can lag the browser by a moment, so poll a few times. Once paid,
-        // render() hides this whole panel and shows #paidCard, so there is no
-        // confirmation to write here.
+        // Our server callback flips the order to paid moments after PeleCard
+        // confirms, so a buyer returning from the confirmation page can arrive
+        // a beat early. Poll for a few seconds rather than let them land back on
+        // the checkout they just paid — the ordinary 5s refresh would eventually
+        // catch it, but not before the panel had already re-read as "unpaid".
         function pollPaid(tries = 0) {
           refresh().then(() => {
             if (!isPaid() && tries < 8) {
@@ -2622,17 +2626,30 @@
             }
           });
         }
+        // Set by goPaySuccess() before it leaves; consumed once on the way back.
+        try {
+          if (sessionStorage.getItem(PAID_FLAG)) {
+            sessionStorage.removeItem(PAID_FLAG);
+            pollPaid();
+          }
+        } catch (e) {
+          /* private mode — the 5s refresh still gets there */
+        }
 
-        // The card modal closing on its own read as "did that work?" — nothing
-        // on screen said the charge went through. Send the buyer to a real
-        // confirmation page instead, carrying this collection's URL so its
-        // button brings them straight back to adding words.
+        // Every way a payment can complete — a card charge or a 100%-off coupon
+        // — ends here. The old in-place ending (close the modal, poll, swap the
+        // panel for #paidCard) read as "did that even work?", so instead we hand
+        // the buyer a confirmation page, carrying this collection's URL so its
+        // button brings them straight back to adding words. PAID_FLAG marks the
+        // round trip so the page they come back to polls for the paid state
+        // instead of greeting them with the checkout again (see the init below).
         function goPaySuccess() {
           const back = location.pathname + location.search;
           try {
             sessionStorage.setItem('dugri:payReturn', back);
+            sessionStorage.setItem(PAID_FLAG, '1');
           } catch (e) {
-            /* private mode — the ?back= below still carries it */
+            /* private mode — the ?back= below still carries the way back */
           }
           location.href = 'pay-success.html?back=' + encodeURIComponent(back);
         }
@@ -2676,11 +2693,14 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload),
             });
-            // 100%/free coupon: the order is already paid server-side, no iframe.
-            // Refresh (via pollPaid) so the paid UI + #paidCard take over.
+            // 100%/free coupon: the order is already paid server-side, so there
+            // is no iframe and no PeleCard handshake. It is still a placed, paid
+            // order, so it gets the SAME confirmation page as a card charge —
+            // swapping the panel for #paidCard in place was the quiet ending
+            // buyers couldn't read as "that worked".
             if (res.free || res.paid) {
               track('card_pay_done');
-              pollPaid();
+              goPaySuccess();
               return;
             }
             // Remember where to come back to BEFORE handing over to PeleCard:
