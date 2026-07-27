@@ -88,14 +88,15 @@ def _crop_card(full_png, cell, viewbox, out_png):
 
 
 def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
-            chasers=False, custom_title=None):
+            chasers=False, custom_title=None, calibration=None):
     """Render a preview and return ``{"card": path, "board": path, "back": path}``.
 
     ``board`` and ``back`` are included only when the theme has that artwork; the
     single run produces the front card, the game board AND the personalized card
     back together (one Chrome per product, no separate back process).
 
-    theme         a key in generator/themes.json (must be calibrated)
+    theme         a key in generator/themes.json (must be calibrated, UNLESS
+                  ``calibration`` supplies the missing style — see below)
     name          the honoree name (cased per the theme's name_form)
     extra_fields  dict feeding the title template (AGE/YEARS/NAME1/...)
     word_font     optional card word-font filename override (theme fonts/ or the
@@ -105,7 +106,18 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
     custom_title  optional free-form title (F7) overriding the theme-derived title
                   on the sample card + board; empty/absent keeps the theme default,
                   so the preview is WYSIWYG for what production renders
+    calibration   optional UNSAVED calibration knobs from the owner's calibration
+                  form — ``{title_style, board, back, word_size}``. Merged over the
+                  theme in memory (themes.json is never written) so an
+                  uncalibrated template can be previewed and tuned before it is
+                  saved. The blob is the full source of truth for the look, so an
+                  explicit ``board``/``back`` of null previews as "no title on that
+                  surface". Production never passes this, so a real print-ready
+                  PDF still requires ``calibrated: true``.
     """
+    # Install BEFORE the first config.theme() read: render_page/build re-read the
+    # config themselves, and they must all see the same overridden values.
+    config.set_preview_overrides(theme, calibration)
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
     title_lines = config.title_lines(cfg, name, extra_fields or {}, custom_title=custom_title)
@@ -196,12 +208,21 @@ def main():
                     help="show the theme's chasers board variant when available")
     ap.add_argument("--title", default=None,
                     help="optional custom title overriding the theme-derived title")
+    ap.add_argument("--calibration", default=None, metavar="FILE",
+                    help="path to a JSON file of UNSAVED calibration knobs "
+                         "(title_style/board/back/word_size) to render with, so an "
+                         "uncalibrated template can be previewed before saving")
     args = ap.parse_args()
+
+    calibration = None
+    if args.calibration:
+        with open(args.calibration, encoding="utf-8") as f:
+            calibration = json.load(f)
 
     imgs = preview(
         args.theme, args.name, _parse_fields(args.field),
         word_font=args.word_font, workdir=args.out_dir, chasers=args.chasers,
-        custom_title=args.title,
+        custom_title=args.title, calibration=calibration,
     )
     # The server parses this JSON line to locate the produced PNGs.
     print(json.dumps(imgs))

@@ -642,6 +642,131 @@ def test_title_block_autofits_overlong_title_within_box():
             "auto-fit must keep the title within the box width (no overflow)")
 
 
+# ---- Preview calibration overrides ----------------------------------------
+# The owner's calibration form previews an UNCALIBRATED template with knobs it
+# has not saved yet. These guard the two halves of that: the knobs really reach
+# every config read, and the exemption NEVER widens to production.
+
+# A minimal uncalibrated entry, exactly as server/templates.js writes one for a
+# freshly onboarded template (title_style/board/back null, calibrated false).
+_UNCAL = {
+    "slug": "fresh", "dir": "resources/canva/templates/fresh", "recipe": "fresh",
+    "display_he": "חדש", "title_text": "{NAME}", "title_lines": ["{NAME}"],
+    "language": "hebrew", "name_form": "hebrew", "extra_fields": [],
+    "title_font": "X.ttf", "word_font": "Y.ttf",
+    "title_style": None, "board": None, "back": None, "calibrated": False,
+}
+
+# A valid blob in the shape server/templates.js validateCalibration emits.
+_KNOBS = {
+    "title_style": {"fill": "#ffffff", "outline": "#000000", "outline_w": 0.05,
+                    "arch": 0.1, "shadow": True, "size": 24},
+    "board": None, "back": None, "word_size": 12,
+}
+
+
+def _with_uncalibrated_themes(fn):
+    """Run ``fn`` against a themes.json holding only the uncalibrated entry."""
+    import json
+    import tempfile
+    saved = config.THEMES_JSON
+    tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False,
+                                      encoding="utf-8")
+    json.dump({"fresh": _UNCAL}, tmp)
+    tmp.close()
+    config.THEMES_JSON = tmp.name
+    try:
+        fn()
+    finally:
+        config.THEMES_JSON = saved
+        config.clear_preview_overrides()
+        os.unlink(tmp.name)
+
+
+def test_uncalibrated_theme_is_refused_without_knobs():
+    def check():
+        try:
+            config.ensure_calibrated(config.theme("fresh"))
+        except RuntimeError as e:
+            assert "not calibrated" in str(e)
+        else:
+            raise AssertionError("an uncalibrated theme must not render")
+    _with_uncalibrated_themes(check)
+
+
+def test_supplied_knobs_let_an_uncalibrated_theme_preview():
+    def check():
+        config.set_preview_overrides("fresh", _KNOBS)
+        cfg = config.theme("fresh")
+        # No raise: the preview is allowed through on the supplied knobs alone.
+        config.ensure_calibrated(cfg)
+        # ...and it renders with THOSE values, not the stored nulls.
+        assert cfg["title_style"]["fill"] == "#ffffff"
+        assert cfg["title_style"]["outline_w"] == 0.05
+        assert cfg["title_style"]["size"] == 24
+        assert cfg["word_size"] == 12
+        # themes.json is untouched — overrides are in-memory only.
+        assert config.load_themes()["fresh"]["title_style"] is None
+        assert config.load_themes()["fresh"]["calibrated"] is False
+    _with_uncalibrated_themes(check)
+
+
+def test_knobs_reach_every_later_config_read():
+    # render_page.build_page / build.render_board / build.render_backs each
+    # re-read config.theme() themselves. If overrides didn't survive a re-read,
+    # the card front would preview with the knobs while the board/back died on
+    # the stored null title_style.
+    def check():
+        config.set_preview_overrides("fresh", _KNOBS)
+        for _ in range(3):
+            cfg = config.theme("fresh")
+            config.ensure_calibrated(cfg)
+            assert cfg["title_style"]["arch"] == 0.1
+    _with_uncalibrated_themes(check)
+
+
+def test_knobs_cannot_repoint_a_theme_at_other_files():
+    # Only the look knobs are overridable — never identity/asset config, so a
+    # preview can't be steered at another template's art or fonts.
+    def check():
+        config.set_preview_overrides("fresh", dict(
+            _KNOBS, dir="resources/canva/templates/anniversary",
+            recipe="anniversary", title_font="Evil.ttf"))
+        cfg = config.theme("fresh")
+        assert cfg["dir"] == "resources/canva/templates/fresh"
+        assert cfg["recipe"] == "fresh"
+        assert cfg["title_font"] == "X.ttf"
+    _with_uncalibrated_themes(check)
+
+
+def test_knobs_without_a_usable_title_style_still_refuse():
+    # The exemption is not a blanket bypass: knobs that don't actually supply a
+    # title_style must fail HERE with the clear "not calibrated" message rather
+    # than deeper in the renderer on a missing fill/outline.
+    def check():
+        for bad in ({"word_size": 12}, {"title_style": None},
+                    {"title_style": "big"}):
+            config.clear_preview_overrides()
+            config.set_preview_overrides("fresh", bad)
+            try:
+                config.ensure_calibrated(config.theme("fresh"))
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError(f"{bad!r} must not unlock rendering")
+    _with_uncalibrated_themes(check)
+
+
+def test_production_themes_are_unaffected_by_the_override_hook():
+    # With nothing installed, every shipped theme reads exactly as before and a
+    # real PDF still requires calibrated:true.
+    config.clear_preview_overrides()
+    for name in config.load_themes():
+        cfg = config.theme(name)
+        assert config._PREVIEW_MARK not in cfg
+        config.ensure_calibrated(cfg)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

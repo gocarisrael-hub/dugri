@@ -112,6 +112,54 @@ describe('POST /api/admin/collections/:id/generate', () => {
     expect(r.body.error).toBe('theme required');
   });
 
+  // One-click production: the admin "produce" button posts an empty body, so the
+  // route must fall back to the theme the collection already resolved to when the
+  // buyer picked their design.
+  it("defaults to the collection's stored theme when the body has none", async () => {
+    const c = db.createCollection('Stored Theme', { theme: 'trip comeback' });
+    db.addWords(c.id, ['מים', 'אש']);
+    const r = await post(key('/api/admin/collections/' + c.id + '/generate'), {});
+    expect(r.status).toBe(200);
+    expect(r.body.production.state).toBe('generated');
+    // the stored key is what production actually ran with (and was recorded)
+    expect(r.body.production.theme).toBe('trip comeback');
+    expect(fs.existsSync(path.join(genDir, c.id + '.pdf'))).toBe(true);
+  });
+
+  it('an explicit body theme still overrides the stored one', async () => {
+    const c = db.createCollection('Override Theme', { theme: 'trip comeback' });
+    db.addWords(c.id, ['מים', 'אש']);
+    const r = await post(key('/api/admin/collections/' + c.id + '/generate'), {
+      theme: 'bachelorette',
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.production.theme).toBe('bachelorette');
+  });
+
+  // The fallback must not smuggle a bad key past the guards: an unknown stored
+  // theme is rejected by the SAME check an unknown body theme hits, and the
+  // validate.js pre-production checks still run on the resolved key.
+  it('400 "unknown theme" when the stored theme is not a themes.json key', async () => {
+    const c = db.createCollection('Bad Stored', { theme: 'no-such-theme' });
+    db.addWords(c.id, ['מים', 'אש']);
+    const r = await post(key('/api/admin/collections/' + c.id + '/generate'), {});
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('unknown theme');
+    expect(fs.existsSync(path.join(genDir, c.id + '.pdf'))).toBe(false);
+  });
+
+  it('still runs the pre-production checks against the stored theme', async () => {
+    // 'trip comeback' is english-caps, so a Hebrew honoree name must still be
+    // caught — the defaulted theme is validated exactly like a supplied one.
+    const c = db.createCollection('שירה', { theme: 'trip comeback' });
+    db.addWords(c.id, ['מים', 'אש']);
+    const r = await post(key('/api/admin/collections/' + c.id + '/generate'), {});
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('validation failed');
+    expect(r.body.problems.length).toBeGreaterThan(0);
+    expect(fs.existsSync(path.join(genDir, c.id + '.pdf'))).toBe(false);
+  });
+
   it('400 when the collection has no words', async () => {
     const c = db.createCollection('בלי מילים');
     const r = await post(key('/api/admin/collections/' + c.id + '/generate'), {

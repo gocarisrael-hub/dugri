@@ -27,11 +27,65 @@ def load_themes():
         return json.load(f)
 
 
+# ---- Preview-only calibration overrides -----------------------------------
+# The owner's calibration form previews an UNCALIBRATED template (title_style /
+# board / back are still null) using knobs it has NOT saved yet, so the look can
+# be tuned before it is written to themes.json. ``preview.py`` installs those
+# knobs here and every ``theme()`` read in the SAME process then sees them merged
+# over the stored entry — which matters because ``render_page.build_page``,
+# ``build.render_board`` and ``build.render_backs`` each re-read the config
+# themselves rather than being handed one.
+#
+# Process-local by design: the server spawns a fresh Python per preview request,
+# so knobs can never leak between requests, and NO production entry point
+# (order_to_pdf / build) installs them — a real print-ready PDF still requires a
+# genuine ``calibrated: true`` in themes.json.
+_PREVIEW_OVERRIDES = {}
+
+# Only the render knobs the calibration form owns may be overridden. Everything
+# else (dir, recipe, fonts, visibility, ...) is identity/asset configuration, so
+# a preview can never repoint a theme at another template's files.
+_OVERRIDABLE = ("title_style", "board", "back", "word_size")
+
+# Marker merged into an overridden cfg so ``ensure_calibrated`` lets the preview
+# through. In-memory only — overrides are never written back to themes.json.
+_PREVIEW_MARK = "_preview_calibration"
+
+
+def set_preview_overrides(name, overrides):
+    """Install in-memory calibration knobs for theme ``name`` (PREVIEW ONLY).
+
+    ``overrides`` is the calibration blob the admin form sent
+    (``{title_style, board, back, word_size}``). Unknown keys are ignored. A
+    falsy/empty blob is a no-op, so the normal preview path is untouched.
+    """
+    if not overrides:
+        return
+    picked = {k: overrides[k] for k in _OVERRIDABLE if k in overrides}
+    if not picked:
+        return
+    picked[_PREVIEW_MARK] = True
+    _PREVIEW_OVERRIDES[name] = picked
+
+
+def clear_preview_overrides():
+    """Drop every installed preview override (used by tests)."""
+    _PREVIEW_OVERRIDES.clear()
+
+
 def theme(name):
-    """Return the config dict for a single theme (by folder-name key)."""
+    """Return the config dict for a single theme (by folder-name key).
+
+    Any preview-only calibration override installed for ``name`` is merged over
+    the stored entry (see ``set_preview_overrides``); with none installed this
+    returns the themes.json entry exactly as before.
+    """
     themes = load_themes()
     if name not in themes:
         raise KeyError(f"unknown theme {name!r}; known: {sorted(themes)}")
+    override = _PREVIEW_OVERRIDES.get(name)
+    if override:
+        return {**themes[name], **override}
     return themes[name]
 
 
@@ -108,7 +162,17 @@ def board_clean_path(theme_name, chasers=False):
 
 
 def ensure_calibrated(cfg):
-    """Raise a clear error if a theme has no calibrated render style yet."""
+    """Raise a clear error if a theme has no calibrated render style yet.
+
+    A PREVIEW carrying unsaved calibration knobs is the one exception: it may
+    render an uncalibrated template so the owner can see the look before saving.
+    That exemption requires the knobs to actually supply a usable ``title_style``
+    dict — otherwise the render would only get further before dying on a missing
+    fill/outline. Production is unaffected: it never installs overrides, so a
+    real PDF still needs ``calibrated: true``.
+    """
+    if cfg.get(_PREVIEW_MARK) and isinstance(cfg.get("title_style"), dict):
+        return
     if not cfg.get("calibrated"):
         raise RuntimeError(
             f"theme {cfg.get('slug', '?')!r} is not calibrated yet — "

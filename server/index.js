@@ -528,9 +528,11 @@ app.get('/api/admin/designs', async (req, res) => {
   res.json({ designs, expected: EXPECTED_DESIGN_ASSETS });
 });
 
-// Admin: generate the full print-ready PDF for a collection. The admin supplies
-// the theme (a generator/themes.json key) — the design->theme mapping is a later
-// workstream. Body: { theme, word_font?, extra_fields? }. Gathers the
+// Admin: generate the full print-ready PDF for a collection. The theme (a
+// generator/themes.json key) defaults to the one the collection already resolved
+// to when the buyer picked their design, so the admin's one-click "produce"
+// button needn't ask for it; an explicit body theme still overrides.
+// Body: { theme?, word_font?, extra_fields? }. Gathers the
 // collection's words + honoree name, spawns the Python generator, stores the PDF
 // under GENERATED_DIR/<id>.pdf, records order.production, and (when email is
 // configured) mails a download link to the client + Dugri.
@@ -539,7 +541,13 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
   const c = db.getCollection(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
-  const theme = String(b.theme || '').trim();
+  // One-click production: fall back to the collection's STORED resolved theme
+  // (db sets `theme` from the design the buyer chose) so the admin button can
+  // post an empty body. An explicit body theme still wins, so re-generating onto
+  // a different template stays possible. Neither present is still a 400 — every
+  // downstream check (unknown theme, then the validate.js pre-production checks)
+  // runs on the resolved key exactly as before.
+  const theme = String(b.theme || c.theme || '').trim();
   if (!theme) return res.status(400).json({ error: 'theme required' });
   const words = db.listWords(c.id).map((w) => w.text);
   if (!words.length) return res.status(400).json({ error: 'no words to generate' });
