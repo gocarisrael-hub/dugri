@@ -11,10 +11,21 @@
 // A freshly onboarded template ALWAYS comes in uncalibrated: title_style/board/
 // back are null and calibrated:false, so it still needs a hand-tuned style pass
 // (mirroring how the shipped themes were calibrated) before it renders.
+//
+// PERSISTENCE (see server/template-store.js): the repo checkout is the Docker
+// image in production, whose filesystem resets on every deploy. So this module
+// READS THROUGH AN OVERLAY — the image's shipped config as the base, the owner
+// store under DATA_DIR/templates on top — and ALWAYS WRITES to the owner store.
+// Editing a SHIPPED template is copy-on-write: the edited entry (and, for an
+// asset write, a copy of the whole template dir) lands in the owner store and
+// shadows the pristine shipped one. With DATA_DIR unset (local dev, unit tests)
+// the store is disabled and every path below is the image path, exactly as
+// before.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const store = require('./template-store');
 
 const REPO_ROOT = path.join(__dirname, '..');
 
@@ -42,6 +53,10 @@ const CHASERS_BOARD_FILE = 'board-chasers.svg';
 // The two font roles the onboarding form uploads.
 const FONT_ROLES = ['title', 'word'];
 
+// ---- IMAGE (shipped) paths --------------------------------------------------
+// These stay exactly what they always were: the read-only base layer. The owner
+// store's counterparts live in server/template-store.js, and the resolvers
+// further down pick between the two.
 function templateDir(root, slug) {
   return path.join(root, 'resources', 'canva', 'templates', slug);
 }
@@ -52,6 +67,11 @@ function recipesDirFor(root) {
   return path.join(root, 'generator', 'recipes');
 }
 
+// Theme keys that would collide with the owner store's own layout
+// (DATA_DIR/templates/themes.json and .../recipes/), so a template can never be
+// registered under one.
+const RESERVED_KEYS = new Set(store.RESERVED_KEYS);
+
 // A basic sanity check that an uploaded buffer looks like an SVG document.
 function looksLikeSvg(buf) {
   if (!buf || !buf.length) return false;
@@ -59,12 +79,12 @@ function looksLikeSvg(buf) {
   return head.includes('<svg') || head.includes('<?xml');
 }
 
-// Read the themes mapping (key -> config) from a themes.json path. Returns {}
-// only when the file is genuinely absent or empty (a first-ever onboarding). A
-// file that EXISTS with content but won't parse is CORRUPT — we THROW rather than
-// return {}, because swallowing the error here would let appendThemeEntry write
-// back a single entry and destroy every existing theme.
-function loadThemes(themesPath) {
+// Read ONE themes mapping (key -> config) from a themes.json path, with no
+// overlay. Returns {} only when the file is genuinely absent or empty (a
+// first-ever onboarding). A file that EXISTS with content but won't parse is
+// CORRUPT — we THROW rather than return {}, because swallowing the error here
+// would let a write path put back a single entry and destroy every other theme.
+function loadThemesFile(themesPath) {
   let raw;
   try {
     raw = fs.readFileSync(themesPath, 'utf8');
@@ -81,6 +101,25 @@ function loadThemes(themesPath) {
         ((e && e.message) || e)
     );
   }
+}
+
+// The OWNER theme entries (DATA_DIR/templates/themes.json), or {} when the store
+// is disabled / the file doesn't exist yet. Throws on a corrupt owner file for
+// the same reason loadThemesFile does.
+function loadOwnerThemes() {
+  const p = store.ownerThemesPath();
+  return p ? loadThemesFile(p) : {};
+}
+
+// The MERGED view every reader gets: the image's shipped themes with the owner's
+// entries laid over them. A slug present in both means the OWNER entry wins as a
+// WHOLE ENTRY (not a deep merge) — that is what makes editing a shipped template
+// copy-on-write. With the store disabled this is just the shipped file, byte for
+// byte the behaviour this function has always had.
+function loadThemes(themesPath) {
+  const shipped = loadThemesFile(themesPath);
+  const owner = loadOwnerThemes();
+  return Object.keys(owner).length ? { ...shipped, ...owner } : shipped;
 }
 
 // Build the themes.json entry for a newly uploaded PRIVATE template. It is always
@@ -126,16 +165,39 @@ function buildThemeEntry({
   };
 }
 
-// Append one entry to themes.json under `key`. Throws when the key is already
-// taken (never silently overwrites a shipped theme), and refuses to write when
-// the loaded mapping is empty — the shipped themes.json always has entries, so an
-// empty load means the file is missing/corrupt and writing a lone entry would
-// destroy it. The write is ATOMIC (temp file in the same dir, then rename) so a
-// crash mid-write can never leave a truncated themes.json. Preserves the file's
-// 1-space indent so the diff against the hand-maintained file stays minimal.
+// Append one entry under `key`. Throws when the key is already taken in the
+// MERGED view (never silently shadows an existing theme — onboarding is for NEW
+// slugs; changing an existing one goes through updateTemplateSettings, which is
+// the copy-on-write path). The entry is persisted by persistThemeEntry, i.e. into
+// the OWNER store when DATA_DIR is set and into the image's themes.json
+// otherwise.
 function appendThemeEntry(themesPath, key, entry) {
   const themes = loadThemes(themesPath);
   if (themes[key]) throw new Error('theme already registered: ' + key);
+  return persistThemeEntry(themesPath, key, entry);
+}
+
+// Persist ONE whole theme entry.
+//
+// With the owner store ACTIVE the entry goes into DATA_DIR/templates/themes.json
+// and nothing in the image is touched — so editing a shipped theme shadows it
+// while the shipped file stays pristine, and the shipped file keeps shipping
+// updates for every theme the owner has NOT overridden.
+//
+// With the store DISABLED this is the historical behaviour: rewrite the image's
+// themes.json, refusing when the loaded mapping is empty (the shipped file always
+// has entries, so an empty load means missing/corrupt and writing a lone entry
+// would destroy it). That guard does NOT apply to the owner store, which
+// legitimately starts empty.
+function persistThemeEntry(themesPath, key, entry) {
+  const ownerPath = store.ownerThemesPath();
+  if (ownerPath) {
+    const owner = loadThemesFile(ownerPath);
+    owner[key] = entry;
+    writeThemesFile(ownerPath, owner);
+    return entry;
+  }
+  const themes = loadThemesFile(themesPath);
   if (!themes || Object.keys(themes).length === 0) {
     throw new Error(
       'refusing to write themes.json: loaded mapping is empty (missing/corrupt file)'
@@ -146,54 +208,76 @@ function appendThemeEntry(themesPath, key, entry) {
   return entry;
 }
 
-// Atomically write the whole themes mapping back (temp file in the same dir, then
-// rename) so a crash mid-write can never leave a truncated themes.json. Preserves
-// the file's 1-space indent so the diff against the hand-maintained file stays
-// minimal. Shared by appendThemeEntry (onboarding) + renameTemplate/replaceAsset.
-// After the rename it refreshes the loadThemesCached() cache to the just-written
-// mapping so the hot public GET /api/design-names sees a rename immediately
-// without re-reading disk.
+// Drop one entry from whichever layer the writes go to. Returns true when
+// something was actually removed.
+function dropThemeEntry(themesPath, key) {
+  const ownerPath = store.ownerThemesPath();
+  const target = ownerPath || themesPath;
+  const themes = loadThemesFile(target);
+  if (!Object.prototype.hasOwnProperty.call(themes, key)) return false;
+  delete themes[key];
+  writeThemesFile(target, themes);
+  return true;
+}
+
+// Atomically write a whole themes mapping to `themesPath` (temp file in the same
+// dir, then rename) so a crash mid-write can never leave a truncated file.
+// Preserves the 1-space indent so the diff against the hand-maintained shipped
+// file stays minimal. Creates the parent dir when missing — on a fresh volume the
+// owner store does not exist yet. Every write drops the loadThemesCached()
+// entries so the hot public GET /api/design-names picks the change up at once
+// (the mapping just written is one LAYER, not the merged view, so it cannot be
+// installed into the cache directly).
 function writeThemesFile(themesPath, themes) {
   const dir = path.dirname(themesPath);
+  fs.mkdirSync(dir, { recursive: true });
   const tmp = path.join(dir, `.themes.${process.pid}.${Date.now()}.tmp`);
   fs.writeFileSync(tmp, JSON.stringify(themes, null, 1) + '\n', 'utf8');
   fs.renameSync(tmp, themesPath);
-  try {
-    _themesCache.set(themesPath, { mtimeMs: fs.statSync(themesPath).mtimeMs, themes });
-  } catch {
-    _themesCache.delete(themesPath);
-  }
+  _themesCache.clear();
 }
 
-// mtime-keyed parse cache for themes.json, so a hot READ-ONLY caller (the public
-// GET /api/design-names, hit on every products.html + product.html load) doesn't
-// re-read + re-parse the file on every request. Keyed by path so a test root and
-// the real root never collide. Invalidated implicitly by an mtime change (an
-// external write, e.g. a test) and explicitly by writeThemesFile (our own writes).
-// The MUTATING paths (renameTemplate/appendThemeEntry/replaceAsset) deliberately
-// keep using the uncached loadThemes() so they always read fresh disk state before
-// mutating — the cache is a read-side optimization only.
+// mtime-keyed parse cache for the MERGED themes view, so a hot READ-ONLY caller
+// (the public GET /api/design-names, hit on every products.html + product.html
+// load) doesn't re-read + re-parse two files on every request. Keyed by the
+// shipped path so a test root and the real root never collide, and validated
+// against BOTH layers' mtimes — an owner-store write must invalidate it just as a
+// shipped-file write does. Invalidated implicitly by an mtime change (an external
+// write, e.g. a test) and explicitly by writeThemesFile (our own writes, which
+// can land inside the same millisecond).
+// The MUTATING paths deliberately keep using the uncached loadThemes()/
+// loadThemesFile() so they always read fresh disk state before mutating — the
+// cache is a read-side optimization only.
 const _themesCache = new Map();
-function loadThemesCached(themesPath) {
-  let st;
+function mtimeOf(p) {
+  if (!p) return null;
   try {
-    st = fs.statSync(themesPath);
+    return fs.statSync(p).mtimeMs;
   } catch {
-    return loadThemes(themesPath); // missing file: fall through to the {} path
+    return null;
   }
+}
+function loadThemesCached(themesPath) {
+  const shippedM = mtimeOf(themesPath);
+  const ownerM = mtimeOf(store.ownerThemesPath());
+  // Neither layer exists on disk: nothing worth caching, fall through to the {}
+  // path (and keep an already-cached entry from masking a later file appearing).
+  if (shippedM === null && ownerM === null) return loadThemes(themesPath);
   const cached = _themesCache.get(themesPath);
-  if (cached && cached.mtimeMs === st.mtimeMs) return cached.themes;
+  if (cached && cached.shippedM === shippedM && cached.ownerM === ownerM) return cached.themes;
   const themes = loadThemes(themesPath);
-  _themesCache.set(themesPath, { mtimeMs: st.mtimeMs, themes });
+  _themesCache.set(themesPath, { shippedM, ownerM, themes });
   return themes;
 }
 
-// Write the uploaded SVGs + fonts into resources/canva/templates/<slug>/.
+// Write the uploaded SVGs + fonts into the template's asset dir — the OWNER store
+// (DATA_DIR/templates/<slug>/) when it is active, else the image's
+// resources/canva/templates/<slug>/.
 //   clean/filled: { fronts, backs, board } -> Buffers
 //   fonts: { title: {name, data}, word: {name, data} }
 // Returns { dir, fonts: { title: <filename>, word: <filename> } }.
 function writeTemplateFiles({ root, slug, clean, filled, fonts }) {
-  const dir = templateDir(root, slug);
+  const dir = templateWriteDir(root, null, slug);
   for (const sub of ['clean', 'filled', 'fonts']) {
     fs.mkdirSync(path.join(dir, sub), { recursive: true });
   }
@@ -223,11 +307,16 @@ function writeTemplateFiles({ root, slug, clean, filled, fonts }) {
 // vs clean fronts pair, which writes generator/recipes/<slug>.json. Needs Chrome
 // + Pillow; on any failure we return {ok:false} and the caller flags it (the
 // template is still registered). `pythonBin` + `runner` are injectable for tests.
+// The recipe path is resolved through the overlay too: the Python half writes to
+// the OWNER recipes dir when DATA_DIR is set (it inherits the env), so the
+// success check accepts a recipe that landed in EITHER layer rather than only
+// the image's.
 function runRecipeDiff({ root, slug, pythonBin = 'python3', timeoutMs = 120000, runner }) {
   const script = path.join(root, 'generator', 'recipe_diff.py');
-  const filled = path.join(templateDir(root, slug), 'filled', 'fronts.svg');
-  const clean = path.join(templateDir(root, slug), 'clean', 'fronts.svg');
-  const out = path.join(recipesDirFor(root), slug + '.json');
+  const dir = resolveTemplateDirBySlug(root, slug);
+  const filled = path.join(dir, 'filled', 'fronts.svg');
+  const clean = path.join(dir, 'clean', 'fronts.svg');
+  const out = store.ownerRecipePath(slug) || path.join(recipesDirFor(root), slug + '.json');
   const args = [script, filled, clean, slug];
   let result;
   try {
@@ -236,10 +325,10 @@ function runRecipeDiff({ root, slug, pythonBin = 'python3', timeoutMs = 120000, 
   } catch (e) {
     return { ok: false, recipe: out, detail: String((e && e.message) || e) };
   }
-  const ok = !!result && result.status === 0 && fs.existsSync(out);
+  const ok = !!result && result.status === 0 && !!resolveRecipePath(root, slug);
   return {
     ok,
-    recipe: out,
+    recipe: resolveRecipePath(root, slug) || out,
     detail: ok
       ? null
       : String((result && (result.stderr || result.stdout)) || 'recipe failed').slice(0, 800),
@@ -361,9 +450,14 @@ function normalizeMetadata({ root, fields }) {
   if (!isSafeSlug(slug)) {
     return { error: 'invalid slug: use lowercase letters, digits and hyphens (a-z, 0-9, -)' };
   }
+  // A slug that collides with the owner store's own layout (recipes/, themes.json)
+  // would corrupt it, so it is never registrable.
+  if (RESERVED_KEYS.has(slug)) return { error: 'this slug is reserved: ' + slug };
   const themesPath = themesPathFor(root);
   if (loadThemes(themesPath)[slug]) return { error: 'a template with this slug already exists' };
-  if (fs.existsSync(templateDir(root, slug))) {
+  // A dir in EITHER layer counts — an owner template that lost its themes entry
+  // must not be silently overwritten by a new upload.
+  if (templateDirExists(root, slug)) {
     return { error: 'a template directory with this slug already exists' };
   }
   const displayHe = String((fields && fields.display_he) || '').trim();
@@ -550,7 +644,7 @@ function onboardTemplate(opts) {
 function createTemplateShell({ root, fields }) {
   const meta = normalizeMetadata({ root, fields });
   if (meta.error) return { error: meta.error, httpStatus: 400 };
-  const dir = templateDir(root, meta.slug);
+  const dir = templateWriteDir(root, null, meta.slug);
   for (const sub of ['clean', 'filled', 'fonts']) {
     fs.mkdirSync(path.join(dir, sub), { recursive: true });
   }
@@ -656,11 +750,13 @@ function templatesBaseDir(root) {
   return path.resolve(path.join(root, 'resources', 'canva', 'templates'));
 }
 
-// Resolve a theme's on-disk dir, CONFINED to the templates base. The dir comes
-// from the (trusted) themes.json entry, but we still resolve + assert it is the
-// base itself or a child of it, so a doctored `dir`/key can never escape. Returns
-// the absolute path, or null when it would fall outside the base.
-function resolveTemplateDir(root, entry, key) {
+// Resolve a theme's SHIPPED (image) dir, CONFINED to the templates base. The dir
+// comes from the (trusted) themes.json entry — which is how the one shipped theme
+// whose folder name differs from its slug ("trip comeback") still resolves — but
+// we still assert the result is the base itself or a child of it, so a doctored
+// `dir`/key can never escape. Returns the absolute path, or null when it would
+// fall outside the base.
+function shippedTemplateDir(root, entry, key) {
   const base = templatesBaseDir(root);
   const rel =
     entry && entry.dir
@@ -669,6 +765,94 @@ function resolveTemplateDir(root, entry, key) {
   const abs = path.resolve(root, rel);
   if (abs !== base && !abs.startsWith(base + path.sep)) return null;
   return abs;
+}
+
+// Resolve a theme's asset dir THROUGH THE OVERLAY: the owner store's
+// DATA_DIR/templates/<key>/ when that dir exists, else the image's copy.
+//
+// The owner side is keyed BY THEME KEY, never by the entry's `dir` field — an
+// owner-uploaded template's `dir` still reads "resources/canva/templates/<slug>",
+// a path that does not exist in the image at all. The generator's Python half
+// resolves the same way, from the same key it looks the theme up by.
+//
+// Whole-dir, not per-file: that is why every asset write copies the shipped dir
+// into the store first (see templateWriteDir) — a half-populated owner dir would
+// hide the assets it didn't copy.
+function resolveTemplateDir(root, entry, key) {
+  const owner = store.ownerTemplateDir(key);
+  if (owner && fs.existsSync(owner)) return owner;
+  return shippedTemplateDir(root, entry, key);
+}
+
+// Same resolution from a bare slug (no themes lookup) — for callers that only
+// have the key, e.g. the storefront's template-image route.
+function resolveTemplateDirBySlug(root, slug) {
+  return resolveTemplateDir(root, null, slug);
+}
+
+// Does a template dir for this slug exist in EITHER layer?
+function templateDirExists(root, slug) {
+  const dir = resolveTemplateDirBySlug(root, slug);
+  return !!dir && fs.existsSync(dir);
+}
+
+// The dir an asset WRITE must land in.
+//   store disabled -> the image dir, exactly as before.
+//   store active   -> DATA_DIR/templates/<key>/, COPY-ON-WRITE: when the owner dir
+//                     doesn't exist yet but a shipped one does, the whole shipped
+//                     dir is copied in first. Without that copy the overlay (which
+//                     picks a dir, not a file) would make every asset the write
+//                     didn't touch disappear.
+// Falls back to the image dir when the key is unsafe for the store (so a write
+// never silently goes nowhere).
+function templateWriteDir(root, entry, key) {
+  const shipped = shippedTemplateDir(root, entry, key);
+  const owner = store.ownerTemplateDir(key);
+  if (!owner) return shipped;
+  if (!fs.existsSync(owner)) {
+    if (shipped && fs.existsSync(shipped)) fs.cpSync(shipped, owner, { recursive: true });
+    else fs.mkdirSync(owner, { recursive: true });
+  }
+  return owner;
+}
+
+// Resolve a template asset (a path RELATIVE to the template dir, e.g.
+// "filled/fronts.svg") through the overlay. Returns the absolute path, or null
+// when the template dir can't be resolved or the target would escape it.
+// Existence is the caller's business.
+function templateAssetPath(root, key, rel) {
+  if (typeof rel !== 'string' || !rel) return null;
+  let entry = null;
+  try {
+    entry = ownTheme(loadThemesCached(themesPathFor(root)), key);
+  } catch {
+    entry = null; // a corrupt themes file must not break asset serving
+  }
+  const dir = resolveTemplateDir(root, entry, key);
+  if (!dir) return null;
+  const abs = path.resolve(dir, rel);
+  if (abs !== dir && !abs.startsWith(dir + path.sep)) return null;
+  return abs;
+}
+
+// ---- Recipes ----------------------------------------------------------------
+// generator/recipes/<slug>.json, overlaid the same way: the owner copy wins when
+// it exists. Returns the absolute path of the recipe that WOULD be read, or null
+// when neither layer has one.
+function resolveRecipePath(root, slug) {
+  const owner = store.ownerRecipePath(slug);
+  if (owner && fs.existsSync(owner)) return owner;
+  const shipped = path.join(recipesDirFor(root), String(slug) + '.json');
+  return fs.existsSync(shipped) ? shipped : null;
+}
+
+// A human-readable path for an absolute file we just wrote — relative to the repo
+// root for an image write, relative to DATA_DIR for an owner-store write.
+function displayPath(root, abs) {
+  if (store.isInStore(abs) && process.env.DATA_DIR) {
+    return path.relative(path.resolve(process.env.DATA_DIR), abs);
+  }
+  return path.relative(root, abs);
 }
 
 // A safe file basename: no path separators, no traversal. Returns null on junk.
@@ -766,10 +950,33 @@ function computeTemplateStatus(root, key, entry) {
     chasersBoard: !!(chasers && chasers.present),
     complete: missingRequired.length === 0,
     missingRequired,
+    // Overlay provenance, so the admin UI can tell a persisted owner template (or
+    // an owner override of a shipped one) from a pristine shipped template — and
+    // so it can offer "revert" only where there is something to revert TO.
+    owner: isOwnerTheme(key),
+    shipped: isShippedTheme(root, key),
   };
 }
 
-// The status of EVERY registered template, in themes.json order.
+// Is this key overridden/owned in the persistent owner store?
+function isOwnerTheme(key) {
+  try {
+    return Object.prototype.hasOwnProperty.call(loadOwnerThemes(), key);
+  } catch {
+    return false;
+  }
+}
+
+// Is this key present in the IMAGE's themes.json (i.e. it comes back on redeploy)?
+function isShippedTheme(root, key) {
+  try {
+    return Object.prototype.hasOwnProperty.call(loadThemesFile(themesPathFor(root)), key);
+  } catch {
+    return false;
+  }
+}
+
+// The status of EVERY registered template, in merged-themes order.
 function listTemplateStatuses(root) {
   const themes = loadThemes(themesPathFor(root));
   return Object.keys(themes).map((key) => computeTemplateStatus(root, key, themes[key]));
@@ -798,7 +1005,9 @@ function renameTemplate({ root, key, displayName }) {
   const v = validateDisplayName(displayName);
   if (v.error) return { error: v.error, httpStatus: 400 };
   entry.display_he = v.value;
-  writeThemesFile(themesPath, themes);
+  // Copy-on-write: the WHOLE (merged) entry is persisted to the owner store, so a
+  // renamed shipped theme is shadowed rather than edited in the image.
+  persistThemeEntry(themesPath, key, entry);
   return { key, display_he: v.value, slug: entry.slug || key };
 }
 
@@ -1038,7 +1247,9 @@ function updateTemplateSettings({ root, key, patch }) {
   // word_size:null means "auto" — same as absent; drop the key so themes.json
   // stays as clean as the shipped themes (which simply omit it).
   if ('word_size' in changed && changed.word_size === null) delete entry.word_size;
-  writeThemesFile(themesPath, themes);
+  // Copy-on-write: a calibration saved on a SHIPPED template lands in the owner
+  // store as a whole-entry override; the image's themes.json is never touched.
+  persistThemeEntry(themesPath, key, entry);
   return {
     key,
     slug: entry.slug || key,
@@ -1057,11 +1268,18 @@ function updateTemplateSettings({ root, key, patch }) {
   };
 }
 
-// Delete a template: remove its themes.json entry (atomic write), then best-effort
-// remove its on-disk dir (confined to the templates base) and recipe file. GUARDED:
-// a theme a LIVE orderable design maps to (its key ∈ `inUseThemes`) is refused
-// (409) — deleting it would break the storefront / an in-flight order's production.
-// Refuses to empty themes.json entirely. Returns { ok, key } or { error, httpStatus }.
+// Delete a template: remove its entry, then best-effort remove its on-disk dir
+// and recipe file.
+//
+// GUARDED three ways:
+//  - a theme a LIVE orderable design maps to (its key ∈ `inUseThemes`) is refused
+//    (409) — deleting it would break the storefront / an in-flight order.
+//  - a SHIPPED template (one that exists in the image's themes.json) is refused
+//    (409) whenever the owner store is active: "deleting" it could only mean
+//    writing an override, and it would simply come back on the next deploy.
+//    Reverting an override is the honest operation there — see revertTemplate.
+//  - it refuses to empty the mapping it writes to entirely.
+// Returns { ok, key } or { error, httpStatus }.
 function deleteTemplate({ root, key, inUseThemes }) {
   const themesPath = themesPathFor(root);
   const themes = loadThemes(themesPath);
@@ -1078,14 +1296,25 @@ function deleteTemplate({ root, key, inUseThemes }) {
       inUse: true,
     };
   }
-  delete themes[key];
-  if (Object.keys(themes).length === 0) {
+  if (store.enabled() && isShippedTheme(root, key)) {
+    return {
+      error:
+        'זו תבנית מובנית שמגיעה עם הגרסה — אי אפשר למחוק אותה, היא תחזור בפריסה הבאה. ' +
+        'אפשר להסתיר אותה (visibility: private), או לבטל שינויים ששמרת עליה (שחזור למקור).',
+      httpStatus: 409,
+      shipped: true,
+    };
+  }
+  const remaining = { ...themes };
+  delete remaining[key];
+  if (Object.keys(remaining).length === 0) {
     return { error: 'refusing to empty themes.json (last template)', httpStatus: 409 };
   }
-  writeThemesFile(themesPath, themes);
-  // Best-effort file cleanup — a failure just leaves files, never throws.
-  const dir = resolveTemplateDir(root, entry, key);
-  if (dir && dir !== templatesBaseDir(root)) {
+  dropThemeEntry(themesPath, key);
+  // Best-effort file cleanup — a failure just leaves files, never throws. Only the
+  // layer we write to is touched; the image is never modified once the store is on.
+  const dir = store.enabled() ? store.ownerTemplateDir(key) : shippedTemplateDir(root, entry, key);
+  if (dir && dir !== templatesBaseDir(root) && dir !== store.storeRoot()) {
     try {
       fs.rmSync(dir, { recursive: true, force: true });
     } catch {
@@ -1093,12 +1322,57 @@ function deleteTemplate({ root, key, inUseThemes }) {
     }
   }
   try {
-    const recipe = path.join(recipesDirFor(root), (entry.slug || key) + '.json');
-    if (fs.existsSync(recipe)) fs.rmSync(recipe, { force: true });
+    const recipe = store.enabled()
+      ? store.ownerRecipePath(entry.slug || key)
+      : path.join(recipesDirFor(root), (entry.slug || key) + '.json');
+    if (recipe && fs.existsSync(recipe)) fs.rmSync(recipe, { force: true });
   } catch {
     /* best-effort */
   }
   return { ok: true, key, deleted: true };
+}
+
+// Drop the OWNER override of a shipped template, so the pristine shipped entry +
+// assets take over again. The cheap counterpart to copy-on-write: the shipped
+// layer was never modified, so "revert" is just deleting what we added.
+// Refuses when there is no override, or when the key isn't shipped (that one is
+// a real delete, not a revert). Returns { ok, key, reverted } or { error, httpStatus }.
+function revertTemplate({ root, key }) {
+  if (!store.enabled()) {
+    return { error: 'no persistent template store configured (DATA_DIR unset)', httpStatus: 409 };
+  }
+  if (typeof key !== 'string' || !key || DANGEROUS_KEYS.has(key)) {
+    return { error: 'template not found', httpStatus: 404 };
+  }
+  if (!isShippedTheme(root, key)) {
+    return {
+      error: 'זו לא תבנית מובנית — אין למה לשחזר אותה. אפשר פשוט למחוק אותה.',
+      httpStatus: 409,
+    };
+  }
+  const hadEntry = dropThemeEntry(themesPathFor(root), key);
+  const dir = store.ownerTemplateDir(key);
+  let hadAssets = false;
+  if (dir && fs.existsSync(dir)) {
+    hadAssets = true;
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
+  }
+  const recipe = store.ownerRecipePath(key);
+  if (recipe && fs.existsSync(recipe)) {
+    try {
+      fs.rmSync(recipe, { force: true });
+    } catch {
+      /* best-effort */
+    }
+  }
+  if (!hadEntry && !hadAssets) {
+    return { error: 'לא נשמרו שינויים על התבנית הזו — אין מה לשחזר.', httpStatus: 409 };
+  }
+  return { ok: true, key, reverted: true };
 }
 
 // Build the PUBLIC { <designId>: displayName } map the storefront uses to show a
@@ -1157,8 +1431,14 @@ function replaceAsset({
   if (!file || !file.data || !file.data.length)
     return { error: 'no file uploaded', httpStatus: 400 };
 
-  const dir = resolveTemplateDir(root, entry, key);
-  if (!dir) return { error: 'template directory is outside the templates root', httpStatus: 400 };
+  // Resolve the CURRENT (read) dir first — every validation + the calibration
+  // guard runs against what is live today. Only once the upload is accepted do we
+  // resolve the WRITE dir, which may copy the shipped template into the owner
+  // store; doing that up front would turn a rejected upload into a permanent
+  // (if harmless) override.
+  const readDir = resolveTemplateDir(root, entry, key);
+  if (!readDir)
+    return { error: 'template directory is outside the templates root', httpStatus: 400 };
 
   // Role is whitelisted, so assetRolesFor always yields its spec (single source of
   // truth for the path + kind — no divergent fallback).
@@ -1187,9 +1467,9 @@ function replaceAsset({
     recordFontField = spec.field;
   }
 
-  const abs = path.resolve(dir, rel);
+  const current = path.resolve(readDir, rel);
   // Defense in depth: the resolved target must stay inside the template dir.
-  if (abs !== dir && !abs.startsWith(dir + path.sep)) {
+  if (current !== readDir && !current.startsWith(readDir + path.sep)) {
     return { error: 'refusing to write outside the template directory', httpStatus: 400 };
   }
 
@@ -1202,7 +1482,7 @@ function replaceAsset({
   // non-calibrated template has no geometry to protect, and a FIRST-TIME add (no
   // current file at this role, e.g. a fresh chasers board) isn't replacing
   // anything — both write freely.
-  if (kind === 'svg' && entry.calibrated && !force && fs.existsSync(abs)) {
+  if (kind === 'svg' && entry.calibrated && !force && fs.existsSync(current)) {
     return {
       error:
         'this template is calibrated — replacing its art may misalign the title/word slots. ' +
@@ -1220,15 +1500,25 @@ function replaceAsset({
     data = shrinkSvgImages(file.data, { root, pythonBin, runner: shrinkRunner });
   }
 
+  // Only now resolve WHERE the write lands: the owner store (copy-on-write over
+  // the shipped dir) when it is active, else the image dir exactly as before.
+  const writeDir = templateWriteDir(root, entry, key);
+  if (!writeDir)
+    return { error: 'template directory is outside the templates root', httpStatus: 400 };
+  const abs = path.resolve(writeDir, rel);
+  if (abs !== writeDir && !abs.startsWith(writeDir + path.sep)) {
+    return { error: 'refusing to write outside the template directory', httpStatus: 400 };
+  }
+
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   fs.writeFileSync(abs, data);
 
   // A newly-named font needs its filename recorded so the generator finds it.
   if (recordFontField) {
     entry[recordFontField] = path.basename(abs);
-    writeThemesFile(themesPath, themes);
+    persistThemeEntry(themesPath, key, entry);
   }
-  return { key, role, path: path.relative(root, abs) };
+  return { key, role, path: displayPath(root, abs) };
 }
 
 // -- Minimal multipart/form-data parser (no external dependency) --------------
@@ -1280,7 +1570,10 @@ module.exports = {
   SVG_ROLES,
   buildThemeEntry,
   appendThemeEntry,
+  persistThemeEntry,
   loadThemes,
+  loadThemesFile,
+  loadOwnerThemes,
   loadThemesCached,
   writeTemplateFiles,
   runRecipeDiff,
@@ -1303,6 +1596,15 @@ module.exports = {
   REPLACEABLE_ROLES,
   assetRolesFor,
   resolveTemplateDir,
+  resolveTemplateDirBySlug,
+  shippedTemplateDir,
+  templateWriteDir,
+  templateDirExists,
+  templateAssetPath,
+  resolveRecipePath,
+  isOwnerTheme,
+  isShippedTheme,
+  revertTemplate,
   computeTemplateStatus,
   listTemplateStatuses,
   validateDisplayName,
