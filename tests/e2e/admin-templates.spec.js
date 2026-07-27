@@ -151,6 +151,131 @@ test.describe('admin templates — status view (read-only)', () => {
     await expect(cal.locator('.cal-field:has([data-cal="ts.fill"]) .cal-flag')).toHaveCount(0);
   });
 
+  test('calibration preview takes a value for each extra field the theme declares', async ({
+    page,
+  }) => {
+    // A theme whose title carries placeholders beyond {NAME} had nowhere to enter
+    // them, so the preview rendered the title with them BLANK: japanese
+    // ("{NAME}'S {AGE}S") came out as "DANIEL'S S", which reads as a broken
+    // template rather than a missing input. The inputs are driven off the theme's
+    // own extra_fields, and their values must reach /api/preview.
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({
+        json: {
+          templates: [
+            {
+              key: 'ex-age',
+              slug: 'ex-age',
+              display_he: 'עם גיל',
+              visibility: 'public',
+              // Uncalibrated so the panel opens by default — which is also when
+              // the owner actually needs these inputs.
+              calibrated: false,
+              language: 'english',
+              name_form: 'english-caps',
+              extra_fields: ['AGE'],
+              assets: [],
+              title_style: { fill: '#000000', outline: '#ffffff' },
+              board: null,
+              back: null,
+            },
+            {
+              key: 'ex-none',
+              slug: 'ex-none',
+              display_he: 'בלי שדות',
+              visibility: 'public',
+              calibrated: true,
+              language: 'hebrew',
+              name_form: 'hebrew',
+              extra_fields: [],
+              assets: [],
+              title_style: { fill: '#000000', outline: '#ffffff' },
+              board: null,
+              back: null,
+            },
+          ],
+        },
+      })
+    );
+    let previewBody = null;
+    await page.route('**/api/preview*', async (route) => {
+      previewBody = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({ json: { card: 'data:image/png;base64,iVBORw0KGgo=' } });
+    });
+
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const cal = page.locator('.tpl-card[data-key="ex-age"] .tpl-cal');
+    const ageInput = cal.locator('.cal-extra[data-field="AGE"]');
+    await expect(ageInput).toHaveCount(1);
+
+    // A theme with NO extra fields gets no extra inputs — that panel is unchanged.
+    await expect(page.locator('.tpl-card[data-key="ex-none"] .tpl-cal .cal-extra')).toHaveCount(0);
+
+    await ageInput.fill('40');
+    await cal.locator('.cal-preview-btn').click();
+    await expect(cal.locator('.cal-preview img')).toHaveCount(1);
+    expect(previewBody.extra_fields).toEqual({ AGE: '40' });
+
+    // Cleared to blank, the field is DROPPED rather than sent as "" — so a theme
+    // that declares none posts the same body it always did.
+    previewBody = null;
+    await ageInput.fill('');
+    await cal.locator('.cal-preview-btn').click();
+    await expect.poll(() => previewBody && previewBody.extra_fields).toEqual({});
+  });
+
+  test('a rendered preview can be closed without saving, keeping the knobs', async ({ page }) => {
+    // A preview is a look, not a commitment. Without a way out, the only exits
+    // from a rendered preview are "save and mark calibrated" or leaving the page,
+    // which makes just checking feel like it needs a decision.
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({
+        json: {
+          templates: [
+            {
+              key: 'close-x',
+              slug: 'close-x',
+              display_he: 'סגירה',
+              visibility: 'public',
+              calibrated: false,
+              language: 'hebrew',
+              name_form: 'hebrew',
+              extra_fields: [],
+              assets: [],
+              title_style: { fill: '#000000', outline: '#ffffff' },
+              board: null,
+              back: null,
+            },
+          ],
+        },
+      })
+    );
+    let saveCalls = 0;
+    await page.route('**/api/admin/templates/**', async (route) => {
+      saveCalls += 1;
+      await route.fulfill({ json: { ok: true } });
+    });
+    await page.route('**/api/preview*', (route) =>
+      route.fulfill({ json: { card: 'data:image/png;base64,iVBORw0KGgo=' } })
+    );
+
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const cal = page.locator('.tpl-card[data-key="close-x"] .tpl-cal');
+    await cal.locator('[data-cal="ts.outline_w"]').fill('0.07');
+    await cal.locator('.cal-preview-btn').click();
+    await expect(cal.locator('.cal-preview img')).toHaveCount(1);
+
+    await cal.locator('.cal-preview-close').click();
+    await expect(cal.locator('.cal-preview img')).toHaveCount(0);
+    // Closing is not saving.
+    expect(saveCalls).toBe(0);
+    // ...and it discards nothing: the knob keeps its value, so the owner can
+    // close, tweak and preview again.
+    await expect(cal.locator('[data-cal="ts.outline_w"]')).toHaveValue('0.07');
+    // The status bar is hidden, not left as an empty coloured bar.
+    await expect(page.locator('.tpl-card[data-key="close-x"] .tpl-msg')).toBeHidden();
+  });
+
   test('every card exposes a calibration panel (title look-knobs + board/back + preview/save)', async ({
     page,
   }) => {
