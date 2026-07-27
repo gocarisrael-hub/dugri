@@ -138,8 +138,8 @@ def build_csv(words, out, shuffle=True, seed=42):
 - עובדים על ענף ייעודי: `feat/<תיאור-קצר>` לפיצ'ר, `fix/<תיאור-קצר>` לתיקון. לא דוחפים ישירות ל-main.
 - פותחים Pull Request ל-main.
 - ה-CI חייב להיות ירוק לפני מיזוג. הוא מריץ: Prettier (בדיקת פורמט), ESLint, Vitest (בדיקות יחידה) ו-Playwright (בדיקות E2E).
-- אחרי שה-CI עובר — code review. ממזגים רק אחרי אישור.
-- מיזוג ל-main.
+- אחרי שה-CI עובר — code review בידי האינטגרייטור.
+- **רק האינטגרייטור ממזג ל-main — לא הסוכן שכתב את ה-PR.** סוכן פותח PR ועוצר; לעולם לא ממזג (לא את שלו ולא של אחר). ראו סעיף "עבודה מרובת-סוכנים" למטה.
 - המשתמשת לוחצת ידנית על דיפלוי ב-Railway. אף אחד אחר לא מבצע דיפלוי.
 
 כל שינוי מגיע עם בדיקות. פיצ'ר חדש, תיקון באג או שינוי התנהגות — תמיד מצורפות בדיקות שמכסות את התרחיש. תיקון בלי בדיקה הוא תיקון שיכול להישבר שוב.
@@ -148,3 +148,26 @@ def build_csv(words, out, shuffle=True, seed=42):
 
 - בדיקות יחידה: `tests/unit/*.test.js` (סביבת jsdom, מייבאים מ-`vitest`).
 - בדיקות E2E: `tests/e2e/*.spec.js` (Playwright, מול האתר הסטטי שמוגש מתיקיית `site/`).
+
+## עבודה מרובת-סוכנים (Multi-agent workflow)
+
+If you were told "you are Agent A/B/C/D", this section is your operating manual.
+
+You are ONE of several parallel agents. Each works in its OWN git worktree. A single **integrator** — NOT you — reviews and merges every PR to main.
+
+**Domains**
+
+- Agent A — Commerce: pricing, coupons, orders, checkout, payment.
+- Agent B — Catalog & Design: designs, gallery/images, templates, themes, storefront carousels.
+- Agent C — Wizard & Word-collection: buyer wizard, word collection, name preview, the Python generator + print PDF.
+- Agent D — Platform & Comms: settings, content editor, WhatsApp/Whapi, emails/reminders, the test/CI harness.
+  Full detail: `docs/agent-partition.md`.
+
+**Rules (every agent)**
+
+1. Own worktree: you start in the repo root — FIRST run `git worktree add -b feat/<short> ../dugri-<short> origin/main` and do ALL work there. Never edit files in the shared root checkout.
+2. The two monolith files — `server/index.js` (all routes) and `server/db.js` (all stores) — are shared: edit ONLY your domain's block, never reflow another domain's code.
+3. Before EVERY push: `git fetch origin && git rebase origin/main` (resolve only YOUR block), re-run `npm test`, then `git push --force-with-lease`.
+4. Open your OWN PR (`gh pr create`). CI must be green — Prettier, ESLint, Vitest, Playwright (E2E runs on push:main too). Don't wave a red E2E off as "flake"; root-cause it (CI already retries load-flakes twice).
+5. **You NEVER merge — not your own PR, not anyone's. A single integrator reviews and merges.** Open your PR and STOP.
+6. Never deploy — Railway is owner-only.
