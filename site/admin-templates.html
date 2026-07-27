@@ -742,6 +742,19 @@
       // /api/preview using the UNSAVED knobs) and a save that flips calibrated:true.
       // The preview is the visual guide — the owner tweaks frac/colors, previews,
       // sees the name land on the board/back, and only saves once it looks right.
+      // Hebrew labels + sample values for the placeholders a theme's title can
+      // carry beyond {NAME}. The labels match server/validate.js so the owner sees
+      // the same wording here as in a production-validation error. The samples are
+      // only so the preview renders something sensible on first open — the owner
+      // overwrites them freely.
+      const EXTRA_FIELD_LABEL = {
+        AGE: 'גיל',
+        YEARS: 'שנים',
+        NAME1: 'שם ראשון',
+        NAME2: 'שם שני',
+      };
+      const EXTRA_FIELD_SAMPLE = { AGE: '30', YEARS: '30', NAME1: 'מיכל', NAME2: 'זאבי' };
+
       function buildCalibrationPanel(t) {
         const ts = t.title_style || {};
         const details = document.createElement('details');
@@ -868,7 +881,7 @@
         );
         body.append(wsG);
 
-        // actions: sample name + preview + save
+        // actions: sample name + any theme-required extra fields + preview + save
         const actions = document.createElement('div');
         actions.className = 'cal-actions';
         const nameInput = document.createElement('input');
@@ -877,6 +890,24 @@
         nameInput.value = t.language === 'english' ? 'DANIEL' : 'דניאל';
         nameInput.placeholder = 'שם לדוגמה';
         nameInput.style.maxWidth = '140px';
+        // A theme whose title template carries placeholders beyond {NAME} needs a
+        // sample value for EACH of them, or the preview renders the title with
+        // them blank: the japanese theme ("{NAME}'S {AGE}S") came out as
+        // "DANIEL'S S", which reads as a broken template rather than a missing
+        // input. Driven off the theme's own extra_fields, so a theme with none
+        // (most of them) shows nothing extra and is unchanged.
+        const extraInputs = [];
+        for (const field of t.extra_fields || []) {
+          const inp = document.createElement('input');
+          inp.type = 'text';
+          inp.className = 'cal-extra';
+          inp.dataset.field = field;
+          inp.placeholder = EXTRA_FIELD_LABEL[field] || field;
+          inp.title = (EXTRA_FIELD_LABEL[field] || field) + ' (' + field + ')';
+          inp.value = EXTRA_FIELD_SAMPLE[field] || '';
+          inp.style.maxWidth = field === 'NAME1' || field === 'NAME2' ? '120px' : '90px';
+          extraInputs.push(inp);
+        }
         const previewBtn = document.createElement('button');
         previewBtn.type = 'button';
         previewBtn.className = 'link-btn cal-preview-btn';
@@ -885,7 +916,7 @@
         saveBtn.type = 'button';
         saveBtn.className = 'link-btn cal-save cal-save-btn';
         saveBtn.textContent = 'שמור וסמן מכויל';
-        actions.append(nameInput, previewBtn, saveBtn);
+        actions.append(nameInput, ...extraInputs, previewBtn, saveBtn);
         body.append(actions);
 
         const preview = document.createElement('div');
@@ -1264,6 +1295,15 @@
           const card = calPreviewBtn.closest('.tpl-card');
           const calibration = collectCalibration(card);
           const name = (card.querySelector('.cal-name') || {}).value || '';
+          // Sample values for the theme's own extra placeholders, so a title like
+          // "{NAME}'S {AGE}S" previews as written instead of losing {AGE}. Blank
+          // inputs are dropped rather than sent as "", which keeps the request
+          // identical to today's for a theme that declares no extra fields.
+          const extraFields = {};
+          for (const inp of card.querySelectorAll('.tpl-cal .cal-extra')) {
+            const v = (inp.value || '').trim();
+            if (v) extraFields[inp.dataset.field] = v;
+          }
           const previewEl = card.querySelector('.tpl-cal .cal-preview');
           calPreviewBtn.disabled = true;
           previewEl.textContent = 'מרנדר…';
@@ -1271,7 +1311,12 @@
             const res = await fetch('/api/preview?key=' + encodeURIComponent(key), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ theme: card.dataset.key, name, calibration }),
+              body: JSON.stringify({
+                theme: card.dataset.key,
+                name,
+                calibration,
+                extra_fields: extraFields,
+              }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
