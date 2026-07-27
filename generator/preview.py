@@ -87,15 +87,36 @@ def _crop_card(full_png, cell, viewbox, out_png):
     return out_png
 
 
+def _merge_calibration(cfg, blob):
+    """Merge an owner-supplied, not-yet-persisted calibration blob into a cfg copy.
+
+    Mirrors the real themes.json schema exactly (see build.py: title_style keys
+    fill/outline/outline_w/arch/shadow[/size/board_size/back_size/align/offset/
+    italic]; board/back = {frac:{x0,y0,x1,y1}, fill, outline}; word_size at theme
+    level). ``board``/``back``/``word_size`` may be null/absent. Returns a NEW
+    dict so the underlying themes mapping is never mutated; sets calibrated:true
+    so the theme renders exactly as it will once the owner saves these knobs.
+    """
+    merged = dict(cfg)
+    merged["title_style"] = blob["title_style"]
+    merged["board"] = blob.get("board")
+    merged["back"] = blob.get("back")
+    if blob.get("word_size") is not None:
+        merged["word_size"] = blob["word_size"]
+    merged["calibrated"] = True
+    return merged
+
+
 def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
-            chasers=False, custom_title=None):
+            chasers=False, custom_title=None, calibration=None):
     """Render a preview and return ``{"card": path, "board": path, "back": path}``.
 
     ``board`` and ``back`` are included only when the theme has that artwork; the
     single run produces the front card, the game board AND the personalized card
     back together (one Chrome per product, no separate back process).
 
-    theme         a key in generator/themes.json (must be calibrated)
+    theme         a key in generator/themes.json (must exist; may be uncalibrated
+                  only when ``calibration`` is supplied)
     name          the honoree name (cased per the theme's name_form)
     extra_fields  dict feeding the title template (AGE/YEARS/NAME1/...)
     word_font     optional card word-font filename override (theme fonts/ or the
@@ -105,9 +126,26 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
     custom_title  optional free-form title (F7) overriding the theme-derived title
                   on the sample card + board; empty/absent keeps the theme default,
                   so the preview is WYSIWYG for what production renders
+    calibration   optional owner-supplied calibration blob (dict; see
+                  ``_merge_calibration``) for rendering an UNCALIBRATED template
+                  from knobs not yet saved to themes.json. When given, it is
+                  merged into the in-memory cfg (title_style/board/back/word_size)
+                  and ``ensure_calibrated`` is skipped — WITHOUT writing any theme
+                  file. When absent, behavior is unchanged: an uncalibrated theme
+                  still errors.
     """
-    cfg = config.theme(theme)
-    config.ensure_calibrated(cfg)
+    cfg = config.theme(theme)  # theme must exist (KeyError otherwise), even uncalibrated
+    override_installed = False
+    if calibration is not None:
+        cfg = _merge_calibration(cfg, calibration)
+        # Every render path (build_page, render_board, render_backs) re-reads the
+        # cfg via config.theme(theme); install the merged cfg as an in-memory
+        # override so the knobs reach ALL of them for this one render. Cleared in
+        # the finally below — nothing is ever written to themes.json.
+        config.set_theme_override(theme, cfg)
+        override_installed = True
+    else:
+        config.ensure_calibrated(cfg)
     title_lines = config.title_lines(cfg, name, extra_fields or {}, custom_title=custom_title)
 
     own_workdir = workdir is None
@@ -173,6 +211,11 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
         if own_workdir:
             shutil.rmtree(workdir, ignore_errors=True)
         raise
+    finally:
+        # The calibration override is in-memory for THIS render only; always clear
+        # it so it can never leak into a later render (of this or another theme).
+        if override_installed:
+            config.set_theme_override(theme, None)
 
 
 def _parse_fields(pairs):
@@ -183,6 +226,28 @@ def _parse_fields(pairs):
         k, v = p.split("=", 1)
         out[k.strip()] = v
     return out
+
+
+def _load_calibration(path):
+    """Load + shape-check a ``--calibration`` JSON file, or return None.
+
+    Bad JSON / missing file / wrong shape exits non-zero with a clear one-line
+    stderr message (``sys.exit(str)`` — no traceback), so the server can classify
+    the failure instead of choking on a Python stack trace.
+    """
+    if path is None:
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            blob = json.load(f)
+    except (OSError, ValueError) as e:
+        sys.exit(f"bad --calibration file {path!r}: {e}")
+    if not isinstance(blob, dict) or not isinstance(blob.get("title_style"), dict):
+        sys.exit(
+            f"bad --calibration file {path!r}: expected a JSON object with a "
+            "'title_style' object"
+        )
+    return blob
 
 
 def main():
@@ -196,13 +261,24 @@ def main():
                     help="show the theme's chasers board variant when available")
     ap.add_argument("--title", default=None,
                     help="optional custom title overriding the theme-derived title")
+    ap.add_argument("--calibration", default=None, metavar="PATH",
+                    help="path to a JSON file of owner-supplied, not-yet-saved "
+                         "calibration knobs (title_style/board/back/word_size) to "
+                         "render an UNCALIBRATED template; never writes themes.json")
     args = ap.parse_args()
 
-    imgs = preview(
-        args.theme, args.name, _parse_fields(args.field),
-        word_font=args.word_font, workdir=args.out_dir, chasers=args.chasers,
-        custom_title=args.title,
-    )
+    calibration = _load_calibration(args.calibration)
+    try:
+        imgs = preview(
+            args.theme, args.name, _parse_fields(args.field),
+            word_font=args.word_font, workdir=args.out_dir, chasers=args.chasers,
+            custom_title=args.title, calibration=calibration,
+        )
+    except (RuntimeError, KeyError) as e:
+        # Known, classifiable failures (uncalibrated theme / unknown theme) — emit
+        # the message on stderr with a non-zero exit, NOT a traceback, so the
+        # server's /not calibrated|unknown theme/i mapping can catch it.
+        sys.exit(str(e))
     # The server parses this JSON line to locate the produced PNGs.
     print(json.dumps(imgs))
 

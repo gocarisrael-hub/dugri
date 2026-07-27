@@ -27,8 +27,40 @@ def load_themes():
         return json.load(f)
 
 
+# In-memory, not-yet-persisted theme overrides. When set for a theme name, every
+# ``theme(name)`` lookup returns the override INSTEAD of the on-disk themes.json
+# entry — without ever writing the file. This lets the order preview render an
+# UNCALIBRATED, freshly-uploaded template from owner-supplied calibration knobs
+# they're still tweaking in the admin form (not saved to themes.json yet), so the
+# preview is WYSIWYG for what production will render once those same knobs are
+# saved. Every render path (render_page.build_page, build.render_board/backs)
+# re-reads the config via ``theme(name)``, so installing the override here makes
+# the merged knobs reach ALL of them for the one render. Preview installs/clears
+# it around a single render; it is never persisted.
+_OVERRIDES = {}
+
+
+def set_theme_override(name, cfg):
+    """Install (cfg is a dict) or clear (cfg is None) an in-memory theme override.
+
+    See ``_OVERRIDES``. This never touches themes.json — the override lives only
+    for the life of the process (in practice: one preview render, cleared after).
+    """
+    if cfg is None:
+        _OVERRIDES.pop(name, None)
+    else:
+        _OVERRIDES[name] = cfg
+
+
 def theme(name):
-    """Return the config dict for a single theme (by folder-name key)."""
+    """Return the config dict for a single theme (by folder-name key).
+
+    An in-memory override installed via ``set_theme_override`` wins over the
+    on-disk entry (used by the preview to render uncalibrated, not-yet-saved
+    knobs); otherwise the theme must exist in themes.json.
+    """
+    if name in _OVERRIDES:
+        return _OVERRIDES[name]
     themes = load_themes()
     if name not in themes:
         raise KeyError(f"unknown theme {name!r}; known: {sorted(themes)}")
