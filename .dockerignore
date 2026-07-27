@@ -42,3 +42,10 @@ resources/
 !resources/canva/templates/**
 resources/canva/templates/*/filled
 resources/canva/templates/*/filled/**
+
+# The seed word pools (content/wordlists/*.txt) that generator/topup.py reads to
+# top a short order up to a full deck. The `*` above excludes everything, so the
+# Dockerfile's `COPY content/` needs these re-includes or the build has nothing to
+# copy (that broke every order under a full deck — #216 added the COPY but not this).
+!content/
+!content/**
