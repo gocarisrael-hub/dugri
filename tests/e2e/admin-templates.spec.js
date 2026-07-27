@@ -90,6 +90,67 @@ test.describe('admin templates — status view (read-only)', () => {
     await expect(page.locator('#tpl-list')).toContainText('מפתח גישה');
   });
 
+  test('auto-calibration hints: partial pre-fill renders, low-confidence fields flagged, notes shown', async ({
+    page,
+  }) => {
+    // Simulate what the upcoming auto-calibration produces: a PARTIAL title_style
+    // (only what it could measure), plus per-field `confidence` and `notes`. The
+    // form must pre-fill without assuming every key is present and surface the
+    // low-confidence fields. Stub the list so no real template/fixture is needed.
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({
+        json: {
+          templates: [
+            {
+              key: 'auto-x',
+              slug: 'auto-x',
+              display_he: 'כיול אוטומטי',
+              visibility: 'public',
+              calibrated: false,
+              language: 'hebrew',
+              name_form: 'hebrew',
+              extra_fields: [],
+              assets: [],
+              // Only fill + size were measured — outline_w/arch/board/back absent.
+              title_style: { fill: '#ff0000', size: 20 },
+              board: null,
+              back: null,
+              word_size: null,
+              confidence: {
+                'title_style.fill': 'high',
+                'title_style.outline_w': 'none',
+                'board.frac': 'low',
+              },
+              notes: ['לא זוהה עובי מתאר', 'תיבת השם על הלוח לא ודאית'],
+            },
+          ],
+        },
+      })
+    );
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const card = page.locator('.tpl-card[data-key="auto-x"]');
+    await expect(card).toBeVisible();
+    const cal = card.locator('.tpl-cal');
+
+    // Partial pre-fill: the measured fill is set; an ABSENT field falls back to its
+    // default (outline_w → 0) rather than crashing or blanking the form.
+    await expect(cal.locator('[data-cal="ts.fill"]')).toHaveValue('#ff0000');
+    await expect(cal.locator('[data-cal="ts.outline_w"]')).toHaveValue('0');
+
+    // Notes are listed.
+    await expect(cal.locator('.cal-notes')).toContainText('לא זוהה עובי מתאר');
+
+    // A 'none' field is flagged "fill it in"; a 'low' frac field is flagged "check".
+    const owField = cal.locator('.cal-field:has([data-cal="ts.outline_w"])');
+    await expect(owField).toHaveClass(/cal-check/);
+    await expect(owField.locator('.cal-flag')).toHaveText('לא זוהה — מלאו');
+    const fracField = cal.locator('.cal-field:has([data-cal="board.frac.x0"])');
+    await expect(fracField.locator('.cal-flag')).toHaveText('בדקו');
+
+    // A HIGH-confidence field carries no flag.
+    await expect(cal.locator('.cal-field:has([data-cal="ts.fill"]) .cal-flag')).toHaveCount(0);
+  });
+
   test('every card exposes a calibration panel (title look-knobs + board/back + preview/save)', async ({
     page,
   }) => {

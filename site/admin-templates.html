@@ -351,6 +351,36 @@
         color: #2f6b2a;
         font-weight: 700;
       }
+      /* Auto-calibration hints: notes list + per-field "check this" flag */
+      .cal-notes {
+        background: #fbeecb;
+        border: 1px solid #edd9a6;
+        border-radius: 9px;
+        padding: 8px 10px;
+        margin: 0 0 10px;
+        font-size: 12px;
+        color: #7a5f14;
+      }
+      .cal-notes ul {
+        margin: 4px 0 0;
+        padding-inline-start: 18px;
+      }
+      .cal-flag {
+        display: inline-block;
+        margin-inline-start: 6px;
+        font-size: 10px;
+        font-weight: 800;
+        color: #8a6d1e;
+        background: #fbeecb;
+        border: 1px solid #edd9a6;
+        border-radius: 99px;
+        padding: 1px 7px;
+      }
+      .cal-field.cal-check input,
+      .cal-field.cal-check select {
+        border-color: #e0b950;
+        box-shadow: 0 0 0 1px #f0d488;
+      }
       .assets {
         list-style: none;
         margin: 12px 0 0;
@@ -861,7 +891,62 @@
         const preview = document.createElement('div');
         preview.className = 'cal-preview';
         body.append(preview);
+
+        // Auto-calibration hints. Fields the upload couldn't measure arrive absent
+        // (already handled above — every control has a default), and the measured
+        // ones carry a confidence level: flag anything low/none as "check this one",
+        // and list the notes explaining what couldn't be worked out.
+        const notes = Array.isArray(t.notes)
+          ? t.notes.filter((s) => typeof s === 'string' && s.trim())
+          : [];
+        if (notes.length) {
+          const box = document.createElement('div');
+          box.className = 'cal-notes';
+          const h = document.createElement('strong');
+          h.textContent = 'כיול אוטומטי — לבדיקה:';
+          box.append(h);
+          const ul = document.createElement('ul');
+          for (const n of notes) {
+            const li = document.createElement('li');
+            li.textContent = n;
+            ul.append(li);
+          }
+          box.append(ul);
+          body.insertBefore(box, body.firstChild);
+        }
+        const conf = t.confidence && typeof t.confidence === 'object' ? t.confidence : null;
+        if (conf) {
+          for (const input of details.querySelectorAll('[data-cal]')) {
+            const k = confKeyFor(input.dataset.cal);
+            const level = k && conf[k];
+            if (level !== 'low' && level !== 'none') continue;
+            const label = input.closest('.cal-field');
+            if (!label || label.querySelector('.cal-flag')) continue;
+            label.classList.add('cal-check');
+            const flag = document.createElement('span');
+            flag.className = 'cal-flag';
+            flag.textContent = level === 'none' ? 'לא זוהה — מלאו' : 'בדקו';
+            flag.title = 'הכיול האוטומטי לא בטוח בערך הזה';
+            label.append(flag);
+          }
+        }
         return details;
+      }
+
+      // Map a control's data-cal name → the auto-calibration confidence key (the
+      // dotted field path the measurer reports). The four frac coordinates share
+      // one key (board.frac / back.frac); the offset X/Y share title_style.offset;
+      // the enable toggles have no confidence of their own.
+      function confKeyFor(dataCal) {
+        if (!dataCal || dataCal === 'board.enabled' || dataCal === 'back.enabled') return null;
+        if (dataCal.startsWith('ts.')) {
+          const rest = dataCal.slice(3);
+          if (rest === 'offset_x' || rest === 'offset_y') return 'title_style.offset';
+          return 'title_style.' + rest;
+        }
+        const fm = dataCal.match(/^(board|back)\.frac\./);
+        if (fm) return fm[1] + '.frac';
+        return dataCal; // board.fill, board.outline, back.fill, back.outline, word_size
       }
 
       // Read one calibration control by its data-cal name (scoped to the card).

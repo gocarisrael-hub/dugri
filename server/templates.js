@@ -657,6 +657,13 @@ function computeTemplateStatus(root, key, entry) {
     board: (entry && entry.board) || null,
     back: (entry && entry.back) || null,
     word_size: entry && entry.word_size != null ? entry.word_size : null,
+    // Auto-calibration hints (populated when the upload measured the artwork):
+    // `confidence` maps a dotted field path → 'high'|'low'|'none', `notes` is a
+    // list of strings. Pass-through only (never validated/persisted by the save
+    // path) so the form can flag low-confidence pre-fills as "check this one".
+    confidence:
+      entry && entry.confidence && typeof entry.confidence === 'object' ? entry.confidence : null,
+    notes: Array.isArray(entry && entry.notes) ? entry.notes : null,
     assets,
     chasersBoard: !!(chasers && chasers.present),
     complete: missingRequired.length === 0,

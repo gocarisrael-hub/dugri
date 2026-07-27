@@ -366,6 +366,28 @@ describe('templates.js full editing (status / rename / replace)', () => {
     expect(st.chasersBoard).toBe(false);
     // an OPTIONAL asset missing does not make the template incomplete
     expect(st.complete).toBe(true);
+    // A fresh template has no auto-calibration hints.
+    expect(st.confidence).toBeNull();
+    expect(st.notes).toBeNull();
+  });
+
+  it('computeTemplateStatus passes through auto-calibration confidence + notes when present', () => {
+    const root = makeScaffold();
+    onboard(root, 'stat-conf');
+    const themes = templates.loadThemes(templates.themesPathFor(root));
+    // Auto-calibration attaches measurement hints to the entry (never validated
+    // or persisted by the save path — pure pass-through for the form).
+    themes['stat-conf'].confidence = { 'title_style.fill': 'high', 'board.frac': 'low' };
+    themes['stat-conf'].notes = ['לא זוהתה תיבת שם על הלוח בביטחון'];
+    const st = templates.computeTemplateStatus(root, 'stat-conf', themes['stat-conf']);
+    expect(st.confidence).toEqual({ 'title_style.fill': 'high', 'board.frac': 'low' });
+    expect(st.notes).toEqual(['לא זוהתה תיבת שם על הלוח בביטחון']);
+    // Malformed hints degrade to null rather than leaking a bad shape.
+    themes['stat-conf'].confidence = 'nope';
+    themes['stat-conf'].notes = 'not-an-array';
+    const st2 = templates.computeTemplateStatus(root, 'stat-conf', themes['stat-conf']);
+    expect(st2.confidence).toBeNull();
+    expect(st2.notes).toBeNull();
   });
 
   it('listTemplateStatuses flips chasersBoard true when the variant exists', () => {
