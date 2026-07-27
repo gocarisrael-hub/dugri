@@ -582,7 +582,7 @@ def calibrate(theme_key, workdir=None):
 
         # --- BACKS: one title per card; fractions are of the CARD CELL ---
         kf, kc = sheet("backs", "filled"), sheet("backs", "clean")
-        recipe_path = os.path.join(HERE, "recipes", cfg["recipe"] + ".json")
+        recipe_path = config.recipe_path(cfg["recipe"])
         if os.path.exists(kf) and os.path.exists(kc) and os.path.exists(recipe_path):
             recipe = json.load(open(recipe_path, encoding="utf-8"))
             mask, image, vb = _diff(kf, kc, workdir)

@@ -92,7 +92,6 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
 
 def render_backs(theme, backs_clean, title_lines, out_png):
     """Overlay the centered title on each of the 8 clean backs."""
-    import json
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
     w, h, vb = svg_dims(backs_clean)
@@ -101,7 +100,7 @@ def render_backs(theme, backs_clean, title_lines, out_png):
         return render_svg(open(backs_clean, encoding="utf-8").read(), w, h, out_png)
     frac = bk["frac"]
     title_font = config.font_path(theme, cfg["title_font"])
-    recipe = json.load(open(os.path.join(HERE, "recipes", f"{cfg['recipe']}.json")))
+    recipe = config.load_recipe(cfg["recipe"])
     svg = open(backs_clean, encoding="utf-8").read()
     body = ["<style>" + rp.GEOMETRIC_TEXT_STYLE
             + rp.font_face("TitleFont", title_font) + "</style>"]

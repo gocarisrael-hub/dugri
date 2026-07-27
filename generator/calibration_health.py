@@ -582,7 +582,7 @@ def _assets(theme_key, cfg):
             problems.append(
                 f"קובץ פונט {kind} חסר: {named or '(לא הוגדר)'} — ההפקה תיכשל. "
                 f"הנתיב שנבדק: {path}")
-    recipe_path = os.path.join(HERE, "recipes", f"{cfg.get('recipe')}.json")
+    recipe_path = config.recipe_path(cfg.get("recipe"))
     paths["recipe"] = recipe_path
     if not os.path.exists(recipe_path):
         problems.append(f"קובץ המתכון (recipe) של התבנית חסר: {recipe_path} — "
@@ -593,7 +593,7 @@ def _assets(theme_key, cfg):
         paths[f"clean_{which}"] = p
         if needed and not os.path.exists(p):
             problems.append(f"קובץ הרקע הנקי חסר: clean/{which}.svg בתיקיית "
-                            f"{os.path.relpath(tdir, config.REPO)} — ההפקה תיכשל.")
+                            f"{config.display_path(tdir)} — ההפקה תיכשל.")
     return problems, paths
 
 

@@ -44,8 +44,7 @@ BOARD_MAX_W = 1000
 
 
 def _recipe(cfg):
-    with open(os.path.join(HERE, "recipes", f"{cfg['recipe']}.json"), encoding="utf-8") as f:
-        return json.load(f)
+    return config.load_recipe(cfg["recipe"])
 
 
 def _sample_card_index(recipe):
