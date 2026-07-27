@@ -51,6 +51,9 @@ COPY resources/canva/templates/ ./resources/canva/templates/
 # these, so EVERY order with fewer than TARGET personal words reads them — an
 # image without this directory dies with FileNotFoundError on
 # content/wordlists/generic-350.txt partway through generating a paid order.
+# READ-ONLY baseline: the container filesystem is ephemeral, so the owner's edits
+# are written to DATA_DIR/wordlists instead and SHADOW these at read time (see
+# server/wordlists.js + generator/topup.py).
 COPY content/ ./content/
 
 ENV NODE_ENV=production

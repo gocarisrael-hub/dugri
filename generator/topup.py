@@ -12,6 +12,21 @@ added.
 
 Priority order (dedup, case/space-insensitive): personal -> theme wordlist ->
 generic-350. The theme's wordlist file is named in themes.json (`wordlist`).
+
+WHERE A POOL IS READ FROM (two directories, store-first)
+--------------------------------------------------------
+1. DATA_DIR/wordlists — the owner's copy on the PERSISTENT Railway volume,
+   written by the admin wordlist screen (server/wordlists.js). DATA_DIR comes
+   from the environment; this process is spawned by the Node server and inherits
+   it. Unset (local dev / tests) simply means "no owner store".
+2. <repo>/content/wordlists — the pools that ship inside the Docker image. The
+   container filesystem is EPHEMERAL, so this is READ-ONLY baseline content:
+   it is rebuilt from the image on every deploy and nothing may be written here.
+
+A file in (1) SHADOWS the shipped file of the same name, so an owner edit to a
+shipped list takes effect WITHOUT mutating the image (server/wordlists.js does
+the copy-on-write). Both sides implement the identical rule so the generator and
+the admin UI never disagree about which bytes are the live pool.
 """
 import os
 import re
@@ -20,6 +35,9 @@ import config
 
 TARGET = 416
 WORDLISTS_DIR = os.path.join(config.REPO, "content", "wordlists")
+# The owner's persistent store; "" when DATA_DIR is unset (local dev / tests).
+DATA_DIR = os.environ.get("DATA_DIR") or ""
+STORE_DIR = os.path.join(DATA_DIR, "wordlists") if DATA_DIR else ""
 GENERIC = "generic-350.txt"
 
 
@@ -28,9 +46,33 @@ def _norm(word):
     return re.sub(r"\s+", " ", str(word).strip()).lower()
 
 
+def _wordlist_path(filename):
+    """Absolute path a pool is read from, or None when it exists nowhere.
+
+    The owner's DATA_DIR copy wins over the shipped baseline. basename() is the
+    traversal guard: a themes.json `wordlist` can never reach outside the two
+    wordlist directories.
+    """
+    name = os.path.basename(str(filename or "").strip())
+    if not name:
+        return None
+    if STORE_DIR:
+        owner = os.path.join(STORE_DIR, name)
+        if os.path.isfile(owner):
+            return owner
+    shipped = os.path.join(WORDLISTS_DIR, name)
+    return shipped if os.path.isfile(shipped) else None
+
+
 def _read_wordlist(filename):
-    """Read a wordlist file into a list of non-empty lines (blank lines ignored)."""
-    path = os.path.join(WORDLISTS_DIR, filename)
+    """Read a wordlist into a list of lines (blank lines ignored).
+
+    A pool that exists in NEITHER directory yields [] rather than raising: a
+    missing filler pool must degrade to a shorter deck, never fail a paid order.
+    """
+    path = _wordlist_path(filename)
+    if not path:
+        return []
     with open(path, encoding="utf-8-sig") as f:
         return [ln for ln in f.read().splitlines()]
 
