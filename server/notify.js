@@ -430,6 +430,36 @@ function buildCustomOrderAlert(collection, baseUrl, options) {
 // Returns {subject, text} — same shape as the other builders. `options` may
 // carry `amountCharged` — the amount actually paid (0 for a free 100%-coupon
 // order, the discounted amount for a partial coupon).
+// Shared BUYER-facing order-detail block: package + what-they-bought line +
+// amount + design/colour, then the delivery/self-pickup block. Used by BOTH buyer
+// emails — the confirmation at order creation and the receipt at payment — so the
+// two can never drift apart. `priceLabel` is the field label for the amount line,
+// letting the receipt say "שולם" where the confirmation says "מחיר". `options`
+// may carry `amountCharged` (see amountLines).
+function buyerDetailLines(collection, options, priceLabel) {
+  const lines = [];
+  const f = fieldLabels();
+  const order = (collection && collection.order) || null;
+  if (order) {
+    const label = versionLabelFor(order.version);
+    lines.push(f.buyerPackage + ': ' + label);
+    // What they bought — a one-line description of the version (owner-editable).
+    const desc = productLine(order.version);
+    if (desc) lines.push(desc);
+    lines.push(...amountLines(order, options, priceLabel));
+  }
+  if (collection && collection.design) lines.push(f.buyerDesign + ': ' + collection.design);
+  if (collection && collection.color) lines.push(f.buyerColor + ': ' + collection.color);
+  // Delivery / self-pickup block: approx time + address (delivery) or the
+  // "we'll email when ready" + prep time + pickup address (pickup).
+  const fulfil = fulfilmentLines(order);
+  if (fulfil.length) {
+    lines.push('');
+    lines.push(...fulfil);
+  }
+  return lines;
+}
+
 function buildBuyerConfirmation(collection, baseUrl, options) {
   const name = honoreeName(collection);
   const tpl = emailTpl('buyer_confirmation');
@@ -442,24 +472,7 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
   const values = { honoree: name, link: link || '' };
   const subject = interpolate(tpl.subject, values);
   const lines = interpolate(tpl.body, values).split('\n');
-  const order = (collection && collection.order) || null;
-  if (order) {
-    const label = versionLabelFor(order.version);
-    lines.push(f.buyerPackage + ': ' + label);
-    // What they bought — a one-line description of the version (owner-editable).
-    const desc = productLine(order.version);
-    if (desc) lines.push(desc);
-    lines.push(...amountLines(order, options, f.buyerPrice));
-  }
-  if (collection && collection.design) lines.push(f.buyerDesign + ': ' + collection.design);
-  if (collection && collection.color) lines.push(f.buyerColor + ': ' + collection.color);
-  // Delivery / self-pickup block: approx time + address (delivery) or the
-  // "we'll email when ready" + prep time + pickup address (pickup).
-  const fulfil = fulfilmentLines(order);
-  if (fulfil.length) {
-    lines.push('');
-    lines.push(...fulfil);
-  }
+  lines.push(...buyerDetailLines(collection, options, f.buyerPrice));
   // Branded HTML mirrors the plain-text body but drops the raw URL line — the
   // link becomes the CTA button. Everything above the link is reused as-is.
   const htmlLines = lines.slice();
@@ -475,6 +488,73 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
   lines.push(ft.line2);
   const html = renderEmailHtml({
     title: 'ההזמנה שלכם התקבלה — ' + name,
+    bodyLines: htmlLines,
+    cta: link ? { label: cta.addWords, url: link } : null,
+    baseUrl,
+    // The template product photo (owner override or catalog thumbnail), resolved
+    // by the caller and passed through options; alt text is the chosen design.
+    image: options && options.productImageUrl ? String(options.productImageUrl) : null,
+    imageAlt: collection && collection.design ? String(collection.design) : name,
+  });
+  return { subject, text: lines.join('\n'), html };
+}
+
+// Pure builder: the OWNER's "payment received" receipt — fired at the real
+// unpaid->paid transition (card callback, free 100%-coupon order, or a manual
+// admin mark-paid), NOT at order creation (that's buildPaidMessage, whose legacy
+// name predates this split). `options` carries `amountCharged` — what the
+// customer ACTUALLY paid after any coupon; without it the order's pre-coupon
+// total is shown. `baseUrl` is the normalized public origin (optional).
+// Returns {subject, text}.
+function buildPaymentReceipt(collection, baseUrl, options) {
+  const name = honoreeName(collection);
+  const tpl = emailTpl('payment_received');
+  const values = ownerTokenValues(collection, baseUrl, options, name);
+  const subject = interpolate(tpl.subject, values);
+  const text = [
+    ...interpolate(tpl.body, values).split('\n'),
+    '',
+    ...orderLines(collection, baseUrl, options),
+  ].join('\n');
+  return { subject, text };
+}
+
+// Pure builder: the BUYER's payment receipt — sent to the customer at the real
+// unpaid->paid transition. Same branded shell as the order confirmation (logo,
+// hero product photo, add-words CTA button) so the two read as one series, but it
+// confirms the PAYMENT: the amount actually charged, the order id, and the
+// order's details. `options` may carry `amountCharged` and `productImageUrl`
+// (resolved by the caller). Returns {subject, text, html}.
+function buildBuyerReceipt(collection, baseUrl, options) {
+  const name = honoreeName(collection);
+  const tpl = emailTpl('buyer_payment_received');
+  const f = fieldLabels();
+  const cta = ctaLabels();
+  const ft = footer();
+  const link = ownerLink(collection, baseUrl);
+  // {link} is available to the owner inside the template body; '' when absent so
+  // it vanishes rather than rendering literally.
+  const values = { honoree: name, link: link || '' };
+  const subject = interpolate(tpl.subject, values);
+  const lines = interpolate(tpl.body, values).split('\n');
+  lines.push(...buyerDetailLines(collection, options, f.buyerPaid));
+  // A receipt needs a reference the customer can quote back to us.
+  if (collection && collection.id) lines.push(f.orderId + ': ' + collection.id);
+  // Branded HTML mirrors the plain-text body but drops the raw URL line — the
+  // link becomes the CTA button. Everything above the link is reused as-is.
+  const htmlLines = lines.slice();
+  if (link) {
+    lines.push('');
+    lines.push('נשאר רק שלב אחד: הוסיפו את 70+ המילים על בעל/ת השמחה כאן:');
+    lines.push(link);
+    htmlLines.push('');
+    htmlLines.push('נשאר רק שלב אחד: הוסיפו את 70+ המילים על בעל/ת השמחה.');
+  }
+  lines.push('');
+  lines.push(ft.line1);
+  lines.push(ft.line2);
+  const html = renderEmailHtml({
+    title: 'התשלום התקבל — ' + name,
     bodyLines: htmlLines,
     cta: link ? { label: cta.addWords, url: link } : null,
     baseUrl,
@@ -715,6 +795,33 @@ async function sendOrderPaid(collection, baseUrl, options) {
   }
 }
 
+// Fire the OWNER's payment receipt to NOTIFY_TO, at the real unpaid->paid
+// transition. `options` carries `amountCharged` (what was actually charged).
+// Never throws.
+async function sendPaymentReceipt(collection, baseUrl, options) {
+  try {
+    return await send(buildPaymentReceipt(collection, baseUrl, options));
+  } catch (e) {
+    console.warn('[notify] sendPaymentReceipt failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
+// Fire the BUYER's payment receipt to the customer's own email (the collection's
+// owner_email captured at checkout), NOT to NOTIFY_TO. Skips gracefully (returns
+// false) when that address is missing/empty, and stays dormant like the others
+// when Resend is unconfigured. Never throws.
+async function sendBuyerReceipt(collection, baseUrl, options) {
+  try {
+    const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
+    if (!to) return false;
+    return await send({ ...buildBuyerReceipt(collection, baseUrl, options), to });
+  } catch (e) {
+    console.warn('[notify] sendBuyerReceipt failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
 // Fire the Dugri-only "custom order needs hand-design" alert (to NOTIFY_TO).
 // Called alongside sendOrderPaid for a paid bespoke order. `baseUrl` is the
 // normalized public origin (optional). Never throws.
@@ -879,6 +986,8 @@ module.exports = {
   buildPaidMessage,
   buildCustomOrderAlert,
   buildBuyerConfirmation,
+  buildPaymentReceipt,
+  buildBuyerReceipt,
   buildFinishedMessage,
   buildPdfReadyMessage,
   buildProductionError,
@@ -889,6 +998,8 @@ module.exports = {
   sendOrderPaid,
   sendCustomOrderAlert,
   sendBuyerConfirmation,
+  sendPaymentReceipt,
+  sendBuyerReceipt,
   sendOrderFinished,
   sendPdfReady,
   sendProductionError,

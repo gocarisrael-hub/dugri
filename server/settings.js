@@ -11,7 +11,7 @@
 // default when there is no override, so the app always has a complete value.
 //
 // Two sections:
-//   email.<name>  — the subject/body templates for the 7 transactional emails,
+//   email.<name>  — the subject/body templates for the transactional emails,
 //                   plus the editable label maps (version labels, order-detail
 //                   field labels, CTA button labels, the shared footer).
 //   wa.trigger.<id> — the WhatsApp trigger catalog (Phase B). Defaults are
@@ -75,6 +75,9 @@ function interpolate(template, values, opts) {
 //   'flag'   — a boolean on/off switch (a checkout version's enabled state).
 const REGISTRY = {
   email: {
+    // The owner's "a new order started" alert. Despite the legacy key name this
+    // fires at ORDER CREATION, not at payment — the payment receipts are the
+    // payment_received / buyer_payment_received pair below.
     order_paid: {
       kind: 'email',
       tokens: ['honoree', 'orderId', 'link', 'adminLink'],
@@ -101,6 +104,30 @@ const REGISTRY = {
         body:
           'תודה רבה על ההזמנה!\n' +
           'קיבלנו את ההזמנה שלך למשחק של {honoree}.\n' +
+          '\n' +
+          'פרטי ההזמנה:',
+      },
+    },
+    // --- payment receipts: fired at the real unpaid->paid transition ONLY -----
+    // (card callback, a free 100%-coupon order, or a manual admin mark-paid).
+    // Distinct from order_paid / buyer_confirmation above, which fire when the
+    // order is CREATED — before/without a completed payment.
+    payment_received: {
+      kind: 'email',
+      tokens: ['honoree', 'orderId', 'link', 'adminLink'],
+      default: {
+        subject: 'דוגרי · התקבל תשלום — {honoree}',
+        body: 'התקבל תשלום עבור ההזמנה של {honoree}.',
+      },
+    },
+    buyer_payment_received: {
+      kind: 'email',
+      tokens: ['honoree', 'link'],
+      default: {
+        subject: 'דוגרי · התשלום התקבל — {honoree}',
+        body:
+          'התשלום התקבל — תודה רבה!\n' +
+          'ההזמנה של {honoree} מאושרת ואנחנו מתחילים להכין את המשחק.\n' +
           '\n' +
           'פרטי ההזמנה:',
       },
@@ -179,6 +206,7 @@ const REGISTRY = {
         freeCoupon: 'קופון 100%', // shown for a fully-free (0 ₪) order
         buyerPackage: '· חבילה', // buyer confirmation: "· חבילה: <label>"
         buyerPrice: '· מחיר', // buyer confirmation: "· מחיר: <n> ₪"
+        buyerPaid: '· שולם', // buyer payment receipt: "· שולם: <n> ₪"
         buyerDesign: '· עיצוב', // buyer confirmation: "· עיצוב: <design>"
         buyerColor: '· צבע', // buyer confirmation: "· צבע: <color>"
         orderId: 'מספר הזמנה', // owner order-detail: "מספר הזמנה: <id>"
