@@ -33,6 +33,31 @@ const isCopied = (rel) =>
     return rel === s || rel.startsWith(s + '/');
   });
 
+// A COPY line is only half the story. .dockerignore excludes EVERYTHING with a
+// leading `*` and then re-includes each build input with `!`, so a path the
+// Dockerfile copies but the ignore file never re-includes is simply absent from
+// the build context — the COPY then matches nothing and either fails the build or
+// ships an empty directory. That is exactly how `content/` was missed twice: the
+// COPY was added without the matching re-include.
+const dockerignore = fs
+  .readFileSync(path.join(repo, '.dockerignore'), 'utf8')
+  .split('\n')
+  .map((l) => l.trim())
+  .filter((l) => l && !l.startsWith('#'));
+
+const excludesEverythingByDefault = dockerignore.includes('*');
+
+// True when the ignore file re-includes `rel` (or a parent of it) via `!`.
+const isReincluded = (rel) =>
+  dockerignore.some((line) => {
+    if (!line.startsWith('!')) return false;
+    const p = line
+      .slice(1)
+      .replace(/\/\*\*$/, '')
+      .replace(/\/$/, '');
+    return rel === p || rel.startsWith(p + '/');
+  });
+
 describe('runtime assets are packaged into the image', () => {
   // Every directory the Python generator opens at request time.
   const RUNTIME_DIRS = [
@@ -46,7 +71,24 @@ describe('runtime assets are packaged into the image', () => {
       expect(fs.existsSync(path.join(repo, dir))).toBe(true);
       expect(isCopied(dir)).toBe(true);
     });
+
+    it(`.dockerignore re-includes ${dir}/ so the COPY has a source`, () => {
+      if (!excludesEverythingByDefault) return; // no blanket exclude, nothing to re-include
+      expect(isReincluded(dir)).toBe(true);
+    });
   }
+
+  it('every path the Dockerfile copies survives .dockerignore', () => {
+    // The general form of the rule above: no COPY may reference a path the
+    // ignore file drops. Catches a future COPY added without its `!` line.
+    if (!excludesEverythingByDefault) return;
+    const dropped = copied
+      .map((s) => s.replace(/^\.\//, '').replace(/\/$/, ''))
+      .filter((s) => s && !s.startsWith('/') && !s.includes('*'))
+      .filter((s) => fs.existsSync(path.join(repo, s)))
+      .filter((s) => !isReincluded(s));
+    expect(dropped).toEqual([]);
+  });
 
   it('copies the wordlists directory topup.py resolves', () => {
     // topup.py: WORKDIR is /app and WORDLISTS_DIR = <repo>/content/wordlists.
