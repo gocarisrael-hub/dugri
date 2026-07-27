@@ -766,19 +766,23 @@ test("a stored delivery address prefills the checkout form so the buyer isn't fo
 });
 
 test('after payment: pay panel + reminder disappear, סיום card takes over', async ({ page }) => {
+  // There is no admin "mark as paid" route — an order goes paid only on a real
+  // money event, and the E2E server runs without card credentials — so the paid
+  // FLAG is injected into the collection GET (ctl.paid). This test is about how
+  // the collect page renders a paid order, not about how it became paid; the
+  // order and the close below are real server state.
+  const ctl = await enableCardButton(page);
   await createCollection(page, 'Shira');
   const url = new URL(page.url());
   const c = url.searchParams.get('c');
   const k = url.searchParams.get('k');
 
-  // Place an order, then mark it paid via the admin endpoint (E2E ADMIN_KEY).
-  // pickup is the enabled-by-default version (this is a real API POST that
+  // Place a real order. pickup is the enabled-by-default version (page.request
   // bypasses page.route, so it must use a version the server actually offers).
   await page.request.post(`/api/collections/${c}/order`, {
     data: { owner_token: k, version: 'pickup' },
   });
-  const paidRes = await page.request.post(`/api/admin/collections/${c}/paid?key=dugri-admin`);
-  expect(paidRes.ok()).toBeTruthy();
+  ctl.paid = true;
 
   await page.reload();
   // Pay panel + top reminder gone; the "keep adding, then סיום" card is shown.

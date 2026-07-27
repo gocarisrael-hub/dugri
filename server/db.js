@@ -662,8 +662,9 @@ const db = {
     return session ? { collection: c, session } : null;
   },
 
-  // Mark an existing order as paid. Used by the admin route (manual), the
-  // PeleCard callback, and the free-coupon path. meta carries the method +
+  // Mark an existing order as paid. Used by the PeleCard callback and the
+  // free-coupon path — the only two real money events. Nothing marks an order
+  // paid by hand (there is no admin mark-paid route). meta carries the method +
   // transaction details, the applied coupon/charge (for the order record), and
   // optionally the session `token` to mark that session resolved.
   markPaid(id, meta = {}) {

@@ -123,6 +123,17 @@ async function waitForMails(n, timeout = 1000) {
   return sent;
 }
 
+// The four transactional messages a paid order produces, keyed by subject: the
+// order-CREATED pair (package price) and the PAYMENT pair (amount charged).
+function split(mails) {
+  return {
+    createdOwner: mails.find((m) => m.subject.includes('התקבלה הזמנה חדשה')),
+    createdBuyer: mails.find((m) => m.subject.includes('ההזמנה שלכם התקבלה')),
+    paidOwner: mails.find((m) => m.subject.includes('התקבל תשלום')),
+    paidBuyer: mails.find((m) => m.subject.includes('התשלום התקבל')),
+  };
+}
+
 describe('order-created emails (100%-coupon order)', () => {
   it('fires owner + buyer emails at ORDER CREATION showing the package price', async () => {
     await post(key('/api/admin/coupons'), { code: 'FREEMAIL', discount_pct: 100 });
@@ -136,23 +147,28 @@ describe('order-created emails (100%-coupon order)', () => {
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ free: true, paid: true, total: 0 });
 
-    const mails = await waitForMails(2);
-    expect(mails.length).toBe(2);
+    // A 100%-coupon order is created AND paid in this one call, so all four
+    // messages fire: the created pair, then the payment-receipt pair.
+    const mails = await waitForMails(4);
+    expect(mails.length).toBe(4);
+    const { createdOwner, createdBuyer, paidOwner, paidBuyer } = split(mails);
+    for (const m of [createdOwner, createdBuyer, paidOwner, paidBuyer]) expect(m).toBeTruthy();
 
-    const owner = mails.find((m) => m.subject.includes('התקבלה הזמנה חדשה'));
-    const buyer = mails.find((m) => m.subject.includes('ההזמנה שלכם התקבלה'));
-    expect(owner).toBeTruthy();
-    expect(buyer).toBeTruthy();
+    // Owner emails go to NOTIFY_TO; buyer emails go to the customer.
+    expect(createdOwner.to).toBe('owner@dugri.example');
+    expect(paidOwner.to).toBe('owner@dugri.example');
+    expect(createdBuyer.to).toBe('buyer@example.com');
+    expect(paidBuyer.to).toBe('buyer@example.com');
 
-    // Owner email goes to NOTIFY_TO; buyer email goes to the customer.
-    expect(owner.to).toBe('owner@dugri.example');
-    expect(buyer.to).toBe('buyer@example.com');
-
-    // Emails now fire at ORDER CREATION with the PACKAGE price — the coupon /
-    // charged-amount is a payment concern and no longer appears in the email.
-    for (const m of [owner, buyer]) {
+    // The CREATED pair shows the PACKAGE price — the coupon is a payment concern.
+    for (const m of [createdOwner, createdBuyer]) {
       expect(m.text).toContain('79 ₪');
       expect(m.text).not.toContain('קופון 100%');
+    }
+    // The PAYMENT pair shows what was actually charged: nothing, via the coupon.
+    for (const m of [paidOwner, paidBuyer]) {
+      expect(m.text).toContain('קופון 100%');
+      expect(m.text).not.toContain('79 ₪');
     }
   });
 });
@@ -179,16 +195,18 @@ describe('paid (PeleCard) order emails — no regression', () => {
     expect(cb.status).toBe(200);
     expect(db.getCollection(c.id).order.paid).toBe(true);
 
-    const mails = await waitForMails(2);
-    const owner = mails.find((m) => m.subject.includes('התקבלה הזמנה חדשה'));
-    const buyer = mails.find((m) => m.subject.includes('ההזמנה שלכם התקבלה'));
-    for (const m of [owner, buyer]) {
+    // Created pair (package price) + payment pair (charged) — both show 79 here.
+    const mails = await waitForMails(4);
+    expect(mails.length).toBe(4);
+    const { createdOwner, createdBuyer, paidOwner, paidBuyer } = split(mails);
+    for (const m of [createdOwner, createdBuyer, paidOwner, paidBuyer]) {
+      expect(m).toBeTruthy();
       expect(m.text).toContain('79 ₪');
       expect(m.text).not.toContain('קופון 100%');
     }
   });
 
-  it('a coupon order still emails the package price (charge is a payment concern)', async () => {
+  it('a coupon order emails the package price at creation and the CHARGE at payment', async () => {
     await post(key('/api/admin/coupons'), { code: 'HALFMAIL', discount_pct: 50 }); // 79 -> 40
     const c = db.createCollection('קופון חצי מייל', { email: 'buyer3@example.com' });
     await post('/api/collections/' + c.id + '/pay/init', {
@@ -211,14 +229,20 @@ describe('paid (PeleCard) order emails — no regression', () => {
     expect(cb.status).toBe(200);
     expect(db.getCollection(c.id).order.paid).toBe(true);
 
+    const mails = await waitForMails(4);
+    expect(mails.length).toBe(4);
+    const { createdOwner, createdBuyer, paidOwner, paidBuyer } = split(mails);
     // The order-received emails fired at creation with the package price (79),
-    // not the discounted charge (40) — the discount applies at payment.
-    const mails = await waitForMails(2);
-    const owner = mails.find((m) => m.subject.includes('התקבלה הזמנה חדשה'));
-    const buyer = mails.find((m) => m.subject.includes('ההזמנה שלכם התקבלה'));
-    for (const m of [owner, buyer]) {
+    // not the discounted charge — the discount applies at payment.
+    for (const m of [createdOwner, createdBuyer]) {
+      expect(m).toBeTruthy();
       expect(m.text).toContain('79 ₪');
-      expect(m.text).not.toContain('קופון 100%');
+    }
+    // The receipts show what the card was actually debited: 40, never 79.
+    for (const m of [paidOwner, paidBuyer]) {
+      expect(m).toBeTruthy();
+      expect(m.text).toContain('40 ₪');
+      expect(m.text).not.toContain('79 ₪');
     }
   });
 });

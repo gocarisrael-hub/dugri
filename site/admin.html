@@ -635,29 +635,11 @@
             badge.textContent = 'שולם ✅';
             tdPaid.appendChild(badge);
           } else {
-            const payBtn = document.createElement('button');
-            payBtn.textContent = 'סמן כשולם';
-            payBtn.onclick = async () => {
-              payBtn.disabled = true;
-              try {
-                const r = await fetch(
-                  '/api/admin/collections/' + c.id + '/paid?key=' + encodeURIComponent(key),
-                  { method: 'POST' }
-                );
-                if (r.ok) {
-                  tdPaid.textContent = '';
-                  const badge = document.createElement('span');
-                  badge.className = 'pill open';
-                  badge.textContent = 'שולם ✅';
-                  tdPaid.appendChild(badge);
-                } else {
-                  payBtn.disabled = false;
-                }
-              } catch {
-                payBtn.disabled = false;
-              }
-            };
-            tdPaid.appendChild(payBtn);
+            // Read-only on purpose: an order becomes paid only through a real
+            // money event (a verified card payment or a 100%-coupon order), so
+            // there is no "mark as paid" action here to flip it by hand.
+            tdPaid.className = 'muted';
+            tdPaid.textContent = 'לא שולם';
           }
 
           // Production state ("הפקה"): the outcome of the last generate attempt.

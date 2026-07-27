@@ -411,12 +411,10 @@ app.get('/api/admin/collections', (req, res) => {
   res.json({ collections: db.listAllCollections() });
 });
 
-// Admin: mark an order as paid.
-app.post('/api/admin/collections/:id/paid', (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  if (!db.markPaid(req.params.id)) return res.status(404).json({ error: 'not found' });
-  res.json({ ok: true });
-});
+// NOTE: there is deliberately NO admin "mark this order paid" route. An order
+// becomes paid only through a real money event — a verified PeleCard callback or
+// a 100%-coupon order — so `paid` always means the customer actually paid, and a
+// payment receipt can never be sent for a payment that did not happen.
 
 // Admin: create a bespoke "custom" (599₪) order on a collection and return the
 // owner pay link, so the admin can hand-set an order to version:'custom' and send
@@ -1178,12 +1176,43 @@ function onOrderCreated(collectionId, base) {
   fireStartNotifications(collectionId, base);
 }
 
-// Payment no longer triggers notifications — the owner wants the order captured
-// and words collected at ORDER CREATION (see onOrderCreated), before/without a
-// completed card payment. Kept as a no-op hook the paid transitions still call, so
-// a payment receipt can be reintroduced here later without re-touching the payment
-// paths.
-function onOrderPaid() {}
+// Send the owner + buyer PAYMENT receipts for a collection that just went paid.
+// The counterpart to sendOrderNotifications (which fires at order CREATION): this
+// one is about the money actually landing, so it shows `amountCharged` — what was
+// charged AFTER any coupon — rather than the package's list price. The buyer's
+// copy carries the product photo and the add-words CTA, so it needs the same async
+// catalog lookup the confirmation does; the owner's copy is fired first and does
+// not wait on it. `base` is the normalized public origin.
+async function sendPaidNotifications(collectionId, base, amountCharged) {
+  const c = db.getCollection(collectionId);
+  if (!c) return;
+  const enriched = { ...c, count: db.listWords(collectionId).length };
+  // One-click admin orders panel link — OWNER copy only. Built here (never inside
+  // server/notify.js) so the mail module never sees ADMIN_KEY, and never passed to
+  // the buyer's copy.
+  const adminLink =
+    base && ADMIN_KEY ? base + '/admin.html?key=' + encodeURIComponent(ADMIN_KEY) : null;
+  // Both callers pass a real charge, but a non-finite value is tolerated: it's
+  // omitted so the emails fall back to the order's own total rather than
+  // rendering a broken amount.
+  const charged = Number.isFinite(amountCharged) ? { amountCharged } : {};
+  notify.sendPaymentReceipt(enriched, base, { adminLink, ...charged }).catch(() => {});
+  const productImageUrl = await resolveProductImageUrl(c, base);
+  notify.sendBuyerReceipt(enriched, base, { productImageUrl, ...charged }).catch(() => {});
+}
+
+// Everything that must happen when a payment actually COMPLETES. Called from BOTH
+// unpaid->paid transitions — the verified PeleCard callback and the free
+// (100%-coupon) path — each of which guards the transition, so this never fires
+// twice for one order. There is no third caller by design: nothing marks an order
+// paid by hand, so a receipt always follows real money. Order creation has its own
+// notifications (onOrderCreated); this is purely the receipt pair. Gated on
+// notify.isConfigured() so the word-count/image work is skipped when email is
+// dormant, and fire-and-forget: a failed send must never fail the payment.
+function onOrderPaid(collectionId, base, amountCharged) {
+  if (!notify.isConfigured()) return;
+  sendPaidNotifications(collectionId, base, amountCharged).catch(() => {});
+}
 
 // =========================================================================
 // WhatsApp bot (Phase B) — inbound webhook, paid-order group creation, and the
@@ -1671,9 +1700,9 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       discount_pct: couponCode ? discountPct : null,
     });
     if (couponCode) db.incrementCouponUses(couponCode);
-    // A free (100%-coupon) order is now paid — fire the same paid-order side
-    // effects as the PeleCard callback (owner/buyer emails when email is on, the
-    // WhatsApp group when the bot is armed), showing the real charged amount (0).
+    // A free (100%-coupon) order is now paid — fire the same payment receipts as
+    // the PeleCard callback, showing the real charged amount (0, which the emails
+    // render as "free — 100% coupon" rather than a bare price).
     onOrderPaid(req.params.id, base, 0);
     return res.json({ free: true, paid: true, total: 0 });
   }
@@ -1763,10 +1792,10 @@ app.post('/api/payment/callback', async (req, res) => {
     });
     // Count the coupon use once, on the real unpaid->paid transition.
     if (session.coupon) db.incrementCouponUses(session.coupon);
-    // Fire the paid-order side effects, showing the amount ACTUALLY charged for
-    // THIS session (never the pre-coupon order.total). Email owner/buyer
-    // notifications and the WhatsApp group-open are INDEPENDENTLY gated inside
-    // onOrderPaid — each stays dormant until its own service is configured.
+    // Fire the owner + buyer payment receipts, showing the amount ACTUALLY
+    // charged for THIS session (never the pre-coupon order.total). Gated on
+    // email being configured inside onOrderPaid, and fire-and-forget — a failed
+    // send must never turn a successful charge into a failed callback.
     onOrderPaid(c.id, paymentBaseUrl(), session.charged_total);
   }
   res.json({ ok: true });

@@ -123,11 +123,18 @@ describe('order-detail email wiring (delivery order)', () => {
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ free: true, paid: true, total: 0 });
 
-    const mails = await waitForMails(2);
+    // A 100%-coupon order is created AND paid in this one call, so FOUR messages
+    // fire: the created pair and the payment-receipt pair. Wait for all four —
+    // waiting for only two returns as soon as the (synchronous) owner mails land,
+    // before the buyer's, whose product-photo lookup is async.
+    const mails = await waitForMails(4);
+    expect(mails.length).toBe(4);
     const owner = mails.find((m) => m.subject.includes('התקבלה הזמנה חדשה'));
     const buyer = mails.find((m) => m.subject.includes('ההזמנה שלכם התקבלה'));
+    const buyerReceipt = mails.find((m) => m.subject.includes('התשלום התקבל'));
     expect(owner).toBeTruthy();
     expect(buyer).toBeTruthy();
+    expect(buyerReceipt).toBeTruthy();
 
     // Owner email: order id + keyed admin link + shipping address.
     expect(owner.text).toContain('מספר הזמנה: ' + c.id);
@@ -141,8 +148,14 @@ describe('order-detail email wiring (delivery order)', () => {
     expect(buyer.text).toContain('הרצל 5');
     expect(buyer.text).toContain('דירה 4');
     expect(buyer.html).toContain(BASE_URL + '/assets/designs/bachelorette/store.webp');
-    // The admin key must NEVER reach the buyer.
-    expect(buyer.text).not.toContain(ADMIN_KEY);
-    expect(buyer.html).not.toContain(ADMIN_KEY);
+    // The admin key must NEVER reach the buyer — in EITHER of their emails.
+    for (const m of [buyer, buyerReceipt]) {
+      expect(m.text).not.toContain(ADMIN_KEY);
+      expect(m.html).not.toContain(ADMIN_KEY);
+    }
+    // The buyer's payment receipt goes through the same wiring: the resolved
+    // product photo and the delivery address are on it too.
+    expect(buyerReceipt.html).toContain(BASE_URL + '/assets/designs/bachelorette/store.webp');
+    expect(buyerReceipt.text).toContain('הרצל 5');
   });
 });
