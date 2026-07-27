@@ -131,6 +131,86 @@ def test_alignment_declines_on_a_single_line():
     assert C._alignment(one, (0, 0, 300, 30)) is None
 
 
+# ---- Reading the paints from the VECTOR source ----------------------------
+# The render alone is not enough: on a small, heavily-ringed title the fill can
+# be completely covered and never reach the pixels. The SVG still names it.
+
+def _svg(tmpdir, name, fills):
+    """Write a throwaway SVG whose paths carry the given fill attributes."""
+    import os
+    body = "".join('<path fill="%s" d="M0 0h1v1z"/>' % f for f in fills)
+    path = os.path.join(tmpdir, name)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write('<svg xmlns="http://www.w3.org/2000/svg">' + body + "</svg>")
+    return path
+
+
+def test_candidate_paints_finds_what_the_text_added():
+    import tempfile
+    d = tempfile.mkdtemp()
+    # The clean sheet already uses #000000 for background art, so a plain set
+    # difference would miss the title's black ring. The COUNT is what rises.
+    clean = _svg(d, "clean.svg", ["#000000"] * 5 + ["#ff7aa9"] * 2)
+    filled = _svg(d, "filled.svg", ["#000000"] * 12 + ["#a4e9ff"] * 7 + ["#ff7aa9"] * 2)
+    got = dict(C.candidate_paints(filled, clean))
+    assert got.get("#a4e9ff") == 7, "a colour only the text uses is fully counted"
+    assert got.get("#000000") == 7, "a shared colour counts only what the text ADDED"
+    assert "#ff7aa9" not in got, "a colour used equally in both sheets is not the text"
+
+
+def test_candidate_paints_excludes_the_word_colours():
+    import tempfile
+    d = tempfile.mkdtemp()
+    # The fronts sheet adds the words too; the recipe already knows their colour,
+    # so excluding it leaves the title's own paints.
+    clean = _svg(d, "c.svg", [])
+    filled = _svg(d, "f.svg", ["#ff7aa9"] * 30 + ["#000000"] * 8 + ["#a4e9ff"] * 8)
+    got = dict(C.candidate_paints(filled, clean, exclude={"#ff7aa9"}))
+    assert "#ff7aa9" not in got, "the known word colour must be dropped"
+    assert set(got) == {"#000000", "#a4e9ff"}
+
+
+def test_candidate_paints_is_empty_when_colour_is_encoded_elsewhere():
+    # Some exports use a style block or inherited group fills; then there is
+    # nothing to read and the caller must fall back to the render.
+    import os
+    import tempfile
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "s.svg")
+    with open(p, "w", encoding="utf-8") as f:
+        f.write('<svg><style>.a{fill:#a4e9ff}</style><path class="a"/></svg>')
+    assert C.candidate_paints(p, p) == []
+
+
+def test_assign_paints_calls_the_enclosing_ring_the_outline():
+    # Two KNOWN colours; the only question is which encloses which. The ring owns
+    # the ink's outer boundary.
+    img, mask = _ringed(fill=(164, 233, 255), outline=(0, 0, 0))
+    fill, outline = C.assign_paints(
+        [("#a4e9ff", 8), ("#000000", 8)], img, mask, _RINGED_BOX)
+    assert fill == "#a4e9ff", f"the enclosed paint is the fill, got {fill}"
+    assert outline == "#000000", f"the bordering paint is the outline, got {outline}"
+
+
+def test_assign_paints_is_not_swayed_by_which_paint_is_commoner():
+    # Regression: an early version compared per-paint edge RATIOS, so a mostly
+    # covered fill (few pixels, noisy ratio) could outscore the ring that
+    # encloses it — which is how 'birthday-girls' came out backwards. A very thin
+    # fill must still be identified as the fill.
+    img, mask = _ringed(ring=22, fill=(164, 233, 255), outline=(0, 0, 0))
+    fill, outline = C.assign_paints(
+        [("#a4e9ff", 8), ("#000000", 8)], img, mask, _RINGED_BOX)
+    assert (fill, outline) == ("#a4e9ff", "#000000"), (
+        "a barely-visible fill is still the fill, however few pixels it has")
+
+
+def test_assign_paints_passes_a_single_paint_through():
+    img, mask = _ringed(ring=0)
+    assert C.assign_paints([("#96dce6", 8)], img, mask, _RINGED_BOX) == (
+        "#96dce6", "#96dce6")
+    assert C.assign_paints([], img, mask, _RINGED_BOX) == (None, None)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:
