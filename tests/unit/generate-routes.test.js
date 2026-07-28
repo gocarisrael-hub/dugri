@@ -12,9 +12,10 @@ import fs from 'node:fs';
 // prints the "(N pages)" line the route parses; a theme containing "uncal" makes
 // it fail like an uncalibrated theme.
 //
-// It also writes the SECOND artifact — the board, at "<out>-board.pdf" — which is
-// the real generator's contract. An honoree name containing "NoBoard" skips it,
-// standing in for an order generated before the board was split out of the deck.
+// It also writes the SECOND artifact — the board, at "<out>.board.pdf" — which is
+// the real generator's contract (#233). An honoree name containing "NoBoard"
+// skips it, standing in for an order generated before the board was split out of
+// the deck.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
@@ -49,7 +50,7 @@ beforeAll(async () => {
       'printf "%%PDF-1.4 fake" > "$out"',
       'case "$3" in',
       '  *NoBoard*) ;;',
-      '  *) printf "%%PDF-1.4 fake board" > "${out%.pdf}-board.pdf";;',
+      '  *) printf "%%PDF-1.4 fake board" > "${out%.pdf}.board.pdf";;',
       'esac',
       'echo "wrote $out (3 pages)"',
       '',
@@ -280,13 +281,13 @@ describe('the board artifact', () => {
       theme: 'trip comeback',
     });
     expect(r.status).toBe(200);
-    expect(r.body.production.board_file).toBe(c.id + '-board.pdf');
+    expect(r.body.production.board_file).toBe(c.id + '.board.pdf');
     expect(r.body.boardLink).toContain(
       '/api/admin/collections/' + c.id + '/board?key=' + ADMIN_KEY
     );
-    expect(fs.existsSync(path.join(genDir, c.id + '-board.pdf'))).toBe(true);
+    expect(fs.existsSync(path.join(genDir, c.id + '.board.pdf'))).toBe(true);
     // persisted, so a page reload still offers the board
-    expect(db.getCollection(c.id).production.board_file).toBe(c.id + '-board.pdf');
+    expect(db.getCollection(c.id).production.board_file).toBe(c.id + '.board.pdf');
   });
 
   it('serves the board over the admin route and refuses it without the key', async () => {
@@ -295,7 +296,8 @@ describe('the board artifact', () => {
     const dl = await fetch(base + '/api/admin/collections/' + c.id + '/board?key=' + ADMIN_KEY);
     expect(dl.status).toBe(200);
     expect(dl.headers.get('content-type')).toContain('application/pdf');
-    expect(dl.headers.get('content-disposition')).toContain(c.id + '-board.pdf');
+    // the download name is the customer-facing one, not the on-disk one
+    expect(dl.headers.get('content-disposition')).toContain('dugri-' + c.id + '-board.pdf');
     expect((await fetch(base + '/api/admin/collections/' + c.id + '/board')).status).toBe(403);
   });
 

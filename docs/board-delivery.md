@@ -6,24 +6,25 @@ and becomes its own output file. An order therefore delivers **two** artifacts:
 | artifact  | file                                        | route                                                                      |
 | --------- | ------------------------------------------- | -------------------------------------------------------------------------- |
 | card deck | `GENERATED_DIR/<collection id>.pdf`         | `/api/admin/collections/:id/pdf`, `/api/collections/:id/pdf?t=<token>`     |
-| board     | `GENERATED_DIR/<collection id>-board.<ext>` | `/api/admin/collections/:id/board`, `/api/collections/:id/board?t=<token>` |
+| board     | `GENERATED_DIR/<collection id>.board.<ext>` | `/api/admin/collections/:id/board`, `/api/collections/:id/board?t=<token>` |
 
 ## Generator contract
 
-`generator/order_to_pdf.py` writes the board **next to the deck**, using the deck
-path's stem plus `-board`:
+`generator/order_to_pdf.py` writes the board **next to the deck**, deriving its
+path from the deck path by replacing the `.pdf` suffix with `.board.pdf` (#233):
 
 ```
-out_pdf            .../generated/<collection id>.pdf
-board (expected)   .../generated/<collection id>-board.pdf
+out_pdf   .../generated/<collection id>.pdf
+board     .../generated/<collection id>.board.pdf
 ```
 
 The server resolves the board by probing that stem in its own `GENERATED_DIR`
 (`.pdf`, then `.png`, then `.svg` — see `boardFileFor` in `server/index.js`). It
-deliberately does **not** read the path off the generator's stdout: a path handed
-over by a subprocess must never decide which file a download route serves. So the
-generator needs no new stdout line — writing the file at the agreed path is the
-whole contract. Only the extension is negotiable; the stem is not.
+deliberately does **not** take the path from the `board <path>` line the
+generator prints: a path handed over by a subprocess must never decide which file
+a download route serves, and the download routes run long after that stdout is
+gone, so they have to hit the disk regardless. Writing the file at the agreed
+path is the whole contract. Only the extension is negotiable; the stem is not.
 
 A run that produces no board is not an error. `production.board_file` stays
 `null`, the email keeps its single download button, the admin row shows only the

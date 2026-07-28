@@ -76,14 +76,17 @@ const GENERATE_TIMEOUT_MS = Number(process.env.GENERATE_TIMEOUT_MS || 120000);
 // --- The board artifact ---------------------------------------------------
 // One order now produces TWO deliverables: the card-deck PDF at <id>.pdf, and
 // the game BOARD as a SEPARATE file beside it (it is no longer a page inside the
-// deck). Contract with the generator: order_to_pdf.py writes the board to
-// "<out_pdf stem>-board.<ext>", i.e. GENERATED_DIR/<collection id>-board.pdf.
+// deck). Contract with the generator (#233): order_to_pdf.py derives the board
+// path from the deck path by replacing the ".pdf" suffix with ".board.pdf", i.e.
+// GENERATED_DIR/<collection id>.board.pdf.
 // We resolve it by probing OUR OWN GENERATED_DIR for that stem rather than by
-// reading a path off the child's stdout — a path handed to us by a subprocess
-// must never decide which file a download route serves. A missing board file is
-// normal (orders generated before the split, or a theme whose board isn't wired
-// yet): every board-aware path then degrades to the deck-only behaviour it had
-// before, instead of failing the generation.
+// reading the path off the child's stdout (which the generator also prints) — a
+// path handed to us by a subprocess must never decide which file a download
+// route serves, and the download routes run long after that stdout is gone and
+// have to hit the disk anyway. A missing board file is normal (orders generated
+// before the split, or a theme whose board isn't wired yet): every board-aware
+// path then degrades to the deck-only behaviour it had before, instead of
+// failing the generation.
 const BOARD_EXTS = ['.pdf', '.png', '.svg'];
 // SVG is served as octet-stream (never image/svg+xml): an SVG can carry script,
 // and this origin also serves the admin UI. With attachment + nosniff it is only
@@ -93,7 +96,7 @@ const BOARD_TYPES = { '.pdf': 'application/pdf', '.png': 'image/png' };
 // Absolute path of the board file produced for `id`, or null when there is none.
 function boardFileFor(id) {
   for (const ext of BOARD_EXTS) {
-    const f = path.join(GENERATED_DIR, id + '-board' + ext);
+    const f = path.join(GENERATED_DIR, id + '.board' + ext);
     if (fs.existsSync(f)) return f;
   }
   return null;
@@ -108,6 +111,8 @@ function sendBoardFile(res, id) {
   const ext = path.extname(file);
   res.setHeader('Content-Type', BOARD_TYPES[ext] || 'application/octet-stream');
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  // The name the CUSTOMER sees is ours to choose and reads better hyphenated —
+  // it is not the generator's on-disk name (<id>.board.pdf).
   res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + id + '-board' + ext + '"');
   res.sendFile(file);
 }
