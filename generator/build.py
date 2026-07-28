@@ -293,8 +293,8 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
 
     # Register each distinct design ONCE; the pages then reference them, so a
     # 208-page deck costs nine copies of the artwork rather than 208.
-    back_svg = card_assets.read_card_svg(config.back_path(theme), theme_dir)
-    front_svgs = {i: card_assets.read_card_svg(config.card_path(theme, i), theme_dir)
+    back_svg = card_assets.read_svg(config.back_path(theme))
+    front_svgs = {i: card_assets.read_svg(config.card_path(theme, i))
                   for i in fronts}
     vb = deck_html.view_box(front_svgs[fronts[0]])
     doc = deck_html.DeckDocument(vb[2], vb[3])
@@ -313,9 +313,12 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
     for n, card in enumerate(cards, 1):
         doc.add_page("back", back_ov)                      # duplex: back, then front
         if card["kind"] == "photo":
-            doc.add_design("photo", card_assets.read_card_svg(
-                config.photo_card_path(theme), theme_dir))
-            doc.add_page("photo", rp.photo_overlay(recipe, photo_paths))
+            # The photo card's slots live in the artwork and are filled in place
+            # (docs/photo-card.md), so the FILLED card is the design — there is
+            # no text overlay to lay on top of it, and it needs no font.
+            doc.add_design("photo", rp.fill_photo_slots(
+                card_assets.read_svg(config.photo_card_path(theme)), photo_paths))
+            doc.add_page("photo")
         else:
             front = fronts[card["front"] % len(fronts)]
             doc.add_page(f"front{front}",

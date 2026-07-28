@@ -492,30 +492,51 @@ def back_overlay(theme, recipe, title_lines):
                           fixed_size=ts.get("back_size") or ts.get("size"))
 
 
-def photo_overlay(recipe, photo_paths):
-    """The four customer pawn-photos, laid into the photo card's slots.
+# The photo card's four slots ship in the artwork as <image> elements with NO
+# href — id="photo-slot-1".."photo-slot-4" — already carrying their geometry,
+# their xMidYMid-slice crop and their circular clip (see docs/photo-card.md).
+# Filling one is therefore a single attribute set, NOT drawing a new image: the
+# card's designed crop, disc clip and empty-slot artwork all stay the template's
+# to decide, and a slot we leave alone renders as its designed empty disc rather
+# than a hole.
+_PHOTO_SLOT = re.compile(
+    r'<image\b(?P<attrs>[^>]*?\bid="photo-slot-(?P<n>[1-9])"[^>]*?)/\s*>'
+)
+_HAS_HREF = re.compile(r'\b(?:xlink:href|href)\s*=')
 
-    Each photo is drawn with ``preserveAspectRatio="xMidYMid slice"`` inside a
-    clip of its slot, so a portrait or landscape phone photo FILLS its slot and
-    is cropped to it rather than letterboxed with background showing through.
-    Fewer than four photos simply leaves the remaining slots as artwork.
+
+def photo_slot_count(svg_text):
+    """How many fillable photo slots the artwork ships (0 on a non-photo card)."""
+    return len(set(m.group("n") for m in _PHOTO_SLOT.finditer(svg_text)))
+
+
+def fill_photo_slots(svg_text, photo_paths):
+    """Return the photo card with its slots filled from ``photo_paths``, in order.
+
+    Slots are matched by id, so slot N always takes photo N regardless of the
+    order the elements appear in the file. Both ``href`` and ``xlink:href`` are
+    set, because the deck is rendered by Chrome (which honours plain ``href``)
+    while older rasterisers only understand the namespaced form.
+
+    A slot with no corresponding photo is left EXACTLY as shipped, so a customer
+    who uploaded two photos still prints a clean card with two designed empty
+    discs rather than two broken images.
     """
-    if not photo_paths:
-        return ""
-    cell = _recipe_cell(recipe)
-    slots = config.photo_slots(recipe, cell)
-    defs, out = [], []
-    for i, (slot, path) in enumerate(zip(slots, photo_paths)):
-        x, y = slot["x0"], slot["y0"]
-        w, h = slot["x1"] - slot["x0"], slot["y1"] - slot["y0"]
-        cid = f"pc{i}"
-        defs.append(f'<clipPath id="{cid}"><rect x="{x:.2f}" y="{y:.2f}" '
-                    f'width="{w:.2f}" height="{h:.2f}"/></clipPath>')
-        out.append(f'<image clip-path="url(#{cid})" x="{x:.2f}" y="{y:.2f}" '
-                   f'width="{w:.2f}" height="{h:.2f}" '
-                   f'preserveAspectRatio="xMidYMid slice" '
-                   f'xlink:href="{deck_html.image_data_url(path)}"/>')
-    return "<defs>" + "".join(defs) + "</defs>" + "".join(out)
+    by_index = {str(i + 1): p for i, p in enumerate(photo_paths or []) if p}
+    if not by_index:
+        return svg_text
+
+    def fill(m):
+        path = by_index.get(m.group("n"))
+        attrs = m.group("attrs")
+        # Never add a second href to a slot that already has one — that would be
+        # artwork we do not understand, and overwriting it could blank the card.
+        if not path or _HAS_HREF.search(attrs):
+            return m.group(0)
+        url = deck_html.image_data_url(path)
+        return f'<image{attrs} href="{url}" xlink:href="{url}"/>'
+
+    return _PHOTO_SLOT.sub(fill, svg_text)
 
 
 def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None,
@@ -531,14 +552,17 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
     recipe = config.load_recipe(cfg["recipe"])
-    svg = card_assets.read_card_svg(clean_svg, config.theme_dir(theme))
+    svg = card_assets.read_svg(clean_svg)
+    if kind == "photo":
+        # The photo card carries no text — every piece of its static copy is
+        # already baked to vector paths — so it needs no @font-face injection at
+        # all. Its slots are filled in the artwork itself, not overlaid.
+        return fill_photo_slots(svg, photos or [])
     style = ("<style>" + GEOMETRIC_TEXT_STYLE
              + font_face("HebWord", config.resolve_word_font(theme, word_font))
              + font_face("TitleFont", config.font_path(theme, cfg["title_font"]))
              + "</style>")
-    if kind == "photo":
-        overlay = photo_overlay(recipe, photos or [])
-    elif kind == "back":
+    if kind == "back":
         overlay = back_overlay(theme, recipe, title_lines)
     else:
         overlay = card_overlay(theme, recipe, words, title_lines,
