@@ -760,10 +760,22 @@ def test_knobs_without_a_usable_title_style_still_refuse():
 def test_production_themes_are_unaffected_by_the_override_hook():
     # With nothing installed, every shipped theme reads exactly as before and a
     # real PDF still requires calibrated:true.
+    #
+    # A theme STAGED for a redesign is the one exception: while its artwork is
+    # being migrated it sits in themes.json as visibility:private +
+    # calibrated:false, geometry not yet detected (grapefruit, during the move to
+    # portrait single cards). The storefront skips a non-public entry, so it is
+    # not a production theme. The invariant that actually matters is asserted
+    # here instead: anything a customer CAN reach must be calibrated.
     config.clear_preview_overrides()
     for name in config.load_themes():
         cfg = config.theme(name)
         assert config._PREVIEW_MARK not in cfg
+        if not cfg.get("calibrated", False):
+            assert (cfg.get("visibility") or "public") != "public", (
+                f"{name} is uncalibrated but PUBLIC — the storefront would offer "
+                "a theme that cannot render")
+            continue
         config.ensure_calibrated(cfg)
 
 

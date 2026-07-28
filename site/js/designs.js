@@ -60,6 +60,7 @@ export const THEME_EXTRA_FIELDS = {
   anniversary: ['YEARS', 'NAME1', 'NAME2'],
   japanese: ['AGE'],
   'football-boys': [],
+  grapefruit: [],
 };
 
 /**
@@ -79,6 +80,9 @@ export const VISIBILITY_BY_THEME = {
   anniversary: 'public',
   japanese: 'public',
   'football-boys': 'public',
+  // Staged for the portrait-card redesign: artwork migrated, geometry not yet
+  // calibrated. Private until it is, so it never reaches the public grid.
+  grapefruit: 'private',
 };
 
 /**
@@ -97,6 +101,7 @@ export const LANGUAGE_BY_THEME = {
   anniversary: 'hebrew',
   japanese: 'english',
   'football-boys': 'english',
+  grapefruit: 'hebrew',
 };
 
 /** Resolve a design id to its generator theme key, or null when unknown. */
