@@ -248,6 +248,92 @@ def test_an_absent_back_key_still_falls_back_to_the_theme_fractions():
         assert _with_back(tmp, None, drop=True) != ""
 
 
+# --- the owner's saved calibration must actually be read --------------------
+# Two things write a single-card template's geometry, to DIFFERENT files: the
+# admin calibration form writes themes.json `card_slots` (fractions), while
+# recipe_diff/calibrate write recipes/<t>.json `card` (viewBox units). The
+# generator read only the recipe, so a template calibrated through the admin UI
+# rendered with NO words and NO title — every measurement silently ignored, and
+# the admin route will not even set calibrated:true without card_slots.
+
+_FRAC_SLOTS = {
+    "words": [{"x0": 0.12, "y0": 0.46 + i * 0.085,
+               "x1": 0.88, "y1": 0.51 + i * 0.085} for i in range(4)],
+    "titles": {str(n): {"x0": 0.10, "y0": 0.26, "x1": 0.90, "y1": 0.38}
+               for n in range(2, 10)},
+}
+# What a template looks like when the owner calibrated by hand and detection was
+# never run: format 2, a cell, and nothing else. This is grapefruit today.
+_STUB_RECIPE = {"theme": "demo", "format": 2, "viewBox": [0, 0, W, H],
+                "card": {"cell": [0, 0, W, H]}}
+
+
+def _calibrate_by_hand(slots=_FRAC_SLOTS, recipe=None):
+    """Save owner card_slots and (by default) blank out the detected recipe."""
+    root = os.environ["DATA_DIR"]
+    tp = os.path.join(root, "templates", "themes.json")
+    with open(tp, encoding="utf-8") as f:
+        themes = json.load(f)
+    themes["demo"]["card_slots"] = slots
+    with open(tp, "w", encoding="utf-8") as f:
+        json.dump(themes, f)
+    rp_path = os.path.join(root, "templates", "recipes", "demo.json")
+    with open(rp_path, "w", encoding="utf-8") as f:
+        json.dump(recipe if recipe is not None else _STUB_RECIPE, f)
+    return recipe if recipe is not None else _STUB_RECIPE
+
+
+def test_a_hand_calibrated_template_renders_its_words_and_title():
+    import render_page as rp
+    with Store():
+        recipe = _calibrate_by_hand()
+        out = rp.card_overlay("demo", recipe, ["א", "ב", "ג", "ד"], ["שירה"],
+                              front_index=3)
+        assert out.count("<text") >= 4, (
+            "card_slots saved by the admin form must be rendered; reading only "
+            "the recipe here prints a blank card"
+        )
+
+
+def test_hand_calibrated_slots_land_inside_the_card():
+    # card_slots are FRACTIONS of the card; rendering them without converting to
+    # viewBox units would put every word off-canvas.
+    import re
+    import render_page as rp
+    with Store():
+        recipe = _calibrate_by_hand()
+        out = rp.card_overlay("demo", recipe, ["א", "ב", "ג", "ד"], ["שירה"],
+                              front_index=3)
+        xs = [float(v) for v in re.findall(r'<text x="([\d.]+)"', out)]
+        assert xs and all(0 <= x <= W for x in xs), xs
+
+
+def test_owner_calibration_wins_over_the_detected_recipe():
+    with Store():
+        recipe = _calibrate_by_hand(recipe=json.loads(json.dumps(_STUB_RECIPE)))
+        recipe["card"]["words"] = [{"x0": 1, "y0": 1, "x1": 2, "y1": 2,
+                                    "color": "#010101"} for _ in range(4)]
+        cfg = config.theme("demo")
+        boxes = config.card_word_boxes(cfg, recipe, [0, 0, W, H])
+        # The owner's box spans 12%..88% of the card, not the recipe's 1..2 units.
+        assert boxes[0]["x1"] > 100, boxes[0]
+        # ...but the DETECTED ink colour is still used, since card_slots has none.
+        assert boxes[0]["color"] == "#010101", boxes[0]
+
+
+def test_detection_still_works_when_the_owner_saved_nothing():
+    # The mirror of the bug: preferring card_slots must not orphan the
+    # auto-detected recipe on a template the owner never hand-calibrated.
+    with Store() as tmp:
+        path = os.path.join(os.environ["DATA_DIR"], "templates", "recipes", "demo.json")
+        with open(path, encoding="utf-8") as f:
+            recipe = json.load(f)
+        cfg = config.theme("demo")
+        assert config.card_slots(cfg) is None
+        assert len(config.card_word_boxes(cfg, recipe, [0, 0, W, H])) == 4
+        assert len(config.card_title_boxes(cfg, recipe, 3, [0, 0, W, H])) == 1
+
+
 # --- the board is a separate artifact ---------------------------------------
 
 def test_board_path_is_derived_from_the_deck_path():

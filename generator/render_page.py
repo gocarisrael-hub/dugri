@@ -442,23 +442,28 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
     """Title + word markup for ONE card, in the card's own viewBox units.
 
     ``front_index`` selects which front's title box to use: the words are SHARED
-    across the eight fronts but the title MOVES, so the box comes from the
-    recipe per front and the owner's nudge from ``title_style.front_offset``.
+    across the eight fronts but the title MOVES, so the box comes per front and
+    the owner's nudge from ``title_style.front_offset``.
     The photo card (``kind="photo"``) carries no text at all — its four customer
     photos are the content, and a title would sit on top of them.
+
+    Geometry comes from ``config.card_word_boxes`` / ``config.card_title_boxes``,
+    which prefer the owner's saved ``card_slots`` calibration and fall back to
+    the auto-detected recipe. Reading the recipe directly here would silently
+    ignore every measurement made through the admin calibration form.
     """
     if kind == "photo":
         return ""
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    card = config.recipe_card(recipe)
-    cell = card.get("cell") or _recipe_cell(recipe)
+    cell = (recipe.get("card") or {}).get("cell") or _recipe_cell(recipe)
     word_font_path = config.resolve_word_font(theme, word_font)
     title_font_path = config.font_path(theme, cfg["title_font"])
-    return (_title_overlay(config.recipe_front_title(recipe, front_index), title_lines,
-                           cfg, title_font_path, cell,
+    return (_title_overlay(config.card_title_boxes(cfg, recipe, front_index, cell),
+                           title_lines, cfg, title_font_path, cell,
                            offset=config.front_offset(cfg, front_index))
-            + _words_overlay(card.get("words") or [], words, cfg, word_font_path, cell))
+            + _words_overlay(config.card_word_boxes(cfg, recipe, cell), words,
+                             cfg, word_font_path, cell))
 
 
 def back_overlay(theme, recipe, title_lines):
