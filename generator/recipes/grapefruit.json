@@ -1,22 +1,6 @@
 {
-  "_comment": "Recipe format v2 (portrait single card) — see docs/card-structure-schema.md. GEOMETRY IS NOT YET CALIBRATED: card.words and card.title are empty placeholders for Agent C's single-card clean-vs-filled detector to fill in. themes.json keeps grapefruit at calibrated:false / visibility:private until it does, so nothing renders against these empty slots.",
+  "_comment": "Portrait single-card template — see docs/card-structure-schema.md. GEOMETRY DOES NOT LIVE HERE. For a card_structure:'cards' theme the four shared word slots and the eight per-front title positions are `card_slots` on the themes.json entry, written by the admin calibrator; grapefruit's is still null (uncalibrated), which is why the entry is visibility:private + calibrated:false. This file exists only so the theme's `recipe` key resolves, and to record the card geometry every slot fraction is relative to.",
   "theme": "grapefruit",
   "format": 2,
-  "viewBox": [0, 0, 223.92, 312],
-  "card": {
-    "cell": [0, 0, 223.92, 312],
-    "words": [],
-    "title": {
-      "2": [],
-      "3": [],
-      "4": [],
-      "5": [],
-      "6": [],
-      "7": [],
-      "8": [],
-      "9": []
-    }
-  },
-  "back": null,
-  "photo": null
+  "viewBox": [0, 0, 223.92, 312]
 }

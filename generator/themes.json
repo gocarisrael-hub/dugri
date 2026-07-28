@@ -403,6 +403,8 @@
     9
    ]
   },
+  "card_structure": "cards",
+  "card_slots": null,
   "board": null,
   "back": null,
   "calibrated": false

@@ -39,41 +39,47 @@ output file.
 
 Card geometry is `viewBox="0 0 223.92 312"` (portrait, ~0.718 aspect).
 
-## 2. Recipe format v2
+## 2. Single-card geometry — `card_slots` on the theme entry
 
-Geometry stays in `generator/recipes/<name>.json`; style knobs stay in
-`themes.json`. That split is unchanged — only the shape of the geometry moves
-from "8 cells on a sheet" to "one card".
+**Geometry for a single-card template lives on the themes.json entry, NOT in the
+recipe file.** A `card_structure: "cards"` theme carries:
 
 ```jsonc
-{
-  "theme": "grapefruit",
-  "format": 2,                          // absent/1 = legacy 8-up sheet
-  "viewBox": [0, 0, 223.92, 312],
-  "card": {
-    "cell": [0, 0, 223.92, 312],
-    "words": [ {"x0":…,"y0":…,"x1":…,"y1":…,"color":"#…"}, …4 total ],
-    "title": {                          // PER-FRONT: the title moves per front
-      "2": [ {"x0":…,"y0":…,"x1":…,"y1":…,"color":"#…"} ],
-      "3": [ … ], "4": […], "5": […], "6": […], "7": […], "8": […], "9": […]
-    }
-  },
-  "back":  { "title": [ {…} ] },        // the back's own title slot (card 1)
-  "photo": { "slots": [ {…}, {…}, {…}, {…} ] }   // optional, see §3
+"card_structure": "cards",   // absent => "sheet", i.e. a legacy 8-up template
+"card_slots": {
+  // The four word slots — SHARED by all eight fronts, because they never move.
+  // One calibration, not eight.
+  "words": [ {"x0":…,"y0":…,"x1":…,"y1":…}, …4 total ],
+  // The title POSITION per front — the one thing that DOES move. All eight
+  // fronts are required: a half-filled map leaves some fronts with the title
+  // wherever the last calibration happened to put it.
+  "titles": { "2": {…}, "3": {…}, "4": {…}, "5": {…},
+              "6": {…}, "7": {…}, "8": {…}, "9": {…} }
 }
 ```
 
-Why this shape:
+`card_slots: null` means "not calibrated yet" and is a valid state — it is what
+a freshly migrated template ships with, alongside `calibrated: false`.
 
-- **`card.words` is shared** across all eight fronts. The eight differ only by a
-  thin icon layer, so the four word slots sit in the same place on each. One
-  calibration, not eight.
-- **`card.title` is keyed by front number** because the title _does_ move per
-  front. A title entry is a LIST of boxes (one per title line) exactly as today,
-  so the existing "fit the stacked title into the union of its boxes" logic
-  carries over unchanged.
-- `format: 2` is explicit so the generator can branch cleanly and tests can
-  assert which era a recipe is from.
+Every box is a **fraction of the 223.92×312 card** (`x0,y0,x1,y1` each in 0..1,
+`x0 < x1`, `y0 < y1`), not an absolute coordinate. Fractions survive a re-export
+at a different pixel size; absolute coordinates silently would not.
+
+Why the entry rather than the recipe file:
+
+- Owner-uploaded templates live on the volume as a themes.json entry with **no
+  shipped recipe file at all**. Entry-based geometry works identically for
+  shipped and owner templates; recipe-based would not.
+- The admin calibrator already writes calibration into the entry (the board and
+  back name slots are `frac` boxes there today). `card_slots` follows the
+  convention that already exists rather than adding a second one.
+- One source of truth. Geometry in two places is the failure this section exists
+  to prevent.
+
+The recipe file for a cards template therefore carries no geometry — only
+`format: 2` and the `viewBox` the fractions are relative to — and exists so the
+entry's `recipe` key resolves. `generator/recipes/grapefruit.json` is the
+reference. Legacy sheet templates keep their existing recipe geometry untouched.
 
 Font, colour and size knobs (`title_style`, `word_font`, `word_size`, `offset`,
 `italic`, `outline`…) stay in `themes.json` and stay **shared across the eight
@@ -100,8 +106,11 @@ Worth knowing before you calibrate against it:
 
 Legacy recipes are A4-landscape (`viewBox` 841.92×595.5) with 8 cells, and card
 0's cell is `[9.7, 10.5, 200.2, 286.4]` — already inside a 223.92×312 box. So
-card 0's slots transfer to the new single card essentially as-is, which is how
-the other seven themes get a v2 recipe without a fresh hand-calibration.
+card 0's slots are a good STARTING POINT for the equivalent single card: divide
+them by the card's width and height to get the `card_slots` fractions, rather
+than hand-calibrating the other seven themes from scratch. Treat the result as a
+first guess to be checked against a render, not as finished calibration — the
+old cell carried a sheet's margins that the single card does not.
 
 ## 3. themes.json additions
 
@@ -115,9 +124,16 @@ the other seven themes get a v2 recipe without a fresh hand-calibration.
       "template": "clean/photo.svg",     // omit -> fall back to front 2
       "fallback": "photo-fallback"       // dir of 4 generic Dugri images
     }
-  }
+  },
+  "card_structure": "cards",             // absent => legacy "sheet" (§2)
+  "card_slots": null                     // §2; null = not calibrated yet
 }
 ```
+
+`card_structure` is what the server and the admin form branch on. **A migrated
+template that omits it is treated as a legacy sheet** and the server goes looking
+for `clean/fronts.svg`, so it must be set whenever the numbered 1–9 artwork is
+installed.
 
 ### Which front does word card _n_ get?
 
