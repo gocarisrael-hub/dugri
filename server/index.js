@@ -1844,12 +1844,17 @@ app.post('/api/payment/callback', async (req, res) => {
   res.json({ ok: true });
 });
 
-// Admin: onboard a NEW private template. Multipart upload of the clean +
-// filled {fronts,backs,board} SVGs, the title + word font files, and a few text
-// fields (slug, display_he, title_text, name_form, language?, extra_fields?).
+// Admin: onboard a NEW private template. Multipart upload of the card SVGs, the
+// title + word font files, and a few text fields (slug, display_he, title_text,
+// name_form, language?, extra_fields?). Accepts BOTH asset layouts and detects
+// which one the upload is (see server/templates.js):
+//   sheet (legacy) clean+filled {fronts,backs,board}.svg
+//   cards  (new)   clean+filled 1.svg-9.svg (1 = back, 2-9 = the eight fronts),
+//                  the board uploaded separately since it is its own output file
 // Writes them into resources/canva/templates/<slug>/, best-effort runs
-// generator/recipe_diff.py to produce generator/recipes/<slug>.json, and appends
-// a visibility:"private", calibrated:false entry to generator/themes.json. The
+// generator/recipe_diff.py to produce generator/recipes/<slug>.json (sheet only —
+// there is no sheet to measure on a single-card template), and appends a
+// visibility:"private", calibrated:false entry to generator/themes.json. The
 // new template is NOT yet renderable — it needs a title-style calibration pass.
 // Body is parsed with a tiny in-repo multipart parser (no multer/busboy dep).
 app.post(
@@ -1861,7 +1866,7 @@ app.post(
     if (!boundary || !Buffer.isBuffer(req.body)) {
       return res.status(400).json({ error: 'expected multipart/form-data upload' });
     }
-    const { fields, files } = templates.parseMultipart(req.body, boundary);
+    const { fields, files, fileLists } = templates.parseMultipart(req.body, boundary);
     let result;
     try {
       result = templates.onboardTemplate({
@@ -1869,6 +1874,9 @@ app.post(
         pythonBin: PYTHON_BIN,
         fields,
         files,
+        // Repeated parts sharing one name — how a single multi-file picker
+        // delivers the nine numbered card SVGs (and the shared assets/) at once.
+        fileLists,
       });
     } catch (e) {
       return res
@@ -2181,14 +2189,17 @@ app.get('/api/design-names', async (req, res) => {
 // blank clean art), served by GET /api/template-image below. Uncalibrated templates
 // still appear (the owner controls visibility + the admin gates PDF generation).
 
-// The filled SVG role for a product picture slot.
-const CUSTOM_SLOT_ROLE = { front: 'fronts', back: 'backs', board: 'board' };
-// Does the template's filled/<role>.svg exist? Resolved through the persistent
-// overlay (server/template-store.js), so an OWNER-uploaded template — whose
-// assets live under DATA_DIR and not in the image — shows its product pictures.
-function customSvgExists(slug, role) {
+// The product picture slots a custom design can expose.
+const CUSTOM_SLOTS = ['front', 'back', 'board'];
+// Does the template have a filled SVG for this picture slot? The FILE behind a
+// slot depends on the template's asset layout — filled/fronts.svg on a legacy
+// sheet, filled/2.svg on a single-card template (whose filled/1.svg is the back)
+// — so the mapping lives in templates.filledImageRel and is resolved through the
+// persistent overlay (server/template-store.js), so an OWNER-uploaded template —
+// whose assets live under DATA_DIR and not in the image — shows its pictures.
+function customSvgExists(slug, slot) {
   if (!templates.isSafeSlug(slug)) return false;
-  const file = templates.templateAssetPath(TEMPLATE_ROOT, slug, 'filled/' + role + '.svg');
+  const file = templates.templateImagePath(TEMPLATE_ROOT, slug, slot);
   return !!file && fs.existsSync(file);
 }
 
@@ -2209,8 +2220,8 @@ app.get('/api/custom-designs', async (req, res) => {
       if ((t.visibility || 'public') !== 'public') continue; // owner hid it
       if (!templates.isSafeSlug(key)) continue;
       const img = {};
-      for (const slot of Object.keys(CUSTOM_SLOT_ROLE)) {
-        if (customSvgExists(key, CUSTOM_SLOT_ROLE[slot])) {
+      for (const slot of CUSTOM_SLOTS) {
+        if (customSvgExists(key, slot)) {
           img[slot] = '/api/template-image/' + encodeURIComponent(key) + '/' + slot;
         }
       }
@@ -2233,20 +2244,23 @@ app.get('/api/custom-designs', async (req, res) => {
   res.json({ designs: out });
 });
 
-// Public: serve a custom design's picture — the template's FILLED <role>.svg (the
-// sample-personalized art, so the storefront shows a realistic example). slot is
-// front|back|board (mapped to the fronts/backs/board.svg role). The slug is
-// validated to the safe-slug shape and the path is confined to the templates dir,
-// so there is no traversal. Cached (the art changes only on a re-upload, which
-// changes the file). SVG only.
+// Public: serve a custom design's picture — the template's FILLED SVG for the
+// slot (the sample-personalized art, so the storefront shows a realistic
+// example). slot is front|back|board, mapped to a file by the template's asset
+// layout (fronts/backs.svg on a sheet, 2.svg/1.svg on a single-card template).
+// The slug is validated to the safe-slug shape and the path is confined to the
+// templates dir, so there is no traversal. Cached (the art changes only on a
+// re-upload, which changes the file). SVG only.
 app.get('/api/template-image/:slug/:slot', (req, res) => {
   const slug = String(req.params.slug || '');
-  const role = CUSTOM_SLOT_ROLE[String(req.params.slot || '')];
-  if (!templates.isSafeSlug(slug) || !role) return res.status(404).type('txt').send('Not found');
+  const slot = String(req.params.slot || '');
+  if (!templates.isSafeSlug(slug) || !CUSTOM_SLOTS.includes(slot)) {
+    return res.status(404).type('txt').send('Not found');
+  }
   // Resolved through the persistent overlay and confined to the resolved template
-  // dir (templateAssetPath returns null on any escape), so an owner-uploaded
+  // dir (templateImagePath returns null on any escape), so an owner-uploaded
   // template's art is served from DATA_DIR while there is still no traversal.
-  const file = templates.templateAssetPath(TEMPLATE_ROOT, slug, 'filled/' + role + '.svg');
+  const file = templates.templateImagePath(TEMPLATE_ROOT, slug, slot);
   if (!file || !fs.existsSync(file)) return res.status(404).type('txt').send('Not found');
   res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
   res.setHeader('X-Content-Type-Options', 'nosniff');
