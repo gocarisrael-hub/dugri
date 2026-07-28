@@ -1627,12 +1627,33 @@ async function runReminderListScan(now = Date.now()) {
         // window; never retry on a failed-looking send (that spammed the group).
         db.markReminderSent(c.id, d.id, now);
         let delivered = false;
-        if (d.channels.whatsapp && groupId && waOn) {
+        // Could WhatsApp carry this reminder AT ALL? Distinct from "did the send
+        // succeed" — see the fallback below, which turns on this distinction.
+        const waPossible = !!(d.channels.whatsapp && groupId && waOn);
+        if (waPossible) {
           const text = settings.interpolate(d.text, values);
           const r = await whatsapp.sendMessage(groupId, text);
           if (r && r.ok) delivered = true;
         }
-        if (d.channels.email && emailOn) {
+        // Email runs when the reminder asks for it, OR as a FALLBACK when it asked
+        // for WhatsApp only and WhatsApp could not be attempted at all — the bot is
+        // off/disconnected, or this collection has no group. Without the fallback a
+        // WhatsApp-only reminder (the shipped default for `morning`, see
+        // reminders.js DEFAULT_REMINDERS) is marked sent by the record-on-attempt
+        // above, delivers nothing, and never retries: the customer silently stops
+        // being chased while the admin state claims the reminder went out. Learned
+        // when the bot's WhatsApp number was banned and every group went dark.
+        //
+        // The condition is deliberately `!waPossible`, NOT "the send failed". A
+        // restricted account can DELIVER and still return not-ok (see the
+        // records-on-attempt regression in reminder-scan.test.js), so falling back
+        // on a failed send would double-message the customer. Only the case where
+        // nothing was even attempted is unambiguous.
+        //
+        // Gated on owner_email so a phone-only buyer doesn't count as "delivered".
+        // The reminder text is reused as-is — it is channel-neutral.
+        const wantsEmail = d.channels.email || (d.channels.whatsapp && !waPossible);
+        if (wantsEmail && emailOn && c.owner_email) {
           if (await notify.sendReminderEmail(c, d.text, base)) delivered = true;
         }
         if (delivered) sent += 1;
