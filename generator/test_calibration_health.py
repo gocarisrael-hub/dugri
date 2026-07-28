@@ -36,6 +36,11 @@ FONT_A = os.path.join(HERE, "Cafe-Regular.ttf")
 FONT_B = os.path.join(HERE, "MrDafoe-Regular.ttf")
 FONT_C = os.path.join(HERE, "word-fonts", "almoni-neue-aaa-bold-OFFICE.ttf")
 
+# Timestamp every commit in the throwaway git fixture is made at, so that all of
+# them share one second by construction. See _git_repo_fixture() for why that
+# matters and why it costs the assertions nothing.
+_FIXED_COMMIT_DATE = "2024-01-01T00:00:00+00:00"
+
 _SVG = ('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" '
         'viewBox="0 0 400 300"></svg>')
 
@@ -434,8 +439,9 @@ def _git_repo_fixture():
     """A throwaway git repo holding a themes.json and a template font.
 
     Returns ``(tmpdir, font_path, commit)`` where ``commit`` commits everything
-    with a message. Used to drive the "did the font move after the calibration
-    was saved?" check without touching the real repository.
+    with a message, at a fixed timestamp (see below). Used to drive the "did the
+    font move after the calibration was saved?" check without touching the real
+    repository.
     """
     tmp = tempfile.mkdtemp(prefix="dugri-health-git-")
     os.makedirs(os.path.join(tmp, "generator"))
@@ -452,11 +458,30 @@ def _git_repo_fixture():
                  ["config", "user.name", "t"]):
         subprocess.run(["git", "-C", tmp] + args, capture_output=True, check=True)
 
+    # Every commit is pinned to ONE fixed timestamp, so all of them land in the
+    # same second by construction instead of by luck.
+    #
+    # This is the case the check is BUILT for: ``_committed_after`` answers "is
+    # the font newer than the calibration?" from history ancestry precisely
+    # because two commits in the same second share a ``%ct`` and a clock
+    # comparison would miss a font swap landing right after a calibration. The
+    # fixture used to reach that state by committing twice quickly and hoping,
+    # and asserted it had — so whenever the two commits straddled a second
+    # boundary the assertion "the fixture is meant to commit twice within one
+    # second" failed and the suite went red for a reason that had nothing to do
+    # with the behaviour under test (~20% of runs, measured on main).
+    #
+    # Pinning the date does not weaken anything: ancestry is unchanged, so
+    # ``font_commit_is_newer`` is still decided by history order alone.
+    env = {**os.environ,
+           "GIT_AUTHOR_DATE": _FIXED_COMMIT_DATE,
+           "GIT_COMMITTER_DATE": _FIXED_COMMIT_DATE}
+
     def commit(msg):
         subprocess.run(["git", "-C", tmp, "add", "-A"], capture_output=True,
                        check=True)
         subprocess.run(["git", "-C", tmp, "commit", "-q", "-m", msg],
-                       capture_output=True, check=True)
+                       capture_output=True, check=True, env=env)
 
     return tmp, os.path.join(tdir, "fonts", "Title.ttf"), commit
 
