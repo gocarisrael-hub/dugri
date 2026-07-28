@@ -208,7 +208,25 @@ function runGenerator({
       } catch {
         /* best-effort cleanup */
       }
-      if (timedOut) return reject(new Error('generation timed out'));
+      if (timedOut) {
+        // A bare "generation timed out" reads exactly like a crash in the admin
+        // UI, which sends whoever is on call looking for a broken template when
+        // the real answer is usually "it was still working". Say how long we
+        // waited, what the normal cost is, and carry whatever the generator had
+        // already reported — a timeout is the one failure whose stderr we used
+        // to throw away entirely.
+        const secs = Math.round(GENERATE_TIMEOUT_MS / 1000);
+        const tail = (stderr || stdout || '').trim().slice(-400);
+        return reject(
+          new Error(
+            `generation timed out after ${secs}s and was killed. A full deck is ` +
+              'one Chrome pass and normally takes seconds, so this usually means ' +
+              'the template has an asset that never finishes loading — or that ' +
+              'GENERATE_TIMEOUT_MS is set too low for this machine.' +
+              (tail ? ` Last output: ${tail}` : ' The generator printed nothing.')
+          )
+        );
+      }
       if (code !== 0) {
         return reject(new Error((stderr || stdout || 'exit ' + code).trim().slice(0, 800)));
       }
