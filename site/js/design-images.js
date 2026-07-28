@@ -19,8 +19,18 @@ export const UPLOAD_PATH_RE = /^\/content-uploads\/[a-f0-9]{16}\.(webp|jpe?g|png
 // How long to wait for the config before giving up and using the shipped renders.
 const FETCH_TIMEOUT_MS = 3000;
 
-// Base (shipped-render) slots in their default display order.
-const DEFAULT_ORDER = ['store', 'front', 'back', 'board'];
+// Base (shipped-render) slots in their default display order. `photo` is the
+// deck's PHOTO CARD (the 104th front, which carries the buyer's four pawn photos
+// — the storefront render always uses the GENERIC Dugri fallback art). It sits
+// with the other card renders, ahead of the board.
+const DEFAULT_ORDER = ['store', 'front', 'back', 'photo', 'board'];
+
+// Slots a design may or may not ship. `board`: a design can have no board at all
+// (kids). `photo`: only a PORTRAIT card-structure design renders a photo card,
+// and only once the generic fallback art exists. Both are surfaced from
+// `thumbs.<slot>` — the canonical "this design ships that render" indicator — and
+// both can still be surfaced by an owner override alone (see baseSlots).
+const OPTIONAL_SLOTS = new Set(['photo', 'board']);
 
 /** The shipped asset path for a design's base slot (the fallback picture). */
 export function baseSrc(designId, slot) {
@@ -30,21 +40,25 @@ export function baseSrc(designId, slot) {
 }
 
 /** Whether a design SHIPS a static render for a base slot. store/front/back always
- *  ship; a board render ships only when the design has a board thumb (the canonical
- *  board-render indicator — matches designs.js designShipsBoard). A boardless
- *  design can still CARRY a board OVERRIDE (#159), but has no shipped board file to
- *  fall back to. */
+ *  ship; an OPTIONAL slot (board, photo) ships only when the design has that thumb
+ *  (the canonical per-slot render indicator — matches designs.js designShipsBoard).
+ *  A design without one can still CARRY an override for it (#159), but has no
+ *  shipped file to fall back to. */
 function shipsRender(design, slot) {
-  if (slot === 'board') return !!(design && design.thumbs && design.thumbs.board);
+  if (OPTIONAL_SLOTS.has(slot)) return !!(design && design.thumbs && design.thumbs[slot]);
   return slot === 'store' || slot === 'front' || slot === 'back';
 }
 
 /** The base slots to consider for a design, in default order: store/front/back
- *  always; board when the design ships one OR the owner uploaded a board override
- *  for it (so a boardless design that gains a board picture surfaces it — #159). */
+ *  always; an optional slot (board, photo) when the design ships one OR the owner
+ *  uploaded an override for it (so a boardless design that gains a board picture
+ *  surfaces it — #159, and the same now holds for a photo card). */
 function baseSlots(design, baseCfg) {
-  const hasBoardOverride = !!(baseCfg && baseCfg.board && validImg(baseCfg.board.img));
-  return DEFAULT_ORDER.filter((s) => s !== 'board' || shipsRender(design, s) || hasBoardOverride);
+  return DEFAULT_ORDER.filter((s) => {
+    if (!OPTIONAL_SLOTS.has(s) || shipsRender(design, s)) return true;
+    const cfg = baseCfg && baseCfg[s];
+    return !!(cfg && validImg(cfg.img));
+  });
 }
 
 function validImg(p) {
@@ -103,7 +117,7 @@ export function galleryFor(map, design, surface) {
       if (!visible) continue;
       const ships = shipsRender(design, key);
       // A shipped slot falls back to its static render on a broken override; a
-      // slot with NO shipped render (a boardless board via override only) has no
+      // slot with NO shipped render (an override-only board or photo card) has no
       // fallback — it's DROPPABLE, so a broken upload removes the slide, not 404s.
       const fallback = ships ? baseSrc(id, key) : '';
       const src = validImg(bc.img) ? bc.img : ships ? baseSrc(id, key) : null;

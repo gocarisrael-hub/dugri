@@ -136,12 +136,48 @@ export function shouldShowBoard(d, designImages) {
 }
 
 // Human label for a resolved gallery item: the owner's photo name, else the base
-// slot's kind, else the design name.
-const SLOT_KIND = { store: 'תמונת חנות', front: 'קלף', back: 'גב הקלף', board: 'לוח המשחק' };
+// slot's kind, else the design name. `front`/`back` are ONE card each — for a
+// portrait design that is a single card, for a legacy design still the printed
+// sheet those cards come on. `photo` is the deck's photo card.
+const SLOT_KIND = {
+  store: 'תמונת חנות',
+  front: 'קלף',
+  back: 'גב הקלף',
+  photo: 'קלף התמונות',
+  board: 'לוח המשחק',
+};
 function labelFor(d, item) {
   if (item.name) return item.name;
   if (SLOT_KIND[item.key]) return `${d.name} · ${SLOT_KIND[item.key]}`;
   return d.name;
+}
+
+// ---- gallery box shape ---------------------------------------------------
+// The carousel needs ONE aspect for all its slides, and the two card eras have
+// very different ones: a legacy design's front/back renders are LANDSCAPE A4
+// sheets of 8 cards (841.92×595.5 → 1.41), while a portrait card-structure design
+// ships SINGLE cards (223.92×312 → 0.72). Dropping a 0.72 card into the 1.41 box
+// (object-fit: contain) would show it at ~51% of the tile width — half the frame
+// empty.
+//
+// A portrait design's gallery still MIXES shapes though: its cards are portrait
+// but its board is landscape. A SQUARE box is the only shape that treats both
+// fairly — a card fills the full height at 72% width, the board fills the full
+// width at 71% height. Designs still on the landscape art keep the exact box they
+// have today, so the seven live designs are pixel-identical to before.
+export const LANDSCAPE_ASPECT = '841.92 / 595.5';
+export const PORTRAIT_ASPECT = '1 / 1';
+
+/** The CSS aspect-ratio for a design's gallery box. */
+export function galleryAspect(d) {
+  return d && d.portrait ? PORTRAIT_ASPECT : LANDSCAPE_ASPECT;
+}
+
+/** Size the inline gallery box for this design's card era. (The fullscreen zoom
+ *  needs nothing: its slides fit the viewport with max-width/max-height.) */
+function applyGalleryAspect(d) {
+  const gallery = document.querySelector('.pdp-gallery');
+  if (gallery) gallery.style.setProperty('--gallery-aspect', galleryAspect(d));
 }
 
 /** The design's DEFAULT gallery photos: front/back/board. The board slide is
@@ -626,6 +662,7 @@ function boot() {
   // the shopper's ability to see the product and buy.
   const shots = galleryShots(d, currentOverrides, currentDesignImages); // defaults (no overrides yet)
   renderInfo(d, currentOverrides); // tags nodes + default name/about + price + buy
+  applyGalleryAspect(d); // portrait cards vs legacy landscape sheets
   renderGallery(shots);
   renderZoomSlides(shots);
   wireZoom();
@@ -687,6 +724,7 @@ function switchToDesign(d) {
   currentDesignImages = {};
   const shots = galleryShots(d, currentOverrides, currentDesignImages);
   renderInfo(d, currentOverrides);
+  applyGalleryAspect(d);
   renderGallery(shots);
   renderZoomSlides(shots);
   renderRelated(d);

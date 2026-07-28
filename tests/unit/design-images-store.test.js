@@ -44,16 +44,35 @@ describe('design-images gallery store', () => {
     return loadStore(dir);
   }
 
-  it('validates design ids (alnum start, kebab) and the four base slots', async () => {
+  it('validates design ids (alnum start, kebab) and the five base slots', async () => {
     const s = await store();
     expect(s.designOk('posttrip')).toBe('posttrip');
     expect(s.designOk('kids-2')).toBe('kids-2');
     expect(s.designOk('-bad')).toBe(null);
     expect(s.designOk('Bad Id')).toBe(null);
     expect(s.designOk('')).toBe(null);
-    for (const slot of ['store', 'front', 'back', 'board']) expect(s.slotOk(slot)).toBe(slot);
+    // `photo` is the deck's photo card (portrait card structure). It MUST be
+    // accepted here or the owner's curation of that slide would be dropped on save
+    // while the client happily orders and renders it.
+    for (const slot of ['store', 'front', 'back', 'photo', 'board'])
+      expect(s.slotOk(slot)).toBe(slot);
     expect(s.slotOk('cover')).toBe(null);
+    expect(s.slotOk('fronts')).toBe(null);
     expect(s.slotOk('')).toBe(null);
+  });
+
+  it('curates the photo-card slot exactly like any other base slot', async () => {
+    const s = await store();
+    expect(s.setBaseImg('grapefruit', 'photo', P1)).toEqual({ ok: true, prev: null });
+    expect(s.getForDesign('grapefruit')).toEqual({ base: { photo: { img: P1 } } });
+    expect(s.setBaseImg('grapefruit', 'photo', 'https://evil.example/x.png').ok).toBe(false);
+    // ordering accepts it as a known key
+    expect(s.setOrder('grapefruit', ['photo', 'front', 'back'])).toEqual([
+      'photo',
+      'front',
+      'back',
+    ]);
+    expect(s.resetBaseImg('grapefruit', 'photo')).toEqual({ ok: true, prev: P1 });
   });
 
   it('setBaseImg stores an our-own upload path; getForDesign/getAll reflect it', async () => {

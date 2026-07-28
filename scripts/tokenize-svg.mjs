@@ -511,6 +511,11 @@ for (const d of DESIGNS) {
     rasterKinds,
     hasRaster: rasterKinds.length > 0,
     recolor: d.recolor,
+    // Carried into the manifest so the storefront can size its picture box for the
+    // design's card era (see site/js/designs.js `portrait`). Set it on a DESIGNS
+    // entry above once that design's artwork is re-exported into the portrait
+    // single-card structure (docs/card-structure-schema.md).
+    portrait: !!d.portrait,
     sizes,
   });
 }
@@ -546,9 +551,11 @@ for (const r of report) {
     .map((k) => `${k}:'assets/designs/${r.id}/thumb-${k}.webp'`);
   const key = `${r.id}:`.padEnd(14);
   const accentPart = r.accent ? `accent:'${r.accent}', ` : '';
+  // Emitted only when true, so a legacy design's manifest line is byte-identical.
+  const portraitPart = r.portrait ? 'portrait:true, ' : '';
   js +=
     `  ${key}{ anchors:[${anchorsStr}], hasRaster:${r.hasRaster}, ` +
-    `recolor:'${r.recolor}', ${accentPart}thumb:'${r.thumb}', ` +
+    `recolor:'${r.recolor}', ${accentPart}${portraitPart}thumb:'${r.thumb}', ` +
     `thumbs:{ ${thumbParts.join(', ')} }, products:{ ${prodParts.join(', ')} } },\n`;
 }
 js += '};\n';
