@@ -40,6 +40,7 @@ function setResend(on) {
 }
 
 const link = 'https://dugri.example/api/admin/collections/col-1/pdf?key=SECRET';
+const board = 'https://dugri.example/api/admin/collections/col-1/board?key=SECRET';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -58,6 +59,35 @@ describe('buildPdfReadyMessage', () => {
     const notify = loadFresh();
     const msg = notify.buildPdfReadyMessage({ honoree_name: 'עוז' }, null);
     expect(msg.text).not.toContain('http');
+  });
+
+  // An order now ships TWO artifacts: the card deck and the board, generated as
+  // a separate file. Both have to reach the customer in this one email.
+  it('carries the board link as a second labelled link + CTA', () => {
+    const notify = loadFresh();
+    const msg = notify.buildPdfReadyMessage({ honoree_name: 'עוז' }, link, '', {
+      boardLink: board,
+    });
+    expect(msg.text).toContain(link);
+    expect(msg.text).toContain(board);
+    expect(msg.text).toContain('לוח המשחק');
+    // two CTA buttons in the branded HTML — one per artifact
+    expect(msg.html).toContain(`href="${link}"`);
+    expect(msg.html).toContain(`href="${board}"`);
+    expect(msg.html.match(/<a href="http/g) || []).toHaveLength(2);
+  });
+
+  // A board is only produced once a theme is migrated to the new card structure;
+  // until then the email must look exactly like the single-artifact one.
+  it('stays a one-artifact email when there is no board file', () => {
+    const notify = loadFresh();
+    const withOut = notify.buildPdfReadyMessage({ honoree_name: 'עוז' }, link, '');
+    const withNull = notify.buildPdfReadyMessage({ honoree_name: 'עוז' }, link, '', {
+      boardLink: null,
+    });
+    expect(withNull).toEqual(withOut);
+    expect(withOut.text).not.toContain('לוח המשחק');
+    expect(withOut.html.match(/<a href="http/g) || []).toHaveLength(1);
   });
 });
 
@@ -124,6 +154,33 @@ describe('sendPdfReady', () => {
     // The customer gets the capability link and NEVER the admin key.
     const customer = byRecipient['client@x.com'];
     expect(customer.text).toContain(customerLink);
+    expect(JSON.stringify(customer)).not.toContain('SUPERSECRET');
+    expect(JSON.stringify(customer)).not.toContain('key=');
+  });
+
+  // Same split for the SECOND artifact: the board links are per-recipient too, so
+  // the admin-keyed board URL can never ride along in the customer's copy.
+  it('gives each recipient their OWN board link alongside their deck link', async () => {
+    setResend(true);
+    const notify = loadFresh();
+    const { calls } = stubFetch();
+    const adminLink = 'https://dugri.example/api/admin/collections/col-1/pdf?key=SUPERSECRET';
+    const adminBoard = 'https://dugri.example/api/admin/collections/col-1/board?key=SUPERSECRET';
+    const customerLink = 'https://dugri.example/api/collections/col-1/pdf?t=capabilitytoken123';
+    const customerBoard = 'https://dugri.example/api/collections/col-1/board?t=capabilitytoken123';
+    await notify.sendPdfReady({ honoree_name: 'עוז', owner_email: 'client@x.com' }, '', {
+      admin: adminLink,
+      customer: customerLink,
+      adminBoard,
+      customerBoard,
+    });
+    const byRecipient = Object.fromEntries(calls.map((c) => [c.body.to[0], c.body]));
+    const owner = byRecipient['owner@dugri.example'];
+    expect(owner.text).toContain(adminLink);
+    expect(owner.text).toContain(adminBoard);
+    const customer = byRecipient['client@x.com'];
+    expect(customer.text).toContain(customerLink);
+    expect(customer.text).toContain(customerBoard);
     expect(JSON.stringify(customer)).not.toContain('SUPERSECRET');
     expect(JSON.stringify(customer)).not.toContain('key=');
   });

@@ -94,7 +94,12 @@ const EMAIL_KINDS = [
     id: 'pdf_ready',
     label: 'הקובץ מוכן',
     audience: 'buyer',
-    build: (n, c, base) => n.buildPdfReadyMessage(c, base + '/download/sample.pdf', base),
+    // An order ships two artifacts, so the preview shows both CTAs: the card
+    // deck and the separate board file.
+    build: (n, c, base) =>
+      n.buildPdfReadyMessage(c, base + '/download/sample.pdf', base, {
+        boardLink: base + '/download/sample-board.pdf',
+      }),
   },
   {
     id: 'owner_order_created',

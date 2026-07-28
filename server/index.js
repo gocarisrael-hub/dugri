@@ -73,6 +73,50 @@ const PAWN_UPLOAD_LIMIT = process.env.PAWN_UPLOAD_LIMIT || '20mb';
 // large deck is slow); the child is SIGKILLed past this and the request 504s.
 const GENERATE_TIMEOUT_MS = Number(process.env.GENERATE_TIMEOUT_MS || 120000);
 
+// --- The board artifact ---------------------------------------------------
+// One order now produces TWO deliverables: the card-deck PDF at <id>.pdf, and
+// the game BOARD as a SEPARATE file beside it (it is no longer a page inside the
+// deck). Contract with the generator (#233): order_to_pdf.py derives the board
+// path from the deck path by replacing the ".pdf" suffix with ".board.pdf", i.e.
+// GENERATED_DIR/<collection id>.board.pdf.
+// We resolve it by probing OUR OWN GENERATED_DIR for that stem rather than by
+// reading the path off the child's stdout (which the generator also prints) — a
+// path handed to us by a subprocess must never decide which file a download
+// route serves, and the download routes run long after that stdout is gone and
+// have to hit the disk anyway. A missing board file is normal (orders generated
+// before the split, or a theme whose board isn't wired yet): every board-aware
+// path then degrades to the deck-only behaviour it had before, instead of
+// failing the generation.
+const BOARD_EXTS = ['.pdf', '.png', '.svg'];
+// SVG is served as octet-stream (never image/svg+xml): an SVG can carry script,
+// and this origin also serves the admin UI. With attachment + nosniff it is only
+// ever downloaded, never rendered in the origin's context.
+const BOARD_TYPES = { '.pdf': 'application/pdf', '.png': 'image/png' };
+
+// Absolute path of the board file produced for `id`, or null when there is none.
+function boardFileFor(id) {
+  for (const ext of BOARD_EXTS) {
+    const f = path.join(GENERATED_DIR, id + '.board' + ext);
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
+
+// Stream the board file for `id` as a download, or 404 when it was never
+// produced. Callers must have authorized the request FIRST (admin key or the
+// per-order capability token) — this helper does no access control.
+function sendBoardFile(res, id) {
+  const file = boardFileFor(id);
+  if (!file) return res.status(404).json({ error: 'no board' });
+  const ext = path.extname(file);
+  res.setHeader('Content-Type', BOARD_TYPES[ext] || 'application/octet-stream');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // The name the CUSTOMER sees is ours to choose and reads better hyphenated —
+  // it is not the generator's on-disk name (<id>.board.pdf).
+  res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + id + '-board' + ext + '"');
+  res.sendFile(file);
+}
+
 // Spawn the Python generator for one order and resolve { pages } on success.
 // Writes the words to a temp file (cleaned up after), streams the theme +
 // honoree + optional word-font/extra-fields as CLI args, captures stderr for a
@@ -636,9 +680,14 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       customTitle: c.custom_title || null,
       photos: pawnPhotoFiles(c),
     });
+    // The board is a second, separate artifact — recorded on production so the
+    // admin UI knows whether to offer it, and left null for a generator run that
+    // produced none (pre-split orders keep working exactly as before).
+    const boardFile = boardFileFor(c.id);
     const production = db.setProduction(c.id, {
       state: 'generated',
       pdf_file: path.basename(outPdf),
+      board_file: boardFile ? path.basename(boardFile) : null,
       generated_at: new Date().toISOString(),
       theme,
       pages,
@@ -654,6 +703,8 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
     //  - customerLink carries this collection's per-order pdf_token capability
     //    (set by db.setProduction) so the CUSTOMER can download WITHOUT ever
     //    seeing the admin secret. The customer email must use customerLink.
+    // Each has a board twin on the same footing — the SAME capability token
+    // covers both artifacts of one order, so no second secret is minted.
     const adminLink = base
       ? base + '/api/admin/collections/' + c.id + '/pdf?key=' + encodeURIComponent(ADMIN_KEY)
       : null;
@@ -661,16 +712,26 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       base && production && production.pdf_token
         ? base + '/api/collections/' + c.id + '/pdf?t=' + encodeURIComponent(production.pdf_token)
         : null;
+    const adminBoardLink =
+      base && boardFile
+        ? base + '/api/admin/collections/' + c.id + '/board?key=' + encodeURIComponent(ADMIN_KEY)
+        : null;
+    const customerBoardLink =
+      base && boardFile && production && production.pdf_token
+        ? base + '/api/collections/' + c.id + '/board?t=' + encodeURIComponent(production.pdf_token)
+        : null;
     if (notify.isConfigured() && (adminLink || customerLink)) {
       notify
         .sendPdfReady({ ...c, count: words.length }, base, {
           admin: adminLink,
           customer: customerLink,
+          adminBoard: adminBoardLink,
+          customerBoard: customerBoardLink,
         })
         .catch(() => {});
     }
-    // The admin UI is already authenticated, so the response keeps the admin link.
-    res.json({ ok: true, production, link: adminLink });
+    // The admin UI is already authenticated, so the response keeps the admin links.
+    res.json({ ok: true, production, link: adminLink, boardLink: adminBoardLink });
   } catch (e) {
     const detail = String((e && e.message) || e);
     // A clear, actionable status for the common "theme not calibrated" case.
@@ -692,6 +753,16 @@ app.get('/api/admin/collections/:id/pdf', (req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + c.id + '.pdf"');
   res.sendFile(file);
+});
+
+// Admin: download the order's BOARD file — the second artifact, produced beside
+// the deck. Same gate and same id-handling as the PDF route above; 404 when the
+// collection or the board file is absent.
+app.get('/api/admin/collections/:id/board', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  sendBoardFile(res, c.id);
 });
 
 // Constant-time compare of a supplied pdf capability token against the stored
@@ -719,6 +790,19 @@ app.get('/api/collections/:id/pdf', (req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + c.id + '.pdf"');
   res.sendFile(file);
+});
+
+// PUBLIC: download the order's BOARD file via the SAME per-collection capability
+// token as the deck (one order, one secret, two artifacts) — this is the second
+// link in the customer's "file ready" email. 403 on a missing/wrong token, 404
+// when the collection or the board file is absent.
+app.get('/api/collections/:id/board', (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const production = (c.order && c.order.production) || c.production || null;
+  const token = production && production.pdf_token;
+  if (!pdfTokenOk(req.query.t, token)) return res.status(403).json({ error: 'forbidden' });
+  sendBoardFile(res, c.id);
 });
 
 // Admin: soft-cancel a collection (body {undo:true} to restore).

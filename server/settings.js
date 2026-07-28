@@ -257,7 +257,8 @@ const REGISTRY = {
       tokens: [],
       default: {
         addWords: 'להוספת המילים', // buyer confirmation + words reminder
-        downloadFile: 'להורדת הקובץ', // PDF ready
+        downloadFile: 'להורדת הקובץ', // PDF ready — the card deck
+        downloadBoard: 'להורדת לוח המשחק', // PDF ready — the separate board file
         updateOrder: 'לעדכון ההזמנה', // production error
         pay: 'להשלמת התשלום', // payment reminder
       },

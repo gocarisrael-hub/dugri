@@ -11,6 +11,11 @@ import fs from 'node:fs';
 // in unit tests. The fake writes a stub PDF to the requested output path and
 // prints the "(N pages)" line the route parses; a theme containing "uncal" makes
 // it fail like an uncalibrated theme.
+//
+// It also writes the SECOND artifact — the board, at "<out>.board.pdf" — which is
+// the real generator's contract (#233). An honoree name containing "NoBoard"
+// skips it, standing in for an order generated before the board was split out of
+// the deck.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
@@ -43,6 +48,10 @@ beforeAll(async () => {
       '  *uncal*) echo "theme foo is not calibrated yet" 1>&2; exit 1;;',
       'esac',
       'printf "%%PDF-1.4 fake" > "$out"',
+      'case "$3" in',
+      '  *NoBoard*) ;;',
+      '  *) printf "%%PDF-1.4 fake board" > "${out%.pdf}.board.pdf";;',
+      'esac',
       'echo "wrote $out (3 pages)"',
       '',
     ].join('\n'),
@@ -259,6 +268,80 @@ describe('POST /api/admin/collections/:id/generate', () => {
   it('404 downloading a PDF that was never generated', async () => {
     const c = db.createCollection('אין קובץ');
     const dl = await fetch(base + '/api/admin/collections/' + c.id + '/pdf?key=' + ADMIN_KEY);
+    expect(dl.status).toBe(404);
+  });
+});
+
+// The board is no longer a page inside the deck — it is a second file the order
+// must deliver alongside it, over the same two gates as the PDF.
+describe('the board artifact', () => {
+  it('records board_file on production and returns an admin board link', async () => {
+    const c = seedWithWords('Board', ['a', 'b']);
+    const r = await post(key('/api/admin/collections/' + c.id + '/generate'), {
+      theme: 'trip comeback',
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.production.board_file).toBe(c.id + '.board.pdf');
+    expect(r.body.boardLink).toContain(
+      '/api/admin/collections/' + c.id + '/board?key=' + ADMIN_KEY
+    );
+    expect(fs.existsSync(path.join(genDir, c.id + '.board.pdf'))).toBe(true);
+    // persisted, so a page reload still offers the board
+    expect(db.getCollection(c.id).production.board_file).toBe(c.id + '.board.pdf');
+  });
+
+  it('serves the board over the admin route and refuses it without the key', async () => {
+    const c = seedWithWords('BoardAdmin', ['a', 'b']);
+    await post(key('/api/admin/collections/' + c.id + '/generate'), { theme: 'trip comeback' });
+    const dl = await fetch(base + '/api/admin/collections/' + c.id + '/board?key=' + ADMIN_KEY);
+    expect(dl.status).toBe(200);
+    expect(dl.headers.get('content-type')).toContain('application/pdf');
+    // the download name is the customer-facing one, not the on-disk one
+    expect(dl.headers.get('content-disposition')).toContain('dugri-' + c.id + '-board.pdf');
+    expect((await fetch(base + '/api/admin/collections/' + c.id + '/board')).status).toBe(403);
+  });
+
+  it('serves the board over the PUBLIC route with the SAME capability token as the deck', async () => {
+    const c = seedWithWords('BoardToken', ['a', 'b']);
+    const r = await post(key('/api/admin/collections/' + c.id + '/generate'), {
+      theme: 'trip comeback',
+    });
+    const token = r.body.production.pdf_token;
+    const dl = await fetch(base + '/api/collections/' + c.id + '/board?t=' + token);
+    expect(dl.status).toBe(200);
+    expect(dl.headers.get('content-type')).toContain('application/pdf');
+    // and the token gate behaves exactly like the deck's: no token, wrong token
+    // and the admin key are all refused.
+    expect((await fetch(base + '/api/collections/' + c.id + '/board')).status).toBe(403);
+    expect((await fetch(base + '/api/collections/' + c.id + '/board?t=nope')).status).toBe(403);
+    expect((await fetch(base + '/api/collections/' + c.id + '/board?t=' + ADMIN_KEY)).status).toBe(
+      403
+    );
+  });
+
+  // A generator run that produces no board (an un-migrated theme, or an order
+  // generated before the split) must still succeed — just without a board.
+  it('generation still succeeds when no board file is produced', async () => {
+    const c = seedWithWords('NoBoard', ['a', 'b']);
+    const r = await post(key('/api/admin/collections/' + c.id + '/generate'), {
+      theme: 'trip comeback',
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.production.state).toBe('generated');
+    expect(r.body.production.board_file).toBe(null);
+    expect(r.body.boardLink).toBe(null);
+    // the deck is there; the board routes 404 rather than serving something else
+    expect(fs.existsSync(path.join(genDir, c.id + '.pdf'))).toBe(true);
+    const dl = await fetch(base + '/api/admin/collections/' + c.id + '/board?key=' + ADMIN_KEY);
+    expect(dl.status).toBe(404);
+    const pub = await fetch(
+      base + '/api/collections/' + c.id + '/board?t=' + r.body.production.pdf_token
+    );
+    expect(pub.status).toBe(404);
+  });
+
+  it('404 on the board route for an unknown collection', async () => {
+    const dl = await fetch(base + '/api/admin/collections/nope/board?key=' + ADMIN_KEY);
     expect(dl.status).toBe(404);
   });
 });

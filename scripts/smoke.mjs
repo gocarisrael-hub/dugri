@@ -177,6 +177,23 @@ export async function runSmoke(baseUrl, opts = {}) {
         `card_enabled is not a boolean (got ${typeof view.card_enabled})`
       );
     }
+
+    // d. The two order-artifact downloads (card deck + board) are live and answer
+    // as an API. This collection has no production, so an untokened request must
+    // be REFUSED — 403 JSON. A 200 or an HTML body would mean the route is gone
+    // or shadowed by the SPA fallback, i.e. a customer's download link quietly
+    // serving the homepage. No file is produced here; generation needs Chrome and
+    // a real order, so this only proves the delivery routes are reachable.
+    for (const artifact of ['pdf', 'board']) {
+      const url = base + `/api/collections/${id}/${artifact}`;
+      const res = await fetchOrFail('artifact-route', url);
+      if (res.status !== 403) {
+        fail('artifact-route', url, `expected 403 without a token, got ${res.status}`);
+      }
+      if (!(res.headers.get('content-type') || '').includes('application/json')) {
+        fail('artifact-route', url, 'answered as a page, not as an API');
+      }
+    }
   } finally {
     // Always try to remove the smoke collection, even if a check threw.
     await cleanup(base, id, adminKey);
