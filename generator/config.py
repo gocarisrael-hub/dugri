@@ -535,6 +535,95 @@ def is_single_card_recipe(recipe):
     return fmt >= 2 or recipe.get("layout") == "single" or "card" in recipe
 
 
+# ---- The owner's saved calibration (themes.json ``card_slots``) ------------
+# TWO things write a single-card template's geometry, and they write to
+# DIFFERENT files:
+#
+#   admin calibration form  -> themes.json  "card_slots"   (FRACTIONS of the card)
+#   recipe_diff/calibrate   -> recipes/<t>.json "card"      (viewBox USER UNITS)
+#
+# Both are legitimate — one is the owner measuring by eye in the UI, the other is
+# automatic clean<->filled detection — so the generator reads BOTH rather than
+# declaring one of them wrong. The owner's saved calibration WINS, because it is
+# the more deliberate act and because the admin route refuses to set
+# ``calibrated: true`` on a single-card theme without it.
+#
+# Reading only the recipe (which is what this did until now) meant a template
+# calibrated through the admin UI rendered with NO words and NO title — every
+# measurement silently ignored. Reading only ``card_slots`` would mirror the same
+# bug onto the auto-detection path. Hence: prefer, then fall back.
+#
+# ``card_slots`` is geometry ONLY (``{words: [4 fracs], titles: {"2": frac, …}}``);
+# it carries no colour, so ink colour still comes from the detected recipe, and
+# from the theme's title outline when there is no recipe to draw it from.
+CARD_WORD_SLOTS = 4
+
+
+def card_slots(cfg):
+    """The owner's saved slot calibration, or None when they haven't saved one."""
+    slots = cfg.get("card_slots")
+    if not isinstance(slots, dict):
+        return None
+    words = slots.get("words")
+    if not isinstance(words, list) or len(words) < CARD_WORD_SLOTS:
+        return None
+    return slots
+
+
+def _box_from_frac(frac, cell):
+    """A ``{x0,y0,x1,y1}`` fraction of the card as absolute viewBox units."""
+    x0, y0, x1, y1 = cell
+    w, h = x1 - x0, y1 - y0
+    return {"x0": x0 + frac["x0"] * w, "y0": y0 + frac["y0"] * h,
+            "x1": x0 + frac["x1"] * w, "y1": y0 + frac["y1"] * h}
+
+
+def _default_ink(cfg):
+    """Fallback ink colour when no detected recipe supplies one.
+
+    The title's outline is the template's dark ink, which is what card words are
+    drawn in on every shipped design — a far better guess than black, and only
+    ever reached when the owner calibrated by hand without running detection.
+    """
+    return (cfg.get("title_style") or {}).get("outline") or "#000000"
+
+
+def card_word_boxes(cfg, recipe, cell):
+    """The four word slots in viewBox units — owner calibration first.
+
+    Colour is taken from the detected recipe slot at the same position when
+    there is one, since ``card_slots`` records no colour.
+    """
+    detected = (recipe.get("card") or {}).get("words") or []
+    slots = card_slots(cfg)
+    if not slots:
+        return detected
+    out = []
+    for i, frac in enumerate(slots["words"][:CARD_WORD_SLOTS]):
+        box = _box_from_frac(frac, cell)
+        was = detected[i] if i < len(detected) else None
+        box["color"] = (was or {}).get("color") or _default_ink(cfg)
+        out.append(box)
+    return out
+
+
+def card_title_boxes(cfg, recipe, front_index, cell):
+    """The title box(es) for one front in viewBox units — owner calibration first.
+
+    The owner's form records ONE box per front; the detector may record one box
+    per title LINE. Either way the renderer fits the stacked title into their
+    union, so a single box is returned as a one-item list.
+    """
+    slots = card_slots(cfg)
+    titles = (slots or {}).get("titles") or {}
+    frac = titles.get(str(front_index), titles.get(front_index))
+    if frac:
+        box = _box_from_frac(frac, cell)
+        box["color"] = (cfg.get("title_style") or {}).get("fill") or _default_ink(cfg)
+        return [box]
+    return recipe_front_title(recipe, front_index)
+
+
 def recipe_card(recipe):
     """The single-card block (``{cell, words}``) of a v2 recipe."""
     card = recipe.get("card")
