@@ -670,7 +670,7 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
   const outPdf = path.join(GENERATED_DIR, c.id + '.pdf');
 
   try {
-    const { pages, board } = await runGenerator({
+    const { pages } = await runGenerator({
       theme,
       name: c.honoree_name || '',
       words,
@@ -683,7 +683,11 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
     });
     // The board is a second, separate artifact — recorded on production so the
     // admin UI knows whether to offer it, and left null for a generator run that
-    // produced none (pre-split orders keep working exactly as before).
+    // produced none (a v1 theme, whose board is still the deck's last page).
+    // ONE source of truth: what the generator actually left on disk. The child
+    // also prints the board path on stdout (#233), but the download routes have
+    // to probe the disk anyway — they run in a later request — and two sources
+    // can disagree, so the record is derived the same way the routes resolve it.
     const boardFile = boardFileFor(c.id);
     const production = db.setProduction(c.id, {
       state: 'generated',
@@ -692,11 +696,6 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       generated_at: new Date().toISOString(),
       theme,
       pages,
-      // v2 orders deliver TWO artifacts: the card deck and the game board.
-      // Recorded here so the delivery layer (email + /pdf download routes) can
-      // find the board without re-deriving it. null for a v1 order, whose board
-      // is still the deck's last page.
-      board_file: board ? path.basename(board) : null,
     });
     const base = paymentBaseUrl();
     // Two links, and they are NOT interchangeable:
