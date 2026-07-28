@@ -324,6 +324,58 @@
         width: 16px;
         height: 16px;
       }
+      /* Single portrait card calibration: the card map beside its knobs. */
+      .cal-card {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 14px;
+      }
+      .cal-card-map {
+        flex: 0 0 auto;
+        width: 152px;
+        height: 212px;
+        border: 1px solid #e0d6c8;
+        border-radius: 8px;
+        background: #fff;
+      }
+      .cal-card-knobs {
+        flex: 1 1 260px;
+        min-width: 240px;
+      }
+      .cal-slot-h {
+        font-size: 12px;
+        font-weight: 800;
+        color: #5c7357;
+        margin: 6px 0 3px;
+      }
+      /* Front picker: which of the eight fronts' title position is being edited. */
+      .cal-fronts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin: 8px 0 2px;
+      }
+      .cal-front-btn {
+        appearance: none;
+        border: 1px solid #d8a7a0;
+        background: #faf8f4;
+        color: #5c7357;
+        font-family: inherit;
+        font-weight: 700;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 99px;
+        cursor: pointer;
+      }
+      .cal-front-btn.active {
+        background: #8ca287;
+        border-color: #8ca287;
+        color: #fff;
+      }
+      .cal-title-row[hidden] {
+        display: none;
+      }
       .cal-actions {
         display: flex;
         flex-wrap: wrap;
@@ -565,9 +617,47 @@
               <option value="private">פרטי (private)</option>
             </select>
           </label>
+          <label
+            >מבנה קלפים (card_structure)
+            <span class="hint"
+              >קלף בודד (חדש): תשעה קבצים בכל תיקייה — <code>1.svg</code> הוא גב הקלף,
+              <code>2.svg</code> עד <code>9.svg</code> הם שמונה הפנים. הלוח אינו חלק מהסט הזה והוא
+              קובץ נפרד. גיליון (ישן): fronts/backs/board.</span
+            >
+            <select name="card_structure" id="cardStructure">
+              <option value="cards">קלף בודד — 1.svg עד 9.svg (חדש)</option>
+              <option value="sheet">גיליון 8 קלפים — fronts/backs/board (ישן)</option>
+            </select>
+          </label>
         </fieldset>
 
-        <fieldset>
+        <!-- NEW single-card layout. The nine files go in through ONE picker each,
+             so the owner selects the exported folder rather than filling nine
+             separate slots; the mapping comes from each file's own name. -->
+        <fieldset id="cardsAssets">
+          <legend>קבצי הקלפים — 1.svg עד 9.svg</legend>
+          <div class="row">
+            <label
+              >נקי (clean) · בחרו את כל תשעת הקבצים
+              <span class="hint">1.svg = גב הקלף, 2.svg-9.svg = שמונה הפנים</span>
+              <input type="file" name="clean_cards" accept=".svg,image/svg+xml" multiple />
+            </label>
+            <label
+              >ממולא (filled) · אותם תשעה קבצים
+              <span class="hint">עם טקסט הדוגמה של Canva</span>
+              <input type="file" name="filled_cards" accept=".svg,image/svg+xml" multiple />
+            </label>
+          </div>
+          <div class="row">
+            <label
+              >תמונות משותפות · assets (רשות)
+              <span class="hint">קבצים בשם &lt;16 תווי hex&gt;.&lt;סיומת&gt;</span>
+              <input type="file" name="assets" multiple />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="sheet-assets">
           <legend>SVG נקי (clean — ללא טקסט)</legend>
           <div class="row">
             <label
@@ -576,19 +666,10 @@
             <label
               >backs<input type="file" name="clean_backs" accept=".svg,image/svg+xml" required
             /></label>
-            <label
-              >board<input type="file" name="clean_board" accept=".svg,image/svg+xml" required
-            /></label>
-            <label
-              >board צ׳ייסרים (רשות)<input
-                type="file"
-                name="clean_board_chasers"
-                accept=".svg,image/svg+xml"
-            /></label>
           </div>
         </fieldset>
 
-        <fieldset>
+        <fieldset class="sheet-assets">
           <legend>SVG ממולא (filled — עם טקסט לדוגמה)</legend>
           <div class="row">
             <label
@@ -597,8 +678,36 @@
             <label
               >backs<input type="file" name="filled_backs" accept=".svg,image/svg+xml" required
             /></label>
+          </div>
+        </fieldset>
+
+        <!-- The board is the SAME pair of files in both layouts — it is a separate
+             output, never a page of the deck — so it gets one fieldset shared by
+             both modes. It is required with the sheet layout (where it always
+             shipped together with the cards) and optional with the single-card
+             one, which can be registered deck-first. -->
+        <fieldset id="boardAssets">
+          <legend>לוח (קובץ נפרד מהחפיסה)</legend>
+          <div class="row">
             <label
-              >board<input type="file" name="filled_board" accept=".svg,image/svg+xml" required
+              >לוח נקי (clean)<input
+                type="file"
+                name="clean_board"
+                accept=".svg,image/svg+xml"
+                required
+            /></label>
+            <label
+              >לוח ממולא (filled)<input
+                type="file"
+                name="filled_board"
+                accept=".svg,image/svg+xml"
+                required
+            /></label>
+            <label
+              >לוח צ׳ייסרים (רשות)<input
+                type="file"
+                name="clean_board_chasers"
+                accept=".svg,image/svg+xml"
             /></label>
           </div>
         </fieldset>
@@ -652,6 +761,37 @@
         msg.textContent = text;
       }
 
+      // The upload form serves BOTH asset layouts, and only the active one's
+      // inputs stay ENABLED. A disabled input is left out of the FormData
+      // entirely and skips `required` validation, so switching modes can neither
+      // block submit on a hidden field nor post an empty part that shadows a real
+      // file. The board fieldset is shared (the board is the same separate output
+      // in both layouts) — only its required-ness changes.
+      const structureSel = document.getElementById('cardStructure');
+      const cardsFs = document.getElementById('cardsAssets');
+      const boardFs = document.getElementById('boardAssets');
+      const sheetFs = [...document.querySelectorAll('.sheet-assets')];
+      function applyStructureMode() {
+        const cards = structureSel.value === 'cards';
+        cardsFs.hidden = !cards;
+        for (const el of cardsFs.querySelectorAll('input')) el.disabled = !cards;
+        for (const fs of sheetFs) {
+          fs.hidden = cards;
+          for (const el of fs.querySelectorAll('input')) el.disabled = cards;
+        }
+        // The two nine-file pickers are what the new layout requires...
+        for (const name of ['clean_cards', 'filled_cards']) {
+          cardsFs.querySelector('[name="' + name + '"]').required = cards;
+        }
+        // ...while a single-card template may be registered DECK-FIRST and get its
+        // board later, which the sheet layout never did.
+        for (const name of ['clean_board', 'filled_board']) {
+          boardFs.querySelector('[name="' + name + '"]').required = !cards;
+        }
+      }
+      structureSel.addEventListener('change', applyStructureMode);
+      applyStructureMode();
+
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (!key) {
@@ -672,10 +812,14 @@
               'שגיאה: ' + (data.error || res.status) + (data.detail ? '\n' + data.detail : '')
             );
           } else {
+            // recipe_diff measures the sheet layout only, so a single-card
+            // template never runs it — its word slots are calibrated by hand.
             const recipeTxt =
-              data.recipe === 'generated'
-                ? 'recipe זוהה אוטומטית ✓'
-                : 'recipe לא נוצר כאן — צריך להריץ recipe_diff.py ידנית';
+              data.card_structure === 'cards'
+                ? 'מבנה: קלף בודד — משבצות המילים נקבעות בכיול (ללא recipe)'
+                : data.recipe === 'generated'
+                  ? 'recipe זוהה אוטומטית ✓'
+                  : 'recipe לא נוצר כאן — צריך להריץ recipe_diff.py ידנית';
             show(
               'ok',
               'נוצרה תבנית: ' +
@@ -688,6 +832,7 @@
                 (data.note || '')
             );
             form.reset();
+            applyStructureMode(); // reset() restores the default mode — re-sync the fieldsets
           }
         } catch (err) {
           show('err', 'שגיאת רשת: ' + err);
@@ -714,6 +859,7 @@
           language: (fd.get('language') || '').trim(),
           extra_fields: (fd.get('extra_fields') || '').trim(),
           visibility: fd.get('visibility') || 'public',
+          card_structure: fd.get('card_structure') || 'cards',
         };
         if (!payload.slug || !payload.display_he || !payload.title_text) {
           show('err', 'מלאו slug, שם (display_he) וטקסט כותרת (title_text) כדי ליצור תבנית ריקה.');
@@ -736,6 +882,7 @@
               (data.note || 'נוצרה תבנית ריקה: ' + data.key) + '\n\nהעלו כעת כל קובץ מהרשימה למטה.'
             );
             form.reset();
+            applyStructureMode(); // reset() restores the default mode — re-sync the fieldsets
           }
         } catch (err) {
           show('err', 'שגיאת רשת: ' + err);
@@ -773,15 +920,37 @@
       };
       const EXTRA_FIELD_SAMPLE = { AGE: '30', YEARS: '30', NAME1: 'מיכל', NAME2: 'זאבי' };
 
+      // --- Single portrait card (the new asset layout) ----------------------
+      // 1.svg is the card BACK and 2.svg-9.svg the eight FRONTS, which differ
+      // only by a thin icon layer — so the four word slots are calibrated ONCE
+      // and shared, and only the title position is per front.
+      const SVG_NS = 'http://www.w3.org/2000/svg';
+      const CARD_FRONTS = [2, 3, 4, 5, 6, 7, 8, 9];
+      const CARD_WORD_SLOTS = 4;
+      // Fallback only — the server reports the real box in `card_viewbox`.
+      const CARD_VIEWBOX = { w: 223.92, h: 312 };
+      // Starting boxes for a template nobody has calibrated yet: a title band
+      // across the top and four evenly stacked word slots under it. A plausible
+      // layout to drag into place beats 48 empty inputs.
+      const DEFAULT_CARD_WORDS = [
+        { x0: 0.1, y0: 0.3, x1: 0.9, y1: 0.42 },
+        { x0: 0.1, y0: 0.45, x1: 0.9, y1: 0.57 },
+        { x0: 0.1, y0: 0.6, x1: 0.9, y1: 0.72 },
+        { x0: 0.1, y0: 0.75, x1: 0.9, y1: 0.87 },
+      ];
+      const DEFAULT_CARD_TITLE = { x0: 0.08, y0: 0.07, x1: 0.92, y1: 0.2 };
+
       function buildCalibrationPanel(t) {
         const ts = t.title_style || {};
         const details = document.createElement('details');
         details.className = 'tpl-cal';
         details.open = !t.calibrated; // fresh template → open the step by default
         const summary = document.createElement('summary');
+        const surfaces =
+          t.card_structure === 'cards' ? 'כותרת · קלף · לוח · גב' : 'כותרת · לוח · גב';
         summary.textContent = t.calibrated
-          ? 'עריכת מראה (כותרת · לוח · גב)'
-          : 'כיול מראה (חובה) — כותרת · לוח · גב';
+          ? 'עריכת מראה (' + surfaces + ')'
+          : 'כיול מראה (חובה) — ' + surfaces;
         details.append(summary);
         const body = document.createElement('div');
         body.className = 'cal-body';
@@ -863,6 +1032,86 @@
         );
         titleG.append(titleGrid);
         body.append(titleG);
+
+        // SINGLE-CARD geometry (the new layout only): the four word slots, which
+        // are SHARED by all eight fronts because they never move, and the title
+        // POSITION per front, which does. Title STYLE stays in the group above —
+        // it is one look for the whole deck. The board is deliberately absent
+        // here: it is a separate output file, not one of the nine cards, and its
+        // own name slot is the board group further down.
+        if (t.card_structure === 'cards') {
+          const vb = t.card_viewbox || CARD_VIEWBOX;
+          const slots = t.card_slots || {};
+          const words = Array.isArray(slots.words) ? slots.words : [];
+          const titles = (slots.titles && typeof slots.titles === 'object' && slots.titles) || {};
+
+          const g = document.createElement('fieldset');
+          g.className = 'cal-group cal-card-group';
+          const lg = document.createElement('legend');
+          lg.textContent = `קלף בודד (${vb.w}×${vb.h}) — מילים משותפות לכל הפנים, כותרת לכל פנים`;
+          g.append(lg);
+
+          const wrap = document.createElement('div');
+          wrap.className = 'cal-card';
+          // Live map of the card: the boxes as they will sit on the printed card,
+          // redrawn on every keystroke. Numbers alone make it far too easy to
+          // save an overlapping or off-card slot and only see it on the proof.
+          const map = document.createElementNS(SVG_NS, 'svg');
+          map.setAttribute('class', 'cal-card-map');
+          map.setAttribute('viewBox', `0 0 ${vb.w} ${vb.h}`);
+          map.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+          map.dataset.w = String(vb.w);
+          map.dataset.h = String(vb.h);
+          wrap.append(map);
+
+          const knobs = document.createElement('div');
+          knobs.className = 'cal-card-knobs';
+          const boxGrid = (prefix, box, ph) => {
+            const grid = document.createElement('div');
+            grid.className = 'cal-grid';
+            const b = box || {};
+            grid.append(
+              field('x0', num(prefix + '.x0', b.x0 == null ? ph.x0 : b.x0, 0.001)),
+              field('y0', num(prefix + '.y0', b.y0 == null ? ph.y0 : b.y0, 0.001)),
+              field('x1', num(prefix + '.x1', b.x1 == null ? ph.x1 : b.x1, 0.001)),
+              field('y1', num(prefix + '.y1', b.y1 == null ? ph.y1 : b.y1, 0.001))
+            );
+            return grid;
+          };
+          for (let i = 0; i < CARD_WORD_SLOTS; i += 1) {
+            const h = document.createElement('div');
+            h.className = 'cal-slot-h';
+            h.textContent = 'משבצת מילה ' + (i + 1);
+            knobs.append(h, boxGrid('card.word.' + (i + 1), words[i], DEFAULT_CARD_WORDS[i]));
+          }
+
+          // One title box per front, only the picked one on screen — eight open
+          // boxes at once is unreadable, and the map already shows which is which.
+          const fronts = document.createElement('div');
+          fronts.className = 'cal-fronts';
+          const titleHead = document.createElement('div');
+          titleHead.className = 'cal-slot-h';
+          titleHead.textContent = 'מיקום הכותרת — לכל פנים בנפרד';
+          knobs.append(titleHead, fronts);
+          for (const n of CARD_FRONTS) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'cal-front-btn' + (n === CARD_FRONTS[0] ? ' active' : '');
+            btn.dataset.front = String(n);
+            btn.textContent = 'פנים ' + (n - 1);
+            btn.title = n + '.svg';
+            fronts.append(btn);
+            const row = document.createElement('div');
+            row.className = 'cal-title-row';
+            row.dataset.front = String(n);
+            row.hidden = n !== CARD_FRONTS[0];
+            row.append(boxGrid('card.title.' + n, titles[String(n)], DEFAULT_CARD_TITLE));
+            knobs.append(row);
+          }
+          wrap.append(knobs);
+          g.append(wrap);
+          body.append(g);
+        }
 
         // board + back name slots
         const slotGroup = (prefix, legendText, slot) => {
@@ -998,6 +1247,55 @@
         return dataCal; // board.fill, board.outline, back.fill, back.outline, word_size
       }
 
+      // Redraw a template card's single-card MAP from its current inputs: the four
+      // shared word slots plus the title box of the front being edited. Purely
+      // visual — it reads the controls and writes nothing back, so a half-typed
+      // value just draws nothing rather than clobbering the input.
+      function redrawCardMap(card) {
+        const map = card.querySelector('.cal-card-map');
+        if (!map) return;
+        const W = Number(map.dataset.w) || CARD_VIEWBOX.w;
+        const H = Number(map.dataset.h) || CARD_VIEWBOX.h;
+        while (map.firstChild) map.removeChild(map.firstChild);
+        const active =
+          card.querySelector('.cal-front-btn.active') || card.querySelector('.cal-front-btn');
+        const box = (prefix) => {
+          const b = {
+            x0: calNum(card, prefix + '.x0'),
+            y0: calNum(card, prefix + '.y0'),
+            x1: calNum(card, prefix + '.x1'),
+            y1: calNum(card, prefix + '.y1'),
+          };
+          return b.x0 != null && b.y0 != null && b.x1 > b.x0 && b.y1 > b.y0 ? b : null;
+        };
+        const draw = (b, fill, stroke, label) => {
+          if (!b) return;
+          const r = document.createElementNS(SVG_NS, 'rect');
+          r.setAttribute('x', String(b.x0 * W));
+          r.setAttribute('y', String(b.y0 * H));
+          r.setAttribute('width', String((b.x1 - b.x0) * W));
+          r.setAttribute('height', String((b.y1 - b.y0) * H));
+          r.setAttribute('fill', fill);
+          r.setAttribute('stroke', stroke);
+          r.setAttribute('stroke-width', '1.5');
+          map.append(r);
+          const t = document.createElementNS(SVG_NS, 'text');
+          t.setAttribute('x', String(((b.x0 + b.x1) / 2) * W));
+          t.setAttribute('y', String(((b.y0 + b.y1) / 2) * H + 5));
+          t.setAttribute('text-anchor', 'middle');
+          t.setAttribute('font-size', '14');
+          t.setAttribute('fill', stroke);
+          t.textContent = label;
+          map.append(t);
+        };
+        for (let i = 1; i <= CARD_WORD_SLOTS; i += 1) {
+          draw(box('card.word.' + i), 'rgba(140,162,135,0.22)', '#5c7357', String(i));
+        }
+        if (active) {
+          draw(box('card.title.' + active.dataset.front), 'rgba(216,167,160,0.28)', '#b23b3b', 'T');
+        }
+      }
+
       // Read one calibration control by its data-cal name (scoped to the card).
       function calEl(card, name) {
         return card.querySelector('.tpl-cal [data-cal="' + name + '"]');
@@ -1053,12 +1351,29 @@
             outline: calStr(card, prefix + '.outline'),
           };
         };
-        return {
+        const out = {
           title_style,
           board: slot('board'),
           back: slot('back'),
           word_size: calNum(card, 'word_size'),
         };
+        // Single-card geometry, only for a template on the new layout — a sheet
+        // template posts exactly the blob it always did.
+        if (card.querySelector('.tpl-cal .cal-card-group')) {
+          const box = (prefix) => ({
+            x0: calNum(card, prefix + '.x0'),
+            y0: calNum(card, prefix + '.y0'),
+            x1: calNum(card, prefix + '.x1'),
+            y1: calNum(card, prefix + '.y1'),
+          });
+          const titles = {};
+          for (const n of CARD_FRONTS) titles[String(n)] = box('card.title.' + n);
+          out.card_slots = {
+            words: Array.from({ length: CARD_WORD_SLOTS }, (_, i) => box('card.word.' + (i + 1))),
+            titles,
+          };
+        }
+        return out;
       }
 
       function renderTemplates(items) {
@@ -1141,6 +1456,10 @@
           };
           grid.append(mkSelect('visibility', ['public', 'private'], t.visibility));
           grid.append(mkSelect('language', ['hebrew', 'english'], t.language || ''));
+          // Asset layout. Switching it re-points every SVG path, so the server
+          // drops `calibrated` back to false and the template has to be calibrated
+          // against its new art before it can be ordered again.
+          grid.append(mkSelect('card_structure', ['cards', 'sheet'], t.card_structure || 'sheet'));
           grid.append(
             mkSelect('name_form', ['hebrew', 'english', 'english-caps'], t.name_form || '')
           );
@@ -1200,6 +1519,9 @@
           msg.className = 'tpl-msg';
           card.append(msg);
           listEl.append(card);
+          // Draw the single-card map once the panel is in the document (no-op for
+          // a template on the legacy sheet layout).
+          redrawCardMap(card);
         }
       }
 
@@ -1221,8 +1543,32 @@
         }
       }
 
+      // Keep the single-card map in step with the numbers as they are typed.
+      listEl.addEventListener('input', (e) => {
+        const el = e.target.closest('[data-cal]');
+        if (!el || !String(el.dataset.cal || '').startsWith('card.')) return;
+        redrawCardMap(el.closest('.tpl-card'));
+      });
+
       // Inline rename: swap the name span for an input + save/cancel.
       listEl.addEventListener('click', async (e) => {
+        // Front picker: show the chosen front's title box (and only it) and
+        // highlight it on the map. All eight rows stay in the DOM, so saving
+        // still sends a title position for every front.
+        const frontBtn = e.target.closest('.cal-front-btn');
+        if (frontBtn) {
+          const card = frontBtn.closest('.tpl-card');
+          const n = frontBtn.dataset.front;
+          for (const b of card.querySelectorAll('.cal-front-btn')) {
+            b.classList.toggle('active', b === frontBtn);
+          }
+          for (const row of card.querySelectorAll('.cal-title-row')) {
+            row.hidden = row.dataset.front !== n;
+          }
+          redrawCardMap(card);
+          return;
+        }
+
         const renameBtn = e.target.closest('.tpl-rename-btn');
         if (renameBtn) {
           const card = renameBtn.closest('.tpl-card');
