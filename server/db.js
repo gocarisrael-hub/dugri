@@ -698,7 +698,9 @@ const db = {
   },
 
   // Record the PDF-production state for a collection. Shape:
-  // { state:'generated', pdf_file, generated_at, theme?, pages? }. Stored on the
+  // { state:'generated', pdf_file, board_file, generated_at, theme?, pages? } —
+  // board_file is the order's SECOND artifact (the game board, generated as its
+  // own file beside the deck) and is null when the run produced none. Stored on the
   // order when one exists (order.production, per the order model) and always
   // mirrored to the collection (c.production) so an order that was generated
   // before a version was chosen still surfaces its production state. Returns the

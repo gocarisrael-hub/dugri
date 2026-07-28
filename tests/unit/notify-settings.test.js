@@ -116,7 +116,9 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
       [
         'הקובץ המוכן להדפסה של המשחק עבור שירה מוכן!',
         '',
-        'להורדת ה-PDF:',
+        // Deliberately no longer "להורדת ה-PDF": the order ships two files and
+        // the board is a PDF too, so this line names the artifact it links to.
+        'להורדת חפיסת הקלפים:',
         pdfLink,
         '',
         'נתראה על הלוח,',

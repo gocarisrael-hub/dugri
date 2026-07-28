@@ -368,6 +368,24 @@
       const tabsEl = document.getElementById('tabs');
       const sortSelect = document.getElementById('sort');
 
+      // A download link for an order's BOARD — the second artifact, produced as
+      // its own file next to the card-deck PDF. Callers add it only when the
+      // order actually has one (production.board_file).
+      function boardLink(id, label) {
+        const a = document.createElement('a');
+        a.className = 'act';
+        a.textContent = label || 'לוח';
+        a.href =
+          location.origin +
+          '/api/admin/collections/' +
+          id +
+          '/board?key=' +
+          encodeURIComponent(key);
+        a.target = '_blank';
+        a.rel = 'noopener';
+        return a;
+      }
+
       // Last fetched list + current view state (client-side filter/sort).
       let allCols = [];
       // collection id -> { groupId, closed }, refreshed with the collections.
@@ -681,6 +699,12 @@
             a.target = '_blank';
             a.rel = 'noopener';
             tdProduction.appendChild(a);
+            // The board ships as its OWN file — offer it only when this order
+            // actually produced one (pre-split orders have no board_file).
+            if (prod.board_file) {
+              tdProduction.appendChild(document.createTextNode(' '));
+              tdProduction.appendChild(boardLink(c.id));
+            }
           } else if (prod && prod.state === 'needs_design') {
             // Bespoke custom order: paid, awaiting hand-design (no template).
             const badge = document.createElement('span');
@@ -835,7 +859,8 @@
           const genBtn = document.createElement('button');
           genBtn.textContent = 'צור PDF';
           const pdfWrap = document.createElement('span');
-          const showPdf = () => {
+          // `hasBoard` adds the second artifact's download beside the deck's.
+          const showPdf = (hasBoard) => {
             pdfWrap.textContent = ' ';
             const a = document.createElement('a');
             a.className = 'act';
@@ -849,6 +874,10 @@
             a.target = '_blank';
             a.rel = 'noopener';
             pdfWrap.appendChild(a);
+            if (hasBoard) {
+              pdfWrap.appendChild(document.createTextNode(' '));
+              pdfWrap.appendChild(boardLink(c.id, 'הורד לוח'));
+            }
           };
           genBtn.onclick = async () => {
             // Default to the RESOLVED generator theme key stored on the order/
@@ -874,7 +903,8 @@
               if (r.ok) {
                 genBtn.textContent = 'צור PDF מחדש';
                 genBtn.disabled = false;
-                showPdf();
+                const madeBoard = !!(data.production && data.production.board_file);
+                showPdf(madeBoard);
                 // Refresh the "הפקה" cell to its generated state — it was built on
                 // page load and would otherwise stay stale (— / שגיאה) until reload.
                 tdProduction.textContent = '';
@@ -891,6 +921,10 @@
                 doneLink.target = '_blank';
                 doneLink.rel = 'noopener';
                 tdProduction.appendChild(doneLink);
+                if (madeBoard) {
+                  tdProduction.appendChild(document.createTextNode(' '));
+                  tdProduction.appendChild(boardLink(c.id));
+                }
               } else {
                 genBtn.textContent = orig;
                 genBtn.disabled = false;
@@ -907,7 +941,7 @@
           td.appendChild(pdfWrap);
           if (prod && prod.state === 'generated') {
             genBtn.textContent = 'צור PDF מחדש';
-            showPdf();
+            showPdf(!!prod.board_file);
           }
 
           // Cancel / restore (soft) + hard delete.

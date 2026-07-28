@@ -263,3 +263,54 @@ test('WhatsApp column links into the group when one exists', async ({ page, requ
   await expect(row.getByRole('button', { name: 'פתח קבוצה', exact: true })).toBeVisible();
   await expect(row.getByRole('button', { name: 'פתח קבוצה בבוט' })).toHaveCount(0);
 });
+
+// Report ONE seeded collection as produced, by patching the admin list response
+// on its way to the browser (same trick as markRowPaid, and for the same reason:
+// there is no way to actually run the generator from an E2E run). `board`
+// controls whether that production also yielded the separate board file.
+async function markRowGenerated(page, honoreeName, board) {
+  await page.route('**/api/admin/collections*', async (route) => {
+    const resp = await route.fetch();
+    const body = await resp.json();
+    for (const c of body.collections || []) {
+      if (c.honoree_name !== honoreeName) continue;
+      const production = {
+        state: 'generated',
+        pdf_file: c.id + '.pdf',
+        board_file: board ? c.id + '-board.pdf' : null,
+      };
+      c.production = production;
+      if (c.order) c.order.production = production;
+    }
+    return route.fulfill({ json: body });
+  });
+}
+
+// The board is a SECOND deliverable now — the admin row has to offer it next to
+// the deck, and only when that order actually produced one.
+test('a produced order offers the board file alongside the PDF', async ({ page, request }) => {
+  const name = uniq('לוח');
+  await seed(request, { name, email: 'board@example.com', phone: '0521234567', words: ['א', 'ב'] });
+  await markRowGenerated(page, name, true);
+
+  await page.goto(`/admin.html?key=${KEY}`);
+  const row = page.locator('tbody tr', { hasText: name });
+  await expect(row.locator('a[href*="/pdf?key="]').first()).toBeVisible();
+  await expect(row.locator('a[href*="/board?key="]').first()).toBeVisible();
+});
+
+test('a produced order with no board file offers only the PDF', async ({ page, request }) => {
+  const name = uniq('בלילוח');
+  await seed(request, {
+    name,
+    email: 'noboard@example.com',
+    phone: '0521234567',
+    words: ['א', 'ב'],
+  });
+  await markRowGenerated(page, name, false);
+
+  await page.goto(`/admin.html?key=${KEY}`);
+  const row = page.locator('tbody tr', { hasText: name });
+  await expect(row.locator('a[href*="/pdf?key="]').first()).toBeVisible();
+  await expect(row.locator('a[href*="/board?key="]')).toHaveCount(0);
+});

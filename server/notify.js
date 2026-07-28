@@ -124,7 +124,8 @@ function escapeHtml(value) {
 
 // Shared branded HTML shell. `bodyLines` are plain strings rendered as centered
 // paragraphs (an empty string becomes vertical spacing). `cta` is an optional
-// { label, url } rendered as a rounded brand-pink button. `baseUrl` (the
+// { label, url } — or an ARRAY of them — rendered as rounded buttons (the first
+// filled, the rest outlined; see `buttons` below). `baseUrl` (the
 // normalized public origin) is where the hosted logo is loaded from; without it
 // the header falls back to the brand wordmark so the email still renders. `image`
 // is an optional absolute URL for a hero product photo shown under the heading
@@ -171,16 +172,30 @@ function renderEmailHtml({ title, bodyLines, cta, baseUrl, image, imageAlt } = {
     })
     .join('');
 
-  const button =
-    cta && cta.url
-      ? `<tr><td style="padding:24px 32px 8px;text-align:center;">
+  // One or more CTAs. `cta` takes a single { label, url } OR an array of them —
+  // the "file ready" email ships two (the card deck and the separate board file).
+  // The first is the filled brand-pink pill; any further ones render as outlined
+  // pills below it, so a one-CTA email is byte-identical to what it was before.
+  const buttons = (Array.isArray(cta) ? cta : [cta])
+    .filter((c) => c && c.url)
+    .map((c, i) =>
+      i === 0
+        ? `<tr><td style="padding:24px 32px 8px;text-align:center;">
             <a href="${escapeHtml(
-              cta.url
+              c.url
             )}" style="display:inline-block;background:${BRAND_PINK};background-image:linear-gradient(135deg,${BRAND_PINK_LIGHT},${BRAND_PINK});color:#ffffff;text-decoration:none;font-size:16px;font-weight:700;padding:14px 32px;border-radius:9999px;">${escapeHtml(
-              cta.label || 'המשך'
+              c.label || 'המשך'
             )}</a>
           </td></tr>`
-      : '';
+        : `<tr><td style="padding:8px 32px 0;text-align:center;">
+            <a href="${escapeHtml(
+              c.url
+            )}" style="display:inline-block;background:#ffffff;border:2px solid ${BRAND_PINK};color:${BRAND_PINK};text-decoration:none;font-size:16px;font-weight:700;padding:12px 30px;border-radius:9999px;">${escapeHtml(
+              c.label || 'המשך'
+            )}</a>
+          </td></tr>`
+    )
+    .join('');
 
   return `<!DOCTYPE html>
 <html dir="rtl" lang="he">
@@ -206,7 +221,7 @@ function renderEmailHtml({ title, bodyLines, cta, baseUrl, image, imageAlt } = {
             ${heading}
             ${hero}
             ${paragraphs}
-            ${button}
+            ${buttons}
             <tr><td style="height:16px;line-height:16px;font-size:16px;">&nbsp;</td></tr>
             <tr>
               <td style="padding:20px 32px;border-top:1px solid #eee;text-align:center;font-size:13px;line-height:1.6;color:${MUTED};">
@@ -566,22 +581,35 @@ function buildBuyerReceipt(collection, baseUrl, options) {
   return { subject, text: lines.join('\n'), html };
 }
 
-// Pure builder: the "your game PDF is ready" email. `link` is the download URL
-// for the generated print-ready PDF (the admin-gated GET route). `baseUrl` (the
+// Pure builder: the "your game PDF is ready" email. An order now ships TWO
+// artifacts, so this email carries up to two download URLs:
+//   `link`               the card-deck PDF (back+front per card)
+//   `options.boardLink`  the game board, generated as a SEPARATE file
+// Both are the same kind of link — either the admin-gated route (for Dugri) or
+// the per-order capability route (for the customer) — and a caller must never
+// mix the two in one message, or the customer's copy would leak the admin key.
+// The board link is omitted when the generator produced no board file (older
+// orders), leaving the message exactly as it was before. `baseUrl` (the
 // normalized public origin, optional) is used only to host the branded logo.
 // Returns {subject, text, html}. The same body is sent to the client and to Dugri.
-function buildPdfReadyMessage(collection, link, baseUrl) {
+function buildPdfReadyMessage(collection, link, baseUrl, options) {
   const name = honoreeName(collection);
+  const boardLink = (options && options.boardLink) || null;
   const tpl = emailTpl('pdf_ready');
   const cta = ctaLabels();
   const ft = footer();
-  const values = { honoree: name, downloadLink: link || '' };
+  const values = { honoree: name, downloadLink: link || '', boardLink: boardLink || '' };
   const subject = interpolate(tpl.subject, values);
   const bodyLines = interpolate(tpl.body, values).split('\n');
   const lines = [...bodyLines, ''];
   if (link) {
-    lines.push('להורדת ה-PDF:');
+    lines.push('להורדת חפיסת הקלפים:');
     lines.push(link);
+    lines.push('');
+  }
+  if (boardLink) {
+    lines.push('להורדת לוח המשחק:');
+    lines.push(boardLink);
     lines.push('');
   }
   lines.push(ft.line1);
@@ -589,7 +617,10 @@ function buildPdfReadyMessage(collection, link, baseUrl) {
   const html = renderEmailHtml({
     title: 'הקובץ שלכם מוכן — ' + name,
     bodyLines,
-    cta: link ? { label: cta.downloadFile, url: link } : null,
+    cta: [
+      link ? { label: cta.downloadFile, url: link } : null,
+      boardLink ? { label: cta.downloadBoard, url: boardLink } : null,
+    ].filter(Boolean),
     baseUrl,
   });
   return { subject, text: lines.join('\n'), html };
@@ -892,22 +923,28 @@ async function sendOrderFinished(collection, baseUrl) {
 }
 
 // Fire the "PDF ready" notification. `links` is either a single string (legacy:
-// the same link to everyone) or a { admin, customer } pair. Dugri (NOTIFY_TO)
-// gets the admin link; the CUSTOMER (owner_email) gets the customer link — which
-// carries a capability token, NEVER the admin key. Each recipient gets a message
-// built with only their own link, so the admin secret can't leak in the customer
-// email. Fully wrapped — never throws. Returns true when at least one send
-// succeeded.
+// the same link to everyone) or a { admin, customer, adminBoard, customerBoard }
+// set. Dugri (NOTIFY_TO) gets the admin links; the CUSTOMER (owner_email) gets
+// the customer links — which carry a capability token, NEVER the admin key. Each
+// recipient gets a message built with only their OWN pair (deck + board), so the
+// admin secret can't leak in the customer email. The *Board links are optional:
+// without them the message is the single-artifact email it has always been.
+// Fully wrapped — never throws. Returns true when at least one send succeeded.
 async function sendPdfReady(collection, baseUrl, links) {
   try {
-    const adminLink = typeof links === 'string' ? links : (links && links.admin) || null;
-    const customerLink = typeof links === 'string' ? links : (links && links.customer) || null;
-    const ownerMsg = buildPdfReadyMessage(collection, adminLink, baseUrl);
+    const set = links && typeof links === 'object' ? links : null;
+    const adminLink = typeof links === 'string' ? links : (set && set.admin) || null;
+    const customerLink = typeof links === 'string' ? links : (set && set.customer) || null;
+    const ownerMsg = buildPdfReadyMessage(collection, adminLink, baseUrl, {
+      boardLink: (set && set.adminBoard) || null,
+    });
     const owner = await send(ownerMsg); // -> NOTIFY_TO (Dugri)
     let client = false;
     const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
     if (to && to.toLowerCase() !== String(NOTIFY_TO).toLowerCase()) {
-      const clientMsg = buildPdfReadyMessage(collection, customerLink, baseUrl);
+      const clientMsg = buildPdfReadyMessage(collection, customerLink, baseUrl, {
+        boardLink: (set && set.customerBoard) || null,
+      });
       client = await send({ ...clientMsg, to });
     }
     return owner || client;
