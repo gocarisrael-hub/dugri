@@ -324,6 +324,194 @@ def board_clean_path(theme_name, chasers=False):
     return clean_path(theme_name, "board")
 
 
+# ---- v2: single-card deck --------------------------------------------------
+# A v2 template ships its deck as numbered cards — clean/1.svg (the back) and
+# clean/2.svg..9.svg (eight fronts that differ only by an icon) — instead of the
+# v1 8-up ``fronts.svg`` / ``backs.svg`` sheets. The board is NOT part of that
+# numeric set: it keeps its own ``clean/board.svg`` because it is a different
+# geometry and, in v2, a separate output artifact.
+#
+# ``card_layout`` gates the whole path, so a theme without it renders through the
+# v1 sheet code exactly as before and the seven un-migrated themes keep working
+# while grapefruit goes first. See docs/card-schema-v2.md.
+DEFAULT_FRONTS = [2, 3, 4, 5, 6, 7, 8, 9]
+DEFAULT_BACK_INDEX = 1
+
+
+def is_single_card(cfg):
+    """True when a theme config uses the v2 single-card deck."""
+    return cfg.get("card_layout") == "single"
+
+
+def fronts(cfg):
+    """The theme's front indices (``[2..9]`` when unset).
+
+    Non-int / empty entries are dropped rather than trusted: a bad value would
+    otherwise become a filename and fail deep inside a render.
+    """
+    raw = cfg.get("fronts") or DEFAULT_FRONTS
+    out = []
+    for v in raw:
+        try:
+            out.append(int(v))
+        except (TypeError, ValueError):
+            continue
+    return out or list(DEFAULT_FRONTS)
+
+
+def back_index(cfg):
+    """The card index of the deck's back (``1`` when unset)."""
+    try:
+        return int(cfg.get("back_index", DEFAULT_BACK_INDEX))
+    except (TypeError, ValueError):
+        return DEFAULT_BACK_INDEX
+
+
+def card_path(theme_name, index, filled=False):
+    """Absolute path to a numbered card SVG (``clean/3.svg``, ``filled/3.svg``)."""
+    sub = "filled" if filled else "clean"
+    return os.path.join(theme_dir(theme_name), sub, f"{int(index)}.svg")
+
+
+def front_paths(theme_name, filled=False):
+    """Absolute paths of the theme's eight fronts, in configured order."""
+    return [card_path(theme_name, i, filled=filled) for i in fronts(theme(theme_name))]
+
+
+def back_path(theme_name, filled=False):
+    """Absolute path of the theme's card back."""
+    return card_path(theme_name, back_index(theme(theme_name)), filled=filled)
+
+
+def photo_card_config(cfg):
+    """The theme's ``photo_card`` block, or ``{}`` when it ships none."""
+    block = cfg.get("photo_card")
+    return block if isinstance(block, dict) else {}
+
+
+def photo_card_path(theme_name):
+    """Absolute path of the photo-card background.
+
+    The theme's ``photo_card.template`` (a filename in ``clean/``) when it ships
+    one and the file exists; otherwise the FIRST front, so a template that has
+    not shipped dedicated photo-card art still produces a photo card on brand
+    artwork rather than failing the order.
+    """
+    cfg = theme(theme_name)
+    name = photo_card_config(cfg).get("template")
+    if name:
+        path = os.path.join(theme_dir(theme_name), "clean", os.path.basename(str(name)))
+        if os.path.exists(path):
+            return path
+    return card_path(theme_name, fronts(cfg)[0])
+
+
+def photo_fallback_paths(theme_name):
+    """The generic Dugri pawn images used when the customer uploaded none.
+
+    Repo-relative paths from the theme's ``photo_card.fallback``; entries that
+    do not exist are dropped, so a partly-shipped fallback set degrades to the
+    images that ARE there instead of rendering a broken slot.
+    """
+    out = []
+    for rel in photo_card_config(theme(theme_name)).get("fallback") or []:
+        path = rel if os.path.isabs(str(rel)) else os.path.join(REPO, str(rel))
+        if os.path.isfile(path):
+            out.append(path)
+    return out
+
+
+def front_offset(cfg, front_index):
+    """Title nudge for one front, as ``[dx, dy]`` fractions of the card cell.
+
+    ``title_style.front_offset["<n>"]`` when that front has its own nudge, else
+    the shared ``title_style.offset``, else ``None``. This is the OWNER-tunable
+    half of "per-front title position"; the detected box is the recipe's half.
+    """
+    ts = cfg.get("title_style") or {}
+    per = ts.get("front_offset") or {}
+    off = per.get(str(front_index), per.get(front_index))
+    if off is None:
+        off = ts.get("offset")
+    if not off or len(off) < 2:
+        return None
+    return [float(off[0]), float(off[1])]
+
+
+def is_single_card_recipe(recipe):
+    """True when a recipe describes ONE card rather than a v1 8-up sheet."""
+    return recipe.get("layout") == "single" or "card" in recipe
+
+
+def recipe_card(recipe):
+    """The single-card block (``{cell, words}``) of a v2 recipe."""
+    card = recipe.get("card")
+    if not isinstance(card, dict):
+        raise RuntimeError(
+            "this template's recipe has no single-card block — it looks like a "
+            "v1 8-up sheet recipe. Re-run calibration for the template so its "
+            "card/word slot geometry is detected against the new card art."
+        )
+    return card
+
+
+def recipe_front_title(recipe, front_index):
+    """Title boxes for one front — a list, possibly one box per title line.
+
+    Falls back, in order, to: the front's own entry; a shared ``card.title``;
+    then the union of every other front's boxes. The last fallback keeps a
+    partially-calibrated template rendering a title in roughly the right place
+    on an un-detected front instead of dropping the honoree's name entirely.
+    Returns ``[]`` when the recipe records no title anywhere.
+    """
+    entry = (recipe.get("fronts") or {}).get(str(front_index))
+    if isinstance(entry, dict) and entry.get("title"):
+        return entry["title"]
+    card = recipe.get("card") or {}
+    if card.get("title"):
+        return card["title"]
+    boxes = []
+    for other in (recipe.get("fronts") or {}).values():
+        if isinstance(other, dict) and other.get("title"):
+            boxes.extend(other["title"])
+    if not boxes:
+        return []
+    return [{"x0": min(b["x0"] for b in boxes), "y0": min(b["y0"] for b in boxes),
+             "x1": max(b["x1"] for b in boxes), "y1": max(b["y1"] for b in boxes),
+             "color": boxes[0].get("color", "#000000")}]
+
+
+# Inset of the default photo grid from the card edge, as a fraction of the card.
+_PHOTO_INSET = 0.06
+# Gap between the 2x2 photo cells, as a fraction of the card.
+_PHOTO_GAP = 0.04
+
+
+def photo_slots(recipe, cell):
+    """The four photo boxes on the photo card, in reading order.
+
+    Uses the recipe's ``photo.slots`` when calibration detected them; otherwise
+    lays out a 2x2 grid inset from the card edge, so the photo card works on a
+    template whose photo slots have not been calibrated yet.
+    """
+    slots = (recipe.get("photo") or {}).get("slots")
+    if isinstance(slots, list) and len(slots) >= 4:
+        return slots[:4]
+    x0, y0, x1, y1 = cell
+    w, h = x1 - x0, y1 - y0
+    ix, iy = _PHOTO_INSET * w, _PHOTO_INSET * h
+    gx, gy = _PHOTO_GAP * w, _PHOTO_GAP * h
+    cw = (w - 2 * ix - gx) / 2
+    ch = (h - 2 * iy - gy) / 2
+    out = []
+    for row in range(2):
+        for col in range(2):
+            sx = x0 + ix + col * (cw + gx)
+            sy = y0 + iy + row * (ch + gy)
+            out.append({"x0": sx, "y0": sy, "x1": sx + cw, "y1": sy + ch})
+    return out
+
+
 def ensure_calibrated(cfg):
     """Raise a clear error if a theme has no calibrated render style yet.
 
