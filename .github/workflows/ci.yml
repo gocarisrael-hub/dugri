@@ -62,3 +62,44 @@ jobs:
           npx playwright install chromium
       - name: E2E tests (iPhone 14 + Desktop Chrome)
         run: npx playwright test --project="iPhone 14" --project="Desktop Chrome"
+
+  # --- The Python generator ---------------------------------------------------
+  # generator/ has 279 tests and CI has never run a single one of them: the job
+  # above is Node-only, so the whole PDF pipeline — pack, topup, config, the deck
+  # assembler, calibration — merged unguarded. A separate job so it runs in
+  # PARALLEL with the Node suite and adds no wall-clock to it.
+  python:
+    name: Generator tests (pytest)
+    runs-on: ubuntu-latest
+    # Bound worst-case cost the same way the Node job does. The suite runs in
+    # about a minute; anything near this cap means something is hung.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # The runtime image is node:20-alpine's python3. 3.11 is the closest
+          # widely-available match; the generator is version-agnostic beyond that.
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install Python dependencies
+        # The generator's only third-party imports are Pillow and numpy (grep the
+        # imports across generator/*.py); pytest is the runner.
+        run: pip install pytest pillow numpy
+      # Several generator tests shell out to real headless Chrome, and they
+      # SOFT-skip when no binary is found — printing "(skipped: no Chrome)" and
+      # returning green. A missing browser would therefore look exactly like a
+      # pass. ubuntu-latest ships Google Chrome preinstalled; assert it, so the
+      # day that stops being true we get a visible failure instead of a suite
+      # that quietly stops testing the render path.
+      - name: Verify a Chrome binary is present
+        run: |
+          which google-chrome || which chromium || which chromium-browser || {
+            echo "No Chrome found — the Chrome-gated generator tests would silently skip."
+            exit 1
+          }
+      - name: Generator tests (pytest)
+        # Run from generator/ — the tests import their modules by bare name
+        # (`import pack`), which resolves via pytest putting the test file's own
+        # directory on sys.path.
+        run: npm run test:py
