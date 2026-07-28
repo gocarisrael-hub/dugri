@@ -67,12 +67,18 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
         # 1) Top up the personal words to a full deck.
         words = topup(personal_words, theme_key)
 
-        # 2) Write the words to a temp file, then pack into the 32-col Canva CSV.
+        # 2) Write the words to a temp file, then pack into the deck CSV (one row
+        #    per card in v2, one row per 8-up sheet in v1). The front cycling is
+        #    taken from the THEME's front count, not pack's default, so a template
+        #    that ships other than eight fronts still gets an even spread.
         words_path = os.path.join(workdir, "words.txt")
         with open(words_path, "w", encoding="utf-8") as f:
             f.write("\n".join(words) + "\n")
         csv_path = os.path.join(workdir, "order.csv")
-        pack.pack(words, csv_path)
+        if config.is_single_card(cfg):
+            pack.pack(words, csv_path, fronts=len(config.fronts(cfg)))
+        else:
+            pack.pack(words, csv_path)
 
         # 3) Render. A v2 (single-card) template produces TWO artifacts — the
         #    208-page card deck and a separate board file; a v1 template still
