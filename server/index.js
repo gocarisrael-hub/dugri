@@ -22,6 +22,7 @@ const waState = require('./wa-state');
 const reminders = require('./reminders');
 const wordlists = require('./wordlists');
 const messagePreview = require('./message-preview');
+const storeImport = require('./store-import');
 const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
 
 const app = express();
@@ -2767,6 +2768,55 @@ app.post('/api/admin/content/import-from-staging', async (req, res) => {
     return res.status(500).json({ error: String((e && e.message) || e) });
   }
   if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+  res.json(result);
+});
+
+// Admin: what another service may mirror FROM this one — the owner-authored
+// stores (settings/prices/emails, playbook, design gallery, word lists). This is
+// the endpoint production calls against staging. Admin-gated and deliberately
+// narrow: owner configuration only, never orders, customers, collected words,
+// owner tokens, or any secret.
+app.get('/api/admin/stores/export', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({
+    stores: storeImport.exportAll({ settings, playbook, designImages, wordlists }),
+  });
+});
+
+// Admin: mirror those stores from STAGING onto this service — the destructive
+// twin of the export above, and the counterpart to content/import-from-staging
+// (which moves the content overrides). MIRROR semantics: anything present here
+// but absent on staging is DELETED. So the import refuses an empty payload, backs
+// up every store, and fetches every gallery image BEFORE replacing anything.
+// Same config as the content import: STAGING_URL + STAGING_ADMIN_KEY.
+app.post('/api/admin/stores/import-from-staging', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  // Self-import guard, same as the content import: under mirror semantics a
+  // STAGING_URL misconfigured to point here is destructive, not a no-op.
+  const stagingUrl = process.env.STAGING_URL || '';
+  const ownOrigins = [];
+  if (process.env.PUBLIC_BASE_URL) ownOrigins.push(process.env.PUBLIC_BASE_URL);
+  try {
+    ownOrigins.push(req.protocol + '://' + req.get('host'));
+  } catch {
+    /* no Host header — PUBLIC_BASE_URL still guards the check */
+  }
+  if (contentImport.isSelfOrigin(stagingUrl, ownOrigins)) {
+    return res
+      .status(400)
+      .json({ error: 'STAGING_URL points at this same service — refusing self-import' });
+  }
+  let result;
+  try {
+    result = await storeImport.importFromStaging({
+      stagingUrl,
+      adminKey: process.env.STAGING_ADMIN_KEY || ADMIN_KEY || '',
+      deps: { settings, playbook, designImages, wordlists },
+    });
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (!result.ok) return res.status(result.status || 400).json(result);
   res.json(result);
 });
 

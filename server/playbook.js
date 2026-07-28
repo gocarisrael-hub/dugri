@@ -11,6 +11,7 @@
 // is fully editable/deletable — the owner owns all of it.
 const fs = require('fs');
 const path = require('path');
+const { backupFile } = require('./store-backup');
 const crypto = require('crypto');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
@@ -174,4 +175,34 @@ function remove(id) {
   return true;
 }
 
-module.exports = { list, add, update, remove, _file: FILE };
+// --- staging mirror (see store-import.js) -------------------------------------
+
+// The raw notes array, for mirroring onto another service. Not `list()`, which
+// sorts for display — mirroring must carry the stored order, not a view of it.
+function exportNotes() {
+  return JSON.parse(JSON.stringify(_notes));
+}
+
+// Back up before a destructive replace. Returns the path, null when there's
+// nothing to back up, and THROWS on a real failure so the caller aborts.
+function backup() {
+  return backupFile(FILE);
+}
+
+// REPLACE every note with `raw` (mirror semantics). Rolls memory back if the
+// save fails so memory always matches disk. A non-array is refused outright
+// rather than coerced to [] — that would silently wipe the playbook.
+function replaceNotes(raw) {
+  if (!Array.isArray(raw)) throw new Error('notes must be an array');
+  const prev = _notes;
+  _notes = raw.filter((n) => n && typeof n === 'object' && !Array.isArray(n));
+  try {
+    save();
+  } catch (e) {
+    _notes = prev;
+    throw e;
+  }
+  return exportNotes();
+}
+
+module.exports = { list, add, update, remove, exportNotes, replaceNotes, backup, _file: FILE };

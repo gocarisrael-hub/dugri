@@ -390,8 +390,83 @@ function revert(name) {
   return read(n);
 }
 
+// --- staging mirror (see store-import.js) -------------------------------------
+
+// The OWNER-CREATED lists only — the ones living on the volume (STORE_DIR).
+// Shipped lists come with the Docker image and are byte-identical on every
+// service, so mirroring them would move bytes to no effect; worse, a shipped list
+// that the source has and the target doesn't means the two are on different
+// builds, which an import must not paper over.
+function exportOwnerLists() {
+  const out = [];
+  for (const file of listDir(STORE_DIR)) {
+    const n = safeName(file);
+    if (!n) continue;
+    try {
+      out.push({ name: n, words: readFileWords(path.join(STORE_DIR, n)) });
+    } catch {
+      /* unreadable file — skip rather than abort the whole export */
+    }
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Snapshot every owner list into ONE json file before a destructive replace.
+// The other stores are single files that store-backup can copy; this one is a
+// directory, so the recovery point is a serialized snapshot next to it. Returns
+// the path, or null when there are no owner lists to lose. THROWS on failure.
+function backup(opts = {}) {
+  const lists = exportOwnerLists();
+  if (!lists.length) return null;
+  const now = typeof opts.now === 'number' ? opts.now : Date.now();
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const dest = path.join(DATA_DIR, `wordlists.backup-${now}.json`);
+  fs.writeFileSync(dest, JSON.stringify(lists, null, 2), 'utf8');
+  return dest;
+}
+
+// REPLACE the owner lists with `incoming` (mirror semantics: an owner list not
+// present in `incoming` is DELETED). Shipped lists are never touched.
+//
+// Writes every file BEFORE deleting any, so a mid-way failure leaves the target
+// with a superset rather than a hole — the recoverable direction. A bad entry
+// aborts before anything is written at all.
+function replaceOwnerLists(incoming) {
+  if (!Array.isArray(incoming)) throw new Error('wordlists must be an array');
+  const staged = [];
+  for (const item of incoming) {
+    if (!item || typeof item !== 'object') continue;
+    const n = safeName(item.name);
+    if (!n) throw new Error('invalid wordlist name: ' + String(item && item.name));
+    if (!Array.isArray(item.words)) throw new Error('wordlist ' + n + ' has no words array');
+    staged.push({ name: n, words: item.words.map((w) => String(w)) });
+  }
+  fs.mkdirSync(STORE_DIR, { recursive: true });
+  for (const { name, words } of staged) {
+    const tmp = path.join(STORE_DIR, name + '.tmp');
+    fs.writeFileSync(tmp, words.join('\n') + (words.length ? '\n' : ''), 'utf8');
+    fs.renameSync(tmp, path.join(STORE_DIR, name));
+  }
+  const keep = new Set(staged.map((x) => x.name));
+  let removed = 0;
+  for (const file of listDir(STORE_DIR)) {
+    const n = safeName(file);
+    if (!n || keep.has(n)) continue;
+    try {
+      fs.unlinkSync(path.join(STORE_DIR, n));
+      removed += 1;
+    } catch {
+      /* best-effort: a file we couldn't delete is a leftover, not data loss */
+    }
+  }
+  return { written: staged.length, removed };
+}
+
 module.exports = {
   list,
+  exportOwnerLists,
+  replaceOwnerLists,
+  backup,
   read,
   create,
   update,

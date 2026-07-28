@@ -26,6 +26,7 @@ const path = require('path');
 // module (server/reminders.js). reminders.js has NO deps, so requiring it here
 // creates no cycle (settings -> reminders only).
 const { DEFAULT_REMINDERS, validateReminders } = require('./reminders');
+const { backupFile } = require('./store-backup');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const FILE = path.join(DATA_DIR, 'settings.json');
@@ -670,6 +671,55 @@ function reset(section, key) {
   return get(section, key);
 }
 
+// --- staging mirror (see store-import.js) -------------------------------------
+
+// The RAW overrides, for mirroring onto another service. Deliberately not `all()`:
+// that returns defaults + effective + registry, and mirroring effective values
+// would freeze today's defaults into the target as explicit overrides — a later
+// default change would then silently not apply there. Only real overrides travel.
+function exportOverrides() {
+  return clone(_overrides);
+}
+
+// Back up the overrides file before a destructive replace. Returns the backup
+// path, or null when there is nothing to back up; THROWS on a real copy failure
+// so the caller aborts rather than overwriting without a recovery point.
+function backup() {
+  return backupFile(FILE);
+}
+
+// REPLACE every override with `raw` (mirror semantics — keys absent from `raw`
+// revert to their defaults). Validates EVERY value against the registry first and
+// rejects the whole payload if any is bad: a partially-applied settings import is
+// worse than a refused one, because the owner can't tell which half landed.
+// Unknown sections/keys are DROPPED rather than rejected, so a source running a
+// newer build (with settings this one doesn't have yet) can still be imported.
+// Rolls memory back if the save fails, so memory always matches disk.
+function replaceOverrides(raw) {
+  if (!isPlainObject(raw)) throw new Error('overrides must be an object');
+  const next = {};
+  for (const section of Object.keys(raw)) {
+    if (!isPlainObject(raw[section])) continue;
+    if (!Object.prototype.hasOwnProperty.call(REGISTRY, section)) continue; // newer source
+    for (const key of Object.keys(raw[section])) {
+      if (!hasKey(section, key)) continue; // newer source
+      const err = validateValue(section, key, raw[section][key]);
+      if (err) throw new Error('invalid ' + section + '.' + key + ': ' + err);
+      if (!next[section]) next[section] = {};
+      next[section][key] = clone(raw[section][key]);
+    }
+  }
+  const prev = _overrides;
+  _overrides = next;
+  try {
+    save();
+  } catch (e) {
+    _overrides = prev; // memory == disk == old settings
+    throw e;
+  }
+  return clone(_overrides);
+}
+
 // Everything the admin API needs: the defaults, the raw overrides, the effective
 // (merged) values, and a registry view (tokens + kind per key) so the UI can
 // render an editor and list the tokens each field supports.
@@ -696,6 +746,9 @@ module.exports = {
   set,
   reset,
   all,
+  exportOverrides,
+  replaceOverrides,
+  backup,
   hasKey,
   validateValue,
   interpolate,
