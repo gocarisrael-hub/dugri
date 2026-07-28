@@ -295,6 +295,7 @@
     var exitBtn = toolbar.querySelector('[data-role="exit"]');
     var pageSelect = toolbar.querySelector('[data-role="pageselect"]');
     var importBtn = toolbar.querySelector('[data-role="import-staging"]');
+    var importStoresBtn = toolbar.querySelector('[data-role="import-stores"]');
 
     // Per-field save state + the representative DOM node per text key (same-key
     // clones stay in sync, so any one node reflects the field's current value). One
@@ -786,6 +787,41 @@
       });
     }
 
+    // Mirror the owner-authored stores from staging. Separate from the content
+    // import above because it replaces DIFFERENT stores — and because it deletes:
+    // anything configured here but not on staging goes away. The confirmation says
+    // so explicitly rather than the softer wording the content import uses.
+    if (importStoresBtn) {
+      importStoresBtn.addEventListener('click', function () {
+        if (
+          !window.confirm(
+            'פעולה זו תחליף את ההגדרות, המחירים, תבניות המיילים, הודעות הוואטסאפ, ' +
+              'הפלייבוק, גלריית העיצובים ורשימות המילים בגרסה מהסטייג׳ינג.\n\n' +
+              'כל פריט שקיים כאן ולא קיים בסטייג׳ינג יימחק. להמשיך?'
+          )
+        ) {
+          return;
+        }
+        setStatus('מייבא הגדרות…');
+        postImportStores(key).then(
+          function (data) {
+            var summary =
+              'הייבוא הושלם: ' +
+              ((data.applied || []).length || 0) +
+              ' מאגרים, ' +
+              (data.images || 0) +
+              ' תמונות';
+            setStatus(summary);
+            window.alert(summary);
+            location.reload();
+          },
+          function (err) {
+            setStatus((err && err.userMessage) || 'שגיאה בייבוא');
+          }
+        );
+      });
+    }
+
     function leaveEditMode() {
       location.href = exitHref(location.pathname, location.search);
     }
@@ -960,6 +996,40 @@
       );
     });
   }
+  // Trigger the cross-service "import the owner-authored STORES from staging"
+  // (settings/prices/emails, playbook, design gallery, word lists). Same shape and
+  // same 403 self-heal as postImportFromStaging above; separate endpoint because
+  // it mirrors different stores and is independently destructive.
+  function postImportStores(key) {
+    return fetch(adminUrl('/api/admin/stores/import-from-staging', key), {
+      method: 'POST',
+    }).then(function (r) {
+      if (r.status === 403) {
+        try {
+          if (window.localStorage.getItem(LS_KEY) === key) {
+            window.localStorage.removeItem(LS_KEY);
+          }
+        } catch {
+          /* storage blocked — nothing to clear */
+        }
+      }
+      return r.json().then(
+        function (data) {
+          if (!r.ok) {
+            var e = new Error((data && data.error) || 'import failed');
+            e.userMessage = (data && data.error) || 'שגיאה בייבוא';
+            throw e;
+          }
+          return data;
+        },
+        function () {
+          var e = new Error('import failed');
+          e.userMessage = 'שגיאה בייבוא';
+          throw e;
+        }
+      );
+    });
+  }
   function postImage(page, key, editKey, file) {
     var fd = new window.FormData();
     fd.append('page', page);
@@ -1039,6 +1109,7 @@
       '</select></label>' +
       '<span class="dugri-editbar__status" data-role="status" aria-live="polite"></span>' +
       '<button type="button" class="dugri-editbar__btn" data-role="import-staging">ייבוא תוכן מהסטייג׳ינג</button>' +
+      '<button type="button" class="dugri-editbar__btn" data-role="import-stores">ייבוא הגדרות מהסטייג׳ינג</button>' +
       '<button type="button" class="dugri-editbar__btn" data-role="save">שמור</button>' +
       '<button type="button" class="dugri-editbar__btn dugri-editbar__btn--exit" data-role="exit">שמירה ויציאה</button>';
     // The picker's change handler is wired in enableEditMode (it must save-then-nav,

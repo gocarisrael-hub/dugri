@@ -32,6 +32,7 @@
 // under DATA_DIR so it survives redeploys.
 const fs = require('fs');
 const path = require('path');
+const { backupFile } = require('./store-backup');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const FILE = path.join(DATA_DIR, 'design-images.json');
@@ -374,8 +375,57 @@ function isImageReferenced(imgPath) {
   return false;
 }
 
+// --- staging mirror (see store-import.js) -------------------------------------
+
+// Back up before a destructive replace. Path on success, null when there's
+// nothing to back up, THROWS on a real failure so the caller aborts.
+function backup() {
+  return backupFile(FILE);
+}
+
+// Every /content-uploads/<hash> path this store references, deduped. The import
+// must fetch each one's BYTES from the source before committing — mirroring the
+// JSON alone would leave every override pointing at a file that doesn't exist on
+// this volume, i.e. a gallery of broken images.
+function collectImagePaths(raw) {
+  const store = raw === undefined ? _store : raw;
+  const out = new Set();
+  for (const id of Object.keys(store || {})) {
+    const g = store[id];
+    if (!g || typeof g !== 'object') continue;
+    for (const slot of Object.keys(g.base || {})) {
+      const img = g.base[slot] && g.base[slot].img;
+      if (typeof img === 'string' && UPLOAD_PATH_RE.test(img)) out.add(img);
+    }
+    for (const ph of Array.isArray(g.photos) ? g.photos : []) {
+      if (ph && typeof ph.img === 'string' && UPLOAD_PATH_RE.test(ph.img)) out.add(ph.img);
+    }
+  }
+  return [...out];
+}
+
+// REPLACE the whole store (mirror semantics), sanitized so a corrupt source
+// payload can't poison it. Rolls memory back if the save fails.
+function replaceAll(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('design images must be an object');
+  }
+  const prev = _store;
+  _store = sanitize(raw);
+  try {
+    save();
+  } catch (e) {
+    _store = prev;
+    throw e;
+  }
+  return _store;
+}
+
 module.exports = {
   getAll,
+  backup,
+  replaceAll,
+  collectImagePaths,
   getForDesign,
   get,
   setBaseImg,
