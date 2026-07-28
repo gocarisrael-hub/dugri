@@ -37,6 +37,19 @@ rather than guessed, so the form shows them as the owner's remaining work:
 Deliberately NOT flipped: ``calibrated``. This pass pre-fills the numbers; a
 human confirms them in the admin preview before the template can be ordered.
 
+SINGLE-CARD (v2) TEMPLATES. A migrated template ships one portrait card per file
+— ``clean/1.svg`` (the back) and ``clean/2.svg``..``9.svg`` (eight fronts) —
+instead of the 8-up ``backs.svg`` / ``fronts.svg`` sheets. Every measurement
+below is unchanged; only WHERE it reads from moves, because the whole page is
+now one card and there is no cell to pick out of a grid. The board keeps its own
+named file in both structures, so that branch is shared verbatim.
+
+The split of responsibilities is the schema's (docs/card-structure-schema.md): the
+per-front title BOX is geometry and belongs to the recipe, which
+``recipe_diff.py`` writes; this module keeps owning the STYLE knobs — the
+title's paints, ring thickness, alignment, shadow — and those are SHARED across
+all eight fronts, so one front is measured and the answer stands for the deck.
+
   python3 generator/calibrate.py <theme-key> [--out FILE]
 """
 import argparse
@@ -51,6 +64,7 @@ from collections import Counter
 from PIL import Image, ImageChops, ImageFilter
 
 import config
+import recipe_diff
 
 CHROME = os.environ.get(
     "CHROME", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
@@ -88,8 +102,13 @@ def _diff(filled_svg, clean_svg, workdir):
     w, h, vb = _dims(clean_svg)
     fp = os.path.join(workdir, "filled.png")
     cp = os.path.join(workdir, "clean.png")
-    _render(filled_svg, fp, w, h)
-    _render(clean_svg, cp, w, h)
+    # Re-inline a deduped background before rasterizing. A migrated template
+    # keeps its multi-megabyte artwork once per theme and leaves a marker in each
+    # card; Chrome cannot resolve that, and two backgroundless cards would diff
+    # to whatever the missing artwork was covering. No-op when there is no
+    # marker, so every v1 sheet renders from its own file exactly as before.
+    _render(recipe_diff._renderable(filled_svg, workdir, "_filled.svg"), fp, w, h)
+    _render(recipe_diff._renderable(clean_svg, workdir, "_clean.svg"), cp, w, h)
     fim = Image.open(fp).convert("RGB")
     cim = Image.open(cp).convert("RGB")
     if fim.size != cim.size:
@@ -527,6 +546,71 @@ def _slot(filled_svg, clean_svg, workdir, cell=None):
             box, vb, mask, image)
 
 
+def is_single_card(cfg, template_dir):
+    """Whether this template calibrates as a v2 single-card deck.
+
+    The theme's own ``card_layout`` wins — it is the discriminator the schema
+    locks and the one the renderer obeys. The ART is only the fallback, for the
+    window in which a template has been uploaded but its entry not yet flipped:
+    without it every surface would report "filled/clean pair missing, skipped"
+    and the owner would be handed an empty calibration for a template that is
+    perfectly measurable.
+    """
+    if config.is_single_card(cfg):
+        return True
+    return recipe_diff.template_layout(template_dir) == "single"
+
+
+def _viewport(mask, vb):
+    """``(ppu, ox, oy)`` for a rendered card — the exact xMidYMid-meet mapping.
+
+    Shared with ``recipe_diff`` on purpose: the recipe's boxes and this pass's
+    crops must land on the same pixels, and a width-only scale is 0.15% out on a
+    portrait card — enough to clip the foot of a title box before its paints are
+    read.
+    """
+    w, h = mask.size
+    return recipe_diff.viewport(vb, w / SCALE, h / SCALE)
+
+
+def _front_title_boxes(recipe, cfg, single):
+    """The first front title recorded in a recipe, in recipe units, or None.
+
+    The paints are SHARED across the eight fronts, so one measured surface
+    settles them for the whole deck — which front it came from does not matter,
+    only that it carries ink.
+
+    v2 keeps the per-front boxes inside the card, as ``card.title["<n>"]``, and
+    this reads them straight out of the recipe exactly as the v1 branch below
+    reads ``cards[]``. Deliberately NOT through the renderer's accessor: that one
+    substitutes a FALLBACK box (the union of the other fronts') for a front that
+    measured nothing, which is right for printing a name but wrong here — this
+    pass would then read the deck's paints off a rectangle no export has ink in.
+    """
+    if single:
+        titles = (recipe.get("card") or {}).get("title") or {}
+        for index in config.fronts(cfg):
+            boxes = titles.get(str(index))
+            if boxes:
+                return boxes
+        return None
+    for card in recipe.get("cards") or []:
+        if card and card.get("title"):
+            return card["title"]
+    return None
+
+
+def _word_colours(recipe):
+    """Every word-slot colour a recipe records, lowercased, either structure."""
+    cards = recipe.get("cards")
+    if not cards:
+        card = recipe.get("card")
+        cards = [card] if isinstance(card, dict) else []
+    return {(slot.get("color") or "").lower()
+            for c in cards if c
+            for slot in c.get("words", []) if slot.get("color")}
+
+
 def calibrate(theme_key, workdir=None):
     """Derive the calibration blob for a theme from its filled/clean art."""
     cfg = config.theme(theme_key)
@@ -536,6 +620,7 @@ def calibrate(theme_key, workdir=None):
     notes, confidence = [], {}
     out = {"title_style": {}, "board": None, "back": None, "word_size": None}
     board_paints = None
+    single = is_single_card(cfg, tdir)
 
     def sheet(kind, half):
         return os.path.join(tdir, half, kind + ".svg")
@@ -581,18 +666,30 @@ def calibrate(theme_key, workdir=None):
             confidence["board"] = "none"
 
         # --- BACKS: one title per card; fractions are of the CARD CELL ---
-        kf, kc = sheet("backs", "filled"), sheet("backs", "clean")
+        # v2 needs NO recipe to find that cell: the back is one whole card
+        # (``clean/1.svg``), so the cell IS the page. Everything downstream — the
+        # shrink-to-clean-border guard, the plausibility check, the vector-first
+        # paint reading — is the v1 body unchanged, just handed one cell instead
+        # of eight.
         recipe_path = config.recipe_path(cfg["recipe"])
-        if os.path.exists(kf) and os.path.exists(kc) and os.path.exists(recipe_path):
-            recipe = json.load(open(recipe_path, encoding="utf-8"))
+        if single:
+            kf = config.card_path(theme_key, config.back_index(cfg), filled=True)
+            kc = config.card_path(theme_key, config.back_index(cfg))
+        else:
+            kf, kc = sheet("backs", "filled"), sheet("backs", "clean")
+        if (os.path.exists(kf) and os.path.exists(kc)
+                and (single or os.path.exists(recipe_path))):
             mask, image, vb = _diff(kf, kc, workdir)
             w, h = mask.size
-            ppu = w / vb[2]
+            if single:
+                cells = [(0.0, 0.0, float(w), float(h))]
+            else:
+                recipe = json.load(open(recipe_path, encoding="utf-8"))
+                ppu = w / vb[2]
+                cells = [tuple(v * ppu for v in card["cell"])
+                         for card in recipe["cards"] if card]
             got = None
-            for card in recipe["cards"]:
-                if not card:
-                    continue
-                cx0, cy0, cx1, cy1 = [v * ppu for v in card["cell"]]
+            for cx0, cy0, cx1, cy1 in cells:
                 region = _shrink_to_clean_border(
                     mask, (int(cx0), int(cy0), int(cx1), int(cy1)))
                 box = _bbox(mask, region)
@@ -625,42 +722,47 @@ def calibrate(theme_key, workdir=None):
             out["back"] = got
             confidence["back.frac"] = "high" if got else "none"
             if not got:
-                notes.append("back: could not isolate a title on any card — this "
-                             "design may carry no title on the card backs, or its "
-                             "filled/clean backs differ across the whole sheet.")
+                notes.append("back: could not isolate a title — this design may "
+                             "carry no title on the card back (several don't), or "
+                             "its filled and clean backs differ across the whole "
+                             "surface.")
         else:
             notes.append("back: filled/clean pair or recipe missing, skipped.")
             confidence["back"] = "none"
 
         # --- FRONTS: the title's paint colours, ring thickness and alignment ---
-        ff, fc = sheet("fronts", "filled"), sheet("fronts", "clean")
+        # These knobs are SHARED across the whole deck (docs/card-structure-schema.md),
+        # so ONE front settles them — v1 already worked that way, taking the first
+        # card on the sheet that carries a title. v2 just reads its title box out
+        # of the card's per-front ``card.title`` map instead of out of a card cell.
+        if single:
+            front_index = config.fronts(cfg)[0]
+            ff = config.card_path(theme_key, front_index, filled=True)
+            fc = config.card_path(theme_key, front_index)
+        else:
+            ff, fc = sheet("fronts", "filled"), sheet("fronts", "clean")
         if os.path.exists(ff) and os.path.exists(fc) and os.path.exists(recipe_path):
             recipe = json.load(open(recipe_path, encoding="utf-8"))
             mask, image, vb = _diff(ff, fc, workdir)
             w, _h = mask.size
-            ppu = w / vb[2]
-            for card in recipe["cards"]:
-                if not card or not card.get("title"):
-                    continue
-                t = card["title"]
-                box = (int(min(b["x0"] for b in t) * ppu),
-                       int(min(b["y0"] for b in t) * ppu),
-                       int(max(b["x1"] for b in t) * ppu),
-                       int(max(b["y1"] for b in t) * ppu))
+            # v1 geometry is page-relative at a width-only scale; a v2 card is
+            # letterboxed inside its window, so it needs the real viewport map.
+            ppu, ox, oy = _viewport(mask, vb) if single else (w / vb[2], 0.0, 0.0)
+            t = _front_title_boxes(recipe, cfg, single)
+            if t:
+                box = (int(min(b["x0"] for b in t) * ppu + ox),
+                       int(min(b["y0"] for b in t) * ppu + oy),
+                       int(max(b["x1"] for b in t) * ppu + ox),
+                       int(max(b["y1"] for b in t) * ppu + oy))
                 tight = _bbox(mask, box) or box
                 ts = out["title_style"]
                 _, _, outline_w = _fill_and_outline(image, mask, tight)
 
                 # Read the title's paints from the VECTOR, not the pixels. The
-                # fronts sheet adds both the title and the words, so exclude the
-                # word colours the recipe already recorded — what is left is the
+                # front carries both the title and the words, so exclude the word
+                # colours the recipe already recorded — what is left is the
                 # title's own fill and ring.
-                word_colours = {
-                    (slot.get("color") or "").lower()
-                    for c in recipe["cards"] if c
-                    for slot in c.get("words", []) if slot.get("color")
-                }
-                cands = candidate_paints(ff, fc, exclude=word_colours)
+                cands = candidate_paints(ff, fc, exclude=_word_colours(recipe))
                 fill, outline = assign_paints(cands, image, mask, tight)
                 source = "vector"
                 if not (fill and outline):
@@ -712,7 +814,6 @@ def calibrate(theme_key, workdir=None):
                 if align:
                     ts["align"] = align
                     confidence["title_style.align"] = "medium"
-                break
             if not out["title_style"]:
                 notes.append("title: no card in the recipe carries a title slot.")
         else:

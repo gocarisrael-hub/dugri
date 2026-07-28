@@ -28,8 +28,12 @@ from topup import topup
 
 def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                  word_font=None, workdir=None, progress=False, chasers=False,
-                 custom_title=None):
-    """Render an order to a PDF and return (out_pdf, page_count).
+                 custom_title=None, photos=None):
+    """Render an order and return ``(out_pdf, page_count, board_pdf)``.
+
+    ``board_pdf`` is the separate board file a v2 (single-card) template
+    produces, and None for a v1 template, whose board is still the last page of
+    the single PDF.
 
     theme_key     a key in generator/themes.json (e.g. "trip comeback")
     name          the honoree name (cased per the theme's name_form)
@@ -41,6 +45,9 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                   (clean/board-chasers.svg), else the normal board (additive)
     custom_title  optional free-form title (F7) that overrides the theme-derived
                   title on the cards + board; empty/absent keeps the theme default
+    photos        absolute paths to the customer's pawn photos for the final
+                  photo card (v2 only); fewer than four are topped up from the
+                  theme's generic Dugri fallback set
     """
     cfg = config.theme(theme_key)
     config.ensure_calibrated(cfg)  # fail fast on an uncalibrated theme
@@ -60,25 +67,43 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
         # 1) Top up the personal words to a full deck.
         words = topup(personal_words, theme_key)
 
-        # 2) Write the words to a temp file, then pack into the 32-col Canva CSV.
+        # 2) Write the words to a temp file, then pack into the deck CSV (one row
+        #    per card in v2, one row per 8-up sheet in v1). The front cycling is
+        #    taken from the THEME's front count, not pack's default, so a template
+        #    that ships other than eight fronts still gets an even spread.
         words_path = os.path.join(workdir, "words.txt")
         with open(words_path, "w", encoding="utf-8") as f:
             f.write("\n".join(words) + "\n")
         csv_path = os.path.join(workdir, "order.csv")
-        pack.pack(words, csv_path)
+        if config.is_single_card(cfg):
+            pack.pack(words, csv_path, fronts=len(config.fronts(cfg)))
+        else:
+            pack.pack(words, csv_path)
 
-        # 3) Render the full PDF onto the theme's clean backgrounds.
+        # 3) Render. A v2 (single-card) template produces TWO artifacts — the
+        #    208-page card deck and a separate board file; a v1 template still
+        #    produces the one combined PDF with the board as its last page, so
+        #    the un-migrated themes keep working. board is None for v1.
+        if config.is_single_card(cfg):
+            return buildmod.build_deck(
+                theme_key, csv_path, name, out_pdf,
+                extra_fields=extra_fields or {}, word_font=word_font,
+                workdir=os.path.join(workdir, "build"), progress=progress,
+                chasers=chasers, custom_title=custom_title, photos=photos,
+            )
+
         fronts = config.clean_path(theme_key, "fronts")
         board = config.board_clean_path(theme_key, chasers=chasers)
         backs_path = config.clean_path(theme_key, "backs")
         backs = backs_path if os.path.exists(backs_path) else None
 
-        return buildmod.build_pdf(
+        pdf, pages = buildmod.build_pdf(
             theme_key, fronts, board, csv_path, name, out_pdf,
             backs=backs, extra_fields=extra_fields or {}, word_font=word_font,
             workdir=os.path.join(workdir, "build"), progress=progress,
             chasers=chasers, custom_title=custom_title,
         )
+        return pdf, pages, None
     except BaseException:
         # On failure, drop a half-written PDF we created (a partial file is
         # useless). A caller-supplied out_pdf is left untouched.
@@ -119,15 +144,21 @@ def main():
                     help="use the theme's chasers board variant when available")
     ap.add_argument("--title", default=None,
                     help="optional custom title overriding the theme-derived title")
+    ap.add_argument("--photo", action="append", default=[], metavar="PATH",
+                    help="a customer pawn photo for the photo card (repeatable, up to 4)")
     args = ap.parse_args()
 
     personal = open(args.words, encoding="utf-8-sig").read().splitlines()
-    pdf, pages = order_to_pdf(
+    pdf, pages, board = order_to_pdf(
         args.theme, args.name, _parse_fields(args.field), personal,
         out_pdf=args.out_pdf, word_font=args.word_font, progress=True,
-        chasers=args.chasers, custom_title=args.title,
+        chasers=args.chasers, custom_title=args.title, photos=args.photo,
     )
     print(f"\nwrote {pdf} ({pages} pages)")
+    # Printed on its own line so the server can pick the board artifact out of
+    # stdout the same way it already picks up the page count.
+    if board:
+        print(f"board {board}")
 
 
 if __name__ == "__main__":

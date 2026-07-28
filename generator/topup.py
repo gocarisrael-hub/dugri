@@ -8,7 +8,7 @@ the remainder. If the personal list alone already meets the target, no filler is
 added.
 
   from topup import topup
-  words = topup(personal_words, "trip comeback")   # -> list, len >= 416
+  words = topup(personal_words, "trip comeback")   # -> list, len >= 412
 
 Priority order (dedup, case/space-insensitive): personal -> theme wordlist ->
 generic-350. The theme's wordlist file is named in themes.json (`wordlist`).
@@ -33,7 +33,9 @@ import re
 
 import config
 
-TARGET = 416
+# A full v2 deck is 103 word cards x 4 words (pack.WORD_CARDS x pack.PER_CARD);
+# the 104th card is the photo card and carries no words.
+TARGET = 412
 WORDLISTS_DIR = os.path.join(config.REPO, "content", "wordlists")
 # The owner's persistent store; "" when DATA_DIR is unset (local dev / tests).
 DATA_DIR = os.environ.get("DATA_DIR") or ""

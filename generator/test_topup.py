@@ -7,6 +7,7 @@ import os
 import shutil
 import tempfile
 
+import pack
 import topup
 
 
@@ -35,6 +36,15 @@ class _store:
         return False
 
 
+def test_target_is_a_full_deck_of_word_cards():
+    # TARGET is not a free-standing number: it is exactly the deck pack.py builds,
+    # 103 word cards x 4 words (the 104th card is the photo card and holds none).
+    # Pinned against pack's own constants so moving either one without the other
+    # fails here instead of quietly shipping a deck with a half-empty last card.
+    assert topup.TARGET == 412
+    assert topup.TARGET == pack.WORD_CARDS * pack.PER_CARD
+
+
 def test_personal_all_present_and_length_and_no_dupes():
     personal = ["בדיחה פנימית", "חבר טוב", "ריקוד"]
     result = topup.topup(personal, "trip comeback")
@@ -42,7 +52,7 @@ def test_personal_all_present_and_length_and_no_dupes():
     for w in personal:
         assert w in result, f"missing personal word {w!r}"
     # filled to at least the target deck size
-    assert len(result) >= 416, f"expected >=416, got {len(result)}"
+    assert len(result) >= 412, f"expected >=412, got {len(result)}"
     # no duplicates (case/space-insensitive)
     keys = [topup._norm(w) for w in result]
     assert len(keys) == len(set(keys)), "duplicate words in result"
@@ -72,7 +82,7 @@ def test_personal_alone_over_target_uses_all_personal_only():
 
 def test_empty_personal_still_fills():
     result = topup.topup([], "trip comeback")
-    assert len(result) >= 416
+    assert len(result) >= 412
 
 
 # ---- DATA_DIR store resolution ---------------------------------------------
@@ -106,7 +116,7 @@ def test_owner_edit_of_a_theme_pool_reaches_the_deck():
         result = topup.topup(["אישית"], "trip comeback")
         assert result[0] == "אישית"
         assert "מילת בעלים 0" in result
-        assert len(result) >= 416
+        assert len(result) >= 412
 
 
 def test_owner_created_pool_is_readable_by_name():

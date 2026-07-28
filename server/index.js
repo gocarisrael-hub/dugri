@@ -77,7 +77,36 @@ const GENERATE_TIMEOUT_MS = Number(process.env.GENERATE_TIMEOUT_MS || 120000);
 // Writes the words to a temp file (cleaned up after), streams the theme +
 // honoree + optional word-font/extra-fields as CLI args, captures stderr for a
 // useful error, and enforces a timeout. Never leaks the child process.
-function runGenerator({ theme, name, words, outPdf, wordFont, extraFields, chasers, customTitle }) {
+// Map a collection's stored pawn-image paths ("/content-uploads/<hash>.<ext>",
+// written by the pawn-photos wizard step) onto the files on disk, so the
+// generator can draw them into the deck's photo card. Anything that isn't one of
+// our own upload paths — or whose file is gone — is dropped rather than passed
+// through: the generator tops the card up from the theme's fallback set, which
+// is a better outcome than failing a paid order over a missing photo.
+const PAWN_UPLOAD_PATH_RE = /^\/content-uploads\/[a-f0-9]{16}\.(webp|jpe?g|png)$/;
+
+function pawnPhotoFiles(collection) {
+  const paths = Array.isArray(collection && collection.pawn_images) ? collection.pawn_images : [];
+  const out = [];
+  for (const p of paths) {
+    if (typeof p !== 'string' || !PAWN_UPLOAD_PATH_RE.test(p)) continue;
+    const file = path.join(content._uploadDir, path.basename(p));
+    if (fs.existsSync(file)) out.push(file);
+  }
+  return out.slice(0, 4);
+}
+
+function runGenerator({
+  theme,
+  name,
+  words,
+  outPdf,
+  wordFont,
+  extraFields,
+  chasers,
+  customTitle,
+  photos,
+}) {
   return new Promise((resolve, reject) => {
     let wordsFile;
     try {
@@ -105,6 +134,9 @@ function runGenerator({ theme, name, words, outPdf, wordFont, extraFields, chase
     // --title=<value> (single token) so a title that starts with '-' (e.g. "-40",
     // "-רווקות") is never parsed by argparse as an option and crash the generator.
     if (customTitle) args.push('--title=' + customTitle);
+    // The customer's pawn photos for the deck's photo card (v2 templates). A v1
+    // theme ignores them, so passing them is always safe.
+    for (const photo of photos || []) args.push('--photo', photo);
     const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
     let stdout = '';
     let stderr = '';
@@ -136,7 +168,11 @@ function runGenerator({ theme, name, words, outPdf, wordFont, extraFields, chase
         return reject(new Error((stderr || stdout || 'exit ' + code).trim().slice(0, 800)));
       }
       const m = /\((\d+) pages?\)/.exec(stdout);
-      resolve({ pages: m ? Number(m[1]) : null });
+      // A v2 (single-card) order also produces the game board as a SEPARATE
+      // file and prints its path on its own line; v1 keeps the board inside the
+      // deck and prints nothing, so board stays null there.
+      const b = /^board (.+)$/m.exec(stdout);
+      resolve({ pages: m ? Number(m[1]) : null, board: b ? b[1].trim() : null });
     });
   });
 }
@@ -589,7 +625,7 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
   const outPdf = path.join(GENERATED_DIR, c.id + '.pdf');
 
   try {
-    const { pages } = await runGenerator({
+    const { pages, board } = await runGenerator({
       theme,
       name: c.honoree_name || '',
       words,
@@ -598,6 +634,7 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       extraFields,
       chasers: !!c.chasers,
       customTitle: c.custom_title || null,
+      photos: pawnPhotoFiles(c),
     });
     const production = db.setProduction(c.id, {
       state: 'generated',
@@ -605,6 +642,11 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       generated_at: new Date().toISOString(),
       theme,
       pages,
+      // v2 orders deliver TWO artifacts: the card deck and the game board.
+      // Recorded here so the delivery layer (email + /pdf download routes) can
+      // find the board without re-deriving it. null for a v1 order, whose board
+      // is still the deck's last page.
+      board_file: board ? path.basename(board) : null,
     });
     const base = paymentBaseUrl();
     // Two links, and they are NOT interchangeable:

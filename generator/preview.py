@@ -86,6 +86,42 @@ def _crop_card(full_png, cell, viewbox, out_png):
     return out_png
 
 
+def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
+                         chasers=False):
+    """The v2 preview: one front card, its back, and the board.
+
+    The front is rendered on the theme's FIRST front style — the eight differ
+    only by an icon, and previewing a fixed one keeps the image stable as the
+    buyer retypes the name (the preview cache keys on the name, not the style).
+    """
+    front = config.fronts(cfg)[0]
+    card_png = rp.render_single_card(
+        theme, config.card_path(theme, front), list(PLACEHOLDER_WORDS), title_lines,
+        os.path.join(workdir, "card.png"), front_index=front, word_font=word_font)
+    _downscale(card_png, CARD_MAX_W)
+    out = {"card": card_png}
+
+    board_clean = config.board_clean_path(theme, chasers=chasers)
+    if os.path.exists(board_clean):
+        board_png = buildmod.render_board(
+            theme, board_clean, title_lines, os.path.join(workdir, "board.png"),
+            chasers=chasers)
+        _downscale(board_png, BOARD_MAX_W)
+        out["board"] = board_png
+
+    # Best-effort, exactly as the v1 path: a back that fails to render must never
+    # cost the buyer their card+board preview.
+    try:
+        back_png = rp.render_single_card(
+            theme, config.back_path(theme), [], title_lines,
+            os.path.join(workdir, "back.png"), kind="back", word_font=word_font)
+        _downscale(back_png, CARD_MAX_W)
+        out["back"] = back_png
+    except Exception:
+        pass
+    return out
+
+
 def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
             chasers=False, custom_title=None, calibration=None):
     """Render a preview and return ``{"card": path, "board": path, "back": path}``.
@@ -127,6 +163,13 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
     os.makedirs(workdir, exist_ok=True)
 
     try:
+        # A v2 (single-card) theme needs no sheet render + crop: the page IS the
+        # card, so one screenshot per surface. Same overlays as the deck, so the
+        # preview stays WYSIWYG for what production prints.
+        if config.is_single_card(cfg):
+            return _preview_single_card(theme, cfg, title_lines, workdir,
+                                        word_font=word_font, chasers=chasers)
+
         recipe = _recipe(cfg)
         idx = _sample_card_index(recipe)
 
