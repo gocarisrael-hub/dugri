@@ -1,0 +1,17 @@
+# Python packages needed to RUN THE GENERATOR'S TESTS (`npm run test:py`).
+#
+# This is not the runtime contract. The production image installs what the
+# generator itself needs through apk (see Dockerfile: python3 + py3-pillow +
+# chromium); it deliberately carries no pip layer. Keep the two in step:
+#
+#   pillow  — used by the generator at runtime AND by the tests
+#   numpy   — TEST-ONLY (test_render_page's glyph-shape comparison); no module
+#             under generator/ imports it outside tests, which is why the image
+#             ships without it
+#   pytest  — the runner
+#
+# Pinned loosely: these are stable, widely-packaged libraries and the tests do
+# not depend on version-specific behaviour.
+pytest>=8
+pillow>=10
+numpy>=1.26

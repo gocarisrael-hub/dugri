@@ -82,10 +82,13 @@ jobs:
           # widely-available match; the generator is version-agnostic beyond that.
           python-version: '3.11'
           cache: 'pip'
+          # pip caching needs a dependency file to key on; without this the
+          # action fails outright ("No file matched to **/requirements.txt").
+          cache-dependency-path: generator/requirements-dev.txt
       - name: Install Python dependencies
-        # The generator's only third-party imports are Pillow and numpy (grep the
-        # imports across generator/*.py); pytest is the runner.
-        run: pip install pytest pillow numpy
+        # Test-only deps; the runtime image installs what the generator needs
+        # through apk instead (see the file's own header).
+        run: pip install -r generator/requirements-dev.txt
       # Several generator tests shell out to real headless Chrome, and they
       # SOFT-skip when no binary is found — printing "(skipped: no Chrome)" and
       # returning green. A missing browser would therefore look exactly like a
