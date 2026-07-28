@@ -464,15 +464,26 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
 def back_overlay(theme, recipe, title_lines):
     """Title markup for the card BACK, which every pair repeats.
 
-    Prefers the box calibration detected into the recipe; falls back to the
-    theme's ``back.frac`` fractions of the card, which is how v1 placed it.
+    Three distinct cases, and conflating the last two would misprint a card:
+
+    * the recipe carries detected back boxes -> use them;
+    * the recipe carries an EXPLICIT ``"back": null`` -> the back genuinely has
+      no text slot, so print NOTHING. Grapefruit's back is a full-bleed pattern
+      with no room for a name; falling through to ``back.frac`` here would stamp
+      the honoree's name across the artwork on all 104 backs.
+    * the recipe has NO ``back`` key at all -> nothing was said either way (the
+      template predates back detection), so fall back to the theme's
+      ``back.frac`` fractions, which is how v1 placed it.
     """
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
     bk = cfg.get("back")
     cell = _recipe_cell(recipe)
-    boxes = (recipe.get("back") or {}).get("title")
+    boxes = config.recipe_back_title(recipe)
     if not boxes:
+        # An explicit null/empty back is an ANSWER, not a gap — respect it.
+        if "back" in recipe:
+            return ""
         if not bk:
             return ""            # theme has no personalized back -> clean art
         frac = bk["frac"]

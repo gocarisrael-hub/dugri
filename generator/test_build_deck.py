@@ -201,6 +201,51 @@ def test_an_oversized_word_list_grows_the_deck_so_no_word_is_dropped():
         assert doc.page_count == 302
 
 
+# --- the back's title is an answer, not a gap -------------------------------
+# Grapefruit's card back is a full-bleed pattern with NO text slot: its clean and
+# filled exports render pixel-identical. Treating that "no boxes" as "not
+# calibrated yet" and falling through to the theme's back.frac would stamp the
+# honoree's name across the artwork on all 104 backs of a paid order.
+
+def _with_back(tmp, value, drop=False):
+    """Re-render the back overlay with the recipe's `back` key set/removed."""
+    import render_page as rp
+    path = os.path.join(os.environ["DATA_DIR"], "templates", "recipes", "demo.json")
+    with open(path, encoding="utf-8") as f:
+        recipe = json.load(f)
+    if drop:
+        recipe.pop("back", None)
+    else:
+        recipe["back"] = value
+    return rp.back_overlay("demo", recipe, ["שירה"])
+
+
+def test_detected_back_boxes_print_the_title():
+    with Store() as tmp:
+        assert _with_back(tmp, None, drop=False) is not None  # sanity
+        import render_page as rp
+        path = os.path.join(os.environ["DATA_DIR"], "templates", "recipes", "demo.json")
+        with open(path, encoding="utf-8") as f:
+            recipe = json.load(f)
+        assert rp.back_overlay("demo", recipe, ["שירה"]), "detected boxes must print"
+
+
+def test_an_explicit_null_back_prints_nothing():
+    with Store() as tmp:
+        assert _with_back(tmp, None) == "", (
+            "an explicit null back means the artwork has no text slot; printing "
+            "the name there would deface all 104 backs"
+        )
+        assert _with_back(tmp, {}) == ""
+
+
+def test_an_absent_back_key_still_falls_back_to_the_theme_fractions():
+    # No statement either way (a template predating back detection) keeps v1's
+    # behaviour, so nothing that used to print a back title silently stops.
+    with Store() as tmp:
+        assert _with_back(tmp, None, drop=True) != ""
+
+
 # --- the board is a separate artifact ---------------------------------------
 
 def test_board_path_is_derived_from_the_deck_path():
