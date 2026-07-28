@@ -21,6 +21,7 @@ const whatsapp = require('./whatsapp');
 const waState = require('./wa-state');
 const reminders = require('./reminders');
 const wordlists = require('./wordlists');
+const messagePreview = require('./message-preview');
 const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
 
 const app = express();
@@ -2810,6 +2811,49 @@ app.get('/api/whatsapp/health', async (req, res) => {
   } catch (e) {
     res.json({ ok: false, connection: 'error', error: (e && e.message) || String(e) });
   }
+});
+
+// Admin: the catalog of previewable messages (email + WhatsApp triggers).
+app.get('/api/admin/message-preview', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ kinds: messagePreview.listKinds({ settings }) });
+});
+
+// Admin: render ONE message exactly as it would be sent. Renders against a
+// SAMPLE order by default so the preview works on a fresh install and never puts
+// a real customer's details into a screenshot; pass ?collection=<id> to render a
+// real order instead, which is what you want when checking that a specific
+// order's address / design / amount interpolates correctly.
+//
+// The hero product photo is resolved through the SAME resolveProductImageUrl the
+// real send path uses, so "does the photo actually appear" is a question the
+// preview can answer honestly.
+app.get('/api/admin/message-preview/:channel/:id', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const base = paymentBaseUrl();
+  let collection = null;
+  if (req.query && req.query.collection) {
+    collection = db.getCollection(String(req.query.collection));
+    if (!collection) return res.status(404).json({ error: 'collection not found' });
+    collection = { ...collection, count: db.countWords(collection.id) };
+  }
+  const target = collection || messagePreview.SAMPLE_COLLECTION;
+  let productImageUrl = null;
+  try {
+    productImageUrl = await resolveProductImageUrl(target, base);
+  } catch {
+    productImageUrl = null;
+  }
+  const out = messagePreview.render(String(req.params.channel), String(req.params.id), {
+    notify,
+    whatsapp,
+    settings,
+    baseUrl: base,
+    collection,
+    productImageUrl,
+  });
+  if (!out) return res.status(404).json({ error: 'unknown message id' });
+  res.json({ ...out, sample: !collection });
 });
 
 // Admin: which collections have a WhatsApp group. Pure local state (no Whapi

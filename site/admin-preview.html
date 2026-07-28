@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="dugri:page" content="admin-preview.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>תצוגה מקדימה של הודעות — דוגרי (ניהול)</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --ink: #1a1a1a;
+        --muted: #6b6b6b;
+        --line: #ececec;
+        --section: #fdf2f5;
+        --pink: #e85a97;
+        --pink-deep: #c53f79;
+        --radius: 10px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: 'Heebo', Arial, sans-serif;
+        padding: 22px 16px 60px;
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 16px;
+      }
+      .nav a {
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--pink-deep);
+        border-radius: 99px;
+        padding: 6px 14px;
+      }
+      .nav a.active {
+        background: var(--pink);
+        border-color: var(--pink);
+        color: #fff;
+      }
+      .kicker {
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 4px;
+      }
+      h1 {
+        font-size: 24px;
+        margin: 0 0 4px;
+      }
+      header p {
+        color: var(--muted);
+        margin: 0 0 18px;
+      }
+      .cols {
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        gap: 18px;
+        align-items: start;
+      }
+      @media (max-width: 760px) {
+        .cols {
+          grid-template-columns: 1fr;
+        }
+      }
+      .list {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .group-label {
+        background: var(--section);
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--pink-deep);
+        padding: 7px 12px;
+      }
+      .list button {
+        display: block;
+        width: 100%;
+        text-align: right;
+        font: inherit;
+        font-size: 14px;
+        background: #fff;
+        border: 0;
+        border-top: 1px solid var(--line);
+        padding: 9px 12px;
+        cursor: pointer;
+      }
+      .list button:hover {
+        background: #fafafa;
+      }
+      .list button.active {
+        background: var(--section);
+        font-weight: 700;
+      }
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 14px;
+        min-height: 320px;
+      }
+      .subject {
+        font-weight: 700;
+        font-size: 15px;
+        margin-bottom: 4px;
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 12.5px;
+        margin-bottom: 12px;
+      }
+      .pill {
+        display: inline-block;
+        border-radius: 99px;
+        padding: 2px 9px;
+        font-size: 12px;
+        font-weight: 700;
+        margin-inline-start: 6px;
+      }
+      .pill.off {
+        background: #fdecec;
+        color: #b23b3b;
+      }
+      .pill.sample {
+        background: var(--section);
+        color: var(--pink-deep);
+      }
+      iframe {
+        width: 100%;
+        height: 620px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f4f4f7;
+      }
+      pre.text {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: #fafafa;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 14px;
+        line-height: 1.6;
+        margin: 0;
+      }
+      /* WhatsApp messages read as a chat bubble, so the owner judges them the way
+         the customer will see them rather than as a config value. */
+      .bubble {
+        background: #dcf8c6;
+        border-radius: 10px;
+        padding: 10px 12px;
+        max-width: 460px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 15px;
+        line-height: 1.55;
+      }
+      .bubble-wrap {
+        background: #ece5dd;
+        border-radius: 8px;
+        padding: 16px;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      input[type='text'] {
+        font: inherit;
+        font-size: 13px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 6px 10px;
+        min-width: 240px;
+      }
+      .toggle {
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        border: 1px solid var(--pink);
+        background: #fff;
+        color: var(--pink-deep);
+        border-radius: 8px;
+        padding: 6px 12px;
+      }
+      .msg {
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="nav" id="nav">
+        <a data-page="dashboard.html">לוח בקרה</a>
+        <a data-page="admin.html">ניהול הזמנות</a>
+        <a data-page="coupons.html">ניהול קופונים</a>
+        <a data-page="design-codes.html">קודי עיצוב</a>
+        <a data-page="admin-templates.html">תבנית חדשה</a>
+        <a data-page="admin-designs.html">עיצובים</a>
+        <a data-page="admin-wordlists.html">רשימות מילים</a>
+        <a data-page="admin-playbook.html">פלייבוק</a>
+        <a data-page="admin-texts.html">הודעות וטקסטים</a>
+        <a data-page="admin-preview.html" class="active">תצוגה מקדימה</a>
+        <a data-page="admin-features.html">פיצ׳רים</a>
+        <a data-page="admin-pricing.html">מחירים</a>
+        <a data-page="admin-images.html">תמונות מוצר</a>
+      </nav>
+      <header>
+        <p class="kicker">Internal · הודעות</p>
+        <h1>תצוגה מקדימה של הודעות</h1>
+        <p>
+          כל מייל וכל הודעת וואטסאפ, בדיוק כפי שהם נשלחים — כולל הלוגו, תמונת המוצר והכפתורים. ברירת
+          המחדל היא הזמנת דוגמה; אפשר להזין מזהה הזמנה אמיתית כדי לראות את הנתונים שלה.
+        </p>
+      </header>
+
+      <div class="row">
+        <input id="cid" type="text" placeholder="מזהה הזמנה אמיתית (אופציונלי)" />
+        <button class="toggle" id="apply">הצג</button>
+      </div>
+
+      <div class="cols">
+        <div class="list" id="list"></div>
+        <div class="panel" id="panel"><p class="msg">בחרו הודעה מהרשימה.</p></div>
+      </div>
+    </div>
+
+    <script>
+      const key = new URLSearchParams(location.search).get('key') || '';
+      for (const a of document.querySelectorAll('#nav a')) {
+        a.href = a.dataset.page + (key ? '?key=' + encodeURIComponent(key) : '');
+      }
+      const listEl = document.getElementById('list');
+      const panel = document.getElementById('panel');
+      const cidInput = document.getElementById('cid');
+      let kinds = [];
+      let current = null;
+
+      function esc(s) {
+        return String(s == null ? '' : s).replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+        );
+      }
+
+      function renderList() {
+        listEl.innerHTML = '';
+        const groups = [
+          {
+            label: 'מיילים ללקוח/ה',
+            match: (k) => k.channel === 'email' && k.audience === 'buyer',
+          },
+          {
+            label: 'מיילים לבעלת העסק',
+            match: (k) => k.channel === 'email' && k.audience === 'owner',
+          },
+          { label: 'וואטסאפ', match: (k) => k.channel === 'whatsapp' },
+        ];
+        for (const g of groups) {
+          const items = kinds.filter(g.match);
+          if (!items.length) continue;
+          const head = document.createElement('div');
+          head.className = 'group-label';
+          head.textContent = g.label;
+          listEl.appendChild(head);
+          for (const k of items) {
+            const b = document.createElement('button');
+            b.textContent = k.label;
+            b.dataset.id = k.channel + '/' + k.id;
+            b.onclick = () => show(k.channel, k.id);
+            listEl.appendChild(b);
+          }
+        }
+      }
+
+      async function show(channel, id) {
+        current = { channel, id };
+        for (const b of listEl.querySelectorAll('button')) {
+          b.classList.toggle('active', b.dataset.id === channel + '/' + id);
+        }
+        panel.innerHTML = '<p class="msg">טוען…</p>';
+        const cid = cidInput.value.trim();
+        let url =
+          '/api/admin/message-preview/' +
+          encodeURIComponent(channel) +
+          '/' +
+          encodeURIComponent(id) +
+          '?key=' +
+          encodeURIComponent(key);
+        if (cid) url += '&collection=' + encodeURIComponent(cid);
+        try {
+          const r = await fetch(url);
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            panel.innerHTML = '<p class="msg">שגיאה: ' + esc(d.error || r.status) + '</p>';
+            return;
+          }
+          const pills =
+            (d.enabled === false ? '<span class="pill off">מכובה — לא נשלח</span>' : '') +
+            (d.sample ? '<span class="pill sample">הזמנת דוגמה</span>' : '');
+          let body;
+          if (d.html) {
+            // srcdoc + sandbox: the mail is rendered for real (logo, hero photo,
+            // CTA) but can't script against the admin page.
+            body = '<iframe sandbox="allow-same-origin" srcdoc="' + esc(d.html) + '"></iframe>';
+          } else if (d.channel === 'whatsapp') {
+            body = '<div class="bubble-wrap"><div class="bubble">' + esc(d.text) + '</div></div>';
+          } else {
+            body = '<pre class="text">' + esc(d.text) + '</pre>';
+          }
+          panel.innerHTML =
+            (d.subject ? '<div class="subject">' + esc(d.subject) + '</div>' : '') +
+            '<div class="meta">' +
+            esc(d.channel === 'email' ? 'מייל' : 'וואטסאפ') +
+            pills +
+            '</div>' +
+            body;
+        } catch {
+          panel.innerHTML = '<p class="msg">שגיאה בטעינה.</p>';
+        }
+      }
+
+      document.getElementById('apply').onclick = () => {
+        if (current) show(current.channel, current.id);
+      };
+
+      async function load() {
+        if (!key) {
+          listEl.innerHTML = '';
+          panel.innerHTML = '<p class="msg">חסר מפתח גישה. פתחו עם <code>?key=…</code>.</p>';
+          return;
+        }
+        try {
+          const r = await fetch('/api/admin/message-preview?key=' + encodeURIComponent(key));
+          if (r.status === 403) {
+            panel.innerHTML = '<p class="msg">מפתח גישה שגוי.</p>';
+            return;
+          }
+          kinds = (await r.json()).kinds || [];
+          renderList();
+        } catch {
+          panel.innerHTML = '<p class="msg">שגיאה בטעינה.</p>';
+        }
+      }
+      load();
+    </script>
+  </body>
+</html>
