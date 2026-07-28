@@ -235,7 +235,7 @@ def build_board_pdf(theme, out_pdf, title_lines, workdir, chasers=False):
     """
     cfg = config.theme(theme)
     board_clean = config.board_clean_path(theme, chasers=chasers)
-    raw = card_assets.read_card_svg(board_clean, config.theme_dir(theme))
+    raw = card_assets.read_svg(board_clean)
     if cfg.get("fix_ring_discs"):
         raw = svg_rings.align_ring_discs(raw)
     vb = deck_html.view_box(raw)
@@ -277,9 +277,9 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
     config.ensure_calibrated(cfg)
     if not config.is_single_card(cfg):
         raise RuntimeError(
-            f"theme {theme!r} is not a single-card (v2) template — it has no "
-            '"card_layout": "single". Migrate its assets to clean/1..9.svg '
-            "first; see docs/card-schema-v2.md."
+            f"theme {theme!r} is not a single-card template — its themes.json "
+            'entry has no "cards" block. Migrate its assets to clean/1..9.svg '
+            "first; see docs/card-structure-schema.md."
         )
     recipe = config.load_recipe(cfg["recipe"])
     theme_dir = config.theme_dir(theme)
@@ -347,6 +347,20 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
     title_lines = config.title_lines(cfg, name, extra_fields or {},
                                      custom_title=custom_title)
     os.makedirs(workdir, exist_ok=True)
+    # Check the board artwork BEFORE rendering the deck. An order owes the
+    # customer BOTH artifacts, so a missing board is a failed order, not a deck
+    # shipped quietly without its board — and finding out up front costs a
+    # stat() instead of a full deck render, and leaves no half-finished PDF
+    # behind for someone to mistake for a complete one.
+    board_clean = config.board_clean_path(theme, chasers=chasers)
+    if not os.path.exists(board_clean):
+        raise RuntimeError(
+            f"theme {theme!r} has no board artwork — looked for {board_clean}. "
+            "The board is a separate delivered artifact in the single-card deck "
+            "(docs/card-structure-schema.md 1), so it is not optional: a "
+            "migrated template must keep its clean/board.svg alongside the "
+            "numbered 1..9 cards."
+        )
     doc, vbs = deck_document(theme, csvp, title_lines, word_font=word_font,
                              photos=photos, progress=progress)
     print_to_pdf(doc.html(vbs), out_pdf, workdir, tag="deck")

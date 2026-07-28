@@ -44,7 +44,7 @@ below is unchanged; only WHERE it reads from moves, because the whole page is
 now one card and there is no cell to pick out of a grid. The board keeps its own
 named file in both structures, so that branch is shared verbatim.
 
-The split of responsibilities is the schema's (docs/card-schema-v2.md 3): the
+The split of responsibilities is the schema's (docs/card-structure-schema.md): the
 per-front title BOX is geometry and belongs to the recipe, which
 ``recipe_diff.py`` writes; this module keeps owning the STYLE knobs — the
 title's paints, ring thickness, alignment, shadow — and those are SHARED across
@@ -723,7 +723,7 @@ def calibrate(theme_key, workdir=None):
             confidence["back"] = "none"
 
         # --- FRONTS: the title's paint colours, ring thickness and alignment ---
-        # These knobs are SHARED across the whole deck (docs/card-schema-v2.md 3),
+        # These knobs are SHARED across the whole deck (docs/card-structure-schema.md),
         # so ONE front settles them — v1 already worked that way, taking the first
         # card on the sheet that carries a title. v2 just reads its title box out
         # of the per-front recipe entry instead of out of a card cell.

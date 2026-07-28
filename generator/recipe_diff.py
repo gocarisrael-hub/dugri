@@ -16,7 +16,7 @@ both — only what it is fed changes:
                icon), each with a text-filled twin in ``filled/``. There is no
                grid: the whole page IS the card, so the cell is the viewBox and
                the same banding machinery is handed the entire render. Emits a
-               ``layout:"single"`` recipe (docs/card-schema-v2.md section 4).
+               ``layout:"single"`` recipe (docs/card-structure-schema.md).
 
   python3 generator/recipe_diff.py <text_svg> <clean_svg> <theme>   # v1 sheet
   python3 generator/recipe_diff.py --single <template_dir> <theme>  # v2 deck
@@ -213,29 +213,31 @@ def viewport(vb, w, h):
 
 
 def _renderable(svg_path, workdir, tag):
-    """The path to hand Chrome, with any deduped background re-inlined.
+    """The path to hand Chrome, with any de-duplicated background resolved.
 
     A migrated template stores its multi-megabyte background ONCE per theme and
-    leaves a ``dugri:shared/<hash>.png`` marker in each card
-    (docs/card-schema-v2.md 2.1). Chrome cannot resolve that href, so detection
-    would diff two backgroundless cards and happily "measure" whatever the
-    missing artwork exposed. Re-inline through the shared helper — never a
-    second implementation, so strip and inline can never disagree — and only
-    write a temp copy when a marker is actually present, so the common case
-    still hands Chrome the original file untouched.
+    references it from each card as ``../assets/<sha>.png``
+    (docs/card-structure-schema.md 4). That relative href resolves against the
+    SVG's own directory, so it survives being handed to Chrome in place — but
+    NOT being copied elsewhere. ``card_assets.read_svg`` absolutizes it, which is
+    what makes a temp copy safe; without that, detection would diff two
+    backgroundless cards and happily "measure" whatever the missing artwork
+    exposed.
+
+    A temp copy is only written when reading actually changed something, so an
+    unmigrated template still hands Chrome the original file untouched.
     """
     try:
         import card_assets
     except ImportError:  # card_assets is optional for the v1 path
         return svg_path
+    text = card_assets.read_svg(svg_path)
     with open(svg_path, encoding="utf-8") as f:
-        text = f.read()
-    if not card_assets.has_marker(text):
-        return svg_path
-    theme_dir = os.path.dirname(os.path.dirname(os.path.abspath(svg_path)))
+        if f.read() == text:
+            return svg_path
     out = os.path.join(workdir, tag)
     with open(out, "w", encoding="utf-8") as f:
-        f.write(card_assets.inline_shared(text, theme_dir))
+        f.write(text)
     return out
 
 
@@ -364,7 +366,7 @@ def reconcile_word_slots(per_front):
     """Fold the fronts' word slots into the ONE shared set the deck prints with.
 
     The word slots, the word font and every size are SHARED across the eight
-    fronts by contract (docs/card-schema-v2.md 3) — only the title moves per
+    fronts by contract (docs/card-structure-schema.md) — only the title moves per
     front. So eight independent measurements of the same four boxes have to
     collapse into one answer, and the only real question is which central value
     to take.
@@ -400,7 +402,7 @@ def reconcile_word_slots(per_front):
 
 def assemble_single_recipe(theme, vb, words, front_titles,
                            back_title=None, photo_slots=None):
-    """Build the v2 recipe dict — the exact shape docs/card-schema-v2.md 4 locks.
+    """Build the v2 recipe dict — the exact shape docs/card-structure-schema.md locks.
 
     ``front_titles`` maps a front index to its own detected title boxes. A front
     that measured none is OMITTED rather than written as an empty list: the

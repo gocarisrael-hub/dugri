@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests for the v2 single-card deck: generator/build.py build_deck/deck_document.
 
-The contract these pin (docs/card-schema-v2.md sections 5 and 6):
+The contract these pin (docs/deck-rendering.md):
 
   * a standard order is 104 cards = 208 pages, ordered (back, front) so it
     prints duplex;
