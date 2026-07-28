@@ -9,17 +9,17 @@ has a stated default the generator applies when it is absent.
 
 ## 1. What changes
 
-| | v1 (today) | v2 |
-|---|---|---|
-| Page | landscape A4 sheet, 8 cards | portrait single card, viewBox ~223.92 x 312 |
-| Deck | N front sheets + shared back sheet + board | (back, front) x 104 = 208 pages |
-| Words/card | 4 | 4 (unchanged) |
-| Words/page | 32 | 4 |
-| Deck words | 416 | 412 (103 word cards x 4) |
-| Fronts | one `fronts.svg` | eight, `2.svg`..`9.svg` (icon differs only) |
-| Back | one `backs.svg` (8-up) | one `1.svg`, page 1 of every pair |
-| Board | last page of the deck PDF | **separate output file** |
-| Photo card | — | card 104, 4 customer pawn-photos |
+|            | v1 (today)                                 | v2                                          |
+| ---------- | ------------------------------------------ | ------------------------------------------- |
+| Page       | landscape A4 sheet, 8 cards                | portrait single card, viewBox ~223.92 x 312 |
+| Deck       | N front sheets + shared back sheet + board | (back, front) x 104 = 208 pages             |
+| Words/card | 4                                          | 4 (unchanged)                               |
+| Words/page | 32                                         | 4                                           |
+| Deck words | 416                                        | 412 (103 word cards x 4)                    |
+| Fronts     | one `fronts.svg`                           | eight, `2.svg`..`9.svg` (icon differs only) |
+| Back       | one `backs.svg` (8-up)                     | one `1.svg`, page 1 of every pair           |
+| Board      | last page of the deck PDF                  | **separate output file**                    |
+| Photo card | —                                          | card 104, 4 customer pawn-photos            |
 
 ## 2. Asset contract
 
@@ -43,16 +43,16 @@ Reference export: `resources/canva/templates/grapefruit/new structure/`.
   file: it is a different geometry and a different output artifact, so it is not
   in the numeric sequence.
 - All nine share one viewBox. `9.svg` in the reference export is `224.25 x
-  311.999995` against the others' `223.92 x 312` — a ~0.15% Canva rounding
+311.999995` against the others' `223.92 x 312` — a ~0.15% Canva rounding
   artifact. The generator renders each front at **its own** viewBox and lays
-  slots out in *fractions of the card cell*, so this is harmless. B does not
+  slots out in _fractions of the card cell_, so this is harmless. B does not
   need to re-export for it.
 
 ### 2.1 Shared background dedupe (ground rule 3)
 
 Verified on the grapefruit export: all 8 fronts embed the **byte-identical**
 5.4 MB PNG (`md5` of the base64 payload matches across `2.svg`..`9.svg`).
-That is ~43 MB per theme, ~344 MB across 8 themes, in the image *and* on the
+That is ~43 MB per theme, ~344 MB across 8 themes, in the image _and_ on the
 `DATA_DIR` volume.
 
 The deduped form: the payload is lifted out once per theme, and each front keeps
@@ -171,11 +171,11 @@ paginates via `@page`; Python never holds a raster.
 
 Measured on the real grapefruit export:
 
-| pages | Chrome | PDF | page box | Python peak RSS |
-|---|---|---|---|---|
-| 8 | 1.96 s | 4.4 MB | 223.92 x 312 pt | — |
-| 52 | 2.08 s | 5.5 MB | 223.92 x 312 pt | — |
-| **208** | **2.98 s** | **9.4 MB** | **223.92 x 312 pt** | **149 MB** |
+| pages   | Chrome     | PDF        | page box            | Python peak RSS |
+| ------- | ---------- | ---------- | ------------------- | --------------- |
+| 8       | 1.96 s     | 4.4 MB     | 223.92 x 312 pt     | —               |
+| 52      | 2.08 s     | 5.5 MB     | 223.92 x 312 pt     | —               |
+| **208** | **2.98 s** | **9.4 MB** | **223.92 x 312 pt** | **149 MB**      |
 
 A full order (topup -> pack -> deck + board) runs end to end in ~6 s.
 
