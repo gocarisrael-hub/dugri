@@ -5,10 +5,17 @@ Detection is image-based and its last mile needs headless Chrome, which is not
 present everywhere the suite runs. So everything that can be tested WITHOUT a
 rasterizer is: the structure gate, the viewBox->pixel mapping, the clustering of
 one card's ink (fed a synthetic mask), the median reconciliation across the eight
-fronts, and the assembly of the recipe — checked against the REAL consumers in
-``config`` rather than against a hand-copied shape. The two end-to-end tests
-build a throwaway template and drive Chrome; they skip (never fail) where the
-binary is absent, the same way ``test_svg_rings`` and ``test_config`` do.
+fronts, and the assembly of the recipe.
+
+The recipe assertions read the emitted JSON DIRECTLY rather than through
+``config``'s accessors. That is on purpose: the recipe file is the contract, and
+the accessors layer renderer-side fallbacks (a union title box for an undetected
+front, a default photo grid) on top of it — asserting through them cannot tell
+"detection wrote this" from "the reader invented it".
+
+The two end-to-end tests build a throwaway template and drive Chrome; they skip
+(never fail) where the binary is absent, the same way ``test_svg_rings`` and
+``test_config`` do.
 
 Run: python3 generator/test_recipe_diff_single.py   (or via pytest)
 """
@@ -248,7 +255,10 @@ def test_slot_colour_is_voted_not_blended():
     assert shared[0]["color"] == "#711d20"
 
 
-# ---- the emitted recipe, checked against its real consumers -----------------
+# ---- the emitted recipe -----------------------------------------------------
+# Asserted on the JSON itself: this shape IS the cross-agent contract, so a test
+# that only checked what a reader makes of it would pass on a recipe nobody else
+# can parse.
 
 
 def _recipe(front_titles=None, **kw):
@@ -261,23 +271,32 @@ def _recipe(front_titles=None, **kw):
         R.reconcile_word_slots([_slots() for _ in range(8)]), titles, **kw)
 
 
-def test_the_recipe_reads_as_single_card_to_config():
-    assert config.is_single_card_recipe(_recipe())
+def test_the_recipe_declares_format_2_with_its_titles_inside_the_card():
+    # The era marker and the placement of the per-front titles are the two things
+    # every other agent codes against, so they get their own assertion.
+    recipe = _recipe()
+    assert recipe["format"] == 2, "absent or 1 would mean the legacy 8-up sheet"
+    assert "layout" not in recipe, "the old discriminator must be gone"
+    assert "fronts" not in recipe, "titles live in the card, not at the top level"
+    titles = recipe["card"]["title"]
+    assert sorted(titles) == sorted(str(n) for n in R.DEFAULT_FRONTS)
+    for n in R.DEFAULT_FRONTS:
+        assert isinstance(titles[str(n)], list), "a title is a LIST, one box per line"
 
 
-def test_config_recipe_card_gets_the_whole_card_as_the_cell():
+def test_the_card_block_gets_the_whole_page_as_its_cell():
     # The grid split is gone: the page IS the card, so the cell is the viewBox.
-    card = config.recipe_card(_recipe())
+    card = _recipe()["card"]
     assert card["cell"] == [0.0, 0.0, 223.92, 312.0]
     assert len(card["words"]) == 4
 
 
-def test_config_recipe_front_title_returns_each_front_its_own_box():
+def test_each_front_keeps_its_own_title_box():
     titles = {n: [{"x0": float(n), "y0": 10.0, "x1": 200.0, "y1": 40.0,
                    "color": "#711d20"}] for n in R.DEFAULT_FRONTS}
     recipe = _recipe(front_titles=titles)
     for n in R.DEFAULT_FRONTS:
-        got = config.recipe_front_title(recipe, n)
+        got = recipe["card"]["title"][str(n)]
         assert len(got) == 1 and got[0]["x0"] == float(n)
 
 
@@ -285,45 +304,49 @@ def test_a_multi_line_title_survives_as_several_boxes():
     two_lines = [{"x0": 20.0, "y0": 10.0, "x1": 200.0, "y1": 40.0, "color": "#111"},
                  {"x0": 30.0, "y0": 44.0, "x1": 190.0, "y1": 70.0, "color": "#111"}]
     recipe = _recipe(front_titles={2: two_lines})
-    assert config.recipe_front_title(recipe, 2) == two_lines
+    assert recipe["card"]["title"]["2"] == two_lines
 
 
-def test_an_undetected_front_falls_back_to_the_other_fronts_union():
-    # A front that measured nothing is OMITTED, not written as an empty list, and
-    # the renderer's documented fallback then covers it — the honoree's name is
-    # still printed, roughly where the other fronts put it.
+def test_an_undetected_front_is_omitted_not_written_as_an_empty_title():
+    # An empty list and a missing key take the SAME renderer fallback, so writing
+    # one would only pretend something was measured. The recipe records only what
+    # was actually seen; supplying the fallback box is the reader's job.
     titles = {2: [{"x0": 20.0, "y0": 10.0, "x1": 100.0, "y1": 40.0, "color": "#111"}],
               3: [{"x0": 60.0, "y0": 14.0, "x1": 200.0, "y1": 50.0, "color": "#111"}],
               4: []}
     recipe = _recipe(front_titles=titles)
-    assert "4" not in recipe["fronts"], "an empty title must not be recorded"
-    got = config.recipe_front_title(recipe, 4)
-    assert len(got) == 1
-    assert (got[0]["x0"], got[0]["y0"], got[0]["x1"], got[0]["y1"]) == (
-        20.0, 10.0, 200.0, 50.0)
+    assert sorted(recipe["card"]["title"]) == ["2", "3"]
 
 
-def test_photo_slots_fall_back_to_the_default_grid_when_undetected():
-    recipe = _recipe()
-    assert "photo" not in recipe
-    slots = config.photo_slots(recipe, config.recipe_card(recipe)["cell"])
-    assert len(slots) == 4
-    assert all(0 <= s["x0"] < s["x1"] <= 223.92 for s in slots)
+def test_undetected_photo_slots_leave_the_key_off_entirely():
+    # Optional by contract: the reader then lays out its default inset grid,
+    # rather than the recipe carrying a guessed geometry.
+    assert "photo" not in _recipe()
 
 
-def test_detected_photo_slots_reach_config_verbatim():
+def test_detected_photo_slots_are_recorded_verbatim():
     quads = [{"x0": 10.0, "y0": 10.0, "x1": 100.0, "y1": 140.0},
              {"x0": 120.0, "y0": 10.0, "x1": 210.0, "y1": 140.0},
              {"x0": 10.0, "y0": 160.0, "x1": 100.0, "y1": 300.0},
              {"x0": 120.0, "y0": 160.0, "x1": 210.0, "y1": 300.0}]
-    recipe = _recipe(photo_slots=quads)
-    assert config.photo_slots(recipe, config.recipe_card(recipe)["cell"]) == quads
+    assert _recipe(photo_slots=quads)["photo"]["slots"] == quads
 
 
-def test_a_back_with_no_title_leaves_the_key_off_entirely():
-    # Optional by contract: the renderer then uses the theme's back.frac.
-    assert "back" not in _recipe(back_title=[])
+def test_a_back_with_no_title_is_recorded_as_an_explicit_null():
+    # Not an omission: grapefruit's back is a full-bleed pattern with no text slot
+    # at all, and null is the measured answer "asked, nothing there". The renderer
+    # then uses the theme's back.frac.
+    recipe = _recipe(back_title=[])
+    assert "back" in recipe and recipe["back"] is None
     assert _recipe(back_title=[{"x0": 1.0, "y0": 2.0, "x1": 3.0, "y1": 4.0}])["back"]
+
+
+def test_the_recipe_round_trips_through_json_unchanged():
+    # It is written to disk and read back by other processes, so nothing in the
+    # emitted shape may depend on Python-only key types (a front number keyed as
+    # an int would come back as a string and silently miss every lookup).
+    recipe = _recipe(back_title=[{"x0": 1.0, "y0": 2.0, "x1": 3.0, "y1": 4.0}])
+    assert json.loads(json.dumps(recipe)) == recipe
 
 
 # ---- the v1 path is untouched ----------------------------------------------
@@ -338,7 +361,9 @@ def test_the_shipped_v1_recipes_still_read_as_sheet_recipes():
             recipe = json.load(f)
         if "cards" not in recipe:
             continue
-        assert not config.is_single_card_recipe(recipe), name
+        # Nothing about a v1 recipe may read as v2: no era marker, no card block.
+        assert recipe.get("format", 1) == 1, name
+        assert "card" not in recipe, name
         checked += 1
     assert checked, "no shipped v1 recipe was exercised"
 
@@ -433,15 +458,15 @@ def test_end_to_end_on_a_rendered_deck():
         recipe = R.detect_single_card("e2e", d, fronts=[2, 3], log=lambda *a: None)
     finally:
         shutil.rmtree(d, ignore_errors=True)
-    assert config.is_single_card_recipe(recipe)
-    card = config.recipe_card(recipe)
+    assert recipe["format"] == 2
+    card = recipe["card"]
     assert len(card["words"]) == 4
     # the drawn word bands, recovered in the card's own user units
     for i, slot in enumerate(card["words"]):
         assert abs(slot["y0"] - (110 + 30 * i)) < 1.5, slot
         assert abs(slot["x0"] - (60 + 10 * i)) < 1.5, slot
     for n in (2, 3):
-        title = config.recipe_front_title(recipe, n)
+        title = card["title"][str(n)]
         assert len(title) == 1
         assert abs(title[0]["y0"] - 20) < 1.5 and abs(title[0]["x0"] - 40) < 1.5
     assert recipe["back"]["title"], "the back's title must be detected"
@@ -458,7 +483,8 @@ def test_end_to_end_a_back_with_no_personalization_records_no_title():
         recipe = R.detect_single_card("e2e", d, fronts=[2], log=lambda *a: None)
     finally:
         shutil.rmtree(d, ignore_errors=True)
-    assert "back" not in recipe, "an identical clean/filled back has no title"
+    # null, not a bogus box: the diff found nothing because there is nothing.
+    assert recipe["back"] is None, "an identical clean/filled back has no title"
 
 
 def test_end_to_end_on_the_shipped_grapefruit_export():
@@ -477,10 +503,10 @@ def test_end_to_end_on_the_shipped_grapefruit_export():
         return
     recipe = R.detect_single_card("grapefruit", src, fronts=[2, 3],
                                   log=lambda *a: None)
-    card = config.recipe_card(recipe)
+    card = recipe["card"]
     assert len(card["words"]) == 4
     assert card["cell"][2] > 200 and card["cell"][3] > 300, "a portrait card"
-    assert config.recipe_front_title(recipe, 2), "front 2 must carry a title"
+    assert card["title"].get("2"), "front 2 must carry a title"
 
 
 if __name__ == "__main__":

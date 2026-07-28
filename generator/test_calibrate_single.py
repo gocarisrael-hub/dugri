@@ -89,18 +89,20 @@ def test_v2_reads_the_first_front_that_actually_carries_a_title():
     # but it has to be a surface with ink on it.
     cfg = {"fronts": [2, 3, 4]}
     box = [{"x0": 20.0, "y0": 10.0, "x1": 200.0, "y1": 40.0, "color": "#111111"}]
-    got = C._front_title_boxes(_v2_recipe({2: [], 3: box}), cfg, True)
-    assert got == box
+    recipe = _v2_recipe({2: [], 3: box})
+    # the shape it is read out of: per-front titles live inside the card block
+    assert recipe["format"] == 2 and recipe["card"]["title"]["3"] == box
+    assert C._front_title_boxes(recipe, cfg, True) == box
 
 
-def test_v2_falls_back_to_the_other_fronts_when_the_first_measured_nothing():
-    # config.recipe_front_title's union fallback must reach calibration too, so a
-    # partially-detected template still gets its paints read instead of landing
-    # on the owner's desk as "no card carries a title slot".
+def test_v2_moves_on_when_the_first_front_measured_nothing():
+    # A partially-detected template still gets its paints read instead of landing
+    # on the owner's desk as "no card carries a title slot" — but off a front that
+    # was really measured, never off a fallback box no export has ink in.
     cfg = {"fronts": [2, 3]}
     recipe = _v2_recipe({3: [{"x0": 20.0, "y0": 10.0, "x1": 200.0, "y1": 40.0,
                               "color": "#111111"}]})
-    assert "2" not in recipe["fronts"]
+    assert "2" not in recipe["card"]["title"]
     got = C._front_title_boxes(recipe, cfg, True)
     assert got and got[0]["x1"] == 200.0
 

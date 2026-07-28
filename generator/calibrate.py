@@ -579,10 +579,18 @@ def _front_title_boxes(recipe, cfg, single):
     The paints are SHARED across the eight fronts, so one measured surface
     settles them for the whole deck — which front it came from does not matter,
     only that it carries ink.
+
+    v2 keeps the per-front boxes inside the card, as ``card.title["<n>"]``, and
+    this reads them straight out of the recipe exactly as the v1 branch below
+    reads ``cards[]``. Deliberately NOT through the renderer's accessor: that one
+    substitutes a FALLBACK box (the union of the other fronts') for a front that
+    measured nothing, which is right for printing a name but wrong here — this
+    pass would then read the deck's paints off a rectangle no export has ink in.
     """
     if single:
+        titles = (recipe.get("card") or {}).get("title") or {}
         for index in config.fronts(cfg):
-            boxes = config.recipe_front_title(recipe, index)
+            boxes = titles.get(str(index))
             if boxes:
                 return boxes
         return None
@@ -726,7 +734,7 @@ def calibrate(theme_key, workdir=None):
         # These knobs are SHARED across the whole deck (docs/card-structure-schema.md),
         # so ONE front settles them — v1 already worked that way, taking the first
         # card on the sheet that carries a title. v2 just reads its title box out
-        # of the per-front recipe entry instead of out of a card cell.
+        # of the card's per-front ``card.title`` map instead of out of a card cell.
         if single:
             front_index = config.fronts(cfg)[0]
             ff = config.card_path(theme_key, front_index, filled=True)

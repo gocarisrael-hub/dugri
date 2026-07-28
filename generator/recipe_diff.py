@@ -16,7 +16,8 @@ both — only what it is fed changes:
                icon), each with a text-filled twin in ``filled/``. There is no
                grid: the whole page IS the card, so the cell is the viewBox and
                the same banding machinery is handed the entire render. Emits a
-               ``layout:"single"`` recipe (docs/card-structure-schema.md).
+               ``format: 2`` recipe — the shape locked in
+               docs/card-structure-schema.md ("Recipe format v2").
 
   python3 generator/recipe_diff.py <text_svg> <clean_svg> <theme>   # v1 sheet
   python3 generator/recipe_diff.py --single <template_dir> <theme>  # v2 deck
@@ -285,8 +286,8 @@ def detect_front(mask, image, vb, ppu, ox, oy):
     None (rather than a partial answer) when the ink cannot be read as text at
     all: fewer than four bands, or a band so large the diff clearly caught the
     artwork. A front that reports nothing is dropped from the shared-slot vote
-    and simply gets no ``fronts.<n>`` entry, which the renderer already has a
-    fallback for.
+    and simply gets no ``card.title.<n>`` entry, which the renderer already has
+    a fallback for.
     """
     cell = (0, 0) + mask.size
     grouped = group_words(rows_in_cell(mask, cell), mask.size[1])
@@ -311,10 +312,11 @@ def detect_back_title(mask, image, vb, ppu, ox, oy):
     A back carries no words, so ``group_words`` (which needs at least four
     bands) cannot be used here: every band of ink on this surface IS a title
     line. An empty list is a real, measured answer and not a failure — the
-    grapefruit reference export's ``1.svg`` is byte-identical clean vs filled
-    apart from randomized element ids, i.e. that design simply prints no
-    honoree name on the back. The schema makes ``back`` optional for exactly
-    that reason and the renderer falls back to the theme's ``back.frac``.
+    grapefruit reference export's ``clean/1.svg`` is a full-bleed pattern whose
+    clean and filled renders are pixel-identical, i.e. that design simply prints
+    no honoree name on the back. The schema records that as ``back: null`` for
+    exactly that reason, and the renderer falls back to the theme's
+    ``back.frac``.
     """
     cell = (0, 0) + mask.size
     out = []
@@ -402,30 +404,45 @@ def reconcile_word_slots(per_front):
 
 def assemble_single_recipe(theme, vb, words, front_titles,
                            back_title=None, photo_slots=None):
-    """Build the v2 recipe dict — the exact shape docs/card-structure-schema.md locks.
+    """Build the v2 recipe dict — the shape docs/card-structure-schema.md locks.
 
-    ``front_titles`` maps a front index to its own detected title boxes. A front
-    that measured none is OMITTED rather than written as an empty list: the
-    schema gives a missing front a defined fallback (a shared ``card.title``,
-    else the union of the other fronts' boxes), and an empty list would only
-    take the same path while pretending something was recorded.
+    ``format: 2`` is the era marker (absent or 1 means the legacy 8-up sheet), so
+    a consumer can branch on one explicit key rather than sniff for a section
+    that happens to be present.
+
+    ``front_titles`` maps a front index to its own detected title boxes, and they
+    live INSIDE the card as ``card.title["<n>"]`` — beside the word slots they
+    share a surface with, so one card block describes one printed card instead of
+    a reader having to join two top-level sections. Keyed by front number because
+    the title is the ONE thing that moves per front; the four word slots are
+    shared, which is what ``reconcile_word_slots`` above votes them down to.
+
+    A front that measured none is OMITTED rather than written as an empty list:
+    the schema gives a missing front a defined fallback (the union of the other
+    fronts' boxes), and an empty list would only take the same path while
+    pretending something was recorded.
+
+    ``back`` is always written, as ``null`` when the back carries no title. That
+    is a MEASURED answer, not a gap — grapefruit's ``clean/1.svg`` is a
+    full-bleed pattern whose clean and filled renders are pixel-identical, so the
+    honest record is "asked, and there is nothing there". A bogus box would put
+    the honoree's name on a back that was never designed to carry it.
     """
     recipe = {
         "theme": theme,
-        "layout": "single",
+        "format": 2,
         "viewBox": [float(v) for v in vb],
         "card": {
             "cell": [vb[0], vb[1], vb[0] + vb[2], vb[1] + vb[3]],
             "words": words,
+            "title": {},
         },
-        "fronts": {},
+        "back": {"title": back_title} if back_title else None,
     }
     for index in sorted(front_titles, key=int):
         boxes = front_titles[index]
         if boxes:
-            recipe["fronts"][str(index)] = {"title": boxes}
-    if back_title:
-        recipe["back"] = {"title": back_title}
+            recipe["card"]["title"][str(index)] = boxes
     if photo_slots:
         recipe["photo"] = {"slots": photo_slots}
     return recipe
@@ -526,8 +543,8 @@ def _save_single_preview(theme, recipe, vb, image, mask, ppu, ox, oy):
 
         for slot in recipe["card"]["words"]:
             rect(slot, (255, 0, 0))
-        for entry in recipe["fronts"].values():
-            for box in entry["title"]:
+        for boxes in recipe["card"]["title"].values():
+            for box in boxes:
                 rect(box, (0, 200, 0))
         vis.save(f"/tmp/gen/{theme}_recipe.png")
         mask.save(f"/tmp/gen/{theme}_diffmask.png")
@@ -548,7 +565,7 @@ def main_single(template_dir, theme):
     recipe = detect_single_card(theme, template_dir)
     path = write_recipe(theme, recipe)
     print(f"single-card recipe: {len(recipe['card']['words'])} shared word slots, "
-          f"{len(recipe['fronts'])} front title(s), "
+          f"{len(recipe['card']['title'])} front title(s), "
           f"back {'yes' if recipe.get('back') else 'no'}, "
           f"photo {'detected' if recipe.get('photo') else 'default grid'}")
     print(f"wrote {path} + /tmp/gen/{theme}_recipe.png + _diffmask.png")
