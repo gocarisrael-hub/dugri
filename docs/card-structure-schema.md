@@ -98,6 +98,11 @@ Worth knowing before you calibrate against it:
   simply uniform today. Do not "optimise" the eight fronts down to one.
 - `clean/1` (the back) is a full-bleed pattern with **no text slot at all** —
   hence `"back": null` in its themes.json entry.
+- The board carries **no honoree name either** — the owner has confirmed the
+  final board is impersonal — so `"board": null` is correct and there is no board
+  name slot to calibrate. Grapefruit therefore ships `clean/board.svg` and
+  `clean/board-chasers.svg` but **no `filled/` boards**: `filled/` exists only to
+  diff against for text positions, and there is no board text to find.
 - The cream panel the text sits in is at `[24.34, 22.44, 199.52, 290.0]` on
   fronts 1–8, but front 9's panel is DIFFERENT. That is the concrete reason
   title geometry is per-front rather than shared.
