@@ -366,5 +366,45 @@
    "outline": "#000000"
   },
   "calibrated": true
+ },
+ "grapefruit": {
+  "slug": "grapefruit",
+  "wordlist": "bachelorette-350.txt",
+  "display_he": "דוגרי אשכוליות",
+  "dir": "resources/canva/templates/grapefruit",
+  "recipe": "grapefruit",
+  "visibility": "private",
+  "title_text": "רווקות ל{NAME}",
+  "title_lines": [
+   "רווקות ל{NAME}"
+  ],
+  "language": "hebrew",
+  "name_form": "hebrew",
+  "extra_fields": [],
+  "title_font": "haglos/Haglos DEMO.otf",
+  "word_font": "Cafe Regular/Cafe Regular.ttf",
+  "title_style": {
+   "fill": "#711d20",
+   "outline": "#711d20",
+   "outline_w": 0,
+   "arch": 0,
+   "shadow": false
+  },
+  "cards": {
+   "back": 1,
+   "fronts": [
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+   ]
+  },
+  "board": null,
+  "back": null,
+  "calibrated": false
  }
 }

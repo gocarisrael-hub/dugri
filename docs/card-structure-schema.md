@@ -79,6 +79,23 @@ Font, colour and size knobs (`title_style`, `word_font`, `word_size`, `offset`,
 `italic`, `outline`…) stay in `themes.json` and stay **shared across the eight
 fronts** — only the title's _position_ is per-front.
 
+### What grapefruit's export actually contains (measured, not assumed)
+
+Worth knowing before you calibrate against it:
+
+- `clean/2` … `clean/8` render **pixel-identical** — grapefruit ships ONE front
+  design, not eight. Their SVG text differs only in Canva's randomised element
+  ids. Only `clean/9` differs visually (same layout, background pattern
+  positioned differently).
+- The owner has confirmed the `1 = back / 2–9 = eight fronts` schema is correct
+  and that OTHER templates will have genuinely distinct fronts. Grapefruit is
+  simply uniform today. Do not "optimise" the eight fronts down to one.
+- `clean/1` (the back) is a full-bleed pattern with **no text slot at all** —
+  hence `"back": null` in its themes.json entry.
+- The cream panel the text sits in is at `[24.34, 22.44, 199.52, 290.0]` on
+  fronts 1–8, but front 9's panel is DIFFERENT. That is the concrete reason
+  title geometry is per-front rather than shared.
+
 ### Migrating an existing theme's calibration
 
 Legacy recipes are A4-landscape (`viewBox` 841.92×595.5) with 8 cells, and card

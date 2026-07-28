@@ -1,0 +1,22 @@
+{
+  "_comment": "Recipe format v2 (portrait single card) — see docs/card-structure-schema.md. GEOMETRY IS NOT YET CALIBRATED: card.words and card.title are empty placeholders for Agent C's single-card clean-vs-filled detector to fill in. themes.json keeps grapefruit at calibrated:false / visibility:private until it does, so nothing renders against these empty slots.",
+  "theme": "grapefruit",
+  "format": 2,
+  "viewBox": [0, 0, 223.92, 312],
+  "card": {
+    "cell": [0, 0, 223.92, 312],
+    "words": [],
+    "title": {
+      "2": [],
+      "3": [],
+      "4": [],
+      "5": [],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": []
+    }
+  },
+  "back": null,
+  "photo": null
+}
