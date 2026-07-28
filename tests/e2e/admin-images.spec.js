@@ -33,7 +33,7 @@ test.describe('admin gallery page', () => {
     expect(hitAdmin).toBe(false);
   });
 
-  test('offers all four base items for EVERY design (boardless board is empty, uploadable) + default flags', async ({
+  test('offers all five base items for EVERY design (unshipped slots are empty, uploadable) + default flags', async ({
     page,
   }) => {
     await stubGet(page, {});
@@ -42,19 +42,27 @@ test.describe('admin gallery page', () => {
 
     await expect(page.locator('.design')).toHaveCount(7);
 
-    // posttrip ships a board → 4 base items (store/front/back/board).
+    // Five base slots: store/front/back/photo/board. posttrip ships a board.
     const posttripBase = page.locator('.item[data-design="posttrip"][data-type="base"]');
-    await expect(posttripBase).toHaveCount(4);
+    await expect(posttripBase).toHaveCount(5);
     await expect(page.locator('.item[data-design="posttrip"][data-key="board"]')).toHaveCount(1);
 
     // kids ships NO board, but the board slot is STILL offered so the owner can
     // upload one (#159). It starts as an empty "upload a board" placeholder.
-    await expect(page.locator('.item[data-design="kids"][data-type="base"]')).toHaveCount(4);
+    await expect(page.locator('.item[data-design="kids"][data-type="base"]')).toHaveCount(5);
     const kidsBoard = page.locator('.item[data-design="kids"][data-key="board"]');
     await expect(kidsBoard).toHaveCount(1);
     await expect(kidsBoard.locator('.preview-empty')).toBeVisible();
     await expect(kidsBoard.locator('button[data-act="upload"]')).toBeVisible();
     await expect(kidsBoard.locator('button[data-act="reset"]')).toBeDisabled();
+
+    // The PHOTO CARD slot behaves the same way. No design ships one yet (it needs
+    // the portrait card artwork plus the generic Dugri fallback art), so it starts
+    // empty for every design — and the owner can still upload a picture for it.
+    const photo = page.locator('.item[data-design="posttrip"][data-key="photo"]');
+    await expect(photo).toHaveCount(1);
+    await expect(photo.locator('.preview-empty')).toBeVisible();
+    await expect(photo.locator('button[data-act="reset"]')).toBeDisabled();
 
     // Default flags: the store cover shows on the grid but NOT the product page;
     // the card front shows on both.

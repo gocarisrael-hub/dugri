@@ -12,8 +12,11 @@ import {
   photosFromOverride,
   galleryShots,
   shouldShowBoard,
+  galleryAspect,
+  LANDSCAPE_ASPECT,
+  PORTRAIT_ASPECT,
 } from '../../site/js/product.js';
-import { designShipsBoard } from '../../site/js/designs.js';
+import { designShipsBoard, DESIGNS } from '../../site/js/designs.js';
 
 const P1 = '/content-uploads/aaaaaaaaaaaaaaaa.png';
 const P2 = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
@@ -324,5 +327,36 @@ describe('board "ships a board" is ONE shared field (admin ↔ product agree)', 
     expect(designShipsBoard(null)).toBe(false);
     expect(designShipsBoard({})).toBe(false);
     expect(designShipsBoard({ thumbs: null })).toBe(false);
+  });
+});
+
+// The gallery box's shape follows the design's CARD ERA. A legacy design's
+// front/back renders are landscape A4 sheets of 8 cards (1.41); a portrait
+// card-structure design's are single 223.92×312 cards (0.72), which contained in
+// the landscape box would show at ~51% of the frame width. See galleryAspect for
+// why a portrait design gets a SQUARE box rather than a portrait one.
+describe('galleryAspect — picture-box shape per card era', () => {
+  it('keeps the landscape sheet box for a design still on the legacy artwork', () => {
+    expect(galleryAspect({ id: 'birthday' })).toBe(LANDSCAPE_ASPECT);
+    expect(galleryAspect({ id: 'birthday', portrait: false })).toBe(LANDSCAPE_ASPECT);
+  });
+
+  it('gives a portrait card-structure design a square box', () => {
+    expect(galleryAspect({ id: 'grapefruit', portrait: true })).toBe(PORTRAIT_ASPECT);
+  });
+
+  it('falls back to the landscape box for a missing/garbage design (never throws)', () => {
+    expect(galleryAspect(null)).toBe(LANDSCAPE_ASPECT);
+    expect(galleryAspect(undefined)).toBe(LANDSCAPE_ASPECT);
+    expect(galleryAspect({})).toBe(LANDSCAPE_ASPECT);
+  });
+
+  it('EVERY shipped design is still on the landscape artwork — none re-exported yet', () => {
+    // Guards the migration: the day a design's artwork is re-exported into the
+    // portrait structure, this flips and its store tile + gallery box change shape.
+    // If this test fails, that is the change — confirm the renders were regenerated
+    // (scripts/render-design-assets.mjs) before updating it.
+    expect(DESIGNS.filter((d) => d.portrait).map((d) => d.id)).toEqual([]);
+    expect(DESIGNS.every((d) => galleryAspect(d) === LANDSCAPE_ASPECT)).toBe(true);
   });
 });

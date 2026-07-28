@@ -334,22 +334,33 @@
         store: 'תמונת חנות',
         front: 'קלף',
         back: 'גב הקלף',
+        photo: 'קלף התמונות',
         board: 'לוח המשחק',
       };
+      // The slot's noun INSIDE the "you can upload one yourself" placeholder
+      // sentence — SLOT_LABELS reads as a heading and is clumsy mid-sentence.
+      const SLOT_UPLOAD_NOUN = { photo: 'קלף תמונות', board: 'לוח' };
       const DESIGN_BY_ID = {};
       for (const d of DESIGNS) DESIGN_BY_ID[d.id] = d;
 
-      // The base slots a design OFFERS in the manager: store/front/back/board for
-      // EVERY design. The board slot is always offered so a boardless design (e.g.
-      // kids) can still have a board picture UPLOADED (#159) — it just starts empty.
+      // The base slots a design OFFERS in the manager: store/front/back/photo/board
+      // for EVERY design. Board and photo are always offered so a design that ships
+      // neither (a boardless design like kids — #159; any design still on the legacy
+      // landscape art, which has no photo card) can still have that picture
+      // UPLOADED — the slot just starts empty. Keep in sync with BASE_SLOTS in
+      // server/design-images.js and DEFAULT_ORDER in site/js/design-images.js.
       function availBase() {
-        return ['store', 'front', 'back', 'board'];
+        return ['store', 'front', 'back', 'photo', 'board'];
       }
       // Whether the design SHIPS a static render for a base slot (store/front/back
-      // always; board only via designShipsBoard). A slot that doesn't ship has no
-      // default preview — it shows an empty "upload a picture" state until overridden.
+      // always; board via designShipsBoard, photo via its thumb — the same canonical
+      // per-slot indicator the buyer-facing reader uses). A slot that doesn't ship
+      // has no default preview — it shows an empty "upload a picture" state until
+      // overridden.
       function shipsBase(d, slot) {
-        return slot === 'board' ? designShipsBoard(d) : true;
+        if (slot === 'board') return designShipsBoard(d);
+        if (slot === 'photo') return !!(d && d.thumbs && d.thumbs.photo);
+        return true;
       }
       // Default per-surface visibility of a base slot (store hidden on the product
       // page by default; everything else shown). Matches the server + reader rule.
@@ -396,8 +407,9 @@
         if (isBase) {
           const override = g.base && g.base[keyName] && g.base[keyName].img;
           const ships = shipsBase(d, keyName);
-          // A boardless design's board slot has no shipped render: it starts EMPTY
-          // (an "upload a board" placeholder) until the owner uploads one (#159).
+          // A slot the design doesn't ship (a boardless design's board — #159; a
+          // photo card on a design still on the legacy landscape art) has no render:
+          // it starts EMPTY, an "upload one" placeholder, until the owner uploads.
           const src = override || (ships ? defaultSrc(d, keyName) : '');
           const badge = override
             ? '<span class="badge custom">מותאם</span>'
@@ -406,7 +418,7 @@
               : '<span class="badge default">אין תמונה</span>';
           const preview = src
             ? `<img class="preview" alt="${esc(SLOT_LABELS[keyName] || keyName)}" src="${esc(src)}" onerror="this.style.visibility='hidden'" />`
-            : `<div class="preview preview-empty">אפשר להעלות לוח משלכם</div>`;
+            : `<div class="preview preview-empty">אפשר להעלות ${esc(SLOT_UPLOAD_NOUN[keyName] || 'תמונה')} משלכם</div>`;
           const uploadLabel = src ? 'החלף תמונה' : 'העלה תמונה';
           return `
             <div class="item" data-design="${esc(d.id)}" data-key="${esc(keyName)}" data-type="base">

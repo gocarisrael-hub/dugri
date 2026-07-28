@@ -168,11 +168,18 @@ export const DESIGNS = Object.entries(GENERATED).map(([id, g]) => ({
   // that have no anchors) so the page tint can switch even when the SVG can't.
   accent: g.accent || null,
   // `thumb` is the small picker thumbnail (= front) used by options.html; `thumbs`
-  // is the per-product raster map {front,back[,board]} the templates gallery
-  // carousel flips through. board is omitted for boardless designs (kids).
+  // is the per-product raster map {front,back[,board][,photo]} the templates gallery
+  // carousel flips through. board is omitted for boardless designs (kids); photo
+  // only exists for portrait designs whose photo-card art has shipped.
   thumb: g.thumb || null,
   thumbs: g.thumbs || null,
   products: g.products,
+  // True once this design's artwork has been re-exported into the PORTRAIT
+  // single-card structure (docs/card-structure-schema.md): its front/back renders
+  // are then ONE 223.92×312 card each instead of a landscape A4 sheet of 8. The
+  // storefront uses it only to size the picture box (js/product.js galleryAspect,
+  // products.html gridAspect) — nothing else branches on it.
+  portrait: !!g.portrait,
   // Visibility from the mapped theme (themes.json). Private designs are hidden
   // from the public grid until unlocked with an access code; `public` is the
   // convenient boolean the public lists filter on.

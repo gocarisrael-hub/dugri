@@ -18,9 +18,10 @@
 // the design's ORIGINAL look. 'fixed' designs (neon, empty anchors) already
 // carry literal colours and need no style.
 //
-// It also (re)writes the per-design `thumbs:{front,back[,board]}` map into
+// It also (re)writes the per-design `thumbs:{front,back[,photo][,board]}` map into
 // site/js/designs.generated.js, keeping `thumb` (= front picker thumb) intact so
-// options.html's design picker keeps working unchanged.
+// options.html's design picker keeps working unchanged. `photo` (the deck's photo
+// card) is rendered elsewhere — see the carry-through note in the loop below.
 //
 // Usage:
 //   node scripts/product-thumbs.mjs            # render only MISSING thumbs, refresh manifest
@@ -151,6 +152,16 @@ for (const [id, g] of Object.entries(GENERATED)) {
     const svg = paintOriginal(readFileSync(svgPath, 'utf8'), g.anchors);
     jobs.push({ label: `${id}-${kind}`, svg, outPath });
   }
+  // Kinds this script does NOT render — today only `photo`, the deck's photo card,
+  // which has no `products.*` SVG because it comes from the template's portrait
+  // card artwork (scripts/render-design-assets.mjs). Carry an already-rendered one
+  // through instead of dropping it: `thumbs.photo` is what tells the storefront the
+  // design ships a photo-card slide at all, so losing it here would silently remove
+  // that slide from the gallery.
+  for (const [kind, rel] of Object.entries(g.thumbs || {})) {
+    if (thumbsById[id][kind] || !existsSync(resolve(SITE, rel))) continue;
+    thumbsById[id][kind] = rel;
+  }
 }
 
 if (jobs.length) {
@@ -172,12 +183,16 @@ for (const [id, g] of Object.entries(GENERATED)) {
   if (p.board) prodParts.push(`board:'${p.board}'`);
   const t = thumbsById[id];
   const thumbParts = [`front:'${t.front}'`, `back:'${t.back}'`];
+  if (t.photo) thumbParts.push(`photo:'${t.photo}'`);
   if (t.board) thumbParts.push(`board:'${t.board}'`);
   const key = `${id}:`.padEnd(14);
   const accentPart = g.accent ? `accent:'${g.accent}', ` : '';
+  // Carried through untouched (tokenize-svg.mjs owns setting it) — dropping it
+  // would silently resize the storefront picture box back to the landscape sheet.
+  const portraitPart = g.portrait ? 'portrait:true, ' : '';
   js +=
     `  ${key}{ anchors:[${anchorsStr}], hasRaster:${g.hasRaster}, ` +
-    `recolor:'${g.recolor}', ${accentPart}thumb:'${g.thumb}', ` +
+    `recolor:'${g.recolor}', ${accentPart}${portraitPart}thumb:'${g.thumb}', ` +
     `thumbs:{ ${thumbParts.join(', ')} }, products:{ ${prodParts.join(', ')} } },\n`;
 }
 js += '};\n';

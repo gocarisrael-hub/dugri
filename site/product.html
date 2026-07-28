@@ -230,9 +230,15 @@
       #galleryTrack.carousel-track {
         gap: 0;
       }
+      /* The box shape follows the design's CARD ERA (js/product.js galleryAspect
+         sets --gallery-aspect on .pdp-gallery): a legacy design's front/back
+         renders are LANDSCAPE A4 sheets of 8 cards, a portrait card-structure
+         design's are single 0.72 cards and get a square box. The default here is
+         the landscape sheet, so a page that never resolves a design looks exactly
+         as it always has. */
       .pdp-gallery-slide {
         width: 100%;
-        aspect-ratio: 841.92 / 595.5;
+        aspect-ratio: var(--gallery-aspect, 841.92 / 595.5);
         background: var(--section);
       }
       /* contain (not cover) so the whole product photo shows, never cropped. */

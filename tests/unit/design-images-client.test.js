@@ -132,6 +132,57 @@ describe('galleryFor — resolved per-surface gallery', () => {
   });
 });
 
+// The PHOTO CARD slide — the deck's 104th front, shown on the storefront with the
+// generic Dugri fallback art. Only a PORTRAIT card-structure design renders one,
+// and only once that art ships, so the slot behaves exactly like the board: present
+// when the design ships the render (thumbs.photo) or the owner uploaded one, absent
+// otherwise. No live design ships one yet, so today's gallery is unchanged.
+describe('galleryFor — the photo-card slot', () => {
+  const PORTRAIT = { id: 'grapefruit', thumbs: { front: 'f', back: 'b', photo: 'ph' } };
+
+  it('sits between the card renders and the board', () => {
+    const boarded = {
+      id: 'grapefruit',
+      thumbs: { front: 'f', back: 'b', photo: 'ph', board: 'g' },
+    };
+    expect(keys(galleryFor({}, boarded, 'products'))).toEqual([
+      'store',
+      'front',
+      'back',
+      'photo',
+      'board',
+    ]);
+    expect(keys(galleryFor({}, PORTRAIT, 'product'))).toEqual(['front', 'back', 'photo']);
+    expect(galleryFor({}, PORTRAIT, 'product').find((i) => i.key === 'photo')).toMatchObject({
+      src: baseSrc('grapefruit', 'photo'),
+      fallback: baseSrc('grapefruit', 'photo'),
+      droppable: false,
+    });
+  });
+
+  it('is absent for a design that ships no photo card (every design today)', () => {
+    expect(keys(galleryFor({}, BOARDED, 'product'))).not.toContain('photo');
+    expect(keys(galleryFor({}, BOARDLESS, 'products'))).not.toContain('photo');
+  });
+
+  it('is surfaced by an owner override alone, tagged droppable (no shipped render)', () => {
+    const map = { posttrip: { base: { photo: { img: P1 } } } };
+    const photo = galleryFor(map, BOARDED, 'product').find((i) => i.key === 'photo');
+    expect(photo).toMatchObject({ src: P1, fallback: '', droppable: true });
+  });
+
+  it('ignores an off-origin photo override rather than surfacing a bogus slide', () => {
+    const map = { posttrip: { base: { photo: { img: 'https://evil.example/x.png' } } } };
+    expect(keys(galleryFor(map, BOARDED, 'product'))).not.toContain('photo');
+  });
+
+  it('honours the owner hiding it per surface', () => {
+    const map = { grapefruit: { base: { photo: { onProduct: false } } } };
+    expect(keys(galleryFor(map, PORTRAIT, 'product'))).toEqual(['front', 'back']);
+    expect(keys(galleryFor(map, PORTRAIT, 'products'))).toContain('photo');
+  });
+});
+
 describe('loadDesignImages — timeout-bounded + fail-safe (never rejects)', () => {
   const realFetch = global.fetch;
   afterEach(() => {

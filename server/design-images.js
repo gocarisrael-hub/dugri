@@ -1,9 +1,12 @@
 // design-images.js — per-design GALLERY configuration (owner self-serve).
 //
-// Each design ships three required "base" renders under site/assets/designs/<id>/:
+// Each design ships two required "base" renders under site/assets/designs/<id>/:
 //   gallery-front.webp  — the card front
 //   gallery-back.webp   — the card back
-//   gallery-board.webp   — the game board (only designs that ship a board)
+// and up to two optional ones:
+//   gallery-board.webp  — the game board (only designs that ship a board)
+//   gallery-photo.webp  — the deck's PHOTO CARD, rendered with the generic Dugri
+//                         fallback art (only PORTRAIT card-structure designs)
 // plus a store cover (store.webp). Those are baked into the repo and are the
 // DEFAULT gallery. This store lets the owner CURATE each design's gallery WITHOUT
 // a deploy:
@@ -22,7 +25,7 @@
 // Persisted store shape — only DEVIATIONS from the defaults are kept, so a design
 // the owner never touched is simply absent (the client applies full defaults):
 //   { [designId]: {
-//       base:   { [slot]: { img?, onProducts?, onProduct? } },  // slot: store|front|back|board
+//       base:   { [slot]: { img?, onProducts?, onProduct? } },  // slot: store|front|back|photo|board
 //       photos: [ { id, img, name, onProducts, onProduct } ],   // owner extras
 //       order:  [ key, ... ]   // display order; keys = base slots + photo ids
 //   } }
@@ -38,8 +41,10 @@ const FILE = path.join(DATA_DIR, 'design-images.json');
 
 // A design id: starts alphanumeric, then kebab, ≤41 chars (matches the catalog).
 const DESIGN_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
-// The four base (shipped-render) slots, in their default display order.
-const BASE_SLOTS = ['store', 'front', 'back', 'board'];
+// The base (shipped-render) slots, in their default display order. MUST match
+// DEFAULT_ORDER in site/js/design-images.js — a slot the client orders but the
+// server rejects would silently drop the owner's setting for it on save.
+const BASE_SLOTS = ['store', 'front', 'back', 'photo', 'board'];
 const BASE_SLOT_SET = new Set(BASE_SLOTS);
 // A stored path must be EXACTLY one content.saveImageBytes produced (16-hex
 // content hash + a raster ext). Validating on write means a picture can never

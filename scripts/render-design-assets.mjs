@@ -33,10 +33,29 @@
 // in site/assets/designs, so it runs in any checkout/CI without the Canva staging
 // sources.
 //
+// PORTRAIT CARD STRUCTURE (docs/card-structure-schema.md). The deck is moving
+// from landscape A4 sheets of 8 cards to PORTRAIT SINGLE CARDS
+// (viewBox "0 0 223.92 312", ~0.72 aspect). A migrated template keeps its
+// artwork as <slug>/clean/{1..9}.svg — 1 = the card BACK, 2–9 = the eight front
+// styles — so a migrated design's gallery renders ONE representative card per
+// slide instead of a whole sheet:
+//   clean/1.svg -> gallery-back.webp   the portrait card back
+//   clean/2.svg -> gallery-front.webp  the HERO card (one representative front)
+//   photo card  -> gallery-photo.webp  the 104th front, which carries the buyer's
+//                                      four pawn photos — ALWAYS rendered here
+//                                      with the GENERIC Dugri fallback art, never
+//                                      with a real customer's photos.
+// Only designs listed in PORTRAIT below take that path; every other design still
+// renders from the committed landscape sheets in site/assets/designs, unchanged.
+// The board is NOT part of the 1–9 set and keeps rendering from its site SVG.
+//
 // NOTE. store.webp is a 3D "beauty shot" mockup (cards + board on a surface), NOT
 // a flat board render, and is authored outside this repo — this script does not
 // and cannot regenerate it. Every shipped store.webp already renders the logo
 // correctly, so none needed fixing.
+// ⚠ store.webp is now STALE for portrait designs: the hand-authored beauty shots
+// still show the old LANDSCAPE cards. Nothing here can fix that — the owner has
+// to re-shoot them. Accepted deliberately; see the portrait-gallery PR.
 //
 // Usage:
 //   node scripts/render-design-assets.mjs                       # render MISSING gallery assets
@@ -47,14 +66,15 @@
 // Fails loudly if a renderer is missing or a result comes out near-blank, so a
 // blank/broken gallery image can never ship.
 
-import { readFileSync, existsSync, statSync, rmSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { readFileSync, existsSync, mkdirSync, statSync, rmSync } from 'node:fs';
+import { basename, dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const SITE = resolve(ROOT, 'site');
+const TEMPLATES = resolve(ROOT, 'resources/canva/templates');
 
 const GALLERY_W = 1100; // final webp width (px) — matches the shipped gallery assets
 const MIN_BYTES = 2500; // near-blank guard
@@ -107,6 +127,102 @@ export function healMaskIds(svgText) {
   return { svg: svgText, healed: null };
 }
 
+// ---- portrait card structure -----------------------------------------------
+// Storefront design id -> its template directory under resources/canva/templates.
+// A design is listed here ONLY once its artwork has been re-exported into the
+// numbered portrait structure (clean/1..9.svg). Everything not listed keeps the
+// legacy landscape-sheet renders — which is why the seven live designs are
+// untouched by this file until the owner re-exports them one at a time.
+//
+// `grapefruit` is the first (and today the only) migrated template. It is NOT yet
+// a storefront product — it has no generator theme in generator/themes.json, so it
+// is deliberately absent from the design catalog. Its renders are STAGED here so
+// the portrait pipeline is proven end-to-end and so the pictures are ready the day
+// the owner promotes it. tests/e2e/product-portrait.spec.js drives the real
+// storefront against exactly these files.
+export const PORTRAIT = {
+  grapefruit: 'grapefruit',
+};
+
+// Which numbered card stands in for each gallery slide. 1 = back, 2–9 = the eight
+// fronts; front 2 is the representative HERO card. (An "all eight styles" contact
+// sheet was considered and dropped: on grapefruit, fronts 2–8 render pixel
+// identical — they differ only by Canva's randomised element ids — so the slide
+// would have shown eight copies of one card. Revisit when a template ships fronts
+// that genuinely differ.)
+const PORTRAIT_CARD = { back: 1, front: 2 };
+
+// The PHOTO CARD's artwork, in preference order, relative to the template dir and
+// then to the shared fallback dir. It must ALWAYS be the generic Dugri art — this
+// picture is a storefront advert, so a real customer's four photos must never be
+// rendered into it.
+const PHOTO_CARD_SOURCES = [
+  (dir) => resolve(dir, 'clean/photo.svg'), // per-theme photo-card template
+  () => resolve(TEMPLATES, '_shared/photo-fallback/photo-card.svg'), // shared generic
+];
+
+const DATA_MIME = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+};
+
+/**
+ * Read a portrait card SVG with its DE-DUPLICATED images inlined.
+ *
+ * Migrated artwork stores each shared background raster ONCE at
+ * <slug>/assets/<sha16>.png and references it as href="../assets/<sha16>.png"
+ * (docs/card-structure-schema.md §4) — grapefruit's eight fronts share one 5 MB
+ * PNG, so this is what keeps the template at 9 MB instead of 124 MB.
+ *
+ * That relative reference resolves fine over HTTP, but this renderer hands the
+ * SVG to page.setContent(), whose document has NO base URL: a relative href has
+ * nothing to resolve against, and rewriting it to file:// only gets it blocked as
+ * a local-file subresource. Rewriting to file:// was tried and the card came out
+ * with visible garbage where the grapefruit pattern should be — and the near-blank
+ * byte guard did NOT catch it, because the card frame alone is far bigger than
+ * MIN_BYTES. So a bad reference here ships a broken picture silently; always LOOK
+ * at a new render. Inlining as a data: URI is the only form that survives
+ * setContent, and it is byte-for-byte the raster the SVG shipped with.
+ *
+ * A no-op on artwork that was never de-duplicated, so it is always the correct
+ * way to read a card SVG (mirrors generator/card_assets.read_svg on the Python
+ * side).
+ */
+export function inlineCardAssets(svgText, svgPath, readFile = readFileSync) {
+  const base = dirname(svgPath);
+  return svgText.replace(/href="(\.\.\/assets\/[^"]+)"/g, (whole, rel) => {
+    const abs = resolve(base, rel);
+    let bytes;
+    try {
+      bytes = readFile(abs);
+    } catch {
+      // Missing asset: leave the reference alone so the near-blank guard / a
+      // visual check surfaces it, rather than silently swallowing the error.
+      console.warn(`  [warn] card asset not found: ${rel} (from ${basename(svgPath)})`);
+      return whole;
+    }
+    const mime = DATA_MIME[extname(abs).toLowerCase()] || 'image/png';
+    return `href="data:${mime};base64,${bytes.toString('base64')}"`;
+  });
+}
+
+/** Read a card SVG from disk, assets inlined. */
+function readCardSvg(svgPath) {
+  return inlineCardAssets(readFileSync(svgPath, 'utf8'), svgPath);
+}
+
+/** The photo card's source SVG for a template dir, or '' when none exists yet. */
+export function photoCardSource(templateDir, exists = existsSync) {
+  for (const pick of PHOTO_CARD_SOURCES) {
+    const p = pick(templateDir);
+    if (exists(p)) return p;
+  }
+  return '';
+}
+
 // ---- ImageMagick (PNG → webp) ----------------------------------------------
 let magick = null;
 try {
@@ -150,6 +266,9 @@ async function render(jobs) {
   try {
     const page = await browser.newPage({ deviceScaleFactor: 2 });
     for (const { label, svg, outPath } of jobs) {
+      // A design rendering for the first time (a newly migrated portrait template)
+      // has no assets/designs/<id>/ dir yet.
+      mkdirSync(dirname(outPath), { recursive: true });
       await page.setViewportSize({ width: GALLERY_W * 2, height: GALLERY_W * 2 });
       await page.setContent(
         `<!doctype html><body style="margin:0;background:#fff">` +
@@ -191,21 +310,66 @@ async function main() {
   const { GENERATED } = await import('../site/js/designs.generated.js');
 
   const jobs = [];
+  const wanted = (id, kind) => {
+    if (ONLY_DESIGN && id !== ONLY_DESIGN) return null;
+    if (ONLY_KIND && kind !== ONLY_KIND) return null;
+    const rel = `assets/designs/${id}/gallery-${kind}.webp`;
+    const outPath = resolve(SITE, rel);
+    // Already rendered (and not near-blank)? Leave it — --force re-renders.
+    if (!FORCE && existsSync(outPath) && statSync(outPath).size >= MIN_BYTES) return null;
+    return { rel, outPath };
+  };
+
+  // PORTRAIT designs first: their card slides come from the template's numbered
+  // artwork, NOT from the landscape sheets in site/assets/designs. A portrait
+  // design may not be in the catalog at all yet (grapefruit), so this loop is
+  // driven by PORTRAIT rather than by GENERATED.
+  for (const [id, slug] of Object.entries(PORTRAIT)) {
+    const dir = resolve(TEMPLATES, slug);
+    if (!existsSync(dir)) {
+      // The artwork lands via the asset-migration PR; until then there is simply
+      // nothing to render. Never fatal — the rest of the gallery must still build.
+      console.log(`  [skip] ${id}: portrait artwork missing (${dir})`);
+      continue;
+    }
+    for (const [kind, n] of Object.entries(PORTRAIT_CARD)) {
+      const want = wanted(id, kind);
+      if (!want) continue;
+      const svgPath = resolve(dir, `clean/${n}.svg`);
+      if (!existsSync(svgPath)) {
+        console.log(`  [skip] ${id}-${kind}: no clean/${n}.svg`);
+        continue;
+      }
+      jobs.push({ label: `${id}-${kind}`, svg: readCardSvg(svgPath), ...want });
+    }
+    // The photo card is optional: it needs the generic Dugri fallback art, which
+    // ships separately. Without it we render NOTHING — no gallery-photo.webp means
+    // no thumbs.photo, which means the reader simply omits the slide (it never
+    // 404s a missing slide into the carousel).
+    const photoWant = wanted(id, 'photo');
+    if (photoWant) {
+      const src = photoCardSource(dir);
+      if (src) jobs.push({ label: `${id}-photo`, svg: readCardSvg(src), ...photoWant });
+      else console.log(`  [skip] ${id}-photo: no photo-card art yet (see docs/photo-card.md)`);
+    }
+  }
+
   for (const [id, g] of Object.entries(GENERATED)) {
     if (ONLY_DESIGN && id !== ONLY_DESIGN) continue;
-    const kinds = ['front', 'back', ...(g.products.board ? ['board'] : [])];
+    // A portrait design's front/back come from the loop above; only its BOARD
+    // (which is not part of the 1–9 card set) still renders from the site SVG.
+    const cards = PORTRAIT[id] ? [] : ['front', 'back'];
+    const kinds = [...cards, ...(g.products.board ? ['board'] : [])];
     for (const kind of kinds) {
-      if (ONLY_KIND && kind !== ONLY_KIND) continue;
-      const rel = `assets/designs/${id}/gallery-${kind}.webp`;
-      const outPath = resolve(SITE, rel);
-      if (!FORCE && existsSync(outPath) && statSync(outPath).size >= MIN_BYTES) continue;
+      const want = wanted(id, kind);
+      if (!want) continue;
       const svgPath = resolve(SITE, g.products[kind]);
       const { svg: healedSvg, healed } = healMaskIds(readFileSync(svgPath, 'utf8'));
       if (healed) {
         console.log(`  [heal] ${id}-${kind}: mask id "${healed.from}" → "${healed.to}"`);
       }
       const svg = paintOriginal(healedSvg, g.anchors);
-      jobs.push({ label: `${id}-${kind}`, svg, outPath, rel });
+      jobs.push({ label: `${id}-${kind}`, svg, ...want });
     }
   }
 

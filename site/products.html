@@ -203,12 +203,15 @@
         display: block;
       }
       /* the picture box. object-fit:contain shows the WHOLE picture, never cropped;
-         any letterbox falls back to the tile's --surface background. */
+         any letterbox falls back to the tile's --surface background.
+         --card-aspect is set once on the GRID (see gridAspect below) so every tile
+         keeps the SAME shape: the landscape default while the catalog is all legacy
+         A4 sheets, square once any design ships portrait single cards. */
       .product-card__media {
         position: relative;
         display: block;
         width: 100%;
-        aspect-ratio: 841.92 / 595.5;
+        aspect-ratio: var(--card-aspect, 841.92 / 595.5);
         border-radius: var(--radius);
         overflow: hidden;
         background: var(--surface);
@@ -688,6 +691,19 @@
         return article;
       }
 
+      // ONE grid, ONE tile shape. A legacy design's card renders are LANDSCAPE A4
+      // sheets of 8 cards (1.41); a portrait card-structure design's are single
+      // cards (0.72). Contained in the landscape box a portrait card would show at
+      // ~51% of the tile width, but giving each card its OWN aspect would leave the
+      // grid ragged — captions at different heights across a row. So the shape
+      // follows the CATALOG: all-legacy keeps today's landscape tile exactly, and
+      // the moment any design ships portrait artwork every tile becomes square (the
+      // same compromise the detail gallery makes — see js/product.js galleryAspect).
+      function gridAspect() {
+        if (allDesigns.some((d) => d && d.portrait))
+          grid.style.setProperty('--card-aspect', '1 / 1');
+      }
+
       function renderGrid(map) {
         try {
           if (!Array.isArray(allDesigns) || !allDesigns.length) throw new Error('empty catalog');
@@ -701,6 +717,7 @@
             }
           }
           if (!frag.childNodes.length) throw new Error('no cards rendered');
+          gridAspect();
           grid.replaceChildren(frag);
         } catch (err) {
           // Graceful degradation: never leave a blank page — offer the wizard.

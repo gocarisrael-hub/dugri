@@ -2408,7 +2408,7 @@ app.put('/api/admin/content/photos', (req, res) => {
 
 // --- Per-design GALLERY (server/design-images.js) ----------------------------
 // The owner CURATES each design's gallery WITHOUT a deploy — same self-serve
-// pattern as the content editor: REPLACE a base render (store|front|back|board),
+// pattern as the content editor: REPLACE a base render (store|front|back|photo|board),
 // ADD named extra photos, toggle each picture's visibility per surface (products
 // grid / product detail), and reorder. Storage is REUSED from content.js: a
 // picture only ever holds a "/content-uploads/<hash>.<ext>" path THIS server
@@ -2457,7 +2457,7 @@ app.get('/api/design-images', (req, res) => {
   res.json({ images: designImages.getAll() });
 });
 
-// Admin: REPLACE a base render (store|front|back|board) with an uploaded picture.
+// Admin: REPLACE a base render (store|front|back|photo|board) with an uploaded picture.
 // Multipart (fields designId, slot + a file part). A displaced prior override is
 // reclaimed. Auth runs on ?key= BEFORE buffering megabytes.
 app.post(
