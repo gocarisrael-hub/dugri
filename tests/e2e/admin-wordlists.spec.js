@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { FIXTURE_SENTINEL } from './tpl-fixture.js';
 
 // The seed word-pool ("wordlists") admin screen, behind the admin key. The e2e
 // server runs with ADMIN_KEY=dugri-admin and DATA_DIR=.e2e-data (throwaway), so
@@ -19,8 +20,9 @@ test.describe('admin wordlists', () => {
     const generic = page.locator('.list-item[data-item="generic-350.txt"]');
     await expect(generic).toBeVisible();
     await expect(generic.locator('.li-meta')).toContainText('350 מילים');
-    // the read-only theme -> pool table is populated
+    // the design -> pool table is populated, each row an editable picker
     await expect(page.locator('#links tr')).not.toHaveCount(0);
+    await expect(page.locator('#links select[data-link]').first()).toBeVisible();
   });
 
   test('the owner can create a list, edit it, and it persists across a reload', async ({
@@ -84,5 +86,46 @@ test.describe('admin wordlists', () => {
     await link.click();
     await expect(page).toHaveURL(/admin-wordlists\.html\?key=/);
     await expect(page.locator('#app')).toBeVisible();
+  });
+});
+
+// Re-pointing a design at another seed pool WRITES to the shared throwaway
+// config, so this follows the same discipline as the template mutations: serial,
+// one project only (the device matrix shares one server, so two browsers would
+// race on the same theme entry), and refused outright unless the live server is
+// the fixture-owned one.
+test.describe('admin wordlists — design → pool linkage (fixture only, single project)', () => {
+  test.describe.configure({ mode: 'serial' });
+  const ONLY = 'Desktop Chrome';
+
+  test.beforeEach(async ({ request }, testInfo) => {
+    test.skip(testInfo.project.name !== ONLY, 'mutating test runs on one project only');
+    const r = await request.get(`/api/admin/templates?key=${KEY}`);
+    const body = await r.json().catch(() => ({}));
+    const usingFixture = (body.templates || []).some((t) => t.key === FIXTURE_SENTINEL);
+    test.skip(
+      !usingFixture,
+      'server is not the throwaway-fixture server (reused dev server?) — refusing to touch real config'
+    );
+  });
+
+  test('the owner picks a pool for one design and it survives a reload', async ({ page }) => {
+    await page.goto(`/admin-wordlists.html?key=${KEY}`);
+    await expect(page.locator('#app')).toBeVisible();
+
+    const sel = page.locator('select[data-link="bachelorette"]');
+    await expect(sel).toBeVisible();
+    await sel.selectOption('family-350.txt');
+    await expect(page.locator('[data-linkmsg="bachelorette"]')).toContainText('נשמר');
+
+    // Persisted server-side, not just in the DOM.
+    await page.reload();
+    await expect(page.locator('select[data-link="bachelorette"]')).toHaveValue('family-350.txt');
+
+    // And back to the generic default — the empty option, which stores NO pool.
+    await page.locator('select[data-link="bachelorette"]').selectOption('');
+    await expect(page.locator('[data-linkmsg="bachelorette"]')).toContainText('נשמר');
+    await page.reload();
+    await expect(page.locator('select[data-link="bachelorette"]')).toHaveValue('');
   });
 });

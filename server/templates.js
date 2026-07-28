@@ -26,6 +26,10 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const store = require('./template-store');
+// Only for validating a `wordlist` setting against the pools that actually
+// resolve. wordlists -> validate -> template-store, so there is no cycle back
+// here; templates is required by index.js alone.
+const wordlists = require('./wordlists');
 
 const REPO_ROOT = path.join(__dirname, '..');
 
@@ -1601,6 +1605,30 @@ function updateTemplateSettings({ root, key, patch }) {
   if ('extra_fields' in p) {
     changed.extra_fields = normalizeExtraFields(p.extra_fields);
   }
+  // Which seed pool tops this template's orders up to a full deck. Until now the
+  // link lived only in the shipped themes.json — baked into the image, so it was
+  // surfaced read-only on the wordlists screen and could not be changed without a
+  // deploy. It rides the same whole-entry copy-on-write as every other setting
+  // here, which is what makes it survive one: the generator reads the merged
+  // entry from the owner store (generator/config.py), so an override takes effect
+  // on the next order with no change on the Python side.
+  //
+  // Empty/null means "no pool named" — the key is dropped so the theme falls back
+  // to the shared generic pool, exactly like a shipped theme that omits it.
+  // Anything else must name a pool that actually RESOLVES today: a typo would not
+  // fail anything at generation time (topup treats a missing pool as empty and
+  // quietly ships a shorter deck), so it has to be caught at the write.
+  if ('wordlist' in p) {
+    if (p.wordlist === null || p.wordlist === '') {
+      changed.wordlist = null;
+    } else {
+      const name = wordlists.safeName(p.wordlist);
+      if (!name || !wordlists.resolveWordlist(name)) {
+        return { error: 'unknown wordlist: ' + String(p.wordlist).slice(0, 80), httpStatus: 400 };
+      }
+      changed.wordlist = name;
+    }
+  }
   // Calibration look-pass: title_style / board / back / word_size, and the
   // calibrated flip. Each may arrive alone (tweak one knob) or together (the
   // form's "save + calibrate" action).
@@ -1694,6 +1722,11 @@ function updateTemplateSettings({ root, key, patch }) {
   // word_size:null means "auto" — same as absent; drop the key so themes.json
   // stays as clean as the shipped themes (which simply omit it).
   if ('word_size' in changed && changed.word_size === null) delete entry.word_size;
+  // Same for wordlist:null — "no pool named", i.e. fall back to the generic one.
+  // Dropping the key rather than storing null keeps the owner entry readable as
+  // the shipped entries are, and topup's `cfg.get("wordlist") or GENERIC` treats
+  // absent and null identically anyway.
+  if ('wordlist' in changed && changed.wordlist === null) delete entry.wordlist;
   // Copy-on-write: a calibration saved on a SHIPPED template lands in the owner
   // store as a whole-entry override; the image's themes.json is never touched.
   persistThemeEntry(themesPath, key, entry);
@@ -1710,6 +1743,8 @@ function updateTemplateSettings({ root, key, patch }) {
       board: entry.board || null,
       back: entry.back || null,
       word_size: entry.word_size == null ? null : entry.word_size,
+      // null = names no pool, i.e. the generic fallback.
+      wordlist: entry.wordlist || null,
       calibrated: !!entry.calibrated,
     },
   };

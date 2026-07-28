@@ -41,12 +41,15 @@
 //                volume copy wins. Revertible.
 //   'custom'   — created by the owner; only on the volume.
 //
-// KNOWN GAP (out of scope here, flagged deliberately): generator/themes.json —
-// which holds the theme -> wordlist LINK — is itself baked into the image and
-// has exactly the same ephemerality problem. This module only READS it, so the
-// linkage is surfaced read-only; making it owner-writable is the templates
-// owner's call (server/templates.js updateTemplateSettings does not currently
-// accept a `wordlist` key).
+// THE THEME -> POOL LINK (previously a known gap here, now closed): that link
+// lives in generator/themes.json, which is baked into the image and has exactly
+// the same ephemerality problem as the pools themselves. It is now an ordinary
+// template setting — `wordlist` on updateTemplateSettings (server/templates.js)
+// — so a change rides the template store's whole-entry copy-on-write onto the
+// volume, and the generator reads it through the same overlay (config.py). This
+// module still only READS the linkage (`themeLinks`): the admin wordlists screen
+// renders the picker, but the WRITE goes through the templates route, so there
+// is exactly one code path that validates and persists a theme entry.
 const fs = require('fs');
 const path = require('path');
 const validate = require('./validate');

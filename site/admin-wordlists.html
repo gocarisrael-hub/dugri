@@ -379,14 +379,15 @@
         <div class="panel" style="margin-top: 26px">
           <h2>איזה עיצוב משתמש באיזו רשימה</h2>
           <p class="status" id="linkNote">
-            הקישור בין עיצוב לרשימה נקבע כרגע בקובץ ההגדרות של המחולל (themes.json) ולא ניתן לשינוי
-            מכאן.
+            בוחרים לכל עיצוב מאיזו רשימה יישאבו מילים להשלמת החפיסה. השינוי נשמר בנפח הקבוע ותקף
+            מההזמנה הבאה. "ברירת מחדל" משתמשת ברשימה הכללית.
           </p>
           <table>
             <thead>
               <tr>
                 <th>עיצוב</th>
                 <th>רשימה</th>
+                <th></th>
               </tr>
             </thead>
             <tbody id="links"></tbody>
@@ -482,17 +483,43 @@
             })
             .join('') || '<p class="status">אין עדיין רשימות.</p>';
 
-        qs('links').innerHTML = data.themes
-          .map(
-            (t) =>
-              '<tr><td>' +
-              esc(t.display_he) +
-              '</td><td class="file">' +
-              esc(t.wordlist) +
-              (t.implicit ? ' <span class="badge">ברירת מחדל</span>' : '') +
-              '</td></tr>'
+        qs('links').innerHTML = data.themes.map(linkRowHtml).join('');
+      }
+
+      // One row of the design -> pool table: a select of every pool that exists,
+      // plus an explicit "default" option meaning "name none, use the generic
+      // one". `implicit` themes select that option, so the row shows what the
+      // generator will actually do rather than pretending a pool was chosen.
+      function linkRowHtml(t) {
+        const options = [
+          '<option value=""' + (t.implicit ? ' selected' : '') + '>ברירת מחדל (כללית)</option>',
+        ].concat(
+          data.wordlists.map(
+            (w) =>
+              '<option value="' +
+              esc(w.name) +
+              '"' +
+              (!t.implicit && w.name === t.wordlist ? ' selected' : '') +
+              '>' +
+              esc(w.name) +
+              '</option>'
           )
-          .join('');
+        );
+        return (
+          '<tr><td>' +
+          esc(t.display_he) +
+          '</td><td class="file">' +
+          '<select data-link="' +
+          esc(t.key) +
+          '" aria-label="רשימה עבור ' +
+          esc(t.display_he) +
+          '">' +
+          options.join('') +
+          '</select>' +
+          '</td><td><span class="status" data-linkmsg="' +
+          esc(t.key) +
+          '"></span></td></tr>'
+        );
       }
 
       function editorHtml(w) {
@@ -644,6 +671,32 @@
       });
 
       qs('createBtn').addEventListener('click', createList);
+
+      // Re-point one design at another pool. Saves on change (no separate button
+      // — a single select is its own confirmation) through the template settings
+      // route, which persists the whole theme entry to the owner store so the
+      // choice survives a deploy and the generator reads it on the next order.
+      qs('links').addEventListener('change', async (e) => {
+        const sel = e.target.closest('select[data-link]');
+        if (!sel) return;
+        const themeKey = sel.dataset.link;
+        const msgFor = () =>
+          document.querySelector('[data-linkmsg="' + CSS.escape(themeKey) + '"]');
+        sel.disabled = true;
+        setMsg(msgFor(), 'שומר…');
+        try {
+          await api('POST', '/api/admin/templates/' + encodeURIComponent(themeKey) + '/settings', {
+            wordlist: sel.value || null,
+          });
+          // Reload first — the per-list "used by" counts change with the linkage —
+          // then message the FRESH element, or the re-render would wipe it.
+          await load();
+          setMsg(msgFor(), 'נשמר ✓', 'ok');
+        } catch (err) {
+          setMsg(msgFor(), err.message, 'err');
+          sel.disabled = false;
+        }
+      });
 
       if (!key) {
         qs('noKey').hidden = false;

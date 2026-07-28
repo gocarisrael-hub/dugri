@@ -261,6 +261,34 @@ describe('templates.js overlay with the owner store ACTIVE', () => {
     expect(templates.loadThemes(templates.themesPathFor(root))['ship-a'].calibrated).toBe(true);
   });
 
+  // The point of routing the seed-pool link through template settings: it lands
+  // on the VOLUME, so re-pointing a design at another pool survives a deploy. The
+  // link used to live only in the image's themes.json, where an edit is wiped by
+  // the next deploy — which is why the wordlists screen showed it read-only.
+  it('a SEED-POOL change on a shipped template persists to the volume', () => {
+    expect(readShipped(root)['ship-a'].wordlist).toBeUndefined();
+
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'ship-a',
+      patch: { wordlist: 'bachelorette-350.txt' },
+    });
+    expect(r.error).toBeUndefined();
+
+    // On the volume, as a whole entry — exactly the merged entry the Python
+    // generator reads (config.py applies the same overlay), so topup draws its
+    // filler words from the new pool on the next order.
+    const saved = ownerThemes()['ship-a'];
+    expect(saved.wordlist).toBe('bachelorette-350.txt');
+    expect(saved.slug).toBe('ship-a'); // identity intact — assets still resolve
+
+    // The image is untouched, so the shipped default stays recoverable.
+    expect(readShipped(root)['ship-a'].wordlist).toBeUndefined();
+    expect(templates.loadThemes(templates.themesPathFor(root))['ship-a'].wordlist).toBe(
+      'bachelorette-350.txt'
+    );
+  });
+
   it('loadThemesCached reflects an owner-store write immediately', () => {
     const themesPath = templates.themesPathFor(root);
     expect(templates.loadThemesCached(themesPath)['ship-a'].display_he).toBe('תבנית מובנית');
