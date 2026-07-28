@@ -1,5 +1,6 @@
 // Flat ESLint config for the static site.
-// Two passes: browser ES modules (site/js/** + e2e/unit tests) and Node config files.
+// Three passes: browser ES modules (site/js/** + e2e/unit tests), the CommonJS
+// backend (server/**), and Node config files.
 // Globals are declared inline to avoid an extra `globals` dependency.
 
 const browserGlobals = {
@@ -72,6 +73,37 @@ export default [
       globals: browserGlobals,
     },
     rules: commonRules,
+  },
+  // The backend (CommonJS). Until now server/** matched NO config block, so the
+  // whole backend went unlinted — and a duplicate object key merged to main
+  // unnoticed (two `board_file` entries in one setProduction literal, the second
+  // silently winning). These are the "this is a mistake, not a style opinion"
+  // rules; the pass is clean today, so a new error here means a real defect.
+  {
+    files: ['server/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: {
+        ...nodeGlobals,
+        // Web APIs Node ships as globals and the backend actually uses.
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        fetch: 'readonly',
+        AbortController: 'readonly',
+        TextDecoder: 'readonly',
+        TextEncoder: 'readonly',
+        structuredClone: 'readonly',
+        queueMicrotask: 'readonly',
+      },
+    },
+    rules: {
+      ...commonRules,
+      'no-dupe-keys': 'error',
+      'no-dupe-args': 'error',
+      'no-dupe-else-if': 'error',
+      'no-unreachable': 'error',
+    },
   },
   // Node config files at the repo root.
   {
