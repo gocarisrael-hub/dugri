@@ -577,6 +577,8 @@ describe('templates.js full editing (status / rename / replace)', () => {
       board: null,
       back: null,
       word_size: null,
+      // Names no seed pool → the generic fallback (see the wordlist tests below).
+      wordlist: null,
       calibrated: false,
     });
     const after = templates.loadThemes(templates.themesPathFor(root))['set-x'];
@@ -586,6 +588,60 @@ describe('templates.js full editing (status / rename / replace)', () => {
     expect(after.slug).toBe(before.slug); // identity untouched
     expect(after.dir).toBe(before.dir);
     expect(after.recipe).toBe(before.recipe);
+  });
+
+  // Which seed pool tops a template's orders up to a full deck. This used to be
+  // fixed in the shipped themes.json — i.e. changeable only by a deploy — and the
+  // wordlists screen surfaced it read-only. It is now a normal setting, which is
+  // what puts it on the whole-entry copy-on-write path the generator reads.
+  it('updateTemplateSettings re-points a template at another seed pool', () => {
+    const root = makeScaffold();
+    onboard(root, 'set-wl');
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'set-wl',
+      patch: { wordlist: 'friends-350.txt' },
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.settings.wordlist).toBe('friends-350.txt');
+    // Persisted on the entry — this is the byte the generator reads at topup.
+    const after = templates.loadThemes(templates.themesPathFor(root))['set-wl'];
+    expect(after.wordlist).toBe('friends-350.txt');
+  });
+
+  it('updateTemplateSettings clears the pool back to the generic default', () => {
+    const root = makeScaffold();
+    onboard(root, 'set-wl0');
+    templates.updateTemplateSettings({
+      root,
+      key: 'set-wl0',
+      patch: { wordlist: 'family-350.txt' },
+    });
+    const r = templates.updateTemplateSettings({ root, key: 'set-wl0', patch: { wordlist: null } });
+    expect(r.error).toBeUndefined();
+    expect(r.settings.wordlist).toBe(null);
+    // The KEY is dropped rather than stored as null, so the entry reads like a
+    // shipped theme that simply names no pool (topup: `wordlist or GENERIC`).
+    const after = templates.loadThemes(templates.themesPathFor(root))['set-wl0'];
+    expect('wordlist' in after).toBe(false);
+  });
+
+  it('updateTemplateSettings refuses a pool that does not exist', () => {
+    const root = makeScaffold();
+    onboard(root, 'set-wlx');
+    // A typo here would NOT fail at generation time — topup treats a missing pool
+    // as empty and quietly ships a shorter deck — so it has to be caught on write.
+    for (const bad of ['nope-350.txt', '../../etc/passwd', 'sub/dir.txt', '   ']) {
+      const r = templates.updateTemplateSettings({
+        root,
+        key: 'set-wlx',
+        patch: { wordlist: bad },
+      });
+      expect(r.httpStatus).toBe(400);
+      expect(r.error).toMatch(/unknown wordlist|no valid settings/);
+    }
+    const after = templates.loadThemes(templates.themesPathFor(root))['set-wlx'];
+    expect('wordlist' in after).toBe(false); // nothing partially written
   });
 
   it('updateTemplateSettings rejects invalid values and unknown keys (no partial write)', () => {
