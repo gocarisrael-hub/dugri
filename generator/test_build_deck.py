@@ -78,21 +78,23 @@ def make_store(tmp, card_layout="single"):
         "calibrated": True,
     }
     if card_layout:
-        entry["card_layout"] = card_layout
-        entry["fronts"] = [2, 3, 4, 5, 6, 7, 8, 9]
-        entry["back_index"] = 1
+        # The canonical themes.json shape (docs/card-structure-schema.md): the
+        # deck's back and fronts live in a `cards` block.
+        entry["cards"] = {"back": 1, "fronts": [2, 3, 4, 5, 6, 7, 8, 9]}
     with open(os.path.join(root, "templates", "themes.json"), "w", encoding="utf-8") as f:
         json.dump({"demo": entry}, f)
 
+    # The canonical recipe shape (docs/card-structure-schema.md, "Recipe format
+    # v2"): format 2, per-front titles keyed by front number INSIDE card.title.
     recipe = {
-        "theme": "demo", "layout": "single", "viewBox": [0, 0, W, H],
+        "theme": "demo", "format": 2, "viewBox": [0, 0, W, H],
         "card": {"cell": [0, 0, W, H],
                  "words": [{"x0": 0.12 * W, "y0": (0.46 + i * 0.085) * H,
                             "x1": 0.88 * W, "y1": (0.51 + i * 0.085) * H,
-                            "color": "#333"} for i in range(4)]},
-        "fronts": {str(n): {"title": [{"x0": 0.1 * W, "y0": 0.26 * H,
-                                       "x1": 0.9 * W, "y1": 0.38 * H,
-                                       "color": "#800"}]} for n in range(2, 10)},
+                            "color": "#333"} for i in range(4)],
+                 "title": {str(n): [{"x0": 0.1 * W, "y0": 0.26 * H,
+                                     "x1": 0.9 * W, "y1": 0.38 * H,
+                                     "color": "#800"}] for n in range(2, 10)}},
         "back": {"title": [{"x0": 0.15 * W, "y0": 0.4 * H,
                             "x1": 0.85 * W, "y1": 0.58 * H, "color": "#800"}]},
     }
@@ -267,7 +269,7 @@ def test_a_v1_theme_is_refused_by_the_v2_path():
         try:
             build.deck_document("demo", _csv(tmp), ["שירה"])
         except RuntimeError as e:
-            assert "card_layout" in str(e), e
+            assert "cards" in str(e), e
             return
         raise AssertionError("a v1 theme must be refused, not half-rendered")
 
