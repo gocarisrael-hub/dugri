@@ -32,3 +32,22 @@ test('GET /api/stats/orders returns { count } >= 23 with no auth', async ({ requ
   // Only the aggregate is exposed — no order details leak out.
   expect(Object.keys(body)).toEqual(['count']);
 });
+
+// The two order-artifact downloads (deck + board) are API routes, not pages. If
+// one were ever un-registered or registered AFTER the SPA catch-all, the fallback
+// above would answer it with the landing page — HTTP 200 and HTML — and the
+// customer's download link would quietly hand them the homepage under a .pdf
+// filename. Assert both still answer as an API for an unknown collection.
+for (const artifact of ['pdf', 'board']) {
+  test(`the ${artifact} download answers as an API, not the SPA fallback`, async ({ request }) => {
+    const res = await request.get(`/api/collections/no-such-collection/${artifact}?t=x`);
+    expect(res.status()).toBe(404);
+    expect(res.headers()['content-type'] || '').toContain('application/json');
+  });
+
+  test(`the admin ${artifact} download refuses without a key, as an API`, async ({ request }) => {
+    const res = await request.get(`/api/admin/collections/no-such-collection/${artifact}`);
+    expect(res.status()).toBe(403);
+    expect(res.headers()['content-type'] || '').toContain('application/json');
+  });
+}
