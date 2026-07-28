@@ -13,6 +13,7 @@ import sys
 import csv as csvmod
 
 import config
+import deck_html
 
 CHROME = os.environ.get(
     "CHROME", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
@@ -379,6 +380,197 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
             out.append(on_path(f"t{uid}m{k}", outline, outline, outer, line))  # outline
         out.append(on_path(f"t{uid}m{k}", fill, fill, w_fat, line))         # fill body
     return "<defs>" + "".join(defs) + "</defs>" + "".join(out)
+
+
+def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
+                   fixed_size=None):
+    """The stacked-title markup for one card, or "" when there is nothing to draw.
+
+    ``tbox_list`` may hold ONE BOX PER TITLE LINE (birthday-girls records two);
+    the title is fitted into their UNION, because using only the first box would
+    cram every line into one line's height at ~half size. ``offset`` nudges the
+    union by ``[dx, dy]`` fractions of the card cell — used to seat a title that
+    detection placed into a corner at the original's inset position.
+    """
+    if not tbox_list or not title_lines:
+        return ""
+    ts = cfg["title_style"]
+    tbox = {"x0": min(b["x0"] for b in tbox_list), "y0": min(b["y0"] for b in tbox_list),
+            "x1": max(b["x1"] for b in tbox_list), "y1": max(b["y1"] for b in tbox_list)}
+    if offset and cell:
+        dx = offset[0] * (cell[2] - cell[0])
+        dy = offset[1] * (cell[3] - cell[1])
+        tbox = {"x0": tbox["x0"] + dx, "x1": tbox["x1"] + dx,
+                "y0": tbox["y0"] + dy, "y1": tbox["y1"] + dy}
+    return title_block(tbox, title_lines, ts["fill"], ts["outline"], title_font,
+                       ts["outline_w"], ts["arch"], ts["shadow"],
+                       rtl=title_is_rtl(cfg),
+                       fixed_size=fixed_size if fixed_size is not None else ts.get("size"),
+                       align=ts.get("align", "center"),
+                       italic=ts.get("italic", False))
+
+
+def _words_overlay(slots, words, cfg, word_font, cell):
+    """The four numbered word lines for one card, as SVG markup."""
+    if not slots:
+        return ""
+    wf_metrics, wf_ref = _word_metrics(word_font)
+    sizes = _word_sizes(slots, words, wf_metrics, wf_ref, cell=cell,
+                        word_size=cfg.get("word_size"))
+    out = []
+    for wi, slot in enumerate(slots):
+        wsize = sizes[wi]
+        if wsize is None:
+            continue
+        baseline = (slot["y0"] + slot["y1"]) / 2 + wsize * 0.34
+        x_right = _line_right_edge(slot["x1"], cell)
+        out.append(word_text(x_right, baseline, wsize, slot["color"],
+                             wi + 1, words[wi], word_font))
+    return "".join(out)
+
+
+# ---- v2: one portrait card per page ---------------------------------------
+# v1 laid 8 cards onto an A4 sheet, so every render walked recipe["cards"]. A v2
+# page IS one card: the same slot geometry and the same title/word painters, just
+# applied once against the card's own viewBox. The overlays below emit markup
+# ONLY — no <style>, no @font-face — because the whole deck is assembled into one
+# HTML document where the fonts are declared a single time (see deck_html).
+
+
+def card_overlay(theme, recipe, words, title_lines, front_index=None,
+                 word_font=None, kind="word"):
+    """Title + word markup for ONE card, in the card's own viewBox units.
+
+    ``front_index`` selects which front's title box to use: the words are SHARED
+    across the eight fronts but the title MOVES, so the box comes from the
+    recipe per front and the owner's nudge from ``title_style.front_offset``.
+    The photo card (``kind="photo"``) carries no text at all — its four customer
+    photos are the content, and a title would sit on top of them.
+    """
+    if kind == "photo":
+        return ""
+    cfg = config.theme(theme)
+    config.ensure_calibrated(cfg)
+    card = config.recipe_card(recipe)
+    cell = card.get("cell") or _recipe_cell(recipe)
+    word_font_path = config.resolve_word_font(theme, word_font)
+    title_font_path = config.font_path(theme, cfg["title_font"])
+    return (_title_overlay(config.recipe_front_title(recipe, front_index), title_lines,
+                           cfg, title_font_path, cell,
+                           offset=config.front_offset(cfg, front_index))
+            + _words_overlay(card.get("words") or [], words, cfg, word_font_path, cell))
+
+
+def back_overlay(theme, recipe, title_lines):
+    """Title markup for the card BACK, which every pair repeats.
+
+    Prefers the box calibration detected into the recipe; falls back to the
+    theme's ``back.frac`` fractions of the card, which is how v1 placed it.
+    """
+    cfg = config.theme(theme)
+    config.ensure_calibrated(cfg)
+    bk = cfg.get("back")
+    cell = _recipe_cell(recipe)
+    boxes = (recipe.get("back") or {}).get("title")
+    if not boxes:
+        if not bk:
+            return ""            # theme has no personalized back -> clean art
+        frac = bk["frac"]
+        w, h = cell[2] - cell[0], cell[3] - cell[1]
+        boxes = [{"x0": cell[0] + frac["x0"] * w, "x1": cell[0] + frac["x1"] * w,
+                  "y0": cell[1] + frac["y0"] * h, "y1": cell[1] + frac["y1"] * h}]
+    ts = cfg["title_style"]
+    title_font = config.font_path(theme, cfg["title_font"])
+    # The back's own fill/outline when the theme calibrated them (the back art is
+    # usually a different colour field from the fronts), else the shared style.
+    style = dict(ts)
+    if bk:
+        style["fill"] = bk.get("fill", ts["fill"])
+        style["outline"] = bk.get("outline", ts["outline"])
+    cfg_back = {**cfg, "title_style": style}
+    return _title_overlay(boxes, title_lines, cfg_back, title_font, cell,
+                          fixed_size=ts.get("back_size") or ts.get("size"))
+
+
+def photo_overlay(recipe, photo_paths):
+    """The four customer pawn-photos, laid into the photo card's slots.
+
+    Each photo is drawn with ``preserveAspectRatio="xMidYMid slice"`` inside a
+    clip of its slot, so a portrait or landscape phone photo FILLS its slot and
+    is cropped to it rather than letterboxed with background showing through.
+    Fewer than four photos simply leaves the remaining slots as artwork.
+    """
+    if not photo_paths:
+        return ""
+    cell = _recipe_cell(recipe)
+    slots = config.photo_slots(recipe, cell)
+    defs, out = [], []
+    for i, (slot, path) in enumerate(zip(slots, photo_paths)):
+        x, y = slot["x0"], slot["y0"]
+        w, h = slot["x1"] - slot["x0"], slot["y1"] - slot["y0"]
+        cid = f"pc{i}"
+        defs.append(f'<clipPath id="{cid}"><rect x="{x:.2f}" y="{y:.2f}" '
+                    f'width="{w:.2f}" height="{h:.2f}"/></clipPath>')
+        out.append(f'<image clip-path="url(#{cid})" x="{x:.2f}" y="{y:.2f}" '
+                   f'width="{w:.2f}" height="{h:.2f}" '
+                   f'preserveAspectRatio="xMidYMid slice" '
+                   f'xlink:href="{deck_html.image_data_url(path)}"/>')
+    return "<defs>" + "".join(defs) + "</defs>" + "".join(out)
+
+
+def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None,
+                          word_font=None, kind="word", photos=None):
+    """A STANDALONE, self-contained SVG for one card — fonts and all.
+
+    The deck path puts fonts in the document stylesheet once and shares the
+    artwork between pages; a preview renders exactly ONE card on its own, so it
+    needs the @font-face rules inside the SVG itself. Same overlays either way,
+    so what the buyer previews is what the deck prints.
+    """
+    import card_assets
+    cfg = config.theme(theme)
+    config.ensure_calibrated(cfg)
+    recipe = config.load_recipe(cfg["recipe"])
+    svg = card_assets.read_card_svg(clean_svg, config.theme_dir(theme))
+    style = ("<style>" + GEOMETRIC_TEXT_STYLE
+             + font_face("HebWord", config.resolve_word_font(theme, word_font))
+             + font_face("TitleFont", config.font_path(theme, cfg["title_font"]))
+             + "</style>")
+    if kind == "photo":
+        overlay = photo_overlay(recipe, photos or [])
+    elif kind == "back":
+        overlay = back_overlay(theme, recipe, title_lines)
+    else:
+        overlay = card_overlay(theme, recipe, words, title_lines,
+                               front_index=front_index, word_font=word_font)
+    return svg.replace("</svg>", style + overlay + "</svg>")
+
+
+def render_single_card(theme, clean_svg, words, title_lines, out_png,
+                       front_index=None, word_font=None, kind="word", photos=None):
+    """Screenshot one card to ``out_png`` (the preview path)."""
+    svg = build_single_card_svg(theme, clean_svg, words, title_lines,
+                                front_index=front_index, word_font=word_font,
+                                kind=kind, photos=photos)
+    svg_path = out_png.replace(".png", ".svg")
+    with open(svg_path, "w", encoding="utf-8") as f:
+        f.write(svg)
+    w, h = dims(clean_svg)
+    subprocess.run([CHROME, "--headless", "--no-sandbox",
+                    "--disable-dev-shm-usage", "--disable-gpu", CHROME_FONT_WAIT,
+                    "--force-device-scale-factor=2", f"--screenshot={out_png}",
+                    f"--window-size={w},{h}", svg_path],
+                   check=True, stderr=subprocess.DEVNULL)
+    return out_png
+
+
+def _recipe_cell(recipe):
+    """The card's box in viewBox units — the whole card in v2."""
+    card = recipe.get("card") or {}
+    if card.get("cell"):
+        return card["cell"]
+    vb = recipe.get("viewBox") or [0, 0, 0, 0]
+    return [vb[0], vb[1], vb[0] + vb[2], vb[1] + vb[3]]
 
 
 def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):

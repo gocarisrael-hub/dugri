@@ -154,6 +154,47 @@ Only the title box moves per front.
 A title may be recorded as **several boxes** (one per title line); the generator
 fits the stacked title into their union, as it does in v1.
 
+## 4a. How the deck is rendered (implemented; measured)
+
+v1 screenshotted each page with its own headless-Chrome run and stitched the
+PNGs with Pillow. That does not survive v2's scale, and both failure modes were
+measured rather than assumed:
+
+- Pillow's PDF writer materialises every page before encoding — a 208-page deck
+  at print resolution peaks at **784 MB**, which Railway does not have;
+- 106 distinct pages x one Chrome start-up each runs to minutes, past the
+  server's 120 s `GENERATE_TIMEOUT_MS`.
+
+So a v2 deck is built as **ONE HTML document containing all 208 pages** and
+printed in a **single `--print-to-pdf` pass** (`generator/deck_html.py`). Chrome
+paginates via `@page`; Python never holds a raster.
+
+Measured on the real grapefruit export:
+
+| pages | Chrome | PDF | page box | Python peak RSS |
+|---|---|---|---|---|
+| 8 | 1.96 s | 4.4 MB | 223.92 x 312 pt | — |
+| 52 | 2.08 s | 5.5 MB | 223.92 x 312 pt | — |
+| **208** | **2.98 s** | **9.4 MB** | **223.92 x 312 pt** | **149 MB** |
+
+A full order (topup -> pack -> deck + board) runs end to end in ~6 s.
+
+Three consequences worth knowing:
+
+- **Pages stay vector.** Text is real text, not a resampled bitmap.
+- **The page box is the card's physical size in points**, so "print at 100%" is
+  literally true. (v1's A4 sheets were declared at 300 DPI over a 1123 px raster,
+  i.e. ~190 mm wide rather than 297 mm — v2 does not inherit that.)
+- **No `--virtual-time-budget` on the print path.** It makes Chrome sit out the
+  whole clock, turning a 3 s deck into minutes. Chrome already waits for
+  webfonts before printing. The screenshot path (preview) still needs it.
+
+Three things the assembler must get right, each pinned by tests in
+`generator/test_deck_html.py`: per-file **id namespacing** (the nine exports
+reuse Canva clip-path ids and would otherwise clip each other's artwork),
+**payload dedupe** (the background is emitted once and `<use>`d), and **art
+dedupe** (each design is defined once, not once per page).
+
 ## 5. Outputs
 
 `order_to_pdf` returns `(deck_pdf, pages, board_path)` and writes two files:
@@ -165,8 +206,16 @@ fits the stacked title into their union, as it does in v1.
 
 The board path is derived from the deck path by replacing the `.pdf` suffix with
 `.board.pdf`, so a caller that knows the deck path knows the board path without
-a second round-trip. The CLI prints both. **Agent D**: wire both into the
-`pdf_ready` email and the `/pdf` capability-token routes.
+a second round-trip.
+
+The CLI prints the board on its own line (`board <path>`), and the server already
+parses it: `runGenerator` resolves `{ pages, board }`, and `db.setProduction`
+records **`board_file`** alongside `pdf_file` (null for a v1 order, whose board
+is still the deck's last page).
+
+**Agent D**: `board_file` is the hook — wire it into the `pdf_ready` email and
+the `/pdf` capability-token download routes so an order delivers both artifacts.
+The generator and the production record are done; only delivery is open.
 
 ## 6. Card composition
 
@@ -175,8 +224,8 @@ a second round-trip. The CLI prints both. **Agent D**: wire both into the
 - cards 1..103 — word cards, 4 words each (412 words total).
   Front style cycles round-robin: card `i` (0-based) uses
   `fronts[i % len(fronts)]`, giving 13/13/13/13/13/13/13/12 across the 8 styles.
-- card 104 — the photo card: the collection's `pawn_images` (up to 4), падded
-  padded from `photo_card.fallback` when the customer uploaded fewer than 4, and
+- card 104 — the photo card: the collection's `pawn_images` (up to 4), padded
+  from `photo_card.fallback` when the customer uploaded fewer than 4, and
   entirely from the fallback set when they uploaded none.
 
 Every card is preceded by the back, so the PDF is

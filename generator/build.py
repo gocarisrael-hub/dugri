@@ -17,7 +17,10 @@ import sys
 import re
 from PIL import Image
 
+import card_assets
 import config
+import deck_html
+import pack
 import render_page as rp
 import svg_rings
 
@@ -169,6 +172,205 @@ def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
     log(f"\nwrote {out_pdf}  ({len(pages)} pages: {len(data)} fronts "
         f"+ {nback} backs + board)")
     return out_pdf, len(pages)
+
+
+# ---- v2: the single-card deck ---------------------------------------------
+# The whole deck is ONE HTML document printed by ONE Chrome pass (see deck_html
+# for why). Measured on the real grapefruit assets: 208 pages in ~3s at exactly
+# 223.92 x 312 pt per page, ~9 MB, with Python peaking at ~149 MB. The v1
+# approach — a Chrome run per page, stitched by Pillow — needed ~784 MB and
+# minutes for the same deck.
+
+# Chrome may sit on a print job if the page never settles; cap it so a stuck
+# render surfaces as an error instead of hanging a paid order.
+DECK_TIMEOUT_S = float(os.environ.get("DUGRI_DECK_TIMEOUT_S", "180"))
+
+
+def print_to_pdf(html, out_pdf, workdir, tag="deck"):
+    """Print one HTML document to ``out_pdf`` with headless Chrome.
+
+    Chrome waits for webfonts to load before printing, so the deck's @font-face
+    faces are in place — unlike the screenshot path, which needs an explicit
+    virtual-time budget. A budget is deliberately NOT passed here: it makes
+    Chrome sit out the whole clock, turning a 3-second deck into minutes.
+    """
+    os.makedirs(workdir, exist_ok=True)
+    html_path = os.path.join(workdir, f"{tag}.html")
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    try:
+        subprocess.run(
+            [CHROME, "--headless", "--no-sandbox", "--disable-dev-shm-usage",
+             "--disable-gpu", "--no-pdf-header-footer",
+             f"--print-to-pdf={out_pdf}", html_path],
+            check=True, stderr=subprocess.DEVNULL, timeout=DECK_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"rendering {tag} timed out after {DECK_TIMEOUT_S:.0f}s. The deck is "
+            "one Chrome print pass, which normally takes seconds; a timeout here "
+            "usually means the template embeds an asset that never finishes "
+            "loading."
+        )
+    if not os.path.exists(out_pdf):
+        raise RuntimeError(f"Chrome produced no {tag} PDF at {out_pdf}")
+    return out_pdf
+
+
+def board_pdf_path(out_pdf):
+    """Where the board file sits, given the deck path.
+
+    Derived rather than passed so any caller that knows the deck path knows the
+    board path too — the delivery layer needs both artifacts and should not have
+    to round-trip for the second one.
+    """
+    base = out_pdf[:-4] if out_pdf.lower().endswith(".pdf") else out_pdf
+    return base + ".board.pdf"
+
+
+def build_board_pdf(theme, out_pdf, title_lines, workdir, chasers=False):
+    """Render the game board to its OWN one-page PDF.
+
+    In v2 the board is no longer the deck's last page: it is a separate delivered
+    artifact, printed at the board artwork's own size rather than the card's.
+    """
+    cfg = config.theme(theme)
+    board_clean = config.board_clean_path(theme, chasers=chasers)
+    raw = card_assets.read_card_svg(board_clean, config.theme_dir(theme))
+    if cfg.get("fix_ring_discs"):
+        raw = svg_rings.align_ring_discs(raw)
+    vb = deck_html.view_box(raw)
+    doc = deck_html.DeckDocument(vb[2], vb[3])
+    title_font = config.font_path(theme, cfg["title_font"])
+    doc.add_style(rp.GEOMETRIC_TEXT_STYLE + deck_html.font_face("TitleFont", title_font))
+    doc.add_design("board", raw)
+    bd, ts = cfg.get("board"), cfg["title_style"]
+    overlay = ""
+    if bd and title_lines:
+        frac = bd["frac"]
+        box = {"x0": frac["x0"] * vb[2], "x1": frac["x1"] * vb[2],
+               "y0": frac["y0"] * vb[3], "y1": frac["y1"] * vb[3]}
+        overlay = rp.title_block(box, title_lines, bd["fill"], bd["outline"],
+                                 title_font, ts["outline_w"], ts["arch"], ts["shadow"],
+                                 rtl=rp.title_is_rtl(cfg),
+                                 fixed_size=ts.get("board_size"),
+                                 align=ts.get("align", "center"),
+                                 italic=ts.get("italic", False))
+    doc.add_page("board", overlay)
+    vbs = " ".join(_fmt(v) for v in vb)
+    return print_to_pdf(doc.html(vbs), out_pdf, workdir, tag="board")
+
+
+def _fmt(v):
+    """Render a viewBox number without a trailing ".0" (keeps the attr tidy)."""
+    return f"{v:g}"
+
+
+def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
+                  progress=False):
+    """Assemble the whole deck as a ``(DeckDocument, viewBox_string)`` pair.
+
+    Split out from ``build_deck`` so the deck's STRUCTURE — page count, duplex
+    ordering, front cycling, the photo card — can be asserted without spawning
+    Chrome, which CI may not have.
+    """
+    cfg = config.theme(theme)
+    config.ensure_calibrated(cfg)
+    if not config.is_single_card(cfg):
+        raise RuntimeError(
+            f"theme {theme!r} is not a single-card (v2) template — it has no "
+            '"card_layout": "single". Migrate its assets to clean/1..9.svg '
+            "first; see docs/card-schema-v2.md."
+        )
+    recipe = config.load_recipe(cfg["recipe"])
+    theme_dir = config.theme_dir(theme)
+    fronts = config.fronts(cfg)
+
+    def log(msg):
+        if progress:
+            print(msg)
+
+    cards = pack.load_cards(csvp)
+
+    # Register each distinct design ONCE; the pages then reference them, so a
+    # 208-page deck costs nine copies of the artwork rather than 208.
+    back_svg = card_assets.read_card_svg(config.back_path(theme), theme_dir)
+    front_svgs = {i: card_assets.read_card_svg(config.card_path(theme, i), theme_dir)
+                  for i in fronts}
+    vb = deck_html.view_box(front_svgs[fronts[0]])
+    doc = deck_html.DeckDocument(vb[2], vb[3])
+    word_font_path = config.resolve_word_font(theme, word_font)
+    title_font_path = config.font_path(theme, cfg["title_font"])
+    doc.add_style(rp.GEOMETRIC_TEXT_STYLE
+                  + deck_html.font_face("HebWord", word_font_path)
+                  + deck_html.font_face("TitleFont", title_font_path))
+    doc.add_design("back", back_svg)
+    for i in fronts:
+        doc.add_design(f"front{i}", front_svgs[i])
+    log(f"registered {len(fronts)} fronts + back")
+
+    back_ov = rp.back_overlay(theme, recipe, title_lines)
+    photo_paths = resolve_photos(theme, photos)
+    for n, card in enumerate(cards, 1):
+        doc.add_page("back", back_ov)                      # duplex: back, then front
+        if card["kind"] == "photo":
+            doc.add_design("photo", card_assets.read_card_svg(
+                config.photo_card_path(theme), theme_dir))
+            doc.add_page("photo", rp.photo_overlay(recipe, photo_paths))
+        else:
+            front = fronts[card["front"] % len(fronts)]
+            doc.add_page(f"front{front}",
+                         rp.card_overlay(theme, recipe, card["words"], title_lines,
+                                         front_index=front, word_font=word_font))
+        if progress and n % 25 == 0:
+            log(f"card {n}/{len(cards)}")
+
+    return doc, " ".join(_fmt(v) for v in vb)
+
+
+def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
+               workdir="/tmp/gen/deck", progress=True, chasers=False,
+               custom_title=None, photos=None):
+    """Assemble a v2 order: the card deck PDF + the board PDF.
+
+    Returns ``(out_pdf, page_count, board_pdf)``. The deck is
+    ``[back, card1, back, card2, ...]`` so it prints duplex, and the board is a
+    separate file (see ``board_pdf_path``).
+
+    ``photos`` are absolute paths to the customer's pawn photos for the final
+    card; short/empty is topped up from the theme's generic fallback set.
+    """
+    cfg = config.theme(theme)
+    config.ensure_calibrated(cfg)
+    title_lines = config.title_lines(cfg, name, extra_fields or {},
+                                     custom_title=custom_title)
+    os.makedirs(workdir, exist_ok=True)
+    doc, vbs = deck_document(theme, csvp, title_lines, word_font=word_font,
+                             photos=photos, progress=progress)
+    print_to_pdf(doc.html(vbs), out_pdf, workdir, tag="deck")
+    if progress:
+        print(f"deck: {doc.page_count} pages")
+    board = build_board_pdf(theme, board_pdf_path(out_pdf), title_lines, workdir,
+                            chasers=chasers)
+    if progress:
+        print(f"board: {board}")
+    return out_pdf, doc.page_count, board
+
+
+def resolve_photos(theme, photos):
+    """The four photo-card images: the customer's, topped up from the fallbacks.
+
+    A customer who uploaded nothing gets the generic Dugri set; one who uploaded
+    two gets those two plus two generics, so the card is never half-empty. Paths
+    that do not exist are dropped rather than rendered as a broken image.
+    """
+    out = [p for p in (photos or []) if p and os.path.isfile(p)]
+    if len(out) >= 4:
+        return out[:4]
+    for path in config.photo_fallback_paths(theme):
+        if len(out) >= 4:
+            break
+        out.append(path)
+    return out[:4]
 
 
 def main():
