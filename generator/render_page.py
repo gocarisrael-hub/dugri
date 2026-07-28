@@ -604,6 +604,63 @@ def render_single_card(theme, clean_svg, words, title_lines, out_png,
     return out_png
 
 
+def render_fronts_strip(theme, fronts, words, title_lines, out_dir,
+                        word_font=None, scale=2):
+    """Render EVERY front once and return their PNG paths, in ``fronts`` order.
+
+    The title position is calibrated PER FRONT, so an owner tuning fronts 2..9
+    has to SEE fronts 2..9 — previewing only the first leaves them adjusting
+    numbers blind.
+
+    Done as ONE Chrome run over a single strip of cards rather than one run per
+    front, for the same reason the deck is one pass: browser start-up dominates,
+    so eight separate screenshots cost roughly eight times a strip that is then
+    sliced. Cards are laid out edge to edge at their exact pixel size, so every
+    crop is an exact rectangle.
+    """
+    if not fronts:
+        return []
+    cards = [
+        build_single_card_svg(theme, config.card_path(theme, front), words,
+                              title_lines, front_index=front, word_font=word_font)
+        for front in fronts
+    ]
+    w, h = dims(config.card_path(theme, fronts[0]))
+    body = "".join(f'<div class="c">{svg}</div>' for svg in cards)
+    html = (
+        '<!doctype html><html><head><meta charset="utf-8"><style>'
+        "html,body{margin:0;padding:0;background:#fff}"
+        f"body{{display:flex;width:{w * len(cards)}px}}"
+        f".c{{width:{w}px;height:{h}px;flex:0 0 {w}px;overflow:hidden}}"
+        ".c svg{display:block;width:100%;height:100%}"
+        "</style></head><body>" + body + "</body></html>"
+    )
+    os.makedirs(out_dir, exist_ok=True)
+    page = os.path.join(out_dir, "fronts.html")
+    with open(page, "w", encoding="utf-8") as f:
+        f.write(html)
+    shot = os.path.join(out_dir, "fronts.png")
+    subprocess.run([CHROME, "--headless", "--no-sandbox",
+                    "--disable-dev-shm-usage", "--disable-gpu", CHROME_FONT_WAIT,
+                    f"--force-device-scale-factor={scale}",
+                    f"--screenshot={shot}",
+                    f"--window-size={w * len(cards)},{h}", page],
+                   check=True, stderr=subprocess.DEVNULL)
+    from PIL import Image
+    strip = Image.open(shot)
+    # Slice from the ACTUAL rendered width rather than assuming w*scale: Chrome
+    # can round a device-scale-factor, and a sub-pixel drift accumulated across
+    # eight cards would shear the last crop.
+    cw = strip.width / len(cards)
+    out = []
+    for i, front in enumerate(fronts):
+        path = os.path.join(out_dir, f"front-{front}.png")
+        strip.crop((int(round(i * cw)), 0,
+                    int(round((i + 1) * cw)), strip.height)).save(path)
+        out.append(path)
+    return out
+
+
 def _recipe_cell(recipe):
     """The card's box in viewBox units — the whole card in v2."""
     card = recipe.get("card") or {}

@@ -87,19 +87,39 @@ def _crop_card(full_png, cell, viewbox, out_png):
 
 
 def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
-                         chasers=False):
-    """The v2 preview: one front card, its back, and the board.
+                         chasers=False, all_fronts=False):
+    """The v2 preview: the front card(s), the back, and the board.
 
-    The front is rendered on the theme's FIRST front style — the eight differ
-    only by an icon, and previewing a fixed one keeps the image stable as the
-    buyer retypes the name (the preview cache keys on the name, not the style).
+    A BUYER preview renders the theme's FIRST front only: the fronts differ by
+    an icon, one image keeps the result stable as they retype the name, and it
+    is one Chrome run instead of eight on a public endpoint.
+
+    An OWNER calibration preview (``all_fronts``) renders EVERY front, because
+    the title position is calibrated per front — showing only the first leaves
+    fronts 2..9 being adjusted blind. They all come from ONE Chrome run (see
+    ``rp.render_fronts_strip``), so it costs about what a single front does.
     """
-    front = config.fronts(cfg)[0]
-    card_png = rp.render_single_card(
-        theme, config.card_path(theme, front), list(PLACEHOLDER_WORDS), title_lines,
-        os.path.join(workdir, "card.png"), front_index=front, word_font=word_font)
-    _downscale(card_png, CARD_MAX_W)
-    out = {"card": card_png}
+    fronts = config.fronts(cfg)
+    out = {}
+    if all_fronts and len(fronts) > 1:
+        paths = rp.render_fronts_strip(
+            theme, fronts, list(PLACEHOLDER_WORDS), title_lines,
+            os.path.join(workdir, "fronts"), word_font=word_font)
+        for path in paths:
+            _downscale(path, CARD_MAX_W)
+        # Keyed by front number so the admin UI can label each image with the
+        # front it belongs to; "card" stays the first one so every existing
+        # caller keeps working unchanged.
+        out["cards"] = {str(front): path for front, path in zip(fronts, paths)}
+        card_png = paths[0]
+    else:
+        front = fronts[0]
+        card_png = rp.render_single_card(
+            theme, config.card_path(theme, front), list(PLACEHOLDER_WORDS),
+            title_lines, os.path.join(workdir, "card.png"), front_index=front,
+            word_font=word_font)
+        _downscale(card_png, CARD_MAX_W)
+    out["card"] = card_png
 
     board_clean = config.board_clean_path(theme, chasers=chasers)
     if os.path.exists(board_clean):
@@ -167,8 +187,13 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
         # card, so one screenshot per surface. Same overlays as the deck, so the
         # preview stays WYSIWYG for what production prints.
         if config.is_single_card(cfg):
+            # A calibration blob means the OWNER is tuning this template, and
+            # the title position is per front — so show them every front. A
+            # buyer preview (no blob) stays a single card: one Chrome run on a
+            # public endpoint, and a stable image as they retype the name.
             return _preview_single_card(theme, cfg, title_lines, workdir,
-                                        word_font=word_font, chasers=chasers)
+                                        word_font=word_font, chasers=chasers,
+                                        all_fronts=bool(calibration))
 
         recipe = _recipe(cfg)
         idx = _sample_card_index(recipe)
