@@ -165,22 +165,38 @@ referenced as `href="../assets/<sha16>.png"`. Measured on grapefruit:
 All 18 renders are byte-identical to the embedded originals (verified through the
 real pipeline: read → compose → write to a different directory → headless Chrome).
 
-### The one catch — READ THIS BEFORE LOADING A CARD SVG
+### The catches — READ THIS BEFORE LOADING A CARD SVG
 
-`render_page.render()` writes its composed SVG to the **output** directory, not
-next to the artwork. A relative `../assets/…` reference does not survive that
-move: the background silently vanishes and the card renders bare.
+A `../assets/…` reference resolves against **the SVG's own location**, so it only
+survives while the SVG is loaded as a file that is still sitting next to
+`assets/`. There are two ways to break that, and both fail QUIETLY — the render
+succeeds and the artwork is wrong, so nothing alerts you but the image itself.
 
-So a de-duplicated card SVG must never be loaded with a plain `open()`:
+**1. Python — moving the composed SVG (`render_page.render`).** It writes the
+composed SVG to the **output** directory, away from the artwork. The reference
+then points nowhere and the card renders bare. Never load a card SVG with a plain
+`open()`:
 
 ```python
 import card_assets
 svg = card_assets.read_svg(clean_svg_path)   # NOT open(path).read()
 ```
 
-`read_svg` rewrites every `../assets/` reference to an absolute path as it reads.
-It is a **no-op on artwork that was never migrated**, so callers never have to ask
-which form a template is in — it is always the correct way to read a card SVG.
+`read_svg` rewrites every `../assets/` reference to an absolute path as it reads,
+and is a **no-op on artwork that was never migrated**, so callers never have to
+ask which form a template is in.
+
+**2. Node/Playwright — `page.setContent()` has no base URL.** The page's origin is
+`about:blank`, so a relative reference has nothing to resolve against AND an
+absolute `file://` rewrite is refused as a local-file subresource. The absolute
+path that fixes case 1 therefore does **not** fix this one. Either serve the
+artwork over HTTP, or inline the image as a data URI before injecting the markup
+(what `scripts/render-design-assets.mjs` does).
+
+A near-blank byte-size guard will **not** catch either failure: the card's frame
+and text alone are comfortably over any sane minimum, so a card missing only its
+background still looks like a healthy file. The only reliable check is to LOOK at
+a new render.
 
 `generator/card_assets.py` also provides `migrate_template(src, dst)` to convert a
 Canva export, and runs as a CLI:
