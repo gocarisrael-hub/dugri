@@ -473,3 +473,58 @@ if __name__ == "__main__":
         fn()
         print("ok", fn.__name__)
     print(f"\nall {len(fns)} tests passed")
+
+
+# --- the calibration form's unsaved slots must reach the preview -------------
+# The owner tunes card_slots in the admin form and hits preview BEFORE saving.
+# set_preview_overrides filters to _OVERRIDABLE, and card_slots was missing from
+# it, so the slots were dropped and every preview came back a blank card — no
+# words, no title, and nothing to say the knobs had been ignored rather than
+# mis-measured.
+
+def _slots():
+    return {"words": [{"x0": 0.1, "y0": 0.3 + i * 0.15,
+                       "x1": 0.9, "y1": 0.42 + i * 0.15} for i in range(4)],
+            "titles": {str(n): {"x0": 0.08, "y0": 0.07, "x1": 0.92, "y1": 0.2}
+                       for n in range(2, 10)}}
+
+
+def test_card_slots_is_previewable():
+    assert "card_slots" in config._OVERRIDABLE, (
+        "the calibration form's own geometry must reach the preview, or the "
+        "owner previews a blank card"
+    )
+
+
+def test_unsaved_card_slots_reach_the_render(tmp_path=None):
+    import tempfile
+    root = str(tmp_path or tempfile.mkdtemp())
+    themes = os.path.join(root, "themes.json")
+    with open(themes, "w", encoding="utf-8") as f:
+        json.dump({"demo": {"slug": "demo", "dir": "d", "recipe": "demo",
+                            "cards": {"back": 1, "fronts": [2, 3]},
+                            "title_style": {"fill": "#fff", "outline": "#000"},
+                            "calibrated": False}}, f)
+    prev, config.THEMES_JSON = config.THEMES_JSON, themes
+    try:
+        config.clear_preview_overrides()
+        config.set_preview_overrides("demo", {
+            "title_style": {"fill": "#711d20", "outline": "#711d20"},
+            "card_slots": _slots(),
+        })
+        cfg = config.theme("demo")
+        cell = [0, 0, 223.92, 312]
+        recipe = {"theme": "demo", "format": 2, "viewBox": [0, 0, 223.92, 312]}
+        assert len(config.card_word_boxes(cfg, recipe, cell)) == 4
+        assert len(config.card_title_boxes(cfg, recipe, 2, cell)) == 1
+    finally:
+        config.THEMES_JSON = prev
+        config.clear_preview_overrides()
+
+
+def test_a_preview_still_cannot_repoint_a_theme_at_other_artwork():
+    # card_slots is pure geometry; `cards` chooses WHICH SVGs render, so it must
+    # never be overridable from a preview request.
+    assert "cards" not in config._OVERRIDABLE
+    assert "dir" not in config._OVERRIDABLE
+    assert "recipe" not in config._OVERRIDABLE

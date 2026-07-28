@@ -125,7 +125,16 @@ _PREVIEW_OVERRIDES = {}
 # Only the render knobs the calibration form owns may be overridden. Everything
 # else (dir, recipe, fonts, visibility, ...) is identity/asset configuration, so
 # a preview can never repoint a theme at another template's files.
-_OVERRIDABLE = ("title_style", "board", "back", "word_size")
+#
+# ``card_slots`` is the single-card word/title geometry the form exists FOR, so
+# it has to be here: without it the owner's unsaved slots were dropped before
+# the render and every preview came back as a BLANK card — no words, no title —
+# with nothing to say the knobs had been ignored rather than mis-measured.
+# Allowing it is safe because it is pure geometry (fractions of the card, no
+# path and no filename), so it still cannot repoint a theme at other artwork.
+# ``cards`` — which SVG is the back and which are the fronts — is deliberately
+# NOT here, for exactly that reason.
+_OVERRIDABLE = ("title_style", "board", "back", "word_size", "card_slots")
 
 # Marker merged into an overridden cfg so ``ensure_calibrated`` lets the preview
 # through. In-memory only — overrides are never written back to themes.json.
