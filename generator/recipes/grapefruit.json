@@ -1,5 +1,5 @@
 {
-  "_comment": "Portrait single-card template — see docs/card-structure-schema.md. GEOMETRY DOES NOT LIVE HERE. For a card_structure:'cards' theme the four shared word slots and the eight per-front title positions are `card_slots` on the themes.json entry, written by the admin calibrator; grapefruit's is still null (uncalibrated), which is why the entry is visibility:private + calibrated:false. This file exists only so the theme's `recipe` key resolves, and to record the card geometry every slot fraction is relative to.",
+  "_comment": "Portrait single-card template — see docs/card-structure-schema.md §2. This file is EMPTY OF GEOMETRY but is not forbidden from holding it: a cards theme has two calibration sources, and the generator reads both. `card_slots` on the themes.json entry (written by the admin calibrator, fractions, no colour) WINS; this recipe (written by `recipe_diff --single`, viewBox units, carries the ink colours) is the fallback. Grapefruit has neither yet — card_slots is null and nothing has been detected — which is why its entry is visibility:private + calibrated:false. Running detection also matters for COLOUR: card_slots carries none, so without a recipe the words inherit the title's colour, which is wrong in every shipped theme.",
   "theme": "grapefruit",
   "format": 2,
   "viewBox": [0, 0, 223.92, 312]
