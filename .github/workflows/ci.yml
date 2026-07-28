@@ -62,3 +62,58 @@ jobs:
           npx playwright install chromium
       - name: E2E tests (iPhone 14 + Desktop Chrome)
         run: npx playwright test --project="iPhone 14" --project="Desktop Chrome"
+
+  # --- The Python generator ---------------------------------------------------
+  # generator/ has 279 tests and CI has never run a single one of them: the job
+  # above is Node-only, so the whole PDF pipeline — pack, topup, config, the deck
+  # assembler, calibration — merged unguarded. A separate job so it runs in
+  # PARALLEL with the Node suite and adds no wall-clock to it.
+  python:
+    name: Generator tests (pytest)
+    runs-on: ubuntu-latest
+    # Bound worst-case cost the same way the Node job does. The suite runs in
+    # about a minute; anything near this cap means something is hung.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # The runtime image is node:20-alpine's python3. 3.11 is the closest
+          # widely-available match; the generator is version-agnostic beyond that.
+          python-version: '3.11'
+          cache: 'pip'
+          # pip caching needs a dependency file to key on; without this the
+          # action fails outright ("No file matched to **/requirements.txt").
+          cache-dependency-path: generator/requirements-dev.txt
+      - name: Install Python dependencies
+        # Test-only deps; the runtime image installs what the generator needs
+        # through apk instead (see the file's own header).
+        run: pip install -r generator/requirements-dev.txt
+      # Several generator tests shell out to real headless Chrome. Two things have
+      # to be true for them to mean anything here:
+      #
+      #  1. A browser exists. Without one they SOFT-skip — printing
+      #     "(skipped: no Chrome)" and returning green — so a missing browser
+      #     would look exactly like a passing render path. Assert it instead.
+      #  2. CHROME points at it. render_page.CHROME defaults to the macOS bundle
+      #     path ("/Applications/Google Chrome.app/..."), which is right for the
+      #     owner's laptop and irrelevant on Linux; production sets CHROME through
+      #     the Dockerfile wrapper. Without it here the tests do NOT skip (their
+      #     detection helper finds google-chrome on PATH) — they run and die on
+      #     FileNotFoundError. This is the failure the job's first green-ish run
+      #     surfaced: 277 passed, 2 died on the macOS path.
+      - name: Locate Chrome for the render tests
+        run: |
+          CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable \
+            || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$CHROME_BIN" ]; then
+            echo "No Chrome found — the Chrome-gated generator tests would silently skip."
+            exit 1
+          fi
+          echo "Using $CHROME_BIN"
+          echo "CHROME=$CHROME_BIN" >> "$GITHUB_ENV"
+      - name: Generator tests (pytest)
+        # Run from generator/ — the tests import their modules by bare name
+        # (`import pack`), which resolves via pytest putting the test file's own
+        # directory on sys.path.
+        run: npm run test:py

@@ -68,4 +68,4 @@ Settings, content editor, WhatsApp/Whapi, emails/reminders, and the test/CI harn
 
 ## Workflow (every agent)
 
-Own worktree off `origin/main` · edit only your block in the monolith files · `git fetch && git rebase origin/main` before every push · open your OWN PR, CI green (Prettier/ESLint/Vitest/Playwright; E2E runs on push:main too) · **never merge — the integrator merges** · never deploy (Railway owner-only; integrator deploys staging + smoke, owner promotes production).
+Own worktree off `origin/main` · edit only your block in the monolith files · `git fetch && git rebase origin/main` before every push · open your OWN PR, CI green (Prettier/ESLint/Vitest/Playwright + pytest over `generator/`; E2E runs on push:main too) · **never merge — the integrator merges** · never deploy (Railway owner-only; integrator deploys staging + smoke, owner promotes production).
