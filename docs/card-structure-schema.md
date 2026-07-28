@@ -1,8 +1,9 @@
 # Card-structure schema (portrait single cards)
 
-Status: **proposed by Agent B, pending Agent C sign-off.** This is the contract the
-asset migration, the generator rewrite and the admin UI all code against. Ground
-rule 1: lock this before parallel work.
+Status: **implemented and merged.** This is the contract the asset migration, the
+generator and the admin UI all code against. Where this document and the code
+disagree, the code wins and this document is the bug — §2 has already been wrong
+once in a way that would have silently discarded auto-detected calibration.
 
 ## What changes
 
@@ -41,8 +42,9 @@ Card geometry is `viewBox="0 0 223.92 312"` (portrait, ~0.718 aspect).
 
 ## 2. Single-card geometry — `card_slots` on the theme entry
 
-**Geometry for a single-card template lives on the themes.json entry, NOT in the
-recipe file.** A `card_structure: "cards"` theme carries:
+A `card_structure: "cards"` theme carries its calibration on the themes.json
+entry (see "Two writers, one precedence" below for how this relates to the
+recipe file):
 
 ```jsonc
 "card_structure": "cards",   // absent => "sheet", i.e. a legacy 8-up template
@@ -65,21 +67,56 @@ Every box is a **fraction of the 223.92×312 card** (`x0,y0,x1,y1` each in 0..1,
 `x0 < x1`, `y0 < y1`), not an absolute coordinate. Fractions survive a re-export
 at a different pixel size; absolute coordinates silently would not.
 
-Why the entry rather than the recipe file:
+### Two writers, one precedence
 
-- Owner-uploaded templates live on the volume as a themes.json entry with **no
-  shipped recipe file at all**. Entry-based geometry works identically for
-  shipped and owner templates; recipe-based would not.
-- The admin calibrator already writes calibration into the entry (the board and
-  back name slots are `frac` boxes there today). `card_slots` follows the
-  convention that already exists rather than adding a second one.
-- One source of truth. Geometry in two places is the failure this section exists
-  to prevent.
+Single-card geometry has **two** legitimate producers, and the generator reads
+both:
 
-The recipe file for a cards template therefore carries no geometry — only
-`format: 2` and the `viewBox` the fractions are relative to — and exists so the
-entry's `recipe` key resolves. `generator/recipes/grapefruit.json` is the
-reference. Legacy sheet templates keep their existing recipe geometry untouched.
+| Writer                                  | Writes to                 | Units         | Carries colour |
+| --------------------------------------- | ------------------------- | ------------- | -------------- |
+| Admin calibrator (a human)              | `card_slots` on the entry | fractions     | no             |
+| `recipe_diff --single` (auto-detection) | `recipes/<theme>.json`    | viewBox units | yes            |
+
+**`card_slots` wins where it is present; the detected recipe is the fallback.**
+A human deliberately calibrating should beat auto-detection, and
+`server/templates.js` refuses to set `calibrated: true` on a cards theme without
+`card_slots`, so for any admin-calibrated theme the entry is guaranteed to be the
+authoritative one. Reading only `card_slots` would orphan the detection path;
+reading only the recipe would orphan the admin, which cannot write one.
+
+An earlier revision of this section declared `card_slots` the single canonical
+source and said the recipe carried no geometry. That was wrong — it would have
+silently discarded everything `recipe_diff --single` produces.
+
+#### The colour caveat — read this before calibrating an owner-uploaded template
+
+`card_slots` stores **geometry only, no colour**. Ink therefore comes from the
+detected recipe, falling back to the theme's title colour when there is none.
+That fallback is a real hazard, because the word colour is **not** the title
+colour in a single shipped theme:
+
+| theme          | title fill | word ink  |
+| -------------- | ---------- | --------- |
+| trip comeback  | `#97d8e6`  | `#017f8d` |
+| birthday-girls | `#a4e9ff`  | `#ff7aa9` |
+| football-boys  | `#f8d078`  | `#004aad` |
+| japanese       | `#d3292a`  | `#222220` |
+
+So a template calibrated **only** through the admin — which is exactly an
+owner-uploaded one, since it ships no recipe — renders its words in the title's
+colour: pale blue on birthday-girls, yellow on football-boys. On a light card
+that is close to illegible. Until `card_slots` carries colour (or the admin form
+captures it), run detection at least once on any new template so a recipe exists
+to take the ink from, and LOOK at a render.
+
+#### Units
+
+`card_slots` is in fractions and the recipe is in viewBox units, which is a wart
+worth collapsing eventually — fractions are the better unit because they survive
+a re-export at a different pixel size. Until then, whichever source wins must be
+converted at the point of use, not stored converted.
+
+Legacy sheet templates keep their existing recipe geometry untouched.
 
 Font, colour and size knobs (`title_style`, `word_font`, `word_size`, `offset`,
 `italic`, `outline`…) stay in `themes.json` and stay **shared across the eight
