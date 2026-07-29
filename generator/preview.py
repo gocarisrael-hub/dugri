@@ -209,6 +209,20 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
                                         all_fronts=bool(calibration))
 
         recipe = _recipe(cfg)
+        # BELT AND BRACES. The theme config said "legacy sheet", but the recipe
+        # describes ONE card — so the two disagree about what this template is.
+        # Trust the recipe: it is what the sheet path below is about to index, and
+        # a v2 recipe has no ``cards`` list for it to index, so continuing here is
+        # a guaranteed KeyError rather than a wrong-looking render.
+        #
+        # This is reachable whenever a marker is missing from the entry (see
+        # config.is_single_card for the three of them). Rendering the card is a far
+        # better answer than crashing the owner's preview with a traceback.
+        if config.is_single_card_recipe(recipe):
+            return _preview_single_card(theme, cfg, title_lines, workdir,
+                                        word_font=word_font, chasers=chasers,
+                                        all_fronts=bool(calibration))
+
         idx = _sample_card_index(recipe)
 
         # Fill only the sample card with placeholder words; the rest stay blank (we
