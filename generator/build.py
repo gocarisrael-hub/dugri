@@ -269,7 +269,7 @@ def _fmt(v):
 
 
 def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
-                  progress=False):
+                  progress=False, workdir=None):
     """Assemble the whole deck as a ``(DeckDocument, viewBox_string)`` pair.
 
     Split out from ``build_deck`` so the deck's STRUCTURE — page count, duplex
@@ -312,7 +312,9 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
     log(f"registered {len(fronts)} fronts + back")
 
     back_ov = rp.back_overlay(theme, recipe, title_lines)
-    photo_paths = resolve_photos(theme, photos)
+    photo_paths = resolve_photos(
+        theme, photos,
+        workdir=os.path.join(workdir, "photos") if workdir else None)
     for n, card in enumerate(cards, 1):
         doc.add_page("back", back_ov)                      # duplex: back, then front
         if card["kind"] == "photo":
@@ -365,7 +367,7 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
             "numbered 1..9 cards."
         )
     doc, vbs = deck_document(theme, csvp, title_lines, word_font=word_font,
-                             photos=photos, progress=progress)
+                             photos=photos, progress=progress, workdir=workdir)
     print_to_pdf(doc.html(vbs), out_pdf, workdir, tag="deck")
     if progress:
         print(f"deck: {doc.page_count} pages")
@@ -376,14 +378,66 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
     return out_pdf, doc.page_count, board
 
 
-def resolve_photos(theme, photos):
+# Where a face sits in a portrait photo, as a fraction of the SPARE height. The
+# slot crops a square out of the photo, and a phone photo of a person is tall —
+# so the middle band is their torso and the crop beheads them. Anchoring near
+# the top keeps the head, with a little headroom so it isn't flush against the
+# edge. 0 = flush top, 0.5 = the centre crop that was cutting faces off.
+PHOTO_FACE_BIAS = float(os.environ.get("DUGRI_PHOTO_FACE_BIAS", "0.12"))
+
+
+def square_photo(path, workdir, index=0):
+    """A square copy of a customer photo, cropped to keep the person's head.
+
+    The card's slots are square and crop with ``slice``, centred — fine for the
+    shipped pawns, which are already square, and wrong for a customer's photo,
+    which is usually portrait. Cropping here rather than changing the template's
+    ``preserveAspectRatio`` keeps the disc, ring and clip exactly as designed.
+
+    Also applies the EXIF orientation: a photo taken sideways carries its
+    rotation as metadata, and the renderer does not honour it, so without this a
+    phone photo can land on the card on its side.
+
+    Best-effort by design — anything unreadable returns the ORIGINAL path, so a
+    photo we cannot process still prints (centred) rather than failing an order.
+    """
+    try:
+        from PIL import Image, ImageOps
+        with Image.open(path) as im:
+            im = ImageOps.exif_transpose(im)
+            w, h = im.size
+            if w <= 0 or h <= 0:
+                return path
+            side = min(w, h)
+            if h > w:
+                # Portrait: keep the top of the frame, where the head is.
+                top = int(round((h - side) * PHOTO_FACE_BIAS))
+                box = (0, top, side, top + side)
+            else:
+                # Landscape: people are usually centred left-to-right.
+                left = (w - side) // 2
+                box = (left, 0, left + side, side)
+            out = os.path.join(workdir, f"photo-{index + 1}.png")
+            os.makedirs(workdir, exist_ok=True)
+            im.convert("RGB").crop(box).save(out)
+            return out
+    except Exception:
+        return path
+
+
+def resolve_photos(theme, photos, workdir=None):
     """The four photo-card images: the customer's, topped up from the fallbacks.
 
     A customer who uploaded nothing gets the generic Dugri set; one who uploaded
     two gets those two plus two generics, so the card is never half-empty. Paths
     that do not exist are dropped rather than rendered as a broken image.
     """
-    out = [p for p in (photos or []) if p and os.path.isfile(p)]
+    # Only the CUSTOMER's photos are squared; the shipped pawns are already
+    # square sticker art and re-encoding them would only lose quality.
+    given = [p for p in (photos or []) if p and os.path.isfile(p)]
+    if workdir:
+        given = [square_photo(p, workdir, i) for i, p in enumerate(given)]
+    out = list(given)
     if len(out) >= 4:
         return out[:4]
     for path in config.photo_fallback_paths(theme):

@@ -434,3 +434,83 @@ if __name__ == "__main__":
         fn()
         print(f"  {fn.__name__}")
     print(f"all {len(fns)} tests passed")
+
+
+# --- a customer photo must keep the person's head ---------------------------
+# The card's slots are square and crop with `slice`, CENTRED. A phone photo of a
+# person is portrait, so the middle band is their torso and the crop beheaded
+# them. square_photo crops to a square anchored near the top instead, which also
+# keeps the template's disc/ring/clip untouched.
+
+def _portrait(path, w=900, h=1600):
+    from PIL import Image, ImageDraw
+    im = Image.new("RGB", (w, h), (40, 90, 160))
+    d = ImageDraw.Draw(im)
+    d.ellipse([w // 2 - 150, 120, w // 2 + 150, 420], fill=(250, 220, 190))  # head
+    d.rectangle([w // 2 - 200, 430, w // 2 + 200, h], fill=(220, 60, 60))    # body
+    im.save(path)
+    return path
+
+
+def _head_fraction(img):
+    from PIL import Image
+    px = list(img.convert("RGB").getdata())
+    hits = sum(1 for r, g, b in px
+               if abs(r - 250) < 25 and abs(g - 220) < 25 and abs(b - 190) < 25)
+    return hits / len(px)
+
+
+def test_a_portrait_photo_is_squared_keeping_the_head():
+    from PIL import Image
+    with Store() as tmp:
+        src = _portrait(os.path.join(tmp, "p.png"))
+        out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+        assert out != src
+        with Image.open(out) as sq:
+            assert sq.size[0] == sq.size[1], sq.size
+            kept = _head_fraction(sq)
+        with Image.open(src) as im:
+            side = min(im.size)
+            top = (im.size[1] - side) // 2
+            centred = _head_fraction(im.crop((0, top, side, top + side)))
+        assert kept > centred * 2, (kept, centred)
+
+
+def test_a_landscape_photo_is_centred_horizontally():
+    from PIL import Image
+    with Store() as tmp:
+        src = _portrait(os.path.join(tmp, "l.png"), w=1600, h=900)
+        out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+        with Image.open(out) as sq:
+            assert sq.size == (900, 900), sq.size
+
+
+def test_an_unreadable_photo_falls_back_to_the_original():
+    # Never fail an order over a photo we cannot process — print it as-is.
+    with Store() as tmp:
+        bad = os.path.join(tmp, "bad.png")
+        with open(bad, "wb") as f:
+            f.write(b"not an image")
+        assert build.square_photo(bad, os.path.join(tmp, "sq"), 0) == bad
+
+
+def test_only_customer_photos_are_squared_not_the_shipped_pawns():
+    # The shipped pawns are already square sticker art; re-encoding them would
+    # only lose quality.
+    with Store() as tmp:
+        fallbacks = []
+        for i in range(4):
+            p = os.path.join(tmp, f"fb{i}.png")
+            with open(p, "wb") as f:
+                f.write(b"\x89PNG")
+            fallbacks.append(p)
+        themes_path = os.path.join(os.environ["DATA_DIR"], "templates", "themes.json")
+        with open(themes_path, encoding="utf-8") as f:
+            themes = json.load(f)
+        themes["demo"]["photo_card"] = {"fallback": fallbacks}
+        with open(themes_path, "w", encoding="utf-8") as f:
+            json.dump(themes, f)
+        src = _portrait(os.path.join(tmp, "one.png"))
+        got = build.resolve_photos("demo", [src], workdir=os.path.join(tmp, "sq"))
+        assert got[0] != src, "the customer photo should be squared"
+        assert got[1:] == fallbacks[:3], "shipped pawns must pass through untouched"
