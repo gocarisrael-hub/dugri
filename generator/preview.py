@@ -101,10 +101,23 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
     """
     fronts = config.fronts(cfg)
     out = {}
+    paths = []
     if all_fronts and len(fronts) > 1:
-        paths = rp.render_fronts_strip(
-            theme, fronts, list(PLACEHOLDER_WORDS), title_lines,
-            os.path.join(workdir, "fronts"), word_font=word_font)
+        # Showing every front is an ENHANCEMENT for calibration. It must never
+        # cost the owner their preview: this render is heavier than a single
+        # card (one page eight cards wide) and it fell over in production,
+        # taking the whole calibration screen down with it — the preview died
+        # entirely rather than degrading to the one card it has always shown.
+        # So a failure here falls through to the single-card path below.
+        try:
+            paths = rp.render_fronts_strip(
+                theme, fronts, list(PLACEHOLDER_WORDS), title_lines,
+                os.path.join(workdir, "fronts"), word_font=word_font)
+        except Exception as exc:  # noqa: BLE001 - any failure degrades, none propagates
+            print(f"all-fronts preview failed, falling back to one card: {exc}",
+                  file=sys.stderr)
+            paths = []
+    if paths:
         for path in paths:
             _downscale(path, CARD_MAX_W)
         # Keyed by front number so the admin UI can label each image with the

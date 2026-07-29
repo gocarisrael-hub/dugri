@@ -648,11 +648,25 @@ def render_fronts_strip(theme, fronts, words, title_lines, out_dir,
     """
     if not fronts:
         return []
-    cards = [
-        build_single_card_svg(theme, config.card_path(theme, front), words,
-                              title_lines, front_index=front, word_font=word_font)
-        for front in fronts
-    ]
+    import card_assets
+    cfg = config.theme(theme)
+    config.ensure_calibrated(cfg)
+    recipe = config.load_recipe(cfg["recipe"])
+    # Fonts ONCE for the whole strip, not once per card. build_single_card_svg
+    # makes each card self-contained, which is right for a single preview and
+    # wasteful here: eight cards x two base64 faces is sixteen copies of the same
+    # fonts in one document (653KB, where the artwork itself is a fraction of
+    # that). The deck assembler already declares them at document level for the
+    # same reason.
+    style = (GEOMETRIC_TEXT_STYLE
+             + font_face("HebWord", config.resolve_word_font(theme, word_font))
+             + font_face("TitleFont", config.font_path(theme, cfg["title_font"])))
+    cards = []
+    for front in fronts:
+        svg = card_assets.read_svg(config.card_path(theme, front))
+        overlay = card_overlay(theme, recipe, words, title_lines,
+                               front_index=front, word_font=word_font)
+        cards.append(svg.replace("</svg>", overlay + "</svg>"))
     w, h = dims(config.card_path(theme, fronts[0]))
     body = "".join(f'<div class="c">{svg}</div>' for svg in cards)
     html = (
@@ -661,6 +675,7 @@ def render_fronts_strip(theme, fronts, words, title_lines, out_dir,
         f"body{{display:flex;width:{w * len(cards)}px}}"
         f".c{{width:{w}px;height:{h}px;flex:0 0 {w}px;overflow:hidden}}"
         ".c svg{display:block;width:100%;height:100%}"
+        + style +
         "</style></head><body>" + body + "</body></html>"
     )
     os.makedirs(out_dir, exist_ok=True)
@@ -668,12 +683,20 @@ def render_fronts_strip(theme, fronts, words, title_lines, out_dir,
     with open(page, "w", encoding="utf-8") as f:
         f.write(html)
     shot = os.path.join(out_dir, "fronts.png")
-    subprocess.run([CHROME, "--headless", "--no-sandbox",
-                    "--disable-dev-shm-usage", "--disable-gpu", CHROME_FONT_WAIT,
-                    f"--force-device-scale-factor={scale}",
-                    f"--screenshot={shot}",
-                    f"--window-size={w * len(cards)},{h}", page],
-                   check=True, stderr=subprocess.DEVNULL)
+    proc = subprocess.run(
+        [CHROME, "--headless", "--no-sandbox", "--disable-dev-shm-usage",
+         "--disable-gpu", CHROME_FONT_WAIT,
+         f"--force-device-scale-factor={scale}",
+         f"--screenshot={shot}",
+         f"--window-size={w * len(cards)},{h}", page],
+        capture_output=True, text=True, errors="replace")
+    if proc.returncode != 0 or not os.path.exists(shot):
+        tail = (proc.stderr or proc.stdout or "").strip()
+        raise RuntimeError(
+            f"Chrome could not render the {len(cards)}-front strip "
+            f"({w * len(cards)}x{h} at scale {scale}, exit {proc.returncode}). "
+            + (f"Chrome said: {tail[-500:]}" if tail else "Chrome printed nothing.")
+        )
     from PIL import Image
     strip = Image.open(shot)
     # Slice from the ACTUAL rendered width rather than assuming w*scale: Chrome
