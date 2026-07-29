@@ -54,6 +54,9 @@ _HREF_B64 = re.compile(
 # distinguish the fronts are vector paths, not images, so nothing else comes close.
 BG_MIN_CHARS = 1_000_000
 
+# Photo-card slots carry an id the artwork references; see split_background.
+_PHOTO_SLOT_ID = re.compile(r'\bid="photo-slot-[0-9]+"')
+
 _ID_ATTR = re.compile(r'\bid\s*=\s*"([^"]+)"')
 _URL_REF = re.compile(r'url\(\s*#([^)\s]+)\s*\)')
 _HREF_REF = re.compile(r'\b(xlink:href|href)\s*=\s*"#([^"]+)"')
@@ -113,6 +116,14 @@ def split_background(markup):
         el = m.group(0)
         href = _HREF_B64.search(el)
         if not href or len(href.group(2)) < BG_MIN_CHARS:
+            continue
+        # NEVER hoist a photo slot. Hoisting replaces the <image> with a <use>,
+        # which strips its id — and the photo card's sticker halo is bound to
+        # id="photo-slot-N", so the halo would be orphaned and the customer's
+        # photo would lose the artwork built around it. Only the full-bleed
+        # BACKGROUND is worth sharing anyway: it is identical across cards,
+        # whereas every photo slot is unique to one order.
+        if _PHOTO_SLOT_ID.search(el):
             continue
         # The shared definition keeps the element's own geometry (x/y/width/
         # height/preserveAspectRatio), so <use> reproduces the original placement.

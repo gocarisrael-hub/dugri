@@ -208,3 +208,26 @@ if __name__ == "__main__":
         else:
             fn()
     print(f"all {len(fns)} tests passed")
+
+
+# --- a photo slot must never be hoisted into shared defs ---------------------
+# Hoisting replaces the <image> with a <use>, which strips its id — and the photo
+# card's sticker halo is bound to id="photo-slot-N", so the halo would be
+# orphaned and the customer's photo would lose the artwork built around it.
+
+def test_a_photo_slot_is_never_hoisted_however_large():
+    slot = (f'<image id="photo-slot-1" x="0" y="0" width="66" height="66" '
+            f'xlink:href="data:image/png;base64,{BIG}"/>')
+    markup, payload = dh.split_background(slot)
+    assert payload is None, "a photo slot must not become a shared def"
+    assert 'id="photo-slot-1"' in markup, "the slot must keep its id"
+    assert "<use" not in markup
+
+
+def test_the_background_is_still_hoisted_when_a_photo_slot_is_present():
+    both = (f'<image x="0" y="0" width="2459" height="1844" '
+            f'xlink:href="data:image/png;base64,{BIG}"/>'
+            f'<image id="photo-slot-2" xlink:href="data:image/png;base64,{BIG}"/>')
+    markup, payload = dh.split_background(both)
+    assert payload is not None, "the shared background must still be hoisted"
+    assert 'id="photo-slot-2"' in markup
