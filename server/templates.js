@@ -384,13 +384,24 @@ function writeTemplateFiles({ root, slug, clean, filled, fonts, assets }) {
 // the OWNER recipes dir when DATA_DIR is set (it inherits the env), so the
 // success check accepts a recipe that landed in EITHER layer rather than only
 // the image's.
-function runRecipeDiff({ root, slug, pythonBin = 'python3', timeoutMs = 120000, runner }) {
+function runRecipeDiff({
+  root,
+  slug,
+  pythonBin = 'python3',
+  timeoutMs = 120000,
+  runner,
+  cards = false,
+}) {
   const script = path.join(root, 'generator', 'recipe_diff.py');
   const dir = resolveTemplateDirBySlug(root, slug);
   const filled = path.join(dir, 'filled', 'fronts.svg');
   const clean = path.join(dir, 'clean', 'fronts.svg');
   const out = store.ownerRecipePath(slug) || path.join(recipesDirFor(root), slug + '.json');
-  const args = [script, filled, clean, slug];
+  // A single-card template has no fronts.svg sheet to diff: the detector takes
+  // the template DIRECTORY and walks clean/filled 1..9 itself, reconciling the
+  // four shared word slots across the eight fronts and keeping each front's own
+  // title box.
+  const args = cards ? [script, '--single', dir, slug] : [script, filled, clean, slug];
   let result;
   try {
     const run = runner || spawnSync;
@@ -833,19 +844,21 @@ function onboardTemplate(opts) {
   });
   appendThemeEntry(themesPathFor(root), norm.slug, entry);
 
-  // recipe_diff + calibrate.py both measure the SHEET layout (eight cells on one
-  // clean/filled fronts.svg pair). A single-card template has no such sheet: its
-  // four word slots and its per-front title boxes are calibrated by hand in the
-  // admin form, against one 223.92x312 card. So both Python steps are SKIPPED for
-  // the new layout rather than run against files that aren't there.
+  // Both Python steps run for BOTH layouts. This used to skip single-card
+  // templates on the grounds that recipe_diff only understood the 8-up sheet, so
+  // their slots had to be measured by hand in the admin form — that stopped being
+  // true when the detector learned the single-card structure, and leaving the
+  // skip in place meant every card template arrived with an empty recipe and no
+  // sign that detection had simply never been attempted.
   let recipe = { ok: false, skipped: true };
-  if (!isCards && opts.runRecipe !== false) {
+  if (opts.runRecipe !== false) {
     recipe = runRecipeDiff({
       root,
       slug: norm.slug,
       pythonBin: opts.pythonBin,
       timeoutMs: opts.recipeTimeoutMs,
       runner: opts.recipeRunner,
+      cards: isCards,
     });
   }
 
@@ -855,7 +868,7 @@ function onboardTemplate(opts) {
   // — a template that cannot be measured is still registered, just with an empty
   // form for the owner to fill by hand exactly as before.
   let calibration = { ok: false, skipped: true };
-  if (!isCards && recipe.ok && opts.runCalibrate !== false) {
+  if (recipe.ok && opts.runCalibrate !== false) {
     calibration = runCalibrate({
       root,
       slug: norm.slug,

@@ -125,21 +125,31 @@ describe('single-card layout — onboarding + validation', () => {
     expect(entry.calibrated).toBe(false);
   });
 
-  it('SKIPS recipe_diff for a single-card template (there is no sheet to measure)', () => {
+  // Detection used to be skipped for single-card templates, because recipe_diff
+  // only understood the 8-up sheet and their slots had to be measured by hand.
+  // It understands the single-card structure now, so skipping it left every card
+  // template arriving with an empty recipe and no sign detection had simply never
+  // been attempted.
+  it('RUNS recipe_diff for a single-card template, in --single mode', () => {
     const root = makeScaffold();
-    let spawned = 0;
-    const r = templates.onboardTemplate({
+    const calls = [];
+    templates.onboardTemplate({
       root,
       ...cardsUpload(),
       shrinkImages: false,
-      recipeRunner: () => {
-        spawned += 1;
+      recipeRunner: (bin, args) => {
+        calls.push(args);
         return { status: 0 };
       },
     });
-    expect(spawned).toBe(0);
-    expect(r.recipe).toBe('skipped');
-    expect(r.note).toMatch(/single-card|BOARD/);
+    expect(calls).toHaveLength(1);
+    const args = calls[0];
+    // The detector takes the template DIRECTORY, not a fronts.svg pair — a
+    // single-card template has no sheet to diff.
+    expect(args).toContain('--single');
+    expect(args.some((a) => String(a).endsWith('recipe_diff.py'))).toBe(true);
+    expect(args.some((a) => String(a).endsWith('fronts.svg'))).toBe(false);
+    expect(args[args.length - 1]).toBe('card-demo');
   });
 
   it('the BOARD is optional on a deck-first upload, and lands when supplied', () => {
