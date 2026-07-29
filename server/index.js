@@ -16,6 +16,7 @@ const playbook = require('./playbook');
 const content = require('./content');
 const contentImport = require('./content-import');
 const designImages = require('./design-images');
+const photoFallback = require('./photo-fallback');
 const settings = require('./settings');
 const whatsapp = require('./whatsapp');
 const waState = require('./wa-state');
@@ -2581,6 +2582,10 @@ function reclaimDesignImage(imgPath) {
   if (!imgPath) return;
   if (designImages.isImageReferenced(imgPath)) return;
   if (content.isImageReferenced(imgPath)) return;
+  // ...and the photo-card fallback pawns, which reuse the same content-addressed
+  // uploads: the SAME bytes uploaded as both a gallery picture and a pawn are ONE
+  // file, so displacing the picture must not delete what the pawn still points at.
+  if (photoFallback.isImageReferenced(imgPath)) return;
   content.deleteUpload(imgPath);
 }
 
@@ -2731,6 +2736,106 @@ app.post('/api/admin/design-images/order', (req, res) => {
   const next = designImages.setOrder(designId, order);
   if (next == null) return res.status(400).json({ error: 'order must be an array' });
   res.json({ ok: true, gallery: designImages.getForDesign(designId) });
+});
+
+// --- Photo-card FALLBACK PAWNS (server/photo-fallback.js) --------------------
+// The photo card's four slots are filled with generic Dugri pawns when an order
+// supplies no customer photos. The shipped set lives in the repo, so replacing
+// one meant a PR; these routes let the owner do it per slot from the admin, with
+// no deploy. An un-overridden slot keeps using the shipped artwork, which is why
+// "reset" DELETES the override rather than storing a copy of the default.
+//
+// The GENERATOR reads the resulting store directly — see
+// docs/photo-fallback-overrides.md.
+
+// Where the shipped pawns live. Read-only, and only ever joined with a validated
+// slot digit, so this can never be steered at another file.
+const SHIPPED_PAWN_DIR = path.join(
+  __dirname,
+  '..',
+  'resources',
+  'canva',
+  'templates',
+  '_shared',
+  'photo-fallback'
+);
+
+// Reclaim a now-orphaned upload. Uploads are content-addressed and SHARED across
+// ALL THREE stores, so a displaced pawn may still be in use as a gallery picture
+// or a content image — check every one before deleting the bytes.
+function reclaimPawn(imgPath) {
+  if (!imgPath) return;
+  if (photoFallback.isImageReferenced(imgPath)) return;
+  if (designImages.isImageReferenced(imgPath)) return;
+  if (content.isImageReferenced(imgPath)) return;
+  content.deleteUpload(imgPath);
+}
+
+// Admin: the four slots, each reporting whether it is overridden and what to
+// show as its thumbnail. `img` is what the generator will actually use.
+app.get('/api/admin/photo-fallback', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const overrides = photoFallback.getAll();
+  const slots = photoFallback.SLOTS.map((slot) => {
+    const img = overrides[slot] || null;
+    return {
+      slot,
+      img,
+      overridden: !!img,
+      // The shipped pawn is not under site/, so it cannot be linked directly —
+      // it is served by the route below.
+      shipped: '/api/admin/photo-fallback/default/' + slot,
+      shippedExists: fs.existsSync(path.join(SHIPPED_PAWN_DIR, slot + '.svg')),
+    };
+  });
+  res.json({ slots });
+});
+
+// Admin: the SHIPPED pawn for a slot, so the panel can show what a slot falls
+// back to. Streams a repo file (our own committed artwork, not user input) and
+// is admin-gated like the rest of this panel.
+app.get('/api/admin/photo-fallback/default/:slot', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const slot = photoFallback.slotOk(req.params.slot);
+  if (!slot) return res.status(400).json({ error: 'bad slot' });
+  const file = path.join(SHIPPED_PAWN_DIR, slot + '.svg');
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'no shipped pawn for that slot' });
+  res.type('image/svg+xml');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(fs.readFileSync(file));
+});
+
+// Admin: REPLACE one slot's pawn. Multipart (field `slot` + a file part).
+app.post(
+  '/api/admin/photo-fallback',
+  (req, res, next) => {
+    if (!requireAdmin(req, res)) return;
+    next();
+  },
+  express.raw({ type: () => true, limit: CONTENT_IMAGE_UPLOAD_LIMIT }),
+  (req, res) => {
+    const saved = saveGalleryUpload(req, res);
+    if (!saved) return;
+    const slot = photoFallback.slotOk(saved.fields.slot);
+    if (!slot) {
+      // Reclaim the just-written orphan — nothing references it yet.
+      reclaimPawn(saved.img);
+      return res.status(400).json({ error: 'bad slot' });
+    }
+    const { prev } = photoFallback.setSlot(slot, saved.img);
+    if (prev) reclaimPawn(prev);
+    res.json({ ok: true, slot, img: saved.img });
+  }
+);
+
+// Admin: revert one slot to its shipped pawn. JSON { slot }.
+app.delete('/api/admin/photo-fallback', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const slot = photoFallback.slotOk((req.body || {}).slot);
+  if (!slot) return res.status(400).json({ error: 'bad slot' });
+  const { prev } = photoFallback.resetSlot(slot);
+  if (prev) reclaimPawn(prev);
+  res.json({ ok: true, slot });
 });
 
 // Public social-proof "celebrations" counter for the homepage. Returns ONLY an

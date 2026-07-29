@@ -181,6 +181,109 @@ test.describe('admin gallery page', () => {
     await expect(photo.locator('img.preview')).toHaveAttribute('src', UPLOADED);
   });
 
+  // ---- Photo-card fallback pawns -------------------------------------------
+  // One shared set of four, NOT per design: the pawns fill the photo card when an
+  // order arrives with no customer photos.
+  const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>';
+
+  // Stubs the pawn API. `slots` maps slot -> override path (absent = shipped).
+  function stubPawns(page, slots = {}, onCall) {
+    return page.route('**/api/admin/photo-fallback*', (route) => {
+      const req = route.request();
+      const url = req.url();
+      if (url.includes('/photo-fallback/default/')) {
+        return route.fulfill({ contentType: 'image/svg+xml', body: SVG });
+      }
+      if (req.method() === 'GET') {
+        return route.fulfill({
+          json: {
+            slots: ['1', '2', '3', '4'].map((slot) => ({
+              slot,
+              img: slots[slot] || null,
+              overridden: !!slots[slot],
+              shipped: '/api/admin/photo-fallback/default/' + slot,
+              shippedExists: true,
+            })),
+          },
+        });
+      }
+      if (onCall) onCall(req);
+      return route.fulfill({ json: { ok: true, slot: '1' } });
+    });
+  }
+
+  test('the pawn panel lists four slots, each on its shipped pawn', async ({ page }) => {
+    await stubGet(page, {});
+    await stubPawns(page);
+    await page.goto(`/admin-images.html?key=${KEY}`);
+
+    const pawns = page.locator('#pawnsList .item[data-pawn]');
+    await expect(pawns).toHaveCount(4);
+    await expect(page.locator('#pawns')).toBeVisible();
+    // Every slot reports the shipped default, and reset is meaningless there.
+    await expect(page.locator('#pawnsList .badge.default')).toHaveCount(4);
+    await expect(page.locator('#pawnsList button[data-act="pawn-reset"][disabled]')).toHaveCount(4);
+    // The thumbnail shows what the slot falls back to, via the admin route.
+    await expect(pawns.first().locator('img.preview')).toHaveAttribute(
+      'src',
+      /photo-fallback\/default\/1/
+    );
+  });
+
+  test('an overridden slot is marked custom and can be reset', async ({ page }) => {
+    await stubGet(page, {});
+    await stubUploads(page);
+    let deleted = null;
+    await stubPawns(page, { 2: UPLOADED }, (req) => {
+      if (req.method() === 'DELETE') deleted = JSON.parse(req.postData() || '{}');
+    });
+    await page.goto(`/admin-images.html?key=${KEY}`);
+
+    const two = page.locator('#pawnsList .item[data-pawn="2"]');
+    await expect(two.locator('.badge.custom')).toBeVisible();
+    // The thumbnail is the OVERRIDE, not the shipped pawn — it is what the
+    // generator will actually print.
+    await expect(two.locator('img.preview')).toHaveAttribute('src', UPLOADED);
+    await expect(two.locator('button[data-act="pawn-reset"]')).toBeEnabled();
+
+    await two.locator('button[data-act="pawn-reset"]').click();
+    await expect.poll(() => deleted).not.toBeNull();
+    expect(deleted).toEqual({ slot: '2' });
+  });
+
+  test('uploading a pawn posts the slot with the file', async ({ page }) => {
+    await stubGet(page, {});
+    let posted = null;
+    await stubPawns(page, {}, (req) => {
+      if (req.method() === 'POST') posted = req.postData() || '';
+    });
+    await page.goto(`/admin-images.html?key=${KEY}`);
+
+    const three = page.locator('#pawnsList .item[data-pawn="3"]');
+    await three.locator('input[type="file"]').setInputFiles({
+      name: 'pawn.png',
+      mimeType: 'image/png',
+      buffer: PNG,
+    });
+
+    await expect.poll(() => posted).not.toBeNull();
+    // Multipart carrying the slot and the file part.
+    expect(posted).toContain('name="slot"');
+    expect(posted).toContain('3');
+    expect(posted).toContain('name="file"');
+  });
+
+  test('without a key the pawn panel is not requested either', async ({ page }) => {
+    let hitPawns = false;
+    page.on('request', (req) => {
+      if (req.url().includes('/api/admin/photo-fallback')) hitPawns = true;
+    });
+    await page.goto('/admin-images.html');
+    await expect(page.locator('#noKey')).toBeVisible();
+    await expect(page.locator('#pawns')).toBeHidden();
+    expect(hitPawns).toBe(false);
+  });
+
   test('reorder posts the full new key order', async ({ page }) => {
     await stubGet(page, {});
     let orderBody = null;

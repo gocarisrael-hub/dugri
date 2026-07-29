@@ -121,6 +121,25 @@
         grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
         gap: 14px;
       }
+      /* A non-design section that still reads as part of the page. Deliberately
+         NOT .design: that class means "one design's gallery", and reusing it
+         would make the pawn panel count as an eighth design. */
+      .panel {
+        margin: 28px 0 10px;
+        padding-top: 8px;
+        border-top: 1px solid var(--line);
+      }
+      #pawns h2 {
+        font-size: 15px;
+        font-weight: 800;
+        color: var(--pink-deep);
+        margin: 0 0 4px;
+      }
+      .pawns-lede {
+        margin: 0 0 12px;
+        font-size: 13px;
+        color: var(--ink-soft, #6b6b6b);
+      }
       .item {
         border: 1px solid var(--line);
         border-radius: var(--radius);
@@ -308,6 +327,19 @@
       <div id="loadErr" class="msg" hidden></div>
 
       <div id="app" hidden></div>
+
+      <!-- The photo card's four fallback pawns. Not per-design: ONE set, used by
+           every deck whose order arrived without customer photos. -->
+      <section id="pawns" class="panel" hidden>
+        <h2>חיילים לקלף התמונות</h2>
+        <p class="pawns-lede">
+          הקלף האחרון בחפיסה הוא קלף התמונות — ארבע התמונות שהלקוח/ה מעלה. כשהזמנה מגיעה בלי תמונות,
+          ממלאים את ארבע המשבצות בחיילים הגנריים האלה. אפשר להחליף כל אחד מהם כאן, בלי דפלוי. משבצת
+          שלא הוחלפה משתמשת בחייל המקורי.
+        </p>
+        <div id="pawnsErr" class="msg" hidden></div>
+        <div class="items" id="pawnsList"></div>
+      </section>
 
       <footer>נשמר בשרת (DATA_DIR) · גלוי רק עם מפתח הניהול · לא מקושר מהאתר.</footer>
     </div>
@@ -671,6 +703,94 @@
         if (e.key === 'Enter' && e.target.matches('.item .name-input')) e.target.blur();
       });
 
+      // ---- Photo-card fallback pawns -------------------------------------
+      // ONE set of four, shared by every deck — not per design. A slot is either
+      // OVERRIDDEN (an uploaded raster) or falls back to the shipped pawn, which
+      // is served from an admin route because it lives in resources/, outside the
+      // static site root.
+      const PAWN_LABEL = ['חייל 1', 'חייל 2', 'חייל 3', 'חייל 4'];
+
+      function pawnHtml(s) {
+        // Show what the generator will ACTUALLY use: the override when there is
+        // one, else the shipped pawn. A slot whose shipped file is missing shows
+        // the empty placeholder rather than a broken image.
+        const src = s.img || (s.shippedExists ? withKey(s.shipped) : '');
+        const badge = s.img
+          ? '<span class="badge custom">מותאם</span>'
+          : s.shippedExists
+            ? '<span class="badge default">ברירת מחדל</span>'
+            : '<span class="badge default">אין תמונה</span>';
+        const preview = src
+          ? `<img class="preview" alt="${esc(PAWN_LABEL[Number(s.slot) - 1] || s.slot)}" src="${esc(src)}" onerror="this.style.visibility='hidden'" />`
+          : '<div class="preview preview-empty">אפשר להעלות חייל משלכם</div>';
+        return `
+          <div class="item" data-pawn="${esc(s.slot)}">
+            <h3>${esc(PAWN_LABEL[Number(s.slot) - 1] || s.slot)} ${badge}</h3>
+            ${preview}
+            <div class="row">
+              <button data-act="pawn-upload">${s.img ? 'החלף תמונה' : 'העלה תמונה'}</button>
+              <button class="ghost" data-act="pawn-reset" ${s.img ? '' : 'disabled'}>איפוס</button>
+            </div>
+            <input type="file" accept="image/png,image/jpeg,image/webp" hidden />
+            <div class="status"></div>
+          </div>`;
+      }
+
+      async function loadPawns() {
+        try {
+          const j = await api('/api/admin/photo-fallback');
+          qs('pawnsList').innerHTML = (j.slots || []).map(pawnHtml).join('');
+          qs('pawns').hidden = false;
+          qs('pawnsErr').hidden = true;
+        } catch (e) {
+          qs('pawnsErr').textContent = 'טעינת החיילים נכשלה: ' + e.message;
+          qs('pawnsErr').hidden = false;
+          qs('pawns').hidden = false;
+        }
+      }
+
+      async function uploadPawn(itemEl, file) {
+        const fd = new FormData();
+        fd.append('slot', itemEl.dataset.pawn);
+        fd.append('file', file);
+        setStatus(itemEl.querySelector('.status'), 'מעלה…', '');
+        try {
+          await api('/api/admin/photo-fallback', { method: 'POST', body: fd });
+          await loadPawns();
+        } catch (e) {
+          setStatus(itemEl.querySelector('.status'), 'העלאה נכשלה: ' + e.message, 'err');
+        }
+      }
+
+      async function resetPawn(itemEl) {
+        try {
+          await api('/api/admin/photo-fallback', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slot: itemEl.dataset.pawn }),
+          });
+          await loadPawns();
+        } catch (e) {
+          setStatus(itemEl.querySelector('.status'), 'איפוס נכשל: ' + e.message, 'err');
+        }
+      }
+
+      qs('pawnsList').addEventListener('click', (e) => {
+        const item = e.target.closest('.item[data-pawn]');
+        if (!item) return;
+        const act = (e.target.closest('button') || {}).dataset?.act;
+        if (act === 'pawn-upload') item.querySelector('input[type="file"]').click();
+        if (act === 'pawn-reset') resetPawn(item);
+      });
+      qs('pawnsList').addEventListener('change', (e) => {
+        const item = e.target.closest('.item[data-pawn]');
+        if (!item || !e.target.matches('input[type="file"]')) return;
+        const file = e.target.files && e.target.files[0];
+        // Clear the picker so re-choosing the SAME file fires change again.
+        e.target.value = '';
+        if (file) uploadPawn(item, file);
+      });
+
       async function load() {
         try {
           const r = await fetch(withKey('/api/design-images'));
@@ -689,6 +809,9 @@
       } else {
         qs('app').hidden = false;
         load();
+        // Independent of the per-design galleries: the pawns are one shared set,
+        // so a failure in either list must not blank the other.
+        loadPawns();
       }
     </script>
   </body>
