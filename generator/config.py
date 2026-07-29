@@ -477,6 +477,51 @@ def photo_card_path(theme_name):
     return card_path(theme_name, fronts(cfg)[0])
 
 
+# ---- the owner's admin overrides for the photo card's pawns ----------------
+# The admin panel (server/photo-fallback.js, docs/photo-fallback-overrides.md)
+# lets the owner replace any of the four fallback pawns without a deploy. It
+# writes DATA_DIR/photo-fallback.json:
+#
+#   { "slots": { "1": "/content-uploads/<16-hex>.png", "3": "..." } }
+#
+# ONLY overridden slots are present; an absent slot means "use the shipped pawn".
+# Reading this is what makes the panel real: without it the owner uploads a pawn,
+# sees it on screen, and it never prints — a silent no-op on a paid order.
+#
+# Missing, unreadable or corrupt is deliberately the SAME as "no overrides": a
+# bad file must degrade to the shipped pawns, never fail an order.
+PHOTO_FALLBACK_STORE = "photo-fallback.json"
+# The exact filename shape server/content.js produces. Checked here as well as
+# basename()d, so a hand-edited or doctored value can neither escape the uploads
+# directory nor point the render at an arbitrary file.
+_UPLOAD_NAME_RE = re.compile(r"[a-f0-9]{16}\.(?:webp|jpe?g|png)")
+
+
+def _photo_fallback_overrides():
+    """The owner's pawn overrides as ``{slot_int: absolute_path}``."""
+    data_dir = os.environ.get("DATA_DIR")
+    if not data_dir:
+        return {}
+    try:
+        with open(os.path.join(data_dir, PHOTO_FALLBACK_STORE), encoding="utf-8") as f:
+            slots = (json.load(f) or {}).get("slots") or {}
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(slots, dict):
+        return {}
+    out = {}
+    for key, rel in slots.items():
+        if str(key) not in tuple(str(i) for i in range(1, PHOTO_FALLBACK_COUNT + 1)):
+            continue
+        name = os.path.basename(str(rel))
+        if not _UPLOAD_NAME_RE.fullmatch(name):
+            continue
+        path = os.path.join(data_dir, "content-uploads", name)
+        if os.path.isfile(path):
+            out[int(key)] = path
+    return out
+
+
 def photo_fallback_paths(theme_name):
     """The generic Dugri pawn images used when the customer uploaded none.
 
@@ -502,10 +547,21 @@ def photo_fallback_paths(theme_name):
             if os.path.isfile(path):
                 out.append(path)
         return out
+    # The owner's uploads win over the shipped set, per slot: the admin panel
+    # presents one global set as THE fallback, and replacing a pawn there is the
+    # more recent and more deliberate act than a theme's configured subdir.
+    # Per-slot, not all-or-nothing — overriding pawn 2 must leave 1, 3 and 4 as
+    # shipped, and slot N must still take pawn N.
+    #
+    # An override is a RASTER while the shipped pawns are SVG (content.js refuses
+    # SVG uploads on purpose: served from our own origin, an SVG can carry
+    # <script> and become stored XSS). So this routinely returns a MIXED set of
+    # extensions — nothing downstream may assume .svg.
+    override = _photo_fallback_overrides()
     subdir = os.path.basename(str(raw or "")) or DEFAULT_PHOTO_FALLBACK_DIR
     base = os.path.join(SHARED_TEMPLATES_DIR, subdir)
     for i in range(1, PHOTO_FALLBACK_COUNT + 1):
-        path = os.path.join(base, f"{i}.svg")
+        path = override.get(i) or os.path.join(base, f"{i}.svg")
         if os.path.isfile(path):
             out.append(path)
     return out
