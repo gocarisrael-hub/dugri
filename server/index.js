@@ -1138,6 +1138,47 @@ app.put('/api/admin/collections/:id/pawns', (req, res) => {
 // oracle (each call spawns Chrome). Also runs the name-language check and returns
 // a `warning` when the name doesn't fit the theme's script, plus the shared
 // word-font options so the client can render the picker.
+
+// A fingerprint of everything the RENDER reads for a template, so a preview
+// cache entry can never outlive the artwork it was rendered from.
+//
+// The cache key is built from the request (name, calibration knobs, ...), which
+// silently assumes the template itself is static. It isn't: the owner replaces
+// fonts and card SVGs from the admin panel. Upload a new font, preview the same
+// name, and the identical key returned the PNG from BEFORE the upload — the
+// change appeared to do nothing until the 5-minute TTL expired.
+//
+// mtimes rather than hashes: a few stat() calls per request, no file reads, and
+// any write to a watched path changes one of them. Both themes.json layers are
+// watched (the recorded font filename lives there), plus the template dir and
+// its immediate asset subdirs — writing fonts/X.ttf bumps fonts/, not the theme
+// dir, so the subdirs have to be stat'd individually. Anything unreadable
+// contributes a constant, so a missing dir simply doesn't participate.
+function templateFingerprint(theme) {
+  const parts = [];
+  const stamp = (p) => {
+    try {
+      parts.push(String(fs.statSync(p).mtimeMs));
+    } catch {
+      parts.push('-');
+    }
+  };
+  stamp(path.join(TEMPLATE_ROOT, 'generator', 'themes.json'));
+  const dataDir = process.env.DATA_DIR;
+  if (dataDir) stamp(path.join(dataDir, 'templates', 'themes.json'));
+  let dir = null;
+  try {
+    dir = templates.resolveTemplateDirBySlug(TEMPLATE_ROOT, theme);
+  } catch {
+    /* unknown template — the render will fail on its own terms */
+  }
+  if (dir) {
+    stamp(dir);
+    for (const sub of ['clean', 'filled', 'fonts', 'assets']) stamp(path.join(dir, sub));
+  }
+  return parts.join(':');
+}
+
 app.post('/api/preview', async (req, res) => {
   const b = req.body || {};
   const theme = String(b.theme || '').trim();
@@ -1189,6 +1230,8 @@ app.post('/api/preview', async (req, res) => {
     // Distinct knob sets must not collide, and a calibration preview must never
     // be served a plain (uncalibrated) cache entry or vice-versa.
     calibration,
+    // ...and neither may an entry outlive the artwork it was rendered from.
+    assets: templateFingerprint(theme),
   });
   const cached = previewCache.get(cacheKey);
   if (cached) {

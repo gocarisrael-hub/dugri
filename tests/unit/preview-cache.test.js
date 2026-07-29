@@ -104,3 +104,42 @@ describe('preview result cache', () => {
     expect(c.get(k3)).toEqual({ card: '3' });
   });
 });
+
+// The cache key is built from the REQUEST, which silently assumed the template
+// itself is static. It isn't — the owner replaces fonts and card SVGs from the
+// admin panel. Uploading a new font and previewing the same name produced the
+// identical key, so the PNG from BEFORE the upload came back and the change
+// looked like it had done nothing until the 5-minute TTL expired.
+describe('preview cache key — template assets', () => {
+  it('a different assets fingerprint is a different key', () => {
+    const base = {
+      theme: 'grapefruit',
+      name: 'דנה',
+      wordFont: null,
+      extraFields: {},
+      chasers: false,
+      customTitle: null,
+      calibration: null,
+    };
+    const cache = makePreviewCache({ max: 8, ttlMs: 60000 });
+    const before = cache.key({ ...base, assets: 'mtime-a' });
+    const after = cache.key({ ...base, assets: 'mtime-b' });
+    expect(before).not.toBe(after);
+  });
+
+  it('an unchanged fingerprint still hits the cache', () => {
+    const base = {
+      theme: 'grapefruit',
+      name: 'דנה',
+      wordFont: null,
+      extraFields: {},
+      chasers: false,
+      customTitle: null,
+      calibration: null,
+      assets: 'mtime-a',
+    };
+    const cache = makePreviewCache({ max: 8, ttlMs: 60000 });
+    cache.set(cache.key(base), { card: 'x' });
+    expect(cache.get(cache.key({ ...base }))).toEqual({ card: 'x' });
+  });
+});

@@ -66,6 +66,13 @@ function previewCacheKey(parts = {}) {
     // served from (or into) a plain preview's slot. The blob is built in a fixed
     // key order upstream, so this serialization is stable.
     parts.calibration || null,
+    // A fingerprint of the template's own artwork (mtimes of themes.json + the
+    // asset dirs). Without it the key described only the REQUEST, so it assumed
+    // the template was static — and it isn't: the owner replaces fonts and card
+    // SVGs from the admin panel. Uploading a new font and previewing the same
+    // name hit the identical key and returned the PNG from BEFORE the upload,
+    // so the change looked like it had done nothing until the TTL expired.
+    String(parts.assets || ''),
   ]);
 }
 
