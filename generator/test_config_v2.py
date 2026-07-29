@@ -528,3 +528,25 @@ def test_a_preview_still_cannot_repoint_a_theme_at_other_artwork():
     assert "cards" not in config._OVERRIDABLE
     assert "dir" not in config._OVERRIDABLE
     assert "recipe" not in config._OVERRIDABLE
+
+
+def test_admin_onboarded_template_is_detected_as_single_card():
+    """The ADMIN writes card_structure and NO cards block.
+
+    This is the shape server/templates.js appends on a nine-file upload. Reading
+    it as a legacy sheet sent the render down the v1 path, which indexes
+    recipe["cards"] — a key a v2 recipe does not have — so every owner-uploaded
+    single-card template died with a KeyError instead of previewing.
+    """
+    assert config.is_single_card({"card_structure": "cards", "card_slots": None})
+    # ...and the other two markers still work on their own.
+    assert config.is_single_card({"cards": {"back": 1, "fronts": [2, 3]}})
+    assert config.is_single_card({"card_layout": "single"})
+
+
+def test_a_legacy_sheet_is_still_a_sheet():
+    """The guard has to stay one-directional: nothing here may promote a v1 theme."""
+    assert not config.is_single_card({})
+    assert not config.is_single_card({"card_structure": "sheet"})
+    assert not config.is_single_card({"cards": None})
+    assert not config.is_single_card({"cards": []})

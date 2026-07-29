@@ -377,8 +377,26 @@ def cards_config(cfg):
 
 
 def is_single_card(cfg):
-    """True when a theme config uses the v2 single-card deck."""
-    return bool(cards_config(cfg)) or cfg.get("card_layout") == "single"
+    """True when a theme config uses the v2 single-card deck.
+
+    THREE markers, because three different writers each declare it their own way
+    and a template only has to carry ONE of them:
+
+    * ``card_structure: "cards"`` — what the ADMIN writes when the owner uploads
+      a nine-file deck (server/templates.js). It writes no ``cards`` block at
+      all, so this used to read as a legacy sheet: the render fell through to the
+      v1 path and died on ``recipe["cards"]``, which a v2 recipe has no such key
+      for. Every owner-uploaded single-card template hit that; the shipped ones
+      escaped it only because their ``cards`` block was written by hand.
+    * a ``cards`` block — the hand-written shipped form (grapefruit).
+    * ``card_layout: "single"`` — the earliest marker, kept so anything written
+      before the rename keeps rendering.
+    """
+    return (
+        cfg.get("card_structure") == "cards"
+        or bool(cards_config(cfg))
+        or cfg.get("card_layout") == "single"
+    )
 
 
 def fronts(cfg):
