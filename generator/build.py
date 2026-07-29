@@ -383,7 +383,32 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
 # so the middle band is their torso and the crop beheads them. Anchoring near
 # the top keeps the head, with a little headroom so it isn't flush against the
 # edge. 0 = flush top, 0.5 = the centre crop that was cutting faces off.
-PHOTO_FACE_BIAS = float(os.environ.get("DUGRI_PHOTO_FACE_BIAS", "0.12"))
+# Where a person's head-and-shoulders sits in a portrait photo, as a fraction of
+# its height. The crop is CENTRED on this point, not anchored to the top: the
+# slot shows only the INSCRIBED CIRCLE, and docs/photo-card.md asks for the
+# subject inside a centred disc of 0.46 x the side, so a subject pinned near the
+# top edge gets its head clipped by the circle. 0.5 would be the plain centre
+# crop that put the disc on people's torsos.
+PHOTO_SUBJECT_Y = float(os.environ.get("DUGRI_PHOTO_SUBJECT_Y", "0.30"))
+
+# The square we hand the slot, per docs/photo-card.md: 512 target, 220 floor
+# (300 DPI over the slot's 18.57 mm), 1024 ceiling — every pixel above that is
+# base64 that ships in the order's PDF four times over.
+PHOTO_SLOT_PX = int(os.environ.get("DUGRI_PHOTO_SLOT_PX", "512"))
+PHOTO_SLOT_MIN_PX = 220
+PHOTO_SLOT_MAX_PX = 768
+# deck_html hoists any <image> whose base64 payload exceeds BG_MIN_CHARS into
+# shared defs and replaces the element with a <use> — which would strip the
+# photo-slot id and orphan the sticker halo bound to it. A photo must therefore
+# stay well under that threshold. 512x512 RGBA lands far below it; this is the
+# belt-and-braces check, and deck_html additionally refuses to hoist a photo slot
+# at all (see split_background) so neither guard alone has to be perfect.
+PHOTO_MAX_B64_CHARS = 900_000
+
+
+def _b64_chars(path):
+    """Base64 length this file will occupy once inlined into the card."""
+    return (os.path.getsize(path) + 2) // 3 * 4
 
 
 def square_photo(path, workdir, index=0):
@@ -410,16 +435,39 @@ def square_photo(path, workdir, index=0):
                 return path
             side = min(w, h)
             if h > w:
-                # Portrait: keep the top of the frame, where the head is.
-                top = int(round((h - side) * PHOTO_FACE_BIAS))
+                # Portrait: centre the square on the subject rather than on the
+                # middle of the frame (their torso) or flush with the top (which
+                # the slot's circle would then clip).
+                top = int(round(PHOTO_SUBJECT_Y * h - side / 2))
+                top = max(0, min(top, h - side))
                 box = (0, top, side, top + side)
             else:
                 # Landscape: people are usually centred left-to-right.
                 left = (w - side) // 2
                 box = (left, 0, left + side, side)
+            # RGBA, not RGB: converting to RGB FLATTENS the alpha channel, so a
+            # transparent cutout arrived opaque and — now that the white disc
+            # behind it is gone (die-cut stickers) — printed as a white-edged
+            # rectangle. The shipped fallbacks never pass through here, which is
+            # why they looked right while real customer photos did not.
+            square = im.convert("RGBA").crop(box)
+            target = max(PHOTO_SLOT_MIN_PX, min(PHOTO_SLOT_PX, PHOTO_SLOT_MAX_PX))
+            if square.width != target:
+                # Normalise the size the card carries. Upscaling a small photo is
+                # deliberate: below the floor it prints under 300 DPI, and the
+                # slot would scale it anyway — doing it here keeps every card's
+                # payload predictable.
+                square = square.resize((target, target), Image.LANCZOS)
             out = os.path.join(workdir, f"photo-{index + 1}.png")
             os.makedirs(workdir, exist_ok=True)
-            im.convert("RGB").crop(box).save(out)
+            square.save(out)
+            # A photo that still encodes too large would be hoisted out of the
+            # card by the deck assembler; step the size down rather than let it
+            # silently lose its slot id.
+            side_px = target
+            while _b64_chars(out) > PHOTO_MAX_B64_CHARS and side_px > PHOTO_SLOT_MIN_PX:
+                side_px = max(PHOTO_SLOT_MIN_PX, int(side_px * 0.8))
+                square.resize((side_px, side_px), Image.LANCZOS).save(out)
             return out
     except Exception:
         return path

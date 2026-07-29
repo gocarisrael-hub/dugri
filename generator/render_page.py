@@ -538,7 +538,7 @@ def back_overlay(theme, recipe, title_lines):
 
 # The photo card's four slots ship in the artwork as <image> elements with NO
 # href — id="photo-slot-1".."photo-slot-4" — already carrying their geometry,
-# their xMidYMid-slice crop and their circular clip (see docs/photo-card.md).
+# their xMidYMid-meet fit and their circular clip (see docs/photo-card.md).
 # Filling one is therefore a single attribute set, NOT drawing a new image: the
 # card's designed crop, disc clip and empty-slot artwork all stay the template's
 # to decide, and a slot we leave alone renders as its designed empty disc rather

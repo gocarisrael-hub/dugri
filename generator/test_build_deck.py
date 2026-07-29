@@ -443,11 +443,18 @@ if __name__ == "__main__":
 # keeps the template's disc/ring/clip untouched.
 
 def _portrait(path, w=900, h=1600):
+    """A stand-in person: head in the upper part of the frame, body below.
+
+    Shapes are sized RELATIVE to the frame so the same helper works for a tiny
+    photo and a huge one — the contract test feeds it both.
+    """
     from PIL import Image, ImageDraw
     im = Image.new("RGB", (w, h), (40, 90, 160))
     d = ImageDraw.Draw(im)
-    d.ellipse([w // 2 - 150, 120, w // 2 + 150, 420], fill=(250, 220, 190))  # head
-    d.rectangle([w // 2 - 200, 430, w // 2 + 200, h], fill=(220, 60, 60))    # body
+    hr = w * 0.17                                   # head radius
+    hy = h * 0.17                                   # head centre, upper part
+    d.ellipse([w / 2 - hr, hy - hr, w / 2 + hr, hy + hr], fill=(250, 220, 190))
+    d.rectangle([w / 2 - w * 0.22, hy + hr, w / 2 + w * 0.22, h], fill=(220, 60, 60))
     im.save(path)
     return path
 
@@ -482,7 +489,45 @@ def test_a_landscape_photo_is_centred_horizontally():
         src = _portrait(os.path.join(tmp, "l.png"), w=1600, h=900)
         out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
         with Image.open(out) as sq:
-            assert sq.size == (900, 900), sq.size
+            assert sq.size[0] == sq.size[1], sq.size
+
+
+def test_the_square_matches_the_photo_card_contract_size():
+    # docs/photo-card.md: 512 target, 220 floor (300 DPI over the slot), 1024
+    # ceiling — anything larger is base64 shipped four times over in the PDF.
+    from PIL import Image
+    with Store() as tmp:
+        for w, h in ((900, 1600), (120, 200), (4000, 6000)):
+            src = _portrait(os.path.join(tmp, f"p{w}.png"), w=w, h=h)
+            out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+            with Image.open(out) as sq:
+                assert sq.size == (build.PHOTO_SLOT_PX, build.PHOTO_SLOT_PX), (w, h, sq.size)
+                assert build.PHOTO_SLOT_MIN_PX <= sq.size[0] <= build.PHOTO_SLOT_MAX_PX
+
+
+def test_the_subject_lands_inside_the_slot_s_visible_disc():
+    # Only the INSCRIBED CIRCLE of the square is visible (docs/photo-card.md), so
+    # a subject pinned near the top edge gets its head clipped by the circle.
+    import math
+    from PIL import Image
+    with Store() as tmp:
+        src = _portrait(os.path.join(tmp, "p.png"))
+        out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+        with Image.open(out) as sq:
+            px = sq.convert("RGB").load()
+            side = sq.size[0]
+            cx = cy = side / 2.0
+            inside = outside = 0
+            for y in range(0, side, 4):
+                for x in range(0, side, 4):
+                    r, g, b = px[x, y]
+                    if abs(r - 250) < 25 and abs(g - 220) < 25 and abs(b - 190) < 25:
+                        if math.hypot(x - cx, y - cy) <= side / 2.0:
+                            inside += 1
+                        else:
+                            outside += 1
+        assert inside > 0, "the test photo's head should be in the crop at all"
+        assert outside == 0, f"{outside} head pixels fall outside the visible disc"
 
 
 def test_an_unreadable_photo_falls_back_to_the_original():
@@ -514,3 +559,32 @@ def test_only_customer_photos_are_squared_not_the_shipped_pawns():
         got = build.resolve_photos("demo", [src], workdir=os.path.join(tmp, "sq"))
         assert got[0] != src, "the customer photo should be squared"
         assert got[1:] == fallbacks[:3], "shipped pawns must pass through untouched"
+
+
+def test_a_transparent_photo_keeps_its_alpha():
+    # convert("RGB") FLATTENED the alpha, so a cutout arrived opaque — and with
+    # the white disc gone (die-cut stickers) it printed as a white-edged
+    # rectangle. The shipped fallbacks never pass through here, which is why
+    # they looked right while real customer photos did not.
+    from PIL import Image
+    with Store() as tmp:
+        src = os.path.join(tmp, "cut.png")
+        im = Image.new("RGBA", (900, 1600), (0, 0, 0, 0))
+        im.putpixel((450, 300), (255, 0, 0, 255))
+        im.save(src)
+        out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+        with Image.open(out) as sq:
+            assert sq.mode == "RGBA", sq.mode
+            assert sq.getextrema()[3][0] == 0, "fully transparent pixels must survive"
+
+
+def test_a_photo_stays_under_the_deck_hoist_threshold():
+    # deck_html hoists any <image> past BG_MIN_CHARS into shared defs, which
+    # would strip the photo-slot id and orphan the sticker halo.
+    import deck_html
+    with Store() as tmp:
+        src = _portrait(os.path.join(tmp, "huge.png"), w=3000, h=4000)
+        out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+        chars = build._b64_chars(out)
+        assert chars <= build.PHOTO_MAX_B64_CHARS, chars
+        assert chars < deck_html.BG_MIN_CHARS, (chars, deck_html.BG_MIN_CHARS)
