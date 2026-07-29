@@ -255,6 +255,176 @@ def test_slot_colour_is_voted_not_blended():
     assert shared[0]["color"] == "#711d20"
 
 
+# ---- regularising the measured layout ---------------------------------------
+# Detection measures the ORIGIN's ink, so it reproduces the origin's own
+# sloppiness. The owner was correcting that BY HAND in themes.json; these tests
+# pin the automatic correction — and, just as importantly, pin that a design
+# which is genuinely irregular is left exactly as measured.
+
+_VB = [0.0, 0.0, 223.92, 312.0]
+
+# The real grapefruit measurement, as fractions of the card. The midpoint gaps
+# are 0.095 / 0.110 / 0.091 for a design that plainly means four even lines; the
+# right edges are one intended edge measured four slightly different ways.
+_GRAPEFRUIT_MIDS = [0.377, 0.472, 0.582, 0.673]
+_GRAPEFRUIT_X1 = [0.7026, 0.6993, 0.7010, 0.6959]
+
+
+def _measured(mids, x1s=None, heights=None, width=0.30):
+    """Word slots built from fractions of the card, as detection would emit."""
+    x1s = x1s or [_GRAPEFRUIT_X1[0]] * len(mids)
+    heights = heights or [0.04] * len(mids)
+    return [{"x0": (x - width) * _VB[2], "x1": x * _VB[2],
+             "y0": (m - h / 2) * _VB[3], "y1": (m + h / 2) * _VB[3],
+             "color": "#711d20"}
+            for m, x, h in zip(mids, x1s, heights)]
+
+
+def _mids_of(slots):
+    return [(s["y0"] + s["y1"]) / 2 / _VB[3] for s in slots]
+
+
+def _quiet(*_a):
+    pass
+
+
+def test_grapefruits_uneven_lines_are_snapped_onto_an_even_run():
+    got = R.regularise_word_slots(_measured(_GRAPEFRUIT_MIDS), _VB, log=_quiet)
+    mids = _mids_of(got)
+    gaps = [mids[i + 1] - mids[i] for i in range(3)]
+    assert max(gaps) - min(gaps) < 1e-9, f"still uneven: {gaps}"
+    assert abs(gaps[0] - 0.0987) < 1e-3, f"the design's own spacing, not a guess: {gaps}"
+
+
+def test_the_snap_moves_every_slot_less_than_the_error_it_corrects():
+    # The point of centring the run instead of anchoring slot 1: the correction
+    # is shared out. The worst gap was 0.110 against a 0.0987 spacing — an error
+    # of 0.0113 of the card. No slot may move further than that to fix it.
+    got = R.regularise_word_slots(_measured(_GRAPEFRUIT_MIDS), _VB, log=_quiet)
+    moves = [abs(a - b) for a, b in zip(_mids_of(got), _GRAPEFRUIT_MIDS)]
+    assert max(moves) < 0.0113, f"the cure moved more than the disease: {moves}"
+
+
+def test_a_genuinely_irregular_layout_is_left_exactly_as_measured():
+    # THE guard on the whole feature. Some design really may space its lines
+    # unevenly, and quietly evening it out would be a worse bug than the one
+    # being fixed. These mids need a 32% drag to fit one progression.
+    mids = [0.20, 0.30, 0.55, 0.70]
+    got = R.regularise_word_slots(_measured(mids), _VB, log=_quiet)
+    assert _mids_of(got) == mids
+
+
+def test_one_intended_right_edge_measured_four_ways_collapses_to_one():
+    got = R.regularise_word_slots(
+        _measured(_GRAPEFRUIT_MIDS, x1s=_GRAPEFRUIT_X1), _VB, log=_quiet)
+    edges = {round(s["x1"], 9) for s in got}
+    assert len(edges) == 1, f"four edges survived: {edges}"
+    assert abs(edges.pop() / _VB[2] - 0.70015) < 1e-4, "the median, not an average"
+
+
+def test_edges_that_are_really_staggered_are_not_pooled():
+    staggered = [0.70, 0.50, 0.70, 0.30]
+    got = R.regularise_word_slots(
+        _measured(_GRAPEFRUIT_MIDS, x1s=staggered), _VB, log=_quiet)
+    assert [round(s["x1"] / _VB[2], 6) for s in got] == staggered
+
+
+def test_the_left_bound_keeps_the_leftmost_extent_so_no_word_is_squeezed():
+    # x0 is not a position — the renderer pins the marker to x1 and flows left,
+    # so x0 only bounds the shrink guard. A median would squeeze the longest
+    # word; the leftmost measurement is the honest bound.
+    slots = _measured(_GRAPEFRUIT_MIDS, x1s=_GRAPEFRUIT_X1)
+    slots[2]["x0"] -= 20.0
+    want = min(s["x0"] for s in slots)
+    got = R.regularise_word_slots(slots, _VB, log=_quiet)
+    assert all(abs(s["x0"] - want) < 1e-9 for s in got)
+
+
+def test_heights_that_differ_only_by_ascenders_are_unified():
+    # An ink box, so a line whose sample word carries a descender measures taller
+    # than one that does not. Same box, different words — one height.
+    got = R.regularise_word_slots(
+        _measured(_GRAPEFRUIT_MIDS, heights=[0.040, 0.046, 0.038, 0.044]),
+        _VB, log=_quiet)
+    hs = {round(s["y1"] - s["y0"], 9) for s in got}
+    assert len(hs) == 1
+    assert abs(hs.pop() / _VB[3] - 0.042) < 1e-6, "the median height"
+
+
+def test_heights_that_are_far_apart_are_left_alone():
+    heights = [0.04, 0.04, 0.10, 0.04]
+    got = R.regularise_word_slots(
+        _measured(_GRAPEFRUIT_MIDS, heights=heights), _VB, log=_quiet)
+    assert [round((s["y1"] - s["y0"]) / _VB[3], 6) for s in got] == heights
+
+
+def test_unifying_the_heights_keeps_the_snapped_midpoints():
+    # Heights grow and shrink AROUND the midpoint, so the height snap can never
+    # undo the spacing snap.
+    got = R.regularise_word_slots(
+        _measured(_GRAPEFRUIT_MIDS, heights=[0.040, 0.046, 0.038, 0.044]),
+        _VB, log=_quiet)
+    mids = _mids_of(got)
+    gaps = [mids[i + 1] - mids[i] for i in range(3)]
+    assert max(gaps) - min(gaps) < 1e-9
+
+
+def test_regularising_preserves_order_and_stays_on_the_card():
+    got = R.regularise_word_slots(_measured(_GRAPEFRUIT_MIDS, _GRAPEFRUIT_X1),
+                                  _VB, log=_quiet)
+    ys = [s["y0"] for s in got]
+    assert ys == sorted(ys), "slots must still read top to bottom"
+    for s in got:
+        assert s["x0"] < s["x1"] and s["y0"] < s["y1"]
+        assert _VB[0] <= s["x0"] and s["x1"] <= _VB[0] + _VB[2]
+        assert _VB[1] <= s["y0"] and s["y1"] <= _VB[1] + _VB[3]
+
+
+def test_a_slot_list_that_is_not_four_long_does_not_crash():
+    # Detection only ever emits four, but this is a pure function and a caller is
+    # entitled to hand it anything.
+    assert R.regularise_word_slots([], _VB, log=_quiet) == []
+    one = _measured([0.5])
+    assert R.regularise_word_slots(one, _VB, log=_quiet) == one
+    for n in (2, 3, 5, 6):
+        mids = [0.2 + 0.1 * i for i in range(n)]
+        got = R.regularise_word_slots(_measured(mids), _VB, log=_quiet)
+        assert len(got) == n
+        assert [round(m, 6) for m in _mids_of(got)] == [round(m, 6) for m in mids]
+
+
+def test_the_slot_colour_survives_regularising():
+    got = R.regularise_word_slots(_measured(_GRAPEFRUIT_MIDS), _VB, log=_quiet)
+    assert all(s["color"] == "#711d20" for s in got)
+
+
+def test_every_snap_is_logged_with_its_before_and_after():
+    # The owner has to be able to see that it happened and that it was small —
+    # that is what replaces the hand-correction they used to make in themes.json.
+    lines = []
+    R.regularise_word_slots(
+        _measured(_GRAPEFRUIT_MIDS, _GRAPEFRUIT_X1,
+                  heights=[0.040, 0.046, 0.038, 0.044]),
+        _VB, log=lambda m: lines.append(m))
+    joined = "\n".join(lines)
+    assert len(lines) == 3, joined
+    assert "->" in joined and "largest move" in joined, joined
+    assert "was" in joined, joined
+
+
+def test_leaving_a_layout_alone_is_logged_too():
+    lines = []
+    R.regularise_word_slots(_measured([0.20, 0.30, 0.55, 0.70]), _VB,
+                            log=lambda m: lines.append(m))
+    assert any("left as measured" in m for m in lines), lines
+
+
+def test_the_tolerances_are_env_overridable_like_the_other_knobs():
+    # Same shape as DUGRI_WORD_K and friends: a module constant read from the
+    # environment, so a stubborn template can be nudged without an edit.
+    assert 0 < R._SPACING_TOL < 1 and 0 < R._EDGE_TOL < 1 and 0 < R._HEIGHT_TOL < 1
+
+
 # ---- the emitted recipe -----------------------------------------------------
 # Asserted on the JSON itself: this shape IS the cross-agent contract, so a test
 # that only checked what a reader makes of it would pass on a recipe nobody else
