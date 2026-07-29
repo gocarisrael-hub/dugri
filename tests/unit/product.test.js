@@ -247,6 +247,43 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     const shots = galleryShots(design, { 'product-neon-photos': { imgs: [P2] } }, map);
     expect(shots.map((s) => s.src)).toEqual([P2]); // the curated carousel wins
   });
+
+  // An UPLOADED TEMPLATE is a design like any other on the detail page: its shipped
+  // pictures are the template's own SVGs, and the owner's curation applies on top.
+  // It used to bypass the curated gallery entirely, so anything the owner set for it
+  // in the admin was silently ignored here.
+  describe('a CUSTOM design (uploaded template)', () => {
+    const tpl = {
+      id: 'grapefruit',
+      name: 'אשכוליות',
+      custom: true,
+      img: {
+        front: '/api/template-image/grapefruit/front',
+        back: '/api/template-image/grapefruit/back',
+        board: '/api/template-image/grapefruit/board',
+      },
+    };
+
+    it('shows the template SVGs when nothing is curated', () => {
+      const shots = galleryShots(tpl, {}, {});
+      expect(shots.map((s) => s.src)).toEqual([tpl.img.front, tpl.img.back, tpl.img.board]);
+      expect(shots[0].label).toContain(tpl.name);
+    });
+
+    it('applies the owner’s replaced picture, extra photo and order', () => {
+      const map = {
+        grapefruit: {
+          base: { front: { img: P1 } },
+          photos: [{ id: 'p1', img: P2, name: 'מהמסיבה', onProduct: true }],
+          order: ['p1', 'front', 'back', 'board'],
+        },
+      };
+      const shots = galleryShots(tpl, {}, map);
+      expect(shots.map((s) => s.src)).toEqual([P2, P1, tpl.img.back, tpl.img.board]);
+      // The replaced front falls back to the template SVG if the upload breaks.
+      expect(shots[1].fallback).toBe(tpl.img.front);
+    });
+  });
 });
 
 describe('shouldShowBoard — board slide visibility', () => {

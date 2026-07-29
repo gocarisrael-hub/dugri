@@ -57,6 +57,34 @@ test.describe('admin designs — asset inventory', () => {
     expect(bach.missing).toEqual([]);
   });
 
+  // An uploaded template is a design like any other here. It used to be absent —
+  // sellable on the storefront, invisible in every admin design screen.
+  test('the API lists uploaded templates too, each measured against its OWN files', async ({
+    request,
+  }) => {
+    const r = await request.get(`/api/admin/designs?key=${KEY}`);
+    const { designs } = await r.json();
+    const byId = Object.fromEntries(designs.map((d) => [d.id, d]));
+
+    const tpl = byId.grapefruit; // a real, in-store uploaded template
+    expect(tpl).toBeTruthy();
+    expect(tpl.custom).toBe(true);
+    expect(tpl.theme).toBe('grapefruit'); // a template IS its own theme
+    // Its checklist names the TEMPLATE's files and says where it looked — it is
+    // never reported as missing a built-in design's site/assets/designs/* files.
+    expect(tpl.source.kind).toBe('template');
+    expect(tpl.source.dir).toContain('templates/grapefruit');
+    expect(tpl.assets.every((a) => a.file.startsWith('filled/'))).toBe(true);
+    expect(tpl.missing.some((f) => f.endsWith('.webp'))).toBe(false);
+    // Same group ids as a built-in design, so ONE UI renders both.
+    expect(tpl.assets.map((a) => a.group)).toEqual(['front', 'back', 'board']);
+
+    // The built-ins keep their own layout, and nothing is listed twice.
+    expect(byId.bachelorette.custom).toBe(false);
+    expect(byId.bachelorette.source.kind).toBe('builtin');
+    expect(new Set(designs.map((d) => d.id)).size).toBe(designs.length);
+  });
+
   test('the dashboard renders a card per design and flags kids as incomplete', async ({ page }) => {
     await page.goto(`/admin-designs.html?key=${KEY}`);
     await expect(page.locator('#app')).toBeVisible();
@@ -71,6 +99,7 @@ test.describe('admin designs — asset inventory', () => {
     const bach = page.locator('.card[data-id="bachelorette"]');
     await expect(bach).toHaveClass(/complete/);
     await expect(bach.locator('.state.full')).toContainText('מלא');
+    await expect(bach.locator('.source')).toContainText('site/assets/designs/bachelorette');
 
     // kids card is flagged incomplete with a board-missing badge.
     const kids = page.locator('.card[data-id="kids"]');
@@ -78,6 +107,20 @@ test.describe('admin designs — asset inventory', () => {
     await expect(kids.locator('.state.gap')).toBeVisible();
     await expect(kids.locator('.badge', { hasText: 'לוח' })).toBeVisible();
     await expect(kids.locator('.badge', { hasText: 'board.svg' })).toBeVisible();
+  });
+
+  test('the dashboard shows an uploaded template as its own card, with its own checklist', async ({
+    page,
+  }) => {
+    await page.goto(`/admin-designs.html?key=${KEY}`);
+    const tpl = page.locator('.card[data-id="grapefruit"]');
+    await expect(tpl).toHaveCount(1);
+    // The card names the folder its checklist was measured against, so the report
+    // is honest instead of grading a template against the built-in file layout.
+    await expect(tpl.locator('.source')).toContainText('templates/grapefruit');
+    await expect(tpl.locator('.asset', { hasText: 'filled/' }).first()).toBeVisible();
+    // No built-in file name is ever listed for it.
+    await expect(tpl.locator('.asset', { hasText: 'gallery-front.webp' })).toHaveCount(0);
   });
 
   test('opens from the orders-management page nav, carrying the key', async ({ page }) => {

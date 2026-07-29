@@ -40,8 +40,12 @@ const { backupFile } = require('./store-backup');
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const FILE = path.join(DATA_DIR, 'design-images.json');
 
-// A design id: starts alphanumeric, then kebab, ≤41 chars (matches the catalog).
-const DESIGN_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
+// A design id: starts alphanumeric, then kebab. Covers BOTH kinds of design —
+// a built-in catalog id (`neon`) and an owner template's themes.json key
+// (`grapefruit`), which is the design id for an uploaded template. The length cap
+// matches templates.isSafeSlug (≤64) so a template can never be curatable in the
+// admin yet rejected by this store purely for having a long name.
+const DESIGN_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 // The base (shipped-render) slots, in their default display order. MUST match
 // DEFAULT_ORDER in site/js/design-images.js — a slot the client orders but the
 // server rejects would silently drop the owner's setting for it on save.

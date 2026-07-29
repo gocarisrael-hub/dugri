@@ -183,6 +183,89 @@ describe('galleryFor — the photo-card slot', () => {
   });
 });
 
+// A CUSTOM design is an uploaded template turned product: no committed rasters at
+// all, its shipped renders ARE the template's own SVGs (loadCustomDesigns puts them
+// on `img`). It goes through the SAME resolver as a built-in design, so the owner
+// can curate its gallery in the admin exactly like any other design — which used to
+// be impossible: the storefront read a custom design's pictures straight off `img`
+// and ignored the curated config entirely.
+describe('galleryFor — a CUSTOM design (uploaded template)', () => {
+  const TPL = {
+    id: 'grapefruit',
+    custom: true,
+    img: {
+      front: '/api/template-image/grapefruit/front',
+      back: '/api/template-image/grapefruit/back',
+      board: '/api/template-image/grapefruit/board',
+    },
+  };
+
+  it('shows the template SVGs as its shipped gallery, in the normal slot order', () => {
+    const items = galleryFor({}, TPL, 'products');
+    expect(keys(items)).toEqual(['front', 'back', 'board']);
+    expect(srcs(items)).toEqual([TPL.img.front, TPL.img.back, TPL.img.board]);
+    // Each falls back to itself (the template SVG is the shipped render).
+    expect(items.every((i) => i.fallback === i.src && !i.droppable)).toBe(true);
+    expect(keys(galleryFor({}, TPL, 'product'))).toEqual(['front', 'back', 'board']);
+  });
+
+  it('never invents committed rasters for it (no assets/designs/<id>/ paths)', () => {
+    const all = [...galleryFor({}, TPL, 'products'), ...galleryFor({}, TPL, 'product')];
+    expect(all.some((i) => i.src.includes('assets/designs/'))).toBe(false);
+  });
+
+  it('omits a slot the template has no art for', () => {
+    const frontOnly = {
+      id: 'x-tpl',
+      custom: true,
+      img: { front: '/api/template-image/x-tpl/front' },
+    };
+    expect(keys(galleryFor({}, frontOnly, 'products'))).toEqual(['front']);
+  });
+
+  it('honours an owner override, falling back to the template SVG', () => {
+    const map = { grapefruit: { base: { front: { img: P1 } } } };
+    const front = galleryFor(map, TPL, 'products').find((i) => i.key === 'front');
+    expect(front).toMatchObject({ src: P1, fallback: TPL.img.front });
+  });
+
+  it('surfaces an uploaded store cover / extra photo it never shipped', () => {
+    const map = {
+      grapefruit: {
+        base: { store: { img: P1 } },
+        photos: [{ id: 'p1', img: P2, name: 'מהמסיבה', onProducts: true, onProduct: true }],
+      },
+    };
+    const items = galleryFor(map, TPL, 'products');
+    expect(keys(items)).toEqual(['store', 'front', 'back', 'board', 'p1']);
+    // No shipped store render behind it → droppable rather than a 404 slide.
+    expect(items[0]).toMatchObject({ src: P1, fallback: '', droppable: true });
+    // The store cover still stays off the detail page by default.
+    expect(keys(galleryFor(map, TPL, 'product'))).toEqual(['front', 'back', 'board', 'p1']);
+  });
+
+  it('honours per-surface hiding and the owner order', () => {
+    const map = {
+      grapefruit: { base: { board: { onProducts: false } }, order: ['back', 'front'] },
+    };
+    expect(keys(galleryFor(map, TPL, 'products'))).toEqual(['back', 'front']);
+    expect(keys(galleryFor(map, TPL, 'product'))).toEqual(['back', 'front', 'board']);
+  });
+
+  it('never blanks: hiding everything falls back to the template SVGs', () => {
+    const map = {
+      grapefruit: {
+        base: {
+          front: { onProducts: false },
+          back: { onProducts: false },
+          board: { onProducts: false },
+        },
+      },
+    };
+    expect(keys(galleryFor(map, TPL, 'products'))).toEqual(['front', 'back', 'board']);
+  });
+});
+
 describe('loadDesignImages — timeout-bounded + fail-safe (never rejects)', () => {
   const realFetch = global.fetch;
   afterEach(() => {

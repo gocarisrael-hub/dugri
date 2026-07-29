@@ -20,6 +20,19 @@ function stubUploads(page) {
     route.fulfill({ contentType: 'image/png', body: PNG })
   );
 }
+// The MERGED design catalog the page renders from (GET /api/admin/designs —
+// built-in designs AND owner-uploaded templates, one list). Stubbed where a test
+// needs an exact, server-independent list; the "real merge" test below hits the
+// live endpoint on purpose.
+function stubCatalog(page, designs) {
+  return page.route('**/api/admin/designs*', (route) => route.fulfill({ json: { designs } }));
+}
+// One catalog entry, shaped like the server's: `slots` carries each base slot's
+// SHIPPED render (null when the design ships none — an uploadable empty slot).
+function entry(id, name, slots) {
+  const empty = { store: null, front: null, back: null, photo: null, board: null };
+  return { id, name, slots: { ...empty, ...slots } };
+}
 
 test.describe('admin gallery page', () => {
   test('without a key the page reveals nothing and asks for ?key=', async ({ page }) => {
@@ -40,7 +53,19 @@ test.describe('admin gallery page', () => {
     await page.goto(`/admin-images.html?key=${KEY}`);
     await expect(page.locator('#app')).toBeVisible();
 
-    await expect(page.locator('.design')).toHaveCount(7);
+    // Every design in the merged catalog gets a section — the 7 built-ins plus every
+    // uploaded template (asserted by id below, not by a count, so registering a new
+    // template doesn't fail this test).
+    for (const id of [
+      'bachelorette',
+      'marriage',
+      'birthday',
+      'japanese',
+      'posttrip',
+      'neon',
+      'kids',
+    ])
+      await expect(page.locator(`.design[data-design="${id}"]`)).toHaveCount(1);
 
     // Five base slots: store/front/back/photo/board. posttrip ships a board.
     const posttripBase = page.locator('.item[data-design="posttrip"][data-type="base"]');
@@ -73,6 +98,93 @@ test.describe('admin gallery page', () => {
     await expect(front.locator('input[data-flag="onProduct"]')).toBeChecked();
 
     await expect(page.locator('.nav a.active[data-page="admin-images.html"]')).toHaveCount(1);
+  });
+
+  // The bug this page had: it read the bundled built-in catalog, so an uploaded
+  // template was sellable on the storefront and yet had no gallery to curate here.
+  // There is no built-in/uploaded distinction on this page any more.
+  test('an UPLOADED TEMPLATE gets a gallery section, its pictures being the template SVGs', async ({
+    page,
+  }) => {
+    await stubGet(page, {});
+    await stubCatalog(page, [
+      entry('posttrip', 'חזרה מטיול', {
+        store: 'assets/designs/posttrip/store.webp',
+        front: 'assets/designs/posttrip/gallery-front.webp',
+        back: 'assets/designs/posttrip/gallery-back.webp',
+        board: 'assets/designs/posttrip/gallery-board.webp',
+      }),
+      entry('grapefruit', 'אשכוליות', {
+        front: '/api/template-image/grapefruit/front',
+        back: '/api/template-image/grapefruit/back',
+        board: '/api/template-image/grapefruit/board',
+      }),
+    ]);
+    await page.route('**/api/template-image/**', (route) =>
+      route.fulfill({
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>',
+      })
+    );
+
+    await page.goto(`/admin-images.html?key=${KEY}`);
+    const tpl = page.locator('.design[data-design="grapefruit"]');
+    await expect(tpl).toHaveCount(1);
+    // The same five slots every design offers.
+    await expect(tpl.locator('.item[data-type="base"]')).toHaveCount(5);
+    // Its card pictures default to the template's own SVGs.
+    await expect(
+      page.locator('.item[data-design="grapefruit"][data-key="front"] img.preview')
+    ).toHaveAttribute('src', '/api/template-image/grapefruit/front');
+    // A template ships no store cover: the slot starts EMPTY and uploadable, exactly
+    // like a boardless built-in design's board slot.
+    const store = page.locator('.item[data-design="grapefruit"][data-key="store"]');
+    await expect(store.locator('.preview-empty')).toBeVisible();
+    await expect(store.locator('button[data-act="upload"]')).toBeVisible();
+    await expect(store.locator('button[data-act="reset"]')).toBeDisabled();
+  });
+
+  test('the REAL merged catalog lists the built-ins and the uploaded templates together', async ({
+    page,
+  }) => {
+    await stubGet(page, {});
+    await page.goto(`/admin-images.html?key=${KEY}`);
+    await expect(page.locator('#app')).toBeVisible();
+    // No stub: whatever the server merges is what renders. `grapefruit` is a real
+    // in-store template — it must have a gallery section beside the built-ins.
+    await expect(page.locator('.design[data-design="bachelorette"]')).toHaveCount(1);
+    await expect(page.locator('.design[data-design="grapefruit"]')).toHaveCount(1);
+    expect(await page.locator('.design').count()).toBeGreaterThan(7);
+  });
+
+  test('uploading a picture for a TEMPLATE posts its themes.json key as the design id', async ({
+    page,
+  }) => {
+    await stubGet(page, {});
+    await stubUploads(page);
+    await stubCatalog(page, [entry('grapefruit', 'אשכוליות', {})]);
+    let posted = null;
+    await page.route('**/api/admin/design-images/base/image*', (route) => {
+      posted = route.request().postData() || '';
+      route.fulfill({
+        json: { ok: true, img: UPLOADED, gallery: { base: { store: { img: UPLOADED } } } },
+      });
+    });
+
+    await page.goto(`/admin-images.html?key=${KEY}`);
+    const store = page.locator('.item[data-design="grapefruit"][data-key="store"]');
+    await store.locator('input[type=file]').setInputFiles({
+      name: 'cover.png',
+      mimeType: 'image/png',
+      buffer: PNG,
+    });
+
+    await expect.poll(() => posted).not.toBeNull();
+    expect(posted).toContain('grapefruit');
+    // The store accepted the template id: the slot now shows the owner's picture.
+    const after = page.locator('.item[data-design="grapefruit"][data-key="store"]');
+    await expect(after.locator('.badge.custom')).toBeVisible();
+    await expect(after.locator('img.preview')).toHaveAttribute('src', UPLOADED);
   });
 
   test('replacing a base render flips it to "custom" and enables reset', async ({ page }) => {

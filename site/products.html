@@ -569,15 +569,6 @@
       const allDesigns = DESIGNS.slice();
       let currentMap = {}; // last resolved design-images gallery config
 
-      // A custom design's pictures ARE the template's clean SVGs (front/back/board);
-      // build carousel shots straight from them (droppable — drop a slide only if the
-      // SVG somehow 404s).
-      function customShots(d) {
-        return ['front', 'back', 'board']
-          .filter((s) => d.img && d.img[s])
-          .map((s) => ({ key: s, src: d.img[s], fallback: '', name: '', droppable: true }));
-      }
-
       // Storefront names by precedence: the owner's inline content-edit name
       // (product-<id>-name) WINS over the admin template rename (/api/design-names →
       // themes.json display_he), which wins over the built-in catalog name. Both maps
@@ -628,7 +619,12 @@
         media.className = 'product-card__media';
         const track = document.createElement('div');
         track.className = 'product-card__track';
-        const shots = d.custom ? customShots(d) : galleryFor(map, d, 'products');
+        // ONE gallery resolver for EVERY design. A custom design's shipped renders
+        // are its template SVGs rather than committed rasters (js/design-images.js
+        // shippedSrc knows both layouts), so an uploaded template gets the same
+        // owner curation — replaced pictures, extra photos, per-surface visibility,
+        // ordering — as a built-in one, instead of being stuck with its raw SVGs.
+        const shots = galleryFor(map, d, 'products');
         shots.forEach((shot, i) => {
           const slide = document.createElement('a');
           slide.className = 'product-card__slide';
