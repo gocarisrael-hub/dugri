@@ -808,3 +808,44 @@ test.describe('newly-editable copy on options.html (order wizard)', () => {
     await expect(page.locator('.dugri-editbar__status')).toHaveText('נשמר');
   });
 });
+
+// The one thing the specs above never did: fetch an uploaded image's BYTES back
+// over HTTP. Everything else mocks the upload at the network layer, so the whole
+// store-then-serve path ran unexercised — and it was broken. The E2E server runs
+// with DATA_DIR='.e2e-data' (playwright.config.js), a RELATIVE path, and
+// res.sendFile refuses a relative path, so every /content-uploads/<hash>.<ext>
+// answered 500 while the suite stayed green (reported from PR #249).
+//
+// This is the end-to-end half of the guard, against the very configuration that
+// broke: it uploads through the real admin route, then GETs what it returned.
+test.describe('an uploaded image is actually served back', () => {
+  const KEY = 'dugri-admin';
+  // A tiny real PNG (magic bytes + a tail). Content-addressed, so both device
+  // projects uploading it produce the same file and the same override value.
+  const PNG = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.from('e2e-upload-roundtrip'),
+  ]);
+
+  test('upload -> the returned /content-uploads URL returns the same bytes', async ({
+    request,
+  }) => {
+    // A key no page actually tags, so storing this override cannot change what
+    // any other spec renders.
+    const up = await request.post(`/api/admin/content/image?key=${KEY}`, {
+      multipart: {
+        page: 'index.html',
+        key: 'e2e-upload-roundtrip-probe',
+        file: { name: 'probe.png', mimeType: 'image/png', buffer: PNG },
+      },
+    });
+    expect(up.status()).toBe(200);
+    const { img } = await up.json();
+    expect(img).toMatch(/^\/content-uploads\/[a-f0-9]{16}\.png$/);
+
+    const got = await request.get(img);
+    expect(got.status()).toBe(200);
+    expect(got.headers()['content-type'] || '').toContain('image/png');
+    expect(Buffer.from(await got.body()).equals(PNG)).toBe(true);
+  });
+});

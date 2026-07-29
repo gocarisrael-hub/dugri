@@ -16,7 +16,16 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const DATA_DIR = process.env.DATA_DIR || __dirname;
+// RESOLVED, not joined: DATA_DIR may be relative (the E2E server runs with
+// DATA_DIR='.e2e-data'), and an uploaded image is served with res.sendFile,
+// which REFUSES a relative path — "path must be absolute or specify root to
+// res.sendFile" — turning every /content-uploads/<hash>.<ext> into a 500. Fixing
+// it here rather than at the one route means every consumer of _uploadDir gets an
+// absolute path: the download route AND pawnPhotoFiles, which hands these paths
+// to the generator as CLI args (a relative path there would resolve against the
+// generator's cwd, not the server's). Absolute paths also make the traversal
+// guards elsewhere in this file compare like with like.
+const DATA_DIR = path.resolve(process.env.DATA_DIR || __dirname);
 const FILE = path.join(DATA_DIR, 'content-overrides.json');
 const UPLOAD_DIR = path.join(DATA_DIR, 'content-uploads');
 

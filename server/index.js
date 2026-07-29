@@ -47,7 +47,11 @@ const SITE_DIR = path.join(__dirname, '..', 'site');
 // site/) so express.static never exposes it — the only way out is the
 // admin-key-gated download route below.
 const REPO_ROOT = path.join(__dirname, '..');
-const GENERATED_DIR = process.env.GENERATED_DIR || path.join(__dirname, 'generated');
+// RESOLVED for the same reason server/content.js resolves DATA_DIR: the deck and
+// board downloads below res.sendFile these paths, and sendFile refuses a relative
+// one. Nothing sets a relative GENERATED_DIR today, so this is hardening against
+// the same trap, not a live bug — the live one was DATA_DIR (see content.js).
+const GENERATED_DIR = path.resolve(process.env.GENERATED_DIR || path.join(__dirname, 'generated'));
 const PYTHON_BIN = process.env.PYTHON || 'python3';
 // Root of the SHIPPED template config (resources/canva/templates/<slug>/ +
 // generator/themes.json) — the read-only base layer. Overridable via
