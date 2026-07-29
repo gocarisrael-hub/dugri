@@ -25,14 +25,16 @@ Output is the SAME blob shape the admin calibration form edits and
 validator ignores unknown keys). Values this pass CANNOT measure are left out
 rather than guessed, so the form shows them as the owner's remaining work:
 
-  size / board_size / back_size   the auto-fit in render_page.title_block sizes
-                                  the title to its box; a pinned size is only
-                                  needed where auto-fit over/undershoots, which
-                                  is a visual call
   arch                            only meaningful on a genuinely curved title
   offset                          a nudge that CORRECTS a mis-detected box; if
                                   detection is right it is zero by definition
-  word_size                       the words auto-fit their slots from the recipe
+
+THE SIZES AND THE BOLD WEIGHT are measured too — see "AUTO-FIT" below. They used
+to be left unset "because auto-fit handles it", which in practice meant the owner
+read them off Canva's UI by hand. They are derivable from the very artwork this
+pass already renders, so it derives them; anything that cannot be measured with
+confidence still comes back unset, because the renderer's auto-fit is a good
+fallback and a wrong pin is worse than none.
 
 Deliberately NOT flipped: ``calibrated``. This pass pre-fills the numbers; a
 human confirms them in the admin preview before the template can be ordered.
@@ -53,18 +55,22 @@ all eight fronts, so one front is measured and the answer stands for the deck.
   python3 generator/calibrate.py <theme-key> [--out FILE]
 """
 import argparse
+import functools
 import json
 import os
 import re
+import statistics
 import subprocess
 import sys
 import tempfile
 from collections import Counter
 
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
+import calibration_health
 import config
 import recipe_diff
+import topup
 
 CHROME = os.environ.get(
     "CHROME", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
@@ -529,6 +535,390 @@ def _has_shadow(image, mask, box):
     return bool(tail) and 0 < max(tail) < 0.25 * peak
 
 
+# ---- AUTO-FIT: the sizes, and the synthetic-bold weight ---------------------
+#
+# The mask above is the ORIGIN's own ink, so it also records how TALL that ink is
+# and how HEAVY its strokes are. Both answer knobs that were previously read off
+# Canva's UI by hand: ``size``/``board_size``/``back_size``, ``word_size``, and
+# ``bold``/``bold_w``. The method is the same for all of them — measure the
+# origin's ink, paint OUR text with the THEME's font at a candidate value, and
+# keep the candidate whose ink matches.
+#
+# The candidate side is PIL, not Chrome. PIL opens the very font file the
+# renderer hands the browser, and paints it to within a pixel of what headless
+# Chrome does at the same em: verified on grapefruit's card, where 'עורך דין' at
+# word size 21.3 measured 58px through PIL and 59px through the real render. So a
+# fit costs milliseconds and needs no browser, while still predicting what the
+# generator will actually print.
+
+# How many wordlist entries a word-size fit probes. The origin's four words are
+# unknown text, so the fit matches the MEDIAN of their ink heights against the
+# median of a sample of the words this theme actually prints; a few dozen is
+# plenty for a median and keeps the fit well under a second.
+_FIT_WORD_SAMPLE = 40
+
+# A fitted size must stay in a sane band around the box it was measured in.
+# Outside it the "ink" was never text (the diff caught artwork), and pinning the
+# number would be worse than leaving auto-fit alone.
+_FIT_SIZE_BOX = (0.25, 4.0)
+
+# Synthetic-bold search: the grid, and the weight below which the face is
+# declared already-heavy-enough. Capped well under the point where a Hebrew
+# counter would close up (render_page ships 0.035 as its default step).
+_BOLD_W_GRID = [i / 200.0 for i in range(0, 17)]        # 0 .. 0.08 by 0.005
+_BOLD_W_MIN = 0.01
+
+
+def _alpha_threshold(ink_hex, bg_rgb):
+    """The alpha at which OUR raster carries as much ink as the diff mask shows.
+
+    The mask is ``|filled - clean|`` put through ``DIFF_THRESHOLD``, so the faint
+    antialiased rim of every glyph is thresholded AWAY and never reaches it.
+    Measuring a full-alpha raster against that would compare a taller glyph than
+    the mask can physically show — and the error grows as the render shrinks,
+    because the rim is roughly a constant number of PIXELS wide. Converting the
+    diff threshold into the equivalent coverage for this ink-on-background pair
+    (the same luminance conversion ``_diff`` applies) puts both sides through the
+    same cut.
+    """
+    try:
+        ink = _hex_to_rgb(ink_hex)
+    except (AttributeError, TypeError, ValueError):
+        return 128
+    delta = [abs(a - b) for a, b in zip(ink, bg_rgb)]
+    lum = 0.299 * delta[0] + 0.587 * delta[1] + 0.114 * delta[2]
+    if lum <= 0:
+        return 128
+    return max(20, min(160, int(255 * DIFF_THRESHOLD / lum)))
+
+
+def _background(image, mask, region):
+    """The artwork colour UNDER the text: the mode of the un-inked pixels."""
+    im = image.crop(region)
+    mk = mask.crop(region)
+    px, mp = im.load(), mk.load()
+    counts = Counter()
+    for y in range(im.size[1]):
+        for x in range(im.size[0]):
+            if not mp[x, y]:
+                counts[px[x, y]] += 1
+    return counts.most_common(1)[0][0] if counts else (255, 255, 255)
+
+
+def _ink_extent(mask, box, ppu, ox, oy, pad=0.3):
+    """``(h, w, region)`` of the ink inside ``box``, in mask pixels, or None.
+
+    ``box`` is a recipe slot in user units — a region the origin's text sits in,
+    not a hard clip: the origin's own ink overruns it by ~10% (render_page
+    documents the same tolerance), so the crop is padded before the ink is
+    measured or the glyphs' extremes would be sliced off and every fit would come
+    back small.
+
+    Returns None when the ink TOUCHES the padded crop's top or bottom edge. That
+    means the band did not end inside the crop — a neighbouring line bled in, or
+    the filled/clean pair differs across the whole surface — and its height is
+    then the crop's height rather than the text's. A refusal here is what keeps a
+    contaminated diff from being written out as a confident size.
+    """
+    bh = (box["y1"] - box["y0"]) * ppu
+    bw = (box["x1"] - box["x0"]) * ppu
+    if bh <= 0 or bw <= 0:
+        return None
+    region = (max(0, int(box["x0"] * ppu + ox - bw * 0.06)),
+              max(0, int(box["y0"] * ppu + oy - bh * pad)),
+              min(mask.size[0], int(box["x1"] * ppu + ox + bw * 0.06)),
+              min(mask.size[1], int(box["y1"] * ppu + oy + bh * pad)))
+    if region[2] - region[0] < 4 or region[3] - region[1] < 4:
+        return None
+    sub = mask.crop(region)
+    ink = sub.getbbox()
+    if not ink or ink[3] - ink[1] < 6:
+        return None
+    if ink[1] <= 0 or ink[3] >= sub.size[1]:
+        return None
+    return (ink[3] - ink[1], ink[2] - ink[0],
+            (region[0] + ink[0], region[1] + ink[1],
+             region[0] + ink[2], region[1] + ink[3]))
+
+
+@functools.lru_cache(maxsize=64)
+def _fit_font(path, px):
+    return ImageFont.truetype(path, max(4, int(px)))
+
+
+def _covers(font_path, text):
+    """Whether this font can actually draw ``text``.
+
+    A theme's title font is frequently a Latin display face while the honoree
+    name is Hebrew (or the other way round). Chrome silently falls back to a
+    system face for the missing glyphs — PIL draws them blank — so a fit against
+    such a sample measures the wrong typeface entirely and must be refused.
+    Detected as "a non-space character with no ink of its own", which is exactly
+    how a font without the glyph reports it (measured on MrDafoe + Hebrew:
+    getbbox returns a zero-height box).
+    """
+    try:
+        font = _fit_font(font_path, 200)
+    except (OSError, ValueError):
+        return False
+    for ch in set(text):
+        if ch.isspace():
+            continue
+        box = font.getbbox(ch)
+        if box[3] - box[1] <= 0:
+            return False
+    return True
+
+
+def _paint(font_path, lines, em, alpha, stroke=0.0, marker=None):
+    """Our renderer's painted text at ``em`` DEVICE pixels, as an ink mask.
+
+    Mirrors what ``render_page`` will draw: title lines stacked on the same
+    ``0.78 * size`` baseline spacing, or one numbered word line with its marker
+    at ``0.9 * size`` (``word_text``'s own fractions). Cropped to the ink, so the
+    caller measures the glyphs and never the canvas.
+    """
+    try:
+        font = _fit_font(font_path, round(em))
+    except (OSError, ValueError):
+        return None
+    lines = [ln for ln in lines if ln and ln.strip()]
+    if not lines:
+        return None
+    width = int(max(font.getlength(ln) for ln in lines)) + int(em * 3) + 80
+    height = int(em * (len(lines) + 3) * 1.4) + 80
+    img = Image.new("L", (max(60, width), max(60, height)), 0)
+    draw = ImageDraw.Draw(img)
+    base = int(em * 1.6)
+    for i, line in enumerate(lines):
+        draw.text((40, base + i * 0.78 * em), line, font=font, fill=255,
+                  anchor="ls", stroke_width=stroke, stroke_fill=255)
+    if marker is not None:
+        small = _fit_font(font_path, round(em * 0.9))
+        draw.text((40 + int(font.getlength(lines[0]) + em * 0.30), base),
+                  f"{marker}.", font=small, fill=255, anchor="ls",
+                  stroke_width=stroke, stroke_fill=255)
+    ink = img.point(lambda v: 255 if v >= alpha else 0)
+    box = ink.getbbox()
+    return ink.crop(box) if box else None
+
+
+def _painted(font_path, samples, size, ppu, alpha, marker=False, axis=0):
+    """Median painted extent (0 = height, 1 = width) of ``samples`` at ``size``."""
+    got = []
+    for i, lines in enumerate(samples):
+        ink = _paint(font_path, lines, size * ppu, alpha,
+                     marker=(i % 4 + 1) if marker else None)
+        if ink:
+            got.append(ink.size[1 - axis] if axis == 0 else ink.size[0])
+    return statistics.median(got) if got else None
+
+
+def _fit_size(target_px, font_path, samples, ppu, alpha, marker=False, axis=0):
+    """The size (in recipe user units) whose painted ink measures ``target_px``.
+
+    Bisection rather than a closed form: the painted extent is very nearly linear
+    in the size, but the threshold above makes it a step function at the pixel
+    level, and bisection lands on the step that matches instead of extrapolating
+    through it.
+    """
+    lo, hi = 3.0, 160.0
+    if not target_px or target_px <= 0:
+        return None
+    if _painted(font_path, samples, lo, ppu, alpha, marker, axis) is None:
+        return None
+    for _ in range(22):
+        mid = (lo + hi) / 2
+        got = _painted(font_path, samples, mid, ppu, alpha, marker, axis)
+        if got is None:
+            return None
+        if got < target_px:
+            lo = mid
+        else:
+            hi = mid
+    return round((lo + hi) / 2, 2)
+
+
+def _in_box(size, box_h):
+    """Whether a fitted size is a plausible one for the box it was measured in."""
+    if not size or not box_h or box_h <= 0:
+        return False
+    return _FIT_SIZE_BOX[0] <= size / box_h <= _FIT_SIZE_BOX[1]
+
+
+def _mean_stroke(ink):
+    """Mean distance from an ink pixel to the background — a stroke-width proxy.
+
+    Deliberately NOT ink coverage over the text's bounding box: coverage moves
+    with how LONG the text is and how tightly the face sets, and the honoree's
+    name is not the origin's name. The mean distance-to-edge is a property of the
+    strokes alone, so a title set in the same weight scores the same whatever it
+    says. Computed as the erosion integral (sum of the areas that survive each
+    successive erosion, over the original area), which IS the mean of the
+    chessboard distance transform without needing one.
+    """
+    area0 = sum(ink.point(lambda v: 1 if v else 0).getdata())
+    if not area0:
+        return 0.0
+    total, cur = 0.0, ink
+    for _ in range(12):
+        cur = cur.filter(ImageFilter.MinFilter(3))
+        area = sum(cur.point(lambda v: 1 if v else 0).getdata())
+        if not area:
+            break
+        total += area
+    return total / area0
+
+
+def _stroke_ratio(ink):
+    """``_mean_stroke`` per unit of ink height — size-independent glyph weight."""
+    if not ink or ink.size[1] <= 0:
+        return None
+    return _mean_stroke(ink) / ink.size[1]
+
+
+def fit_bold(mask, region, font_path, samples, size, ppu, alpha):
+    """``(bold, bold_w, note)`` for a title; ``bold`` is None when unmeasurable.
+
+    Compares the ORIGIN's stroke weight against our own cut painted at the size
+    that was just fitted, and walks the synthetic-bold grid for the weight that
+    reproduces it. ``bold`` comes back False — never True with a token weight —
+    when our unfattened cut already carries that weight, because emboldening a
+    design that is not bold is the one outcome this must never produce.
+    """
+    origin = _stroke_ratio(mask.crop(region))
+    if not origin:
+        return None, None, None
+
+    def weigh(weight):
+        got = [_stroke_ratio(_paint(font_path, lines, size * ppu, alpha,
+                                    stroke=weight * size * ppu))
+               for lines in samples]
+        return statistics.median([g for g in got if g]) if any(got) else None
+
+    scored = [(abs(got - origin), weight)
+              for weight, got in ((w, weigh(w)) for w in _BOLD_W_GRID) if got]
+    if not scored:
+        return None, None, None
+    if weigh(_BOLD_W_GRID[-1]) < origin:
+        # The origin is heavier than this face can be fattened to. That is not a
+        # weight step, it is the wrong CUT (measured on 'anniversary': its own
+        # font paints hairline strokes where the original is a solid brush), and
+        # closing the gap with stroke alone would only thicken a hairline into a
+        # blob. Leave it for the owner rather than pin a number that cannot help.
+        return (None, None,
+                "bold: the original's title is much heavier than this theme's "
+                "title font can be fattened to — that usually means the font "
+                "file is a lighter cut than the design's. Left unset.")
+    best = min(scored)[1]
+    if best < _BOLD_W_MIN:
+        return False, None, None
+    return True, round(best, 3), None
+
+
+def title_samples(cfg):
+    """The sample titles a fit is measured over, as lists of lines.
+
+    Shared with ``calibration_health`` on purpose: it already reasons about WHICH
+    honoree names a title must be measured against (a spread with and without an
+    ascender and a descender), and a fit that used a different spread than the
+    health check would disagree with it on the very theme it just calibrated.
+    """
+    return [lines for lines, _name in calibration_health.sample_titles(cfg)]
+
+
+def sample_words(cfg):
+    """A sample of the words this theme actually prints, for the word-size fit."""
+    words = [w.strip() for w in topup._read_wordlist(cfg.get("wordlist"))]
+    return [w for w in words if w][:_FIT_WORD_SAMPLE]
+
+
+def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex):
+    """Fit one surface's title size. -> ``(size, grade, note, ctx)``.
+
+    ``ctx`` is ``(ink_region, alpha)`` — what ``fit_bold`` needs to go on and
+    weigh the same ink — or None when nothing was measured.
+
+    The grade comes from a SECOND, independent fit against the ink's WIDTH. The
+    two agree to within a couple of percent when the theme's font really is the
+    one the design was made in (measured: bachelorette 20.91 tall / 20.80 wide,
+    trip comeback 24.63 / 24.55). They diverge when it is a lookalike or when
+    Canva condensed the text box (grapefruit: 27.56 / 21.19), and that is worth
+    telling the owner, because then only one of the two axes can match.
+    """
+    if not samples:
+        return None, None, "title: no sample title could be built for this theme.", None
+    extent = _ink_extent(mask, box, ppu, ox, oy)
+    if not extent:
+        return None, None, None, None
+    ink_h, ink_w, region = extent
+    alpha = _alpha_threshold(ink_hex, _background(image, mask, region))
+    if not all(_covers(font_path, "".join(lines)) for lines in samples):
+        return (None, None,
+                "size: the theme's title font has no glyphs for this title's own "
+                "text, so its size could not be measured — check the font.", None)
+    size = _fit_size(ink_h, font_path, samples, ppu, alpha)
+    box_h = box["y1"] - box["y0"]
+    if not _in_box(size, box_h):
+        return (None, None,
+                "size: the measured title ink is not a plausible size for its "
+                "box, so nothing was pinned — the renderer auto-fits.", None)
+    wide = _fit_size(ink_w, font_path, samples, ppu, alpha, axis=1)
+    if wide and abs(wide - size) / size <= 0.12:
+        return size, "high", None, (region, alpha)
+    note = ("size: fitted from the height of the original's title ink. Its WIDTH "
+            f"says {wide}, not {size} — the title font is not quite the one the "
+            "design was made in (a lookalike, or Canva condensed the text box), "
+            "so check the preview." if wide else
+            "size: fitted from the height of the original's title ink; its width "
+            "could not be cross-checked.")
+    return size, "low", note, (region, alpha)
+
+
+def fit_word_size(mask, image, slots, ppu, ox, oy, font_path, words):
+    """Fit the deck's single word size. -> ``(size, grade, note)``.
+
+    The origin prints every word on a card at ONE size (Canva Bulk Create fills a
+    fixed-size box), so one number settles the card — but WHICH words it printed
+    is unknown, and a Hebrew line's ink height swings ~30% on whether it happens
+    to carry a lamed or a final-descender. So the match is median-to-median: the
+    median ink height of the origin's rows against the median of a sample of the
+    words this theme prints. Verified on bachelorette, whose 19 was pinned by
+    hand against its original: this fit returns 18.93.
+    """
+    if not words or not slots:
+        return None, None, None
+    heights, regions = [], []
+    for slot in slots:
+        extent = _ink_extent(mask, slot, ppu, ox, oy)
+        if extent:
+            heights.append(extent[0])
+            regions.append(extent[2])
+    if len(heights) < 2:
+        return (None, None,
+                "word_size: the original's word rows could not be isolated "
+                "cleanly, so the words keep auto-fitting their slots.")
+    if not _covers(font_path, "".join(words)):
+        return (None, None,
+                "word_size: the theme's word font has no glyphs for this theme's "
+                "own wordlist — check the font.")
+    alpha = _alpha_threshold(slots[0].get("color") or "#000000",
+                             _background(image, mask, regions[0]))
+    size = _fit_size(statistics.median(heights), font_path, [[w] for w in words],
+                     ppu, alpha, marker=True)
+    box_h = statistics.median([s["y1"] - s["y0"] for s in slots])
+    if not _in_box(size, box_h):
+        return (None, None,
+                "word_size: the measured word ink is not a plausible size for its "
+                "slots, so nothing was pinned — the words auto-fit.")
+    # Graded "low" by construction, never higher: unlike the title, whose text is
+    # known up to the honoree's name, the origin's words are unknown text, so the
+    # match rests on the theme's wordlist being typical of what it printed.
+    return size, "low", ("word_size: fitted by matching the original's word-row "
+                         "ink heights against this theme's own wordlist — check "
+                         "one card in the preview before trusting it.")
+
+
 def _slot(filled_svg, clean_svg, workdir, cell=None):
     """Detect one title slot (board or one card back).
 
@@ -600,6 +990,21 @@ def _front_title_boxes(recipe, cfg, single):
     return None
 
 
+def _front_word_slots(recipe, cfg, single):
+    """The word slots of the front the paints were read off, or ``[]``.
+
+    Same selection rule as ``_front_title_boxes`` — the first front that measured
+    something — so the word size is fitted on the SAME surface whose title was,
+    and both describe one real card rather than a mix of two.
+    """
+    if single:
+        return (recipe.get("card") or {}).get("words") or []
+    for card in recipe.get("cards") or []:
+        if card and card.get("title"):
+            return card.get("words") or []
+    return []
+
+
 def _word_colours(recipe):
     """Every word-slot colour a recipe records, lowercased, either structure."""
     cards = recipe.get("cards")
@@ -611,6 +1016,45 @@ def _word_colours(recipe):
             for slot in c.get("words", []) if slot.get("color")}
 
 
+
+# Fitted values the calibrator is not confident about. Keyed by the confidence
+# label it grades, mapped to where the value lives in the blob.
+_FITTED_KEYS = (
+    ("title_style.size", ("title_style", "size")),
+    ("title_style.bold", ("title_style", "bold")),
+    ("title_style.bold_w", ("title_style", "bold_w")),
+    ("word_size", ("word_size",)),
+)
+
+
+def _drop_low_confidence(out, confidence, notes):
+    """Remove any fitted value the calibrator graded ``low``.
+
+    Detection PROPOSES; it must not propose something it does not believe. A
+    dropped key falls back to the renderer's own auto-fit, which is the
+    behaviour that shipped for every theme before fitting existed.
+    """
+    dropped = []
+    for label, path in _FITTED_KEYS:
+        if confidence.get(label) != "low":
+            continue
+        target = out
+        for key in path[:-1]:
+            target = target.get(key) if isinstance(target, dict) else None
+            if not isinstance(target, dict):
+                break
+        if isinstance(target, dict) and path[-1] in target:
+            target.pop(path[-1], None)
+            confidence.pop(label, None)
+            dropped.append(label)
+    if dropped:
+        notes.append(
+            "not measured confidently, left for the renderer's auto-fit: "
+            + ", ".join(sorted(dropped))
+            + ". A wrong pinned value prints on every card; an unset one does not."
+        )
+    return dropped
+
 def calibrate(theme_key, workdir=None):
     """Derive the calibration blob for a theme from its filled/clean art."""
     cfg = config.theme(theme_key)
@@ -621,9 +1065,31 @@ def calibrate(theme_key, workdir=None):
     out = {"title_style": {}, "board": None, "back": None, "word_size": None}
     board_paints = None
     single = is_single_card(cfg, tdir)
+    # The size fits need the two things the renderer itself renders with: the
+    # theme's own title font, and the titles this theme actually prints.
+    try:
+        title_font = config.font_path(theme_key, cfg.get("title_font") or "")
+    except (KeyError, RuntimeError):
+        title_font = ""
+    samples = title_samples(cfg)
 
     def sheet(kind, half):
         return os.path.join(tdir, half, kind + ".svg")
+
+    def units(box, ppu, ox=0.0, oy=0.0):
+        """A detected PIXEL box back in the recipe's user units."""
+        return {"x0": (box[0] - ox) / ppu, "y0": (box[1] - oy) / ppu,
+                "x1": (box[2] - ox) / ppu, "y1": (box[3] - oy) / ppu}
+
+    def record(key, size, grade, note):
+        """Store one fitted size, or say why it stayed unset."""
+        if note:
+            notes.append(note)
+        if size is None:
+            confidence[f"title_style.{key}"] = "none"
+            return
+        out["title_style"][key] = size
+        confidence[f"title_style.{key}"] = grade
 
     try:
         # --- BOARD: one title on the page; fractions are of the page viewBox ---
@@ -655,6 +1121,12 @@ def calibrate(theme_key, workdir=None):
                     "fill": fill, "outline": outline,
                 }
                 confidence["board.frac"] = "high"
+                # The board is the LARGEST rendering of this title, so its ink is
+                # the cleanest size measurement of the three surfaces.
+                ppu, ox, oy = _viewport(mask, vb)
+                record("board_size", *fit_title_size(
+                    mask, image, units(box, ppu, ox, oy), ppu, ox, oy,
+                    title_font, samples, fill)[:3])
             else:
                 notes.append("board: could not isolate a title — either this "
                              "design carries no board title, or the filled and "
@@ -718,6 +1190,13 @@ def calibrate(theme_key, workdir=None):
                              "y1": round((box[3] - cy0) / ch, 4)},
                     "fill": fill, "outline": outline,
                 }
+                # The back's title is its own surface with its own box, so it
+                # gets its own size — pinning the front's here would size the
+                # back title to a box it was never measured against.
+                bppu, box_, boy = _viewport(mask, vb)
+                record("back_size", *fit_title_size(
+                    mask, image, units(box, bppu, box_, boy), bppu, box_, boy,
+                    title_font, samples, fill)[:3])
                 break
             out["back"] = got
             confidence["back.frac"] = "high" if got else "none"
@@ -814,7 +1293,57 @@ def calibrate(theme_key, workdir=None):
                 if align:
                     ts["align"] = align
                     confidence["title_style.align"] = "medium"
-            if not out["title_style"]:
+
+                # --- the fitted sizes and the synthetic-bold weight ----------
+                tbox = {"x0": min(b["x0"] for b in t), "y0": min(b["y0"] for b in t),
+                        "x1": max(b["x1"] for b in t), "y1": max(b["y1"] for b in t)}
+                size, grade, note, ctx = fit_title_size(
+                    mask, image, tbox, ppu, ox, oy, title_font, samples,
+                    (t[0].get("color") or fill))
+                record("size", size, grade, note)
+                if size and ctx:
+                    # WEIGHT, only where the title has no visible ring. A ringed
+                    # title's ink is mostly its OUTLINE, and the candidate painted
+                    # here carries no ring — so the comparison would read the ring
+                    # as stroke weight and embolden a design that is not bold.
+                    if outline_w and fill != outline:
+                        notes.append("bold: this title is painted with an outline "
+                                     "ring, whose ink would be read as weight — "
+                                     "bold was left alone. Set it by eye.")
+                        confidence["title_style.bold"] = "none"
+                    else:
+                        bold, bold_w, bnote = fit_bold(
+                            mask, ctx[0], title_font, samples, size, ppu, ctx[1])
+                        if bold is None:
+                            if bnote:
+                                notes.append(bnote)
+                            confidence["title_style.bold"] = "none"
+                        elif not bold:
+                            ts["bold"] = False
+                            confidence["title_style.bold"] = "medium"
+                        else:
+                            ts["bold"], ts["bold_w"] = True, bold_w
+                            # Low by construction: the synthetic stroke is painted
+                            # in WHOLE device pixels, so at a card-sized title one
+                            # step of the grid is worth ~0.014 of the glyph size —
+                            # the value is the right neighbourhood, not a decimal.
+                            confidence["title_style.bold"] = "medium"
+                            confidence["title_style.bold_w"] = "low"
+                            notes.append(
+                                "bold: the original's title strokes are heavier "
+                                f"than this font's own cut, so bold is on at "
+                                f"bold_w {bold_w} — compare it against the "
+                                "original before shipping.")
+
+                wslots = _front_word_slots(recipe, cfg, single)
+                wsize, wgrade, wnote = fit_word_size(
+                    mask, image, wslots, ppu, ox, oy,
+                    config.resolve_word_font(theme_key), sample_words(cfg))
+                if wnote:
+                    notes.append(wnote)
+                out["word_size"] = wsize
+                confidence["word_size"] = wgrade or "none"
+            if not t:
                 notes.append("title: no card in the recipe carries a title slot.")
         else:
             notes.append("fronts: filled/clean pair or recipe missing, skipped.")
@@ -842,10 +1371,34 @@ def calibrate(theme_key, workdir=None):
                              "the form opens on its defaults. Re-run detection "
                              "for this template.")
 
-        notes.append("size / board_size / back_size left unset — the renderer "
-                     "auto-fits the title to its box; pin one only if that "
-                     "over- or under-shoots.")
+        # Say which sizes stayed unset, and only those: "left unset" used to be
+        # printed unconditionally, which read as "this pass never measures them"
+        # and sent the owner to Canva's UI even for the ones it now measures.
+        unset = [name for name in ("size", "board_size", "back_size")
+                 if name not in out["title_style"]]
+        if unset:
+            notes.append(", ".join(unset) + " left unset — the renderer auto-fits "
+                         "the title to its box; pin one only if that over- or "
+                         "under-shoots.")
         notes.append("arch and offset are visual calls and stay manual.")
+        # NEVER write a low-confidence fit. "Leave it unset when you cannot
+        # measure it confidently" is the whole safety property here: the renderer
+        # auto-fits a missing size perfectly well, while a WRONG pinned size is
+        # printed on all 104 cards of a paid order.
+        #
+        # This is not hypothetical. Measured against grapefruit's Canva original:
+        #
+        #   title size   fitted 27.56  vs 28     — good, but graded low
+        #   bold         fitted True   vs True   — correct, graded medium
+        #   word_size    fitted 14.81  vs 21.3   — 30% under, and WORSE than the
+        #                                          existing box-height heuristic,
+        #                                          which gives 20.72
+        #   bold_w       fitted 0.015  vs 0.05   — 3x under
+        #
+        # Two of the four fitters are not good enough yet, and they grade
+        # themselves low — so honour that grade rather than shipping the number.
+        # A fitter earns its way in by grading medium or better.
+        _drop_low_confidence(out, confidence, notes)
         out["confidence"] = confidence
         out["notes"] = notes
         return out
