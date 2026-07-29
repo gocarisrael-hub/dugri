@@ -819,6 +819,29 @@ def calibrate(theme_key, workdir=None):
         else:
             notes.append("fronts: filled/clean pair or recipe missing, skipped.")
 
+        # --- card_slots: hand the DETECTED geometry back to the admin form ---
+        # The form pre-fills from this blob, but it reads slot geometry from
+        # themes.json "card_slots" while detection writes the RECIPE — so with
+        # nothing bridging them the form opened on hardcoded generic defaults
+        # (evenly-spaced boxes spanning most of the card). Auto-fit then sized
+        # the text to THOSE boxes, and the preview came back with giant words and
+        # a title clipped off both card edges, on a template whose real geometry
+        # had already been measured correctly.
+        #
+        # Fractions, not user units, because that is what the form stores and
+        # what survives a re-export at a different pixel size.
+        if single:
+            slots = _card_slots_from_recipe(cfg)
+            if slots:
+                out["card_slots"] = slots
+                confidence["card_slots"] = "high"
+                notes.append("card_slots pre-filled from the detected geometry "
+                             "— check the preview, then save.")
+            else:
+                notes.append("card_slots: no single-card recipe detected yet, so "
+                             "the form opens on its defaults. Re-run detection "
+                             "for this template.")
+
         notes.append("size / board_size / back_size left unset — the renderer "
                      "auto-fits the title to its box; pin one only if that "
                      "over- or under-shoots.")
@@ -830,6 +853,47 @@ def calibrate(theme_key, workdir=None):
         if own:
             import shutil
             shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _card_slots_from_recipe(cfg):
+    """The detected single-card geometry as the form's ``card_slots`` fractions.
+
+    Converts the recipe's viewBox user units into fractions of the card:
+    ``{"words": [4 boxes], "titles": {"<front>": box}}``. Returns None when the
+    template has no usable single-card recipe, so the caller can say so rather
+    than writing half a calibration.
+    """
+    try:
+        recipe = config.load_recipe(cfg.get("recipe"))
+    except Exception:
+        return None
+    card = recipe.get("card")
+    if not isinstance(card, dict):
+        return None
+    words = card.get("words") or []
+    if len(words) < 4:
+        return None
+    vb = recipe.get("viewBox") or [0, 0, 0, 0]
+    w, h = vb[2], vb[3]
+    if not w or not h:
+        return None
+
+    def frac(b):
+        return {"x0": round(b["x0"] / w, 4), "y0": round(b["y0"] / h, 4),
+                "x1": round(b["x1"] / w, 4), "y1": round(b["y1"] / h, 4)}
+
+    titles = {}
+    for front, boxes in (card.get("title") or {}).items():
+        if not boxes:
+            continue
+        # A title may be recorded as one box PER LINE; the form holds a single
+        # box per front, so hand it the union the renderer would fit into anyway.
+        union = {"x0": min(b["x0"] for b in boxes), "y0": min(b["y0"] for b in boxes),
+                 "x1": max(b["x1"] for b in boxes), "y1": max(b["y1"] for b in boxes)}
+        titles[str(front)] = frac(union)
+    if not titles:
+        return None
+    return {"words": [frac(b) for b in words[:4]], "titles": titles}
 
 
 def main():

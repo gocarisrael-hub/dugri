@@ -1,6 +1,123 @@
 {
-  "_comment": "Portrait single-card template — see docs/card-structure-schema.md §2. This file is EMPTY OF GEOMETRY but is not forbidden from holding it: a cards theme has two calibration sources, and the generator reads both. `card_slots` on the themes.json entry (written by the admin calibrator, fractions, no colour) WINS; this recipe (written by `recipe_diff --single`, viewBox units, carries the ink colours) is the fallback. Grapefruit has neither yet — card_slots is null and nothing has been detected — which is why its entry is visibility:private + calibrated:false. Running detection also matters for COLOUR: card_slots carries none, so without a recipe the words inherit the title's colour, which is wrong in every shipped theme.",
-  "theme": "grapefruit",
-  "format": 2,
-  "viewBox": [0, 0, 223.92, 312]
+ "theme": "grapefruit",
+ "format": 2,
+ "viewBox": [
+  0.0,
+  0.0,
+  223.92,
+  312.0
+ ],
+ "card": {
+  "cell": [
+   0.0,
+   0.0,
+   223.92,
+   312.0
+  ],
+  "words": [
+   {
+    "x0": 107.08499999999998,
+    "y0": 111.0,
+    "x1": 157.33499999999998,
+    "y1": 124.125,
+    "color": "#711d20"
+   },
+   {
+    "x0": 110.45999999999998,
+    "y0": 139.125,
+    "x1": 156.58499999999998,
+    "y1": 155.25,
+    "color": "#711d20"
+   },
+   {
+    "x0": 89.83499999999998,
+    "y0": 173.25,
+    "x1": 156.95999999999998,
+    "y1": 189.75,
+    "color": "#721f22"
+   },
+   {
+    "x0": 68.45999999999998,
+    "y0": 202.125,
+    "x1": 155.83499999999998,
+    "y1": 217.875,
+    "color": "#711d20"
+   }
+  ],
+  "title": {
+   "2": [
+    {
+     "x0": 60.58499999999998,
+     "y0": 34.125,
+     "x1": 162.95999999999998,
+     "y1": 63.75,
+     "color": "#711d20"
+    }
+   ],
+   "3": [
+    {
+     "x0": 60.58499999999998,
+     "y0": 34.125,
+     "x1": 162.95999999999998,
+     "y1": 63.75,
+     "color": "#711d20"
+    }
+   ],
+   "4": [
+    {
+     "x0": 60.58499999999998,
+     "y0": 34.125,
+     "x1": 162.95999999999998,
+     "y1": 63.75,
+     "color": "#711d20"
+    }
+   ],
+   "5": [
+    {
+     "x0": 60.58499999999998,
+     "y0": 34.125,
+     "x1": 162.95999999999998,
+     "y1": 63.75,
+     "color": "#711d20"
+    }
+   ],
+   "6": [
+    {
+     "x0": 60.58499999999998,
+     "y0": 34.125,
+     "x1": 162.95999999999998,
+     "y1": 63.75,
+     "color": "#711d20"
+    }
+   ],
+   "7": [
+    {
+     "x0": 60.58499999999998,
+     "y0": 34.125,
+     "x1": 162.95999999999998,
+     "y1": 63.75,
+     "color": "#711d20"
+    }
+   ],
+   "8": [
+    {
+     "x0": 60.58499999999998,
+     "y0": 34.125,
+     "x1": 162.95999999999998,
+     "y1": 63.75,
+     "color": "#711d20"
+    }
+   ],
+   "9": [
+    {
+     "x0": 60.375,
+     "y0": 34.499997500000006,
+     "x1": 162.375,
+     "y1": 64.1249975,
+     "color": "#711d20"
+    }
+   ]
+  }
+ },
+ "back": null
 }
