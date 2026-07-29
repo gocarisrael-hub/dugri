@@ -113,6 +113,90 @@ test.describe('admin templates — single-card layout (read-only)', () => {
     await expect(cal.locator('.cal-card-map rect')).toHaveCount(4);
   });
 
+  // A 1x1 PNG, enough for an <img> to have a real src.
+  const SHOT = 'data:image/png;base64,iVBORw0KGgo=';
+
+  // The preview response an OWNER calibration gets: every front, keyed by front
+  // number, because the title position is calibrated per front.
+  function allFronts(over = {}) {
+    const cards = {};
+    for (const n of [2, 3, 4, 5, 6, 7, 8, 9]) cards[String(n)] = SHOT;
+    return { cards, card: SHOT, board: SHOT, ...over };
+  }
+
+  test('the preview shows EVERY front as a labelled thumbnail', async ({ page }) => {
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({ json: { templates: [cardsTemplate()] } })
+    );
+    await page.route('**/api/preview*', (route) => route.fulfill({ json: allFronts() }));
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const cal = page.locator('.tpl-card[data-key="cards-x"] .tpl-cal');
+    await cal.locator('.cal-preview-btn').click();
+
+    // Eight fronts, in front order, labelled the SAME way as the picker buttons
+    // ('פנים 1'..'פנים 8' for 2.svg..9.svg) — they are two views of one choice.
+    const thumbs = cal.locator('.cal-card-thumb');
+    await expect(thumbs).toHaveCount(8);
+    await expect(thumbs.first()).toHaveAttribute('data-front', '2');
+    await expect(thumbs.first()).toContainText('פנים 1');
+    await expect(thumbs.last()).toHaveAttribute('data-front', '9');
+    await expect(thumbs.last()).toContainText('פנים 8');
+    await expect(thumbs.nth(3)).toHaveAttribute('title', '5.svg');
+
+    // The single "קלף" figure is REPLACED by the strip, not shown alongside it —
+    // it is just front 2 again, and a duplicate reads as a ninth front.
+    await expect(cal.locator('.cal-preview figure figcaption', { hasText: 'קלף' })).toHaveCount(0);
+    // The board still renders as its own figure below the strip.
+    await expect(cal.locator('.cal-preview figure figcaption', { hasText: 'לוח' })).toHaveCount(1);
+
+    // The active front is marked, so it is clear which one the open title box edits.
+    await expect(cal.locator('.cal-card-thumb.active')).toHaveCount(1);
+    await expect(cal.locator('.cal-card-thumb.active')).toHaveAttribute('data-front', '2');
+  });
+
+  test('a thumbnail and the front picker are two views of one choice', async ({ page }) => {
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({ json: { templates: [cardsTemplate()] } })
+    );
+    await page.route('**/api/preview*', (route) => route.fulfill({ json: allFronts() }));
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const cal = page.locator('.tpl-card[data-key="cards-x"] .tpl-cal');
+    await cal.locator('.cal-preview-btn').click();
+
+    // Clicking a THUMBNAIL selects that front for editing: its title row opens
+    // and the picker button follows. "That one is wrong" and "let me fix that
+    // one" are the same gesture.
+    await cal.locator('.cal-card-thumb[data-front="6"]').click();
+    await expect(cal.locator('.cal-title-row[data-front="6"]')).toBeVisible();
+    await expect(cal.locator('.cal-title-row[data-front="2"]')).toBeHidden();
+    await expect(cal.locator('.cal-front-btn[data-front="6"]')).toHaveClass(/active/);
+    await expect(cal.locator('.cal-card-thumb[data-front="6"]')).toHaveClass(/active/);
+
+    // ...and the other direction: picking a front highlights its thumbnail.
+    await cal.locator('.cal-front-btn[data-front="9"]').click();
+    await expect(cal.locator('.cal-card-thumb[data-front="9"]')).toHaveClass(/active/);
+    await expect(cal.locator('.cal-card-thumb[data-front="6"]')).not.toHaveClass(/active/);
+    await expect(cal.locator('.cal-card-thumb.active')).toHaveCount(1);
+  });
+
+  test('a preview WITHOUT a cards map still shows the single card', async ({ page }) => {
+    // An older generator, or a buyer preview, returns only `card`. The panel must
+    // keep working exactly as it did rather than rendering an empty strip.
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({ json: { templates: [cardsTemplate()] } })
+    );
+    await page.route('**/api/preview*', (route) =>
+      route.fulfill({ json: { card: SHOT, board: SHOT } })
+    );
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const cal = page.locator('.tpl-card[data-key="cards-x"] .tpl-cal');
+    await cal.locator('.cal-preview-btn').click();
+
+    await expect(cal.locator('.cal-card-thumb')).toHaveCount(0);
+    await expect(cal.locator('.cal-preview figure figcaption', { hasText: 'קלף' })).toHaveCount(1);
+    await expect(cal.locator('.cal-preview img')).toHaveCount(2); // card + board
+  });
+
   test('a LEGACY sheet template gets no card group at all', async ({ page }) => {
     await page.route('**/api/admin/templates?key=*', (route) =>
       route.fulfill({

@@ -376,6 +376,56 @@
       .cal-title-row[hidden] {
         display: none;
       }
+      /* Preview thumbnails, one per front. The title is calibrated PER FRONT, so
+         the preview returns all eight — eight portrait cards have to stay small
+         enough to sit together and still be legible enough to judge where a
+         title sits. They take their own full-width row so the board and back
+         renders below them keep their usual size. */
+      .cal-card-thumbs {
+        flex: 1 1 100%;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      /* A button, not a figure: picking a front is a real action and this gets
+         keyboard and focus handling for free. */
+      .cal-card-thumb {
+        appearance: none;
+        border: 0;
+        padding: 0;
+        background: none;
+        font: inherit;
+        font-size: 11px;
+        color: #8a8a8a;
+        text-align: center;
+        cursor: pointer;
+      }
+      /* Scoped under .cal-preview deliberately: the generic `.cal-preview img`
+         rule further down sets a 220px cap at the SAME specificity and, being
+         later in the file, would win — leaving eight cards at full preview size
+         and three rows tall. */
+      .cal-preview .cal-card-thumb img {
+        display: block;
+        max-width: 104px;
+        max-height: 145px;
+        border: 1px solid #ece3d4;
+        border-radius: 8px;
+        background: #fff;
+      }
+      /* Matches .cal-front-btn.active — the thumbnail and the picker button are
+         two views of one choice, so they must look selected the same way. */
+      .cal-preview .cal-card-thumb.active img {
+        border-color: #8ca287;
+        box-shadow: 0 0 0 2px #8ca287;
+      }
+      .cal-card-thumb.active {
+        color: #5c7357;
+        font-weight: 700;
+      }
+      .cal-card-thumb span {
+        display: block;
+        margin-top: 3px;
+      }
       .cal-actions {
         display: flex;
         flex-wrap: wrap;
@@ -1565,7 +1615,26 @@
           for (const row of card.querySelectorAll('.cal-title-row')) {
             row.hidden = row.dataset.front !== n;
           }
+          // Keep the preview strip in step. The thumbnails and these buttons are
+          // two views of ONE choice, so selecting a front either way has to move
+          // the highlight in both places.
+          for (const t of card.querySelectorAll('.cal-card-thumb')) {
+            t.classList.toggle('active', t.dataset.front === n);
+          }
           redrawCardMap(card);
+          return;
+        }
+
+        // A preview thumbnail is that same choice made on the picture instead of
+        // the button, so route it through the button rather than duplicating the
+        // show/hide/redraw logic here.
+        const calThumb = e.target.closest('.cal-card-thumb');
+        if (calThumb) {
+          const card = calThumb.closest('.tpl-card');
+          const btn = card.querySelector(
+            '.cal-front-btn[data-front="' + calThumb.dataset.front + '"]'
+          );
+          if (btn) btn.click();
           return;
         }
 
@@ -1730,8 +1799,47 @@
             closeBtn.textContent = 'סגור תצוגה';
             closeBtn.title = 'סוגר את התצוגה בלבד — הערכים נשארים';
             previewEl.append(closeBtn);
+            // The title position is calibrated PER FRONT, so an owner preview
+            // returns EVERY front (data.cards, keyed by front number) and not
+            // just the first. Showing one card would leave the other seven being
+            // adjusted blind — the whole reason the picker exists. Clicking a
+            // thumbnail selects that front for editing, so "that one is wrong"
+            // and "let me fix that one" are the same gesture.
+            //
+            // data.cards is absent from an older generator and from a buyer
+            // preview (which deliberately renders one front), and then this falls
+            // through to the single data.card below exactly as before.
+            const cardShots = data.cards && typeof data.cards === 'object' ? data.cards : null;
+            if (cardShots) {
+              const activeBtn = card.querySelector('.cal-front-btn.active');
+              const activeFront = activeBtn ? activeBtn.dataset.front : '';
+              const thumbs = document.createElement('div');
+              thumbs.className = 'cal-card-thumbs';
+              // Iterate CARD_FRONTS rather than the object's own keys, so the
+              // strip is always in front order however the server ordered them.
+              for (const n of CARD_FRONTS) {
+                const src = cardShots[String(n)];
+                if (!src) continue;
+                // Same label as the picker button ('פנים 1'..'פנים 8' for
+                // 2.svg..9.svg) — two views of one choice must agree.
+                const label = 'פנים ' + (n - 1);
+                const thumb = document.createElement('button');
+                thumb.type = 'button';
+                thumb.className = 'cal-card-thumb' + (String(n) === activeFront ? ' active' : '');
+                thumb.dataset.front = String(n);
+                thumb.title = n + '.svg';
+                const img = document.createElement('img');
+                img.src = src;
+                img.alt = label;
+                const cap = document.createElement('span');
+                cap.textContent = label;
+                thumb.append(img, cap);
+                thumbs.append(thumb);
+              }
+              if (thumbs.children.length) previewEl.append(thumbs);
+            }
             for (const [k, label] of [
-              ['card', 'קלף'],
+              ...(cardShots ? [] : [['card', 'קלף']]),
               ['board', 'לוח'],
               ['back', 'גב'],
             ]) {
