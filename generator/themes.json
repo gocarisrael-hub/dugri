@@ -409,7 +409,7 @@
   "card_slots": null,
   "board": null,
   "back": null,
-  "calibrated": false,
+  "calibrated": true,
   "word_size": 21.3
  }
 }

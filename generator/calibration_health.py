@@ -587,6 +587,23 @@ def _assets(theme_key, cfg):
     if not os.path.exists(recipe_path):
         problems.append(f"קובץ המתכון (recipe) של התבנית חסר: {recipe_path} — "
                         f"ההפקה תיכשל.")
+    # WHICH artwork must exist depends on the template's LAYOUT. A v1 sheet ships
+    # clean/fronts.svg + clean/backs.svg; a single-card deck ships numbered cards
+    # (clean/1.svg = the back, clean/2..9.svg = the fronts) and has no sheet at
+    # all. Checking for fronts.svg on a card template reported a missing file for
+    # artwork that is not supposed to exist — a false alarm on EVERY migrated
+    # theme, which is exactly the noise this checker exists to avoid.
+    if config.is_single_card(cfg):
+        required = [(f"{n}.svg", config.card_path(theme_key, n))
+                    for n in config.fronts(cfg)]
+        required.append((f"{config.back_index(cfg)}.svg", config.back_path(theme_key)))
+        required.append(("board.svg", config.clean_path(theme_key, "board")))
+        for label, p in required:
+            paths[f"clean_{label}"] = p
+            if not os.path.exists(p):
+                problems.append(f"קובץ הרקע הנקי חסר: clean/{label} בתיקיית "
+                                f"{config.display_path(tdir)} — ההפקה תיכשל.")
+        return problems, paths
     for which, needed in (("fronts", True), ("board", True),
                           ("backs", bool(cfg.get("back")))):
         p = config.clean_path(theme_key, which)
