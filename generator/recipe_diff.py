@@ -627,9 +627,27 @@ def _save_single_preview(theme, recipe, vb, image, mask, ppu, ox, oy):
 
 
 def write_recipe(theme, recipe):
-    """Write a recipe to ``generator/recipes/<theme>.json`` and return the path."""
-    os.makedirs(os.path.join(HERE, "recipes"), exist_ok=True)
-    path = os.path.join(HERE, "recipes", f"{theme}.json")
+    """Write a recipe where the generator will actually READ it back.
+
+    This used to write only to ``generator/recipes/`` — inside the container
+    image, which on Railway is EPHEMERAL. So detection appeared to succeed, the
+    template worked, and the next deploy silently wiped the recipe: the owner
+    pressed "detect again", it reported success, and some time later the
+    calibration screen was back to "recipe is missing". A shipped theme never
+    showed it, because its recipe is committed to the repo and ships in the
+    image; only owner-uploaded templates lost theirs.
+
+    ``config.recipe_path`` has always READ the owner store first — its own
+    docstring says "the recipe auto-detected for an owner-uploaded template is
+    written to DATA_DIR/templates/recipes/", and server/templates.js says the
+    same. Both described a behaviour this function never had. Now it does.
+    """
+    import config
+
+    root = config.owner_store()
+    base = os.path.join(root, "recipes") if root else os.path.join(HERE, "recipes")
+    os.makedirs(base, exist_ok=True)
+    path = os.path.join(base, f"{theme}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(recipe, f, ensure_ascii=False, indent=1)
     return path

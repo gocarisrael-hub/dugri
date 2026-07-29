@@ -9,7 +9,7 @@
 //
 // Runs against a THROWAWAY repo scaffold so nothing touches the real resources/
 // or generator/themes.json, mirroring tests/unit/admin-templates.test.js.
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -798,6 +798,11 @@ describe('POST /api/admin/templates — single-card upload', () => {
 describe('applyCalibration — detected card_slots reach themes.json', () => {
   let templates;
   beforeAll(() => {
+    // No owner store, so persistThemeEntry writes the shipped file these tests
+    // read back — the same convention the other pure suites here use. (With a
+    // store configured it writes the VOLUME instead, which is the whole point of
+    // routing this through persistThemeEntry.)
+    delete process.env.DATA_DIR;
     templates = require(path.join(serverDir, 'templates.js'));
   });
 
@@ -1054,5 +1059,53 @@ describe('re-detection is opt-in, and available on demand', () => {
     });
     expect(r.error).toMatch(/detection failed/);
     expect(r.httpStatus).toBe(422);
+  });
+});
+
+// Runtime writes must land on the VOLUME, not inside the container image. The
+// image filesystem is ephemeral on Railway: a detected calibration written there
+// survived until the next deploy and then silently vanished, so the owner
+// pressed "detect again", saw it succeed, and later found the template back to
+// "recipe is missing".
+describe('applyCalibration persists to the owner store, not the image', () => {
+  let templates;
+  let dataDir;
+  let root;
+
+  beforeAll(() => {
+    root = makeScaffold();
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-vol-'));
+    process.env.DATA_DIR = dataDir;
+    // Fresh require so the store module picks up DATA_DIR.
+    for (const k of Object.keys(require.cache)) {
+      if (k.includes(path.join('server', ''))) delete require.cache[k];
+    }
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  afterAll(() => {
+    delete process.env.DATA_DIR;
+    for (const k of Object.keys(require.cache)) {
+      if (k.includes(path.join('server', ''))) delete require.cache[k];
+    }
+  });
+
+  it('writes the entry under DATA_DIR and leaves the shipped file alone', () => {
+    const imagePath = path.join(root, 'generator', 'themes.json');
+    fs.writeFileSync(
+      imagePath,
+      JSON.stringify({ volt: { slug: 'volt', card_structure: 'cards', word_size: null } }),
+      'utf8'
+    );
+    const before = fs.readFileSync(imagePath, 'utf8');
+
+    templates.applyCalibration(imagePath, 'volt', { word_size: 21.3 });
+
+    // The shipped file is untouched...
+    expect(fs.readFileSync(imagePath, 'utf8')).toBe(before);
+    // ...and the value landed on the volume, where it survives a deploy.
+    const ownerPath = path.join(dataDir, 'templates', 'themes.json');
+    expect(fs.existsSync(ownerPath)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(ownerPath, 'utf8')).volt.word_size).toBe(21.3);
   });
 });
