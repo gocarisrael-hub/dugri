@@ -58,6 +58,81 @@ const isReincluded = (rel) =>
     return rel === p || rel.startsWith(p + '/');
   });
 
+// `isReincluded` above only looks for a `!` line. That is not how .dockerignore
+// actually resolves: rules are applied IN ORDER and the LAST match wins, so a
+// re-included tree can be carved up again by a later exclude — which is exactly
+// what happened to filled/. `!resources/canva/templates/**` made the checks above
+// pass while two later lines stripped every filled/ directory back out.
+//
+// This is the real evaluator: walk the rules in order, last match wins.
+function ruleRegex(pattern) {
+  const rx = pattern
+    .split('/')
+    .map((seg) =>
+      seg === '**' ? '.*' : seg.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*')
+    )
+    .join('/');
+  // A rule that matches a directory also covers everything beneath it.
+  return new RegExp('^' + rx + '(/.*)?$');
+}
+
+const rules = dockerignore.map((line) => ({
+  negated: line.startsWith('!'),
+  re: ruleRegex(line.replace(/^!/, '').replace(/\/$/, '')),
+}));
+
+// True when `rel` survives .dockerignore and is therefore in the build context.
+function inBuildContext(rel) {
+  let included = true;
+  for (const r of rules) if (r.re.test(rel)) included = r.negated;
+  return included;
+}
+
+describe('.dockerignore resolves last-match-wins', () => {
+  it('the evaluator agrees with the blanket exclude', () => {
+    // Sanity: without this the assertions below would pass on any input.
+    expect(excludesEverythingByDefault).toBe(true);
+    expect(inBuildContext('node_modules/express/index.js')).toBe(false);
+    expect(inBuildContext('.git/config')).toBe(false);
+    expect(inBuildContext('CLAUDE.md')).toBe(false);
+  });
+
+  it('keeps the code and assets the image runs on', () => {
+    expect(inBuildContext('server/index.js')).toBe(true);
+    expect(inBuildContext('site/index.html')).toBe(true);
+    expect(inBuildContext('generator/topup.py')).toBe(true);
+    expect(inBuildContext('content/wordlists/generic-350.txt')).toBe(true);
+  });
+
+  // filled/ is a RUNTIME INPUT, not a reference export: since #253 the server runs
+  // generator/recipe_diff.py at template upload and diffs clean/ against filled/
+  // to detect the card slots. Stripping it from the image meant detection could
+  // only ever work on files uploaded in the same session — and worse, "שחזור
+  // למקור" deletes the owner's assets and falls back to the shipped ones, so with
+  // no shipped filled/ to fall back to the owner lost all nine SVGs outright.
+  const themesDir = path.join(repo, 'resources', 'canva', 'templates');
+  const templateDirs = fs
+    .readdirSync(themesDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name);
+
+  for (const t of templateDirs) {
+    const filled = path.join(themesDir, t, 'filled');
+    if (!fs.existsSync(filled)) continue;
+    it(`ships ${t}/filled/ — recipe_diff reads it server-side`, () => {
+      const one = fs.readdirSync(filled).find((f) => f.endsWith('.svg'));
+      expect(one).toBeTruthy();
+      expect(inBuildContext(`resources/canva/templates/${t}/filled/${one}`)).toBe(true);
+    });
+  }
+
+  it('still ships clean/ and fonts/ alongside it', () => {
+    const t = templateDirs[0];
+    expect(inBuildContext(`resources/canva/templates/${t}/clean/fronts.svg`)).toBe(true);
+    expect(inBuildContext(`resources/canva/templates/${t}/fonts/Any.ttf`)).toBe(true);
+  });
+});
+
 describe('runtime assets are packaged into the image', () => {
   // Every directory the Python generator opens at request time.
   const RUNTIME_DIRS = [
