@@ -19,6 +19,7 @@ import shutil
 import tempfile
 
 import calibrate as C
+import calibration_health as H
 import config
 import recipe_diff as R
 
@@ -228,6 +229,14 @@ def test_end_to_end_calibrates_a_single_card_template():
     ts = blob["title_style"]
     assert ts.get("fill") == _FILL, f"fill misread: {ts}"
     assert ts.get("outline") == _OUTLINE, f"outline misread: {ts}"
+    # A calibration must emit EVERY key the renderer indexes and the server
+    # validates. title_style is accepted or rejected as a whole, so one absent
+    # field throws away the colours measured beside it and the template keeps
+    # reporting itself as never calibrated even though detection succeeded —
+    # which is exactly what "arch is a visual call" cost daniel-amit. Sourced
+    # from calibration_health so the producer and the contract cannot drift.
+    missing = [k for k in H._TITLE_STYLE_REQUIRED if k not in ts]
+    assert not missing, f"calibrate omitted {missing} — blob is unusable: {ts}"
     # the back's title box, as a fraction of the card cell (which IS the page)
     frac = blob["back"]["frac"]
     assert abs(frac["y0"] - 120 / 312) < 0.02, frac

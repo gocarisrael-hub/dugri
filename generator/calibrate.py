@@ -1289,6 +1289,18 @@ def calibrate(theme_key, workdir=None):
                 if shadow is not None:
                     ts["shadow"] = bool(shadow)
                     confidence["title_style.shadow"] = "low"
+                # Flat unless the title genuinely curves. This USED to be left out
+                # as "a visual call", but title_style is validated as a WHOLE and a
+                # blob missing one field is rejected entirely — so omitting arch
+                # silently discarded the fill, outline and ring width measured just
+                # above it, and the template went on reporting itself as never
+                # calibrated even though detection had succeeded. Straight is also
+                # the honest reading: nothing measured here bulges. The owner still
+                # overrides it in the form for a curved title.
+                ts.setdefault("arch", 0.0)
+                confidence.setdefault("title_style.arch", "low")
+                ts.setdefault("shadow", False)
+                confidence.setdefault("title_style.shadow", "low")
                 align = _alignment(mask, tight)
                 if align:
                     ts["align"] = align
@@ -1380,7 +1392,8 @@ def calibrate(theme_key, workdir=None):
             notes.append(", ".join(unset) + " left unset — the renderer auto-fits "
                          "the title to its box; pin one only if that over- or "
                          "under-shoots.")
-        notes.append("arch and offset are visual calls and stay manual.")
+        notes.append("arch is set flat (0) — raise it in the form only if this "
+                     "title genuinely curves. offset stays a visual call.")
         # NEVER write a low-confidence fit. "Leave it unset when you cannot
         # measure it confidently" is the whole safety property here: the renderer
         # auto-fits a missing size perfectly well, while a WRONG pinned size is
