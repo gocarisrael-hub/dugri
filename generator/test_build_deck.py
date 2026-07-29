@@ -588,3 +588,67 @@ def test_a_photo_stays_under_the_deck_hoist_threshold():
         chars = build._b64_chars(out)
         assert chars <= build.PHOTO_MAX_B64_CHARS, chars
         assert chars < deck_html.BG_MIN_CHARS, (chars, deck_html.BG_MIN_CHARS)
+
+
+# --- a template with no recipe yet ------------------------------------------
+# Every freshly uploaded template is in this state until detection runs. Opening
+# the calibration screen on one produced a Python traceback — on the very screen
+# whose purpose is to supply the missing geometry.
+
+def _drop_recipe():
+    """Point the demo theme at a recipe that does not exist."""
+    root = os.environ["DATA_DIR"]
+    tp = os.path.join(root, "templates", "themes.json")
+    with open(tp, encoding="utf-8") as f:
+        themes = json.load(f)
+    themes["demo"]["recipe"] = "no-such-recipe"
+    themes["demo"].pop("card_slots", None)
+    with open(tp, "w", encoding="utf-8") as f:
+        json.dump(themes, f)
+
+
+def test_a_missing_recipe_reads_as_empty_rather_than_raising():
+    with Store():
+        _drop_recipe()
+        cfg = config.theme("demo")
+        assert config.recipe_or_empty(cfg) == {}
+
+
+def test_card_slots_alone_are_enough_without_any_recipe():
+    # A hand-calibrated template must render from card_slots alone — the cell
+    # comes from the ARTWORK's viewBox, not the (absent) recipe. Without that
+    # fallback the cell collapsed to [0,0,0,0] and every fraction multiplied to
+    # zero, so the card came out blank.
+    import render_page as rp
+    with Store():
+        _drop_recipe()
+        root = os.environ["DATA_DIR"]
+        tp = os.path.join(root, "templates", "themes.json")
+        with open(tp, encoding="utf-8") as f:
+            themes = json.load(f)
+        themes["demo"]["card_slots"] = {
+            "words": [{"x0": 0.3, "y0": 0.35 + i * 0.1, "x1": 0.7, "y1": 0.40 + i * 0.1}
+                      for i in range(4)],
+            "titles": {str(n): {"x0": 0.27, "y0": 0.11, "x1": 0.73, "y1": 0.20}
+                       for n in range(2, 10)},
+        }
+        with open(tp, "w", encoding="utf-8") as f:
+            json.dump(themes, f)
+        cfg = config.theme("demo")
+        boxes = config.card_word_boxes(cfg, {}, rp._recipe_cell({}, [0, 0, W, H]))
+        assert len(boxes) == 4
+        # Real coordinates on the card, not a collapsed zero box.
+        assert boxes[0]["x1"] > 100, boxes[0]
+
+
+def test_an_order_refuses_when_there_is_no_geometry_at_all():
+    # A preview may show a bare card; an ORDER may not print 104 blank ones.
+    with Store() as tmp:
+        _drop_recipe()
+        try:
+            build.deck_document("demo", _csv(tmp), ["שירה"])
+        except RuntimeError as e:
+            assert "no word-slot geometry" in str(e), e
+            assert "זהה מחדש" in str(e), "the error must name the fix"
+            return
+        raise AssertionError("an order with no geometry must be refused")

@@ -311,6 +311,27 @@ def load_recipe(recipe_name):
         return json.load(f)
 
 
+
+def recipe_or_empty(cfg):
+    """The theme's recipe, or ``{}`` when it has none yet.
+
+    A freshly uploaded template has NO recipe until detection runs, and that is a
+    normal state rather than a broken one: the owner's ``card_slots`` (set in the
+    calibration form) supply the same geometry on their own, and
+    ``card_word_boxes`` / ``card_title_boxes`` already prefer them.
+
+    Raising here meant opening the calibration screen on a new template produced
+    a Python traceback instead of the card the owner is trying to calibrate —
+    the one screen whose entire purpose is to fix that missing geometry. Callers
+    that genuinely cannot proceed without geometry check for it explicitly and
+    say so in their own terms (see build.deck_document).
+    """
+    try:
+        return load_recipe(cfg.get("recipe"))
+    except RuntimeError:
+        return {}
+
+
 def clean_path(theme_name, which):
     """Absolute path to a clean background SVG (which in fronts/backs/board)."""
     return os.path.join(theme_dir(theme_name), "clean", f"{which}.svg")

@@ -472,7 +472,7 @@ def _words_overlay(slots, words, cfg, word_font, cell):
 
 
 def card_overlay(theme, recipe, words, title_lines, front_index=None,
-                 word_font=None, kind="word"):
+                 word_font=None, kind="word", card_vb=None):
     """Title + word markup for ONE card, in the card's own viewBox units.
 
     ``front_index`` selects which front's title box to use: the words are SHARED
@@ -490,7 +490,7 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
         return ""
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    cell = (recipe.get("card") or {}).get("cell") or _recipe_cell(recipe)
+    cell = (recipe.get("card") or {}).get("cell") or _recipe_cell(recipe, card_vb)
     word_font_path = config.resolve_word_font(theme, word_font)
     title_font_path = config.font_path(theme, cfg["title_font"])
     return (_title_overlay(config.card_title_boxes(cfg, recipe, front_index, cell),
@@ -500,7 +500,7 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
                              cfg, word_font_path, cell))
 
 
-def back_overlay(theme, recipe, title_lines):
+def back_overlay(theme, recipe, title_lines, card_vb=None):
     """Title markup for the card BACK, which every pair repeats.
 
     Three distinct cases, and conflating the last two would misprint a card:
@@ -517,7 +517,7 @@ def back_overlay(theme, recipe, title_lines):
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
     bk = cfg.get("back")
-    cell = _recipe_cell(recipe)
+    cell = _recipe_cell(recipe, card_vb)
     boxes = config.recipe_back_title(recipe)
     if not boxes:
         # An explicit null/empty back is an ANSWER, not a gap — respect it.
@@ -601,8 +601,15 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
     import card_assets
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    recipe = config.load_recipe(cfg["recipe"])
+    recipe = config.recipe_or_empty(cfg)
     svg = card_assets.read_svg(clean_svg)
+    # The artwork's OWN viewBox, so card_slots fractions still resolve when no
+    # recipe has been detected yet — without it the cell collapsed to zero and
+    # every fraction multiplied to nothing, rendering a blank card.
+    try:
+        card_vb = deck_html.view_box(svg)
+    except Exception:
+        card_vb = None
     if kind == "photo":
         # The photo card carries no text — every piece of its static copy is
         # already baked to vector paths — so it needs no @font-face injection at
@@ -613,10 +620,11 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
              + font_face("TitleFont", config.font_path(theme, cfg["title_font"]))
              + "</style>")
     if kind == "back":
-        overlay = back_overlay(theme, recipe, title_lines)
+        overlay = back_overlay(theme, recipe, title_lines, card_vb=card_vb)
     else:
         overlay = card_overlay(theme, recipe, words, title_lines,
-                               front_index=front_index, word_font=word_font)
+                               front_index=front_index, word_font=word_font,
+                               card_vb=card_vb)
     return svg.replace("</svg>", style + overlay + "</svg>")
 
 
@@ -657,7 +665,7 @@ def render_fronts_strip(theme, fronts, words, title_lines, out_dir,
     import card_assets
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    recipe = config.load_recipe(cfg["recipe"])
+    recipe = config.recipe_or_empty(cfg)
     # Fonts ONCE for the whole strip, not once per card. build_single_card_svg
     # makes each card self-contained, which is right for a single preview and
     # wasteful here: eight cards x two base64 faces is sixteen copies of the same
@@ -670,8 +678,13 @@ def render_fronts_strip(theme, fronts, words, title_lines, out_dir,
     cards = []
     for front in fronts:
         svg = card_assets.read_svg(config.card_path(theme, front))
+        try:
+            card_vb = deck_html.view_box(svg)
+        except Exception:
+            card_vb = None
         overlay = card_overlay(theme, recipe, words, title_lines,
-                               front_index=front, word_font=word_font)
+                               front_index=front, word_font=word_font,
+                               card_vb=card_vb)
         cards.append(svg.replace("</svg>", overlay + "</svg>"))
     w, h = dims(config.card_path(theme, fronts[0]))
     body = "".join(f'<div class="c">{svg}</div>' for svg in cards)
@@ -718,19 +731,26 @@ def render_fronts_strip(theme, fronts, words, title_lines, out_dir,
     return out
 
 
-def _recipe_cell(recipe):
-    """The card's box in viewBox units — the whole card in v2."""
+def _recipe_cell(recipe, fallback_vb=None):
+    """The card's box in viewBox units — the whole card in v2.
+
+    ``fallback_vb`` is the ARTWORK's own viewBox, used when the recipe has none.
+    A template with no detected recipe yet still has a card to measure against,
+    and card_slots are FRACTIONS of it — without this the cell collapsed to
+    [0,0,0,0] and every fraction multiplied to zero, so a hand-calibrated
+    template rendered a blank card instead of its text.
+    """
     card = recipe.get("card") or {}
     if card.get("cell"):
         return card["cell"]
-    vb = recipe.get("viewBox") or [0, 0, 0, 0]
+    vb = recipe.get("viewBox") or fallback_vb or [0, 0, 0, 0]
     return [vb[0], vb[1], vb[0] + vb[2], vb[1] + vb[3]]
 
 
 def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    recipe = config.load_recipe(cfg["recipe"])
+    recipe = config.recipe_or_empty(cfg)
     # word_font optionally overrides the theme's card font (a filename); it
     # resolves against the theme's own fonts/ dir first, then the shared
     # word-fonts/ pool. No override -> the theme's configured word_font.
