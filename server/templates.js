@@ -515,7 +515,19 @@ function applyCalibration(themesPath, key, blob) {
   // Advisory, for the form's "check this one" flags — not render inputs.
   if (blob.confidence && typeof blob.confidence === 'object') entry.confidence = blob.confidence;
   if (Array.isArray(blob.notes)) entry.notes = blob.notes.filter((s) => typeof s === 'string');
-  writeThemesFile(themesPath, themes);
+  // persistThemeEntry, NOT writeThemesFile. Two bugs in the old line:
+  //
+  // 1. It wrote to the IMAGE themes.json, which on Railway is ephemeral — so a
+  //    detected calibration survived until the next deploy and then silently
+  //    vanished. Same root cause as recipes being written to
+  //    generator/recipes/: a runtime write aimed at the container instead of
+  //    the volume.
+  // 2. It wrote back the MERGED shipped+owner mapping, so every owner entry got
+  //    baked into the shipped file and would come back looking shipped.
+  //
+  // persistThemeEntry writes the single entry to the owner store when there is
+  // one, and only falls back to the shipped file when there is not.
+  persistThemeEntry(themesPath, key, entry);
   return entry;
 }
 
