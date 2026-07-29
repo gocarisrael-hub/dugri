@@ -2432,6 +2432,23 @@ app.delete('/api/admin/wordlists/:name', (req, res) => {
 // The counterpart to the DELETE route's refusal on a shipped template: a shipped
 // template can't be deleted (it would just come back on the next deploy), but the
 // edits layered on top of it can be thrown away.
+// Re-run detection + auto-calibration for a template already in the catalog.
+// Deliberately a BUTTON, not something that fires on every asset replace: a full
+// pass is 18 Chrome start-ups (each card's clean/filled pair rendered
+// separately), measured at ~38s on a laptop and longer here, and it used to run
+// once per uploaded file. Slow enough to need its own timeout allowance.
+app.post('/api/admin/templates/:key/redetect', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let result;
+  try {
+    result = templates.redetectTemplate({ root: TEMPLATE_ROOT, key: req.params.key });
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
+  res.json({ ok: true, ...result });
+});
+
 app.post('/api/admin/templates/:key/revert', (req, res) => {
   if (!requireAdmin(req, res)) return;
   let result;

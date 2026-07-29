@@ -1477,6 +1477,17 @@
             revertBtn.textContent = 'שחזור למקור';
             head.append(revertBtn);
           }
+          // Re-measure the text slots from the artwork. Deliberately a BUTTON:
+          // a full pass is 18 Chrome start-ups (every card's clean/filled pair),
+          // so running it on each uploaded file made a nine-file re-upload
+          // unusable. Pressed once, when the artwork is finished.
+          const redetectBtn = document.createElement('button');
+          redetectBtn.type = 'button';
+          redetectBtn.className = 'link-btn tpl-redetect-btn';
+          redetectBtn.textContent = 'זהה מחדש';
+          redetectBtn.title =
+            'מודד מחדש את מיקומי הטקסט מתוך הקבצים (clean מול filled). לוקח כדקה.';
+          head.append(redetectBtn);
           card.append(head);
 
           // Editable settings (language / name_form / extra_fields / visibility).
@@ -1947,6 +1958,45 @@
 
         // Reset a SHIPPED template to the version that ships with the release:
         // drops the saved owner edits (name, settings, calibration, swapped art).
+        const redetectBtn = e.target.closest('.tpl-redetect-btn');
+        if (redetectBtn) {
+          const card = redetectBtn.closest('.tpl-card');
+          const prev = redetectBtn.textContent;
+          redetectBtn.disabled = true;
+          redetectBtn.textContent = 'מזהה…';
+          tplMsg(card, 'ok', 'מודד את מיקומי הטקסט מתוך הקבצים — זה לוקח כדקה.');
+          try {
+            const res = await fetch(
+              '/api/admin/templates/' +
+                encodeURIComponent(card.dataset.key) +
+                '/redetect?key=' +
+                encodeURIComponent(key),
+              { method: 'POST' }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              tplMsg(card, 'err', 'הזיהוי נכשל: ' + (data.error || res.status));
+            } else if (data.calibrated) {
+              tplMsg(card, 'ok', 'זוהה בהצלחה — בדקו בתצוגה המקדימה ושמרו.');
+              loadTemplates();
+            } else {
+              // The recipe landed but the style pass did not — a real, actionable
+              // state, not a failure worth hiding behind a generic error.
+              tplMsg(
+                card,
+                'err',
+                'המשבצות זוהו, אך הכיול האוטומטי לא הושלם: ' + (data.detail || 'לא ידוע')
+              );
+              loadTemplates();
+            }
+          } catch (err) {
+            tplMsg(card, 'err', 'שגיאת רשת: ' + err);
+          }
+          redetectBtn.disabled = false;
+          redetectBtn.textContent = prev;
+          return;
+        }
+
         const revertBtn = e.target.closest('.tpl-revert-btn');
         if (revertBtn) {
           const card = revertBtn.closest('.tpl-card');
