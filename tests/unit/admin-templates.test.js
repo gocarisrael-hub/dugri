@@ -1836,3 +1836,34 @@ describe('templates.shrinkSvgImages with real Python (skipped without Pillow)', 
     }
   });
 });
+
+// Thumbnails in the asset checklist: nine near-identical rows are only tellable
+// apart by LOOKING at the file. They cannot use <img> — that context blocks
+// external references, and a de-duplicated card's whole background IS one, so
+// every card rendered as an identical blank rectangle. Injected inline instead,
+// which means the markup must not be able to execute anything.
+describe('sanitizeSvgForDom (thumbnail injection)', () => {
+  const src = fs.readFileSync(path.join(serverDir, 'index.js'), 'utf8');
+  const fn = src.match(/function sanitizeSvgForDom[\s\S]*?\n}\n/)[0];
+  const sanitize = eval(fn + ';sanitizeSvgForDom');
+
+  it('strips <script> blocks and self-closing script tags', () => {
+    expect(sanitize('<svg><script>alert(1)</script><rect/></svg>')).not.toMatch(/script/i);
+    expect(sanitize('<svg><script src="x.js"/><rect/></svg>')).not.toMatch(/script/i);
+  });
+
+  it('strips inline event handlers in either quote style', () => {
+    expect(sanitize('<svg><g onload="evil()"/></svg>')).not.toMatch(/onload/i);
+    expect(sanitize("<svg><g onclick='evil()'/></svg>")).not.toMatch(/onclick/i);
+  });
+
+  it('strips javascript: hrefs', () => {
+    expect(sanitize('<svg><a xlink:href="javascript:evil()"/></svg>')).not.toMatch(/javascript:/i);
+  });
+
+  it('leaves the artwork itself alone', () => {
+    const art =
+      '<svg><image xlink:href="/api/template-asset/x/y.png"/><rect fill="#711d20"/></svg>';
+    expect(sanitize(art)).toBe(art);
+  });
+});

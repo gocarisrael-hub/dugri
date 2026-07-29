@@ -232,6 +232,22 @@
         color: #b23b3b;
       }
       /* Shown only on a SHIPPED template that carries saved owner edits. */
+      .asset-thumb {
+        display: inline-block;
+        width: 34px;
+        height: 47px; /* the card's 223.92x312 ratio, so nothing is distorted */
+        overflow: hidden;
+        border: 1px solid #e6e0d8;
+        border-radius: 3px;
+        background: #fff;
+        flex: 0 0 auto;
+        margin-inline-end: 6px;
+      }
+      .asset-thumb svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
       .tpl-revert-btn {
         border-color: #c9b98a;
         color: #8a7433;
@@ -1587,6 +1603,37 @@
             input.accept = REPL_ACCEPT[a.kind] || '';
             repl.append(input);
             li.append(mark, lbl, repl);
+            // A thumbnail of the actual file, so nine near-identical rows can be
+            // told apart by LOOKING rather than by trusting the numbering. Only
+            // for SVG roles that are present — a font has nothing to show, and a
+            // missing file would just 404.
+            if (a.present && a.kind === 'svg') {
+              // Injected INLINE, not via <img>: an <img> sandboxes the SVG and
+              // blocks external references, and a de-duplicated card's entire
+              // background is one — so every card came out an identical blank
+              // rectangle. Inline, the browser fetches that background once and
+              // reuses it across every thumbnail. The server strips anything
+              // executable before sending it.
+              const thumb = document.createElement('span');
+              thumb.className = 'asset-thumb';
+              li.prepend(thumb);
+              fetch(
+                '/api/admin/templates/' +
+                  encodeURIComponent(t.key) +
+                  '/asset-svg/' +
+                  encodeURIComponent(a.role) +
+                  '?key=' +
+                  encodeURIComponent(key)
+              )
+                .then((r) => (r.ok ? r.text() : null))
+                .then((svg) => {
+                  // A template mid-upload can hold a file that will not draw;
+                  // drop the thumbnail rather than leave an empty box.
+                  if (svg) thumb.innerHTML = svg;
+                  else thumb.remove();
+                })
+                .catch(() => thumb.remove());
+            }
             assets.append(li);
           }
           card.append(assets);
