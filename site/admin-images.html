@@ -317,7 +317,8 @@
         <p>
           כל עיצוב מגיע עם שלוש תמונות קבועות — קלף, גב הקלף ולוח — ותמונת חנות. אפשר להחליף כל
           תמונה בתמונה משלכם, להוסיף תמונות נוספות עם שם, לבחור לכל תמונה אם תופיע בעמוד החנות ו/או
-          בעמוד המוצר, ולשנות את הסדר. הכול נשמר בשרת ומופיע מיד לכל המבקרים, בלי דפלוי.
+          בעמוד המוצר, ולשנות את הסדר. הכול נשמר בשרת ומופיע מיד לכל המבקרים, בלי דפלוי. כל העיצובים
+          כאן — גם תבניות שהעליתם; משבצת שאין לה תמונה מוכנה מתחילה ריקה וממתינה להעלאה.
         </p>
       </header>
 
@@ -345,8 +346,12 @@
     </div>
 
     <script type="module">
-      import { DESIGNS, designShipsBoard } from './js/designs.js';
-
+      // The design list comes from the SERVER (GET /api/admin/designs), not from the
+      // bundled site/js/designs.js catalog. That endpoint returns the MERGED catalog
+      // — built-in designs AND owner-uploaded templates, in one list with no
+      // distinction — so every sellable design can have its pictures curated here.
+      // Importing DESIGNS directly is what used to hide an in-store template from
+      // this page while the storefront happily sold it.
       const key = new URLSearchParams(location.search).get('key') || '';
       const qs = (id) => document.getElementById(id);
       for (const a of document.querySelectorAll('#nav a')) {
@@ -372,8 +377,9 @@
       // The slot's noun INSIDE the "you can upload one yourself" placeholder
       // sentence — SLOT_LABELS reads as a heading and is clumsy mid-sentence.
       const SLOT_UPLOAD_NOUN = { photo: 'קלף תמונות', board: 'לוח' };
+      // Filled from GET /api/admin/designs (see load()) — built-ins + templates.
+      let DESIGNS = [];
       const DESIGN_BY_ID = {};
-      for (const d of DESIGNS) DESIGN_BY_ID[d.id] = d;
 
       // The base slots a design OFFERS in the manager: store/front/back/photo/board
       // for EVERY design. Board and photo are always offered so a design that ships
@@ -384,15 +390,15 @@
       function availBase() {
         return ['store', 'front', 'back', 'photo', 'board'];
       }
-      // Whether the design SHIPS a static render for a base slot (store/front/back
-      // always; board via designShipsBoard, photo via its thumb — the same canonical
-      // per-slot indicator the buyer-facing reader uses). A slot that doesn't ship
-      // has no default preview — it shows an empty "upload a picture" state until
-      // overridden.
+      // Whether the design SHIPS a render for a base slot, and what it is. Both come
+      // from the server's `slots` map (server/design-catalog.js): a static
+      // site/assets/designs/<id>/ file for a built-in design, the template's own SVG
+      // (/api/template-image/<slug>/<slot>) for an uploaded one. ONE code path for
+      // both kinds — the page never branches on where a design came from. A slot with
+      // no shipped render has no default preview: it shows an empty "upload a
+      // picture" state until overridden.
       function shipsBase(d, slot) {
-        if (slot === 'board') return designShipsBoard(d);
-        if (slot === 'photo') return !!(d && d.thumbs && d.thumbs.photo);
-        return true;
+        return !!(d && d.slots && d.slots[slot]);
       }
       // Default per-surface visibility of a base slot (store hidden on the product
       // page by default; everything else shown). Matches the server + reader rule.
@@ -404,9 +410,7 @@
         return c && typeof c[flag] === 'boolean' ? c[flag] : baseDefault(slot, flag);
       }
       function defaultSrc(d, slot) {
-        return slot === 'store'
-          ? `assets/designs/${d.id}/store.webp`
-          : `assets/designs/${d.id}/gallery-${slot}.webp`;
+        return (d && d.slots && d.slots[slot]) || '';
       }
 
       // The full ordered key list for a design (base slots + photo ids), reconciling
@@ -793,10 +797,20 @@
 
       async function load() {
         try {
-          const r = await fetch(withKey('/api/design-images'));
-          const j = await r.json().catch(() => ({}));
-          const images = (j && j.images && typeof j.images === 'object' && j.images) || {};
-          for (const d of DESIGNS) state[d.id] = images[d.id] || {};
+          // The merged catalog and the saved gallery config are independent reads —
+          // fetch them together so the page paints once, fully populated.
+          const [catalog, images] = await Promise.all([
+            api('/api/admin/designs').then((j) => (Array.isArray(j.designs) ? j.designs : [])),
+            fetch(withKey('/api/design-images'))
+              .then((r) => r.json())
+              .catch(() => ({}))
+              .then((j) => (j && j.images && typeof j.images === 'object' && j.images) || {}),
+          ]);
+          DESIGNS = catalog;
+          for (const d of DESIGNS) {
+            DESIGN_BY_ID[d.id] = d;
+            state[d.id] = images[d.id] || {};
+          }
           render();
         } catch (e) {
           qs('loadErr').textContent = 'טעינה נכשלה: ' + e.message;

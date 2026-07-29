@@ -32,21 +32,47 @@ const DEFAULT_ORDER = ['store', 'front', 'back', 'photo', 'board'];
 // both can still be surfaced by an owner override alone (see baseSlots).
 const OPTIONAL_SLOTS = new Set(['photo', 'board']);
 
-/** The shipped asset path for a design's base slot (the fallback picture). */
+/** The shipped asset path for a BUILT-IN design's base slot (the fallback picture). */
 export function baseSrc(designId, slot) {
   return slot === 'store'
     ? `assets/designs/${designId}/store.webp`
     : `assets/designs/${designId}/gallery-${slot}.webp`;
 }
 
-/** Whether a design SHIPS a static render for a base slot. store/front/back always
- *  ship; an OPTIONAL slot (board, photo) ships only when the design has that thumb
- *  (the canonical per-slot render indicator — matches designs.js designShipsBoard).
- *  A design without one can still CARRY an override for it (#159), but has no
- *  shipped file to fall back to. */
+/**
+ * The SHIPPED render for a design's base slot — the picture the gallery shows when
+ * the owner set no override, and the one a broken override falls back to. Null when
+ * the design ships nothing for that slot.
+ *
+ * TWO layouts, ONE resolver, so a slot can never count as shipped on one surface
+ * and missing on another:
+ *   • BUILT-IN — committed rasters under site/assets/designs/<id>/. store/front/back
+ *     always ship; an OPTIONAL slot (board, photo) ships only when the design has
+ *     that thumb (the canonical per-slot indicator — matches designs.js
+ *     designShipsBoard). A design without one can still CARRY an override (#159).
+ *   • CUSTOM (an uploaded template) — no committed rasters at all: its shipped
+ *     renders ARE the template's own SVGs, already resolved onto `design.img` by
+ *     loadCustomDesigns (/api/template-image/<slug>/<slot>). It has no store cover
+ *     and no photo card, so those slots ship nothing and surface only from an
+ *     owner upload — which is exactly how an unshipped board behaves for a
+ *     built-in design.
+ */
+export function shippedSrc(design, slot) {
+  if (design && design.custom) {
+    const img = design.img || {};
+    return typeof img[slot] === 'string' && img[slot] ? img[slot] : null;
+  }
+  const id = design && design.id;
+  if (!id) return null;
+  if (OPTIONAL_SLOTS.has(slot)) {
+    return design.thumbs && design.thumbs[slot] ? baseSrc(id, slot) : null;
+  }
+  return slot === 'store' || slot === 'front' || slot === 'back' ? baseSrc(id, slot) : null;
+}
+
+/** Whether a design SHIPS a render for a base slot (see shippedSrc). */
 function shipsRender(design, slot) {
-  if (OPTIONAL_SLOTS.has(slot)) return !!(design && design.thumbs && design.thumbs[slot]);
-  return slot === 'store' || slot === 'front' || slot === 'back';
+  return !!shippedSrc(design, slot);
 }
 
 /** The base slots to consider for a design, in default order: store/front/back
@@ -115,12 +141,13 @@ export function galleryFor(map, design, surface) {
       // Explicit owner flag wins; otherwise the slot's per-surface default decides.
       const visible = typeof bc[flag] === 'boolean' ? bc[flag] : baseDefault(key, flag);
       if (!visible) continue;
-      const ships = shipsRender(design, key);
-      // A shipped slot falls back to its static render on a broken override; a
+      // A shipped slot falls back to its shipped render on a broken override; a
       // slot with NO shipped render (an override-only board or photo card) has no
       // fallback — it's DROPPABLE, so a broken upload removes the slide, not 404s.
-      const fallback = ships ? baseSrc(id, key) : '';
-      const src = validImg(bc.img) ? bc.img : ships ? baseSrc(id, key) : null;
+      const shipped = shippedSrc(design, key);
+      const ships = !!shipped;
+      const fallback = shipped || '';
+      const src = validImg(bc.img) ? bc.img : shipped;
       if (!src) continue; // nothing to show (no override + no shipped render)
       items.push({ key, src, fallback, name: '', droppable: !ships });
     } else {
@@ -140,12 +167,12 @@ export function galleryFor(map, design, surface) {
   // Never blank: if the owner hid everything for this surface, fall back to the
   // shipped renders visible by default on it (so the shopper always sees the
   // product, and the detail page still won't lead with the shop cover). Only
-  // slots that actually ship a static render qualify (never a phantom board).
+  // slots that actually ship a render qualify (never a phantom board).
   if (items.length === 0) {
     for (const key of avail) {
-      if (!baseDefault(key, flag) || !shipsRender(design, key)) continue;
-      const fallback = baseSrc(id, key);
-      items.push({ key, src: fallback, fallback, name: '', droppable: false });
+      const shipped = baseDefault(key, flag) ? shippedSrc(design, key) : null;
+      if (!shipped) continue;
+      items.push({ key, src: shipped, fallback: shipped, name: '', droppable: false });
     }
   }
   return items;

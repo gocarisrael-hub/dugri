@@ -207,19 +207,15 @@ function defaultShots(d, designImages) {
   return shots;
 }
 
-/** A CUSTOM design (uploaded template) shows its own template SVGs as the gallery —
- *  front/back/board, droppable (drop a slide only if the SVG somehow 404s). */
-function customProductShots(d) {
-  return ['front', 'back', 'board']
-    .filter((s) => d.img && d.img[s])
-    .map((s) => ({ src: d.img[s], label: `${d.name} · ${SLOT_KIND[s]}`, droppable: true }));
-}
-
-/** The gallery photos to show: a custom design's template SVGs; else the owner's
- *  CUSTOM inline-editor photos when present, otherwise the curated design-images
- *  gallery. Fail-soft fallback. */
+/** The gallery photos to show: the owner's CUSTOM inline-editor photos when
+ *  present, otherwise the curated design-images gallery. Fail-soft fallback.
+ *
+ *  BOTH kinds of design go through defaultShots. A CUSTOM design (an uploaded
+ *  template) ships no committed renders, but js/design-images.js resolves its
+ *  shipped pictures from the template's own SVGs — so it gets the same owner
+ *  curation (replaced pictures, extra photos, per-surface visibility, ordering)
+ *  as a built-in design instead of being locked to its raw template art. */
 export function galleryShots(d, overrides, designImages) {
-  if (d && d.custom) return customProductShots(d);
   const custom = photosFromOverride(overrides, d.id);
   if (custom.length) {
     return custom.map((src, i) => ({ src, label: `${d.name} · תמונה ${i + 1}` }));
@@ -607,10 +603,17 @@ function applyOverridesToPage(d, overrides) {
 
 // Overlay the owner's per-design image overrides once the map resolves. Custom
 // curated photos (content editor) still win; otherwise rebuild the gallery so any
-// per-slot override picture replaces its static render. Fail-soft: a missing map
-// just leaves the static assets in place. Skipped when custom photos are present.
-function applyDesignImagesToPage(d, imagesMap) {
+// per-slot override picture replaces its shipped render. Fail-soft: a missing map
+// just leaves the shipped renders in place. Skipped when custom photos are present.
+//
+// Applies to whatever design the page is CURRENTLY showing, not the one captured
+// when the fetch was fired: an uploaded template resolves after first paint and
+// switches the page (switchToDesign), so keying off the boot-time design would
+// rebuild the custom design's gallery out of the built-in fallback's pictures.
+function applyDesignImagesToPage(imagesMap) {
   currentDesignImages = imagesMap || {};
+  const d = currentDesign;
+  if (!d) return;
   if (photosFromOverride(currentOverrides, d.id).length) return; // curated photos win
   // Any curated config for this design (base overrides, hidden slots, extra photos,
   // or a custom order) can change the resolved gallery → rebuild from it.
@@ -699,7 +702,7 @@ function boot() {
   // Independently overlay the owner's per-design image overrides (store/gallery
   // pictures). Timeout-bounded + fail-safe: a slow/failed fetch never blocks the
   // first paint and just leaves the static gallery renders in place.
-  loadDesignImages().then((map) => applyDesignImagesToPage(d, map));
+  loadDesignImages().then((map) => applyDesignImagesToPage(map));
 
   // A CUSTOM design (uploaded template) isn't in the bundled catalog, so the first
   // paint fell back to a built-in design. Resolve custom designs async and, if the
@@ -721,7 +724,11 @@ function boot() {
 function switchToDesign(d) {
   currentDesign = d;
   currentOverrides = {};
-  currentDesignImages = {};
+  // KEEP the resolved gallery config: it is the whole { designId: config } map, so
+  // it already holds this design's curated pictures if the owner set any. Blanking
+  // it here (as this used to) threw away a config that had already loaded and left
+  // an uploaded template stuck on its raw template art.
+  boardOverrideDropped = false;
   const shots = galleryShots(d, currentOverrides, currentDesignImages);
   renderInfo(d, currentOverrides);
   applyGalleryAspect(d);

@@ -16,6 +16,7 @@ const playbook = require('./playbook');
 const content = require('./content');
 const contentImport = require('./content-import');
 const designImages = require('./design-images');
+const designCatalog = require('./design-catalog');
 const photoFallback = require('./photo-fallback');
 const settings = require('./settings');
 const whatsapp = require('./whatsapp');
@@ -600,67 +601,30 @@ app.delete('/api/admin/playbook/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// Admin: design asset inventory — READ-ONLY visibility into which per-design
-// files exist on disk under site/assets/designs/<id>/ and which are MISSING, so
-// gaps like the kids design shipping without a board (board.svg / thumb-board /
-// gallery-board) are visible and tracked. The design catalog (id, Hebrew name,
-// theme, public flag) is the single source of truth in the ESM module
-// site/js/designs.js, dynamically imported into this CommonJS server.
-const DESIGN_ASSETS_DIR = path.join(__dirname, '..', 'site', 'assets', 'designs');
-// The full set of files a COMPLETE design ships, grouped by product part so the
-// UI can label a gap by group (e.g. "חסר: לוח"). board-group files are
-// legitimately absent for a boardless design — still reported missing on purpose.
-const DESIGN_ASSET_GROUPS = [
-  { group: 'front', label: 'חזית', files: ['front.svg', 'thumb-front.webp', 'gallery-front.webp'] },
-  { group: 'back', label: 'גב', files: ['back.svg', 'thumb-back.webp', 'gallery-back.webp'] },
-  { group: 'board', label: 'לוח', files: ['board.svg', 'thumb-board.webp', 'gallery-board.webp'] },
-  { group: 'picker', label: 'ממוזערת', files: ['thumb.webp'] },
-  { group: 'cover', label: 'שער', files: ['cover.webp'] },
-  { group: 'store', label: 'חנות', files: ['store.webp'] },
-];
-// Flat list of every expected file with its group, in a stable display order.
-const EXPECTED_DESIGN_ASSETS = DESIGN_ASSET_GROUPS.flatMap((g) =>
-  g.files.map((file) => ({ file, group: g.group, groupLabel: g.label }))
-);
-
+// Admin: the MERGED design catalog + per-design asset inventory. ONE list, no
+// built-in/owner-template distinction — an uploaded template is a design like any
+// other, so it appears wherever a built-in design does. BOTH admin design screens
+// read this endpoint: "עיצובים" (admin-designs.html) for the inventory, and
+// "גלריית מוצר" (admin-images.html) for the design list + each slot's shipped
+// render. One server-side merge, so the two screens can never drift apart again —
+// they did, and that is how an in-store template ended up sellable but invisible
+// in both of them. The merge itself lives in server/design-catalog.js (which also
+// documents the two art layouts and the per-kind asset checklist).
 app.get('/api/admin/designs', async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  let catalog;
+  let designs;
   try {
-    const mod = await import(pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js')));
-    catalog = mod.DESIGNS || [];
+    designs = await designCatalog.mergedDesigns({
+      siteDir: path.join(__dirname, '..', 'site'),
+      templateRoot: TEMPLATE_ROOT,
+    });
   } catch (e) {
-    return res.status(500).json({ error: 'failed to load design catalog: ' + e.message });
+    return res.status(500).json({ error: String((e && e.message) || e) });
   }
-  const designs = catalog.map((d) => {
-    const dir = path.join(DESIGN_ASSETS_DIR, d.id);
-    const assets = EXPECTED_DESIGN_ASSETS.map((a) => ({
-      ...a,
-      exists: fs.existsSync(path.join(dir, a.file)),
-    }));
-    const present = assets.filter((a) => a.exists).map((a) => a.file);
-    const missing = assets.filter((a) => !a.exists).map((a) => a.file);
-    // Group the missing files so the UI shows one badge per affected part.
-    const missingGroups = DESIGN_ASSET_GROUPS.map((g) => ({
-      group: g.group,
-      label: g.label,
-      files: g.files.filter((f) => missing.includes(f)),
-    })).filter((g) => g.files.length > 0);
-    return {
-      id: d.id,
-      name: d.name,
-      theme: d.theme,
-      visibility: d.visibility,
-      public: d.public,
-      thumb: 'assets/designs/' + d.id + '/thumb.webp',
-      assets,
-      present,
-      missing,
-      missingGroups,
-      complete: missing.length === 0,
-    };
-  });
-  res.json({ designs, expected: EXPECTED_DESIGN_ASSETS });
+  // `expected` stays the BUILT-IN file list it always was (the shape a built-in
+  // design is measured against). Per-design expectations now travel on each
+  // design's own `assets` / `source`, which is what a mixed list needs.
+  res.json({ designs, expected: designCatalog.EXPECTED_DESIGN_ASSETS });
 });
 
 // Admin: generate the full print-ready PDF for a collection. The theme (a

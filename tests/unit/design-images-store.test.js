@@ -61,6 +61,24 @@ describe('design-images gallery store', () => {
     expect(s.slotOk('')).toBe(null);
   });
 
+  it('curates an UPLOADED TEMPLATE (its themes.json key is the design id) like any other design', async () => {
+    // The admin gallery manager now lists templates beside the built-in designs, so
+    // the store must accept a template slug as a design id — including a long one:
+    // the id cap here has to match templates.isSafeSlug (≤64), or a template would
+    // be curatable in the UI and rejected on save.
+    const s = await store();
+    const long = 'a'.repeat(64);
+    expect(s.designOk('grapefruit')).toBe('grapefruit');
+    expect(s.designOk(long)).toBe(long);
+    expect(s.designOk('a'.repeat(65))).toBe(null); // past isSafeSlug's cap
+
+    expect(s.setBaseImg('grapefruit', 'store', P1)).toEqual({ ok: true, prev: null });
+    const photo = s.addPhoto('grapefruit', P2, 'מהמסיבה');
+    expect(photo).toMatchObject({ id: 'p1', img: P2, name: 'מהמסיבה' });
+    expect(s.setOrder('grapefruit', ['front', 'store', 'p1'])).toEqual(['front', 'store', 'p1']);
+    expect(s.getAll().grapefruit).toMatchObject({ base: { store: { img: P1 } } });
+  });
+
   it('curates the photo-card slot exactly like any other base slot', async () => {
     const s = await store();
     expect(s.setBaseImg('grapefruit', 'photo', P1)).toEqual({ ok: true, prev: null });
