@@ -904,3 +904,94 @@ describe('in_store — is the template offered in the shop at all', () => {
     expect(templates.computeTemplateStatus(root, 'card-demo', entryNow()).in_store).toBe(false);
   });
 });
+
+// Replacing a font wrote to a DIFFERENT path than the generator reads, for any
+// theme whose font is recorded with a SUBDIRECTORY — which is how most shipped
+// themes record theirs:
+//
+//   themes.json word_font : "Cafe Regular/Cafe Regular.ttf"
+//   generator READS       : fonts/Cafe Regular/Cafe Regular.ttf
+//   panel WROTE           : fonts/Cafe Regular.ttf   (basename'd)
+//
+// so the upload landed in a file nobody read and the old font rendered forever.
+describe('replaceAsset — replacing a nested font actually takes effect', () => {
+  let templates;
+  beforeAll(() => {
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  function scaffoldWithNestedFont() {
+    const root = makeScaffold();
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'nested');
+    fs.mkdirSync(path.join(dir, 'fonts', 'Cafe Regular'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'clean'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'fonts', 'Cafe Regular', 'Cafe Regular.ttf'), FONT());
+    fs.writeFileSync(
+      path.join(root, 'generator', 'themes.json'),
+      JSON.stringify({
+        nested: {
+          slug: 'nested',
+          dir: 'resources/canva/templates/nested',
+          recipe: 'nested',
+          word_font: 'Cafe Regular/Cafe Regular.ttf',
+          title_font: 'Cafe Regular/Cafe Regular.ttf',
+        },
+      }),
+      'utf8'
+    );
+    return { root, dir };
+  }
+
+  it('writes to the nested path the generator actually reads', () => {
+    const { root, dir } = scaffoldWithNestedFont();
+    const bytes = FONT('NEWWORDFONT');
+    const r = templates.replaceAsset({
+      root,
+      key: 'nested',
+      role: 'word-font',
+      file: { filename: 'comixno2clm_medium-webfont.ttf', data: bytes },
+      shrinkImages: false,
+    });
+    expect(r.error).toBeUndefined();
+    // The generator reads themes.json verbatim, so THIS is the file it opens.
+    const read = path.join(dir, 'fonts', 'Cafe Regular', 'Cafe Regular.ttf');
+    expect(fs.readFileSync(read).equals(bytes)).toBe(true);
+    // ...and no stray flat copy that nothing reads.
+    expect(fs.existsSync(path.join(dir, 'fonts', 'Cafe Regular.ttf'))).toBe(false);
+  });
+
+  it('leaves the recorded font name (and the other role) untouched', () => {
+    const { root } = scaffoldWithNestedFont();
+    templates.replaceAsset({
+      root,
+      key: 'nested',
+      role: 'word-font',
+      file: { filename: 'whatever.ttf', data: FONT() },
+      shrinkImages: false,
+    });
+    const entry = JSON.parse(
+      fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8')
+    ).nested;
+    expect(entry.word_font).toBe('Cafe Regular/Cafe Regular.ttf');
+    expect(entry.title_font).toBe('Cafe Regular/Cafe Regular.ttf');
+  });
+
+  it('refuses a recorded font path that would climb out of fonts/', () => {
+    const { root } = scaffoldWithNestedFont();
+    const themesPath = path.join(root, 'generator', 'themes.json');
+    const themes = JSON.parse(fs.readFileSync(themesPath, 'utf8'));
+    themes.nested.word_font = '../../../etc/evil.ttf';
+    fs.writeFileSync(themesPath, JSON.stringify(themes), 'utf8');
+    const r = templates.replaceAsset({
+      root,
+      key: 'nested',
+      role: 'word-font',
+      file: { filename: 'x.ttf', data: FONT() },
+      shrinkImages: false,
+    });
+    // No recorded path resolves, so it falls back to the uploaded basename
+    // inside fonts/ — never outside it.
+    expect(r.error || /fonts[/\\]x\.ttf$/.test(r.path || '')).toBeTruthy();
+    expect(r.path || '').not.toMatch(/\.\./);
+  });
+});
