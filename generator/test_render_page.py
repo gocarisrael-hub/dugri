@@ -530,8 +530,10 @@ def test_back_size_overrides_back_title_size():
     assert ts.get("back_size") and ts.get("back_size") != ts.get("size")
     seen = []
 
+    # **kwargs so adding a style knob (bold, ...) can't break this spy: the test
+    # is about WHICH fixed_size is chosen, not title_block's full signature.
     def spy(box, lines, fill, outline, font_path, outline_w, arch, shadow,
-            rtl=False, italic=False, fixed_size=None, align="center"):
+            fixed_size=None, **kwargs):
         seen.append(fixed_size)
         return ""
 
@@ -606,3 +608,43 @@ if __name__ == "__main__":
         fn()
         print("ok", fn.__name__)
     print(f"\nall {len(fns)} tests passed")
+
+
+# --- a pinned title size must never overflow the card ------------------------
+# A theme may pin title_style.size to the Canva point size. That size was
+# measured against the ORIGIN's own title text, not the honoree's name: pin
+# grapefruit at 28 and "רווקות לדניאל" fits, while "רווקות לאלכסנדרה-מרגריטה"
+# ran clean off BOTH card edges — on all 104 printed cards of a paid order.
+
+_TITLE_BOX = {"x0": 22.0, "y0": 28.0, "x1": 201.0, "y1": 62.0}
+
+
+def _title_font_size(lines, fixed_size):
+    """The font-size title_block actually rendered at."""
+    svg = rp.title_block(_TITLE_BOX, lines, "#711d20", "#711d20", CAFE,
+                         0.0, 0.0, False, rtl=True, fixed_size=fixed_size)
+    sizes = [float(v) for v in re.findall(r'font-size="([\d.]+)"', svg)]
+    assert sizes, svg[:200]
+    return max(sizes)
+
+
+def test_a_pinned_title_size_is_kept_when_it_fits():
+    assert _title_font_size(["רווקות לדנה"], 28) == 28
+
+
+def test_a_pinned_title_size_shrinks_rather_than_overflowing():
+    long_name = _title_font_size(["רווקות לאלכסנדרה-מרגריטה"], 28)
+    assert long_name < 28, "a long title must shrink, not run off the card"
+    # And it must land inside the box, allowing the same ink-overrun tolerance
+    # the calibrated boxes already carry.
+    font, ref = _cafe()
+    width_at_1pt = font.getlength("רווקות לאלכסנדרה-מרגריטה") / ref
+    box_w = _TITLE_BOX["x1"] - _TITLE_BOX["x0"]
+    assert long_name * width_at_1pt <= box_w * (1 + rp._TITLE_OVERFLOW_TOL) + 1
+
+
+def test_the_clamp_does_not_shrink_a_title_that_already_fits():
+    # Every title that fits today must render at exactly its pinned size, or
+    # this clamp would quietly restyle every calibrated theme.
+    for size in (12, 18, 23.9):
+        assert _title_font_size(["OZ'S"], size) == size

@@ -381,14 +381,16 @@
   "language": "hebrew",
   "name_form": "hebrew",
   "extra_fields": [],
-  "title_font": "haglos/Haglos DEMO.otf",
+  "title_font": "comixno2/comixno2clm_medium-webfont.ttf",
   "word_font": "Cafe Regular/Cafe Regular.ttf",
   "title_style": {
    "fill": "#711d20",
    "outline": "#711d20",
    "outline_w": 0,
    "arch": 0,
-   "shadow": false
+   "shadow": false,
+   "size": 28,
+   "bold": true
   },
   "cards": {
    "back": 1,
@@ -407,6 +409,7 @@
   "card_slots": null,
   "board": null,
   "back": null,
-  "calibrated": false
+  "calibrated": false,
+  "word_size": 21.3
  }
 }

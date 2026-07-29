@@ -194,6 +194,12 @@ def _title_metrics(font_path, ref=200):
     return ImageFont.truetype(font_path, ref), ref
 
 
+# Synthetic-bold stroke width as a fraction of the glyph size. Sized to read as
+# a weight step (Medium -> Bold) without closing up Hebrew counters at card
+# sizes; env-tunable so a face that needs more or less can be corrected
+# without a code change.
+_BOLD_WEIGHT = float(os.environ.get("DUGRI_TITLE_BOLD_W", "0.035"))
+
 _TITLE_UID = [0]
 
 
@@ -231,7 +237,8 @@ def title_is_rtl(cfg):
 
 
 def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
-                rtl=False, fixed_size=None, align="center", italic=False):
+                rtl=False, fixed_size=None, align="center", italic=False,
+                bold=False):
     _TITLE_UID[0] += 1
     uid = _TITLE_UID[0]
     """Graffiti-style stacked title: sized so the WIDEST line fills the box
@@ -294,7 +301,20 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # recipe's user units) instead of auto-fitting to the box — the box then only
     # positions (centres) the title. Used where auto-fit over/under-shoots.
     if fixed_size:
+        # ...but a pinned size is the ORIGIN's size, measured against the
+        # ORIGIN's own title text — and the honoree's name is not that text.
+        # Pin grapefruit at Canva's 28 and "רווקות לדניאל" fits, while
+        # "רווקות לאלכסנדרה-מרגריטה" runs clean off BOTH card edges, on all 104
+        # printed cards of a paid order.
+        #
+        # So a pin is a target, never a licence to overflow: clamp it to what
+        # the box can actually hold. The existing overrun tolerance is kept,
+        # because the calibrated boxes are approximate regions that the origin's
+        # own ink already overruns slightly — so every title that fits today is
+        # untouched and only genuine overflow is reined in.
         size = fixed_size
+        if denom_w > 0:
+            size = min(size, bw * 0.89 / denom_w * (1 + _TITLE_OVERFLOW_TOL))
     gap = size * 0.78
     total = gap * (n - 1)
     top = (y0 + y1) / 2 - total / 2
@@ -308,8 +328,15 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # outlined-vector originals. A visible (contrasting) outline is still drawn as
     # a ring behind the fill; a same-colour "outline" (monochrome themes) is NOT
     # drawn, since it would only fatten with no visible ring.
+    # Synthetic BOLD. The default stays true outline weight — that was a
+    # deliberate fidelity fix, because fattening made titles read heavier than
+    # the outlined-vector originals. But a design whose Canva title really is
+    # bold, on a family we only ship a lighter cut of (grapefruit: Comix No2 CLM
+    # ships Medium only, Canva sets Bold), renders too light without it. Opt-in
+    # per theme via title_style "bold": true, and it fattens in the FILL colour
+    # so it thickens the letter rather than adding a visible ring.
     visible_outline = outline_w > 0 and outline != fill
-    w_fat = 0.0                                           # no body fatten (true weight)
+    w_fat = size * _BOLD_WEIGHT if bold else 0.0
     t_ring = size * outline_w                             # dark outline ring
     outer = w_fat + 2 * t_ring
     defs, out = [], []
@@ -407,7 +434,8 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                        rtl=title_is_rtl(cfg),
                        fixed_size=fixed_size if fixed_size is not None else ts.get("size"),
                        align=ts.get("align", "center"),
-                       italic=ts.get("italic", False))
+                       italic=ts.get("italic", False),
+                       bold=ts.get("bold", False))
 
 
 def _words_overlay(slots, words, cfg, word_font, cell):
@@ -712,7 +740,8 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
                                        rtl=title_is_rtl(cfg),
                                        fixed_size=ts.get("size"),
                                        align=ts.get("align", "center"),
-                                       italic=ts.get("italic", False)))
+                                       italic=ts.get("italic", False),
+                       bold=ts.get("bold", False)))
         words = words_by_card[ci] if ci < len(words_by_card) else []
         # A card may carry a title but no word slots (its title was drawn above);
         # skip the word pass so the sizing below can't crash the whole page.

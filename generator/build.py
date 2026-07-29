@@ -89,7 +89,8 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
                                   rtl=rp.title_is_rtl(cfg),
                                   fixed_size=ts.get("board_size"),
                                   align=ts.get("align", "center"),
-                                  italic=ts.get("italic", False))
+                                  italic=ts.get("italic", False),
+                                 bold=ts.get("bold", False))
     return render_svg(svg.replace("</svg>", body + "</svg>"), w, h, out_png)
 
 
@@ -119,7 +120,8 @@ def render_backs(theme, backs_clean, title_lines, out_png):
                                    rtl=rp.title_is_rtl(cfg),
                                    fixed_size=ts.get("back_size") or ts.get("size"),
                                    align=ts.get("align", "center"),
-                                   italic=ts.get("italic", False)))
+                                   italic=ts.get("italic", False),
+                                 bold=ts.get("bold", False)))
     return render_svg(svg.replace("</svg>", "".join(body) + "</svg>"), w, h, out_png)
 
 
@@ -254,7 +256,8 @@ def build_board_pdf(theme, out_pdf, title_lines, workdir, chasers=False):
                                  rtl=rp.title_is_rtl(cfg),
                                  fixed_size=ts.get("board_size"),
                                  align=ts.get("align", "center"),
-                                 italic=ts.get("italic", False))
+                                 italic=ts.get("italic", False),
+                                 bold=ts.get("bold", False))
     doc.add_page("board", overlay)
     vbs = " ".join(_fmt(v) for v in vb)
     return print_to_pdf(doc.html(vbs), out_pdf, workdir, tag="board")
