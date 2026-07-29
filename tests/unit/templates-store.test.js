@@ -339,6 +339,48 @@ describe('templates.js overlay with the owner store ACTIVE', () => {
     expect(st.complete).toBe(true);
   });
 
+  // The claim copy can only ever copy what the IMAGE holds, and the image shipped
+  // no filled/ for a while (.dockerignore excluded it as a "reference export"),
+  // so every template claimed in that window has a permanently half-populated
+  // owner dir — the exact state templateWriteDir's own note says must not exist.
+  // Restoring filled/ to the image does not heal them: resolution picks a DIR, so
+  // the incomplete owner copy keeps shadowing the complete shipped one. The next
+  // write backfills what is missing, additively.
+  it('backfills an ALREADY-CLAIMED owner dir that is missing shipped files', () => {
+    const owned = path.join(storeDir(), 'ship-a');
+    // Simulate the damage: a claim made while the image had no filled/, with a
+    // real owner edit in clean/ that must survive the heal.
+    fs.rmSync(owned, { recursive: true, force: true });
+    fs.mkdirSync(path.join(owned, 'clean'), { recursive: true });
+    fs.mkdirSync(path.join(owned, 'fonts'), { recursive: true });
+    fs.writeFileSync(path.join(owned, 'clean', 'fronts.svg'), SVG('OWNER-EDIT-KEEP'));
+    expect(fs.existsSync(path.join(owned, 'filled'))).toBe(false);
+
+    const r = templates.replaceAsset({
+      root,
+      key: 'ship-a',
+      role: 'clean-backs',
+      file: { filename: 'n.svg', data: SVG('OWNER-BACKS') },
+      force: true,
+    });
+    expect(r.error).toBeUndefined();
+
+    // filled/ is back — recipe_diff can read it again.
+    for (const role of ['fronts', 'backs', 'board']) {
+      expect(fs.readFileSync(path.join(owned, 'filled', role + '.svg'), 'utf8')).toContain(
+        'shipped-filled-' + role
+      );
+    }
+    // The owner's own file was NOT clobbered by the shipped original.
+    expect(fs.readFileSync(path.join(owned, 'clean', 'fronts.svg'), 'utf8')).toContain(
+      'OWNER-EDIT-KEEP'
+    );
+    // …nor was the file this very write uploaded.
+    expect(fs.readFileSync(path.join(owned, 'clean', 'backs.svg'), 'utf8')).toContain(
+      'OWNER-BACKS'
+    );
+  });
+
   it('a REJECTED asset upload does not create an override', () => {
     // 'seed-theme' has no assets at all; a junk font is refused before any write.
     const bad = templates.replaceAsset({

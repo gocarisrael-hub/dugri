@@ -1170,13 +1170,30 @@ function templateDirExists(root, slug) {
 //                     didn't touch disappear.
 // Falls back to the image dir when the key is unsafe for the store (so a write
 // never silently goes nowhere).
+//
+// An ALREADY-CLAIMED dir is backfilled from the shipped one, additively. The
+// claim copy above can only ever copy what the image actually contains, and the
+// image spent a while shipping no filled/ at all (see .dockerignore) — so every
+// template claimed in that window has a permanently half-populated owner dir,
+// which is precisely the state the note above says must never exist. Restoring
+// filled/ to the image does NOT heal those: resolution picks a DIR, so the
+// incomplete owner copy keeps shadowing the now-complete shipped one. force:false
+// makes this strictly additive — a file the owner actually uploaded is never
+// overwritten by the shipped original, only genuinely missing ones are filled in.
 function templateWriteDir(root, entry, key) {
   const shipped = shippedTemplateDir(root, entry, key);
   const owner = store.ownerTemplateDir(key);
   if (!owner) return shipped;
+  const hasShipped = shipped && fs.existsSync(shipped);
   if (!fs.existsSync(owner)) {
-    if (shipped && fs.existsSync(shipped)) fs.cpSync(shipped, owner, { recursive: true });
+    if (hasShipped) fs.cpSync(shipped, owner, { recursive: true });
     else fs.mkdirSync(owner, { recursive: true });
+  } else if (hasShipped) {
+    try {
+      fs.cpSync(shipped, owner, { recursive: true, force: false, errorOnExist: false });
+    } catch {
+      /* best-effort heal: a write must still proceed on its own assets */
+    }
   }
   return owner;
 }

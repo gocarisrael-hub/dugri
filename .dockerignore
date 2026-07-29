@@ -33,15 +33,28 @@ resources/
 !generator/**
 **/__pycache__/
 
-# Each theme's clean/ background SVGs + fonts/ are all that the render path reads.
-# Re-include the whole templates tree, then drop the heavy filled/ reference
-# exports (Canva calibration renders, not used at runtime) to keep the image lean.
+# Each theme's WHOLE directory — clean/ + filled/ + fonts/ + assets/.
+#
+# filled/ used to be excluded right here, as "heavy Canva reference exports, not
+# used at runtime". That stopped being true, and it cost the owner real files:
+#
+#  1. Since #253 the SERVER runs generator/recipe_diff.py at template upload and
+#     diffs clean/ against filled/ to detect the card slots. With filled/ absent
+#     from the image, detection could only ever work on files uploaded in that
+#     same session — a shipped template could never be re-detected.
+#  2. "שחזור למקור" deletes the owner's uploaded assets and falls back to the
+#     shipped ones. With no shipped filled/ to fall back TO, a revert on
+#     grapefruit wiped all nine filled/*.svg and both fonts, unrecoverably.
+#
+# Cost: ~65MB across the eight themes, and shrinking — a MIGRATED theme's filled/
+# references ../assets/ instead of embedding rasters, so grapefruit is 704K
+# against 15M for an unmigrated one. Including only the migrated themes would have
+# left the other seven able to destroy the owner's uploads, which is not a trade
+# worth ~60MB on an image that already carries Chromium.
 !resources/
 !resources/canva/
 !resources/canva/templates/
 !resources/canva/templates/**
-resources/canva/templates/*/filled
-resources/canva/templates/*/filled/**
 
 # The seed word pools (content/wordlists/*.txt) that generator/topup.py reads to
 # top a short order up to a full deck. The `*` above excludes everything, so the
