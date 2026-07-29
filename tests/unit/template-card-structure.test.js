@@ -152,6 +152,26 @@ describe('single-card layout — onboarding + validation', () => {
     expect(args[args.length - 1]).toBe('card-demo');
   });
 
+  it('a single-card upload whose detection fails is still registered, and says so', () => {
+    // Best-effort, exactly as for a sheet: a template that cannot be measured is
+    // registered anyway, with the calibration panel left for the owner.
+    const root = makeScaffold();
+    const r = templates.onboardTemplate({
+      root,
+      ...cardsUpload(),
+      shrinkImages: false,
+      recipeRunner: () => ({ status: 1, stderr: 'no chrome here' }),
+    });
+
+    expect(r.key).toBe('card-demo');
+    expect(r.recipe).toBe('failed');
+    expect(r.note).toMatch(/did not run\/succeed/);
+    const entry = JSON.parse(fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8'))[
+      'card-demo'
+    ];
+    expect(entry.calibrated).toBe(false);
+  });
+
   it('the BOARD is optional on a deck-first upload, and lands when supplied', () => {
     const root = makeScaffold();
     const r = templates.onboardTemplate({
@@ -393,6 +413,91 @@ describe('single-card layout — asset checklist + per-asset replace', () => {
     const dir = path.join(root, 'resources', 'canva', 'templates', 'card-demo');
     expect(fs.readFileSync(path.join(dir, 'filled', '4.svg'), 'utf8')).toContain('new-front-3');
     expect(fs.readFileSync(path.join(dir, 'filled', '5.svg'), 'utf8')).toContain('filled-5');
+  });
+
+  it('replacing a card SVG re-runs detection, so the recipe matches the new art', () => {
+    // The 409 stops art being swapped SILENTLY under a calibrated template, but
+    // once it IS swapped the detected recipe describes a picture that is no
+    // longer there — including the INK COLOURS, which card_slots does not carry.
+    const calls = [];
+    const r = templates.replaceAsset({
+      root,
+      key: 'card-demo',
+      role: 'clean-5',
+      file: { filename: 'x.svg', data: SVG('brand-new-front') },
+      shrinkImages: false,
+      recipeRunner: (bin, args) => {
+        calls.push(args);
+        // Stand in for recipe_diff: success means a recipe actually LANDED, which
+        // is what runRecipeDiff verifies rather than trusting the exit code.
+        const out = path.join(root, 'generator', 'recipes', 'card-demo.json');
+        fs.mkdirSync(path.dirname(out), { recursive: true });
+        fs.writeFileSync(out, JSON.stringify({ theme: 'card-demo', format: 2 }), 'utf8');
+        return { status: 0 };
+      },
+    });
+
+    expect(r.error).toBeUndefined();
+    expect(calls.length).toBe(1);
+    expect(calls[0][1]).toBe('--single');
+    expect(r.redetect).toEqual({ ok: true, detail: null });
+  });
+
+  it('a failed re-detection is reported, not swallowed, and destroys nothing', () => {
+    // recipe_diff writes only on success, so the template keeps the geometry it
+    // had. What must NOT happen is a silent pass: a forced replace that moved the
+    // art and left stale slots would be the very thing the 409 exists to prevent.
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'card-demo');
+    const before = fs.existsSync(path.join(dir, 'clean', '6.svg'));
+
+    const r = templates.replaceAsset({
+      root,
+      key: 'card-demo',
+      role: 'clean-6',
+      file: { filename: 'x.svg', data: SVG('another-front') },
+      shrinkImages: false,
+      recipeRunner: () => ({ status: 1, stderr: 'chrome missing' }),
+    });
+
+    expect(r.error).toBeUndefined(); // the REPLACE still succeeded
+    expect(r.redetect.ok).toBe(false);
+    expect(r.redetect.detail).toMatch(/chrome missing/);
+    expect(fs.existsSync(path.join(dir, 'clean', '6.svg'))).toBe(before);
+    expect(fs.readFileSync(path.join(dir, 'clean', '6.svg'), 'utf8')).toContain('another-front');
+  });
+
+  it('does NOT re-detect for a font or for a legacy sheet template', () => {
+    // Detection measures the numbered card artwork. A font swap changes no slot
+    // geometry, and a sheet template's recipe is not measured this way at all.
+    let spawned = 0;
+    const runner = () => {
+      spawned += 1;
+      return { status: 0 };
+    };
+
+    const font = templates.replaceAsset({
+      root,
+      key: 'card-demo',
+      role: 'title-font',
+      file: { filename: 'x.ttf', data: FONT() },
+      shrinkImages: false,
+      recipeRunner: runner,
+    });
+    expect(font.error).toBeUndefined();
+    expect(font.redetect).toBeNull();
+
+    const sheet = templates.replaceAsset({
+      root,
+      key: 'seed-theme',
+      role: 'clean-fronts',
+      file: { filename: 'x.svg', data: SVG('sheet-art') },
+      shrinkImages: false,
+      recipeRunner: runner,
+    });
+    expect(sheet.error).toBeUndefined();
+    expect(sheet.redetect).toBeNull();
+
+    expect(spawned).toBe(0);
   });
 
   it('a role from the OTHER layout is refused with an explanation, not a crash', () => {

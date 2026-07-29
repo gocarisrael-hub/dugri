@@ -866,6 +866,7 @@ function onboardTemplate(opts) {
     recipe = runRecipeDiff({
       root,
       slug: norm.slug,
+      single: isCards,
       pythonBin: opts.pythonBin,
       timeoutMs: opts.recipeTimeoutMs,
       runner: opts.recipeRunner,
@@ -895,7 +896,15 @@ function onboardTemplate(opts) {
   // is still outstanding instead of leaving the owner to read the checklist.
   const cardsNote =
     `Template registered as ${visLabel} and UNCALIBRATED, with the 18 single-card SVGs ` +
-    '(1 = back, 2-9 = fronts) in place. Open the calibration panel: set the four shared word ' +
+    '(1 = back, 2-9 = fronts) in place. ' +
+    (recipe.ok
+      ? 'The word slots, per-front title boxes and INK COLOURS were detected from the artwork ' +
+        'and are in place as the starting geometry. '
+      : 'Slot auto-detection did not run/succeed here, so there is no detected geometry to ' +
+        'start from — run `python3 generator/recipe_diff.py --single <template_dir> ' +
+        norm.slug +
+        '` on a machine with Chrome + Pillow if you want one. ') +
+    'Open the calibration panel: set the four shared word ' +
     "slots and each front's title position, preview, and save." +
     (norm.clean.board && norm.filled.board
       ? ''
@@ -1077,6 +1086,14 @@ const FONT_ASSET_ROLES = [
 const REPLACEABLE_ROLES = new Set(
   [...SVG_ASSET_ROLES, ...CARD_SVG_ASSET_ROLES, ...FONT_ASSET_ROLES].map((a) => a.role)
 );
+
+// The numbered card SVGs (clean-1..9 / filled-1..9) — the roles whose artwork the
+// detected recipe is measured FROM, so replacing one invalidates it. Excludes the
+// board and the fonts, which detection does not measure.
+const CARD_SVG_ROLE_SET = new Set(CARD_SVG_ASSET_ROLES.map((a) => a.role));
+function isCardSvgRole(role) {
+  return CARD_SVG_ROLE_SET.has(String(role || ''));
+}
 
 // The absolute templates base dir (resources/canva/templates), fully resolved.
 function templatesBaseDir(root) {
@@ -1961,6 +1978,8 @@ function replaceAsset({
   pythonBin,
   shrinkRunner,
   shrinkImages,
+  recipeRunner,
+  redetectOnReplace,
 }) {
   const themesPath = themesPathFor(root);
   const themes = loadThemes(themesPath);
@@ -2072,7 +2091,43 @@ function replaceAsset({
     entry[recordFontField] = path.basename(abs);
     persistThemeEntry(themesPath, key, entry);
   }
-  return { key, role, path: displayPath(root, abs) };
+
+  // New artwork, old measurements. The 409 above stops art being swapped
+  // SILENTLY under a calibrated template, but once the owner forces through it
+  // the detected recipe describes the picture that is no longer there — and it
+  // is not only the fallback geometry that goes stale. card_slots carries NO
+  // COLOUR, so the words' ink comes from this recipe: leaving it alone paints
+  // the new artwork's words in the OLD artwork's colours, on a layer that always
+  // applies. So a forced card-SVG replace re-detects.
+  //
+  // This cannot clobber the owner's work: detection writes the RECIPE, while
+  // hand-tuned card_slots live in themes.json and win in config's reader.
+  //
+  // Best-effort, and NEVER destructive: a detection that fails leaves the
+  // existing recipe exactly where it is (recipe_diff writes only on success), so
+  // the template keeps the geometry it had rather than being left with none. The
+  // outcome is REPORTED either way — a forced replace that moves slot positions
+  // without saying so would be the same silent-change problem the 409 exists to
+  // prevent.
+  //
+  // Not guarded: replacing ONE HALF of a front's clean/filled pair. Detection
+  // finds text by diffing the two, so a mismatched pair yields a confident,
+  // wrong answer rather than an error — nothing here can tell it from a good
+  // one. Re-exporting both halves together is the owner's discipline, which is
+  // why the outcome is surfaced instead of trusted.
+  let redetect = null;
+  if (isCardSvgRole(role) && cardStructureOf(entry) === 'cards' && redetectOnReplace !== false) {
+    const r = runRecipeDiff({
+      root,
+      slug: key,
+      cards: true,
+      pythonBin,
+      runner: recipeRunner,
+    });
+    redetect = { ok: !!r.ok, detail: r.ok ? null : r.detail || null };
+  }
+
+  return { key, role, path: displayPath(root, abs), redetect };
 }
 
 // -- Minimal multipart/form-data parser (no external dependency) --------------

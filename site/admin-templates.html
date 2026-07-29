@@ -2010,7 +2010,32 @@
             input.value = '';
             return;
           }
-          tplMsg(card, 'ok', 'הקובץ הוחלף: ' + role);
+          // Replacing a numbered card SVG re-runs slot detection, because the old
+          // measurements describe artwork that is no longer there. SAY SO: a
+          // forced replace that moves the slots without a word would be the same
+          // silent change the 409 above exists to prevent. A failed detection is
+          // not an error — the file was replaced and the previous geometry is
+          // untouched — but the owner has to know the two no longer agree.
+          if (data.redetect && data.redetect.ok) {
+            tplMsg(
+              card,
+              'ok',
+              'הקובץ הוחלף: ' +
+                role +
+                ' · המשבצות והצבעים זוהו מחדש מהאומנות החדשה — בדקו בתצוגה המקדימה.'
+            );
+          } else if (data.redetect) {
+            tplMsg(
+              card,
+              'err',
+              'הקובץ הוחלף: ' +
+                role +
+                ' — אבל זיהוי המשבצות מחדש נכשל, והמדידות עדיין מתארות את האומנות הקודמת. ' +
+                'בדקו בתצוגה המקדימה לפני שליחה ללקוח.'
+            );
+          } else {
+            tplMsg(card, 'ok', 'הקובץ הוחלף: ' + role);
+          }
           loadTemplates();
         } catch (err) {
           tplMsg(card, 'err', 'שגיאת רשת: ' + err);

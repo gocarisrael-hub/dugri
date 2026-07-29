@@ -2209,6 +2209,13 @@ app.delete('/api/admin/templates/:key', async (req, res) => {
 // magic. On a CALIBRATED template, replacing an SVG role is rejected (409,
 // calibrationWarning) unless the form carries force=1 — the UI re-submits with
 // force after the admin confirms they verified the proof.
+//
+// Replacing a NUMBERED CARD SVG then re-runs slot detection, and the outcome
+// comes back as `redetect: {ok, detail}`. The old recipe measured artwork that is
+// no longer there — and since card_slots carries no colour, leaving it alone
+// would paint the new art's words in the OLD art's ink. Detection writes the
+// RECIPE only, so the owner's hand-tuned card_slots still win; a failure changes
+// nothing on disk and is reported rather than swallowed.
 app.post(
   '/api/admin/templates/:key/assets/:role',
   express.raw({ type: () => true, limit: TEMPLATE_UPLOAD_LIMIT }),
