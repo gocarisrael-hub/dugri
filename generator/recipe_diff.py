@@ -47,10 +47,41 @@ def dims(svg):
 
 
 def render(svg, png, w, h):
-    subprocess.run([CHROME, "--headless", "--disable-gpu",
-                    f"--force-device-scale-factor={SCALE}",
-                    f"--screenshot={png}", f"--window-size={w},{h}", svg],
-                   check=True, stderr=subprocess.DEVNULL)
+    """Screenshot one SVG, raising an ACTIONABLE error when Chrome fails.
+
+    This used to pass ``check=True, stderr=subprocess.DEVNULL``, which discards
+    the only explanation of what went wrong and surfaces a bare
+    CalledProcessError. That was survivable while detection was a local CLI
+    step; it stopped being survivable when detection started running
+    server-side on template upload, where the failure reaches the owner as an
+    opaque traceback in the admin panel with nothing to act on.
+
+    Also checks the screenshot actually EXISTS: headless Chrome can exit 0 and
+    write nothing (it has done so on a missing font or an unloadable
+    sub-resource), and the next step would then fail further away on a file
+    that was never created.
+    """
+    try:
+        proc = subprocess.run(
+            [CHROME, "--headless", "--disable-gpu",
+             f"--force-device-scale-factor={SCALE}",
+             f"--screenshot={png}", f"--window-size={w},{h}", svg],
+            capture_output=True, text=True, errors="replace")
+    except OSError as exc:
+        # The binary itself is missing/unrunnable — say WHICH one, since CHROME
+        # is env-configured and differs between a laptop and the container.
+        raise RuntimeError(
+            f"could not run Chrome at {CHROME!r} ({exc}). Set the CHROME "
+            "environment variable to the browser binary."
+        ) from exc
+    if proc.returncode != 0 or not os.path.exists(png):
+        tail = (proc.stderr or proc.stdout or "").strip()
+        raise RuntimeError(
+            f"Chrome could not render {os.path.basename(svg)} "
+            f"(exit {proc.returncode}, screenshot "
+            f"{'written' if os.path.exists(png) else 'MISSING'}). "
+            + (f"Chrome said: {tail[-600:]}" if tail else "Chrome printed nothing.")
+        )
 
 
 def diff_mask(text_img, clean_img, thr=45):
