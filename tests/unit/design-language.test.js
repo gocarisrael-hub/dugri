@@ -8,6 +8,7 @@ import {
   THEME_BY_DESIGN,
   LANGUAGE_BY_THEME,
   languageForDesign,
+  extraFieldsForDesign,
 } from '../../site/js/designs.js';
 
 const require = createRequire(import.meta.url);
@@ -69,5 +70,38 @@ describe('languageForDesign', () => {
     expect(languageForDesign('bachelorette', { bachelorette: 'hebrew' })).toBe('hebrew');
     // a design whose theme is absent from the override map falls back to hebrew.
     expect(languageForDesign('japanese', { bachelorette: 'hebrew' })).toBe('hebrew');
+  });
+});
+
+// A CUSTOM design (an owner-uploaded template) is not in THEME_BY_DESIGN, so the
+// static maps resolve it to [] extra fields and 'hebrew'. The wizard therefore
+// never asked for AGE / YEARS / NAME1+NAME2 — it took the order anyway and the
+// title rendered with UNFILLED PLACEHOLDERS on a paying customer's deck. A
+// design that carries its own metadata is now believed over the map.
+describe('custom designs carry their own metadata', () => {
+  it('uses a custom design own extra_fields instead of the empty map lookup', () => {
+    const custom = { id: 'my-template', custom: true, extra_fields: ['AGE'] };
+    expect(extraFieldsForDesign(custom)).toEqual(['AGE']);
+    // ...and by id alone it is still unknown, which is the bug being fixed.
+    expect(extraFieldsForDesign('my-template')).toEqual([]);
+  });
+
+  it('uses a custom design own language instead of the hebrew fallback', () => {
+    const custom = { id: 'my-template', custom: true, language: 'english' };
+    expect(languageForDesign(custom)).toBe('english');
+    expect(languageForDesign('my-template')).toBe('hebrew');
+  });
+
+  it('falls back to the static maps when a custom design declares nothing', () => {
+    const bare = { id: 'my-template', custom: true };
+    expect(extraFieldsForDesign(bare)).toEqual([]);
+    expect(languageForDesign(bare)).toBe('hebrew');
+  });
+
+  it('a BUILT-IN design object resolves through the maps exactly as its id does', () => {
+    expect(languageForDesign({ id: 'bachelorette' })).toBe(languageForDesign('bachelorette'));
+    expect(extraFieldsForDesign({ id: 'marriage' })).toEqual(extraFieldsForDesign('marriage'));
+    // couple designs really do need the two names — guards the object path
+    expect(extraFieldsForDesign({ id: 'marriage' }).length).toBeGreaterThan(0);
   });
 });

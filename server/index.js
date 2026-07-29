@@ -2573,6 +2573,15 @@ app.get('/api/custom-designs', async (req, res) => {
         public: true,
         calibrated: !!t.calibrated,
         hasBoard: !!img.board,
+        // The wizard resolves a BUILT-IN design's fields from a static map in
+        // site/js/designs.js, which by definition cannot contain a custom
+        // template. Without these it asked for none of them: a template
+        // declaring AGE / YEARS / NAME1+NAME2 took the order anyway and printed
+        // the title with unfilled placeholders, and an ENGLISH template got the
+        // Hebrew name rule from the fallback.
+        extra_fields: Array.isArray(t.extra_fields) ? t.extra_fields : [],
+        language: typeof t.language === 'string' && t.language ? t.language : 'hebrew',
+        name_form: typeof t.name_form === 'string' && t.name_form ? t.name_form : null,
         img,
       });
     }
