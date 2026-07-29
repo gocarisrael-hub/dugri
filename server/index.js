@@ -1154,11 +1154,16 @@ app.put('/api/admin/collections/:id/pawns', (req, res) => {
 // its immediate asset subdirs — writing fonts/X.ttf bumps fonts/, not the theme
 // dir, so the subdirs have to be stat'd individually. Anything unreadable
 // contributes a constant, so a missing dir simply doesn't participate.
+// Upper bound on files stat'd per preview request. A card template is ~30
+// files; the cap only guards against something pathological.
+const TEMPLATE_FINGERPRINT_MAX_FILES = 400;
+
 function templateFingerprint(theme) {
   const parts = [];
   const stamp = (p) => {
     try {
-      parts.push(String(fs.statSync(p).mtimeMs));
+      const st = fs.statSync(p);
+      parts.push(st.mtimeMs + ':' + st.size);
     } catch {
       parts.push('-');
     }
@@ -1173,8 +1178,31 @@ function templateFingerprint(theme) {
     /* unknown template — the render will fail on its own terms */
   }
   if (dir) {
-    stamp(dir);
-    for (const sub of ['clean', 'filled', 'fonts', 'assets']) stamp(path.join(dir, sub));
+    // FILES, recursively — not just the directories. Replacing an asset
+    // OVERWRITES a file in place, and an in-place write changes no directory
+    // mtime at all (a directory's mtime only moves when an entry is added,
+    // removed or renamed). Stat'ing the theme dir and its immediate subdirs
+    // therefore saw nothing when a font was replaced, and the cache went on
+    // serving the pre-upload card — which is the exact bug this fingerprint
+    // exists to prevent. Fonts also sit two levels down
+    // (fonts/Cafe Regular/Cafe Regular.ttf), so even a NEW file would not have
+    // bumped fonts/.
+    //
+    // Capped so an unusually large template can never make a preview request
+    // walk an unbounded tree; the entries are sorted first so the cap is
+    // deterministic rather than filesystem-order dependent.
+    let entries = [];
+    try {
+      entries = fs
+        .readdirSync(dir, { recursive: true, withFileTypes: true })
+        .filter((e) => e.isFile())
+        .map((e) => path.join(e.parentPath || e.path || dir, e.name))
+        .sort();
+    } catch {
+      /* unreadable dir — the stamps below simply don't participate */
+    }
+    for (const f of entries.slice(0, TEMPLATE_FINGERPRINT_MAX_FILES)) stamp(f);
+    parts.push('n=' + entries.length);
   }
   return parts.join(':');
 }
