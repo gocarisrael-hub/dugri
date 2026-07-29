@@ -238,7 +238,7 @@ def title_is_rtl(cfg):
 
 def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
                 rtl=False, fixed_size=None, align="center", italic=False,
-                bold=False):
+                bold=False, bold_w=None):
     _TITLE_UID[0] += 1
     uid = _TITLE_UID[0]
     """Graffiti-style stacked title: sized so the WIDEST line fills the box
@@ -336,7 +336,12 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # per theme via title_style "bold": true, and it fattens in the FILL colour
     # so it thickens the letter rather than adding a visible ring.
     visible_outline = outline_w > 0 and outline != fill
-    w_fat = size * _BOLD_WEIGHT if bold else 0.0
+    # Per-theme weight when the design needs one: how much stroke it takes to
+    # read as the origin's Bold depends on the face, so a single global number
+    # cannot be right for every template. Measured against grapefruit's Canva
+    # original by ink coverage in the title band (8.72%): 0.035 gave 7.41%,
+    # 0.06 gave 9.28%.
+    w_fat = size * (bold_w if bold_w else _BOLD_WEIGHT) if bold else 0.0
     t_ring = size * outline_w                             # dark outline ring
     outer = w_fat + 2 * t_ring
     defs, out = [], []
@@ -435,7 +440,8 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                        fixed_size=fixed_size if fixed_size is not None else ts.get("size"),
                        align=ts.get("align", "center"),
                        italic=ts.get("italic", False),
-                       bold=ts.get("bold", False))
+                       bold=ts.get("bold", False),
+                       bold_w=ts.get("bold_w"))
 
 
 def _words_overlay(slots, words, cfg, word_font, cell):
@@ -764,7 +770,8 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
                                        fixed_size=ts.get("size"),
                                        align=ts.get("align", "center"),
                                        italic=ts.get("italic", False),
-                       bold=ts.get("bold", False)))
+                       bold=ts.get("bold", False),
+                       bold_w=ts.get("bold_w")))
         words = words_by_card[ci] if ci < len(words_by_card) else []
         # A card may carry a title but no word slots (its title was drawn above);
         # skip the word pass so the sizing below can't crash the whole page.

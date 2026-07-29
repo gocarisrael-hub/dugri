@@ -648,3 +648,33 @@ def test_the_clamp_does_not_shrink_a_title_that_already_fits():
     # this clamp would quietly restyle every calibrated theme.
     for size in (12, 18, 23.9):
         assert _title_font_size(["OZ'S"], size) == size
+
+
+# --- per-theme synthetic bold ------------------------------------------------
+# A single global stroke width cannot be right for every face. Grapefruit's
+# title read too light against its Canva original at the default; measured by
+# ink coverage in the title band, the original is 8.72% and the default gave
+# 7.41%.
+
+def _title_stroke(bold, bold_w=None, size=28):
+    svg = rp.title_block(_TITLE_BOX, ["רווקות לדנה"], "#711d20", "#711d20", CAFE,
+                         0.0, 0.0, False, rtl=True, fixed_size=size,
+                         bold=bold, bold_w=bold_w)
+    return max(float(v) for v in re.findall(r'stroke-width="([\d.]+)"', svg))
+
+
+def test_bold_off_paints_at_true_outline_weight():
+    # The default must stay unfattened — that was a deliberate fidelity fix.
+    assert _title_stroke(bold=False) == 0.0
+
+
+def test_a_theme_can_set_its_own_bold_weight():
+    default = _title_stroke(bold=True)
+    heavier = _title_stroke(bold=True, bold_w=0.05)
+    assert heavier > default, (default, heavier)
+    assert abs(heavier - 28 * 0.05) < 0.01, heavier
+
+
+def test_bold_w_is_ignored_when_bold_is_off():
+    # A stray weight must not silently embolden a theme that never asked.
+    assert _title_stroke(bold=False, bold_w=0.09) == 0.0
