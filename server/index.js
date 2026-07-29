@@ -2562,6 +2562,114 @@ app.get('/api/custom-designs', async (req, res) => {
 // The slug is validated to the safe-slug shape and the path is confined to the
 // templates dir, so there is no traversal. Cached (the art changes only on a
 // re-upload, which changes the file). SVG only.
+// A template's de-duplicated background lives in its own assets/ dir and each
+// card SVG points at it RELATIVELY ("../assets/<sha>.png"). Served straight from
+// an /api/... URL that relative path resolves to nothing, so the card arrived
+// WITHOUT its artwork — the storefront has been showing de-duplicated templates
+// as bare cards. Serving the asset itself, and rewriting the reference to point
+// here, fixes that and lets the admin checklist show a thumbnail per file
+// without inlining a 5MB background into every one of them (the browser fetches
+// it once and caches it across all of them).
+app.get('/api/template-asset/:slug/:name', (req, res) => {
+  const slug = String(req.params.slug || '');
+  const name = path.basename(String(req.params.name || ''));
+  if (!templates.isSafeSlug(slug) || !/^[A-Za-z0-9._-]+$/.test(name)) {
+    return res.status(404).type('txt').send('Not found');
+  }
+  let dir = null;
+  try {
+    dir = templates.resolveTemplateDirBySlug(TEMPLATE_ROOT, slug);
+  } catch {
+    return res.status(404).type('txt').send('Not found');
+  }
+  if (!dir) return res.status(404).type('txt').send('Not found');
+  const file = path.resolve(dir, 'assets', name);
+  // Confined to the template's own assets dir — basename() above plus this
+  // prefix check, so neither half has to be perfect alone.
+  const root = path.resolve(dir, 'assets') + path.sep;
+  if (!file.startsWith(root) || !fs.existsSync(file)) {
+    return res.status(404).type('txt').send('Not found');
+  }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(file);
+});
+
+// Read a card SVG with its "../assets/" references rewritten to absolute
+// /api/template-asset/ URLs, so the markup renders correctly wherever it is
+// served from. Returns null when the file is missing.
+function templateSvgWithAssets(slug, file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+  return text.replace(
+    /((?:xlink:)?href=")\.\.\/assets\/([^"]+)(")/gi,
+    (_m, pre, name, post) =>
+      pre +
+      '/api/template-asset/' +
+      encodeURIComponent(slug) +
+      '/' +
+      encodeURIComponent(name) +
+      post
+  );
+}
+
+// Strip anything executable from an SVG before it is injected into the admin
+// page's DOM.
+//
+// The thumbnails cannot use <img>: that context blocks external references, and
+// a de-duplicated card's whole background IS an external reference, so every
+// card rendered as an identical blank rectangle. Injecting the markup inline
+// makes the background load — and also means any <script> inside it would run,
+// in the admin's own session. These are owner-uploaded Canva exports, so this is
+// closer to self-harm than an attack, but server/content.js already refuses SVG
+// uploads outright over exactly this risk; agreeing with that position costs two
+// regexes.
+function sanitizeSvgForDom(svg) {
+  return String(svg)
+    .replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')
+    .replace(/<script\b[^>]*\/>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
+    .replace(/(?:xlink:)?href\s*=\s*"javascript:[^"]*"/gi, '');
+}
+
+// One card SVG by ROLE, for the admin checklist's thumbnails. Admin-gated: the
+// public storefront route below exposes only the three display slots.
+app.get('/api/admin/templates/:key/asset-svg/:role', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const key = String(req.params.key || '');
+  const role = String(req.params.role || '');
+  if (!templates.isSafeSlug(key)) return res.status(404).type('txt').send('Not found');
+  let entry = null;
+  let dir = null;
+  try {
+    const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT));
+    entry = themes && themes[key];
+    dir = templates.resolveTemplateDirBySlug(TEMPLATE_ROOT, key);
+  } catch {
+    /* fall through to 404 */
+  }
+  if (!entry || !dir) return res.status(404).type('txt').send('Not found');
+  // assetRolesFor is the single source of truth for role -> file, so a thumbnail
+  // can only ever name a file the checklist itself lists.
+  const spec = (templates.assetRolesFor(entry) || []).find((a) => a.role === role);
+  if (!spec || !spec.rel) return res.status(404).type('txt').send('Not found');
+  const file = path.resolve(dir, spec.rel);
+  if (!file.startsWith(path.resolve(dir) + path.sep) || !fs.existsSync(file)) {
+    return res.status(404).type('txt').send('Not found');
+  }
+  const svg = templateSvgWithAssets(key, file);
+  if (svg == null) return res.status(404).type('txt').send('Not found');
+  res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(sanitizeSvgForDom(svg));
+});
+
 app.get('/api/template-image/:slug/:slot', (req, res) => {
   const slug = String(req.params.slug || '');
   const slot = String(req.params.slot || '');
@@ -2576,7 +2684,12 @@ app.get('/api/template-image/:slug/:slot', (req, res) => {
   res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'public, max-age=300');
-  res.sendFile(file);
+  // NOT sendFile: a de-duplicated card points at "../assets/<sha>.png", which
+  // resolves to nothing from this URL, so the storefront was showing those
+  // templates as bare cards with no artwork.
+  const svg = templateSvgWithAssets(slug, file);
+  if (svg == null) return res.status(404).type('txt').send('Not found');
+  res.send(sanitizeSvgForDom(svg));
 });
 
 // Serve an uploaded content image. The files live in DATA_DIR/content-uploads,
