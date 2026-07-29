@@ -111,3 +111,45 @@ if __name__ == "__main__":
         fn()
         print(f"  {fn.__name__}")
     print(f"all {len(fns)} tests passed")
+
+
+# --- the enhancement must never cost the owner their preview ----------------
+# Showing every front is a calibration nicety on a heavier render (one page
+# eight cards wide). It fell over in production and took the WHOLE calibration
+# preview down with it, rather than degrading to the single card the screen has
+# always shown.
+
+def test_a_failing_strip_degrades_to_one_card_instead_of_killing_the_preview():
+    if not _chrome():
+        print("  (skipped: no Chrome)")
+        return
+    import preview as pv
+    import test_build_deck as tb
+    with tb.Store() as tmp:
+        cfg = config.theme("demo")
+        cal = {"title_style": dict(cfg["title_style"])}
+        saved = rp.render_fronts_strip
+        rp.render_fronts_strip = lambda *a, **k: (_ for _ in ()).throw(
+            RuntimeError("simulated container failure"))
+        try:
+            out = pv.preview("demo", "שירה", workdir=os.path.join(tmp, "fb"),
+                             calibration=cal)
+        finally:
+            rp.render_fronts_strip = saved
+            config.clear_preview_overrides()
+        assert out.get("card"), "the preview must still return a card"
+        assert "cards" not in out, "and must not claim per-front images it does not have"
+
+
+def test_the_strip_declares_its_fonts_once_not_once_per_card():
+    # Eight cards x two base64 faces was sixteen copies of the same fonts in one
+    # document; the deck assembler already declares them at document level.
+    import card_assets
+    cfg = config.theme("grapefruit") if "grapefruit" in config.load_themes() else None
+    if cfg is None:
+        print("  (skipped: grapefruit not present)")
+        return
+    svg = card_assets.read_svg(config.card_path("grapefruit", config.fronts(cfg)[0]))
+    assert "@font-face" not in svg, (
+        "a card's artwork must not carry fonts; the strip declares them once"
+    )
