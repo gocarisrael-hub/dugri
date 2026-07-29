@@ -258,6 +258,136 @@
         background: #efe9df;
         color: #6b645b;
       }
+      /* --- Edit-order dialog ------------------------------------------------ */
+      dialog#edit {
+        border: 1px solid #e4ddd0;
+        border-radius: 16px;
+        padding: 0;
+        width: min(560px, 94vw);
+        background: #fff;
+        color: #23201c;
+      }
+      dialog#edit::backdrop {
+        background: rgba(35, 32, 28, 0.45);
+      }
+      #edit .head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 18px;
+        border-bottom: 1px solid #efe9df;
+      }
+      #edit .head h2 {
+        font-size: 17px;
+        font-weight: 900;
+      }
+      #edit .body {
+        padding: 14px 18px;
+        max-height: 70vh;
+        overflow-y: auto;
+      }
+      #edit .foot {
+        display: flex;
+        justify-content: flex-start;
+        gap: 8px;
+        align-items: center;
+        padding: 12px 18px;
+        border-top: 1px solid #efe9df;
+      }
+      #edit fieldset {
+        border: 1px solid #efe9df;
+        border-radius: 12px;
+        padding: 10px 12px;
+        margin-bottom: 12px;
+      }
+      #edit legend {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #5c7357;
+        padding: 0 6px;
+      }
+      .fgrid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .fgrid.one {
+        grid-template-columns: 1fr;
+      }
+      /* `display: grid` on the class outranks the UA's [hidden] rule, so the
+         address block would stay on screen for a non-delivery order without this. */
+      .fgrid[hidden] {
+        display: none;
+      }
+      .fld {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .fld > span {
+        font-size: 12.5px;
+        color: #6b645b;
+      }
+      .fld input[type='text'],
+      .fld input[type='email'],
+      .fld input[type='tel'],
+      .fld select,
+      .fld textarea {
+        font: inherit;
+        font-size: 14px;
+        border: 1px solid #e4ddd0;
+        border-radius: 9px;
+        padding: 7px 9px;
+        background: #fff;
+        color: #23201c;
+        width: 100%;
+      }
+      .fld.check {
+        flex-direction: row;
+        align-items: center;
+        gap: 7px;
+      }
+      #edit .photos {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: flex-start;
+      }
+      #edit .photo {
+        position: relative;
+      }
+      #edit .photo img {
+        width: 62px;
+        height: 62px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid #e4ddd0;
+        display: block;
+      }
+      #edit .photo button {
+        position: absolute;
+        top: -7px;
+        inset-inline-start: -7px;
+        margin: 0;
+        padding: 0;
+        width: 21px;
+        height: 21px;
+        line-height: 1;
+        border-radius: 99px;
+        border-color: #6f8a6a;
+        color: #6f8a6a;
+        background: #fff;
+      }
+      #edit .err {
+        color: #a4443a;
+        font-size: 13px;
+      }
+      @media (max-width: 600px) {
+        .fgrid {
+          grid-template-columns: 1fr;
+        }
+      }
       /* Narrow phones: 15 columns can't fit as a grid, so stack each row into a
          label:value card. The label comes from each cell's data-label (set in
          JS). This keeps every value on-screen with zero horizontal scroll. */
@@ -353,8 +483,107 @@
       <div id="content"></div>
     </div>
 
+    <!-- Edit an order's stored choices. One dialog reused by every row: openEdit()
+         fills it from the collection and PATCHes /api/admin/collections/:id. -->
+    <dialog id="edit">
+      <div class="head">
+        <h2 id="edit-title">עריכת הזמנה</h2>
+        <button type="button" id="edit-x">סגור</button>
+      </div>
+      <div class="body">
+        <fieldset>
+          <legend>פרטי בעל/ת השמחה</legend>
+          <div class="fgrid">
+            <label class="fld"
+              ><span>שם בעל/ת השמחה</span><input type="text" id="e-name" maxlength="80"
+            /></label>
+            <label class="fld"
+              ><span>מגדר</span>
+              <select id="e-gender">
+                <option value="">—</option>
+                <option value="female">נקבה</option>
+                <option value="male">זכר</option>
+              </select>
+            </label>
+            <label class="fld"
+              ><span>אימייל</span><input type="email" id="e-email" maxlength="120"
+            /></label>
+            <label class="fld"
+              ><span>טלפון</span><input type="tel" id="e-phone" maxlength="40"
+            /></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>עיצוב ותבנית</legend>
+          <div class="fgrid">
+            <label class="fld"
+              ><span>עיצוב</span
+              ><select id="e-design"></select
+            ></label>
+            <label class="fld"
+              ><span>צבע</span
+              ><select id="e-color"></select
+            ></label>
+            <label class="fld"
+              ><span>תבנית הפקה (theme)</span
+              ><select id="e-theme"></select
+            ></label>
+          </div>
+          <!-- Theme-required extra fields (AGE, or YEARS + NAME1 + NAME2). Rebuilt
+               whenever the theme changes; values carry over by key. -->
+          <div class="fgrid" id="e-extra" style="margin-top: 10px"></div>
+          <div class="fgrid one" style="margin-top: 10px">
+            <label class="fld"
+              ><span>כותרת מותאמת (ריק = ברירת המחדל של התבנית)</span
+              ><textarea id="e-title" rows="2" maxlength="120"></textarea>
+            </label>
+            <label class="fld check"
+              ><input type="checkbox" id="e-chasers" /><span>צ׳ייסרים</span></label
+            >
+          </div>
+        </fieldset>
+
+        <fieldset id="e-order-fs">
+          <legend>אספקה</legend>
+          <div class="fgrid">
+            <label class="fld"
+              ><span>גרסה</span
+              ><select id="e-version"></select
+            ></label>
+          </div>
+          <div class="fgrid" id="e-address" style="margin-top: 10px">
+            <label class="fld"><span>רחוב ומספר</span><input type="text" id="e-street" /></label>
+            <label class="fld"><span>עיר</span><input type="text" id="e-city" /></label>
+            <label class="fld"><span>מיקוד</span><input type="text" id="e-postal" /></label>
+            <label class="fld"><span>דירה</span><input type="text" id="e-apartment" /></label>
+            <label class="fld"><span>קומה</span><input type="text" id="e-floor" /></label>
+          </div>
+          <div class="muted" id="e-order-none" hidden>טרם בוצעה הזמנה — אין מה לערוך כאן.</div>
+        </fieldset>
+
+        <fieldset>
+          <legend>פיונים (עד 4 תמונות)</legend>
+          <div class="photos" id="e-photos"></div>
+          <div style="margin-top: 8px">
+            <input type="file" id="e-photo-file" accept="image/*" multiple />
+          </div>
+          <div class="muted" id="e-photo-msg"></div>
+        </fieldset>
+        <div class="err" id="e-err" hidden></div>
+      </div>
+      <div class="foot">
+        <button type="button" id="e-save">שמור</button>
+        <button type="button" id="e-cancel">ביטול</button>
+      </div>
+    </dialog>
+
     <script type="module">
       import { buildBulkCsv } from './js/collect.js';
+      // The design catalog + the colour palette the wizard offers, so the edit
+      // dialog writes back exactly the values a customer's own pick would store
+      // (the Hebrew design/colour NAME, plus the design's generator theme).
+      import { DESIGNS, MAIN_COLORS } from './js/designs.js';
 
       const key = new URLSearchParams(location.search).get('key') || '';
       // Carry the admin key across the three linked admin pages.
@@ -449,6 +678,14 @@
         delivery: 'המפונקת (משלוח)',
         custom: 'עיצוב אישי (בהתאמה)',
       };
+      // Hebrew labels for the theme-required extra fields. Shared by the orders
+      // table (muted lines under the honoree) and the edit dialog's inputs.
+      const extraLabels = {
+        AGE: 'גיל',
+        YEARS: 'שנות נישואין',
+        NAME1: 'שם 1',
+        NAME2: 'שם 2',
+      };
 
       function formatAddress(a) {
         if (!a) return '';
@@ -490,6 +727,336 @@
           return false;
         }
       }
+
+      /* ======================================================================
+         EDIT AN ORDER'S CHOICES
+         The customer settles details with the owner on WhatsApp after checkout
+         ("make it their 40th", "switch me to pickup", "here's the address", "use
+         this photo instead"). This dialog edits the stored choices in place —
+         one dialog reused by every row — and PATCHes them back.
+         ====================================================================== */
+      const dlg = document.getElementById('edit');
+      const el = (id) => document.getElementById(id);
+      // The collection being edited + a WORKING COPY of its photo list (removals
+      // are staged locally and applied on save; uploads land immediately).
+      let editing = null;
+      let editPhotos = [];
+      // Generator templates ({key, label, extra}), fetched once on first open.
+      // themes.json is the authority on which extra fields a theme requires.
+      let themeList = null;
+
+      async function loadThemeList() {
+        if (themeList) return themeList;
+        try {
+          const r = await fetch('/api/admin/templates?key=' + encodeURIComponent(key));
+          const d = r.ok ? await r.json() : {};
+          themeList = (d.templates || []).map((t) => ({
+            key: t.key,
+            label: t.display_he || t.key,
+            extra: Array.isArray(t.extra_fields) ? t.extra_fields : [],
+          }));
+        } catch {
+          // The dialog still works without it — the theme select then offers only
+          // the themes the design catalog knows about (filled by fillSelect below).
+          themeList = [];
+        }
+        return themeList;
+      }
+
+      // Fill a <select> from [{value,label}]. A stored value that is NOT in the
+      // list (a design/theme since renamed or removed) is appended rather than
+      // silently rewritten to the first option — an edit must never change a
+      // field the owner didn't touch.
+      function fillSelect(sel, items, value) {
+        sel.textContent = '';
+        for (const it of items) {
+          const o = document.createElement('option');
+          o.value = it.value;
+          o.textContent = it.label;
+          sel.appendChild(o);
+        }
+        const v = value == null ? '' : String(value);
+        if (v && !items.some((i) => i.value === v)) {
+          const o = document.createElement('option');
+          o.value = v;
+          o.textContent = v + ' (קיים)';
+          sel.appendChild(o);
+        }
+        sel.value = v;
+      }
+
+      // Read whatever the extra-field inputs currently hold, so switching theme
+      // carries shared keys (NAME1 on one theme is NAME1 on the next) across the
+      // rebuild instead of blanking them.
+      function readExtraInputs() {
+        const out = {};
+        for (const input of el('e-extra').querySelectorAll('input[data-ek]')) {
+          out[input.dataset.ek] = input.value;
+        }
+        return out;
+      }
+
+      // Build one input per extra field the chosen theme requires. Keys already
+      // stored but NOT required by this theme are still rendered, so a theme
+      // switch never silently drops a value the owner can still see and clear.
+      function renderExtraInputs(themeKey, values) {
+        const box = el('e-extra');
+        box.textContent = '';
+        const t = (themeList || []).find((x) => x.key === themeKey);
+        const keys = [...((t && t.extra) || [])];
+        for (const k of Object.keys(values || {})) if (!keys.includes(k)) keys.push(k);
+        for (const k of keys) {
+          const lab = document.createElement('label');
+          lab.className = 'fld';
+          const span = document.createElement('span');
+          span.textContent = extraLabels[k] || k;
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.maxLength = 80;
+          input.dataset.ek = k;
+          input.value = (values && values[k]) || '';
+          lab.appendChild(span);
+          lab.appendChild(input);
+          box.appendChild(lab);
+        }
+      }
+
+      // Thumbnails of the working photo list, each with a remove (×). Removal is
+      // staged in editPhotos and written on save (PUT .../pawns).
+      function renderEditPhotos() {
+        const box = el('e-photos');
+        box.textContent = '';
+        if (!editPhotos.length) {
+          const none = document.createElement('span');
+          none.className = 'muted';
+          none.textContent = 'אין תמונות';
+          box.appendChild(none);
+        }
+        editPhotos.forEach((p, i) => {
+          const wrap = document.createElement('div');
+          wrap.className = 'photo';
+          const img = document.createElement('img');
+          img.src = p;
+          const x = document.createElement('button');
+          x.type = 'button';
+          x.textContent = '×';
+          x.title = 'הסר תמונה';
+          x.onclick = () => {
+            editPhotos.splice(i, 1);
+            renderEditPhotos();
+          };
+          wrap.appendChild(img);
+          wrap.appendChild(x);
+          box.appendChild(wrap);
+        });
+        // The 4-photo cap is enforced server-side too; disabling the picker here
+        // just avoids an upload that could only be rejected.
+        el('e-photo-file').disabled = editPhotos.length >= 4;
+      }
+
+      // Address inputs only make sense for a delivery order.
+      function syncAddressVisibility() {
+        el('e-address').hidden = el('e-version').value !== 'delivery';
+      }
+
+      async function openEdit(c) {
+        editing = c;
+        editPhotos = Array.isArray(c.pawn_images) ? [...c.pawn_images] : [];
+        el('edit-title').textContent = 'עריכת הזמנה · ' + (c.honoree_name || '');
+        el('e-err').hidden = true;
+        el('e-photo-msg').textContent = '';
+        el('e-photo-file').value = '';
+        el('e-name').value = c.honoree_name || '';
+        el('e-gender').value = c.gender || '';
+        el('e-email').value = c.owner_email || '';
+        el('e-phone').value = c.owner_phone || '';
+        el('e-title').value = c.custom_title || '';
+        el('e-chasers').checked = !!c.chasers;
+
+        await loadThemeList();
+        // Designs are stored by their HEBREW NAME (that is what the wizard posts),
+        // so the select's value is the name and the theme rides along in a map.
+        fillSelect(
+          el('e-design'),
+          [{ value: '', label: '—' }].concat(
+            DESIGNS.map((d) => ({ value: d.name, label: d.name }))
+          ),
+          c.design || ''
+        );
+        fillSelect(
+          el('e-color'),
+          [
+            { value: '', label: '—' },
+            { value: 'מקורי', label: 'מקורי' },
+          ].concat(MAIN_COLORS.map((m) => ({ value: m.name, label: m.name }))),
+          c.color || ''
+        );
+        const themeItems = [{ value: '', label: '—' }].concat(
+          (themeList || []).map((t) => ({ value: t.key, label: t.label + ' · ' + t.key }))
+        );
+        fillSelect(el('e-theme'), themeItems, c.theme || '');
+        renderExtraInputs(el('e-theme').value, c.extra_fields || {});
+
+        const order = c.order || null;
+        el('e-order-none').hidden = !!order;
+        for (const id of ['e-version', 'e-street', 'e-city', 'e-postal', 'e-apartment', 'e-floor'])
+          el(id).disabled = !order;
+        fillSelect(
+          el('e-version'),
+          Object.keys(versionLabel).map((v) => ({ value: v, label: versionLabel[v] })),
+          order ? order.version : ''
+        );
+        const addr = (order && order.address) || {};
+        el('e-street').value = addr.street || '';
+        el('e-city').value = addr.city || '';
+        el('e-postal').value = addr.postal || '';
+        el('e-apartment').value = addr.apartment || '';
+        el('e-floor').value = addr.floor || '';
+        syncAddressVisibility();
+
+        renderEditPhotos();
+        dlg.showModal();
+      }
+
+      // Picking a design re-points the generator theme at that design's own theme
+      // (the same resolution the wizard does), then rebuilds the extra fields.
+      el('e-design').onchange = () => {
+        const d = DESIGNS.find((x) => x.name === el('e-design').value);
+        if (d && d.theme) {
+          el('e-theme').value = d.theme;
+          // A design mapped to a theme the templates list didn't return still has
+          // to be selectable, so re-fill with the value appended when it's unknown.
+          if (el('e-theme').value !== d.theme) {
+            fillSelect(
+              el('e-theme'),
+              [{ value: '', label: '—' }].concat(
+                (themeList || []).map((t) => ({ value: t.key, label: t.label + ' · ' + t.key }))
+              ),
+              d.theme
+            );
+          }
+          renderExtraInputs(d.theme, readExtraInputs());
+        }
+      };
+      el('e-theme').onchange = () => renderExtraInputs(el('e-theme').value, readExtraInputs());
+      el('e-version').onchange = syncAddressVisibility;
+
+      // Upload photos straight away (the bytes have to reach the server) — the
+      // response is the authoritative stored list, so it replaces the working copy.
+      el('e-photo-file').onchange = async () => {
+        const files = [...(el('e-photo-file').files || [])];
+        if (!files.length || !editing) return;
+        const msg = el('e-photo-msg');
+        msg.textContent = 'מעלה…';
+        const fd = new FormData();
+        files.slice(0, 4).forEach((f, i) => fd.append('file' + i, f, f.name));
+        try {
+          const r = await fetch(
+            '/api/admin/collections/' + editing.id + '/pawns?key=' + encodeURIComponent(key),
+            { method: 'POST', body: fd }
+          );
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            msg.textContent = 'העלאה נכשלה: ' + (data.error || r.status);
+            return;
+          }
+          editPhotos = data.pawn_images || editPhotos;
+          // The row's stored list moved on; keep the working copy in step so a
+          // later save doesn't re-remove what was just uploaded.
+          editing.pawn_images = [...editPhotos];
+          msg.textContent = 'הועלה ✓';
+          renderEditPhotos();
+        } catch {
+          msg.textContent = 'העלאה נכשלה';
+        }
+        el('e-photo-file').value = '';
+      };
+
+      function closeEdit() {
+        editing = null;
+        dlg.close();
+      }
+      el('e-cancel').onclick = closeEdit;
+      el('edit-x').onclick = closeEdit;
+
+      el('e-save').onclick = async () => {
+        if (!editing) return;
+        const err = el('e-err');
+        err.hidden = true;
+        const name = el('e-name').value.trim();
+        if (!name) {
+          err.textContent = 'שם בעל/ת השמחה הוא שדה חובה.';
+          err.hidden = false;
+          return;
+        }
+        const patch = {
+          honoree_name: name,
+          gender: el('e-gender').value || null,
+          email: el('e-email').value.trim(),
+          phone: el('e-phone').value.trim(),
+          design: el('e-design').value,
+          color: el('e-color').value,
+          theme: el('e-theme').value,
+          extra_fields: readExtraInputs(),
+          custom_title: el('e-title').value,
+          chasers: el('e-chasers').checked,
+        };
+        if (editing.order) {
+          patch.order = { version: el('e-version').value };
+          if (patch.order.version === 'delivery') {
+            patch.order.address = {
+              street: el('e-street').value.trim(),
+              city: el('e-city').value.trim(),
+              postal: el('e-postal').value.trim(),
+              apartment: el('e-apartment').value.trim(),
+              floor: el('e-floor').value.trim(),
+            };
+          }
+        }
+        const saveBtn = el('e-save');
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'שומר…';
+        try {
+          const r = await fetch(
+            '/api/admin/collections/' + editing.id + '?key=' + encodeURIComponent(key),
+            {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(patch),
+            }
+          );
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            err.textContent =
+              data.error === 'address required'
+                ? 'למשלוח צריך רחוב, עיר ומיקוד.'
+                : 'השמירה נכשלה: ' + (data.error || r.status);
+            err.hidden = false;
+            return;
+          }
+          // Photos: only write when the working list actually differs from what's
+          // stored (a removal or a reorder), so a plain field edit sends nothing.
+          const stored = Array.isArray(editing.pawn_images) ? editing.pawn_images : [];
+          if (JSON.stringify(stored) !== JSON.stringify(editPhotos)) {
+            const ok = await adminAction('PUT', '/api/admin/collections/' + editing.id + '/pawns', {
+              pawn_images: editPhotos,
+            });
+            if (!ok) {
+              err.textContent = 'הפרטים נשמרו, אך עדכון התמונות נכשל.';
+              err.hidden = false;
+              return;
+            }
+          }
+          closeEdit();
+          load();
+        } catch {
+          err.textContent = 'השמירה נכשלה.';
+          err.hidden = false;
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'שמור';
+        }
+      };
 
       function renderStats(cols) {
         const leads = cols.filter((c) => !c.cancelled).length;
@@ -563,12 +1130,6 @@
           // owner sees the child's age / the couple's years+names at a glance.
           // Same stored-XSS rule as above: keys AND values are unsanitized user
           // input, so both go through textContent, never innerHTML.
-          const extraLabels = {
-            AGE: 'גיל',
-            YEARS: 'שנות נישואין',
-            NAME1: 'שם 1',
-            NAME2: 'שם 2',
-          };
           const ef = c.extra_fields;
           if (ef && typeof ef === 'object') {
             for (const [k, v] of Object.entries(ef)) {
@@ -838,6 +1399,13 @@
           tr.appendChild(tdWa);
 
           const td = document.createElement('td');
+          // Edit the customer's choices (names, extra fields, design/theme,
+          // pickup vs delivery + address, photos) after a WhatsApp conversation.
+          const editBtn = document.createElement('button');
+          editBtn.textContent = 'ערוך';
+          editBtn.onclick = () => openEdit(c);
+          td.appendChild(editBtn);
+          td.appendChild(document.createTextNode(' '));
           const copyBtn = document.createElement('button');
           copyBtn.textContent = 'העתק קישור ניהול';
           copyBtn.onclick = () =>
