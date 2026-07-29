@@ -373,7 +373,7 @@
   "display_he": "דוגרי אשכוליות",
   "dir": "resources/canva/templates/grapefruit",
   "recipe": "grapefruit",
-  "visibility": "private",
+  "visibility": "public",
   "title_text": "רווקות ל{NAME}",
   "title_lines": [
    "רווקות ל{NAME}"
@@ -487,6 +487,7 @@
   "board": null,
   "back": null,
   "calibrated": true,
-  "word_size": 21.3
+  "word_size": 21.3,
+  "in_store": true
  }
 }

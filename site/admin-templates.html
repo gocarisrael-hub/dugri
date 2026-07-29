@@ -1488,10 +1488,12 @@
 
           const grid = document.createElement('div');
           grid.className = 'tpl-settings-grid';
-          const mkSelect = (field, options, current) => {
+          // `label` overrides the visible caption when the field name alone is not
+          // self-explanatory; the data-field (what the server reads) is unchanged.
+          const mkSelect = (field, options, current, label) => {
             const wrap = document.createElement('label');
             wrap.className = 'set-field';
-            wrap.append(document.createTextNode(field));
+            wrap.append(document.createTextNode(label || field));
             const sel = document.createElement('select');
             sel.dataset.field = field;
             for (const o of options) {
@@ -1504,6 +1506,19 @@
             wrap.append(sel);
             return wrap;
           };
+          // IS IT FOR SALE — deliberately its own switch, not a third visibility
+          // value. `visibility` answers "once it IS on sale, open grid or access
+          // code only"; this answers "is it on sale at all". Off removes it from
+          // the storefront for everyone, code holders included, while leaving the
+          // owner able to generate an order for it from here.
+          grid.append(
+            mkSelect(
+              'in_store',
+              ['כן', 'לא'],
+              t.in_store === false ? 'לא' : 'כן',
+              'בחנות (in_store)'
+            )
+          );
           grid.append(mkSelect('visibility', ['public', 'private'], t.visibility));
           grid.append(mkSelect('language', ['hebrew', 'english'], t.language || ''));
           // Asset layout. Switching it re-points every SVG path, so the server
@@ -1703,6 +1718,9 @@
           for (const el of card.querySelectorAll('.tpl-settings [data-field]')) {
             patch[el.dataset.field] = el.value;
           }
+          // in_store is shown as כן/לא but stored as a boolean — send what the
+          // server validates, not the label the owner read.
+          if ('in_store' in patch) patch.in_store = patch.in_store !== 'לא';
           settingsBtn.disabled = true;
           try {
             const res = await fetch(

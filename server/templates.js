@@ -45,6 +45,21 @@ function isSafeSlug(slug) {
 const NAME_FORMS = ['hebrew', 'english', 'english-caps'];
 // The two name-script languages a theme can require (themes.json `language`).
 const LANGUAGES = ['hebrew', 'english'];
+/**
+ * Is this template offered in the shop at all?
+ *
+ * SEPARATE from `visibility`, and the distinction matters: `visibility` decides
+ * whether a design that IS on sale sits in the open grid or is unlocked with an
+ * access code, so using it to mean "not launched yet" quietly left the design
+ * orderable by anyone holding a code.
+ *
+ * Absent = true, so every template written before this flag existed keeps
+ * behaving exactly as it did.
+ */
+function inStore(entry) {
+  return !(entry && entry.in_store === false);
+}
+
 // The two storefront visibilities a theme can carry (themes.json `visibility`).
 const VISIBILITIES = ['public', 'private'];
 // The three SVG roles every template ships, for both the clean + filled pages.
@@ -1311,6 +1326,9 @@ function computeTemplateStatus(root, key, entry) {
     // admin form never has to guess; `card_slots` is the shared word slots +
     // per-front title positions, null until the owner saves them.
     card_structure: cardStructureOf(entry),
+    // Always reported as a boolean (absent on the entry reads as true), so the
+    // admin toggle shows the real state instead of guessing from a missing key.
+    in_store: inStore(entry),
     card_slots: (entry && entry.card_slots) || null,
     card_viewbox: { ...CARD_VIEWBOX },
     // How many de-duplicated shared images the template carries (assets/), so the
@@ -1642,6 +1660,18 @@ function updateTemplateSettings({ root, key, patch }) {
       return { error: 'visibility must be one of: ' + VISIBILITIES.join(', '), httpStatus: 400 };
     }
     changed.visibility = vis;
+  }
+  // IS IT FOR SALE AT ALL — a different question from `visibility`, which asks
+  // "once it IS for sale, is it in the open grid or unlocked by an access code".
+  // Conflating the two meant taking a design off the shop floor also handed it to
+  // anyone holding a code. `in_store:false` removes it from the storefront
+  // outright; the owner can still generate an order for it from the admin, which
+  // is what makes it usable for testing a design before launch.
+  //
+  // ABSENT MEANS TRUE. Every template that predates this is for sale exactly as
+  // it was, and nothing has to be backfilled.
+  if ('in_store' in p) {
+    changed.in_store = !(p.in_store === false || p.in_store === 'false' || p.in_store === 0);
   }
   if ('extra_fields' in p) {
     changed.extra_fields = normalizeExtraFields(p.extra_fields);
@@ -2183,6 +2213,7 @@ function boundaryFromContentType(contentType) {
 }
 
 module.exports = {
+  inStore,
   isSafeSlug,
   NAME_FORMS,
   SVG_ROLES,
