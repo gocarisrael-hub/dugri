@@ -144,11 +144,24 @@ describe('photo card templates', () => {
         }
       });
 
-      it('gives every slot a circular clip whose id follows the slot id', () => {
+      // The reference sticker lets the subject cross its own cut-line. A clip
+      // back to the circle would shave exactly that off, so the slot must NOT
+      // reintroduce one.
+      it('does not clip the subject back to the circle', () => {
         for (const id of SLOT_IDS) {
-          expect(slotTag(svg, id)).toContain(`clip-path="url(#${id}-clip)"`);
-          expect(svg).toContain(`<clipPath id="${id}-clip">`);
+          expect(slotTag(svg, id)).not.toMatch(/\bclip-path=/);
         }
+        expect(svg).not.toMatch(/<clipPath id="photo-slot-/);
+      });
+
+      // The halo bleeds past the slot box; the gutter between slots has to
+      // absorb it or neighbouring stickers bump into each other.
+      it('leaves a gutter wide enough for the halo to bleed into', () => {
+        const boxes = SLOT_IDS.map((id) => slotBox(svg, id));
+        const xs = [...new Set(boxes.map((b) => b.x))].sort((a, b) => a - b);
+        const ys = [...new Set(boxes.map((b) => b.y))].sort((a, b) => a - b);
+        expect(xs[1] - (xs[0] + boxes[0].width)).toBeGreaterThanOrEqual(10);
+        expect(ys[1] - (ys[0] + boxes[0].height)).toBeGreaterThanOrEqual(10);
       });
 
       // The generator hands us a cutout with the background already removed, so
@@ -161,11 +174,11 @@ describe('photo card templates', () => {
         }
       });
 
-      // THE STICKER. Each slot is a round die-cut sticker: a white disc BEHIND
-      // the image (so a transparent cutout sits on white, never on the card's
-      // background pattern), a white ring wider than the image disc, and a soft
-      // drop shadow. Asserted on all four slots — a regression on one is as
-      // broken a card as a regression on all of them.
+      // THE STICKER. Each slot is a die-cut sticker: a DASHED cut-line circle
+      // under the artwork, and a white halo that follows the SUBJECT'S OWN
+      // SILHOUETTE — generated from the cutout's alpha, not drawn as a disc.
+      // Asserted on all four slots; a regression on one is as broken a card as
+      // a regression on all of them.
       describe.each(SLOT_IDS.map((id, i) => [i + 1, id]))(
         'slot %i is a die-cut sticker',
         (n, id) => {
@@ -178,54 +191,62 @@ describe('photo card templates', () => {
             expect(group).toContain(`id="${id}"`);
           });
 
-          it('paints a WHITE circle BEHIND the image', () => {
-            const face = circles(group)[0];
-            expect(WHITE.has(face.fill), `face fill is ${face.fill}, not white`).toBe(true);
-            expect(face.cx).toBe(centre.cx);
-            expect(face.cy).toBe(centre.cy);
-            // …and it really is behind: the disc is painted before the image.
-            expect(group.indexOf(face.tag)).toBeLessThan(group.indexOf(`id="${id}"`));
+          it('marks the cut with a DOTTED, unfilled circle', () => {
+            const cut = circles(group)[0];
+            expect(cut, 'no circle in the sticker group').toBeTruthy();
+            expect(cut.fill, 'the cut-line must not be filled — no disc').toBe('none');
+            expect(attr(cut.tag, 'stroke-dasharray'), 'cut-line is not dashed').toBeTruthy();
+            expect(cut.stroke).toBeTruthy();
+            expect(cut.cx).toBe(centre.cx);
+            expect(cut.cy).toBe(centre.cy);
+            expect(cut.r).toBe(box.width / 2); // inscribed in the slot box
           });
 
-          it('extends that circle past the image disc — the white die-cut ring', () => {
-            const face = circles(group)[0];
-            const clip = svg.match(new RegExp(`<clipPath id="${id}-clip">\\s*<circle[^>]*/>`))[0];
-            const disc = circles(clip)[0];
-            expect(disc.r).toBe(box.width / 2); // image disc inscribed in the slot
-            expect(disc.cx).toBe(centre.cx);
-            expect(disc.cy).toBe(centre.cy);
-            // A hairline would not read as die-cut; insist on a real border.
-            expect(face.r - disc.r).toBeGreaterThanOrEqual(2);
+          it('paints exactly ONE circle — no white disc behind the photo', () => {
+            expect(circles(group)).toHaveLength(1);
+            for (const c of circles(group)) {
+              expect(WHITE.has(c.fill), `a ${c.fill} disc crept back in`).toBe(false);
+            }
           });
 
-          it('lifts the sticker with a drop-shadow filter that the file defines', () => {
-            const face = circles(group)[0];
-            const ref = face.filter?.match(/^url\(#([^)]+)\)$/)?.[1];
-            expect(ref, 'sticker face carries no filter').toBeTruthy();
-            const filter = svg.match(new RegExp(`<filter id="${ref}"[\\s\\S]*?</filter>`))?.[0];
-            expect(filter, `no <filter id="${ref}"> in the file`).toBeTruthy();
-            expect(filter).toContain('feDropShadow');
-            // The shadow is on the disc ALONE — never on the customer's photo.
+          it('draws the cut-line UNDER the artwork, so the halo covers it', () => {
+            const cut = circles(group)[0];
+            expect(group.indexOf(cut.tag)).toBeLessThan(group.indexOf(`id="${id}"`));
+          });
+
+          it('haloes the slot through a <use> of the slot itself', () => {
+            // A <use> rather than a second <image>: the generator still fills
+            // ONE element and the halo picks the same cutout up for free.
+            const use = group.match(/<use\b[^>]*\/>/)?.[0];
+            expect(use, `slot ${n} has no halo <use>`).toBeTruthy();
+            expect(attr(use, 'href')).toBe(`#${id}`);
+            expect(attr(use, 'xlink:href')).toBe(`#${id}`);
+            // …and it is BEHIND the real image, which stays unfiltered so the
+            // photo is never rasterised through the filter pipeline.
+            expect(group.indexOf(use)).toBeLessThan(group.indexOf(`id="${id}"`));
             expect(slotTag(svg, id)).not.toMatch(/\bfilter=/);
           });
 
-          it('closes the die-cut edge with a stroked ring ON TOP of the image', () => {
-            const face = circles(group)[0];
-            const ring = circles(group).at(-1);
-            expect(ring.fill).toBe('none');
-            expect(ring.stroke).toBeTruthy();
-            expect(ring.r).toBe(face.r);
-            expect(ring.cx).toBe(centre.cx);
-            expect(ring.cy).toBe(centre.cy);
-            expect(group.indexOf(ring.tag)).toBeGreaterThan(group.indexOf(`id="${id}"`));
+          it('builds the halo from the cutout ALPHA, with a soft shadow', () => {
+            const use = group.match(/<use\b[^>]*\/>/)[0];
+            const ref = attr(use, 'filter')?.match(/^url\(#([^)]+)\)$/)?.[1];
+            expect(ref, 'halo <use> carries no filter').toBeTruthy();
+            const filter = svg.match(new RegExp(`<filter id="${ref}"[\\s\\S]*?</filter>`))?.[0];
+            expect(filter, `no <filter id="${ref}"> in the file`).toBeTruthy();
+            // Silhouette-following, not a circle: dilate the alpha, flood it
+            // white, and shadow the result.
+            expect(filter).toMatch(/<feMorphology[^>]*in="SourceAlpha"[^>]*operator="dilate"/);
+            expect(Number(filter.match(/<feMorphology[^>]*radius="([\d.]+)"/)[1])).toBeGreaterThan(
+              0
+            );
+            expect(filter).toMatch(/<feFlood[^>]*flood-color="#ffffff"/);
+            expect(filter).toContain('feDropShadow');
           });
         }
       );
 
-      it('draws the number badges after every sticker, so none is buried', () => {
-        const badges = svg.indexOf('<g class="photo-sticker-badges">');
-        expect(badges).toBeGreaterThan(-1);
-        expect(svg.lastIndexOf('<g class="photo-sticker" data-slot=')).toBeLessThan(badges);
+      it('carries no numbered badges — the photo is the identity', () => {
+        expect(svg).not.toContain('photo-sticker-badges');
       });
 
       it('carries no embedded raster and stays small', () => {
@@ -292,9 +313,9 @@ describe('generic pawn fallback set', () => {
         expect(fs.statSync(abs).size).toBeLessThan(4 * 1024);
       });
 
-      // A pawn floating small in the middle of a big white sticker reads as a
-      // missing image. It is drawn at ≥ 1× and bottom-anchored so it fills the
-      // sticker the way a cutout portrait does, clear of the number badge.
+      // A pawn floating small inside its box reads as a missing image. It is
+      // drawn at ≥ 1× so it fills the cut-line and spills a little past it, the
+      // way a cutout portrait does.
       it('fills the sticker instead of sitting in it like a placeholder', () => {
         const scale = Number(svg.match(/\bscale\(([\d.]+)\)/)?.[1]);
         expect(Number.isFinite(scale), 'no scale() on the pawn group').toBe(true);
@@ -313,11 +334,19 @@ describe('generic pawn fallback set', () => {
     expect(new Set(bodies).size).toBe(bodies.length);
   });
 
-  it('leaves the ground transparent so it drops onto any theme', () => {
+  // Transparency is now LOAD-BEARING, not a nicety: the host card builds the
+  // white sticker outline out of this image's alpha, so an opaque ground would
+  // print as a white-edged square instead of a pawn-shaped sticker.
+  it('leaves the ground transparent — the halo is cut from its alpha', () => {
     for (const f of files) {
       const svg = fs.readFileSync(path.join(FALLBACK_DIR, f), 'utf8');
-      // A full-bleed background rect/circle would fight the card's own disc.
-      expect(svg).not.toMatch(/<rect[^>]*width="200"[^>]*height="200"/);
+      expect(svg, `${f} has a full-bleed rect`).not.toMatch(
+        /<rect[^>]*\bwidth="200"[^>]*\bheight="200"/
+      );
+      // …and no full-bleed disc either, which would be just as opaque.
+      expect(svg, `${f} has a full-bleed circle`).not.toMatch(
+        /<circle[^>]*\bcx="100"[^>]*\bcy="100"[^>]*\br="1[0-9][0-9]"/
+      );
     }
   });
 });
@@ -333,5 +362,12 @@ describe('photo card documentation', () => {
 
   it('names the slot ids', () => {
     for (const id of SLOT_IDS) expect(doc).toContain(id);
+  });
+
+  // Without a white disc there is no graceful degradation: an opaque photo
+  // prints as a rectangle. That has to be stated, not implied.
+  it('states that a transparent cutout is REQUIRED', () => {
+    expect(doc).toMatch(/transparent cutout is REQUIRED/i);
+    expect(doc).toMatch(/alpha/i);
   });
 });
