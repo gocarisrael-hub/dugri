@@ -1238,6 +1238,23 @@ function displayPath(root, abs) {
 }
 
 // A safe file basename: no path separators, no traversal. Returns null on junk.
+// A theme's recorded font may sit in a SUBDIRECTORY of fonts/ ("Cafe
+// Regular/Cafe Regular.ttf", "comixno2/comixno2clm_medium-webfont.ttf"), which
+// is how most shipped themes record theirs. Reducing that to a basename — as
+// this used to — pointed the replace path at fonts/<file> while the generator
+// went on reading fonts/<dir>/<file>, so replacing such a font wrote a file
+// nobody read and the old one rendered forever.
+//
+// Keeps the relative path, rejects anything that could climb out of fonts/ or
+// name an absolute location.
+function safeFontRel(name) {
+  const raw = String(name || '').replace(/\\/g, '/');
+  if (!raw || path.isAbsolute(raw)) return null;
+  const parts = raw.split('/').filter(Boolean);
+  if (!parts.length || parts.some((p) => p === '.' || p === '..')) return null;
+  return parts.join('/');
+}
+
 function safeBasename(name) {
   const b = path.basename(String(name || ''));
   if (!b || b === '.' || b === '..' || b.includes('/') || b.includes('\\')) return null;
@@ -1253,7 +1270,7 @@ function assetRolesFor(entry) {
   const table = cardStructureOf(entry) === 'cards' ? CARD_SVG_ASSET_ROLES : SVG_ASSET_ROLES;
   const svg = table.map((a) => ({ ...a }));
   const fonts = FONT_ASSET_ROLES.map((a) => {
-    const name = entry && entry[a.field] ? safeBasename(entry[a.field]) : null;
+    const name = entry && entry[a.field] ? safeFontRel(entry[a.field]) : null;
     return {
       role: a.role,
       field: a.field,
