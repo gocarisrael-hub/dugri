@@ -1924,6 +1924,40 @@ function deleteTemplate({ root, key, inUseThemes }) {
 // layer was never modified, so "revert" is just deleting what we added.
 // Refuses when there is no override, or when the key isn't shipped (that one is
 // a real delete, not a revert). Returns { ok, key, reverted } or { error, httpStatus }.
+// Re-run detection + auto-calibration for an EXISTING template, on demand.
+//
+// Until now this only ever happened at onboarding: there was no way to re-detect
+// a template already in the catalog, so swapping artwork left the measured slots
+// silently stale. Doing it automatically on every asset replace was the other
+// extreme — 18 Chrome start-ups per uploaded file. This is the middle: the owner
+// asks for it once, when the artwork is finished.
+//
+// Detection PROPOSES: the measured values are written, but `calibrated` is left
+// exactly as it was, so this can never flip an unfinished template on sale.
+function redetectTemplate({ root, key, pythonBin, recipeRunner, calibrateRunner }) {
+  const themes = loadThemes(themesPathFor(root));
+  const entry = ownTheme(themes, key);
+  if (!entry) return { error: 'template not found', httpStatus: 404 };
+  const cards = cardStructureOf(entry) === 'cards';
+  const recipe = runRecipeDiff({ root, slug: key, cards, pythonBin, runner: recipeRunner });
+  if (!recipe.ok) {
+    return {
+      error: 'detection failed: ' + (recipe.detail || 'unknown error'),
+      httpStatus: 422,
+    };
+  }
+  const calibration = runCalibrate({ root, slug: key, pythonBin, runner: calibrateRunner });
+  if (calibration.ok) applyCalibration(themesPathFor(root), key, calibration.blob);
+  return {
+    key,
+    recipe: recipe.recipe,
+    calibrated: !!calibration.ok,
+    // Surfaced rather than swallowed: a recipe that detected fine while
+    // calibration did not is a real, actionable state.
+    detail: calibration.ok ? null : calibration.detail || null,
+  };
+}
+
 function revertTemplate({ root, key }) {
   if (!store.enabled()) {
     return { error: 'no persistent template store configured (DATA_DIR unset)', httpStatus: 409 };
@@ -2179,8 +2213,14 @@ function replaceAsset({
   // wrong answer rather than an error — nothing here can tell it from a good
   // one. Re-exporting both halves together is the owner's discipline, which is
   // why the outcome is surfaced instead of trusted.
+  // Re-detection is OPT-IN now, not automatic. It costs 18 Chrome start-ups —
+  // every card's clean/filled pair rendered separately — which measured 38s on a
+  // developer laptop and longer in the container, and it ran on EVERY file
+  // replace. Re-uploading nine filled files meant nine full detection passes
+  // before the owner could do anything. The admin panel has an explicit
+  // "detect again" button instead, so the cost is paid once, when it is wanted.
   let redetect = null;
-  if (isCardSvgRole(role) && cardStructureOf(entry) === 'cards' && redetectOnReplace !== false) {
+  if (isCardSvgRole(role) && cardStructureOf(entry) === 'cards' && redetectOnReplace === true) {
     const r = runRecipeDiff({
       root,
       slug: key,
@@ -2298,6 +2338,7 @@ module.exports = {
   isOwnerTheme,
   isShippedTheme,
   revertTemplate,
+  redetectTemplate,
   computeTemplateStatus,
   listTemplateStatuses,
   validateDisplayName,

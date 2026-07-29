@@ -415,10 +415,11 @@ describe('single-card layout — asset checklist + per-asset replace', () => {
     expect(fs.readFileSync(path.join(dir, 'filled', '5.svg'), 'utf8')).toContain('filled-5');
   });
 
-  it('replacing a card SVG re-runs detection, so the recipe matches the new art', () => {
-    // The 409 stops art being swapped SILENTLY under a calibrated template, but
-    // once it IS swapped the detected recipe describes a picture that is no
-    // longer there — including the INK COLOURS, which card_slots does not carry.
+  it('does NOT re-run detection on a plain replace (it is a button now)', () => {
+    // A full pass is 18 Chrome start-ups — each card's clean/filled pair rendered
+    // separately, ~38s on a laptop — and this ran on EVERY uploaded file, so
+    // re-uploading nine files meant nine passes before the owner could do
+    // anything. The admin panel has an explicit 'זהה מחדש' button instead.
     const calls = [];
     const r = templates.replaceAsset({
       root,
@@ -426,6 +427,29 @@ describe('single-card layout — asset checklist + per-asset replace', () => {
       role: 'clean-5',
       file: { filename: 'x.svg', data: SVG('brand-new-front') },
       shrinkImages: false,
+      recipeRunner: (bin, args) => {
+        calls.push(args);
+        return { status: 0 };
+      },
+    });
+    expect(r.error).toBeUndefined();
+    expect(calls.length).toBe(0);
+    expect(r.redetect).toBeNull();
+  });
+
+  it('re-runs detection on replace when explicitly asked to', () => {
+    // The 409 stops art being swapped SILENTLY under a calibrated template, but
+    // once it IS swapped the detected recipe describes a picture that is no
+    // longer there — including the INK COLOURS, which card_slots does not carry.
+    // So the capability stays, opt-in.
+    const calls = [];
+    const r = templates.replaceAsset({
+      root,
+      key: 'card-demo',
+      role: 'clean-5',
+      file: { filename: 'x.svg', data: SVG('brand-new-front') },
+      shrinkImages: false,
+      redetectOnReplace: true,
       recipeRunner: (bin, args) => {
         calls.push(args);
         // Stand in for recipe_diff: success means a recipe actually LANDED, which
@@ -444,6 +468,7 @@ describe('single-card layout — asset checklist + per-asset replace', () => {
   });
 
   it('a failed re-detection is reported, not swallowed, and destroys nothing', () => {
+    // (opt-in path — see above)
     // recipe_diff writes only on success, so the template keeps the geometry it
     // had. What must NOT happen is a silent pass: a forced replace that moved the
     // art and left stale slots would be the very thing the 409 exists to prevent.
@@ -456,6 +481,7 @@ describe('single-card layout — asset checklist + per-asset replace', () => {
       role: 'clean-6',
       file: { filename: 'x.svg', data: SVG('another-front') },
       shrinkImages: false,
+      redetectOnReplace: true,
       recipeRunner: () => ({ status: 1, stderr: 'chrome missing' }),
     });
 
@@ -993,5 +1019,40 @@ describe('replaceAsset — replacing a nested font actually takes effect', () =>
     // inside fonts/ — never outside it.
     expect(r.error || /fonts[/\\]x\.ttf$/.test(r.path || '')).toBeTruthy();
     expect(r.path || '').not.toMatch(/\.\./);
+  });
+});
+
+// Re-detection used to fire on EVERY asset replace. A full pass is 18 Chrome
+// start-ups (each card's clean/filled pair rendered separately) — ~38s on a
+// laptop — so re-uploading nine files meant nine full passes before the owner
+// could do anything. It is an explicit button now.
+describe('re-detection is opt-in, and available on demand', () => {
+  let templates;
+  beforeAll(() => {
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  it('exposes redetectTemplate for the button', () => {
+    expect(typeof templates.redetectTemplate).toBe('function');
+  });
+
+  it('refuses to re-detect a template that does not exist', () => {
+    const root = makeScaffold();
+    const r = templates.redetectTemplate({ root, key: 'no-such-template' });
+    expect(r.error).toBeTruthy();
+    expect(r.httpStatus).toBe(404);
+  });
+
+  it('reports a detection failure instead of silently leaving stale slots', () => {
+    const root = makeScaffold();
+    const r0 = templates.onboardTemplate({ root, ...cardsUpload(), shrinkImages: false });
+    expect(r0.error).toBeUndefined();
+    const r = templates.redetectTemplate({
+      root,
+      key: 'card-demo',
+      recipeRunner: () => ({ status: 1, stderr: 'chrome exploded' }),
+    });
+    expect(r.error).toMatch(/detection failed/);
+    expect(r.httpStatus).toBe(422);
   });
 });
