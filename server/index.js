@@ -915,6 +915,46 @@ app.delete('/api/admin/coupons/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// A design id -> its generator theme key. A CUSTOM design is its own theme (the
+// themes.json key IS the design id); a BUILT-IN one is mapped by THEME_BY_DESIGN
+// in site/js/designs.js. That module is ESM, so it is imported once and cached —
+// a miss just means "unknown", never a thrown route.
+let _themeByDesign = null;
+async function loadThemeByDesign() {
+  if (_themeByDesign) return _themeByDesign;
+  try {
+    const mod = await import(pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js')));
+    _themeByDesign = mod.THEME_BY_DESIGN || {};
+  } catch {
+    _themeByDesign = {};
+  }
+  return _themeByDesign;
+}
+
+/**
+ * Is this DESIGN offered in the shop? Unknown ids answer true: the flag exists to
+ * let the owner withdraw something deliberately, so it must never be the reason a
+ * design nobody registered stops working.
+ *
+ * Synchronous on purpose — the callers are request paths that cannot await — so
+ * it uses the cached map and falls back to treating the design id as its own
+ * theme key, which is exactly right for a custom design.
+ */
+function designIsInStore(designId) {
+  const id = String(designId || '');
+  if (!id) return true;
+  try {
+    const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT)) || {};
+    const key = (_themeByDesign && _themeByDesign[id]) || id;
+    const entry = themes[key];
+    return entry ? templates.inStore(entry) : true;
+  } catch {
+    return true;
+  }
+}
+// Warm the map at boot so the synchronous check above can see built-in designs.
+loadThemeByDesign();
+
 // --- Private-design access codes (admin CRUD) ----------------------------
 // Mirrors the coupon admin routes. An access code unlocks a PRIVATE design in
 // the order flow (see POST /api/design-code/validate). All gated by ADMIN_KEY.
@@ -967,6 +1007,12 @@ app.post('/api/design-code/validate', (req, res) => {
   }
   const r = db.validateDesignCode(req.body && req.body.code);
   if (!r.valid) return res.json({ valid: false });
+  // A design taken OFF the shop floor is off it for everyone. An access code
+  // chooses how an on-sale private design is reached; it is not a way past
+  // "this is not for sale yet", or withdrawing a design would still leave it
+  // orderable by every code already handed out. Reads as an invalid code
+  // rather than "valid but unavailable", so a withdrawn design leaks nothing.
+  if (!designIsInStore(r.design_id)) return res.json({ valid: false });
   db.incrementDesignCodeUses(req.body && req.body.code);
   res.json({ valid: true, design: r.design_id });
 });
@@ -2433,6 +2479,11 @@ app.get('/api/custom-designs', async (req, res) => {
     for (const key of Object.keys(themes || {})) {
       const t = themes[key] || {};
       if (builtIn.has(key)) continue; // a built-in design's theme, not a custom product
+      // Taken off the shop floor entirely — not in the grid, and NOT unlockable
+      // with an access code either. That is the difference from `visibility`
+      // below, which only chooses HOW an on-sale design is reached. The owner can
+      // still generate an order for it from the admin.
+      if (!templates.inStore(t)) continue;
       if ((t.visibility || 'public') !== 'public') continue; // owner hid it
       if (!templates.isSafeSlug(key)) continue;
       const img = {};

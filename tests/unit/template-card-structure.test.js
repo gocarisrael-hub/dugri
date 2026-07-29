@@ -833,3 +833,74 @@ describe('applyCalibration — detected card_slots reach themes.json', () => {
     expect(JSON.parse(fs.readFileSync(p, 'utf8')).demo.card_slots).toBeNull();
   });
 });
+
+// --- "in the store" vs "public/private" -------------------------------------
+// Two DIFFERENT questions that used to share one field. `visibility` decides how
+// an on-sale design is reached (open grid, or unlocked with an access code);
+// `in_store` decides whether it is on sale at all. Conflating them meant taking a
+// design off the shop floor still left it orderable by every code already issued.
+describe('in_store — is the template offered in the shop at all', () => {
+  let templates;
+  beforeAll(() => {
+    // Image paths only — a DATA_DIR left set by another suite would send these
+    // writes to the owner store instead of the scaffold's themes.json.
+    delete process.env.DATA_DIR;
+    delete require.cache[require.resolve(path.join(serverDir, 'templates.js'))];
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  it('a template that predates the flag is for sale, unchanged', () => {
+    // Absent MUST read as true or every existing template would vanish from the
+    // shop the moment this shipped.
+    expect(templates.inStore({})).toBe(true);
+    expect(templates.inStore({ visibility: 'public' })).toBe(true);
+    expect(templates.inStore(null)).toBe(true);
+    expect(templates.inStore(undefined)).toBe(true);
+  });
+
+  it('only an explicit false takes it off the shop floor', () => {
+    expect(templates.inStore({ in_store: false })).toBe(false);
+    expect(templates.inStore({ in_store: true })).toBe(true);
+  });
+
+  it('is INDEPENDENT of visibility — a private design can still be on sale', () => {
+    // private + in store = hidden from the grid, reachable with a code.
+    expect(templates.inStore({ visibility: 'private' })).toBe(true);
+    // off the shop floor, whatever the visibility says.
+    expect(templates.inStore({ visibility: 'private', in_store: false })).toBe(false);
+    expect(templates.inStore({ visibility: 'public', in_store: false })).toBe(false);
+  });
+
+  it('the settings patch accepts it, and coerces the form value', () => {
+    const root = makeScaffold();
+    templates.onboardTemplate({ root, ...cardsUpload(), shrinkImages: false, runRecipe: false });
+    const themesPath = path.join(root, 'generator', 'themes.json');
+
+    templates.updateTemplateSettings({ root, key: 'card-demo', patch: { in_store: false } });
+    let entry = JSON.parse(fs.readFileSync(themesPath, 'utf8'))['card-demo'];
+    expect(entry.in_store).toBe(false);
+
+    // Back on sale.
+    templates.updateTemplateSettings({ root, key: 'card-demo', patch: { in_store: true } });
+    entry = JSON.parse(fs.readFileSync(themesPath, 'utf8'))['card-demo'];
+    expect(entry.in_store).toBe(true);
+
+    // A string 'false' (what a <select> hands back) must not read as truthy.
+    templates.updateTemplateSettings({ root, key: 'card-demo', patch: { in_store: 'false' } });
+    entry = JSON.parse(fs.readFileSync(themesPath, 'utf8'))['card-demo'];
+    expect(entry.in_store).toBe(false);
+  });
+
+  it('is reported on the status payload so the admin shows the real state', () => {
+    const root = makeScaffold();
+    templates.onboardTemplate({ root, ...cardsUpload(), shrinkImages: false, runRecipe: false });
+    const themesPath = path.join(root, 'generator', 'themes.json');
+    const entryNow = () => JSON.parse(fs.readFileSync(themesPath, 'utf8'))['card-demo'];
+
+    // A fresh template reports true even though the key is absent from the entry.
+    expect(templates.computeTemplateStatus(root, 'card-demo', entryNow()).in_store).toBe(true);
+
+    templates.updateTemplateSettings({ root, key: 'card-demo', patch: { in_store: false } });
+    expect(templates.computeTemplateStatus(root, 'card-demo', entryNow()).in_store).toBe(false);
+  });
+});

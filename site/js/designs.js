@@ -80,9 +80,11 @@ export const VISIBILITY_BY_THEME = {
   anniversary: 'public',
   japanese: 'public',
   'football-boys': 'public',
-  // Staged for the portrait-card redesign: artwork migrated, geometry not yet
-  // calibrated. Private until it is, so it never reaches the public grid.
-  grapefruit: 'private',
+  // Calibrated and on sale. Note this map only governs BUILT-IN designs (those in
+  // THEME_BY_DESIGN); grapefruit reaches the storefront through
+  // /api/custom-designs, which reads visibility LIVE from themes.json. Kept in
+  // step anyway so the mirror never states something false.
+  grapefruit: 'public',
 };
 
 /**
