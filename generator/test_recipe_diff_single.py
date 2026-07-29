@@ -515,3 +515,45 @@ if __name__ == "__main__":
         fn()
         print("ok", fn.__name__)
     print(f"\nall {len(fns)} tests passed")
+
+
+# --- a detection failure must say WHAT it saw --------------------------------
+# "not one front yielded four word slots" was true but unusable: the per-front
+# reasons went to stdout, and the server reports stderr when a run fails, so the
+# owner got a bare traceback. The three failures need opposite fixes, so the
+# message has to tell them apart.
+
+def _mask(w, h, fill):
+    from PIL import Image, ImageDraw
+    m = Image.new("1", (w, h), 0)
+    if fill:
+        d = ImageDraw.Draw(m)
+        d.rectangle(fill, fill=1)
+    return m
+
+
+def test_an_empty_diff_says_the_exports_are_identical():
+    why = R._diff_shape(_mask(400, 560, None))
+    assert "identical" in why, why
+    assert "no personalized text" in why
+
+
+def test_a_saturated_diff_says_the_pair_does_not_correspond():
+    # Ink over most of the card means the two files differ everywhere — a
+    # mismatched pair, not a text diff.
+    why = R._diff_shape(_mask(400, 560, (0, 0, 399, 559)))
+    assert "%" in why and "not just in the text" in why, why
+
+
+def test_a_sparse_but_unstructured_diff_says_so():
+    why = R._diff_shape(_mask(400, 560, (10, 10, 120, 60)))
+    assert "does not form four evenly spaced word rows" in why, why
+
+
+def test_the_failure_lists_every_front_it_tried():
+    # The reasons are collected per front and folded into the error itself, so
+    # they survive being reported through stderr.
+    import inspect
+    src = inspect.getsource(R.detect_single_card)
+    assert "reasons.append" in src
+    assert "What each front actually produced" in src

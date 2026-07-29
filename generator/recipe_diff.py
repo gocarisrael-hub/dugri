@@ -479,6 +479,38 @@ def assemble_single_recipe(theme, vb, words, front_titles,
     return recipe
 
 
+
+def _diff_shape(mask):
+    """Describe what the clean<->filled diff looks like, for an error message.
+
+    The three failures are indistinguishable from "no text measured" alone, and
+    they need opposite fixes: an EMPTY diff means the two exports are the same
+    file (nothing personalized was in the filled one), a SATURATED diff means
+    they differ everywhere (the pair does not correspond — different card,
+    different export settings, or one of them re-rendered at another size), and
+    a sparse-but-unstructured diff means there IS ink but not four evenly spaced
+    word rows.
+    """
+    px = mask.load()
+    w, h = mask.size
+    step = max(1, min(w, h) // 200)
+    on = total = 0
+    for y in range(0, h, step):
+        for x in range(0, w, step):
+            total += 1
+            if px[x, y]:
+                on += 1
+    frac = on / (total or 1)
+    if frac < 0.0005:
+        return ("the two exports are identical — filled/ carries no personalized "
+                "text, so there is nothing to measure")
+    if frac > _MAX_TEXT_AREA:
+        return (f"the diff covers {frac * 100:.0f}% of the card — these two files "
+                "differ everywhere, not just in the text, so they are not a "
+                "matching clean/filled pair")
+    return (f"ink covers {frac * 100:.1f}% of the card but does not form four "
+            "evenly spaced word rows")
+
 def detect_single_card(theme, template_dir, fronts=None,
                        back_index=DEFAULT_BACK_INDEX, workdir=None, log=print):
     """Detect a whole v2 deck: shared word slots, per-front titles, back, photo.
@@ -494,6 +526,7 @@ def detect_single_card(theme, template_dir, fronts=None,
     workdir = workdir or tempfile.mkdtemp(prefix="dugri-recipe-diff-")
     try:
         per_front, front_titles, vb0 = [], {}, None
+        reasons = []
         first_render = None
         for index in fronts:
             clean = os.path.join(template_dir, "clean", f"{index}.svg")
@@ -507,7 +540,15 @@ def detect_single_card(theme, template_dir, fronts=None,
                 vb0, first_render = vb, (image, mask, ppu, ox, oy)
             got = detect_front(mask, image, vb, ppu, ox, oy)
             if not got:
-                log(f"front {index}: no text measured")
+                # WHY it measured nothing is the whole diagnosis, and it used to
+                # go only to stdout — which the server drops, because it reports
+                # stderr when a run fails. So the owner got "not one front
+                # yielded four word slots" with no way to tell a blank diff (the
+                # two exports are identical) from a saturated one (they differ
+                # everywhere, so the pair does not correspond).
+                why = _diff_shape(mask)
+                reasons.append(f"front {index}: {why}")
+                log(f"front {index}: no text measured — {why}")
                 continue
             per_front.append(got["words"])
             front_titles[index] = got["title"]
@@ -521,8 +562,10 @@ def detect_single_card(theme, template_dir, fronts=None,
         words = reconcile_word_slots(per_front)
         if len(words) != 4:
             raise RuntimeError(
-                "not one front yielded four word slots — the clean export may "
-                "not match the filled one (the diff must be exactly the text)")
+                "not one front yielded four word slots, so there is nothing to "
+                "calibrate. The diff between clean/ and filled/ must be EXACTLY "
+                "the personalized text. What each front actually produced:\n  "
+                + "\n  ".join(reasons or ["(no front was measured at all)"]))
 
         back_title = []
         bclean = os.path.join(template_dir, "clean", f"{back_index}.svg")
