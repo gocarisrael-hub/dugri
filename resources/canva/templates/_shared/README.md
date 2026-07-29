@@ -16,9 +16,14 @@ generator fills one by setting `href` to a `data:` URI and touching nothing else
 | `photo-slot-3` | 39.93  | 165 | 66    | 66     |
 | `photo-slot-4` | 117.93 | 165 | 66    | 66     |
 
-Each slot already carries `preserveAspectRatio="xMidYMid slice"` (centre-crop to fill) and
-`clip-path="url(#photo-slot-N-clip)"` (an inscribed circle, so the photo reads as a game token).
-An empty slot renders as the designed empty disc, never a broken image.
+Each slot is drawn as a round **die-cut sticker**: a white circle (r 37) behind the image with a
+soft drop shadow, then the image clipped to the inscribed disc (r 33), then a hairline at the
+die-cut edge. The 4-unit white margin between the two radii is the sticker's border, and the
+white face is what shows through the transparent cutout the generator supplies — so nothing of
+the card's background pattern ever appears behind a subject. The slot carries
+`preserveAspectRatio="xMidYMid meet"` (contain, so a tall cutout is never cropped) and
+`clip-path="url(#photo-slot-N-clip)"`. An empty slot renders as a designed white sticker, never a
+broken image.
 
 A theme overrides this card by dropping its own `clean/photo.svg` — same ids, same geometry.
 `grapefruit` does. Full contract and resolution order: `docs/photo-card.md`.
@@ -26,8 +31,14 @@ A theme overrides this card by dropping its own `clean/photo.svg` — same ids, 
 ## `photo-fallback/{1,2,3,4}.svg`
 
 The generic pawn set used for any slot with no customer photo: four monochrome pawn marks
-(solid, dotted, striped, outline) on a **transparent** ground, so they drop onto whatever disc
-the host card draws. 200 × 200, indexed to match the slot numbers — slot 3 takes `3.svg`.
+(solid, two-tone, banded, outline) on a **transparent** ground, so they drop onto whatever
+sticker face the host card draws. 200 × 200, indexed to match the slot numbers — slot 3 takes
+`3.svg`.
+
+Each pawn is drawn large and bottom-anchored so it fills the sticker like a cutout portrait and
+clears the number badge, and the four are told apart by bold silhouette knock-outs rather than
+fine hatching — Chrome rasterises an SVG-in-`<image>` at roughly slot resolution, where a fine
+pattern moirés.
 
 ## Editing
 
