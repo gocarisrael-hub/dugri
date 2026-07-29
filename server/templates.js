@@ -493,12 +493,22 @@ function applyCalibration(themesPath, key, blob) {
   const themes = loadThemes(themesPath);
   const entry = themes[key];
   if (!entry) return null;
+  // A REJECTED field must say so. This used to skip silently: calibrate emits a
+  // title_style it could not fully measure (it grades the paints "low"),
+  // validateTitleStyle refuses the whole object because fill/outline are not hex
+  // colours, and the entry keeps title_style: null. The owner then gets a
+  // template that detects fine, writes card_slots fine, and whose preview
+  // refuses with "not calibrated yet — title_style is null", with nothing
+  // anywhere saying a value was produced and thrown away.
+  const rejected = [];
   const ts = validateTitleStyle(blob.title_style);
   if (!ts.error) entry.title_style = ts.value;
+  else if (blob.title_style) rejected.push('title_style (' + ts.error + ')');
   for (const slot of ['board', 'back']) {
     if (!(slot in blob)) continue;
     const v = validateSlot(blob[slot], slot);
     if (!v.error) entry[slot] = v.value;
+    else if (blob[slot]) rejected.push(slot + ' (' + v.error + ')');
   }
   if (typeof blob.word_size === 'number' && blob.word_size > 0) entry.word_size = blob.word_size;
   // The detected single-card geometry. Without this the detector measured the
@@ -515,6 +525,13 @@ function applyCalibration(themesPath, key, blob) {
   // Advisory, for the form's "check this one" flags — not render inputs.
   if (blob.confidence && typeof blob.confidence === 'object') entry.confidence = blob.confidence;
   if (Array.isArray(blob.notes)) entry.notes = blob.notes.filter((s) => typeof s === 'string');
+  if (rejected.length) {
+    entry.notes = (entry.notes || []).concat(
+      'measured but REJECTED as invalid, so the old value was kept: ' +
+        rejected.join('; ') +
+        '. Fill these in by hand — the template cannot render until title_style is set.'
+    );
+  }
   // persistThemeEntry, NOT writeThemesFile. Two bugs in the old line:
   //
   // 1. It wrote to the IMAGE themes.json, which on Railway is ephemeral — so a

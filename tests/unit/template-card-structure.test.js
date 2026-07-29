@@ -1109,3 +1109,48 @@ describe('applyCalibration persists to the owner store, not the image', () => {
     expect(JSON.parse(fs.readFileSync(ownerPath, 'utf8')).volt.word_size).toBe(21.3);
   });
 });
+
+// A measured-but-invalid calibration field used to be discarded in silence.
+// calibrate emits a title_style whose paints it could not read, validateTitleStyle
+// refuses the whole object because fill/outline are not hex colours, the entry
+// keeps title_style: null — and the owner gets a template that detects fine,
+// writes card_slots fine, and whose preview refuses with "not calibrated yet",
+// with nothing anywhere saying a value was produced and thrown away.
+describe('applyCalibration reports what it rejected', () => {
+  let templates;
+  beforeAll(() => {
+    delete process.env.DATA_DIR;
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  function entryAfter(blob, seed = { slug: 't1', title_style: null }) {
+    const root = makeScaffold();
+    const p = path.join(root, 'generator', 'themes.json');
+    fs.writeFileSync(p, JSON.stringify({ t1: seed }), 'utf8');
+    templates.applyCalibration(p, 't1', blob);
+    return JSON.parse(fs.readFileSync(p, 'utf8')).t1;
+  }
+
+  it('keeps the old value and says which field was refused, and why', () => {
+    const e = entryAfter({ title_style: { arch: 0, shadow: false, outline_w: 0.05 } });
+    expect(e.title_style).toBeNull();
+    const notes = (e.notes || []).join(' ');
+    expect(notes).toMatch(/REJECTED/);
+    expect(notes).toMatch(/title_style/);
+    expect(notes).toMatch(/hex color/);
+  });
+
+  it('says nothing when everything validates', () => {
+    const e = entryAfter({
+      title_style: {
+        fill: '#711d20',
+        outline: '#711d20',
+        outline_w: 0.05,
+        arch: 0,
+        shadow: false,
+      },
+    });
+    expect(e.title_style.fill).toBe('#711d20');
+    expect((e.notes || []).join(' ')).not.toMatch(/REJECTED/);
+  });
+});
