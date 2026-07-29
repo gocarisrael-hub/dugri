@@ -3842,7 +3842,7 @@
       // name (and the couple NAME1/NAME2 fields) must be written in this script.
       function currentLanguage() {
         const d = DESIGNS[designIndex] || {};
-        return languageForDesign(d.id);
+        return languageForDesign(d);
       }
 
       // Anniversary is a COUPLE event: instead of a single honoree name + gender we
@@ -3883,7 +3883,7 @@
       function currentExtraFields() {
         if (hasCustomTitle()) return [];
         const d = DESIGNS[designIndex] || {};
-        return extraFieldsForDesign(d.id);
+        return extraFieldsForDesign(d);
       }
       function extraInput(key) {
         return document.querySelector('[data-extra-input="' + key + '"]');
@@ -3901,7 +3901,7 @@
         // — surface a note in their place explaining why they aren't asked for.
         if (extraFieldsSkipNote) {
           const d = DESIGNS[designIndex] || {};
-          const designNeedsExtras = extraFieldsForDesign(d.id).length > 0;
+          const designNeedsExtras = extraFieldsForDesign(d).length > 0;
           extraFieldsSkipNote.hidden = !(hasCustomTitle() && designNeedsExtras);
         }
         // Couple mode (anniversary): swap the single-name ask for the two partner

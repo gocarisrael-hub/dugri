@@ -106,6 +106,20 @@ export const LANGUAGE_BY_THEME = {
   grapefruit: 'hebrew',
 };
 
+// The design resolvers below accept EITHER a design id or a whole design object.
+// The static maps cover the built-in designs; a custom (owner-uploaded) design
+// is absent from them and carries its own metadata from /api/custom-designs
+// instead, so when an object is passed its own values win. Passing an id keeps
+// the previous behaviour exactly, which is what every built-in call site does.
+function ownMeta(design) {
+  return design && typeof design === 'object' ? design : null;
+}
+
+function designId(design) {
+  const own = ownMeta(design);
+  return own ? own.id : design;
+}
+
 /** Resolve a design id to its generator theme key, or null when unknown. */
 export function themeForDesign(id) {
   return THEME_BY_DESIGN[id] || null;
@@ -118,14 +132,26 @@ export function themeForDesign(id) {
  * design that declares no language is treated as needing a Hebrew name. Accepts
  * a language map override for testability.
  */
-export function languageForDesign(id, languageByTheme = LANGUAGE_BY_THEME) {
-  const theme = themeForDesign(id);
+export function languageForDesign(design, languageByTheme = LANGUAGE_BY_THEME) {
+  const own = ownMeta(design);
+  if (own && typeof own.language === 'string' && own.language) return own.language;
+  const theme = themeForDesign(designId(design));
   return (theme && languageByTheme[theme]) || 'hebrew';
 }
 
-/** The extra fields a design's theme requires (via themeForDesign); [] if none. */
-export function extraFieldsForDesign(id) {
-  const theme = themeForDesign(id);
+/**
+ * The extra fields a design requires ({AGE}, {YEARS}, {NAME1}+{NAME2}); [] if none.
+ *
+ * A CUSTOM design (an owner-uploaded template) is not in THEME_BY_DESIGN, so the
+ * static map resolves it to [] — the wizard would never ask for the fields, the
+ * order would be created anyway, and the title would render with UNFILLED
+ * PLACEHOLDERS on a paying customer's deck. So a design that carries its own
+ * metadata is believed over the map.
+ */
+export function extraFieldsForDesign(design) {
+  const own = ownMeta(design);
+  if (own && Array.isArray(own.extra_fields)) return own.extra_fields;
+  const theme = themeForDesign(designId(design));
   return (theme && THEME_EXTRA_FIELDS[theme]) || [];
 }
 
