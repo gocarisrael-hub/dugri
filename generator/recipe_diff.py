@@ -433,6 +433,173 @@ def reconcile_word_slots(per_front):
     return out
 
 
+# ---- regularising what was measured ----------------------------------------
+# Detection measures the ORIGIN's INK, i.e. where Canva's specimen words happened
+# to land in the design the template was exported from. So it faithfully
+# reproduces two things that are not design intent:
+#
+#   * the origin's own sloppiness — a text box nudged a pixel by hand;
+#   * threshold noise — the diff mask's edge moves with the glyphs that happen to
+#     sit on that line, and a word with a descender measures taller than one
+#     without even when both lines are the same box.
+#
+# Measured on grapefruit, the four word-slot midpoints as a fraction of card
+# height came out 0.377 / 0.472 / 0.582 / 0.673 — gaps of 0.095, 0.110, 0.091 for
+# a design that plainly means four evenly spaced lines. That 0.110 reads as a
+# visible break mid-list, and the owner was correcting it BY HAND in themes.json.
+# Same story on the right edge (x1 of 0.7026 / 0.6993 / 0.7010 / 0.6959 — one
+# intended edge measured four ways) and on the box heights.
+#
+# So: snap. But ONLY when the measurement is consistent enough that the snap is
+# small. Some design really may put its lines at uneven intervals, and silently
+# regularising THAT would be a worse bug than the one being fixed — hence
+# consistent-or-leave-alone on each of the three axes independently.
+
+# How far a midpoint may be dragged onto the even run before we conclude the
+# design meant the unevenness, as a fraction of the run's own spacing.
+# Evidence: fitting grapefruit's 0.377/0.472/0.582/0.673 moves its worst slot by
+# 0.0067 of the card, 6.8% of the 0.0987 spacing. A layout that is genuinely
+# uneven is out by far more — mids 0.20/0.30/0.55/0.70 need a 32% drag. 0.15 sits
+# between with better than 2x clearance on both sides.
+_SPACING_TOL = float(os.environ.get("DUGRI_SLOT_SPACING_TOL", "0.15"))
+
+# How far one slot's right edge may sit from the others' median before they stop
+# being one edge, as a fraction of card WIDTH. Grapefruit's four x1 values span
+# 0.0067 of the width — 1.5 units on a 223.92-unit card, well under a millimetre
+# in print and invisible. A deliberate stagger has to be several millimetres to
+# read as a stagger at all, so 0.02 (4.5 units) separates the two comfortably.
+_EDGE_TOL = float(os.environ.get("DUGRI_SLOT_EDGE_TOL", "0.02"))
+
+# How far one slot's height may sit from the median before the design is taken to
+# mean different heights, as a fraction of that median. Relative, not absolute,
+# because this is an INK box: a line whose sample words carry a descender
+# (ק ן ך ף ץ, or a Latin g/y) measures roughly a cap-height 0.72em against 0.95em
+# with the descender — up to ~28% either side of the median for one single font
+# size. A design that really steps the size up steps it by 1.25x at the very
+# least. 0.35 is above the typography and below the smallest deliberate step.
+_HEIGHT_TOL = float(os.environ.get("DUGRI_SLOT_HEIGHT_TOL", "0.35"))
+
+# Below this many user units a "snap" is float dust on numbers that already
+# agreed — worth applying, not worth a log line.
+_NOOP = 1e-9
+
+
+def _fmt(values):
+    return "[" + ", ".join(f"{v:.2f}" for v in values) + "]"
+
+
+def _even_run(mids):
+    """The evenly spaced run closest to ``mids`` — mean spacing, centred on them.
+
+    Two decisions, both about moving the slots as little as possible:
+
+    SPACING is the mean gap, ``(last - first) / (n - 1)``, so the run spans
+    exactly what was measured rather than inheriting whichever single gap the
+    detector read best.
+
+    CENTRING is on the mean midpoint, NOT anchored to slot 1. Anchoring would
+    hold one slot still and pay for the whole correction with the others — on
+    grapefruit, anchoring to slot 1 leaves slot 4 out by 0.011 of the card, where
+    centring caps the worst move at 0.0067. Centring is also what makes the run
+    symmetric: it minimises the sum of the squared moves for this spacing.
+    """
+    n = len(mids)
+    step = (mids[-1] - mids[0]) / (n - 1)
+    centre = sum(mids) / float(n)
+    return [centre + (i - (n - 1) / 2.0) * step for i in range(n)], step
+
+
+def _clamp_into_card(box, vb):
+    """Keep a regularised box on the card — a snap must never push text off it.
+
+    A cheap belt-and-braces: the snaps are small by construction (that is the
+    whole consistency gate), so this normally does nothing at all. It exists so
+    that no arithmetic here can emit a slot the renderer would have to clip.
+    """
+    x_lo, y_lo = vb[0], vb[1]
+    x_hi, y_hi = vb[0] + vb[2], vb[1] + vb[3]
+    for k in ("x0", "x1"):
+        box[k] = min(max(box[k], x_lo), x_hi)
+    for k in ("y0", "y1"):
+        box[k] = min(max(box[k], y_lo), y_hi)
+    return box
+
+
+def regularise_word_slots(slots, vb, log=print):
+    """Turn measured word slots into the layout the design MEANT, where it can.
+
+    Three independent snaps — even spacing, one shared right edge, one shared
+    height — each applied only when the measurement is consistent enough that the
+    snap is small (see the tolerance constants above). This is what removes the
+    owner's hand-correction step from themes.json; "nothing should be hardcoded
+    or manual" is the requirement it serves.
+
+    Order matters: spacing is decided on the measured midpoints, then heights are
+    grown or shrunk AROUND the snapped midpoints, so unifying the heights can
+    never undo the even spacing.
+
+    ``x0`` is never voted. Word lines are right-anchored — the renderer pins the
+    marker digit to ``x1`` and flows left — so ``x0`` is not a position, it is the
+    shrink guard's left bound. The honest bound is therefore the LEFTMOST extent
+    any front measured: taking a median would squeeze the longest word for no
+    reason. It moves only alongside the right edge, because if the edges are
+    genuinely staggered then so is the box, and nothing here should be pooled.
+    """
+    if len(slots) < 2:
+        # One slot has no spacing, no shared edge and no median height to speak
+        # of; zero has nothing at all. Detection only ever emits four, but this
+        # is a pure function and a caller is entitled to hand it anything.
+        return [dict(s) for s in slots]
+    out = [dict(s) for s in slots]
+
+    mids = [(s["y0"] + s["y1"]) / 2.0 for s in out]
+    heights = [s["y1"] - s["y0"] for s in out]
+    snapped, step = _even_run(mids)
+    moves = [abs(a - b) for a, b in zip(snapped, mids)]
+    if step > 0 and max(moves) <= _SPACING_TOL * step:
+        log(f"word slots: even spacing {step:.2f}u — mids {_fmt(mids)} -> "
+            f"{_fmt(snapped)} (largest move {max(moves):.2f}u, "
+            f"{max(moves) / step:.0%} of the spacing)")
+        mids = snapped
+    else:
+        worst = max(moves) / step if step > 0 else float("inf")
+        log(f"word slots: mids {_fmt(mids)} are not one progression "
+            f"(worst fit {worst:.0%} of the spacing, tolerance "
+            f"{_SPACING_TOL:.0%}) — left as measured")
+
+    median_h = _median(heights)
+    off_h = max(abs(h - median_h) for h in heights)
+    if off_h <= _HEIGHT_TOL * median_h:
+        # _NOOP guards the log, not the snap: slots that already agree to the
+        # last float bit are the common case on a clean export, and announcing a
+        # "change" of 1e-14 units would only teach the owner to skim these lines.
+        if off_h > _NOOP:
+            log(f"word slots: one height {median_h:.2f}u — was {_fmt(heights)}")
+        heights = [median_h] * len(heights)
+    else:
+        log(f"word slots: heights {_fmt(heights)} differ by more than "
+            f"{_HEIGHT_TOL:.0%} of the median — left as measured")
+
+    for slot, mid, height in zip(out, mids, heights):
+        slot["y0"], slot["y1"] = mid - height / 2.0, mid + height / 2.0
+
+    edges = [s["x1"] for s in out]
+    median_x1 = _median(edges)
+    left = min(s["x0"] for s in out)
+    off_x = max(abs(e - median_x1) for e in edges)
+    if off_x <= _EDGE_TOL * vb[2] and left < median_x1:
+        if off_x > _NOOP or max(s["x0"] for s in out) - left > _NOOP:
+            log(f"word slots: one right edge {median_x1:.2f}u — was "
+                f"{_fmt(edges)}; left bound {left:.2f}u (the leftmost measured)")
+        for slot in out:
+            slot["x0"], slot["x1"] = left, median_x1
+    else:
+        log(f"word slots: right edges {_fmt(edges)} span more than "
+            f"{_EDGE_TOL:.0%} of the card width — left as measured")
+
+    return [_clamp_into_card(slot, vb) for slot in out]
+
+
 def assemble_single_recipe(theme, vb, words, front_titles,
                            back_title=None, photo_slots=None):
     """Build the v2 recipe dict — the shape docs/card-structure-schema.md locks.
@@ -566,6 +733,9 @@ def detect_single_card(theme, template_dir, fronts=None,
                 "calibrate. The diff between clean/ and filled/ must be EXACTLY "
                 "the personalized text. What each front actually produced:\n  "
                 + "\n  ".join(reasons or ["(no front was measured at all)"]))
+        # Straight after the vote and BEFORE anything is written: what goes into
+        # the recipe is the layout the design meant, not the origin's ink boxes.
+        words = regularise_word_slots(words, vb0, log=log)
 
         back_title = []
         bclean = os.path.join(template_dir, "clean", f"{back_index}.svg")
