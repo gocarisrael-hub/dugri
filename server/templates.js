@@ -486,6 +486,17 @@ function applyCalibration(themesPath, key, blob) {
     if (!v.error) entry[slot] = v.value;
   }
   if (typeof blob.word_size === 'number' && blob.word_size > 0) entry.word_size = blob.word_size;
+  // The detected single-card geometry. Without this the detector measured the
+  // slots correctly, wrote them into its blob, and the merge silently dropped
+  // them — so the admin form kept opening on its hardcoded defaults (boxes
+  // roughly twice the real width) and the preview came back with giant words and
+  // a title clipped off both card edges. Validated through the same guard the
+  // form's own save uses, so a bad blob can't write geometry the form would have
+  // rejected.
+  if ('card_slots' in blob) {
+    const cs = validateCardSlots(blob.card_slots);
+    if (!cs.error) entry.card_slots = cs.value;
+  }
   // Advisory, for the form's "check this one" flags — not render inputs.
   if (blob.confidence && typeof blob.confidence === 'object') entry.confidence = blob.confidence;
   if (Array.isArray(blob.notes)) entry.notes = blob.notes.filter((s) => typeof s === 'string');

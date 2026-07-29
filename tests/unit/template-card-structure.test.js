@@ -658,3 +658,73 @@ describe('POST /api/admin/templates — single-card upload', () => {
     expect(r.body.error).toContain('9.svg');
   });
 });
+
+// The detector measures a single-card template's slots and returns them in its
+// blob, but applyCalibration merged only title_style/board/back/word_size — so
+// card_slots was silently dropped, the admin form kept opening on its hardcoded
+// defaults (boxes roughly twice the real width), and the preview came back with
+// giant words and a title clipped off both card edges.
+describe('applyCalibration — detected card_slots reach themes.json', () => {
+  let templates;
+  beforeAll(() => {
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  const SLOTS = {
+    words: [0, 1, 2, 3].map((i) => ({
+      x0: 0.478,
+      y0: 0.356 + i * 0.09,
+      x1: 0.703,
+      y1: 0.398 + i * 0.09,
+    })),
+    titles: Object.fromEntries(
+      [2, 3, 4, 5, 6, 7, 8, 9].map((n) => [
+        String(n),
+        { x0: 0.271, y0: 0.109, x1: 0.728, y1: 0.204 },
+      ])
+    ),
+  };
+
+  function themesWith(entry) {
+    const root = makeScaffold();
+    const p = path.join(root, 'generator', 'themes.json');
+    fs.writeFileSync(p, JSON.stringify({ demo: entry }), 'utf8');
+    return p;
+  }
+
+  it('writes card_slots from the calibration blob', () => {
+    const p = themesWith({ slug: 'demo', card_structure: 'cards', card_slots: null });
+    templates.applyCalibration(p, 'demo', { card_slots: SLOTS });
+    const entry = JSON.parse(fs.readFileSync(p, 'utf8')).demo;
+    expect(entry.card_slots).not.toBeNull();
+    expect(entry.card_slots.words).toHaveLength(4);
+    expect(entry.card_slots.words[0].x0).toBeCloseTo(0.478, 3);
+    expect(Object.keys(entry.card_slots.titles).sort()).toEqual([
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+    ]);
+  });
+
+  it('leaves card_slots alone when the blob carries none', () => {
+    const p = themesWith({ slug: 'demo', card_structure: 'cards', card_slots: SLOTS });
+    templates.applyCalibration(p, 'demo', { word_size: 21.3 });
+    const entry = JSON.parse(fs.readFileSync(p, 'utf8')).demo;
+    expect(entry.card_slots.words).toHaveLength(4);
+    expect(entry.word_size).toBe(21.3);
+  });
+
+  it('refuses a malformed card_slots rather than writing geometry the form would reject', () => {
+    const p = themesWith({ slug: 'demo', card_structure: 'cards', card_slots: null });
+    // three word boxes, and a title map missing most fronts
+    templates.applyCalibration(p, 'demo', {
+      card_slots: { words: SLOTS.words.slice(0, 3), titles: { 2: SLOTS.titles['2'] } },
+    });
+    expect(JSON.parse(fs.readFileSync(p, 'utf8')).demo.card_slots).toBeNull();
+  });
+});
