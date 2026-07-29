@@ -204,6 +204,38 @@ function sanitizeCustomTitle(input) {
   return Array.from(lines.join('\n')).slice(0, CUSTOM_TITLE_MAX).join('');
 }
 
+// A delivery shipping address. street + city + postal are REQUIRED (a parcel
+// can't ship without them) — returns null when any is missing, so the caller
+// rejects the order/edit. apartment + floor are optional. Every field is trimmed
+// and capped. Shared by the public setOrder path and the admin order edit.
+function sanitizeAddress(a) {
+  const src = a || {};
+  const street = String(src.street || '').trim();
+  const city = String(src.city || '').trim();
+  const postal = String(src.postal || '').trim();
+  if (!street || !city || !postal) return null;
+  return {
+    street: street.slice(0, 120),
+    city: city.slice(0, 120),
+    postal: postal.slice(0, 120),
+    apartment: src.apartment ? String(src.apartment).trim().slice(0, 120) : null,
+    floor: src.floor ? String(src.floor).trim().slice(0, 120) : null,
+  };
+}
+
+// A stored pawn-image path must be one of OUR OWN content-addressed uploads
+// ("/content-uploads/<file>", no path traversal) — never an arbitrary URL. The
+// admin edit route accepts a client-supplied array (remove/reorder), so the
+// shape is re-validated here rather than trusted.
+function pawnPathOk(p) {
+  return (
+    typeof p === 'string' &&
+    /^\/content-uploads\/[A-Za-z0-9._-]+$/.test(p) &&
+    !p.includes('..') &&
+    p.length <= 200
+  );
+}
+
 // 'cancelled' (admin soft-cancel) takes precedence; otherwise open while not
 // closed and not past expiry; otherwise 'closed' / 'expired'.
 function effectiveStatus(c) {
@@ -488,6 +520,109 @@ const db = {
     return true;
   },
 
+  // Admin: EDIT the choices a customer made in the wizard — the honoree name(s),
+  // contact, design/colour/theme, theme extra fields, word font, gender, chasers
+  // and custom title. The owner takes these corrections over WhatsApp ("actually
+  // it's their 40th, not 30th") and fixes the order in place before production.
+  //
+  // PATCH semantics: only keys PRESENT in `patch` are touched, so a partial body
+  // never blanks a field it didn't mention. Every value goes through the same
+  // sanitizer the create path uses. honoree_name is the one field that cannot be
+  // emptied (a collection with no honoree is meaningless) — a blank is ignored.
+  // Returns the updated collection, or null when there is no such collection.
+  adminUpdateCollection(id, patch = {}) {
+    const c = this.getCollection(id);
+    if (!c) return null;
+    const p = patch && typeof patch === 'object' ? patch : {};
+    const has = (k) => Object.prototype.hasOwnProperty.call(p, k);
+    // Trim + cap a free-text field; '' means "clear it" (stored as null).
+    const text = (v, max) => {
+      const s = String(v == null ? '' : v)
+        .trim()
+        .slice(0, max);
+      return s || null;
+    };
+    if (has('honoree_name')) {
+      const n = text(p.honoree_name, 80);
+      if (n) c.honoree_name = n;
+    }
+    if (has('email')) c.owner_email = text(p.email, 120);
+    if (has('phone')) c.owner_phone = text(p.phone, 40);
+    if (has('design')) c.design = text(p.design, 80);
+    if (has('color')) c.color = text(p.color, 80);
+    if (has('theme')) c.theme = text(p.theme, 80);
+    if (has('word_font')) c.word_font = text(p.word_font, 80);
+    if (has('extra_fields')) c.extra_fields = sanitizeExtraFields(p.extra_fields);
+    if (has('gender')) {
+      c.gender = p.gender === 'male' || p.gender === 'female' ? p.gender : null;
+    }
+    if (has('chasers')) c.chasers = !!p.chasers;
+    if (has('custom_title')) c.custom_title = sanitizeCustomTitle(p.custom_title);
+    saveDb();
+    return c;
+  },
+
+  // Admin: REPLACE a collection's pawn images with an explicit list — how the
+  // owner removes a photo the customer sent by mistake, or reorders them. Adding
+  // photos goes through the upload route (addPawnImages); this only ever narrows
+  // or reorders what is already stored, so entries are re-validated to our own
+  // /content-uploads paths, de-duped, and capped at 4. An empty array is valid
+  // (drops every photo). Returns the stored array, or null for a missing
+  // collection. The FILES are intentionally left on disk: they are shared,
+  // content-addressed uploads, so deleting one could pull the rug out from under
+  // another collection (or the same photo re-sent later).
+  adminSetPawnImages(id, paths) {
+    const c = this.getCollection(id);
+    if (!c) return null;
+    const seen = new Set();
+    const out = [];
+    for (const raw of Array.isArray(paths) ? paths : []) {
+      if (!pawnPathOk(raw) || seen.has(raw)) continue;
+      seen.add(raw);
+      out.push(raw);
+      if (out.length === 4) break;
+    }
+    c.pawn_images = out;
+    saveDb();
+    return c.pawn_images;
+  },
+
+  // Admin: edit the FULFILMENT of an existing order — its version (digital /
+  // pickup / delivery / custom) and, for a delivery, the shipping address. This
+  // is the "she asked on WhatsApp to switch to pickup" fix, so unlike setOrder it
+  // MUTATES the order in place: payment state, provenance, the pending PeleCard
+  // handshake and any production result all survive the edit.
+  //
+  // Pricing rule:
+  //   • UNPAID order — a version change re-prices from settings, exactly like
+  //     placing that order fresh, so the pay link charges the right amount.
+  //   • PAID order — the total is history (that is what was actually charged) and
+  //     is never rewritten. Money owed either way is settled off-system.
+  // A delivery version requires a complete address. Switching AWAY from delivery
+  // keeps the stored address (a mis-click is then undoable); nothing reads it for
+  // a non-delivery order.
+  // Returns the updated order, or {error} — 'not found' (no collection), 'no
+  // order' (nothing ordered yet), 'bad version', 'address required'.
+  adminUpdateOrder(id, { version, address } = {}) {
+    const c = this.getCollection(id);
+    if (!c) return { error: 'not found' };
+    if (!c.order) return { error: 'no order' };
+    const next = version == null ? c.order.version : version;
+    if (!Object.prototype.hasOwnProperty.call(ORDER_PRICES, next)) return { error: 'bad version' };
+    let addr = c.order.address || null;
+    if (next === 'delivery') {
+      // An address body is optional when the order ALREADY has one (a version-only
+      // edit); a delivery order with neither is rejected.
+      addr = address == null ? addr : sanitizeAddress(address);
+      if (!addr) return { error: 'address required' };
+    }
+    if (!c.order.paid && next !== c.order.version) c.order.total = versionPrice(next);
+    c.order.version = next;
+    c.order.address = addr;
+    saveDb();
+    return c.order;
+  },
+
   // Owner-only: attach/replace the order on a collection.
   // Returns the stored order, or an {error} object on bad input/auth.
   //
@@ -535,18 +670,8 @@ const db = {
     }
     let addr = null;
     if (version === 'delivery') {
-      const a = address || {};
-      const street = String(a.street || '').trim();
-      const city = String(a.city || '').trim();
-      const postal = String(a.postal || '').trim();
-      if (!street || !city || !postal) return { error: 'address required' };
-      addr = {
-        street: street.slice(0, 120),
-        city: city.slice(0, 120),
-        postal: postal.slice(0, 120),
-        apartment: a.apartment ? String(a.apartment).trim().slice(0, 120) : null,
-        floor: a.floor ? String(a.floor).trim().slice(0, 120) : null,
-      };
+      addr = sanitizeAddress(address);
+      if (!addr) return { error: 'address required' };
     }
     // Preserve the pending PeleCard handshake (ParamX tokens) when an existing
     // UNPAID order is re-set — an in-flight pay session must still be matchable

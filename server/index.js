@@ -539,6 +539,34 @@ app.post('/api/admin/collections/:id/custom', (req, res) => {
   res.json({ order, pay_link: payLink });
 });
 
+// Admin: EDIT an order's stored choices after the fact. The customer settles the
+// details with the owner on WhatsApp AFTER checking out ("make it their 40th",
+// "switch me to pickup", "here's my address"), and the owner corrects the order
+// here rather than asking the customer to re-run the wizard.
+//
+// Body: any subset of the collection fields (honoree_name, email, phone, design,
+// color, theme, extra_fields, word_font, gender, chasers, custom_title) plus an
+// optional `order: { version, address }` for the fulfilment choice. Absent keys
+// are left untouched.
+//
+// The ORDER edit is applied FIRST and its failure aborts the whole request, so a
+// rejected fulfilment change (bad version / missing delivery address) can never
+// leave the field edits half-applied.
+app.patch('/api/admin/collections/:id', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const b = req.body || {};
+  if (!db.getCollection(req.params.id)) return res.status(404).json({ error: 'not found' });
+  if (b.order && typeof b.order === 'object') {
+    const r = db.adminUpdateOrder(req.params.id, b.order);
+    if (r && r.error) {
+      return res.status(r.error === 'not found' ? 404 : 400).json({ error: r.error });
+    }
+  }
+  const c = db.adminUpdateCollection(req.params.id, b);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true, collection: { ...c, status: db.effectiveStatus(c) } });
+});
+
 // Admin: operational playbook / notebook. The owner's organized notes (recipes,
 // prompts, reminders) — read + add + edit + delete, all behind the admin key.
 // Data persists under DATA_DIR (see server/playbook.js). The static page shell is
@@ -980,46 +1008,78 @@ app.post(
     next();
   },
   express.raw({ type: () => true, limit: PAWN_UPLOAD_LIMIT }),
-  (req, res) => {
-    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
-    if (!boundary || !Buffer.isBuffer(req.body)) {
-      return res.status(400).json({ error: 'expected multipart/form-data upload' });
-    }
-    const { files } = templates.parseMultipart(req.body, boundary);
-    const parts = Object.values(files).filter((f) => f && Buffer.isBuffer(f.data));
-    // Reject an over-large batch UP FRONT so a single request can never write dozens
-    // of files before the cap check (the buyer UI only ever sends up to 4).
-    if (parts.length > 4) return res.status(400).json({ error: 'too many images (max 4)' });
-    // Only persist as many images as there is room for (4 total per collection). A
-    // full collection writes nothing at all — the DoS fix.
-    const c = db.getCollection(req.params.id);
-    const room = Math.max(0, 4 - (Array.isArray(c.pawn_images) ? c.pawn_images.length : 0));
-    const written = []; // { path, created } for every file THIS request actually wrote
-    for (const f of parts.slice(0, room)) {
-      try {
-        written.push(content.saveImageBytes(f.data));
-      } catch {
-        // Oversized/unsupported image — skip this file, keep the rest (fail-soft).
-      }
-    }
-    const stored = db.addPawnImages(
-      req.params.id,
-      req.query.k,
-      written.map((w) => w.path)
-    );
-    // Reclaim any file we wrote that DIDN'T get recorded (a duplicate the DB dropped,
-    // or the whole batch on a lost owner token) — but only files THIS request created
-    // AND that nothing else references, so a shared content-addressed file is safe.
-    const kept = new Set(stored || []);
-    for (const w of written) {
-      if (!kept.has(w.path) && w.created && !content.isImageReferenced(w.path)) {
-        content.deleteUpload(w.path);
-      }
-    }
-    if (stored == null) return res.status(403).json({ error: 'forbidden' });
-    res.json({ ok: true, pawn_images: stored });
-  }
+  (req, res) => handlePawnUpload(req, res, req.params.id, req.query.k)
 );
+
+// The body of a pawn-images upload, shared by the OWNER route above (authenticated
+// by the collection's owner token) and the ADMIN one below (authenticated by the
+// admin key, then acting with the collection's own owner token). Everything after
+// authentication is identical, so the cap/orphan-reclaim rules can't drift apart.
+function handlePawnUpload(req, res, id, ownerToken) {
+  const boundary = templates.boundaryFromContentType(req.headers['content-type']);
+  if (!boundary || !Buffer.isBuffer(req.body)) {
+    return res.status(400).json({ error: 'expected multipart/form-data upload' });
+  }
+  const { files } = templates.parseMultipart(req.body, boundary);
+  const parts = Object.values(files).filter((f) => f && Buffer.isBuffer(f.data));
+  // Reject an over-large batch UP FRONT so a single request can never write dozens
+  // of files before the cap check (the buyer UI only ever sends up to 4).
+  if (parts.length > 4) return res.status(400).json({ error: 'too many images (max 4)' });
+  // Only persist as many images as there is room for (4 total per collection). A
+  // full collection writes nothing at all — the DoS fix.
+  const c = db.getCollection(id);
+  const room = Math.max(0, 4 - (Array.isArray(c.pawn_images) ? c.pawn_images.length : 0));
+  const written = []; // { path, created } for every file THIS request actually wrote
+  for (const f of parts.slice(0, room)) {
+    try {
+      written.push(content.saveImageBytes(f.data));
+    } catch {
+      // Oversized/unsupported image — skip this file, keep the rest (fail-soft).
+    }
+  }
+  const stored = db.addPawnImages(
+    id,
+    ownerToken,
+    written.map((w) => w.path)
+  );
+  // Reclaim any file we wrote that DIDN'T get recorded (a duplicate the DB dropped,
+  // or the whole batch on a lost owner token) — but only files THIS request created
+  // AND that nothing else references, so a shared content-addressed file is safe.
+  const kept = new Set(stored || []);
+  for (const w of written) {
+    if (!kept.has(w.path) && w.created && !content.isImageReferenced(w.path)) {
+      content.deleteUpload(w.path);
+    }
+  }
+  if (stored == null) return res.status(403).json({ error: 'forbidden' });
+  res.json({ ok: true, pawn_images: stored });
+}
+
+// Admin: ADD pawn photos to an order from the orders table — the owner receives a
+// photo on WhatsApp after checkout and attaches it herself. Same multipart shape,
+// 4-per-collection cap and orphan reclaim as the owner route; authenticated by the
+// admin key (checked BEFORE express.raw buffers the body) and then performed with
+// the collection's own owner token, which the admin is trusted to act for.
+app.post(
+  '/api/admin/collections/:id/pawns',
+  (req, res, next) => {
+    if (!requireAdmin(req, res)) return;
+    if (!db.getCollection(req.params.id)) return res.status(404).json({ error: 'not found' });
+    next();
+  },
+  express.raw({ type: () => true, limit: PAWN_UPLOAD_LIMIT }),
+  (req, res) =>
+    handlePawnUpload(req, res, req.params.id, db.getCollection(req.params.id).owner_token)
+);
+
+// Admin: REPLACE the pawn-photo list (remove / reorder). Body: { pawn_images: [] }
+// of our own /content-uploads paths; the store re-validates, de-dupes and caps at 4.
+app.put('/api/admin/collections/:id/pawns', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const imgs = db.adminSetPawnImages(req.params.id, (req.body || {}).pawn_images);
+  if (imgs == null) return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true, pawn_images: imgs });
+});
 
 // Public order PREVIEW: render a REAL sample card + board for a theme with the
 // honoree name (and an optional word-font pick), so the customer sees their card
