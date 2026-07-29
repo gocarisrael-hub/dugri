@@ -284,9 +284,23 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
             'entry has no "cards" block. Migrate its assets to clean/1..9.svg '
             "first; see docs/card-structure-schema.md."
         )
-    recipe = config.load_recipe(cfg["recipe"])
+    recipe = config.recipe_or_empty(cfg)
     theme_dir = config.theme_dir(theme)
     fronts = config.fronts(cfg)
+    # A PREVIEW may render a template with no geometry yet — that is the state
+    # the calibration screen exists to fix, so it shows the bare card. An ORDER
+    # may not: with neither a detected recipe nor saved card_slots there is
+    # nowhere to put the words, and the deck would print 104 cards of blank
+    # artwork. Fail here, naming the fix, rather than at the customer.
+    cell = (recipe.get("card") or {}).get("cell") or rp._recipe_cell(
+        recipe, deck_html.view_box(card_assets.read_svg(config.card_path(theme, fronts[0]))))
+    if not config.card_word_boxes(cfg, recipe, cell):
+        raise RuntimeError(
+            f"theme {theme!r} has no word-slot geometry — neither a detected "
+            f"recipe ({cfg.get('recipe')!r}) nor saved card_slots. Run detection "
+            "for it (the 'זהה מחדש' button in the admin template list), or set "
+            "the slots in the calibration form, before taking an order."
+        )
 
     def log(msg):
         if progress:
@@ -311,7 +325,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
         doc.add_design(f"front{i}", front_svgs[i])
     log(f"registered {len(fronts)} fronts + back")
 
-    back_ov = rp.back_overlay(theme, recipe, title_lines)
+    back_ov = rp.back_overlay(theme, recipe, title_lines, card_vb=vb)
     photo_paths = resolve_photos(
         theme, photos,
         workdir=os.path.join(workdir, "photos") if workdir else None)
@@ -328,7 +342,8 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
             front = fronts[card["front"] % len(fronts)]
             doc.add_page(f"front{front}",
                          rp.card_overlay(theme, recipe, card["words"], title_lines,
-                                         front_index=front, word_font=word_font))
+                                         front_index=front, word_font=word_font,
+                                         card_vb=vb))
         if progress and n % 25 == 0:
             log(f"card {n}/{len(cards)}")
 
