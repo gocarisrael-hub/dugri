@@ -142,9 +142,13 @@ class DeckDocument:
     of the artwork plus one copy of the background.
     """
 
-    def __init__(self, width_pt, height_pt):
+    def __init__(self, width_pt, height_pt, press=None):
         self.width = width_pt
         self.height = height_pt
+        # A press.PressGeometry turns each page into a press sheet: the artwork
+        # keeps its own coordinates and the page grows around it to carry bleed
+        # and crop marks. None renders the plain customer deck.
+        self.press = press
         self._designs = {}       # key -> namespaced <g> markup
         self._order = []         # design keys, in registration order
         self._shared_bg = None
@@ -189,18 +193,33 @@ class DeckDocument:
     def html(self, view_box_str):
         """The complete document. ``view_box_str`` is the shared card viewBox."""
         w, h = self.width, self.height
+        vb = [float(v) for v in view_box_str.replace(",", " ").split()]
+        page_vb, bleed_defs = view_box_str, ""
+        if self.press:
+            w, h = self.press.page_w, self.press.page_h
+            page_vb = " ".join(f"{v:g}" for v in self.press.view_box(vb))
+            bleed_defs = press_defs(self.press, vb)
         defs = []
         if self._shared_bg:
             defs.append(self._shared_bg)
         for key in self._order:
             defs.append(f'<g id="{_design_id(key)}">{self._designs[key]}</g>')
+        if bleed_defs:
+            defs.append(bleed_defs)
         pages = []
         for design_key, overlay in self._pages:
+            art = f'<use xlink:href="#{_design_id(design_key)}"/>'
+            extra = ""
+            if self.press:
+                # Mirrored bleed FIRST so the card paints over it; marks last so
+                # nothing paints over them.
+                art = bleed_uses(_design_id(design_key), vb) + art
+                extra = f'<use xlink:href="#{_MARKS_ID}"/>'
             pages.append(
                 f'<div class="card"><svg xmlns="http://www.w3.org/2000/svg" '
-                f'xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="{view_box_str}" '
+                f'xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="{page_vb}" '
                 f'width="{w}pt" height="{h}pt">'
-                f'<use xlink:href="#{_design_id(design_key)}"/>{overlay}</svg></div>'
+                f'{art}{overlay}{extra}</svg></div>'
             )
         # break-after:page on every card but the last: a trailing break would
         # emit a blank 209th page, which the customer would print.
@@ -224,6 +243,100 @@ class DeckDocument:
 def _design_id(key):
     """A DOM-safe id for a design key (keys are theme/card names, not ids)."""
     return "card_" + re.sub(r"[^A-Za-z0-9_-]", "_", str(key))
+
+
+# ---- press sheets: manufactured bleed + crop marks --------------------------
+# The card artwork stops at the card edge, so the deeper bleed a shop asks for
+# is ink that does not exist. It is manufactured by MIRRORING the outer band
+# outwards — legitimate precisely because the bleed is cut off and thrown away:
+# its only job is to stop a misaligned cut showing a white sliver. Mirroring
+# means the colour and texture at the cut line continue seamlessly, which
+# scaling the artwork up cannot do without shifting the card's printed frame.
+
+_MARKS_ID = "dugriMarks"
+# The eight regions of the bleed ring, as (clip-id, transform-about) pairs. Each
+# is the same artwork reflected across the card edge it borders.
+_BLEED_BANDS = ("L", "R", "T", "B", "TL", "TR", "BL", "BR")
+
+
+def _band_rects(vb, left, top):
+    """The eight bleed-ring rectangles, in the artwork's user units."""
+    x0, y0, w, h = vb
+    x1, y1 = x0 + w, y0 + h
+    return {
+        "L":  (x0 - left, y0, left, h),
+        "R":  (x1, y0, left, h),
+        "T":  (x0, y0 - top, w, top),
+        "B":  (x0, y1, w, top),
+        "TL": (x0 - left, y0 - top, left, top),
+        "TR": (x1, y0 - top, left, top),
+        "BL": (x0 - left, y1, left, top),
+        "BR": (x1, y1, left, top),
+    }
+
+
+def _band_transform(band, vb):
+    """Reflect the artwork across the card edge(s) this band borders."""
+    x0, y0, w, h = vb
+    fx = f"translate({2 * (x0 + w):g},0) scale(-1,1)"
+    fy = f"translate(0,{2 * (y0 + h):g}) scale(1,-1)"
+    nx = f"translate({2 * x0:g},0) scale(-1,1)"
+    ny = f"translate(0,{2 * y0:g}) scale(1,-1)"
+    both = {"TL": (nx, ny), "TR": (fx, ny), "BL": (nx, fy), "BR": (fx, fy)}
+    if band in both:
+        a, b = both[band]
+        return f"{a} {b}"
+    return {"L": nx, "R": fx, "T": ny, "B": fy}[band]
+
+
+def press_defs(press, vb):
+    """Clip paths for the bleed ring plus the crop marks, defined once per deck."""
+    left, top = press.margins(vb)
+    left -= press.mark * vb[2] / press.art_w      # the ring excludes the mark margin
+    top -= press.mark * vb[3] / press.art_h
+    out = []
+    for band, (x, y, w, h) in _band_rects(vb, left, top).items():
+        out.append(f'<clipPath id="dugriBleed{band}">'
+                   f'<rect x="{x:g}" y="{y:g}" width="{w:g}" height="{h:g}"/>'
+                   f"</clipPath>")
+    out.append(_marks(press, vb))
+    return "".join(out)
+
+
+def _marks(press, vb):
+    """Eight crop marks, aligned to the TRIM edges and sitting outside the bleed.
+
+    A mark drawn over the bleed would be cut away with it, so each starts at the
+    bleed edge and points outwards. They are drawn in the artwork's user units
+    like everything else, so they survive the same scaling.
+    """
+    x0, y0, w, h = vb
+    ux, uy = w / press.art_w, h / press.art_h
+    tx, ty = press.native_x * ux, press.native_y * uy      # trim inset in the art
+    bx, by = press.bleed * ux, press.bleed * uy            # bleed from the trim
+    mx, my = press.mark * ux, press.mark * uy
+    lw = press.mark_w * (ux + uy) / 2
+    tl, tr = x0 + tx, x0 + w - tx                          # trim x edges
+    tt, tb = y0 + ty, y0 + h - ty                          # trim y edges
+    seg = []
+    for x in (tl, tr):                                     # vertical marks
+        seg.append((x, tt - by - my, x, tt - by))
+        seg.append((x, tb + by, x, tb + by + my))
+    for y in (tt, tb):                                     # horizontal marks
+        seg.append((tl - bx - mx, y, tl - bx, y))
+        seg.append((tr + bx, y, tr + bx + mx, y))
+    lines = "".join(
+        f'<line x1="{a:g}" y1="{b:g}" x2="{c:g}" y2="{d:g}"/>' for a, b, c, d in seg)
+    return (f'<g id="{_MARKS_ID}" stroke="#000" stroke-width="{lw:g}" '
+            f'fill="none">{lines}</g>')
+
+
+def bleed_uses(design_id, vb):
+    """One clipped, mirrored copy of the artwork per band of the bleed ring."""
+    return "".join(
+        f'<g clip-path="url(#dugriBleed{b})">'
+        f'<use xlink:href="#{design_id}" transform="{_band_transform(b, vb)}"/></g>'
+        for b in _BLEED_BANDS)
 
 
 def font_face(name, path):

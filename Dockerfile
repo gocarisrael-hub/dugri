@@ -14,9 +14,16 @@ WORKDIR /app
 # ttf-dejavu give the browser real glyph coverage (the card text itself uses the
 # theme fonts embedded as base64 @font-face, but system fonts are a safety net
 # and Chromium needs some installed to boot cleanly).
+#
+# ghostscript + py3-pikepdf are the PRESS export (generator/press.py): the shop
+# copy is CMYK, flattened and carries TrimBox/BleedBox, none of which Chromium's
+# print-to-pdf can produce. Both come from apk for the same reason as py3-pillow
+# — pikepdf otherwise needs a qpdf/C++ build toolchain in the image.
 RUN apk add --no-cache \
       python3 \
       py3-pillow \
+      py3-pikepdf \
+      ghostscript \
       chromium \
       font-noto-hebrew \
       ttf-dejavu
