@@ -193,8 +193,51 @@ def test_wrapped_entry_numbers_itself_once_and_hangs_the_continuation():
     assert svg.count(">.</text>") == 1
     ys = [float(m) for m in re.findall(r'y="([0-9.]+)"', svg)]
     assert len(set(ys)) == 2, "the two lines sit on two baselines"
-    xs = re.findall(r'<text x="([-0-9.]+)"[^>]*>(?:להקת שבעת|הכוכבים)</text>', svg)
+    xs = re.findall(r'<text x="([-0-9.]+)"[^>]*>‫(?:להקת שבעת|הכוכבים)‬</text>',
+                    svg)
     assert len(set(xs)) == 1, "continuation hangs under the first line's text"
+
+
+# --- 2c. base direction: a line that STARTS with digits ----------------------
+# A <text> run states no base direction, so Chrome assumes LTR and orders the
+# line by its first strong character. Hebrew-first words are right by luck;
+# "40 מתחת" came out with the 40 on the LEFT, where a browser dir="rtl"
+# paragraph in the same face puts it on the RIGHT. Wrapping exposed it:
+# splitting "40 מתחת ל40" produces a line that begins with digits.
+
+def _word_runs(svg):
+    """The text of every WORD run — the two marker runs (digit, period) out."""
+    runs = re.findall(r'<text [^>]*xml:space="preserve">([^<]*)</text>', svg)
+    return runs[2:]
+
+
+def test_a_line_starting_with_digits_carries_an_explicit_rtl_base():
+    svg = rp.word_lines(190, 50, 20, "#6c4d56", 1, ["40 מתחת"], CAFE)
+    assert "‫40 מתחת‬" in svg, (
+        "without the embedding Chrome lays the line out LTR-first and the "
+        "numeral lands on the wrong side")
+
+
+def test_every_wrapped_line_is_embedded_on_its_own():
+    """Each line is a separate <text>, so each needs its own base direction."""
+    svg = rp.word_lines(190, 50, 20, "#6c4d56", 3, ["40 מתחת", "ל40"], CAFE)
+    assert svg.count("‫") == svg.count("‬") == 2
+    assert _word_runs(svg) == ["‫40 מתחת‬", "‫ל40‬"]
+
+
+def test_a_pure_hebrew_line_keeps_its_text_intact():
+    """The embedding is a no-op on lines that were already correct."""
+    svg = rp.word_lines(190, 50, 20, "#6c4d56", 1, ["מסיבה"], CAFE)
+    assert "‫מסיבה‬" in svg
+    assert svg.count("‫") == 1
+
+
+def test_the_marker_runs_are_never_embedded():
+    """The digit is deliberately direction="ltr" and the period is its own run
+    so bidi cannot reorder them; an RTL embedding there would undo that."""
+    svg = rp.word_lines(190, 50, 20, "#6c4d56", 4, ["בת 40"], CAFE)
+    assert ">4</text>" in svg and ">.</text>" in svg
+    assert "‫4</text>" not in svg and "‫.</text>" not in svg
 
 
 def test_detected_slots_are_not_treated_as_a_text_column():

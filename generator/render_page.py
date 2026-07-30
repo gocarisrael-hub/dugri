@@ -76,6 +76,39 @@ def _marker_geometry(font, ref, num, msize):
     return digit, dot_x, marker_w
 
 
+# Explicit RTL base direction for ONE line of customer text, as bidi control
+# characters embedded in the text itself (U+202B RIGHT-TO-LEFT EMBEDDING …
+# U+202C POP DIRECTIONAL FORMATTING).
+#
+# WHY the characters and not the attribute: a bare <text> run has NO stated base
+# direction, so Chrome falls back to LTR and the Unicode bidi algorithm orders
+# the line by its FIRST strong character. Every customer word that starts with a
+# Hebrew letter is therefore already correct by luck — which is why this went
+# unnoticed — but a line that starts with DIGITS is laid out LTR-first and comes
+# out reversed. Measured against a real HTML ``dir="rtl"`` paragraph in the same
+# face and size:
+#
+#   "40 מתחת"      truth: 40 on the RIGHT  |  no embedding: 40 on the LEFT  WRONG
+#   "40 מתחת ל40"  truth: 40 on the RIGHT  |  no embedding: misplaced       WRONG
+#   "מתחת ל40"     identical                                                fine
+#   "בת 40"        identical                                                fine
+#   "מסיבה"        identical                                                fine
+#
+# With the embedding all five match the browser exactly, so it is applied to
+# every line unconditionally: a no-op on the three that were already right, a fix
+# on the two that were not. Wrapping is what exposed this — splitting
+# "40 מתחת ל40" produces a line "40 מתחת" that BEGINS with digits.
+#
+# WHY not direction="rtl" on the <text>: tried, and it breaks the anchoring
+# model — with text-anchor="end" the runs render off-canvas. The embedding leaves
+# the anchor alone and only states the base direction of the characters.
+#
+# NEVER applied to the marker runs below: the digit is deliberately
+# direction="ltr" and the period is a separate run precisely so bidi cannot
+# reorder them (see word_lines).
+_RTL_EMBED, _RTL_POP = "‫", "‬"
+
+
 def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None):
     """One numbered entry, wrapped over ``lines``, as SVG markup.
 
@@ -87,7 +120,9 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None)
     the PERIOD and the WORD as THREE independent right-anchored <text> runs —
     no bidi crosses an element boundary. The digit's right edge is pinned to
     the slot's right edge (rightmost glyph); the period is pinned just to its
-    LEFT; the word is right-aligned just left of the whole marker.
+    LEFT; the word is right-aligned just left of the whole marker. Each WORD run
+    carries an explicit RTL embedding so a line that starts with digits is not
+    laid out LTR-first (see ``_RTL_EMBED``).
 
     Continuations hang under the FIRST LINE'S TEXT, not under the marker, which
     is the conventional numbered-list shape and keeps the digit column clean. The
@@ -116,7 +151,8 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None)
         out.append(
             f'<text x="{word_x:.2f}" y="{first + i * lead:.2f}" '
             f'font-family="HebWord" font-size="{size:.2f}" fill="{color}" '
-            f'text-anchor="end" xml:space="preserve">{escape(line)}</text>'
+            f'text-anchor="end" xml:space="preserve">'
+            f'{_RTL_EMBED}{escape(line)}{_RTL_POP}</text>'
         )
     return "".join(out)
 
