@@ -85,13 +85,15 @@ def test_word_sizes_shrinks_only_the_overflowing_word_to_stay_in_the_cell():
     assert rendered_line <= (190 - left_bound) + 1e-6, "long word must fit the card"
 
 
-def test_word_sizes_no_cell_means_no_shrink():
+def test_word_sizes_bound_by_the_slot_even_without_a_cell():
     font, ref = _cafe()
     slots = _slots([(100, 10, 190, 44)])
     long = "אבגדהוזחטיכלמנסעפצקרשת"
     uni = rp._word_sizes(slots, [long], font, ref, cell=None)[0]
     med = (slots[0]["y1"] - slots[0]["y0"]) * rp._WORD_SIZE_K
-    assert abs(uni - med) < 1e-9, "without a cell the uniform size is used as-is"
+    assert uni < med, "an unbreakable word still shrinks into its own slot"
+    rendered = rp._line_width_at(font, ref, 1, long) * uni / ref
+    assert rendered <= (190 - 100) + 1e-6, "the slot is the bound when there is no cell"
 
 
 def test_word_sizes_skips_empty_and_missing_slots():
@@ -101,6 +103,119 @@ def test_word_sizes_skips_empty_and_missing_slots():
     assert sizes[0] is not None
     assert sizes[1] is None  # blank word
     assert sizes[2] is None  # no word supplied for this slot
+
+
+# --- 2b. wrapping a phrase that will not fit on one line ---------------------
+# A customer "word" is often a phrase. Rendered as one line it ran left out of
+# its slot, over the artwork and past the TRIM line, so the guillotine cut it in
+# half. These pin the wrap that replaced that overflow.
+
+# The real grapefruit geometry, which is where the amputation was measured: the
+# card is 223.92 x 312 user units and its 2.495 mm bleed is 7.1 units, so any ink
+# left of x=7.1 is cut off the printed card.
+_GF_CELL = [0, 0, 223.92, 312.0]
+_GF_TRIM = 7.1
+_GF_SLOTS = _slots([(67.2, 111.0, 156.7, 124.1), (67.2, 139.1, 156.7, 155.2),
+                    (67.2, 173.2, 156.7, 189.7), (67.2, 202.1, 156.7, 218.6)])
+_GF_PHRASE = "להקת שבעת הכוכבים"
+
+
+def _gf_layouts(font, ref, words):
+    """Lay words out the way the v2 deck does: owner-declared column + bleed floor."""
+    return rp._word_layouts(_GF_SLOTS, words, font, ref, cell=_GF_CELL,
+                            declared_band=True, safe=rp._CARD_SAFE)
+
+
+def _left_edge(font, ref, layout, num, right):
+    """Left-most ink x of a laid-out entry (its widest line runs furthest left)."""
+    size, lines = layout
+    marker = rp._line_width_at(font, ref, num, "") * size / ref
+    widest = max(font.getlength(ln) for ln in lines) * size / ref
+    return right - marker - widest
+
+
+def test_long_phrase_wraps_instead_of_overflowing():
+    font, ref = _cafe()
+    lay = _gf_layouts(font, ref, [_GF_PHRASE])[0]
+    assert len(lay[1]) > 1, "a phrase too wide for its slot must wrap"
+    assert " ".join(lay[1]).split() == _GF_PHRASE.split(), "wrapping must not lose words"
+
+
+def test_wrapped_lines_stay_inside_the_slot_band():
+    font, ref = _cafe()
+    lay = _gf_layouts(font, ref, [_GF_PHRASE])[0]
+    right = rp._line_right_edge(_GF_SLOTS[0]["x1"], _GF_CELL)
+    assert _left_edge(font, ref, lay, 1, right) >= _GF_SLOTS[0]["x0"] - 1e-6
+
+
+def test_no_word_can_reach_the_trim_edge():
+    """The bug this fixes: the old 2%-of-cell bound sat INSIDE the bleed."""
+    font, ref = _cafe()
+    words = [_GF_PHRASE, "ביחד סביב השולחן", "אבגדהוזחטיכלמנסעפצקרשתאבגדהוז", "מדונה"]
+    layouts = _gf_layouts(font, ref, words)
+    for i, lay in enumerate(layouts):
+        right = rp._line_right_edge(_GF_SLOTS[i]["x1"], _GF_CELL)
+        assert _left_edge(font, ref, lay, i + 1, right) > _GF_TRIM, (
+            f"word {i + 1} crosses the trim line and would be cut off")
+
+
+def test_unbreakable_word_shrinks_rather_than_wrapping():
+    font, ref = _cafe()
+    solid = "אבגדהוזחטיכלמנסעפצקרשתאבגדהוז"          # no spaces to wrap at
+    lay = _gf_layouts(font, ref, [solid])[0]
+    assert lay[1] == [solid], "a word with no spaces has nowhere to wrap"
+    assert lay[0] < _GF_SLOTS[0]["y1"] - _GF_SLOTS[0]["y0"], "so it must shrink instead"
+
+
+def test_short_words_are_untouched_by_wrapping():
+    font, ref = _cafe()
+    words = ["מסיבה", "חברים", "ריקודים", "צחוקים"]
+    layouts = _gf_layouts(font, ref, words)
+    assert all(len(l[1]) == 1 for l in layouts), "words that fit must not wrap"
+    sizes = [l[0] for l in layouts]
+    assert max(sizes) - min(sizes) < 1e-9, "and must still share one uniform size"
+
+
+def test_adjacent_wrapped_entries_do_not_collide():
+    """Two neighbours that both wrap must still read as two separate items."""
+    font, ref = _cafe()
+    words = [_GF_PHRASE, "ביחד סביב השולחן גדול", "מדונה", "לקחת"]
+    layouts = _gf_layouts(font, ref, words)
+    centers = [(s["y0"] + s["y1"]) / 2 for s in _GF_SLOTS]
+    for a, b in zip(range(len(layouts)), range(1, len(layouts))):
+        gap = (abs(centers[b] - centers[a])
+               - rp._block_half(layouts[a]) - rp._block_half(layouts[b]))
+        assert gap > 0, f"entries {a + 1} and {b + 1} overlap"
+
+
+def test_wrapped_entry_numbers_itself_once_and_hangs_the_continuation():
+    svg = rp.word_lines(190, 50, 20, "#6c4d56", 2, ["להקת שבעת", "הכוכבים"], CAFE)
+    assert svg.count(">2</text>") == 1, "the marker belongs to the first line only"
+    assert svg.count(">.</text>") == 1
+    ys = [float(m) for m in re.findall(r'y="([0-9.]+)"', svg)]
+    assert len(set(ys)) == 2, "the two lines sit on two baselines"
+    xs = re.findall(r'<text x="([-0-9.]+)"[^>]*>(?:להקת שבעת|הכוכבים)</text>', svg)
+    assert len(set(xs)) == 1, "continuation hangs under the first line's text"
+
+
+def test_detected_slots_are_not_treated_as_a_text_column():
+    """The v1 sheet path must be untouched by wrapping.
+
+    Its slots come from auto-detection, so a box is the ink extent of the ORIGIN
+    word — narrow, because the origin words were short. Treating that as a text
+    column wrapped phrases with room to spare and shrank them to a third of the
+    size around them, changing all eight live sheet themes.
+    """
+    font, ref = _cafe()
+    layouts = rp._word_layouts(_GF_SLOTS, [_GF_PHRASE], font, ref, cell=_GF_CELL)
+    assert len(layouts[0][1]) == 1, "a detected slot is not a column; do not wrap to it"
+
+
+def test_word_text_still_places_a_single_line_on_its_baseline():
+    """word_text takes a BASELINE; word_lines takes a block CENTRE."""
+    a = rp.word_text(190, 50, 20, "#6c4d56", 1, "מסיבה", CAFE)
+    b = rp.word_lines(190, 50 - 20 * 0.34, 20, "#6c4d56", 1, ["מסיבה"], CAFE)
+    assert a == b
 
 
 # --- 3. Latin-digit numbering ------------------------------------------------

@@ -6,6 +6,7 @@ at the recipe slots. No masking needed (background is already text-free).
 """
 import base64
 import functools
+import itertools
 import os
 import re
 import subprocess
@@ -74,32 +75,56 @@ def _marker_geometry(font, ref, num, msize):
     return digit, dot_x, marker_w
 
 
-def word_text(x_right, baseline, size, color, num, word, font_path):
-    # RTL numbered line: the marker must sit on the RIGHT (the Hebrew reading
-    # start) and the word flow to its LEFT. Chrome's headless SVG text engine
-    # ignores ``direction="rtl"`` (and inline bidi controls) for run ORDERING,
-    # and when Hebrew + digits + the neutral "." share one <text> the bidi
-    # algorithm reorders the "." AWAY from its digit. So we render the DIGIT,
-    # the PERIOD and the WORD as THREE independent right-anchored <text> runs —
-    # no bidi crosses an element boundary. The digit's right edge is pinned to
-    # the slot's right edge (rightmost glyph); the period is pinned just to its
-    # LEFT; the word is right-aligned just left of the whole marker.
-    msize = size * 0.9
+def word_lines(x_right, center_y, size, color, num, lines, font_path):
+    """One numbered entry, wrapped over ``lines``, as SVG markup.
+
+    RTL numbered line: the marker must sit on the RIGHT (the Hebrew reading
+    start) and the word flow to its LEFT. Chrome's headless SVG text engine
+    ignores ``direction="rtl"`` (and inline bidi controls) for run ORDERING,
+    and when Hebrew + digits + the neutral "." share one <text> the bidi
+    algorithm reorders the "." AWAY from its digit. So we render the DIGIT,
+    the PERIOD and the WORD as THREE independent right-anchored <text> runs —
+    no bidi crosses an element boundary. The digit's right edge is pinned to
+    the slot's right edge (rightmost glyph); the period is pinned just to its
+    LEFT; the word is right-aligned just left of the whole marker.
+
+    Continuations hang under the FIRST LINE'S TEXT, not under the marker, which
+    is the conventional numbered-list shape and keeps the digit column clean. The
+    block is centred on ``center_y`` so a wrapped entry grows symmetrically into
+    the air above and below rather than drifting down into its neighbour.
+    """
+    msize = size * _MARKER_SCALE
     font, ref = _word_metrics(font_path)
     digit, dot_x, marker_w = _marker_geometry(font, ref, num, msize)
-    gap = size * 0.30
+    gap = size * _WORD_GAP
     word_x = x_right - marker_w - gap
-    return (
-        f'<text x="{x_right:.2f}" y="{baseline:.2f}" font-family="HebWord" '
+    lead = size * _WRAP_LEAD
+    first = center_y - (len(lines) - 1) * lead / 2 + size * 0.34
+    out = [
+        f'<text x="{x_right:.2f}" y="{first:.2f}" font-family="HebWord" '
         f'font-size="{msize:.2f}" fill="{color}" text-anchor="end" '
         f'direction="ltr" xml:space="preserve">{digit}</text>'
-        f'<text x="{x_right + dot_x:.2f}" y="{baseline:.2f}" font-family="HebWord" '
+        f'<text x="{x_right + dot_x:.2f}" y="{first:.2f}" font-family="HebWord" '
         f'font-size="{msize:.2f}" fill="{color}" text-anchor="end" '
         f'xml:space="preserve">.</text>'
-        f'<text x="{word_x:.2f}" y="{baseline:.2f}" font-family="HebWord" '
-        f'font-size="{size:.2f}" fill="{color}" text-anchor="end" '
-        f'xml:space="preserve">{escape(word)}</text>'
-    )
+    ]
+    for i, line in enumerate(lines):
+        out.append(
+            f'<text x="{word_x:.2f}" y="{first + i * lead:.2f}" '
+            f'font-family="HebWord" font-size="{size:.2f}" fill="{color}" '
+            f'text-anchor="end" xml:space="preserve">{escape(line)}</text>'
+        )
+    return "".join(out)
+
+
+def word_text(x_right, baseline, size, color, num, word, font_path):
+    """One numbered entry on a SINGLE line, anchored by its baseline.
+
+    The unwrapped case, kept as its own entry point because a caller that has
+    already decided the word fits wants to place a baseline, not a block centre.
+    """
+    return word_lines(x_right, baseline - size * 0.34, size, color, num,
+                      [word], font_path)
 
 
 def escape(s):
@@ -149,19 +174,195 @@ def _line_width_at(font, ref, num, word):
 _WORD_SIZE_K = float(os.environ.get("DUGRI_WORD_K", "1.3"))
 
 
-def _word_sizes(slots, words, font, ref, cell=None, word_size=None):
-    """One UNIFORM font size for all the card's words (matching the origin's
-    single-size look), with a per-word shrink guard so an unusually long word can
-    never spill past the card edge into the neighbouring artwork.
+# WRAPPING. A customer word is often a PHRASE ("להקת שבעת הכוכבים"), and the
+# origin templates were calibrated against single words. Rendered as one line a
+# phrase runs left out of its slot, across the artwork and — measured on
+# grapefruit — past the TRIM line, so the guillotine amputates it. Canva's own
+# text box wraps instead of overflowing, so we wrap too: split at spaces and hang
+# the continuation under the first line's text.
+#
+# Line pitch as a multiple of the font size. Hebrew has few descenders, so a
+# sub-1.0 pitch still leaves clear air between the two lines and buys size.
+_WRAP_LEAD = float(os.environ.get("DUGRI_WRAP_LEAD", "0.95"))
+# Clear air to leave between one entry's ink and the next entry's, as a fraction
+# of the uniform size. Must stay WIDER than the gap _WRAP_LEAD leaves between two
+# lines of the same entry, or the four entries stop reading as four items: the
+# continuation of entry 2 would sit as close to entry 3 as to its own first line.
+_WRAP_CLEAR = float(os.environ.get("DUGRI_WRAP_CLEAR", "0.30"))
+# Most lines a phrase may wrap onto. Past three the type is smaller than the gain.
+_WRAP_MAX_LINES = int(os.environ.get("DUGRI_WRAP_MAX_LINES", "3"))
+# Relaxation passes for _resolve_overlaps. Each pass shrinks every colliding pair
+# to just clear; a handful settles four slots and the loop exits early once no
+# pair moves, so this is only a backstop against a pathological slot geometry.
+_OVERLAP_PASSES = 6
+# Hard floor on a line's left edge, as a fraction of the cell width — the LAST
+# defence, not the layout bound. Two values because "the cell" is not the same
+# thing in the two deck formats, and the fraction has to mean the same MARGIN
+# INSIDE THE FINISHED CARD in both:
+#
+#   v1 — the cell is one card of the 8-up sheet, i.e. the card as trimmed. 2% of
+#        it is 2% inside the finished card.
+#   v2 — the card page carries its own bleed (grapefruit: 2.495 mm, 3.2% of the
+#        223.92-unit width), so the cell is BIGGER than the finished card and a
+#        fraction of it over-counts. 5% of the page is ~1.8% inside the trim —
+#        the same real margin as v1's 2%.
+#
+# The old code used 0.02 for both. On grapefruit that put the bound 4.5 units
+# from the page edge while the trim line sits at 7.1, so it licensed ink in the
+# region the guillotine removes: the reported amputation.
+_CELL_SAFE = float(os.environ.get("DUGRI_CELL_SAFE", "0.02"))
+_CARD_SAFE = float(os.environ.get("DUGRI_CARD_SAFE", "0.05"))
 
-    The uniform size comes from the recipe box heights (see ``_WORD_SIZE_K``),
-    NOT from fitting each word to its own box — fitting per box would reproduce
-    the ORIGIN word lengths (a short word in a wide origin slot would balloon, a
-    long word in a narrow slot would shrink), destroying the uniform look. The
-    only per-word adjustment is a downward clamp: a numbered line is right-
-    anchored at its slot's right edge and flows LEFT, so a very long word could
-    reach past the card's left edge; we shrink just that word to keep it inside
-    the card cell. Empty/missing slots return ``None``.
+
+def _slot_pitch(slots, i):
+    """Distance from slot ``i`` to its nearest neighbouring slot centre.
+
+    The centre distance — not the slot's own height, which only records where the
+    origin's single line of ink sat. A lone slot has no neighbour to collide
+    with, so it reports twice its own height.
+    """
+    c = [(s["y0"] + s["y1"]) / 2 for s in slots]
+    gaps = [abs(c[i] - c[j]) for j in range(len(slots)) if j != i]
+    return min(gaps) if gaps else (slots[i]["y1"] - slots[i]["y0"]) * 2
+
+
+def _size_cap(pitch, n, uniform):
+    """Largest size ``n`` stacked lines may take without touching the neighbour.
+
+    A wrapped block is CENTRED on its slot, so it does not have to fit inside the
+    pitch — it only has to keep its outermost ink clear of the neighbouring
+    line's ink, and it grows in both directions at once. Budgeting the whole
+    pitch for the block (the obvious reading) is far too strict: on grapefruit it
+    capped a two-line entry at 13.3 against a uniform 21.3, so a wrapped phrase
+    rendered visibly smaller than the words around it for no reason.
+
+    ``_WORD_SIZE_K`` derived the uniform size FROM the ink height, so its inverse
+    converts back: ink height ~= size / _WORD_SIZE_K.
+    """
+    ink = 1.0 / _WORD_SIZE_K
+    room = pitch - ink * uniform / 2 - _WRAP_CLEAR * uniform
+    grow = ink / 2 + (n - 1) * _WRAP_LEAD / 2
+    return room / grow if room > 0 and grow > 0 else uniform
+
+
+def _balanced_split(font, text, n):
+    """Split ``text`` at spaces into ``n`` lines, minimising the widest line.
+
+    Returns None when the text has too few words to make ``n`` lines. Brute force
+    over the split points: a card word is a handful of words, so the search is
+    tiny and always finds the true optimum.
+    """
+    parts = text.split()
+    if len(parts) < n:
+        return None
+    if n == 1:
+        return [" ".join(parts)]
+    best = None
+    for cuts in itertools.combinations(range(1, len(parts)), n - 1):
+        bounds = (0,) + cuts + (len(parts),)
+        lines = [" ".join(parts[a:b]) for a, b in zip(bounds, bounds[1:])]
+        widest = max(font.getlength(ln) for ln in lines)
+        if best is None or widest < best[0]:
+            best = (widest, lines)
+    return best[1]
+
+
+def _fit_line(font, ref, num, word, right, left_bound, pitch, max_size):
+    """Lay one numbered entry out as ``(size, [lines])``.
+
+    Tries one line, then two, then three, and keeps whichever renders LARGEST:
+    wrapping costs height (so the size the room allows shrinks with each line)
+    but buys width (so the size the slot allows grows), and which wins depends on
+    the phrase. A word with no spaces cannot wrap, so it shrinks to fit — the
+    only case that still comes out below the uniform size.
+    """
+    avail = right - left_bound
+    marker_ref = _line_width_at(font, ref, num, "")   # marker + gap, no text
+    best = None
+    for n in range(1, _WRAP_MAX_LINES + 1):
+        lines = _balanced_split(font, word, n)
+        if lines is None:
+            break
+        widest = max(font.getlength(ln) for ln in lines)
+        # Every line is anchored inside the same band: the first after the
+        # marker, the continuations under the first line's text. So one budget
+        # covers them all.
+        denom = marker_ref + widest
+        by_width = avail * ref / denom if denom > 0 and avail > 0 else max_size
+        size = min(max_size, by_width, _size_cap(pitch, n, max_size))
+        if best is None or size > best[0] + 1e-9:
+            best = (size, lines)
+    if best is None:                      # unsplittable and/or no words at all
+        denom = _line_width_at(font, ref, num, word)
+        size = min(max_size, avail * ref / denom) if denom > 0 and avail > 0 else max_size
+        return size, [word]
+    return best
+
+
+def _block_half(layout):
+    """Half the ink height of a laid-out entry, in user units."""
+    size, lines = layout
+    return ((len(lines) - 1) * _WRAP_LEAD + 1.0 / _WORD_SIZE_K) * size / 2
+
+
+def _resolve_overlaps(layouts, slots, uniform):
+    """Shrink wrapped entries until no two adjacent ones' ink can touch.
+
+    ``_size_cap`` sizes each entry against a neighbour assumed to be a SINGLE
+    line at the uniform size. When two adjacent entries both wrap, both grow
+    toward each other and that assumption breaks — on grapefruit words 2 and 3
+    wrapped together and closed the gap to nothing, so four numbered items read
+    as one dense block. Only WRAPPED entries give ground: an unwrapped word is
+    already at the size the design asks for, and shrinking it to make room for
+    its neighbour would spread the damage instead of containing it.
+    """
+    live = [i for i, lay in enumerate(layouts) if lay is not None]
+    centers = [(s["y0"] + s["y1"]) / 2 for s in slots]
+    clear = _WRAP_CLEAR * uniform
+    for _ in range(_OVERLAP_PASSES):
+        settled = True
+        for a, b in zip(live, live[1:]):
+            over = (_block_half(layouts[a]) + _block_half(layouts[b]) + clear
+                    - abs(centers[b] - centers[a]))
+            if over <= 1e-9:
+                continue
+            settled = False
+            give = [i for i in (a, b) if len(layouts[i][1]) > 1] or [a, b]
+            total = sum(_block_half(layouts[i]) for i in give)
+            if total <= 0:
+                continue
+            f = max(0.0, total - over) / total
+            for i in give:
+                layouts[i] = (layouts[i][0] * f, layouts[i][1])
+        if settled:
+            break
+    return layouts
+
+
+def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
+                  declared_band=False, safe=_CELL_SAFE):
+    """Per-slot ``(size, [lines])`` for a card's words, or None for an empty slot.
+
+    One UNIFORM font size is the target for every word (matching the origin's
+    single-size look): the uniform size comes from the recipe box heights (see
+    ``_WORD_SIZE_K``), NOT from fitting each word to its own box — fitting per box
+    would reproduce the ORIGIN word lengths (a short word in a wide origin slot
+    would balloon, a long word in a narrow slot would shrink), destroying the
+    uniform look.
+
+    A word that does not FIT is wrapped rather than pushed out of the card (see
+    the WRAPPING note above). What it has to fit is the question:
+
+    * ``declared_band`` — the slots came from the owner's ``card_slots``, which
+      states where the words' COLUMN is (grapefruit: 0.3..0.7 of the card). That
+      is a real text box, so a phrase wider than it wraps inside it.
+    * otherwise the slots were auto-detected, and a detected box is the ink
+      extent of the ORIGIN word, not a column: the origin words were short, so
+      the boxes are narrow and treating them as a text box wraps phrases that
+      have room to spare. Those fall back to the card-wide safe area.
+
+    Either way ``safe`` floors the bound, so no line can reach the trim edge and
+    be cut off the printed card.
     """
     import statistics
     heights = [s["y1"] - s["y0"] for s in slots]
@@ -171,21 +372,33 @@ def _word_sizes(slots, words, font, ref, cell=None, word_size=None):
     # units) instead of deriving it from the recipe box heights — used where the
     # detected boxes overshoot (e.g. bachelorette rendered ~26 vs the real 19).
     uniform = word_size if word_size else statistics.median(heights) * _WORD_SIZE_K
-    left_bound = cell[0] + (cell[2] - cell[0]) * 0.02 if cell else None
+    floor = cell[0] + (cell[2] - cell[0]) * safe if cell else None
     out = []
     for wi, slot in enumerate(slots):
         word = words[wi] if wi < len(words) else ""
         if not word:
             out.append(None)
             continue
-        wsize = uniform
-        if left_bound is not None:
-            line_w_ref = _line_width_at(font, ref, wi + 1, word)
-            avail = _line_right_edge(slot["x1"], cell) - left_bound
-            if line_w_ref > 0 and avail > 0:
-                wsize = min(wsize, avail * ref / line_w_ref)
-        out.append(wsize)
-    return out
+        right = _line_right_edge(slot["x1"], cell)
+        if declared_band:
+            left = slot["x0"] if floor is None else max(slot["x0"], floor)
+        else:
+            left = floor if floor is not None else slot["x0"]
+        if left >= right:                 # degenerate slot: fall back to the floor
+            left = floor if floor is not None else slot["x0"]
+        out.append(_fit_line(font, ref, wi + 1, word, right, left,
+                             _slot_pitch(slots, wi), uniform))
+    return _resolve_overlaps(out, slots, uniform)
+
+
+def _word_sizes(slots, words, font, ref, cell=None, word_size=None):
+    """The rendered font size per slot (None for an empty one).
+
+    A thin view over ``_word_layouts`` for callers that only care about size.
+    """
+    return [None if lay is None else lay[0]
+            for lay in _word_layouts(slots, words, font, ref, cell=cell,
+                                     word_size=word_size)]
 
 
 @functools.lru_cache(maxsize=8)
@@ -486,17 +699,20 @@ def _words_overlay(slots, words, cfg, word_font, cell):
     if not slots:
         return ""
     wf_metrics, wf_ref = _word_metrics(word_font)
-    sizes = _word_sizes(slots, words, wf_metrics, wf_ref, cell=cell,
-                        word_size=cfg.get("word_size"))
+    # card_slots is the owner's own statement of where the words' column sits, so
+    # when it is set the slots ARE a text box and a long phrase wraps inside it.
+    layouts = _word_layouts(slots, words, wf_metrics, wf_ref, cell=cell,
+                            word_size=cfg.get("word_size"), safe=_CARD_SAFE,
+                            declared_band=bool((cfg.get("card_slots") or {}).get("words")))
     out = []
     for wi, slot in enumerate(slots):
-        wsize = sizes[wi]
-        if wsize is None:
+        if layouts[wi] is None:
             continue
-        baseline = (slot["y0"] + slot["y1"]) / 2 + wsize * 0.34
+        wsize, lines = layouts[wi]
+        center = (slot["y0"] + slot["y1"]) / 2
         x_right = _line_right_edge(slot["x1"], cell)
-        out.append(word_text(x_right, baseline, wsize, slot["color"],
-                             wi + 1, words[wi], word_font))
+        out.append(word_lines(x_right, center, wsize, slot["color"],
+                              wi + 1, lines, word_font))
     return "".join(out)
 
 
@@ -835,16 +1051,16 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
         if not card["words"]:
             continue
         wf_metrics, wf_ref = _word_metrics(word_font)
-        sizes = _word_sizes(card["words"], words, wf_metrics, wf_ref,
-                            cell=card.get("cell"), word_size=cfg.get("word_size"))
+        layouts = _word_layouts(card["words"], words, wf_metrics, wf_ref,
+                                cell=card.get("cell"), word_size=cfg.get("word_size"))
         for wi, slot in enumerate(card["words"]):
-            wsize = sizes[wi]
-            if wsize is None:
+            if layouts[wi] is None:
                 continue
-            baseline = (slot["y0"] + slot["y1"]) / 2 + wsize * 0.34
+            wsize, lines = layouts[wi]
+            center = (slot["y0"] + slot["y1"]) / 2
             x_right = _line_right_edge(slot["x1"], card.get("cell"))
-            overlay.append(word_text(x_right, baseline, wsize, slot["color"],
-                                     wi + 1, words[wi], word_font))
+            overlay.append(word_lines(x_right, center, wsize, slot["color"],
+                                      wi + 1, lines, word_font))
     body = "".join(overlay)
     return svg.replace("</svg>", body + "</svg>")
 
