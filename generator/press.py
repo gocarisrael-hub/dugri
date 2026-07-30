@@ -29,9 +29,17 @@ MM = 72.0 / 25.4          # points per millimetre
 # A7, the finished card. The artwork pages are bigger than this because they
 # already carry some bleed; how much is derived, never assumed (see below).
 TRIM_MM = (74.0, 105.0)
-# What the shop asked for. Canva's default is 3 mm; 6 mm is deeper than usual,
-# so it is a parameter rather than a constant baked into the geometry.
-BLEED_MM = 6.0
+# 3 mm, the industry norm and what the shop accepted. It is a parameter, not a
+# baked-in constant, because the ask moved once already (6 mm before the shop
+# was asked whether 3 would do).
+#
+# Why not simply ship the artwork untouched: Canva exported it with ~2.5 mm, so
+# "as exported" is 0.5 mm SHORT of the agreed 3 mm. At 3 mm only that last
+# 0.5 mm per side is mirrored — 0.5 mm of a 94 mm sheet, all of it inside the
+# band the guillotine destroys — so the file meets spec while staying as close
+# to untouched artwork as the spec permits. Setting this to 2.495 makes the
+# mirroring vanish entirely, at the cost of falling under the agreed bleed.
+BLEED_MM = 3.0
 # Crop marks sit OUTSIDE the bleed — a mark drawn over the bleed would print on
 # the part of the sheet that gets cut away and be useless. This is their length;
 # they start at the bleed edge and point outwards.

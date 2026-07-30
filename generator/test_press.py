@@ -8,7 +8,8 @@ What a print shop asked for, and what Chrome's print-to-pdf cannot give them:
      208-page deck: 2 embedded fonts, 529 transparency groups, 317 soft masks).
   3. Somewhere in the file that says WHERE TO CUT — Chrome emits no TrimBox, so
      nothing states where the A7 card sits inside the page.
-  4. 6 mm of bleed, when the artwork only carries ~2.5 mm.
+  4. The agreed 3 mm of bleed, when the artwork only carries ~2.5 mm — so the
+     last half-millimetre per side has to be manufactured.
 
 The geometry tests run everywhere. The ones that shell out to Ghostscript skip
 when it is not installed rather than fail the suite.
@@ -71,6 +72,20 @@ def test_artwork_with_enough_bleed_needs_none_manufactured():
     assert g.extra_x == 0 and g.extra_y == 0, "never negative: just trim deeper"
 
 
+def test_default_bleed_is_the_agreed_3mm_and_barely_mirrors():
+    """The shop accepted 3 mm, and the artwork already carries ~2.5 mm.
+
+    So the default manufactures only the last half-millimetre per side. Pinning
+    this stops the default drifting back to a depth that mirrors most of the
+    band when the artwork could have supplied it.
+    """
+    g = press.PressGeometry(ART_W, ART_H)
+    assert round(_mm(g.bleed), 2) == 3.0
+    assert round(_mm(g.extra_x), 2) == 0.50
+    assert round(_mm(g.extra_y), 2) == 0.47
+    assert g.extra_x < g.native_x, "most of the bleed is the artwork's own ink"
+
+
 def test_page_carries_bleed_and_the_mark_margin():
     g = press.PressGeometry(ART_W, ART_H, bleed_mm=6.0, mark_mm=4.0)
     assert round(_mm(g.page_w), 2) == 94.0       # 74 + 2x6 + 2x4
@@ -126,7 +141,7 @@ def test_set_boxes_writes_trim_and_bleed_on_every_page(tmp_path):
             trim = [float(v) for v in page.obj["/TrimBox"]]
             bleed = [float(v) for v in page.obj["/BleedBox"]]
             assert round(_mm(trim[2] - trim[0]), 2) == 74.0
-            assert round(_mm(bleed[2] - bleed[0]), 2) == 86.0
+            assert round(_mm(bleed[2] - bleed[0]), 2) == 80.0   # 74 + 2x3mm
 
 
 @pytest.mark.skipif(not HAS_PIKEPDF, reason="pikepdf not installed")
