@@ -128,9 +128,8 @@ def _gf_layouts(font, ref, words):
 
 def _left_edge(font, ref, layout, num, right):
     """Left-most ink x of a laid-out entry (its widest line runs furthest left)."""
-    size, lines = layout
-    marker = rp._line_width_at(font, ref, num, "") * size / ref
-    widest = max(font.getlength(ln) for ln in lines) * size / ref
+    marker = rp._line_width_at(font, ref, num, "") * layout.size / ref
+    widest = max(font.getlength(ln) for ln in layout.lines) * layout.size / ref
     return right - marker - widest
 
 
@@ -209,6 +208,47 @@ def test_detected_slots_are_not_treated_as_a_text_column():
     font, ref = _cafe()
     layouts = rp._word_layouts(_GF_SLOTS, [_GF_PHRASE], font, ref, cell=_GF_CELL)
     assert len(layouts[0][1]) == 1, "a detected slot is not a column; do not wrap to it"
+
+
+def test_one_font_size_per_card_however_uneven_the_words():
+    """Every word on a card renders at the SAME size — the origin's look.
+
+    A card must not mix a large short word with a small long one, so the card's
+    size is set by its most demanding entry and the rest follow it down.
+    """
+    font, ref = _cafe()
+    layouts = _gf_layouts(font, ref, ["ים", _GF_PHRASE, "הבדיחה על הנסיעה לאילת", "קפה"])
+    sizes = {round(l.size, 9) for l in layouts}
+    assert len(sizes) == 1, f"one card, one size — got {sizes}"
+
+
+def test_wrapping_is_only_taken_when_it_buys_size():
+    """Ties go to the fewest lines: wrapping is a cost, not a goal."""
+    font, ref = _cafe()
+    layouts = _gf_layouts(font, ref, ["ים", "קפה", "שירה", "מדונה"])
+    assert all(len(l.lines) == 1 for l in layouts)
+
+
+def test_line_pitch_is_measured_from_the_glyphs_being_set():
+    """A fixed lead collided: Cafe draws far outside its em, and by wildly
+    differing amounts. Lines that clash need more pitch than lines that don't."""
+    font, ref = _cafe()
+    clash = rp._lead_for(font, ref, ["הטיול", "לתאילנד"])   # descender over ascender
+    calm = rp._lead_for(font, ref, ["ים", "ים"])            # neither
+    assert clash > calm, "the pitch must respond to the actual glyphs"
+    assert calm > 0
+
+
+def test_wrapped_lines_ink_never_overlaps():
+    """The reported bug: the ל of a continuation struck the line above it."""
+    font, ref = _cafe()
+    for pair in (["הטיול", "לתאילנד"], ["צוחקת על", "הבדיחות שלה"],
+                 ["לקחת", "לקחת"], ["ים", "מדונה"]):
+        lead = rp._lead_for(font, ref, pair)
+        # Upper line's lowest ink vs lower line's highest, once the baseline has
+        # advanced by the lead. Both are measured in the same ref units.
+        drop = font.getbbox(pair[0])[3] - font.getbbox(pair[1])[1]
+        assert lead * ref >= drop, f"{pair} would collide"
 
 
 def test_word_text_still_places_a_single_line_on_its_baseline():

@@ -5,6 +5,7 @@ at the recipe slots. No masking needed (background is already text-free).
   python3 generator/render_page.py <theme> <clean_svg> <csv> <row> <title> <out.png>
 """
 import base64
+import collections
 import functools
 import itertools
 import os
@@ -75,7 +76,7 @@ def _marker_geometry(font, ref, num, msize):
     return digit, dot_x, marker_w
 
 
-def word_lines(x_right, center_y, size, color, num, lines, font_path):
+def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None):
     """One numbered entry, wrapped over ``lines``, as SVG markup.
 
     RTL numbered line: the marker must sit on the RIGHT (the Hebrew reading
@@ -92,13 +93,16 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path):
     is the conventional numbered-list shape and keeps the digit column clean. The
     block is centred on ``center_y`` so a wrapped entry grows symmetrically into
     the air above and below rather than drifting down into its neighbour.
+
+    ``lead`` is the baseline pitch as a multiple of ``size``; omitted, it is
+    measured from these very lines (see ``_lead_for``).
     """
     msize = size * _MARKER_SCALE
     font, ref = _word_metrics(font_path)
     digit, dot_x, marker_w = _marker_geometry(font, ref, num, msize)
     gap = size * _WORD_GAP
     word_x = x_right - marker_w - gap
-    lead = size * _WRAP_LEAD
+    lead = size * (_lead_for(font, ref, lines) if lead is None else lead)
     first = center_y - (len(lines) - 1) * lead / 2 + size * 0.34
     out = [
         f'<text x="{x_right:.2f}" y="{first:.2f}" font-family="HebWord" '
@@ -181,20 +185,21 @@ _WORD_SIZE_K = float(os.environ.get("DUGRI_WORD_K", "1.3"))
 # text box wraps instead of overflowing, so we wrap too: split at spaces and hang
 # the continuation under the first line's text.
 #
-# Line pitch as a multiple of the font size. Hebrew has few descenders, so a
-# sub-1.0 pitch still leaves clear air between the two lines and buys size.
-_WRAP_LEAD = float(os.environ.get("DUGRI_WRAP_LEAD", "0.95"))
+# Clear air between the INK of one wrapped line and the ink of the next, as a
+# fraction of the font size. The pitch itself is MEASURED, not fixed: a constant
+# lead collides, because the calibrated Hebrew faces draw far outside their em.
+# Cafe sets "לקחת" 1.45x its own font size tall, with ascenders reaching y=8 of
+# a 200-unit em and descenders down to y=325 — so a 0.95 lead put the ל of one
+# line straight through the letters above it. _lead_for measures the two lines
+# actually being set and spaces them by what those glyphs need.
+_WRAP_GAP = float(os.environ.get("DUGRI_WRAP_GAP", "0.07"))
 # Clear air to leave between one entry's ink and the next entry's, as a fraction
-# of the uniform size. Must stay WIDER than the gap _WRAP_LEAD leaves between two
-# lines of the same entry, or the four entries stop reading as four items: the
-# continuation of entry 2 would sit as close to entry 3 as to its own first line.
+# of the size. Must stay wider than _WRAP_GAP leaves between two lines of the
+# SAME entry, or the four entries stop reading as four items: the continuation of
+# entry 2 would sit as close to entry 3 as to its own first line.
 _WRAP_CLEAR = float(os.environ.get("DUGRI_WRAP_CLEAR", "0.30"))
 # Most lines a phrase may wrap onto. Past three the type is smaller than the gain.
 _WRAP_MAX_LINES = int(os.environ.get("DUGRI_WRAP_MAX_LINES", "3"))
-# Relaxation passes for _resolve_overlaps. Each pass shrinks every colliding pair
-# to just clear; a handful settles four slots and the loop exits early once no
-# pair moves, so this is only a backstop against a pathological slot geometry.
-_OVERLAP_PASSES = 6
 # Hard floor on a line's left edge, as a fraction of the cell width — the LAST
 # defence, not the layout bound. Two values because "the cell" is not the same
 # thing in the two deck formats, and the fraction has to mean the same MARGIN
@@ -214,6 +219,30 @@ _CELL_SAFE = float(os.environ.get("DUGRI_CELL_SAFE", "0.02"))
 _CARD_SAFE = float(os.environ.get("DUGRI_CARD_SAFE", "0.05"))
 
 
+Layout = collections.namedtuple("Layout", "size lines lead")
+
+
+def _lead_for(font, ref, lines):
+    """Baseline-to-baseline pitch for a wrapped entry, as a multiple of the size.
+
+    MEASURED from the glyphs actually being set, because the calibrated Hebrew
+    faces draw well outside their em and by wildly different amounts: in Cafe at
+    a 200-unit em, "ים" occupies y=141..254 while "לקחת" occupies y=8..298. A
+    constant lead therefore either collides (the reported bug: the ל of one line
+    struck the letters above it) or wastes height on lines that need none.
+
+    For each stacked pair, the pitch has to carry the upper line's DESCENT plus
+    the lower line's ASCENT, so the two inks clear by ``_WRAP_GAP``.
+    """
+    if len(lines) < 2:
+        return 0.0
+    need = 0.0
+    for upper, lower in zip(lines, lines[1:]):
+        drop = font.getbbox(upper)[3] - font.getbbox(lower)[1]
+        need = max(need, drop / ref)
+    return need + _WRAP_GAP
+
+
 def _slot_pitch(slots, i):
     """Distance from slot ``i`` to its nearest neighbouring slot centre.
 
@@ -226,23 +255,14 @@ def _slot_pitch(slots, i):
     return min(gaps) if gaps else (slots[i]["y1"] - slots[i]["y0"]) * 2
 
 
-def _size_cap(pitch, n, uniform):
-    """Largest size ``n`` stacked lines may take without touching the neighbour.
+def _span(layout):
+    """A laid-out entry's height as a multiple of its font size."""
+    return (len(layout.lines) - 1) * layout.lead + 1.0 / _WORD_SIZE_K
 
-    A wrapped block is CENTRED on its slot, so it does not have to fit inside the
-    pitch — it only has to keep its outermost ink clear of the neighbouring
-    line's ink, and it grows in both directions at once. Budgeting the whole
-    pitch for the block (the obvious reading) is far too strict: on grapefruit it
-    capped a two-line entry at 13.3 against a uniform 21.3, so a wrapped phrase
-    rendered visibly smaller than the words around it for no reason.
 
-    ``_WORD_SIZE_K`` derived the uniform size FROM the ink height, so its inverse
-    converts back: ink height ~= size / _WORD_SIZE_K.
-    """
-    ink = 1.0 / _WORD_SIZE_K
-    room = pitch - ink * uniform / 2 - _WRAP_CLEAR * uniform
-    grow = ink / 2 + (n - 1) * _WRAP_LEAD / 2
-    return room / grow if room > 0 and grow > 0 else uniform
+def _block_half(layout):
+    """Half the ink height of a laid-out entry, in user units."""
+    return _span(layout) * layout.size / 2
 
 
 def _balanced_split(font, text, n):
@@ -267,19 +287,19 @@ def _balanced_split(font, text, n):
     return best[1]
 
 
-def _fit_line(font, ref, num, word, right, left_bound, pitch, max_size):
-    """Lay one numbered entry out as ``(size, [lines])``.
+def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES):
+    """Every way to set one entry: ``{line_count: (lines, lead, max_size_ref)}``.
 
-    Tries one line, then two, then three, and keeps whichever renders LARGEST:
-    wrapping costs height (so the size the room allows shrinks with each line)
-    but buys width (so the size the slot allows grows), and which wins depends on
-    the phrase. A word with no spaces cannot wrap, so it shrinks to fit — the
-    only case that still comes out below the uniform size.
+    ``max_size_ref`` is the largest font size at which that wrapping still fits
+    the band. More lines means a narrower widest line, so it always allows a
+    larger size — the cost is height, which the caller weighs.
+
+    ``max_lines`` of 1 forbids wrapping outright, which is how the v1 sheet path
+    keeps its long words on one line (see ``_word_layouts``).
     """
-    avail = right - left_bound
     marker_ref = _line_width_at(font, ref, num, "")   # marker + gap, no text
-    best = None
-    for n in range(1, _WRAP_MAX_LINES + 1):
+    out = {}
+    for n in range(1, max_lines + 1):
         lines = _balanced_split(font, word, n)
         if lines is None:
             break
@@ -288,55 +308,49 @@ def _fit_line(font, ref, num, word, right, left_bound, pitch, max_size):
         # marker, the continuations under the first line's text. So one budget
         # covers them all.
         denom = marker_ref + widest
-        by_width = avail * ref / denom if denom > 0 and avail > 0 else max_size
-        size = min(max_size, by_width, _size_cap(pitch, n, max_size))
-        if best is None or size > best[0] + 1e-9:
-            best = (size, lines)
-    if best is None:                      # unsplittable and/or no words at all
-        denom = _line_width_at(font, ref, num, word)
-        size = min(max_size, avail * ref / denom) if denom > 0 and avail > 0 else max_size
-        return size, [word]
-    return best
+        out[n] = (lines, _lead_for(font, ref, lines),
+                  avail * ref / denom if denom > 0 and avail > 0 else float("inf"))
+    if not out:                                       # no words at all
+        out[1] = ([word], 0.0, float("inf"))
+    return out
 
 
-def _block_half(layout):
-    """Half the ink height of a laid-out entry, in user units."""
-    size, lines = layout
-    return ((len(lines) - 1) * _WRAP_LEAD + 1.0 / _WORD_SIZE_K) * size / 2
+def _fit_card(cands, pitches, centers, uniform):
+    """Solve ONE font size for the whole card, and each entry's line count.
 
+    Every word on a card renders at the SAME size — that is the origin
+    template's look (Canva Bulk Create fills a fixed-size text box) and what the
+    owner asked for: a card must not mix a large short word with a small long
+    one. So the card's size is set by its most demanding entry, and the others
+    follow it down rather than staying big.
 
-def _resolve_overlaps(layouts, slots, uniform):
-    """Shrink wrapped entries until no two adjacent ones' ink can touch.
+    The two constraints are circular — the size decides how many lines a phrase
+    needs, and the line counts decide how much height the entries take, which
+    caps the size. Rather than relax (which ratchets: the size only falls, and
+    once it is low enough for everything to fit on ONE line the search settles
+    there — measured at 8.9 against a uniform 21.3), every combination of line
+    counts is scored outright. Four slots and at most three lines each is 81
+    combinations of trivial arithmetic, so the exact answer is cheaper than the
+    approximation was.
 
-    ``_size_cap`` sizes each entry against a neighbour assumed to be a SINGLE
-    line at the uniform size. When two adjacent entries both wrap, both grow
-    toward each other and that assumption breaks — on grapefruit words 2 and 3
-    wrapped together and closed the gap to nothing, so four numbered items read
-    as one dense block. Only WRAPPED entries give ground: an unwrapped word is
-    already at the size the design asks for, and shrinking it to make room for
-    its neighbour would spread the damage instead of containing it.
+    Ties go to the FEWEST total lines: wrapping is a cost paid to keep the type
+    big, never a goal, so if a card sets just as large unwrapped it stays
+    unwrapped.
     """
-    live = [i for i, lay in enumerate(layouts) if lay is not None]
-    centers = [(s["y0"] + s["y1"]) / 2 for s in slots]
-    clear = _WRAP_CLEAR * uniform
-    for _ in range(_OVERLAP_PASSES):
-        settled = True
+    live = sorted(cands)
+    best = None
+    for combo in itertools.product(*(sorted(cands[i]) for i in live)):
+        counts = dict(zip(live, combo))
+        size = min([uniform] + [cands[i][counts[i]][2] for i in live])
         for a, b in zip(live, live[1:]):
-            over = (_block_half(layouts[a]) + _block_half(layouts[b]) + clear
-                    - abs(centers[b] - centers[a]))
-            if over <= 1e-9:
-                continue
-            settled = False
-            give = [i for i in (a, b) if len(layouts[i][1]) > 1] or [a, b]
-            total = sum(_block_half(layouts[i]) for i in give)
-            if total <= 0:
-                continue
-            f = max(0.0, total - over) / total
-            for i in give:
-                layouts[i] = (layouts[i][0] * f, layouts[i][1])
-        if settled:
-            break
-    return layouts
+            spans = sum((counts[i] - 1) * cands[i][counts[i]][1] + 1.0 / _WORD_SIZE_K
+                        for i in (a, b))
+            room = min(pitches[a], abs(centers[b] - centers[a]))
+            size = min(size, room / (spans / 2 + _WRAP_CLEAR))
+        key = (size, -sum(combo))
+        if best is None or key > best[0]:
+            best = (key, size, counts)
+    return best[1], best[2]
 
 
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
@@ -373,11 +387,10 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     # detected boxes overshoot (e.g. bachelorette rendered ~26 vs the real 19).
     uniform = word_size if word_size else statistics.median(heights) * _WORD_SIZE_K
     floor = cell[0] + (cell[2] - cell[0]) * safe if cell else None
-    out = []
+    cands = {}
     for wi, slot in enumerate(slots):
         word = words[wi] if wi < len(words) else ""
         if not word:
-            out.append(None)
             continue
         right = _line_right_edge(slot["x1"], cell)
         if declared_band:
@@ -386,9 +399,22 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
             left = floor if floor is not None else slot["x0"]
         if left >= right:                 # degenerate slot: fall back to the floor
             left = floor if floor is not None else slot["x0"]
-        out.append(_fit_line(font, ref, wi + 1, word, right, left,
-                             _slot_pitch(slots, wi), uniform))
-    return _resolve_overlaps(out, slots, uniform)
+        # Wrapping needs a text box to wrap INSIDE. Only a declared column is
+        # one; a detected slot is just where the origin word's ink happened to
+        # land, so reflowing to it would rewrap all eight live sheet themes
+        # against a box their designer never drew. Without a column the old
+        # guarantee stands unchanged: one line, shrunk if that is what it takes
+        # to stay inside the card.
+        cands[wi] = _candidates(font, ref, wi + 1, word, right - left,
+                                max_lines=_WRAP_MAX_LINES if declared_band else 1)
+    if not cands:
+        return [None] * len(slots)
+    centers = [(s["y0"] + s["y1"]) / 2 for s in slots]
+    pitches = {i: _slot_pitch(slots, i) for i in cands}
+    size, counts = _fit_card(cands, pitches, centers, uniform)
+    return [None if wi not in cands
+            else Layout(size, cands[wi][counts[wi]][0], cands[wi][counts[wi]][1])
+            for wi in range(len(slots))]
 
 
 def _word_sizes(slots, words, font, ref, cell=None, word_size=None):
@@ -708,11 +734,11 @@ def _words_overlay(slots, words, cfg, word_font, cell):
     for wi, slot in enumerate(slots):
         if layouts[wi] is None:
             continue
-        wsize, lines = layouts[wi]
+        lay = layouts[wi]
         center = (slot["y0"] + slot["y1"]) / 2
         x_right = _line_right_edge(slot["x1"], cell)
-        out.append(word_lines(x_right, center, wsize, slot["color"],
-                              wi + 1, lines, word_font))
+        out.append(word_lines(x_right, center, lay.size, slot["color"],
+                              wi + 1, lay.lines, word_font, lead=lay.lead))
     return "".join(out)
 
 
@@ -1056,11 +1082,11 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
         for wi, slot in enumerate(card["words"]):
             if layouts[wi] is None:
                 continue
-            wsize, lines = layouts[wi]
+            lay = layouts[wi]
             center = (slot["y0"] + slot["y1"]) / 2
             x_right = _line_right_edge(slot["x1"], card.get("cell"))
-            overlay.append(word_lines(x_right, center, wsize, slot["color"],
-                                      wi + 1, lines, word_font))
+            overlay.append(word_lines(x_right, center, lay.size, slot["color"],
+                                      wi + 1, lay.lines, word_font, lead=lay.lead))
     body = "".join(overlay)
     return svg.replace("</svg>", body + "</svg>")
 
