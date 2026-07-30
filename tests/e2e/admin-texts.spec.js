@@ -174,7 +174,7 @@ test.describe('admin texts editor', () => {
     await card.locator('[data-field="subject"]').fill('X');
     await card.locator('[data-field="body"]').fill('Y');
     const saved = await clickAndRead(page, card.locator('button[data-save]'), 'POST');
-    expect(saved).toEqual({ subject: 'X', body: 'Y' });
+    expect(saved).toEqual({ enabled: true, subject: 'X', body: 'Y' });
 
     const eff = await clickAndRead(page, card.locator('button[data-reset]'), 'DELETE');
     await expect(card.locator('.status')).toHaveText(/אופס/);
@@ -183,6 +183,34 @@ test.describe('admin texts editor', () => {
     expect(eff.subject).toContain('{honoree}');
 
     await resetKey(request, 'email', 'order_paid');
+  });
+
+  test('an email card has a per-message switch that round-trips through save', async ({
+    page,
+    request,
+  }) => {
+    // The email counterpart to a trigger's switch. Worth an E2E rather than only a
+    // unit test because the failure mode is silent: a checkbox that renders but is
+    // not collected by readValue saves enabled:true forever, and the owner sees a
+    // switch that appears to work and never turns the message off.
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const card = page.locator('#card-email-words-reminder');
+    const toggle = card.locator('[data-field="enabled"]');
+    await expect(toggle).toBeChecked(); // ships on
+
+    await toggle.uncheck();
+    const saved = await clickAndRead(page, card.locator('button[data-save]'), 'POST');
+    expect(saved.enabled).toBe(false);
+    expect(saved.subject).toContain('{honoree}'); // the text is untouched
+
+    // The card re-renders from the value the SERVER returned, so an unchecked box
+    // here proves the switch survived the round trip — not just the local click.
+    // Deliberately no reload-and-recheck: every Playwright project runs this file
+    // against the SAME server and settings store, so a sibling project's cleanup
+    // can clear the override between the reload and the assertion.
+    await expect(card.locator('[data-field="enabled"]')).not.toBeChecked();
+
+    await resetKey(request, 'email', 'words_reminder');
   });
 
   test('client refuses payment_reminder with an out-of-order window', async ({ page }) => {

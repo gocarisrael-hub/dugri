@@ -803,6 +803,22 @@ function buildSystemAlert(subject, lines) {
   return { subject: subj, text: body };
 }
 
+// --- the send wrappers --------------------------------------------------------
+// Each one below opens with `if (!settings.emailEnabled('<key>')) return false;`
+// — the owner's per-message switch, edited on the admin texts page next to that
+// message's own subject and body (the email counterpart to a WhatsApp trigger's
+// `enabled`). It gates ONE message: turning off, say, the words reminder leaves
+// every receipt sending. A skipped send returns false, exactly like being
+// unconfigured or having no recipient, so no caller has to learn a new result.
+//
+// Two sends here are deliberately NOT gated. sendSystemAlert is an operational
+// escalation to the owner (e.g. a paid order whose buyer could not be reached at
+// all) — not a message the owner composes, and switching it off would silence
+// the very alert that says something needs a human. sendReminderEmail renders
+// the owner-managed reminder LIST, where each reminder already carries its own
+// `enabled` (server/reminders.js); a second switch over the same thing would
+// only be a second place to look when a reminder doesn't arrive.
+
 // Fire a generic owner system alert to NOTIFY_TO. Dormant (returns false) when
 // Resend is unconfigured, like every other send. Fully wrapped — never throws.
 async function sendSystemAlert(subject, lines) {
@@ -819,6 +835,7 @@ async function sendSystemAlert(subject, lines) {
 // Never throws.
 async function sendOrderPaid(collection, baseUrl, options) {
   try {
+    if (!settings.emailEnabled('order_paid')) return false;
     return await send(buildPaidMessage(collection, baseUrl, options));
   } catch (e) {
     console.warn('[notify] sendOrderPaid failed:', e && e.message ? e.message : e);
@@ -831,6 +848,7 @@ async function sendOrderPaid(collection, baseUrl, options) {
 // Never throws.
 async function sendPaymentReceipt(collection, baseUrl, options) {
   try {
+    if (!settings.emailEnabled('payment_received')) return false;
     return await send(buildPaymentReceipt(collection, baseUrl, options));
   } catch (e) {
     console.warn('[notify] sendPaymentReceipt failed:', e && e.message ? e.message : e);
@@ -844,6 +862,7 @@ async function sendPaymentReceipt(collection, baseUrl, options) {
 // when Resend is unconfigured. Never throws.
 async function sendBuyerReceipt(collection, baseUrl, options) {
   try {
+    if (!settings.emailEnabled('buyer_payment_received')) return false;
     const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
     if (!to) return false;
     return await send({ ...buildBuyerReceipt(collection, baseUrl, options), to });
@@ -858,6 +877,7 @@ async function sendBuyerReceipt(collection, baseUrl, options) {
 // normalized public origin (optional). Never throws.
 async function sendCustomOrderAlert(collection, baseUrl, options) {
   try {
+    if (!settings.emailEnabled('custom_order_alert')) return false;
     return await send(buildCustomOrderAlert(collection, baseUrl, options));
   } catch (e) {
     console.warn('[notify] sendCustomOrderAlert failed:', e && e.message ? e.message : e);
@@ -872,6 +892,7 @@ async function sendCustomOrderAlert(collection, baseUrl, options) {
 // `amountCharged` (the amount actually paid). Never throws.
 async function sendBuyerConfirmation(collection, baseUrl, options) {
   try {
+    if (!settings.emailEnabled('buyer_confirmation')) return false;
     const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
     if (!to) return false;
     return await send({ ...buildBuyerConfirmation(collection, baseUrl, options), to });
@@ -888,6 +909,7 @@ async function sendBuyerConfirmation(collection, baseUrl, options) {
 // (optional). Never throws.
 async function sendWordsReminder(collection, baseUrl) {
   try {
+    if (!settings.emailEnabled('words_reminder')) return false;
     const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
     if (!to) return false;
     return await send({ ...buildWordsReminder(collection, baseUrl), to });
@@ -902,6 +924,7 @@ async function sendWordsReminder(collection, baseUrl) {
 // unconfigured. `baseUrl` is the normalized public origin (optional). Never throws.
 async function sendPaymentReminder(collection, baseUrl) {
   try {
+    if (!settings.emailEnabled('payment_reminder')) return false;
     const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
     if (!to) return false;
     return await send({ ...buildPaymentReminder(collection, baseUrl), to });
@@ -915,6 +938,7 @@ async function sendPaymentReminder(collection, baseUrl) {
 // origin (optional). Never throws.
 async function sendOrderFinished(collection, baseUrl) {
   try {
+    if (!settings.emailEnabled('order_finished')) return false;
     return await send(buildFinishedMessage(collection, baseUrl));
   } catch (e) {
     console.warn('[notify] sendOrderFinished failed:', e && e.message ? e.message : e);
@@ -932,6 +956,7 @@ async function sendOrderFinished(collection, baseUrl) {
 // Fully wrapped — never throws. Returns true when at least one send succeeded.
 async function sendPdfReady(collection, baseUrl, links) {
   try {
+    if (!settings.emailEnabled('pdf_ready')) return false;
     const set = links && typeof links === 'object' ? links : null;
     const adminLink = typeof links === 'string' ? links : (set && set.admin) || null;
     const customerLink = typeof links === 'string' ? links : (set && set.customer) || null;
@@ -960,6 +985,7 @@ async function sendPdfReady(collection, baseUrl, links) {
 // Returns true when at least one send succeeded.
 async function sendProductionError(collection, baseUrl, problems) {
   try {
+    if (!settings.emailEnabled('production_error')) return false;
     const msg = buildProductionError(collection, baseUrl, problems);
     const owner = await send(msg); // -> NOTIFY_TO (Dugri)
     let client = false;

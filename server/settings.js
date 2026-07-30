@@ -68,7 +68,14 @@ function interpolate(template, values, opts) {
 
 // --- The registry: every editable key with its default, tokens and kind -------
 // `kind` tells the admin UI how to render the editor:
-//   'email'  — a { subject, body } template pair (multiline body with {tokens}).
+//   'email'  — an { enabled, subject, body } template (multiline body with
+//              {tokens}). `enabled` is the owner's per-message on/off switch, the
+//              email counterpart to a WhatsApp trigger's: turned off, notify.js
+//              skips that ONE message and every other email keeps sending. It
+//              lives inside the template rather than as a separate 'flag' key so
+//              the switch sits next to the text it governs — and so an existing
+//              { subject, body } override deep-merges to enabled:true, i.e. every
+//              message stays on until the owner deliberately turns it off.
 //   'map'    — a flat { key: label } object of short editable label strings.
 //   'footer' — the shared two-line email sign-off.
 //   'trigger'— a WhatsApp trigger { enabled, text, timing? }.
@@ -83,6 +90,7 @@ const REGISTRY = {
       kind: 'email',
       tokens: ['honoree', 'orderId', 'link', 'adminLink'],
       default: {
+        enabled: true,
         subject: 'דוגרי · התקבלה הזמנה חדשה — {honoree}',
         body: 'התקבלה הזמנה חדשה עבור {honoree}.',
       },
@@ -91,6 +99,7 @@ const REGISTRY = {
       kind: 'email',
       tokens: ['honoree', 'orderId', 'link', 'adminLink'],
       default: {
+        enabled: true,
         subject: 'דוגרי · הזמנה בהתאמה אישית — צריך עיצוב ידני · {honoree}',
         body:
           'התקבלה הזמנת עיצוב אישי (מותאם אישית) עבור {honoree}.\n' +
@@ -101,6 +110,7 @@ const REGISTRY = {
       kind: 'email',
       tokens: ['honoree', 'link'],
       default: {
+        enabled: true,
         subject: 'דוגרי · ההזמנה שלכם התקבלה — {honoree}',
         body:
           'תודה רבה על ההזמנה!\n' +
@@ -117,6 +127,7 @@ const REGISTRY = {
       kind: 'email',
       tokens: ['honoree', 'orderId', 'link', 'adminLink'],
       default: {
+        enabled: true,
         subject: 'דוגרי · התקבל תשלום — {honoree}',
         body: 'התקבל תשלום עבור ההזמנה של {honoree}.',
       },
@@ -125,6 +136,7 @@ const REGISTRY = {
       kind: 'email',
       tokens: ['honoree', 'link'],
       default: {
+        enabled: true,
         subject: 'דוגרי · התשלום התקבל — {honoree}',
         body:
           'התשלום התקבל — תודה רבה!\n' +
@@ -137,6 +149,7 @@ const REGISTRY = {
       kind: 'email',
       tokens: ['honoree'],
       default: {
+        enabled: true,
         subject: 'דוגרי · הקובץ שלכם מוכן — {honoree}',
         body: 'הקובץ המוכן להדפסה של המשחק עבור {honoree} מוכן!',
       },
@@ -145,6 +158,7 @@ const REGISTRY = {
       kind: 'email',
       tokens: ['honoree'],
       default: {
+        enabled: true,
         subject: 'דוגרי · הזמנה מוכנה להפקה — {honoree}',
         body: 'ההזמנה של {honoree} נסגרה ומוכנה להפקה.',
       },
@@ -153,6 +167,7 @@ const REGISTRY = {
       kind: 'email',
       tokens: ['honoree'],
       default: {
+        enabled: true,
         subject: 'דוגרי · צריך תיקון לפני הפקה — {honoree}',
         body: 'לא הצלחנו להפיק את הקובץ של {honoree} — יש לתקן את הנקודות הבאות:',
       },
@@ -161,6 +176,7 @@ const REGISTRY = {
       kind: 'email',
       tokens: ['honoree'],
       default: {
+        enabled: true,
         subject: 'דוגרי · עוד לא הוספתם מילים — {honoree}',
         body:
           'עוד לא קיבלנו את רשימת המילים עבור המשחק של {honoree}.\n' +
@@ -175,6 +191,7 @@ const REGISTRY = {
       kind: 'email',
       tokens: ['honoree'],
       default: {
+        enabled: true,
         subject: 'דוגרי · ההזמנה שלך ממתינה לתשלום — {honoree}',
         body:
           'קיבלנו את ההזמנה שלך למשחק של {honoree}, אבל היא עדיין ממתינה לתשלום.\n' +
@@ -492,6 +509,23 @@ function get(section, key) {
   return clone(ov);
 }
 
+// Is the owner's per-message switch ON for this email template? The gate every
+// send in notify.js goes through.
+//
+// FAILS OPEN, deliberately: an unknown key, a corrupt store or any thrown read
+// answers "on". The two failure directions are not symmetric — a message that
+// sends when it shouldn't is noise the owner can fix, while one silently
+// swallowed by a bad settings file is a buyer who never gets their receipt and
+// nobody finding out. Only an explicit `enabled === false` stops a send.
+function emailEnabled(key) {
+  try {
+    const tpl = get('email', key);
+    return !(isPlainObject(tpl) && tpl.enabled === false);
+  } catch {
+    return true;
+  }
+}
+
 const isIntInRange = (n, lo, hi) => Number.isInteger(n) && n >= lo && n <= hi;
 
 // Range-validate a trigger's timing object. The EXPECTED shape is derived from
@@ -566,6 +600,11 @@ function validateValue(section, key, value) {
     if (!isPlainObject(value)) return 'value must be an object with { subject, body }';
     if (typeof value.subject !== 'string') return 'subject must be a string';
     if (typeof value.body !== 'string') return 'body must be a string';
+    // Optional, like a trigger's: an override written before the switch existed
+    // omits it and deep-merges to the default (on). A non-boolean is rejected
+    // rather than coerced — "false"/0 read as off to a human but truthy to the
+    // gate, which would send a message the owner believes they switched off.
+    if (has('enabled') && typeof value.enabled !== 'boolean') return 'enabled must be a boolean';
     return null;
   }
   if (kind === 'map' || kind === 'footer') {
@@ -743,6 +782,7 @@ function all() {
 
 module.exports = {
   get,
+  emailEnabled,
   set,
   reset,
   all,
