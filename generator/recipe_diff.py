@@ -539,7 +539,7 @@ def _clamp_into_card(box, vb):
     return box
 
 
-def regularise_word_slots(slots, vb, log=print):
+def regularise_word_slots(slots, vb, log=print, declined=None):
     """Turn measured word slots into the layout the design MEANT, where it can.
 
     Three independent snaps — even spacing, one shared right edge, one shared
@@ -558,7 +558,19 @@ def regularise_word_slots(slots, vb, log=print):
     any front measured: taking a median would squeeze the longest word for no
     reason. It moves only alongside the right edge, because if the edges are
     genuinely staggered then so is the box, and nothing here should be pooled.
+
+    ``declined`` is an optional list. Every snap this REFUSES appends its reason
+    to it, so a refusal can travel out of here instead of ending in a log nobody
+    reads. That gap is not hypothetical: grapefruit's spacing snap declined on
+    every container run ("worst fit 18% of the spacing, tolerance 15%"), the
+    detector still reported success, and the owner pressed the button repeatedly
+    against a card that kept coming back uneven with nothing explaining why.
     """
+    def refuse(message):
+        log(message)
+        if declined is not None:
+            declined.append(message)
+
     if len(slots) < 2:
         # One slot has no spacing, no shared edge and no median height to speak
         # of; zero has nothing at all. Detection only ever emits four, but this
@@ -577,9 +589,9 @@ def regularise_word_slots(slots, vb, log=print):
         mids = snapped
     else:
         worst = max(moves) / step if step > 0 else float("inf")
-        log(f"word slots: mids {_fmt(mids)} are not one progression "
-            f"(worst fit {worst:.0%} of the spacing, tolerance "
-            f"{_SPACING_TOL:.0%}) — left as measured")
+        refuse(f"word slots: mids {_fmt(mids)} are not one progression "
+               f"(worst fit {worst:.0%} of the spacing, tolerance "
+               f"{_SPACING_TOL:.0%}) — left as measured")
 
     median_h = _median(heights)
     off_h = max(abs(h - median_h) for h in heights)
@@ -591,8 +603,8 @@ def regularise_word_slots(slots, vb, log=print):
             log(f"word slots: one height {median_h:.2f}u — was {_fmt(heights)}")
         heights = [median_h] * len(heights)
     else:
-        log(f"word slots: heights {_fmt(heights)} differ by more than "
-            f"{_HEIGHT_TOL:.0%} of the median — left as measured")
+        refuse(f"word slots: heights {_fmt(heights)} differ by more than "
+               f"{_HEIGHT_TOL:.0%} of the median — left as measured")
 
     for slot, mid, height in zip(out, mids, heights):
         slot["y0"], slot["y1"] = mid - height / 2.0, mid + height / 2.0
@@ -608,8 +620,8 @@ def regularise_word_slots(slots, vb, log=print):
         for slot in out:
             slot["x0"], slot["x1"] = left, median_x1
     else:
-        log(f"word slots: right edges {_fmt(edges)} span more than "
-            f"{_EDGE_TOL:.0%} of the card width — left as measured")
+        refuse(f"word slots: right edges {_fmt(edges)} span more than "
+               f"{_EDGE_TOL:.0%} of the card width — left as measured")
 
     return [_clamp_into_card(slot, vb) for slot in out]
 
@@ -708,6 +720,7 @@ def detect_single_card(theme, template_dir, fronts=None,
     try:
         per_front, front_titles, vb0 = [], {}, None
         reasons = []
+        declined = []
         first_render = None
         for index in fronts:
             clean = os.path.join(template_dir, "clean", f"{index}.svg")
@@ -749,7 +762,7 @@ def detect_single_card(theme, template_dir, fronts=None,
                 + "\n  ".join(reasons or ["(no front was measured at all)"]))
         # Straight after the vote and BEFORE anything is written: what goes into
         # the recipe is the layout the design meant, not the origin's ink boxes.
-        words = regularise_word_slots(words, vb0, log=log)
+        words = regularise_word_slots(words, vb0, log=log, declined=declined)
 
         back_title = []
         bclean = os.path.join(template_dir, "clean", f"{back_index}.svg")
@@ -774,6 +787,13 @@ def detect_single_card(theme, template_dir, fronts=None,
 
         recipe = assemble_single_recipe(theme, vb0, words, front_titles,
                                         back_title, photo)
+        # Carry any REFUSED snap into the recipe. Detection returning "ok" while
+        # having quietly left a layout as measured is how grapefruit's uneven
+        # card survived repeated presses of "זהה מחדש": the reason existed, in a
+        # log line on a container nobody was reading. Written only when there is
+        # something to say, so a clean detection stays a clean recipe.
+        if declined:
+            recipe["declined"] = list(declined)
         if first_render:
             _save_single_preview(theme, recipe, vb0, *first_render)
         return recipe

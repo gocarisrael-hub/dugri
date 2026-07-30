@@ -1984,7 +1984,25 @@ function redetectTemplate({ root, key, pythonBin, recipeRunner, calibrateRunner 
     // Surfaced rather than swallowed: a recipe that detected fine while
     // calibration did not is a real, actionable state.
     detail: calibration.ok ? null : calibration.detail || null,
+    // So is a run that succeeded while REFUSING to regularise something. That
+    // combination is what let grapefruit come back with unevenly spaced words
+    // from press after press of this button: the detector declined the spacing
+    // snap every time, said "ok", and the only record was a container log.
+    declined: declinedSnapsOf(recipe.recipe),
   };
+}
+
+// The regularisations detection refused, read back off the recipe it just wrote.
+// Absent on a clean run, and absent on any recipe written before this was
+// recorded — both mean "nothing to report".
+function declinedSnapsOf(recipePath) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(recipePath, 'utf8'));
+    if (!Array.isArray(parsed.declined)) return [];
+    return parsed.declined.filter((m) => typeof m === 'string');
+  } catch {
+    return [];
+  }
 }
 
 function revertTemplate({ root, key }) {
