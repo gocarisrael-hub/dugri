@@ -781,6 +781,143 @@ app.get('/api/admin/collections/:id/board', (req, res) => {
   sendBoardFile(res, c.id);
 });
 
+// --- The PRESS copy -------------------------------------------------------
+// The deck above is what the CUSTOMER prints at home: RGB, live text, no crop
+// marks. A commercial printer needs a different artifact — CMYK against a named
+// profile, transparency flattened, text outlined, and the sheet grown to carry
+// bleed and crop marks with a TrimBox stating where to cut.
+//
+// That is a full RE-RENDER plus a Ghostscript pass: measured at ~200s for a
+// 208-page deck, far past GENERATE_TIMEOUT_MS. So it cannot run inside a
+// request, and it is a background job whose entire state is three files — which
+// beats a job table precisely because it survives a restart for free:
+//   <id>.press.pdf       the finished artifact
+//   <id>.press.building  written before the spawn, removed when the child exits
+//   <id>.press.err       the failure detail, for the admin to read
+const PRESS_ICC =
+  process.env.PRESS_ICC ||
+  path.join(REPO_ROOT, 'resources', 'print shop', 'SWOP2006_Coated3v2.icc');
+const PRESS_TIMEOUT_MS = Number(process.env.PRESS_TIMEOUT_MS || 900000);
+// A marker older than this is a crashed run, not a live one — so a container
+// restart mid-build cannot leave the button stuck on "building" forever.
+const PRESS_STALE_MS = PRESS_TIMEOUT_MS + 60000;
+
+function pressPaths(id) {
+  const base = path.join(GENERATED_DIR, id + '.press');
+  return { pdf: base + '.pdf', building: base + '.building', err: base + '.err' };
+}
+
+function pressBuilding(id) {
+  try {
+    return Date.now() - fs.statSync(pressPaths(id).building).mtimeMs < PRESS_STALE_MS;
+  } catch {
+    return false;
+  }
+}
+
+// Admin: START the press build. 202 immediately; the child outlives the
+// request. Re-posting while one is in flight is a no-op rather than a second
+// Chrome+Ghostscript pair racing for the same output file.
+app.post('/api/admin/collections/:id/press', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  if (pressBuilding(c.id)) return res.status(202).json({ status: 'building' });
+  const theme = String((req.body && req.body.theme) || c.theme || '').trim();
+  if (!theme) return res.status(400).json({ error: 'theme required' });
+  const words = db.listWords(c.id).map((w) => w.text);
+  if (!words.length) return res.status(400).json({ error: 'no words to generate' });
+  if (!fs.existsSync(PRESS_ICC)) {
+    // Refuse rather than let Ghostscript fall back to a built-in profile: a
+    // wrong-profile file that LOOKS correct is exactly what reaches a print run
+    // unnoticed.
+    return res.status(500).json({ error: 'press ICC profile missing', detail: PRESS_ICC });
+  }
+  const paths = pressPaths(c.id);
+  let wordsFile;
+  try {
+    fs.mkdirSync(GENERATED_DIR, { recursive: true });
+    wordsFile = path.join(os.tmpdir(), 'dugri-press-' + crypto.randomUUID() + '.txt');
+    fs.writeFileSync(wordsFile, words.join('\n') + '\n', 'utf8');
+    for (const f of [paths.err, paths.pdf]) {
+      try {
+        fs.unlinkSync(f);
+      } catch {
+        /* nothing stale to clear */
+      }
+    }
+    fs.writeFileSync(paths.building, String(Date.now()), 'utf8');
+  } catch (e) {
+    return res.status(500).json({ error: 'could not start', detail: String(e.message || e) });
+  }
+  const args = [
+    path.join(REPO_ROOT, 'generator', 'order_to_pdf.py'),
+    theme,
+    c.honoree_name || '',
+    wordsFile,
+    paths.pdf,
+    '--press',
+    PRESS_ICC,
+  ];
+  if (c.custom_title) args.push('--title=' + c.custom_title);
+  const child = spawn(PYTHON_BIN, args, {
+    cwd: REPO_ROOT,
+    detached: true,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  let stderr = '';
+  child.stderr.on('data', (d) => (stderr += d));
+  const timer = setTimeout(() => child.kill('SIGKILL'), PRESS_TIMEOUT_MS);
+  child.on('close', (code) => {
+    clearTimeout(timer);
+    try {
+      fs.unlinkSync(wordsFile);
+    } catch {
+      /* temp file already gone */
+    }
+    if (code !== 0) {
+      try {
+        fs.writeFileSync(paths.err, stderr.slice(-2000) || 'exit ' + code, 'utf8');
+      } catch {
+        /* nothing more we can do */
+      }
+    }
+    try {
+      fs.unlinkSync(paths.building);
+    } catch {
+      /* marker already gone */
+    }
+  });
+  child.unref();
+  res.status(202).json({ status: 'building' });
+});
+
+// Admin: poll for / download the press copy. 200 streams the finished PDF, 202
+// while it builds, 409 carries the failure detail, 404 when none was requested.
+app.get('/api/admin/collections/:id/press', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const paths = pressPaths(c.id);
+  if (fs.existsSync(paths.pdf)) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + c.id + '-press.pdf"');
+    return res.sendFile(paths.pdf);
+  }
+  if (pressBuilding(c.id)) return res.status(202).json({ status: 'building' });
+  if (fs.existsSync(paths.err)) {
+    let detail = '';
+    try {
+      detail = fs.readFileSync(paths.err, 'utf8');
+    } catch {
+      /* unreadable is still a failure */
+    }
+    return res.status(409).json({ status: 'failed', detail: detail.slice(0, 800) });
+  }
+  res.status(404).json({ error: 'no press pdf' });
+});
+
 // Constant-time compare of a supplied pdf capability token against the stored
 // one, so the public download route can't be used as a timing oracle.
 function pdfTokenOk(provided, expected) {
