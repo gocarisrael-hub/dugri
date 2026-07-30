@@ -269,6 +269,15 @@ _VB = [0.0, 0.0, 223.92, 312.0]
 _GRAPEFRUIT_MIDS = [0.377, 0.472, 0.582, 0.673]
 _GRAPEFRUIT_X1 = [0.7026, 0.6993, 0.7010, 0.6959]
 
+# The SAME grapefruit artwork, measured by the CONTAINER instead of a laptop.
+# Ink boxes move with the rasteriser — Chrome does not lay text out identically
+# across platforms — so production reads two of the four mids 3-5 units away and
+# lands 18% off an even run where the laptop lands 7%. Under the old 0.15
+# tolerance that meant the snap declined in the only place it matters: the owner
+# pressed "זהה מחדש" and got the uneven card back. Pinned as its own fixture
+# because the laptop numbers alone cannot catch that regression.
+_GRAPEFRUIT_MIDS_IN_CONTAINER = [118.50 / 312, 144.38 / 312, 186.75 / 312, 213.00 / 312]
+
 
 def _measured(mids, x1s=None, heights=None, width=0.30):
     """Word slots built from fractions of the card, as detection would emit."""
@@ -294,6 +303,22 @@ def test_grapefruits_uneven_lines_are_snapped_onto_an_even_run():
     gaps = [mids[i + 1] - mids[i] for i in range(3)]
     assert max(gaps) - min(gaps) < 1e-9, f"still uneven: {gaps}"
     assert abs(gaps[0] - 0.0987) < 1e-3, f"the design's own spacing, not a guess: {gaps}"
+
+
+def test_the_measurement_production_actually_makes_is_snapped_too():
+    """The regression this tolerance exists to survive.
+
+    A tolerance calibrated on one rasteriser is not a tolerance. These are the
+    mids the container logged for grapefruit — "worst fit 18% of the spacing,
+    tolerance 15% — left as measured" — while the laptop fitted the same design
+    to 7% and snapped it. The card the customer would have printed had four
+    unevenly spaced lines.
+    """
+    got = R.regularise_word_slots(_measured(_GRAPEFRUIT_MIDS_IN_CONTAINER), _VB,
+                                  log=_quiet)
+    mids = _mids_of(got)
+    gaps = [mids[i + 1] - mids[i] for i in range(3)]
+    assert max(gaps) - min(gaps) < 1e-9, f"production measurement left uneven: {gaps}"
 
 
 def test_the_snap_moves_every_slot_less_than_the_error_it_corrects():
