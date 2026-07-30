@@ -196,9 +196,10 @@ def test_load_cards_falls_back_to_the_row_index_for_a_bad_front():
 
 
 def test_a_normal_deck_gives_every_card_three_singles_and_one_phrase():
-    # The owner's rule: 3 one-word entries + 1 phrase per card. All four words on
-    # a card render at ONE size, so a card of four phrases sets tiny; capping it
-    # at one phrase caps how far any card has to shrink.
+    # The owner's rule at a TYPICAL phrase rate: 3 one-word entries + 1 phrase.
+    # All four words on a card render at ONE size, so a card of four phrases sets
+    # tiny. This shape is only reachable while phrases are <= a quarter of the
+    # list; the promise that survives every ratio is the invariant test below.
     # 309 singles + 103 phrases = 412 words = exactly 103 cards x (3+1).
     out = _csv()
     n, cards = pack.pack(_mix(309, 103), out)
@@ -245,6 +246,58 @@ def test_no_word_is_lost_or_duplicated_over_a_large_random_list():
             assert n == size
             placed = sorted(w for c in _cards(out) for w in c if w)
             assert placed == sorted(words), f"size={size} multi={n_multi}"
+
+
+def test_every_card_is_within_one_phrase_of_the_deck_average():
+    # THE INVARIANT — the only input-independent promise the packer makes.
+    # "3 singles + 1 phrase" is what a typical list works out to, not a rule: a
+    # customer who sends mostly two- and three-word entries MUST get cards with
+    # 2, 3 or 4 phrases, because there is nothing else to put on them. What has
+    # to hold at EVERY ratio is that the load is level — with M phrases over n
+    # cards every card takes M//n or M//n + 1. This is what stops a future
+    # change from quietly reintroducing clustering.
+    #
+    # Full-capacity cards only: the final card can hold 1-3 words and so cannot
+    # take a full share. That is a capacity limit, not clustering, and it gets
+    # its own (weaker) assertion below.
+    rnd = random.Random(4242)
+    for size in (8, 41, 103, 202, 412, 700):
+        # 0% to 100%, deliberately including ratios past 25% (where 3+1 stops
+        # being reachable) and past 100% of the card count (M > n).
+        for pct in (0, 5, 25, 38, 50, 60, 75, 90, 100):
+            n_multi = size * pct // 100
+            words = _mix(size - n_multi, n_multi)
+            rnd.shuffle(words)
+            out = _csv(f"inv-{size}-{pct}.csv")
+            pack.pack(words, out, seed=rnd.randrange(10**6))
+            cards = _cards(out)
+            per = [_n_multi(c) for c in cards if all(c)]
+            where = f"size={size} phrases={n_multi} ({pct}%) cards={len(cards)}"
+            assert max(per) - min(per) <= 1, f"{where}: uneven, saw {sorted(set(per))}"
+            # ...and level at the RIGHT level, so "even" can't mean "even at 0"
+            base = n_multi // len(cards)
+            assert set(per) <= {base, base + 1}, \
+                f"{where}: want {base} or {base + 1} a card, saw {sorted(set(per))}"
+            # the short final card is capped by how many words it holds, no worse
+            for c in (c for c in cards if not all(c)):
+                assert _n_multi(c) <= len([w for w in c if w]), where
+
+
+def test_no_card_hoards_the_phrases_while_an_equal_card_gets_none():
+    # The specific regression, spelled out so the failure message says WHAT
+    # broke rather than just "uneven". A phrase-heavy list must never print one
+    # card of four phrases beside a card of four single words.
+    # 300 phrases + 112 singles over 103 cards: level is 2-3 phrases a card.
+    out = _csv()
+    pack.pack(_mix(112, 300), out)
+    per = [_n_multi(c) for c in _cards(out)]
+    worst, best = max(per), min(per)
+    assert worst <= 3, f"worst card carries {worst} phrases; level for this list is 2-3"
+    assert best >= 2, f"a card carries only {best} phrases while another carries {worst}"
+    assert per.count(pack.PER_CARD) == 0, \
+        f"{per.count(pack.PER_CARD)} all-phrase cards — the deck is clustered"
+    assert per.count(0) == 0, \
+        f"{per.count(0)} phrase-free cards while other cards carry {worst}"
 
 
 def test_more_phrases_than_cards_spreads_them_instead_of_clustering():

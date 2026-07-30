@@ -3,9 +3,10 @@
 
 v2 (single-card deck): each printed card carries 4 words, so a row is a card,
 not an 8-up sheet. Dedupes exact repeats, shuffles so each card gets a mix (not
-alphabetical clumps), deals the words so a card carries at most ONE multi-word
-phrase (see PHRASE MIX below), and tags every card with the front STYLE it
-renders on — round-robin across the theme's 8 fronts so the styles come out even
+alphabetical clumps), deals the words so multi-word phrases are spread evenly —
+every card within one phrase of the deck average (see PHRASE MIX below) — and
+tags every card with the front STYLE it renders on — round-robin across the
+theme's 8 fronts so the styles come out even
 (13/13/13/13/13/13/13/12 over a standard 103-card deck). The last row is the
 PHOTO card, which carries no words. Deterministic given a seed.
 
@@ -35,27 +36,46 @@ All four words on a card render at ONE size, so the most demanding entry drags
 the whole card down — and a plain shuffle-then-slice let phrases clump.
 
 So the deal partitions the list into SINGLE-token and MULTI-token words and
-hands each card 3 singles + 1 phrase where the supply allows, with the phrase in
-the LAST filled slot — slot 4, the bottom line, where a wrapped entry has the
-most room. Measured on the sample order (113 personal words topped up to 412
-with the bachelorette pool = 55 phrases over 103 cards):
+hands them out phrase-by-phrase across the deck (card i takes
+``(i+1)*M//n - i*M//n``), with each card's phrases in its LAST filled slots —
+slot 4, the bottom line, where a wrapped entry has the most room.
+
+WHAT IS GUARANTEED, for ANY word list:
+
+  Every card is within ONE phrase of the deck average, never clustered.
+
+That is the whole promise, and it is input-independent. With M phrases over n
+cards every card carries either ``M//n`` or ``M//n + 1`` of them — so the
+WORST card is only ever one phrase heavier than the best, and no card can carry
+a pile of phrases while an equal-capacity card carries none.
+
+"3 singles + 1 phrase" is what that works out to at a TYPICAL phrase rate, NOT
+a promise. It holds only while phrases are at most a quarter of the list. A
+customer who submits mostly two- and three-word entries will get cards with 2,
+3, even 4 phrases — unavoidably, there is nothing else to put on them. What
+does not happen at any ratio is the clustering: 2 everywhere beats 4-and-0.
+
+  ratio          phrases/card the deck lands on
+  M <= n         some cards 0, the rest 1
+  n < M <= 2n    some cards 1, the rest 2
+  ...            ...
+  M = 4n (all)   every card 4
+
+Measured on the sample order (113 personal words topped up to 412 with the
+bachelorette pool = 55 phrases over 103 cards):
 
   phrases/card   0    1    2
   before        59   33   11
   after         48   55    0
 
-The mix is a target, not a guarantee; the supply decides:
+...and on the ratio that breaks the 3+1 shape — an all-personal 412-word list
+at the sample list's own 38% rate, 157 phrases over 103 cards — the guarantee
+still holds where the shape does not: before = 1 card of 4 phrases, 18 of 3,
+32 of 2; after = 54 cards of 2 and 49 of 1. Two on every card, not four on some.
 
-- MORE phrases than cards: the surplus is spread evenly across the deck (card i
-  takes ``(i+1)*M//n - i*M//n``). An all-personal 412-word list at 38% is 157
-  phrases over 103 cards: before = 1 card of 4 phrases, 18 of 3, 32 of 2;
-  after = 54 cards of 2 and 49 of 1, and never a run of doubles at the tail.
-- FEWER phrases than cards: the same formula spreads the phrase-carrying cards
-  through the deck instead of front-loading them; the rest take 4 singles.
-- ALL phrases (or all singles): every card is simply filled from the one pool,
-  byte-for-byte what the old plain slice produced.
-- The short final card (1-3 words) is capacity-clamped, so a phrase that no
-  longer fits there moves to an earlier card rather than being dropped.
+The one exception is CAPACITY, not clustering: the final card may hold only 1-3
+words, so it cannot take a full share. Its overflow moves to the emptiest cards
+(see ``_phrase_quota``) rather than being dropped.
 
 Every unique word is placed exactly once in every case — the deal only reorders.
 """
@@ -95,8 +115,17 @@ def _phrase_quota(n_multi, caps):
 
     Then the clamp: the final card may hold only 1-3 words, so its quota can
     exceed its capacity (10 all-phrase words -> caps [4,4,2], raw quota
-    [3,3,4]). The overflow is handed to the earliest cards with room, because
-    the alternative — dropping it — would lose a customer's word.
+    [3,3,4]). The overflow has to go somewhere — dropping it would lose a
+    customer's word — and WHERE it goes decides whether the even spread
+    survives. Handing it to the earliest card with room does not: caps
+    [4,4,4,1] with 9 phrases gave [4,2,2,1], i.e. one all-phrase card next to
+    two half-phrase ones of the SAME capacity — the exact clustering this
+    function exists to prevent. So each spilled phrase goes to the card
+    currently holding the FEWEST (ties to the earliest), which fills level and
+    keeps equal-capacity cards within one of each other: [3,3,2,1].
+
+    The spill is at most PER_CARD-1 = 3 phrases (only the last card can be
+    short), so the argmin scan is bounded and cheap at any deck size.
     """
     n = len(caps)
     quota = [(i + 1) * n_multi // n - i * n_multi // n for i in range(n)]
@@ -105,17 +134,23 @@ def _phrase_quota(n_multi, caps):
         if quota[i] > cap:
             spill += quota[i] - cap
             quota[i] = cap
-    for i, cap in enumerate(caps):
-        if not spill:
-            break
-        take = min(cap - quota[i], spill)
-        quota[i] += take
-        spill -= take
+    # Total capacity is the word count, which is >= the phrase count, so a card
+    # with room always exists while spill remains — this cannot spin.
+    for _ in range(spill):
+        i = min((j for j in range(n) if quota[j] < caps[j]), key=lambda j: quota[j])
+        quota[i] += 1
     return quota
 
 
 def deal(uniq, n_cards, rnd):
     """Deal ``uniq`` into ``n_cards`` rows of PER_CARD slots (blank-padded).
+
+    The guarantee, for any word list: every card ends up within ONE phrase of
+    the deck average, never clustered — with M phrases over n cards each card
+    takes ``M//n`` or ``M//n + 1``. This is NOT "at most one phrase per card":
+    a list that is mostly phrases has to put 2, 3 or 4 on every card. What it
+    rules out is the lopsided deck — one card carrying four phrases while the
+    next carries none.
 
     Singles fill from slot 1, phrases fill from the back, so a 3+1 card reads
     single/single/single/phrase and the wrapped entry sits on the bottom line.
