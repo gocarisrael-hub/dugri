@@ -3,12 +3,12 @@
 
 v2 (single-card deck): each printed card carries 4 words, so a row is a card,
 not an 8-up sheet. Dedupes exact repeats, shuffles so each card gets a mix (not
-alphabetical clumps), deals the words so multi-word phrases are spread evenly —
-every card within one phrase of the deck average (see PHRASE MIX below) — and
-tags every card with the front STYLE it renders on — round-robin across the
-theme's 8 fronts so the styles come out even
-(13/13/13/13/13/13/13/12 over a standard 103-card deck). The last row is the
-PHOTO card, which carries no words. Deterministic given a seed.
+alphabetical clumps), and deals the words so multi-word phrases land evenly:
+every card within one phrase of the deck average (see PHRASE MIX below). Each
+card is tagged with the front STYLE it renders on, round-robin across the
+theme's 8 fronts so the styles come out even (13/13/13/13/13/13/13/12 over a
+standard 103-card deck). The last row is the PHOTO card, which carries no
+words. Deterministic given a seed.
 
   python3 generator/pack.py words.txt order.csv
 
