@@ -745,6 +745,39 @@
       // themes.json is the authority on which extra fields a theme requires.
       let themeList = null;
 
+      // EVERY design an order can be placed for — built-ins AND owner-uploaded
+      // templates, from the one merged catalog the admin screens share.
+      //
+      // This used to read the STATIC catalog, so only the seven built-ins were
+      // selectable and no uploaded template could be chosen when creating or
+      // editing an order. That also broke the promise the in-store toggle makes:
+      // a design taken off the shop floor is meant to stay orderable BY THE OWNER
+      // here, which is impossible if this list cannot offer it.
+      //
+      // Listed whatever their state — private, withdrawn, uncalibrated. This is
+      // the owner's own order form, not the storefront; the generator still
+      // refuses to render an uncalibrated theme, which is the right place for
+      // that guard.
+      let designList = null;
+      async function loadDesignList() {
+        if (designList) return designList;
+        try {
+          const r = await fetch('/api/admin/designs?key=' + encodeURIComponent(key));
+          const d = r.ok ? await r.json() : {};
+          const rows = Array.isArray(d.designs) ? d.designs : [];
+          if (rows.length) {
+            designList = rows.map((x) => ({ name: x.name || x.id, theme: x.theme || x.id }));
+            return designList;
+          }
+        } catch {
+          /* fall through to the static catalog */
+        }
+        // Without it the dialog still works, just with the built-ins only —
+        // better than an empty design select.
+        designList = DESIGNS.map((d) => ({ name: d.name, theme: d.theme }));
+        return designList;
+      }
+
       async function loadThemeList() {
         if (themeList) return themeList;
         try {
@@ -874,12 +907,13 @@
         el('e-chasers').checked = !!c.chasers;
 
         await loadThemeList();
+        const designs = await loadDesignList();
         // Designs are stored by their HEBREW NAME (that is what the wizard posts),
         // so the select's value is the name and the theme rides along in a map.
         fillSelect(
           el('e-design'),
           [{ value: '', label: '—' }].concat(
-            DESIGNS.map((d) => ({ value: d.name, label: d.name }))
+            designs.map((d) => ({ value: d.name, label: d.name }))
           ),
           c.design || ''
         );
@@ -921,7 +955,10 @@
       // Picking a design re-points the generator theme at that design's own theme
       // (the same resolution the wizard does), then rebuilds the extra fields.
       el('e-design').onchange = () => {
-        const d = DESIGNS.find((x) => x.name === el('e-design').value);
+        // Resolve against the SAME merged list the select was built from — looking
+        // it up in the static catalog would find no theme for an uploaded
+        // template, silently leaving the generator pointed at the previous one.
+        const d = (designList || DESIGNS).find((x) => x.name === el('e-design').value);
         if (d && d.theme) {
           el('e-theme').value = d.theme;
           // A design mapped to a theme the templates list didn't return still has
