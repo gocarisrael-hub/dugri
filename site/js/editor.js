@@ -296,6 +296,7 @@
     var pageSelect = toolbar.querySelector('[data-role="pageselect"]');
     var importBtn = toolbar.querySelector('[data-role="import-staging"]');
     var importStoresBtn = toolbar.querySelector('[data-role="import-stores"]');
+    var importTemplatesBtn = toolbar.querySelector('[data-role="import-templates"]');
 
     // Per-field save state + the representative DOM node per text key (same-key
     // clones stay in sync, so any one node reflects the field's current value). One
@@ -822,6 +823,43 @@
       });
     }
 
+    // Bring the designs the owner onboarded on staging over to this service. The
+    // two imports above move texts, photos and settings — never a design, whose
+    // SVGs and fonts sit on the service's own volume. ADDITIVE: the confirmation
+    // says so, because the stores import right next to it deletes and the owner
+    // should not have to remember which button has which semantics.
+    if (importTemplatesBtn) {
+      importTemplatesBtn.addEventListener('click', function () {
+        if (
+          !window.confirm(
+            'פעולה זו תעתיק לכאן את העיצובים שהועלו בסטייג׳ינג (כולל הכיול שלהם).\n\n' +
+              'עיצוב שקיים כאן בלבד יישאר — שום דבר לא יימחק. להמשיך?'
+          )
+        ) {
+          return;
+        }
+        setStatus('מייבא עיצובים…');
+        postImportTemplates(key).then(
+          function (data) {
+            var summary =
+              'הייבוא הושלם: ' +
+              ((data.added || []).length || 0) +
+              ' עיצובים חדשים, ' +
+              ((data.updated || []).length || 0) +
+              ' עודכנו, ' +
+              (data.files || 0) +
+              ' קבצים';
+            setStatus(summary);
+            window.alert(summary);
+            location.reload();
+          },
+          function (err) {
+            setStatus((err && err.userMessage) || 'שגיאה בייבוא');
+          }
+        );
+      });
+    }
+
     function leaveEditMode() {
       location.href = exitHref(location.pathname, location.search);
     }
@@ -961,13 +999,17 @@
       return adminResult(r, 'save failed', key);
     });
   }
-  // Trigger the cross-service "import content from staging" on the server. Resolves
-  // to the server's summary { pages, fields, images, backup }; rejects with an Error
-  // whose userMessage carries the server's Hebrew reason so the toolbar can show WHY
-  // (missing STAGING_URL, self-import, staging unreachable, …). A 403 self-heals the
-  // remembered key, exactly like adminResult, so a rotated key doesn't lock edit mode.
-  function postImportFromStaging(key) {
-    return fetch(adminUrl('/api/admin/content/import-from-staging', key), {
+  // Trigger one of the cross-service staging→prod imports. Resolves to the
+  // server's summary object; rejects with an Error whose userMessage carries the
+  // server's Hebrew reason so the toolbar can show WHY (missing STAGING_URL,
+  // self-import, staging unreachable, …). A 403 self-heals the remembered key,
+  // exactly like adminResult, so a rotated key doesn't lock edit mode.
+  //
+  // One helper for all three imports (content / stores / templates): they differ
+  // only in endpoint and in how their summary reads, and a third hand-rolled copy
+  // is a third place for the 403 self-heal to drift out of sync.
+  function postImport(endpoint, key) {
+    return fetch(adminUrl(endpoint, key), {
       method: 'POST',
     }).then(function (r) {
       if (r.status === 403) {
@@ -996,39 +1038,20 @@
       );
     });
   }
-  // Trigger the cross-service "import the owner-authored STORES from staging"
-  // (settings/prices/emails, playbook, design gallery, word lists). Same shape and
-  // same 403 self-heal as postImportFromStaging above; separate endpoint because
-  // it mirrors different stores and is independently destructive.
+  // The content overrides (every editable text + photo on the site).
+  function postImportFromStaging(key) {
+    return postImport('/api/admin/content/import-from-staging', key);
+  }
+  // The owner-authored stores: settings/prices/emails, playbook, design gallery,
+  // word lists. Separate endpoint because it mirrors different stores and is
+  // independently destructive.
   function postImportStores(key) {
-    return fetch(adminUrl('/api/admin/stores/import-from-staging', key), {
-      method: 'POST',
-    }).then(function (r) {
-      if (r.status === 403) {
-        try {
-          if (window.localStorage.getItem(LS_KEY) === key) {
-            window.localStorage.removeItem(LS_KEY);
-          }
-        } catch {
-          /* storage blocked — nothing to clear */
-        }
-      }
-      return r.json().then(
-        function (data) {
-          if (!r.ok) {
-            var e = new Error((data && data.error) || 'import failed');
-            e.userMessage = (data && data.error) || 'שגיאה בייבוא';
-            throw e;
-          }
-          return data;
-        },
-        function () {
-          var e = new Error('import failed');
-          e.userMessage = 'שגיאה בייבוא';
-          throw e;
-        }
-      );
-    });
+    return postImport('/api/admin/stores/import-from-staging', key);
+  }
+  // The owner template store — designs onboarded + calibrated in the admin UI.
+  // These live on the service's own volume, so neither import above moves them.
+  function postImportTemplates(key) {
+    return postImport('/api/admin/templates/import-from-staging', key);
   }
   function postImage(page, key, editKey, file) {
     var fd = new window.FormData();
@@ -1110,6 +1133,7 @@
       '<span class="dugri-editbar__status" data-role="status" aria-live="polite"></span>' +
       '<button type="button" class="dugri-editbar__btn" data-role="import-staging">ייבוא תוכן מהסטייג׳ינג</button>' +
       '<button type="button" class="dugri-editbar__btn" data-role="import-stores">ייבוא הגדרות מהסטייג׳ינג</button>' +
+      '<button type="button" class="dugri-editbar__btn" data-role="import-templates">ייבוא עיצובים מהסטייג׳ינג</button>' +
       '<button type="button" class="dugri-editbar__btn" data-role="save">שמור</button>' +
       '<button type="button" class="dugri-editbar__btn dugri-editbar__btn--exit" data-role="exit">שמירה ויציאה</button>';
     // The picker's change handler is wired in enableEditMode (it must save-then-nav,

@@ -188,6 +188,31 @@ itself — the endpoint refuses a self-import):
   (This is the SAME value as the `STAGING_ADMIN_KEY` GitHub secret used by the smoke
   step; here it is a **Railway env var on the production service**, not a repo secret.)
 
+### The three import buttons
+
+There are **three** separate staging→production imports, because they move three
+different kinds of thing off three different parts of the volume. All three use the
+same `STAGING_URL` + `STAGING_ADMIN_KEY` above and all three refuse a self-import.
+
+| Button                    | Endpoint                        | Moves                                                                                   | Semantics            |
+| ------------------------- | ------------------------------- | --------------------------------------------------------------------------------------- | -------------------- |
+| ייבוא תוכן מהסטייג׳ינג    | `content/import-from-staging`   | every editable text + photo on the site                                                 | mirror               |
+| ייבוא הגדרות מהסטייג׳ינג  | `stores/import-from-staging`    | settings/prices/email templates/WhatsApp triggers, playbook, design gallery, word lists | **mirror — deletes** |
+| ייבוא עיצובים מהסטייג׳ינג | `templates/import-from-staging` | designs onboarded + calibrated in the admin UI (SVGs, fonts, recipe, theme entry)       | additive             |
+
+The **designs** import is the one to reach for after onboarding a new template on
+staging. A design lives in the owner template store (`DATA_DIR/templates/<slug>/` —
+see `server/template-store.js`), which is per-service, so it travels with neither a
+deploy nor the other two imports. It is **additive on purpose**: a design that exists
+only on production is left alone. Remove one deliberately with `DELETE
+/api/admin/templates/:key` instead.
+
+Production downloads each file individually from staging's
+`GET /api/admin/templates/export` manifest and verifies its sha256, so a truncated
+transfer aborts rather than installing a broken SVG. Nothing is installed until every
+file has been downloaded and verified, and the owner `themes.json` is backed up before
+it is rewritten. `TEMPLATE_IMPORT_MAX_BYTES` (default 500MB) caps one import.
+
 ## Card payment (PeleCard)
 
 Online credit-card payment via the PeleCard Iframe is **off until you set the
