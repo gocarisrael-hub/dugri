@@ -270,15 +270,66 @@
       const submitBtn = document.getElementById('submitBtn');
       const errEl = document.getElementById('err');
 
-      // Display name per design id, for the table + the create dropdown.
+      // Display name per design id — for the TABLE, so it must cover EVERY design.
+      // A code outlives the setting that justified it: a design made public again
+      // still has its old codes listed here, and they need a name, not a raw id.
+      // Filled from the merged catalog below; seeded from the static one so the
+      // built-ins render even if that request fails.
       const NAME_BY_ID = new Map(DESIGNS.map((d) => [d.id, d.name]));
-      // Populate the design dropdown. Private designs (the usual target of a code)
-      // are marked so the admin can tell them apart from the public ones.
-      for (const d of DESIGNS) {
-        const opt = document.createElement('option');
-        opt.value = d.id;
-        opt.textContent = d.name + (d.public ? '' : ' · פרטי');
-        designEl.appendChild(opt);
+
+      /**
+       * Fill the design dropdown with the designs a code can actually unlock.
+       *
+       * ONLY PRIVATE ONES. A code exists to reveal a design that is hidden from
+       * the grid; offering a public design is offering a code that unlocks
+       * something already visible to everyone. The list used to be every static
+       * built-in — all of which are public — so in practice it could never offer
+       * a valid target.
+       *
+       * Also requires the design to be IN STORE. A withdrawn design is off the
+       * shop floor for code holders too (the validate route rejects it), so
+       * listing one would let the owner mint a code that can never work.
+       *
+       * Uses the MERGED catalog, so an owner-uploaded template is a legitimate
+       * target like any other — there is no built-in/custom distinction here.
+       */
+      async function fillDesignOptions() {
+        let designs = null;
+        try {
+          const r = await fetch(withKey('/api/admin/designs'));
+          const j = await r.json();
+          if (r.ok && Array.isArray(j.designs)) designs = j.designs;
+        } catch {
+          /* fall through to the static catalog below */
+        }
+        // The merged catalog is the better source; without it, fall back to the
+        // static built-ins rather than leaving the admin with no form at all.
+        const all = designs || DESIGNS;
+        for (const d of all) if (d && d.id) NAME_BY_ID.set(d.id, d.name || d.id);
+
+        const eligible = all.filter(
+          (d) => d && (d.visibility ? d.visibility === 'private' : d.public === false)
+        );
+        const usable = eligible.filter((d) => d.inStore !== false);
+
+        for (const d of usable) {
+          const opt = document.createElement('option');
+          opt.value = d.id;
+          opt.textContent = d.name || d.id;
+          designEl.appendChild(opt);
+        }
+
+        if (usable.length) return;
+        // Nothing to make a code FOR. Say why, and where to change it — an empty
+        // dropdown next to a live "create" button reads as a broken page.
+        designEl.disabled = true;
+        submitBtn.disabled = true;
+        const note = document.createElement('p');
+        note.className = 'hint';
+        note.textContent = eligible.length
+          ? 'יש עיצובים פרטיים, אבל הם לא בחנות — קוד לא יפתח אותם. הפעילו "בחנות" במסך התבניות.'
+          : 'אין עיצובים פרטיים. קוד עיצוב פותח עיצוב מוסתר — הגדירו עיצוב כ"פרטי" במסך התבניות קודם.';
+        form.appendChild(note);
       }
 
       // Human-readable Hebrew for the server's terse error codes.
@@ -450,6 +501,10 @@
             return;
           }
           const codes = (await r.json()).design_codes || [];
+          // Options BEFORE render(): it prints a design's name from NAME_BY_ID,
+          // which the catalog fetch fills — rendering first shows raw ids for any
+          // design the static built-in list does not carry.
+          if (!designEl.options.length) await fillDesignOptions();
           sub.textContent = codes.length + ' קודי עיצוב';
           createPanel.hidden = false;
           render(codes);
