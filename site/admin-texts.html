@@ -784,7 +784,13 @@
         const id = slug('email', k);
         let fields = '';
         if (reg.kind === 'email') {
+          // The per-message switch, rendered exactly like a WhatsApp trigger's so
+          // both channels read the same. Only an explicit false is off — an
+          // override saved before this switch existed has no `enabled` at all.
           fields =
+            '<label class="toggle"><input type="checkbox" data-field="enabled"' +
+            (eff.enabled === false ? '' : ' checked') +
+            ' /> מופעל</label>' +
             '<label class="fld">נושא</label>' +
             '<input type="text" data-field="subject" value="' +
             esc(eff.subject) +
@@ -1086,6 +1092,7 @@
         }
         if (kind === 'email') {
           return {
+            enabled: card.querySelector('[data-field="enabled"]').checked,
             subject: card.querySelector('[data-field="subject"]').value,
             body: card.querySelector('[data-field="body"]').value,
           };

@@ -114,7 +114,9 @@ describe('POST /api/admin/settings', () => {
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.effective).toEqual(value);
+    // The EFFECTIVE value is the posted override merged over the default, so it
+    // carries the per-message switch the payload omitted.
+    expect(body.effective).toEqual({ enabled: true, ...value });
     // Persisted under DATA_DIR.
     const onDisk = JSON.parse(fs.readFileSync(path.join(dataDir, 'settings.json'), 'utf8'));
     expect(onDisk.email.order_paid).toEqual(value);

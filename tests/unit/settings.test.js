@@ -33,6 +33,8 @@ describe('get / set / reset', () => {
   it('returns the registry default when there is no override', () => {
     const s = loadFresh();
     expect(s.get('email', 'order_paid')).toEqual({
+      // The per-message switch ships ON — see REGISTRY's 'email' kind note.
+      enabled: true,
       subject: 'דוגרי · התקבלה הזמנה חדשה — {honoree}',
       body: 'התקבלה הזמנה חדשה עבור {honoree}.',
     });
@@ -45,6 +47,9 @@ describe('get / set / reset', () => {
       body: 'קיבלנו תשלום מ-{honoree}.',
     });
     expect(s.get('email', 'order_paid')).toEqual({
+      // A subject/body override deep-merges over the default, so the switch the
+      // owner never touched stays on.
+      enabled: true,
       subject: 'שולם — {honoree}',
       body: 'קיבלנו תשלום מ-{honoree}.',
     });
@@ -127,7 +132,7 @@ describe('value-shape validation (set + validateValue)', () => {
     const s = loadFresh();
     expect(s.validateValue('email', 'order_paid', { subject: 'a', body: 'b' })).toBeNull();
     const eff = s.set('email', 'order_paid', { subject: 'a', body: 'b' });
-    expect(eff).toEqual({ subject: 'a', body: 'b' });
+    expect(eff).toEqual({ enabled: true, subject: 'a', body: 'b' });
   });
 
   it('range-validates a daily_* trigger hour (0..23 integer)', () => {
@@ -288,6 +293,7 @@ describe('get() is a defensive backstop', () => {
     expect(f.version).toBe('גרסה');
     // order_paid returns the complete template, not the bad string.
     expect(s.get('email', 'order_paid')).toEqual({
+      enabled: true,
       subject: 'דוגרי · התקבלה הזמנה חדשה — {honoree}',
       body: 'התקבלה הזמנה חדשה עבור {honoree}.',
     });
@@ -308,7 +314,11 @@ describe('set() rolls back the in-memory change when save() fails', () => {
     );
     spy.mockRestore();
     // Memory still holds the PRIOR value — not the failed new one.
-    expect(s.get('email', 'order_paid')).toEqual({ subject: 'good', body: 'good body' });
+    expect(s.get('email', 'order_paid')).toEqual({
+      enabled: true,
+      subject: 'good',
+      body: 'good body',
+    });
     // And disk was never updated to the new value.
     const onDisk = JSON.parse(fs.readFileSync(path.join(dataDir, 'settings.json'), 'utf8'));
     expect(onDisk.email.order_paid).toEqual({ subject: 'good', body: 'good body' });
