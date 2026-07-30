@@ -203,6 +203,24 @@ _BOLD_WEIGHT = float(os.environ.get("DUGRI_TITLE_BOLD_W", "0.035"))
 _TITLE_UID = [0]
 
 
+def _ink_bearings(f, ref, line, size):
+    """Gaps between a line's ADVANCE edges and its actual INK, in user units.
+
+    SVG anchors a text run by its advance width, but ink and advance are not the
+    same span: a script or italic face's glyphs routinely overhang the advance
+    (Haglos' "Bride in One Pot" measures 1050 of ink against a 1018 advance), and
+    a face with generous side bearings does the reverse. Anchoring the advance
+    therefore puts the VISIBLE text off the mark the box asks for.
+
+    Returns ``(lsb, rsb)`` — the left and right gaps, scaled from the metric
+    ``ref`` size to the rendered ``size``. Either may be NEGATIVE, which is
+    exactly the overhang case.
+    """
+    bb = f.getbbox(line)
+    adv = f.getlength(line)
+    return bb[0] / ref * size, (adv - bb[2]) / ref * size
+
+
 def _title_ink_stack(f, ref, lines):
     """Total stacked title-ink height at the metric ``ref`` size.
 
@@ -387,17 +405,36 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     for k, line in enumerate(lines):
         by = top + gap * k + size * 0.33
         wln = ratios[k] * size
+        # Centre on the INK, not the advance. SVG's text-anchor positions a run by its
+        # ADVANCE width, but a script or italic face's glyphs overhang that advance
+        # — Haglos' final "t" swash runs 32/1018 past it — so anchoring the advance
+        # leaves the visible title off-centre even though the geometry is right.
+        # Measured on daniel-amit: the title sat 5.5px right of centre on a 598px
+        # card, on BOTH faces (margins L=25 R=14), against a Canva original that is
+        # centred. Correcting by the bearing asymmetry costs one getbbox per line
+        # and needs no per-theme offset knob. (``lsb``/``rsb`` are the gaps from the
+        # advance edges to the ink, in user units; either may be NEGATIVE when the
+        # ink overhangs.)
         if left_align:
             # Anchor every line to the box's left edge; extend the path right so
-            # the left-anchored (possibly arched) run is never clipped.
+            # the left-anchored (possibly arched) run is never clipped. Left and
+            # right alignment stay on the ADVANCE deliberately: they exist to give
+            # multi-line titles a SHARED edge, and a shared advance edge is what
+            # reads as flush — correcting each line by its own bearing would ragged
+            # that edge by a glyph's overhang.
             xl, xr = x0, x0 + wln + size * 0.3
         elif right_align:
             # Mirror of left: anchor every line to the box's RIGHT edge; extend
             # the path left so the right-anchored run is never clipped.
             xl, xr = x1 - wln - size * 0.3, x1
         else:
-            xl, xr = cx - wln / 2 - size * 0.15, cx + wln / 2 + size * 0.15
-        cxp = (xl + xr) / 2 if (left_align or right_align) else cx
+            # Shift the anchor by half the asymmetry so the ink — not the advance —
+            # straddles the box centre.
+            lsb, rsb = _ink_bearings(f, ref, line, size)
+            skew = (lsb - rsb) / 2
+            xl = cx - skew - wln / 2 - size * 0.15
+            xr = cx - skew + wln / 2 + size * 0.15
+        cxp = (xl + xr) / 2
 
         def arc(pid, ox, oy):
             defs.append(f'<path id="{pid}" fill="none" d="M {xl+ox:.1f} {by+oy:.1f} '

@@ -452,6 +452,42 @@ def test_title_align_center_is_default_and_symmetric():
         assert abs((start_x + end_x) / 2 - cx) < 0.15, "centered path must straddle box mid-x"
 
 
+def test_title_center_straddles_the_ink_not_the_advance():
+    """A script face's ink OVERHANGS its advance width, and SVG's text-anchor
+    positions a run by the advance — so anchoring the advance leaves the visible
+    title off-centre even though the box geometry is correct.
+
+    Measured on daniel-amit (Haglos, "Bride in One Pot": 1050 of ink against a
+    1018 advance): the title sat 5.5px right of centre on a 598px card, on BOTH
+    faces, margins L=25 R=14, against a Canva original that is centred.
+    bachelorette's MrDafoe is the same shape of error at 4.7% of the advance,
+    which is what this fixture uses. Eight of the nine shipped title faces have
+    NO asymmetry, so the correction is a no-op for them — hence the guard below
+    that the fixture font really does overhang, or the assertion proves nothing.
+    """
+    cfg = config.theme("bachelorette")
+    fp = config.font_path("bachelorette", cfg["title_font"])
+    ts = cfg["title_style"]
+    box = {"x0": 40.0, "y0": 30.0, "x1": 180.0, "y1": 55.0}
+    line = "Alma's"
+    svg = rp.title_block(box, [line], ts["fill"], ts["outline"], fp,
+                         ts["outline_w"], ts["arch"], ts["shadow"], align="center")
+    size = float(re.search(r'font-size="([\d.]+)"', svg).group(1))
+    # Measured straight from the font, NOT via the renderer's own helper, so this
+    # asserts the resulting geometry rather than restating the implementation.
+    f, ref = rp._title_metrics(fp)
+    bb, adv = f.getbbox(line), f.getlength(line)
+    skew = ((bb[0] + bb[2]) / 2 - adv / 2) / ref * size
+    assert abs(skew) > 0.3, f"fixture font must overhang for this to test anything (skew {skew})"
+    cx = (box["x0"] + box["x1"]) / 2
+    start_x, end_x = _paths(svg)[0]
+    advance_centre = (start_x + end_x) / 2
+    ink_centre = advance_centre + skew
+    assert abs(ink_centre - cx) < 0.15, (
+        f"the INK must straddle box mid-x {cx}: ink centre {ink_centre:.2f}, "
+        f"advance centre {advance_centre:.2f}")
+
+
 # --- 7. de-bold: monochrome title = pure fill, contrasting = outline ring -----
 
 def _stroke_widths(svg):
