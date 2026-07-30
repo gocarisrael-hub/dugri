@@ -212,8 +212,13 @@ class DeckDocument:
             extra = ""
             if self.press:
                 # Mirrored bleed FIRST so the card paints over it; marks last so
-                # nothing paints over them.
-                art = bleed_uses(_design_id(design_key), vb) + art
+                # nothing paints over them. The bands are emitted ONLY when the
+                # artwork is actually short of the requested bleed: eight extra
+                # clipped copies of the artwork per page cost Ghostscript ~9x
+                # the flattening work (measured: 6.7s -> 58.1s over ten pages),
+                # and empty ones would pay that for nothing.
+                if self.press.manufactures_bleed:
+                    art = bleed_uses(_design_id(design_key), vb) + art
                 extra = f'<use xlink:href="#{_MARKS_ID}"/>'
             pages.append(
                 f'<div class="card"><svg xmlns="http://www.w3.org/2000/svg" '
@@ -290,7 +295,13 @@ def _band_transform(band, vb):
 
 
 def press_defs(press, vb):
-    """Clip paths for the bleed ring plus the crop marks, defined once per deck."""
+    """Clip paths for the bleed ring plus the crop marks, defined once per deck.
+
+    The clip paths are skipped when no bleed is being manufactured — nothing
+    references them, and an unused clipPath is still markup Ghostscript reads.
+    """
+    if not press.manufactures_bleed:
+        return _marks(press, vb)
     left, top = press.margins(vb)
     left -= press.mark * vb[2] / press.art_w      # the ring excludes the mark margin
     top -= press.mark * vb[3] / press.art_h

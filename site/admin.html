@@ -615,6 +615,61 @@
         return a;
       }
 
+      // A button for the PRINT SHOP copy of an order: CMYK, flattened, with
+      // bleed and crop marks. A separate artifact from the customer's deck, and
+      // minutes to build (a full re-render onto the bigger press sheet, then
+      // Ghostscript over the whole deck) — so this POSTs to start the job and
+      // polls until the file lands, rather than holding a request open.
+      function pressButton(id) {
+        const b = document.createElement('button');
+        b.className = 'act';
+        b.textContent = 'PDF לבית דפוס';
+        b.title = 'CMYK, שטוח, עם בליד וסימוני חיתוך — הקובץ שנשלח לבית הדפוס';
+        const url =
+          location.origin +
+          '/api/admin/collections/' +
+          id +
+          '/press?key=' +
+          encodeURIComponent(key);
+        let polling = false;
+        const stop = (label) => {
+          b.textContent = label;
+          b.disabled = false;
+          polling = false;
+        };
+        const poll = () => {
+          if (!polling) return;
+          fetch(url)
+            .then(async (r) => {
+              if (r.status === 202) return setTimeout(poll, 5000);
+              if (r.ok) {
+                stop('הורד PDF לבית דפוס');
+                b.onclick = () => window.open(url, '_blank', 'noopener');
+                window.open(url, '_blank', 'noopener');
+                return;
+              }
+              const d = await r.json().catch(() => ({}));
+              stop('נכשל — נסי שוב');
+              alert('בניית הקובץ לבית הדפוס נכשלה:\n' + (d.detail || d.error || r.status));
+            })
+            .catch(() => setTimeout(poll, 5000));
+        };
+        b.onclick = async () => {
+          b.disabled = true;
+          b.textContent = 'בונה…';
+          const r = await fetch(url, { method: 'POST' }).catch(() => null);
+          if (!r || (!r.ok && r.status !== 202)) {
+            const d = r ? await r.json().catch(() => ({})) : {};
+            stop('נכשל — נסי שוב');
+            alert('לא הצלחתי להתחיל:\n' + (d.detail || d.error || (r && r.status) || 'network'));
+            return;
+          }
+          polling = true;
+          setTimeout(poll, 5000);
+        };
+        return b;
+      }
+
       // Last fetched list + current view state (client-side filter/sort).
       let allCols = [];
       // collection id -> { groupId, closed }, refreshed with the collections.
@@ -1303,6 +1358,8 @@
               tdProduction.appendChild(document.createTextNode(' '));
               tdProduction.appendChild(boardLink(c.id));
             }
+            tdProduction.appendChild(document.createTextNode(' '));
+            tdProduction.appendChild(pressButton(c.id));
           } else if (prod && prod.state === 'needs_design') {
             // Bespoke custom order: paid, awaiting hand-design (no template).
             const badge = document.createElement('span');
@@ -1483,6 +1540,8 @@
               pdfWrap.appendChild(document.createTextNode(' '));
               pdfWrap.appendChild(boardLink(c.id, 'הורד לוח'));
             }
+            pdfWrap.appendChild(document.createTextNode(' '));
+            pdfWrap.appendChild(pressButton(c.id));
           };
           genBtn.onclick = async () => {
             // Default to the RESOLVED generator theme key stored on the order/

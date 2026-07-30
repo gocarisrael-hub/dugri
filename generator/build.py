@@ -23,6 +23,7 @@ import deck_html
 import pack
 import render_page as rp
 import svg_rings
+import press
 
 CHROME = rp.CHROME
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -352,7 +353,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
 
 def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
                workdir="/tmp/gen/deck", progress=True, chasers=False,
-               custom_title=None, photos=None):
+               custom_title=None, photos=None, press_icc=None, press_bleed=None):
     """Assemble a v2 order: the card deck PDF + the board PDF.
 
     Returns ``(out_pdf, page_count, board_pdf)``. The deck is
@@ -381,9 +382,27 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
             "migrated template must keep its clean/board.svg alongside the "
             "numbered 1..9 cards."
         )
+    # A PRESS run renders the same deck onto a bigger sheet — the card artwork
+    # keeps its coordinates and the page grows around it to carry bleed and crop
+    # marks — then converts to CMYK and flattens. The customer deck is unchanged
+    # by any of this: press_icc is what turns it on.
+    geom = None
+    if press_icc is not None:
+        vb = deck_html.view_box(card_assets.read_svg(
+            config.card_path(theme, config.fronts(cfg)[0])))
+        kw = {} if press_bleed is None else {"bleed_mm": press_bleed}
+        geom = press.PressGeometry(vb[2], vb[3], **kw)
+        if progress:
+            print("press: " + geom.describe())
     doc, vbs = deck_document(theme, csvp, title_lines, word_font=word_font,
-                             photos=photos, progress=progress, workdir=workdir)
+                             photos=photos, progress=progress, workdir=workdir,
+                             press_geom=geom)
     print_to_pdf(doc.html(vbs), out_pdf, workdir, tag="deck")
+    if geom is not None:
+        # Ghostscript is minutes of work on a full deck, so this deliberately
+        # runs AFTER the render rather than streaming: a failure here leaves the
+        # rendered sheet behind for diagnosis instead of losing both.
+        press.press_pdf(out_pdf, out_pdf, geom, icc=press_icc or None)
     if progress:
         print(f"deck: {doc.page_count} pages")
     board = build_board_pdf(theme, board_pdf_path(out_pdf), title_lines, workdir,

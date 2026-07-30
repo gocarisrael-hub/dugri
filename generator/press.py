@@ -29,17 +29,19 @@ MM = 72.0 / 25.4          # points per millimetre
 # A7, the finished card. The artwork pages are bigger than this because they
 # already carry some bleed; how much is derived, never assumed (see below).
 TRIM_MM = (74.0, 105.0)
-# 3 mm, the industry norm and what the shop accepted. It is a parameter, not a
-# baked-in constant, because the ask moved once already (6 mm before the shop
-# was asked whether 3 would do).
+# None means "whatever bleed the artwork already carries" — the owner's choice,
+# and the only setting that manufactures nothing at all: every dot in the file is
+# Canva's own ink.
 #
-# Why not simply ship the artwork untouched: Canva exported it with ~2.5 mm, so
-# "as exported" is 0.5 mm SHORT of the agreed 3 mm. At 3 mm only that last
-# 0.5 mm per side is mirrored — 0.5 mm of a 94 mm sheet, all of it inside the
-# band the guillotine destroys — so the file meets spec while staying as close
-# to untouched artwork as the spec permits. Setting this to 2.495 makes the
-# mirroring vanish entirely, at the cost of falling under the agreed bleed.
-BLEED_MM = 3.0
+# It is also the fast one. Manufacturing the missing millimetres means mirroring
+# the outer band outward, which puts eight extra clipped copies of the artwork on
+# every page; Ghostscript then has ~9x the work to flatten. Measured on ten
+# grapefruit pages: 6.7s without them, 58.1s with — 2.3 minutes versus 20 for a
+# 208-page deck.
+#
+# Set a number (in mm) to ask for a specific depth; anything beyond what the
+# artwork holds is mirrored, and pays that cost.
+BLEED_MM = None
 # Crop marks sit OUTSIDE the bleed — a mark drawn over the bleed would print on
 # the part of the sheet that gets cut away and be useless. This is their length;
 # they start at the bleed edge and point outwards.
@@ -73,12 +75,15 @@ class PressGeometry:
                  mark_mm=MARK_MM):
         self.art_w, self.art_h = float(art_w), float(art_h)
         self.trim_w, self.trim_h = trim_mm[0] * MM, trim_mm[1] * MM
-        self.bleed = bleed_mm * MM
         self.mark = mark_mm * MM
         self.mark_w = MARK_W_PT
         # Bleed the artwork already carries, per axis.
         self.native_x = max(0.0, (self.art_w - self.trim_w) / 2)
         self.native_y = max(0.0, (self.art_h - self.trim_h) / 2)
+        # The SHALLOWER axis is what the artwork can guarantee on all four
+        # sides, so that is the depth "use what we have" can honestly declare.
+        self.bleed = (min(self.native_x, self.native_y) if bleed_mm is None
+                      else bleed_mm * MM)
         # Bleed still to be manufactured, per axis. Never negative: artwork with
         # MORE bleed than asked for is fine, it just gets trimmed deeper.
         self.extra_x = max(0.0, self.bleed - self.native_x)
@@ -115,11 +120,17 @@ class PressGeometry:
         left, top = self.margins(vb)
         return (vb[0] - left, vb[1] - top, vb[2] + 2 * left, vb[3] + 2 * top)
 
+    @property
+    def manufactures_bleed(self):
+        """True when some of the bleed has to be mirrored into existence."""
+        return self.extra_x > 1e-9 or self.extra_y > 1e-9
+
     def describe(self):
+        made = (f"{self.extra_x / MM:.2f}mm mirrored"
+                if self.manufactures_bleed else "nothing manufactured")
         return (f"trim {self.trim_w / MM:.0f}x{self.trim_h / MM:.0f}mm, "
-                f"bleed {self.bleed / MM:.1f}mm "
-                f"({self.native_x / MM:.2f}mm from artwork + "
-                f"{self.extra_x / MM:.2f}mm mirrored), "
+                f"bleed {self.bleed / MM:.2f}mm "
+                f"({self.native_x / MM:.2f}mm from artwork, {made}), "
                 f"page {self.page_w / MM:.1f}x{self.page_h / MM:.1f}mm")
 
 

@@ -28,7 +28,8 @@ from topup import topup
 
 def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                  word_font=None, workdir=None, progress=False, chasers=False,
-                 custom_title=None, photos=None):
+                 custom_title=None, photos=None, press_icc=None,
+                 press_bleed=None):
     """Render an order and return ``(out_pdf, page_count, board_pdf)``.
 
     ``board_pdf`` is the separate board file a v2 (single-card) template
@@ -90,6 +91,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                 extra_fields=extra_fields or {}, word_font=word_font,
                 workdir=os.path.join(workdir, "build"), progress=progress,
                 chasers=chasers, custom_title=custom_title, photos=photos,
+                press_icc=press_icc, press_bleed=press_bleed,
             )
 
         fronts = config.clean_path(theme_key, "fronts")
@@ -142,6 +144,12 @@ def main():
     ap.add_argument("--field", action="append", default=[], metavar="KEY=VALUE")
     ap.add_argument("--chasers", action="store_true",
                     help="use the theme's chasers board variant when available")
+    ap.add_argument("--press", metavar="ICC", default=None,
+                    help="build the PRINT SHOP copy instead: CMYK against this "
+                         "ICC profile, transparency flattened, text outlined, "
+                         "and the sheet grown to carry bleed + crop marks")
+    ap.add_argument("--bleed", type=float, default=None, metavar="MM",
+                    help="bleed depth in mm for --press (default: the agreed 3)")
     ap.add_argument("--title", default=None,
                     help="optional custom title overriding the theme-derived title")
     ap.add_argument("--photo", action="append", default=[], metavar="PATH",
@@ -153,6 +161,7 @@ def main():
         args.theme, args.name, _parse_fields(args.field), personal,
         out_pdf=args.out_pdf, word_font=args.word_font, progress=True,
         chasers=args.chasers, custom_title=args.title, photos=args.photo,
+        press_icc=args.press, press_bleed=args.bleed,
     )
     print(f"\nwrote {pdf} ({pages} pages)")
     # Printed on its own line so the server can pick the board artifact out of

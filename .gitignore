@@ -44,6 +44,18 @@ resources/instagram/screenshots/
 # / `git stash -u` can't sweep your working docs (comparison PDF/DOCX, screenshots…).
 /resources/*
 !/resources/canva/
+# The press export's ICC profile has to exist on the machine that RUNS the
+# export, so it ships in the repo rather than living on one laptop — without it
+# the admin button answers 500 (see PRESS_ICC in server/index.js). Only the
+# profile itself: the pattern re-ignores everything else in that folder so the
+# sample PDFs and the second SWOP variant stay untracked.
+# Licence, from inside the file: "Copyright X-Rite, Inc.. This profile is made
+# available by IDEAlliance, with permission of X-Rite, Inc., and may be used,
+# embedded, exchanged, and shared without restriction. It may not be altered,
+# or sold without written permission of IDEAlliance." We do neither.
+!/resources/print shop/
+/resources/print shop/*
+!/resources/print shop/SWOP2006_Coated3v2.icc
 
 # Canva source SVGs — LOCAL-ONLY build input (~58MB each), never served. The
 # committed site/assets/designs/ outputs are what actually run the site. To
