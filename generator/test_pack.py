@@ -5,6 +5,7 @@ Run: python3 generator/test_pack.py   (or via pytest)
 """
 import csv
 import os
+import random
 import tempfile
 
 import pack
@@ -20,8 +21,38 @@ def _csv(name="order.csv"):
 
 def _words(n, prefix="מילה"):
     """n distinct words. Distinct matters: pack dedupes, so repeats would shrink
-    the deck and make a card-count assertion measure the wrong thing."""
+    the deck and make a card-count assertion measure the wrong thing.
+
+    NOTE these are two-token strings ("מילה 7"), i.e. PHRASES by pack.is_multi.
+    The deck-shape tests below therefore also exercise the all-phrase supply,
+    which must still fill every card. The phrase-mix tests use _mix()."""
     return [f"{prefix} {i}" for i in range(n)]
+
+
+def _mix(n_single, n_multi):
+    """n_single one-token words + n_multi phrases, interleaved.
+
+    Interleaved on purpose: if the two kinds arrived already grouped, a packer
+    that ignored the split could still look sorted by accident."""
+    singles = [f"מילה{i}" for i in range(n_single)]
+    multis = [f"ביטוי ארוך {i}" for i in range(n_multi)]
+    out = []
+    for i in range(max(n_single, n_multi)):
+        if i < n_single:
+            out.append(singles[i])
+        if i < n_multi:
+            out.append(multis[i])
+    return out
+
+
+def _cards(path):
+    """The word cards' 4-lists, in deck order (photo card excluded)."""
+    return [c["words"] for c in pack.load_cards(path) if c["kind"] == "word"]
+
+
+def _n_multi(words):
+    """How many phrases a card carries (blanks don't count)."""
+    return sum(1 for w in words if w and pack.is_multi(w))
 
 
 def _rows(path):
@@ -162,6 +193,207 @@ def test_load_cards_falls_back_to_the_row_index_for_a_bad_front():
     loaded = pack.load_cards(out)
     assert [c["front"] for c in loaded] == [0, 1, 2, None]
     assert loaded[1]["words"] == ["ה", "ו", "ז", "ח"]
+
+
+def test_a_normal_deck_gives_every_card_three_singles_and_one_phrase():
+    # The owner's rule at a TYPICAL phrase rate: 3 one-word entries + 1 phrase.
+    # All four words on a card render at ONE size, so a card of four phrases sets
+    # tiny. This shape is only reachable while phrases are <= a quarter of the
+    # list; the promise that survives every ratio is the invariant test below.
+    # 309 singles + 103 phrases = 412 words = exactly 103 cards x (3+1).
+    out = _csv()
+    n, cards = pack.pack(_mix(309, 103), out)
+    assert n == FULL and cards == pack.WORD_CARDS + 1
+    for words in _cards(out):
+        assert _n_multi(words) == 1, f"want exactly one phrase, got {words}"
+
+
+def test_the_phrase_is_the_fourth_word_on_the_card():
+    # Slot 4 is the BOTTOM line of the card, where a phrase that wraps to two or
+    # three lines has room. A phrase in slot 1 would push the rest down.
+    out = _csv()
+    pack.pack(_mix(309, 103), out)
+    for words in _cards(out):
+        assert pack.is_multi(words[3]), f"phrase must be last, got {words}"
+        assert not any(pack.is_multi(w) for w in words[:3]), words
+
+
+def test_the_phrase_sits_last_among_the_words_actually_present():
+    # The final card can be short (6 words -> 4+2). Its blanks must stay
+    # TRAILING — the card renderer numbers slots 1..4 top-down, so a blank
+    # between two words prints an empty numbered line. The phrase therefore
+    # takes the last FILLED slot, not literally w4.
+    out = _csv()
+    n, cards = pack.pack(_mix(5, 1), out)
+    assert n == 6 and cards == 2 + 1
+    last = _cards(out)[-1]
+    assert not pack.is_multi(last[0]) and pack.is_multi(last[1])
+    assert last[2] == "" and last[3] == "", f"blanks must trail, got {last}"
+
+
+def test_no_word_is_lost_or_duplicated_over_a_large_random_list():
+    # The deal reorders; it must never be able to drop or repeat a word. Checked
+    # as a MULTISET (sorted list, not set) so a duplicate can't hide behind a
+    # missing word, over lengths that hit every remainder of the final card.
+    rnd = random.Random(20260730)
+    for size in (1, 2, 3, 7, 41, 103, 412, 999):
+        for frac in (0.0, 0.17, 0.5, 0.83, 1.0):
+            n_multi = round(size * frac)
+            words = _mix(size - n_multi, n_multi)
+            rnd.shuffle(words)
+            out = _csv(f"{size}-{n_multi}.csv")
+            n, _ = pack.pack(words, out, seed=rnd.randrange(10**6))
+            assert n == size
+            placed = sorted(w for c in _cards(out) for w in c if w)
+            assert placed == sorted(words), f"size={size} multi={n_multi}"
+
+
+def test_every_card_is_within_one_phrase_of_the_deck_average():
+    # THE INVARIANT — the only input-independent promise the packer makes.
+    # "3 singles + 1 phrase" is what a typical list works out to, not a rule: a
+    # customer who sends mostly two- and three-word entries MUST get cards with
+    # 2, 3 or 4 phrases, because there is nothing else to put on them. What has
+    # to hold at EVERY ratio is that the load is level — with M phrases over n
+    # cards every card takes M//n or M//n + 1. This is what stops a future
+    # change from quietly reintroducing clustering.
+    #
+    # Full-capacity cards only: the final card can hold 1-3 words and so cannot
+    # take a full share. That is a capacity limit, not clustering, and it gets
+    # its own (weaker) assertion below.
+    rnd = random.Random(4242)
+    for size in (8, 41, 103, 202, 412, 700):
+        # 0% to 100%, deliberately including ratios past 25% (where 3+1 stops
+        # being reachable) and past 100% of the card count (M > n).
+        for pct in (0, 5, 25, 38, 50, 60, 75, 90, 100):
+            n_multi = size * pct // 100
+            words = _mix(size - n_multi, n_multi)
+            rnd.shuffle(words)
+            out = _csv(f"inv-{size}-{pct}.csv")
+            pack.pack(words, out, seed=rnd.randrange(10**6))
+            cards = _cards(out)
+            per = [_n_multi(c) for c in cards if all(c)]
+            where = f"size={size} phrases={n_multi} ({pct}%) cards={len(cards)}"
+            assert max(per) - min(per) <= 1, f"{where}: uneven, saw {sorted(set(per))}"
+            # ...and level at the RIGHT level, so "even" can't mean "even at 0"
+            base = n_multi // len(cards)
+            assert set(per) <= {base, base + 1}, \
+                f"{where}: want {base} or {base + 1} a card, saw {sorted(set(per))}"
+            # the short final card is capped by how many words it holds, no worse
+            for c in (c for c in cards if not all(c)):
+                assert _n_multi(c) <= len([w for w in c if w]), where
+
+
+def test_no_card_hoards_the_phrases_while_an_equal_card_gets_none():
+    # The specific regression, spelled out so the failure message says WHAT
+    # broke rather than just "uneven". A phrase-heavy list must never print one
+    # card of four phrases beside a card of four single words.
+    # 300 phrases + 112 singles over 103 cards: level is 2-3 phrases a card.
+    out = _csv()
+    pack.pack(_mix(112, 300), out)
+    per = [_n_multi(c) for c in _cards(out)]
+    worst, best = max(per), min(per)
+    assert worst <= 3, f"worst card carries {worst} phrases; level for this list is 2-3"
+    assert best >= 2, f"a card carries only {best} phrases while another carries {worst}"
+    assert per.count(pack.PER_CARD) == 0, \
+        f"{per.count(pack.PER_CARD)} all-phrase cards — the deck is clustered"
+    assert per.count(0) == 0, \
+        f"{per.count(0)} phrase-free cards while other cards carry {worst}"
+
+
+def test_more_phrases_than_cards_spreads_them_instead_of_clustering():
+    # 250 singles + 162 phrases over 103 cards: the supply can't hold the deck to
+    # one phrase a card, so cards take 1 or 2 — but evenly through the deck, not
+    # 59 clean cards followed by 44 doubles.
+    out = _csv()
+    pack.pack(_mix(250, 162), out)
+    per = [_n_multi(c) for c in _cards(out)]
+    assert len(per) == pack.WORD_CARDS
+    assert sum(per) == 162
+    assert min(per) == 1 and max(per) == 2, f"only 1s and 2s, got {set(per)}"
+    # every prefix stays within one phrase of the ideal rate -> no clustering
+    for k in range(1, len(per) + 1):
+        assert abs(sum(per[:k]) - k * 162 / len(per)) < 1, f"clustered by card {k}"
+
+
+def test_fewer_phrases_than_cards_spreads_the_carriers_through_the_deck():
+    # 20 phrases over 103 cards must not all land on cards 1-20; a customer
+    # flipping through the deck should meet them at a steady rate.
+    out = _csv()
+    pack.pack(_mix(392, 20), out)
+    per = [_n_multi(c) for c in _cards(out)]
+    assert sum(per) == 20 and max(per) == 1
+    carriers = [i for i, m in enumerate(per) if m]
+    assert carriers[0] < 10 and carriers[-1] > len(per) - 10, carriers
+    for k in range(1, len(per) + 1):
+        assert abs(sum(per[:k]) - k * 20 / len(per)) < 1, f"clustered by card {k}"
+
+
+def test_only_phrases_still_fills_a_complete_deck():
+    # A word list can be all phrases (an order written as full expressions).
+    # There is no single to pair them with, so every card takes four — the deck
+    # must still come out full and complete rather than half-empty.
+    out = _csv()
+    n, cards = pack.pack(_mix(0, FULL), out)
+    assert n == FULL and cards == pack.WORD_CARDS + 1
+    for words in _cards(out):
+        assert _n_multi(words) == pack.PER_CARD
+
+
+def test_only_phrases_with_a_short_final_card_reroutes_the_overflow():
+    # 9 phrases -> cards of 4/4/1. The even spread wants 3 per card, but the
+    # final card holds ONE; the two it can't take move up rather than vanish.
+    out = _csv()
+    words = _mix(0, 9)
+    n, cards = pack.pack(words, out)
+    assert n == 9 and cards == 3 + 1
+    got = _cards(out)
+    assert [len([w for w in c if w]) for c in got] == [4, 4, 1]
+    assert sorted(w for c in got for w in c if w) == sorted(words)
+
+
+def test_only_single_words_still_fills_a_complete_deck():
+    out = _csv()
+    n, cards = pack.pack(_mix(FULL, 0), out)
+    assert n == FULL and cards == pack.WORD_CARDS + 1
+    for words in _cards(out):
+        assert _n_multi(words) == 0
+        assert all(words), "a single-token list must still fill every slot"
+
+
+def test_a_handful_of_words_still_yields_one_real_card():
+    # Below 4 words there is nothing to mix; the deck must not collapse to zero
+    # cards (the photo card alone is not a game).
+    for words in ([], ["מים"], ["ביטוי ארוך"], ["מים", "ביטוי ארוך"]):
+        out = _csv()
+        n, cards = pack.pack(words, out)
+        assert n == len(words)
+        assert cards == 1 + 1, f"one word card + the photo card for {words}"
+        got = _cards(out)
+        assert len(got) == 1
+        assert [w for w in got[0] if w] == sorted(words, key=pack.is_multi)
+
+
+def test_the_mix_is_deterministic_for_a_mixed_list():
+    # The all-phrase list in the seed test above never exercises the two-pool
+    # deal. A mixed list must be reproducible too: a reprint of a paid order has
+    # to come out as the same deck, card for card.
+    words = _mix(309, 103)
+    a, b, c = _csv("a.csv"), _csv("b.csv"), _csv("c.csv")
+    pack.pack(words, a, seed=7)
+    pack.pack(words, b, seed=7)
+    pack.pack(words, c, seed=8)
+    assert open(a, "rb").read() == open(b, "rb").read()
+    assert open(c, "rb").read() != open(a, "rb").read()
+
+
+def test_is_multi_counts_whitespace_tokens_not_length():
+    # The cost the mix is managing is WRAPPING. A long unbreakable token wraps as
+    # one line whatever we do, so it is not a phrase; two short words are.
+    assert pack.is_multi("הצעת נישואין")
+    assert pack.is_multi("להקת שבעת הכוכבים")
+    assert pack.is_multi("אבא  שלי"), "a double space is still two tokens"
+    assert not pack.is_multi("אינסטגרם")
+    assert not pack.is_multi("מים")
 
 
 if __name__ == "__main__":
