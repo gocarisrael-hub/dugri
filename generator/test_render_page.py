@@ -182,12 +182,20 @@ def test_short_words_are_untouched_by_wrapping():
     assert max(sizes) - min(sizes) < 1e-9, "and must still share one uniform size"
 
 
+def _entry_center(layout, slot):
+    """Where a laid-out entry's block actually sits: its grid centre, or its slot
+    centre when the layout carries none (the v1 sheet, and any undeclared card)."""
+    if layout.center is not None:
+        return layout.center
+    return (slot["y0"] + slot["y1"]) / 2
+
+
 def test_adjacent_wrapped_entries_do_not_collide():
     """Two neighbours that both wrap must still read as two separate items."""
     font, ref = _cafe()
     words = [_GF_PHRASE, "ביחד סביב השולחן גדול", "מדונה", "לקחת"]
     layouts = _gf_layouts(font, ref, words)
-    centers = [(s["y0"] + s["y1"]) / 2 for s in _GF_SLOTS]
+    centers = [_entry_center(l, s) for l, s in zip(layouts, _GF_SLOTS)]
     for a, b in zip(range(len(layouts)), range(1, len(layouts))):
         gap = (abs(centers[b] - centers[a])
                - rp._block_half(layouts[a]) - rp._block_half(layouts[b]))
@@ -429,6 +437,255 @@ def test_word_text_still_places_a_single_line_on_its_baseline():
     a = rp.word_text(190, 50, 20, "#6c4d56", 1, "מסיבה", CAFE)
     b = rp.word_lines(190, 50 - 20 * 0.34, 20, "#6c4d56", 1, ["מסיבה"], CAFE)
     assert a == b
+
+
+# --- 2f. ONE gap for every pair of lines on a card ---------------------------
+# "the spaces between lines should be the same always!!!" — and, said again on a
+# second card, "spacing between different words and spacing between different
+# words in the same word when going new line", i.e. ONE value covering both kinds
+# of gap. #294 equalised the gaps INSIDE a wrapped entry only; these pin the whole
+# card.
+#
+# The two cards she sent, from the uploaded "Bride in One Pot" deck:
+#
+#     1. מונדיאל          1. אורגניה
+#     2. דובונים          2. מוסיקה
+#     3. שיר השירים       3. אוסייתי
+#     4. הפועל            4. ארצות
+#        תל אביב             הברית
+#
+# Reproduced against that deck's own traced column (0.448 of the card, the
+# calibration those renders were made with — #294 widened the house bound to
+# 0.200 afterwards, which is why the same phrases no longer wrap at today's
+# band). The layout bug is independent of the band: it shows on any card where
+# anything wraps, and — through the slot wobble below — on cards where nothing
+# does.
+
+_TRACED_COLUMN = 0.448
+_CARD_HAPOEL = ["מונדיאל", "דובונים", "שיר השירים", "הפועל תל אביב"]
+_CARD_ARZOT = ["אורגניה", "מוסיקה", "אוסייתי", "ארצות הברית"]
+
+
+def _bp_layouts(font, ref, words, band=None, slots=None):
+    """Lay a card out the way the affected deck does, at a given column bound."""
+    saved = rp._BAND_LEFT_MAX
+    if band is not None:
+        rp._BAND_LEFT_MAX = band
+    try:
+        return rp._word_layouts(slots or _BP_SLOTS, words, font, ref, cell=_BP_CELL,
+                                declared_band=True, safe=rp._CARD_SAFE)
+    finally:
+        rp._BAND_LEFT_MAX = saved
+
+
+def _line_centers(layouts, slots):
+    """Every PRINTED line's centre, down the card — entries and continuations
+    alike. This is the sequence the owner's rule is about."""
+    out = []
+    for lay, slot in zip(layouts, slots):
+        if lay is None:
+            continue
+        pitch = lay.lead * lay.size
+        first = _entry_center(lay, slot) - (len(lay.lines) - 1) * pitch / 2
+        out.extend(first + k * pitch for k in range(len(lay.lines)))
+    return out
+
+
+def _line_gaps(layouts, slots):
+    cs = _line_centers(layouts, slots)
+    return [b - a for a, b in zip(cs, cs[1:])]
+
+
+def _assert_one_gap(layouts, slots, what):
+    gaps = _line_gaps(layouts, slots)
+    assert len(gaps) >= 2, f"{what}: needs at least three lines to compare gaps"
+    assert max(gaps) - min(gaps) < 1e-9, (
+        f"{what}: the gaps down the card must all be the same — got "
+        f"{[round(g, 2) for g in gaps]}")
+
+
+def test_the_reported_card_wraps_its_last_entry():
+    """Sanity: without the wrap there is no bug to fix."""
+    font, ref = _cafe()
+    layouts = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN)
+    assert [len(l.lines) for l in layouts] == [1, 1, 1, 2]
+    assert layouts[3].lines == ["הפועל", "תל אביב"]
+
+
+def test_centring_each_entry_on_its_own_slot_is_what_made_the_gaps_uneven():
+    """The bug, reproduced from the SAME layout: a wrapped entry centred on its
+    slot grows BOTH ways, so its first line rises into the gap above it."""
+    font, ref = _cafe()
+    layouts = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN)
+    slot_centers = [(s["y0"] + s["y1"]) / 2 for s in _BP_SLOTS]
+    cs = []
+    for i, lay in enumerate(layouts):
+        pitch = lay.lead * lay.size
+        first = slot_centers[i] - (len(lay.lines) - 1) * pitch / 2
+        cs.extend(first + k * pitch for k in range(len(lay.lines)))
+    gaps = [b - a for a, b in zip(cs, cs[1:])]
+    assert max(gaps) - min(gaps) > 3, (
+        "the old placement must still measure as uneven, or this fixture has "
+        f"stopped reproducing the report — got {[round(g, 2) for g in gaps]}")
+
+
+def test_the_hapoel_card_has_one_gap_everywhere():
+    font, ref = _cafe()
+    _assert_one_gap(_bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN),
+                    _BP_SLOTS, "הפועל / תל אביב")
+
+
+def test_the_arzot_habrit_card_has_one_gap_everywhere():
+    """Her second card, where the continuation gap was the TIGHTEST of the three
+    kinds and the gap into the wrapped entry the second tightest."""
+    font, ref = _cafe()
+    _assert_one_gap(_bp_layouts(font, ref, _CARD_ARZOT, band=_TRACED_COLUMN),
+                    _BP_SLOTS, "ארצות / הברית")
+
+
+def test_every_shape_of_card_has_one_gap_everywhere():
+    """The five shapes a card can take, including the two the models disagree on:
+    a MIDDLE entry wrapping, and an entry wrapping to three lines."""
+    font, ref = _cafe()
+    cases = {
+        "nothing wraps": ["מונדיאל", "דובונים", "אוסייתי", "מדונה"],
+        "entry 4 wraps": _CARD_HAPOEL,
+        "entry 2 wraps": ["מונדיאל", "הפועל תל אביב", "שיר השירים", "מדונה"],
+        "two entries wrap": ["מונדיאל", "הפועל תל אביב", "שיר השירים", "ארצות הברית"],
+        "an entry wraps to three": ["מונדיאל", "דובונים", "שיר השירים",
+                                    "להקת שבעת הכוכבים הגדולה של אילת"],
+    }
+    for what, words in cases.items():
+        _assert_one_gap(_bp_layouts(font, ref, words, band=_TRACED_COLUMN),
+                        _BP_SLOTS, what)
+
+
+def test_an_entry_can_still_wrap_to_three_lines_on_one_pitch():
+    font, ref = _cafe()
+    layouts = _bp_layouts(font, ref, ["מונדיאל", "דובונים", "שיר השירים",
+                                      "להקת שבעת הכוכבים הגדולה של אילת"],
+                          band=_TRACED_COLUMN)
+    assert len(layouts[3].lines) == 3, "this fixture must exercise a 3-line entry"
+    _assert_one_gap(layouts, _BP_SLOTS, "three-line entry")
+
+
+def test_the_gap_inside_an_entry_equals_the_gap_between_entries():
+    """Her rule, stated directly: the two kinds of gap are ONE number."""
+    font, ref = _cafe()
+    layouts = _bp_layouts(font, ref, _CARD_ARZOT, band=_TRACED_COLUMN)
+    gaps = _line_gaps(layouts, _BP_SLOTS)
+    between = gaps[0]                      # entry 1 -> entry 2
+    inside = gaps[3]                       # ארצות -> הברית, one entry
+    assert abs(between - inside) < 1e-9, f"{between} vs {inside}"
+
+
+def test_a_card_that_never_wraps_loses_the_slot_wobble_too():
+    """The second cause. The four recorded boxes are the ink extents of four
+    DIFFERENT origin words, so their centres are 28.70 / 30.20 / 27.15 apart —
+    a 3-unit (1.1 mm) wobble on a card where nothing wraps at all."""
+    font, ref = _cafe()
+    centers = [(s["y0"] + s["y1"]) / 2 for s in _BP_SLOTS]
+    raw = [b - a for a, b in zip(centers, centers[1:])]
+    assert max(raw) - min(raw) > 2, "this deck's slots must actually be uneven"
+    layouts = _bp_layouts(font, ref, ["מונדיאל", "דובונים", "אוסייתי", "מדונה"])
+    assert [len(l.lines) for l in layouts] == [1, 1, 1, 1]
+    _assert_one_gap(layouts, _BP_SLOTS, "no wrapping at all")
+
+
+def test_the_grid_keeps_the_first_and_last_calibrated_positions():
+    """The pitch is the calibrated span divided up, so the extremes do not move:
+    a wrapped card fits its extra lines INSIDE the origin's own extent."""
+    font, ref = _cafe()
+    centers = [(s["y0"] + s["y1"]) / 2 for s in _BP_SLOTS]
+    for words in (["מונדיאל", "דובונים", "אוסייתי", "מדונה"], _CARD_HAPOEL,
+                  ["מונדיאל", "הפועל תל אביב", "שיר השירים", "ארצות הברית"]):
+        cs = _line_centers(_bp_layouts(font, ref, words, band=_TRACED_COLUMN),
+                           _BP_SLOTS)
+        assert abs(cs[0] - centers[0]) < 1e-9, "the first line must stay put"
+        assert abs(cs[-1] - centers[-1]) < 1e-9, "and so must the last"
+
+
+def test_the_uniform_pitch_clears_the_worst_pair_on_the_card():
+    """Uniform must mean the WIDEST need — measured over the card's whole line
+    sequence, so a gap that straddles two entries is held to the same clearance
+    as a gap inside one. Cafe sets 'לקחת' 1.45x its font size tall, which is why
+    the pitch is measured rather than assumed."""
+    font, ref = _cafe()
+    for words in (_CARD_HAPOEL, _CARD_ARZOT,
+                  ["לקחת", "הטיול", "לתאילנד ובחזרה", "ים"]):
+        layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+        flat = [ln for l in layouts if l is not None for ln in l.lines]
+        pitch = layouts[0].lead * layouts[0].size
+        for upper, lower in zip(flat, flat[1:]):
+            drop = (font.getbbox(upper)[3] - font.getbbox(lower)[1]) / ref
+            assert pitch >= drop * layouts[0].size - 1e-9, (
+                f"{upper!r} over {lower!r} would collide at pitch {pitch:.2f}")
+
+
+def test_no_line_on_a_gridded_card_crosses_the_trim():
+    """Grapefruit's 2.495 mm bleed is 7.1 units: ink outside the safe area is cut
+    off the printed card. The grid's own ink, top and bottom, must stay inside."""
+    font, ref = _cafe()
+    top = _BP_CELL[1] + (_BP_CELL[3] - _BP_CELL[1]) * rp._CARD_SAFE
+    bottom = _BP_CELL[3] - (_BP_CELL[3] - _BP_CELL[1]) * rp._CARD_SAFE
+    for words in (_CARD_HAPOEL, _CARD_ARZOT,
+                  ["מונדיאל", "דובונים", "שיר השירים",
+                   "להקת שבעת הכוכבים הגדולה של אילת"],
+                  ["", "", "להקת שבעת הכוכבים הגדולה של אילת", ""]):
+        layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+        live = [l for l in layouts if l is not None]
+        cs = _line_centers(layouts, _BP_SLOTS)
+        flat = [ln for l in live for ln in l.lines]
+        size = live[0].size
+        above = rp._ink_reach(font, ref, flat[0])[0] * size
+        below = rp._ink_reach(font, ref, flat[-1])[1] * size
+        assert cs[0] - above >= top - 1e-9, f"{words}: the first line runs off the top"
+        assert cs[-1] + below <= bottom + 1e-9, f"{words}: the last line is cut off"
+
+
+def test_a_lone_entry_still_sits_on_its_own_slot():
+    """With one live slot there is no span to divide, so the block is centred on
+    that slot and the pitch falls back to what the glyphs need."""
+    font, ref = _cafe()
+    layouts = _bp_layouts(font, ref, ["", "להקת שבעת הכוכבים", "", ""],
+                          band=_TRACED_COLUMN)
+    assert [l is None for l in layouts] == [True, False, True, True]
+    slot = _BP_SLOTS[1]
+    assert abs(layouts[1].center - (slot["y0"] + slot["y1"]) / 2) < 1e-9
+
+
+def test_one_font_size_survives_the_grid():
+    """#289 must not regress: one size per card, however the lines fall."""
+    font, ref = _cafe()
+    for words in (_CARD_HAPOEL, _CARD_ARZOT,
+                  ["ים", _GF_PHRASE, "הבדיחה על הנסיעה לאילת", "קפה"]):
+        layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+        sizes = {round(l.size, 9) for l in layouts if l is not None}
+        assert len(sizes) == 1, f"one card, one size — got {sizes}"
+
+
+def test_the_v1_sheet_gets_no_grid_at_all():
+    """An undeclared card keeps its per-slot placement, so the eight live sheet
+    themes render exactly as they did. Verified byte for byte against
+    origin/main by rendering a bachelorette 8-up on both."""
+    font, ref = _cafe()
+    layouts = rp._word_layouts(_GF_SLOTS, ["מסיבה", "חברים", "ריקודים", "צחוקים"],
+                               font, ref, cell=_GF_CELL)
+    assert all(l.center is None for l in layouts), (
+        "a detected card must carry no grid centre, so the renderer falls back "
+        "to the slot centre it has always used")
+
+
+def test_the_rendered_lines_land_on_the_grid_centre_it_was_given():
+    """The centre the layout computes is the centre the markup uses."""
+    layout_center, size, lead = 150.0, 20.0, 1.4
+    svg = rp.word_lines(190, layout_center, size, "#000", 4, ["ארצות", "הברית"],
+                        CAFE, lead=lead)
+    ys = [float(y) for y in re.findall(r'<text x="[-0-9.]+" y="([-0-9.]+)"[^>]*>‫',
+                                       svg)]
+    assert len(ys) == 2
+    assert abs((ys[0] + ys[1]) / 2 - (layout_center + size * rp._CENTER_DROP)) < 0.01
+    assert abs((ys[1] - ys[0]) - lead * size) < 0.01
 
 
 # --- 3. Latin-digit numbering ------------------------------------------------

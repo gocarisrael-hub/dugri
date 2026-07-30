@@ -151,7 +151,10 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
     Continuations hang under the FIRST LINE'S TEXT, not under the marker, which
     is the conventional numbered-list shape and keeps the digit column clean. The
     block is centred on ``center_y`` so a wrapped entry grows symmetrically into
-    the air above and below rather than drifting down into its neighbour.
+    the air above and below rather than drifting down into its neighbour. On a
+    declared card the caller does not pass the slot centre here — it passes the
+    centre the CARD-WIDE line grid put this entry on (see ``_grid_centers``), so
+    every gap on the card, inside an entry or between two, is the same.
 
     ``lead`` is the baseline pitch as a multiple of ``size``; omitted, it is
     measured from these very lines (see ``_lead_for``). ``marker_advance`` fixes
@@ -166,7 +169,7 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
     gap = size * _WORD_GAP
     word_x = x_right - marker_w - gap
     lead = size * (_lead_for(font, ref, lines) if lead is None else lead)
-    first = center_y - (len(lines) - 1) * lead / 2 + size * 0.34
+    first = center_y - (len(lines) - 1) * lead / 2 + size * _CENTER_DROP
     out = [
         f'<text x="{x_right + digit_x:.2f}" y="{first:.2f}" font-family="HebWord" '
         f'font-size="{msize:.2f}" fill="{color}" text-anchor="end" '
@@ -191,7 +194,7 @@ def word_text(x_right, baseline, size, color, num, word, font_path):
     The unwrapped case, kept as its own entry point because a caller that has
     already decided the word fits wants to place a baseline, not a block centre.
     """
-    return word_lines(x_right, baseline - size * 0.34, size, color, num,
+    return word_lines(x_right, baseline - size * _CENTER_DROP, size, color, num,
                       [word], font_path)
 
 
@@ -204,6 +207,10 @@ def escape(s):
 # word size, and a 0.30x gap separates the marker from the word.
 _MARKER_SCALE = 0.9
 _WORD_GAP = 0.30
+# Where a line's BASELINE sits below the visual centre the callers place, as a
+# fraction of the font size. Every caller works in centres (a slot centre, or a
+# grid centre); the renderer converts once, here.
+_CENTER_DROP = 0.34
 
 # House-style minimum right margin for a numbered line, as a fraction of the card
 # cell width. A numbered line is right-anchored: its DIGIT (rightmost glyph) is
@@ -326,7 +333,8 @@ _CARD_SAFE = float(os.environ.get("DUGRI_CARD_SAFE", "0.05"))
 _BAND_LEFT_MAX = float(os.environ.get("DUGRI_BAND_LEFT_MAX", "0.200"))
 
 
-Layout = collections.namedtuple("Layout", "size lines lead")
+Layout = collections.namedtuple("Layout", "size lines lead center")
+Layout.__new__.__defaults__ = (None,)   # center: None -> the caller's slot centre
 
 
 def _lead_for(font, ref, lines):
@@ -360,6 +368,139 @@ def _slot_pitch(slots, i):
     c = [(s["y0"] + s["y1"]) / 2 for s in slots]
     gaps = [abs(c[i] - c[j]) for j in range(len(slots)) if j != i]
     return min(gaps) if gaps else (slots[i]["y1"] - slots[i]["y0"]) * 2
+
+
+# THE LINE GRID. ``_lead_for`` answers "how much room does a PAIR of lines need".
+# This answers "where does every line on the card go", which is the question the
+# owner keeps asking: *the spaces between lines should be the same always*. Every
+# vertical gap — between the two lines of one wrapped entry AND between one entry
+# and the next — has to be the same distance. One rhythm down the card.
+#
+# Centring each entry on its own slot could not deliver that, for two independent
+# reasons:
+#
+#   1. A wrapped entry grows BOTH ways from its centre, so its first line rises
+#      towards the entry above and closes that gap. On the two cards the owner
+#      sent — three one-line entries and a fourth wrapping over two — the four
+#      gaps came out 28.70 / 30.20 / 16.93 / 20.43 ("הפועל" / "תל אביב") and
+#      28.70 / 30.20 / 20.69 / 12.91 ("ארצות" / "הברית"): the two gaps she named,
+#      the one INTO the wrapped entry and the one INSIDE it, are the two smallest
+#      on the card in both. #294 equalised the gaps inside a wrapped entry against
+#      each other and never touched either of these.
+#   2. The slot centres are not evenly spaced to begin with. Each recorded box is
+#      the ink extent of a DIFFERENT origin word — one with a descender sits lower
+#      in its box than one without — so the four centres disagree about where the
+#      origin's grid was: 28.70 / 30.20 / 27.15 on the reported deck. That is a
+#      3-unit (1.1 mm) wobble on a card that never wrapped at all.
+#
+# So the whole card gets ONE grid: count every line that will be printed (entries
+# plus continuations) and step them all by a single pitch, spanning the FIRST live
+# slot's centre to the LAST live slot's centre. It is the argument
+# ``_card_right_edge`` already makes for the x anchor, applied to y: the extremes
+# are the honest estimate of a grid that the individual boxes only sample.
+#
+# The two endpoints stay exactly where they are calibrated, so a card that does
+# not wrap keeps the origin's own vertical extent and only loses the interior
+# wobble; a card that wraps fits its extra lines INSIDE that extent instead of
+# growing past it into the artwork or the trim. The price is that the INTERIOR
+# entries shift: at most 1.5 units (0.5 mm) on a card that wraps nothing — that is
+# just the wobble coming out — and further on one that does, because the extra
+# line has to come from somewhere. That drift is what buys the even rhythm.
+#
+# THE ALTERNATIVE, AND WHY IT CANNOT WORK. The obvious way to keep the
+# calibration exactly is to leave every entry pinned to its own slot and let a
+# wrapped one grow DOWNWARDS into a subdivided slot pitch. With slot pitch P, an
+# entry of n lines spaced L, the gap INSIDE it is L and the gap into the next
+# entry is P - (n-1)L, so equality needs L = P/n — a different L for every entry
+# that wraps to a different depth, which is a contradiction the moment two entries
+# disagree. It fails outright when a MIDDLE entry wraps: entry 2 over two lines
+# gives gaps P (1->2), L (inside 2), P-L (2->3), P (3->4), and P = L = P-L has no
+# solution. Pinning cannot be kept; the grid gives it up deliberately.
+#
+# WHAT IT COSTS. The pitch is the calibrated span divided by the gaps that have to
+# fit inside it, so a card that wraps holds MORE lines in the SAME height and the
+# type comes down to clear at that tighter pitch: on grapefruit a card with one
+# wrapped entry sets at 16.3 where it used to set at 20.6. That is the honest
+# price of the rule — the old 20.6 only fitted because the wrapped entry's own
+# lines were spaced widely while the gap above them was squeezed to 22.1, which is
+# exactly the unevenness being fixed. Growing the block past the calibrated span
+# instead would keep the size, but it puts ink where the origin never had text —
+# on the printed frame or the artwork — so the span is treated as a hard envelope.
+#
+# Applied only to a DECLARED card (the v2 path that can wrap). The v1 sheet never
+# wraps, so its lines are its slots and re-gridding them would only move eight
+# live themes off their calibration for nothing.
+
+
+def _grid_pitch(centers, n_lines, lead, size):
+    """The single centre-to-centre distance for every pair of lines on a card.
+
+    The calibrated span divided by the gaps that have to fit in it — floored by
+    what the glyphs themselves need (``lead``), which only bites when there is no
+    span to divide (a lone entry). ``_fit_card`` has already shrunk the size until
+    the natural pitch clears that floor, so on a real card the span wins.
+    """
+    span = (max(centers) - min(centers)) if centers else 0.0
+    natural = span / (n_lines - 1) if n_lines > 1 and span > 0 else 0.0
+    return max(natural, lead * size)
+
+
+def _grid_centers(centers, counts, pitch):
+    """Each entry's block centre on the card grid: ``{slot index: y}``.
+
+    The run of lines is centred on the calibrated slots' own mid-point, so at the
+    natural pitch the first line lands exactly on the first slot's centre and the
+    last on the last slot's. An entry of two lines reports the centre BETWEEN
+    them, which is what ``word_lines`` wants.
+    """
+    n = sum(counts.values())
+    mid = ((min(centers) + max(centers)) / 2) if centers else 0.0
+    first = mid - (n - 1) * pitch / 2
+    out, k = {}, 0
+    for i in sorted(counts):
+        out[i] = first + (k + (counts[i] - 1) / 2) * pitch
+        k += counts[i]
+    return out
+
+
+def _ink_reach(font, ref, line):
+    """How far a line's ink reaches above and below its visual CENTRE.
+
+    As multiples of the font size, so the caller can solve for a size. Measured
+    from the real glyphs: these faces draw far outside their em (Cafe's "לקחת"
+    is 1.45x its own size tall), so an em-based estimate would license ink over
+    the trim.
+    """
+    asc, _desc = font.getmetrics()
+    bb = font.getbbox(line)
+    return (asc - bb[1]) / ref - _CENTER_DROP, (bb[3] - asc) / ref + _CENTER_DROP
+
+
+def _grid_cap(centers, counts, flat, lead, font, ref, vbounds):
+    """Largest size at which the grid's ink still stays inside ``vbounds``.
+
+    The top and bottom bounds are the card's vertical safe area — inside the
+    bleed, so no line can be carried off by the guillotine. The grid's first and
+    last line sit on FIXED centres, so the only thing that grows with the size is
+    the ink around them and the cap is linear. The exception is a card with a
+    single live slot: there is no span to pin, the block grows symmetrically about
+    that one centre, and the pitch grows with the size too.
+    """
+    if not vbounds or not flat:
+        return float("inf")
+    top, bottom = vbounds
+    n = sum(counts.values())
+    span = max(centers) - min(centers)
+    above = _ink_reach(font, ref, flat[0])[0]
+    below = _ink_reach(font, ref, flat[-1])[1]
+    if n > 1 and span > 0:
+        first, last, grow = min(centers), max(centers), 0.0
+    else:
+        first = last = (min(centers) + max(centers)) / 2
+        grow = (n - 1) * lead / 2
+    caps = [c / d for c, d in ((first - top, above + grow),
+                               (bottom - last, below + grow)) if d > 0]
+    return min(caps) if caps else float("inf")
 
 
 def _span(layout):
@@ -447,7 +588,8 @@ def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
     return out
 
 
-def _fit_card(cands, pitches, centers, uniform):
+def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
+              vbounds=None):
     """Solve ONE font size for the whole card, and each entry's line count.
 
     Every word on a card renders at the SAME size — that is the origin
@@ -477,18 +619,47 @@ def _fit_card(cands, pitches, centers, uniform):
     MAXIMUM over the pairs actually being set keeps every line clear of the one
     above it (the collision this mechanism exists to prevent) while making the
     gap the same everywhere.
+
+    ``grid`` switches the HEIGHT constraint from "these two entries must not
+    collide" to "every line on the card sits on one pitch" (see THE LINE GRID
+    above). The pitch is the calibrated span divided by the gaps that must fit in
+    it, so it shrinks as the card takes more lines, and the size follows it down
+    until the glyphs clear at that pitch — the same ratchet the pairwise rule
+    applied, stated once for the whole card instead of per neighbouring pair. The
+    pairs are then measured over the card's WHOLE line sequence, continuations
+    included, so a gap that straddles two entries is held to the same clearance as
+    a gap inside one. Off (the v1 sheet, and any card that cannot wrap) the
+    original pairwise solve runs untouched.
     """
     live = sorted(cands)
     best = None
     for combo in itertools.product(*(sorted(cands[i]) for i in live)):
         counts = dict(zip(live, combo))
         size = min([uniform] + [cands[i][counts[i]][2] for i in live])
-        lead = max([0.0] + [cands[i][counts[i]][1] for i in live])
-        for a, b in zip(live, live[1:]):
-            spans = sum((counts[i] - 1) * lead + 1.0 / _WORD_SIZE_K
-                        for i in (a, b))
-            room = min(pitches[a], abs(centers[b] - centers[a]))
-            size = min(size, room / (spans / 2 + _WRAP_CLEAR))
+        if grid:
+            flat = [ln for i in live for ln in cands[i][counts[i]][0]]
+            live_c = [centers[i] for i in live]
+            lead = _lead_for(font, ref, flat)
+            span = max(live_c) - min(live_c)
+            # ONLY the lines the wrap ADDS are ours to fit. A card that wraps
+            # nothing sets exactly the entries the origin template set, at exactly
+            # the origin's pitch and (pinned) size — a calibration that has
+            # shipped, so overruling it here would shrink type on cards that read
+            # perfectly well and never had the reported fault. Measured on
+            # grapefruit: a plain four-word card would have dropped 21.3 -> 20.3
+            # to buy 1.5 units of clearance between two glyphs the ORIGIN already
+            # sets that close.
+            if len(flat) > len(live) and span > 0 and lead > 0:
+                size = min(size, span / ((len(flat) - 1) * lead))
+            size = min(size, _grid_cap(live_c, counts, flat, lead, font, ref,
+                                       vbounds))
+        else:
+            lead = max([0.0] + [cands[i][counts[i]][1] for i in live])
+            for a, b in zip(live, live[1:]):
+                spans = sum((counts[i] - 1) * lead + 1.0 / _WORD_SIZE_K
+                            for i in (a, b))
+                room = min(pitches[a], abs(centers[b] - centers[a]))
+                size = min(size, room / (spans / 2 + _WRAP_CLEAR))
         key = (size, -sum(combo))
         if best is None or key > best[0]:
             best = (key, size, counts, lead)
@@ -565,9 +736,25 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
         return [None] * len(slots)
     centers = [(s["y0"] + s["y1"]) / 2 for s in slots]
     pitches = {i: _slot_pitch(slots, i) for i in cands}
-    size, counts, lead = _fit_card(cands, pitches, centers, uniform)
+    vbounds = ((cell[1] + (cell[3] - cell[1]) * safe,
+                cell[3] - (cell[3] - cell[1]) * safe) if cell else None)
+    size, counts, lead = _fit_card(cands, pitches, centers, uniform,
+                                   font=font, ref=ref, grid=declared_band,
+                                   vbounds=vbounds)
+    if not declared_band:
+        return [None if wi not in cands
+                else Layout(size, cands[wi][counts[wi]][0], lead)
+                for wi in range(len(slots))]
+    # Declared card: place every line on the card-wide grid and hand each entry
+    # the centre the grid put it on, plus the grid pitch as its lead — so the gap
+    # inside a wrapped entry IS the gap between two entries.
+    live_c = [centers[i] for i in sorted(cands)]
+    lines = sum(counts.values())
+    pitch = _grid_pitch(live_c, lines, lead, size)
+    grid_c = _grid_centers(live_c, counts, pitch)
     return [None if wi not in cands
-            else Layout(size, cands[wi][counts[wi]][0], lead)
+            else Layout(size, cands[wi][counts[wi]][0],
+                        pitch / size if size else 0.0, grid_c[wi])
             for wi in range(len(slots))]
 
 
@@ -896,7 +1083,9 @@ def _words_overlay(slots, words, cfg, word_font, cell):
         if layouts[wi] is None:
             continue
         lay = layouts[wi]
-        center = (slot["y0"] + slot["y1"]) / 2
+        # A declared card carries its own grid centre (one pitch for every gap on
+        # the card); without one the entry sits on its slot centre as before.
+        center = lay.center if lay.center is not None else (slot["y0"] + slot["y1"]) / 2
         right = x_right if x_right is not None else _line_right_edge(slot["x1"], cell)
         out.append(word_lines(right, center, lay.size, slot["color"],
                               wi + 1, lay.lines, word_font, lead=lay.lead,
