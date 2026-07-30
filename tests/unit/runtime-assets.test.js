@@ -23,7 +23,21 @@ const dockerfile = fs.readFileSync(path.join(repo, 'Dockerfile'), 'utf8');
 const copied = dockerfile
   .split('\n')
   .filter((l) => /^\s*COPY\s/.test(l) && !/--from=/.test(l))
-  .map((l) => l.trim().split(/\s+/).slice(1, -1))
+  .map((l) => {
+    const rest = l.trim().replace(/^COPY\s+/, '');
+    // JSON-array form: COPY ["src with space", "dest"]. Docker REQUIRES it when
+    // a path contains a space, so a whitespace split would read those paths as
+    // several broken fragments and silently report the file as never copied —
+    // which is precisely the case most likely to be wrong in the first place.
+    if (rest.startsWith('[')) {
+      try {
+        return JSON.parse(rest).slice(0, -1);
+      } catch {
+        return [];
+      }
+    }
+    return rest.split(/\s+/).slice(0, -1);
+  })
   .flat();
 
 // True when `rel` is inside something the image copies.
@@ -102,6 +116,27 @@ describe('.dockerignore resolves last-match-wins', () => {
     expect(inBuildContext('site/index.html')).toBe(true);
     expect(inBuildContext('generator/topup.py')).toBe(true);
     expect(inBuildContext('content/wordlists/generic-350.txt')).toBe(true);
+  });
+
+  // The press export reads this ICC profile off disk when the admin presses
+  // "PDF לבית דפוס". It was committed to git with a .gitignore exception and
+  // shipped anyway broken, because .dockerignore drops all of resources/ and
+  // NOTHING re-included it — so deployed, the button answered
+  //   500 press ICC profile missing  /app/resources/print shop/...
+  // The path also carries a space, which is why the Dockerfile COPY has to use
+  // the JSON-array form; a bare COPY would split it into two arguments.
+  it('ships the press ICC profile the CMYK export reads', () => {
+    const icc = 'resources/print shop/SWOP2006_Coated3v2.icc';
+    expect(fs.existsSync(path.join(repo, icc))).toBe(true);
+    expect(inBuildContext(icc)).toBe(true);
+    expect(isCopied(icc)).toBe(true);
+  });
+
+  // The re-include is deliberately narrow. Generated press samples land in that
+  // same folder and are megabytes each; sweeping the directory in would grow
+  // every image build for nothing.
+  it('does not sweep the rest of that folder into the image', () => {
+    expect(inBuildContext('resources/print shop/dugri-press-sample.pdf')).toBe(false);
   });
 
   // filled/ is a RUNTIME INPUT, not a reference export: since #253 the server runs

@@ -56,6 +56,16 @@ resources/
 !resources/canva/templates/
 !resources/canva/templates/**
 
+# The press export (generator/press.py) converts an order to CMYK against this
+# ICC profile, read off disk at request time. It lives under resources/, which
+# the blanket rule above drops, so without this re-include the file is committed
+# to git yet absent from the image and the admin button answers
+#   500 press ICC profile missing  /app/resources/print shop/SWOP2006_Coated3v2.icc
+# Only the profile: the folder's sample PDFs stay out of the build context.
+!resources/print shop/
+resources/print shop/*
+!resources/print shop/SWOP2006_Coated3v2.icc
+
 # The seed word pools (content/wordlists/*.txt) that generator/topup.py reads to
 # top a short order up to a full deck. The `*` above excludes everything, so the
 # Dockerfile's `COPY content/` needs these re-includes or the build has nothing to
