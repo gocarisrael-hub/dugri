@@ -54,6 +54,10 @@ COPY site/ ./site/
 # excluded via .dockerignore, so this stays lean).
 COPY generator/ ./generator/
 COPY resources/canva/templates/ ./resources/canva/templates/
+# The press export's ICC profile (see PRESS_ICC in server/index.js). A
+# .dockerignore re-include alone would not put it in the image — nothing copies
+# it — and the pair is the whole reason this class of bug keeps recurring.
+COPY ["resources/print shop/SWOP2006_Coated3v2.icc", "./resources/print shop/"]
 # The seed word pools. generator/topup.py tops an order up to a full deck from
 # these, so EVERY order with fewer than TARGET personal words reads them — an
 # image without this directory dies with FileNotFoundError on
