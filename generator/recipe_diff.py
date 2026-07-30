@@ -457,11 +457,25 @@ def reconcile_word_slots(per_front):
 
 # How far a midpoint may be dragged onto the even run before we conclude the
 # design meant the unevenness, as a fraction of the run's own spacing.
-# Evidence: fitting grapefruit's 0.377/0.472/0.582/0.673 moves its worst slot by
-# 0.0067 of the card, 6.8% of the 0.0987 spacing. A layout that is genuinely
-# uneven is out by far more — mids 0.20/0.30/0.55/0.70 need a 32% drag. 0.15 sits
-# between with better than 2x clearance on both sides.
-_SPACING_TOL = float(os.environ.get("DUGRI_SLOT_SPACING_TOL", "0.15"))
+#
+# This was 0.15, chosen from a run on a developer laptop where grapefruit fitted
+# to 6.8%. That number does not survive contact with the container. The SAME
+# template and the SAME code measure differently depending on who rasterises it,
+# because the mids come from ink boxes and Chrome's text rendering is not
+# identical across platforms:
+#
+#   laptop     mids [117.56, 147.19, 181.50, 210.00]  ->  worst fit  7%  SNAPPED
+#   container  mids [118.50, 144.38, 186.75, 213.00]  ->  worst fit 18%  DECLINED
+#
+# So in production the snap silently declined and wrote the raw ink boxes —
+# grapefruit shipped gaps of 0.0829/0.1358/0.0841 where the design has one
+# spacing, the owner pressed "זהה מחדש" and got the uneven card back, and
+# nothing said why. A tolerance calibrated on one rasteriser is not a tolerance.
+#
+# 0.25 is set from the measurement that actually runs. It clears the container's
+# 18% and still refuses a genuinely staggered layout: mids 0.20/0.30/0.55/0.70 —
+# two pairs, not one progression — need a 32.5% drag and stay refused.
+_SPACING_TOL = float(os.environ.get("DUGRI_SLOT_SPACING_TOL", "0.25"))
 
 # How far one slot's right edge may sit from the others' median before they stop
 # being one edge, as a fraction of card WIDTH. Grapefruit's four x1 values span
