@@ -727,3 +727,26 @@ def test_the_failure_lists_every_front_it_tried():
     src = inspect.getsource(R.detect_single_card)
     assert "reasons.append" in src
     assert "What each front actually produced" in src
+
+
+def test_a_refused_snap_is_reported_not_just_logged():
+    """The gap that let grapefruit's uneven card survive repeated re-detections.
+
+    The refusal was always computed and always logged — on a container, into a
+    stream nobody reads, while the detector reported success. Collect it so it
+    can reach the owner.
+    """
+    declined = []
+    R.regularise_word_slots(_measured([0.20, 0.30, 0.55, 0.70]), _VB,
+                            log=_quiet, declined=declined)
+    assert declined, "a refused snap must be reported, not only logged"
+    assert any("not one progression" in m for m in declined), declined
+
+
+def test_a_clean_detection_reports_nothing_refused():
+    # The other half: no false alarms. A layout that snaps cleanly must leave
+    # the list empty, or the warning stops meaning anything.
+    declined = []
+    R.regularise_word_slots(_measured(_GRAPEFRUIT_MIDS), _VB,
+                            log=_quiet, declined=declined)
+    assert declined == [], declined

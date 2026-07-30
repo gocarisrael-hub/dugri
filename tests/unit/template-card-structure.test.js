@@ -1060,6 +1060,47 @@ describe('re-detection is opt-in, and available on demand', () => {
     expect(r.error).toMatch(/detection failed/);
     expect(r.httpStatus).toBe(422);
   });
+
+  // A run can succeed and still have REFUSED to regularise something. Reporting
+  // that as plain success is what let grapefruit come back with unevenly spaced
+  // words from press after press of this button: the detector declined the
+  // even-spacing snap on every container run, answered ok, and the only record
+  // was a log line on a machine nobody was watching.
+  const writeRecipe = (root, body) => {
+    const target = path.join(root, 'generator', 'recipes', 'card-demo.json');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, JSON.stringify({ theme: 'card-demo', format: 2, ...body }));
+  };
+
+  it('reports the regularisations detection refused, not just success', () => {
+    const root = makeScaffold();
+    expect(
+      templates.onboardTemplate({ root, ...cardsUpload(), shrinkImages: false }).error
+    ).toBeUndefined();
+    const refusal = 'word slots: mids are not one progression — left as measured';
+    const r = templates.redetectTemplate({
+      root,
+      key: 'card-demo',
+      recipeRunner: () => (writeRecipe(root, { declined: [refusal] }), { status: 0 }),
+      calibrateRunner: () => ({ status: 1, stderr: 'not the subject of this test' }),
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.declined).toEqual([refusal]);
+  });
+
+  it('reports nothing refused when the detection was clean', () => {
+    const root = makeScaffold();
+    expect(
+      templates.onboardTemplate({ root, ...cardsUpload(), shrinkImages: false }).error
+    ).toBeUndefined();
+    const r = templates.redetectTemplate({
+      root,
+      key: 'card-demo',
+      recipeRunner: () => (writeRecipe(root, {}), { status: 0 }),
+      calibrateRunner: () => ({ status: 1, stderr: 'not the subject of this test' }),
+    });
+    expect(r.declined).toEqual([]);
+  });
 });
 
 // Runtime writes must land on the VOLUME, not inside the container image. The

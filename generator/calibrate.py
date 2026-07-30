@@ -1378,6 +1378,21 @@ def calibrate(theme_key, workdir=None):
                 confidence["card_slots"] = "high"
                 notes.append("card_slots pre-filled from the detected geometry "
                              "— check the preview, then save.")
+                # A snap detection REFUSED is the one thing the owner has to
+                # know about this geometry, and it used to exist only as a log
+                # line on the container: grapefruit's even-spacing snap declined
+                # on every run, detection still reported success, and the card
+                # kept coming back with uneven lines for no visible reason. Say
+                # it here, where the form already shows what to check, and grade
+                # the geometry down so it is flagged rather than presented as a
+                # confident reading.
+                for message in _declined_snaps(cfg):
+                    confidence["card_slots"] = "low"
+                    notes.append(
+                        "card_slots: detection did NOT regularise this — "
+                        + message
+                        + ". The geometry below is the raw measurement, so "
+                        "check the spacing on the preview before saving.")
             else:
                 notes.append("card_slots: no single-card recipe detected yet, so "
                              "the form opens on its defaults. Re-run detection "
@@ -1419,6 +1434,22 @@ def calibrate(theme_key, workdir=None):
         if own:
             import shutil
             shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _declined_snaps(cfg):
+    """The regularisations detection refused for this template, if any.
+
+    Recorded by ``recipe_diff.regularise_word_slots`` into the recipe's
+    ``declined`` list. Absent on a clean detection, and absent entirely on a
+    recipe written before this was recorded — both mean "nothing to report", so
+    the caller says nothing rather than inventing reassurance.
+    """
+    try:
+        recipe = config.load_recipe(cfg.get("recipe"))
+    except Exception:
+        return []
+    out = recipe.get("declined")
+    return [m for m in out if isinstance(m, str)] if isinstance(out, list) else []
 
 
 def _card_slots_from_recipe(cfg):

@@ -2024,7 +2024,22 @@
             if (!res.ok) {
               tplMsg(card, 'err', 'הזיהוי נכשל: ' + (data.error || res.status));
             } else if (data.calibrated) {
-              tplMsg(card, 'ok', 'זוהה בהצלחה — בדקו בתצוגה המקדימה ושמרו.');
+              // "Detected" is not the same as "regularised everything". A run
+              // that refused a snap used to report plain success, so grapefruit
+              // came back with unevenly spaced words press after press with
+              // nothing on screen explaining it. Say what was left alone.
+              const declined = Array.isArray(data.declined) ? data.declined : [];
+              if (declined.length) {
+                tplMsg(
+                  card,
+                  'err',
+                  'זוהה, אך חלק מהמדידה לא יושרה אוטומטית — ' +
+                    declined.join(' | ') +
+                    ' — בדקו את המרווחים בתצוגה המקדימה לפני שמירה.'
+                );
+              } else {
+                tplMsg(card, 'ok', 'זוהה בהצלחה — בדקו בתצוגה המקדימה ושמרו.');
+              }
               loadTemplates();
             } else {
               // The recipe landed but the style pass did not — a real, actionable
