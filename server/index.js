@@ -25,6 +25,7 @@ const reminders = require('./reminders');
 const wordlists = require('./wordlists');
 const messagePreview = require('./message-preview');
 const storeImport = require('./store-import');
+const templateImport = require('./template-import');
 const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
 
 const app = express();
@@ -3230,6 +3231,77 @@ app.post('/api/admin/stores/import-from-staging', async (req, res) => {
       stagingUrl,
       adminKey: process.env.STAGING_ADMIN_KEY || ADMIN_KEY || '',
       deps: { settings, playbook, designImages, wordlists },
+    });
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (!result.ok) return res.status(result.status || 400).json(result);
+  res.json(result);
+});
+
+// Admin: the manifest of THIS service's owner template store — the designs the
+// owner onboarded through the admin UI, which live on the volume
+// (DATA_DIR/templates) and therefore do NOT travel with a deploy. Metadata only:
+// theme entries, recipes, and a {key, rel, bytes, sha256} row per file. The bytes
+// come from the per-file route below, so a store with tens of MB of artwork is
+// never marshalled into one JSON response. Admin-gated; the shipped templates
+// baked into the image are deliberately excluded (the target already has them).
+app.get('/api/admin/templates/export', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let manifest;
+  try {
+    manifest = templateImport.exportManifest();
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  res.json(manifest);
+});
+
+// Admin: raw bytes of ONE file named by that manifest. The template key comes in
+// as `template` (not `key`, which is reserved for the admin secret) and the path
+// is resolved strictly inside the owner dir — an unsafe key or path 404s without
+// touching the filesystem. Owner layer only: the image's shipped assets are not
+// reachable through here.
+app.get('/api/admin/templates/export/file', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const file = templateImport.ownerFilePath(req.query.template, req.query.path);
+  if (!file || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+    return res.status(404).json({ error: 'not found' });
+  }
+  res.type('application/octet-stream').sendFile(file);
+});
+
+// Admin: mirror staging's owner templates onto this service — the third of the
+// staging→prod imports, alongside content (texts + photos) and stores
+// (settings/playbook/gallery/word lists). Neither of those carries a template:
+// a design is a DIRECTORY of SVGs and fonts on the volume, so an owner who
+// onboarded and calibrated a design on staging had no way to get it to
+// production short of re-uploading it by hand.
+//
+// ADDITIVE, unlike the stores mirror: a template that exists only here is left
+// alone, never deleted. Removing one stays an explicit act (DELETE
+// /api/admin/templates/:key). Same config as the other two imports: STAGING_URL
+// + STAGING_ADMIN_KEY, and the same self-import refusal.
+app.post('/api/admin/templates/import-from-staging', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const stagingUrl = process.env.STAGING_URL || '';
+  const ownOrigins = [];
+  if (process.env.PUBLIC_BASE_URL) ownOrigins.push(process.env.PUBLIC_BASE_URL);
+  try {
+    ownOrigins.push(req.protocol + '://' + req.get('host'));
+  } catch {
+    /* no Host header — PUBLIC_BASE_URL still guards the check */
+  }
+  if (contentImport.isSelfOrigin(stagingUrl, ownOrigins)) {
+    return res
+      .status(400)
+      .json({ error: 'STAGING_URL points at this same service — refusing self-import' });
+  }
+  let result;
+  try {
+    result = await templateImport.importFromStaging({
+      stagingUrl,
+      adminKey: process.env.STAGING_ADMIN_KEY || ADMIN_KEY || '',
     });
   } catch (e) {
     return res.status(500).json({ error: String((e && e.message) || e) });
