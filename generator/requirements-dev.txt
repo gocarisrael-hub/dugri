@@ -2,16 +2,24 @@
 #
 # This is not the runtime contract. The production image installs what the
 # generator itself needs through apk (see Dockerfile: python3 + py3-pillow +
-# chromium); it deliberately carries no pip layer. Keep the two in step:
+# py3-pikepdf + ghostscript + chromium); it deliberately carries no pip layer.
+# Keep the two in step:
 #
 #   pillow  — used by the generator at runtime AND by the tests
+#   pikepdf — used by press.py at runtime (writing TrimBox/BleedBox and the
+#             OutputIntent) AND by its tests; the image gets it from apk as
+#             py3-pikepdf
 #   numpy   — TEST-ONLY (test_render_page's glyph-shape comparison); no module
 #             under generator/ imports it outside tests, which is why the image
 #             ships without it
 #   pytest  — the runner
+#
+# Ghostscript is a BINARY, not a pip package: press.py shells out to it, and the
+# tests that need it skip when it is absent rather than fail.
 #
 # Pinned loosely: these are stable, widely-packaged libraries and the tests do
 # not depend on version-specific behaviour.
 pytest>=8
 pillow>=10
 numpy>=1.26
+pikepdf>=8

@@ -269,7 +269,7 @@ def _fmt(v):
 
 
 def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
-                  progress=False, workdir=None):
+                  progress=False, workdir=None, press_geom=None):
     """Assemble the whole deck as a ``(DeckDocument, viewBox_string)`` pair.
 
     Split out from ``build_deck`` so the deck's STRUCTURE — page count, duplex
@@ -314,7 +314,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
     front_svgs = {i: card_assets.read_svg(config.card_path(theme, i))
                   for i in fronts}
     vb = deck_html.view_box(front_svgs[fronts[0]])
-    doc = deck_html.DeckDocument(vb[2], vb[3])
+    doc = deck_html.DeckDocument(vb[2], vb[3], press=press_geom)
     word_font_path = config.resolve_word_font(theme, word_font)
     title_font_path = config.font_path(theme, cfg["title_font"])
     doc.add_style(rp.GEOMETRIC_TEXT_STYLE
