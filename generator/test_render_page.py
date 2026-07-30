@@ -126,11 +126,15 @@ def _gf_layouts(font, ref, words):
                             declared_band=True, safe=rp._CARD_SAFE)
 
 
-def _left_edge(font, ref, layout, num, right):
+def _left_edge(font, ref, layout, num, right, advance=None):
     """Left-most ink x of a laid-out entry (its widest line runs furthest left)."""
-    marker = rp._line_width_at(font, ref, num, "") * layout.size / ref
+    marker = rp._line_width_at(font, ref, num, "", advance=advance) * layout.size / ref
     widest = max(font.getlength(ln) for ln in layout.lines) * layout.size / ref
     return right - marker - widest
+
+
+def _gf_advance(font):
+    return rp._marker_advance(font, len(_GF_SLOTS))
 
 
 def test_long_phrase_wraps_instead_of_overflowing():
@@ -140,11 +144,13 @@ def test_long_phrase_wraps_instead_of_overflowing():
     assert " ".join(lay[1]).split() == _GF_PHRASE.split(), "wrapping must not lose words"
 
 
-def test_wrapped_lines_stay_inside_the_slot_band():
+def test_wrapped_lines_stay_inside_the_widened_band():
+    """The band is the DECLARED column widened to the house bound, not the cell."""
     font, ref = _cafe()
     lay = _gf_layouts(font, ref, [_GF_PHRASE])[0]
-    right = rp._line_right_edge(_GF_SLOTS[0]["x1"], _GF_CELL)
-    assert _left_edge(font, ref, lay, 1, right) >= _GF_SLOTS[0]["x0"] - 1e-6
+    right = rp._card_right_edge(_GF_SLOTS, _GF_CELL)
+    left = rp._declared_left(_GF_SLOTS[0], _GF_CELL)
+    assert _left_edge(font, ref, lay, 1, right, _gf_advance(font)) >= left - 1e-6
 
 
 def test_no_word_can_reach_the_trim_edge():
@@ -152,9 +158,10 @@ def test_no_word_can_reach_the_trim_edge():
     font, ref = _cafe()
     words = [_GF_PHRASE, "ביחד סביב השולחן", "אבגדהוזחטיכלמנסעפצקרשתאבגדהוז", "מדונה"]
     layouts = _gf_layouts(font, ref, words)
+    right = rp._card_right_edge(_GF_SLOTS, _GF_CELL)
     for i, lay in enumerate(layouts):
-        right = rp._line_right_edge(_GF_SLOTS[i]["x1"], _GF_CELL)
-        assert _left_edge(font, ref, lay, i + 1, right) > _GF_TRIM, (
+        assert _left_edge(font, ref, lay, i + 1, right,
+                          _gf_advance(font)) > _GF_TRIM, (
             f"word {i + 1} crosses the trim line and would be cut off")
 
 
@@ -238,6 +245,129 @@ def test_the_marker_runs_are_never_embedded():
     svg = rp.word_lines(190, 50, 20, "#6c4d56", 4, ["בת 40"], CAFE)
     assert ">4</text>" in svg and ">.</text>" in svg
     assert "‫4</text>" not in svg and "‫.</text>" not in svg
+
+
+# --- 2d. the declared column is widened to the house bound -------------------
+# A declared column is traced by eye around the ORIGIN card's short words, so its
+# left edge is where those words stopped, not a box anyone drew. On the affected
+# deck it was 0.448 of the card — 21.7 mm — inside a printed frame leaving
+# 61.5 mm clear, so two-word entries wrapped with 27 mm standing empty. The owner
+# chose 0.200 as the bound; _declared_left widens any column that starts right of
+# it and leaves a wider one alone.
+
+_BP_CELL = [0, 0, 223.92, 312.0]
+_BP_SLOTS = _slots([(100.3, 112.1, 161.8, 123.4), (100.3, 140.3, 161.8, 152.6),
+                    (100.3, 169.9, 161.8, 183.4), (100.3, 194.6, 161.8, 213.0)])
+
+
+def test_a_traced_column_is_widened_to_the_house_bound():
+    left = rp._declared_left(_BP_SLOTS[0], _BP_CELL)
+    assert abs(left - 0.200 * 223.92) < 1e-9, "0.448 of the card must widen to 0.200"
+
+
+def test_a_column_already_wider_than_the_bound_is_left_alone():
+    wide = {"x0": 0.05 * 223.92, "y0": 0, "x1": 160.0, "y1": 10, "color": "#000"}
+    assert rp._declared_left(wide, _BP_CELL) == wide["x0"]
+
+
+def test_a_short_two_word_phrase_no_longer_wraps():
+    """The reported card: 'סדנה שמית' and 'אפיה שמרי' wrapped with room to spare."""
+    font, ref = _cafe()
+    layouts = rp._word_layouts(_BP_SLOTS, ["סין", "מחבת", "סדנה שמית", "אפיה שמרי"],
+                               font, ref, cell=_BP_CELL, declared_band=True,
+                               safe=rp._CARD_SAFE)
+    assert [len(l.lines) for l in layouts] == [1, 1, 1, 1]
+
+
+def test_a_genuinely_long_phrase_still_wraps():
+    font, ref = _cafe()
+    layouts = rp._word_layouts(_BP_SLOTS, ["סין", "מחבת", "אהבה", _GF_PHRASE],
+                               font, ref, cell=_BP_CELL, declared_band=True,
+                               safe=rp._CARD_SAFE)
+    assert len(layouts[3].lines) > 1, "a phrase wider than the whole band must wrap"
+
+
+# --- 2e. one lead, one anchor, one digit column ------------------------------
+# "the spaces between lines should be the same always" and "the numbers should be
+# aligned": _lead_for answers per PAIR of lines (0.82..1.52 across these cards)
+# and _marker_geometry measured each digit (Cafe sets "1" at 54 of a 200 em
+# against "2" at 110), so one card could show two different line gaps and four
+# different word starts.
+
+def test_one_lead_for_every_wrapped_entry_on_a_card():
+    font, ref = _cafe()
+    layouts = _gf_layouts(font, ref, [_GF_PHRASE, "הבדיחה על הנסיעה לאילת",
+                                      "ביחד סביב השולחן", "מדונה"])
+    leads = {round(l.lead, 9) for l in layouts}
+    assert len(leads) == 1, f"one card, one line gap — got {leads}"
+
+
+def test_the_shared_lead_is_the_widest_pair_a_card_sets():
+    """Uniform must mean the WIDEST need, never an average that collides.
+
+    Driven straight at the solver: two entries that must both wrap, one needing
+    a 1.50 pitch and one needing 0.85. The card has to use 1.50 for both.
+    """
+    cands = {0: {1: (["a"], 0.0, 5.0), 2: (["a", "b"], 1.50, 30.0)},
+             1: {1: (["c"], 0.0, 5.0), 2: (["c", "d"], 0.85, 30.0)}}
+    size, counts, lead = rp._fit_card(cands, {0: 200.0, 1: 200.0}, [50.0, 250.0], 20.0)
+    assert counts == {0: 2, 1: 2}, "both entries must wrap for this fixture to mean anything"
+    assert lead == 1.50
+
+
+def test_every_word_on_a_card_starts_at_the_same_x():
+    font, ref = _cafe()
+    words = ["סין", "מחבת", "סדנה שמית", _GF_PHRASE]
+    layouts = rp._word_layouts(_BP_SLOTS, words, font, ref, cell=_BP_CELL,
+                               declared_band=True, safe=rp._CARD_SAFE)
+    right = rp._card_right_edge(_BP_SLOTS, _BP_CELL)
+    adv = rp._marker_advance(font, len(_BP_SLOTS))
+    xs = set()
+    for i, lay in enumerate(layouts):
+        svg = rp.word_lines(right, 100, lay.size, "#000", i + 1, lay.lines, CAFE,
+                            lead=lay.lead, marker_advance=adv)
+        xs.update(re.findall(r'<text x="([-0-9.]+)"[^>]*>‫', svg))
+    assert len(xs) == 1, f"four entries must share one word x — got {sorted(xs)}"
+
+
+def test_the_period_column_is_fixed_too():
+    font, _ = _cafe()
+    adv = rp._marker_advance(font, 4)
+    dots = set()
+    for num in (1, 2, 3, 4):
+        svg = rp.word_lines(190, 50, 20, "#000", num, ["מסיבה"], CAFE,
+                            marker_advance=adv)
+        dots.add(re.search(r'<text x="([-0-9.]+)"[^>]*>\.</text>', svg).group(1))
+    assert len(dots) == 1, f"the periods must line up — got {sorted(dots)}"
+
+
+def test_without_a_fixed_advance_the_marker_is_measured_as_before():
+    """The v1 sheet passes no advance, so its markup must not move a hair."""
+    svg = rp.word_lines(190, 50, 20, "#6c4d56", 1, ["מסיבה"], CAFE)
+    assert '<text x="190.00"' in svg, "the digit stays pinned to the line's right edge"
+
+
+def test_a_leading_numeral_does_not_take_the_next_word_with_it():
+    """The real customer entry "40 מתחת ל40". Width alone splits it
+    "40 מתחת" / "ל40" — two figures at opposite ends of two lines."""
+    font, _ = _cafe()
+    assert rp._balanced_split(font, "40 מתחת ל40", 2) == ["40", "מתחת ל40"]
+
+
+def test_a_numeral_inside_a_phrase_is_left_to_the_width_rule():
+    """The rule is narrow on purpose: only a phrase that STARTS with a numeral."""
+    font, _ = _cafe()
+    lines = rp._balanced_split(font, "מסיבה 40 שנים", 2)
+    assert not rp._strands_a_leading_numeral(lines)
+    assert " ".join(lines).split() == ["מסיבה", "40", "שנים"]
+
+
+def test_one_right_anchor_for_a_card_whose_slots_disagree():
+    """Detected boxes differ by 2.24 units on the affected deck — 0.8 mm of
+    ragged digits. The widest edge is the column's real position."""
+    slots = _slots([(100, 10, 159.6, 20), (100, 30, 161.8, 40),
+                    (100, 50, 160.7, 60), (100, 70, 161.1, 80)])
+    assert rp._card_right_edge(slots, _BP_CELL) == 161.8
 
 
 def test_detected_slots_are_not_treated_as_a_text_column():

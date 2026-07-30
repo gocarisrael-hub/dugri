@@ -59,21 +59,44 @@ def _word_metrics(font_path, ref=200):
     return ImageFont.truetype(font_path, ref), ref
 
 
-def _marker_geometry(font, ref, num, msize):
+def _marker_geometry(font, ref, num, msize, advance=None):
     # Standard numbered look in RTL: the DIGIT is the rightmost glyph and the
     # PERIOD sits immediately to its LEFT (so reading right-to-left gives "1."),
     # then a gap, then the word. Digit and period are separate <text> runs so
     # bidi can never reorder the "." away from its digit. Returns the digit
-    # string, the period's right-anchor offset relative to the digit's right
-    # edge (a negative number), and the marker's total width (digit + tiny
-    # inter-gap + period) — the caller uses the width to place the word.
+    # string, the digit's own right-anchor offset, the period's right-anchor
+    # offset (both relative to the line's right edge, both <= 0) and the
+    # marker's total width (digit + tiny inter-gap + period) — the caller uses
+    # the width to place the word.
+    #
+    # ``advance`` (in ``ref`` units) makes the DIGIT COLUMN a fixed width instead
+    # of the drawn digit's own advance. The calibrated Hebrew faces have no
+    # tabular figures and their digits differ wildly — Cafe sets "1" at 54 units
+    # of a 200 em against "2" at 110 — so measuring each digit put every entry's
+    # period and word at a different x: 0.28 x the font size of drift, 1.7 mm at
+    # the 16.8 these cards set at. That is the ragged left edge the owner
+    # reported. With a fixed column the period and the word land on exactly the
+    # same x for all four entries, and the digit is CENTRED in its column so the
+    # right edge stays as flush as a proportional face allows (half the drift,
+    # 0.8 mm, split evenly instead of all of it on one side).
     digit = f"{num}"
     digit_w = font.getlength(digit) / ref * msize
+    col_w = digit_w if advance is None else advance / ref * msize
     dot_w = font.getlength(".") / ref * msize
     tiny = msize * 0.06                      # hairline gap between digit & period
-    dot_x = -digit_w - tiny                  # period right edge, just left of digit
-    marker_w = digit_w + tiny + dot_w        # full marker span (digit..period)
-    return digit, dot_x, marker_w
+    digit_x = -(col_w - digit_w) / 2         # 0 unless a fixed column is asked for
+    dot_x = -col_w - tiny                    # period right edge, just left of it
+    marker_w = col_w + tiny + dot_w          # full marker span (digit..period)
+    return digit, digit_x, dot_x, marker_w
+
+
+def _marker_advance(font, count):
+    """Width of the fixed digit column for a card of ``count`` numbered entries.
+
+    The WIDEST digit actually used, so no marker ever overflows its column and
+    every word starts at the same x (see ``_marker_geometry``). In ``ref`` units.
+    """
+    return max(font.getlength(f"{n}") for n in range(1, max(count, 1) + 1))
 
 
 # Explicit RTL base direction for ONE line of customer text, as bidi control
@@ -109,7 +132,8 @@ def _marker_geometry(font, ref, num, msize):
 _RTL_EMBED, _RTL_POP = "‫", "‬"
 
 
-def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None):
+def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
+               marker_advance=None):
     """One numbered entry, wrapped over ``lines``, as SVG markup.
 
     RTL numbered line: the marker must sit on the RIGHT (the Hebrew reading
@@ -130,17 +154,21 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None)
     the air above and below rather than drifting down into its neighbour.
 
     ``lead`` is the baseline pitch as a multiple of ``size``; omitted, it is
-    measured from these very lines (see ``_lead_for``).
+    measured from these very lines (see ``_lead_for``). ``marker_advance`` fixes
+    the digit column width so every entry's word starts at the same x; omitted,
+    each digit is measured as before and the v1 sheet renders byte for byte
+    unchanged.
     """
     msize = size * _MARKER_SCALE
     font, ref = _word_metrics(font_path)
-    digit, dot_x, marker_w = _marker_geometry(font, ref, num, msize)
+    digit, digit_x, dot_x, marker_w = _marker_geometry(font, ref, num, msize,
+                                                       advance=marker_advance)
     gap = size * _WORD_GAP
     word_x = x_right - marker_w - gap
     lead = size * (_lead_for(font, ref, lines) if lead is None else lead)
     first = center_y - (len(lines) - 1) * lead / 2 + size * 0.34
     out = [
-        f'<text x="{x_right:.2f}" y="{first:.2f}" font-family="HebWord" '
+        f'<text x="{x_right + digit_x:.2f}" y="{first:.2f}" font-family="HebWord" '
         f'font-size="{msize:.2f}" fill="{color}" text-anchor="end" '
         f'direction="ltr" xml:space="preserve">{digit}</text>'
         f'<text x="{x_right + dot_x:.2f}" y="{first:.2f}" font-family="HebWord" '
@@ -197,11 +225,35 @@ def _line_right_edge(slot_x1, cell):
     return min(slot_x1, cell[2] - _LINE_RIGHT_MARGIN * (cell[2] - cell[0]))
 
 
-def _line_width_at(font, ref, num, word):
+def _card_right_edge(slots, cell):
+    """ONE right anchor for every numbered line on a declared card.
+
+    The four slots are supposed to share an anchor — the origin's numbers sit in
+    a column — but each recorded box is the INK extent of a different origin
+    word, so they disagree: on the affected deck by 2.24 units (0.8 mm) between
+    slot 3 and slot 4, which is a visibly ragged column of digits. The WIDEST
+    right edge is the honest estimate of where that column really is (ink can
+    only fall short of the anchor, never past it), clamped as always so the
+    marker cannot land on the card border.
+    """
+    return _line_right_edge(max(s["x1"] for s in slots), cell)
+
+
+def _declared_left(slot, cell):
+    """Left bound of a declared words column, widened to ``_BAND_LEFT_MAX``."""
+    if not cell:
+        return slot["x0"]
+    return min(slot["x0"], cell[0] + _BAND_LEFT_MAX * (cell[2] - cell[0]))
+
+
+def _line_width_at(font, ref, num, word, advance=None):
     """Full numbered-line width (marker + gap + word) at the metric ``ref`` size.
     Everything scales linearly with the font size, so a width measured at ``ref``
-    converts to any render size S by multiplying by S/ref."""
-    _, _, marker_w = _marker_geometry(font, ref, num, ref * _MARKER_SCALE)
+    converts to any render size S by multiplying by S/ref. ``advance`` must be
+    the same fixed digit column the render uses, or the fit and the render
+    disagree about where the word starts."""
+    _, _, _, marker_w = _marker_geometry(font, ref, num, ref * _MARKER_SCALE,
+                                         advance=advance)
     return marker_w + ref * _WORD_GAP + font.getlength(word)
 
 
@@ -253,6 +305,25 @@ _WRAP_MAX_LINES = int(os.environ.get("DUGRI_WRAP_MAX_LINES", "3"))
 # region the guillotine removes: the reported amputation.
 _CELL_SAFE = float(os.environ.get("DUGRI_CELL_SAFE", "0.02"))
 _CARD_SAFE = float(os.environ.get("DUGRI_CARD_SAFE", "0.05"))
+# How far right a DECLARED words column may start, as a fraction of the card
+# width. The owner's choice, measured on the affected deck.
+#
+# A declared column is traced by eye around the ORIGIN card's words, and the
+# origin words are short, so the traced left edge records where those particular
+# words happened to stop — not a text box anyone drew. On the "Bride in One Pot"
+# deck it came out at 0.448, a column 21.7 mm wide, while the printed frame
+# leaves 61.5 mm of clear paper (0.110..0.890, measured off the artwork). Two-word
+# entries like "סדנה שמית" therefore wrapped with 27 mm standing empty to their
+# left, which is what the owner reported. Grapefruit has the same shape at 0.300
+# (31.6 mm of the same 61.5).
+#
+# Rather than restate the boundary per theme, it is clamped here: the affected
+# deck is an OWNER-UPLOADED template whose calibration lives in the admin store,
+# not in themes.json, so a themes.json edit could not reach it — and every future
+# upload would arrive with the same too-narrow trace. 0.200 leaves the ink about
+# 15.8 mm from the page edge, 7 mm clear of the frame stroke, so nothing lands on
+# the printed border. A column that already starts further LEFT is untouched.
+_BAND_LEFT_MAX = float(os.environ.get("DUGRI_BAND_LEFT_MAX", "0.200"))
 
 
 Layout = collections.namedtuple("Layout", "size lines lead")
@@ -301,12 +372,35 @@ def _block_half(layout):
     return _span(layout) * layout.size / 2
 
 
+def _strands_a_leading_numeral(lines):
+    """True when the first line glues a LEADING bare numeral to the word after it.
+
+    "40 מתחת ל40" is a real customer entry. Split on width alone it comes out as
+    "40 מתחת" / "ל40" — 938 units against 1021 for the alternative in the deck's
+    own face, so width picks it — and it reads as two figures at opposite ends of
+    two lines with מתחת stranded between them. Keeping the numeral on its own
+    line gives "40" / "מתחת ל40", which reads as written.
+
+    Deliberately narrow: only a phrase that STARTS with a bare numeral, and only
+    its first line. A numeral inside a phrase ("מסיבה 40 שנים") is left alone —
+    there it belongs to the words on both sides and no split is obviously wrong.
+    """
+    first = lines[0].split()
+    return len(first) > 1 and first[0].isdigit()
+
+
 def _balanced_split(font, text, n):
     """Split ``text`` at spaces into ``n`` lines, minimising the widest line.
 
     Returns None when the text has too few words to make ``n`` lines. Brute force
     over the split points: a card word is a handful of words, so the search is
     tiny and always finds the true optimum.
+
+    Ranked by (strands a leading numeral, widest line), so the numeral rule beats
+    pure width — which is the point of it, since the width-optimal split is the
+    unreadable one. The readable split is 8.8% wider on the deck's own face but
+    needs LESS line pitch (its two lines' glyphs clash less), so on the affected
+    card it cost nothing at all: 16.7 against 16.4 for the width-optimal one.
     """
     parts = text.split()
     if len(parts) < n:
@@ -317,13 +411,15 @@ def _balanced_split(font, text, n):
     for cuts in itertools.combinations(range(1, len(parts)), n - 1):
         bounds = (0,) + cuts + (len(parts),)
         lines = [" ".join(parts[a:b]) for a, b in zip(bounds, bounds[1:])]
-        widest = max(font.getlength(ln) for ln in lines)
-        if best is None or widest < best[0]:
-            best = (widest, lines)
+        rank = (_strands_a_leading_numeral(lines),
+                max(font.getlength(ln) for ln in lines))
+        if best is None or rank < best[0]:
+            best = (rank, lines)
     return best[1]
 
 
-def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES):
+def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
+                advance=None):
     """Every way to set one entry: ``{line_count: (lines, lead, max_size_ref)}``.
 
     ``max_size_ref`` is the largest font size at which that wrapping still fits
@@ -333,7 +429,7 @@ def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES):
     ``max_lines`` of 1 forbids wrapping outright, which is how the v1 sheet path
     keeps its long words on one line (see ``_word_layouts``).
     """
-    marker_ref = _line_width_at(font, ref, num, "")   # marker + gap, no text
+    marker_ref = _line_width_at(font, ref, num, "", advance=advance)
     out = {}
     for n in range(1, max_lines + 1):
         lines = _balanced_split(font, word, n)
@@ -372,21 +468,31 @@ def _fit_card(cands, pitches, centers, uniform):
     Ties go to the FEWEST total lines: wrapping is a cost paid to keep the type
     big, never a goal, so if a card sets just as large unwrapped it stays
     unwrapped.
+
+    ONE LEAD for the whole card, returned alongside the size. ``_lead_for``
+    answers what a given PAIR of lines needs, and that answer varies with the
+    glyphs — 0.82 to 1.52 across the test cards — so an entry wrapping around
+    "ים" was spaced visibly tighter than the entry below it wrapping around
+    "לקחת". The owner reads that as two different gaps on one card. Taking the
+    MAXIMUM over the pairs actually being set keeps every line clear of the one
+    above it (the collision this mechanism exists to prevent) while making the
+    gap the same everywhere.
     """
     live = sorted(cands)
     best = None
     for combo in itertools.product(*(sorted(cands[i]) for i in live)):
         counts = dict(zip(live, combo))
         size = min([uniform] + [cands[i][counts[i]][2] for i in live])
+        lead = max([0.0] + [cands[i][counts[i]][1] for i in live])
         for a, b in zip(live, live[1:]):
-            spans = sum((counts[i] - 1) * cands[i][counts[i]][1] + 1.0 / _WORD_SIZE_K
+            spans = sum((counts[i] - 1) * lead + 1.0 / _WORD_SIZE_K
                         for i in (a, b))
             room = min(pitches[a], abs(centers[b] - centers[a]))
             size = min(size, room / (spans / 2 + _WRAP_CLEAR))
         key = (size, -sum(combo))
         if best is None or key > best[0]:
-            best = (key, size, counts)
-    return best[1], best[2]
+            best = (key, size, counts, lead)
+    return best[1], best[2], best[3]
 
 
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
@@ -404,8 +510,10 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     the WRAPPING note above). What it has to fit is the question:
 
     * ``declared_band`` — the slots came from the owner's ``card_slots``, which
-      states where the words' COLUMN is (grapefruit: 0.3..0.7 of the card). That
-      is a real text box, so a phrase wider than it wraps inside it.
+      states where the words' COLUMN is. That is a real text box, so a phrase
+      wider than it wraps inside it — but its left edge is only ever traced
+      around the ORIGIN's short words, so it is widened to at least
+      ``_BAND_LEFT_MAX`` of the card first.
     * otherwise the slots were auto-detected, and a detected box is the ink
       extent of the ORIGIN word, not a column: the origin words were short, so
       the boxes are narrow and treating them as a text box wraps phrases that
@@ -413,6 +521,11 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
 
     Either way ``safe`` floors the bound, so no line can reach the trim edge and
     be cut off the printed card.
+
+    A declared card also gets ONE right anchor and ONE digit column for all four
+    entries (see ``_card_right_edge`` / ``_marker_advance``), so the numbers and
+    the words line up down the card instead of each entry landing where its own
+    slot and its own digit put it.
     """
     import statistics
     heights = [s["y1"] - s["y0"] for s in slots]
@@ -423,15 +536,19 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     # detected boxes overshoot (e.g. bachelorette rendered ~26 vs the real 19).
     uniform = word_size if word_size else statistics.median(heights) * _WORD_SIZE_K
     floor = cell[0] + (cell[2] - cell[0]) * safe if cell else None
+    advance = _marker_advance(font, len(slots)) if declared_band else None
     cands = {}
     for wi, slot in enumerate(slots):
         word = words[wi] if wi < len(words) else ""
         if not word:
             continue
-        right = _line_right_edge(slot["x1"], cell)
         if declared_band:
-            left = slot["x0"] if floor is None else max(slot["x0"], floor)
+            right = _card_right_edge(slots, cell)
+            left = _declared_left(slot, cell)
+            if floor is not None:
+                left = max(left, floor)
         else:
+            right = _line_right_edge(slot["x1"], cell)
             left = floor if floor is not None else slot["x0"]
         if left >= right:                 # degenerate slot: fall back to the floor
             left = floor if floor is not None else slot["x0"]
@@ -442,14 +559,15 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
         # guarantee stands unchanged: one line, shrunk if that is what it takes
         # to stay inside the card.
         cands[wi] = _candidates(font, ref, wi + 1, word, right - left,
-                                max_lines=_WRAP_MAX_LINES if declared_band else 1)
+                                max_lines=_WRAP_MAX_LINES if declared_band else 1,
+                                advance=advance)
     if not cands:
         return [None] * len(slots)
     centers = [(s["y0"] + s["y1"]) / 2 for s in slots]
     pitches = {i: _slot_pitch(slots, i) for i in cands}
-    size, counts = _fit_card(cands, pitches, centers, uniform)
+    size, counts, lead = _fit_card(cands, pitches, centers, uniform)
     return [None if wi not in cands
-            else Layout(size, cands[wi][counts[wi]][0], cands[wi][counts[wi]][1])
+            else Layout(size, cands[wi][counts[wi]][0], lead)
             for wi in range(len(slots))]
 
 
@@ -763,18 +881,26 @@ def _words_overlay(slots, words, cfg, word_font, cell):
     wf_metrics, wf_ref = _word_metrics(word_font)
     # card_slots is the owner's own statement of where the words' column sits, so
     # when it is set the slots ARE a text box and a long phrase wraps inside it.
+    declared = bool((cfg.get("card_slots") or {}).get("words"))
     layouts = _word_layouts(slots, words, wf_metrics, wf_ref, cell=cell,
                             word_size=cfg.get("word_size"), safe=_CARD_SAFE,
-                            declared_band=bool((cfg.get("card_slots") or {}).get("words")))
+                            declared_band=declared)
+    # One anchor and one digit column for the whole card, so the four numbers sit
+    # in a column and the four words start at the same x. Both must match what
+    # _word_layouts fitted against, or the render would overflow the band it was
+    # measured for.
+    x_right = _card_right_edge(slots, cell) if declared else None
+    advance = _marker_advance(wf_metrics, len(slots)) if declared else None
     out = []
     for wi, slot in enumerate(slots):
         if layouts[wi] is None:
             continue
         lay = layouts[wi]
         center = (slot["y0"] + slot["y1"]) / 2
-        x_right = _line_right_edge(slot["x1"], cell)
-        out.append(word_lines(x_right, center, lay.size, slot["color"],
-                              wi + 1, lay.lines, word_font, lead=lay.lead))
+        right = x_right if x_right is not None else _line_right_edge(slot["x1"], cell)
+        out.append(word_lines(right, center, lay.size, slot["color"],
+                              wi + 1, lay.lines, word_font, lead=lay.lead,
+                              marker_advance=advance))
     return "".join(out)
 
 
