@@ -182,3 +182,61 @@ describe('fetchDesignNames — buyer-facing, fail-soft client fetcher', () => {
     expect(names).toEqual({});
   });
 });
+
+// (C) applyDesignNames — writes the fetched names ONTO the catalog objects, so a
+// rename reaches everything read from the catalog after the fetch (analytics
+// labels, the designName stored on an order, any list built later) and not just
+// the nodes a page happens to re-stamp.
+describe('applyDesignNames — the rename reaches the catalog itself', () => {
+  let applyDesignNames;
+  beforeAll(async () => {
+    ({ applyDesignNames } = await import('../../site/js/designs.js'));
+  });
+
+  const catalog = () => [
+    { id: 'bachelorette', name: 'מסיבת רווקות' },
+    { id: 'birthday', name: 'יום הולדת' },
+  ];
+
+  it('overwrites the built-in name and reports which ids changed', () => {
+    const list = catalog();
+    const changed = applyDesignNames({ bachelorette: 'פרידה מהרווקות' }, list);
+    expect(changed).toEqual(['bachelorette']);
+    expect(list[0].name).toBe('פרידה מהרווקות');
+    // an id the map omits keeps its built-in name
+    expect(list[1].name).toBe('יום הולדת');
+  });
+
+  it('trims, and reports nothing when the name is unchanged', () => {
+    const list = catalog();
+    expect(applyDesignNames({ bachelorette: '  מסיבת רווקות  ' }, list)).toEqual([]);
+    expect(list[0].name).toBe('מסיבת רווקות');
+  });
+
+  it('never blanks a name from an empty, whitespace or non-string value', () => {
+    const list = catalog();
+    const changed = applyDesignNames({ bachelorette: '', birthday: '   ', kids: 'ילדים' }, list);
+    expect(changed).toEqual([]);
+    expect(list.map((d) => d.name)).toEqual(['מסיבת רווקות', 'יום הולדת']);
+  });
+
+  it('is a no-op for a missing/malformed map or list (page never breaks)', () => {
+    const list = catalog();
+    // `undefined` is deliberately absent from the list cases: it is the DEFAULT
+    // argument, which resolves to the real catalog — that is the documented call
+    // shape, not a malformed one.
+    for (const bad of [null, undefined, 'nope', 42]) {
+      expect(applyDesignNames(bad, list)).toEqual([]);
+    }
+    for (const badList of [null, 'nope', 42]) {
+      expect(applyDesignNames({ bachelorette: 'x' }, badList)).toEqual([]);
+    }
+    expect(list[0].name).toBe('מסיבת רווקות');
+  });
+
+  it('ignores catalog entries with no id', () => {
+    const list = [{ name: 'orphan' }, null, { id: 'birthday', name: 'יום הולדת' }];
+    expect(applyDesignNames({ birthday: 'ימי הולדת' }, list)).toEqual(['birthday']);
+    expect(list[2].name).toBe('ימי הולדת');
+  });
+});

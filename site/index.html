@@ -1080,7 +1080,7 @@
 
     <script type="module">
       import { initCarousel } from './js/carousel.js';
-      import { PUBLIC_DESIGNS } from './js/designs.js';
+      import { PUBLIC_DESIGNS, fetchDesignNames, applyDesignNames } from './js/designs.js';
       import { fetchPricing } from './js/pricing.js';
       import { loadDesignImages, galleryFor } from './js/design-images.js';
 
@@ -1147,6 +1147,26 @@
         // versa) instead of hitting an edge. The cards are layer-promoted in CSS
         // so the seamless-loop recenter is a cheap reposition, not a repaint.
         initCarousel(productsTrack, { mode: 'scroller', loop: true, dots: false });
+
+        // An admin rename edits themes.json display_he, which lands long after this
+        // page's catalog was built — so without this the rail keeps showing the
+        // built-in name while the store and the product page show the new one.
+        // Re-stamped AFTER initCarousel so the loop's CLONED cards (also matched by
+        // the selector) are corrected too. Fail-soft: the fetcher resolves to {} on
+        // timeout/error, applyDesignNames then changes nothing and the built-in
+        // names stand.
+        fetchDesignNames().then((names) => {
+          applyDesignNames(names, PUBLIC_DESIGNS);
+          for (const card of productsTrack.querySelectorAll('.home-prod-card[data-design-id]')) {
+            const nm = names[card.getAttribute('data-design-id')];
+            if (!nm) continue;
+            card.dataset.label = nm;
+            const img = card.querySelector('img');
+            if (img) img.alt = nm;
+            const nameEl = card.querySelector('.home-prod-name');
+            if (nameEl) nameEl.textContent = shortLabel(nm);
+          }
+        });
 
         // Overlay the owner's per-design STORE-tile overrides so the homepage rail
         // shows the SAME picture as /products (else one design would show two

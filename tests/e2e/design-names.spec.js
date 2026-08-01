@@ -47,6 +47,44 @@ test.describe('design-name propagation to the storefront', () => {
     await expect(marriage).not.toHaveText(CUSTOM);
   });
 
+  // The rename has to land on EVERY buyer-facing surface, not just the store and
+  // the product page. These two were rendering the built-in catalog name: the home
+  // rail (which never fetched the map at all) and the wizard's design chooser —
+  // where a shopper picked a design in the store and then met a differently
+  // labelled tile one click later.
+  test('the home designs rail shows the renamed name', async ({ page }) => {
+    await stubNames(page, { bachelorette: CUSTOM });
+    await page.goto('/index.html');
+
+    // The rail loops by cloning cards; EVERY copy has to carry the new name, or the
+    // old one reappears as the shopper swipes.
+    const cards = page.locator('.home-prod-card[data-design-id="bachelorette"]');
+    await expect(cards.first().locator('.home-prod-name')).toHaveText(CUSTOM);
+    const count = await cards.count();
+    for (let i = 0; i < count; i++) {
+      await expect(cards.nth(i)).toHaveAttribute('data-label', CUSTOM);
+      await expect(cards.nth(i).locator('img')).toHaveAttribute('alt', CUSTOM);
+    }
+
+    // A design the map omits keeps its built-in name.
+    const other = page.locator('.home-prod-card[data-design-id="marriage"] .home-prod-name');
+    await expect(other.first()).not.toHaveText('');
+    await expect(other.first()).not.toHaveText(CUSTOM);
+  });
+
+  test('the order wizard design tile shows the renamed name', async ({ page }) => {
+    await stubNames(page, { bachelorette: CUSTOM });
+    await page.goto('/options.html');
+
+    const tile = page.locator('.design[data-design-id="bachelorette"]');
+    await expect(tile.locator('.dname')).toHaveText(CUSTOM);
+    await expect(tile).toHaveAttribute('aria-label', CUSTOM);
+
+    const other = page.locator('.design[data-design-id="marriage"] .dname');
+    await expect(other).not.toHaveText('');
+    await expect(other).not.toHaveText(CUSTOM);
+  });
+
   test('the product page title + tab reflect the renamed name', async ({ page }) => {
     await stubNames(page, { bachelorette: CUSTOM });
     await page.goto('/product.html?design=bachelorette');

@@ -25,6 +25,9 @@
 import {
   PUBLIC_DESIGNS,
   fetchDesignNames,
+  // aliased: this module has its own applyDesignNames, which re-stamps THIS page's
+  // nodes; the imported one updates the shared catalog objects.
+  applyDesignNames as applyCatalogNames,
   designShipsBoard,
   loadCustomDesigns,
 } from './designs.js';
@@ -697,7 +700,13 @@ function boot() {
 
   // Overlay the owner-editable design names (independent, fail-soft) — see the
   // note above; a name override applied here defers to a content name override.
-  fetchDesignNames().then((names) => applyDesignNames(d, names));
+  fetchDesignNames().then((names) => {
+    // Update the CATALOG first, so anything read from it after this point (a
+    // gallery slide's label/alt, a rebuilt carousel) carries the renamed value
+    // too; then re-stamp the nodes already painted.
+    applyCatalogNames(names);
+    applyDesignNames(d, names);
+  });
 
   // Independently overlay the owner's per-design image overrides (store/gallery
   // pictures). Timeout-bounded + fail-safe: a slow/failed fetch never blocks the
@@ -738,7 +747,13 @@ function switchToDesign(d) {
   markPhotosEditable(d);
   restampPrices();
   loadOverrides((ov) => applyOverridesToPage(d, ov));
-  fetchDesignNames().then((names) => applyDesignNames(d, names));
+  fetchDesignNames().then((names) => {
+    // Update the CATALOG first, so anything read from it after this point (a
+    // gallery slide's label/alt, a rebuilt carousel) carries the renamed value
+    // too; then re-stamp the nodes already painted.
+    applyCatalogNames(names);
+    applyDesignNames(d, names);
+  });
 }
 
 // Re-stamp every rendered store price (the PDP now/was + each related card) from
