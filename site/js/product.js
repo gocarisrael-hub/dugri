@@ -29,6 +29,7 @@ import {
   loadCustomDesigns,
 } from './designs.js';
 import { initCarousel } from './carousel.js';
+import { initPinchZoom } from './pinch-zoom.js';
 import { fetchPricing } from './pricing.js';
 import { loadDesignImages, galleryFor } from './design-images.js';
 
@@ -241,6 +242,10 @@ let currentOverrides = {};
 let currentDesignImages = {}; // owner's per-design store/gallery image overrides
 let galleryApi = null;
 let zoomApi = null;
+// Finger zoom inside the fullscreen overlay (pinch / double-tap / pan). Bound once
+// to the overlay, so it survives the slide rebuilds; reset whenever the shopper
+// leaves the photo they zoomed into.
+let zoomPinch = null;
 // True once a boardless design's OVERRIDE-ONLY board slide (no shipped render to
 // fall back to) failed to load and was dropped, so we don't drop/rebuild twice
 // (the gallery and zoom tracks each render — and error on — that image). Reset
@@ -325,6 +330,15 @@ function wireZoom() {
   const closeBtn = document.getElementById('pdpZoomClose');
   if (!overlay || !openBtn || !closeBtn) return;
 
+  // Pinch / double-tap / drag zoom on the enlarged photo. The overlay is the
+  // viewport; while a photo is zoomed the module marks it `is-zoomed`, and
+  // product.html's CSS takes the track's horizontal gesture away from the
+  // carousel for as long as that lasts.
+  zoomPinch = initPinchZoom(overlay, {
+    imgSelector: '.pdp-zoom-slide img',
+    slideSelector: '.pdp-zoom-slide',
+  });
+
   let opener = null;
   function open() {
     if (!overlay.hidden) return;
@@ -333,6 +347,7 @@ function wireZoom() {
     document.documentElement.style.overflow = 'hidden';
     // Open on whichever image the inline gallery is showing (no smooth jump).
     if (galleryApi && zoomApi) zoomApi.goTo(galleryApi.current(), false);
+    if (zoomPinch) zoomPinch.reset(); // always open at fit
     opener = document.activeElement;
     closeBtn.focus();
   }
@@ -341,6 +356,9 @@ function wireZoom() {
     overlay.hidden = true;
     document.body.style.overflow = '';
     document.documentElement.style.overflow = '';
+    // Drop the zoom with the overlay, so the next open isn't stuck mid-photo and
+    // the track gets its native swipe back.
+    if (zoomPinch) zoomPinch.reset();
     if (opener && typeof opener.focus === 'function') opener.focus();
   }
 
@@ -359,9 +377,11 @@ function wireZoom() {
       close();
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
+      if (zoomPinch) zoomPinch.reset(); // moving on — the new photo opens at fit
       if (zoomApi) zoomApi.next();
     } else if (e.key === 'ArrowRight') {
       e.preventDefault();
+      if (zoomPinch) zoomPinch.reset();
       if (zoomApi) zoomApi.prev();
     }
   });
@@ -378,6 +398,8 @@ function rebuildCarousels(shots) {
     zoomApi.destroy();
     zoomApi = null;
   }
+  // The slides about to be replaced may be carrying a zoom transform.
+  if (zoomPinch) zoomPinch.reset();
   renderGallery(shots);
   renderZoomSlides(shots);
 }

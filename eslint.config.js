@@ -27,6 +27,9 @@ const browserGlobals = {
   FormData: 'readonly',
   CustomEvent: 'readonly',
   Event: 'readonly',
+  // Synthesised by the e2e specs that drive the product page's pinch zoom.
+  Touch: 'readonly',
+  TouchEvent: 'readonly',
   getComputedStyle: 'readonly',
   gtag: 'readonly',
   dataLayer: 'readonly',

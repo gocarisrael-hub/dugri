@@ -391,6 +391,11 @@
         align-items: center;
         justify-content: center;
         padding: max(env(safe-area-inset-top, 0px), 60px) 20px 64px;
+        /* A pinch-zoomed photo is transformed several times its slide's size. Clip
+           it here so that overflow can't grow the TRACK's scrollable area — the
+           track is a scroll-snap container, and a wider scroll range would let the
+           carousel drift off its snapped slide while the photo is being panned. */
+        overflow: hidden;
       }
       .pdp-zoom-slide img {
         max-width: 100%;
@@ -399,6 +404,27 @@
         display: block;
         border-radius: var(--radius);
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        /* js/pinch-zoom.js scales/translates this node on pinch, double-tap and
+           ctrl+wheel. Origin at the centre is what the module's focal-point maths
+           assumes; the layer hint keeps the pinch on the compositor. */
+        transform-origin: center center;
+        will-change: transform;
+      }
+      /* While a photo is zoomed IN (class set by js/pinch-zoom.js) the finger is
+         panning that photo, so the track must stop treating a sideways drag as a
+         carousel swipe — carousel.css's `pan-x pan-y` would scroll to the next
+         photo mid-pan. At fit the rule drops and the native swipe is back,
+         untouched. (`pan-x pan-y` also excludes `pinch-zoom` at every scale,
+         which is what makes iOS zoom the PHOTO here rather than the whole page.) */
+      .pdp-zoom.is-zoomed #pdpZoomTrack {
+        touch-action: none;
+      }
+      /* A drag now means "pan me". */
+      .pdp-zoom.is-zoomed .pdp-zoom-slide img {
+        cursor: grab;
+      }
+      .pdp-zoom.is-zoomed .pdp-zoom-slide img:active {
+        cursor: grabbing;
       }
       .pdp-zoom-dots {
         position: absolute;

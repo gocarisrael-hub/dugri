@@ -218,6 +218,93 @@ test.describe('product detail page', () => {
     await expect(page.getByTestId('pdp-zoom')).toBeHidden();
   });
 
+  // Finger zoom inside the enlarge overlay (js/pinch-zoom.js): a shopper checking
+  // the fine print on a card pinches the photo like any photo. Real touch events
+  // are dispatched at the viewport centre — the carousel loops by cloning slides,
+  // so the photo actually on screen is found by hit-testing rather than by index.
+  test('pinching the enlarged photo zooms it, and pinching back out restores it', async ({
+    page,
+  }) => {
+    await page.goto('/product.html?design=bachelorette');
+    await page.getByTestId('gallery-enlarge').click();
+    const overlay = page.getByTestId('pdp-zoom');
+    await expect(overlay).toBeVisible();
+    await expect(overlay.locator('.pdp-zoom-slide img').first()).toBeVisible();
+
+    // Dispatch a two-finger gesture spreading from 100px apart to `spread` px.
+    const doPinch = (spread) =>
+      page.evaluate((to) => {
+        const cx = window.innerWidth / 2;
+        const cy = window.innerHeight / 2;
+        const imgs = [...document.querySelectorAll('#pdpZoomTrack .pdp-zoom-slide img')];
+        const onScreen = imgs.find((i) => {
+          const r = i.getBoundingClientRect();
+          return r.width > 0 && r.left <= cx && r.right >= cx && r.top <= cy && r.bottom >= cy;
+        });
+        const img = onScreen || imgs[0];
+        const ev = (type, half) => {
+          const touches = [-half, half].map(
+            (dx, id) => new Touch({ identifier: id, target: img, clientX: cx + dx, clientY: cy })
+          );
+          return new TouchEvent(type, {
+            touches,
+            targetTouches: touches,
+            changedTouches: touches,
+            bubbles: true,
+            cancelable: true,
+          });
+        };
+        img.dispatchEvent(ev('touchstart', 50));
+        img.dispatchEvent(ev('touchmove', to / 2));
+        img.dispatchEvent(
+          new TouchEvent('touchend', {
+            touches: [],
+            changedTouches: [],
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+        // scaleX out of the computed matrix — "none" while unzoomed.
+        const m = getComputedStyle(img).transform;
+        return { matrix: m, scale: m === 'none' ? 1 : Number(m.split('(')[1].split(',')[0]) };
+      }, spread);
+
+    // Spread 100px -> 300px == 3x.
+    const zoomed = await doPinch(300);
+    expect(zoomed.scale).toBeCloseTo(3, 1);
+    await expect(overlay).toHaveClass(/is-zoomed/);
+    // While zoomed the track must stop treating a drag as a carousel swipe,
+    // otherwise panning the photo scrolls to the next one.
+    await expect(page.locator('#pdpZoomTrack')).toHaveCSS('touch-action', 'none');
+
+    // Pinch back in: fit again, transform cleared, carousel swipe handed back.
+    const restored = await doPinch(20);
+    expect(restored.matrix).toBe('none');
+    await expect(overlay).not.toHaveClass(/is-zoomed/);
+    await expect(page.locator('#pdpZoomTrack')).toHaveCSS('touch-action', 'pan-x pan-y');
+  });
+
+  test('the enlarge overlay always opens at fit, even after a zoom', async ({ page }) => {
+    await page.goto('/product.html?design=bachelorette');
+    const overlay = page.getByTestId('pdp-zoom');
+
+    await page.getByTestId('gallery-enlarge').click();
+    await expect(overlay.locator('.pdp-zoom-slide img').first()).toBeVisible();
+    // Double-click is the mouse path into the same zoom the double-tap drives.
+    await overlay.locator('.pdp-zoom-slide img').first().dblclick();
+    await expect(overlay).toHaveClass(/is-zoomed/);
+
+    await page.getByTestId('pdp-zoom-close').click();
+    await expect(overlay).toBeHidden();
+
+    await page.getByTestId('gallery-enlarge').click();
+    await expect(overlay).toBeVisible();
+    await expect(overlay).not.toHaveClass(/is-zoomed/);
+    for (const img of await overlay.locator('.pdp-zoom-slide img').all()) {
+      await expect(img).toHaveCSS('transform', 'none');
+    }
+  });
+
   // Item 4: the enlarge icon lives in the PHYSICAL top-left corner of the gallery.
   // The page is dir="rtl", so this asserts the real rendered geometry (not a
   // logical inset that could land on the opposite side). Runs on every device
