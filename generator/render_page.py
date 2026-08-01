@@ -520,8 +520,10 @@ _TRANSFORM = re.compile(r"(matrix|translate|scale)\s*\(([^)]*)\)")
 # Any relative path command (lowercase), or one whose arguments are not xy pairs
 # (H/V/A). Either makes a coordinate-pair reading of ``d`` wrong, so such a path
 # is skipped rather than mis-measured. "Z" closes a subpath and takes no
-# arguments, so it is harmless.
-_PATH_UNREADABLE = re.compile(r"[a-gi-y]|[HVA]")
+# arguments, so it is harmless and left out of the range. A lowercase "e" from
+# scientific notation trips this too — which only costs us a candidate we would
+# have had to trust a hand-rolled parser for.
+_PATH_UNREADABLE = re.compile(r"[a-y]|[HVA]")
 _IDENTITY = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 
 
