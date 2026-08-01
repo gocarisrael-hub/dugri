@@ -891,8 +891,8 @@ def _room_cap(centers, n_lines, lead, flat, font, ref, room):
 
     ``room`` is ``(top bound, bottom bound)``: the top is the card's safe area
     (nothing may rise into it), the bottom is ``room_bottom`` — the printed
-    frame's inner edge less clear air. The first line stays pinned to the first
-    calibrated centre, so the block runs
+    frame's interior less the reserved bottom margin. The first line stays pinned
+    to the first calibrated centre, so the block runs
 
         first centre  +  (lines-1) x pitch  +  the last line's ink below its centre
 
