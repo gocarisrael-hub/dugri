@@ -661,12 +661,25 @@ def frame_box(svg_text, cell):
 # Measured from the LAST LINE'S INK, descenders included, to the frame's interior
 # edge: measuring from the baseline would let a "ך" eat the margin.
 #
-# 4 mm is the shipped default because it is the last value that is effectively
-# free: on her own wrapped cards it costs 21.30 -> 21.12 of type size (0.9%) and
-# turns an incidental 3.6 mm of clearance into a guaranteed 4.1 mm. 8 mm costs
-# 8%, 12 mm costs 15%. One env var away if the proof says otherwise.
+# 8 mm is the shipped default because the OWNER PICKED IT off that proof: she
+# wanted the foot of the card visibly, unmistakably empty, and 8 mm is the value
+# that reads as deliberate white space rather than as a near miss. It is a
+# preference about how the printed card looks, so it is hers to set, and she set
+# it knowing what it costs — she was shown the trade before choosing:
+#
+#   * type size. On her own wrapped card it takes 21.12 -> 19.61 (7.1%); 4 mm
+#     would have cost 0.9%. Measured, not estimated.
+#   * a card whose last entry only just wrapped stops wrapping, because the
+#     shorter room makes the extra line cost more than it buys. Two cards of one
+#     deck can then set at different sizes (hers: 19.61 and 20.89). She accepted
+#     that; it is not a bug report waiting to be filed.
+#
+# In exchange every card is guaranteed 8 mm of clear paper under its last line
+# (measured 8.08 mm on her wrapped card, ink to the scanned frame interior),
+# where 4 mm promised 4.14 and 0 mm promised nothing at all. One env var away if
+# a later proof changes her mind.
 _PT_PER_MM = 72.0 / 25.4
-_BOTTOM_RESERVE_MM = float(os.environ.get("DUGRI_BOTTOM_RESERVE_MM", "4"))
+_BOTTOM_RESERVE_MM = float(os.environ.get("DUGRI_BOTTOM_RESERVE_MM", "8"))
 
 # Cache: the frame is a property of the ARTWORK, and one deck renders the same
 # eight fronts 104 times. Keyed by theme + front + payload size, so a test that

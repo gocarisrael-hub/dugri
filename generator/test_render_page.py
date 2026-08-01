@@ -842,6 +842,28 @@ def test_the_bottom_margin_is_stated_in_millimetres():
     assert 0 <= rp._BOTTOM_RESERVE_MM <= 20
 
 
+def test_the_shipped_margin_is_the_eight_millimetres_the_owner_chose():
+    """The default is a DECISION, not a tuning constant, so it is pinned.
+
+    She picked 8 mm off the 0/4/8/12 proof with the cost in front of her: on her
+    own wrapped card it takes the type from 21.12 to 19.61, and her second card
+    stops wrapping at this margin so the two set at different sizes. Anything
+    that quietly walks this back to 4 is undoing her call, not fixing a bug."""
+    assert rp._BOTTOM_RESERVE_MM == 8
+
+
+def test_the_shipped_margin_actually_clears_eight_millimetres_of_ink():
+    """The default is only worth pinning if it delivers: her wrapped card's last
+    line — descenders and all — must stop a full 8 mm above the frame."""
+    font, ref = _cafe()
+    layouts = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN)
+    live = [l for l in layouts if l is not None]
+    ink = (_line_centers(layouts, _BP_SLOTS)[-1]
+           + rp._ink_reach(font, ref, live[-1].lines[-1])[1] * live[0].size)
+    clear_mm = (_BP_FRAME_BOTTOM - ink) / rp._PT_PER_MM
+    assert clear_mm >= 8.0 - 1e-6, f"only {clear_mm:.2f} mm clear at the foot"
+
+
 # --- 2h. ONE line gap per FONT, not per card --------------------------------
 # "i want a fixed gap between lines (the minimum gap (that obey the rule that no 2
 # letters touch each other) between the most descent letter (above) and the most
@@ -856,8 +878,16 @@ _BP_FLOOR_PITCH = (((_BP_SLOTS[-1]["y0"] + _BP_SLOTS[-1]["y1"]) / 2
 def test_the_line_gap_comes_from_the_font_not_the_cards_own_glyphs():
     """``_lead_for`` answered per card, so two cards of one deck got two rhythms
     (30.56 against 29.39 on the owner's own pair). The pitch is now the FONT's
-    worst case, floored by the origin's own entry spacing — neither of which
-    knows which letters this particular card happens to carry."""
+    need, floored by the origin's own entry spacing and capped by the paper left
+    below the card — three quantities, none of which knows which letters this
+    particular card happens to carry.
+
+    At the shipped 8 mm bottom margin the CAP binds on her wrapped card: six
+    lines no longer fit under the origin's spacing, so the pitch comes off the
+    floor and takes the value the room dictates — which shows as the last line's
+    ink landing exactly on ``room_bottom``. That is the documented order (the
+    floor is a preference, the font's need is the rule), so both branches are
+    pinned here rather than the floor alone."""
     font, ref = _cafe()
     lead = rp._font_lead(font, ref)
     for words in (_CARD_HAPOEL, _CARD_ARZOT,
@@ -865,9 +895,26 @@ def test_the_line_gap_comes_from_the_font_not_the_cards_own_glyphs():
                   ["לקחת", "לקחת", "לקחת", "לקחת"]):   # both, at their extremes
         layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
         live = [l for l in layouts if l is not None]
-        pitch = live[0].lead * live[0].size
-        assert abs(pitch - max(_BP_FLOOR_PITCH, lead * live[0].size)) < 1e-9, (
-            f"{words}: the gap must not depend on this card's glyphs — {pitch}")
+        size = live[0].size
+        pitch = live[0].lead * size
+        want = max(_BP_FLOOR_PITCH, lead * size)
+        ink = (_line_centers(layouts, _BP_SLOTS)[-1]
+               + rp._ink_reach(font, ref, live[-1].lines[-1])[1] * size)
+        assert pitch >= lead * size - 1e-9, (
+            f"{words}: the font's need is the rule and may not be undercut — "
+            f"{pitch} < {lead * size}")
+        assert pitch <= want + 1e-9, (
+            f"{words}: nothing may spread the lines past the origin's own "
+            f"spacing — {pitch} > {want}")
+        if abs(pitch - want) > 1e-9:
+            # The only thing allowed to pull the pitch below the floor is the
+            # room, and then the block must be sitting ON the room's bottom —
+            # not merely somewhere under it.
+            assert abs(ink - _bp_room()) < 1e-6, (
+                f"{words}: pitch {pitch} is below the floor {want} without the "
+                f"room being the reason — ink {ink}, room {_bp_room()}")
+        else:
+            assert ink <= _bp_room() + 1e-6, f"{words}: ink {ink} past the room"
 
 
 def test_two_cards_that_set_at_one_size_show_one_gap():
