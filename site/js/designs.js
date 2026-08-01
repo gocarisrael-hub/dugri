@@ -238,6 +238,40 @@ export const PUBLIC_DESIGNS = DESIGNS.filter((d) => d.public);
  * letting the caller keep the built-in catalog names. Never rejects. `fetchImpl`
  * is injectable for tests.
  */
+/**
+ * Write the admin's current display names onto the catalog objects themselves.
+ *
+ * `name` is baked into DESIGNS from the built-in META table at module load, and
+ * an admin rename lands in themes.json long after that build — so every page that
+ * reads `d.name` renders the OLD name until this runs. Calling it once, as soon
+ * as fetchDesignNames resolves, makes the rename reach everything downstream that
+ * reads the catalog rather than the DOM: analytics labels, the `designName` the
+ * wizard stores on the order, any list built after the fetch. Pages that already
+ * painted still have to re-stamp their own nodes (see the callers) — this fixes
+ * the SOURCE, not the pixels already on screen.
+ *
+ * Only non-empty string names for ids that exist are applied, so a partial or
+ * malformed map can never blank a design's name.
+ *
+ * @param {Record<string,string>} names  as returned by fetchDesignNames
+ * @param {Array<object>} [list]         catalog to update (defaults to all designs)
+ * @returns {string[]} the ids whose name actually changed
+ */
+export function applyDesignNames(names, list = DESIGNS) {
+  const map = names && typeof names === 'object' ? names : {};
+  const changed = [];
+  for (const d of Array.isArray(list) ? list : []) {
+    if (!d || typeof d.id !== 'string') continue;
+    const next = map[d.id];
+    if (typeof next !== 'string') continue;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === d.name) continue;
+    d.name = trimmed;
+    changed.push(d.id);
+  }
+  return changed;
+}
+
 export async function fetchDesignNames({ fetchImpl, timeoutMs = 2500 } = {}) {
   const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
   if (!f) return {};
