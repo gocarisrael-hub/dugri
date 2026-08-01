@@ -20,6 +20,30 @@ const PNG =
 // The create button is gated on the name step until the live name-preview shows.
 // Stub /api/preview so the real (Python) render isn't needed and the gate opens
 // deterministically — the same technique name-preview.spec.js uses.
+// Pin /api/pricing to the launch defaults. The store price is a GLOBAL,
+// owner-editable setting on the shared e2e server, and admin-pricing.spec edits
+// it for real while this file runs — a live read here is a coin flip between 199
+// and whatever that spec has stored at that instant. Stubbing keeps the pill's
+// assertion about the pill (does it render the price it was given) instead of
+// about another spec's timing.
+async function stubPricing(page, now = 199, was = 239) {
+  await page.route('**/api/pricing', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        store: { now, was },
+        versions: {
+          pdf: { enabled: false, price: 79 },
+          pickup: { enabled: true, price: 199 },
+          delivery: { enabled: false, price: 199 },
+          custom: { enabled: false, price: 599 },
+        },
+      }),
+    })
+  );
+}
+
 async function mockPreview(page) {
   await page.route('**/api/preview', (route) =>
     route.fulfill({
@@ -39,11 +63,12 @@ async function mockPreview(page) {
 
 test.describe('order wizard', () => {
   test('preview + design + color recolor work across the first steps', async ({ page }) => {
+    await stubPricing(page);
     await page.goto('/options.html?plan=base');
 
     // Step 1 is the design step: preview visible, plan price reflects base.
     await expect(page.getByTestId('preview')).toBeVisible();
-    // The pill sources the store price from /api/pricing (launch default 199).
+    // The pill sources the store price from /api/pricing (pinned to 199 above).
     await expect(page.getByTestId('plan-price')).toHaveText('199');
     await expect(page.getByTestId('step-1')).toBeVisible();
     await expect(page.getByTestId('step-now')).toHaveText('1');

@@ -322,9 +322,11 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
   // concurrent browsers here (and only one project ever writes the file).
   // THEN refuse to run at all unless the live server lists the fixture-only
   // sentinel theme — proof it is the test-owned server honoring the throwaway
-  // TEMPLATE_ROOT. If a dev already had `node server/index.js` on :4321 (which
-  // Playwright reuses locally, reuseExistingServer:!CI), the sentinel is absent
-  // and we skip rather than write to the REAL generator/themes.json + resources/.
+  // TEMPLATE_ROOT, rather than a dev server on the real config that Playwright
+  // reused (reuseExistingServer:!CI). Second line of defense: global-setup.js now
+  // FAILS the whole run when the port answers with another checkout's config, so
+  // by here the sentinel is expected — this only keeps a hand-started server on a
+  // real TEMPLATE_ROOT from writing to generator/themes.json + resources/.
   test.beforeEach(async ({ request }, testInfo) => {
     test.skip(testInfo.project.name !== ONLY, 'mutating test runs on one project only');
     const r = await request.get(`/api/admin/templates?key=${KEY}`);

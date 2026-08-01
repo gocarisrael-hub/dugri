@@ -1,10 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 import { FIXTURE_ROOT } from './tests/e2e/tpl-fixture.js';
+import { E2E_PORT, E2E_BASE_URL } from './tests/e2e/server-target.js';
 
-// E2E specs live in tests/e2e/*.spec.js and run against the Node server
-// (Express serving site/ + the word-collection /api) on localhost:4321.
-const PORT = 4321;
-const baseURL = `http://localhost:${PORT}`;
+// E2E specs live in tests/e2e/*.spec.js and run against the Node server (Express
+// serving site/ + the word-collection /api). The port is derived per checkout —
+// see tests/e2e/server-target.js for why it is not a fixed 4321 — and
+// global-setup.js refuses to run against a server that isn't this checkout's.
+const PORT = E2E_PORT;
+const baseURL = E2E_BASE_URL;
 
 export default defineConfig({
   testDir: './tests/e2e',

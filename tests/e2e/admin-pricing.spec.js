@@ -5,12 +5,23 @@ import { test, expect } from '@playwright/test';
 // DATA_DIR=.e2e-data (throwaway), so overrides written here never touch real data.
 const KEY = 'dugri-admin';
 
-// The two device projects run this spec in parallel against ONE server (shared
-// DATA_DIR). To keep assertions race-free we read each save/reset from the page's
-// OWN re-rendered inputs (populated by that request's own single-threaded
-// response), never a shared re-fetch. Every test resets the keys it touched so no
-// override leaks to the storefront/checkout specs. pickup is NEVER disabled here
-// (it is the launch default the checkout specs rely on).
+// This spec owns the ONLY writes to the shared `pricing` settings in the whole
+// suite. Two things keep those writes from leaking into other tests:
+//
+//  • Tests that READ or WRITE the shared store run on ONE project (see ONLY
+//    below). Playwright runs the tests in a file sequentially within a project,
+//    but the two device projects run the same file CONCURRENTLY against one
+//    server — so "renders the launch defaults (199)" on the phone was racing
+//    "saving the store price (211)" on the desktop. Nothing here is
+//    device-specific: it is an admin form, so the second run only added the race.
+//  • Every test resets the keys it touched, and pickup is NEVER disabled (it is
+//    the launch default the checkout specs rely on).
+//
+// Assertions still read each save/reset from the page's OWN re-rendered inputs
+// (populated by that request's single-threaded response) rather than a shared
+// re-fetch, so a leftover override from an interrupted run can't fake a pass.
+const ONLY = 'Desktop Chrome';
+
 async function resetKey(request, k) {
   const r = await request.delete(
     `/api/admin/settings?section=pricing&settingKey=${encodeURIComponent(k)}&key=${KEY}`
@@ -30,7 +41,11 @@ test.describe('admin pricing editor', () => {
     expect(hitAdmin).toBe(false);
   });
 
-  test('with the key it renders the store card and the four version cards', async ({ page }) => {
+  test('with the key it renders the store card and the four version cards', async ({
+    page,
+  }, testInfo) => {
+    // Reads the shared store (the launch defaults below) — one project only.
+    test.skip(testInfo.project.name !== ONLY, 'reads shared pricing state — one project only');
     await page.goto(`/admin-pricing.html?key=${KEY}`);
     await expect(page.locator('#app')).toBeVisible();
 
@@ -53,7 +68,8 @@ test.describe('admin pricing editor', () => {
     await expect(page.locator('[data-card="pdf"] [data-flag="pdf_enabled"]')).not.toBeChecked();
   });
 
-  test('saving the store price persists via the admin API', async ({ page, request }) => {
+  test('saving the store price persists via the admin API', async ({ page, request }, testInfo) => {
+    test.skip(testInfo.project.name !== ONLY, 'writes shared pricing state — one project only');
     await page.goto(`/admin-pricing.html?key=${KEY}`);
     const store = page.locator('[data-card="store"]');
     await expect(store).toBeVisible();
@@ -76,7 +92,8 @@ test.describe('admin pricing editor', () => {
   test('toggling a version on + repricing it persists via the admin API', async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== ONLY, 'writes shared pricing state — one project only');
     await page.goto(`/admin-pricing.html?key=${KEY}`);
     const card = page.locator('[data-card="pdf"]');
     await expect(card).toBeVisible();
@@ -112,7 +129,8 @@ test.describe('admin pricing editor', () => {
     expect(posted).toBe(false);
   });
 
-  test('reset restores the default store price', async ({ page, request }) => {
+  test('reset restores the default store price', async ({ page, request }, testInfo) => {
+    test.skip(testInfo.project.name !== ONLY, 'writes shared pricing state — one project only');
     page.on('dialog', (d) => d.accept()); // reset asks for confirmation
     await page.goto(`/admin-pricing.html?key=${KEY}`);
     const store = page.locator('[data-card="store"]');
