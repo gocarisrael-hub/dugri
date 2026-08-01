@@ -181,6 +181,31 @@ test.describe('product detail page', () => {
     }
   });
 
+  // The buyer can title the deck anything, but that field only appears deep in the
+  // wizard — long after this page is where she decides a "רווקות" design is not for
+  // her birthday. The note has to sit between the price and the first section, so
+  // it cannot be scrolled past on the way to the buy button.
+  test('the title note sits between the price and the first section, on every design', async ({
+    page,
+  }) => {
+    for (const id of ['bachelorette', 'birthday', 'kids']) {
+      await page.goto(`/product.html?design=${id}`);
+
+      const note = page.getByTestId('pdp-title-note');
+      await expect(note).toBeVisible();
+      await expect(note).toContainText('הכותרת נכתבת על ידכם');
+
+      const priceBox = await page.locator('#pdpPriceNow').boundingBox();
+      const noteBox = await note.boundingBox();
+      const firstSecBox = await page.locator('.pdp-sec').first().boundingBox();
+      const buyBox = await page.getByTestId('pdp-buy').boundingBox();
+
+      expect(noteBox.y, `${id}: note below the price`).toBeGreaterThan(priceBox.y);
+      expect(noteBox.y, `${id}: note above the first section`).toBeLessThan(firstSecBox.y);
+      expect(noteBox.y, `${id}: note above the buy button`).toBeLessThan(buyBox.y);
+    }
+  });
+
   test('the enlarge button opens a fullscreen overlay with the swipeable images', async ({
     page,
   }) => {

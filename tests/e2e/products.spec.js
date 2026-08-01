@@ -80,11 +80,29 @@ test.describe('store grid (products.html)', () => {
     expect(wb.x + wb.width).toBeLessThanOrEqual(nb.x + 1);
   });
 
-  test('has exactly one (visually-hidden) page heading for a11y/SEO', async ({ page }) => {
+  test('has exactly one page heading, and it is VISIBLE above the grid', async ({ page }) => {
     await page.goto('/products.html');
     const h1 = page.locator('h1');
     await expect(h1).toHaveCount(1);
     await expect(h1).not.toHaveText('');
+    // It used to be visually-hidden and the grid opened cold. The masthead now
+    // carries the "write your own title" promise, so it has to actually render.
+    await expect(h1).toBeVisible();
+  });
+
+  // The store is where a shopper decides a design belongs to somebody else's kind
+  // of party. The masthead says otherwise, before the pictures get a chance to.
+  test('the masthead says the title is the buyer’s, above the first design', async ({ page }) => {
+    await page.goto('/products.html');
+
+    const sub = page.getByTestId('store-sub');
+    await expect(sub).toBeVisible();
+    await expect(sub).toContainText('כותבים את הכותרת שלכם');
+
+    // Above the grid, not floating somewhere below it.
+    const subBox = await sub.boundingBox();
+    const gridBox = await page.getByTestId('store-grid').boundingBox();
+    expect(subBox.y + subBox.height).toBeLessThanOrEqual(gridBox.y);
   });
 
   test('shows only the grid — no hero and no design chooser', async ({ page }) => {

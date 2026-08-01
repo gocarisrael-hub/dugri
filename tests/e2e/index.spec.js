@@ -179,6 +179,24 @@ test.describe('home product rail', () => {
     // The "מעבר אל החנות" button opens the store.
     await expect(rail.locator('.home-products-cta a')).toHaveAttribute('href', 'products.html');
   });
+
+  // The designs are NAMED after events ("רווקות", "יום הולדת"), which quietly tells
+  // a visitor that only one of them is for her. The sub-line under the heading is
+  // the first place we say that isn't so.
+  test('the designs heading carries the "any celebration" sub-line', async ({ page }) => {
+    await page.goto('/index.html');
+
+    const sub = page.getByTestId('home-products-sub');
+    await expect(sub).toBeVisible();
+    await expect(sub).toContainText('כל חגיגה');
+
+    // Directly under the heading, above the cards.
+    const headBox = await page.locator('#products .home-products-head h2').boundingBox();
+    const subBox = await sub.boundingBox();
+    const cardBox = await page.locator('a.home-prod-card').first().boundingBox();
+    expect(subBox.y).toBeGreaterThanOrEqual(headBox.y + headBox.height - 1);
+    expect(subBox.y).toBeLessThan(cardBox.y);
+  });
 });
 
 test.describe('landing order funnel', () => {
