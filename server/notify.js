@@ -236,31 +236,55 @@ function renderEmailHtml({ title, bodyLines, cta, baseUrl, image, imageAlt } = {
 </html>`;
 }
 
+// Which settings store the builders read templates/labels from. Normally THE
+// store; swapped only for the duration of a withSettings() call (see below).
+let _store = settings;
+
+// Render the mails against an ALTERNATIVE settings store for the duration of one
+// SYNCHRONOUS call, then restore the real one. The admin message preview uses it
+// to render an UNSAVED draft — the owner sees the mail as they type it — without
+// writing that draft to the real store, which would make every keystroke a live
+// change to what customers receive.
+//
+// Synchronous only, deliberately: the builders are pure and sync, and the swap is
+// undone in `finally`. Wrapping an async fn would restore the store at the first
+// await and leak the override into whatever ran in between. `store` must expose
+// settings' read surface (get/interpolate); a falsy one is a no-op.
+function withSettings(store, fn) {
+  const prev = _store;
+  _store = store || settings;
+  try {
+    return fn();
+  } finally {
+    _store = prev;
+  }
+}
+
 // Owner-editable string groups (registry-backed; default to the current
 // strings). Read fresh each build so an override takes effect without a restart.
 function emailTpl(name) {
-  return settings.get('email', name);
+  return _store.get('email', name);
 }
 function versionLabels() {
-  return settings.get('email', 'version_labels');
+  return _store.get('email', 'version_labels');
 }
 function fieldLabels() {
-  return settings.get('email', 'field_labels');
+  return _store.get('email', 'field_labels');
 }
 function ctaLabels() {
-  return settings.get('email', 'cta_labels');
+  return _store.get('email', 'cta_labels');
 }
 function footer() {
-  return settings.get('email', 'footer');
+  return _store.get('email', 'footer');
 }
 function productInfo() {
-  return settings.get('email', 'product_info');
+  return _store.get('email', 'product_info');
 }
 function deliveryInfo() {
-  return settings.get('email', 'delivery_info');
+  return _store.get('email', 'delivery_info');
 }
 function pickupInfo() {
-  return settings.get('email', 'pickup_info');
+  return _store.get('email', 'pickup_info');
 }
 
 // One-line description of the product for a version, or '' when none is set.
@@ -1045,6 +1069,7 @@ async function sendReminderEmail(collection, rawText, baseUrl) {
 
 module.exports = {
   isConfigured,
+  withSettings,
   renderEmailHtml,
   buildPaidMessage,
   buildCustomOrderAlert,
