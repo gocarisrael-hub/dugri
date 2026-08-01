@@ -365,6 +365,32 @@
         color: #5c7357;
         margin: 6px 0 3px;
       }
+      /* Upload-form mode picker: nine files vs one front + one back. Two buttons
+         rather than a select, because it is a fork in what the form ASKS FOR —
+         the choice has to read as a choice, not a hidden setting. */
+      .mode-pick {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 0 0 10px;
+      }
+      .mode-btn {
+        appearance: none;
+        border: 1px solid #d8a7a0;
+        background: #faf8f4;
+        color: #5c7357;
+        font-family: inherit;
+        font-weight: 700;
+        font-size: 13px;
+        padding: 6px 14px;
+        border-radius: 99px;
+        cursor: pointer;
+      }
+      .mode-btn.active {
+        background: #8ca287;
+        border-color: #8ca287;
+        color: #fff;
+      }
       /* Front picker: which of the eight fronts' title position is being edited. */
       .cal-fronts {
         display: flex;
@@ -699,20 +725,66 @@
 
         <!-- NEW single-card layout. The nine files go in through ONE picker each,
              so the owner selects the exported folder rather than filling nine
-             separate slots; the mapping comes from each file's own name. -->
+             separate slots; the mapping comes from each file's own name.
+
+             ONE-FRONT mode is the shortcut for a deck where every card carries
+             the SAME design: two files instead of nine per layer. It does not
+             copy one file to nine names — the theme entry records a single-index
+             front list and the deck's front cycling lands every card on it. -->
         <fieldset id="cardsAssets">
-          <legend>קבצי הקלפים — 1.svg עד 9.svg</legend>
-          <div class="row">
-            <label
-              >נקי (clean) · בחרו את כל תשעת הקבצים
-              <span class="hint">1.svg = גב הקלף, 2.svg-9.svg = שמונה הפנים</span>
-              <input type="file" name="clean_cards" accept=".svg,image/svg+xml" multiple />
-            </label>
-            <label
-              >ממולא (filled) · אותם תשעה קבצים
-              <span class="hint">עם טקסט הדוגמה של Canva</span>
-              <input type="file" name="filled_cards" accept=".svg,image/svg+xml" multiple />
-            </label>
+          <legend>קבצי הקלפים</legend>
+          <div class="mode-pick">
+            <button type="button" class="mode-btn active" data-fronts="all">
+              עיצוב שונה לכל קלף — 9 קבצים
+            </button>
+            <button type="button" class="mode-btn" data-fronts="one">
+              אותו עיצוב לכל הקלפים — פנים אחד + גב אחד
+            </button>
+          </div>
+          <input type="hidden" name="card_fronts" id="cardFronts" value="all" />
+          <div id="cardsAll">
+            <div class="row">
+              <label
+                >נקי (clean) · בחרו את כל תשעת הקבצים
+                <span class="hint">1.svg = גב הקלף, 2.svg-9.svg = שמונה הפנים</span>
+                <input type="file" name="clean_cards" accept=".svg,image/svg+xml" multiple />
+              </label>
+              <label
+                >ממולא (filled) · אותם תשעה קבצים
+                <span class="hint">עם טקסט הדוגמה של Canva</span>
+                <input type="file" name="filled_cards" accept=".svg,image/svg+xml" multiple />
+              </label>
+            </div>
+          </div>
+          <div id="cardsOne" hidden>
+            <p class="hint">
+              קובץ פנים אחד וקובץ גב אחד — כל 103 קלפי המילים יודפסו על אותו עיצוב פנים. אין צורך
+              להעלות תשעה עותקים.
+            </p>
+            <div class="row">
+              <label
+                >פנים · נקי (clean)
+                <span class="hint">נשמר כ-2.svg</span>
+                <input type="file" name="clean_2" accept=".svg,image/svg+xml" />
+              </label>
+              <label
+                >גב · נקי (clean)
+                <span class="hint">נשמר כ-1.svg</span>
+                <input type="file" name="clean_1" accept=".svg,image/svg+xml" />
+              </label>
+            </div>
+            <div class="row">
+              <label
+                >פנים · ממולא (filled)
+                <span class="hint">אותו עיצוב עם טקסט הדוגמה של Canva</span>
+                <input type="file" name="filled_2" accept=".svg,image/svg+xml" />
+              </label>
+              <label
+                >גב · ממולא (filled)
+                <span class="hint">אותו גב עם טקסט הדוגמה (אם יש)</span>
+                <input type="file" name="filled_1" accept=".svg,image/svg+xml" />
+              </label>
+            </div>
           </div>
           <div class="row">
             <label
@@ -837,23 +909,58 @@
       const cardsFs = document.getElementById('cardsAssets');
       const boardFs = document.getElementById('boardAssets');
       const sheetFs = [...document.querySelectorAll('.sheet-assets')];
+      // Which FRONT mode the card layout is in: 'all' (nine files, eight distinct
+      // fronts) or 'one' (one front + one back, used by every card). Carried in a
+      // hidden field so it posts with the rest of the form.
+      const frontsField = document.getElementById('cardFronts');
+      const cardsAll = document.getElementById('cardsAll');
+      const cardsOne = document.getElementById('cardsOne');
+      const modeBtns = [...cardsFs.querySelectorAll('.mode-btn')];
+      // The file inputs each mode owns — only the ACTIVE mode's stay enabled, for
+      // the same reason the sheet/cards fieldsets do: a disabled input is left out
+      // of the FormData entirely, so the inactive mode can neither block submit on
+      // a hidden `required` nor post a part that shadows a real file.
+      const ALL_INPUTS = ['clean_cards', 'filled_cards'];
+      const ONE_INPUTS = ['clean_2', 'clean_1', 'filled_2', 'filled_1'];
       function applyStructureMode() {
         const cards = structureSel.value === 'cards';
+        const oneFront = cards && frontsField.value === 'one';
         cardsFs.hidden = !cards;
         for (const el of cardsFs.querySelectorAll('input')) el.disabled = !cards;
+        // The sheet layout has no front list to narrow, so it must not post one
+        // at all — a stale 'one' left behind by a mode switch would be rejected.
+        frontsField.disabled = !cards;
+        cardsAll.hidden = oneFront;
+        cardsOne.hidden = !oneFront;
+        for (const b of modeBtns)
+          b.classList.toggle('active', b.dataset.fronts === frontsField.value);
         for (const fs of sheetFs) {
           fs.hidden = cards;
           for (const el of fs.querySelectorAll('input')) el.disabled = cards;
         }
-        // The two nine-file pickers are what the new layout requires...
-        for (const name of ['clean_cards', 'filled_cards']) {
-          cardsFs.querySelector('[name="' + name + '"]').required = cards;
+        // Exactly one mode's card inputs participate: the nine-file pickers, or
+        // the four single files.
+        for (const name of ALL_INPUTS) {
+          const el = cardsFs.querySelector('[name="' + name + '"]');
+          el.disabled = !cards || oneFront;
+          el.required = cards && !oneFront;
+        }
+        for (const name of ONE_INPUTS) {
+          const el = cardsFs.querySelector('[name="' + name + '"]');
+          el.disabled = !oneFront;
+          el.required = oneFront;
         }
         // ...while a single-card template may be registered DECK-FIRST and get its
         // board later, which the sheet layout never did.
         for (const name of ['clean_board', 'filled_board']) {
           boardFs.querySelector('[name="' + name + '"]').required = !cards;
         }
+      }
+      for (const b of modeBtns) {
+        b.addEventListener('click', () => {
+          frontsField.value = b.dataset.fronts;
+          applyStructureMode();
+        });
       }
       structureSel.addEventListener('change', applyStructureMode);
       applyStructureMode();
@@ -926,6 +1033,8 @@
           extra_fields: (fd.get('extra_fields') || '').trim(),
           visibility: fd.get('visibility') || 'public',
           card_structure: fd.get('card_structure') || 'cards',
+          // Omitted (disabled) on the sheet layout, which has no fronts to narrow.
+          card_fronts: fd.get('card_fronts') || 'all',
         };
         if (!payload.slug || !payload.display_he || !payload.title_text) {
           show('err', 'מלאו slug, שם (display_he) וטקסט כותרת (title_text) כדי ליצור תבנית ריקה.');
@@ -991,6 +1100,9 @@
       // only by a thin icon layer — so the four word slots are calibrated ONCE
       // and shared, and only the title position is per front.
       const SVG_NS = 'http://www.w3.org/2000/svg';
+      // Fallback only — the server reports each template's REAL front list in
+      // `card_fronts`, which may hold a single index (one design for the whole
+      // deck). Used when an older server sends no list at all.
       const CARD_FRONTS = [2, 3, 4, 5, 6, 7, 8, 9];
       const CARD_WORD_SLOTS = 4;
       // Fallback only — the server reports the real box in `card_viewbox`.
@@ -1153,24 +1265,32 @@
 
           // One title box per front, only the picked one on screen — eight open
           // boxes at once is unreadable, and the map already shows which is which.
+          //
+          // Iterates the template's OWN front list (the server reports it as
+          // `card_fronts`), not a hardcoded 2..9: a deck that prints one front
+          // design has exactly one title position, and offering eight would ask
+          // the owner to calibrate seven cards that will never be printed.
+          const frontNums =
+            Array.isArray(t.card_fronts) && t.card_fronts.length ? t.card_fronts : CARD_FRONTS;
           const fronts = document.createElement('div');
           fronts.className = 'cal-fronts';
           const titleHead = document.createElement('div');
           titleHead.className = 'cal-slot-h';
-          titleHead.textContent = 'מיקום הכותרת — לכל פנים בנפרד';
+          titleHead.textContent =
+            frontNums.length > 1 ? 'מיקום הכותרת — לכל פנים בנפרד' : 'מיקום הכותרת';
           knobs.append(titleHead, fronts);
-          for (const n of CARD_FRONTS) {
+          for (const n of frontNums) {
             const btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = 'cal-front-btn' + (n === CARD_FRONTS[0] ? ' active' : '');
+            btn.className = 'cal-front-btn' + (n === frontNums[0] ? ' active' : '');
             btn.dataset.front = String(n);
-            btn.textContent = 'פנים ' + (n - 1);
+            btn.textContent = frontNums.length > 1 ? 'פנים ' + (n - 1) : 'פנים';
             btn.title = n + '.svg';
             fronts.append(btn);
             const row = document.createElement('div');
             row.className = 'cal-title-row';
             row.dataset.front = String(n);
-            row.hidden = n !== CARD_FRONTS[0];
+            row.hidden = n !== frontNums[0];
             row.append(boxGrid('card.title.' + n, titles[String(n)], DEFAULT_CARD_TITLE));
             knobs.append(row);
           }
@@ -1432,8 +1552,12 @@
             x1: calNum(card, prefix + '.x1'),
             y1: calNum(card, prefix + '.y1'),
           });
+          // The fronts the PANEL rendered, which is the template's own list — a
+          // one-front deck posts one title position, an eight-front deck eight.
           const titles = {};
-          for (const n of CARD_FRONTS) titles[String(n)] = box('card.title.' + n);
+          for (const row of card.querySelectorAll('.tpl-cal .cal-title-row')) {
+            titles[row.dataset.front] = box('card.title.' + row.dataset.front);
+          }
           out.card_slots = {
             words: Array.from({ length: CARD_WORD_SLOTS }, (_, i) => box('card.word.' + (i + 1))),
             titles,
@@ -1891,14 +2015,19 @@
               const activeFront = activeBtn ? activeBtn.dataset.front : '';
               const thumbs = document.createElement('div');
               thumbs.className = 'cal-card-thumbs';
-              // Iterate CARD_FRONTS rather than the object's own keys, so the
-              // strip is always in front order however the server ordered them.
-              for (const n of CARD_FRONTS) {
+              // Iterate the PICKER's fronts rather than the object's own keys, so
+              // the strip is always in front order however the server ordered
+              // them — and covers exactly the fronts this deck has.
+              const shotFronts = [...card.querySelectorAll('.cal-front-btn')].map((b) =>
+                Number(b.dataset.front)
+              );
+              for (const n of shotFronts.length ? shotFronts : CARD_FRONTS) {
                 const src = cardShots[String(n)];
                 if (!src) continue;
                 // Same label as the picker button ('פנים 1'..'פנים 8' for
-                // 2.svg..9.svg) — two views of one choice must agree.
-                const label = 'פנים ' + (n - 1);
+                // 2.svg..9.svg, plain 'פנים' on a one-front deck) — two views of
+                // one choice must agree.
+                const label = shotFronts.length > 1 ? 'פנים ' + (n - 1) : 'פנים';
                 const thumb = document.createElement('button');
                 thumb.type = 'button';
                 thumb.className = 'cal-card-thumb' + (String(n) === activeFront ? ' active' : '');

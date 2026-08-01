@@ -1195,3 +1195,301 @@ describe('applyCalibration reports what it rejected', () => {
     expect((e.notes || []).join(' ')).not.toMatch(/REJECTED/);
   });
 });
+
+// ---- ONE-FRONT mode --------------------------------------------------------
+// The upload shortcut for a deck where every card carries the SAME design: one
+// front + one back instead of nine files per layer.
+//
+// The thing these pin hardest is that it is a NARROWER FRONT LIST, not a copy.
+// build.py picks a card's front with `fronts[card["front"] % len(fronts)]`, so a
+// one-element list lands all 103 word cards on that one design by arithmetic —
+// no duplicated artwork on disk, in the image or in a render, and nothing to
+// drift apart when the owner re-uploads the design. Everything downstream must
+// therefore read the ENTRY's front list rather than a hardcoded 2..9.
+describe('single-card layout — ONE front for the whole deck', () => {
+  let templates;
+  beforeAll(() => {
+    delete process.env.DATA_DIR;
+    delete require.cache[require.resolve(path.join(serverDir, 'templates.js'))];
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  // The four files the mode takes: front + back, clean + filled.
+  function oneFrontUpload(overrides = {}) {
+    return {
+      fields: {
+        slug: 'one-demo',
+        display_he: 'עיצוב אחד',
+        title_text: '{NAME}',
+        name_form: 'hebrew',
+        card_structure: 'cards',
+        card_fronts: 'one',
+        ...(overrides.fields || {}),
+      },
+      files: {
+        title_font: { filename: 'Title.ttf', data: FONT() },
+        word_font: { filename: 'Word.ttf', data: FONT() },
+        clean_1: { filename: '1.svg', data: SVG('clean-back') },
+        clean_2: { filename: '2.svg', data: SVG('clean-front') },
+        filled_1: { filename: '1.svg', data: SVG('filled-back') },
+        filled_2: { filename: '2.svg', data: SVG('filled-front') },
+        ...(overrides.files || {}),
+      },
+      fileLists: overrides.fileLists || {},
+    };
+  }
+  // A valid saved calibration for a ONE-front deck: the four shared word slots
+  // plus the single title position the deck actually has.
+  function oneFrontSlots() {
+    const box = (y0) => ({ x0: 0.1, y0, x1: 0.9, y1: y0 + 0.1 });
+    return {
+      words: [box(0.3), box(0.45), box(0.6), box(0.75)],
+      titles: { 2: { ...box(0.05), x1: 0.92 } },
+    };
+  }
+  function onboardOne(root, overrides) {
+    return templates.onboardTemplate({
+      root,
+      ...oneFrontUpload(overrides),
+      shrinkImages: false,
+      runRecipe: false,
+    });
+  }
+
+  it('registers FOUR files and a single-index front list — no duplicated artwork', () => {
+    const root = makeScaffold();
+    const r = onboardOne(root);
+    expect(r.error).toBeUndefined();
+    expect(r.card_structure).toBe('cards');
+    expect(r.card_fronts).toEqual([2]);
+
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'one-demo');
+    for (const layer of ['clean', 'filled']) {
+      expect(fs.existsSync(path.join(dir, layer, '1.svg'))).toBe(true);
+      expect(fs.existsSync(path.join(dir, layer, '2.svg'))).toBe(true);
+      // The whole point: 3..9 are NOT copies of 2 — they do not exist at all.
+      for (let n = 3; n <= 9; n += 1) {
+        expect(fs.existsSync(path.join(dir, layer, n + '.svg'))).toBe(false);
+      }
+    }
+    const entry = templates.loadThemes(templates.themesPathFor(root))['one-demo'];
+    expect(entry.card_structure).toBe('cards');
+    // The generator's own `cards` block — this is what makes the deck cycle a
+    // single front (config.fronts reads cards.fronts first).
+    expect(entry.cards).toEqual({ back: 1, fronts: [2] });
+    expect(entry.card_slots).toBeNull();
+    expect(entry.calibrated).toBe(false);
+    expect(templates.entryFrontNumbers(entry)).toEqual([2]);
+  });
+
+  it('a NORMAL eight-front upload is completely unaffected — still no cards block', () => {
+    const root = makeScaffold();
+    const r = templates.onboardTemplate({
+      root,
+      ...cardsUpload(),
+      shrinkImages: false,
+      runRecipe: false,
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.card_fronts).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+    const entry = templates.loadThemes(templates.themesPathFor(root))['card-demo'];
+    // No `cards` key at all: the entry is byte-for-byte what onboarding has
+    // always produced, and the generator's [2..9] default still applies.
+    expect('cards' in entry).toBe(false);
+    expect(templates.entryFrontNumbers(entry)).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+    const st = templates.computeTemplateStatus(root, 'card-demo', entry);
+    expect(st.card_fronts).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+    for (const layer of ['clean', 'filled']) {
+      for (let n = 1; n <= 9; n += 1) {
+        expect(st.assets.map((a) => a.role)).toContain(layer + '-' + n);
+      }
+    }
+  });
+
+  it('rejects a missing FRONT in Hebrew, naming the file and the slot', () => {
+    const root = makeScaffold();
+    const up = oneFrontUpload();
+    delete up.files.clean_2;
+    const r = templates.onboardTemplate({ root, ...up, shrinkImages: false, runRecipe: false });
+    expect(r.httpStatus).toBe(400);
+    expect(r.error).toContain('2.svg');
+    expect(r.error).toContain('פנים');
+    expect(r.error).toContain('clean');
+    // ...and nothing was registered.
+    expect(templates.loadThemes(templates.themesPathFor(root))['one-demo']).toBeUndefined();
+  });
+
+  it('rejects a missing BACK in Hebrew, naming the file and the slot', () => {
+    const root = makeScaffold();
+    const up = oneFrontUpload();
+    delete up.files.filled_1;
+    const r = templates.onboardTemplate({ root, ...up, shrinkImages: false, runRecipe: false });
+    expect(r.httpStatus).toBe(400);
+    expect(r.error).toContain('1.svg');
+    expect(r.error).toContain('גב הקלף');
+    expect(r.error).toContain('filled');
+    // The message is the ONE-FRONT one, not the eighteen-file one.
+    expect(r.error).toContain('4 קבצים');
+    expect(r.error).not.toContain('18 קבצים');
+  });
+
+  it('refuses files this deck has no card for, rather than writing dead assets', () => {
+    const root = makeScaffold();
+    const r = onboardOne(root, {
+      files: { clean_5: { filename: '5.svg', data: SVG('stray') } },
+    });
+    expect(r.httpStatus).toBe(400);
+    expect(r.error).toContain('5.svg');
+    expect(r.error).toContain('אינם בשימוש');
+  });
+
+  it("refuses card_fronts:'one' on the legacy sheet layout, which has no fronts to narrow", () => {
+    const root = makeScaffold();
+    const r = templates.normalizeMetadata({
+      root,
+      fields: {
+        slug: 'sheet-one',
+        display_he: 'גיליון',
+        title_text: '{NAME}',
+        name_form: 'hebrew',
+        card_structure: 'sheet',
+        card_fronts: 'one',
+      },
+    });
+    expect(r.error).toMatch(/card_structure/);
+    expect(
+      templates.normalizeMetadata({ root, fields: { slug: 'x', card_fronts: 'lots' } }).error
+    ).toBeTruthy();
+  });
+
+  it('asks for FOUR numbered assets in the checklist, and reads complete with them', () => {
+    const root = makeScaffold();
+    onboardOne(root, {
+      files: {
+        clean_board: { filename: 'board.svg', data: SVG('cb') },
+        filled_board: { filename: 'board.svg', data: SVG('fb') },
+      },
+    });
+    const entry = templates.loadThemes(templates.themesPathFor(root))['one-demo'];
+    const st = templates.computeTemplateStatus(root, 'one-demo', entry);
+    expect(st.card_fronts).toEqual([2]);
+    const roles = st.assets.map((a) => a.role);
+    expect(roles).toContain('clean-1');
+    expect(roles).toContain('clean-2');
+    // The seven fronts this deck does not have must not be listed as missing —
+    // the checklist would never read complete.
+    for (let n = 3; n <= 9; n += 1) {
+      expect(roles).not.toContain('clean-' + n);
+      expect(roles).not.toContain('filled-' + n);
+    }
+    expect(st.missingRequired).toEqual([]);
+    expect(st.complete).toBe(true);
+  });
+
+  it('refuses to replace an asset role this deck has no card for', () => {
+    const root = makeScaffold();
+    onboardOne(root);
+    const r = templates.replaceAsset({
+      root,
+      key: 'one-demo',
+      role: 'clean-5',
+      file: { filename: 'x.svg', data: SVG('nope') },
+      shrinkImages: false,
+    });
+    expect(r.httpStatus).toBe(400);
+    expect(r.error).toMatch(/does not belong to this template/);
+    // ...while its own front still replaces normally.
+    const ok = templates.replaceAsset({
+      root,
+      key: 'one-demo',
+      role: 'clean-2',
+      file: { filename: 'x.svg', data: SVG('new-front') },
+      shrinkImages: false,
+    });
+    expect(ok.error).toBeUndefined();
+  });
+
+  it('calibrates with ONE title position, and still demands one per front on a normal deck', () => {
+    // The one-front deck: a single title box is the complete calibration.
+    expect(templates.validateCardSlots(oneFrontSlots(), [2]).error).toBeUndefined();
+    // The same blob against the default eight-front deck is INCOMPLETE, and says
+    // exactly which fronts have no title position.
+    const short = templates.validateCardSlots(oneFrontSlots());
+    expect(short.error).toContain('3.svg');
+    expect(short.error).toContain('9.svg');
+    // A form that posts more fronts than the deck has writes no dead geometry.
+    const extra = templates.validateCardSlots(cardSlots(), [2]);
+    expect(extra.error).toBeUndefined();
+    expect(Object.keys(extra.value.titles)).toEqual(['2']);
+  });
+
+  it('saves the one-front calibration and flips calibrated:true', () => {
+    const root = makeScaffold();
+    onboardOne(root);
+    const style = { fill: '#112233', outline: '#ffffff', outline_w: 0.05, arch: 0, shadow: false };
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'one-demo',
+      patch: { title_style: style, card_slots: oneFrontSlots(), calibrated: true },
+    });
+    expect(r.error).toBeUndefined();
+    const entry = templates.loadThemes(templates.themesPathFor(root))['one-demo'];
+    expect(entry.calibrated).toBe(true);
+    expect(Object.keys(entry.card_slots.titles)).toEqual(['2']);
+    // The `cards` block survives the save — losing it would silently restore the
+    // eight-front cycle and send the deck looking for 3.svg..9.svg.
+    expect(entry.cards).toEqual({ back: 1, fronts: [2] });
+  });
+
+  it('lets the DETECTED calibration land on a one-front entry (the "זהה מחדש" path)', () => {
+    const root = makeScaffold();
+    onboardOne(root);
+    const p = templates.themesPathFor(root);
+    templates.applyCalibration(p, 'one-demo', { card_slots: oneFrontSlots() });
+    const entry = templates.loadThemes(p)['one-demo'];
+    expect(Object.keys(entry.card_slots.titles)).toEqual(['2']);
+  });
+
+  it('shows the deck’s own front as the storefront picture', () => {
+    expect(templates.filledImageRel({ card_structure: 'cards' }, 'front')).toBe('filled/2.svg');
+    expect(
+      templates.filledImageRel(
+        { card_structure: 'cards', cards: { back: 1, fronts: [2] } },
+        'front'
+      )
+    ).toBe('filled/2.svg');
+    expect(
+      templates.filledImageRel({ card_structure: 'cards', cards: { back: 1, fronts: [2] } }, 'back')
+    ).toBe('filled/1.svg');
+  });
+
+  it('creates a one-front SHELL for the per-asset upload flow', () => {
+    const root = makeScaffold();
+    const r = templates.createTemplateShell({
+      root,
+      fields: {
+        slug: 'shell-one',
+        display_he: 'שלד',
+        title_text: '{NAME}',
+        name_form: 'hebrew',
+        card_structure: 'cards',
+        card_fronts: 'one',
+      },
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.card_fronts).toEqual([2]);
+    expect(r.theme.cards).toEqual({ back: 1, fronts: [2] });
+    expect(r.note).toContain('2.svg');
+  });
+
+  it('reads a junk/duplicate/out-of-range front list as the default, never as a filename', () => {
+    const f = templates.entryFrontNumbers;
+    expect(f({})).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(f({ cards: { fronts: [] } })).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(f({ cards: { fronts: ['x', null, 99, 0] } })).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+    // 1 is the BACK, never a front.
+    expect(f({ cards: { fronts: [1, 2, 2, 3] } })).toEqual([2, 3]);
+    // The legacy flat key the generator also reads.
+    expect(f({ fronts: [4] })).toEqual([4]);
+  });
+});

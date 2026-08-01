@@ -92,6 +92,31 @@ const DEFAULT_CARD_STRUCTURE = 'sheet';
 const CARD_BACK_NUMBER = 1;
 const CARD_FRONT_NUMBERS = [2, 3, 4, 5, 6, 7, 8, 9];
 const CARD_FILE_NUMBERS = [CARD_BACK_NUMBER, ...CARD_FRONT_NUMBERS];
+
+// ---- ONE-FRONT mode: the whole deck on a single front design ----------------
+// Most decks want eight fronts that differ by a thin icon layer. Some want ONE
+// design on every card — and the owner should not have to upload eight
+// near-identical exports (plus their eight filled twins) to say so.
+//
+// The deck does NOT need nine copies of the same file. build.py picks a card's
+// front with `fronts[card["front"] % len(fronts)]`, so a template whose `fronts`
+// list holds ONE index lands every one of the 103 word cards on that index by
+// arithmetic. Duplicating one export to eight names would bloat the image, the
+// volume and every render, and the eight copies would drift apart the first time
+// anyone edited one.
+//
+// So one-front mode is a NARROWER FRONT LIST, not a copy: the upload takes
+// 2.svg (the front) + 1.svg (the back) in clean and filled — four files — and
+// the theme entry records `cards: {back: 1, fronts: [2]}`. Everything downstream
+// (asset checklist, calibration, detection, the render) reads the entry's front
+// list, so an eight-front template is byte-for-byte what it always was: it
+// writes NO `cards` block at all and keeps the [2..9] default.
+const CARD_FRONT_MODES = ['all', 'one'];
+const DEFAULT_CARD_FRONT_MODE = 'all';
+// Which numbered file one-front mode uses as THE front. 2 by contract — the
+// first front of the normal set, which is also the file the storefront's product
+// picture and the calibration preview already read.
+const SINGLE_FRONT_NUMBERS = [CARD_FRONT_NUMBERS[0]];
 // The single portrait card's viewBox — locked by the asset contract. Exposed to
 // the admin form so the calibration preview draws the card at the true aspect.
 const CARD_VIEWBOX = { w: 223.92, h: 312 };
@@ -107,6 +132,36 @@ const CARD_ASSET_NAME_RE = /^[a-f0-9]{16}\.[a-z0-9]{1,5}$/;
 function cardStructureOf(entry) {
   const v = entry && entry.card_structure;
   return CARD_STRUCTURES.includes(v) ? v : DEFAULT_CARD_STRUCTURE;
+}
+
+// The front indices a 'cards' theme entry actually renders, in order. Mirrors
+// the generator's `config.fronts` EXACTLY (`cards.fronts` first, then the legacy
+// flat `fronts`, then the [2..9] default), so the admin's checklist, calibration
+// form and validators can never disagree with what the deck will print.
+// Anything unparseable, out of range or naming the BACK is dropped rather than
+// trusted — a bad value would otherwise become a filename.
+function entryFrontNumbers(entry) {
+  const cards = entry && entry.cards && typeof entry.cards === 'object' ? entry.cards : {};
+  const raw = Array.isArray(cards.fronts)
+    ? cards.fronts
+    : Array.isArray(entry && entry.fronts)
+      ? entry.fronts
+      : null;
+  if (!raw) return [...CARD_FRONT_NUMBERS];
+  const out = [];
+  for (const v of raw) {
+    const n = Number(v);
+    if (!Number.isInteger(n) || !CARD_FRONT_NUMBERS.includes(n)) continue;
+    if (!out.includes(n)) out.push(n);
+  }
+  return out.length ? out : [...CARD_FRONT_NUMBERS];
+}
+
+// The numbered files a template with these fronts must ship: the back + each
+// front. One-front mode therefore needs four files (1 + 2, clean + filled)
+// where the normal set needs eighteen.
+function cardFileNumbersFor(fronts) {
+  return [CARD_BACK_NUMBER, ...fronts];
 }
 
 // ---- IMAGE (shipped) paths --------------------------------------------------
@@ -192,6 +247,7 @@ function buildThemeEntry({
   extraFields,
   visibility,
   cardStructure,
+  cardFrontMode,
 }) {
   const lines = String(titleText || '')
     .split('\n')
@@ -200,7 +256,21 @@ function buildThemeEntry({
   // Only a 'cards' template records the key (plus its empty per-card slot blob).
   // A legacy upload writes NO card_structure at all, so its entry is byte-for-byte
   // what onboarding has always produced.
-  const structure = cardStructure === 'cards' ? { card_structure: 'cards', card_slots: null } : {};
+  //
+  // ONE-FRONT mode additionally pins the deck's front list to a single index —
+  // the generator's own `cards` block, which is what makes every card land on
+  // that one design. An eight-front template writes no `cards` block at all, so
+  // it keeps reading the [2..9] default exactly as before.
+  const structure =
+    cardStructure === 'cards'
+      ? {
+          card_structure: 'cards',
+          ...(cardFrontMode === 'one'
+            ? { cards: { back: CARD_BACK_NUMBER, fronts: [...SINGLE_FRONT_NUMBERS] } }
+            : {}),
+          card_slots: null,
+        }
+      : {};
   return {
     slug,
     display_he: displayHe || slug,
@@ -519,7 +589,7 @@ function applyCalibration(themesPath, key, blob) {
   // form's own save uses, so a bad blob can't write geometry the form would have
   // rejected.
   if ('card_slots' in blob) {
-    const cs = validateCardSlots(blob.card_slots);
+    const cs = validateCardSlots(blob.card_slots, entryFrontNumbers(entry));
     if (!cs.error) entry.card_slots = cs.value;
   }
   // Advisory, for the form's "check this one" flags — not render inputs.
@@ -623,6 +693,18 @@ function normalizeMetadata({ root, fields }) {
     return { error: 'card_structure must be one of: ' + CARD_STRUCTURES.join(', ') };
   }
   const cardStructure = rawStructure || DEFAULT_CARD_STRUCTURE;
+  // How many FRONT designs the deck has: 'all' (the eight numbered fronts) or
+  // 'one' (a single front used by every card). Explicit only, and meaningless
+  // outside the 'cards' layout — a sheet template has no numbered fronts to
+  // narrow, so asking for one is a mistake worth naming rather than ignoring.
+  const rawFrontMode = String((fields && fields.card_fronts) || '').trim();
+  if (rawFrontMode && !CARD_FRONT_MODES.includes(rawFrontMode)) {
+    return { error: 'card_fronts must be one of: ' + CARD_FRONT_MODES.join(', ') };
+  }
+  if (rawFrontMode === 'one' && cardStructure !== 'cards') {
+    return { error: "card_fronts:'one' requires card_structure:'cards'" };
+  }
+  const cardFrontMode = rawFrontMode || DEFAULT_CARD_FRONT_MODE;
   return {
     slug,
     displayHe,
@@ -632,6 +714,7 @@ function normalizeMetadata({ root, fields }) {
     extraFields,
     visibility,
     cardStructure,
+    cardFrontMode,
   };
 }
 
@@ -672,8 +755,10 @@ function cardSlotLabel(n) {
   return Number(n) === CARD_BACK_NUMBER ? 'גב הקלף' : 'פנים ' + (Number(n) - 1);
 }
 
-// Validate the NEW numbered layout's uploads: 1.svg .. 9.svg in BOTH clean/ and
-// filled/ — eighteen files, of which 1 is the back and 2-9 the eight fronts. The
+// Validate the NEW numbered layout's uploads: for the normal eight-front deck,
+// 1.svg .. 9.svg in BOTH clean/ and filled/ — eighteen files, of which 1 is the
+// back and 2-9 the eight fronts. In ONE-FRONT mode the required set narrows to
+// the back plus the single front (1.svg + 2.svg in each layer, four files). The
 // board is NOT one of them (it is a separate output file), so it is accepted here
 // but never required; a template can be registered deck-first and get its board
 // from the per-asset uploader afterwards.
@@ -681,23 +766,35 @@ function cardSlotLabel(n) {
 // This is an OWNER-FACING tool, so a failure NAMES every file that is missing or
 // misnamed instead of stopping at the first one — a cryptic "missing SVG" costs a
 // support round-trip. Returns { error } or { clean, filled }.
-function normalizeCardUploads({ files, fileLists }) {
+function normalizeCardUploads({ files, fileLists, fronts }) {
+  const wanted = cardFileNumbersFor(fronts && fronts.length ? fronts : CARD_FRONT_NUMBERS);
+  const oneFront = wanted.length < CARD_FILE_NUMBERS.length;
   const clean = collectNumberedCardFiles('clean', files, fileLists);
   const filled = collectNumberedCardFiles('filled', files, fileLists);
   const missing = { clean: [], filled: [] };
   const notSvg = [];
+  const unused = new Set();
   for (const layer of ['clean', 'filled']) {
     const got = layer === 'clean' ? clean.got : filled.got;
-    for (const n of CARD_FILE_NUMBERS) {
+    for (const n of wanted) {
       if (!got[String(n)]) missing[layer].push(n);
       else if (!looksLikeSvg(got[String(n)])) notSvg.push(layer + '/' + n + '.svg');
     }
+    // A file this deck has no card for would be written and never rendered — a
+    // silent dead asset. Say so instead: it almost always means the mode picker
+    // and the files disagree.
+    for (const n of CARD_FILE_NUMBERS) {
+      if (!wanted.includes(n) && got[String(n)]) unused.add(n);
+    }
   }
   const bad = [...clean.bad, ...filled.bad];
-  if (missing.clean.length || missing.filled.length || notSvg.length || bad.length) {
+  if (missing.clean.length || missing.filled.length || notSvg.length || bad.length || unused.size) {
     const lines = [
-      'מבנה הקלפים החדש דורש 18 קבצים: 1.svg עד 9.svg בתיקייה clean, ואותם תשעה בתיקייה ' +
-        'filled (1 = גב הקלף, 2-9 = שמונה הפנים). הלוח אינו חלק מהסט הזה.',
+      oneFront
+        ? 'מצב "אותו עיצוב לכל הקלפים" דורש 4 קבצים: 1.svg (גב הקלף) ו-2.svg (הפנים) בתיקייה ' +
+          'clean, ואותם שניים בתיקייה filled. הלוח אינו חלק מהסט הזה.'
+        : 'מבנה הקלפים החדש דורש 18 קבצים: 1.svg עד 9.svg בתיקייה clean, ואותם תשעה בתיקייה ' +
+          'filled (1 = גב הקלף, 2-9 = שמונה הפנים). הלוח אינו חלק מהסט הזה.',
     ];
     for (const layer of ['clean', 'filled']) {
       if (!missing[layer].length) continue;
@@ -715,10 +812,25 @@ function normalizeCardUploads({ files, fileLists }) {
           ' — כל קובץ חייב להיקרא בדיוק 1.svg עד 9.svg.'
       );
     }
+    if (unused.size) {
+      lines.push(
+        'קבצים שאינם בשימוש במצב הזה: ' +
+          [...unused]
+            .sort((a, b) => a - b)
+            .map((n) => n + '.svg')
+            .join(', ') +
+          ' — בחרו "עיצוב שונה לכל קלף" אם רציתם להעלות את כל התשעה.'
+      );
+    }
     if (notSvg.length) lines.push('לא נראים כמו SVG: ' + notSvg.join(', '));
     return { error: lines.join('\n') };
   }
-  return { clean: clean.got, filled: filled.got };
+  const pick = (got) => {
+    const out = {};
+    for (const n of wanted) out[String(n)] = got[String(n)];
+    return out;
+  };
+  return { clean: pick(clean.got), filled: pick(filled.got) };
 }
 
 // The shared images (<sha16>.<ext>) an upload supplied for the 'cards' layout's
@@ -772,12 +884,17 @@ function normalizeOnboarding({ root, fields, files, fileLists }) {
   const { slug, displayHe, titleText, nameForm, language, extraFields, visibility } = meta;
   const declared = String((fields && fields.card_structure) || '').trim();
   const cardStructure = declared || (looksLikeCardUpload(files, fileLists) ? 'cards' : 'sheet');
+  // The front mode only means anything on the 'cards' layout; normalizeMetadata
+  // already rejected 'one' with an explicit sheet structure, and a SNIFFED sheet
+  // upload simply carries the default.
+  const cardFrontMode = cardStructure === 'cards' ? meta.cardFrontMode : DEFAULT_CARD_FRONT_MODE;
+  const fronts = cardFrontMode === 'one' ? [...SINGLE_FRONT_NUMBERS] : [...CARD_FRONT_NUMBERS];
 
   const clean = {};
   const filled = {};
   let assets = null;
   if (cardStructure === 'cards') {
-    const cards = normalizeCardUploads({ files, fileLists });
+    const cards = normalizeCardUploads({ files, fileLists, fronts });
     if (cards.error) return { error: cards.error };
     Object.assign(clean, cards.clean);
     Object.assign(filled, cards.filled);
@@ -840,6 +957,7 @@ function normalizeOnboarding({ root, fields, files, fileLists }) {
     extraFields,
     visibility,
     cardStructure,
+    cardFrontMode,
     clean,
     filled,
     assets,
@@ -896,6 +1014,7 @@ function onboardTemplate(opts) {
     extraFields: norm.extraFields,
     visibility: norm.visibility,
     cardStructure: norm.cardStructure,
+    cardFrontMode: norm.cardFrontMode,
   });
   appendThemeEntry(themesPathFor(root), norm.slug, entry);
 
@@ -938,9 +1057,14 @@ function onboardTemplate(opts) {
   const visLabel = entry.visibility.toUpperCase();
   // A missing board is expected on a deck-first single-card upload, so say what
   // is still outstanding instead of leaving the owner to read the checklist.
+  const oneFront = norm.cardFrontMode === 'one';
   const cardsNote =
-    `Template registered as ${visLabel} and UNCALIBRATED, with the 18 single-card SVGs ` +
-    '(1 = back, 2-9 = fronts) in place. ' +
+    `Template registered as ${visLabel} and UNCALIBRATED, with the ` +
+    (oneFront
+      ? '4 single-card SVGs (1 = back, 2 = the ONE front every card uses) in place. The deck ' +
+        'cycles its front list, and that list holds a single index — so all 103 word cards ' +
+        'render on 2.svg with no duplicated artwork. '
+      : '18 single-card SVGs (1 = back, 2-9 = fronts) in place. ') +
     (recipe.ok
       ? 'The word slots, per-front title boxes and INK COLOURS were detected from the artwork ' +
         'and are in place as the starting geometry. '
@@ -978,6 +1102,7 @@ function onboardTemplate(opts) {
     calibration: calibration.ok ? 'measured' : calibration.skipped ? 'skipped' : 'failed',
     calibration_detail: calibration.ok ? null : calibration.detail || null,
     card_structure: norm.cardStructure,
+    card_fronts: isCards ? entryFrontNumbers(entry) : null,
     note,
     // Re-read: applyCalibration wrote the measured values after `entry` was built.
     theme: loadThemes(themesPathFor(root))[norm.slug] || entry,
@@ -1012,22 +1137,28 @@ function createTemplateShell({ root, fields }) {
     extraFields: meta.extraFields,
     visibility: meta.visibility,
     cardStructure: meta.cardStructure,
+    cardFrontMode: meta.cardFrontMode,
   });
   appendThemeEntry(themesPathFor(root), meta.slug, entry);
+  const oneFront = isCards && meta.cardFrontMode === 'one';
   return {
     key: meta.slug,
     dir: 'resources/canva/templates/' + meta.slug,
     calibrated: false,
     visibility: entry.visibility,
     card_structure: meta.cardStructure,
+    card_fronts: isCards ? entryFrontNumbers(entry) : null,
     shell: true,
     theme: entry,
     note:
       `Empty template "${meta.slug}" created (${entry.visibility.toUpperCase()}). Upload each ` +
-      (isCards
-        ? 'asset (clean/filled 1.svg-9.svg — 1 is the back, 2-9 the fronts — plus the separate ' +
-          'board and both fonts) '
-        : 'asset (clean/filled fronts, backs, board + both fonts) ') +
+      (oneFront
+        ? 'asset (clean/filled 1.svg = the back and 2.svg = the ONE front every card uses, plus ' +
+          'the separate board and both fonts) '
+        : isCards
+          ? 'asset (clean/filled 1.svg-9.svg — 1 is the back, 2-9 the fronts — plus the separate ' +
+            'board and both fonts) '
+          : 'asset (clean/filled fronts, backs, board + both fonts) ') +
       'separately from the template list below, then calibrate.',
   };
 }
@@ -1094,28 +1225,39 @@ const SVG_ASSET_ROLES = [
     label: 'לוח (ממולא)',
   },
 ];
-// The SAME table for the NEW single-card layout: the eighteen numbered files
-// (clean/filled 1.svg-9.svg, 1 = back and 2-9 = the eight fronts) plus the board,
-// which is NOT one of them — it is a separate output file that happens to live in
-// the same dir. Board rows keep the exact role ids the sheet layout uses, so
-// board upload/replace works identically in both layouts.
-const CARD_SVG_ASSET_ROLES = [
-  ...['clean', 'filled'].flatMap((layer) =>
-    CARD_FILE_NUMBERS.map((n) => ({
-      role: layer + '-' + n,
-      rel: layer + '/' + n + '.svg',
-      kind: 'svg',
-      optional: false,
-      label:
-        (n === CARD_BACK_NUMBER ? 'גב קלף' : 'פנים ' + (n - 1)) +
-        ' · ' +
-        n +
-        '.svg ' +
-        (layer === 'clean' ? '(נקי)' : '(ממולא)'),
-    }))
-  ),
-  ...SVG_ASSET_ROLES.filter((a) => a.role.endsWith('-board') || a.role.endsWith('-board-chasers')),
-];
+// The SAME table for the NEW single-card layout: the numbered files (clean/filled
+// 1.svg-9.svg, 1 = back and 2-9 = the eight fronts) plus the board, which is NOT
+// one of them — it is a separate output file that happens to live in the same
+// dir. Board rows keep the exact role ids the sheet layout uses, so board
+// upload/replace works identically in both layouts.
+//
+// Built per FRONT LIST rather than fixed, because a one-front template ships four
+// numbered files, not eighteen. Listing all nine for it would report fourteen
+// permanently "missing" assets and never let the checklist read complete.
+function cardSvgAssetRoles(fronts) {
+  return [
+    ...['clean', 'filled'].flatMap((layer) =>
+      cardFileNumbersFor(fronts).map((n) => ({
+        role: layer + '-' + n,
+        rel: layer + '/' + n + '.svg',
+        kind: 'svg',
+        optional: false,
+        label:
+          (n === CARD_BACK_NUMBER ? 'גב קלף' : 'פנים ' + (n - 1)) +
+          ' · ' +
+          n +
+          '.svg ' +
+          (layer === 'clean' ? '(נקי)' : '(ממולא)'),
+      }))
+    ),
+    ...SVG_ASSET_ROLES.filter(
+      (a) => a.role.endsWith('-board') || a.role.endsWith('-board-chasers')
+    ),
+  ];
+}
+// The full nine-file table — the WHITELIST of role ids the replace API accepts,
+// and what a template with the default front list gets.
+const CARD_SVG_ASSET_ROLES = cardSvgAssetRoles(CARD_FRONT_NUMBERS);
 
 // Font roles resolve their path from the theme entry (the filename the generator
 // reads out of themes.json), so their `rel` is computed per-entry, not fixed.
@@ -1293,10 +1435,14 @@ function safeBasename(name) {
 // The full asset-role list for a specific theme entry, with font `rel` resolved
 // from the recorded filename (null when no font is on record yet). The SVG half
 // follows the entry's asset layout — the legacy fronts/backs/board sheet, or the
-// eighteen numbered single cards — so an entry with no `card_structure` yields
-// exactly the list it always did.
+// numbered single cards the entry's front list actually calls for — so an entry
+// with no `card_structure` yields exactly the list it always did, and one with no
+// `cards` block still gets all eighteen.
 function assetRolesFor(entry) {
-  const table = cardStructureOf(entry) === 'cards' ? CARD_SVG_ASSET_ROLES : SVG_ASSET_ROLES;
+  const table =
+    cardStructureOf(entry) === 'cards'
+      ? cardSvgAssetRoles(entryFrontNumbers(entry))
+      : SVG_ASSET_ROLES;
   const svg = table.map((a) => ({ ...a }));
   const fonts = FONT_ASSET_ROLES.map((a) => {
     const name = entry && entry[a.field] ? safeFontRel(entry[a.field]) : null;
@@ -1389,6 +1535,12 @@ function computeTemplateStatus(root, key, entry) {
     // admin form never has to guess; `card_slots` is the shared word slots +
     // per-front title positions, null until the owner saves them.
     card_structure: cardStructureOf(entry),
+    // The front indices this deck actually renders. [2..9] for a normal cards
+    // template, a single index for one that uses ONE front design for every
+    // card, and null for a legacy sheet. The calibration form iterates THIS
+    // rather than a hardcoded 2..9, so it never asks for a title position on a
+    // front the deck will never print.
+    card_fronts: cardStructureOf(entry) === 'cards' ? entryFrontNumbers(entry) : null,
     // Always reported as a boolean (absent on the entry reads as true), so the
     // admin toggle shows the real state instead of guessing from a missing key.
     in_store: inStore(entry),
@@ -1581,8 +1733,14 @@ function validateFrac(f, label) {
 //                                   outline) stays shared in title_style.
 // Every box is a fraction of the 223.92x312 card, so the values survive any
 // re-export at a different pixel size. `null` is valid (not calibrated yet).
+//
+// `fronts` is the deck's OWN front list (default [2..9]) — a one-front template
+// has exactly one title position to give, and demanding eight would make it
+// impossible to calibrate. Titles for fronts outside the list are dropped, so a
+// form that posts more than the deck has cannot write dead geometry.
 // Returns a fresh, generator-shaped object. { value } (may be null) | { error }.
-function validateCardSlots(input) {
+function validateCardSlots(input, fronts) {
+  const wanted = fronts && fronts.length ? fronts : CARD_FRONT_NUMBERS;
   if (input == null) return { value: null };
   if (typeof input !== 'object' || Array.isArray(input)) {
     return { error: 'card_slots must be an object or null' };
@@ -1600,11 +1758,10 @@ function validateCardSlots(input) {
   if (!t || typeof t !== 'object' || Array.isArray(t)) {
     return { error: 'card_slots.titles must be an object keyed by front number' };
   }
-  // All eight fronts, always: a half-filled map would render some fronts with the
-  // title in whatever place the last calibration happened to leave.
-  const missing = CARD_FRONT_NUMBERS.filter(
-    (n) => !Object.prototype.hasOwnProperty.call(t, String(n))
-  );
+  // Every front the deck renders, always: a half-filled map would render some
+  // fronts with the title in whatever place the last calibration happened to
+  // leave.
+  const missing = wanted.filter((n) => !Object.prototype.hasOwnProperty.call(t, String(n)));
   if (missing.length) {
     return {
       error:
@@ -1613,7 +1770,7 @@ function validateCardSlots(input) {
     };
   }
   const titles = {};
-  for (const n of CARD_FRONT_NUMBERS) {
+  for (const n of wanted) {
     const v = validateFrac(t[String(n)], 'card_slots.titles.' + n);
     if (v.error) return { error: v.error };
     titles[String(n)] = v.value;
@@ -1653,7 +1810,7 @@ function validateSlot(input, label) {
 // without it; board/back/word_size may be null/absent). Returns a fresh,
 // generator-shaped object or { error }. Shared by /api/preview so the previewed
 // look uses the exact same validation the save path enforces.
-function validateCalibration(input) {
+function validateCalibration(input, fronts) {
   const b = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   const ts = validateTitleStyle(b.title_style);
   if (ts.error) return { error: ts.error };
@@ -1670,7 +1827,7 @@ function validateCalibration(input) {
   }
   // Single-card geometry, only sent by a 'cards' template's form. Absent for
   // every sheet template, so the blob a legacy preview posts is unchanged.
-  const cards = validateCardSlots(b.card_slots);
+  const cards = validateCardSlots(b.card_slots, fronts);
   if (cards.error) return { error: cards.error };
   return {
     value: {
@@ -1795,7 +1952,7 @@ function updateTemplateSettings({ root, key, patch }) {
     }
   }
   if ('card_slots' in p) {
-    const v = validateCardSlots(p.card_slots);
+    const v = validateCardSlots(p.card_slots, entryFrontNumbers(entry));
     if (v.error) return { error: v.error, httpStatus: 400 };
     changed.card_slots = v.value;
   }
@@ -2084,7 +2241,14 @@ const FILLED_IMAGE_REL = {
   },
 };
 function filledImageRel(entry, slot) {
-  return FILLED_IMAGE_REL[cardStructureOf(entry)][slot] || null;
+  const structure = cardStructureOf(entry);
+  // The product picture is the deck's FIRST front — read off the entry's own
+  // front list, so a template whose fronts start somewhere other than 2 shows
+  // the card it actually prints rather than a file it may not even ship.
+  if (structure === 'cards' && slot === 'front') {
+    return 'filled/' + entryFrontNumbers(entry)[0] + '.svg';
+  }
+  return FILLED_IMAGE_REL[structure][slot] || null;
 }
 
 // The absolute path of a storefront picture slot (front|back|board) for a slug,
@@ -2342,9 +2506,12 @@ module.exports = {
   CARD_FILE_NUMBERS,
   CARD_FRONT_NUMBERS,
   CARD_BACK_NUMBER,
+  CARD_FRONT_MODES,
+  SINGLE_FRONT_NUMBERS,
   CARD_VIEWBOX,
   CARD_WORD_SLOTS,
   cardStructureOf,
+  entryFrontNumbers,
   validateCardSlots,
   filledImageRel,
   templateImagePath,

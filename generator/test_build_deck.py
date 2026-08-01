@@ -49,14 +49,21 @@ def _card_svg(marker):
     )
 
 
-def make_store(tmp, card_layout="single"):
-    """A throwaway owner template store with a v2 grapefruit-shaped theme."""
+def make_store(tmp, card_layout="single", fronts=(2, 3, 4, 5, 6, 7, 8, 9)):
+    """A throwaway owner template store with a v2 grapefruit-shaped theme.
+
+    ``fronts`` is the deck's front list. A ONE-FRONT template passes ``(2,)``
+    and ships only ``clean/1.svg`` + ``clean/2.svg`` — the deck is meant to work
+    off a single design, NOT off eight copies of it, so the other seven files are
+    deliberately absent here and their absence is part of what is being tested.
+    """
+    fronts = list(fronts)
     root = os.path.join(tmp, "store")
     theme_dir = os.path.join(root, "templates", "demo")
     os.makedirs(os.path.join(theme_dir, "clean"))
     os.makedirs(os.path.join(theme_dir, "fonts"))
     os.makedirs(os.path.join(root, "templates", "recipes"))
-    for i in range(1, 10):
+    for i in [1] + fronts:
         with open(os.path.join(theme_dir, "clean", f"{i}.svg"), "w", encoding="utf-8") as f:
             f.write(_card_svg(f"card{i}"))
     with open(os.path.join(theme_dir, "clean", "board.svg"), "w", encoding="utf-8") as f:
@@ -80,7 +87,7 @@ def make_store(tmp, card_layout="single"):
     if card_layout:
         # The canonical themes.json shape (docs/card-structure-schema.md): the
         # deck's back and fronts live in a `cards` block.
-        entry["cards"] = {"back": 1, "fronts": [2, 3, 4, 5, 6, 7, 8, 9]}
+        entry["cards"] = {"back": 1, "fronts": fronts}
     with open(os.path.join(root, "templates", "themes.json"), "w", encoding="utf-8") as f:
         json.dump({"demo": entry}, f)
 
@@ -94,7 +101,7 @@ def make_store(tmp, card_layout="single"):
                             "color": "#333"} for i in range(4)],
                  "title": {str(n): [{"x0": 0.1 * W, "y0": 0.26 * H,
                                      "x1": 0.9 * W, "y1": 0.38 * H,
-                                     "color": "#800"}] for n in range(2, 10)}},
+                                     "color": "#800"}] for n in fronts}},
         "back": {"title": [{"x0": 0.15 * W, "y0": 0.4 * H,
                             "x1": 0.85 * W, "y1": 0.58 * H, "color": "#800"}]},
     }
@@ -107,13 +114,14 @@ def make_store(tmp, card_layout="single"):
 class Store:
     """Point config at a throwaway store for the duration of a test."""
 
-    def __init__(self, card_layout="single"):
+    def __init__(self, card_layout="single", fronts=(2, 3, 4, 5, 6, 7, 8, 9)):
         self.card_layout = card_layout
+        self.fronts = fronts
 
     def __enter__(self):
         self.tmp = tempfile.mkdtemp(prefix="dugri-deck-test-")
         self.prev = os.environ.get("DATA_DIR")
-        os.environ["DATA_DIR"] = make_store(self.tmp, self.card_layout)
+        os.environ["DATA_DIR"] = make_store(self.tmp, self.card_layout, self.fronts)
         config.clear_preview_overrides()
         return self.tmp
 
@@ -177,6 +185,59 @@ def test_each_page_uses_the_front_style_pack_assigned_it():
         fronts = [k for k, _ in _pages(doc) if k.startswith("front")]
         expected = [f"front{config.DEFAULT_FRONTS[c['front'] % 8]}" for c in cards]
         assert fronts == expected
+
+
+# --- one front for the whole deck -------------------------------------------
+# The admin's "אותו עיצוב לכל הקלפים" upload registers a deck whose front list
+# holds ONE index. Nothing duplicates that design to nine filenames: the cycle
+# `fronts[card["front"] % len(fronts)]` already lands every card on it, and a
+# store built for these tests ships only clean/1.svg + clean/2.svg to prove the
+# other seven files are genuinely never read.
+
+ONE = (2,)
+
+
+def test_a_one_front_deck_is_still_104_cards_and_208_pages():
+    with Store(fronts=ONE) as tmp:
+        doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
+        assert doc.page_count == 208, f"expected 208 pages, got {doc.page_count}"
+
+
+def test_every_word_card_of_a_one_front_deck_uses_that_one_front():
+    with Store(fronts=ONE) as tmp:
+        doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
+        fronts = [k for k, _ in _pages(doc) if k.startswith("front")]
+        assert set(fronts) == {"front2"}, sorted(set(fronts))
+        assert len(fronts) == 103, len(fronts)
+
+
+def test_the_back_is_applied_to_every_card_of_a_one_front_deck():
+    with Store(fronts=ONE) as tmp:
+        doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
+        keys = [k for k, _ in _pages(doc)]
+        assert keys[0::2] == ["back"] * 104, "every odd page must be the back"
+        assert "back" not in keys[1::2], "no back may appear in a front slot"
+        # ...and the photo card is still the last card, as on any other deck.
+        assert keys[-1] == "photo"
+
+
+def test_a_one_front_deck_registers_one_design_not_nine_copies():
+    with Store(fronts=ONE) as tmp:
+        doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
+        # back + the single front + the photo card. Nine near-identical designs
+        # would be nine copies of the same artwork in every render.
+        assert sorted(doc._designs) == ["back", "front2", "photo"], sorted(doc._designs)
+        cfg = config.theme("demo")
+        assert config.fronts(cfg) == [2]
+        assert [os.path.basename(p) for p in config.front_paths("demo")] == ["2.svg"]
+        assert os.path.basename(config.back_path("demo")) == "1.svg"
+
+
+def test_words_and_title_still_land_on_a_one_front_card():
+    with Store(fronts=ONE) as tmp:
+        doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
+        first_front = _pages(doc)[1][1]
+        assert first_front.count("<text") >= 4, "each card needs its 4 word lines"
 
 
 def test_word_cards_carry_their_words_and_the_photo_card_carries_none():

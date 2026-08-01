@@ -1339,7 +1339,13 @@ app.post('/api/preview', async (req, res) => {
   let calibration = null;
   if (b.calibration != null) {
     if (!requireAdmin(req, res)) return;
-    const v = templates.validateCalibration(b.calibration);
+    // Validated against the THEME'S OWN front list: a deck that renders one
+    // front has one title position to give, and the eight-front rule would
+    // reject its calibration preview outright.
+    const v = templates.validateCalibration(
+      b.calibration,
+      templates.entryFrontNumbers(themeConfig)
+    );
     if (v.error) return res.status(400).json({ error: v.error });
     calibration = v.value;
   }
