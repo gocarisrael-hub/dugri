@@ -1518,9 +1518,10 @@
           : 'רוצים משחק כזה לאירוע שלכם? →';
       }
 
-      // The real product word cap (owner's decision). Single source of truth for
-      // the counter pill, the hint copy, and the progress-bar math.
-      const MAX_WORDS = 416;
+      // The real product word cap — one full deck, matching generator/topup.py's
+      // TARGET (103 word cards x 4 words). Single source of truth for the counter
+      // pill, the hint copy, and the progress-bar math.
+      const MAX_WORDS = 412;
       const WORD_GOAL = 70; // the "meaningful minimum" milestone
 
       // small transient confirmation pop-up ("word added")
@@ -1667,13 +1668,13 @@
                 ')';
         // Two-stage bar. Stage 1 (n < WORD_GOAL) fills toward the 70-word
         // minimum. At 70 it's replaced by Stage 2 — a new bar scaled to
-        // MAX_WORDS, so 70/416 ≈ ⅙ already filled — that grows toward the cap.
+        // MAX_WORDS, so 70/412 ≈ ⅙ already filled — that grows toward the cap.
         $('#stage1').classList.toggle('hidden', stage2);
         $('#stage2').classList.toggle('hidden', !stage2);
         $('#barFill1').style.width = Math.min(100, (n / WORD_GOAL) * 100) + '%';
         $('#barFill2').style.width = Math.min(100, (n / MAX_WORDS) * 100) + '%';
         // Render-driven Stage-2 label: a message that stays true across the whole
-        // 100→416 range (never claims the "first quarter" is still just full at
+        // 100→412 range (never claims the "first quarter" is still just full at
         // 400 words), and flips to a max-reached framing at/over the cap so it
         // doesn't contradict the "reached maximum" hint.
         $('#stage2Label').textContent = atMax
