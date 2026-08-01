@@ -344,7 +344,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
             doc.add_page(f"front{front}",
                          rp.card_overlay(theme, recipe, card["words"], title_lines,
                                          front_index=front, word_font=word_font,
-                                         card_vb=vb))
+                                         card_vb=vb, card_svg=front_svgs[front]))
         if progress and n % 25 == 0:
             log(f"card {n}/{len(cards)}")
 
