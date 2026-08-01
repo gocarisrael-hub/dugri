@@ -65,35 +65,48 @@ function sampleWaValues(baseUrl) {
 // arguments it takes — the builders do NOT share a signature, so the differences
 // are spelled out here rather than papered over with a lowest-common-denominator
 // wrapper that would drift from the real call sites.
+// `settingsKey` is the settings.REGISTRY key under section 'email' whose
+// { enabled, subject, body } this message is built from — what the admin UI edits
+// when the owner types in the preview. It is NOT derivable from `id`: several
+// preview ids read deliberately for a human (owner_order_created) while the
+// stored key keeps its historical name (order_paid), so the mapping is spelled
+// out. `null` marks a message with no editable template — system_alert composes
+// its text in code — and the UI shows it read-only rather than offering an editor
+// that would silently save nothing.
 const EMAIL_KINDS = [
   {
     id: 'buyer_confirmation',
     label: 'אישור הזמנה ללקוח/ה',
     audience: 'buyer',
+    settingsKey: 'buyer_confirmation',
     build: (n, c, base, opts) => n.buildBuyerConfirmation(c, base, opts),
   },
   {
     id: 'buyer_payment_received',
     label: 'קבלה על תשלום ללקוח/ה',
     audience: 'buyer',
+    settingsKey: 'buyer_payment_received',
     build: (n, c, base, opts) => n.buildBuyerReceipt(c, base, { ...opts, amountCharged: 139 }),
   },
   {
     id: 'words_reminder',
     label: 'תזכורת להוסיף מילים',
     audience: 'buyer',
+    settingsKey: 'words_reminder',
     build: (n, c, base) => n.buildWordsReminder(c, base),
   },
   {
     id: 'payment_reminder',
     label: 'תזכורת להשלים תשלום',
     audience: 'buyer',
+    settingsKey: 'payment_reminder',
     build: (n, c, base) => n.buildPaymentReminder(c, base),
   },
   {
     id: 'pdf_ready',
     label: 'הקובץ מוכן',
     audience: 'buyer',
+    settingsKey: 'pdf_ready',
     // An order ships two artifacts, so the preview shows both CTAs: the card
     // deck and the separate board file.
     build: (n, c, base) =>
@@ -105,36 +118,44 @@ const EMAIL_KINDS = [
     id: 'owner_order_created',
     label: 'הזמנה חדשה (לבעלת העסק)',
     audience: 'owner',
+    settingsKey: 'order_paid',
     build: (n, c, base, opts) => n.buildPaidMessage(c, base, opts),
   },
   {
     id: 'owner_payment_received',
     label: 'התקבל תשלום (לבעלת העסק)',
     audience: 'owner',
+    settingsKey: 'payment_received',
     build: (n, c, base, opts) => n.buildPaymentReceipt(c, base, { ...opts, amountCharged: 139 }),
   },
   {
     id: 'owner_custom_order',
     label: 'הזמנה מותאמת (לבעלת העסק)',
     audience: 'owner',
+    settingsKey: 'custom_order_alert',
     build: (n, c, base, opts) => n.buildCustomOrderAlert(c, base, opts),
   },
   {
     id: 'owner_finished',
     label: 'הרשימה נסגרה — מוכן להפקה',
     audience: 'owner',
+    settingsKey: 'order_finished',
     build: (n, c, base) => n.buildFinishedMessage({ ...c, count: 84 }, base),
   },
   {
     id: 'production_error',
     label: 'שגיאת הפקה',
     audience: 'owner',
+    settingsKey: 'production_error',
     build: (n, c, base) => n.buildProductionError(c, base, ['חסר גופן לתבנית', 'קובץ פלט ריק']),
   },
   {
     id: 'system_alert',
     label: 'התראת מערכת',
     audience: 'owner',
+    // Composed in code (notify.buildSystemAlert), with no settings template — the
+    // owner cannot edit this one.
+    settingsKey: null,
     build: (n) =>
       n.buildSystemAlert('קבוצת וואטסאפ — צריך צירוף ידני', [
         'נפתחה קבוצה אבל לא הצלחנו לצרף את הלקוח/ה.',
@@ -146,6 +167,10 @@ const EMAIL_KINDS = [
 // Every previewable message, email + WhatsApp, as a flat list for the admin UI.
 // WhatsApp entries are derived from the settings REGISTRY rather than hardcoded,
 // so a trigger added to the catalog becomes previewable with no change here.
+// Each entry carries `settings` — { section, key } identifying the stored
+// template behind it, or null when there is none — so the admin UI can open an
+// editor for it (and save through the ordinary settings API) without duplicating
+// this id -> key mapping in the browser, where it would drift.
 function listKinds(deps = {}) {
   const settings = deps.settings || require('./settings');
   const kinds = EMAIL_KINDS.map((k) => ({
@@ -153,30 +178,85 @@ function listKinds(deps = {}) {
     channel: 'email',
     label: k.label,
     audience: k.audience,
+    settings: k.settingsKey ? { section: 'email', key: k.settingsKey } : null,
   }));
   const waSection = (settings.REGISTRY && settings.REGISTRY.wa) || {};
   for (const key of Object.keys(waSection)) {
     if (!key.startsWith('trigger.')) continue;
     const id = key.slice('trigger.'.length);
-    kinds.push({ id, channel: 'whatsapp', label: id, audience: 'group' });
+    kinds.push({
+      id,
+      channel: 'whatsapp',
+      label: id,
+      audience: 'group',
+      settings: { section: 'wa', key },
+    });
   }
   return kinds;
 }
 
+// A read-only view of the settings store with ONE key replaced by an unsaved
+// draft, so the preview can render what the owner is typing without the store
+// (and therefore what real customers receive) changing. Everything else reads
+// through untouched, including get()'s throw on an unknown key.
+//
+// The draft is merged OVER the effective value rather than replacing it: the
+// editor sends only the fields it owns (subject/body/text/enabled), and a bare
+// replace would drop the siblings the builders need — a trigger's `timing`, or
+// any field a future editor doesn't render.
+function draftStore(base, draft) {
+  if (!draft || typeof draft.section !== 'string' || typeof draft.key !== 'string') return base;
+  const value = draft.value;
+  if (value === undefined || value === null) return base;
+  return {
+    get(section, key) {
+      const eff = base.get(section, key);
+      if (section !== draft.section || key !== draft.key) return eff;
+      const bothObjects =
+        eff && typeof eff === 'object' && !Array.isArray(eff) && !Array.isArray(value);
+      return bothObjects && typeof value === 'object' ? { ...eff, ...value } : value;
+    },
+    interpolate: (...args) => base.interpolate(...args),
+    REGISTRY: base.REGISTRY,
+  };
+}
+
+// Is this email template's own on/off switch on? Read through the (possibly
+// drafted) store so toggling the switch in the preview editor is visible BEFORE
+// saving. Mirrors settings.emailEnabled: only an explicit false is off, and a
+// read failure answers "on" rather than claiming a live message is disabled.
+function emailEnabledIn(store, key) {
+  if (!key) return true;
+  try {
+    const tpl = store.get('email', key);
+    return !(tpl && typeof tpl === 'object' && tpl.enabled === false);
+  } catch {
+    return true;
+  }
+}
+
 // Render ONE message. Returns
-//   { id, channel, label, subject, text, html, enabled }
+//   { id, channel, label, subject, text, html, enabled, settings }
 // or null when the id isn't previewable. `html` is null for WhatsApp and for the
 // plain-text-only emails (several owner-facing builders return no html) — the UI
 // falls back to showing `text`, which is exactly what those mails contain.
 //
-// `enabled` is meaningful for WhatsApp only: a disabled trigger sends nothing, and
-// the preview must SAY so rather than silently rendering text that never goes out.
+// `enabled` is the message's own on/off switch (a WhatsApp trigger's, or an email
+// template's): the preview must SAY when what it is showing does not actually go
+// out, rather than silently rendering text nobody receives.
+//
+// `deps.draft` — { section, key, value } — renders an UNSAVED edit: the owner
+// types in the preview editor and sees the result before committing it. The draft
+// is applied through a throwaway overlay (draftStore), so nothing is written and
+// a concurrent real send is unaffected.
 function render(channel, id, deps = {}) {
   const notify = deps.notify || require('./notify');
   const whatsapp = deps.whatsapp || require('./whatsapp');
   const baseUrl = deps.baseUrl || '';
   const collection = deps.collection || SAMPLE_COLLECTION;
   const productImageUrl = deps.productImageUrl || null;
+  const settings = deps.settings || require('./settings');
+  const store = draftStore(settings, deps.draft);
 
   // Keyed on (channel, id), NOT id alone: `payment_reminder` exists as BOTH an
   // email and a WhatsApp trigger, and an id-only lookup silently returned the
@@ -184,7 +264,14 @@ function render(channel, id, deps = {}) {
   // have no way to tell.
   const email = channel === 'email' ? EMAIL_KINDS.find((k) => k.id === id) : null;
   if (email) {
-    const built = email.build(notify, collection, baseUrl, { productImageUrl }) || {};
+    const build = () => email.build(notify, collection, baseUrl, { productImageUrl }) || {};
+    // notify.withSettings swaps the store the builders read for the duration of
+    // this (synchronous) build. Guarded so an injected test double without it
+    // still renders — against the real store, which is what it had before.
+    const built =
+      store !== settings && typeof notify.withSettings === 'function'
+        ? notify.withSettings(store, build)
+        : build();
     return {
       id,
       channel: 'email',
@@ -193,16 +280,16 @@ function render(channel, id, deps = {}) {
       subject: built.subject || '',
       text: built.text || '',
       html: built.html || null,
-      enabled: true,
+      enabled: emailEnabledIn(store, email.settingsKey),
+      settings: email.settingsKey ? { section: 'email', key: email.settingsKey } : null,
     };
   }
 
   if (channel !== 'whatsapp') return null;
   const wa = listKinds(deps).find((k) => k.channel === 'whatsapp' && k.id === id);
   if (!wa) return null;
-  const settings = deps.settings || require('./settings');
   const values = sampleWaValues(baseUrl);
-  const msg = whatsapp.buildTriggerMessage(id, values, { settings }) || {};
+  const msg = whatsapp.buildTriggerMessage(id, values, { settings: store }) || {};
   // buildTriggerMessage returns text:null for a DISABLED trigger — correct for the
   // send path (nothing goes out), wrong for a preview: several triggers ship
   // disabled (word_added), and a blank panel is exactly the wrong answer when the
@@ -213,8 +300,8 @@ function render(channel, id, deps = {}) {
   let text = msg.text || '';
   if (!text) {
     try {
-      const cfg = settings.get('wa', 'trigger.' + id);
-      text = settings.interpolate((cfg && cfg.text) || '', values);
+      const cfg = store.get('wa', 'trigger.' + id);
+      text = store.interpolate((cfg && cfg.text) || '', values);
     } catch {
       text = '';
     }
@@ -228,7 +315,8 @@ function render(channel, id, deps = {}) {
     text,
     html: null,
     enabled: !!msg.enabled,
+    settings: { section: 'wa', key: 'trigger.' + id },
   };
 }
 
-module.exports = { listKinds, render, SAMPLE_COLLECTION, EMAIL_KINDS };
+module.exports = { listKinds, render, draftStore, SAMPLE_COLLECTION, EMAIL_KINDS };

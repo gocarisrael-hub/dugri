@@ -3651,8 +3651,13 @@ app.get('/api/admin/message-preview', (req, res) => {
 // The hero product photo is resolved through the SAME resolveProductImageUrl the
 // real send path uses, so "does the photo actually appear" is a question the
 // preview can answer honestly.
-app.get('/api/admin/message-preview/:channel/:id', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+//
+// `draft`, when present, renders an UNSAVED edit instead of the stored template —
+// see the POST route below. The body is shared by both routes so a drafted
+// preview and a stored one can't diverge in how they resolve the order, the
+// product photo or the base URL. It answers the request itself, including its own
+// 404s, so each route just awaits it.
+async function respondWithMessagePreview(req, res, draft) {
   const base = paymentBaseUrl();
   let collection = null;
   if (req.query && req.query.collection) {
@@ -3674,9 +3679,39 @@ app.get('/api/admin/message-preview/:channel/:id', async (req, res) => {
     baseUrl: base,
     collection,
     productImageUrl,
+    draft,
   });
   if (!out) return res.status(404).json({ error: 'unknown message id' });
-  res.json({ ...out, sample: !collection });
+  res.json({ ...out, sample: !collection, draft: !!draft });
+}
+
+app.get('/api/admin/message-preview/:channel/:id', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  await respondWithMessagePreview(req, res, null);
+});
+
+// Admin: render ONE message from an UNSAVED draft — the preview page's editor
+// POSTs the text as it is typed so the owner sees the real, rendered result
+// before committing it. Nothing is stored: the draft is overlaid on a throwaway
+// copy of the settings store for this one render, and saving still goes through
+// POST /api/admin/settings like every other edit.
+//
+// The draft is shape-validated with the SAME settings.validateValue a save uses,
+// so the preview can't accept (and appear to bless) a value that a save would
+// then reject.
+app.post('/api/admin/message-preview/:channel/:id', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const draft = (req.body && req.body.draft) || null;
+  if (draft) {
+    const { section, key, value } = draft;
+    if (!settings.hasKey(section, key)) {
+      return res.status(400).json({ error: 'unknown section/key' });
+    }
+    if (value === undefined) return res.status(400).json({ error: 'value required' });
+    const shapeError = settings.validateValue(section, key, value);
+    if (shapeError) return res.status(400).json({ error: shapeError });
+  }
+  await respondWithMessagePreview(req, res, draft);
 });
 
 // Admin: which collections have a WhatsApp group. Pure local state (no Whapi

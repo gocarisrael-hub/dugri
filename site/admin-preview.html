@@ -191,6 +191,118 @@
         padding: 6px 10px;
         min-width: 240px;
       }
+      /* Inline editor — the same subject/body/text the הודעות וטקסטים page saves,
+         placed above the rendered result so an edit and its effect are one view. */
+      .editor {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 14px;
+        background: #fcfcfc;
+      }
+      .editor label.fld {
+        display: block;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--muted);
+        margin: 8px 0 4px;
+      }
+      .editor label.fld:first-of-type {
+        margin-top: 0;
+      }
+      .editor input[type='text'],
+      .editor textarea {
+        width: 100%;
+        min-width: 0;
+        font: inherit;
+        font-size: 14px;
+        color: var(--ink);
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+      }
+      .editor textarea {
+        min-height: 110px;
+        resize: vertical;
+        direction: rtl;
+        line-height: 1.6;
+      }
+      .editor input:focus,
+      .editor textarea:focus {
+        outline: none;
+        border-color: var(--pink);
+      }
+      .editor .toggle-row {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+      .editor .toggle-row input {
+        width: auto;
+      }
+      .editor .hint {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 6px 0 0;
+      }
+      .editor .hint code {
+        background: var(--section);
+        border-radius: 4px;
+        padding: 0 5px;
+        direction: ltr;
+        unicode-bidi: embed;
+      }
+      .editor .actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+      .editor button {
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        border-radius: 8px;
+        padding: 7px 14px;
+      }
+      .editor button.primary {
+        background: var(--pink);
+        border-color: var(--pink);
+        color: #fff;
+      }
+      .editor button.primary:hover {
+        background: var(--pink-deep);
+      }
+      .editor button.danger {
+        color: #b12a4b;
+        border-color: #f0cdd8;
+      }
+      .status {
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+      .status.ok {
+        color: #2e7d4f;
+        font-weight: 700;
+      }
+      .status.err {
+        color: #b12a4b;
+        font-weight: 700;
+      }
+      .note {
+        font-size: 12.5px;
+        color: var(--muted);
+        margin: 0 0 12px;
+      }
       .toggle {
         font: inherit;
         font-size: 13px;
@@ -228,7 +340,8 @@
         <p class="kicker">Internal · הודעות</p>
         <h1>תצוגה מקדימה של הודעות</h1>
         <p>
-          כל מייל וכל הודעת וואטסאפ, בדיוק כפי שהם נשלחים — כולל הלוגו, תמונת המוצר והכפתורים. ברירת
+          כל מייל וכל הודעת וואטסאפ, בדיוק כפי שהם נשלחים — כולל הלוגו, תמונת המוצר והכפתורים. אפשר
+          לערוך כל הודעה כאן: התצוגה מתעדכנת תוך כדי הקלדה, והשינוי נשמר רק בלחיצה על "שמירה". ברירת
           המחדל היא הזמנת דוגמה; אפשר להזין מזהה הזמנה אמיתית כדי לראות את הנתונים שלה.
         </p>
       </header>
@@ -254,12 +367,38 @@
       const cidInput = document.getElementById('cid');
       let kinds = [];
       let current = null;
+      // The settings tree (registry + effective values) behind the messages, so
+      // the editor can show the stored text and the tokens each one accepts. One
+      // fetch at load; kept in sync from what each save/reset returns.
+      let settingsState = null;
+      let debounceTimer = null;
 
       function esc(s) {
         return String(s == null ? '' : s).replace(
           /[&<>"']/g,
           (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
         );
+      }
+      function withKey(url) {
+        return url + (url.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key);
+      }
+      // The settings (section, key) behind the currently shown message, or null
+      // for one composed in code (system_alert) — the server decides which is
+      // which, so this page never has to mirror the id -> key mapping.
+      function currentKey() {
+        return (current && current.settings) || null;
+      }
+      function effectiveValue() {
+        const sk = currentKey();
+        if (!sk || !settingsState) return null;
+        const sect = settingsState.effective && settingsState.effective[sk.section];
+        return (sect && sect[sk.key]) || null;
+      }
+      function tokensFor() {
+        const sk = currentKey();
+        if (!sk || !settingsState) return [];
+        const sect = settingsState.registry && settingsState.registry[sk.section];
+        return (sect && sect[sk.key] && sect[sk.key].tokens) || [];
       }
 
       function renderList() {
@@ -286,32 +425,156 @@
             const b = document.createElement('button');
             b.textContent = k.label;
             b.dataset.id = k.channel + '/' + k.id;
-            b.onclick = () => show(k.channel, k.id);
+            b.onclick = () => show(k);
             listEl.appendChild(b);
           }
         }
       }
 
-      async function show(channel, id) {
-        current = { channel, id };
+      // Select a message: build its editor once (so typing survives every preview
+      // refresh), then render it.
+      function show(kind) {
+        current = kind;
         for (const b of listEl.querySelectorAll('button')) {
-          b.classList.toggle('active', b.dataset.id === channel + '/' + id);
+          b.classList.toggle('active', b.dataset.id === kind.channel + '/' + kind.id);
         }
-        panel.innerHTML = '<p class="msg">טוען…</p>';
+        panel.innerHTML = editorHtml() + '<div id="render"><p class="msg">טוען…</p></div>';
+        fillEditor(effectiveValue());
+        wireEditor();
+        renderPreview(null);
+      }
+
+      // The editor markup for the selected message. A WhatsApp trigger has one
+      // text; an email has a subject and a body. Both carry the message's own
+      // on/off switch, because "why didn't this arrive" is answered by that
+      // switch more often than by the text.
+      function editorHtml() {
+        const sk = currentKey();
+        if (!sk) {
+          return '<p class="note">ההודעה הזו נבנית בקוד ואין לה תבנית לעריכה — אפשר רק לצפות בה.</p>';
+        }
+        const isEmail = sk.section === 'email';
+        const tokens = tokensFor();
+        const hint = tokens.length
+          ? '<p class="hint">אפשר להשתמש ב: ' +
+            tokens.map((t) => '<code>{' + esc(t) + '}</code>').join(' ') +
+            '</p>'
+          : '';
+        return (
+          '<div class="editor" id="editor">' +
+          '<label class="toggle-row"><input type="checkbox" id="fEnabled" /> מופעל — ההודעה נשלחת</label>' +
+          (isEmail ? '<label class="fld" for="fSubject">נושא</label>' : '') +
+          (isEmail ? '<input type="text" id="fSubject" />' : '') +
+          '<label class="fld" for="fBody">' +
+          (isEmail ? 'גוף ההודעה' : 'טקסט ההודעה') +
+          '</label>' +
+          '<textarea id="fBody"></textarea>' +
+          hint +
+          '<div class="actions">' +
+          '<button class="primary" id="save" type="button">שמירה</button>' +
+          '<button class="danger" id="reset" type="button">אפס לברירת מחדל</button>' +
+          '<span class="status" id="edStatus" role="status" aria-live="polite"></span>' +
+          '</div></div>'
+        );
+      }
+
+      // Load a stored value into the editor fields. Set as .value (not as markup)
+      // so a body containing < or " survives round-tripping unchanged.
+      function fillEditor(value) {
+        if (!currentKey()) return;
+        const v = value || {};
+        const enabled = document.getElementById('fEnabled');
+        const subject = document.getElementById('fSubject');
+        const body = document.getElementById('fBody');
+        if (enabled) enabled.checked = v.enabled !== false;
+        if (subject) subject.value = v.subject == null ? '' : v.subject;
+        if (body) {
+          const text = currentKey().section === 'email' ? v.body : v.text;
+          body.value = text == null ? '' : text;
+        }
+      }
+
+      // The value the editor currently describes, in the shape the settings API
+      // stores. A trigger's `timing` is carried over from the effective value
+      // untouched: this editor doesn't show it, and omitting it from the saved
+      // override would silently drop a schedule set on the הודעות וטקסטים page.
+      function draftValue() {
+        const sk = currentKey();
+        if (!sk) return null;
+        const enabled = document.getElementById('fEnabled');
+        const body = document.getElementById('fBody');
+        const subject = document.getElementById('fSubject');
+        if (sk.section === 'email') {
+          return {
+            enabled: !!(enabled && enabled.checked),
+            subject: subject ? subject.value : '',
+            body: body ? body.value : '',
+          };
+        }
+        const value = {
+          enabled: !!(enabled && enabled.checked),
+          text: body ? body.value : '',
+        };
+        const eff = effectiveValue();
+        if (eff && eff.timing) value.timing = eff.timing;
+        return value;
+      }
+
+      function setStatus(text, cls) {
+        const el = document.getElementById('edStatus');
+        if (!el) return;
+        el.textContent = text;
+        el.className = 'status' + (cls ? ' ' + cls : '');
+        if (cls === 'ok') setTimeout(() => (el.textContent = ''), 2200);
+      }
+
+      // Typing re-renders the preview from the UNSAVED draft (debounced), so the
+      // owner judges the real, rendered mail rather than a template with braces
+      // in it. Nothing is stored until Save.
+      function wireEditor() {
+        const editor = document.getElementById('editor');
+        if (!editor) return;
+        const queue = () => {
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => renderPreview(draftValue()), 350);
+        };
+        editor.addEventListener('input', queue);
+        editor.addEventListener('change', queue);
+        document.getElementById('save').onclick = save;
+        document.getElementById('reset').onclick = reset;
+      }
+
+      // Render the message. With a draft, POST it for a preview-only render; with
+      // none, GET the stored version.
+      async function renderPreview(draft) {
+        if (!current) return;
+        const target = document.getElementById('render');
+        if (!target) return;
         const cid = cidInput.value.trim();
         let url =
           '/api/admin/message-preview/' +
-          encodeURIComponent(channel) +
+          encodeURIComponent(current.channel) +
           '/' +
-          encodeURIComponent(id) +
-          '?key=' +
-          encodeURIComponent(key);
+          encodeURIComponent(current.id);
+        url = withKey(url);
         if (cid) url += '&collection=' + encodeURIComponent(cid);
+        const sk = currentKey();
         try {
-          const r = await fetch(url);
+          const r = await fetch(
+            url,
+            draft && sk
+              ? {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    draft: { section: sk.section, key: sk.key, value: draft },
+                  }),
+                }
+              : undefined
+          );
           const d = await r.json().catch(() => ({}));
           if (!r.ok) {
-            panel.innerHTML = '<p class="msg">שגיאה: ' + esc(d.error || r.status) + '</p>';
+            target.innerHTML = '<p class="msg">שגיאה: ' + esc(d.error || r.status) + '</p>';
             return;
           }
           const pills =
@@ -327,7 +590,7 @@
           } else {
             body = '<pre class="text">' + esc(d.text) + '</pre>';
           }
-          panel.innerHTML =
+          target.innerHTML =
             (d.subject ? '<div class="subject">' + esc(d.subject) + '</div>' : '') +
             '<div class="meta">' +
             esc(d.channel === 'email' ? 'מייל' : 'וואטסאפ') +
@@ -335,12 +598,70 @@
             '</div>' +
             body;
         } catch {
-          panel.innerHTML = '<p class="msg">שגיאה בטעינה.</p>';
+          target.innerHTML = '<p class="msg">שגיאה בטעינה.</p>';
         }
       }
 
+      // Commit the draft through the ordinary settings API — the same endpoint the
+      // הודעות וטקסטים page saves through, so both pages write identical overrides.
+      async function save() {
+        const sk = currentKey();
+        if (!sk) return;
+        setStatus('שומר…');
+        try {
+          const r = await fetch(withKey('/api/admin/settings'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ section: sk.section, key: sk.key, value: draftValue() }),
+          });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+          applyEffective(sk, d.effective);
+          setStatus('נשמר ✓', 'ok');
+          renderPreview(null);
+        } catch (e) {
+          setStatus('שמירה נכשלה: ' + e.message, 'err');
+        }
+      }
+
+      async function reset() {
+        const sk = currentKey();
+        if (!sk) return;
+        if (!confirm('לאפס לברירת המחדל?')) return;
+        setStatus('מאפס…');
+        try {
+          // The `key` query param is the admin secret, so the settings key travels
+          // as `settingKey` (and in the query — DELETE bodies get dropped in
+          // transit).
+          const url = withKey(
+            '/api/admin/settings?section=' +
+              encodeURIComponent(sk.section) +
+              '&settingKey=' +
+              encodeURIComponent(sk.key)
+          );
+          const r = await fetch(url, { method: 'DELETE' });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+          applyEffective(sk, d.effective);
+          fillEditor(d.effective);
+          setStatus('אופס ✓', 'ok');
+          renderPreview(null);
+        } catch (e) {
+          setStatus('איפוס נכשל: ' + e.message, 'err');
+        }
+      }
+
+      // Keep the local settings copy in step with what the server just stored, so
+      // a later draft (which carries a trigger's timing through) is built from the
+      // new value rather than the one loaded at page open.
+      function applyEffective(sk, effective) {
+        if (!settingsState || !effective) return;
+        if (!settingsState.effective[sk.section]) settingsState.effective[sk.section] = {};
+        settingsState.effective[sk.section][sk.key] = effective;
+      }
+
       document.getElementById('apply').onclick = () => {
-        if (current) show(current.channel, current.id);
+        if (current) renderPreview(draftValue());
       };
 
       async function load() {
@@ -350,12 +671,16 @@
           return;
         }
         try {
-          const r = await fetch('/api/admin/message-preview?key=' + encodeURIComponent(key));
-          if (r.status === 403) {
+          const [kindsRes, settingsRes] = await Promise.all([
+            fetch(withKey('/api/admin/message-preview')),
+            fetch(withKey('/api/admin/settings')),
+          ]);
+          if (kindsRes.status === 403) {
             panel.innerHTML = '<p class="msg">מפתח גישה שגוי.</p>';
             return;
           }
-          kinds = (await r.json()).kinds || [];
+          kinds = (await kindsRes.json()).kinds || [];
+          settingsState = settingsRes.ok ? await settingsRes.json() : null;
           renderList();
         } catch {
           panel.innerHTML = '<p class="msg">שגיאה בטעינה.</p>';

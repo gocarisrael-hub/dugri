@@ -87,6 +87,41 @@ describe('listKinds', () => {
   });
 });
 
+describe('settings key mapping', () => {
+  it('points every editable kind at the settings key it is actually built from', () => {
+    const kinds = preview.listKinds({ settings });
+    const byId = (channel, id) => kinds.find((k) => k.channel === channel && k.id === id);
+    // The preview id and the stored key deliberately differ here (the key keeps
+    // its historical name) — the whole reason the mapping is explicit. Editing
+    // through the wrong key would save into a different message.
+    expect(byId('email', 'owner_order_created').settings).toEqual({
+      section: 'email',
+      key: 'order_paid',
+    });
+    expect(byId('email', 'owner_custom_order').settings).toEqual({
+      section: 'email',
+      key: 'custom_order_alert',
+    });
+    expect(byId('whatsapp', 'group_opened').settings).toEqual({
+      section: 'wa',
+      key: 'trigger.group_opened',
+    });
+    // Composed in code — no template to edit, and the UI must be told so rather
+    // than offering an editor that saves nothing.
+    expect(byId('email', 'system_alert').settings).toBeNull();
+  });
+
+  it('every advertised settings key exists in the registry', () => {
+    for (const k of preview.listKinds({ settings })) {
+      if (!k.settings) continue;
+      expect(
+        settings.hasKey(k.settings.section, k.settings.key),
+        'bad settings key for ' + k.channel + '/' + k.id
+      ).toBe(true);
+    }
+  });
+});
+
 describe('render', () => {
   it('every catalogued kind renders without throwing and produces content', () => {
     for (const k of preview.listKinds({ settings })) {
@@ -137,6 +172,95 @@ describe('render', () => {
   it('returns null for an unknown id', () => {
     expect(preview.render('email', 'no-such-message', { settings })).toBeNull();
   });
+
+  it('reports an email whose own switch is OFF as disabled', () => {
+    const tpl = settings.get('email', 'buyer_confirmation');
+    settings.set('email', 'buyer_confirmation', { ...tpl, enabled: false });
+    const out = preview.render('email', 'buyer_confirmation', { settings });
+    // The text still renders (the owner is reading it to decide), but the preview
+    // must not imply a message that never sends is live.
+    expect(out.enabled).toBe(false);
+    expect(out.html).toBeTruthy();
+  });
+});
+
+// Rendering an UNSAVED edit is the whole point of an editable preview: the owner
+// must see the real mail before committing text that goes to customers. The
+// load-bearing property is that it renders through the same builders WITHOUT
+// touching the store — a draft that leaked into settings would change live sends
+// on every keystroke.
+describe('render with an unsaved draft', () => {
+  it('renders an email draft without storing it', () => {
+    const before = settings.get('email', 'buyer_confirmation');
+    const out = preview.render('email', 'buyer_confirmation', {
+      settings,
+      baseUrl: 'https://x.example',
+      draft: {
+        section: 'email',
+        key: 'buyer_confirmation',
+        value: { enabled: true, subject: 'טיוטה {honoree}', body: 'שלום {honoree}, זו טיוטה' },
+      },
+    });
+    expect(out.subject).toBe('טיוטה שירה'); // tokens interpolate as in a real send
+    expect(out.html).toContain('זו טיוטה');
+    // The store is untouched — and the next un-drafted render proves it.
+    expect(settings.get('email', 'buyer_confirmation')).toEqual(before);
+    const stored = preview.render('email', 'buyer_confirmation', { settings });
+    expect(stored.subject).not.toContain('טיוטה');
+  });
+
+  it('renders a WhatsApp trigger draft, including its unsaved on/off switch', () => {
+    const out = preview.render('whatsapp', 'group_opened', {
+      settings,
+      baseUrl: 'https://x.example',
+      draft: {
+        section: 'wa',
+        key: 'trigger.group_opened',
+        value: { enabled: false, text: 'טיוטה על {honoree}' },
+      },
+    });
+    expect(out.text).toBe('טיוטה על שירה');
+    expect(out.enabled).toBe(false);
+    expect(settings.get('wa', 'trigger.group_opened').text).not.toContain('טיוטה');
+  });
+
+  it('merges the draft OVER the stored value so fields the editor omits survive', () => {
+    // The editor sends { enabled, subject, body } / { enabled, text }; a bare
+    // replace would strip siblings the builders read (a trigger's timing).
+    const merged = preview
+      .draftStore(settings, {
+        section: 'wa',
+        key: 'trigger.payment_reminder',
+        value: { text: 'רק טקסט' },
+      })
+      .get('wa', 'trigger.payment_reminder');
+    expect(merged.text).toBe('רק טקסט');
+    expect(merged.timing).toEqual(settings.get('wa', 'trigger.payment_reminder').timing);
+  });
+
+  it('leaves OTHER keys reading straight through the real store', () => {
+    const store = preview.draftStore(settings, {
+      section: 'email',
+      key: 'buyer_confirmation',
+      value: { subject: 'טיוטה' },
+    });
+    expect(store.get('email', 'footer')).toEqual(settings.get('email', 'footer'));
+    expect(() => store.get('email', 'no-such-key')).toThrow();
+  });
+
+  it('restores the real store even when a builder throws mid-render', () => {
+    // withSettings swaps a module-level binding; a throw that skipped the restore
+    // would leave every later email rendering from a stale draft.
+    const notify = require(path.join(serverDir, 'notify.js'));
+    const fake = { get: () => ({}), interpolate: (s) => s, REGISTRY: settings.REGISTRY };
+    expect(() =>
+      notify.withSettings(fake, () => {
+        throw new Error('boom');
+      })
+    ).toThrow('boom');
+    const out = preview.render('email', 'buyer_confirmation', { settings });
+    expect(out.subject).toContain('שירה');
+  });
 });
 
 describe('admin routes', () => {
@@ -178,6 +302,76 @@ describe('admin routes', () => {
     expect(r.status).toBe(200);
     expect(d.sample).toBe(false);
     expect(d.html).toContain('רותם-אמיתי');
+  });
+
+  it('renders a POSTed draft and stores nothing', async () => {
+    const before = settings.get('email', 'buyer_confirmation');
+    const r = await realFetch(base + '/api/admin/message-preview/email/buyer_confirmation' + qs, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        draft: {
+          section: 'email',
+          key: 'buyer_confirmation',
+          value: { enabled: true, subject: 'טיוטה מהדפדפן', body: 'גוף טיוטה' },
+        },
+      }),
+    });
+    const d = await r.json();
+    expect(r.status).toBe(200);
+    expect(d.draft).toBe(true);
+    expect(d.subject).toBe('טיוטה מהדפדפן');
+    expect(d.html).toContain('גוף טיוטה');
+    expect(settings.get('email', 'buyer_confirmation')).toEqual(before);
+  });
+
+  it('POST without a draft is just a render of the stored message', async () => {
+    const r = await realFetch(base + '/api/admin/message-preview/email/buyer_confirmation' + qs, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const d = await r.json();
+    expect(r.status).toBe(200);
+    expect(d.draft).toBe(false);
+    expect(d.subject).toBe(
+      settings
+        .get('email', 'buyer_confirmation')
+        .subject.replace('{honoree}', preview.SAMPLE_COLLECTION.honoree_name)
+    );
+  });
+
+  it('rejects a draft the settings API itself would reject, with the same reason', async () => {
+    // A preview that happily rendered a value Save then refuses would be telling
+    // the owner their text is fine when it can never be stored.
+    const bad = await realFetch(base + '/api/admin/message-preview/email/buyer_confirmation' + qs, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        draft: { section: 'email', key: 'buyer_confirmation', value: { subject: 5, body: 'x' } },
+      }),
+    });
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error).toBe('subject must be a string');
+
+    const unknown = await realFetch(
+      base + '/api/admin/message-preview/email/buyer_confirmation' + qs,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ draft: { section: 'email', key: 'nope', value: {} } }),
+      }
+    );
+    expect(unknown.status).toBe(400);
+  });
+
+  it('the draft route rejects without the admin key', async () => {
+    const r = await realFetch(base + '/api/admin/message-preview/email/buyer_confirmation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ draft: null }),
+    });
+    expect(r.status).toBe(403);
   });
 
   it('404s an unknown message id and an unknown collection', async () => {
