@@ -2122,6 +2122,44 @@
           ></span>
         </label>
 
+        <!-- PREVIEW TEASER: sits exactly where the live preview will appear, so
+             the empty space below the fields explains itself instead of reading
+             as "nothing happens here". Shown ONLY while #namePreview is hidden
+             (setNamePreviewHidden keeps the two mutually exclusive), and never
+             at all when the name_preview feature is gated off. -->
+        <p
+          class="preview-teaser"
+          id="previewTeaser"
+          data-testid="preview-teaser"
+          data-edit="options-preview-teaser"
+          hidden
+        >
+          עוד רגע - כשתסיימו למלא את הפרטים, תופיע כאן תצוגה חיה של הקלף והלוח עם השם שלכם.
+        </p>
+        <style>
+          /* Quiet, non-blocking placeholder — it must read as a promise, not as
+             an error/warning, so it borrows the panel surface rather than any
+             accent colour. Centred to match .name-preview, which replaces it.
+             Deliberately COMPACT (one short sentence, tight padding): on a phone
+             the whole name step has to fit above the sticky Back/Next bar without
+             scrolling — see tests/e2e/wizard-noscroll.spec.js. Growing this copy
+             or its spacing breaks that. */
+          .preview-teaser {
+            margin: 12px 0 0;
+            padding: 9px 12px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            background: var(--surface);
+            text-align: center;
+            font-size: 13px;
+            line-height: 1.45;
+            color: var(--muted);
+          }
+          .preview-teaser[hidden] {
+            display: none;
+          }
+        </style>
+
         <!-- LIVE RENDERED PREVIEW: right after a valid name is entered we POST it
              to /api/preview and show the REAL rendered sample card + board with
              the name, plus a Hebrew word-font picker. Best-effort — any failure
@@ -3979,6 +4017,17 @@
          font is sent with the order so production uses it. Best-effort: any
          failure just hides the loader and never blocks the wizard. */
       const namePreview = document.getElementById('namePreview');
+      const previewTeaser = document.getElementById('previewTeaser');
+      // The ONLY way #namePreview's visibility changes. It also flips the teaser
+      // to the opposite state, so the buyer always sees exactly one of the two:
+      // the promise ("you'll see it here") or the thing itself. When the
+      // name_preview feature is gated off, applyFeatureFlags hard-hides both and
+      // teaserOff keeps this from resurrecting the teaser.
+      let teaserOff = false;
+      function setNamePreviewHidden(v) {
+        namePreview.hidden = v;
+        if (previewTeaser) previewTeaser.hidden = teaserOff || !v;
+      }
       const namePreviewCard = document.getElementById('namePreviewCard');
       const namePreviewBack = document.getElementById('namePreviewBack');
       const namePreviewBoard = document.getElementById('namePreviewBoard');
@@ -4404,7 +4453,7 @@
       // refining indicator shows for the duration so even the INITIAL (uncached,
       // multi-MB SVG) draw never presents a blank box with no affordance.
       async function kickInstant(seq) {
-        namePreview.hidden = false;
+        setNamePreviewHidden(false);
         if (!REVEAL_INSTANT_PREVIEW) {
           // Owner: do NOT reveal the instant approximation. Hold the LOADING card
           // (spinner skeleton, NOT the honoree name) until the exact server render
@@ -4458,7 +4507,7 @@
       async function doPreview(attempt = 0, seq = previewSeq) {
         const theme = currentTheme();
         const name = honoreeNameValue();
-        namePreview.hidden = false;
+        setNamePreviewHidden(false);
         if (attempt === 0) {
           // The instant draw is already on screen — keep the "refining…" indicator
           // over it while the exact render is in flight. Arm the 20s backstop only
@@ -4543,7 +4592,7 @@
         // keep #namePreview hidden and never POST /api/preview. The create gate in
         // refreshControls() drops its preview requirement in the same off state.
         if (!FEATURES.name_preview) {
-          namePreview.hidden = true;
+          setNamePreviewHidden(true);
           instantShown = false;
           previewSeq++; // reject any in-flight render for the previous inputs
           refreshControls();
@@ -4552,7 +4601,7 @@
         if (!previewReady()) {
           // Nothing renderable (invalid/empty name, wrong step) → hide the preview
           // and fully re-gate; validateStep also blocks Next on its own.
-          namePreview.hidden = true;
+          setNamePreviewHidden(true);
           instantShown = false;
           resetPreviewGate();
           previewSeq++; // reject any in-flight render for the previous inputs
@@ -4908,7 +4957,12 @@
         if (!FEATURES.color_picking) hide(document.querySelector('.color-carousel'));
         if (!FEATURES.chasers_choice) hide(document.getElementById('chasersCard'));
         if (!fontChoiceOn) hide(document.querySelector('.wiz-fontpicker'));
-        if (!FEATURES.name_preview) hide(document.getElementById('namePreview'));
+        if (!FEATURES.name_preview) {
+          hide(document.getElementById('namePreview'));
+          // No preview is coming, so the teaser would be a promise we don't keep.
+          teaserOff = true;
+          if (previewTeaser) previewTeaser.hidden = true;
+        }
       }
 
       function goStep(n, opts = {}) {

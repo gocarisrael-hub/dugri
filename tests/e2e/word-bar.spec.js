@@ -6,7 +6,7 @@ import { test, expect } from '@playwright/test';
 // depend on options.html (which is changing under a separate PR).
 
 const WORD_GOAL = 70; // stage-1 target (the minimum)
-const MAX_WORDS = 416; // stage-2 target (the cap)
+const MAX_WORDS = 412; // stage-2 target (the cap)
 
 // Create a collection and return { id, k } (owner token). Optionally seed it
 // with `count` distinct words in one API call.
@@ -59,13 +59,13 @@ test('crossing to exactly 70 words: stage-2 bar replaces stage-1, ~⅙ full', as
   // The swap happened: stage-1 gone, the new stage-2 bar is shown.
   await expect(page.locator('#stage1')).toBeHidden();
   await expect(page.locator('#stage2')).toBeVisible();
-  // Label is render-driven and true across the whole 70→416 range.
+  // Label is render-driven and true across the whole 70→412 range.
   await expect(page.locator('#stage2Label')).toContainText('ממשיכים למקסימום');
   await expect(page.locator('#stage2Label')).toContainText(String(MAX_WORDS));
   // Pill now frames the max.
   await expect(page.locator('#countMax')).toContainText('/ ' + MAX_WORDS);
   await expect(page.locator('#countMax')).not.toContainText('מינימום');
-  // 70 / 416 ≈ 17% — the new bar starts already ~⅙ filled.
+  // 70 / 412 ≈ 17% — the new bar starts already ~⅙ filled.
   const w = await barWidth(page.locator('#barFill2'));
   expect(w).toBeGreaterThan(14);
   expect(w).toBeLessThan(20);
@@ -101,13 +101,13 @@ test('more words (200): stage-2 fill grows toward the max', async ({ page, reque
   await expect(page.locator('#stage1')).toBeHidden();
   await expect(page.locator('#stage2')).toBeVisible();
   await expect(page.locator('#countMax')).toContainText('/ ' + MAX_WORDS);
-  // 200 / 416 ≈ 48%.
+  // 200 / 412 ≈ 48%.
   const w = await barWidth(page.locator('#barFill2'));
   expect(w).toBeGreaterThan(46);
   expect(w).toBeLessThan(50);
 });
 
-test('past the 416 cap: capped count, מקסימום note, stage-2 bar full, no fraction', async ({
+test('past the 412 cap: capped count, מקסימום note, stage-2 bar full, no fraction', async ({
   page,
   request,
 }) => {

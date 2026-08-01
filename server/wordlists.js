@@ -2,7 +2,7 @@
 //
 // A "wordlist" is a plain UTF-8 text file, one word per line, that
 // generator/topup.py draws filler words from when an order's personal words
-// don't reach a full deck (TARGET=416). generator/themes.json links a theme to
+// don't reach a full deck (TARGET=412). generator/themes.json links a theme to
 // its pool by filename (`"wordlist": "friends-350.txt"`); a theme with no
 // `wordlist` falls back to the shared generic-350.txt.
 //
@@ -62,7 +62,7 @@ const STORE_DIR = path.join(DATA_DIR, 'wordlists');
 // The implicit pool every theme falls back to when it names none (topup.GENERIC).
 const GENERIC = 'generic-350.txt';
 
-// Caps: a pool is filler for a 416-card deck, so a few thousand words is already
+// Caps: a pool is filler for a 412-word deck, so a few thousand words is already
 // far more than any deck can consume — bound it so a paste can't fill the volume.
 const MAX_WORDS = 5000;
 // One word per line; the collection word cap is 80 chars, so match it.

@@ -504,7 +504,7 @@ test('card disabled: no dead pay CTA, neutral note instead, and no top nag', asy
 
 test('below 70 words: Stage-1 bar is scaled to the 70-word minimum', async ({ page }) => {
   await createCollection(page, 'Shira');
-  // Stage 1 frames the 70-word minimum (not the 416 max) below the goal.
+  // Stage 1 frames the 70-word minimum (not the 412 max) below the goal.
   await expect(page.locator('.count-pill')).toContainText('/ 70');
   await expect(page.locator('.count-pill')).toContainText('מינימום');
   await expect(page.locator('#stage1')).toBeVisible();
@@ -519,7 +519,7 @@ test('below 70 words: Stage-1 bar is scaled to the 70-word minimum', async ({ pa
   expect(parseFloat(width)).toBeCloseTo(100 / 70, 1);
 });
 
-test('at 70+ words: Stage-2 bar replaces Stage-1 and is scaled to the 416 max', async ({
+test('at 70+ words: Stage-2 bar replaces Stage-1 and is scaled to the 412 max', async ({
   page,
 }) => {
   await createCollection(page, 'Shira');
@@ -535,30 +535,30 @@ test('at 70+ words: Stage-2 bar replaces Stage-1 and is scaled to the 416 max', 
   // The swap: Stage-1 gone, the new Stage-2 bar takes over and frames the max.
   await expect(page.locator('#stage1')).toBeHidden();
   await expect(page.locator('#stage2')).toBeVisible();
-  await expect(page.locator('#countMax')).toContainText('/ 416');
+  await expect(page.locator('#countMax')).toContainText('/ 412');
   await expect(page.locator('#countMax')).not.toContainText('מינימום');
-  // 70 / 416 ≈ 17% — the second bar starts already ~⅙ filled.
+  // 70 / 412 ≈ 17% — the second bar starts already ~⅙ filled.
   const width = await page.locator('#barFill2').evaluate((el) => el.style.width);
   expect(parseFloat(width)).toBeGreaterThan(14);
   expect(parseFloat(width)).toBeLessThan(20);
 });
 
-test('over the 416 cap: counter shows 416 max (no fraction over cap), bar full', async ({
+test('over the 412 cap: counter shows 412 max (no fraction over cap), bar full', async ({
   page,
 }) => {
   await createCollection(page, 'Shira');
   const url = new URL(page.url());
   const c = url.searchParams.get('c');
-  // Push the count past the cap in one API call (417 unique words).
-  const words = Array.from({ length: 417 }, (_, i) => 'w' + i);
+  // Push the count past the cap in one API call (413 unique words).
+  const words = Array.from({ length: 413 }, (_, i) => 'w' + i);
   const res = await page.request.post(`/api/collections/${c}/words`, { data: { words } });
   expect(res.ok()).toBeTruthy();
 
   await page.reload();
-  await expect(page.locator('#count')).toHaveText('416'); // capped display
+  await expect(page.locator('#count')).toHaveText('412'); // capped display
   await expect(page.locator('#countMax')).toContainText('מקסימום');
-  await expect(page.locator('.count-pill')).not.toContainText('417');
-  await expect(page.locator('.count-pill')).not.toContainText('/ 416'); // no fraction over cap
+  await expect(page.locator('.count-pill')).not.toContainText('413');
+  await expect(page.locator('.count-pill')).not.toContainText('/ 412'); // no fraction over cap
   await expect(page.locator('#countHint')).toContainText('מקסימום');
   // Past 70 words the Stage-2 bar is in play; over the cap it's full.
   const width = await page.locator('#barFill2').evaluate((el) => el.style.width);
