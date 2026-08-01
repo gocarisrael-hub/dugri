@@ -197,6 +197,83 @@ test.describe('admin templates — single-card layout (read-only)', () => {
     await expect(cal.locator('.cal-preview img')).toHaveCount(2); // card + board
   });
 
+  // ONE-FRONT mode: the shortcut for a deck where every card carries the same
+  // design. The form asks for four files instead of eighteen, and the panel
+  // calibrates the one title position the deck actually has.
+  test('the mode buttons swap between nine files and one front + one back', async ({ page }) => {
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const cleanCards = page.locator('#form input[name="clean_cards"]');
+    const front = page.locator('#form input[name="clean_2"]');
+    const back = page.locator('#form input[name="filled_1"]');
+    // Default: the nine-file pickers, exactly as before.
+    await expect(cleanCards).toBeVisible();
+    await expect(front).toBeHidden();
+    expect(await front.evaluate((el) => el.disabled)).toBe(true);
+    await expect(page.locator('#cardFronts')).toHaveValue('all');
+
+    await page.locator('#form .mode-btn[data-fronts="one"]').click();
+    await expect(page.locator('#cardFronts')).toHaveValue('one');
+    await expect(front).toBeVisible();
+    expect(await front.evaluate((el) => el.required)).toBe(true);
+    expect(await back.evaluate((el) => el.required)).toBe(true);
+    // The nine-file pickers are hidden AND disabled, so they neither block
+    // submit on a hidden `required` nor post an empty part.
+    await expect(cleanCards).toBeHidden();
+    expect(await cleanCards.evaluate((el) => el.disabled)).toBe(true);
+    expect(await cleanCards.evaluate((el) => el.required)).toBe(false);
+
+    // ...and back, without stranding either mode's inputs.
+    await page.locator('#form .mode-btn[data-fronts="all"]').click();
+    await expect(cleanCards).toBeVisible();
+    expect(await cleanCards.evaluate((el) => el.disabled)).toBe(false);
+    expect(await front.evaluate((el) => el.disabled)).toBe(true);
+
+    // The sheet layout has no front list to narrow, so it posts none at all.
+    await page.locator('#form .mode-btn[data-fronts="one"]').click();
+    await page.locator('#form select[name="card_structure"]').selectOption('sheet');
+    expect(await page.locator('#cardFronts').evaluate((el) => el.disabled)).toBe(true);
+  });
+
+  test('a ONE-front template calibrates a single title, not eight', async ({ page }) => {
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({ json: { templates: [cardsTemplate({ card_fronts: [2] })] } })
+    );
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const cal = page.locator('.tpl-card[data-key="cards-x"] .tpl-cal');
+    // The four shared word slots are unchanged — only the title list narrows.
+    await expect(cal.locator('[data-cal="card.word.4.x0"]')).toHaveCount(1);
+    await expect(cal.locator('.cal-front-btn')).toHaveCount(1);
+    await expect(cal.locator('[data-cal="card.title.2.x0"]')).toHaveCount(1);
+    for (const n of [3, 5, 9]) {
+      await expect(cal.locator(`[data-cal="card.title.${n}.x0"]`)).toHaveCount(0);
+    }
+    await expect(cal.locator('.cal-title-row[data-front="2"]')).toBeVisible();
+    // With one front there is nothing to number, so the button just says 'פנים'.
+    await expect(cal.locator('.cal-front-btn')).toHaveText('פנים');
+    // The map still draws four word boxes + the title.
+    await expect(cal.locator('.cal-card-map rect')).toHaveCount(5);
+  });
+
+  test('a ONE-front template posts exactly one title position', async ({ page }) => {
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({ json: { templates: [cardsTemplate({ card_fronts: [2] })] } })
+    );
+    let previewBody = null;
+    await page.route('**/api/preview*', (route) => {
+      previewBody = route.request().postDataJSON();
+      return route.fulfill({ json: { card: 'data:image/png;base64,iVBORw0KGgo=' } });
+    });
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const cal = page.locator('.tpl-card[data-key="cards-x"] .tpl-cal');
+    await cal.locator('[data-cal="card.title.2.y0"]').fill('0.07');
+    await cal.locator('.cal-preview-btn').click();
+    await expect
+      .poll(() => previewBody && Object.keys(previewBody.calibration.card_slots.titles))
+      .toEqual(['2']);
+    expect(previewBody.calibration.card_slots.titles['2'].y0).toBe(0.07);
+    expect(previewBody.calibration.card_slots.words).toHaveLength(4);
+  });
+
   test('a LEGACY sheet template gets no card group at all', async ({ page }) => {
     await page.route('**/api/admin/templates?key=*', (route) =>
       route.fulfill({
@@ -309,6 +386,95 @@ test.describe('admin templates — single-card mutations (fixture only, single p
       expect(fs.existsSync(path.join(dir, 'clean', `${n}.svg`))).toBe(true);
       expect(fs.existsSync(path.join(dir, 'filled', `${n}.svg`))).toBe(true);
     }
+  });
+
+  test('uploads ONE front + ONE back and registers a single-index front list', async ({ page }) => {
+    const slug = 'e2e-one-front';
+    const svg = (label) => ({
+      name: 'x.svg',
+      mimeType: 'image/svg+xml',
+      buffer: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg">${label}</svg>`),
+    });
+    const font = (name) => ({
+      name,
+      mimeType: 'font/ttf',
+      buffer: Buffer.concat([Buffer.from([0x00, 0x01, 0x00, 0x00]), Buffer.from(name)]),
+    });
+
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    await page.locator('#form .mode-btn[data-fronts="one"]').click();
+    await page.fill('#form input[name="slug"]', slug);
+    await page.fill('#form input[name="display_he"]', 'עיצוב אחד E2E');
+    await page.fill('#form input[name="title_text"]', '{NAME}');
+    await page.setInputFiles('#form input[name="clean_2"]', svg('clean-front'));
+    await page.setInputFiles('#form input[name="clean_1"]', svg('clean-back'));
+    await page.setInputFiles('#form input[name="filled_2"]', svg('filled-front'));
+    await page.setInputFiles('#form input[name="filled_1"]', svg('filled-back'));
+    await page.setInputFiles('#form input[name="title_font"]', font('Title.ttf'));
+    await page.setInputFiles('#form input[name="word_font"]', font('Word.ttf'));
+    await page.click('#submit');
+
+    await expect(page.locator('#msg')).toContainText(slug);
+    const card = page.locator(`.tpl-card[data-key="${slug}"]`);
+    await expect(card).toBeVisible();
+    // Four numbered rows, not eighteen — the seven fronts this deck has no card
+    // for must not sit in the checklist as permanently missing.
+    await expect(card.locator('.asset[data-role="clean-1"]')).toHaveClass(/on/);
+    await expect(card.locator('.asset[data-role="clean-2"]')).toHaveClass(/on/);
+    await expect(card.locator('.asset[data-role="filled-2"]')).toHaveClass(/on/);
+    await expect(card.locator('.asset[data-role="clean-3"]')).toHaveCount(0);
+    await expect(card.locator('.asset[data-role="filled-9"]')).toHaveCount(0);
+
+    const themes = readThemes();
+    expect(themes[slug].card_structure).toBe('cards');
+    expect(themes[slug].cards).toEqual({ back: 1, fronts: [2] });
+    const dir = templateDirFor(slug);
+    for (const layer of ['clean', 'filled']) {
+      expect(fs.existsSync(path.join(dir, layer, '1.svg'))).toBe(true);
+      expect(fs.existsSync(path.join(dir, layer, '2.svg'))).toBe(true);
+      // Not copied to nine names — that is the whole point.
+      expect(fs.existsSync(path.join(dir, layer, '3.svg'))).toBe(false);
+    }
+  });
+
+  test('a one-front upload missing its back is refused in Hebrew, and registers nothing', async ({
+    page,
+  }) => {
+    const slug = 'e2e-one-front-short';
+    const svg = {
+      name: 'x.svg',
+      mimeType: 'image/svg+xml',
+      buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg">c</svg>'),
+    };
+    const font = {
+      name: 'F.ttf',
+      mimeType: 'font/ttf',
+      buffer: Buffer.concat([Buffer.from([0x00, 0x01, 0x00, 0x00]), Buffer.from('f')]),
+    };
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    await page.locator('#form .mode-btn[data-fronts="one"]').click();
+    await page.fill('#form input[name="slug"]', slug);
+    await page.fill('#form input[name="display_he"]', 'חסר גב E2E');
+    await page.fill('#form input[name="title_text"]', '{NAME}');
+    await page.setInputFiles('#form input[name="clean_2"]', svg);
+    await page.setInputFiles('#form input[name="clean_1"]', svg);
+    await page.setInputFiles('#form input[name="filled_2"]', svg);
+    await page.setInputFiles('#form input[name="title_font"]', font);
+    await page.setInputFiles('#form input[name="word_font"]', font);
+    // The missing filled back is `required`, so the browser blocks submit before
+    // the request — drop the flag to prove the SERVER also names it.
+    await page.locator('#form input[name="filled_1"]').evaluate((el) => {
+      el.required = false;
+    });
+    await page.click('#submit');
+
+    const msg = page.locator('#msg');
+    await expect(msg).toHaveClass(/err/);
+    await expect(msg).toContainText('1.svg');
+    await expect(msg).toContainText('גב הקלף');
+    await expect(msg).toContainText('4 קבצים');
+    await expect(page.locator(`.tpl-card[data-key="${slug}"]`)).toHaveCount(0);
+    expect(readThemes()[slug]).toBeUndefined();
   });
 
   test('a short pick is refused with the missing file names, and registers nothing', async ({

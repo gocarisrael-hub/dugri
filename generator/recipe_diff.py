@@ -857,8 +857,29 @@ def write_recipe(theme, recipe):
     return path
 
 
+def theme_fronts(theme):
+    """The registered theme's own front list, or ``None`` when it has none.
+
+    A template may declare FEWER fronts than the default eight — a deck where
+    every card carries the SAME front design ships ``clean/1.svg`` and
+    ``clean/2.svg`` and nothing else, and its themes.json entry says
+    ``cards: {fronts: [2]}``. Walking 2..9 for it still works (missing pairs are
+    skipped) but reports seven files as absent, which reads like a broken upload.
+
+    Never fatal: detection must run for an UNREGISTERED theme too (that is how a
+    template is measured before its entry exists), so anything unresolvable
+    simply falls back to the default set.
+    """
+    try:
+        import config
+
+        return config.fronts(config.theme(theme))
+    except Exception:
+        return None
+
+
 def main_single(template_dir, theme):
-    recipe = detect_single_card(theme, template_dir)
+    recipe = detect_single_card(theme, template_dir, fronts=theme_fronts(theme))
     path = write_recipe(theme, recipe)
     print(f"single-card recipe: {len(recipe['card']['words'])} shared word slots, "
           f"{len(recipe['card']['title'])} front title(s), "

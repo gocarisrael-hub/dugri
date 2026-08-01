@@ -605,6 +605,60 @@ def test_the_cli_sends_each_structure_down_its_own_path():
         shutil.rmtree(v2, ignore_errors=True)
 
 
+# ---- a template may declare FEWER fronts than the default eight -------------
+# A deck where every card carries the SAME design ships clean/1.svg + clean/2.svg
+# and says so with `cards: {fronts: [2]}`. Detection must walk THAT list: walking
+# 2..9 still works (missing pairs are skipped) but reports seven absent files,
+# which reads to the owner like a broken upload.
+
+def test_detection_walks_the_themes_own_front_list():
+    root = tempfile.mkdtemp(prefix="dugri-fronts-")
+    prev = os.environ.get("DATA_DIR")
+    try:
+        os.makedirs(os.path.join(root, "templates"))
+        with open(os.path.join(root, "templates", "themes.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"onefront": {"slug": "onefront", "card_structure": "cards",
+                                    "cards": {"back": 1, "fronts": [2]}},
+                       "eightfront": {"slug": "eightfront",
+                                      "card_structure": "cards"}}, f)
+        os.environ["DATA_DIR"] = root
+        config.clear_preview_overrides()
+        assert R.theme_fronts("onefront") == [2]
+        assert R.theme_fronts("eightfront") == R.DEFAULT_FRONTS
+        # An UNREGISTERED theme is the normal case when a template is measured
+        # before its entry exists — never fatal, just "no opinion".
+        assert R.theme_fronts("no-such-theme") is None
+    finally:
+        if prev is None:
+            os.environ.pop("DATA_DIR", None)
+        else:
+            os.environ["DATA_DIR"] = prev
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_a_one_front_template_measures_only_the_front_it_has():
+    """detect_single_card over a one-element list touches 2.svg and nothing else."""
+    seen = []
+
+    def fake_card_diff(filled, clean, workdir, tag=None):
+        seen.append(os.path.basename(clean))
+        raise RuntimeError("stop once the walked file list is known")
+
+    real = R.card_diff
+    R.card_diff = fake_card_diff
+    d = _template(["clean/1.svg", "clean/2.svg", "filled/1.svg", "filled/2.svg"])
+    try:
+        try:
+            R.detect_single_card("t", d, fronts=[2], log=lambda *a: None)
+        except RuntimeError:
+            pass
+        assert seen == ["2.svg"], seen
+    finally:
+        R.card_diff = real
+        shutil.rmtree(d, ignore_errors=True)
+
+
 # ---- end to end, where a rasterizer exists ---------------------------------
 
 _SVG = ('<svg xmlns="http://www.w3.org/2000/svg" width="224" height="312" '

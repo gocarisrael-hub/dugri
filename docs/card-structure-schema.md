@@ -52,9 +52,10 @@ recipe file):
   // The four word slots — SHARED by all eight fronts, because they never move.
   // One calibration, not eight.
   "words": [ {"x0":…,"y0":…,"x1":…,"y1":…}, …4 total ],
-  // The title POSITION per front — the one thing that DOES move. All eight
-  // fronts are required: a half-filled map leaves some fronts with the title
-  // wherever the last calibration happened to put it.
+  // The title POSITION per front — the one thing that DOES move. Every front
+  // THE DECK HAS is required (all eight here; exactly one on a `fronts: [2]`
+  // template — see "One design for the whole deck" below): a half-filled map
+  // leaves some fronts with the title wherever the last calibration put it.
   "titles": { "2": {…}, "3": {…}, "4": {…}, "5": {…},
               "6": {…}, "7": {…}, "8": {…}, "9": {…} }
 }
@@ -187,6 +188,32 @@ front = cards["fronts"][n % len(cards["fronts"])]
 
 103 over 8 gives 13/13/13/13/13/13/13/12 — even to within one card, as specified.
 Card 104 is the photo card and takes no front from this cycle.
+
+### One design for the whole deck (`fronts: [2]`)
+
+Some decks want ONE front design on every card. That is expressed as a **narrower
+front list**, never as eight copies of one file:
+
+```jsonc
+"cards": { "back": 1, "fronts": [2] }
+```
+
+`build.py` picks a card's front with `fronts[card["front"] % len(fronts)]`, so a
+one-element list lands all 103 word cards on `clean/2.svg` by arithmetic. The
+template therefore ships **four** numbered files — `clean/1.svg`, `clean/2.svg`
+and their `filled/` twins — and 3–9 do not exist. Duplicating one export to nine
+names would multiply the image, the volume and every render, and the copies would
+drift apart the moment anyone edited one.
+
+The admin upload form offers this as a mode ("אותו עיצוב לכל הקלפים"), posting
+`card_fronts=one` alongside `card_structure=cards`; `server/templates.js` then
+writes the `cards` block above. An eight-front template still writes **no `cards`
+block at all** and keeps the `[2..9]` default, so nothing about it changes.
+
+Everything that iterates fronts must read the entry's list rather than assume
+2–9: the asset checklist, `card_slots.titles` (a one-front deck has exactly ONE
+title position and validation must not demand eight), `recipe_diff --single`, the
+calibration form, and the storefront's front picture.
 
 ## 4. Image de-duplication (ground rule 3)
 
