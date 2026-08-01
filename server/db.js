@@ -29,7 +29,19 @@ const SESSION_TTL_MS = Number(process.env.PELECARD_SESSION_TTL_MS || 20 * 60 * 1
 // verify against, leaving a charged customer's order stuck unpaid.
 const MAX_SESSIONS = Number(process.env.PELECARD_MAX_SESSIONS || 50);
 
-const DEFAULTS = { collections: [], words: [], coupons: [], design_codes: [] };
+// `order_seq` is the high-water mark behind the human order number (see
+// nextOrderNo) — a plain counter so numbers are never reused, even after a
+// collection is deleted.
+const DEFAULTS = { collections: [], words: [], coupons: [], design_codes: [], order_seq: 0 };
+
+// Human-quotable order numbers: "DG-1001", "DG-1002", … A collection id is a
+// UUID — fine as a database key, useless on a receipt or in a WhatsApp message
+// ("what's your order number?" / "8f3c1a2e-…"). Every collection therefore also
+// carries a SHORT sequential number, assigned once at creation and never reused.
+// Starting at 1001 keeps every number the same width and doesn't advertise that
+// the first customer was order #1.
+const ORDER_NO_PREFIX = 'DG-';
+const ORDER_NO_START = 1001;
 
 // Owner-editable pricing lives in server/settings.js (the `pricing` section) so
 // the store price + per-version enable/price change with NO deploy. This module
@@ -147,6 +159,33 @@ function saveDb() {
   fs.renameSync(tmp, DB_FILE);
 }
 
+// Claim the next order number, advancing the stored counter. Callers must save.
+function nextOrderNo() {
+  const seq = Number.isFinite(_db.order_seq) ? _db.order_seq : 0;
+  _db.order_seq = Math.max(seq, ORDER_NO_START - 1) + 1;
+  return ORDER_NO_PREFIX + _db.order_seq;
+}
+
+// One-time backfill for collections created BEFORE order numbers existed. Runs
+// at boot, oldest first, so the numbering follows the order the collections were
+// actually placed in. A no-op (and no write) once every row has one.
+function backfillOrderNumbers() {
+  const missing = _db.collections.filter((c) => c && !c.order_no);
+  if (!missing.length) return;
+  missing.sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+  for (const c of missing) c.order_no = nextOrderNo();
+  saveDb();
+}
+
+backfillOrderNumbers();
+
+// The reference a human quotes back at us. Prefers the short order number and
+// falls back to the raw id, so a row that somehow missed the backfill still
+// yields SOMETHING printable rather than an empty receipt line.
+function orderRef(c) {
+  return (c && c.order_no) || (c && c.id) || '';
+}
+
 const uid = () => crypto.randomUUID();
 const nowIso = () => new Date().toISOString();
 // Today as 'YYYY-MM-DD' in Israel time. Coupon expiry is inclusive through the
@@ -254,6 +293,9 @@ const db = {
   createCollection(honoreeName, contact = {}) {
     const c = {
       id: uid(),
+      // Short, human-quotable order number (DG-1001…). Shown on the payment
+      // confirmation page and in every email; the UUID above stays internal.
+      order_no: nextOrderNo(),
       owner_token: uid(),
       honoree_name: String(honoreeName || '')
         .trim()
@@ -1153,3 +1195,5 @@ module.exports.ORDER_PRICES = ORDER_PRICES;
 // The effective pricing projection (store + per-version enabled/price), read by
 // the public GET /api/pricing so the DISPLAY always matches the CHARGE path.
 module.exports.effectivePricing = effectivePricing;
+// The short order number to print for a collection (falls back to its id).
+module.exports.orderRef = orderRef;

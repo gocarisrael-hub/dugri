@@ -27,7 +27,7 @@
         color: var(--ink);
         min-height: 100vh;
         display: grid;
-        place-items: center;
+        place-items: start center;
         padding: 32px 20px calc(40px + env(safe-area-inset-bottom, 0px));
       }
       .done {
@@ -98,8 +98,121 @@
         font-size: 17px;
         line-height: 1.65;
         color: var(--muted);
-        margin: 0 auto 26px;
+        margin: 0 auto 22px;
         max-width: 30em;
+      }
+      /* The order number, as its own object rather than a line of copy — it is
+         the one string the buyer may have to quote back at us, so it gets the
+         weight of a reference and a one-tap copy. */
+      .orderno {
+        display: none;
+        width: 100%;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        box-sizing: border-box;
+        border: 1px solid var(--line);
+        background: var(--section);
+        padding: 11px 14px;
+        margin: 0 0 22px;
+        font: inherit;
+        color: var(--ink);
+        cursor: pointer;
+        text-align: center;
+      }
+      .orderno.shown {
+        display: flex;
+      }
+      .orderno .lbl {
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      .orderno .val {
+        font-weight: 900;
+        font-size: 17px;
+        letter-spacing: 0.04em;
+        font-variant-numeric: tabular-nums;
+      }
+      .orderno .copied {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--ok);
+      }
+      /* What they just bought. The picture is the buyer's OWN card — rendered
+         from the same inputs the wizard previewed — so the confirmation shows the
+         thing they paid for, not a stock photo of the product line. */
+      .summary {
+        display: none;
+        border: 1px solid var(--line);
+        text-align: start;
+        margin: 0 0 26px;
+      }
+      .summary.shown {
+        display: block;
+      }
+      .summary h2 {
+        margin: 0;
+        padding: 13px 16px;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        border-bottom: 1px solid var(--line);
+      }
+      .shot {
+        margin: 0;
+        background: var(--section);
+        min-height: 150px;
+        display: grid;
+        place-items: center;
+        border-bottom: 1px solid var(--line);
+        overflow: hidden;
+      }
+      .shot img {
+        display: block;
+        max-width: 100%;
+        max-height: 300px;
+        opacity: 0;
+        transition: opacity 0.35s var(--ease);
+      }
+      .shot img.loaded {
+        opacity: 1;
+      }
+      /* Shown until the first image lands, so the block never opens as a hole. */
+      .shot .skel {
+        font-size: 13px;
+        color: var(--muted);
+        padding: 24px;
+      }
+      .rows p {
+        display: flex;
+        gap: 12px;
+        align-items: baseline;
+        justify-content: space-between;
+        margin: 0;
+        padding: 12px 16px;
+        font-size: 15px;
+        line-height: 1.5;
+      }
+      .rows p + p {
+        border-top: 1px solid var(--line);
+      }
+      .rows .k {
+        color: var(--muted);
+        font-size: 13.5px;
+        flex: none;
+      }
+      .rows .v {
+        font-weight: 700;
+        text-align: end;
+      }
+      .rows .desc {
+        display: block;
+        color: var(--muted);
+        font-size: 13.5px;
+        font-weight: 400;
+        padding-top: 3px;
       }
       /* The two facts the buyer wants confirmed, as a bordered receipt block so
          they read as a record of what just happened, not as body copy. */
@@ -155,6 +268,38 @@
       .back:active {
         transform: translateY(0);
       }
+      /* Secondary route out: a direct line to us, with the order number already
+         in the message so we know which order they mean. */
+      .wa {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 12px;
+        padding: 15px 20px;
+        border: 1px solid var(--ink);
+        border-radius: var(--radius-pill);
+        background: var(--bg);
+        color: var(--ink);
+        font: inherit;
+        font-weight: 800;
+        font-size: 16px;
+        text-decoration: none;
+        transition:
+          background 0.2s var(--ease),
+          color 0.2s var(--ease);
+      }
+      .wa:hover {
+        background: var(--ink);
+        color: #fff;
+      }
+      .wa svg {
+        width: 20px;
+        height: 20px;
+        flex: none;
+      }
       .note {
         color: var(--muted);
         font-size: 13.5px;
@@ -171,9 +316,25 @@
         </svg>
       </div>
       <h1 data-edit="paysuccess-title">התשלום התקבל</h1>
-      <p class="lead" data-edit="paysuccess-lead">
-        זהו, ההזמנה שלכם נקלטה אצלנו. אפשר להירגע — הכול תפוס.
-      </p>
+      <p class="lead" data-edit="paysuccess-lead">זהו, ההזמנה שלכם נקלטה אצלנו.</p>
+
+      <button class="orderno" id="orderNo" type="button" hidden>
+        <span class="lbl" data-edit="paysuccess-orderno-label">מספר הזמנה</span>
+        <span class="val" id="orderNoVal"></span>
+        <span class="copied" id="orderNoCopied" hidden>הועתק ✓</span>
+      </button>
+
+      <section class="summary" id="summary" aria-live="polite">
+        <h2 data-edit="paysuccess-summary-title">מה הזמנתם</h2>
+        <figure class="shot" id="shot">
+          <span class="skel" id="shotSkel" data-edit="paysuccess-shot-loading"
+            >מכינים תצוגה מקדימה של הקלף שלכם…</span
+          >
+          <img id="shotImg" alt="" hidden />
+        </figure>
+        <div class="rows" id="summaryRows"></div>
+      </section>
+
       <div class="facts">
         <p>
           <i aria-hidden="true">✉️</i>
@@ -190,7 +351,16 @@
         </p>
       </div>
       <a class="back" id="backBtn" href="/" data-edit="paysuccess-back">חזרה להוספת מילים</a>
-      <p class="note" data-edit="paysuccess-note">שאלה? כתבו לנו בוואטסאפ ונחזור אליכם.</p>
+      <a class="wa" id="waBtn" href="https://wa.me/972546577715" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path
+            fill="currentColor"
+            d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm0 18.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 2.2 0 4.27.86 5.82 2.42a8.18 8.18 0 0 1 2.41 5.83c0 4.54-3.7 8.23-8.24 8.23zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.24-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.51.11-.11.25-.29.37-.43.13-.14.17-.24.25-.41.08-.16.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.4-.42-.56-.43-.14-.01-.31-.01-.48-.01a.92.92 0 0 0-.67.31c-.23.25-.87.85-.87 2.07 0 1.22.89 2.4 1.02 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.47-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"
+          />
+        </svg>
+        <span data-edit="paysuccess-wa">שאלה? דברו איתנו בוואטסאפ</span>
+      </a>
+      <p class="note" data-edit="paysuccess-note">נשמור על הקישור — אפשר לחזור אליו בכל רגע.</p>
     </main>
     <script>
       // Where to send the buyer back to: the collect page they paid from.
@@ -203,7 +373,8 @@
         function safePath(v) {
           return typeof v === 'string' && /^\/[^/\\]/.test(v) ? v : null;
         }
-        var back = safePath(new URLSearchParams(location.search).get('back'));
+        var own = new URLSearchParams(location.search);
+        var back = safePath(own.get('back'));
         if (!back) {
           try {
             var stored = sessionStorage.getItem('dugri:payReturn');
@@ -213,6 +384,150 @@
           }
         }
         if (back) document.getElementById('backBtn').href = back;
+
+        // The collect URL we just came from carries the collection id and the
+        // owner token (?c=…&k=…) — the two things the order summary needs. Read
+        // them from our OWN query first (an explicit hand-off), else parse the
+        // return path. Without both we simply show no summary: the page still
+        // confirms the payment and still points back to adding words.
+        function fromQuery(qs) {
+          var p = new URLSearchParams(qs || '');
+          var c = p.get('c');
+          var k = p.get('k');
+          return c && k ? { c: c, k: k } : null;
+        }
+        var ref = fromQuery(location.search);
+        if (!ref && back) ref = fromQuery(back.split('?')[1] || '');
+        if (!ref) return;
+
+        var waBtn = document.getElementById('waBtn');
+        var WA_NUMBER = '972546577715';
+
+        function show(el) {
+          el.hidden = false;
+          el.classList.add('shown');
+        }
+
+        function row(key, value, description) {
+          var p = document.createElement('p');
+          var k = document.createElement('span');
+          k.className = 'k';
+          k.textContent = key;
+          var v = document.createElement('span');
+          v.className = 'v';
+          v.textContent = value;
+          if (description) {
+            var d = document.createElement('span');
+            d.className = 'desc';
+            d.textContent = description;
+            v.appendChild(d);
+          }
+          p.appendChild(k);
+          p.appendChild(v);
+          return p;
+        }
+
+        // The amount to print: what was actually CHARGED when we know it (a
+        // coupon means that is not the package price), else the package price.
+        // A 0 charge is a real, fully-discounted order — not a missing value.
+        function amountText(order) {
+          var n = order.charged != null ? order.charged : order.total;
+          if (n == null) return null;
+          if (n <= 0) return 'חינם (קופון 100%)';
+          return n + ' ₪';
+        }
+
+        fetch(
+          '/api/collections/' +
+            encodeURIComponent(ref.c) +
+            '/summary?k=' +
+            encodeURIComponent(ref.k)
+        )
+          .then(function (r) {
+            if (!r.ok) throw new Error(r.status);
+            return r.json();
+          })
+          .then(function (s) {
+            if (s.order_no) {
+              var btn = document.getElementById('orderNo');
+              var val = document.getElementById('orderNoVal');
+              var copied = document.getElementById('orderNoCopied');
+              val.textContent = s.order_no;
+              show(btn);
+              btn.addEventListener('click', function () {
+                navigator.clipboard.writeText(s.order_no).then(function () {
+                  copied.hidden = false;
+                  setTimeout(function () {
+                    copied.hidden = true;
+                  }, 1600);
+                });
+              });
+              // Give us the order number up front so a question doesn't start
+              // with us asking "which order?".
+              waBtn.href =
+                'https://wa.me/' +
+                WA_NUMBER +
+                '?text=' +
+                encodeURIComponent('היי, יש לי שאלה על הזמנה ' + s.order_no);
+            }
+
+            var rows = document.getElementById('summaryRows');
+            if (s.order) {
+              rows.appendChild(row('חבילה', s.order.version_label, s.order.description));
+              var amount = amountText(s.order);
+              if (amount) rows.appendChild(row(s.order.paid ? 'שולם' : 'מחיר', amount));
+            }
+            if (s.honoree_name) rows.appendChild(row('לכבוד', s.honoree_name));
+            if (s.design) rows.appendChild(row('עיצוב', s.design));
+            if (s.color) rows.appendChild(row('צבע', s.color));
+            if (!rows.children.length && !s.product_image && !s.preview) return;
+            show(document.getElementById('summary'));
+
+            var img = document.getElementById('shotImg');
+            var skel = document.getElementById('shotSkel');
+            function paint(src, alt) {
+              img.onload = function () {
+                skel.hidden = true;
+                img.hidden = false;
+                img.classList.add('loaded');
+              };
+              img.alt = alt || '';
+              img.src = src;
+            }
+            // Show the catalogue photo of the chosen design at once so the block
+            // is never empty, then swap in the buyer's OWN rendered card when it
+            // arrives. The wizard already rendered these exact inputs, so this is
+            // normally a preview-cache hit and the swap is immediate.
+            if (s.product_image) paint(s.product_image, s.design || '');
+            if (!s.preview) {
+              if (!s.product_image) skel.textContent = '';
+              return;
+            }
+            fetch('/api/preview', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(s.preview),
+            })
+              .then(function (r) {
+                if (!r.ok) throw new Error(r.status);
+                return r.json();
+              })
+              .then(function (p) {
+                if (p && p.card) paint(p.card, s.honoree_name || '');
+                else if (!s.product_image) skel.hidden = true;
+              })
+              .catch(function () {
+                // The render failed or timed out — the catalogue photo (when we
+                // have one) already stands in; otherwise drop the empty frame.
+                if (!s.product_image) {
+                  document.getElementById('shot').style.display = 'none';
+                }
+              });
+          })
+          .catch(function () {
+            /* No summary (expired link, wrong token, server hiccup) — the
+               confirmation itself still stands on its own. */
+          });
       })();
     </script>
   </body>
