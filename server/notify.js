@@ -342,6 +342,15 @@ function versionLabelFor(version) {
   return version || '-';
 }
 
+// The order reference a human quotes back at us: the short order number
+// ("DG-1042") when the collection carries one, else the raw collection id. Older
+// collections predate order numbers and a receipt still needs SOME reference, so
+// the id remains the fallback rather than printing an empty line.
+function orderRef(collection) {
+  if (!collection) return '';
+  return String(collection.order_no || collection.id || '');
+}
+
 function honoreeName(collection) {
   const n = collection && collection.honoree_name ? String(collection.honoree_name).trim() : '';
   return n || 'ללא שם';
@@ -388,7 +397,8 @@ function orderLines(collection, baseUrl, options) {
   const lines = [];
   const f = fieldLabels();
   const order = (collection && collection.order) || null;
-  if (collection && collection.id) lines.push(f.orderId + ': ' + collection.id);
+  const ref = orderRef(collection);
+  if (ref) lines.push(f.orderId + ': ' + ref);
   if (order) {
     const label = versionLabelFor(order.version);
     lines.push(f.version + ': ' + label);
@@ -419,7 +429,7 @@ function orderLines(collection, baseUrl, options) {
 function ownerTokenValues(collection, baseUrl, options, name) {
   return {
     honoree: name,
-    orderId: collection && collection.id ? String(collection.id) : '',
+    orderId: orderRef(collection),
     link: ownerLink(collection, baseUrl) || '',
     adminLink: options && options.adminLink ? String(options.adminLink) : '',
   };
@@ -479,6 +489,12 @@ function buyerDetailLines(collection, options, priceLabel) {
   const lines = [];
   const f = fieldLabels();
   const order = (collection && collection.order) || null;
+  // Lead with the reference the buyer quotes back at us. It sits in the SHARED
+  // block so the confirmation and the receipt can never disagree about it — and
+  // so the confirmation, which used to carry no reference at all, has one from
+  // the very first email.
+  const ref = orderRef(collection);
+  if (ref) lines.push(f.orderId + ': ' + ref);
   if (order) {
     const label = versionLabelFor(order.version);
     lines.push(f.buyerPackage + ': ' + label);
@@ -576,9 +592,8 @@ function buildBuyerReceipt(collection, baseUrl, options) {
   const values = { honoree: name, link: link || '' };
   const subject = interpolate(tpl.subject, values);
   const lines = interpolate(tpl.body, values).split('\n');
+  // The order reference leads the shared detail block (see buyerDetailLines).
   lines.push(...buyerDetailLines(collection, options, f.buyerPaid));
-  // A receipt needs a reference the customer can quote back to us.
-  if (collection && collection.id) lines.push(f.orderId + ': ' + collection.id);
   // Branded HTML mirrors the plain-text body but drops the raw URL line — the
   // link becomes the CTA button. Everything above the link is reused as-is.
   const htmlLines = lines.slice();

@@ -1432,6 +1432,64 @@ app.get('/api/collections/:id', (req, res) => {
   res.json(publicView(c, { owner }));
 });
 
+// OWNER-ONLY order summary, for the payment confirmation page: "here is what you
+// just bought". Everything on it is either already on the buyer's own receipt
+// email or is their own input, but it includes what they were ACTUALLY charged
+// (post-coupon) — which the shared collect link must never leak to the friends the
+// owner invites — so it is gated on the owner token rather than on link knowledge.
+app.get('/api/collections/:id/summary', async (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  if (!req.query.k || req.query.k !== c.owner_token) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  const order = c.order || null;
+  const labels = settings.get('email', 'version_labels') || {};
+  const descriptions = settings.get('email', 'product_info') || {};
+  // Never fails the summary: a missing catalog entry just means no photo.
+  let productImage = null;
+  try {
+    productImage = await resolveProductImagePath(c);
+  } catch {
+    productImage = null;
+  }
+  res.json({
+    order_no: db.orderRef(c),
+    honoree_name: c.honoree_name,
+    design: c.design || null,
+    color: c.color || null,
+    product_image: productImage,
+    order: order
+      ? {
+          version: order.version,
+          version_label: labels[order.version] || order.version,
+          description: descriptions[order.version] || null,
+          // The package price, and — when the order is paid — what was actually
+          // charged after any coupon. `charged` is null for an unpaid order and
+          // 0 for a fully-free 100%-coupon one, so the page can tell them apart.
+          total: order.total != null ? order.total : null,
+          charged: order.paid && order.charged_total != null ? order.charged_total : null,
+          coupon: order.paid ? order.coupon || null : null,
+          paid: !!order.paid,
+          paid_at: order.paid_at || null,
+        }
+      : null,
+    // Everything POST /api/preview needs to re-render the buyer's own card, so
+    // the confirmation page can show the real thing rather than a stock photo.
+    // Mirrors the fields the wizard sent when the order was placed.
+    preview: c.theme
+      ? {
+          theme: c.theme,
+          name: c.honoree_name,
+          extra_fields: c.extra_fields || {},
+          word_font: c.word_font || null,
+          title: c.custom_title || null,
+          chasers: !!c.chasers,
+        }
+      : null,
+  });
+});
+
 // Add words (rejected when closed/expired).
 app.post('/api/collections/:id/words', (req, res) => {
   const c = db.getCollection(req.params.id);
@@ -1524,8 +1582,13 @@ function newPayToken() {
 // when nothing resolves. Fail-soft: any error -> null (the email just omits the
 // image). The design catalog is the ESM site/js/designs.js, dynamically imported
 // (and Node-cached) exactly as /api/admin/designs does.
-async function resolveProductImageUrl(collection, base) {
-  if (!base || !collection) return null;
+// The SITE-RELATIVE path ("/assets/designs/<id>/store.webp" or an owner-uploaded
+// "/content-uploads/<hash>.webp") of the product photo for a collection's chosen
+// design, or null when nothing resolves. Split out from resolveProductImageUrl so
+// the browser (payment confirmation page) can use a relative path while the email
+// builders — which need a fully-qualified src — prepend the public origin.
+async function resolveProductImagePath(collection) {
+  if (!collection) return null;
   try {
     const mod = await import(pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js')));
     const catalog = mod.DESIGNS || [];
@@ -1538,15 +1601,23 @@ async function resolveProductImageUrl(collection, base) {
     // Owner override (a validated /content-uploads/<hash> path) wins over the
     // shipped static photo.
     const override = designImages.get(d.id, 'store') || designImages.get(d.id, 'front');
-    if (override) return base + override;
+    if (override) return override;
     // Static fallback — only when the file actually exists on disk, so the email
     // never embeds a broken <img> (it would then just show the alt text).
     const rel = 'assets/designs/' + d.id + '/store.webp';
     if (!fs.existsSync(path.join(__dirname, '..', 'site', rel))) return null;
-    return base + '/' + rel;
+    return '/' + rel;
   } catch {
     return null;
   }
+}
+
+// The same photo as an ABSOLUTE url for the email builders (an <img> in an inbox
+// can't resolve a site-relative src). Null without a public origin to build on.
+async function resolveProductImageUrl(collection, base) {
+  if (!base) return null;
+  const rel = await resolveProductImagePath(collection);
+  return rel ? base + rel : null;
 }
 
 // Send the owner + buyer "order received" emails. Fired at ORDER CREATION, so

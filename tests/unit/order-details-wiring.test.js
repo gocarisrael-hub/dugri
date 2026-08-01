@@ -136,8 +136,10 @@ describe('order-detail email wiring (delivery order)', () => {
     expect(buyer).toBeTruthy();
     expect(buyerReceipt).toBeTruthy();
 
-    // Owner email: order id + keyed admin link + shipping address.
-    expect(owner.text).toContain('מספר הזמנה: ' + c.id);
+    // Owner email: order number (the short, quotable one — not the UUID) +
+    // keyed admin link + shipping address.
+    expect(c.order_no).toMatch(/^DG-\d+$/);
+    expect(owner.text).toContain('מספר הזמנה: ' + c.order_no);
     expect(owner.text).toContain('ניהול ההזמנה: ' + BASE_URL + '/admin.html?key=' + ADMIN_KEY);
     expect(owner.text).toContain('כתובת למשלוח: ');
     expect(owner.text).toContain('הרצל 5');

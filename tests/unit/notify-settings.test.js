@@ -90,6 +90,9 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
         'קיבלנו את ההזמנה שלך למשחק של שירה.',
         '',
         'פרטי ההזמנה:',
+        // The buyer's reference leads the shared detail block, so the order
+        // confirmation and the payment receipt quote the same number.
+        'מספר הזמנה: col-1',
         '· חבילה: משלוח עד הבית',
         'משחק מודפס ומוכן — חפיסת קלפים, לוח משחק ודף חוקים, שנשלח עד הבית.',
         '· מחיר: 199 ₪',

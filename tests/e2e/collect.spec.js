@@ -1502,6 +1502,124 @@ test('a successful card payment lands on the confirmation page and back to the w
   await expect(page.locator('#wordInput')).toBeVisible();
 });
 
+// "Payment received" on its own left the buyer with nothing to check: no
+// reference to quote, no record of WHAT they bought, and no way to reach us. The
+// confirmation page now carries the order number, an order summary with the
+// buyer's own rendered card, and a WhatsApp button that opens pre-addressed.
+test('the confirmation page shows the order number, what was ordered and a way to reach us', async ({
+  page,
+}) => {
+  await enableCardButton(page);
+  // The E2E server runs without PeleCard credentials, so pay/init always 503s —
+  // every payment test stubs it. The ORDER, though, is placed for real (below),
+  // so the summary the confirmation page reads back is genuine server data and
+  // not a fixture.
+  await page.route('**/api/collections/*/pay/init', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ free: true, paid: true, total: 0 }),
+    })
+  );
+
+  await createCollection(page, 'Shira');
+  const url = new URL(page.url());
+  // Place a REAL pickup order (the only version the server enables by default).
+  // page.request bypasses page.route, so this hits the actual API.
+  const placed = await page.request.post(`/api/collections/${url.searchParams.get('c')}/order`, {
+    data: { owner_token: url.searchParams.get('k'), version: 'pickup' },
+  });
+  expect(placed.status()).toBe(200);
+
+  await page.locator('#payPanel summary').click();
+  await page.click('#cardPayBtn');
+  await page.waitForURL(/pay-success\.html/);
+
+  // The order number: shown, and in the DG-#### shape a person can read out.
+  const orderNo = page.locator('#orderNoVal');
+  await expect(orderNo).toBeVisible();
+  const ref = (await orderNo.textContent()).trim();
+  expect(ref).toMatch(/^DG-\d+$/);
+
+  // What they bought — the package they actually chose, its price, and who the
+  // game is for. All of it read back from the real order.
+  const summary = page.locator('#summary');
+  await expect(summary).toBeVisible();
+  await expect(summary).toContainText('איסוף עצמי');
+  await expect(summary).toContainText('199 ₪');
+  await expect(summary).toContainText('Shira');
+  // ...with a picture of the card, not an empty frame.
+  await expect(page.locator('#shotImg')).toBeVisible();
+
+  // WhatsApp opens with the order already named, so the conversation doesn't
+  // start with us asking which order they mean.
+  const wa = page.locator('#waBtn');
+  await expect(wa).toBeVisible();
+  const href = await wa.getAttribute('href');
+  expect(href).toContain('wa.me/972546577715');
+  expect(decodeURIComponent(href)).toContain(ref);
+
+  // The old "everything is booked, you can relax" line is gone — nothing is
+  // booked until the buyer sends their words.
+  await expect(page.locator('body')).not.toContainText('הכול תפוס');
+});
+
+// A 100%-off coupon still produces a real, placed order — the confirmation has
+// to read as "paid: free", never as a blank or a 0 that looks like a bug. The
+// paid state can't be reached through the UI here (pay/init needs PeleCard
+// credentials the E2E server doesn't have), so the summary payload is stubbed
+// and this pins the PAGE's rendering of it.
+test('a fully-discounted order reads as paid and free on the confirmation page', async ({
+  page,
+}) => {
+  await page.route('**/api/collections/*/summary*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        order_no: 'DG-1042',
+        honoree_name: 'Shira',
+        design: 'קלאסי',
+        color: 'ורוד',
+        product_image: null,
+        order: {
+          version: 'pickup',
+          version_label: 'איסוף עצמי',
+          description: null,
+          total: 199,
+          charged: 0,
+          coupon: 'FREEALL',
+          paid: true,
+          paid_at: '2026-08-01T10:00:00.000Z',
+        },
+        preview: null,
+      }),
+    })
+  );
+
+  await page.goto('/pay-success.html?c=col-1&k=tok-1');
+  await expect(page.locator('#orderNoVal')).toHaveText('DG-1042');
+  const summary = page.locator('#summary');
+  await expect(summary).toContainText('שולם');
+  await expect(summary).toContainText('חינם (קופון 100%)');
+  // The package price is not what they paid, so it must not be shown as such.
+  await expect(summary).not.toContainText('199');
+});
+
+// The summary is owner-gated: it carries what was actually CHARGED, which the
+// collect link the owner shares with friends must never expose.
+test('the order summary refuses a request without the owner token', async ({ page, request }) => {
+  await stubPricing(page);
+  await createCollection(page, 'Shira');
+  const url = new URL(page.url());
+  const id = url.searchParams.get('c');
+  const token = url.searchParams.get('k');
+
+  expect((await request.get(`/api/collections/${id}/summary`)).status()).toBe(403);
+  expect((await request.get(`/api/collections/${id}/summary?k=nope`)).status()).toBe(403);
+  expect((await request.get(`/api/collections/${id}/summary?k=${token}`)).status()).toBe(200);
+});
+
 // A crafted ?back= must not turn the confirmation page into an open redirect.
 test('pay-success ignores an off-site ?back= and keeps its default link', async ({ page }) => {
   await page.goto('/pay-success.html?back=' + encodeURIComponent('https://evil.example/x'));
