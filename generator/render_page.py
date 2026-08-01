@@ -59,15 +59,46 @@ def _word_metrics(font_path, ref=200):
     return ImageFont.truetype(font_path, ref), ref
 
 
+# How many times the metric size a glyph is rendered at when its ink edges are
+# measured. A bitmap answers in whole pixels, so measuring at the metric size
+# alone quantises the bearings to 1 unit of 200 — 0.1 user units at card sizes.
+# Four times over gives a quarter-unit answer, which is a hundredth of a
+# millimetre on the printed card and costs one 2400px render per glyph, once.
+_BEARING_SS = 4
+
+
+@functools.lru_cache(maxsize=64)
+def _glyph_bearings(font, ref, ch):
+    """``(lsb, rsb)`` — the gaps from ``ch``'s ADVANCE edges to its INK, at ``ref``.
+
+    Measured off a rendered bitmap, because ``ImageFont.getbbox`` cannot answer
+    this: for the calibrated word faces it reports 0..advance horizontally — the
+    LAYOUT box, not the outline. Drawn and measured instead, Cafe's digits carry
+    left bearings of 14 / 8 / 7 / 2 units of a 200 em and right bearings of
+    9 / 8 / 8 / 9, so advance and ink are genuinely different spans and pinning
+    one does not pin the other. Nine glyphs per face, cached for the process.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+    big = ImageFont.truetype(font.path, ref * _BEARING_SS)
+    pad = ref * _BEARING_SS
+    im = Image.new("L", (pad * 3, pad * 3), 0)
+    ImageDraw.Draw(im).text((pad, pad), ch, font=big, fill=255)
+    bb = im.getbbox()
+    if not bb:                                # whitespace: no ink to bear
+        return 0.0, 0.0
+    return ((bb[0] - pad) / _BEARING_SS,
+            (big.getlength(ch) - (bb[2] - pad)) / _BEARING_SS)
+
+
 def _marker_geometry(font, ref, num, msize, advance=None):
     # Standard numbered look in RTL: the DIGIT is the rightmost glyph and the
     # PERIOD sits immediately to its LEFT (so reading right-to-left gives "1."),
     # then a gap, then the word. Digit and period are separate <text> runs so
     # bidi can never reorder the "." away from its digit. Returns the digit
     # string, the digit's own right-anchor offset, the period's right-anchor
-    # offset (both relative to the line's right edge, both <= 0) and the
-    # marker's total width (digit + tiny inter-gap + period) — the caller uses
-    # the width to place the word.
+    # offset (both relative to the line's right edge) and the marker's total
+    # width (digit + tiny inter-gap + period) — the caller uses the width to
+    # place the word.
     #
     # ``advance`` (in ``ref`` units) makes the DIGIT COLUMN a fixed width instead
     # of the drawn digit's own advance. The calibrated Hebrew faces have no
@@ -75,18 +106,42 @@ def _marker_geometry(font, ref, num, msize, advance=None):
     # of a 200 em against "2" at 110 — so measuring each digit put every entry's
     # period and word at a different x: 0.28 x the font size of drift, 1.7 mm at
     # the 16.8 these cards set at. That is the ragged left edge the owner
-    # reported. With a fixed column the period and the word land on exactly the
-    # same x for all four entries, and the digit is CENTRED in its column so the
-    # right edge stays as flush as a proportional face allows (half the drift,
-    # 0.8 mm, split evenly instead of all of it on one side).
+    # reported. The fixed column keeps the WORDS all starting at the same x.
+    #
+    # WHAT THE DIGIT IS PINNED BY. #294 centred each digit inside that column,
+    # which lined the PERIODS up (they hang off the column, not off the digit)
+    # and left the digits' own right edges ragged by the half-column difference:
+    # measured on grapefruit, the four digits' anchors spread over 2.24 units,
+    # 0.8 mm, exactly the wobble the owner then photographed. Her instruction is
+    # to align by "the right outer boundary of the number", so the DIGIT'S INK
+    # right edge is pinned to the line's right edge and the period is placed
+    # relative to that digit's ink. The dots therefore do NOT form a column any
+    # more — that is the accepted trade, not a regression; the two cannot both be
+    # true on a face whose digits are different widths.
+    #
+    # Ink, not advance: the right edge asked for is the one you can SEE, and the
+    # two differ by 8-9 units of a 200 em on this face (see ``_glyph_bearings``).
+    #
+    # Only when a fixed column is in play (a declared v2 card, where the four
+    # numbers really do share one anchor). The v1 sheet anchors every line on its
+    # OWN slot, so its digits never shared an x to be ragged about, and it stays
+    # byte for byte as calibrated.
     digit = f"{num}"
     digit_w = font.getlength(digit) / ref * msize
     col_w = digit_w if advance is None else advance / ref * msize
     dot_w = font.getlength(".") / ref * msize
     tiny = msize * 0.06                      # hairline gap between digit & period
-    digit_x = -(col_w - digit_w) / 2         # 0 unless a fixed column is asked for
-    dot_x = -col_w - tiny                    # period right edge, just left of it
     marker_w = col_w + tiny + dot_w          # full marker span (digit..period)
+    if advance is None:
+        return digit, 0.0, -col_w - tiny, marker_w
+    d_lsb, d_rsb = (v / ref * msize for v in _glyph_bearings(font, ref, digit))
+    _, dot_rsb = (v / ref * msize for v in _glyph_bearings(font, ref, "."))
+    ink_w = digit_w - d_lsb - d_rsb
+    # text-anchor="end" pins the ADVANCE right edge, so push it right by the
+    # digit's own right bearing and the INK lands exactly on the line's edge.
+    digit_x = d_rsb
+    # The period hangs off the digit's INK left edge, a hairline clear of it.
+    dot_x = -(ink_w + tiny) + dot_rsb
     return digit, digit_x, dot_x, marker_w
 
 
@@ -358,6 +413,74 @@ def _lead_for(font, ref, lines):
     return need + _WRAP_GAP
 
 
+# Every glyph a card can print: the Hebrew alphabet (final forms included),
+# Latin, the digits the markers set, and the punctuation a customer's phrase can
+# carry. The FONT's worst case is measured over all of it — see ``_font_lead``.
+_LEAD_REPERTOIRE = ("".join(chr(c) for c in range(0x05D0, 0x05EB))
+                    + "0123456789"
+                    + "abcdefghijklmnopqrstuvwxyz"
+                    + "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    + ".,:;!?()'\"-־׳״")
+
+
+@functools.lru_cache(maxsize=8)
+def _font_lead(font, ref):
+    """The ONE line pitch this face needs, as a multiple of the font size.
+
+    The owner's rule, in her words: "a fixed gap between lines (the minimum gap
+    (that obey the rule that no 2 letters touch each other) between the most
+    descent letter (above) and the most ascent letter (bottom)) … applied between
+    all lines, same phrase or also totally different words."
+
+    So it is a property of the FONT, not of the card: the deepest descender that
+    can ever sit above a line, plus the tallest ascender that can ever sit below
+    it, plus ``_WRAP_GAP`` of clear air. Measuring it per card — which is what
+    ``_lead_for`` does — gave two cards of the same deck two different rhythms
+    (30.56 against 29.39 on the owner's own two cards), and that difference is
+    exactly what she is reading as inconsistent.
+
+    Measured off rendered ink, not font metrics: these display faces draw far
+    outside their em and the metrics do not describe where the ink actually is.
+    Per 200-unit em, Cafe runs from y=0 ("h") to y=333 ("g"), 8..325 over Hebrew
+    alone ("ל" over "ך") — a 1.665 pitch. The other shipped faces are far tighter
+    (almoni 0.835, VarelaRound 1.005, Comix No2 1.095), so on those templates this
+    floor never binds and the origin's own spacing stands.
+
+    Drawn in chunks rather than glyph by glyph: only the vertical extremes matter,
+    so a whole run of glyphs shares one bitmap and one measurement. Once per face
+    per process.
+    """
+    from PIL import Image, ImageDraw
+    top = bottom = None
+    for i in range(0, len(_LEAD_REPERTOIRE), 24):
+        run = _LEAD_REPERTOIRE[i:i + 24]
+        w = max(int(font.getlength(run)) + 4 * ref, ref * 3)
+        im = Image.new("L", (w, ref * 3), 0)
+        ImageDraw.Draw(im).text((ref, ref), run, font=font, fill=255)
+        bb = im.getbbox()
+        if not bb:
+            continue
+        t, b = bb[1] - ref, bb[3] - ref
+        top = t if top is None else min(top, t)
+        bottom = b if bottom is None else max(bottom, b)
+    if top is None:
+        return 0.0
+    return (bottom - top) / ref + _WRAP_GAP
+
+
+def _card_lead(font, ref, lines):
+    """The pitch for one card: the font's fixed one, floored by these glyphs.
+
+    The font's number is the answer (see ``_font_lead``). ``_lead_for`` stays as a
+    guard for text outside ``_LEAD_REPERTOIRE`` — a Cyrillic or emoji character
+    that draws deeper than anything measured — because two letters touching is a
+    worse fault than one card in a deck spacing wider than its neighbours. On
+    ordinary Hebrew, Latin or numeric input it can never bite, so the gap is fixed
+    in practice as well as in principle.
+    """
+    return max(_font_lead(font, ref), _lead_for(font, ref, lines))
+
+
 def _slot_pitch(slots, i):
     """Distance from slot ``i`` to its nearest neighbouring slot centre.
 
@@ -368,6 +491,211 @@ def _slot_pitch(slots, i):
     c = [(s["y0"] + s["y1"]) / 2 for s in slots]
     gaps = [abs(c[i] - c[j]) for j in range(len(slots)) if j != i]
     return min(gaps) if gaps else (slots[i]["y1"] - slots[i]["y0"]) * 2
+
+
+# THE PRINTED FRAME. A card design draws a border and sets its text INSIDE it, so
+# the frame — not the recipe's slots — is what says how much paper the words may
+# use. Finding it is a geometry question the artwork already answers: a frame is a
+# STROKED outline (``fill="none"`` plus a ``stroke``) that spans most of the card
+# and is inset from all four edges. Nothing else in a Canva card export looks like
+# that — the background is a filled rect flush to the edge, the decorations are
+# filled paths a fraction of the card wide — so the test picks out the border and
+# only the border. Verified against the rasterised artwork: on grapefruit the scan
+# returns y=22.44..289.37 where a 200-dpi render of the same clean card puts the
+# stroke's own pixels at 22.50..289.13, i.e. the two agree to a third of a unit
+# (0.1 mm). Scanned rather than hardcoded so an owner-uploaded template — whose
+# calibration lives in the admin store and never passes through this repo — is
+# measured the same way grapefruit is.
+#
+# Read straight off the SVG instead of a raster because it needs no browser: the
+# layout runs 104 times per order and inside unit tests, and shelling out to
+# Chrome for each would be both slow and one more thing to fail in production. A
+# template whose border is drawn some other way (a filled ring, an image) simply
+# reports no frame, and the caller falls back to the trim-safe area.
+_DEFS_BLOCK = re.compile(r"<defs\b.*?</defs>", re.S)
+_GEOM_TAG = re.compile(r"<(/?)(g|path|rect)\b([^>]*?)(/?)>", re.S)
+_ATTR = re.compile(r'([a-zA-Z:-]+)\s*=\s*"([^"]*)"')
+_NUMBER = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+_TRANSFORM = re.compile(r"(matrix|translate|scale)\s*\(([^)]*)\)")
+# Any relative path command (lowercase), or one whose arguments are not xy pairs
+# (H/V/A). Either makes a coordinate-pair reading of ``d`` wrong, so such a path
+# is skipped rather than mis-measured. "Z" closes a subpath and takes no
+# arguments, so it is harmless.
+_PATH_UNREADABLE = re.compile(r"[a-gi-y]|[HVA]")
+_IDENTITY = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+
+def _mat_mul(a, b):
+    """Compose two SVG transform matrices ``(a, b, c, d, e, f)`` (a then b)."""
+    return (a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1],
+            a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
+            a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5])
+
+
+def _parse_transform(text):
+    """An SVG ``transform`` attribute as a matrix (matrix/translate/scale only).
+
+    Those three are what Canva emits — grapefruit's own border arrives as a
+    ``matrix(0.749732, 0, 0, 0.749732, 24.34, 22.44)`` around a path in its own
+    coordinates, so ignoring transforms would place the frame at 0,0. A rotate or
+    skew would need a different bbox anyway (the corners move), so it is left out
+    and such an element reports its untransformed box; the inset test then almost
+    always rejects it.
+    """
+    m = _IDENTITY
+    for kind, args in _TRANSFORM.findall(text or ""):
+        v = [float(x) for x in _NUMBER.findall(args)]
+        if kind == "matrix" and len(v) == 6:
+            t = tuple(v)
+        elif kind == "translate" and v:
+            t = (1.0, 0.0, 0.0, 1.0, v[0], v[1] if len(v) > 1 else 0.0)
+        elif kind == "scale" and v:
+            t = (v[0], 0.0, 0.0, v[1] if len(v) > 1 else v[0], 0.0, 0.0)
+        else:
+            continue
+        m = _mat_mul(m, t)
+    return m
+
+
+def _path_points(d):
+    """``d`` as a list of (x, y), or None when it cannot be read as xy pairs."""
+    if not d or _PATH_UNREADABLE.search(d):
+        return None
+    v = [float(x) for x in _NUMBER.findall(d)]
+    if len(v) < 4 or len(v) % 2:
+        return None
+    return list(zip(v[0::2], v[1::2]))
+
+
+# How much of the card a stroked outline must span, and how far it must be inset
+# from every edge, to count as the printed frame.
+_FRAME_MIN_SPAN = 0.50
+_FRAME_MIN_INSET = 0.01
+
+
+def frame_box(svg_text, cell):
+    """The printed frame's INTERIOR ``[x0, y0, x1, y1]`` in card units, or None.
+
+    ``cell`` is the card itself. The INNERMOST qualifying outline wins (smallest
+    bottom), because a design that draws two borders means the text to sit inside
+    the inner one.
+
+    The stroke's whole width is taken off each side, not half. A stroke is centred
+    on its path, so half would be the geometric interior — but the rasteriser puts
+    the painted edge a little past that (grapefruit: geometry says the bottom
+    stroke starts at 288.62, a 200-dpi render of the same card inks it from
+    288.00), and half a stroke of deliberate conservatism is cheaper than ink on
+    the border. On grapefruit that is 0.5 pt.
+    """
+    if not svg_text or not cell:
+        return None
+    x0c, y0c, x1c, y1c = cell
+    w, h = x1c - x0c, y1c - y0c
+    if w <= 0 or h <= 0:
+        return None
+    body = _DEFS_BLOCK.sub("", svg_text)
+    stack = [_IDENTITY]
+    best = None
+    for m in _GEOM_TAG.finditer(body):
+        close, name, attrs, selfclose = m.groups()
+        if name == "g":
+            if close:
+                if len(stack) > 1:
+                    stack.pop()
+            elif not selfclose:
+                stack.append(_mat_mul(stack[-1], _parse_transform(attrs)))
+            continue
+        if close:
+            continue
+        a = dict(_ATTR.findall(attrs))
+        # A frame is a STROKE, not a fill: an outline that paints no interior.
+        if (a.get("fill") or "").strip() != "none":
+            continue
+        if not (a.get("stroke") or "").strip() or a["stroke"].strip() == "none":
+            continue
+        t = _mat_mul(stack[-1], _parse_transform(attrs))
+        if name == "rect":
+            try:
+                rx, ry = float(a.get("x", 0)), float(a.get("y", 0))
+                rw, rh = float(a["width"]), float(a["height"])
+            except (KeyError, ValueError):
+                continue
+            pts = [(rx, ry), (rx + rw, ry), (rx, ry + rh), (rx + rw, ry + rh)]
+        else:
+            pts = _path_points(a.get("d"))
+            if not pts:
+                continue
+        xs = [t[0] * x + t[2] * y + t[4] for x, y in pts]
+        ys = [t[1] * x + t[3] * y + t[5] for x, y in pts]
+        box = [min(xs), min(ys), max(xs), max(ys)]
+        if box[2] - box[0] < _FRAME_MIN_SPAN * w or box[3] - box[1] < _FRAME_MIN_SPAN * h:
+            continue
+        inset = min(box[0] - x0c, box[1] - y0c, x1c - box[2], y1c - box[3])
+        if inset < _FRAME_MIN_INSET * min(w, h):
+            continue
+        try:
+            sw = float(a.get("stroke-width", 1))
+        except ValueError:
+            sw = 1.0
+        sw *= abs(t[0] * t[3] - t[1] * t[2]) ** 0.5     # the transform's scale
+        box = [box[0] + sw, box[1] + sw, box[2] - sw, box[3] - sw]
+        if best is None or box[3] < best[3]:
+            best = box
+    return best
+
+
+# RESERVED BOTTOM MARGIN. The owner's words: "i want to get some empty space from
+# the bottom that the word wont get to there (in this case the font will be
+# smaller)". So the usable area stops SHORT of the frame by a stated margin, and a
+# card whose lines will not fit inside what is left sets smaller — which she asked
+# for explicitly.
+#
+# In MILLIMETRES, because that is what it means on the printed card and what she
+# picks it by — the value here is the one chosen off a rendered proof of 0 / 4 /
+# 8 / 12 mm on real cards. The card's user units are POINTS throughout this
+# pipeline (deck_html sets the PDF page box in pt from the same viewBox), so the
+# conversion is exact rather than a guess.
+#
+# Measured from the LAST LINE'S INK, descenders included, to the frame's interior
+# edge: measuring from the baseline would let a "ך" eat the margin.
+#
+# 4 mm is the shipped default because it is the last value that is effectively
+# free: on her own wrapped cards it costs 21.30 -> 21.12 of type size (0.9%) and
+# turns an incidental 3.6 mm of clearance into a guaranteed 4.1 mm. 8 mm costs
+# 8%, 12 mm costs 15%. One env var away if the proof says otherwise.
+_PT_PER_MM = 72.0 / 25.4
+_BOTTOM_RESERVE_MM = float(os.environ.get("DUGRI_BOTTOM_RESERVE_MM", "4"))
+
+# Cache: the frame is a property of the ARTWORK, and one deck renders the same
+# eight fronts 104 times. Keyed by theme + front + payload size, so a test that
+# swaps a demo theme's artwork under the same name is not served a stale box.
+_FRAME_BOXES = {}
+
+
+def card_frame_box(theme, front_index, svg_text, cell):
+    """``frame_box`` for one card, computed once per (theme, front) per process."""
+    key = (theme, front_index, len(svg_text or ""))
+    if key not in _FRAME_BOXES:
+        _FRAME_BOXES[key] = frame_box(svg_text, cell)
+    return _FRAME_BOXES[key]
+
+
+def room_bottom(theme, front_index, svg_text, cell, safe_bottom):
+    """Lowest y a line's INK may reach on this card.
+
+    The frame's interior edge less ``_BOTTOM_RESERVE_MM``, never past the trim-safe
+    bound. With no detectable frame the safe bound carries the reserve instead —
+    a fraction of the card (``_CARD_SAFE``, inside the bleed) less the same
+    margin, which is all a full-bleed design can honestly promise: there is no
+    border to stay off, only the guillotine.
+    """
+    if not cell:
+        return safe_bottom
+    reserve = _BOTTOM_RESERVE_MM * _PT_PER_MM
+    box = card_frame_box(theme, front_index, svg_text, cell)
+    if box is None:
+        return safe_bottom - reserve
+    return min(safe_bottom, box[3]) - reserve
 
 
 # THE LINE GRID. ``_lead_for`` answers "how much room does a PAIR of lines need".
@@ -417,45 +745,98 @@ def _slot_pitch(slots, i):
 # gives gaps P (1->2), L (inside 2), P-L (2->3), P (3->4), and P = L = P-L has no
 # solution. Pinning cannot be kept; the grid gives it up deliberately.
 #
-# WHAT IT COSTS. The pitch is the calibrated span divided by the gaps that have to
-# fit inside it, so a card that wraps holds MORE lines in the SAME height and the
-# type comes down to clear at that tighter pitch: on grapefruit a card with one
-# wrapped entry sets at 16.3 where it used to set at 20.6. That is the honest
-# price of the rule — the old 20.6 only fitted because the wrapped entry's own
-# lines were spaced widely while the gap above them was squeezed to 22.1, which is
-# exactly the unevenness being fixed. Growing the block past the calibrated span
-# instead would keep the size, but it puts ink where the origin never had text —
-# on the printed frame or the artwork — so the span is treated as a hard envelope.
+# WHERE THE ENVELOPE COMES FROM. The pitch is a span divided by the gaps that must
+# fit inside it, so the span is the whole argument. #295 used the calibrated span —
+# first live slot's centre to last — and called it a hard envelope on the grounds
+# that growing past it "puts ink where the origin never had text". That was wrong,
+# and the artwork says so. Measured on grapefruit (a 223.92 x 312 card):
 #
-# Applied only to a DECLARED card (the v2 path that can wrap). The v1 sheet never
-# wraps, so its lines are its slots and re-gridding them would only move eight
-# live themes off their calibration for nothing.
+#   printed frame, interior   23.9 .. 287.9   (scanned off the artwork)
+#   slot centres              117.6, 148.8, 180.0, 211.2
+#   the calibrated span       117.6 .. 211.2  =  93.6 units
+#   FREE below the last line  211.2 .. 287.9  =  76.7 units, holding nothing
+#
+# So 78 units of clear paper — 83% again of the entire height the words were
+# allowed — sat directly beneath the last line, INSIDE the frame, unusable. The
+# calibrated span is not a design boundary at all: it is a record of where four
+# ONE-LINE origin words happened to sit. Treating that accident as a wall is what
+# made a card that needs a fifth line compress its pitch and drop its type
+# (grapefruit: 21.3 -> 16.3, and on cards that could not wrap it forced them to
+# stay unwrapped and shrink to fit the width instead — 17.9 on the owner's own
+# "הפועל תל אביב" card).
+#
+# So the envelope now comes from the CARD: the first live slot's centre down to
+# ``room_bottom`` — the printed frame's interior less the reserved bottom margin,
+# never past the trim. The first line stays pinned where it is calibrated, because
+# the space above it belongs to the title, and a card that needs more lines grows
+# DOWNWARD into the paper that was empty.
+#
+# The pitch is then a fixed multiple of the type size (``_font_lead``), floored by
+# the origin's own entry spacing, rather than whatever a fixed height leaves over.
+# So every gap is equal down the card AND the same from card to card — the
+# owner's rule — and the type keeps its size.
+#
+# WHERE IT APPLIES, AND FOR HOW LONG. Only to a card with a DECLARED words column
+# (``card_slots``), which today means the v2 single-card templates. The eight v1
+# sheet themes have no declared column yet, so they cannot wrap and are not
+# gridded — their lines are their slots and they render exactly as calibrated.
+#
+# That split is a MIGRATION STATE, not a design: the owner's plan is that "every
+# template will move to card slots". As each sheet theme gains a column it starts
+# wrapping and gridding like the rest, and once none are left the undeclared
+# branches below (and the ``declared_band`` flag itself) can be deleted outright.
+# Nothing here is written to keep two worlds working forever.
 
 
-def _grid_pitch(centers, n_lines, lead, size):
+def _grid_pitch(centers, gaps, lead, size, cap=None):
     """The single centre-to-centre distance for every pair of lines on a card.
 
-    The calibrated span divided by the gaps that have to fit in it — floored by
-    what the glyphs themselves need (``lead``), which only bites when there is no
-    span to divide (a lone entry). ``_fit_card`` has already shrunk the size until
-    the natural pitch clears that floor, so on a real card the span wins.
+    What the font needs (``lead`` x size, fixed per face — see ``_font_lead``),
+    floored by the calibrated span divided by ``gaps`` and capped by ``cap``.
+
+    ``gaps`` is what makes the rhythm the same on every card of a deck: pass the
+    number of gaps between the card's ENTRIES and the floor is the origin's own
+    spacing, a constant that does not care how many lines the card wraps onto. A
+    card that wraps then keeps that spacing and grows downward into the room below
+    (see WHERE THE ENVELOPE COMES FROM); a card that does not wrap sits exactly
+    where it always did. Passing the number of gaps between LINES is the legacy
+    behaviour — the calibrated span as a hard envelope — used only when there is
+    no card to measure the room against.
+
+    The floor is a PREFERENCE (keep the origin's airy spacing) and the font's own
+    need is the RULE (letters must not touch), so ``cap`` — what the remaining
+    paper actually allows — overrides the floor but never the rule. Without that
+    order a card of six lines was held at the origin's 31.2 spacing, ran out of
+    paper, and had to set at 7 points to make the arithmetic work.
     """
     span = (max(centers) - min(centers)) if centers else 0.0
-    natural = span / (n_lines - 1) if n_lines > 1 and span > 0 else 0.0
-    return max(natural, lead * size)
+    natural = span / gaps if gaps > 0 and span > 0 else 0.0
+    pitch = max(natural, lead * size)
+    if cap is not None:
+        pitch = max(lead * size, min(pitch, cap))
+    return pitch
 
 
-def _grid_centers(centers, counts, pitch):
+def _grid_centers(centers, counts, pitch, anchor_top=False):
     """Each entry's block centre on the card grid: ``{slot index: y}``.
 
     The run of lines is centred on the calibrated slots' own mid-point, so at the
     natural pitch the first line lands exactly on the first slot's centre and the
     last on the last slot's. An entry of two lines reports the centre BETWEEN
     them, which is what ``word_lines`` wants.
+
+    ``anchor_top`` pins the FIRST line to the first calibrated centre and lets the
+    run grow downward instead. Used by a card that has reached into the room below
+    the last slot: growing symmetrically would spend half that room upward, where
+    the title is, so the extra lines all go down. At the natural pitch the two are
+    the same placement, which is why a card that wraps nothing is unaffected.
     """
     n = sum(counts.values())
-    mid = ((min(centers) + max(centers)) / 2) if centers else 0.0
-    first = mid - (n - 1) * pitch / 2
+    if anchor_top:
+        first = min(centers) if centers else 0.0
+    else:
+        mid = ((min(centers) + max(centers)) / 2) if centers else 0.0
+        first = mid - (n - 1) * pitch / 2
     out, k = {}, 0
     for i in sorted(counts):
         out[i] = first + (k + (counts[i] - 1) / 2) * pitch
@@ -500,6 +881,36 @@ def _grid_cap(centers, counts, flat, lead, font, ref, vbounds):
         grow = (n - 1) * lead / 2
     caps = [c / d for c, d in ((first - top, above + grow),
                                (bottom - last, below + grow)) if d > 0]
+    return min(caps) if caps else float("inf")
+
+
+def _room_cap(centers, n_lines, lead, flat, font, ref, room):
+    """Largest size for a grid allowed to extend DOWN into the card's free room.
+
+    ``room`` is ``(top bound, bottom bound)``: the top is the card's safe area
+    (nothing may rise into it), the bottom is ``room_bottom`` — the printed
+    frame's inner edge less clear air. The first line stays pinned to the first
+    calibrated centre, so the block runs
+
+        first centre  +  (lines-1) x pitch  +  the last line's ink below its centre
+
+    and everything after the first term grows with the size. Solved at the TIGHTEST
+    pitch the font allows (``lead`` x size): the origin's wider entry spacing is a
+    preference the pitch keeps whenever the paper allows it, so it can never be the
+    thing that decides how large the card may set (see ``_grid_pitch``).
+    """
+    if not room or not flat or not centers or len(centers) < 2:
+        return float("inf")
+    top_bound, bottom_bound = room
+    first = min(centers)
+    above = _ink_reach(font, ref, flat[0])[0]
+    below = _ink_reach(font, ref, flat[-1])[1]
+    caps = []
+    if above > 0:
+        caps.append((first - top_bound) / above)
+    denom = max(n_lines - 1, 0) * lead + below
+    if denom > 0:
+        caps.append(max((bottom_bound - first) / denom, 0.0))
     return min(caps) if caps else float("inf")
 
 
@@ -559,8 +970,84 @@ def _balanced_split(font, text, n):
     return best[1]
 
 
+# BREAKING A WORD THAT HAS NOWHERE TO WRAP. "בית הכנסת הגדול" wraps at its
+# spaces; "אינטרנציונליזם" has none, so the only ways to fit it are to shrink the
+# WHOLE card (one size per card — that is the rule) or to break the word itself.
+# The owner asked for the break: a single over-long entry should not shrink the
+# other three.
+#
+# The character drawn at the break. Hebrew does not normally hyphenate, so this
+# was put to the owner as an open question and she chose the visible hyphen: a
+# silent split can read as two different words. Env-overridable, and setting it to
+# "" restores the silent split.
+_BREAK_HYPHEN = os.environ.get("DUGRI_BREAK_HYPHEN", "-")
+# How far the type has to fall before an ugly break is the better deal, as a
+# fraction of the card's target size. A word only slightly too wide is better set
+# a little smaller than broken across two lines — the break is visible on every
+# card of the deck, the 5% is not. At 0.85 an entry breaks only once keeping it
+# whole would cost the card more than 15% of its type.
+_BREAK_BELOW = float(os.environ.get("DUGRI_BREAK_BELOW", "0.85"))
+
+
+def _fit_chars(font, token, width, hyphen):
+    """How many leading characters of ``token`` fit ``width`` with ``hyphen``.
+
+    At least one and always fewer than the whole token, so a caller looping on the
+    remainder always makes progress. 0 when not even one character fits.
+    """
+    for k in range(len(token) - 1, 0, -1):
+        if font.getlength(token[:k] + hyphen) <= width:
+            return k
+    return 0
+
+
+def _wrap_at(font, text, width, hyphen):
+    """Greedily wrap ``text`` to ``width``, breaking INSIDE a word when it must."""
+    lines, cur = [], ""
+    for tok in text.split():
+        trial = f"{cur} {tok}" if cur else tok
+        if font.getlength(trial) <= width:
+            cur = trial
+            continue
+        if cur:
+            lines.append(cur)
+            cur = ""
+        while font.getlength(tok) > width:
+            k = _fit_chars(font, tok, width, hyphen)
+            if not k:
+                return None                   # not even one character fits
+            lines.append(tok[:k] + hyphen)
+            tok = tok[k:]
+        cur = tok
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def _hard_split(font, text, n, hyphen=_BREAK_HYPHEN):
+    """Split ``text`` into at most ``n`` lines, breaking inside words if needed.
+
+    The narrowest width that still fits ``n`` lines, found by bisection — which is
+    the same "minimise the widest line" objective ``_balanced_split`` brute-forces,
+    just over a search space (every character boundary) too large to enumerate.
+    Returns None when even a single character will not fit.
+    """
+    whole = font.getlength(text)
+    if whole <= 0 or n < 1:
+        return None
+    lo, hi, best = 0.0, whole, None
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        lines = _wrap_at(font, text, mid, hyphen)
+        if lines and len(lines) <= n:
+            best, hi = lines, mid
+        else:
+            lo = mid
+    return best
+
+
 def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
-                advance=None):
+                advance=None, uniform=None):
     """Every way to set one entry: ``{line_count: (lines, lead, max_size_ref)}``.
 
     ``max_size_ref`` is the largest font size at which that wrapping still fits
@@ -569,27 +1056,43 @@ def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
 
     ``max_lines`` of 1 forbids wrapping outright, which is how the v1 sheet path
     keeps its long words on one line (see ``_word_layouts``).
+
+    ``uniform`` is the card's target size, and it is what decides whether an entry
+    with too few spaces may be BROKEN mid-word: only when keeping it whole would
+    drag the card below ``_BREAK_BELOW`` of that target.
     """
     marker_ref = _line_width_at(font, ref, num, "", advance=advance)
-    out = {}
-    for n in range(1, max_lines + 1):
-        lines = _balanced_split(font, word, n)
-        if lines is None:
-            break
+
+    def budget(lines):
         widest = max(font.getlength(ln) for ln in lines)
         # Every line is anchored inside the same band: the first after the
         # marker, the continuations under the first line's text. So one budget
         # covers them all.
         denom = marker_ref + widest
-        out[n] = (lines, _lead_for(font, ref, lines),
-                  avail * ref / denom if denom > 0 and avail > 0 else float("inf"))
-    if not out:                                       # no words at all
+        return (lines, _lead_for(font, ref, lines),
+                avail * ref / denom if denom > 0 and avail > 0 else float("inf"))
+
+    out = {}
+    for n in range(1, max_lines + 1):
+        lines = _balanced_split(font, word, n)
+        if lines is None:                     # too few spaces to make n lines
+            break
+        out[n] = budget(lines)
+    if not out:                               # no words at all
         out[1] = ([word], 0.0, float("inf"))
+        return out
+    whole_word_best = max(v[2] for v in out.values())
+    if uniform and whole_word_best < uniform * _BREAK_BELOW:
+        for n in range(len(out) + 1, max_lines + 1):
+            lines = _hard_split(font, word, n)
+            if not lines or len(lines) in out:
+                break
+            out[len(lines)] = budget(lines)
     return out
 
 
 def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
-              vbounds=None):
+              vbounds=None, room=None):
     """Solve ONE font size for the whole card, and each entry's line count.
 
     Every word on a card renders at the SAME size — that is the origin
@@ -622,14 +1125,17 @@ def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
 
     ``grid`` switches the HEIGHT constraint from "these two entries must not
     collide" to "every line on the card sits on one pitch" (see THE LINE GRID
-    above). The pitch is the calibrated span divided by the gaps that must fit in
-    it, so it shrinks as the card takes more lines, and the size follows it down
-    until the glyphs clear at that pitch — the same ratchet the pairwise rule
-    applied, stated once for the whole card instead of per neighbouring pair. The
-    pairs are then measured over the card's WHOLE line sequence, continuations
-    included, so a gap that straddles two entries is held to the same clearance as
-    a gap inside one. Off (the v1 sheet, and any card that cannot wrap) the
-    original pairwise solve runs untouched.
+    above). The pairs are measured over the card's WHOLE line sequence,
+    continuations included, so a gap that straddles two entries is held to the
+    same clearance as a gap inside one. Off (the v1 sheet, and any card that
+    cannot wrap) the original pairwise solve runs untouched.
+
+    ``room`` is the card's real vertical envelope — the safe top and
+    ``room_bottom`` (the printed frame's inner edge less clear air). A card whose
+    wrapping ADDS lines is solved against it, so the extra lines go into the paper
+    that is actually free below the last calibrated line instead of squeezing the
+    pitch. Without it (no cell, no artwork to scan) the old calibrated-span
+    envelope stands, which is the conservative answer.
     """
     live = sorted(cands)
     best = None
@@ -639,20 +1145,25 @@ def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
         if grid:
             flat = [ln for i in live for ln in cands[i][counts[i]][0]]
             live_c = [centers[i] for i in live]
-            lead = _lead_for(font, ref, flat)
+            lead = _card_lead(font, ref, flat)
             span = max(live_c) - min(live_c)
-            # ONLY the lines the wrap ADDS are ours to fit. A card that wraps
-            # nothing sets exactly the entries the origin template set, at exactly
-            # the origin's pitch and (pinned) size — a calibration that has
-            # shipped, so overruling it here would shrink type on cards that read
-            # perfectly well and never had the reported fault. Measured on
-            # grapefruit: a plain four-word card would have dropped 21.3 -> 20.3
-            # to buy 1.5 units of clearance between two glyphs the ORIGIN already
-            # sets that close.
-            if len(flat) > len(live) and span > 0 and lead > 0:
+            if room:
+                # The card's real envelope: the first calibrated line down to the
+                # printed frame. Applied whether the card wraps or not, because
+                # the fixed font pitch can spread a plain card too.
+                size = min(size, _room_cap(live_c, len(flat), lead, flat,
+                                           font, ref, room))
+            elif len(flat) > len(live) and span > 0 and lead > 0:
+                # No card to measure: the calibrated span is the envelope, as it
+                # was before the frame could be read. ONLY the lines the wrap ADDS
+                # are ours to fit — a card that wraps nothing sets exactly the
+                # entries the origin template set.
                 size = min(size, span / ((len(flat) - 1) * lead))
-            size = min(size, _grid_cap(live_c, counts, flat, lead, font, ref,
-                                       vbounds))
+                size = min(size, _grid_cap(live_c, counts, flat, lead, font,
+                                           ref, vbounds))
+            else:
+                size = min(size, _grid_cap(live_c, counts, flat, lead, font, ref,
+                                           vbounds))
         else:
             lead = max([0.0] + [cands[i][counts[i]][1] for i in live])
             for a, b in zip(live, live[1:]):
@@ -667,7 +1178,7 @@ def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
 
 
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
-                  declared_band=False, safe=_CELL_SAFE):
+                  declared_band=False, safe=_CELL_SAFE, room_bottom=None):
     """Per-slot ``(size, [lines])`` for a card's words, or None for an empty slot.
 
     One UNIFORM font size is the target for every word (matching the origin's
@@ -688,7 +1199,9 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     * otherwise the slots were auto-detected, and a detected box is the ink
       extent of the ORIGIN word, not a column: the origin words were short, so
       the boxes are narrow and treating them as a text box wraps phrases that
-      have room to spare. Those fall back to the card-wide safe area.
+      have room to spare. Those fall back to the card-wide safe area and set one
+      line per entry. This is the UN-MIGRATED path — every template is moving to
+      ``card_slots``, and when the last one has, it goes.
 
     Either way ``safe`` floors the bound, so no line can reach the trim edge and
     be cut off the printed card.
@@ -697,6 +1210,12 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     entries (see ``_card_right_edge`` / ``_marker_advance``), so the numbers and
     the words line up down the card instead of each entry landing where its own
     slot and its own digit put it.
+
+    ``room_bottom`` is the lowest y a line's ink may reach on this card — the
+    printed frame's inner edge less clear air (see ``room_bottom``). It is what
+    lets a card that has to wrap grow DOWNWARD into paper that is already empty
+    rather than compressing its pitch; without it the calibrated span is the
+    envelope, as before.
     """
     import statistics
     heights = [s["y1"] - s["y0"] for s in slots]
@@ -731,27 +1250,49 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
         # to stay inside the card.
         cands[wi] = _candidates(font, ref, wi + 1, word, right - left,
                                 max_lines=_WRAP_MAX_LINES if declared_band else 1,
-                                advance=advance)
+                                advance=advance,
+                                uniform=uniform if declared_band else None)
     if not cands:
         return [None] * len(slots)
     centers = [(s["y0"] + s["y1"]) / 2 for s in slots]
     pitches = {i: _slot_pitch(slots, i) for i in cands}
     vbounds = ((cell[1] + (cell[3] - cell[1]) * safe,
                 cell[3] - (cell[3] - cell[1]) * safe) if cell else None)
+    live_c = [centers[i] for i in sorted(cands)]
+    # The room below is only usable when it IS below, and only when there are two
+    # calibrated centres to read a spacing from. A bound that lands above the last
+    # line says the scan found something that is not the frame the words sit in,
+    # and the calibrated span is the safer answer.
+    room = None
+    if (vbounds and room_bottom is not None and len(live_c) > 1
+            and max(live_c) > min(live_c) and room_bottom > max(live_c)):
+        room = (vbounds[0], min(vbounds[1], room_bottom))
     size, counts, lead = _fit_card(cands, pitches, centers, uniform,
                                    font=font, ref=ref, grid=declared_band,
-                                   vbounds=vbounds)
+                                   vbounds=vbounds, room=room)
     if not declared_band:
         return [None if wi not in cands
                 else Layout(size, cands[wi][counts[wi]][0], lead)
                 for wi in range(len(slots))]
     # Declared card: place every line on the card-wide grid and hand each entry
     # the centre the grid put it on, plus the grid pitch as its lead — so the gap
-    # inside a wrapped entry IS the gap between two entries.
-    live_c = [centers[i] for i in sorted(cands)]
+    # inside a wrapped entry IS the gap between two entries, and the gap on THIS
+    # card is the gap on every other card of the deck.
     lines = sum(counts.values())
-    pitch = _grid_pitch(live_c, lines, lead, size)
-    grid_c = _grid_centers(live_c, counts, pitch)
+    # With a card to measure, the pitch floor is the origin's ENTRY spacing (a
+    # constant per template) and the ceiling is the paper left below the first
+    # line; without one it is the legacy line-span envelope.
+    cap = None
+    if room and lines > 1:
+        last = cands[max(cands)][counts[max(cands)]][0][-1]
+        below = _ink_reach(font, ref, last)[1] * size
+        cap = (room[1] - min(live_c) - below) / (lines - 1)
+    pitch = _grid_pitch(live_c, (len(live_c) - 1) if room else (lines - 1),
+                        lead, size, cap=cap)
+    # Pinned to the first calibrated line, growing downward, whenever the room is
+    # known — the space above belongs to the title. Without a known room the block
+    # stays centred on the calibrated span, exactly as it was placed before.
+    grid_c = _grid_centers(live_c, counts, pitch, anchor_top=bool(room))
     return [None if wi not in cands
             else Layout(size, cands[wi][counts[wi]][0],
                         pitch / size if size else 0.0, grid_c[wi])
@@ -1061,8 +1602,12 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                        bold_w=ts.get("bold_w"))
 
 
-def _words_overlay(slots, words, cfg, word_font, cell):
-    """The four numbered word lines for one card, as SVG markup."""
+def _words_overlay(slots, words, cfg, word_font, cell, room=None):
+    """The four numbered word lines for one card, as SVG markup.
+
+    ``room`` is the lowest y a line's ink may reach (see ``room_bottom``) — the
+    card's real vertical envelope, which a wrapping card may grow down into.
+    """
     if not slots:
         return ""
     wf_metrics, wf_ref = _word_metrics(word_font)
@@ -1071,7 +1616,7 @@ def _words_overlay(slots, words, cfg, word_font, cell):
     declared = bool((cfg.get("card_slots") or {}).get("words"))
     layouts = _word_layouts(slots, words, wf_metrics, wf_ref, cell=cell,
                             word_size=cfg.get("word_size"), safe=_CARD_SAFE,
-                            declared_band=declared)
+                            declared_band=declared, room_bottom=room)
     # One anchor and one digit column for the whole card, so the four numbers sit
     # in a column and the four words start at the same x. Both must match what
     # _word_layouts fitted against, or the render would overflow the band it was
@@ -1102,7 +1647,7 @@ def _words_overlay(slots, words, cfg, word_font, cell):
 
 
 def card_overlay(theme, recipe, words, title_lines, front_index=None,
-                 word_font=None, kind="word", card_vb=None):
+                 word_font=None, kind="word", card_vb=None, card_svg=None):
     """Title + word markup for ONE card, in the card's own viewBox units.
 
     ``front_index`` selects which front's title box to use: the words are SHARED
@@ -1115,6 +1660,12 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
     which prefer the owner's saved ``card_slots`` calibration and fall back to
     the auto-detected recipe. Reading the recipe directly here would silently
     ignore every measurement made through the admin calibration form.
+
+    ``card_svg`` is the artwork this overlay is going onto. It is what the words
+    are allowed to measure their room against — the printed frame is in there and
+    nowhere else (see THE PRINTED FRAME). Every production caller already holds
+    the text, so it is passed rather than re-read; omitted, the card falls back to
+    the trim-safe area, which is where a v2 card sat before the frame was read.
     """
     if kind == "photo":
         return ""
@@ -1123,11 +1674,14 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
     cell = (recipe.get("card") or {}).get("cell") or _recipe_cell(recipe, card_vb)
     word_font_path = config.resolve_word_font(theme, word_font)
     title_font_path = config.font_path(theme, cfg["title_font"])
+    safe_bottom = cell[3] - (cell[3] - cell[1]) * _CARD_SAFE if cell else None
+    room = (room_bottom(theme, front_index, card_svg, cell, safe_bottom)
+            if card_svg and cell else None)
     return (_title_overlay(config.card_title_boxes(cfg, recipe, front_index, cell),
                            title_lines, cfg, title_font_path, cell,
                            offset=config.front_offset(cfg, front_index))
             + _words_overlay(config.card_word_boxes(cfg, recipe, cell), words,
-                             cfg, word_font_path, cell))
+                             cfg, word_font_path, cell, room=room))
 
 
 def back_overlay(theme, recipe, title_lines, card_vb=None):
@@ -1254,7 +1808,7 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
     else:
         overlay = card_overlay(theme, recipe, words, title_lines,
                                front_index=front_index, word_font=word_font,
-                               card_vb=card_vb)
+                               card_vb=card_vb, card_svg=svg)
     return svg.replace("</svg>", style + overlay + "</svg>")
 
 
@@ -1314,7 +1868,7 @@ def render_fronts_strip(theme, fronts, words, title_lines, out_dir,
             card_vb = None
         overlay = card_overlay(theme, recipe, words, title_lines,
                                front_index=front, word_font=word_font,
-                               card_vb=card_vb)
+                               card_vb=card_vb, card_svg=svg)
         cards.append(svg.replace("</svg>", overlay + "</svg>"))
     w, h = dims(config.card_path(theme, fronts[0]))
     body = "".join(f'<div class="c">{svg}</div>' for svg in cards)

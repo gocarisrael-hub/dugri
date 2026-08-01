@@ -165,12 +165,50 @@ def test_no_word_can_reach_the_trim_edge():
             f"word {i + 1} crosses the trim line and would be cut off")
 
 
-def test_unbreakable_word_shrinks_rather_than_wrapping():
+# --- 2b-ii. breaking a word that has nowhere to wrap ------------------------
+# The owner: a single over-long entry should not shrink the other three. So a
+# word with no spaces BREAKS, and — her answer to the question we put to her —
+# shows a hyphen at the break rather than splitting silently.
+
+def test_an_unbreakable_word_breaks_rather_than_shrinking_the_whole_card():
     font, ref = _cafe()
     solid = "אבגדהוזחטיכלמנסעפצקרשתאבגדהוז"          # no spaces to wrap at
     lay = _gf_layouts(font, ref, [solid])[0]
-    assert lay[1] == [solid], "a word with no spaces has nowhere to wrap"
-    assert lay[0] < _GF_SLOTS[0]["y1"] - _GF_SLOTS[0]["y0"], "so it must shrink instead"
+    assert len(lay.lines) > 1, "a word too wide for the column must break"
+    rejoined = "".join(ln[:-1] if ln.endswith(rp._BREAK_HYPHEN) else ln
+                       for ln in lay.lines)
+    assert rejoined == solid, "breaking must not lose or reorder a single letter"
+
+
+def test_a_broken_word_shows_the_hyphen():
+    """Her answer to the open question: a visible "-", not a silent split."""
+    assert rp._BREAK_HYPHEN == "-"
+    font, _ = _cafe()
+    lines = rp._hard_split(font, "אבגדהוזחטיכלמנסעפצקרשתאבגדהוז", 2)
+    assert len(lines) == 2
+    assert lines[0].endswith("-"), f"the break must be marked — got {lines}"
+    assert not lines[-1].endswith("-"), "the last line ends the word, not a break"
+
+
+def test_a_silent_split_is_one_constant_away():
+    """The hyphen is a single knob, so the choice can be revisited without code."""
+    font, _ = _cafe()
+    lines = rp._hard_split(font, "אבגדהוזחטיכלמנסעפצקרשתאבגדהוז", 2, hyphen="")
+    assert len(lines) == 2 and not any(ln.endswith("-") for ln in lines)
+
+
+def test_a_word_only_slightly_too_wide_shrinks_instead_of_breaking():
+    """A break is visible on every printed card; 5% of type size is not. So a word
+    that costs the card less than _BREAK_BELOW stays whole."""
+    font, ref = _cafe()
+    avail, word = 90.0, "אבגדהוזחט"
+    whole = rp._candidates(font, ref, 1, word, avail)[1][2]
+    assert list(rp._candidates(font, ref, 1, word, avail,
+                               uniform=whole / 0.95)) == [1], \
+        "must not break to buy 5% of type size"
+    assert len(rp._candidates(font, ref, 1, word, avail,
+                              uniform=whole / 0.5)) > 1, \
+        "a word that halves the card's type must break"
 
 
 def test_short_words_are_untouched_by_wrapping():
@@ -289,9 +327,7 @@ def test_a_short_two_word_phrase_no_longer_wraps():
 
 def test_a_genuinely_long_phrase_still_wraps():
     font, ref = _cafe()
-    layouts = rp._word_layouts(_BP_SLOTS, ["סין", "מחבת", "אהבה", _GF_PHRASE],
-                               font, ref, cell=_BP_CELL, declared_band=True,
-                               safe=rp._CARD_SAFE)
+    layouts = _bp_layouts(font, ref, ["סין", "מחבת", "אהבה", _GF_PHRASE])
     assert len(layouts[3].lines) > 1, "a phrase wider than the whole band must wrap"
 
 
@@ -338,15 +374,48 @@ def test_every_word_on_a_card_starts_at_the_same_x():
     assert len(xs) == 1, f"four entries must share one word x — got {sorted(xs)}"
 
 
-def test_the_period_column_is_fixed_too():
-    font, _ = _cafe()
+def _digit_ink_right(font, ref, svg, size):
+    """Where the digit's INK right edge lands, from the emitted markup.
+
+    The run is anchored by its ADVANCE, so the ink edge is the anchor less the
+    glyph's right side bearing — which is the whole point of the alignment.
+    """
+    m = re.search(r'<text x="([-0-9.]+)"[^>]*direction="ltr"[^>]*>(\d)</text>', svg)
+    x, digit = float(m.group(1)), m.group(2)
+    return x - rp._glyph_bearings(font, ref, digit)[1] / ref * size
+
+
+def test_the_digits_share_one_right_ink_edge():
+    """Her instruction: "align by the right outer boundry of the number".
+
+    #294 aligned the PERIODS (a side effect of centring each digit in a fixed
+    column) and left the digits' own right edges 2.24 units apart.
+    """
+    font, ref = _cafe()
     adv = rp._marker_advance(font, 4)
-    dots = set()
+    msize = 20 * rp._MARKER_SCALE
+    edges = set()
     for num in (1, 2, 3, 4):
         svg = rp.word_lines(190, 50, 20, "#000", num, ["מסיבה"], CAFE,
                             marker_advance=adv)
-        dots.add(re.search(r'<text x="([-0-9.]+)"[^>]*>\.</text>', svg).group(1))
-    assert len(dots) == 1, f"the periods must line up — got {sorted(dots)}"
+        edges.add(_digit_ink_right(font, ref, svg, msize))
+    # The markup writes x to two decimals, so the four edges agree to within that
+    # rounding — 0.01 user units, a fortieth of a printed millimetre.
+    assert max(edges) - min(edges) <= 0.01, (
+        f"the digits' right edges must line up — got {sorted(edges)}")
+    assert abs(max(edges) - 190) <= 0.01, "…on the line's own right edge"
+
+
+def test_the_periods_are_no_longer_a_column():
+    """The accepted trade: a proportional face cannot align both. The period hangs
+    off its own digit's ink, so the dots move and the DIGITS line up instead."""
+    font, _ = _cafe()
+    adv = rp._marker_advance(font, 4)
+    dots = {re.search(r'<text x="([-0-9.]+)"[^>]*>\.</text>',
+                      rp.word_lines(190, 50, 20, "#000", num, ["מסיבה"], CAFE,
+                                    marker_advance=adv)).group(1)
+            for num in (1, 2, 3, 4)}
+    assert len(dots) > 1, "the dots follow the digits now"
 
 
 def test_without_a_fixed_advance_the_marker_is_measured_as_before():
@@ -466,14 +535,30 @@ _CARD_HAPOEL = ["מונדיאל", "דובונים", "שיר השירים", "הפ
 _CARD_ARZOT = ["אורגניה", "מוסיקה", "אוסייתי", "ארצות הברית"]
 
 
-def _bp_layouts(font, ref, words, band=None, slots=None):
-    """Lay a card out the way the affected deck does, at a given column bound."""
+# The room a real card of this size has below its last calibrated line. The
+# affected deck is an owner upload and not in this repo, so grapefruit's own
+# printed frame — same 223.92 x 312 card — stands in for it: interior bottom
+# 287.87, less the reserved bottom margin.
+_BP_FRAME_BOTTOM = 287.87
+
+
+def _bp_room():
+    return _BP_FRAME_BOTTOM - rp._BOTTOM_RESERVE_MM * rp._PT_PER_MM
+
+
+def _bp_layouts(font, ref, words, band=None, slots=None, room=-1):
+    """Lay a card out the way the affected deck does, at a given column bound.
+
+    ``room`` defaults to the card's real one (the production path); pass None for
+    the legacy no-artwork path.
+    """
     saved = rp._BAND_LEFT_MAX
     if band is not None:
         rp._BAND_LEFT_MAX = band
     try:
         return rp._word_layouts(slots or _BP_SLOTS, words, font, ref, cell=_BP_CELL,
-                                declared_band=True, safe=rp._CARD_SAFE)
+                                declared_band=True, safe=rp._CARD_SAFE,
+                                room_bottom=_bp_room() if room == -1 else room)
     finally:
         rp._BAND_LEFT_MAX = saved
 
@@ -508,8 +593,8 @@ def test_the_reported_card_wraps_its_last_entry():
     """Sanity: without the wrap there is no bug to fix."""
     font, ref = _cafe()
     layouts = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN)
-    assert [len(l.lines) for l in layouts] == [1, 1, 1, 2]
     assert layouts[3].lines == ["הפועל", "תל אביב"]
+    assert sum(len(l.lines) for l in layouts) > len(layouts), "something must wrap"
 
 
 def test_centring_each_entry_on_its_own_slot_is_what_made_the_gaps_uneven():
@@ -592,17 +677,21 @@ def test_a_card_that_never_wraps_loses_the_slot_wobble_too():
     _assert_one_gap(layouts, _BP_SLOTS, "no wrapping at all")
 
 
-def test_the_grid_keeps_the_first_and_last_calibrated_positions():
-    """The pitch is the calibrated span divided up, so the extremes do not move:
-    a wrapped card fits its extra lines INSIDE the origin's own extent."""
+def test_the_grid_is_pinned_to_the_first_calibrated_line_and_grows_downward():
+    """The room below the last line is what a wrapped card reaches into, so the
+    block grows DOWN. The space above the first line belongs to the title, so the
+    first line never moves."""
     font, ref = _cafe()
     centers = [(s["y0"] + s["y1"]) / 2 for s in _BP_SLOTS]
     for words in (["מונדיאל", "דובונים", "אוסייתי", "מדונה"], _CARD_HAPOEL,
                   ["מונדיאל", "הפועל תל אביב", "שיר השירים", "ארצות הברית"]):
-        cs = _line_centers(_bp_layouts(font, ref, words, band=_TRACED_COLUMN),
-                           _BP_SLOTS)
+        layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+        cs = _line_centers(layouts, _BP_SLOTS)
         assert abs(cs[0] - centers[0]) < 1e-9, "the first line must stay put"
-        assert abs(cs[-1] - centers[-1]) < 1e-9, "and so must the last"
+        assert cs[-1] >= centers[-1] - 1e-9, "and the block may only grow downward"
+        below = rp._ink_reach(font, ref, layouts[-1].lines[-1])[1]
+        assert cs[-1] + below * layouts[-1].size <= _bp_room() + 1e-9, (
+            "…never past the reserved bottom margin")
 
 
 def test_the_uniform_pitch_clears_the_worst_pair_on_the_card():
@@ -641,6 +730,175 @@ def test_no_line_on_a_gridded_card_crosses_the_trim():
         below = rp._ink_reach(font, ref, flat[-1])[1] * size
         assert cs[0] - above >= top - 1e-9, f"{words}: the first line runs off the top"
         assert cs[-1] + below <= bottom + 1e-9, f"{words}: the last line is cut off"
+
+
+# --- 2g. the room the card actually has -------------------------------------
+# #295 treated the calibrated span (first slot centre to last) as a hard envelope
+# and justified it as "growing past it puts ink where the origin never had text".
+# The artwork says otherwise: grapefruit's printed frame leaves ~77 units of clear
+# paper below the last slot centre, and squeezing the pitch to avoid it dropped
+# the type from 21.3 to 16.3. These pin the frame scan, the room it opens, and the
+# margin the owner asked to keep clear at the bottom of it.
+
+_GF_CLEAN_2 = os.path.join(
+    config.REPO, "resources", "canva", "templates", "grapefruit", "clean", "2.svg")
+
+
+def _gf_clean():
+    return open(_GF_CLEAN_2, encoding="utf-8").read()
+
+
+def test_the_printed_frame_is_scanned_off_the_real_artwork():
+    """Not hardcoded: an owner-uploaded template must be measured the same way.
+
+    Cross-checked against a 200-dpi render of this same clean card, which inks the
+    bottom stroke from y=288.0 — the scan must land on or just inside that.
+    """
+    box = rp.frame_box(_gf_clean(), [0, 0, 223.92, 312.0])
+    assert box is not None, "grapefruit draws a frame; the scan must find it"
+    assert 285.0 < box[3] <= 288.5, f"frame interior bottom looks wrong: {box}"
+    assert 20.0 < box[1] < 27.0 and 20.0 < box[0] < 30.0
+
+
+def test_the_frame_scan_follows_a_transform():
+    """Grapefruit's border is a path in its own coordinates under a matrix(); read
+    without the transform it would report the frame at 0,0."""
+    svg = ('<svg viewBox="0 0 100 200"><path fill="none" stroke="#000" '
+           'stroke-width="0" transform="matrix(0.5, 0, 0, 0.5, 10, 20)" '
+           'd="M 0 0 L 160 0 L 160 320 L 0 320 Z"/></svg>')
+    assert rp.frame_box(svg, [0, 0, 100, 200]) == [10, 20, 90, 180]
+
+
+def test_a_filled_shape_is_not_a_frame():
+    """A frame is a STROKE. The full-bleed background is a filled rect the same
+    size as the card, and reading it as the frame would licence ink to the edge."""
+    svg = ('<svg viewBox="0 0 100 200"><rect fill="#fff" x="5" y="5" '
+           'width="90" height="190"/></svg>')
+    assert rp.frame_box(svg, [0, 0, 100, 200]) is None
+
+
+def test_a_card_with_no_frame_falls_back_to_the_safe_area_less_the_margin():
+    """Stated in the code and here: a full-bleed design has no border to stay off,
+    only the guillotine — so the trim-safe bound carries the reserve instead."""
+    cell = [0, 0, 223.92, 312.0]
+    safe = cell[3] - (cell[3] - cell[1]) * rp._CARD_SAFE
+    got = rp.room_bottom("no-such-theme", 1, "<svg viewBox='0 0 224 312'></svg>",
+                         cell, safe)
+    assert abs(got - (safe - rp._BOTTOM_RESERVE_MM * rp._PT_PER_MM)) < 1e-9
+
+
+def test_the_free_room_below_the_last_line_is_real():
+    """The measurement that makes the old envelope indefensible."""
+    box = rp.frame_box(_gf_clean(), [0, 0, 223.92, 312.0])
+    last_slot_center = (_BP_SLOTS[-1]["y0"] + _BP_SLOTS[-1]["y1"]) / 2
+    span = last_slot_center - (_BP_SLOTS[0]["y0"] + _BP_SLOTS[0]["y1"]) / 2
+    free = box[3] - last_slot_center
+    assert free > 70, f"only {free:.1f} units free below the last line?"
+    assert free > 0.8 * span, (
+        "the empty paper below the words is comparable to the whole height they "
+        f"were allowed ({free:.1f} against {span:.1f})")
+
+
+def test_the_extra_room_is_what_keeps_the_type_at_full_size():
+    """Her card, with and without the room: the same words, the same wrap, and a
+    third of the type size riding on which envelope is used."""
+    font, ref = _cafe()
+    penned = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN, room=None)
+    roomy = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN)
+    assert roomy[0].size > penned[0].size * 1.2, (
+        f"{penned[0].size:.2f} -> {roomy[0].size:.2f}")
+
+
+def test_the_reserved_bottom_margin_is_kept_clear():
+    """Her words: "i want to get some empty space from the bottom that the word
+    wont get to there (in this case the font will be smaller)". Measured from the
+    last line's INK — a descender must not eat the margin."""
+    font, ref = _cafe()
+    words = ["מונדיאל", "הפועל תל אביב", "שיר השירים", "ארצות הברית"]
+    saved = rp._BOTTOM_RESERVE_MM
+    try:
+        sizes = {}
+        for mm in (0, 10):
+            rp._BOTTOM_RESERVE_MM = mm
+            layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+            cs = _line_centers(layouts, _BP_SLOTS)
+            live = [l for l in layouts if l is not None]
+            last = live[-1].lines[-1]
+            ink = cs[-1] + rp._ink_reach(font, ref, last)[1] * live[0].size
+            assert ink <= _BP_FRAME_BOTTOM - mm * rp._PT_PER_MM + 1e-9, (
+                f"{mm}mm reserve: ink reaches {ink:.2f}")
+            sizes[mm] = live[0].size
+        assert sizes[10] < sizes[0], (
+            "reserving 10 mm has to cost type size, or it is not being applied — "
+            f"{sizes}")
+    finally:
+        rp._BOTTOM_RESERVE_MM = saved
+
+
+def test_the_bottom_margin_is_stated_in_millimetres():
+    """It is a printed distance, so it is set as one — and the card's user units
+    are points throughout this pipeline (deck_html sets the PDF page box in pt)."""
+    assert abs(rp._PT_PER_MM - 72.0 / 25.4) < 1e-12
+    assert 0 <= rp._BOTTOM_RESERVE_MM <= 20
+
+
+# --- 2h. ONE line gap per FONT, not per card --------------------------------
+# "i want a fixed gap between lines (the minimum gap (that obey the rule that no 2
+# letters touch each other) between the most descent letter (above) and the most
+# ascent letter (bottom)) ... this gap should be applied between all lines, same
+# phrase or also totally different words."
+
+_BP_FLOOR_PITCH = (((_BP_SLOTS[-1]["y0"] + _BP_SLOTS[-1]["y1"]) / 2
+                    - (_BP_SLOTS[0]["y0"] + _BP_SLOTS[0]["y1"]) / 2)
+                   / (len(_BP_SLOTS) - 1))
+
+
+def test_the_line_gap_comes_from_the_font_not_the_cards_own_glyphs():
+    """``_lead_for`` answered per card, so two cards of one deck got two rhythms
+    (30.56 against 29.39 on the owner's own pair). The pitch is now the FONT's
+    worst case, floored by the origin's own entry spacing — neither of which
+    knows which letters this particular card happens to carry."""
+    font, ref = _cafe()
+    lead = rp._font_lead(font, ref)
+    for words in (_CARD_HAPOEL, _CARD_ARZOT,
+                  ["ים", "ים", "ים", "ים"],            # nothing descends or rises
+                  ["לקחת", "לקחת", "לקחת", "לקחת"]):   # both, at their extremes
+        layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+        live = [l for l in layouts if l is not None]
+        pitch = live[0].lead * live[0].size
+        assert abs(pitch - max(_BP_FLOOR_PITCH, lead * live[0].size)) < 1e-9, (
+            f"{words}: the gap must not depend on this card's glyphs — {pitch}")
+
+
+def test_two_cards_that_set_at_one_size_show_one_gap():
+    """The owner's complaint, stated as a test: her two cards side by side."""
+    font, ref = _cafe()
+    a, b = (_bp_layouts(font, ref, w) for w in (_CARD_HAPOEL, _CARD_ARZOT))
+    assert abs(a[0].size - b[0].size) < 1e-9, "this fixture needs one size"
+    assert abs(a[0].lead * a[0].size - b[0].lead * b[0].size) < 1e-9
+
+
+def test_the_font_gap_clears_the_deepest_descender_over_the_tallest_ascender():
+    """Cafe runs from y=0 to y=333 of a 200 em across the repertoire, so any two
+    lines set at this pitch clear each other whatever letters they carry."""
+    font, ref = _cafe()
+    lead = rp._font_lead(font, ref)
+    worst = 0.0
+    for upper in ("ך", "g", "ץ", "לקחת"):
+        for lower in ("ל", "h", "אבג"):
+            worst = max(worst, (font.getbbox(upper)[3]
+                                - font.getbbox(lower)[1]) / ref)
+    assert lead >= worst, f"{lead} does not clear {worst}"
+    assert lead >= worst + rp._WRAP_GAP - 1e-9, "…with clear air to spare"
+
+
+def test_a_tighter_face_is_not_spread_by_the_rule():
+    """The floor is the FONT's need, so a face that does not draw outside its em
+    keeps the origin's own spacing: only Cafe-class faces move."""
+    font, ref = _cafe()
+    tight = ImageFont.truetype(
+        os.path.join(HERE, "word-fonts", "almoni-neue-aaa-bold-OFFICE.ttf"), 200)
+    assert rp._font_lead(tight, ref) < rp._font_lead(font, ref) * 0.6
 
 
 def test_a_lone_entry_still_sits_on_its_own_slot():
