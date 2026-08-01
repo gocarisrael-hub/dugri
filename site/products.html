@@ -179,6 +179,36 @@
       .store .wrap {
         max-width: 1240px;
       }
+      /* Store masthead. Centred and hairline-separated like every other section
+         head on the site; sized a step below the home hero so the pictures still
+         lead the page. */
+      .store-head {
+        text-align: center;
+        max-width: 620px;
+        margin: 0 auto 30px;
+        padding-bottom: 24px;
+        border-bottom: 1px solid var(--line);
+      }
+      .store-head h1 {
+        font-size: 30px;
+      }
+      .store-head p {
+        color: var(--muted);
+        margin-top: 10px;
+        font-size: 16px;
+        font-weight: var(--sub-weight);
+      }
+      @media (min-width: 720px) {
+        .store-head {
+          margin-bottom: 38px;
+        }
+        .store-head h1 {
+          font-size: 40px;
+        }
+        .store-head p {
+          font-size: 17px;
+        }
+      }
       .store-grid {
         display: grid;
         /* 2 columns on mobile; 3 on tablet; 4 on wide desktop. */
@@ -458,8 +488,16 @@
            design's detail page (product.html?design=<id>). -->
       <section class="store">
         <div class="wrap">
-          <!-- Clean "just the pictures" grid — heading kept for a11y/SEO, visually hidden. -->
-          <h1 class="visually-hidden" data-edit="products-heading">העיצובים של דוגרי</h1>
+          <!-- The store used to open cold: the h1 was visually-hidden (a11y/SEO only)
+               and the grid started immediately. It is VISIBLE now, carrying the one
+               thing the pictures cannot say — every design takes whatever title the
+               buyer writes, so a design named after an event isn't limited to it. -->
+          <div class="store-head">
+            <h1 data-edit="products-heading">העיצובים שלנו</h1>
+            <p data-edit="products-sub" data-testid="store-sub">
+              בוחרים עיצוב, כותבים את הכותרת שלכם. אותו משחק — לכל אירוע וכל חגיגה.
+            </p>
+          </div>
           <div class="store-grid" id="storeGrid" data-testid="store-grid">
             <!-- product cards rendered from js/designs.js -->
           </div>

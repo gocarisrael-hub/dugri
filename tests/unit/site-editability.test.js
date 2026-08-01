@@ -63,14 +63,27 @@ describe('representative NEW owner-editable keys are present on each page', () =
       'index-nav-shop',
       'index-footer-brand',
       'index-footer-wa-label',
+      // "every design fits every celebration" — reworded from the site, no deploy
+      'index-products-sub',
     ],
     'how.html': ['how-nav-designs', 'how-nav-how', 'how-footer-brand', 'how-footer-mail-label'],
-    'products.html': ['products-nav-shop', 'products-footer-brand', 'products-footer-wa-label'],
+    'products.html': [
+      'products-nav-shop',
+      'products-footer-brand',
+      'products-footer-wa-label',
+      // the now-visible store masthead
+      'products-heading',
+      'products-sub',
+    ],
     'product.html': [
       'product-nav-shop',
       'product-back-label',
       'product-store-cta',
       'product-footer-brand',
+      // the "your title" note under the price — page-level (identical on every
+      // design), so it is data-edit, not data-edit-pd
+      'product-title-note-heading',
+      'product-title-note-body',
     ],
     // Checkout version options (pickup/delivery/pdf/custom): each option's TITLE
     // and NOTE are owner-editable text, priced separately in admin-pricing.

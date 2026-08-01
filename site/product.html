@@ -485,6 +485,53 @@
         font-size: 18px;
       }
 
+      /* ---- 2b. "THE TITLE IS YOURS" NOTE ----
+         Deliberately NOT a .pdp-sec card: it is a note about the product, not a
+         section of it, so it reads as an aside — sand wash, a single accent edge on
+         the leading side, no shadow. Quieter than the content cards below it while
+         still impossible to scroll past on the way to the buy button. */
+      .pdp-title-note {
+        margin-top: 18px;
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        background: var(--section);
+        border: 1px solid var(--line);
+        border-inline-start: 3px solid var(--accent);
+        border-radius: var(--radius);
+        padding: 16px 18px;
+      }
+      .pdp-title-note svg {
+        width: 22px;
+        height: 22px;
+        flex: none;
+        margin-top: 2px;
+        color: var(--accent-deep);
+        stroke-width: 1.4;
+      }
+      .pdp-title-note b {
+        display: block;
+        font-family: var(--display);
+        font-weight: var(--h-weight);
+        letter-spacing: var(--h-spacing);
+        font-size: 17px;
+        color: var(--ink);
+      }
+      .pdp-title-note p {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.6;
+      }
+      @media (min-width: 720px) {
+        .pdp-title-note b {
+          font-size: 19px;
+        }
+        .pdp-title-note p {
+          font-size: 16px;
+        }
+      }
+
       /* ---- 3. SECTIONS ---- */
       .pdp-sec {
         margin-top: 26px;
@@ -850,6 +897,28 @@
             <span class="was" id="pdpPriceWas">129 ₪</span>
           </div>
         </div>
+
+        <!-- 2b. THE TITLE IS THE BUYER'S -->
+        <!-- Sits between the price and the first content section, so it cannot be
+             scrolled past on the way to the buy button. This is the last screen
+             before "קנו עכשיו" where a shopper writes the design off as belonging
+             to somebody else's kind of party — the free-title field is real, but it
+             only appears in the wizard, several steps after this decision. NOT
+             per-design (no data-edit-pd): the promise is identical on every design,
+             so one page-level pair of keys keeps it consistent everywhere. -->
+        <section class="pdp-title-note" data-testid="pdp-title-note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3z" />
+            <path d="M14.5 6.5l3 3" />
+          </svg>
+          <div>
+            <b data-edit="product-title-note-heading">הכותרת נכתבת על ידכם</b>
+            <p data-edit="product-title-note-body">
+              משאירים את הכותרת של העיצוב או כותבים אחת משלכם — למשל "40 לרונית". היא מודפסת על
+              הקלפים ועל הלוח.
+            </p>
+          </div>
+        </section>
 
         <!-- 3a. ABOUT THIS DESIGN -->
         <section class="pdp-sec">
