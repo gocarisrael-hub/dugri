@@ -180,13 +180,94 @@ def group_words(rows, h):
     return dict(words=words, title=title)
 
 
+def _lum(c):
+    return 0.299*c[0] + 0.587*c[1] + 0.114*c[2]
+
+
+# How close in luminance a group has to be before it counts as ONE colour and
+# ``color_of`` stops peeling. Wide enough to swallow the couple of levels a
+# renderer's dithering adds to a flat fill, far narrower than the gap between
+# glyph ink and any page it is legible against.
+_INK_SPREAD = 12
+
+
+def _ink_cut(lums):
+    """Split a word box's luminances into INK and BACKGROUND, return the cut.
+
+    Otsu: pick the threshold that maximises the variance BETWEEN the two groups,
+    i.e. the split the pixels themselves argue for. Used instead of a fixed
+    "darkest N%" because N is exactly what we cannot know in advance — see
+    ``color_of``. Returns a luminance; pixels at or below it are the ink.
+    """
+    hist = [0] * 256
+    for l in lums:
+        hist[min(255, int(l))] += 1
+    total = len(lums)
+    sum_all = sum(i * hist[i] for i in range(256))
+    sum_b = 0.0
+    w_b = 0
+    best, cut = -1.0, 0
+    for t in range(256):
+        w_b += hist[t]
+        if w_b == 0:
+            continue
+        w_f = total - w_b
+        if w_f == 0:
+            break
+        sum_b += t * hist[t]
+        m_b = sum_b / w_b
+        m_f = (sum_all - sum_b) / w_f
+        between = w_b * w_f * (m_b - m_f) ** 2
+        if between > best:
+            best, cut = between, t
+    return cut
+
+
 def color_of(text_img, cell, f):
-    def lum(c): return 0.299*c[0]+0.587*c[1]+0.114*c[2]
+    """The INK colour of one detected text box, as ``#rrggbb``.
+
+    This used to average the darkest EIGHTH of the box. That silently assumed
+    the glyphs cover at least 12.5% of their own bounding box — and a long entry
+    in a thin script does not: its ink is spread over a wider box, so coverage
+    falls below the eighth, the bucket fills up with page background, and the
+    average drifts toward it. The recorded colour then prints WASHED OUT on every
+    card, which is what put a pale third line on an otherwise uniform deck
+    (bachelorette card 2 recorded #a37b87 for a #6b4d56 word).
+
+    So the ink/background split is measured rather than assumed (``_ink_cut``),
+    and only the ink side is averaged. Anti-aliased edge pixels sit in the light
+    group by construction, so they no longer drag the answer up.
+    """
     cx0, cy0 = cell[0], cell[1]
     crop = text_img.crop((cx0+f["x0"], cy0+f["y0"], cx0+f["x1"], cy0+f["y1"]))
-    px = list(crop.getdata()); px.sort(key=lum)
-    k = max(1, len(px)//8); s = px[:k]
-    return "#%02x%02x%02x" % tuple(sum(p[i] for p in s)//len(s) for i in range(3))
+    px = list(crop.getdata())
+    if not px:
+        return "#000000"
+    # Bin ONCE and compare bins. Comparing a raw float luminance against a bin
+    # index silently drops the whole ink group whenever it lands mid-bin (ink at
+    # 86.99 binned to 86, then 86.99 <= 86 is false) — every pixel falls out and
+    # the fallback averages the background back in.
+    lums = [min(255, int(_lum(p))) for p in px]
+    group = list(zip(px, lums))
+    # Peel the lighter side off repeatedly. ONE split separates ink from page,
+    # but a glyph also carries an anti-aliased fringe — pixels part-way between
+    # the two — and against a sparse stem that fringe can outnumber the stem
+    # itself, pulling a single split's average back toward the page. Each pass
+    # drops the lighter half of what is left; it stops as soon as the group is
+    # tight enough to be one colour, which pure glyph ink is immediately.
+    for _ in range(4):
+        spread = max(l for _, l in group) - min(l for _, l in group)
+        if spread <= _INK_SPREAD:
+            break
+        cut = _ink_cut([l for _, l in group])
+        darker = [(p, l) for p, l in group if l <= cut]
+        # A group that will not split (every pixel one side) is already as pure
+        # as this can get — averaging it is the answer, not an empty set.
+        if not darker or len(darker) == len(group):
+            break
+        group = darker
+    ink = [p for p, _ in group]
+    return "#%02x%02x%02x" % tuple(sum(p[i] for p in ink)//len(ink) for i in range(3))
 
 
 # ---- v2: single-card deck --------------------------------------------------
