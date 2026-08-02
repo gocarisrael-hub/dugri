@@ -29,7 +29,7 @@
 // thumb-*.webp). Same toolchain — headless Chromium (Playwright) → PNG →
 // ImageMagick → webp — and the same original-colour <style> injection so the
 // tokenized var(--cN) paints resolve to each design's shipped hexes. It renders
-// the LARGER gallery-*.webp (1100px) straight from the committed tokenized SVGs
+// the LARGER gallery-*.webp (see GALLERY_W) straight from the committed tokenized SVGs
 // in site/assets/designs, so it runs in any checkout/CI without the Canva staging
 // sources.
 //
@@ -76,7 +76,11 @@ const ROOT = resolve(__dirname, '..');
 const SITE = resolve(ROOT, 'site');
 const TEMPLATES = resolve(ROOT, 'resources/canva/templates');
 
-const GALLERY_W = 1100; // final webp width (px) — matches the shipped gallery assets
+// Final webp width (px) for the gallery renders. Raised 1100 -> 2200: the
+// fullscreen enlarge overlay zooms to 4x, and 1100px upscaled on a 3x-DPR phone
+// was visibly mushy the moment a shopper pinched in to read a card. 2200 is sharp
+// at fit on every phone and holds up through the zoom, for ~2.4x the bytes.
+const GALLERY_W = 2200;
 const MIN_BYTES = 2500; // near-blank guard
 
 // ---- original-colour style (mirror of site/options.html paintSvg) ----------
@@ -269,10 +273,10 @@ async function render(jobs) {
       // A design rendering for the first time (a newly migrated portrait template)
       // has no assets/designs/<id>/ dir yet.
       mkdirSync(dirname(outPath), { recursive: true });
-      await page.setViewportSize({ width: GALLERY_W * 2, height: GALLERY_W * 2 });
+      await page.setViewportSize({ width: GALLERY_W, height: GALLERY_W });
       await page.setContent(
         `<!doctype html><body style="margin:0;background:#fff">` +
-          `<div id="w" style="width:${GALLERY_W * 2}px">${svg}</div></body>`,
+          `<div id="w" style="width:${GALLERY_W}px">${svg}</div></body>`,
         { waitUntil: 'networkidle' }
       );
       await page.evaluate((w) => {
@@ -282,11 +286,17 @@ async function render(jobs) {
           s.style.height = 'auto';
           s.style.display = 'block';
         }
-      }, GALLERY_W * 2);
+      }, GALLERY_W);
       const el = await page.$('#w svg');
       if (!el) throw new Error(`gallery ${label}: no <svg> element found in source`);
       const tmpPng = resolve(dirname(outPath), `.gallery-${label}.png`);
-      await el.screenshot({ path: tmpPng, type: 'png' });
+      // Supersampling is the deviceScaleFactor alone (CSS box = GALLERY_W, device
+      // raster = 2×), so the working canvas stays 2·GALLERY_W regardless of the
+      // output size. It used to ALSO double the CSS box, making the canvas 4×;
+      // at GALLERY_W=1100 that was 4400px and survived, but at 2200 it becomes
+      // 8800px and the heavier board SVGs blow the screenshot timeout. Downsampling
+      // 2× still resolves the hairline card outlines cleanly.
+      await el.screenshot({ path: tmpPng, type: 'png', timeout: 120_000 });
       execSync(
         `${magick} ${JSON.stringify(tmpPng)} -resize ${GALLERY_W}x ` +
           `-background white -flatten -quality 86 ${JSON.stringify(outPath)}`,
