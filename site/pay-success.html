@@ -300,11 +300,6 @@
         height: 20px;
         flex: none;
       }
-      .note {
-        color: var(--muted);
-        font-size: 13.5px;
-        margin: 16px 0 0;
-      }
     </style>
     <script src="js/editor.js" defer></script>
   </head>
@@ -316,7 +311,9 @@
         </svg>
       </div>
       <h1 data-edit="paysuccess-title">התשלום התקבל</h1>
-      <p class="lead" data-edit="paysuccess-lead">זהו, ההזמנה שלכם נקלטה אצלנו.</p>
+      <p class="lead" data-edit="paysuccess-lead">
+        תודה רבה על ההזמנה! זהו, ההזמנה שלכם נקלטה אצלנו.
+      </p>
 
       <button class="orderno" id="orderNo" type="button" hidden>
         <span class="lbl" data-edit="paysuccess-orderno-label">מספר הזמנה</span>
@@ -360,7 +357,6 @@
         </svg>
         <span data-edit="paysuccess-wa">שאלה? דברו איתנו בוואטסאפ</span>
       </a>
-      <p class="note" data-edit="paysuccess-note">נשמור על הקישור — אפשר לחזור אליו בכל רגע.</p>
     </main>
     <script>
       // Where to send the buyer back to: the collect page they paid from.
