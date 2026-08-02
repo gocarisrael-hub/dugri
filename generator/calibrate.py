@@ -641,6 +641,54 @@ def _ink_extent(mask, box, ppu, ox, oy, pad=0.3):
              region[0] + ink[2], region[1] + ink[3]))
 
 
+def _ink_lines(mask, region):
+    """The ink's per-LINE bands inside ``region``, as ``(height, width)`` pixels.
+
+    A title is measured against a rendered sample, and the two only compare if
+    both are the same shape. They are not: the sample comes from the theme's own
+    ``title_lines`` template (anniversary's is two lines) while the artwork the
+    size is read off may print one. Measuring a one-line block against a two-line
+    sample asks "what size makes TWO lines as tall as ONE" and answers with about
+    half the real size — which is how a 30-unit title came back as 17.
+
+    So both sides are reduced to a single line: here by splitting the ink into
+    its rows, in the caller by painting one sample line.
+    """
+    sub = mask.crop(region)
+    w, h = sub.size
+    px = sub.load()
+    rows = [any(px[x, y] for x in range(w)) for y in range(h)]
+    bands, y = [], 0
+    while y < h:
+        if rows[y]:
+            y0 = y
+            while y < h and rows[y]:
+                y += 1
+            xs = [x for yy in range(y0, y) for x in range(w) if px[x, yy]]
+            if xs and y - y0 >= 3:
+                bands.append((y - y0, max(xs) - min(xs) + 1))
+        else:
+            y += 1
+    return bands
+
+
+def _one_line_extent(mask, box, ppu, ox, oy):
+    """``(one line's height, the widest line's width, region)`` — or None.
+
+    The block extent from ``_ink_extent`` with its line count divided out, so a
+    multi-line original is comparable with a single painted line.
+    """
+    ext = _ink_extent(mask, box, ppu, ox, oy)
+    if not ext:
+        return None
+    ink_h, ink_w, region = ext
+    bands = _ink_lines(mask, region)
+    if not bands:
+        return ink_h, ink_w, region
+    heights = sorted(b[0] for b in bands)
+    return heights[len(heights) // 2], max(b[1] for b in bands), region
+
+
 @functools.lru_cache(maxsize=64)
 def _fit_font(path, px):
     return ImageFont.truetype(path, max(4, int(px)))
@@ -848,7 +896,7 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex):
     """
     if not samples:
         return None, None, "title: no sample title could be built for this theme.", None
-    extent = _ink_extent(mask, box, ppu, ox, oy)
+    extent = _one_line_extent(mask, box, ppu, ox, oy)
     if not extent:
         return None, None, None, None
     ink_h, ink_w, region = extent
@@ -857,13 +905,17 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex):
         return (None, None,
                 "size: the theme's title font has no glyphs for this title's own "
                 "text, so its size could not be measured — check the font.", None)
-    size = _fit_size(ink_h, font_path, samples, ppu, alpha)
+    # ONE line against one line. The width axis never had the line-count problem
+    # (a painted block's width is already its widest single line), which is why
+    # it used to be the axis that stayed near the truth while height halved.
+    lines = [[max(s, key=len)] for s in samples if s]
+    size = _fit_size(ink_h, font_path, lines, ppu, alpha)
     box_h = box["y1"] - box["y0"]
     if not _in_box(size, box_h):
         return (None, None,
                 "size: the measured title ink is not a plausible size for its "
                 "box, so nothing was pinned — the renderer auto-fits.", None)
-    wide = _fit_size(ink_w, font_path, samples, ppu, alpha, axis=1)
+    wide = _fit_size(ink_w, font_path, lines, ppu, alpha, axis=1)
     if wide and abs(wide - size) / size <= 0.12:
         return size, "high", None, (region, alpha)
     note = ("size: fitted from the height of the original's title ink. Its WIDTH "
