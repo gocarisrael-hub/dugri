@@ -973,9 +973,15 @@ describe('replaceAsset — replacing a nested font actually takes effect', () =>
     return { root, dir };
   }
 
-  it('writes to the nested path the generator actually reads', () => {
+  // Distinguishable bytes. The shared FONT() helper above ignores its argument,
+  // so a test written with it cannot tell the new file from the old one — which
+  // is how the assertions below used to pass no matter where the upload landed.
+  const FONT_BYTES = (label) =>
+    Buffer.concat([Buffer.from([0x00, 0x01, 0x00, 0x00]), Buffer.from(label)]);
+
+  it('records the uploaded name so file and themes.json still agree', () => {
     const { root, dir } = scaffoldWithNestedFont();
-    const bytes = FONT('NEWWORDFONT');
+    const bytes = FONT_BYTES('NEWWORDFONT');
     const r = templates.replaceAsset({
       root,
       key: 'nested',
@@ -984,27 +990,37 @@ describe('replaceAsset — replacing a nested font actually takes effect', () =>
       shrinkImages: false,
     });
     expect(r.error).toBeUndefined();
-    // The generator reads themes.json verbatim, so THIS is the file it opens.
-    const read = path.join(dir, 'fonts', 'Cafe Regular', 'Cafe Regular.ttf');
-    expect(fs.readFileSync(read).equals(bytes)).toBe(true);
-    // ...and no stray flat copy that nothing reads.
-    expect(fs.existsSync(path.join(dir, 'fonts', 'Cafe Regular.ttf'))).toBe(false);
+    // The generator reads themes.json verbatim, so whatever is recorded there is
+    // the file it opens — the invariant is that the two agree, not that the name
+    // never changes.
+    const entry = JSON.parse(
+      fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8')
+    ).nested;
+    expect(entry.word_font).toBe('comixno2clm_medium-webfont.ttf');
+    expect(fs.readFileSync(path.join(dir, 'fonts', entry.word_font)).equals(bytes)).toBe(true);
   });
 
-  it('leaves the recorded font name (and the other role) untouched', () => {
-    const { root } = scaffoldWithNestedFont();
+  it('a word-font upload leaves the title font alone even when they share a file', () => {
+    // Both roles start on ONE nested file. Replacing the word font must not drag
+    // the title font along — that is exactly the trap that made a template's two
+    // fonts impossible to separate.
+    const { root, dir } = scaffoldWithNestedFont();
     templates.replaceAsset({
       root,
       key: 'nested',
       role: 'word-font',
-      file: { filename: 'whatever.ttf', data: FONT() },
+      file: { filename: 'whatever.ttf', data: FONT_BYTES('WORDONLY') },
       shrinkImages: false,
     });
     const entry = JSON.parse(
       fs.readFileSync(path.join(root, 'generator', 'themes.json'), 'utf8')
     ).nested;
-    expect(entry.word_font).toBe('Cafe Regular/Cafe Regular.ttf');
+    expect(entry.word_font).toBe('whatever.ttf');
     expect(entry.title_font).toBe('Cafe Regular/Cafe Regular.ttf');
+    expect(entry.word_font).not.toBe(entry.title_font);
+    // The shared file still holds the ORIGINAL bytes — the title font is intact.
+    const shared = path.join(dir, 'fonts', 'Cafe Regular', 'Cafe Regular.ttf');
+    expect(fs.readFileSync(shared).equals(FONT())).toBe(true);
   });
 
   it('refuses a recorded font path that would climb out of fonts/', () => {
