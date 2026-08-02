@@ -1564,9 +1564,14 @@ test('the confirmation page shows the order number, what was ordered and a way t
   expect(href).toContain('wa.me/972546577715');
   expect(decodeURIComponent(href)).toContain(ref);
 
-  // The old "everything is booked, you can relax" line is gone — nothing is
-  // booked until the buyer sends their words.
-  await expect(page.locator('body')).not.toContainText('הכול תפוס');
+  // The buyer is thanked for the order...
+  await expect(page.locator('.lead')).toContainText('תודה רבה');
+  // ...and the two lines that used to sit here are gone: "everything is booked,
+  // you can relax" (nothing is booked until the words arrive) and the closing
+  // note about keeping the link.
+  const body = page.locator('body');
+  await expect(body).not.toContainText('הכול תפוס');
+  await expect(body).not.toContainText('נשמור על הקישור');
 });
 
 // A 100%-off coupon still produces a real, placed order — the confirmation has
