@@ -922,6 +922,108 @@ describe('templates.js full editing (status / rename / replace)', () => {
     ).toBe(400);
   });
 
+  it('replacing a font keeps the name of the file the owner uploaded', () => {
+    // The old behaviour wrote over whatever filename was already on record and
+    // threw the uploaded name away, so the owner's file "disappeared" into the
+    // previous one.
+    const root = makeScaffold();
+    onboard(root, 'ren-x'); // ships title_font Title.ttf, word_font Word.ttf
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'ren-x');
+
+    const r = templates.replaceAsset({
+      root,
+      key: 'ren-x',
+      role: 'title-font',
+      file: { filename: 'Santorini-Display.otf', data: FONT('NEWTITLE') },
+    });
+    expect(r.error).toBeUndefined();
+
+    const themes = templates.loadThemes(templates.themesPathFor(root));
+    expect(themes['ren-x'].title_font).toBe('Santorini-Display.otf');
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'Santorini-Display.otf')).toString()).toContain(
+      'NEWTITLE'
+    );
+    // ...and the OTHER role is untouched by a title-font upload.
+    expect(themes['ren-x'].word_font).toBe('Word.ttf');
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'Word.ttf')).toString()).toBe('WORDFONT');
+  });
+
+  it('two roles sharing ONE font file can be pulled apart by uploading two files', () => {
+    // The anniversary/סנטוריני shape: title_font and word_font both naming the
+    // same file. Uploading a distinct font to each role used to write both onto
+    // that one shared file, so the last upload silently became the font for BOTH
+    // surfaces and the title/word fonts could never differ.
+    const root = makeScaffold();
+    onboard(root, 'share-x', {
+      title_font: { filename: 'Shared.ttf', data: Buffer.from('SHARED') },
+      word_font: { filename: 'Shared.ttf', data: Buffer.from('SHARED') },
+    });
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'share-x');
+    const before = templates.loadThemes(templates.themesPathFor(root));
+    expect(before['share-x'].title_font).toBe(before['share-x'].word_font); // the trap
+
+    templates.replaceAsset({
+      root,
+      key: 'share-x',
+      role: 'title-font',
+      file: { filename: 'TitleOnly.otf', data: FONT('TITLEONLY') },
+    });
+    templates.replaceAsset({
+      root,
+      key: 'share-x',
+      role: 'word-font',
+      file: { filename: 'WordOnly.otf', data: FONT('WORDONLY') },
+    });
+
+    const themes = templates.loadThemes(templates.themesPathFor(root));
+    expect(themes['share-x'].title_font).toBe('TitleOnly.otf');
+    expect(themes['share-x'].word_font).toBe('WordOnly.otf');
+    expect(themes['share-x'].title_font).not.toBe(themes['share-x'].word_font);
+    // Two files, each holding its OWN bytes — neither overwrote the other.
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'TitleOnly.otf')).toString()).toContain(
+      'TITLEONLY'
+    );
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'WordOnly.otf')).toString()).toContain(
+      'WORDONLY'
+    );
+  });
+
+  it('re-uploading a font under the SAME name just replaces its bytes', () => {
+    // No rename, nothing new to record — the plain "I fixed the font file" case
+    // must keep working exactly as before.
+    const root = makeScaffold();
+    onboard(root, 'same-x');
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'same-x');
+    const r = templates.replaceAsset({
+      root,
+      key: 'same-x',
+      role: 'word-font',
+      file: { filename: 'Word.ttf', data: FONT('REVISED') },
+    });
+    expect(r.error).toBeUndefined();
+    const themes = templates.loadThemes(templates.themesPathFor(root));
+    expect(themes['same-x'].word_font).toBe('Word.ttf');
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'Word.ttf')).toString()).toContain('REVISED');
+  });
+
+  it('a font upload with no usable filename still lands on the recorded one', () => {
+    // A browser that sends no filename must not break re-uploading an existing
+    // font — there is a recorded path to fall back on.
+    const root = makeScaffold();
+    onboard(root, 'noname-x');
+    const dir = path.join(root, 'resources', 'canva', 'templates', 'noname-x');
+    const r = templates.replaceAsset({
+      root,
+      key: 'noname-x',
+      role: 'title-font',
+      file: { filename: '', data: FONT('FALLBACK') },
+    });
+    expect(r.error).toBeUndefined();
+    const themes = templates.loadThemes(templates.themesPathFor(root));
+    expect(themes['noname-x'].title_font).toBe('Title.ttf');
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'Title.ttf')).toString()).toContain('FALLBACK');
+  });
+
   it('a shell + per-asset uploads builds a complete template (records the font too)', () => {
     const root = makeScaffold();
     templates.createTemplateShell({
@@ -1020,7 +1122,11 @@ describe('templates.js full editing (status / rename / replace)', () => {
     );
   });
 
-  it('replaceAsset replaces a font (by sfnt magic) at the recorded path', () => {
+  it('replaceAsset accepts a font by sfnt magic and lands it under its own name', () => {
+    // The file is validated by CONTENT (sfnt magic), not by extension. It is
+    // written under the name it was uploaded with, and themes.json is updated to
+    // point at it — the generator reads the recorded name, so the two must move
+    // together or the upload writes a file nobody reads.
     const root = makeScaffold();
     onboard(root, 'rep-f');
     const dir = path.join(root, 'resources', 'canva', 'templates', 'rep-f');
@@ -1032,8 +1138,9 @@ describe('templates.js full editing (status / rename / replace)', () => {
       file: { filename: 'New.ttf', data: good },
     });
     expect(r.error).toBeUndefined();
-    // written to the SAME filename the generator reads from themes.json
-    expect(fs.readFileSync(path.join(dir, 'fonts', 'Title.ttf')).equals(good)).toBe(true);
+    expect(fs.readFileSync(path.join(dir, 'fonts', 'New.ttf')).equals(good)).toBe(true);
+    const themes = templates.loadThemes(templates.themesPathFor(root));
+    expect(themes['rep-f'].title_font).toBe('New.ttf');
   });
 
   it('replaceAsset rejects a non-font uploaded as .ttf and leaves the old font intact', () => {

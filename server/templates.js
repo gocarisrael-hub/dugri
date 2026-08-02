@@ -2443,16 +2443,30 @@ function replaceAsset({
     }
   }
 
-  // Resolve the destination path. SVG roles have a fixed rel; a font role writes
-  // to the recorded filename (the exact path the generator reads) when present,
-  // else to the uploaded basename which we then record.
+  // Resolve the destination path. SVG roles have a fixed rel; a font role keeps
+  // the name of the file the owner actually uploaded, and records it.
+  //
+  // This used to write over the RECORDED filename whenever one was already on
+  // record, discarding the uploaded name. On a template whose two roles happen
+  // to name the SAME file — anniversary/סנטוריני ships title_font and word_font
+  // both as "Dana Yad AlefAlefAlef Normal.ttf" — that makes the two roles
+  // impossible to separate: uploading a distinct title font and a distinct word
+  // font writes BOTH onto that one file, so whichever went last became the font
+  // for both surfaces, and the owner's two differently-named files vanished. The
+  // uploaded name is the owner's intent; honour it.
   let rel = spec.rel;
   let recordFontField = null;
-  if (kind === 'font' && !rel) {
+  if (kind === 'font') {
     const name = safeBasename(file.filename);
-    if (!name) return { error: 'font filename is missing or unsafe', httpStatus: 400 };
-    rel = 'fonts/' + name;
-    recordFontField = spec.field;
+    // No usable name is only fatal when there is no recorded path to fall back
+    // on — re-uploading over an existing font must keep working regardless.
+    if (!name && !rel) {
+      return { error: 'font filename is missing or unsafe', httpStatus: 400 };
+    }
+    if (name && 'fonts/' + name !== rel) {
+      rel = 'fonts/' + name;
+      recordFontField = spec.field;
+    }
   }
 
   const current = path.resolve(readDir, rel);
