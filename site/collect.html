@@ -1806,6 +1806,8 @@
           // state machine's CLOSED/NORMAL branches) toggles the "sales paused"
           // notice when the owner has switched off every option.
           if (applyPricingRef) applyPricingRef();
+          // Now that the panel's real state is known, honour a ?pay=1 arrival.
+          maybeAutoOpenPay(paid);
         } else {
           $('#ownerControls').classList.add('hidden');
         }
@@ -2256,6 +2258,23 @@
       // Set by setupPayPanel so render() can re-apply the checkout state (esp. the
       // LOCKED state) each time the collection reloads.
       let applyPricingRef = null;
+      // Same idiom for "open the checkout and scroll to it" — the top reminder's
+      // click behaviour, reused by the ?pay=1 arrival below.
+      let openPayPanelRef = null;
+      // Arrived from the "complete your payment" button in the order email
+      // (…&pay=1). The pay panel is a collapsed <details> that also starts hidden
+      // until the collection loads, so this can't act on arrival: it fires ONCE
+      // from render(), after the first load has decided the panel is actually
+      // there to open. Owner-only, since only the owner link carries a checkout.
+      const wantsPay = isOwner && params.get('pay') === '1';
+      let payAutoOpened = false;
+      // Open the checkout for a pay=1 arrival — unless the order is already paid,
+      // where the panel is gone and the paid card has taken its place.
+      function maybeAutoOpenPay(paid) {
+        if (!wantsPay || payAutoOpened || paid || !openPayPanelRef) return;
+        payAutoOpened = true;
+        openPayPanelRef();
+      }
       function priceFor(v) {
         if (lockVersion && v === lockVersion && Number.isInteger(lockTotal)) return lockTotal;
         const info = pricing.versions && pricing.versions[v];
@@ -2309,11 +2328,18 @@
       }
       function setupPayPanel() {
         const payPanel = $('#payPanel');
-        // Top reminder opens the pay panel and scrolls to it.
-        $('#payReminder').addEventListener('click', () => {
+        // `block` differs by caller: the reminder sits just above the panel, so
+        // centering reads naturally there. A ?pay=1 arrival aligns the panel's TOP
+        // to the viewport instead — on a phone the open panel is taller than the
+        // screen, and centering it pushes the version options off the top.
+        const openPayPanel = (block = 'center') => {
           payPanel.open = true;
-          payPanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        });
+          payPanel.scrollIntoView({ behavior: 'smooth', block });
+        };
+        // Top reminder opens the pay panel and scrolls to it.
+        $('#payReminder').addEventListener('click', () => openPayPanel('center'));
+        // ...and so does arriving with ?pay=1 (the order email's pay button).
+        openPayPanelRef = () => openPayPanel('start');
         const opts = Array.from(document.querySelectorAll('.pay-opt'));
         const optsBox = $('#payOpts');
         const addressForm = $('#addressForm');

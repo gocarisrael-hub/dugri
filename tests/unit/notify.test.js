@@ -213,9 +213,10 @@ describe('buildBuyerConfirmation', () => {
     expect(text).toContain('199 ₪');
     expect(text).toContain('קלאסי');
     expect(text).toContain('ורוד');
-    // Collect link (collect.html with id + owner token) plus the words prompt.
-    expect(text).toContain('הוסיפו את 70+ המילים');
-    expect(text).toContain('https://dugri.example/collect.html?c=col-1&k=tok-abc');
+    // The order is unpaid at this point, so the closing line and the link are
+    // about PAYING — and the link carries pay=1 so the checkout opens on arrival.
+    expect(text).toContain('להשלים את התשלום');
+    expect(text).toContain('https://dugri.example/collect.html?c=col-1&k=tok-abc&pay=1');
   });
 
   it('falls back to a placeholder name and omits the link without a baseUrl', () => {

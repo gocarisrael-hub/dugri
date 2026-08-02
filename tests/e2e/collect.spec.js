@@ -770,6 +770,44 @@ test("a stored delivery address prefills the checkout form so the buyer isn't fo
   await expect(page.locator('#addrPostal')).toHaveValue('6100000');
 });
 
+// The link the order-confirmation email's "complete your payment" button carries.
+// Landing on the word list with the checkout folded shut is the failure this
+// guards: the button promises payment, so the payment has to be on screen.
+test('?pay=1 (the order email pay button) opens the checkout on arrival', async ({ page }) => {
+  await enableCardButton(page);
+  await stubPricing(page);
+  await createCollection(page, 'Shira');
+  const url = new URL(page.url());
+
+  // Same page WITHOUT the flag: the panel is there but collapsed.
+  await expect(page.locator('#payPanel')).toBeVisible();
+  await expect(page.locator('#payPanel')).not.toHaveAttribute('open', /.*/);
+
+  await page.goto(url.pathname + url.search + '&pay=1');
+  const panel = page.locator('#payPanel');
+  await expect(panel).toHaveAttribute('open', /.*/);
+  // Scrolled to for real, not merely expanded somewhere down the page: the
+  // version options are on screen. (The pay button itself sits below the fold on
+  // a phone — the panel is taller than the viewport — which is why the arrival
+  // aligns the panel's top rather than centering it.)
+  await expect(page.locator('#payOpts')).toBeInViewport();
+});
+
+test('?pay=1 on an ALREADY-PAID order does not force a dead panel open', async ({ page }) => {
+  // The panel is gone once paid (the "keep adding, then סיום" card replaces it),
+  // so a stale link from the inbox must land quietly rather than reopening a
+  // checkout for an order that is already settled.
+  const ctl = await enableCardButton(page);
+  await stubPricing(page);
+  await createCollection(page, 'Shira');
+  const url = new URL(page.url());
+  ctl.paid = true;
+
+  await page.goto(url.pathname + url.search + '&pay=1');
+  await expect(page.locator('#paidCard')).toBeVisible();
+  await expect(page.locator('#payPanel')).toBeHidden();
+});
+
 test('after payment: pay panel + reminder disappear, סיום card takes over', async ({ page }) => {
   // There is no admin "mark as paid" route — an order goes paid only on a real
   // money event, and the E2E server runs without card credentials — so the paid

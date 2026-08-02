@@ -496,6 +496,7 @@
         'email.version_labels': 'תוויות גרסה',
         'email.field_labels': 'תוויות שדות',
         'email.cta_labels': 'תוויות כפתורים',
+        'email.next_step': 'שורת "מה השלב הבא"',
         'email.product_info': 'תיאור המוצר',
         'email.delivery_info': 'פרטי משלוח',
         'email.pickup_info': 'פרטי איסוף עצמי',
@@ -538,6 +539,8 @@
         'email.version_labels': 'תוויות (לא הודעה) — שמות הגרסאות שמופיעים בתוך המיילים.',
         'email.field_labels': 'תוויות (לא הודעה) — שמות השדות בפירוט ההזמנה במיילים.',
         'email.cta_labels': 'תוויות (לא הודעה) — הטקסט על כפתורי הפעולה במיילים.',
+        'email.next_step':
+          'טקסט (לא הודעה) — השורה שסוגרת את המייל ללקוח/ה, מעל הכפתור. במייל אישור ההזמנה (לפני תשלום) הכפתור מוביל ישירות לתשלום; במייל הקבלה (אחרי תשלום) הוא מוביל להוספת המילים.',
         'email.product_info': 'טקסט (לא הודעה) — תיאור המוצר שמופיע במייל האישור ללקוח/ה.',
         'email.delivery_info': 'טקסט (לא הודעה) — פרטי המשלוח במייל האישור (להזמנת משלוח).',
         'email.pickup_info': 'טקסט (לא הודעה) — פרטי האיסוף העצמי במייל האישור.',
@@ -583,9 +586,13 @@
         // footer
         line1: 'שורה ראשונה',
         line2: 'שורה שנייה',
+        // next_step — scoped, because a bare `pay` already means the CTA button
+        // label above. Scoped keys ('<section>.<key>.<sub>') win over bare ones.
+        'email.next_step.pay': 'לפני תשלום — במייל אישור ההזמנה',
+        'email.next_step.words': 'אחרי תשלום — במייל הקבלה',
       };
-      function subLabel(sub) {
-        return SUBLABELS[sub] || sub;
+      function subLabel(section, k, sub) {
+        return SUBLABELS[section + '.' + k + '.' + sub] || SUBLABELS[sub] || sub;
       }
 
       let state = null; // last full settings.all() response
@@ -806,7 +813,7 @@
             .map(
               (sub) =>
                 '<label class="fld">' +
-                esc(subLabel(sub)) +
+                esc(subLabel('email', k, sub)) +
                 '</label><input type="text" data-mapkey="' +
                 esc(sub) +
                 '" value="' +
