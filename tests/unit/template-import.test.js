@@ -23,6 +23,11 @@ let templateImport;
 let store;
 let templates;
 let dataDir;
+// Stands in for the image's shipped template config (generator/themes.json), the
+// read-only base layer an owner entry can override. 'bachelorette' is a design
+// BOTH services ship; the tests below rename it on staging the way the admin UI
+// does — an entry, no artwork.
+let shippedRoot;
 
 function sha(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
@@ -37,10 +42,22 @@ beforeAll(() => {
   store = require(path.join(serverDir, 'template-store.js'));
   templates = require(path.join(serverDir, 'templates.js'));
   templateImport = require(path.join(serverDir, 'template-import.js'));
+
+  shippedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-shipped-root-'));
+  fs.mkdirSync(path.join(shippedRoot, 'generator'), { recursive: true });
+  fs.writeFileSync(
+    path.join(shippedRoot, 'generator', 'themes.json'),
+    JSON.stringify({
+      bachelorette: { slug: 'bachelorette', display_he: 'רווקות', visibility: 'public' },
+      japanese: { slug: 'japanese', display_he: 'יפני', visibility: 'public' },
+    }),
+    'utf8'
+  );
 });
 
 afterAll(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });
+  fs.rmSync(shippedRoot, { recursive: true, force: true });
   delete process.env.DATA_DIR;
 });
 
@@ -193,29 +210,102 @@ describe('manifest path safety', () => {
   });
 });
 
+// Renaming a SHIPPED design in the admin UI is copy-on-write at the ENTRY level:
+// the whole theme entry lands in the owner store and NO artwork is copied,
+// because the artwork is in the image both services run. The importer used to
+// read "theme entry, no files" as a broken registration and abort the ENTIRE
+// import — so one rename on staging blocked every new design too. Observed live:
+// 7 renamed shipped designs made the import fail with `template "trip comeback"
+// has no files on staging`, and a brand-new design never reached production.
+describe('metadata-only entries for designs we also ship', () => {
+  it('imports a renamed shipped design ALONGSIDE a genuinely new one', async () => {
+    const fake = fakeStaging(
+      { 'imported/clean/board.svg': '<svg>new</svg>' },
+      {
+        themes: {
+          imported: { display_he: 'מיובא', visibility: 'private' },
+          // Renamed on staging: entry only, no files — exactly what the admin
+          // rename writes.
+          bachelorette: { slug: 'bachelorette', display_he: 'פריז', visibility: 'public' },
+        },
+      }
+    );
+    const res = await run(fake, { templateRoot: shippedRoot });
+    expect(res.ok).toBe(true);
+    // The new design's artwork landed...
+    expect(res.added).toContain('imported');
+    expect(
+      fs.readFileSync(path.join(dataDir, 'templates', 'imported', 'clean', 'board.svg'), 'utf8')
+    ).toBe('<svg>new</svg>');
+    // ...and the rename carried over, which is the whole point of mirroring it.
+    const owner = templates.loadOwnerThemes();
+    expect(owner.bachelorette.display_he).toBe('פריז');
+    // A metadata-only entry creates no artwork directory (there is none to make).
+    expect(fs.existsSync(path.join(dataDir, 'templates', 'bachelorette'))).toBe(false);
+    // Nothing was fetched for it either — no wasted round trip.
+    expect(fake.calls.some((u) => u.includes('template=bachelorette'))).toBe(false);
+    // The unrelated local template is still untouched.
+    expect(owner['local-only'].display_he).toBe('מקומי');
+  });
+
+  it('imports an all-renames manifest that carries no files at all', async () => {
+    // The owner only renamed shipped designs on staging. There is nothing to
+    // download, but it is a real change — not the "empty store" misconfiguration
+    // the emptiness guard is there to catch.
+    const fake = fakeStaging(
+      {},
+      {
+        themes: {
+          bachelorette: { slug: 'bachelorette', display_he: 'פריז' },
+          japanese: { slug: 'japanese', display_he: 'טוקיו' },
+        },
+      }
+    );
+    const res = await run(fake, { templateRoot: shippedRoot });
+    expect(res.ok).toBe(true);
+    expect(res.files).toBe(0);
+    const owner = templates.loadOwnerThemes();
+    expect(owner.bachelorette.display_he).toBe('פריז');
+    expect(owner.japanese.display_he).toBe('טוקיו');
+  });
+
+  it('still refuses a metadata-only entry when we do NOT ship that design', async () => {
+    // Same shape, but the key exists in neither layer here: importing it would
+    // list a design that renders nothing.
+    const fake = fakeStaging({}, { themes: { 'no-such-design': { display_he: 'רפאים' } } });
+    const res = await run(fake, { templateRoot: shippedRoot });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/no-such-design/);
+    expectUntouched();
+  });
+});
+
 describe('refusals', () => {
   it('refuses an empty staging store instead of reporting a no-op success', async () => {
     const fake = fakeStaging({}, { themes: {} });
-    const res = await run(fake);
+    const res = await run(fake, { templateRoot: shippedRoot });
     expect(res.ok).toBe(false);
     expect(res.status).toBe(400);
     expect(res.error).toMatch(/no owner templates/);
     expectUntouched();
   });
 
-  it('refuses a theme entry that carries no files', async () => {
+  it('refuses a theme entry that carries no files and is no design of ours', async () => {
     // A registration pointing at nothing: it would list in the admin UI and fail
-    // to render, so it must not import at all.
+    // to render, so it must not import at all. Still refused WITH a shipped root
+    // in play — 'ghost' is not in it.
     const fake = fakeStaging(
       { 'imported/clean/board.svg': '<svg/>' },
       {
         themes: { imported: {}, ghost: {} },
       }
     );
-    const res = await run(fake);
-    expect(res.ok).toBe(false);
-    expect(res.error).toMatch(/"ghost" has no files/);
-    expectUntouched();
+    for (const extra of [{}, { templateRoot: shippedRoot }]) {
+      const res = await run(fake, extra);
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatch(/"ghost" has no files/);
+      expectUntouched();
+    }
   });
 
   it('refuses when STAGING_URL is unset', async () => {
