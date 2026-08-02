@@ -2127,36 +2127,77 @@
              as "nothing happens here". Shown ONLY while #namePreview is hidden
              (setNamePreviewHidden keeps the two mutually exclusive), and never
              at all when the name_preview feature is gated off. -->
-        <p
-          class="preview-teaser"
-          id="previewTeaser"
-          data-testid="preview-teaser"
-          data-edit="options-preview-teaser"
-          hidden
-        >
-          עוד רגע - כשתסיימו למלא את הפרטים, תופיע כאן תצוגה חיה של הקלף והלוח עם השם שלכם.
-        </p>
+        <div class="preview-teaser" id="previewTeaser" data-testid="preview-teaser" hidden>
+          <!-- The empty slot itself: a dashed card silhouette in the real card's
+               portrait ratio. Purely decorative — the copy beside it carries the
+               whole message, so it is hidden from assistive tech. -->
+          <span class="pt-ghost" aria-hidden="true"><span class="pt-spark">✦</span></span>
+          <span class="pt-copy">
+            <span class="pt-title" data-edit="options-preview-teaser-title"
+              >עוד רגע - הקלף שלכם מופיע כאן</span
+            >
+            <span class="pt-sub" data-edit="options-preview-teaser-sub"
+              >מלאו את הפרטים ותראו תצוגה חיה של הקלף והלוח</span
+            >
+          </span>
+        </div>
         <style>
-          /* Quiet, non-blocking placeholder — it must read as a promise, not as
-             an error/warning, so it borrows the panel surface rather than any
-             accent colour. Centred to match .name-preview, which replaces it.
-             Deliberately COMPACT (one short sentence, tight padding): on a phone
-             the whole name step has to fit above the sticky Back/Next bar without
-             scrolling — see tests/e2e/wizard-noscroll.spec.js. Growing this copy
-             or its spacing breaks that. */
+          /* The "your card lands here" placeholder. It stands exactly where
+             .name-preview will replace it, so the buyer sees the empty slot
+             rather than empty space.
+
+             Deliberately COMPACT — the ghost card is 46px and the copy is two
+             short lines. On a phone the whole name step must fit above the
+             sticky Back/Next bar without scrolling (tests/e2e/wizard-noscroll
+             .spec.js); a taller ghost or a third line of copy breaks that. */
           .preview-teaser {
+            display: flex;
+            align-items: center;
+            gap: 12px;
             margin: 12px 0 0;
-            padding: 9px 12px;
+            padding: 8px 12px;
             border: 1px solid var(--line);
             border-radius: var(--radius);
             background: var(--surface);
-            text-align: center;
-            font-size: 13px;
-            line-height: 1.45;
-            color: var(--muted);
+            text-align: start;
           }
           .preview-teaser[hidden] {
             display: none;
+          }
+          /* Dashed portrait card (~0.72 ratio, matching the printed card). */
+          .pt-ghost {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 33px;
+            height: 46px;
+            border: 1.5px dashed var(--line);
+            border-radius: 5px;
+          }
+          .pt-spark {
+            font-size: 14px;
+            line-height: 1;
+            color: var(--muted);
+            opacity: 0.75;
+          }
+          .pt-copy {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+          }
+          .pt-title {
+            font-family: var(--display);
+            font-weight: 600;
+            font-size: 15px;
+            line-height: 1.3;
+            color: var(--ink);
+          }
+          .pt-sub {
+            font-size: 12.5px;
+            line-height: 1.35;
+            color: var(--muted);
           }
         </style>
 
