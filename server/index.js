@@ -3516,6 +3516,10 @@ app.post('/api/admin/templates/import-from-staging', async (req, res) => {
     result = await templateImport.importFromStaging({
       stagingUrl,
       adminKey: process.env.STAGING_ADMIN_KEY || ADMIN_KEY || '',
+      // OUR shipped designs, so a staging entry carrying only metadata (a renamed
+      // shipped template — no artwork by design) is accepted rather than aborting
+      // the whole import.
+      templateRoot: TEMPLATE_ROOT,
     });
   } catch (e) {
     return res.status(500).json({ error: String((e && e.message) || e) });

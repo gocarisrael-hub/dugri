@@ -164,7 +164,12 @@ async function runPool(items, limit, worker) {
 // entry rejects the ENTIRE import rather than being skipped. Skipping is the
 // failure mode this module exists to avoid — it produces a template that is
 // present, listed, and missing the file nobody noticed.
-function validateManifest(manifest) {
+//
+// `opts.shippedKeys` is the set of designs THIS service ships in its own image.
+// It decides whether a theme entry naming no files is legitimate — see the
+// files-less check at the bottom.
+function validateManifest(manifest, opts = {}) {
+  const shippedKeys = opts.shippedKeys instanceof Set ? opts.shippedKeys : new Set();
   const themes = manifest.themes;
   const recipes = manifest.recipes;
   const files = manifest.files;
@@ -213,19 +218,48 @@ function validateManifest(manifest) {
     };
   }
 
-  // A theme entry with no files is a registration pointing at nothing. It would
-  // list in the admin UI and fail to render, which is worse than not importing
-  // it — so it's a hard error, naming the key so the owner knows what to re-upload
-  // on staging.
+  // A theme entry naming no files is one of two very different things.
+  //
+  //   • A METADATA-ONLY OVERRIDE of a design this service also ships. Editing a
+  //     shipped template is copy-on-write at the ENTRY level: renaming it (or
+  //     changing its visibility, in_store flag or calibration) writes the whole
+  //     entry into the owner store and copies NO artwork, because the artwork
+  //     lives in the image both services run. Perfectly valid, and the only way
+  //     an owner's renames ever reach production.
+  //   • A DANGLING REGISTRATION for a design that exists nowhere here. It would
+  //     list in the admin UI and render nothing.
+  //
+  // Only the second is an error. Treating both as errors (which is what this did)
+  // meant one rename on staging aborted the ENTIRE import — including brand-new
+  // designs that had nothing to do with it.
   const withFiles = new Set(checked.map((f) => f.key));
   for (const k of Object.keys(themes)) {
-    if (!withFiles.has(k)) return { error: 'template "' + k + '" has no files on staging' };
+    if (withFiles.has(k) || shippedKeys.has(k)) continue;
+    return {
+      error:
+        'template "' +
+        k +
+        '" has no files on staging and is not a design shipped here — re-upload it on staging',
+    };
   }
 
   return { keys: [...keys], files: checked, bytes: total };
 }
 
-// opts = { stagingUrl, adminKey, fetchImpl?, concurrency?, now? }
+// The design keys THIS service ships in its image — the base layer an owner
+// entry can legitimately override without carrying any artwork. Returns an empty
+// set when the root is unreadable, which only makes validation stricter (a
+// metadata-only entry is then refused rather than silently accepted).
+function shippedKeysFor(templateRoot) {
+  if (!templateRoot) return new Set();
+  try {
+    return new Set(Object.keys(templates.loadThemesFile(templates.themesPathFor(templateRoot))));
+  } catch {
+    return new Set();
+  }
+}
+
+// opts = { stagingUrl, adminKey, templateRoot?, fetchImpl?, concurrency?, now? }
 async function importFromStaging(opts) {
   opts = opts || {};
   const fetchImpl = opts.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
@@ -266,14 +300,17 @@ async function importFromStaging(opts) {
     return { ok: false, status: 502, error: 'staging template manifest fetch error: ' + msg(e) };
   }
 
-  const checked = validateManifest(manifest);
+  const checked = validateManifest(manifest, { shippedKeys: shippedKeysFor(opts.templateRoot) });
   if (checked.error) return { ok: false, status: 502, error: checked.error };
 
   // 2. Refuse an empty store. Additive semantics mean an empty import is harmless
   //    rather than destructive — but it is still always a misconfiguration (wrong
   //    STAGING_URL, reset volume), and reporting it as a successful no-op is how
   //    the owner ends up believing a design shipped when it didn't.
-  if (!checked.files.length) {
+  //
+  //    "Empty" means no files AND no theme entries: an import carrying only
+  //    renames of shipped designs has no files by nature and is a real change.
+  if (!checked.files.length && !Object.keys(manifest.themes).length) {
     return {
       ok: false,
       status: 400,
@@ -354,7 +391,10 @@ async function importFromStaging(opts) {
   try {
     for (const key of checked.keys) {
       const src = path.join(scratch, key);
-      if (!fs.existsSync(src)) continue; // themes-only key — validateManifest rejects these
+      // No downloaded dir = a metadata-only entry for a design shipped in the
+      // image (a rename/visibility edit). Its theme entry is merged in step 6;
+      // there is no artwork to swap.
+      if (!fs.existsSync(src)) continue;
       const live = store.ownerTemplateDir(key);
       const existed = fs.existsSync(live);
       if (existed) {
