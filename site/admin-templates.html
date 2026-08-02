@@ -1647,11 +1647,14 @@
             wrap.append(document.createTextNode(label || field));
             const sel = document.createElement('select');
             sel.dataset.field = field;
+            // An option is either a bare string (value === caption) or
+            // {value, text} where the stored value is not what the owner should
+            // read — the card-layout modes need a sentence, not "one".
             for (const o of options) {
               const opt = document.createElement('option');
-              opt.value = o;
-              opt.textContent = o;
-              if (o === current) opt.selected = true;
+              opt.value = typeof o === 'string' ? o : o.value;
+              opt.textContent = typeof o === 'string' ? o : o.text;
+              if (opt.value === current) opt.selected = true;
               sel.append(opt);
             }
             wrap.append(sel);
@@ -1676,6 +1679,23 @@
           // drops `calibrated` back to false and the template has to be calibrated
           // against its new art before it can be ordered again.
           grid.append(mkSelect('card_structure', ['cards', 'sheet'], t.card_structure || 'sheet'));
+          // The same choice the NEW-template form offers, for a template that
+          // already exists — this is what an owner converting a shipped sheet deck
+          // to cards needs, and until now only onboarding had it. Set both this
+          // and card_structure in ONE save to convert; the checklist below then
+          // asks for four card files instead of eighteen. Server-side it records a
+          // narrower FRONT LIST (cards:{back:1,fronts:[2]}), never nine copies.
+          grid.append(
+            mkSelect(
+              'card_fronts',
+              [
+                { value: 'all', text: 'עיצוב שונה לכל קלף — 9 קבצים' },
+                { value: 'one', text: 'אותו עיצוב לכל הקלפים — פנים אחד + גב אחד' },
+              ],
+              Array.isArray(t.card_fronts) && t.card_fronts.length === 1 ? 'one' : 'all',
+              'עיצוב הקלפים (card_fronts)'
+            )
+          );
           grid.append(
             mkSelect('name_form', ['hebrew', 'english', 'english-caps'], t.name_form || '')
           );

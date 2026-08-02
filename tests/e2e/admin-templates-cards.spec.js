@@ -290,6 +290,62 @@ test.describe('admin templates — single-card layout (read-only)', () => {
     await expect(cal.locator('[data-cal="word_size"]')).toHaveCount(1);
   });
 
+  // CONVERTING AN EXISTING TEMPLATE. The one-front shortcut used to exist only in
+  // the NEW-template form, so an owner moving a shipped sheet deck onto the card
+  // layout was asked for all eighteen numbered files. The settings panel offers
+  // the same choice now, and both fields go up in ONE save.
+  test('an existing sheet template can be converted to one-design cards in one save', async ({
+    page,
+  }) => {
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({
+        json: {
+          templates: [
+            cardsTemplate({
+              key: 'sheet-y',
+              slug: 'sheet-y',
+              card_structure: 'sheet',
+              card_fronts: null,
+            }),
+          ],
+        },
+      })
+    );
+    let posted = null;
+    await page.route('**/api/admin/templates/sheet-y/settings*', (route) => {
+      posted = JSON.parse(route.request().postData() || '{}');
+      return route.fulfill({ json: { ok: true, settings: {} } });
+    });
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+
+    const card = page.locator('.tpl-card[data-key="sheet-y"]');
+    const settings = card.locator('.tpl-settings');
+    await settings.locator('summary').click();
+
+    // The choice is there, defaulted to the eight-front layout.
+    const mode = settings.locator('[data-field="card_fronts"]');
+    await expect(mode).toHaveValue('all');
+    await expect(mode.locator('option')).toHaveCount(2);
+
+    await settings.locator('[data-field="card_structure"]').selectOption('cards');
+    await mode.selectOption('one');
+    await card.locator('.tpl-settings-save').click();
+
+    await expect.poll(() => posted).not.toBeNull();
+    expect(posted.card_structure).toBe('cards');
+    expect(posted.card_fronts).toBe('one');
+  });
+
+  test('a template already on one front shows the mode as selected', async ({ page }) => {
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({ json: { templates: [cardsTemplate({ card_fronts: [2] })] } })
+    );
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const settings = page.locator('.tpl-card[data-key="cards-x"] .tpl-settings');
+    await settings.locator('summary').click();
+    await expect(settings.locator('[data-field="card_fronts"]')).toHaveValue('one');
+  });
+
   test('saved card_slots pre-fill the form, and preview/save carry them', async ({ page }) => {
     const box = (y0) => ({ x0: 0.11, y0, x1: 0.89, y1: y0 + 0.1 });
     const titles = {};

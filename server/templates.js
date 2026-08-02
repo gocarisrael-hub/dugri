@@ -1356,17 +1356,69 @@ function templateWriteDir(root, entry, key) {
   const owner = store.ownerTemplateDir(key);
   if (!owner) return shipped;
   const hasShipped = shipped && fs.existsSync(shipped);
+  // A template CONVERTED to the single-card layout must not have the shipped
+  // sheet's fronts.svg/backs.svg copied (or healed) back in: the additive backfill
+  // below runs on every asset write, so without this filter a pruned sheet file
+  // reappears the moment the owner uploads their first card.
+  const skip = obsoleteLayoutRels(entry);
+  const filter = skip.size
+    ? (src) => !skip.has(path.relative(shipped, src).split(path.sep).join('/'))
+    : undefined;
   if (!fs.existsSync(owner)) {
-    if (hasShipped) fs.cpSync(shipped, owner, { recursive: true });
+    if (hasShipped) fs.cpSync(shipped, owner, { recursive: true, filter });
     else fs.mkdirSync(owner, { recursive: true });
   } else if (hasShipped) {
     try {
-      fs.cpSync(shipped, owner, { recursive: true, force: false, errorOnExist: false });
+      fs.cpSync(shipped, owner, { recursive: true, force: false, errorOnExist: false, filter });
     } catch {
       /* best-effort heal: a write must still proceed on its own assets */
     }
   }
   return owner;
+}
+
+// The files the entry's CURRENT layout has no use for, relative to the template
+// dir. Only the sheet↔cards direction is described: a `cards` entry never reads
+// the sheet's fronts.svg/backs.svg (its cards are the numbered files, and the
+// board is shared by both layouts). A sheet entry is left alone — nothing is
+// pruned from a template that was never converted.
+function obsoleteLayoutRels(entry) {
+  if (!entry || cardStructureOf(entry) !== 'cards') return new Set();
+  return new Set(['clean/fronts.svg', 'clean/backs.svg', 'filled/fronts.svg', 'filled/backs.svg']);
+}
+
+// Delete the previous layout's now-dead SVGs from the WRITABLE dir. Best-effort
+// by design: this is housekeeping, and a template whose conversion is otherwise
+// complete must never fail to save because a stale file could not be unlinked.
+// The shipped image is never touched — only the owner's copy — so the files are
+// gone from what the generator and the checklist read, which is what "replace"
+// means here. Returns the rels actually removed (for the caller's report).
+function pruneObsoleteLayoutAssets(root, entry, key) {
+  const rels = obsoleteLayoutRels(entry);
+  if (!rels.size) return [];
+  // ONLY the owner's copy, never the shipped image dir — deleting there would
+  // destroy repo-committed artwork on any checkout running without DATA_DIR, and
+  // a shipped sheet file is harmless anyway: a `cards` entry never reads it, and
+  // templateWriteDir's filter keeps it from being copied across later.
+  // Resolved WITHOUT templateWriteDir, which would copy the shipped dir in first
+  // and re-create the very files being pruned.
+  if (!store.enabled()) return [];
+  const dir = store.ownerTemplateDir(key);
+  if (!dir || !fs.existsSync(dir)) return [];
+  const removed = [];
+  for (const rel of rels) {
+    const abs = path.resolve(dir, rel);
+    if (abs !== dir && !abs.startsWith(dir + path.sep)) continue; // never escape the dir
+    try {
+      if (fs.existsSync(abs)) {
+        fs.rmSync(abs, { force: true });
+        removed.push(rel);
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+  return removed;
 }
 
 // Resolve a template asset (a path RELATIVE to the template dir, e.g.
@@ -1973,12 +2025,52 @@ function updateTemplateSettings({ root, key, patch }) {
       changed.calibrated = false;
     }
   }
+  // Switch an EXISTING template between "a design per card" and "one design on
+  // every card". Onboarding has offered this since #297, but only for a NEW
+  // template — an owner converting a shipped sheet deck to cards had no way to say
+  // "they're all the same", so the asset checklist demanded all eighteen numbered
+  // files. Same meaning as at onboarding: 'one' records a NARROWER FRONT LIST
+  // (cards:{back:1,fronts:[2]}), never nine copies of one file, and 'all' drops
+  // the block so the entry reads the [2..9] default exactly as an untouched one
+  // does. Only meaningful under the 'cards' layout — validated against the
+  // structure this same patch results in, so switching layout and front mode in
+  // ONE save is allowed while asking for 'one' on a sheet deck is still refused.
+  if ('card_fronts' in p) {
+    const fm = String(p.card_fronts || '').trim();
+    if (!CARD_FRONT_MODES.includes(fm)) {
+      return {
+        error: 'card_fronts must be one of: ' + CARD_FRONT_MODES.join(', '),
+        httpStatus: 400,
+      };
+    }
+    const resultingStructure =
+      'card_structure' in changed ? changed.card_structure : cardStructureOf(entry);
+    if (fm === 'one' && resultingStructure !== 'cards') {
+      return { error: "card_fronts:'one' requires card_structure:'cards'", httpStatus: 400 };
+    }
+    const isOneNow =
+      cardStructureOf(entry) === 'cards' &&
+      entryFrontNumbers(entry).length === SINGLE_FRONT_NUMBERS.length &&
+      entryFrontNumbers(entry).every((n, i) => n === SINGLE_FRONT_NUMBERS[i]);
+    if (fm === 'one' && !isOneNow) {
+      changed.cards = { back: CARD_BACK_NUMBER, fronts: [...SINGLE_FRONT_NUMBERS] };
+      // The eight fronts each carried their own title position; one front has one.
+      changed.calibrated = false;
+    } else if (fm === 'all' && isOneNow) {
+      changed.cards = null; // dropped below — back to the [2..9] default
+      changed.calibrated = false;
+    }
+  }
   if ('calibrated' in p) {
     if (typeof p.calibrated !== 'boolean') {
       return { error: 'calibrated must be a boolean', httpStatus: 400 };
     }
-    // A layout switch in the SAME patch wins — see above.
-    if (!('card_structure' in changed)) changed.calibrated = p.calibrated;
+    // A layout OR front-list switch in the SAME patch wins — see above. Both
+    // invalidate the measured geometry, so an explicit calibrated:true riding
+    // along in the same save must not resurrect it.
+    if (!('card_structure' in changed) && !('cards' in changed)) {
+      changed.calibrated = p.calibrated;
+    }
   }
   if (Object.keys(changed).length === 0) {
     return { error: 'no valid settings to update', httpStatus: 400 };
@@ -2018,6 +2110,16 @@ function updateTemplateSettings({ root, key, patch }) {
   // the shipped entries are, and topup's `cfg.get("wordlist") or GENERIC` treats
   // absent and null identically anyway.
   if ('wordlist' in changed && changed.wordlist === null) delete entry.wordlist;
+  // cards:null means "the default [2..9] front list" — same as absent. Drop the
+  // key so a template switched back to eight fronts is byte-for-byte an entry
+  // that never had a `cards` block.
+  if ('cards' in changed && changed.cards === null) delete entry.cards;
+  // The layout changed, so the files the OLD layout needed are now dead weight.
+  // The owner asked for replace, not keep: prune them from the writable dir so
+  // the asset checklist and every render see only the current layout's files.
+  if ('card_structure' in changed || 'cards' in changed) {
+    pruneObsoleteLayoutAssets(root, entry, key);
+  }
   // Copy-on-write: a calibration saved on a SHIPPED template lands in the owner
   // store as a whole-entry override; the image's themes.json is never touched.
   persistThemeEntry(themesPath, key, entry);
@@ -2037,6 +2139,10 @@ function updateTemplateSettings({ root, key, patch }) {
       // null = names no pool, i.e. the generic fallback.
       wordlist: entry.wordlist || null,
       calibrated: !!entry.calibrated,
+      // Same shape the list reports: the front indices this deck renders, so the
+      // form can re-read the saved layout without a refetch. null on a sheet.
+      card_structure: cardStructureOf(entry),
+      card_fronts: cardStructureOf(entry) === 'cards' ? entryFrontNumbers(entry) : null,
     },
   };
 }

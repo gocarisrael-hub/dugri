@@ -580,6 +580,10 @@ describe('templates.js full editing (status / rename / replace)', () => {
       // Names no seed pool → the generic fallback (see the wordlist tests below).
       wordlist: null,
       calibrated: false,
+      // Reported so the settings form can re-read the saved layout without a
+      // refetch. This template is a legacy sheet, which has no front list at all.
+      card_structure: 'sheet',
+      card_fronts: null,
     });
     const after = templates.loadThemes(templates.themesPathFor(root))['set-x'];
     expect(after.visibility).toBe('private');
