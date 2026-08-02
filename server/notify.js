@@ -286,6 +286,9 @@ function deliveryInfo() {
 function pickupInfo() {
   return _store.get('email', 'pickup_info');
 }
+function nextStep() {
+  return _store.get('email', 'next_step');
+}
 
 // One-line description of the product for a version, or '' when none is set.
 function productLine(version) {
@@ -372,6 +375,23 @@ function wordCount(collection) {
 function ownerLink(collection, baseUrl) {
   if (!baseUrl || !collection || !collection.id || !collection.owner_token) return null;
   return baseUrl + '/collect.html?c=' + collection.id + '&k=' + collection.owner_token;
+}
+
+// The same link with `pay=1`, which makes the collect page OPEN its checkout on
+// arrival instead of landing on the word list with the pay panel folded shut.
+// Used by the buyer emails whose next step is payment: a "complete your payment"
+// button has to land ON the payment, not near it. Null whenever ownerLink is.
+function payLink(collection, baseUrl) {
+  const link = ownerLink(collection, baseUrl);
+  return link ? link + '&pay=1' : null;
+}
+
+// Is this collection's order already paid? Drives which closing line + CTA a
+// buyer email gets. Treated as UNPAID when there is no order yet — the order
+// confirmation fires when a collection is created, often before any version is
+// chosen, and payment is exactly what is missing at that point.
+function orderPaid(collection) {
+  return !!(collection && collection.order && collection.order.paid);
 }
 
 // The amount line(s) for a paid order email. `options.amountCharged`, when a
@@ -521,7 +541,16 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
   const f = fieldLabels();
   const cta = ctaLabels();
   const ft = footer();
-  const link = ownerLink(collection, baseUrl);
+  const step = nextStep();
+  // This mail fires at ORDER CREATION, so the buyer's next step is PAYING: the
+  // closing line and the button both point at the checkout, and the link carries
+  // pay=1 so the collect page opens it rather than making them find it. The
+  // add-words pair is kept for the one case where that would be wrong — an order
+  // already paid when the mail goes out (a 100% coupon).
+  const paid = orderPaid(collection);
+  const link = paid ? ownerLink(collection, baseUrl) : payLink(collection, baseUrl);
+  const closing = paid ? step.words : step.pay;
+  const ctaLabel = paid ? cta.addWords : cta.pay;
   // {link} is available to the owner inside the template body; '' when absent so
   // it vanishes rather than rendering literally.
   const values = { honoree: name, link: link || '' };
@@ -533,10 +562,10 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
   const htmlLines = lines.slice();
   if (link) {
     lines.push('');
-    lines.push('נשאר רק שלב אחד: הוסיפו את 70+ המילים על בעל/ת השמחה כאן:');
+    lines.push(closing);
     lines.push(link);
     htmlLines.push('');
-    htmlLines.push('נשאר רק שלב אחד: הוסיפו את 70+ המילים על בעל/ת השמחה.');
+    htmlLines.push(closing);
   }
   lines.push('');
   lines.push(ft.line1);
@@ -544,7 +573,7 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
   const html = renderEmailHtml({
     title: 'ההזמנה שלכם התקבלה — ' + name,
     bodyLines: htmlLines,
-    cta: link ? { label: cta.addWords, url: link } : null,
+    cta: link ? { label: ctaLabel, url: link } : null,
     baseUrl,
     // The template product photo (owner override or catalog thumbnail), resolved
     // by the caller and passed through options; alt text is the chosen design.
@@ -599,10 +628,12 @@ function buildBuyerReceipt(collection, baseUrl, options) {
   const htmlLines = lines.slice();
   if (link) {
     lines.push('');
-    lines.push('נשאר רק שלב אחד: הוסיפו את 70+ המילים על בעל/ת השמחה כאן:');
+    // Payment is done by the time this receipt goes out, so the next step here
+    // really is the word list (owner-editable, shared with the confirmation).
+    lines.push(nextStep().words);
     lines.push(link);
     htmlLines.push('');
-    htmlLines.push('נשאר רק שלב אחד: הוסיפו את 70+ המילים על בעל/ת השמחה.');
+    htmlLines.push(nextStep().words);
   }
   lines.push('');
   lines.push(ft.line1);

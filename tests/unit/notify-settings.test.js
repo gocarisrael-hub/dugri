@@ -101,8 +101,11 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
         '',
         'המשחק יישלח אליך בדרך כלל תוך 5–7 ימי עסקים מרגע שרשימת המילים מוכנה.',
         '',
-        'נשאר רק שלב אחד: הוסיפו את 70+ המילים על בעל/ת השמחה כאן:',
-        link,
+        // This mail goes out at order creation, so the closing line + link send
+        // the buyer to PAY (pay=1 opens the checkout on arrival), not to the
+        // word list. Both strings are owner-editable (email.next_step).
+        'נשאר רק שלב אחד: להשלים את התשלום, ומתחילים להכין את המשחק.',
+        link + '&pay=1',
         '',
         'נתראה על הלוח,',
         'צוות דוגרי',

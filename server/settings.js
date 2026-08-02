@@ -274,11 +274,26 @@ const REGISTRY = {
       kind: 'map',
       tokens: [],
       default: {
-        addWords: 'להוספת המילים', // buyer confirmation + words reminder
+        addWords: 'להוספת המילים', // buyer payment receipt + words reminder
         downloadFile: 'להורדת הקובץ', // PDF ready — the card deck
         downloadBoard: 'להורדת לוח המשחק', // PDF ready — the separate board file
         updateOrder: 'לעדכון ההזמנה', // production error
-        pay: 'להשלמת התשלום', // payment reminder
+        pay: 'להשלמת התשלום', // buyer confirmation + payment reminder
+      },
+    },
+    // The one-line "what happens next" that closes a buyer email, sitting just
+    // above its CTA button. Which line is used follows what the buyer actually has
+    // left to do: `pay` in the order confirmation (sent at order creation, before
+    // any payment), `words` in the payment receipt — and `words` in the
+    // confirmation too on the path where the order is already paid when it goes
+    // out (a 100% coupon), since sending a paid customer to pay is the one thing
+    // that must never happen.
+    next_step: {
+      kind: 'map',
+      tokens: [],
+      default: {
+        pay: 'נשאר רק שלב אחד: להשלים את התשלום, ומתחילים להכין את המשחק.',
+        words: 'נשאר רק שלב אחד: הוסיפו את 70+ המילים על בעל/ת השמחה.',
       },
     },
     // The shared two-line plain-text sign-off. (The branded HTML shell keeps its
