@@ -56,6 +56,15 @@ test.describe('name-step preview teaser', () => {
     await expect(teaser).toContainText('תצוגה חיה');
     // ...and the real preview is not up yet, so the two never overlap.
     await expect(page.getByTestId('name-preview')).toBeHidden();
+
+    // The empty slot is drawn as a card silhouette — that's what makes the
+    // promise legible at a glance. Decorative, so it stays out of the a11y tree.
+    const ghost = teaser.locator('.pt-ghost');
+    await expect(ghost).toBeVisible();
+    await expect(ghost).toHaveAttribute('aria-hidden', 'true');
+    // Portrait, like the printed card — never a square or a landscape strip.
+    const box = await ghost.boundingBox();
+    expect(box.height).toBeGreaterThan(box.width);
   });
 
   test('a valid name swaps the teaser out for the live preview', async ({ page }) => {
