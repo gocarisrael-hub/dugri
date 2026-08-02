@@ -158,8 +158,35 @@ def rows_in_cell(mask, cell):
     return out
 
 
+def _marker_aligned(feats):
+    """The largest run of rows whose RIGHT edge agrees — the numbered rows.
+
+    Every word row on a card begins with its "N." marker pinned to the slot's
+    right edge (see ``render_page.word_lines``), so the four word rows share a
+    right edge to within a pixel or two. Two kinds of row do NOT: a title, which
+    is set wider, and the CONTINUATION of a word that wrapped, which carries no
+    marker and therefore stops a whole marker-width short.
+
+    That makes the right edge the one signal that tells a real word row from a
+    wrap, which even spacing cannot: a wrapped entry produces five evenly spaced
+    rows for four words.
+    """
+    if not feats:
+        return []
+    # A marker is about as wide as a row is tall, so half a row height separates
+    # "same column" from "a marker short of it" with room on both sides.
+    heights = sorted(f["y1"] - f["y0"] for f in feats)
+    tol = 0.5 * heights[len(heights) // 2]
+    best = []
+    for anchor in feats:
+        group = [f for f in feats if abs(f["x1"] - anchor["x1"]) <= tol]
+        if len(group) > len(best):
+            best = group
+    return sorted(best, key=lambda f: f["cy"])
+
+
 def group_words(rows, h):
-    """4 word rows = the 4 evenly-spaced similar-height rows; title = the rest above."""
+    """4 word rows = the 4 marker-aligned rows; title = the rest above."""
     import itertools
     feats = [dict(y0=r[0], y1=r[1], x0=r[2], x1=r[3],
                   cy=(r[0]+r[1])/2/h, bh=(r[1]-r[0])/h) for r in rows]
@@ -169,12 +196,23 @@ def group_words(rows, h):
     if len(feats) == 4:
         words = feats
     else:
-        def sc(g):
-            g = sorted(g, key=lambda f: f["cy"])
-            gaps = [g[i+1]["cy"]-g[i]["cy"] for i in range(3)]
-            mg = sum(gaps)/3
-            return sum((x-mg)**2 for x in gaps)
-        words = sorted(min(itertools.combinations(feats, 4), key=sc), key=lambda f: f["cy"])
+        # Prefer the rows that actually carry a number marker. Picking the four
+        # most EVENLY SPACED rows instead is what shifted every slot down a line
+        # on a template whose filled sample wraps one entry: the wrap makes five
+        # evenly spaced rows, and dropping the FIRST scores just as evenly as
+        # dropping the wrap, so the real first word was discarded and the wrap
+        # adopted as a slot.
+        marked = _marker_aligned(feats)
+        if len(marked) == 4:
+            words = marked
+        else:
+            def sc(g):
+                g = sorted(g, key=lambda f: f["cy"])
+                gaps = [g[i+1]["cy"]-g[i]["cy"] for i in range(3)]
+                mg = sum(gaps)/3
+                return sum((x-mg)**2 for x in gaps)
+            words = sorted(min(itertools.combinations(feats, 4), key=sc),
+                           key=lambda f: f["cy"])
     wtop = words[0]["cy"]
     title = [f for f in feats if f["cy"] < wtop - 0.02]
     return dict(words=words, title=title)
