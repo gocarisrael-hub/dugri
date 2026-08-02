@@ -1493,3 +1493,205 @@ describe('single-card layout — ONE front for the whole deck', () => {
     expect(f({ fronts: [4] })).toEqual([4]);
   });
 });
+
+// CONVERTING AN EXISTING TEMPLATE. Onboarding could always take one front + one
+// back, but only for a NEW template — an owner moving a shipped SHEET deck onto
+// the card layout had no way to say "every card carries the same design", so the
+// checklist demanded all eighteen numbered files. These cover the settings patch
+// that does it, and the file housekeeping that "replace" implies: the previous
+// layout's SVGs must not survive the conversion, including via the additive
+// shipped→owner backfill that runs on every asset write.
+describe('converting an existing template to the single-card layout', () => {
+  let templates;
+  let root;
+  let dataDir;
+
+  function reload(withStore) {
+    if (withStore) {
+      dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-cvt-data-'));
+      process.env.DATA_DIR = dataDir;
+    } else {
+      delete process.env.DATA_DIR;
+    }
+    delete require.cache[require.resolve(path.join(serverDir, 'templates.js'))];
+    delete require.cache[require.resolve(path.join(serverDir, 'template-store.js'))];
+    templates = require(path.join(serverDir, 'templates.js'));
+  }
+
+  // A shipped SHEET template: entry with no card_structure + the four sheet SVGs.
+  function seedSheet(key = 'sheet-demo') {
+    const themesPath = templates.themesPathFor(root);
+    const themes = templates.loadThemes(themesPath);
+    themes[key] = { slug: key, display_he: 'גיליון', calibrated: true };
+    fs.writeFileSync(themesPath, JSON.stringify(themes, null, 1) + '\n', 'utf8');
+    const dir = path.join(root, 'resources', 'canva', 'templates', key);
+    for (const layer of ['clean', 'filled']) {
+      fs.mkdirSync(path.join(dir, layer), { recursive: true });
+      for (const f of ['fronts.svg', 'backs.svg', 'board.svg']) {
+        fs.writeFileSync(path.join(dir, layer, f), SVG(layer + '-' + f).toString(), 'utf8');
+      }
+    }
+    return { key, dir };
+  }
+
+  const entryOf = (key) => templates.loadThemes(templates.themesPathFor(root))[key];
+
+  beforeAll(() => {
+    reload(false);
+    root = makeScaffold();
+  });
+  afterAll(() => {
+    delete process.env.DATA_DIR;
+  });
+
+  it('one save switches layout AND front mode, recording a narrow front list', () => {
+    const { key } = seedSheet('cvt-one');
+    const r = templates.updateTemplateSettings({
+      root,
+      key,
+      patch: { card_structure: 'cards', card_fronts: 'one' },
+    });
+    expect(r.error).toBeUndefined();
+    // A narrower FRONT LIST — never nine copies of one file.
+    expect(entryOf(key).cards).toEqual({ back: 1, fronts: [2] });
+    expect(r.settings.card_structure).toBe('cards');
+    expect(r.settings.card_fronts).toEqual([2]);
+  });
+
+  it('the checklist then asks for FOUR card files instead of eighteen', () => {
+    const { key } = seedSheet('cvt-list');
+    templates.updateTemplateSettings({
+      root,
+      key,
+      patch: { card_structure: 'cards', card_fronts: 'one' },
+    });
+    const st = templates.computeTemplateStatus(root, key, entryOf(key));
+    const cardRoles = st.assets
+      .map((a) => a.role)
+      .filter((r) => /^(clean|filled)-\d+$/.test(r))
+      .sort();
+    expect(cardRoles).toEqual(['clean-1', 'clean-2', 'filled-1', 'filled-2']);
+    // The board is shared by both layouts and stays; the sheet's own files go.
+    expect(st.assets.map((a) => a.role)).toContain('clean-board');
+    expect(st.assets.map((a) => a.role)).not.toContain('clean-fronts');
+  });
+
+  it('the conversion drops `calibrated` — the geometry was measured on other art', () => {
+    const { key } = seedSheet('cvt-cal');
+    expect(entryOf(key).calibrated).toBe(true);
+    templates.updateTemplateSettings({ root, key, patch: { card_structure: 'cards' } });
+    expect(entryOf(key).calibrated).toBe(false);
+  });
+
+  it('an explicit calibrated:true in the SAME save cannot resurrect the geometry', () => {
+    const { key } = seedSheet('cvt-cal2');
+    const r = templates.updateTemplateSettings({
+      root,
+      key,
+      patch: { card_fronts: 'one', card_structure: 'cards', calibrated: true },
+    });
+    // Refused outright (no card_slots for the new layout) — never silently true.
+    expect(r.error).toBeUndefined();
+    expect(entryOf(key).calibrated).toBe(false);
+  });
+
+  it("refuses card_fronts:'one' on a template that stays a sheet", () => {
+    const { key } = seedSheet('cvt-refuse');
+    const r = templates.updateTemplateSettings({ root, key, patch: { card_fronts: 'one' } });
+    expect(r.error).toMatch(/requires card_structure/);
+    expect(entryOf(key).cards).toBeUndefined();
+  });
+
+  it('rejects an unknown front mode', () => {
+    const { key } = seedSheet('cvt-bad');
+    const r = templates.updateTemplateSettings({ root, key, patch: { card_fronts: 'seven' } });
+    expect(r.error).toMatch(/card_fronts must be one of/);
+  });
+
+  it('switching back to `all` drops the block entirely (byte-for-byte the default)', () => {
+    const { key } = seedSheet('cvt-back');
+    templates.updateTemplateSettings({
+      root,
+      key,
+      patch: { card_structure: 'cards', card_fronts: 'one' },
+    });
+    expect(entryOf(key).cards).toEqual({ back: 1, fronts: [2] });
+    const r = templates.updateTemplateSettings({ root, key, patch: { card_fronts: 'all' } });
+    expect(r.error).toBeUndefined();
+    expect('cards' in entryOf(key)).toBe(false);
+    expect(r.settings.card_fronts).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it('a no-op front-mode save on an unconverted sheet changes nothing', () => {
+    const { key } = seedSheet('cvt-noop');
+    const r = templates.updateTemplateSettings({ root, key, patch: { card_fronts: 'all' } });
+    // Nothing to change — and it must not be reported as a successful conversion.
+    expect(r.error).toMatch(/no valid settings/);
+    expect(entryOf(key).calibrated).toBe(true);
+  });
+
+  it('NEVER deletes from the shipped image dir (a checkout with no DATA_DIR)', () => {
+    const { key, dir } = seedSheet('cvt-shipped');
+    templates.updateTemplateSettings({
+      root,
+      key,
+      patch: { card_structure: 'cards', card_fronts: 'one' },
+    });
+    // The repo's own artwork survives; it is simply no longer read.
+    expect(fs.existsSync(path.join(dir, 'clean', 'fronts.svg'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'filled', 'backs.svg'))).toBe(true);
+  });
+
+  describe('with a persistent store (production shape)', () => {
+    beforeAll(() => {
+      reload(true);
+      root = makeScaffold();
+    });
+
+    it('the sheet SVGs do not survive into the owner copy on the first card upload', () => {
+      const { key } = seedSheet('cvt-store');
+      templates.updateTemplateSettings({
+        root,
+        key,
+        patch: { card_structure: 'cards', card_fronts: 'one' },
+      });
+      // The first upload is what claims the owner dir, copying the shipped one in.
+      const up = templates.replaceAsset({
+        root,
+        key,
+        role: 'clean-2',
+        file: { filename: '2.svg', data: SVG('the-one-front') },
+      });
+      expect(up.error).toBeUndefined();
+
+      const ownerDir = path.join(dataDir, 'templates', key);
+      const rel = (p) => path.join(ownerDir, p);
+      // What the owner uploaded, and the board both layouts share: present.
+      expect(fs.existsSync(rel('clean/2.svg'))).toBe(true);
+      expect(fs.existsSync(rel('clean/board.svg'))).toBe(true);
+      // The previous layout's art: gone, and NOT restored by the additive
+      // shipped→owner backfill that runs on every write.
+      for (const dead of ['clean/fronts.svg', 'clean/backs.svg', 'filled/fronts.svg']) {
+        expect(fs.existsSync(rel(dead)), dead + ' should not be copied across').toBe(false);
+      }
+    });
+
+    it('a template left on the sheet layout keeps its files copied across as before', () => {
+      const { key } = seedSheet('cvt-untouched');
+      const up = templates.replaceAsset({
+        root,
+        key,
+        role: 'clean-fronts',
+        file: { filename: 'fronts.svg', data: SVG('new-fronts') },
+        // Seeded calibrated, and this one is NOT being converted — so the
+        // replace-on-a-calibrated-template guard applies and has to be confirmed.
+        force: true,
+      });
+      expect(up.error).toBeUndefined();
+      const ownerDir = path.join(dataDir, 'templates', key);
+      // Nothing is pruned from a template that was never converted.
+      expect(fs.existsSync(path.join(ownerDir, 'clean', 'backs.svg'))).toBe(true);
+      expect(fs.existsSync(path.join(ownerDir, 'filled', 'fronts.svg'))).toBe(true);
+    });
+  });
+});
