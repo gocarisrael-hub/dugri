@@ -54,7 +54,8 @@ Settings, content editor, WhatsApp/Whapi, emails/reminders, and the test/CI harn
 - `site/js/editor.js` (loaded on every page), `header.js`, `analytics.js`, `timer.js`, `consent.js` (shared w/ C)
 - Pages: `admin.html` chrome, `admin-features.html`, `admin-texts.html`, `admin-playbook.html`, `how.html`, `timer.html`, homepage marketing shell
 - In `index.js`: content/settings/features routes, `/api/whatsapp/webhook`, the reminder/nudge scans, the SPA `GET *` catch-all
-- Test/CI harness (D arbitrates): `package.json`, `vitest.config.js`, `playwright.config.js`, `eslint.config.js`, `tests/e2e/{tpl-fixture,global-setup,feature-flags}.js`
+- Test/CI harness (D arbitrates): `package.json`, `vitest.config.js`, `playwright.config.js`, `eslint.config.js`, `tests/e2e/{tpl-fixture,global-setup,feature-flags,server-target}.js`
+  - The e2e server's port is derived per checkout (`server-target.js`), so worktrees can run E2E concurrently; `E2E_PORT=<n>` overrides. global-setup FAILS the run if that port answers with another checkout's config.
 - Tests: `settings*`, `content-*`, `whatsapp*`, `wa-*`, `notify*`, `reminder*`, `playbook*`, `analytics`, `editor`, `feature-flags`, `admin-features/texts/playbook.spec`, `content-editor.spec`, `server-routing`, `smoke`
 
 ## Shared / coordination points

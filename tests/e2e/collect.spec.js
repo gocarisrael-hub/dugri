@@ -720,49 +720,54 @@ test("a stored delivery address prefills the checkout form so the buyer isn't fo
 }) => {
   // Fix #4: an order with a stored delivery address (owner reload) must prefill
   // the form — collectAddress() otherwise blocks pay until street/city/zip are
-  // re-entered. Enable delivery server-side, place a delivery order with an
-  // address, reload as the owner, and assert the fields come back filled.
+  // re-entered. Place an order with a delivery address, reload as the owner, and
+  // assert the fields come back filled.
+  //
+  // The delivery order is created in TWO steps — a pickup order, then the ADMIN
+  // order edit that switches it to delivery — rather than POSTing delivery
+  // straight to /order. The public route refuses a version the owner has turned
+  // off, and delivery ships off, so the direct route needed `pricing.delivery_
+  // enabled` flipped on the server. That setting is GLOBAL and shared with every
+  // spec running concurrently: for the width of this one test the whole suite saw
+  // a checkout that offers delivery, which is exactly the cross-spec flake the
+  // retries were papering over. adminUpdateOrder deliberately doesn't consult the
+  // enable gate (the owner fulfils what was actually sold), so this reaches the
+  // same stored state while touching only THIS collection.
   await enableCardButton(page);
-  await page.request.post('/api/admin/settings?key=dugri-admin', {
-    data: { section: 'pricing', key: 'delivery_enabled', value: true },
+  await stubPricing(page, {
+    store: { now: 199, was: 239 },
+    versions: {
+      pdf: { enabled: false, price: 79 },
+      pickup: { enabled: true, price: 199 },
+      delivery: { enabled: true, price: 220 },
+      custom: { enabled: false, price: 599 },
+    },
   });
-  try {
-    await stubPricing(page, {
-      store: { now: 199, was: 239 },
-      versions: {
-        pdf: { enabled: false, price: 79 },
-        pickup: { enabled: true, price: 199 },
-        delivery: { enabled: true, price: 220 },
-        custom: { enabled: false, price: 599 },
-      },
-    });
-    await createCollection(page, 'Shira');
-    const url = new URL(page.url());
-    const c = url.searchParams.get('c');
-    const k = url.searchParams.get('k');
-    // Place a delivery order WITH an address directly (bypasses the card iframe).
-    const res = await page.request.post(`/api/collections/${c}/order`, {
-      data: {
-        owner_token: k,
+  await createCollection(page, 'Shira');
+  const url = new URL(page.url());
+  const c = url.searchParams.get('c');
+  const k = url.searchParams.get('k');
+  const placed = await page.request.post(`/api/collections/${c}/order`, {
+    data: { owner_token: k, version: 'pickup' },
+  });
+  expect(placed.ok()).toBeTruthy();
+  const switched = await page.request.patch(`/api/admin/collections/${c}?key=dugri-admin`, {
+    data: {
+      order: {
         version: 'delivery',
         address: { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' },
       },
-    });
-    expect(res.ok()).toBeTruthy();
+    },
+  });
+  expect(switched.ok()).toBeTruthy();
 
-    await page.reload();
-    await page.locator('#payPanel summary').click();
-    // Re-select delivery; the stored address is prefilled (no re-typing to pay).
-    await page.locator('.pay-opt input[value="delivery"]').check();
-    await expect(page.locator('#addrStreet')).toHaveValue('הרצל 1');
-    await expect(page.locator('#addrCity')).toHaveValue('תל אביב');
-    await expect(page.locator('#addrPostal')).toHaveValue('6100000');
-  } finally {
-    // Restore the launch default so this global server setting can't leak.
-    await page.request.delete(
-      '/api/admin/settings?key=dugri-admin&section=pricing&settingKey=delivery_enabled'
-    );
-  }
+  await page.reload();
+  await page.locator('#payPanel summary').click();
+  // Re-select delivery; the stored address is prefilled (no re-typing to pay).
+  await page.locator('.pay-opt input[value="delivery"]').check();
+  await expect(page.locator('#addrStreet')).toHaveValue('הרצל 1');
+  await expect(page.locator('#addrCity')).toHaveValue('תל אביב');
+  await expect(page.locator('#addrPostal')).toHaveValue('6100000');
 });
 
 test('after payment: pay panel + reminder disappear, סיום card takes over', async ({ page }) => {
