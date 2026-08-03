@@ -41,6 +41,25 @@ function isSafeSlug(slug) {
   return typeof slug === 'string' && slug.length >= 1 && slug.length <= 64 && SLUG_RE.test(slug);
 }
 
+// Whether a string is safe to LOOK UP as an existing themes.json key.
+//
+// isSafeSlug is the rule for a key we are about to CREATE, and it is right to
+// stay strict there. It is the wrong rule for reading one that already exists:
+// the shipped "trip comeback" is keyed with a space, so a route that gated on
+// isSafeSlug refused it — which is why that one template's asset thumbnails all
+// came back 404 and its checklist showed no pictures.
+//
+// The safety a lookup actually needs is that the string cannot escape a
+// directory. Callers still resolve through an exact themes lookup and check the
+// resolved file stays inside the template dir, so this only has to rule out the
+// path-shaped inputs.
+function isSafeThemeKey(key) {
+  if (typeof key !== 'string' || key.length < 1 || key.length > 64) return false;
+  if (key !== key.trim()) return false;
+  if (key === '.' || key === '..') return false;
+  return !/[/\\]/.test(key) && !key.includes('\0');
+}
+
 // The name-casing rules a theme can use (matches config.py's _form_name).
 const NAME_FORMS = ['hebrew', 'english', 'english-caps'];
 // The two name-script languages a theme can require (themes.json `language`).
@@ -472,6 +491,7 @@ function writeTemplateFiles({ root, slug, clean, filled, fonts, assets }) {
 function runRecipeDiff({
   root,
   slug,
+  recipeName,
   pythonBin = 'python3',
   timeoutMs = 120000,
   runner,
@@ -481,12 +501,22 @@ function runRecipeDiff({
   const dir = resolveTemplateDirBySlug(root, slug);
   const filled = path.join(dir, 'filled', 'fronts.svg');
   const clean = path.join(dir, 'clean', 'fronts.svg');
-  const out = store.ownerRecipePath(slug) || path.join(recipesDirFor(root), slug + '.json');
+  // Detection must write the file the GENERATOR reads, which is named by the
+  // theme's `recipe` field — NOT by its key. The two are the same for every
+  // template onboarded through the panel, and differ for a shipped one:
+  // "trip comeback" is keyed with a space and its recipe is "trip". Writing by
+  // key put a fresh single-card recipe in "trip comeback.json" while the
+  // renderer went on reading the old 8-up "trip.json", so pressing "detect
+  // again" appeared to succeed and changed nothing — the card then previewed
+  // with no title and no words, because the recipe actually in use had no
+  // single-card geometry at all.
+  const name = recipeName || slug;
+  const out = store.ownerRecipePath(name) || path.join(recipesDirFor(root), name + '.json');
   // A single-card template has no fronts.svg sheet to diff: the detector takes
   // the template DIRECTORY and walks clean/filled 1..9 itself, reconciling the
   // four shared word slots across the eight fronts and keeping each front's own
   // title box.
-  const args = cards ? [script, '--single', dir, slug] : [script, filled, clean, slug];
+  const args = cards ? [script, '--single', dir, name] : [script, filled, clean, name];
   let result;
   try {
     const run = runner || spawnSync;
@@ -2231,7 +2261,14 @@ function redetectTemplate({ root, key, pythonBin, recipeRunner, calibrateRunner 
   const entry = ownTheme(themes, key);
   if (!entry) return { error: 'template not found', httpStatus: 404 };
   const cards = cardStructureOf(entry) === 'cards';
-  const recipe = runRecipeDiff({ root, slug: key, cards, pythonBin, runner: recipeRunner });
+  const recipe = runRecipeDiff({
+    root,
+    slug: key,
+    recipeName: entry.recipe || key,
+    cards,
+    pythonBin,
+    runner: recipeRunner,
+  });
   if (!recipe.ok) {
     return {
       error: 'detection failed: ' + (recipe.detail || 'unknown error'),
@@ -2555,6 +2592,7 @@ function replaceAsset({
     const r = runRecipeDiff({
       root,
       slug: key,
+      recipeName: entry.recipe || key,
       cards: true,
       pythonBin,
       runner: recipeRunner,
@@ -2620,6 +2658,7 @@ function boundaryFromContentType(contentType) {
 module.exports = {
   inStore,
   isSafeSlug,
+  isSafeThemeKey,
   NAME_FORMS,
   SVG_ROLES,
   CARD_STRUCTURES,
