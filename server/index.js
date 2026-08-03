@@ -2875,7 +2875,7 @@ app.get('/api/admin/templates/:key/asset-svg/:role', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const key = String(req.params.key || '');
   const role = String(req.params.role || '');
-  if (!templates.isSafeSlug(key)) return res.status(404).type('txt').send('Not found');
+  if (!templates.isSafeThemeKey(key)) return res.status(404).type('txt').send('Not found');
   let entry = null;
   let dir = null;
   try {
