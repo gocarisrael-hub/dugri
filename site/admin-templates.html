@@ -1300,7 +1300,7 @@
         }
 
         // board + back name slots
-        const slotGroup = (prefix, legendText, slot) => {
+        const slotGroup = (prefix, legendText, slot, withSize) => {
           const g = document.createElement('fieldset');
           g.className = 'cal-group';
           const lg = document.createElement('legend');
@@ -1320,11 +1320,43 @@
             field('fill', color(prefix + '.fill', slot && slot.fill)),
             field('outline', color(prefix + '.outline', slot && slot.outline))
           );
+          // A paired back gets its OWN size: eight separately drawn backs give the
+          // title eight differently sized rooms, so the deck-wide back_size fits
+          // only the one it was measured against. Blank = fall back to it.
+          if (withSize) {
+            grid.append(
+              field('גודל (ריק=כללי)', num(prefix + '.size', slot && slot.size, 0.1, 'auto'))
+            );
+          }
           g.append(grid);
           return g;
         };
         body.append(slotGroup('board', 'שם על הלוח (board)', t.board || null));
-        body.append(slotGroup('back', 'שם על גב הקלף (back)', t.back || null));
+        // A deck whose eight styles each have their OWN back was drawn eight
+        // times, so the name may sit somewhere else on each — one shared slot
+        // would misplace it on seven cards in eight. Only a paired template
+        // (card_backs non-empty) gets the per-back panels; every other template
+        // keeps the single `back` group it has always had.
+        const backNums = Array.isArray(t.card_backs) ? t.card_backs : [];
+        if (backNums.length > 1) {
+          const savedBacks = t.backs && typeof t.backs === 'object' ? t.backs : {};
+          const head = document.createElement('div');
+          head.className = 'cal-slot-h';
+          head.textContent = 'שם על גב הקלף — לכל גב בנפרד';
+          body.append(head);
+          backNums.forEach((n, i) => {
+            body.append(
+              slotGroup(
+                'backs.' + n,
+                'גב ' + (i + 1) + ' (' + n + '.svg)',
+                savedBacks[String(n)] || null,
+                true
+              )
+            );
+          });
+        } else {
+          body.append(slotGroup('back', 'שם על גב הקלף (back)', t.back || null));
+        }
 
         // word_size (theme-level; empty = auto-fit)
         const wsG = document.createElement('div');
@@ -1422,15 +1454,18 @@
       // one key (board.frac / back.frac); the offset X/Y share title_style.offset;
       // the enable toggles have no confidence of their own.
       function confKeyFor(dataCal) {
-        if (!dataCal || dataCal === 'board.enabled' || dataCal === 'back.enabled') return null;
+        if (!dataCal || /\.enabled$/.test(dataCal)) return null;
         if (dataCal.startsWith('ts.')) {
           const rest = dataCal.slice(3);
           if (rest === 'offset_x' || rest === 'offset_y') return 'title_style.offset';
           return 'title_style.' + rest;
         }
-        const fm = dataCal.match(/^(board|back)\.frac\./);
-        if (fm) return fm[1] + '.frac';
-        return dataCal; // board.fill, board.outline, back.fill, back.outline, word_size
+        // The four frac coordinates of a surface share one confidence key — the
+        // measurer grades the BOX, not each edge of it. `backs.10.frac.x0` →
+        // `backs.10.frac`, the same way `board.frac.x0` → `board.frac`.
+        const fm = dataCal.match(/^((?:board|back|backs\.\d+)\.frac)\./);
+        if (fm) return fm[1];
+        return dataCal; // board.fill, back.outline, backs.10.size, word_size, ...
       }
 
       // Redraw a template card's single-card MAP from its current inputs: the four
@@ -1526,7 +1561,7 @@
         }
         const slot = (prefix) => {
           if (!calBool(card, prefix + '.enabled')) return null;
-          return {
+          const s = {
             frac: {
               x0: calNum(card, prefix + '.frac.x0'),
               y0: calNum(card, prefix + '.frac.y0'),
@@ -1536,6 +1571,9 @@
             fill: calStr(card, prefix + '.fill'),
             outline: calStr(card, prefix + '.outline'),
           };
+          const size = calNum(card, prefix + '.size');
+          if (size != null) s.size = size;
+          return s;
         };
         const out = {
           title_style,
@@ -1543,6 +1581,20 @@
           back: slot('back'),
           word_size: calNum(card, 'word_size'),
         };
+        // Per-back slots, when the panel rendered them. A disabled one posts an
+        // explicit null — "this back carries no title" is an ANSWER, and dropping
+        // the key would read as "nobody has looked yet" and fall back to the
+        // shared `back` the old artwork was measured against.
+        const backEls = card.querySelectorAll(
+          '.tpl-cal [data-cal^="backs."][data-cal$=".enabled"]'
+        );
+        if (backEls.length) {
+          out.backs = {};
+          for (const el of backEls) {
+            const prefix = el.dataset.cal.replace(/\.enabled$/, '');
+            out.backs[prefix.slice('backs.'.length)] = slot(prefix);
+          }
+        }
         // Single-card geometry, only for a template on the new layout — a sheet
         // template posts exactly the blob it always did.
         if (card.querySelector('.tpl-cal .cal-card-group')) {

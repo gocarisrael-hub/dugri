@@ -21,6 +21,17 @@ Output is the SAME blob shape the admin calibration form edits and
     {"title_style": {...}, "board": {...}, "back": {...}, "word_size": null,
      "confidence": {...}, "notes": [...]}
 
+A deck whose eight styles each have their own back (#315) answers PER BACK
+instead, under ``backs`` keyed by the card file number, with ``back`` left null::
+
+    {"backs": {"10": {"frac": {...}, "fill": ..., "outline": ..., "size": 42},
+               "11": null, ...}}
+
+``null`` there is an ANSWER — that back carries no title — and never a gap. The
+size moves inside the entry because eight separately drawn backs give the title
+eight differently sized rooms, where one deck-wide ``back_size`` fits only the
+box it was measured against.
+
 ``confidence`` and ``notes`` are advisory extras for the admin UI (the server's
 validator ignores unknown keys). Values this pass CANNOT measure are left out
 rather than guessed, so the form shows them as the owner's remaining work:
@@ -1143,14 +1154,21 @@ def calibrate(theme_key, workdir=None):
         # shrink-to-clean-border guard, the plausibility check, the vector-first
         # paint reading — is the v1 body unchanged, just handed one cell instead
         # of eight.
+        #
+        # A template whose eight styles each have their OWN back (#315) is
+        # measured ONCE PER BACK. The knobs the fronts share (paints, ring,
+        # alignment) genuinely are one deck-wide answer, but the back's title BOX
+        # is not: each back is separate artwork, so the name may sit somewhere
+        # else on each — or on none of them. Measuring one and repeating it is
+        # how seven cards in eight get the name in the wrong place.
         recipe_path = config.recipe_path(cfg["recipe"])
-        if single:
-            kf = config.card_path(theme_key, config.back_index(cfg), filled=True)
-            kc = config.card_path(theme_key, config.back_index(cfg))
-        else:
-            kf, kc = sheet("backs", "filled"), sheet("backs", "clean")
-        if (os.path.exists(kf) and os.path.exists(kc)
-                and (single or os.path.exists(recipe_path))):
+
+        def measure_back(kf, kc, label):
+            """One back's slot — ``(slot|None, size, grade, note)``.
+
+            ``label`` prefixes this back's notes and confidence keys so a deck
+            with eight of them says WHICH one it could not read.
+            """
             mask, image, vb = _diff(kf, kc, workdir)
             w, h = mask.size
             if single:
@@ -1160,7 +1178,6 @@ def calibrate(theme_key, workdir=None):
                 ppu = w / vb[2]
                 cells = [tuple(v * ppu for v in card["cell"])
                          for card in recipe["cards"] if card]
-            got = None
             for cx0, cy0, cx1, cy1 in cells:
                 region = _shrink_to_clean_border(
                     mask, (int(cx0), int(cy0), int(cx1), int(cy1)))
@@ -1175,15 +1192,15 @@ def calibrate(theme_key, workdir=None):
                 if not (fill and outline):
                     fill, outline, _ = _fill_and_outline(image, mask, box)
                 if fill and outline:
-                    confidence["back.colors"] = "high" if fill != outline else "low"
+                    confidence[label + ".colors"] = "high" if fill != outline else "low"
                 else:
                     fill = outline = fill or _dominant_color(image, mask, box)
-                    notes.append("back: the title box is measured, but its two "
+                    notes.append(label + ": the title box is measured, but its two "
                                  "paints could not be told apart — fill and "
                                  "outline are both set to the dominant ink colour "
                                  "and need confirming.")
-                    confidence["back.colors"] = "low"
-                got = {
+                    confidence[label + ".colors"] = "low"
+                slot = {
                     "frac": {"x0": round((box[0] - cx0) / cw, 4),
                              "y0": round((box[1] - cy0) / ch, 4),
                              "x1": round((box[2] - cx0) / cw, 4),
@@ -1194,20 +1211,58 @@ def calibrate(theme_key, workdir=None):
                 # gets its own size — pinning the front's here would size the
                 # back title to a box it was never measured against.
                 bppu, box_, boy = _viewport(mask, vb)
-                record("back_size", *fit_title_size(
+                size, grade, note = fit_title_size(
                     mask, image, units(box, bppu, box_, boy), bppu, box_, boy,
-                    title_font, samples, fill)[:3])
-                break
-            out["back"] = got
-            confidence["back.frac"] = "high" if got else "none"
-            if not got:
-                notes.append("back: could not isolate a title — this design may "
-                             "carry no title on the card back (several don't), or "
-                             "its filled and clean backs differ across the whole "
-                             "surface.")
-        else:
-            notes.append("back: filled/clean pair or recipe missing, skipped.")
-            confidence["back"] = "none"
+                    title_font, samples, fill)[:3]
+                return slot, size, grade, note
+            return None, None, None, None
+
+        def back_pair(index):
+            """The filled/clean pair for one back, sheet or single-card."""
+            if single:
+                return (config.card_path(theme_key, index, filled=True),
+                        config.card_path(theme_key, index))
+            return sheet("backs", "filled"), sheet("backs", "clean")
+
+        def unreadable(label):
+            notes.append(label + ": could not isolate a title — this design may "
+                         "carry no title on the card back (several don't), or "
+                         "its filled and clean backs differ across the whole "
+                         "surface.")
+
+        # Distinct backs, in printing order. A one-back deck yields exactly one,
+        # so it takes the SAME path and writes the same `back` blob it always did.
+        back_list = list(dict.fromkeys(config.back_indices(cfg))) if single else [None]
+        paired = single and config.has_per_front_backs(cfg)
+        if paired:
+            out["backs"] = {}
+        for bi in back_list:
+            label = f"backs.{bi}" if paired else "back"
+            kf, kc = back_pair(bi)
+            if not (os.path.exists(kf) and os.path.exists(kc)
+                    and (single or os.path.exists(recipe_path))):
+                notes.append(label + ": filled/clean pair or recipe missing, skipped.")
+                confidence[label] = "none"
+                if paired:
+                    out["backs"][str(bi)] = None
+                continue
+            slot, size, grade, note = measure_back(kf, kc, label)
+            confidence[label + ".frac"] = "high" if slot else "none"
+            if not slot:
+                unreadable(label)
+            if paired:
+                # Each back's size belongs to that back: eight separately drawn
+                # backs give the title eight different rooms, and one shared pin
+                # fits only the box it was measured against.
+                if slot and size is not None:
+                    slot["size"] = size
+                if note:
+                    notes.append(note)
+                confidence[label + ".size"] = grade if size is not None else "none"
+                out["backs"][str(bi)] = slot
+            else:
+                record("back_size", size, grade, note)
+                out["back"] = slot
 
         # --- FRONTS: the title's paint colours, ring thickness and alignment ---
         # These knobs are SHARED across the whole deck (docs/card-structure-schema.md),
@@ -1507,9 +1562,17 @@ def main():
         with open(args.out, "w", encoding="utf-8") as f:
             f.write(text)
         ts = blob.get("title_style") or {}
+        backs = blob.get("backs")
+        if isinstance(backs, dict):
+            # A paired deck has no single back to report yes/no about; what the
+            # owner needs to know is how many of the eight were actually read.
+            got = sum(1 for v in backs.values() if v)
+            back_state = f"{got}/{len(backs)} backs"
+        else:
+            back_state = "yes" if blob.get("back") else "no"
         print(f"calibrated {args.theme!r}: "
               f"board={'yes' if blob.get('board') else 'no'} "
-              f"back={'yes' if blob.get('back') else 'no'} "
+              f"back={back_state} "
               f"title_fill={ts.get('fill') or '-'} -> {args.out}")
     else:
         print(text)

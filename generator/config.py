@@ -134,7 +134,11 @@ _PREVIEW_OVERRIDES = {}
 # path and no filename), so it still cannot repoint a theme at other artwork.
 # ``cards`` — which SVG is the back and which are the fronts — is deliberately
 # NOT here, for exactly that reason.
-_OVERRIDABLE = ("title_style", "board", "back", "word_size", "card_slots")
+# ``backs`` is the per-back half of the same look pass — a paired template's
+# eight backs each carry the title in their own place — so it overrides for the
+# same reason ``back`` does. Also pure geometry and paints, keyed by card number;
+# it selects no artwork, so it cannot repoint the theme either.
+_OVERRIDABLE = ("title_style", "board", "back", "backs", "word_size", "card_slots")
 
 # Marker merged into an overridden cfg so ``ensure_calibrated`` lets the preview
 # through. In-memory only — overrides are never written back to themes.json.
@@ -788,19 +792,78 @@ def recipe_card(recipe):
     return card
 
 
-def recipe_back_title(recipe):
-    """Title boxes for the card BACK — ``[]`` when it has no text slot.
+# Sentinel: a key that is PRESENT and null is an answer ("no title here"), which
+# has to stay distinguishable from a key that was never written at all.
+_MISSING = object()
+
+
+def recipe_back_title(recipe, back_index=None):
+    """Title boxes for ONE card back — ``[]`` when it has no text slot.
 
     ``"back": null`` is a legitimate answer, not a gap in calibration:
     grapefruit's back is a full-bleed pattern with no text on it at all. So a
     null/absent back means "print no back title" and must NEVER fall through to
     another card's boxes — that would stamp the honoree's name onto artwork that
     was designed without room for it.
+
+    A template whose eight styles each have their OWN back (#315) answers PER
+    BACK, under ``backs`` keyed by the card file number — the same numbering
+    ``cards.backs`` uses, so a key means one thing everywhere. Each back was
+    drawn separately and may carry the name somewhere else, or nowhere; the
+    shared ``back`` above is then the one-back deck's degenerate case.
     """
+    backs = recipe.get("backs")
+    if isinstance(backs, dict) and back_index is not None:
+        entry = backs.get(str(back_index), _MISSING)
+        if entry is not _MISSING:
+            return entry.get("title") or [] if isinstance(entry, dict) else []
     back = recipe.get("back")
     if not isinstance(back, dict):
         return []
     return back.get("title") or []
+
+
+def recipe_answered_back(recipe, back_index=None):
+    """Whether the recipe says anything definite about this back's title slot.
+
+    Detection writing ``back``/``backs`` is what separates "this surface has no
+    text" from "nobody has looked yet" — only the first may print nothing.
+    """
+    backs = recipe.get("backs")
+    if isinstance(backs, dict) and back_index is not None and str(back_index) in backs:
+        return True
+    return "back" in recipe
+
+
+def theme_back_slot(cfg, back_index=None):
+    """The calibrated title slot for ONE back — ``{frac, fill, outline}`` or None.
+
+    Resolution is most-specific-first, and mirrors :func:`recipe_back_title`:
+
+    * ``backs["<index>"]`` present -> that back's own calibration. An explicit
+      ``null`` is an ANSWER ("this back carries no title"), never a gap;
+    * otherwise the deck's shared ``back`` — every one-back template, which is
+      every template that existed before per-front backs.
+    """
+    backs = cfg.get("backs")
+    if isinstance(backs, dict) and back_index is not None:
+        entry = backs.get(str(back_index), _MISSING)
+        if entry is not _MISSING:
+            return entry if isinstance(entry, dict) else None
+    return cfg.get("back")
+
+
+def has_back_calibration(cfg, back_index=None):
+    """Whether this specific back carries its own calibration entry.
+
+    A per-back entry is a more specific answer than the recipe's SHARED back, so
+    it has to outrank one: a template converted to per-front backs keeps the
+    shared ``back`` its old artwork was detected against, and that answer is no
+    longer about the back now being printed.
+    """
+    backs = cfg.get("backs")
+    return (isinstance(backs, dict) and back_index is not None
+            and str(back_index) in backs)
 
 
 def recipe_front_title(recipe, front_index):

@@ -815,6 +815,37 @@ describe('templates.js full editing (status / rename / replace)', () => {
     expect(min.error).toBeUndefined();
     expect(min.value.board).toBeNull();
     expect(min.value.word_size).toBeNull();
+    // A shared-back template posts no `backs` at all, and must not grow one.
+    expect(min.value.backs).toBeNull();
+  });
+
+  // A deck whose eight styles each have their OWN back (#315) calibrates each of
+  // them: they are separate artwork, so the honoree's name may sit somewhere else
+  // on each — or on none — and one shared answer misplaces it on seven in eight.
+  it('validateCalibration takes a per-back map, keeps an explicit null, and pins a per-back size', () => {
+    const v = templates.validateCalibration({
+      title_style: CAL.title_style,
+      backs: { 10: { ...CAL.back, size: 17 }, 11: null },
+    });
+    expect(v.error).toBeUndefined();
+    expect(v.value.backs['10']).toMatchObject({ ...CAL.back, size: 17 });
+    // null is an ANSWER ("this back carries no title"), so it has to survive the
+    // round-trip — dropping the key would read as "nobody has measured it yet"
+    // and fall back to the shared `back` the old artwork was measured against.
+    expect('11' in v.value.backs).toBe(true);
+    expect(v.value.backs['11']).toBeNull();
+  });
+
+  it('validateCalibration rejects a malformed per-back map', () => {
+    const withBacks = (backs) =>
+      templates.validateCalibration({ title_style: CAL.title_style, backs });
+    expect(withBacks({ front: CAL.back }).error).toMatch(/card number/);
+    expect(withBacks({ 10: { ...CAL.back, fill: 'nope' } }).error).toMatch(/backs\.10\.fill/);
+    expect(withBacks({ 10: { ...CAL.back, size: -3 } }).error).toMatch(/backs\.10\.size/);
+    expect(
+      withBacks({ 10: { ...CAL.back, frac: { x0: 0.9, y0: 0.1, x1: 0.2, y1: 0.5 } } }).error
+    ).toMatch(/backs\.10\.frac/);
+    expect(withBacks([CAL.back]).error).toMatch(/backs must be an object/);
   });
 
   it('deleteTemplate removes the entry + files, refuses an in-use theme + the last theme', () => {
