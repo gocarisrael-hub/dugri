@@ -1699,8 +1699,8 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
                              cfg, word_font_path, cell, room=room))
 
 
-def back_overlay(theme, recipe, title_lines, card_vb=None):
-    """Title markup for the card BACK, which every pair repeats.
+def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
+    """Title markup for ONE card back.
 
     Three distinct cases, and conflating the last two would misprint a card:
 
@@ -1712,15 +1712,28 @@ def back_overlay(theme, recipe, title_lines, card_vb=None):
     * the recipe has NO ``back`` key at all -> nothing was said either way (the
       template predates back detection), so fall back to the theme's
       ``back.frac`` fractions, which is how v1 placed it.
+
+    ``back_index`` names WHICH back is being drawn. A deck whose eight styles
+    each have their own back (#315) was drawn eight separate times, so the
+    honoree's name may sit somewhere else on each — or on none of them — and one
+    shared answer would misplace it on seven cards out of eight. Omitting the
+    argument keeps the shared-back behaviour verbatim, which is every template
+    that predates pairing.
+
+    A per-back CALIBRATION entry outranks the recipe's shared ``back``: a
+    template converted to per-front backs keeps the ``back`` its OLD artwork was
+    detected against, and that answer is not about the card now being printed.
     """
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    bk = cfg.get("back")
+    bk = config.theme_back_slot(cfg, back_index)
     cell = _recipe_cell(recipe, card_vb)
-    boxes = config.recipe_back_title(recipe)
+    boxes = config.recipe_back_title(recipe, back_index)
     if not boxes:
-        # An explicit null/empty back is an ANSWER, not a gap — respect it.
-        if "back" in recipe:
+        # An explicit null/empty back is an ANSWER, not a gap — respect it,
+        # unless THIS back has since been calibrated on its own.
+        if (config.recipe_answered_back(recipe, back_index)
+                and not config.has_back_calibration(cfg, back_index)):
             return ""
         if not bk:
             return ""            # theme has no personalized back -> clean art
@@ -1737,8 +1750,12 @@ def back_overlay(theme, recipe, title_lines, card_vb=None):
         style["fill"] = bk.get("fill", ts["fill"])
         style["outline"] = bk.get("outline", ts["outline"])
     cfg_back = {**cfg, "title_style": style}
+    # A paired back may need its own size: eight separately drawn backs give the
+    # title eight differently sized rooms, and one pin fits only the box it was
+    # measured against. Falls through to the deck-wide pins when unset.
     return _title_overlay(boxes, title_lines, cfg_back, title_font, cell,
-                          fixed_size=ts.get("back_size") or ts.get("size"))
+                          fixed_size=((bk or {}).get("size")
+                                      or ts.get("back_size") or ts.get("size")))
 
 
 # The photo card's four slots ship in the artwork as <image> elements with NO
@@ -1788,8 +1805,15 @@ def fill_photo_slots(svg_text, photo_paths):
     return _PHOTO_SLOT.sub(fill, svg_text)
 
 
+def _index_from_card_path(path):
+    """The card number a ``clean/13.svg`` path names, or None if it isn't one."""
+    stem = os.path.splitext(os.path.basename(path or ""))[0]
+    return int(stem) if stem.isdigit() else None
+
+
 def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None,
-                          word_font=None, kind="word", photos=None):
+                          word_font=None, kind="word", photos=None,
+                          back_index=None):
     """A STANDALONE, self-contained SVG for one card — fonts and all.
 
     The deck path puts fonts in the document stylesheet once and shares the
@@ -1819,7 +1843,13 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
              + font_face("TitleFont", config.font_path(theme, cfg["title_font"]))
              + "</style>")
     if kind == "back":
-        overlay = back_overlay(theme, recipe, title_lines, card_vb=card_vb)
+        # Which back this is decides where its title goes on a paired template.
+        # The caller usually knows; when it doesn't, the file being rendered says
+        # so — its number IS the back index everywhere else in the schema.
+        if back_index is None:
+            back_index = _index_from_card_path(clean_svg)
+        overlay = back_overlay(theme, recipe, title_lines, card_vb=card_vb,
+                               back_index=back_index)
     else:
         overlay = card_overlay(theme, recipe, words, title_lines,
                                front_index=front_index, word_font=word_font,
@@ -1828,11 +1858,12 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
 
 
 def render_single_card(theme, clean_svg, words, title_lines, out_png,
-                       front_index=None, word_font=None, kind="word", photos=None):
+                       front_index=None, word_font=None, kind="word", photos=None,
+                       back_index=None):
     """Screenshot one card to ``out_png`` (the preview path)."""
     svg = build_single_card_svg(theme, clean_svg, words, title_lines,
                                 front_index=front_index, word_font=word_font,
-                                kind=kind, photos=photos)
+                                kind=kind, photos=photos, back_index=back_index)
     svg_path = out_png.replace(".png", ".svg")
     with open(svg_path, "w", encoding="utf-8") as f:
         f.write(svg)

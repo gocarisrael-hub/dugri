@@ -145,9 +145,14 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
     # Best-effort, exactly as the v1 path: a back that fails to render must never
     # cost the buyer their card+board preview.
     try:
+        # The FIRST back, which on a one-back deck is the only one. A paired
+        # template has no shared back file at all, so asking for `back_path`
+        # here would look for a `1.svg` it was never meant to ship.
+        bi = config.back_indices(config.theme(theme))[0]
         back_png = rp.render_single_card(
-            theme, config.back_path(theme), [], title_lines,
-            os.path.join(workdir, "back.png"), kind="back", word_font=word_font)
+            theme, config.card_path(theme, bi), [], title_lines,
+            os.path.join(workdir, "back.png"), kind="back", word_font=word_font,
+            back_index=bi)
         _downscale(back_png, CARD_MAX_W)
         out["back"] = back_png
     except Exception:

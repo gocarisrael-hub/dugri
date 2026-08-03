@@ -134,6 +134,19 @@ _SURFACE_HE = {
 }
 
 
+def _surface_label(surface):
+    """Owner-facing name for a surface, including a paired ``back <n>``.
+
+    Each of a paired template's backs is its own surface, so the message has to
+    name WHICH back is mis-pinned — "the card back" would send the owner looking
+    at eight of them.
+    """
+    if surface in _SURFACE_HE:
+        return _SURFACE_HE[surface]
+    number = surface.split()[-1]
+    return f'הכותרת על גב הקלף {number} (backs."{number}"."size")'
+
+
 def _lang(cfg):
     return "hebrew" if cfg.get("language") == "hebrew" else "english"
 
@@ -246,7 +259,7 @@ def _fit(surface, pinned, box, font_path, font_name, samples, named, ts):
     fh_lo, fh_hi = h_lo * pinned / bh, h_hi * pinned / bh
     fw_lo = ws[0] * pinned / bw if ws else None
     fw_hi = ws[2] * pinned / bw if ws else None
-    label = _SURFACE_HE[surface]
+    label = _surface_label(surface)
     over = []
     if fh_lo > _OVERFLOW:
         over.append(f"גבוה ב-{(fh_lo - 1) * 100:.0f}% לפחות מהתיבה "
@@ -565,7 +578,23 @@ def _structure(cfg):
         problems += _slot_problems(cfg["board"], "הכותרת על הלוח (board)")
     if isinstance(cfg.get("back"), dict):
         problems += _slot_problems(cfg["back"], "הכותרת על גב הקלף (back)")
+    # A paired template's backs are eight separate answers, so each is checked on
+    # its own — a good back must never vouch for a malformed one beside it.
+    backs = cfg.get("backs")
+    if isinstance(backs, dict):
+        for key in sorted(backs, key=_as_int):
+            if isinstance(backs[key], dict):
+                problems += _slot_problems(
+                    backs[key], f"הכותרת על גב הקלף {key} (backs.{key})")
     return problems
+
+
+def _as_int(key):
+    """Sort a back key numerically — '10' comes after '9', not before it."""
+    try:
+        return int(key)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _assets(theme_key, cfg):
@@ -596,7 +625,11 @@ def _assets(theme_key, cfg):
     if config.is_single_card(cfg):
         required = [(f"{n}.svg", config.card_path(theme_key, n))
                     for n in config.fronts(cfg)]
-        required.append((f"{config.back_index(cfg)}.svg", config.back_path(theme_key)))
+        # Every DISTINCT back the deck prints. A paired template ships eight and
+        # no shared 1.svg at all, so asking for `back_path` here reported a
+        # missing file for artwork it was never supposed to have.
+        required += [(f"{n}.svg", config.card_path(theme_key, n))
+                     for n in dict.fromkeys(config.back_indices(cfg))]
         required.append(("board.svg", config.clean_path(theme_key, "board")))
         for label, p in required:
             paths[f"clean_{label}"] = p
@@ -674,6 +707,19 @@ def _pinned_surfaces(theme_key, cfg, ts, recipe):
         if isinstance(cfg.get("back"), dict) and cfg["back"].get("frac"):
             surfaces.append(("back", ts.get("back_size") or ts.get("size"),
                              _back_boxes(recipe, cfg["back"]["frac"])))
+        # Each of a paired template's backs is its own surface with its own box
+        # and its own pin, so each is judged separately — exactly the reason the
+        # back is not judged against the front's box above.
+        backs = cfg.get("backs")
+        if isinstance(backs, dict):
+            for key in sorted(backs, key=_as_int):
+                slot = backs[key]
+                if not isinstance(slot, dict) or not slot.get("frac"):
+                    continue
+                surfaces.append((
+                    f"back {key}",
+                    slot.get("size") or ts.get("back_size") or ts.get("size"),
+                    _back_boxes(recipe, slot["frac"])))
     if isinstance(cfg.get("board"), dict) and cfg["board"].get("frac"):
         box = _board_box(theme_key, cfg["board"]["frac"])
         if ts.get("board_size") and box is None:

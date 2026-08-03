@@ -334,7 +334,13 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
         doc.add_design(f"front{i}", front_svgs[i])
     log(f"registered {len(fronts)} fronts + {len(back_svgs)} back(s)")
 
-    back_ov = rp.back_overlay(theme, recipe, title_lines, card_vb=vb)
+    # One overlay PER DISTINCT back, not one for the deck: each back of a paired
+    # template is its own artwork and carries the title in its own place (or not
+    # at all), so a single overlay would misprint seven cards in eight. Built
+    # once per back rather than per card — a 208-card deck has at most eight.
+    back_ov = {i: rp.back_overlay(theme, recipe, title_lines, card_vb=vb,
+                                  back_index=i)
+               for i in dict.fromkeys(backs)}
     photo_paths = resolve_photos(
         theme, photos,
         workdir=os.path.join(workdir, "photos") if workdir else None)
@@ -351,7 +357,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
         else:
             front = fronts[card["front"] % len(fronts)]
             back = back_by_front[front]
-        doc.add_page(f"back{back}", back_ov)               # duplex: back, then front
+        doc.add_page(f"back{back}", back_ov[back])         # duplex: back, then front
         if front is None:
             # The photo card's slots live in the artwork and are filled in place
             # (docs/photo-card.md), so the FILLED card is the design — there is

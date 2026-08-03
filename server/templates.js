@@ -1672,6 +1672,11 @@ function computeTemplateStatus(root, key, entry) {
     title_style: (entry && entry.title_style) || null,
     board: (entry && entry.board) || null,
     back: (entry && entry.back) || null,
+    // Per-back calibration for a template whose eight styles each have their own
+    // back — keyed by card number, `null` inside meaning "this back carries no
+    // title". Null (not {}) when the deck shares one back, so the form can tell
+    // "not a paired template" from "paired, nothing measured yet".
+    backs: (entry && entry.backs) || null,
     word_size: entry && entry.word_size != null ? entry.word_size : null,
     // Asset layout + the single-card calibration it needs. `card_structure` is
     // always reported (absent on the entry reads as the legacy 'sheet'), so the
@@ -1951,6 +1956,45 @@ function validateSlot(input, label) {
   };
 }
 
+// Validate a PER-BACK calibration map { "<cardNumber>": slot|null } — a template
+// whose eight card styles each have their OWN back (#315). The key is the card
+// FILE number, the same numbering `cards.backs` uses, so a key means exactly one
+// thing everywhere. A `null` entry is an ANSWER ("this back carries no title"),
+// never a gap, so it must survive the round-trip instead of being dropped.
+// Each slot may pin its own `size`: eight separately drawn backs give the title
+// eight differently sized rooms, and one deck-wide back_size fits only the box
+// it was measured against. { value } (may be null) | { error }.
+function validateBacks(input, label) {
+  if (input == null) return { value: null };
+  if (typeof input !== 'object' || Array.isArray(input)) {
+    return { error: label + ' must be an object or null' };
+  }
+  const out = {};
+  for (const key of Object.keys(input)) {
+    if (!/^[0-9]+$/.test(key)) {
+      return {
+        error: label + ' key must be a card number, got ' + JSON.stringify(key.slice(0, 20)),
+      };
+    }
+    const slotLabel = label + '.' + key;
+    const v = validateSlot(input[key], slotLabel);
+    if (v.error) return { error: v.error };
+    if (v.value === null) {
+      out[key] = null;
+      continue;
+    }
+    const size = input[key].size;
+    if (size != null && size !== '') {
+      if (!isFiniteNum(size) || size <= 0 || size > 400) {
+        return { error: slotLabel + '.size must be a positive number or null' };
+      }
+      v.value.size = size;
+    }
+    out[key] = v.value;
+  }
+  return { value: out };
+}
+
 // Validate a full calibration blob { title_style, board, back, word_size } for
 // the LIVE PREVIEW path (title_style is REQUIRED — you can't render a title
 // without it; board/back/word_size may be null/absent). Returns a fresh,
@@ -1964,6 +2008,8 @@ function validateCalibration(input, fronts) {
   if (board.error) return { error: board.error };
   const back = validateSlot(b.back, 'back');
   if (back.error) return { error: back.error };
+  const backs = validateBacks(b.backs, 'backs');
+  if (backs.error) return { error: backs.error };
   let word_size = null;
   if (b.word_size != null && b.word_size !== '') {
     if (!isFiniteNum(b.word_size) || b.word_size <= 0 || b.word_size > 400) {
@@ -1980,6 +2026,7 @@ function validateCalibration(input, fronts) {
       title_style: ts.value,
       board: board.value,
       back: back.value,
+      backs: backs.value,
       word_size,
       card_slots: cards.value,
     },
@@ -2087,6 +2134,11 @@ function updateTemplateSettings({ root, key, patch }) {
     const v = validateSlot(p.back, 'back');
     if (v.error) return { error: v.error, httpStatus: 400 };
     changed.back = v.value;
+  }
+  if ('backs' in p) {
+    const v = validateBacks(p.backs, 'backs');
+    if (v.error) return { error: v.error, httpStatus: 400 };
+    changed.backs = v.value;
   }
   if ('word_size' in p) {
     if (p.word_size === null || p.word_size === '') {
