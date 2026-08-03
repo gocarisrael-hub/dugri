@@ -584,6 +584,8 @@ describe('templates.js full editing (status / rename / replace)', () => {
       // refetch. This template is a legacy sheet, which has no front list at all.
       card_structure: 'sheet',
       card_fronts: null,
+      // A legacy sheet has no card layout, so no per-front backs either.
+      card_backs: [],
     });
     const after = templates.loadThemes(templates.themesPathFor(root))['set-x'];
     expect(after.visibility).toBe('private');

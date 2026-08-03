@@ -93,6 +93,31 @@ const CARD_BACK_NUMBER = 1;
 const CARD_FRONT_NUMBERS = [2, 3, 4, 5, 6, 7, 8, 9];
 const CARD_FILE_NUMBERS = [CARD_BACK_NUMBER, ...CARD_FRONT_NUMBERS];
 
+// ---- PER-FRONT BACKS: eight styles, each with its OWN back ------------------
+// The layout above gives a deck ONE back (file 1) shared by all 104 cards. Some
+// templates are authored as eight complete card STYLES — a front and a matching
+// back each — and there was no way to express that at all, so they could not be
+// uploaded.
+//
+// The numbering is ADDITIVE, never a reinterpretation: 1 stays the shared back
+// and 2–9 stay the fronts on every template that exists, and a paired template
+// adds its backs as 10–17. So a file number means exactly one thing everywhere,
+// and reading a template dir never depends on knowing which mode it is in.
+//
+// The pairing is POSITIONAL and fixed: backs[i] prints on the reverse of
+// fronts[i] — 10 with 2, 11 with 3, … 17 with 9 — so a card can never come out
+// carrying another style's back. generator/config.py back_indices() is the
+// other half of this contract; build.py zips the two lists.
+const CARD_PAIRED_BACK_NUMBERS = [10, 11, 12, 13, 14, 15, 16, 17];
+// How a template's backs are organised. 'shared' is every template today, and is
+// simply the absence of a `cards.backs` list rather than a stored default.
+const CARD_BACK_MODES = ['shared', 'per-front'];
+// The back paired with a given front, by position in the two ranges.
+function pairedBackFor(front) {
+  const i = CARD_FRONT_NUMBERS.indexOf(Number(front));
+  return i < 0 ? null : CARD_PAIRED_BACK_NUMBERS[i];
+}
+
 // ---- ONE-FRONT mode: the whole deck on a single front design ----------------
 // Most decks want eight fronts that differ by a thin icon layer. Some want ONE
 // design on every card — and the owner should not have to upload eight
@@ -160,8 +185,36 @@ function entryFrontNumbers(entry) {
 // The numbered files a template with these fronts must ship: the back + each
 // front. One-front mode therefore needs four files (1 + 2, clean + filled)
 // where the normal set needs eighteen.
-function cardFileNumbersFor(fronts) {
-  return [CARD_BACK_NUMBER, ...fronts];
+//
+// With PER-FRONT backs the shared back (file 1) is not part of the deck at all —
+// every card takes its own style's back — so it is replaced by one back per
+// front rather than added to. Asking for a shared back that nothing prints would
+// show the owner a required slot they can never meaningfully fill.
+function cardFileNumbersFor(fronts, backs) {
+  const list = Array.isArray(backs) && backs.length ? backs : null;
+  return list ? [...fronts, ...list] : [CARD_BACK_NUMBER, ...fronts];
+}
+
+// The per-front back list an entry declares, positionally paired with its
+// fronts. Empty when the template shares one back — which is every template that
+// existed before this, so nothing changes for them.
+function entryBackNumbers(entry) {
+  const cards = entry && entry.cards && typeof entry.cards === 'object' ? entry.cards : {};
+  const raw = Array.isArray(cards.backs) ? cards.backs : null;
+  if (!raw) return [];
+  const allowed = new Set(CARD_PAIRED_BACK_NUMBERS);
+  const out = [];
+  for (const v of raw) {
+    const n = Number(v);
+    if (!Number.isInteger(n) || !allowed.has(n)) continue;
+    if (!out.includes(n)) out.push(n);
+  }
+  return out;
+}
+
+// Does this entry give each front its own back?
+function entryHasPerFrontBacks(entry) {
+  return entryBackNumbers(entry).length > 0;
 }
 
 // ---- IMAGE (shipped) paths --------------------------------------------------
@@ -750,9 +803,14 @@ function collectNumberedCardFiles(layer, files, fileLists) {
   return { got, bad };
 }
 
-// Human name of a numbered card slot, for an owner-facing message.
+// Human name of a numbered card slot, for an owner-facing message. A PAIRED back
+// is named by the front it belongs to ("גב 3"), not by its file number — the
+// owner thinks in card styles, and 17.svg means nothing to them.
 function cardSlotLabel(n) {
-  return Number(n) === CARD_BACK_NUMBER ? 'גב הקלף' : 'פנים ' + (Number(n) - 1);
+  const num = Number(n);
+  const paired = CARD_PAIRED_BACK_NUMBERS.indexOf(num);
+  if (paired >= 0) return 'גב ' + (paired + 1);
+  return num === CARD_BACK_NUMBER ? 'גב הקלף' : 'פנים ' + (num - 1);
 }
 
 // Validate the NEW numbered layout's uploads: for the normal eight-front deck,
@@ -1234,20 +1292,15 @@ const SVG_ASSET_ROLES = [
 // Built per FRONT LIST rather than fixed, because a one-front template ships four
 // numbered files, not eighteen. Listing all nine for it would report fourteen
 // permanently "missing" assets and never let the checklist read complete.
-function cardSvgAssetRoles(fronts) {
+function cardSvgAssetRoles(fronts, backs) {
   return [
     ...['clean', 'filled'].flatMap((layer) =>
-      cardFileNumbersFor(fronts).map((n) => ({
+      cardFileNumbersFor(fronts, backs).map((n) => ({
         role: layer + '-' + n,
         rel: layer + '/' + n + '.svg',
         kind: 'svg',
         optional: false,
-        label:
-          (n === CARD_BACK_NUMBER ? 'גב קלף' : 'פנים ' + (n - 1)) +
-          ' · ' +
-          n +
-          '.svg ' +
-          (layer === 'clean' ? '(נקי)' : '(ממולא)'),
+        label: cardSlotLabel(n) + ' · ' + n + '.svg ' + (layer === 'clean' ? '(נקי)' : '(ממולא)'),
       }))
     ),
     ...SVG_ASSET_ROLES.filter(
@@ -1270,7 +1323,15 @@ const FONT_ASSET_ROLES = [
 // edited is a separate, per-entry check in replaceAsset (a numbered role posted
 // at a sheet template is rejected with an explanation, not silently written).
 const REPLACEABLE_ROLES = new Set(
-  [...SVG_ASSET_ROLES, ...CARD_SVG_ASSET_ROLES, ...FONT_ASSET_ROLES].map((a) => a.role)
+  [
+    ...SVG_ASSET_ROLES,
+    ...CARD_SVG_ASSET_ROLES,
+    // The per-front backs are not in the default nine-file table, so whitelist
+    // their roles explicitly — otherwise the replace API would reject the very
+    // uploads this layout exists for.
+    ...cardSvgAssetRoles(CARD_FRONT_NUMBERS, CARD_PAIRED_BACK_NUMBERS),
+    ...FONT_ASSET_ROLES,
+  ].map((a) => a.role)
 );
 
 // The numbered card SVGs (clean-1..9 / filled-1..9) — the roles whose artwork the
@@ -1493,7 +1554,7 @@ function safeBasename(name) {
 function assetRolesFor(entry) {
   const table =
     cardStructureOf(entry) === 'cards'
-      ? cardSvgAssetRoles(entryFrontNumbers(entry))
+      ? cardSvgAssetRoles(entryFrontNumbers(entry), entryBackNumbers(entry))
       : SVG_ASSET_ROLES;
   const svg = table.map((a) => ({ ...a }));
   const fonts = FONT_ASSET_ROLES.map((a) => {
@@ -1593,6 +1654,9 @@ function computeTemplateStatus(root, key, entry) {
     // rather than a hardcoded 2..9, so it never asks for a title position on a
     // front the deck will never print.
     card_fronts: cardStructureOf(entry) === 'cards' ? entryFrontNumbers(entry) : null,
+    // The per-front back list, positionally paired with card_fronts. Empty on a
+    // deck that shares one back, so the admin form can tell the two apart.
+    card_backs: cardStructureOf(entry) === 'cards' ? entryBackNumbers(entry) : [],
     // Always reported as a boolean (absent on the entry reads as true), so the
     // admin toggle shows the real state instead of guessing from a missing key.
     in_store: inStore(entry),
@@ -2061,6 +2125,46 @@ function updateTemplateSettings({ root, key, patch }) {
       changed.calibrated = false;
     }
   }
+  // Eight card STYLES, each with its own back — versus one back shared by all
+  // 104 cards, which is every template that existed before this. Only meaningful
+  // under the 'cards' layout, validated against the structure this same patch
+  // results in so layout + back mode can be set in ONE save.
+  //
+  // 'per-front' records the POSITIONAL pairing (cards.backs [10..17] against
+  // fronts [2..9]); 'shared' drops the list so the entry is byte-for-byte one
+  // that never had it. The checklist below then offers a back slot per front
+  // instead of the single 1.svg, which is what makes these templates uploadable.
+  if ('card_backs' in p) {
+    const bm = String(p.card_backs || '').trim();
+    if (!CARD_BACK_MODES.includes(bm)) {
+      return { error: 'card_backs must be one of: ' + CARD_BACK_MODES.join(', '), httpStatus: 400 };
+    }
+    const resultingStructure =
+      'card_structure' in changed ? changed.card_structure : cardStructureOf(entry);
+    if (bm === 'per-front' && resultingStructure !== 'cards') {
+      return { error: "card_backs:'per-front' requires card_structure:'cards'", httpStatus: 400 };
+    }
+    const isPerFrontNow = entryHasPerFrontBacks(entry);
+    if (bm === 'per-front' && !isPerFrontNow) {
+      // One back per front the deck actually renders, paired by position.
+      const fronts =
+        'cards' in changed && changed.cards && Array.isArray(changed.cards.fronts)
+          ? changed.cards.fronts
+          : entryFrontNumbers(entry);
+      const cards = { ...(entry.cards && typeof entry.cards === 'object' ? entry.cards : {}) };
+      cards.fronts = [...fronts];
+      cards.backs = fronts.map(pairedBackFor).filter((n) => n != null);
+      delete cards.back; // no shared back on a paired deck — nothing prints it
+      changed.cards = cards;
+      changed.calibrated = false; // each back may carry its title somewhere else
+    } else if (bm === 'shared' && isPerFrontNow) {
+      const cards = { ...entry.cards };
+      delete cards.backs;
+      cards.back = CARD_BACK_NUMBER;
+      changed.cards = cards;
+      changed.calibrated = false;
+    }
+  }
   if ('calibrated' in p) {
     if (typeof p.calibrated !== 'boolean') {
       return { error: 'calibrated must be a boolean', httpStatus: 400 };
@@ -2143,6 +2247,7 @@ function updateTemplateSettings({ root, key, patch }) {
       // form can re-read the saved layout without a refetch. null on a sheet.
       card_structure: cardStructureOf(entry),
       card_fronts: cardStructureOf(entry) === 'cards' ? entryFrontNumbers(entry) : null,
+      card_backs: cardStructureOf(entry) === 'cards' ? entryBackNumbers(entry) : [],
     },
   };
 }

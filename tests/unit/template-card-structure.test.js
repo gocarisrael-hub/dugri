@@ -1711,3 +1711,141 @@ describe('converting an existing template to the single-card layout', () => {
     });
   });
 });
+
+// PER-FRONT BACKS. Some templates are authored as eight complete card STYLES —
+// a front AND its own matching back each. The single-back layout could not
+// express that at all, so those templates were impossible to upload. The backs
+// are numbered 10-17, DISJOINT from the fronts (2-9), and paired POSITIONALLY:
+// 10 prints on the reverse of 2, 11 of 3, … 17 of 9.
+describe('per-front backs — eight styles, each with its own back', () => {
+  let templates;
+  let root;
+  beforeAll(() => {
+    delete process.env.DATA_DIR;
+    delete require.cache[require.resolve(path.join(serverDir, 'templates.js'))];
+    templates = require(path.join(serverDir, 'templates.js'));
+    root = makeScaffold();
+    templates.onboardTemplate({ root, ...cardsUpload(), shrinkImages: false, runRecipe: false });
+  });
+
+  const entryOf = (key) => templates.loadThemes(templates.themesPathFor(root))[key];
+  const cardRoles = (key) =>
+    templates
+      .computeTemplateStatus(root, key, entryOf(key))
+      .assets.map((a) => a.role)
+      .filter((r) => /^clean-\d+$/.test(r))
+      .map((r) => Number(r.split('-')[1]))
+      .sort((a, b) => a - b);
+
+  it('switching to per-front backs records the positional pairing', () => {
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'card-demo',
+      patch: { card_backs: 'per-front' },
+    });
+    expect(r.error).toBeUndefined();
+    expect(entryOf('card-demo').cards.fronts).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(entryOf('card-demo').cards.backs).toEqual([10, 11, 12, 13, 14, 15, 16, 17]);
+    expect(r.settings.card_backs).toEqual([10, 11, 12, 13, 14, 15, 16, 17]);
+  });
+
+  it('drops the shared back — nothing on a paired deck ever prints it', () => {
+    expect('back' in entryOf('card-demo').cards).toBe(false);
+    // …and the checklist stops asking for 1.svg, which the owner could never
+    // meaningfully fill on this layout.
+    expect(cardRoles('card-demo')).toEqual([
+      2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+    ]);
+  });
+
+  it('names each back by the STYLE it belongs to, not by its file number', () => {
+    const st = templates.computeTemplateStatus(root, 'card-demo', entryOf('card-demo'));
+    const label = (role) => st.assets.find((a) => a.role === role).label;
+    expect(label('clean-10')).toContain('גב 1');
+    expect(label('clean-17')).toContain('גב 8');
+    expect(label('clean-2')).toContain('פנים 1');
+  });
+
+  it('the paired back roles are accepted by the replace API', () => {
+    const up = templates.replaceAsset({
+      root,
+      key: 'card-demo',
+      role: 'clean-17',
+      file: { filename: '17.svg', data: SVG('back-of-front-9') },
+    });
+    expect(up.error).toBeUndefined();
+    expect(up.path).toMatch(/17\.svg$/);
+  });
+
+  it('rejects a back number outside the 10-17 range', () => {
+    const up = templates.replaceAsset({
+      root,
+      key: 'card-demo',
+      role: 'clean-18',
+      file: { filename: '18.svg', data: SVG('nope') },
+    });
+    expect(up.error).toMatch(/unknown asset role/);
+  });
+
+  it('the conversion drops `calibrated` — each back may carry its title elsewhere', () => {
+    expect(entryOf('card-demo').calibrated).toBe(false);
+  });
+
+  it('switching back to a shared back restores the single 1.svg slot', () => {
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'card-demo',
+      patch: { card_backs: 'shared' },
+    });
+    expect(r.error).toBeUndefined();
+    expect('backs' in entryOf('card-demo').cards).toBe(false);
+    expect(entryOf('card-demo').cards.back).toBe(1);
+    expect(cardRoles('card-demo')).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it('pairs only the fronts the deck actually renders (one-front + its own back)', () => {
+    templates.updateTemplateSettings({
+      root,
+      key: 'card-demo',
+      patch: { card_fronts: 'one' },
+    });
+    templates.updateTemplateSettings({
+      root,
+      key: 'card-demo',
+      patch: { card_backs: 'per-front' },
+    });
+    // One front renders, so exactly one back is paired with it — not eight.
+    expect(entryOf('card-demo').cards.fronts).toEqual([2]);
+    expect(entryOf('card-demo').cards.backs).toEqual([10]);
+    expect(cardRoles('card-demo')).toEqual([2, 10]);
+  });
+
+  it("refuses 'per-front' on a template that stays a sheet", () => {
+    const themesPath = templates.themesPathFor(root);
+    const themes = templates.loadThemes(themesPath);
+    themes['pb-sheet'] = { slug: 'pb-sheet', display_he: 'גיליון' };
+    fs.writeFileSync(themesPath, JSON.stringify(themes, null, 1) + '\n', 'utf8');
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'pb-sheet',
+      patch: { card_backs: 'per-front' },
+    });
+    expect(r.error).toMatch(/requires card_structure/);
+  });
+
+  it('rejects an unknown back mode', () => {
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'card-demo',
+      patch: { card_backs: 'sometimes' },
+    });
+    expect(r.error).toMatch(/card_backs must be one of/);
+  });
+
+  it('a shared-back template reports an EMPTY back list, not null', () => {
+    const themes = templates.loadThemes(templates.themesPathFor(root));
+    const st = templates.computeTemplateStatus(root, 'seed-theme', themes['seed-theme']);
+    // A legacy sheet has no card layout at all.
+    expect(st.card_backs).toEqual([]);
+  });
+});

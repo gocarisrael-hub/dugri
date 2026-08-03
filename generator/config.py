@@ -438,9 +438,14 @@ def fronts(cfg):
 
 
 def back_index(cfg):
-    """The card index of the deck's back (``1`` when unset).
+    """The card index of the deck's SINGLE back (``1`` when unset).
 
     ``cards.back`` first, then the legacy flat ``back_index``.
+
+    A template with PER-FRONT backs has no single back; callers that render the
+    deck must go through :func:`back_indices`, which covers both shapes. This
+    stays for the one-back templates (every template that exists today) and for
+    the storefront's single card-back picture.
     """
     cards = cards_config(cfg)
     raw = cards["back"] if "back" in cards else cfg.get("back_index", DEFAULT_BACK_INDEX)
@@ -448,6 +453,49 @@ def back_index(cfg):
         return int(raw)
     except (TypeError, ValueError):
         return DEFAULT_BACK_INDEX
+
+
+def back_indices(cfg):
+    """One back card index PER FRONT, positionally paired with :func:`fronts`.
+
+    Two shapes, and the pairing is what the printed deck depends on:
+
+    * ``cards.backs: [10, …, 17]`` — a template whose eight card styles each
+      have their OWN back. ``backs[i]`` is printed on the reverse of
+      ``fronts[i]``, so front 2 pairs with back 10, front 3 with 11, and so on.
+      The numbering is disjoint from the fronts on purpose (fronts stay 2–9),
+      so a file number means exactly one thing across every template.
+    * no ``cards.backs`` — every card shares one back, so this returns that same
+      index repeated once per front. Callers therefore never branch: they zip
+      fronts with backs and the one-back deck falls out of the general case.
+
+    A short/ragged list is padded from its own first entry rather than from the
+    default back: the artwork was clearly authored per front, so repeating one of
+    ITS backs prints something coherent, where falling back to ``1`` could print
+    a back that belongs to a different design entirely. An empty/absent list is
+    the one-back case above.
+    """
+    front_list = fronts(cfg)
+    raw = cards_config(cfg).get("backs")
+    if not isinstance(raw, (list, tuple)) or not raw:
+        return [back_index(cfg)] * len(front_list)
+    out = []
+    for v in raw:
+        try:
+            out.append(int(v))
+        except (TypeError, ValueError):
+            continue
+    if not out:
+        return [back_index(cfg)] * len(front_list)
+    while len(out) < len(front_list):
+        out.append(out[0])
+    return out[: len(front_list)]
+
+
+def has_per_front_backs(cfg):
+    """True when the theme ships a distinct back for each front."""
+    raw = cards_config(cfg).get("backs")
+    return isinstance(raw, (list, tuple)) and len(raw) > 0
 
 
 def card_path(theme_name, index, filled=False):
