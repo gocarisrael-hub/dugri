@@ -215,6 +215,39 @@ Everything that iterates fronts must read the entry's list rather than assume
 title position and validation must not demand eight), `recipe_diff --single`, the
 calibration form, and the storefront's front picture.
 
+### Per-front backs — eight styles, each with its own back
+
+Some templates are authored as eight complete card **styles**: a front _and_ its
+own matching back. The single-back layout above cannot express that, so those
+templates could not be uploaded at all.
+
+The numbering is **additive, never a reinterpretation**. `1` stays the shared
+back and `2`–`9` stay the fronts on every template that already exists; a paired
+template adds its backs as **`10`–`17`**. A file number therefore means exactly
+one thing across every template, and reading a template dir never depends on
+knowing which mode it is in.
+
+The pairing is **positional and fixed** — `backs[i]` prints on the reverse of
+`fronts[i]`:
+
+```
+front  2  3  4  5  6  7  8  9
+back  10 11 12 13 14 15 16 17
+```
+
+```jsonc
+"cards": { "fronts": [2,3,4,5,6,7,8,9], "backs": [10,11,12,13,14,15,16,17] }
+```
+
+A paired entry carries **no `back` key**: nothing on the deck prints a shared
+back, so asking the owner for `1.svg` would be a required slot they could never
+meaningfully fill. `generator/config.py back_indices()` is the other half of the
+contract — it returns one back index per front, repeating the single back when
+there is no list, so `build.py` zips the two lists and the shared-back deck falls
+out as the degenerate case with no branch.
+
+Switching modes drops `calibrated`: each back may carry its title somewhere else.
+
 ## 4. Image de-duplication (ground rule 3)
 
 Canva embeds each card's background raster as a base64 data URI. The eight fronts

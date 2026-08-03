@@ -49,7 +49,7 @@ def _card_svg(marker):
     )
 
 
-def make_store(tmp, card_layout="single", fronts=(2, 3, 4, 5, 6, 7, 8, 9)):
+def make_store(tmp, card_layout="single", fronts=(2, 3, 4, 5, 6, 7, 8, 9), backs=None):
     """A throwaway owner template store with a v2 grapefruit-shaped theme.
 
     ``fronts`` is the deck's front list. A ONE-FRONT template passes ``(2,)``
@@ -58,12 +58,13 @@ def make_store(tmp, card_layout="single", fronts=(2, 3, 4, 5, 6, 7, 8, 9)):
     deliberately absent here and their absence is part of what is being tested.
     """
     fronts = list(fronts)
+    backs = list(backs) if backs else []
     root = os.path.join(tmp, "store")
     theme_dir = os.path.join(root, "templates", "demo")
     os.makedirs(os.path.join(theme_dir, "clean"))
     os.makedirs(os.path.join(theme_dir, "fonts"))
     os.makedirs(os.path.join(root, "templates", "recipes"))
-    for i in [1] + fronts:
+    for i in [1] + fronts + backs:
         with open(os.path.join(theme_dir, "clean", f"{i}.svg"), "w", encoding="utf-8") as f:
             f.write(_card_svg(f"card{i}"))
     with open(os.path.join(theme_dir, "clean", "board.svg"), "w", encoding="utf-8") as f:
@@ -88,6 +89,10 @@ def make_store(tmp, card_layout="single", fronts=(2, 3, 4, 5, 6, 7, 8, 9)):
         # The canonical themes.json shape (docs/card-structure-schema.md): the
         # deck's back and fronts live in a `cards` block.
         entry["cards"] = {"back": 1, "fronts": fronts}
+        # A template whose eight styles each have their OWN back records the list
+        # positionally: backs[i] prints on the reverse of fronts[i].
+        if backs:
+            entry["cards"]["backs"] = backs
     with open(os.path.join(root, "templates", "themes.json"), "w", encoding="utf-8") as f:
         json.dump({"demo": entry}, f)
 
@@ -114,14 +119,16 @@ def make_store(tmp, card_layout="single", fronts=(2, 3, 4, 5, 6, 7, 8, 9)):
 class Store:
     """Point config at a throwaway store for the duration of a test."""
 
-    def __init__(self, card_layout="single", fronts=(2, 3, 4, 5, 6, 7, 8, 9)):
+    def __init__(self, card_layout="single", fronts=(2, 3, 4, 5, 6, 7, 8, 9), backs=None):
         self.card_layout = card_layout
         self.fronts = fronts
+        self.backs = backs
 
     def __enter__(self):
         self.tmp = tempfile.mkdtemp(prefix="dugri-deck-test-")
         self.prev = os.environ.get("DATA_DIR")
-        os.environ["DATA_DIR"] = make_store(self.tmp, self.card_layout, self.fronts)
+        os.environ["DATA_DIR"] = make_store(self.tmp, self.card_layout, self.fronts,
+                                            self.backs)
         config.clear_preview_overrides()
         return self.tmp
 
@@ -156,8 +163,12 @@ def test_pages_alternate_back_then_front_for_duplex_printing():
     with Store() as tmp:
         doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
         keys = [k for k, _ in _pages(doc)]
-        assert keys[0::2] == ["back"] * 104, "every odd page must be the back"
-        assert "back" not in keys[1::2], "no back may appear in a front slot"
+        # The design id carries the back's CARD INDEX now that a deck can
+        # register more than one (a template whose eight styles each have their
+        # own back). A shared-back deck registers exactly one, "back1".
+        assert keys[0::2] == ["back1"] * 104, "every odd page must be the back"
+        assert not any(k.startswith("back") for k in keys[1::2]), \
+            "no back may appear in a front slot"
 
 
 def test_the_photo_card_is_the_last_card():
@@ -215,8 +226,12 @@ def test_the_back_is_applied_to_every_card_of_a_one_front_deck():
     with Store(fronts=ONE) as tmp:
         doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
         keys = [k for k, _ in _pages(doc)]
-        assert keys[0::2] == ["back"] * 104, "every odd page must be the back"
-        assert "back" not in keys[1::2], "no back may appear in a front slot"
+        # The design id carries the back's CARD INDEX now that a deck can
+        # register more than one (a template whose eight styles each have their
+        # own back). A shared-back deck registers exactly one, "back1".
+        assert keys[0::2] == ["back1"] * 104, "every odd page must be the back"
+        assert not any(k.startswith("back") for k in keys[1::2]), \
+            "no back may appear in a front slot"
         # ...and the photo card is still the last card, as on any other deck.
         assert keys[-1] == "photo"
 
@@ -226,7 +241,7 @@ def test_a_one_front_deck_registers_one_design_not_nine_copies():
         doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
         # back + the single front + the photo card. Nine near-identical designs
         # would be nine copies of the same artwork in every render.
-        assert sorted(doc._designs) == ["back", "front2", "photo"], sorted(doc._designs)
+        assert sorted(doc._designs) == ["back1", "front2", "photo"], sorted(doc._designs)
         cfg = config.theme("demo")
         assert config.fronts(cfg) == [2]
         assert [os.path.basename(p) for p in config.front_paths("demo")] == ["2.svg"]
@@ -713,3 +728,97 @@ def test_an_order_refuses_when_there_is_no_geometry_at_all():
             assert "זהה מחדש" in str(e), "the error must name the fix"
             return
         raise AssertionError("an order with no geometry must be refused")
+
+
+# --- per-front backs --------------------------------------------------------
+# A template whose eight card styles each have their OWN back. `cards.backs` is
+# positional: backs[i] prints on the reverse of fronts[i], so the duplex pairing
+# is fixed and a card never comes out with another style's back.
+
+PAIRED_FRONTS = (2, 3, 4, 5, 6, 7, 8, 9)
+PAIRED_BACKS = (10, 11, 12, 13, 14, 15, 16, 17)
+
+
+def test_each_front_prints_with_its_OWN_back():
+    with Store(fronts=PAIRED_FRONTS, backs=PAIRED_BACKS) as tmp:
+        doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
+        keys = [k for k, _ in _pages(doc)]
+        backs, fronts = keys[0::2], keys[1::2]
+        assert len(backs) == len(fronts) == 104
+        for back, front in zip(backs, fronts):
+            if front == "photo":      # the photo card takes the first back
+                assert back == "back10"
+                continue
+            n = int(front.removeprefix("front"))
+            assert back == f"back{n + 8}", f"{front} printed with {back}"
+
+
+def test_a_paired_deck_registers_every_back_exactly_once():
+    with Store(fronts=PAIRED_FRONTS, backs=PAIRED_BACKS) as tmp:
+        doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
+        assert sorted(doc._designs) == sorted(
+            [f"back{n}" for n in PAIRED_BACKS]
+            + [f"front{n}" for n in PAIRED_FRONTS]
+            + ["photo"]
+        ), sorted(doc._designs)
+
+
+def test_a_paired_deck_is_still_104_cards_back_then_front():
+    with Store(fronts=PAIRED_FRONTS, backs=PAIRED_BACKS) as tmp:
+        doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
+        keys = [k for k, _ in _pages(doc)]
+        assert doc.page_count == 208
+        assert all(k.startswith("back") for k in keys[0::2])
+        assert not any(k.startswith("back") for k in keys[1::2])
+        assert keys[-1] == "photo"
+
+
+def test_one_front_with_its_own_back_pairs_them():
+    with Store(fronts=(2,), backs=(10,)) as tmp:
+        doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
+        assert sorted(doc._designs) == ["back10", "front2", "photo"]
+        keys = [k for k, _ in _pages(doc)]
+        assert keys[0::2] == ["back10"] * 104
+
+
+# --- config.back_indices ----------------------------------------------------
+
+def test_back_indices_pairs_positionally():
+    cfg = {"cards": {"back": 1, "fronts": [2, 3, 4], "backs": [10, 11, 12]}}
+    assert config.back_indices(cfg) == [10, 11, 12]
+    assert config.has_per_front_backs(cfg) is True
+
+
+def test_back_indices_repeats_the_single_back_when_there_is_no_list():
+    cfg = {"cards": {"back": 1, "fronts": [2, 3, 4]}}
+    # Callers zip fronts with backs and never branch — the shared-back deck is
+    # the degenerate pairing, not a special case.
+    assert config.back_indices(cfg) == [1, 1, 1]
+    assert config.has_per_front_backs(cfg) is False
+
+
+def test_a_short_back_list_pads_from_its_OWN_first_back():
+    # Padding from the default back (1) could print a back belonging to a
+    # different design; repeating one of this artwork's own backs cannot.
+    cfg = {"cards": {"back": 1, "fronts": [2, 3, 4, 5], "backs": [10, 11]}}
+    assert config.back_indices(cfg) == [10, 11, 10, 10]
+
+
+def test_a_longer_back_list_is_trimmed_to_the_front_count():
+    cfg = {"cards": {"back": 1, "fronts": [2, 3], "backs": [10, 11, 12, 13]}}
+    assert config.back_indices(cfg) == [10, 11]
+
+
+def test_junk_entries_in_the_back_list_are_dropped():
+    cfg = {"cards": {"back": 1, "fronts": [2, 3], "backs": ["10", None, 11]}}
+    assert config.back_indices(cfg) == [10, 11]
+
+
+def test_an_all_junk_back_list_falls_back_to_the_single_back():
+    cfg = {"cards": {"back": 4, "fronts": [2, 3], "backs": [None, "x"]}}
+    assert config.back_indices(cfg) == [4, 4]
+
+
+def test_a_v1_theme_has_no_per_front_backs():
+    assert config.has_per_front_backs({}) is False
+    assert config.back_indices({"cards": {"fronts": [2]}}) == [1]

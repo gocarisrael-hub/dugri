@@ -311,9 +311,16 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
 
     # Register each distinct design ONCE; the pages then reference them, so a
     # 208-page deck costs nine copies of the artwork rather than 208.
-    back_svg = card_assets.read_svg(config.back_path(theme))
+    # One back index per front, positionally paired (config.back_indices). A
+    # one-back template yields the same index repeated, so there is no branch
+    # here and no special case downstream — the shared-back deck is just the
+    # degenerate pairing.
+    backs = config.back_indices(cfg)
+    back_by_front = dict(zip(fronts, backs))
     front_svgs = {i: card_assets.read_svg(config.card_path(theme, i))
                   for i in fronts}
+    back_svgs = {i: card_assets.read_svg(config.card_path(theme, i))
+                 for i in dict.fromkeys(backs)}
     vb = deck_html.view_box(front_svgs[fronts[0]])
     doc = deck_html.DeckDocument(vb[2], vb[3], press=press_geom)
     word_font_path = config.resolve_word_font(theme, word_font)
@@ -321,18 +328,31 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
     doc.add_style(rp.GEOMETRIC_TEXT_STYLE
                   + deck_html.font_face("HebWord", word_font_path)
                   + deck_html.font_face("TitleFont", title_font_path))
-    doc.add_design("back", back_svg)
+    for i, svg in back_svgs.items():
+        doc.add_design(f"back{i}", svg)
     for i in fronts:
         doc.add_design(f"front{i}", front_svgs[i])
-    log(f"registered {len(fronts)} fronts + back")
+    log(f"registered {len(fronts)} fronts + {len(back_svgs)} back(s)")
 
     back_ov = rp.back_overlay(theme, recipe, title_lines, card_vb=vb)
     photo_paths = resolve_photos(
         theme, photos,
         workdir=os.path.join(workdir, "photos") if workdir else None)
     for n, card in enumerate(cards, 1):
-        doc.add_page("back", back_ov)                      # duplex: back, then front
+        # Resolve this card's FRONT before emitting anything: with per-front backs
+        # the back is chosen by the front, and the pages still have to come out in
+        # duplex order (back, then front) or the deck prints mismatched.
         if card["kind"] == "photo":
+            # The photo card is not one of the eight styles, so it has no paired
+            # back of its own — it takes the first, which is also the only one on
+            # a shared-back deck.
+            front = None
+            back = backs[0]
+        else:
+            front = fronts[card["front"] % len(fronts)]
+            back = back_by_front[front]
+        doc.add_page(f"back{back}", back_ov)               # duplex: back, then front
+        if front is None:
             # The photo card's slots live in the artwork and are filled in place
             # (docs/photo-card.md), so the FILLED card is the design — there is
             # no text overlay to lay on top of it, and it needs no font.
@@ -340,7 +360,6 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
                 card_assets.read_svg(config.photo_card_path(theme)), photo_paths))
             doc.add_page("photo")
         else:
-            front = fronts[card["front"] % len(fronts)]
             doc.add_page(f"front{front}",
                          rp.card_overlay(theme, recipe, card["words"], title_lines,
                                          front_index=front, word_font=word_font,

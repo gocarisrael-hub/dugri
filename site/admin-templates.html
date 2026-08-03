@@ -1696,6 +1696,22 @@
               'עיצוב הקלפים (card_fronts)'
             )
           );
+          // Some templates are authored as eight complete card STYLES — a front
+          // AND its own matching back each — which the single-back layout could
+          // not express at all, so they were impossible to upload. Switching this
+          // adds a back slot PER FRONT to the checklist below (10.svg-17.svg,
+          // paired 10↔2, 11↔3, … 17↔9) in place of the one shared 1.svg.
+          grid.append(
+            mkSelect(
+              'card_backs',
+              [
+                { value: 'shared', text: 'גב אחד לכל החפיסה' },
+                { value: 'per-front', text: 'גב נפרד לכל עיצוב — 8 פנים + 8 גבים' },
+              ],
+              Array.isArray(t.card_backs) && t.card_backs.length ? 'per-front' : 'shared',
+              'גב הקלפים (card_backs)'
+            )
+          );
           grid.append(
             mkSelect('name_form', ['hebrew', 'english', 'english-caps'], t.name_form || '')
           );

@@ -336,6 +336,44 @@ test.describe('admin templates — single-card layout (read-only)', () => {
     expect(posted.card_fronts).toBe('one');
   });
 
+  // Eight card STYLES, each with its own back. The single-back layout could not
+  // express this, so such a template could not be uploaded at all.
+  test('a cards template can be switched to a back per front', async ({ page }) => {
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({ json: { templates: [cardsTemplate({ card_backs: [] })] } })
+    );
+    let posted = null;
+    await page.route('**/api/admin/templates/cards-x/settings*', (route) => {
+      posted = JSON.parse(route.request().postData() || '{}');
+      return route.fulfill({ json: { ok: true, settings: {} } });
+    });
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+
+    const card = page.locator('.tpl-card[data-key="cards-x"]');
+    const settings = card.locator('.tpl-settings');
+    await settings.locator('summary').click();
+
+    const mode = settings.locator('[data-field="card_backs"]');
+    await expect(mode).toHaveValue('shared');
+    await mode.selectOption('per-front');
+    await card.locator('.tpl-settings-save').click();
+
+    await expect.poll(() => posted).not.toBeNull();
+    expect(posted.card_backs).toBe('per-front');
+  });
+
+  test('a template already on per-front backs shows the mode as selected', async ({ page }) => {
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({
+        json: { templates: [cardsTemplate({ card_backs: [10, 11, 12, 13, 14, 15, 16, 17] })] },
+      })
+    );
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const settings = page.locator('.tpl-card[data-key="cards-x"] .tpl-settings');
+    await settings.locator('summary').click();
+    await expect(settings.locator('[data-field="card_backs"]')).toHaveValue('per-front');
+  });
+
   test('a template already on one front shows the mode as selected', async ({ page }) => {
     await page.route('**/api/admin/templates?key=*', (route) =>
       route.fulfill({ json: { templates: [cardsTemplate({ card_fronts: [2] })] } })
