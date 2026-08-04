@@ -920,11 +920,16 @@
           none.textContent = 'אין תמונות';
           box.appendChild(none);
         }
+        const cuts =
+          (editing && editing.pawn_cutouts && typeof editing.pawn_cutouts === 'object'
+            ? editing.pawn_cutouts
+            : null) || {};
         editPhotos.forEach((p, i) => {
           const wrap = document.createElement('div');
           wrap.className = 'photo';
           const img = document.createElement('img');
-          img.src = p;
+          // Show what will PRINT: the cutout when we have one, else the original.
+          img.src = (Object.prototype.hasOwnProperty.call(cuts, p) && cuts[p]) || p;
           const x = document.createElement('button');
           x.type = 'button';
           x.textContent = '×';
@@ -1056,6 +1061,11 @@
           // The row's stored list moved on; keep the working copy in step so a
           // later save doesn't re-remove what was just uploaded.
           editing.pawn_images = [...editPhotos];
+          // ...and the freshly cut backgrounds, so the thumbnails show the cutout
+          // rather than the original the moment the upload returns.
+          if (data.pawn_cutouts && typeof data.pawn_cutouts === 'object') {
+            editing.pawn_cutouts = data.pawn_cutouts;
+          }
           msg.textContent = 'הועלה ✓';
           renderEditPhotos();
         } catch {
@@ -1260,16 +1270,31 @@
 
           // Optional customer photos ("פיונים"): thumbnails linking to the full
           // image. These are our own /content-uploads/ paths, so they're safe.
+          // The thumbnail shows the background-removed CUTOUT when there is one —
+          // that is what actually prints. A photo whose cutout FAILED is flagged in
+          // red: the card traces its sticker outline from the image's own alpha, so
+          // an uncut photo prints as a white rectangle and needs a manual cut.
           const tdPawns = document.createElement('td');
           if (Array.isArray(c.pawn_images) && c.pawn_images.length) {
+            const cuts =
+              (c.pawn_cutouts && typeof c.pawn_cutouts === 'object' && c.pawn_cutouts) || {};
             for (const p of c.pawn_images) {
+              const hasRecord = Object.prototype.hasOwnProperty.call(cuts, p);
+              const cut = hasRecord ? cuts[p] : null;
               const a = document.createElement('a');
-              a.href = p;
+              a.href = cut || p;
               a.target = '_blank';
+              a.title = cut
+                ? 'רקע הוסר אוטומטית'
+                : hasRecord
+                  ? 'הסרת הרקע נכשלה - צריך חיתוך ידני'
+                  : 'לא נוסתה הסרת רקע';
               const img = document.createElement('img');
-              img.src = p;
+              img.src = cut || p;
               img.style.cssText =
-                'width:34px;height:34px;object-fit:cover;border-radius:4px;border:1px solid #ddd;margin:2px';
+                'width:34px;height:34px;object-fit:cover;border-radius:4px;border:1px solid ' +
+                (cut ? '#ddd' : '#c00') +
+                ';margin:2px';
               a.appendChild(img);
               tdPawns.appendChild(a);
             }
