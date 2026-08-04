@@ -1011,3 +1011,32 @@ if __name__ == "__main__":
         fn()
         print("ok", fn.__name__)
     print(f"\nall {len(fns)} tests passed")
+
+
+# ---- the three fidelity fixes of #316, pinned as INTENT not as numbers -----
+def _themes():
+    import json
+    here = os.path.dirname(os.path.abspath(__file__))
+    return json.load(open(os.path.join(here, "themes.json"), encoding="utf-8"))
+
+
+def test_japanese_nudges_the_fronts_whose_koi_takes_the_top_left():
+    ts = _themes()["japanese"]["title_style"]
+    per = ts.get("front_offset") or {}
+    assert set(per) == {"5", "6", "7", "8"}, per
+    for n in ("5", "6", "7", "8"):
+        assert per[n][0] > ts["offset"][0], (
+            f"front {n} must clear the koi, not take the shared offset")
+
+
+def test_football_pins_a_size_for_the_front_and_its_own_for_the_back():
+    ts = _themes()["football-boys"]["title_style"]
+    assert ts.get("size"), "the front auto-fit printed the title over-size"
+    assert ts.get("back_size"), "the back needs its OWN size, bigger than the front"
+    assert ts["back_size"] > ts["size"]
+
+
+def test_trip_comeback_sets_its_words_in_the_origin_s_heavier_weight():
+    cfg = _themes()["trip comeback"]
+    assert cfg.get("word_bold") is True
+    assert cfg.get("word_size"), "the origin's words are larger than the detected fit"

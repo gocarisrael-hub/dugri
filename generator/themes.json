@@ -20,10 +20,14 @@
   "title_style": {
    "fill": "#97d8e6",
    "outline": "#0d3e43",
-   "outline_w": 0.05,
+   "outline_w": 0.07,
    "arch": 0.11,
    "shadow": true,
-   "size": 23.9
+   "size": 22.3,
+   "offset": [
+    0,
+    0.009
+   ]
   },
   "board": {
    "frac": {
@@ -45,7 +49,10 @@
    "fill": "#fff7cd",
    "outline": "#0c464c"
   },
-  "calibrated": true
+  "calibrated": true,
+  "word_size": 18.7,
+  "word_bold": true,
+  "word_bold_w": 0.04
  },
  "bachelorette": {
   "slug": "bachelorette",
@@ -306,7 +313,25 @@
    "offset": [
     0.06,
     0.06
-   ]
+   ],
+   "front_offset": {
+    "5": [
+     0.3,
+     0.06
+    ],
+    "6": [
+     0.3,
+     0.06
+    ],
+    "7": [
+     0.3,
+     0.06
+    ],
+    "8": [
+     0.3,
+     0.06
+    ]
+   }
   },
   "board": {
    "frac": {
@@ -343,7 +368,9 @@
    "outline": "#000000",
    "outline_w": 0.03,
    "arch": 0,
-   "shadow": false
+   "shadow": false,
+   "size": 30.5,
+   "back_size": 37.3
   },
   "board": {
    "frac": {

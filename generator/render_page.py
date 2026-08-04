@@ -188,7 +188,7 @@ _RTL_EMBED, _RTL_POP = "‫", "‬"
 
 
 def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
-               marker_advance=None):
+               marker_advance=None, bold_w=0.0):
     """One numbered entry, wrapped over ``lines``, as SVG markup.
 
     RTL numbered line: the marker must sit on the RIGHT (the Hebrew reading
@@ -216,6 +216,12 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
     the digit column width so every entry's word starts at the same x; omitted,
     each digit is measured as before and the v1 sheet renders byte for byte
     unchanged.
+
+    ``bold_w`` fattens every run with a stroke IN ITS OWN COLOUR — synthetic
+    bold for a template whose origin words are heavier than the cut we ship (see
+    ``_WORD_BOLD_W``). The marker is fattened with the word so a bold card does
+    not read as bold words beside thin numbers. Zero (the default) emits the
+    exact markup it always did.
     """
     msize = size * _MARKER_SCALE
     font, ref = _word_metrics(font_path)
@@ -225,19 +231,25 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
     word_x = x_right - marker_w - gap
     lead = size * (_lead_for(font, ref, lines) if lead is None else lead)
     first = center_y - (len(lines) - 1) * lead / 2 + size * _CENTER_DROP
+    # paint-order="stroke" keeps the stroke UNDER the fill, so the glyph grows
+    # outward instead of the stroke eating into its own counters.
+    fat = (f'stroke="{color}" stroke-width="{size * bold_w:.2f}" '
+           'paint-order="stroke" stroke-linejoin="round" ') if bold_w else ""
+    m_fat = (f'stroke="{color}" stroke-width="{msize * bold_w:.2f}" '
+             'paint-order="stroke" stroke-linejoin="round" ') if bold_w else ""
     out = [
         f'<text x="{x_right + digit_x:.2f}" y="{first:.2f}" font-family="HebWord" '
-        f'font-size="{msize:.2f}" fill="{color}" text-anchor="end" '
+        f'font-size="{msize:.2f}" fill="{color}" {m_fat}text-anchor="end" '
         f'direction="ltr" xml:space="preserve">{digit}</text>'
         f'<text x="{x_right + dot_x:.2f}" y="{first:.2f}" font-family="HebWord" '
-        f'font-size="{msize:.2f}" fill="{color}" text-anchor="end" '
+        f'font-size="{msize:.2f}" fill="{color}" {m_fat}text-anchor="end" '
         f'xml:space="preserve">.</text>'
     ]
     for i, line in enumerate(lines):
         out.append(
             f'<text x="{word_x:.2f}" y="{first + i * lead:.2f}" '
             f'font-family="HebWord" font-size="{size:.2f}" fill="{color}" '
-            f'text-anchor="end" xml:space="preserve">'
+            f'{fat}text-anchor="end" xml:space="preserve">'
             f'{_RTL_EMBED}{escape(line)}{_RTL_POP}</text>'
         )
     return "".join(out)
@@ -262,6 +274,13 @@ def escape(s):
 # word size, and a 0.30x gap separates the marker from the word.
 _MARKER_SCALE = 0.9
 _WORD_GAP = 0.30
+# Synthetic-bold stroke for the WORDS, as a fraction of the word size — the same
+# trick the title already uses (see _BOLD_WEIGHT), for a template whose origin
+# set its words in a heavier cut than the face we ship. Opt in per theme via
+# ``word_bold``; ``word_bold_w`` overrides the weight. Kept lighter than the
+# title's default because a card word is set far smaller, and a heavy stroke
+# closes up Hebrew counters first at that size.
+_WORD_BOLD_W = float(os.environ.get("DUGRI_WORD_BOLD_W", "0.028"))
 # Where a line's BASELINE sits below the visual centre the callers place, as a
 # fraction of the font size. Every caller works in centres (a slot centre, or a
 # grid centre); the renderer converts once, here.
@@ -1193,7 +1212,8 @@ def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
 
 
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
-                  declared_band=False, safe=_CELL_SAFE, room_bottom=None):
+                  declared_band=False, safe=_CELL_SAFE, room_bottom=None,
+                  bold_w=0.0):
     """Per-slot ``(size, [lines])`` for a card's words, or None for an empty slot.
 
     One UNIFORM font size is the target for every word (matching the origin's
@@ -1241,6 +1261,13 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     # detected boxes overshoot (e.g. bachelorette rendered ~26 vs the real 19).
     uniform = word_size if word_size else statistics.median(heights) * _WORD_SIZE_K
     floor = cell[0] + (cell[2] - cell[0]) * safe if cell else None
+    # A synthetic-bold word is WIDER than the advance the fit measures: the
+    # stroke is centred on the outline, so it hangs half its width past each end
+    # of the run. Take the WHOLE width off the left bound rather than half — a
+    # stroke that reaches the trim edge is guillotined off the printed card, and
+    # the fraction of a millimetre this costs is invisible.
+    if floor is not None and bold_w:
+        floor += uniform * bold_w
     advance = _marker_advance(font, len(slots)) if declared_band else None
     cands = {}
     for wi, slot in enumerate(slots):
@@ -1587,6 +1614,37 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     return "<defs>" + "".join(defs) + "</defs>" + "".join(out)
 
 
+# How far a nudged title box may reach toward the card's trim, as a fraction of
+# the cell. The recipes' own detected title boxes sit at 0.03, so a nudge that
+# stops there lands where the origin's own title was allowed to.
+_TITLE_NUDGE_MARGIN = 0.03
+
+
+def _nudge_title_box(tbox, cell, offset):
+    """Move a title box by ``[dx, dy]`` cell fractions, CLIPPED to the card.
+
+    A nudge that pushes the box past the card is clipped rather than translated,
+    so the box SHRINKS and the title auto-fits smaller instead of printing off
+    the card. That is the whole safety of a per-front nudge: japanese needs its
+    title driven ~0.30 to the right on the four fronts whose koi occupies the
+    top-left, and a translate-only nudge would carry a long honoree name clean
+    past the trim edge on every one of them.
+    """
+    if not offset or not cell:
+        return tbox
+    cw, ch = cell[2] - cell[0], cell[3] - cell[1]
+    dx, dy = offset[0] * cw, offset[1] * ch
+    lo_x, hi_x = cell[0] + _TITLE_NUDGE_MARGIN * cw, cell[2] - _TITLE_NUDGE_MARGIN * cw
+    lo_y, hi_y = cell[1] + _TITLE_NUDGE_MARGIN * ch, cell[3] - _TITLE_NUDGE_MARGIN * ch
+    x0, x1 = max(lo_x, tbox["x0"] + dx), min(hi_x, tbox["x1"] + dx)
+    y0, y1 = max(lo_y, tbox["y0"] + dy), min(hi_y, tbox["y1"] + dy)
+    # A nudge big enough to invert the box would leave nothing to fit into;
+    # keep the original rather than emit a negative-width box.
+    if x1 <= x0 or y1 <= y0:
+        return tbox
+    return {"x0": x0, "x1": x1, "y0": y0, "y1": y1}
+
+
 def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                    fixed_size=None):
     """The stacked-title markup for one card, or "" when there is nothing to draw.
@@ -1602,11 +1660,7 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
     ts = cfg["title_style"]
     tbox = {"x0": min(b["x0"] for b in tbox_list), "y0": min(b["y0"] for b in tbox_list),
             "x1": max(b["x1"] for b in tbox_list), "y1": max(b["y1"] for b in tbox_list)}
-    if offset and cell:
-        dx = offset[0] * (cell[2] - cell[0])
-        dy = offset[1] * (cell[3] - cell[1])
-        tbox = {"x0": tbox["x0"] + dx, "x1": tbox["x1"] + dx,
-                "y0": tbox["y0"] + dy, "y1": tbox["y1"] + dy}
+    tbox = _nudge_title_box(tbox, cell, offset)
     return title_block(tbox, title_lines, ts["fill"], ts["outline"], title_font,
                        ts["outline_w"], ts["arch"], ts["shadow"],
                        rtl=title_is_rtl(cfg),
@@ -1629,9 +1683,11 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None):
     # card_slots is the owner's own statement of where the words' column sits, so
     # when it is set the slots ARE a text box and a long phrase wraps inside it.
     declared = bool((cfg.get("card_slots") or {}).get("words"))
+    bold_w = config.word_bold_w(cfg, _WORD_BOLD_W)
     layouts = _word_layouts(slots, words, wf_metrics, wf_ref, cell=cell,
                             word_size=cfg.get("word_size"), safe=_CARD_SAFE,
-                            declared_band=declared, room_bottom=room)
+                            declared_band=declared, room_bottom=room,
+                            bold_w=bold_w)
     # One anchor and one digit column for the whole card, so the four numbers sit
     # in a column and the four words start at the same x. Both must match what
     # _word_layouts fitted against, or the render would overflow the band it was
@@ -1649,7 +1705,7 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None):
         right = x_right if x_right is not None else _line_right_edge(slot["x1"], cell)
         out.append(word_lines(right, center, lay.size, slot["color"],
                               wi + 1, lay.lines, word_font, lead=lay.lead,
-                              marker_advance=advance))
+                              marker_advance=advance, bold_w=bold_w))
     return "".join(out)
 
 
@@ -2006,13 +2062,16 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
             # cell (positive = right / down). Used to seat a title that the
             # detected box places into a corner (e.g. japanese, top-left) at the
             # original's inset position. No-op when unset.
-            off = ts.get("offset")
+            #
+            # PER CARD, not one nudge for the sheet: the eight fronts of a sheet
+            # differ by more than an icon (japanese alternates which corner the
+            # koi occupies), so the position that clears the artwork on cards 1-4
+            # lands the title ON it for 5-8. ``front_offset["<n>"]`` answers for
+            # one card and falls back to the shared ``offset``, so a theme that
+            # never needed per-card placement renders exactly as before.
+            off = config.front_offset(cfg, ci + 1)
             cell = card.get("cell")
-            if off and cell:
-                dx = off[0] * (cell[2] - cell[0])
-                dy = off[1] * (cell[3] - cell[1])
-                tbox = {"x0": tbox["x0"] + dx, "x1": tbox["x1"] + dx,
-                        "y0": tbox["y0"] + dy, "y1": tbox["y1"] + dy}
+            tbox = _nudge_title_box(tbox, cell, off)
             overlay.append(title_block(tbox, title_lines,
                                        ts["fill"], ts["outline"], title_font,
                                        ts["outline_w"], ts["arch"], ts["shadow"],
@@ -2028,8 +2087,10 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
         if not card["words"]:
             continue
         wf_metrics, wf_ref = _word_metrics(word_font)
+        bold_w = config.word_bold_w(cfg, _WORD_BOLD_W)
         layouts = _word_layouts(card["words"], words, wf_metrics, wf_ref,
-                                cell=card.get("cell"), word_size=cfg.get("word_size"))
+                                cell=card.get("cell"), word_size=cfg.get("word_size"),
+                                bold_w=bold_w)
         for wi, slot in enumerate(card["words"]):
             if layouts[wi] is None:
                 continue
@@ -2037,7 +2098,8 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
             center = (slot["y0"] + slot["y1"]) / 2
             x_right = _line_right_edge(slot["x1"], card.get("cell"))
             overlay.append(word_lines(x_right, center, lay.size, slot["color"],
-                                      wi + 1, lay.lines, word_font, lead=lay.lead))
+                                      wi + 1, lay.lines, word_font, lead=lay.lead,
+                                      bold_w=bold_w))
     body = "".join(overlay)
     return svg.replace("</svg>", body + "</svg>")
 

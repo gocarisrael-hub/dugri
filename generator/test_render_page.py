@@ -1604,3 +1604,90 @@ def test_a_theme_can_set_its_own_bold_weight():
 def test_bold_w_is_ignored_when_bold_is_off():
     # A stray weight must not silently embolden a theme that never asked.
     assert _title_stroke(bold=False, bold_w=0.09) == 0.0
+
+
+# ---- synthetic-bold WORDS (trip comeback's origin sets them heavier) -------
+def _word_markup(bold_w=0.0):
+    return rp.word_lines(200, 100, 12, "#017f8d", 1, ["מסיבה"], CAFE,
+                         bold_w=bold_w)
+
+
+def test_words_are_unfattened_by_default():
+    # Nine shipped templates were calibrated against the face's own weight, so
+    # the no-bold markup must stay byte-for-byte what it always was.
+    assert "stroke" not in _word_markup()
+
+
+def test_a_bold_word_is_stroked_in_its_own_colour():
+    markup = _word_markup(bold_w=0.04)
+    assert 'stroke="#017f8d"' in markup, markup
+    assert 'paint-order="stroke"' in markup, markup
+    # 12 * 0.04 = 0.48 on the word run.
+    assert 'stroke-width="0.48"' in markup, markup
+
+
+def test_the_marker_is_fattened_with_the_word():
+    # Bold words beside a hairline digit reads as a bug, not a design.
+    markup = _word_markup(bold_w=0.04)
+    assert markup.count('paint-order="stroke"') == 3, markup
+
+
+def test_word_bold_is_opt_in_per_theme():
+    assert config.word_bold_w({}, 0.028) == 0.0
+    assert config.word_bold_w({"word_bold": True}, 0.028) == 0.028
+    assert config.word_bold_w({"word_bold": True, "word_bold_w": 0.04}, 0.028) == 0.04
+    # A weight without the opt-in must not embolden a theme that never asked.
+    assert config.word_bold_w({"word_bold_w": 0.09}, 0.028) == 0.0
+
+
+def test_a_bold_word_reserves_its_stroke_inside_the_card():
+    # The stroke hangs past the advance the fit measures; without the
+    # allowance a bold word reaches further left than the fit believed and the
+    # guillotine takes it off the printed card.
+    slots = [{"x0": 40, "y0": 20, "x1": 180, "y1": 40, "color": "#000"}]
+    font, ref = rp._word_metrics(CAFE)
+    cell = [0, 0, 200, 300]
+    plain = rp._word_layouts(slots, ["מסיבהמסיבהמסיבה"], font, ref, cell=cell)
+    bold = rp._word_layouts(slots, ["מסיבהמסיבהמסיבה"], font, ref, cell=cell,
+                            bold_w=0.05)
+    assert bold[0].size <= plain[0].size, (plain[0].size, bold[0].size)
+
+
+# ---- per-front title nudge (japanese: the koi swaps corners) --------------
+CELL = [0, 0, 100, 200]
+
+
+def test_a_nudge_moves_the_box():
+    box = {"x0": 10, "x1": 50, "y0": 10, "y1": 30}
+    out = rp._nudge_title_box(box, CELL, [0.1, 0.05])
+    assert (out["x0"], out["x1"]) == (20, 60)
+    assert (out["y0"], out["y1"]) == (20, 40)
+
+
+def test_a_nudge_past_the_card_is_clipped_not_translated():
+    # Translating would carry a long honoree name clean past the trim edge.
+    box = {"x0": 3, "x1": 97, "y0": 10, "y1": 30}
+    out = rp._nudge_title_box(box, CELL, [0.30, 0])
+    assert out["x0"] == 33
+    assert out["x1"] == 97, "the box must stop at the card, not run past it"
+    assert out["x1"] - out["x0"] < box["x1"] - box["x0"], "it shrank, so the fit shrinks"
+
+
+def test_no_nudge_leaves_the_box_alone():
+    box = {"x0": 3, "x1": 97, "y0": 10, "y1": 30}
+    assert rp._nudge_title_box(box, CELL, None) is box
+    assert rp._nudge_title_box(box, None, [0.3, 0]) is box
+
+
+def test_a_nudge_that_would_invert_the_box_is_refused():
+    box = {"x0": 3, "x1": 97, "y0": 10, "y1": 30}
+    assert rp._nudge_title_box(box, CELL, [5.0, 0]) is box
+
+
+def test_the_sheet_reads_the_per_front_nudge():
+    # japanese's koi occupies the top-left on fronts 5-8 only, so the four
+    # cards must NOT all take the shared offset.
+    cfg = {"title_style": {"offset": [0.06, 0.06],
+                           "front_offset": {"5": [0.30, 0.06]}}}
+    assert config.front_offset(cfg, 1) == [0.06, 0.06]
+    assert config.front_offset(cfg, 5) == [0.30, 0.06]
