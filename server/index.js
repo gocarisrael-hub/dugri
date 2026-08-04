@@ -2393,7 +2393,15 @@ app.post(
         .status(500)
         .json({ error: 'onboarding failed', detail: String((e && e.message) || e) });
     }
-    if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
+    // `titleless` marks the ONE rejection the owner can override: a title with no
+    // {NAME}. It is legitimate (a deck whose artwork carries no name at all) but
+    // must never be reached by accident, so the form re-posts with
+    // allow_titleless:true after an explicit confirmation.
+    if (result.error) {
+      return res
+        .status(result.httpStatus || 400)
+        .json({ error: result.error, ...(result.titleless ? { titleless: true } : {}) });
+    }
     res.status(201).json({ ok: true, ...result });
   }
 );
@@ -2412,7 +2420,11 @@ app.post('/api/admin/templates/create', (req, res) => {
   } catch (e) {
     return res.status(500).json({ error: 'create failed', detail: String((e && e.message) || e) });
   }
-  if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
+  if (result.error) {
+    return res
+      .status(result.httpStatus || 400)
+      .json({ error: result.error, ...(result.titleless ? { titleless: true } : {}) });
+  }
   res.status(201).json({ ok: true, ...result });
 });
 
@@ -2452,9 +2464,10 @@ app.post('/api/admin/templates/:key/rename', (req, res) => {
 });
 
 // Admin: edit an existing template's SETTINGS (display_he, language, name_form,
-// extra_fields, visibility) — the storefront/config knobs, never the identity
-// (slug/dir/recipe) or assets. JSON body carries only the fields to change; each
-// is validated. e.g. flip an uploaded template public/private or fix its language.
+// extra_fields, visibility, title_text/title_lines) — the storefront/config knobs,
+// never the identity (slug/dir/recipe) or assets. JSON body carries only the
+// fields to change; each is validated. e.g. flip an uploaded template
+// public/private, fix its language, or repair a title that lost its {NAME}.
 app.post('/api/admin/templates/:key/settings', (req, res) => {
   if (!requireAdmin(req, res)) return;
   let result;
@@ -2467,7 +2480,13 @@ app.post('/api/admin/templates/:key/settings', (req, res) => {
   } catch (e) {
     return res.status(500).json({ error: String((e && e.message) || e) });
   }
-  if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
+  // See the upload route: `titleless` is the one rejection the owner may confirm
+  // past (allow_titleless:true), not a validation the client can simply ignore.
+  if (result.error) {
+    return res
+      .status(result.httpStatus || 400)
+      .json({ error: result.error, ...(result.titleless ? { titleless: true } : {}) });
+  }
   res.json({ ok: true, ...result });
 });
 

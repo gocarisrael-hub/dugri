@@ -482,7 +482,7 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     // is added: register the shell, then upload each asset one at a time.
     await page.fill('#form input[name="slug"]', slug);
     await page.fill('#form input[name="display_he"]', 'ריק E2E');
-    await page.fill('#form input[name="title_text"]', '{NAME}');
+    await page.fill('#form textarea[name="title_text"]', '{NAME}');
     // The form defaults to the single-card layout; this test covers the LEGACY
     // sheet path (fronts/backs/board), so it picks that explicitly.
     await page.selectOption('#form select[name="card_structure"]', 'sheet');
@@ -532,7 +532,7 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     // Register an uncalibrated shell.
     await page.fill('#form input[name="slug"]', slug);
     await page.fill('#form input[name="display_he"]', 'כיול E2E');
-    await page.fill('#form input[name="title_text"]', '{NAME}');
+    await page.fill('#form textarea[name="title_text"]', '{NAME}');
     // LEGACY sheet layout — this test is the backward-compatibility guarantee for
     // the calibration that shipped before single cards existed.
     await page.selectOption('#form select[name="card_structure"]', 'sheet');
