@@ -427,6 +427,11 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
 # existed. Every photo that DOES carry a cutout is framed from its alpha instead
 # (``subject_box``) and never reads this value. 0.5 would be the plain centre
 # crop that put the slot's circle on people's torsos.
+#
+# This is exactly where the guess still earns its keep: with no alpha there is no
+# subject box to measure, and the square still has to be clipped to the disc
+# (a photo NEVER prints as a rectangle — docs/photo-card.md point 1), so where
+# the square sits decides which part of the person the circle keeps.
 PHOTO_SUBJECT_Y = float(os.environ.get("DUGRI_PHOTO_SUBJECT_Y", "0.30"))
 
 # --- subject-aware framing (docs/photo-card.md) ------------------------------
@@ -703,11 +708,15 @@ def square_photo(path, workdir, index=0):
     The old fixed square guessed at the head and sliced the person along a
     straight line that the sticker halo then traced; see docs/photo-card.md.
 
-    With no usable alpha — an opaque photo, or a cut that failed — there is
-    nothing to see, so the old head-anchored square crop stands, unclipped and
-    unchanged. That is deliberate: docs/photo-card.md wants a photo that never
-    got cut to print as an obvious white-edged rectangle rather than quietly
-    look almost right.
+    With no usable alpha — an opaque photo, or a cut that failed — there is no
+    subject box to measure, so the head-anchored square crop (``PHOTO_SUBJECT_Y``)
+    picks the square. It is then clipped to the disc like every other photo:
+    **a photo never prints as a rectangle**, whatever happened upstream
+    (docs/photo-card.md point 1). An uncut photo therefore comes out round with
+    its background still inside the circle — less obviously a failure than the
+    white-edged rectangle this used to print, which is why the failed cut is
+    recorded on the collection (``pawn_cutouts[original] = null``) for the owner
+    to fix by hand rather than advertised on the card.
 
     Also applies the EXIF orientation: a photo taken sideways carries its
     rotation as metadata, and the renderer does not honour it, so without this a
@@ -735,6 +744,12 @@ def square_photo(path, workdir, index=0):
                 im.putalpha(alpha)
                 crop = subject_window(box)
             else:
+                # No alpha to measure, so the square is a guess. The disc clip
+                # below still runs — an opaque photo has no silhouette, so that
+                # disc is the only alpha it will ever have, and it is the alpha
+                # the sticker halo is dilated from. Skip it and the slot gets a
+                # full square whose corners the halo traces: a white-edged
+                # rectangle on the card, which is what this path used to print.
                 side = min(w, h)
                 if h > w:
                     # Portrait: centre the square on the subject rather than on
@@ -758,12 +773,13 @@ def square_photo(path, workdir, index=0):
                 # slot would scale it anyway — doing it here keeps every card's
                 # payload predictable.
                 square = square.resize((target, target), Image.LANCZOS)
-            if found:
-                # Clip to the slot's disc. Everything outside is cut away, so the
-                # sticker's edge is the circle and not wherever the photo's own
-                # border happened to slice the person.
-                square.putalpha(ImageChops.multiply(square.getchannel("A"),
-                                                    _disc_mask(square.width)))
+            # Clip to the slot's disc — ALWAYS, both paths. Everything outside is
+            # cut away, so the sticker's edge is the circle and not wherever the
+            # photo's own border happened to slice the person. On the degraded
+            # path the disc is the whole of the alpha; on the framed path it is a
+            # ceiling on how far the subject's own silhouette may reach.
+            square.putalpha(ImageChops.multiply(square.getchannel("A"),
+                                                _disc_mask(square.width)))
             out = os.path.join(workdir, f"photo-{index + 1}.png")
             os.makedirs(workdir, exist_ok=True)
             square.save(out)

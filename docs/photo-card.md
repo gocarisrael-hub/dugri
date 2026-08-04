@@ -12,11 +12,29 @@ disagrees with the numbers below, this document is the contract to reconcile aga
 artwork is authored to it, and the four slots are byte-identical on every photo card so the
 generator never branches on which template it loaded.
 
-1. **A transparent cutout is REQUIRED, not preferred.** The card no longer draws a white disc
-   behind the photo. The white sticker outline is generated **from the image's own alpha**, so an
-   image with an opaque background has no silhouette to follow: it renders as a white-bordered
-   **rectangle** and the card looks broken. There is no graceful degradation here by design —
-   the failure is meant to be obvious rather than subtly wrong.
+1. **A photo NEVER prints as a rectangle.** The card no longer draws a white disc behind the
+   photo; the white sticker outline is generated **from the image's own alpha**. So the generator
+   guarantees every image reaching a slot HAS a round alpha: `square_photo()` multiplies the disc
+   into the alpha unconditionally, cutout or not. A photo whose background could not be removed
+   still comes out cropped, fitted to the circle, clipped round and ringed in white like every
+   other pawn.
+
+   **This reverses the earlier rule and the reversal is deliberate — do not restore it.** The
+   degraded path used to fall through unclipped on purpose, so a failed cut printed as an obvious
+   white-edged rectangle ("no graceful degradation by design"). The owner has seen that rendered
+   and rejected it: every slot is round, always.
+
+   The trade the reversal makes, stated plainly: an uncut photo is now a round photo **with its
+   background still inside the circle**. Far less jarring than a rectangle — but it also no longer
+   announces itself as a failure. **The record is what catches it now**, not the card: the
+   collection keeps `pawn_cutouts[<original path>] = null` for every photo where the cut was
+   attempted and failed, the admin surfaces it, and the owner cuts that one by hand. If you touch
+   the cutout pipeline, keep that null.
+
+   A cutout is still what you WANT on every photo: without one the disc is the whole of the alpha,
+   so the halo is a plain ring rather than the subject's silhouette, and the framing falls back to
+   a guess (point 5).
+
 2. **Alpha must survive the generator's own photo prep.** `square_photo()` works in `RGBA`
    throughout and saves `RGBA` — `convert("RGB")` anywhere in that function flattens the alpha
    away and every customer photo reaches the slot opaque, whatever was done upstream. It is also
@@ -43,6 +61,12 @@ generator never branches on which template it loaded.
    `clip-path` of its own. **Do not add one** — a clip in the artwork would apply to the halo
    `<use>` as well and shave the white outline off.
 
+   The clip is unconditional; only the FRAMING degrades. With no alpha there is no subject box to
+   measure, so the head-anchored guess (`PHOTO_SUBJECT_Y`, 0.30 of the height) picks the square
+   and the disc is cut out of that — which is the one place that constant still earns its keep,
+   because it decides which part of the person the circle keeps. No face detector: the guess is
+   cheap and this is the degraded path, not the normal one.
+
    The disc fills **0.90** of the square (`PHOTO_DISC_FILL`), not all of it. That margin is
    load-bearing: the halo dilates ~2.4 units outward, and a disc filling the whole square would
    put the white ring exactly on the dashed cut-line at r = 33 — hiding the line you are meant to
@@ -60,16 +84,16 @@ generator never branches on which template it loaded.
 8. **There are no slot numbers.** The photo is the identity; the numbered chips are gone. Do not
    reintroduce per-slot labelling.
 
-| what                  | value                                                      |
-| --------------------- | ---------------------------------------------------------- |
-| slot box              | 66 × 66 units (18.57 × 18.57 mm)                           |
-| cut-line              | dashed circle, r = 33 units, centred in the slot box       |
-| white halo            | ≈ 2.4 units (0.68 mm), follows the image's alpha           |
-| cutout format         | **transparent RGBA PNG** — required, alpha must be intact  |
-| cutout size           | 512 × 512 px target (min 220 = 300 DPI, max 768)           |
-| payload cap           | < 1,000,000 base64 chars (`deck_html.BG_MIN_CHARS`)        |
-| clipping              | in the IMAGE — a disc of 0.90 × the square, generator-side |
-| `preserveAspectRatio` | `xMidYMid meet` (contain — never crops)                    |
+| what                  | value                                                     |
+| --------------------- | --------------------------------------------------------- |
+| slot box              | 66 × 66 units (18.57 × 18.57 mm)                          |
+| cut-line              | dashed circle, r = 33 units, centred in the slot box      |
+| white halo            | ≈ 2.4 units (0.68 mm), follows the image's alpha          |
+| cutout format         | **transparent RGBA PNG** — required, alpha must be intact |
+| cutout size           | 512 × 512 px target (min 220 = 300 DPI, max 768)          |
+| payload cap           | < 1,000,000 base64 chars (`deck_html.BG_MIN_CHARS`)       |
+| clipping              | in the IMAGE — a disc of 0.90 × the square, always        |
+| `preserveAspectRatio` | `xMidYMid meet` (contain — never crops)                   |
 
 ## How the generator frames a photo
 
@@ -93,13 +117,19 @@ guess about where the head is anywhere in it: with a cutout, the alpha says wher
    sides are allowed to go rather than shrink the subject to a sliver. The window may fall outside
    the photo; cropping past the edge pads with transparency, which is what a sticker wants.
 3. **Clip it** — a disc of `PHOTO_DISC_FILL` × the square, anti-aliased, multiplied into the
-   alpha.
+   alpha. **Unconditional**: steps 1 and 2 can fail, step 3 never runs a different way.
 
 **No usable alpha is a supported state**, not an error: an opaque photo, or a cut that collapsed.
-`subject_box()` returns `None` and the old head-anchored square crop (`PHOTO_SUBJECT_Y`) stands,
-**unclipped and unchanged**. That is deliberate — point 1 of this contract wants an uncut photo to
-print as an obvious white-edged rectangle rather than quietly look almost right, and the wizard
-has already told the buyer we will cut it by hand.
+`subject_box()` returns `None`, so steps 1 and 2 are replaced by the head-anchored square crop —
+portrait: a square of the short side, centred on `PHOTO_SUBJECT_Y` (0.30) of the height and
+clamped inside the photo; landscape: the full height, centred left-to-right. Step 3 runs exactly
+as it does on a cutout, so the slot still receives a round PNG and the halo still renders as a
+white ring (verified on a real grapefruit render, not assumed: the `#sticker-halo` filter dilates
+`SourceAlpha`, and a disc-masked photo has a disc alpha, so the ring follows for free).
+
+What that costs, since it is no longer visible on the card: the circle is full of the photo's
+original background, and it is a guess rather than a measurement, so a subject standing off to one
+side or low in the frame can be badly framed. Point 1 covers how the miss is recorded instead.
 
 ## Geometry
 
@@ -200,6 +230,13 @@ transparency is now load-bearing, not a convenience: the fallbacks go through th
 customer photo, and a fallback with an opaque ground would print as a white-edged square. Any
 replacement pawn — including an owner override uploaded through the admin panel — has to be
 transparent for the same reason.
+
+Point 1's "never a rectangle" guarantee does **not** cover them, because they never pass through
+`square_photo()` — `resolve_photos()` tops the list up with them untouched, and Pillow cannot open
+an SVG anyway. Their own transparency is the whole of it. An owner who uploads an opaque PNG
+override gets the white-edged square that customer photos no longer produce; if that becomes a
+real complaint, disc-masking the raster overrides at upload is the fix, not routing artwork
+through the customer-photo path.
 
 Recommended fill rule:
 
