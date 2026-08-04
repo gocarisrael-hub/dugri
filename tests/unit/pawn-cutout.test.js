@@ -260,6 +260,31 @@ describe('POST /api/collections/:id/pawns — originals + their cutouts', () => 
     expect(res.body.pawn_cutouts[p]).toBe(null);
   });
 
+  it('accepts a full batch of 4 photos WITH their cutouts (body-size ceiling)', async () => {
+    // Each photo now travels with a cutout PNG, so a full batch is far bigger than
+    // it used to be. If the body parser rejected it the buyer would lose every
+    // photo at once, so the ceiling has to clear four near-cap originals plus cuts.
+    const big = (head, mb) => Buffer.concat([head, Buffer.alloc(Math.round(mb * 1024 * 1024))]);
+    const parts = [];
+    for (let i = 0; i < 4; i++) {
+      parts.push({
+        name: 'pawn' + i,
+        filename: `p${i}.jpg`,
+        data: big(jpegWith('big-' + i), 3.8),
+      });
+      parts.push({
+        name: 'cut:pawn' + i,
+        filename: `p${i}-cut.png`,
+        data: big(pngWith('bigc-' + i), 1.6),
+      });
+    }
+    const c = db.createCollection('בדיקה', {});
+    const res = await uploadPawns(c.id, c.owner_token, parts); // ~21.6MB body
+    expect(res.status).toBe(200);
+    expect(res.body.pawn_images).toHaveLength(4);
+    expect(Object.values(res.body.pawn_cutouts).filter(Boolean)).toHaveLength(4);
+  });
+
   it('does not count cutouts against the 4-image cap', async () => {
     const c = db.createCollection('בדיקה', {});
     const parts = [];

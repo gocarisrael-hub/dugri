@@ -75,8 +75,13 @@ const TEMPLATE_UPLOAD_LIMIT = process.env.TEMPLATE_UPLOAD_LIMIT || '100mb';
 // multipart envelope so a valid image is never rejected at the body-parser layer.
 const CONTENT_IMAGE_UPLOAD_LIMIT = process.env.CONTENT_IMAGE_UPLOAD_LIMIT || '6mb';
 // Max multipart body for a pawn-images upload: up to 4 customer photos, each
-// capped at ~4MB by the store (server/content.js IMAGE_CAP), plus envelope room.
-const PAWN_UPLOAD_LIMIT = process.env.PAWN_UPLOAD_LIMIT || '20mb';
+// capped at ~4MB by the store (server/content.js IMAGE_CAP), plus envelope room —
+// AND each photo now travels with its background-removed cutout, a PNG of up to
+// ~1024px that runs 1-3MB. Four 4MB originals with their cutouts is over 20MB, and
+// the body parser rejecting the batch would lose the photos entirely, so the
+// ceiling doubles. Nothing here relaxes the per-image cap, which the store still
+// enforces file by file.
+const PAWN_UPLOAD_LIMIT = process.env.PAWN_UPLOAD_LIMIT || '40mb';
 // Hard cap on a single generation run (Chrome renders one page at a time, so a
 // large deck is slow); the child's whole process group is SIGKILLed past this
 // and the request 504s.
@@ -1187,15 +1192,15 @@ app.post(
   (req, res) => handlePawnUpload(req, res, req.params.id, req.query.k)
 );
 
-// The body of a pawn-images upload, shared by the OWNER route above (authenticated
-// by the collection's owner token) and the ADMIN one below (authenticated by the
-// admin key, then acting with the collection's own owner token). Everything after
-// authentication is identical, so the cap/orphan-reclaim rules can't drift apart.
 // A cutout part is named after the original it belongs to: "cut:pawn0" carries the
 // cutout for the "pawn0" original. Pairing by NAME rather than by position keeps
 // the two lists from sliding against each other when one photo is skipped.
 const CUTOUT_PREFIX = 'cut:';
 
+// The body of a pawn-images upload, shared by the OWNER route above (authenticated
+// by the collection's owner token) and the ADMIN one below (authenticated by the
+// admin key, then acting with the collection's own owner token). Everything after
+// authentication is identical, so the cap/orphan-reclaim rules can't drift apart.
 function handlePawnUpload(req, res, id, ownerToken) {
   const boundary = templates.boundaryFromContentType(req.headers['content-type']);
   if (!boundary || !Buffer.isBuffer(req.body)) {

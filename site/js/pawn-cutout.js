@@ -48,9 +48,7 @@ let segmenterPromise = null;
 function getSegmenter() {
   if (!segmenterPromise) {
     segmenterPromise = (async () => {
-      const { FilesetResolver, ImageSegmenter } = await import(
-        /* @vite-ignore */ VENDOR + '/vision_bundle.mjs'
-      );
+      const { FilesetResolver, ImageSegmenter } = await import(VENDOR + '/vision_bundle.mjs');
       const fileset = await FilesetResolver.forVisionTasks(VENDOR);
       return await ImageSegmenter.createFromOptions(fileset, {
         baseOptions: { modelAssetPath: MODEL, delegate: 'CPU' },
