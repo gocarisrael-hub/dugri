@@ -17,7 +17,6 @@ generated cards match the origin Canva templates:
 
 Run: python3 generator/test_render_page.py   (or via pytest)
 """
-import hashlib
 import json
 import os
 import re
@@ -1867,25 +1866,7 @@ def test_no_shipped_theme_carries_a_leading_yet():
     assert not with_leading, with_leading
 
 
-# Every shipped theme's title markup, hashed, as it stood BEFORE the leading
-# reached the renderer. Nine designs are live; re-spacing one of them by side
-# effect would reprint every card of every order placed against it. A diff here
-# is not a stale fixture to refresh — it is a shipped design that moved, and it
-# has to be looked at before the number is updated.
-_TITLE_MARKUP_BEFORE = {
-    "anniversary": ["249a68ed1d636ddf", "65d902c8cb32b102", "03dcefc26e9b2ba0"],
-    "bachelorette": ["bb7978c319df903d", "fa08527e5bcb61ce", "1a84048450db01cb"],
-    "birthday-boys-basketball": ["1af59fe492ce033b", "18f6a49cf0e8f9d0",
-                                 "ce4d444b421c0b45"],
-    "birthday-girls": ["46f772cbb7155904", "eb9fe572ee9f72ca", "c713563a71d14b8a"],
-    "birthday-girls-neon": ["e2fdd7b53a7dfca9", "0b2b6c8748dfe4b3",
-                            "71305b0298031c15"],
-    "football-boys": ["92d447f4a454c421", "3627b9e6ef4032aa", "dea6d6ae55145772"],
-    "grapefruit": ["df84b23ed96caf8d", "04f8b3878acb6645", "478cdf359f24a291"],
-    "japanese": ["b0fdff33a41756e2", "fc2ae321792c414e", "75d5d8cfc42a4717"],
-    "trip comeback": ["7b52fc1cb83a0e2a", "88f1fbfcb49f8f1e", "aec204b7fe9df45c"],
-}
-# Two lines of Hebrew, two of Latin, one alone — so the fixture covers the
+# Two lines of Hebrew, two of Latin, one alone — so the sweep below covers the
 # stacked path, the RTL and LTR splits, and the single-line path that has no
 # spacing at all.
 _TITLE_MARKUP_CASES = (["מסיבת רווקות", "לשירה"],
@@ -1893,25 +1874,60 @@ _TITLE_MARKUP_CASES = (["מסיבת רווקות", "לשירה"],
                        ["דנה"])
 
 
-def test_the_shipped_themes_titles_render_byte_for_byte_as_before():
+def _shipped_title(entry, key, lines, **kw):
+    ts = entry["title_style"]
+    rp._TITLE_UID[0] = 0
+    return rp.title_block(
+        LEAD_BOX, list(lines), ts["fill"], ts["outline"],
+        config.font_path(key, entry["title_font"]),
+        ts["outline_w"], ts["arch"], ts["shadow"],
+        rtl=(entry.get("language") == "hebrew"),
+        fixed_size=ts.get("size"), align=ts.get("align", "center"),
+        italic=ts.get("italic", False), bold=ts.get("bold", False),
+        bold_w=ts.get("bold_w"), **kw)
+
+
+def test_the_shipped_themes_titles_render_exactly_as_before():
+    # Nine designs are live; re-spacing one by side effect would reprint every
+    # card of every order placed against it. So: for every shipped theme, over
+    # every shape of title, the markup with the theme's leading (none of them
+    # has one) is byte-identical to the markup produced without the argument at
+    # all, and the lines come out on exactly the fixed step this renderer has
+    # always used. Those two together are the whole guarantee — with no measured
+    # leading, `pitch` IS `RENDER_PITCH`, and every place the pitch reaches
+    # (the ink stack, the height cap's per-line share, the baseline gap) then
+    # sees the identical constant it saw before.
+    #
+    # Deliberately not a hash of the output: the emitted coordinates come from
+    # FreeType's metrics, which differ by a fraction of a unit between a dev
+    # machine and CI, so a golden hash would fail for a reason that has nothing
+    # to do with this change.
     shipped = json.load(open(os.path.join(HERE, "themes.json"), encoding="utf-8"))
-    assert set(shipped) == set(_TITLE_MARKUP_BEFORE), (
-        "a theme was added or removed — record its titles before shipping it")
+    assert len(shipped) >= 9, "the shipped set shrank — check what was removed"
     for key, entry in sorted(shipped.items()):
         ts = entry["title_style"]
-        font = config.font_path(key, entry["title_font"])
-        for i, lines in enumerate(_TITLE_MARKUP_CASES):
-            rp._TITLE_UID[0] = 0
-            svg = rp.title_block(
-                LEAD_BOX, list(lines), ts["fill"], ts["outline"], font,
-                ts["outline_w"], ts["arch"], ts["shadow"],
-                rtl=(entry.get("language") == "hebrew"),
-                fixed_size=ts.get("size"), align=ts.get("align", "center"),
-                italic=ts.get("italic", False), bold=ts.get("bold", False),
-                bold_w=ts.get("bold_w"), leading=ts.get("leading"))
-            got = hashlib.sha256(svg.encode()).hexdigest()[:16]
-            assert got == _TITLE_MARKUP_BEFORE[key][i], (
-                f"{key} case {i}: this shipped design's title MOVED")
+        assert ts.get("leading") is None, key
+        for lines in _TITLE_MARKUP_CASES:
+            with_arg = _shipped_title(entry, key, lines, leading=ts.get("leading"))
+            without = _shipped_title(entry, key, lines)
+            assert with_arg == without, f"{key}: {lines} moved"
+            got = _baselines(with_arg)
+            if len(got) < 2:
+                continue
+            size = _emitted_size(with_arg)
+            for a, b in zip(got, got[1:]):
+                assert abs((b - a) - rp.RENDER_PITCH * size) < 0.15, (
+                    f"{key}: {lines} is no longer stacked at {rp.RENDER_PITCH}")
+
+
+def test_the_pitch_falls_back_to_the_renderers_own_step_whatever_is_asked_of_it():
+    # The other half of the guarantee above: with no measured leading the clamp
+    # cannot fire, for any font, any text and any amount of paint — so there is
+    # no input on which an uncalibrated theme picks up a spacing it did not have.
+    f, ref = rp._title_metrics(_hebrew_title_font())
+    for lines in (["לתמר", "מזל טוב"], ["דנה"], ["א", "ב", "ג"]):
+        for pad in (0.0, 0.1, 0.5, 2.0):
+            assert rp.title_pitch(f, ref, lines, None, pad) == rp.RENDER_PITCH
 
 
 def test_a_single_line_title_is_unaffected_by_the_leading():

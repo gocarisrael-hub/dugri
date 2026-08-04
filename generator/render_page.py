@@ -1563,8 +1563,10 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     width, tight line spacing, an optional drop shadow + thick dark outline
     behind a light fill — the 3D bubble look. All style knobs come from the
     theme config: ``outline_w`` (dark ring thickness as a fraction of glyph
-    size), ``arch`` (upward bulge fraction) and ``shadow`` (draw the drop
-    shadow layer or not)."""
+    size), ``arch`` (upward bulge fraction), ``shadow`` (draw the drop shadow
+    layer or not) and ``leading`` (the baseline step, as a fraction of the type
+    size, measured off the design — unset keeps this renderer's own fixed
+    step)."""
     x0, y0, x1, y1 = box["x0"], box["y0"], box["x1"], box["y1"]
     cx = (x0 + x1) / 2
     bw, bh = x1 - x0, y1 - y0
