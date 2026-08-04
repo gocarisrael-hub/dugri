@@ -720,25 +720,58 @@ def _alignment(mask, box):
     return {sl: "left", sr: "right", sm: "center"}[best]
 
 
-def _has_shadow(image, mask, box):
-    """Whether the title carries a drop shadow.
+# How far the ring's ink must sit below the fill's, as a fraction of the type
+# size, before the title is taken to carry a drop shadow. A ring drawn around a
+# glyph is concentric with it, so with no shadow this displacement is zero up to
+# rasterising noise; the renderer's own shadow is offset by 0.06 of the size, so
+# anything at a quarter of that is unambiguous.
+_SHADOW_DROP = 0.015
 
-    A shadow shows up as ink offset DOWN from the glyph body in a colour close
-    to the outline's — so the ink mask's bottom band holds pixels that the
-    eroded body does not. Cheap heuristic; reported at low confidence.
+
+def detect_shadow(image, mask, box, fill, outline, bg, em_px):
+    """Whether the title carries a drop shadow — measured, or None if unknowable.
+
+    A shadow is the glyph drawn AGAIN, below and to the right, in the outline's
+    colour. So it shows up as the ring's ink sitting lower than the fill's: a
+    plain ring is concentric with the glyph it encloses and the two centroids
+    coincide, while a shadow drags the outline-coloured centroid down.
+
+    This used to look for "a thin low-density tail in the bottom 12% of the ink",
+    which is not a shadow — it is a DESCENDER, and almost every title has one.
+    Turned on for a design with no shadow it prints an extra offset copy of the
+    whole title, which is ink the original does not have anywhere on the card.
+
+    None (not False) when the question cannot be put: a single-paint title has no
+    ring to compare the fill against, so there is nothing to measure and the
+    theme's existing answer should stand rather than be overwritten with a guess.
     """
-    region = mask.crop(box)
-    w, h = region.size
-    if h < 8:
+    if not (fill and outline) or fill == outline or not em_px or em_px <= 0:
         return None
-    px = region.load()
-    rows = [sum(1 for x in range(w) if px[x, y]) for y in range(h)]
-    if not any(rows):
+    rgb = [_hex_to_rgb(fill), _hex_to_rgb(outline)]
+    pad = 2
+    bw, bh = box[2] - box[0], box[3] - box[1]
+    if bw < 4 or bh < 4:
         return None
-    peak = max(rows)
-    # A shadow leaves a thin, low-density tail under the glyph body.
-    tail = rows[int(h * 0.88):]
-    return bool(tail) and 0 < max(tail) < 0.25 * peak
+    region = Image.new("L", (bw + 2 * pad, bh + 2 * pad), 0)
+    region.paste(solid_ink(mask.crop(box)), (pad, pad))
+    crop = Image.new("RGB", region.size, bg)
+    crop.paste(image.crop(box), (pad, pad))
+    px, mp = crop.load(), region.load()
+    sums = [0.0, 0.0]
+    counts = [0, 0]
+    for y in range(region.size[1]):
+        for x in range(region.size[0]):
+            if not mp[x, y]:
+                continue
+            which = _paint_class(px[x, y], rgb, bg)
+            if which is None:
+                continue
+            sums[which] += y
+            counts[which] += 1
+    if min(counts) < 30:
+        return None
+    drop = (sums[1] / counts[1]) - (sums[0] / counts[0])
+    return drop > _SHADOW_DROP * em_px
 
 
 # ---- AUTO-FIT: the sizes, and the synthetic-bold weight ---------------------
@@ -1889,10 +1922,6 @@ def calibrate(theme_key, workdir=None):
                     notes.append("title: ring thickness (outline_w) could not be "
                                  "measured — set it by eye against the original.")
                     confidence["title_style.outline_w"] = "none"
-                shadow = _has_shadow(image, mask, tight)
-                if shadow is not None:
-                    ts["shadow"] = bool(shadow)
-                    confidence["title_style.shadow"] = "low"
                 # Flat unless the title genuinely curves. This USED to be left out
                 # as "a visual call", but title_style is validated as a WHOLE and a
                 # blob missing one field is rejected entirely — so omitting arch
@@ -1903,8 +1932,18 @@ def calibrate(theme_key, workdir=None):
                 # overrides it in the form for a curved title.
                 ts.setdefault("arch", 0.0)
                 confidence.setdefault("title_style.arch", "low")
-                ts.setdefault("shadow", False)
-                confidence.setdefault("title_style.shadow", "low")
+                # The shadow is read AFTER the size, because it is measured as a
+                # displacement in units of the type size.
+                shadow = detect_shadow(image, mask, tight, fill, outline,
+                                       _background(image, mask, tight),
+                                       (size or 0) * ppu)
+                if shadow is None:
+                    ts.setdefault("shadow", bool((cfg.get("title_style") or {})
+                                                 .get("shadow", False)))
+                    confidence.setdefault("title_style.shadow", "none")
+                else:
+                    ts["shadow"] = bool(shadow)
+                    confidence["title_style.shadow"] = "medium"
                 align = _alignment(mask, tight)
                 if align:
                     ts["align"] = align

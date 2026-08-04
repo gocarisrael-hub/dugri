@@ -325,6 +325,51 @@ def test_a_light_fill_inside_a_dark_ring_is_read_as_fill_and_ring():
     assert abs(width - 0.08) <= 0.02, width
 
 
+# --- the drop shadow ---------------------------------------------------------
+# The old test was "a thin low-density tail in the bottom 12% of the ink", which
+# is not a shadow — it is a DESCENDER, and almost every title has one. Turned on
+# for a design that has none it prints an offset second copy of the whole title.
+
+def _shadowed(size=100, ring=8, pad=30, drop=0):
+    """A ringed glyph, optionally with its own silhouette repeated below-right."""
+    dim = size + 2 * pad
+    img = Image.new("RGB", (dim, dim), (255, 255, 255))
+    mask = Image.new("L", (dim, dim), 0)
+    if drop:
+        for y in range(size):
+            for x in range(size):
+                img.putpixel((x + pad + drop, y + pad + drop), (0, 0, 0))
+                mask.putpixel((x + pad + drop, y + pad + drop), 255)
+    for y in range(size):
+        for x in range(size):
+            edge = x < ring or y < ring or x >= size - ring or y >= size - ring
+            img.putpixel((x + pad, y + pad), (0, 0, 0) if edge else (164, 233, 255))
+            mask.putpixel((x + pad, y + pad), 255)
+    return img, mask
+
+
+def test_a_plain_ring_is_not_reported_as_a_shadow():
+    img, mask = _shadowed(drop=0)
+    got = C.detect_shadow(img, mask, (0, 0, 160, 160),
+                          "#a4e9ff", "#000000", (255, 255, 255), 100.0)
+    assert got is False, "a concentric ring is not a shadow"
+
+
+def test_a_real_offset_copy_is_reported_as_a_shadow():
+    img, mask = _shadowed(drop=10)
+    got = C.detect_shadow(img, mask, (0, 0, 160, 160),
+                          "#a4e9ff", "#000000", (255, 255, 255), 100.0)
+    assert got is True
+
+
+def test_a_single_paint_title_cannot_be_asked_about_its_shadow():
+    """No ring means nothing to compare the fill against, so the answer is
+    "unknown" — which must not be written down as "no shadow"."""
+    img, mask = _ringed(ring=0)
+    assert C.detect_shadow(img, mask, _RINGED_BOX, "#96dce6", "#96dce6",
+                           (255, 255, 255), 100.0) is None
+
+
 def test_too_little_ink_is_refused_rather_than_measured():
     img = Image.new("RGB", (12, 12), (255, 255, 255))
     mask = Image.new("L", (12, 12), 0)
