@@ -455,7 +455,7 @@ test.describe('admin templates — single-card mutations (fixture only, single p
     await page.goto(`/admin-templates.html?key=${KEY}`);
     await page.fill('#form input[name="slug"]', slug);
     await page.fill('#form input[name="display_he"]', 'קלפים E2E');
-    await page.fill('#form input[name="title_text"]', '{NAME}');
+    await page.fill('#form textarea[name="title_text"]', '{NAME}');
     await page.setInputFiles('#form input[name="clean_cards"]', files('clean'));
     await page.setInputFiles('#form input[name="filled_cards"]', files('filled'));
     await page.setInputFiles('#form input[name="title_font"]', font('Title.ttf'));
@@ -499,7 +499,7 @@ test.describe('admin templates — single-card mutations (fixture only, single p
     await page.locator('#form .mode-btn[data-fronts="one"]').click();
     await page.fill('#form input[name="slug"]', slug);
     await page.fill('#form input[name="display_he"]', 'עיצוב אחד E2E');
-    await page.fill('#form input[name="title_text"]', '{NAME}');
+    await page.fill('#form textarea[name="title_text"]', '{NAME}');
     await page.setInputFiles('#form input[name="clean_2"]', svg('clean-front'));
     await page.setInputFiles('#form input[name="clean_1"]', svg('clean-back'));
     await page.setInputFiles('#form input[name="filled_2"]', svg('filled-front'));
@@ -549,7 +549,7 @@ test.describe('admin templates — single-card mutations (fixture only, single p
     await page.locator('#form .mode-btn[data-fronts="one"]').click();
     await page.fill('#form input[name="slug"]', slug);
     await page.fill('#form input[name="display_he"]', 'חסר גב E2E');
-    await page.fill('#form input[name="title_text"]', '{NAME}');
+    await page.fill('#form textarea[name="title_text"]', '{NAME}');
     await page.setInputFiles('#form input[name="clean_2"]', svg);
     await page.setInputFiles('#form input[name="clean_1"]', svg);
     await page.setInputFiles('#form input[name="filled_2"]', svg);
@@ -578,7 +578,7 @@ test.describe('admin templates — single-card mutations (fixture only, single p
     await page.goto(`/admin-templates.html?key=${KEY}`);
     await page.fill('#form input[name="slug"]', slug);
     await page.fill('#form input[name="display_he"]', 'חסר E2E');
-    await page.fill('#form input[name="title_text"]', '{NAME}');
+    await page.fill('#form textarea[name="title_text"]', '{NAME}');
     await page.setInputFiles(
       '#form input[name="clean_cards"]',
       [1, 2].map((n) => ({

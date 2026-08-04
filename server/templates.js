@@ -769,6 +769,21 @@ function normalizeMetadata({ root, fields }) {
     .filter(Boolean);
   const visibility =
     String((fields && fields.visibility) || '').trim() === 'private' ? 'private' : 'public';
+  // The TITLE, checked against the extra fields this same form declares — the
+  // origin of the "'s Birthday" bug. Onboarding used to accept ANY non-empty
+  // string, so a title with no {NAME} (or with a placeholder the wizard never
+  // collects) registered silently and printed a gap on every card. Refusing it
+  // here is what stops the broken template from being created in the first place;
+  // `allow_titleless` is the explicit confirmation for the legitimate case of a
+  // deck whose artwork carries no name at all.
+  const titleCheck = validateTitle({
+    titleText,
+    extraFields,
+    allowNoName: isTruthyFlag(fields && fields.allow_titleless),
+  });
+  if (titleCheck.error) {
+    return { error: titleCheck.error, ...(titleCheck.titleless ? { titleless: true } : {}) };
+  }
   // Asset layout. Explicit only — an absent/unknown value is the legacy sheet
   // layout, so nothing that already registers templates has to change.
   const rawStructure = String((fields && fields.card_structure) || '').trim();
@@ -791,7 +806,10 @@ function normalizeMetadata({ root, fields }) {
   return {
     slug,
     displayHe,
-    titleText,
+    // The validated title, newline-joined — identical to the input except for the
+    // blank-line/whitespace trimming buildThemeEntry would have done anyway.
+    titleText: titleCheck.title_text,
+    titleLines: titleCheck.title_lines,
     nameForm,
     language,
     extraFields,
@@ -1068,7 +1086,12 @@ function onboardTemplate(opts) {
     files: opts.files,
     fileLists: opts.fileLists,
   });
-  if (norm.error) return { error: norm.error, httpStatus: 400 };
+  // `titleless` rides along: a title with no {NAME} is the ONE rejection the
+  // owner may confirm past (allow_titleless), so the route has to be able to tell
+  // it from every other 400 and offer the confirmation.
+  if (norm.error) {
+    return { error: norm.error, httpStatus: 400, ...(norm.titleless ? { titleless: true } : {}) };
+  }
   const isCards = norm.cardStructure === 'cards';
 
   // Shrink oversized embedded images BEFORE writing, so both the stored files and
@@ -1206,7 +1229,10 @@ function onboardTemplate(opts) {
 // { key, shell:true, ... } or { error, httpStatus }.
 function createTemplateShell({ root, fields }) {
   const meta = normalizeMetadata({ root, fields });
-  if (meta.error) return { error: meta.error, httpStatus: 400 };
+  // See onboardTemplate: `titleless` is confirmable, every other 400 is not.
+  if (meta.error) {
+    return { error: meta.error, httpStatus: 400, ...(meta.titleless ? { titleless: true } : {}) };
+  }
   const isCards = meta.cardStructure === 'cards';
   const dir = templateWriteDir(root, null, meta.slug);
   // assets/ only for the single-card layout, whose SVGs reference de-duplicated
@@ -1666,6 +1692,13 @@ function computeTemplateStatus(root, key, entry) {
     language: (entry && entry.language) || null,
     name_form: (entry && entry.name_form) || null,
     extra_fields: Array.isArray(entry && entry.extra_fields) ? entry.extra_fields : [],
+    // The honoree TITLE template, so the admin form can show and edit it. Until
+    // now neither field was reported at all, which is why a template onboarded
+    // with a nameless title could not even be diagnosed from the UI, let alone
+    // repaired. `title_lines` is the list the generator renders (one line per
+    // entry); `title_text` is the same content newline-joined.
+    title_text: (entry && entry.title_text) || '',
+    title_lines: Array.isArray(entry && entry.title_lines) ? entry.title_lines : [],
     calibrated: !!(entry && entry.calibrated),
     // Current calibration look-pass values, so the admin form pre-fills on
     // re-edit (null on a fresh, not-yet-calibrated template).
@@ -1780,6 +1813,134 @@ function normalizeExtraFields(input) {
     .split(/[\s,]+/)
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+// ---- The title template ----------------------------------------------------
+// A theme entry carries the honoree title in TWO fields, and only one of them is
+// read by anything that renders:
+//
+//   title_lines  AUTHORITATIVE. config.py's `title_lines()` iterates exactly this
+//                list, one rendered line per entry, and render_page calibrates the
+//                title box against the whole stack. Nothing else is consulted.
+//   title_text   The human/source form — the single string the onboarding form
+//                collected, newline-separated. NO renderer reads it (grep the
+//                generator: it appears only in fixtures).
+//
+// They could therefore DRIFT, and in the shipped file they already have
+// (birthday-girls-neon: title_text "XOXO {NAME}'S BIRTHDAY" against title_lines
+// ["{NAME}'S","BIRTHDAY"] — the XOXO prints nowhere). So every write here derives
+// title_text FROM the lines rather than storing two independent values: edit the
+// lines, and the two can never disagree again.
+//
+// Placeholders are `{TOKEN}` and are substituted by config.title_lines(): {NAME}
+// from the honoree name, everything else from the order's extra fields. A token
+// with no value is STRIPPED by the generator's defense-in-depth `re.sub` — which
+// is why a title that never had a valid {NAME} in it prints as "'s Birthday" with
+// no hint that anything is missing. Catching that at the WRITE is the whole point
+// of the validation below.
+const MAX_TITLE_LINES = 6;
+const MAX_TITLE_LINE = 80;
+// A well-formed placeholder token: SHOUTING_SNAKE, which is what config.py's
+// substitution map is keyed by. `{name}` / `{Name}` never match a key and would
+// be silently stripped at render time, so they are rejected as unknown rather
+// than quietly accepted.
+const PLACEHOLDER_TOKEN_RE = /^[A-Z][A-Z0-9_]*$/;
+// Any brace group at all, well-formed or not — deliberately the SAME pattern the
+// generator strips with, so what we validate is exactly what it would erase.
+const PLACEHOLDER_ANY_RE = /\{[^{}]*\}/g;
+// The one placeholder every theme can always use: the honoree's name.
+const NAME_PLACEHOLDER = 'NAME';
+
+// Split a title into render lines: newline-separated, trimmed, blanks dropped.
+// Mirrors buildThemeEntry's original split so an edited title lands in exactly
+// the shape onboarding produces.
+function titleLinesFrom(input) {
+  const raw = Array.isArray(input) ? input : String(input == null ? '' : input).split('\n');
+  return raw.map((s) => String(s == null ? '' : s).trim()).filter(Boolean);
+}
+
+// Every `{TOKEN}` used by a title, in order of first appearance.
+function titlePlaceholders(lines) {
+  const out = [];
+  for (const line of titleLinesFrom(lines)) {
+    for (const m of String(line).match(PLACEHOLDER_ANY_RE) || []) {
+      const token = m.slice(1, -1).trim();
+      if (!out.includes(token)) out.push(token);
+    }
+  }
+  return out;
+}
+
+/**
+ * Validate a title template against the extra fields the wizard will collect.
+ *
+ * Returns `{ title_text, title_lines, placeholders, unusedFields }` or `{ error }`.
+ *
+ * Three failure modes, all of them the class of bug that produced "'s Birthday":
+ *  1. EMPTY — a title has to say something.
+ *  2. An UNKNOWN placeholder: `{AGE}` on a theme whose extra_fields lacks AGE, or
+ *     a mis-cased `{Name}`. The wizard never collects it, so the generator strips
+ *     it and the card prints a gap. Named explicitly, with the fix spelled out.
+ *  3. NO `{NAME}` at all — legitimate (the "Bride in One Pot" deck carries no name
+ *     whatsoever) but never something to arrive at by accident. Allowed only when
+ *     the caller passes `allowNoName`, i.e. the owner confirmed it.
+ *
+ * `unusedFields` is advisory, not an error: an extra field the title never
+ * references means the wizard asks the buyer for something nothing prints.
+ */
+function validateTitle({ titleText, titleLines, extraFields, allowNoName }) {
+  const lines = titleLinesFrom(titleLines != null ? titleLines : titleText);
+  if (!lines.length) return { error: 'title_text is required' };
+  if (lines.length > MAX_TITLE_LINES) {
+    return { error: 'title has too many lines (max ' + MAX_TITLE_LINES + ')' };
+  }
+  const tooLong = lines.find((l) => l.length > MAX_TITLE_LINE);
+  if (tooLong) {
+    return { error: 'title line too long (max ' + MAX_TITLE_LINE + ' chars): ' + tooLong };
+  }
+  const fields = Array.isArray(extraFields) ? extraFields : [];
+  const known = new Set([NAME_PLACEHOLDER, ...fields]);
+  const used = titlePlaceholders(lines);
+  for (const token of used) {
+    if (!PLACEHOLDER_TOKEN_RE.test(token) || !known.has(token)) {
+      return {
+        error:
+          'title uses {' +
+          token +
+          '} but the template does not collect it — ' +
+          'add ' +
+          (PLACEHOLDER_TOKEN_RE.test(token) ? token : 'a valid field name') +
+          ' to extra_fields, or fix the placeholder. Available here: ' +
+          [...known].map((k) => '{' + k + '}').join(' '),
+      };
+    }
+  }
+  // A leftover brace after removing every group means an unclosed one ("{NAME"),
+  // which would print raw on the card.
+  const leftover = lines.join('\n').replace(PLACEHOLDER_ANY_RE, '');
+  if (leftover.includes('{') || leftover.includes('}')) {
+    return { error: 'title has an unclosed { or } — write placeholders as {NAME}' };
+  }
+  if (!used.includes(NAME_PLACEHOLDER) && !allowNoName) {
+    return {
+      error:
+        'title has no {NAME} placeholder, so every card would print without the ' +
+        "honoree's name. Send allow_titleless:true to confirm that is intended.",
+      titleless: true,
+    };
+  }
+  return {
+    title_text: lines.join('\n'),
+    title_lines: lines,
+    placeholders: used,
+    unusedFields: fields.filter((f) => !used.includes(f)),
+  };
+}
+
+// Did the owner explicitly confirm a title with no {NAME}? Accepts the boolean
+// and the string form a multipart form posts.
+function isTruthyFlag(v) {
+  return v === true || v === 'true' || v === '1' || v === 1 || v === 'on';
 }
 
 // ---- Calibration knobs ----------------------------------------------------
@@ -2089,6 +2250,46 @@ function updateTemplateSettings({ root, key, patch }) {
   if ('extra_fields' in p) {
     changed.extra_fields = normalizeExtraFields(p.extra_fields);
   }
+  // THE HONOREE TITLE — editable after creation, which it was not until now.
+  //
+  // A template onboarded with a title that carries no usable {NAME} printed
+  // "'s Birthday" on every card forever: nothing in this patch accepted
+  // title_text/title_lines, so the only way out was hand-editing themes.json on
+  // the volume. Both fields are accepted here, `title_lines` (the one the
+  // generator actually reads) wins when both arrive, and `title_text` is always
+  // re-derived from the saved lines so the pair can never drift apart.
+  //
+  // Validated against the extra fields this SAME patch results in, so fixing a
+  // title and adding the field it needs is one save rather than a chicken-and-egg
+  // pair of rejected ones.
+  const titleInPatch = 'title_text' in p || 'title_lines' in p;
+  const resultingExtraFields = Array.isArray(changed.extra_fields)
+    ? changed.extra_fields
+    : Array.isArray(entry.extra_fields)
+      ? entry.extra_fields
+      : [];
+  const extraFieldsChanged =
+    'extra_fields' in changed &&
+    (changed.extra_fields.length !== (entry.extra_fields || []).length ||
+      changed.extra_fields.some((f, i) => f !== (entry.extra_fields || [])[i]));
+  if (titleInPatch || extraFieldsChanged) {
+    const v = validateTitle({
+      titleText: p.title_text,
+      titleLines: 'title_lines' in p ? p.title_lines : titleInPatch ? undefined : entry.title_lines,
+      extraFields: resultingExtraFields,
+      // The no-{NAME} confirmation guards the TITLE edit. Narrowing extra_fields
+      // on a template whose title never had a name must not demand a confirmation
+      // for a title this patch is not touching.
+      allowNoName: !titleInPatch || isTruthyFlag(p.allow_titleless),
+    });
+    if (v.error) {
+      return { error: v.error, httpStatus: 400, ...(v.titleless ? { titleless: true } : {}) };
+    }
+    if (titleInPatch) {
+      changed.title_text = v.title_text;
+      changed.title_lines = v.title_lines;
+    }
+  }
   // Which seed pool tops this template's orders up to a full deck. Until now the
   // link lived only in the shipped themes.json — baked into the image, so it was
   // surfaced read-only on the wordlists screen and could not be changed without a
@@ -2318,6 +2519,10 @@ function updateTemplateSettings({ root, key, patch }) {
       name_form: entry.name_form,
       visibility: entry.visibility,
       extra_fields: Array.isArray(entry.extra_fields) ? entry.extra_fields : [],
+      // The title as saved. `title_lines` is what renders; `title_text` is the
+      // same thing newline-joined, for the form to show in one box.
+      title_text: entry.title_text || '',
+      title_lines: Array.isArray(entry.title_lines) ? entry.title_lines : [],
       title_style: entry.title_style || null,
       board: entry.board || null,
       back: entry.back || null,
@@ -2877,6 +3082,9 @@ module.exports = {
   validateCalibration,
   deleteTemplate,
   normalizeExtraFields,
+  validateTitle,
+  titlePlaceholders,
+  titleLinesFrom,
   replaceAsset,
   designDisplayNames,
   LANGUAGES,

@@ -373,7 +373,7 @@ describe('templates.js pure logic', () => {
     const r = templates.onboardTemplate({
       root,
       runRecipe: false,
-      fields: { slug: 'party-badch', display_he: 'x', title_text: 'x', name_form: 'english' },
+      fields: { slug: 'party-badch', display_he: 'x', title_text: '{NAME}', name_form: 'english' },
       files,
     });
     expect(r.error).toMatch(/chasers board does not look like an SVG/);
@@ -397,7 +397,7 @@ describe('templates.js pure logic', () => {
     const dup = templates.onboardTemplate({
       root,
       runRecipe: false,
-      fields: { slug: 'taken', display_he: 'x', title_text: 'x', name_form: 'english' },
+      fields: { slug: 'taken', display_he: 'x', title_text: '{NAME}', name_form: 'english' },
       files: validFiles(),
     });
     expect(dup.error).toMatch(/already exists/);
@@ -407,7 +407,7 @@ describe('templates.js pure logic', () => {
     const miss = templates.onboardTemplate({
       root,
       runRecipe: false,
-      fields: { slug: 'nofile', display_he: 'x', title_text: 'x', name_form: 'english' },
+      fields: { slug: 'nofile', display_he: 'x', title_text: '{NAME}', name_form: 'english' },
       files: missing,
     });
     expect(miss.error).toMatch(/missing clean board/);
@@ -571,6 +571,10 @@ describe('templates.js full editing (status / rename / replace)', () => {
       name_form: 'english-caps',
       visibility: 'private',
       extra_fields: ['YEARS', 'NAME1', 'NAME2'],
+      // Reported so the settings form can show the title it is editing. Untouched
+      // by this patch — the fixture onboards with '{NAME}'.
+      title_text: '{NAME}',
+      title_lines: ['{NAME}'],
       // A settings-only patch leaves the calibration look-pass untouched (this
       // template is freshly onboarded → still uncalibrated).
       title_style: null,

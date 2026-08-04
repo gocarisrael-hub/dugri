@@ -103,6 +103,7 @@
       }
       input[type='text'],
       input[type='file'],
+      textarea,
       select {
         width: 100%;
         margin-top: 5px;
@@ -215,6 +216,10 @@
         background: #fbeecb;
         color: #8a6d1e;
       }
+      .tpl-badge.notitle {
+        background: #f7ddd8;
+        color: #96382a;
+      }
       .link-btn {
         appearance: none;
         border: 1px solid #d8a7a0;
@@ -281,6 +286,61 @@
         padding: 5px 7px;
         border: 1px solid #e0d6c8;
         border-radius: 7px;
+      }
+      /* Title template editor — one input per RENDERED line, because that is what
+         the generator stacks and calibrates the title box against. */
+      .tpl-title-ed {
+        margin: 10px 0 4px;
+        padding: 8px 10px;
+        border: 1px solid #e0d6c8;
+        border-radius: 9px;
+        background: #fcfaf6;
+      }
+      .tpl-title-ed > b {
+        font-size: 12px;
+        color: #5c7357;
+      }
+      .title-line-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 5px 0;
+      }
+      .title-line-row .title-line-no {
+        font-size: 11px;
+        color: #9a9a9a;
+        min-width: 42px;
+      }
+      .title-line-row input {
+        flex: 1;
+        font: inherit;
+        font-size: 13px;
+        padding: 5px 7px;
+        border: 1px solid #e0d6c8;
+        border-radius: 7px;
+        direction: ltr;
+        text-align: left;
+      }
+      .title-ph {
+        margin-top: 6px;
+        font-size: 11.5px;
+        color: #6b6b6b;
+      }
+      .title-ph code {
+        background: #efe9dd;
+        border-radius: 4px;
+        padding: 1px 4px;
+        cursor: pointer;
+        direction: ltr;
+        display: inline-block;
+      }
+      .title-warn {
+        margin-top: 6px;
+        font-size: 12px;
+        color: #9a6a1f;
+      }
+      .title-warn:empty {
+        display: none;
       }
       /* Calibration (title/board/back look pass) */
       .tpl-cal {
@@ -668,13 +728,17 @@
               <input type="text" name="display_he" required placeholder="דוגרי בת מצווה" />
             </label>
           </div>
+          <!-- A TEXTAREA, not a text input: the hint has always said "a new line is
+               another title line" (that is exactly how title_lines is derived) but a
+               single-line input made a multi-line title impossible to type. -->
           <label
             >טקסט כותרת (title_text)
             <span class="hint"
-              >אפשר משתנים כמו <code>{NAME}</code>, <code>{AGE}</code>. שורה חדשה = שורת כותרת
-              נוספת.</span
+              >חובה <code>{NAME}</code> כדי שהשם יודפס. אפשר גם שדות שהתבנית אוספת
+              (<code>{AGE}</code>, <code>{YEARS}</code>, <code>{NAME1}</code>, <code>{NAME2}</code>)
+              — כל אחד מהם חייב להופיע גם ב-extra_fields. שורה חדשה = שורת כותרת נוספת.</span
             >
-            <input type="text" name="title_text" required placeholder="{NAME}'S B-DAY" />
+            <textarea name="title_text" rows="2" required placeholder="{NAME}'S B-DAY"></textarea>
           </label>
           <div class="row">
             <label
@@ -974,11 +1038,28 @@
         submitBtn.disabled = true;
         show('ok', 'מעלה ומעבד…');
         try {
-          const res = await fetch('/api/admin/templates?key=' + encodeURIComponent(key), {
-            method: 'POST',
-            body: new FormData(form),
-          });
-          const data = await res.json().catch(() => ({}));
+          const post = (extra) => {
+            const fd = new FormData(form);
+            if (extra) for (const [k, v] of Object.entries(extra)) fd.set(k, v);
+            return fetch('/api/admin/templates?key=' + encodeURIComponent(key), {
+              method: 'POST',
+              body: fd,
+            });
+          };
+          let res = await post();
+          let data = await res.json().catch(() => ({}));
+          // Onboarding is where "'s Birthday" was BORN: a title with no {NAME}
+          // registered silently and could not be edited afterwards. Now it is
+          // refused once and only saved on an explicit confirmation — possible,
+          // never accidental.
+          if (!res.ok && data.titleless) {
+            if (
+              window.confirm('אין {NAME} בכותרת — הקלפים יודפסו בלי שם החוגג/ת. להמשיך בכל זאת?')
+            ) {
+              res = await post({ allow_titleless: 'true' });
+              data = await res.json().catch(() => ({}));
+            }
+          }
           if (!res.ok) {
             show(
               'err',
@@ -1043,12 +1124,23 @@
         createShellBtn.disabled = true;
         show('ok', 'יוצר תבנית ריקה…');
         try {
-          const res = await fetch('/api/admin/templates/create?key=' + encodeURIComponent(key), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-          const data = await res.json().catch(() => ({}));
+          const post = (body) =>
+            fetch('/api/admin/templates/create?key=' + encodeURIComponent(key), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+          let res = await post(payload);
+          let data = await res.json().catch(() => ({}));
+          // Same confirmation as the full upload — see there.
+          if (!res.ok && data.titleless) {
+            if (
+              window.confirm('אין {NAME} בכותרת — הקלפים יודפסו בלי שם החוגג/ת. להמשיך בכל זאת?')
+            ) {
+              res = await post({ ...payload, allow_titleless: true });
+              data = await res.json().catch(() => ({}));
+            }
+          }
           if (!res.ok) {
             show('err', 'שגיאה: ' + (data.error || res.status));
           } else {
@@ -1618,6 +1710,195 @@
         return out;
       }
 
+      // ---- The title template editor -------------------------------------
+      // Any `{TOKEN}` group, well-formed or not — the SAME shape the generator
+      // strips with (config.py's `re.sub(r"\{[^{}]*\}", "", line)`), so what is
+      // flagged here is exactly what would silently vanish from the card.
+      const TITLE_PLACEHOLDER_RE = /\{[^{}]*\}/g;
+
+      // The placeholders a template may use: {NAME} always, plus whatever the
+      // wizard collects for it. Read LIVE off the extra_fields input beside it, so
+      // typing AGE there immediately makes {AGE} legal in the title below.
+      function titleAllowedPlaceholders(efInput) {
+        const extras = String((efInput && efInput.value) || '')
+          .split(/[\s,]+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        return ['NAME', ...extras.filter((f) => f !== 'NAME')];
+      }
+
+      function titleLinesOf(card) {
+        return [...card.querySelectorAll('.tpl-title-ed .title-line-input')]
+          .map((i) => i.value.trim())
+          .filter(Boolean);
+      }
+
+      // Everything the server would refuse, restated in Hebrew as the owner types.
+      // Advisory only — the server re-validates and is the authority; this exists
+      // so a mismatch is visible BEFORE the save rather than as a 400 afterwards.
+      //
+      // `blocking` separates "this title cannot print what it says" (a nameless
+      // title, or a placeholder nothing collects — the reported bug) from the
+      // merely untidy (an extra field the title never uses). Only the former
+      // earns the badge on the card head.
+      function titleProblems(lines, allowed) {
+        const out = [];
+        const used = [];
+        for (const line of lines) {
+          for (const m of line.match(TITLE_PLACEHOLDER_RE) || []) {
+            const tok = m.slice(1, -1).trim();
+            if (!used.includes(tok)) used.push(tok);
+          }
+        }
+        for (const tok of used) {
+          if (!allowed.includes(tok)) {
+            out.push({
+              blocking: true,
+              text:
+                'הכותרת משתמשת ב-{' +
+                tok +
+                '} אבל התבנית לא אוספת את השדה הזה — הוסיפו ' +
+                tok +
+                ' ל-extra_fields, או תקנו את המשתנה. הקלף יודפס בלעדיו.',
+            });
+          }
+        }
+        if (!used.includes('NAME')) {
+          out.push({ blocking: true, text: 'אין {NAME} בכותרת — הקלפים יודפסו בלי שם החוגג/ת.' });
+        }
+        for (const f of allowed) {
+          if (f !== 'NAME' && !used.includes(f)) {
+            out.push({
+              blocking: false,
+              text: 'השדה ' + f + ' נאסף מהלקוח/ה אבל לא מופיע בכותרת.',
+            });
+          }
+        }
+        return out;
+      }
+
+      // One input per rendered line + the placeholder palette + the live warning.
+      function buildTitleEditor(t, efInput) {
+        const box = document.createElement('div');
+        box.className = 'tpl-title-ed';
+        const head = document.createElement('b');
+        head.textContent = 'כותרת הקלף (title_lines) — שורה לכל שורת כותרת';
+        box.append(head);
+
+        const rows = document.createElement('div');
+        rows.className = 'title-lines';
+        box.append(rows);
+
+        const warn = document.createElement('div');
+        warn.className = 'title-warn';
+
+        const refresh = () => {
+          // Renumber after an add/remove so the captions never lie about which
+          // line renders where.
+          [...rows.children].forEach((row, i) => {
+            const no = row.querySelector('.title-line-no');
+            if (no) no.textContent = 'שורה ' + (i + 1);
+          });
+          const problems = titleProblems(
+            [...rows.querySelectorAll('.title-line-input')]
+              .map((i) => i.value.trim())
+              .filter(Boolean),
+            titleAllowedPlaceholders(efInput)
+          );
+          warn.textContent = problems.map((p) => p.text).join(' · ');
+        };
+
+        const addRow = (value) => {
+          const row = document.createElement('div');
+          row.className = 'title-line-row';
+          const no = document.createElement('span');
+          no.className = 'title-line-no';
+          const inp = document.createElement('input');
+          inp.type = 'text';
+          inp.className = 'title-line-input';
+          inp.value = value || '';
+          inp.placeholder = "{NAME}'S B-DAY";
+          inp.addEventListener('input', refresh);
+          const del = document.createElement('button');
+          del.type = 'button';
+          del.className = 'link-btn title-line-del';
+          del.textContent = '−';
+          del.title = 'מחק שורה';
+          del.addEventListener('click', () => {
+            // Never leave zero inputs — an empty editor has nothing to type into.
+            if (rows.children.length > 1) row.remove();
+            else inp.value = '';
+            refresh();
+          });
+          row.append(no, inp, del);
+          rows.append(row);
+          return inp;
+        };
+
+        const existing =
+          Array.isArray(t.title_lines) && t.title_lines.length
+            ? t.title_lines
+            : String(t.title_text || '')
+                .split('\n')
+                .filter(Boolean);
+        for (const line of existing.length ? existing : ['']) addRow(line);
+
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'link-btn title-line-add';
+        addBtn.textContent = '+ שורה';
+        addBtn.addEventListener('click', () => {
+          addRow('').focus();
+          refresh();
+        });
+        box.append(addBtn);
+
+        // The palette. The owner cannot be expected to remember the syntax, and
+        // the exact set differs per template — {AGE} is legal on the japanese deck
+        // and a broken title on the bachelorette one.
+        const ph = document.createElement('div');
+        ph.className = 'title-ph';
+        ph.append(document.createTextNode('משתנים זמינים (לחצו להוספה): '));
+        const renderChips = () => {
+          [...ph.querySelectorAll('code')].forEach((c) => c.remove());
+          for (const f of titleAllowedPlaceholders(efInput)) {
+            const chip = document.createElement('code');
+            chip.textContent = '{' + f + '}';
+            chip.title = f === 'NAME' ? 'שם החוגג/ת' : 'שדה נוסף שהתבנית אוספת';
+            // mousedown-preventDefault keeps the focused line focused, so the
+            // token lands where the caret already is instead of at the end of
+            // whichever input happened to be last.
+            chip.addEventListener('mousedown', (ev) => ev.preventDefault());
+            chip.addEventListener('click', () => {
+              const inputs = [...rows.querySelectorAll('.title-line-input')];
+              const target = inputs.includes(document.activeElement)
+                ? document.activeElement
+                : inputs[inputs.length - 1];
+              if (!target) return;
+              const at =
+                target.selectionStart == null ? target.value.length : target.selectionStart;
+              const end = target.selectionEnd == null ? at : target.selectionEnd;
+              const token = '{' + f + '}';
+              target.value = target.value.slice(0, at) + token + target.value.slice(end);
+              target.focus();
+              target.setSelectionRange(at + token.length, at + token.length);
+              refresh();
+            });
+            ph.append(chip, document.createTextNode(' '));
+          }
+        };
+        renderChips();
+        // extra_fields and the title validate against each other, so editing one
+        // has to re-judge the other on the spot.
+        efInput.addEventListener('input', () => {
+          renderChips();
+          refresh();
+        });
+        box.append(ph, warn);
+        refresh();
+        return box;
+      }
+
       function renderTemplates(items) {
         listEl.textContent = '';
         if (!items.length) {
@@ -1628,6 +1909,10 @@
           const card = document.createElement('div');
           card.className = 'tpl-card';
           card.dataset.key = t.key;
+          // The title as LOADED, so the save can tell an actual title edit from a
+          // save that only touched visibility — only the former is worth spending
+          // a Chrome render on.
+          card.dataset.titleLines = (t.title_lines || []).join('\n');
 
           const head = document.createElement('div');
           head.className = 'tpl-head';
@@ -1652,6 +1937,22 @@
             const b = document.createElement('span');
             b.className = 'tpl-badge uncal';
             b.textContent = 'לא מכוילת';
+            head.append(b);
+          }
+          // A title that CANNOT print what it says — no {NAME}, or a placeholder
+          // nothing collects — was invisible until a customer's cards came out
+          // reading "'s Birthday". Flag it on the card head, next to the
+          // uncalibrated badge, so it is seen without opening anything.
+          if (
+            titleProblems((t.title_lines || []).map((s) => String(s).trim()).filter(Boolean), [
+              'NAME',
+              ...(t.extra_fields || []),
+            ]).some((p) => p.blocking)
+          ) {
+            const b = document.createElement('span');
+            b.className = 'tpl-badge notitle';
+            b.textContent = 'כותרת בלי שם';
+            b.title = 'הכותרת לא תדפיס את שם החוגג/ת — ערכו אותה בהגדרות';
             head.append(b);
           }
           const deleteBtn = document.createElement('button');
@@ -1686,7 +1987,7 @@
           const settings = document.createElement('details');
           settings.className = 'tpl-settings';
           const summary = document.createElement('summary');
-          summary.textContent = 'הגדרות (שפה, שדות, נראות)';
+          summary.textContent = 'הגדרות (כותרת, שפה, שדות, נראות)';
           settings.append(summary);
 
           const grid = document.createElement('div');
@@ -1779,6 +2080,14 @@
           efWrap.append(efInput);
           grid.append(efWrap);
           settings.append(grid);
+          // The TITLE the cards print. Editable here because a template onboarded
+          // with a title that lost its {NAME} printed "'s Birthday" on every card
+          // and there was NO way to change it short of hand-editing themes.json on
+          // the volume. Edited LINE BY LINE, not as one blob: `title_lines` is the
+          // list the generator stacks, one rendered line per entry, and the title
+          // box is auto-fitted against the whole stack — so where the breaks fall
+          // is a layout decision, not cosmetic.
+          settings.append(buildTitleEditor(t, efInput));
           const saveSettings = document.createElement('button');
           saveSettings.type = 'button';
           saveSettings.className = 'link-btn tpl-settings-save';
@@ -1980,7 +2289,8 @@
           return;
         }
 
-        // Save the editable settings (visibility / language / name_form / extra_fields).
+        // Save the editable settings (visibility / language / name_form /
+        // extra_fields / the card TITLE).
         const settingsBtn = e.target.closest('.tpl-settings-save');
         if (settingsBtn) {
           const card = settingsBtn.closest('.tpl-card');
@@ -1991,9 +2301,22 @@
           // in_store is shown as כן/לא but stored as a boolean — send what the
           // server validates, not the label the owner read.
           if ('in_store' in patch) patch.in_store = patch.in_store !== 'לא';
+          // The title goes as the LIST — one entry per rendered line, which is what
+          // the generator stacks. The server derives title_text from it, so the
+          // two can never drift apart.
+          //
+          // Sent ONLY when it actually changed. A template whose title is
+          // deliberately nameless is confirmed once; re-posting the same title on
+          // every unrelated save would ask again every time, which trains the owner
+          // to click through the one confirmation that matters.
+          const titleEd = card.querySelector('.tpl-title-ed');
+          const lines = titleEd ? titleLinesOf(card) : [];
+          const titleChanged =
+            !!titleEd && lines.join('\n') !== (card.dataset.titleLines || '').replace(/\r/g, '');
+          if (titleChanged) patch.title_lines = lines;
           settingsBtn.disabled = true;
-          try {
-            const res = await fetch(
+          const post = (body) =>
+            fetch(
               '/api/admin/templates/' +
                 encodeURIComponent(card.dataset.key) +
                 '/settings?key=' +
@@ -2001,17 +2324,52 @@
               {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(patch),
+                body: JSON.stringify(body),
               }
             );
-            const data = await res.json().catch(() => ({}));
+          try {
+            let res = await post(patch);
+            let data = await res.json().catch(() => ({}));
+            // A title with NO {NAME} is legitimate — some decks carry no name at
+            // all — but it must never be reached by accident. The server refuses
+            // it once with `titleless`; the owner confirms, and only then does it
+            // save. That is the difference between "possible" and "silent".
+            if (!res.ok && data.titleless) {
+              if (
+                !window.confirm('אין {NAME} בכותרת — הקלפים יודפסו בלי שם החוגג/ת. לשמור בכל זאת?')
+              ) {
+                tplMsg(card, '', '');
+                settingsBtn.disabled = false;
+                return;
+              }
+              res = await post({ ...patch, allow_titleless: true });
+              data = await res.json().catch(() => ({}));
+            }
             if (!res.ok) {
               tplMsg(card, 'err', 'שגיאה: ' + (data.error || res.status));
               settingsBtn.disabled = false;
               return;
             }
-            tplMsg(card, 'ok', 'ההגדרות נשמרו.');
-            loadTemplates();
+            await loadTemplates();
+            // The reload REPLACES this card, so the confirmation has to land on the
+            // one that survives — setting it on the old node just threw it away.
+            // Matched by dataset rather than a CSS attribute selector: a slug is
+            // owner-supplied text and must never be spliced into a selector.
+            const fresh = [...listEl.querySelectorAll('.tpl-card')].find(
+              (c) => c.dataset.key === card.dataset.key
+            );
+            tplMsg(fresh || card, 'ok', 'ההגדרות נשמרו.');
+            // A saved title is only believable once it has been RENDERED. Kick the
+            // preview off automatically so the corrected title is on screen, rather
+            // than making the owner save blind and then hunt for the button.
+            if (titleChanged) {
+              const cal = fresh && fresh.querySelector('.tpl-cal');
+              const previewBtn = cal && cal.querySelector('.cal-preview-btn');
+              if (previewBtn) {
+                cal.open = true;
+                previewBtn.click();
+              }
+            }
           } catch (err) {
             tplMsg(card, 'err', 'שגיאת רשת: ' + err);
             settingsBtn.disabled = false;
