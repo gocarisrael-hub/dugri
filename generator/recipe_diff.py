@@ -1027,12 +1027,16 @@ def main_sheet(text_svg, clean_svg, theme):
         recipe["cards"].append(entry)
 
     print(f"cards ok (4 words): {sum(1 for c in recipe['cards'] if c and len(c['words'])==4)}/{len(cells)}")
-    os.makedirs(os.path.join(HERE, "recipes"), exist_ok=True)
-    json.dump(recipe, open(os.path.join(HERE, "recipes", f"{theme}.json"), "w"),
-              ensure_ascii=False, indent=1)
+    # Through ``write_recipe``, exactly as the v2 path does. This branch wrote
+    # straight into ``generator/recipes/`` — inside the container image, which on
+    # Railway is EPHEMERAL — so an 8-up template's re-detected recipe survived
+    # until the next deploy and then silently reverted. That is the bug
+    # ``write_recipe`` exists to fix; it was only ever wired into the single-card
+    # branch, and the sheet templates kept losing theirs.
+    path = write_recipe(theme, recipe)
     vis.save(f"/tmp/gen/{theme}_recipe.png")
     mask.save(f"/tmp/gen/{theme}_diffmask.png")
-    print("wrote recipe + /tmp/gen/%s_recipe.png + _diffmask.png" % theme)
+    print(f"wrote {path} + /tmp/gen/{theme}_recipe.png + _diffmask.png")
     return 0
 
 

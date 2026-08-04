@@ -19,6 +19,7 @@ The two end-to-end tests build a throwaway template and drive Chrome; they skip
 
 Run: python3 generator/test_recipe_diff_single.py   (or via pytest)
 """
+import inspect
 import json
 import os
 import shutil
@@ -561,6 +562,41 @@ def test_the_shipped_v1_recipes_still_read_as_sheet_recipes():
         assert "card" not in recipe, name
         checked += 1
     assert checked, "no shipped v1 recipe was exercised"
+
+
+def test_both_detectors_write_where_the_generator_reads_back():
+    """``write_recipe`` exists because ``generator/recipes/`` is INSIDE the
+    container image, which on Railway is ephemeral: a recipe written there
+    survives until the next deploy and then silently reverts, so the owner
+    presses "detect again", it reports success, and some time later the
+    calibration screen says the recipe is missing.
+
+    It was only ever wired into the single-card branch. The 8-up sheet branch
+    wrote straight into the image, so every v1 template kept losing its
+    re-detected recipe — and, on a developer's machine, wrote into the checkout.
+    """
+
+
+    with tempfile.TemporaryDirectory() as store:
+        was = os.environ.get("DATA_DIR")
+        os.environ["DATA_DIR"] = store
+        try:
+            path = R.write_recipe("some-theme", {"theme": "some-theme"})
+        finally:
+            if was is None:
+                os.environ.pop("DATA_DIR", None)
+            else:
+                os.environ["DATA_DIR"] = was
+        assert path.startswith(store), path
+        assert os.path.exists(path)
+        assert not os.path.exists(
+            os.path.join(R.HERE, "recipes", "some-theme.json")), (
+            "the sheet path must not write into the image")
+    # And the sheet branch reaches it rather than opening a file of its own.
+    src = inspect.getsource(R.main_sheet)
+    assert "write_recipe(" in src, "main_sheet bypasses write_recipe"
+    assert 'os.path.join(HERE, "recipes"' not in src, (
+        "main_sheet still writes into the image")
 
 
 def test_the_cli_sends_each_structure_down_its_own_path():
