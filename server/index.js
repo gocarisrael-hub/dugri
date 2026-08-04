@@ -26,6 +26,7 @@ const wordlists = require('./wordlists');
 const messagePreview = require('./message-preview');
 const storeImport = require('./store-import');
 const templateImport = require('./template-import');
+const cutout = require('./cutout');
 const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
 
 const app = express();
@@ -137,13 +138,31 @@ function sendBoardFile(res, id) {
 // is a better outcome than failing a paid order over a missing photo.
 const PAWN_UPLOAD_PATH_RE = /^\/content-uploads\/[a-f0-9]{16}\.(webp|jpe?g|png)$/;
 
+// Absolute path on disk for one of our own /content-uploads paths, or null when the
+// shape is wrong or the file is gone.
+function uploadFileFor(p) {
+  if (typeof p !== 'string' || !PAWN_UPLOAD_PATH_RE.test(p)) return null;
+  const file = path.join(content._uploadDir, path.basename(p));
+  return fs.existsSync(file) ? file : null;
+}
+
+// Which photo actually goes on the card: the background-removed CUTOUT when we have
+// one, else the original. The photo card's white sticker outline is traced from the
+// image's own alpha (docs/photo-card.md), so an original prints as a white-bordered
+// rectangle — but printing that is still better than failing a paid order, and a
+// missing cutout is recorded on the collection so the owner can fix it by hand.
 function pawnPhotoFiles(collection) {
   const paths = Array.isArray(collection && collection.pawn_images) ? collection.pawn_images : [];
+  const cuts =
+    collection && collection.pawn_cutouts && typeof collection.pawn_cutouts === 'object'
+      ? collection.pawn_cutouts
+      : {};
   const out = [];
   for (const p of paths) {
-    if (typeof p !== 'string' || !PAWN_UPLOAD_PATH_RE.test(p)) continue;
-    const file = path.join(content._uploadDir, path.basename(p));
-    if (fs.existsSync(file)) out.push(file);
+    const original = uploadFileFor(p);
+    if (!original) continue;
+    const cutPath = Object.prototype.hasOwnProperty.call(cuts, p) ? cuts[p] : null;
+    out.push(uploadFileFor(cutPath) || original);
   }
   return out.slice(0, 4);
 }
@@ -1161,14 +1180,14 @@ app.post(
     next();
   },
   express.raw({ type: () => true, limit: PAWN_UPLOAD_LIMIT }),
-  (req, res) => handlePawnUpload(req, res, req.params.id, req.query.k)
+  (req, res, next) => handlePawnUpload(req, res, req.params.id, req.query.k).catch(next)
 );
 
 // The body of a pawn-images upload, shared by the OWNER route above (authenticated
 // by the collection's owner token) and the ADMIN one below (authenticated by the
 // admin key, then acting with the collection's own owner token). Everything after
 // authentication is identical, so the cap/orphan-reclaim rules can't drift apart.
-function handlePawnUpload(req, res, id, ownerToken) {
+async function handlePawnUpload(req, res, id, ownerToken) {
   const boundary = templates.boundaryFromContentType(req.headers['content-type']);
   if (!boundary || !Buffer.isBuffer(req.body)) {
     return res.status(400).json({ error: 'expected multipart/form-data upload' });
@@ -1205,7 +1224,67 @@ function handlePawnUpload(req, res, id, ownerToken) {
     }
   }
   if (stored == null) return res.status(403).json({ error: 'forbidden' });
-  res.json({ ok: true, pawn_images: stored });
+  // Cut the backgrounds out before answering, so the response is only sent once
+  // every photo is either cut or explicitly marked uncuttable. Best-effort and
+  // budgeted — it can slow the reply but can never fail it (see attachPawnCutouts).
+  await attachPawnCutouts(id, ownerToken, stored);
+  const fresh = db.getCollection(id);
+  res.json({
+    ok: true,
+    pawn_images: stored,
+    pawn_cutouts: (fresh && fresh.pawn_cutouts) || {},
+  });
+}
+
+// --- background removal for the pawn photos ---------------------------------
+// The photo card's white sticker outline is generated from the image's OWN alpha
+// (docs/photo-card.md): the halo is a <use> of the slot through a filter that
+// dilates SourceAlpha. A photo straight off a phone is opaque, so it has no
+// silhouette to trace and prints as a white-bordered RECTANGLE. Every pawn photo
+// therefore has to become a transparent RGBA cutout.
+//
+// We cut at UPLOAD time rather than at generate time, on purpose:
+//   • the buyer can SEE the cut and re-upload while still in the wizard — a bad
+//     cut is the one defect that survives to 104 printed cards;
+//   • the ORIGINAL stays on disk, so a cut can be redone (or reverted) without
+//     asking the buyer for their photo again;
+//   • generation stays a pure, fast, offline step with no network call mid-order.
+//
+// EVERY failure mode degrades to the original photo: unconfigured, down, slow,
+// rate-limited, or a refused image. The collection records the miss (a null in
+// pawn_cutouts) so the owner sees it in the orders table and can cut it by hand.
+
+// Total wall-clock ceiling for one upload's cutouts. The photos are cut in
+// PARALLEL (one round trip, not four), and the wizard has usually warmed the
+// provider cache already via /api/pawn-cutout, so the normal cost is ~0.
+const PAWN_CUTOUT_BUDGET_MS = Number(process.env.PAWN_CUTOUT_BUDGET_MS || 20000);
+
+async function attachPawnCutouts(id, ownerToken, storedPaths) {
+  if (!cutout.isConfigured()) return; // feature off → behave exactly as before
+  const c = db.getCollection(id);
+  if (!c) return;
+  const have = c.pawn_cutouts && typeof c.pawn_cutouts === 'object' ? c.pawn_cutouts : {};
+  const todo = (storedPaths || []).filter(
+    (p) => !(Object.prototype.hasOwnProperty.call(have, p) && have[p]) && uploadFileFor(p)
+  );
+  if (!todo.length) return;
+  const deadline = Date.now() + PAWN_CUTOUT_BUDGET_MS;
+  const results = await Promise.all(
+    todo.map(async (p) => {
+      try {
+        const png = await cutout.removeBackground(fs.readFileSync(uploadFileFor(p)), {
+          timeoutMs: Math.max(0, deadline - Date.now()),
+        });
+        // saveImageBytes is content-addressed, so the same cutout uploaded twice is
+        // one file — and it lands in the SAME store as the original, which is what
+        // lets the generator, the admin table and the buyer all read it by path.
+        return [p, png ? content.saveImageBytes(png).path : null];
+      } catch {
+        return [p, null]; // record the miss; the original photo is used
+      }
+    })
+  );
+  for (const [p, savedPath] of results) db.setPawnCutout(id, ownerToken, p, savedPath);
 }
 
 // Admin: ADD pawn photos to an order from the orders table — the owner receives a
@@ -1221,9 +1300,76 @@ app.post(
     next();
   },
   express.raw({ type: () => true, limit: PAWN_UPLOAD_LIMIT }),
-  (req, res) =>
-    handlePawnUpload(req, res, req.params.id, db.getCollection(req.params.id).owner_token)
+  (req, res, next) =>
+    handlePawnUpload(req, res, req.params.id, db.getCollection(req.params.id).owner_token).catch(
+      next
+    )
 );
+
+// PUBLIC cutout PREVIEW: cut one photo's background out and hand the transparent
+// PNG straight back, WITHOUT storing anything. This is what lets the wizard's photo
+// step show the buyer the actual sticker they will get — the collection (and its
+// owner token) does not exist until the last step, so the authenticated upload route
+// cannot serve that moment.
+//
+// Nothing is written: no db row, no file on the volume. The provider result IS
+// cached in-process by content hash (server/cutout.js), so the authoritative cut at
+// upload time is a cache hit rather than a second paid call.
+//
+// It costs money per call, so it is rate-limited per client IP in its own bucket
+// (never sharing the coupon/preview budgets) and capped at one image per request.
+const cutoutRate = makeRateLimiter({
+  limit: Number(process.env.PAWN_CUTOUT_RATE_LIMIT || 40),
+  windowMs: 60 * 60 * 1000,
+  maxKeys: Number(process.env.COUPON_RATE_MAX_KEYS || 10000),
+});
+
+app.post(
+  '/api/pawn-cutout',
+  express.raw({ type: () => true, limit: CONTENT_IMAGE_UPLOAD_LIMIT }),
+  async (req, res) => {
+    // Unconfigured is a 200, not an error: the wizard then keeps the plain photo
+    // and says nothing, i.e. exactly today's behaviour.
+    if (!cutout.isConfigured()) return res.json({ ok: false, reason: 'unconfigured' });
+    if (!cutoutRate.ok('cutout:' + clientKey(req))) {
+      return res.status(429).json({ ok: false, reason: 'rate' });
+    }
+    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
+    if (!boundary || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ ok: false, reason: 'expected multipart/form-data upload' });
+    }
+    const { files } = templates.parseMultipart(req.body, boundary);
+    const file = Object.values(files).find((f) => f && Buffer.isBuffer(f.data));
+    // Same magic-byte typing and size cap the stored upload gets, so a preview can
+    // never be a cheaper way to push bytes at the provider than a real upload.
+    if (!file || file.data.length > content.IMAGE_CAP || !content.extFromMagic(file.data)) {
+      return res.status(400).json({ ok: false, reason: 'image' });
+    }
+    let png = null;
+    try {
+      png = await cutout.removeBackground(file.data);
+    } catch {
+      png = null;
+    }
+    if (!png) return res.json({ ok: false, reason: 'failed' });
+    res.json({ ok: true, cutout: 'data:image/png;base64,' + png.toString('base64') });
+  }
+);
+
+// The ONE route server/cutout.js needs: Adobe's remove-background takes its input
+// as an HTTPS GET url and nothing else (no multipart, no base64), so a photo has to
+// be reachable on our own origin for the length of the call. The bytes live in
+// memory inside cutout.js, are addressed by 128 random bits, expire in minutes, and
+// are dropped the moment the job ends — a strictly smaller exposure than
+// /content-uploads/<hash>, which is public and permanent. Unknown/expired is a 404.
+app.get(cutout.SOURCE_ROUTE + '/:token', (req, res) => {
+  const src = cutout.serveSource(req.params.token);
+  if (!src) return res.status(404).json({ error: 'not found' });
+  res.setHeader('Content-Type', src.contentType);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(src.bytes);
+});
 
 // Admin: REPLACE the pawn-photo list (remove / reorder). Body: { pawn_images: [] }
 // of our own /content-uploads paths; the store re-validates, de-dupes and caps at 4.
@@ -4122,3 +4268,7 @@ module.exports.isGroupWebhook = isGroupWebhook;
 module.exports.ilPhoneToWaId = ilPhoneToWaId;
 module.exports.waIdDigits = waIdDigits;
 module.exports.buyerLandedInGroup = buyerLandedInGroup;
+// Which pawn files the generator is handed for a collection (cutout when we have
+// one, original otherwise) — exposed so the choice can be asserted directly
+// instead of through a full generation run.
+module.exports.pawnPhotoFiles = pawnPhotoFiles;

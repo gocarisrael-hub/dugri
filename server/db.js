@@ -324,7 +324,18 @@ const db = {
       // Up to 4 optional customer photos ("פיונים") attached to the collection,
       // stored as public "/content-uploads/<hash>.<ext>" path strings. Appended
       // via addPawnImages (owner-token gated). Empty on a fresh collection.
+      // These are always the ORIGINALS exactly as the buyer uploaded them — the
+      // background-removed cutouts live beside them in pawn_cutouts, so a cut can
+      // always be redone (or reverted) without asking the buyer for the photo again.
       pawn_images: [],
+      // Background-removed cutouts, keyed BY THE ORIGINAL'S PATH rather than by
+      // slot index, so removing/reordering pawn_images (adminSetPawnImages) can
+      // never mis-pair a photo with someone else's cutout. Three states per photo:
+      //   • key absent      — never attempted (cutouts unconfigured, or a legacy order)
+      //   • value = path    — the "/content-uploads/<hash>.png" transparent cutout
+      //   • value = null    — attempted and FAILED (provider down/refused); the
+      //                       original is used instead and the admin table says so.
+      pawn_cutouts: {},
       // Optional free-form custom title (F7) overriding the theme's derived title
       // on the cards + board. Sanitized/capped; null when empty so the theme
       // default is used. The generator receives this via its --title CLI arg.
@@ -518,6 +529,28 @@ const db = {
     return c.pawn_images;
   },
 
+  // Record the background-removed cutout for ONE stored pawn photo, owner-token
+  // gated exactly like addPawnImages. `cutPath` is our own "/content-uploads/…"
+  // path on success, or null to record "we tried and could not cut this one" —
+  // which is what makes a provider outage VISIBLE to the owner instead of silently
+  // shipping a photo that will print as a white rectangle.
+  //
+  // Keyed by the ORIGINAL's path, and only ever for a path this collection
+  // actually stores, so a stale key can't accumulate. Returns the cutout map, or
+  // null on a bad owner token / unknown collection / a path we don't hold.
+  setPawnCutout(id, ownerToken, origPath, cutPath) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return null;
+    if (!Array.isArray(c.pawn_images) || !c.pawn_images.includes(origPath)) return null;
+    if (cutPath != null && !pawnPathOk(cutPath)) return null;
+    if (!c.pawn_cutouts || typeof c.pawn_cutouts !== 'object' || Array.isArray(c.pawn_cutouts)) {
+      c.pawn_cutouts = {};
+    }
+    c.pawn_cutouts[origPath] = cutPath == null ? null : cutPath;
+    saveDb();
+    return c.pawn_cutouts;
+  },
+
   // Admin: soft-cancel a collection (reversible). With undo=true it restores
   // the collection. Returns false when the collection doesn't exist.
   cancelCollection(id, undo = false) {
@@ -625,6 +658,19 @@ const db = {
       if (out.length === 4) break;
     }
     c.pawn_images = out;
+    // Drop cutout records for photos that are no longer attached, so the map can
+    // never outgrow the (max 4) list it annotates. Keyed by path, so the photos
+    // that SURVIVE a removal/reorder keep their own cutout — no re-cut needed.
+    const cuts = c.pawn_cutouts;
+    if (cuts && typeof cuts === 'object' && !Array.isArray(cuts)) {
+      const kept = {};
+      for (const p of out) {
+        if (Object.prototype.hasOwnProperty.call(cuts, p)) kept[p] = cuts[p];
+      }
+      c.pawn_cutouts = kept;
+    } else {
+      c.pawn_cutouts = {};
+    }
     saveDb();
     return c.pawn_images;
   },
