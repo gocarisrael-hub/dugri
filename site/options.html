@@ -2819,7 +2819,6 @@
             >
               ×
             </button>
-            <span class="pawn-status" data-testid="pawn-status-0" hidden></span>
           </label>
           <label class="pawn-slot" data-idx="1">
             <input
@@ -2842,7 +2841,6 @@
             >
               ×
             </button>
-            <span class="pawn-status" data-testid="pawn-status-1" hidden></span>
           </label>
           <label class="pawn-slot" data-idx="2">
             <input
@@ -2865,7 +2863,6 @@
             >
               ×
             </button>
-            <span class="pawn-status" data-testid="pawn-status-2" hidden></span>
           </label>
           <label class="pawn-slot" data-idx="3">
             <input
@@ -2888,26 +2885,11 @@
             >
               ×
             </button>
-            <span class="pawn-status" data-testid="pawn-status-3" hidden></span>
           </label>
         </div>
-        <!-- The buyer sees the CUT, not just the photo: each slot shows the
-             background-removed sticker as soon as it comes back, so a bad cut is
-             caught here rather than on 104 printed cards. Tapping a filled slot
-             re-opens its file picker (the input covers the whole slot), which is
-             the per-slot re-upload — this line says so out loud. -->
-        <p class="pawn-hint" data-testid="pawn-hint" data-edit="options-photos-hint">
-          נסיר את הרקע אוטומטית. לא אהבתם את התוצאה? לחצו על התמונה כדי להחליף אותה.
-        </p>
         <p class="wiz-err" id="pawnErr" data-testid="pawn-err" hidden></p>
         <button class="pawn-skip" type="button" id="pawnSkip" data-testid="pawn-skip">דלגו</button>
         <style>
-          .pawn-hint {
-            margin: 0 0 10px;
-            font-size: 13px;
-            color: var(--muted);
-            text-align: center;
-          }
           .pawn-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -2964,38 +2946,6 @@
             padding: 0;
           }
           .pawn-slot.is-filled .pawn-plus {
-            display: none;
-          }
-          /* A cutout is mostly transparent, so `cover` would blow the subject up
-             and crop it — show it CONTAINED over a light checkerboard, which is
-             what makes "the background is gone" legible at thumbnail size. */
-          .pawn-slot.is-cut .pawn-thumb {
-            object-fit: contain;
-            background-color: #fff;
-            background-image:
-              linear-gradient(45deg, #e9e9e9 25%, transparent 25%),
-              linear-gradient(-45deg, #e9e9e9 25%, transparent 25%),
-              linear-gradient(45deg, transparent 75%, #e9e9e9 75%),
-              linear-gradient(-45deg, transparent 75%, #e9e9e9 75%);
-            background-size: 12px 12px;
-            background-position:
-              0 0,
-              0 6px,
-              6px -6px,
-              -6px 0;
-          }
-          .pawn-status {
-            position: absolute;
-            inset-inline: 0;
-            bottom: 0;
-            padding: 2px 3px;
-            font-size: 10px;
-            line-height: 1.2;
-            text-align: center;
-            background: rgba(0, 0, 0, 0.62);
-            color: #fff;
-          }
-          .pawn-status[hidden] {
             display: none;
           }
           .pawn-skip {
@@ -5228,34 +5178,17 @@
       const pawnFiles = new Array(PAWN_MAX).fill(null);
       const pawnObjectUrls = new Array(PAWN_MAX).fill(null);
       const pawnSlots = Array.from(document.querySelectorAll('.pawn-slot'));
-      // Per-slot cutout preview: the transparent PNG data-URL the server sent back
-      // (null until it arrives / when it never will) plus a coarse state so the slot
-      // can say what is happening. A photo card's white sticker outline is traced
-      // from the image's OWN alpha, so an uncut photo prints as a white rectangle —
-      // showing the cut here is the buyer's only chance to catch that.
-      const pawnCutouts = new Array(PAWN_MAX).fill(null);
-      const pawnCutState = new Array(PAWN_MAX).fill(''); // '' | working | done | failed
-      // Monotonic per slot: a fast re-upload must not have its OLD cutout land on
-      // top of the new photo, so a response is only applied when it is still current.
-      const pawnCutSeq = new Array(PAWN_MAX).fill(0);
-      const PAWN_CUT_LABEL = {
-        working: 'מסירים רקע…',
-        done: 'הרקע הוסר',
-        failed: 'נסיר את הרקע ידנית',
-      };
 
       function renderPawnSlot(idx) {
         const slot = pawnSlots[idx];
         if (!slot) return;
         const img = slot.querySelector('.pawn-thumb');
         const removeBtn = slot.querySelector('.pawn-remove');
-        const status = slot.querySelector('.pawn-status');
         const file = pawnFiles[idx];
         if (file) {
           if (pawnObjectUrls[idx]) URL.revokeObjectURL(pawnObjectUrls[idx]);
           pawnObjectUrls[idx] = URL.createObjectURL(file);
-          // Prefer the CUT once it exists — that is what actually goes on the card.
-          img.src = pawnCutouts[idx] || pawnObjectUrls[idx];
+          img.src = pawnObjectUrls[idx];
           img.hidden = false;
           removeBtn.hidden = false;
           slot.classList.add('is-filled');
@@ -5269,45 +5202,6 @@
           removeBtn.hidden = true;
           slot.classList.remove('is-filled');
         }
-        slot.classList.toggle('is-cut', Boolean(file && pawnCutouts[idx]));
-        if (status) {
-          const label = file ? PAWN_CUT_LABEL[pawnCutState[idx]] || '' : '';
-          status.textContent = label;
-          status.hidden = !label;
-        }
-      }
-
-      // Ask the server to cut this photo out so the buyer sees the sticker NOW.
-      // Entirely best-effort: an unconfigured provider, an outage, a rate-limit or a
-      // network blip all just leave the plain photo on screen — the real cutout is
-      // redone server-side at upload time, and a missing one is recorded for the
-      // owner. Never surfaces an error to the buyer; the photos are optional.
-      async function requestPawnCutout(idx, file) {
-        const seq = ++pawnCutSeq[idx];
-        pawnCutouts[idx] = null;
-        pawnCutState[idx] = 'working';
-        renderPawnSlot(idx);
-        let data = null;
-        try {
-          const fd = new FormData();
-          fd.append('photo', file, file.name || 'photo');
-          const res = await fetch('/api/pawn-cutout', { method: 'POST', body: fd });
-          data = await res.json();
-        } catch {
-          data = null;
-        }
-        if (seq !== pawnCutSeq[idx] || pawnFiles[idx] !== file) return; // superseded
-        if (data && data.ok && typeof data.cutout === 'string') {
-          pawnCutouts[idx] = data.cutout;
-          pawnCutState[idx] = 'done';
-        } else if (data && data.reason === 'unconfigured') {
-          // Background removal isn't switched on: behave exactly as before — a plain
-          // thumbnail with no promise we aren't keeping.
-          pawnCutState[idx] = '';
-        } else {
-          pawnCutState[idx] = 'failed';
-        }
-        renderPawnSlot(idx);
       }
 
       const pawnErr = document.getElementById('pawnErr');
@@ -5343,7 +5237,6 @@
           hidePawnError();
           pawnFiles[idx] = file;
           renderPawnSlot(idx);
-          requestPawnCutout(idx, file);
         });
         // The × sits inside the slot's <label>, so stop the click from re-opening
         // the file picker; just clear the slot.
@@ -5351,9 +5244,6 @@
           e.preventDefault();
           e.stopPropagation();
           pawnFiles[idx] = null;
-          pawnCutouts[idx] = null;
-          pawnCutState[idx] = '';
-          pawnCutSeq[idx]++; // abandon an in-flight cutout for the photo just dropped
           input.value = '';
           renderPawnSlot(idx);
         });
