@@ -136,6 +136,27 @@ def test_the_measured_leading_comes_back_out_with_the_size():
     assert lead is None
 
 
+def test_the_search_may_report_a_leading_tighter_than_the_lines_can_be_drawn():
+    # The grid's floor used to be a PHYSICAL claim — "below half the type size
+    # the lines would overprint" — asserted inside the measurement, where it
+    # cannot be checked. render_page.title_pitch enforces it where it can be, so
+    # the search is free to report what the ink says. It matters: סנטוריני's
+    # back's optimum was sitting ON the old 0.50 rail and reads 0.48.
+    assert C._PITCH_GRID[0] <= 0.30, C._PITCH_GRID[0]
+    assert C._PITCH_GRID[-1] >= 2.0, C._PITCH_GRID[-1]
+    size = 24.0
+    ink = C._paint(HEBREW_FONT, _TWO[0], size * PPU, ALPHA, pitch=0.42)
+    got, found, _score = C.solve_size_and_leading(
+        ink, HEBREW_FONT, _TWO, PPU, ALPHA)
+    assert abs(found - 0.42) <= 0.06, found
+    assert abs(got - size) / size <= 0.03, got
+    # ...and the renderer will not DRAW it that tight: the clamp opens it to what
+    # these glyphs need, so the measurement stays honest and the card stays legible.
+    import render_page as rp
+    f, ref = rp._title_metrics(HEBREW_FONT)
+    assert rp.title_pitch(f, ref, _TWO[0], found, 0.0) > found
+
+
 def test_a_leading_already_settled_is_used_rather_than_searched_again():
     # A caller that already knows the spacing must be able to say so and get the
     # size fitted at it rather than pay for the grid again — and get back the

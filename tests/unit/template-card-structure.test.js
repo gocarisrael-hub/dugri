@@ -896,11 +896,24 @@ describe('applyCalibration — detected card_slots reach themes.json', () => {
     expect('leading' in entry.title_style).toBe(false);
   });
 
+  it('accepts every leading the measurement can actually return', () => {
+    // The bounds are calibrate.py's own search grid (0.30..2.00). A value the
+    // measurement can legitimately produce must not be refused, because
+    // title_style is validated as a WHOLE: one rejected field throws away the
+    // colours and sizes measured beside it and the template goes on reporting
+    // itself uncalibrated. סנטוריני's back really does measure 0.48, which the
+    // old 0.5 floor would have thrown the whole entry away over.
+    for (const good of [0.3, 0.48, 0.78, 2]) {
+      const p = themesWith({ slug: 'demo', title_style: null });
+      templates.applyCalibration(p, 'demo', { title_style: { ...TS, leading: good } });
+      expect(JSON.parse(fs.readFileSync(p, 'utf8')).demo.title_style.leading).toBe(good);
+    }
+  });
+
   it('refuses a leading that would overprint or split the title', () => {
-    // Under half the type size the lines collide; over twice it they read as two
-    // separate blocks. Either is a mis-measurement, and it would print on every
-    // card of a paid order — so the whole title_style is refused and the old one
-    // kept, exactly as a bad colour is.
+    // Outside the grid it is not a design, it is a mis-measurement, and it would
+    // print on every card of a paid order — so the whole title_style is refused
+    // and the old one kept, exactly as a bad colour is.
     for (const bad of [0.2, 3, 'x', null]) {
       const p = themesWith({ slug: 'demo', title_style: null });
       templates.applyCalibration(p, 'demo', { title_style: { ...TS, leading: bad } });

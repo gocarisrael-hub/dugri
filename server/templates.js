@@ -1967,6 +1967,14 @@ function isFrac(v) {
 }
 const TITLE_ALIGNS = ['center', 'left', 'right'];
 
+// The span of title line spacings that count as a reading rather than a
+// mis-measurement, as a fraction of the type size. These ARE calibrate.py's
+// `_PITCH_GRID` end points — a value the measurement can return must not be
+// refused here, or one rejected field throws away the whole title_style
+// (colours and sizes included) and the template reports itself uncalibrated.
+const TITLE_LEADING_MIN = 0.3;
+const TITLE_LEADING_MAX = 2;
+
 // Validate a title_style blob. Required: fill, outline (hex), outline_w + arch
 // (0..1 fractions), shadow (bool). Optional: size / board_size / back_size,
 // leading / board_leading / back_leading
@@ -2001,14 +2009,27 @@ function validateTitleStyle(input) {
   // board and backs are separate text boxes and are spaced separately, and each
   // surface's pinned size was fitted at its own spacing. Absent = fall through
   // to the fronts', then to the renderer's own fixed step, which is what every
-  // uncalibrated (and every single-line) title uses. Bounded by the same span
-  // calibration searches: under half the type size the lines overprint, and
-  // over twice it they read as two blocks — either is a mis-measurement rather
-  // than a design, and it would print on every card of a paid order.
+  // uncalibrated (and every single-line) title uses.
+  //
+  // The bounds are calibrate.py's own search grid, deliberately: a value the
+  // measurement can legitimately return must not be refused here, because
+  // title_style is validated as a WHOLE and one rejected field throws away the
+  // colours and sizes measured beside it. סנטוריני's back really does measure
+  // 0.48. Outside the grid it is not a design, it is a mis-measurement, and it
+  // would print on every card of a paid order.
   for (const k of ['leading', 'back_leading', 'board_leading']) {
     if (input[k] == null) continue;
-    if (!isFiniteNum(input[k]) || input[k] < 0.5 || input[k] > 2) {
-      return { error: 'title_style.' + k + ' must be a fraction 0.5..2 of the type size' };
+    if (!isFiniteNum(input[k]) || input[k] < TITLE_LEADING_MIN || input[k] > TITLE_LEADING_MAX) {
+      return {
+        error:
+          'title_style.' +
+          k +
+          ' must be a fraction ' +
+          TITLE_LEADING_MIN +
+          '..' +
+          TITLE_LEADING_MAX +
+          ' of the type size',
+      };
     }
     out[k] = input[k];
   }
@@ -2174,8 +2195,16 @@ function validateBacks(input, label) {
     // pinned away from its own spacing prints a block nobody measured.
     const lead = input[key].leading;
     if (lead != null && lead !== '') {
-      if (!isFiniteNum(lead) || lead < 0.5 || lead > 2) {
-        return { error: slotLabel + '.leading must be a fraction 0.5..2 of the type size' };
+      if (!isFiniteNum(lead) || lead < TITLE_LEADING_MIN || lead > TITLE_LEADING_MAX) {
+        return {
+          error:
+            slotLabel +
+            '.leading must be a fraction ' +
+            TITLE_LEADING_MIN +
+            '..' +
+            TITLE_LEADING_MAX +
+            ' of the type size',
+        };
       }
       v.value.leading = lead;
     }

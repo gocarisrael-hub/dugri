@@ -888,9 +888,25 @@ _BOLD_W_MIN = 0.01
 # solved FOR, as a second unknown, against a second reading of the same ink.
 RENDER_PITCH = 0.78
 # The leadings a design can plausibly be set at. Canva's own spacing control
-# spans well under one to well over two; below half the type size the lines
-# would overprint, and above this they read as separate blocks.
-_PITCH_GRID = [round(0.50 + 0.02 * i, 2) for i in range(76)]     # 0.50 .. 2.00
+# spans well under one to well over two; above the top of this they read as
+# separate blocks rather than one title.
+#
+# THE FLOOR IS NOT A PLAUSIBILITY GUARD ANY MORE. It used to stop at 0.50
+# because "below half the type size the lines would overprint" — a physical
+# constraint asserted inside the MEASUREMENT, where it cannot be checked. The
+# renderer now enforces it where it can be: ``render_page.title_pitch`` opens
+# any leading tighter than the glyphs about to be drawn can fit, proved on
+# rendered pixels for every template. With the constraint moved to where it is
+# actually enforceable, the search is free to report what the ink says.
+#
+# It matters, and only where it should: re-measured across every multi-line
+# surface, lowering the floor to 0.30 changes exactly ONE answer — סנטוריני's
+# back, whose optimum was sitting ON the old boundary and which comes back at
+# 0.48 for a size of 25.69 against Canva's 25.3 (−3.4% -> +1.5%). Every other
+# surface returns the identical size and the identical leading, because none of
+# them was pressed against the rail. An optimum on the boundary is evidence
+# about the boundary, not about the design.
+_PITCH_GRID = [round(0.30 + 0.02 * i, 2) for i in range(86)]     # 0.30 .. 2.00
 # How much of a vote the DENSITY profile gets beside the EXTENT one. The extent
 # is the reading that decides: it is set by the first and last glyph's edges, so
 # it survives the fact that PIL packs a line differently from the browser (no
