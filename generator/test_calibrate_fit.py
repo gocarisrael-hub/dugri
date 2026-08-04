@@ -57,8 +57,8 @@ def test_a_whole_surface_fit_returns_that_size_and_grades_it_high():
     size = 26.0
     ink = C._paint(HEBREW_FONT, LINES, size * PPU, ALPHA)
     mask, image, box = _origin(ink)
-    got, grade, note, ctx = C.fit_title_size(mask, image, box, PPU, 0.0, 0.0,
-                                             HEBREW_FONT, [LINES], "#000000")
+    got, grade, note, ctx, lead = C.fit_title_size(mask, image, box, PPU, 0.0, 0.0,
+                                                   HEBREW_FONT, [LINES], "#000000")
     assert abs(got - size) <= 0.5, got
     assert grade == "high" and note is None
     assert ctx and len(ctx) == 2
@@ -95,11 +95,14 @@ def test_the_old_single_bisection_would_have_missed_those_sizes():
 
 def test_a_single_line_title_keeps_the_renderers_own_step():
     # There is no leading to solve for, so this stays the one bisection that
-    # shipped — which is why the single-line templates do not move.
+    # shipped — which is why the single-line templates do not move. It reports
+    # its leading as None rather than as the renderer's own number: the renderer
+    # must be left on its default step, and pinning 0.78 into the theme would
+    # claim a measurement that was never taken.
     ink = C._paint(HEBREW_FONT, LINES, 26.0 * PPU, ALPHA)
     got, found, score = C.solve_size_and_leading(
         ink, HEBREW_FONT, [LINES], PPU, ALPHA)
-    assert found == C.RENDER_PITCH and score is None
+    assert found is None and score is None
     assert abs(got - 26.0) <= 0.5, got
 
 
@@ -107,11 +110,72 @@ def test_a_leading_unlike_the_renderers_is_reported_to_the_owner():
     size = 24.0
     ink = C._paint(HEBREW_FONT, _TWO[0], size * PPU, ALPHA, pitch=1.30)
     mask, image, box = _origin(ink)
-    got, grade, note, _ctx = C.fit_title_size(
+    got, grade, note, _ctx, _lead = C.fit_title_size(
         mask, image, box, PPU, 0.0, 0.0, HEBREW_FONT, _TWO, "#000000")
     assert abs(got - size) / size <= 0.03, got
     assert grade in ("high", "medium")
     assert note and "stacks its title lines" in note
+
+
+def test_the_measured_leading_comes_back_out_with_the_size():
+    # Measuring the spacing is only half the job — it has to LEAVE the fit, or
+    # the renderer goes on stacking at 0.78 and the size that was measured with
+    # the design's own spacing prints at the wrong one.
+    size = 24.0
+    ink = C._paint(HEBREW_FONT, _TWO[0], size * PPU, ALPHA, pitch=1.30)
+    mask, image, box = _origin(ink)
+    _got, _grade, _note, _ctx, lead = C.fit_title_size(
+        mask, image, box, PPU, 0.0, 0.0, HEBREW_FONT, _TWO, "#000000")
+    assert lead is not None and abs(lead - 1.30) <= 0.06, lead
+    # ...and a single-line title reports None, so the theme is left without a
+    # leading and the renderer keeps its own step.
+    one = C._paint(HEBREW_FONT, LINES, size * PPU, ALPHA)
+    mask, image, box = _origin(one)
+    *_rest, lead = C.fit_title_size(mask, image, box, PPU, 0.0, 0.0,
+                                    HEBREW_FONT, [LINES], "#000000")
+    assert lead is None
+
+
+def test_a_leading_already_settled_is_used_rather_than_searched_again():
+    # A caller that already knows the spacing must be able to say so and get the
+    # size fitted at it rather than pay for the grid again — and get back the
+    # spacing it gave, so the size and the number it was measured at stay one
+    # answer however the fit was reached.
+    size = 24.0
+    ink = C._paint(HEBREW_FONT, _TWO[0], size * PPU, ALPHA, pitch=1.30)
+    got, found, score = C.solve_size_and_leading(
+        ink, HEBREW_FONT, _TWO, PPU, ALPHA, pitch=1.30)
+    assert found == 1.30 and score is None, "the grid must not have been swept"
+    assert abs(got - size) / size <= 0.03, got
+    # Handed the WRONG spacing it must not quietly re-solve: it answers at the
+    # spacing it was given, which is what keeps the deck's surfaces consistent.
+    _got2, found2, _ = C.solve_size_and_leading(
+        ink, HEBREW_FONT, _TWO, PPU, ALPHA, pitch=0.78)
+    assert found2 == 0.78
+
+
+def test_the_calibrators_and_the_renderers_block_are_the_same_block():
+    # The number only means anything if both sides stack the lines the same way.
+    # The calibrator paints with PIL and the renderer emits SVG baselines, and
+    # the two do not measure a block's ABSOLUTE height alike — the renderer's
+    # is a deliberate over-estimate, taking the tallest ascender and the deepest
+    # descender from ANY line so a middle line can never spill. What they must
+    # agree on is what the LEADING does: one step of spacing has to move the
+    # block by the same amount, or a leading measured off the artwork would
+    # print as a different one.
+    import render_page as rp
+    f, ref = rp._title_metrics(HEBREW_FONT)
+    size, n = 30.0, len(_TWO[0])
+    base = C._paint(HEBREW_FONT, _TWO[0], size * PPU, ALPHA, pitch=0.78)
+    for pitch in (0.60, 1.00, 1.30):
+        ink = C._paint(HEBREW_FONT, _TWO[0], size * PPU, ALPHA, pitch=pitch)
+        want = (pitch - 0.78) * size * PPU * (n - 1)
+        assert abs((ink.size[1] - base.size[1]) - want) <= 2, (
+            pitch, ink.size[1], base.size[1], want)
+        # the renderer's own model moves by exactly the same amount
+        moved = (rp._title_ink_stack(f, ref, _TWO[0], pitch)
+                 - rp._title_ink_stack(f, ref, _TWO[0], 0.78)) / ref * size * PPU
+        assert abs(moved - want) < 1e-6, (pitch, moved, want)
 
 
 def test_the_profile_match_compares_shape_and_not_amount():
@@ -192,8 +256,8 @@ def test_no_ink_is_measured_as_nothing_rather_than_as_a_size():
     image = Image.new("RGB", blank.size, (255, 255, 255))
     box = {"x0": 10, "y0": 10, "x1": 90, "y1": 50}
     assert C._ink_extent(blank, box, PPU, 0.0, 0.0) is None
-    got, grade, _note, ctx = C.fit_title_size(blank, image, box, PPU, 0.0, 0.0,
-                                              HEBREW_FONT, [LINES], "#000000")
+    got, grade, _note, ctx, _lead = C.fit_title_size(blank, image, box, PPU, 0.0, 0.0,
+                                                     HEBREW_FONT, [LINES], "#000000")
     assert got is None and grade is None and ctx is None
 
 
@@ -218,8 +282,8 @@ def test_a_size_that_is_absurd_for_its_box_is_left_unset():
     ink = C._paint(HEBREW_FONT, LINES, 24 * PPU, ALPHA)
     mask, image, box = _origin(ink, pad=600)
     box["y1"] = box["y0"] + 600.0
-    got, grade, note, _ctx = C.fit_title_size(mask, image, box, PPU, 0.0, 0.0,
-                                              HEBREW_FONT, [LINES], "#000000")
+    got, grade, note, _ctx, _lead = C.fit_title_size(mask, image, box, PPU, 0.0, 0.0,
+                                                     HEBREW_FONT, [LINES], "#000000")
     assert got is None and grade is None and "plausible" in note
 
 
@@ -231,8 +295,8 @@ def test_a_font_that_cannot_draw_the_title_is_refused_not_measured():
     assert not C._covers(LATIN_FONT, "מסיבה")
     ink = C._paint(HEBREW_FONT, LINES, 24 * PPU, ALPHA)
     mask, image, box = _origin(ink)
-    got, grade, note, _ctx = C.fit_title_size(mask, image, box, PPU, 0.0, 0.0,
-                                              LATIN_FONT, [LINES], "#000000")
+    got, grade, note, _ctx, _lead = C.fit_title_size(mask, image, box, PPU, 0.0, 0.0,
+                                                     LATIN_FONT, [LINES], "#000000")
     assert got is None and grade is None and "no glyphs" in note
 
 

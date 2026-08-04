@@ -1294,6 +1294,9 @@
           field('גודל כותרת', num('ts.size', ts.size, 0.1, 'auto')),
           field('גודל בלוח', num('ts.board_size', ts.board_size, 0.1, 'auto')),
           field('גודל בגב', num('ts.back_size', ts.back_size, 0.1, 'auto')),
+          field('ריווח שורות', num('ts.leading', ts.leading, 0.01, 'ברירת מחדל')),
+          field('ריווח בלוח', num('ts.board_leading', ts.board_leading, 0.01, 'כמו בקלף')),
+          field('ריווח בגב', num('ts.back_leading', ts.back_leading, 0.01, 'כמו בקלף')),
           field('יישור', select('ts.align', ['center', 'left', 'right'], ts.align || 'center')),
           field('היסט X', num('ts.offset_x', ts.offset ? ts.offset[0] : '', 0.01, '0')),
           field('היסט Y', num('ts.offset_y', ts.offset ? ts.offset[1] : '', 0.01, '0')),
@@ -1646,6 +1649,17 @@
         if (bsz != null) title_style.board_size = bsz;
         const bksz = calNum(card, 'ts.back_size');
         if (bksz != null) title_style.back_size = bksz;
+        // The measured line spacing, one per surface like the sizes above.
+        // Blank = fall through (the board and back fall to the card's, the card
+        // to the renderer's own fixed step), so clearing a field is a real
+        // answer and must not be posted as 0 — hence the same omit-when-blank
+        // rule the sizes use. They have to round-trip through this form at all,
+        // or opening the panel and pressing save would silently un-space every
+        // multi-line title the calibrator had measured.
+        for (const k of ['leading', 'board_leading', 'back_leading']) {
+          const v = calNum(card, 'ts.' + k);
+          if (v != null) title_style[k] = v;
+        }
         const ox = calNum(card, 'ts.offset_x');
         const oy = calNum(card, 'ts.offset_y');
         if ((ox != null && ox !== 0) || (oy != null && oy !== 0)) {

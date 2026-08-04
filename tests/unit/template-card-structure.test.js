@@ -863,6 +863,55 @@ describe('applyCalibration — detected card_slots reach themes.json', () => {
     });
     expect(JSON.parse(fs.readFileSync(p, 'utf8')).demo.card_slots).toBeNull();
   });
+
+  // The LEADING — how far apart the title's lines are stacked, as a fraction of
+  // the type size. The calibrator measures it off the design's own artwork, and
+  // it is inseparable from the size it was measured beside: a size that lands
+  // without its spacing prints the right type stacked the wrong way. It has to
+  // survive this whitelist, or the measurement never reaches the card.
+  const TS = {
+    fill: '#97d8e6',
+    outline: '#0d3e43',
+    outline_w: 0.05,
+    arch: 0,
+    shadow: false,
+    size: 23.9,
+  };
+
+  it('writes the measured title leading', () => {
+    const p = themesWith({ slug: 'demo', title_style: null });
+    templates.applyCalibration(p, 'demo', { title_style: { ...TS, leading: 1.13 } });
+    const entry = JSON.parse(fs.readFileSync(p, 'utf8')).demo;
+    expect(entry.title_style.leading).toBe(1.13);
+    expect(entry.title_style.size).toBe(23.9);
+  });
+
+  it('leaves the leading absent when nothing measured one', () => {
+    // A single-line title has no spacing to measure. Absent must stay absent —
+    // the renderer then keeps its own step, which is how every design already
+    // in production goes on rendering exactly as it does today.
+    const p = themesWith({ slug: 'demo', title_style: null });
+    templates.applyCalibration(p, 'demo', { title_style: { ...TS } });
+    const entry = JSON.parse(fs.readFileSync(p, 'utf8')).demo;
+    expect('leading' in entry.title_style).toBe(false);
+  });
+
+  it('refuses a leading that would overprint or split the title', () => {
+    // Under half the type size the lines collide; over twice it they read as two
+    // separate blocks. Either is a mis-measurement, and it would print on every
+    // card of a paid order — so the whole title_style is refused and the old one
+    // kept, exactly as a bad colour is.
+    for (const bad of [0.2, 3, 'x', null]) {
+      const p = themesWith({ slug: 'demo', title_style: null });
+      templates.applyCalibration(p, 'demo', { title_style: { ...TS, leading: bad } });
+      const got = JSON.parse(fs.readFileSync(p, 'utf8')).demo.title_style;
+      if (bad === null) {
+        expect('leading' in got).toBe(false); // null = "not measured", not an error
+      } else {
+        expect(got).toBeNull();
+      }
+    }
+  });
 });
 
 // --- "in the store" vs "public/private" -------------------------------------

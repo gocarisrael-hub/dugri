@@ -186,20 +186,30 @@ def _drawn(lines):
     return [ln for ln in (lines or []) if ln and ln.strip()]
 
 
-def _paint_ratio(font_path, lines, outline_w, shadow):
+def _paint_ratio(font_path, lines, outline_w, shadow, leading=None, arch=0.0,
+                 bold=False, bold_w=None):
     """Painted title height per unit of font size, for these lines and font.
 
     This is the whole fit calculation in one number: ``title_block`` stacks the
-    lines 0.78 apart and reserves headroom for the outline ring and the drop
+    lines at the theme's own leading (its fixed default when the design's was
+    never measured) and reserves headroom for the outline ring and the drop
     shadow, so the painted footprint of a title rendered at size S is exactly
     ``ratio * S``. Returns None when the font cannot be measured.
+
+    The spacing has to come through here, not be assumed: a theme calibrated at
+    a wide leading paints a block visibly taller than the default step predicts,
+    and a health check that predicted a different footprint from the one the
+    card prints would pass a pin that overflows (or flag one that does not).
     """
     got = _metrics(font_path)
     drawn = _drawn(lines)
     if not got or not drawn:
         return None
     f, ref = got
-    stack = rp._title_ink_stack(f, ref, drawn)
+    pitch = rp.title_pitch(f, ref, drawn, leading,
+                           rp.title_paint_pad(outline_w, arch, shadow, bold,
+                                              bold_w))
+    stack = rp._title_ink_stack(f, ref, drawn, pitch)
     pad = 2 * (outline_w or 0) + (0.06 if shadow else 0.0)
     return stack / ref + pad
 
@@ -224,7 +234,8 @@ def _span(values):
     return lo, lo_n, hi, hi_n
 
 
-def _fit(surface, pinned, box, font_path, font_name, samples, named, ts):
+def _fit(surface, pinned, box, font_path, font_name, samples, named, ts,
+         leading=None):
     """Judge ONE pinned size against ONE calibrated box. -> (problems, notes, m).
 
     A verdict is only reached where the WHOLE spread of reference names agrees —
@@ -251,7 +262,9 @@ def _fit(surface, pinned, box, font_path, font_name, samples, named, ts):
     if bh <= 0 or bw <= 0:
         return problems, notes, None
     hs = _span([(_paint_ratio(font_path, ln, ts.get("outline_w"),
-                              ts.get("shadow")), n) for ln, n in samples])
+                              ts.get("shadow"), leading,
+                              ts.get("arch"), ts.get("bold"), ts.get("bold_w")),
+                 n) for ln, n in samples])
     ws = _span([(_width_ratio(font_path, ln), n) for ln, n in samples])
     if not hs:
         return problems, notes, None
@@ -285,7 +298,9 @@ def _fit(surface, pinned, box, font_path, font_name, samples, named, ts):
     if named:
         nlines, nname = named
         nw = _width_ratio(font_path, nlines)
-        nh = _paint_ratio(font_path, nlines, ts.get("outline_w"), ts.get("shadow"))
+        nh = _paint_ratio(font_path, nlines, ts.get("outline_w"),
+                          ts.get("shadow"), leading, ts.get("arch"),
+                          ts.get("bold"), ts.get("bold_w"))
         if nw and nw * pinned > bw:
             notes.append(
                 f'{label}: עם השם "{nname}" הכותרת רחבה מהתיבה '
@@ -425,7 +440,9 @@ def _font_drift(cfg, font_abs, font_name, lines, ts, pinned_any):
     hint = ""
     if newer:
         old = _git(["show", f"{themes_c[1]}:{rel_font}"], binary=True)
-        now = _paint_ratio(font_abs, lines, ts.get("outline_w"), ts.get("shadow"))
+        now = _paint_ratio(font_abs, lines, ts.get("outline_w"),
+                           ts.get("shadow"), ts.get("leading"), ts.get("arch"),
+                           ts.get("bold"), ts.get("bold_w"))
         if old and now:
             tmp = tempfile.NamedTemporaryFile(
                 suffix=os.path.splitext(rel_font)[1], delete=False)
@@ -433,7 +450,9 @@ def _font_drift(cfg, font_abs, font_name, lines, ts, pinned_any):
                 tmp.write(old)
                 tmp.close()
                 before = _paint_ratio(tmp.name, lines, ts.get("outline_w"),
-                                      ts.get("shadow"))
+                                      ts.get("shadow"), ts.get("leading"),
+                                      ts.get("arch"), ts.get("bold"),
+                                      ts.get("bold_w"))
             finally:
                 os.unlink(tmp.name)
             if before and before > 0:
@@ -700,13 +719,21 @@ def _pinned_surfaces(theme_key, cfg, ts, recipe):
     pinned by different keys — a bad ``back_size`` must not be able to hide
     behind a fine ``size``. ``back_size`` falls back to ``size`` exactly as
     ``build.render_backs`` does, so what is checked is what will be rendered.
+
+    Each surface carries its own LEADING for the same reason: the painted height
+    a pinned size produces depends on how far apart the lines are stacked, and
+    the surfaces are separately spaced text boxes in the design. Resolved
+    through the same fallbacks the renderer uses, so the block measured here is
+    the block the card prints.
     """
     surfaces, unknown = [], {}
     if recipe:
-        surfaces.append(("front", ts.get("size"), _front_boxes(recipe, ts)))
+        surfaces.append(("front", ts.get("size"), _front_boxes(recipe, ts),
+                         ts.get("leading")))
         if isinstance(cfg.get("back"), dict) and cfg["back"].get("frac"):
             surfaces.append(("back", ts.get("back_size") or ts.get("size"),
-                             _back_boxes(recipe, cfg["back"]["frac"])))
+                             _back_boxes(recipe, cfg["back"]["frac"]),
+                             rp.back_leading(ts, cfg["back"])))
         # Each of a paired template's backs is its own surface with its own box
         # and its own pin, so each is judged separately — exactly the reason the
         # back is not judged against the front's box above.
@@ -719,14 +746,16 @@ def _pinned_surfaces(theme_key, cfg, ts, recipe):
                 surfaces.append((
                     f"back {key}",
                     slot.get("size") or ts.get("back_size") or ts.get("size"),
-                    _back_boxes(recipe, slot["frac"])))
+                    _back_boxes(recipe, slot["frac"]),
+                    rp.back_leading(ts, slot)))
     if isinstance(cfg.get("board"), dict) and cfg["board"].get("frac"):
         box = _board_box(theme_key, cfg["board"]["frac"])
         if ts.get("board_size") and box is None:
             unknown["board_fit"] = (
                 "לא ניתן למדוד את תיבת הכותרת על הלוח (חסר clean/board.svg או "
                 "שאין בו viewBox), ולכן board_size לא נבדק.")
-        surfaces.append(("board", ts.get("board_size"), [box] if box else []))
+        surfaces.append(("board", ts.get("board_size"), [box] if box else [],
+                         rp.board_leading(ts)))
     return surfaces, unknown
 
 
@@ -734,7 +763,7 @@ def _title_fit(theme_key, cfg, ts, recipe, paths, font_name, samples, named):
     """Judge every pinned title size. -> (problems, notes, unknown, measurements)."""
     problems, notes, fits = [], [], {}
     surfaces, unknown = _pinned_surfaces(theme_key, cfg, ts, recipe)
-    for surface, pinned, boxes in surfaces:
+    for surface, pinned, boxes, leading in surfaces:
         if not pinned or not boxes:
             continue
         # A pinned size has to survive EVERY box on the sheet (the eight cards of
@@ -742,7 +771,7 @@ def _title_fit(theme_key, cfg, ts, recipe, paths, font_name, samples, named):
         worst, worst_m, keep = None, None, ([], [])
         for box in boxes:
             probs, note, m = _fit(surface, pinned, box, paths["title_font"],
-                                  font_name, samples, named, ts)
+                                  font_name, samples, named, ts, leading)
             if m is None:
                 continue
             score = max(m["fills_box_h_max"] - 1, 1 - m["fills_box_h_min"],

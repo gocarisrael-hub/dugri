@@ -1968,7 +1968,8 @@ function isFrac(v) {
 const TITLE_ALIGNS = ['center', 'left', 'right'];
 
 // Validate a title_style blob. Required: fill, outline (hex), outline_w + arch
-// (0..1 fractions), shadow (bool). Optional: size / board_size / back_size
+// (0..1 fractions), shadow (bool). Optional: size / board_size / back_size,
+// leading / board_leading / back_leading
 // (positive px, absent = auto-fit), align (center/left/right), offset ([dx,dy]
 // fractions -1..1), italic (bool). Returns a FRESH, key-whitelisted object so no
 // stray field reaches themes.json. { value } | { error }.
@@ -1991,6 +1992,23 @@ function validateTitleStyle(input) {
     if (input[k] == null) continue;
     if (!isFiniteNum(input[k]) || input[k] <= 0 || input[k] > 400) {
       return { error: 'title_style.' + k + ' must be a positive size' };
+    }
+    out[k] = input[k];
+  }
+  // leading / back_leading / board_leading: the baseline step between a title's
+  // lines, as a fraction of the type size, measured off the design's own
+  // artwork. One per SURFACE, exactly like the sizes above — a design's front,
+  // board and backs are separate text boxes and are spaced separately, and each
+  // surface's pinned size was fitted at its own spacing. Absent = fall through
+  // to the fronts', then to the renderer's own fixed step, which is what every
+  // uncalibrated (and every single-line) title uses. Bounded by the same span
+  // calibration searches: under half the type size the lines overprint, and
+  // over twice it they read as two blocks — either is a mis-measurement rather
+  // than a design, and it would print on every card of a paid order.
+  for (const k of ['leading', 'back_leading', 'board_leading']) {
+    if (input[k] == null) continue;
+    if (!isFiniteNum(input[k]) || input[k] < 0.5 || input[k] > 2) {
+      return { error: 'title_style.' + k + ' must be a fraction 0.5..2 of the type size' };
     }
     out[k] = input[k];
   }
@@ -2150,6 +2168,16 @@ function validateBacks(input, label) {
         return { error: slotLabel + '.size must be a positive number or null' };
       }
       v.value.size = size;
+    }
+    // ...and the spacing that size was measured at. It travels WITH the size:
+    // separately drawn backs are separately spaced text boxes, and a size
+    // pinned away from its own spacing prints a block nobody measured.
+    const lead = input[key].leading;
+    if (lead != null && lead !== '') {
+      if (!isFiniteNum(lead) || lead < 0.5 || lead > 2) {
+        return { error: slotLabel + '.leading must be a fraction 0.5..2 of the type size' };
+      }
+      v.value.leading = lead;
     }
     out[key] = v.value;
   }

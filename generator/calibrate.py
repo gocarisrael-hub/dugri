@@ -1445,7 +1445,8 @@ def _extent_match(a, b):
     return 1.0 - sum(abs(p / ma - q / mb) for p, q in zip(a, b)) / n
 
 
-def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0):
+def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0,
+                           pitch=None):
     """``(size, leading, score)`` reproducing one title block's ink.
 
     Two unknowns, so two readings of the same ink:
@@ -1457,13 +1458,25 @@ def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0):
 
     A single-line title has no leading to solve for, so it takes the renderer's
     own step and this is exactly the one-bisection fit that shipped before —
-    which is why the shipped single-line templates do not move.
+    which is why the shipped single-line templates do not move. It reports its
+    leading as ``None``: there is nothing to say about the spacing of one line,
+    and the renderer must be left on its own step rather than pinned to a number
+    this never measured.
+
+    ``pitch`` short-circuits the search when the leading is ALREADY known — the
+    deck's later surfaces (board, backs) are painted with the leading the fronts
+    measured, because ``title_style`` carries one, so their sizes have to be
+    fitted at that same spacing or they pin a size the renderer will never draw.
     """
     target = ink.size[1]
     lines = [ln for ln in (samples[0] if samples else []) if ln and ln.strip()]
     if len(lines) < 2:
         size = _fit_size(target, font_path, samples, ppu, alpha, ring=ring)
-        return size, RENDER_PITCH, None
+        return size, None, None
+    if pitch is not None:
+        size = _fit_size(target, font_path, samples, ppu, alpha, ring=ring,
+                         pitch=pitch)
+        return size, pitch, None
     o_dens, o_ext = _row_ink(ink)
 
     def at(pitch):
@@ -1509,7 +1522,7 @@ def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0):
         if score is not None and (best is None or score > best[1]):
             best = (pitch, score)
     if best is None:
-        return None, RENDER_PITCH, None
+        return None, None, None
     leading = round(best[0], 3)
     size = _fit_size(target, font_path, samples, ppu, alpha, ring=ring,
                      pitch=leading)
@@ -1517,11 +1530,20 @@ def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0):
 
 
 def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
-                   ring=0.0):
-    """Fit one surface's title size. -> ``(size, grade, note, ctx)``.
+                   ring=0.0, leading=None):
+    """Fit one surface's title size. -> ``(size, grade, note, ctx, leading)``.
 
     ``ctx`` is ``(ink_region, alpha)`` — what ``fit_bold`` needs to go on and
     weigh the same ink — or None when nothing was measured.
+
+    The trailing ``leading`` is the line spacing this surface's ink was measured
+    WITH, as a fraction of the type size, or None for a single-line title that
+    has none. The size and the leading are inseparable in the ink, so they leave
+    together: pinning the size without it would print the measured type at the
+    wrong spacing, which is the whole defect this pair exists to fix.
+
+    ``leading`` IN says the spacing is already settled (the fronts measured it)
+    and this surface must be fitted at it rather than solving its own.
 
     ``ring`` is the outline thickness the title is painted with, as a fraction of
     the size. The origin's ink includes its ring, so a bare-glyph candidate is
@@ -1544,23 +1566,30 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
     because a large disagreement still says something real about the font.
     """
     if not samples:
-        return None, None, "title: no sample title could be built for this theme.", None
+        return (None, None, "title: no sample title could be built for this theme.",
+                None, None)
     extent = _ink_extent(mask, box, ppu, ox, oy)
     if not extent:
-        return None, None, None, None
+        return None, None, None, None, None
     ink_h, ink_w, region = extent
     alpha = _alpha_threshold(ink_hex, _background(image, mask, region))
     if not all(_covers(font_path, "".join(lines)) for lines in samples):
         return (None, None,
                 "size: the theme's title font has no glyphs for this title's own "
-                "text, so its size could not be measured — check the font.", None)
+                "text, so its size could not be measured — check the font.",
+                None, None)
     size, leading, _score = solve_size_and_leading(
-        solid_ink(mask.crop(region)), font_path, samples, ppu, alpha, ring=ring)
+        solid_ink(mask.crop(region)), font_path, samples, ppu, alpha, ring=ring,
+        pitch=leading)
+    # Every measurement below repaints the same block, so it has to be repainted
+    # at the spacing the block was fitted at. A single-line title has no spacing,
+    # and the renderer's own step is what it will be drawn with.
+    pitch = leading if leading is not None else RENDER_PITCH
     box_h = box["y1"] - box["y0"]
     if not _in_box(size, box_h):
         return (None, None,
                 "size: the measured title ink is not a plausible size for its "
-                "box, so nothing was pinned — the renderer auto-fits.", None)
+                "box, so nothing was pinned — the renderer auto-fits.", None, None)
     # How far the answer moves with the honoree's name, measured by painting each
     # sample ONCE at the fitted size rather than bisecting a fit per sample. The
     # painted extent is very nearly linear in the size, so the relative spread of
@@ -1570,20 +1599,21 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
     each = []
     for one in samples:
         ink = _paint(font_path, one, size * ppu, alpha, stroke=ring * size * ppu,
-                     pitch=leading)
+                     pitch=pitch)
         got = _extent_of(ink, 0) if ink else None
         if got:
             each.append(got)
     spread = ((max(each) - min(each)) / statistics.median(each)) if each else None
     wide = _fit_size(ink_w, font_path, samples, ppu, alpha, axis=1, ring=ring,
-                     pitch=leading)
+                     pitch=pitch)
     note = None
     if leading is not None and abs(leading - RENDER_PITCH) > 0.02:
         note = (f"size: the original stacks its title lines {leading} of the type "
-                f"size apart, where the renderer stacks them {RENDER_PITCH}. The "
-                "size below is the one the ORIGINAL is set at, measured with the "
-                "original's own spacing — so our block prints a little taller or "
-                "shorter than the artwork's even though the type matches.")
+                f"size apart, where this renderer's default is {RENDER_PITCH}. "
+                "The measured spacing is pinned alongside the size and printed "
+                "with it, so the block matches the artwork — but the two were "
+                "read off the same ink and only make sense together: changing "
+                "one by hand without the other resizes the block.")
     if wide and abs(wide - size) / size > 0.12:
         wnote = (f"size: fitted from the height of the original's title ink. Its "
                  f"WIDTH says {wide}, not {size} — the title font is not quite the "
@@ -1592,13 +1622,14 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
                  "of text. Only one of the two axes can match; check the preview.")
         note = (note + " " + wnote) if note else wnote
     if spread is None:
-        return size, "medium", note, (region, alpha)
+        return size, "medium", note, (region, alpha), leading
     if spread <= _FIT_STABLE:
-        return size, "high", note, (region, alpha)
+        return size, "high", note, (region, alpha), leading
     extra = (f"size: the fit moves {spread:.0%} across sample honoree names, so "
              f"{size} is the median rather than one exact answer — this face's "
              "ink height depends on which letters the name carries.")
-    return size, "medium", (note + " " + extra) if note else extra, (region, alpha)
+    return (size, "medium", (note + " " + extra) if note else extra,
+            (region, alpha), leading)
 
 
 def fit_word_size(mask, image, slots, ppu, ox, oy, font_path, words):
@@ -1777,6 +1808,12 @@ def _word_colours(recipe):
 # label it grades, mapped to where the value lives in the blob.
 _FITTED_KEYS = (
     ("title_style.size", ("title_style", "size")),
+    # Each leading is graded with the size it was solved beside, so a size the
+    # calibrator does not believe takes its spacing down with it — the pair is
+    # one reading and half of it is worse than neither.
+    ("title_style.leading", ("title_style", "leading")),
+    ("title_style.back_leading", ("title_style", "back_leading")),
+    ("title_style.board_leading", ("title_style", "board_leading")),
     ("title_style.bold", ("title_style", "bold")),
     ("title_style.bold_w", ("title_style", "bold_w")),
     ("word_size", ("word_size",)),
@@ -1822,7 +1859,9 @@ def _drop_low_confidence(out, confidence, notes):
 # with; losing one sends that surface back to auto-fit, which is a visible change
 # to a template the owner had already signed off.
 _CARRIED = (("title_style", "size"), ("title_style", "board_size"),
-            ("title_style", "back_size"), ("title_style", "outline_w"),
+            ("title_style", "back_size"), ("title_style", "leading"),
+            ("title_style", "back_leading"), ("title_style", "board_leading"),
+            ("title_style", "outline_w"),
             ("title_style", "align"), ("word_size",))
 
 
@@ -2008,9 +2047,15 @@ def calibrate(theme_key, workdir=None):
                 tbox = {"x0": min(b["x0"] for b in t), "y0": min(b["y0"] for b in t),
                         "x1": max(b["x1"] for b in t), "y1": max(b["y1"] for b in t)}
                 ring = 0.0
-                size = tgrade = tnote = ctx = None
+                size = tgrade = tnote = ctx = tlead = None
                 for _pass in range(3):
-                    size, tgrade, tnote, ctx = fit_title_size(
+                    # The leading is re-solved on every pass rather than carried
+                    # from the first: the candidate the profile is matched
+                    # against is painted WITH the ring, so the ring the pass
+                    # before measured changes what spacing best reproduces the
+                    # original's rows. The last pass — the one whose ring has
+                    # converged — is the answer both numbers come from.
+                    size, tgrade, tnote, ctx, tlead = fit_title_size(
                         mask, image, tbox, ppu, ox, oy, title_font, samples,
                         (t[0].get("color") or fill), ring=ring)
                     if not (size and fill and outline):
@@ -2063,10 +2108,18 @@ def calibrate(theme_key, workdir=None):
                 # blob missing one field is rejected entirely — so omitting arch
                 # silently discarded the fill, outline and ring width measured just
                 # above it, and the template went on reporting itself as never
-                # calibrated even though detection had succeeded. Straight is also
-                # the honest reading: nothing measured here bulges. The owner still
-                # overrides it in the form for a curved title.
-                ts.setdefault("arch", 0.0)
+                # calibrated even though detection had succeeded.
+                #
+                # The default is the theme's OWN arch, not zero — the same way
+                # the shadow one line below already inherits. Nothing here
+                # MEASURES the curve, so writing a flat 0.0 over a template the
+                # owner had curved is not a reading, it is an erasure: pressing
+                # "detect again" straightened סיישל's graffiti title, whose
+                # design plainly arcs (its top line's ink sits 44px higher in
+                # the middle than at its ends, on a 138px block), and nothing
+                # said so. A knob a pass cannot measure must be left as it was.
+                ts.setdefault("arch", float((cfg.get("title_style") or {})
+                                            .get("arch") or 0.0))
                 confidence.setdefault("title_style.arch", "low")
                 # The shadow is read AFTER the size, because it is measured as a
                 # displacement in units of the type size.
@@ -2087,6 +2140,23 @@ def calibrate(theme_key, workdir=None):
 
                 # --- the fitted size, and the synthetic-bold weight -----------
                 record("size", size, tgrade, tnote)
+                # The LEADING that size was measured with. It travels with the
+                # size and never without it: the two are one reading of one
+                # block of ink, and a size pinned without its spacing prints the
+                # right type stacked at the wrong step — which is the defect
+                # this pair was introduced to fix. Graded with the size for the
+                # same reason, so a size the owner is asked to check comes with a
+                # spacing flagged the same way, and the low-confidence drop takes
+                # them out together.
+                #
+                # PER SURFACE, exactly like the size it belongs to. A deck's
+                # front, board and backs are separate text boxes in the design
+                # and are spaced independently: tarifa's back stacks its two
+                # lines a third further apart than its front does. Fitting the
+                # back at the front's spacing put its size 21% over the Canva
+                # value it had been matching to 2%.
+                if size is not None:
+                    record("leading", tlead, tgrade, None)
                 if size and ctx:
                     # WEIGHT, only where the title has no visible ring. A ringed
                     # title's ink is mostly its OUTLINE, and the candidate painted
@@ -2169,9 +2239,12 @@ def calibrate(theme_key, workdir=None):
                 # The board is the LARGEST rendering of this title, so its ink is
                 # the cleanest size measurement of the three surfaces.
                 ppu, ox, oy = _viewport(mask, vb)
-                record("board_size", *fit_title_size(
+                bsize, bgrade, bnote, _bctx, blead = fit_title_size(
                     mask, image, units(box, ppu, ox, oy), ppu, ox, oy,
-                    title_font, samples, fill, ring=deck_ring)[:3])
+                    title_font, samples, fill, ring=deck_ring)
+                record("board_size", bsize, bgrade, bnote)
+                if bsize is not None:
+                    record("board_leading", blead, bgrade, None)
             else:
                 notes.append("board: could not isolate a title — either this "
                              "design carries no board title, or the filled and "
@@ -2197,7 +2270,7 @@ def calibrate(theme_key, workdir=None):
         # how seven cards in eight get the name in the wrong place.
 
         def measure_back(kf, kc, label):
-            """One back's slot — ``(slot|None, size, grade, note)``.
+            """One back's slot — ``(slot|None, size, grade, note, leading)``.
 
             ``label`` prefixes this back's notes and confidence keys so a deck
             with eight of them says WHICH one it could not read.
@@ -2258,13 +2331,16 @@ def calibrate(theme_key, workdir=None):
                 }
                 # The back's title is its own surface with its own box, so it
                 # gets its own size — pinning the front's here would size the
-                # back title to a box it was never measured against.
+                # back title to a box it was never measured against. Its own
+                # LEADING too, and for the same reason: separate text boxes in
+                # the design are spaced separately, and tarifa's back stacks its
+                # two lines a third further apart than its front does.
                 bppu, box_, boy = _viewport(mask, vb)
-                size, grade, note = fit_title_size(
+                size, grade, note, _bctx, lead = fit_title_size(
                     mask, image, units(box, bppu, box_, boy), bppu, box_, boy,
-                    title_font, samples, fill, ring=deck_ring)[:3]
-                return slot, size, grade, note
-            return None, None, None, None
+                    title_font, samples, fill, ring=deck_ring)
+                return slot, size, grade, note, lead
+            return None, None, None, None, None
 
         def back_pair(index):
             """The filled/clean pair for one back, sheet or single-card."""
@@ -2295,22 +2371,28 @@ def calibrate(theme_key, workdir=None):
                 if paired:
                     out["backs"][str(bi)] = None
                 continue
-            slot, size, grade, note = measure_back(kf, kc, label)
+            slot, size, grade, note, lead = measure_back(kf, kc, label)
             confidence[label + ".frac"] = "high" if slot else "none"
             if not slot:
                 unreadable(label)
             if paired:
                 # Each back's size belongs to that back: eight separately drawn
                 # backs give the title eight different rooms, and one shared pin
-                # fits only the box it was measured against.
+                # fits only the box it was measured against. Its spacing goes
+                # with it — the size was fitted at that spacing and means
+                # nothing away from it.
                 if slot and size is not None:
                     slot["size"] = size
+                    if lead is not None:
+                        slot["leading"] = lead
                 if note:
                     notes.append(note)
                 confidence[label + ".size"] = grade if size is not None else "none"
                 out["backs"][str(bi)] = slot
             else:
                 record("back_size", size, grade, note)
+                if size is not None:
+                    record("back_leading", lead, grade, None)
                 out["back"] = slot
 
         # --- card_slots: hand the DETECTED geometry back to the admin form ---
