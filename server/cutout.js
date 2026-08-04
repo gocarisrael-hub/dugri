@@ -44,7 +44,7 @@
 
 const crypto = require('crypto');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const REPO_ROOT = path.join(__dirname, '..');
 
@@ -200,19 +200,50 @@ function mimeOf(buf) {
 // MUST happen here: the cutout comes back as a fresh PNG with no EXIF, so a photo
 // sent sideways comes back sideways with nothing left to correct it. Best-effort —
 // a missing or broken Python just means the original bytes go over the wire.
+//
+// ASYNC spawn, deliberately not spawnSync: this runs on the BUYER's request path,
+// four photos deep, and each resize is a few hundred ms of Pillow. spawnSync would
+// block the event loop for all of it and stall every other request on the box.
+const PREPARE_TIMEOUT_MS = Number(process.env.ADOBE_CUTOUT_PREPARE_TIMEOUT_MS || 30000);
+
 function prepareForProvider(bytes) {
-  try {
-    const r = spawnSync('python3', [path.join(REPO_ROOT, 'generator', 'prepare_photo.py')], {
-      input: bytes,
-      timeout: 30000,
-      maxBuffer: 64 * 1024 * 1024,
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (v) => {
+      if (settled) return;
+      settled = true;
+      resolve(v);
+    };
+    let child;
+    try {
+      child = spawn('python3', [path.join(REPO_ROOT, 'generator', 'prepare_photo.py')]);
+    } catch {
+      return finish(bytes); // no python at all
+    }
+    const chunks = [];
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        /* already gone */
+      }
+      finish(bytes);
+    }, PREPARE_TIMEOUT_MS);
+    child.stdout.on('data', (d) => chunks.push(d));
+    child.on('error', () => {
+      clearTimeout(timer);
+      finish(bytes);
     });
-    const out = r && r.status === 0 ? r.stdout : null;
-    if (Buffer.isBuffer(out) && out.length > 0) return out;
-  } catch {
-    /* fall through to the original bytes */
-  }
-  return bytes;
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      const out = Buffer.concat(chunks);
+      finish(code === 0 && out.length > 0 ? out : bytes);
+    });
+    // A child that dies before reading the photo makes this pipe EPIPE; that is a
+    // normal outcome here, not a crash.
+    child.stdin.on('error', () => {});
+    child.stdin.end(bytes);
+  });
 }
 
 // Adobe hands us back URLs (the status URL, then the result URL). Only ever follow
@@ -250,7 +281,7 @@ async function submitSlot() {
 // Submit → poll → download. Throws on anything unexpected; removeBackground turns
 // every throw into a null.
 async function cut(bytes, signal) {
-  const prepared = prepareForProvider(bytes);
+  const prepared = await prepareForProvider(bytes);
   const token = publishSource(prepared, mimeOf(prepared));
   try {
     const bearer = await accessToken(signal);

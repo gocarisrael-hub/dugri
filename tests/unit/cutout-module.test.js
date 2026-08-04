@@ -97,19 +97,24 @@ describe('isConfigured', () => {
 
 describe('the temporary source URL', () => {
   it('serves the published bytes and forgets them once expired', () => {
-    const cutout = loadCutout({ ...CONFIGURED, ADOBE_CUTOUT_SOURCE_TTL_MS: '1' });
+    const cutout = loadCutout(CONFIGURED);
     const token = cutout._internals.publishSource(FAKE_JPEG, 'image/jpeg');
     expect(token).toMatch(/^[a-f0-9]{32}$/); // 128 bits — the token IS the credential
     expect(cutout.serveSource(token).bytes).toBe(FAKE_JPEG);
-    delete process.env.ADOBE_CUTOUT_SOURCE_TTL_MS;
-    // TTL of 1ms: by the next tick the entry is gone (and stays gone).
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        expect(cutout.serveSource(token)).toBe(null);
-        expect(cutout._internals.sources.has(token)).toBe(false);
-        resolve();
-      }, 10);
-    });
+    // Expire it by hand rather than by racing a short TTL against the clock — the
+    // behaviour under test is "an expired entry is refused AND dropped", not how
+    // fast a timer fires on a loaded CI box.
+    cutout._internals.sources.get(token).expiresAt = Date.now() - 1;
+    expect(cutout.serveSource(token)).toBe(null);
+    expect(cutout._internals.sources.has(token)).toBe(false);
+  });
+
+  it('sweeps expired entries out even if nobody asks for them', () => {
+    const cutout = loadCutout(CONFIGURED);
+    const stale = cutout._internals.publishSource(FAKE_JPEG, 'image/jpeg');
+    cutout._internals.sources.get(stale).expiresAt = Date.now() - 1;
+    cutout._internals.sweepSources();
+    expect(cutout._internals.sources.has(stale)).toBe(false);
   });
 
   it('404-equivalent (null) for an unknown token', () => {
@@ -120,13 +125,24 @@ describe('the temporary source URL', () => {
 });
 
 describe('normalising a photo before it is sent', () => {
-  it('falls back to the ORIGINAL bytes when the photo cannot be normalised', () => {
+  it('falls back to the ORIGINAL bytes when the photo cannot be normalised', async () => {
     // generator/prepare_photo.py exits non-zero on anything Pillow cannot read;
     // the send must go ahead with the original rather than be abandoned. (What the
     // script does when it CAN read the photo — EXIF rotation + the size cap — is
     // pinned in generator/test_prepare_photo.py.)
     const { prepareForProvider } = loadCutout(CONFIGURED)._internals;
-    expect(prepareForProvider(FAKE_JPEG).equals(FAKE_JPEG)).toBe(true);
+    const out = await prepareForProvider(FAKE_JPEG);
+    expect(out.equals(FAKE_JPEG)).toBe(true);
+  });
+
+  it('falls back to the original when the helper cannot run at all', async () => {
+    // A broken/missing script must not take the cut down with it.
+    const { prepareForProvider } = loadCutout({
+      ...CONFIGURED,
+      ADOBE_CUTOUT_PREPARE_TIMEOUT_MS: '2000',
+    })._internals;
+    const out = await prepareForProvider(Buffer.from('nope'));
+    expect(out.equals(Buffer.from('nope'))).toBe(true);
   });
 
   it('labels the source URL with the sniffed image type', () => {
