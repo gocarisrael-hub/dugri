@@ -202,7 +202,19 @@ describe('POST /api/preview leaves nothing behind when it times out', () => {
     });
     expect(res.status).toBeGreaterThanOrEqual(500);
 
-    const raw = fs.readFileSync(pidFile, 'utf8').trim();
+    // WAIT for the pid file rather than reading it straight off. The request
+    // fails on a 1200ms timer, and under a loaded full-suite run the fake
+    // generator has not always finished writing the file by then — reading it
+    // immediately threw ENOENT and failed a test whose subject had not even been
+    // exercised yet. Nothing here is being given more time to PASS: the
+    // grandchild kill is still asserted below, on the same budget.
+    const raw = await waitFor(() => {
+      try {
+        return fs.readFileSync(pidFile, 'utf8').trim() || null;
+      } catch {
+        return null; // not written yet
+      }
+    });
     expect(raw, 'the fake generator never started its "Chrome"').toBeTruthy();
     expect(
       await waitGone(Number(raw)),
