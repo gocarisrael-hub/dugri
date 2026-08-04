@@ -276,8 +276,23 @@ def test_a_knob_this_pass_could_not_measure_keeps_its_calibrated_value():
     assert out["title_style"]["outline_w"] == 0.05
     assert out["word_size"] == 21.3
     assert len(kept) == 4
-    assert conf["word_size"] == "carried"
+    # Flagged with a level the admin form actually reacts to — an inherited
+    # value is one for the owner to check, and a level the form does not
+    # recognise would present it as a confident fresh reading.
+    assert conf["word_size"] == "low"
     assert notes and "KEPT" in notes[0]
+
+
+def test_a_carried_value_is_not_then_dropped_as_low_confidence():
+    """Order matters: the low-confidence drop runs BEFORE the carry, so marking
+    a carried value "low" must not feed it back into the shredder."""
+    out = {"title_style": {}, "word_size": None}
+    cfg = {"title_style": {"size": 28.0}, "word_size": 21.3}
+    conf, notes = {}, []
+    C._carry_forward(out, cfg, notes, conf)
+    C._drop_low_confidence(out, conf, notes)
+    assert out["title_style"]["size"] == 28.0
+    assert out["word_size"] == 21.3
 
 
 def test_a_fresh_measurement_always_beats_the_carried_one():

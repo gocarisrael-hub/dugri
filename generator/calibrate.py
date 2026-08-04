@@ -1504,9 +1504,16 @@ def _drop_low_confidence(out, confidence, notes):
     dropped key falls back to the renderer's own auto-fit, which is the
     behaviour that shipped for every theme before fitting existed.
     """
+    # A value CARRIED forward from an existing calibration is graded "low" too —
+    # it is inherited, not fresh, and the admin form flags exactly "low" for the
+    # owner to check. It must never be shredded here, though: dropping it is the
+    # regression the carry exists to prevent. Today the carry runs after this, so
+    # the case cannot arise; naming it explicitly means a future reorder cannot
+    # quietly reintroduce the bug.
+    carried = set(out.get("carried") or ())
     dropped = []
     for label, path in _FITTED_KEYS:
-        if confidence.get(label) != "low":
+        if confidence.get(label) != "low" or label in carried:
             continue
         target = out
         for key in path[:-1]:
@@ -1567,7 +1574,13 @@ def _carry_forward(out, cfg, notes, confidence):
         if target.get(path[-1]) is None:
             target[path[-1]] = old
             label = ".".join(path)
-            confidence[label] = "carried"
+            # Graded "low", not some new level of its own: the admin form flags
+            # exactly "low" and "none" for the owner to check, and an inherited
+            # value is precisely one to check. A level it does not recognise
+            # would show as a confident reading. Safe because the low-confidence
+            # drop runs BEFORE this, so nothing carried here is dropped again.
+            confidence[label] = "low"
+            out.setdefault("carried", []).append(label)
             kept.append(f"{label} = {old}")
     if kept:
         notes.append(
