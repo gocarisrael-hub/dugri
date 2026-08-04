@@ -420,18 +420,69 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
     return out_pdf, doc.page_count, board
 
 
-# Where a face sits in a portrait photo, as a fraction of the SPARE height. The
-# slot crops a square out of the photo, and a phone photo of a person is tall —
-# so the middle band is their torso and the crop beheads them. Anchoring near
-# the top keeps the head, with a little headroom so it isn't flush against the
-# edge. 0 = flush top, 0.5 = the centre crop that was cutting faces off.
-# Where a person's head-and-shoulders sits in a portrait photo, as a fraction of
-# its height. The crop is CENTRED on this point, not anchored to the top: the
-# slot shows only the INSCRIBED CIRCLE, and docs/photo-card.md asks for the
-# subject inside a centred disc of 0.46 x the side, so a subject pinned near the
-# top edge gets its head clipped by the circle. 0.5 would be the plain centre
-# crop that put the disc on people's torsos.
+# Where a face sits in a portrait photo, as a fraction of its height. THIS IS THE
+# DEGRADED PATH ONLY. A photo that carries no usable alpha — an opaque phone
+# photo, or a cutout that failed — gives us nothing to look at, so the only crop
+# left is a guess, and this is the guess we shipped before subject-aware cropping
+# existed. Every photo that DOES carry a cutout is framed from its alpha instead
+# (``subject_box``) and never reads this value. 0.5 would be the plain centre
+# crop that put the slot's circle on people's torsos.
 PHOTO_SUBJECT_Y = float(os.environ.get("DUGRI_PHOTO_SUBJECT_Y", "0.30"))
+
+# --- subject-aware framing (docs/photo-card.md) ------------------------------
+# A cutout tells us exactly where the person is, so nothing here is a guess. The
+# square we hand the slot is built from the subject's own alpha:
+#
+#   1. the bounding box of the non-transparent pixels — of the blob nearest the
+#      centre of the frame, if the cut left more than one;
+#   2. scaled so the subject spans the slot's visible disc and centred on it;
+#   3. clipped to that disc, so everything outside is cut away.
+#
+# Step 3 is why this exists. The old fixed square sliced straight through arms
+# and legs, and the sticker halo is dilated from the image's OWN alpha, so it
+# traced that ruler-straight cut instead of the subject.
+
+# An alpha at or above this counts as subject. Deliberately low: the soft edge of
+# a hair matte runs from 0 to 255 over a few pixels and belongs to the subject.
+PHOTO_ALPHA_MIN = 24
+
+# Below this share of the frame there is nothing worth framing (a cut that
+# collapsed), and above the second there is nothing transparent to frame BY (an
+# ordinary opaque photo). Either way we fall back to the old square crop.
+PHOTO_SUBJECT_MIN_COVER = 0.005
+PHOTO_SUBJECT_MAX_COVER = 0.995
+
+# A blob smaller than this share of the biggest one is a speck the segmenter left
+# behind, never the subject — it is dropped before the nearest-to-centre choice
+# so a stray 20-pixel scrap at dead centre cannot beat the person.
+PHOTO_BLOB_MIN_SHARE = 0.08
+
+# Long side of the mask the blob search runs on. Full resolution would be a
+# million-pixel flood fill in pure Python (numpy is TEST-ONLY here — the
+# production image ships py3-pillow and nothing else, see the Dockerfile).
+PHOTO_BLOB_MASK_PX = 200
+
+# How much of the square the visible disc takes. NOT 1.0 on purpose: the halo is
+# dilated ~2.4 units outward from the image's alpha and the dashed cut-line sits
+# at r=33 of a 66-unit slot, so a disc filling the whole square would put the
+# white ring exactly ON the dashes — hiding the line you are meant to cut, and
+# putting the ring outside the cut so it is trimmed off the finished pawn. At
+# 0.90 the ring lands inside the dashes: outlined disc first, cut-line just
+# outside it, which is also the right order for a real die-cut sticker.
+PHOTO_DISC_FILL = float(os.environ.get("DUGRI_PHOTO_DISC_FILL", "0.90"))
+
+# Clear space above the subject's own top edge, as a share of the disc. The disc
+# narrows sharply towards its top, so a head pushed flush to it comes out with a
+# flat crown. Only used when the subject is taller than the disc; a subject that
+# fits is simply centred. This is not the old head guess — the alpha tells us
+# where the top of the person IS, this only says how much air to leave above it.
+PHOTO_SUBJECT_HEADROOM = 0.11
+
+# Widest subject we will show whole, as a multiple of its own height. Framing on
+# the subject's WIDTH means a wide subject is never cropped left or right — but
+# a 5:1 sliver would shrink to nothing inside the disc, so past this the sides
+# are allowed to go.
+PHOTO_SUBJECT_MAX_ASPECT = 2.0
 
 # The square we hand the slot, per docs/photo-card.md: 512 target, 220 floor
 # (300 DPI over the slot's 18.57 mm), 1024 ceiling — every pixel above that is
@@ -453,13 +504,210 @@ def _b64_chars(path):
     return (os.path.getsize(path) + 2) // 3 * 4
 
 
-def square_photo(path, workdir, index=0):
-    """A square copy of a customer photo, cropped to keep the person's head.
+def _blobs(mask):
+    """Label the 8-connected blobs of a 0/255 mask.
 
-    The card's slots are square and crop with ``slice``, centred — fine for the
-    shipped pawns, which are already square, and wrong for a customer's photo,
-    which is usually portrait. Cropping here rather than changing the template's
-    ``preserveAspectRatio`` keeps the disc, ring and clip exactly as designed.
+    Returns ``[(pixels, (l, t, r, b), (cx, cy), seed), ...]``, biggest first —
+    ``seed`` being one pixel known to belong to the blob, so a caller can walk it
+    again without hunting for a way in. Pure Pillow + stdlib: an iterative flood
+    fill, which is why the caller works on a small mask rather than the
+    full-resolution alpha.
+    """
+    w, h = mask.size
+    px = mask.load()
+    seen = bytearray(w * h)
+    out = []
+    for y0 in range(h):
+        row = y0 * w
+        for x0 in range(w):
+            if not px[x0, y0] or seen[row + x0]:
+                continue
+            seen[row + x0] = 1
+            stack = [(x0, y0)]
+            n = 0
+            sx = sy = 0
+            left = right = x0
+            top = bottom = y0
+            while stack:
+                x, y = stack.pop()
+                n += 1
+                sx += x
+                sy += y
+                if x < left:
+                    left = x
+                elif x > right:
+                    right = x
+                if y < top:
+                    top = y
+                elif y > bottom:
+                    bottom = y
+                for ny in range(max(0, y - 1), min(h, y + 2)):
+                    nrow = ny * w
+                    for nx in range(max(0, x - 1), min(w, x + 2)):
+                        if px[nx, ny] and not seen[nrow + nx]:
+                            seen[nrow + nx] = 1
+                            stack.append((nx, ny))
+            out.append((n, (left, top, right + 1, bottom + 1), (sx / n, sy / n), (x0, y0)))
+    out.sort(key=lambda b: -b[0])
+    return out
+
+
+def subject_box(im):
+    """Where the subject is in an RGBA image: ``(box, alpha)`` or ``None``.
+
+    ``box`` is the bounding rectangle of the cutout's non-transparent pixels;
+    ``alpha`` is the image's alpha with every OTHER blob erased, so a bystander
+    the segmenter kept in a corner does not come along for the ride.
+
+    Which blob is the subject: **the one whose centre of mass is nearest the
+    centre of the frame**. Not the biggest — a person standing behind the
+    honoree can easily be the larger of the two, and the one being photographed
+    is the one in the middle. Specks are dropped first (``PHOTO_BLOB_MIN_SHARE``)
+    so nothing tiny can win on position alone.
+
+    ``None`` means "no usable alpha" — an opaque photo, or a cut that collapsed
+    to nothing. The caller falls back to the old square crop rather than failing.
+    """
+    from PIL import Image, ImageFilter
+    if im.mode != "RGBA":
+        return None
+    w, h = im.size
+    alpha = im.getchannel("A")
+    lo, hi = alpha.getextrema()
+    if hi < PHOTO_ALPHA_MIN or lo >= PHOTO_ALPHA_MIN:
+        # Nothing opaque at all, or nothing transparent at all: either way the
+        # alpha carries no silhouette to frame by.
+        return None
+    solid = alpha.point(lambda v: 255 if v >= PHOTO_ALPHA_MIN else 0)
+    box = solid.getbbox()
+    if not box:
+        return None
+    opaque = sum(i * c for i, c in enumerate(solid.histogram())) // 255
+    cover = opaque / float(w * h)
+    if not PHOTO_SUBJECT_MIN_COVER <= cover <= PHOTO_SUBJECT_MAX_COVER:
+        return None
+
+    # The blob search runs on a small copy; at full resolution this flood fill
+    # would be a million iterations of Python.
+    scale = PHOTO_BLOB_MASK_PX / float(max(w, h))
+    if scale < 1:
+        sw = max(1, int(round(w * scale)))
+        sh = max(1, int(round(h * scale)))
+        small = solid.resize((sw, sh), Image.BILINEAR).point(lambda v: 255 if v >= 128 else 0)
+    else:
+        sw, sh, small = w, h, solid
+    found = _blobs(small)
+    if not found:
+        return None
+    pick = found[0]
+    if len(found) > 1:
+        biggest = found[0][0]
+        real = [b for b in found if b[0] >= PHOTO_BLOB_MIN_SHARE * biggest] or found[:1]
+        cx, cy = sw / 2.0, sh / 2.0
+        pick = min(real, key=lambda b: (b[2][0] - cx) ** 2 + (b[2][1] - cy) ** 2)
+
+        # Erase the blobs we did not pick. The keep-mask is built small and blown
+        # back up, so it is DILATED first: a mask that lands a pixel short would
+        # shave the subject's own edge, while a pixel long only reaches into the
+        # empty gap between blobs.
+        keep = Image.new("L", (sw, sh), 0)
+        kpx = keep.load()
+        spx = small.load()
+        # Re-walk the chosen blob only (cheap: one blob, small mask).
+        stack = [pick[3]]
+        seen = bytearray(sw * sh)
+        while stack:
+            x, y = stack.pop()
+            if x < 0 or y < 0 or x >= sw or y >= sh or seen[y * sw + x] or not spx[x, y]:
+                continue
+            seen[y * sw + x] = 1
+            kpx[x, y] = 255
+            for ny in range(max(0, y - 1), min(sh, y + 2)):
+                for nx in range(max(0, x - 1), min(sw, x + 2)):
+                    if spx[nx, ny] and not seen[ny * sw + nx]:
+                        stack.append((nx, ny))
+        keep = keep.filter(ImageFilter.MaxFilter(5))
+        if (sw, sh) != (w, h):
+            keep = keep.resize((w, h), Image.BILINEAR).point(lambda v: 255 if v >= 96 else 0)
+        alpha = alpha.copy()
+        alpha.paste(0, (0, 0, w, h), keep.point(lambda v: 255 - v))
+        solid = alpha.point(lambda v: 255 if v >= PHOTO_ALPHA_MIN else 0)
+
+    # The blob's box is only as precise as the small mask, so re-measure the
+    # full-resolution alpha inside a generous window around it.
+    if scale < 1:
+        pad = int(round(2 / scale))
+        bl, bt, br, bb = pick[1]
+        window = (max(0, int(bl / scale) - pad), max(0, int(bt / scale) - pad),
+                  min(w, int(br / scale) + pad), min(h, int(bb / scale) + pad))
+    else:
+        window = pick[1]
+    tight = solid.crop(window).getbbox()
+    if tight:
+        box = (window[0] + tight[0], window[1] + tight[1],
+               window[0] + tight[2], window[1] + tight[3])
+    if box[2] <= box[0] or box[3] <= box[1]:
+        return None
+    return box, alpha
+
+
+def _disc_mask(size):
+    """An anti-aliased disc of ``PHOTO_DISC_FILL`` x ``size``, centred."""
+    from PIL import Image, ImageDraw
+    ss = 4
+    big = Image.new("L", (size * ss, size * ss), 0)
+    r = size * ss * PHOTO_DISC_FILL / 2.0
+    c = size * ss / 2.0
+    ImageDraw.Draw(big).ellipse([c - r, c - r, c + r, c + r], fill=255)
+    return big.resize((size, size), Image.LANCZOS)
+
+
+def subject_window(box, disc_fill=None):
+    """The square region of the SOURCE that maps onto the output square.
+
+    ``box`` is the subject's bounding rectangle; the returned window is in the
+    same coordinates and may fall outside the photo — cropping past the edge
+    pads with transparency, which is exactly what a sticker wants.
+
+    The window is sized on the subject's **width**, so a wide subject is never
+    cropped left or right (we know where the top of a person is; we have no such
+    handle on which side of them matters). Vertically: a subject shorter than the
+    disc is centred, a taller one is pinned near the top with
+    ``PHOTO_SUBJECT_HEADROOM`` of air above it and the rest allowed to run out of
+    the bottom of the circle — which is usually the photo's own edge, i.e. the
+    ruler-straight cut this whole change exists to get rid of.
+    """
+    fill = PHOTO_DISC_FILL if disc_fill is None else disc_fill
+    bw = max(1, box[2] - box[0])
+    bh = max(1, box[3] - box[1])
+    disc = min(bw, PHOTO_SUBJECT_MAX_ASPECT * bh)
+    side = disc / fill
+    margin = (side - disc) / 2.0
+    slack = disc - bh
+    if slack >= 2 * PHOTO_SUBJECT_HEADROOM * disc:
+        above = slack / 2.0
+    else:
+        above = PHOTO_SUBJECT_HEADROOM * disc
+    left = (box[0] + box[2]) / 2.0 - disc / 2.0 - margin
+    top = box[1] - above - margin
+    return (int(round(left)), int(round(top)),
+            int(round(left + side)), int(round(top + side)))
+
+
+def square_photo(path, workdir, index=0):
+    """A square copy of a customer photo, framed on the subject.
+
+    With a cutout (the normal case — the wizard cuts the background out on the
+    buyer's device) the frame comes from the alpha: the subject's own bounding
+    box, scaled to span the slot's visible disc, centred on it and CLIPPED to it.
+    The old fixed square guessed at the head and sliced the person along a
+    straight line that the sticker halo then traced; see docs/photo-card.md.
+
+    With no usable alpha — an opaque photo, or a cut that failed — there is
+    nothing to see, so the old head-anchored square crop stands, unclipped and
+    unchanged. That is deliberate: docs/photo-card.md wants a photo that never
+    got cut to print as an obvious white-edged rectangle rather than quietly
+    look almost right.
 
     Also applies the EXIF orientation: a photo taken sideways carries its
     rotation as metadata, and the renderer does not honour it, so without this a
@@ -469,30 +717,40 @@ def square_photo(path, workdir, index=0):
     photo we cannot process still prints (centred) rather than failing an order.
     """
     try:
-        from PIL import Image, ImageOps
+        from PIL import Image, ImageChops, ImageOps
         with Image.open(path) as im:
             im = ImageOps.exif_transpose(im)
             w, h = im.size
             if w <= 0 or h <= 0:
                 return path
-            side = min(w, h)
-            if h > w:
-                # Portrait: centre the square on the subject rather than on the
-                # middle of the frame (their torso) or flush with the top (which
-                # the slot's circle would then clip).
-                top = int(round(PHOTO_SUBJECT_Y * h - side / 2))
-                top = max(0, min(top, h - side))
-                box = (0, top, side, top + side)
-            else:
-                # Landscape: people are usually centred left-to-right.
-                left = (w - side) // 2
-                box = (left, 0, left + side, side)
             # RGBA, not RGB: converting to RGB FLATTENS the alpha channel, so a
             # transparent cutout arrived opaque and — now that the white disc
             # behind it is gone (die-cut stickers) — printed as a white-edged
             # rectangle. The shipped fallbacks never pass through here, which is
             # why they looked right while real customer photos did not.
-            square = im.convert("RGBA").crop(box)
+            im = im.convert("RGBA")
+            found = subject_box(im)
+            if found:
+                box, alpha = found
+                im.putalpha(alpha)
+                crop = subject_window(box)
+            else:
+                side = min(w, h)
+                if h > w:
+                    # Portrait: centre the square on the subject rather than on
+                    # the middle of the frame (their torso) or flush with the top
+                    # (which the slot's circle would then clip).
+                    top = int(round(PHOTO_SUBJECT_Y * h - side / 2))
+                    top = max(0, min(top, h - side))
+                    crop = (0, top, side, top + side)
+                else:
+                    # Landscape: people are usually centred left-to-right.
+                    left = (w - side) // 2
+                    crop = (left, 0, left + side, side)
+            # Cropping PAST the edge of the photo is intended when the subject
+            # runs off it: Pillow pads with zeros, which on RGBA is transparent —
+            # the sticker simply has empty space there.
+            square = im.crop(crop)
             target = max(PHOTO_SLOT_MIN_PX, min(PHOTO_SLOT_PX, PHOTO_SLOT_MAX_PX))
             if square.width != target:
                 # Normalise the size the card carries. Upscaling a small photo is
@@ -500,6 +758,12 @@ def square_photo(path, workdir, index=0):
                 # slot would scale it anyway — doing it here keeps every card's
                 # payload predictable.
                 square = square.resize((target, target), Image.LANCZOS)
+            if found:
+                # Clip to the slot's disc. Everything outside is cut away, so the
+                # sticker's edge is the circle and not wherever the photo's own
+                # border happened to slice the person.
+                square.putalpha(ImageChops.multiply(square.getchannel("A"),
+                                                    _disc_mask(square.width)))
             out = os.path.join(workdir, f"photo-{index + 1}.png")
             os.makedirs(workdir, exist_ok=True)
             square.save(out)

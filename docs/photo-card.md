@@ -17,11 +17,12 @@ generator never branches on which template it loaded.
    image with an opaque background has no silhouette to follow: it renders as a white-bordered
    **rectangle** and the card looks broken. There is no graceful degradation here by design —
    the failure is meant to be obvious rather than subtly wrong.
-2. **Alpha must survive the generator's own photo prep.** As of today it does not:
-   `generator/build.py` → `square_photo()` ends with `im.convert("RGB").crop(box).save(out)`, and
-   `convert("RGB")` flattens the alpha channel away. Every customer photo therefore reaches the
-   slot opaque, whatever was done upstream. `convert("RGBA")` is the fix; the shipped fallbacks
-   are not squared, so they already arrive transparent.
+2. **Alpha must survive the generator's own photo prep.** `square_photo()` works in `RGBA`
+   throughout and saves `RGBA` — `convert("RGB")` anywhere in that function flattens the alpha
+   away and every customer photo reaches the slot opaque, whatever was done upstream. It is also
+   the alpha the crop itself is computed from now (see "How the generator frames a photo"), so
+   losing it costs the framing as well as the silhouette. The shipped fallbacks are not squared,
+   so they already arrive transparent.
 3. **Four slots, filled by setting ONE attribute.** Each is an `<image>` with an id, explicit
    `x`/`y`/`width`/`height` and **no `href`**. Set `href` (plus `xlink:href`) to a `data:` URI and
    touch nothing else. Ids: `photo-slot-1`, `photo-slot-2`, `photo-slot-3`, `photo-slot-4`. The
@@ -32,10 +33,26 @@ generator never branches on which template it loaded.
    element with a `<use>` — that would take `#photo-slot-N` out of the document and orphan the
    halo. **Keep the encoded payload under 1,000,000 base64 characters.** A 512 × 512 RGBA cutout
    lands around a third of that.
-5. **Nothing is clipped to the circle.** The subject is allowed to spill past the cut-line, the
-   way a real die-cut sticker does. Keep the subject inside the **slot box** (66 × 66 units); the
-   halo and its shadow bleed roughly 5 units past that, which the 12-unit gutter between slots
-   absorbs.
+5. **The image arrives already round — the generator clips it, the artwork does not.** This
+   reverses the earlier "nothing is clipped, the subject may spill past the cut-line" rule. That
+   rule assumed the cutout's alpha was the subject's silhouette; it was not. The generator used
+   to crop a fixed square out of the photo, which sliced through arms and legs, and since the
+   halo is dilated from the image's OWN alpha it traced that ruler-straight cut instead of the
+   person. `generator/build.py` → `square_photo()` now frames on the subject's alpha and clips
+   the result to a disc, so the slot receives a round RGBA PNG and the artwork needs no
+   `clip-path` of its own. **Do not add one** — a clip in the artwork would apply to the halo
+   `<use>` as well and shave the white outline off.
+
+   The disc fills **0.90** of the square (`PHOTO_DISC_FILL`), not all of it. That margin is
+   load-bearing: the halo dilates ~2.4 units outward, and a disc filling the whole square would
+   put the white ring exactly on the dashed cut-line at r = 33 — hiding the line you are meant to
+   cut, and putting the ring outside the cut so it is trimmed off the finished pawn. At 0.90 the
+   ring lands just inside the dashes.
+
+   Where the subject does not reach the disc's edge the halo still follows its silhouette, so a
+   card is a mix of full discs and silhouettes. That is correct, not a defect: the clip is a
+   ceiling on how far the sticker may reach, not a shape imposed on every photo.
+
 6. **The slot contains, it does not crop.** `preserveAspectRatio="xMidYMid meet"` — a non-square
    cutout is scaled to fit and centred, so a tall cutout keeps its head.
 7. **Empty is a valid state.** A slot left without an `href` renders as the dotted cut-line
@@ -43,16 +60,46 @@ generator never branches on which template it loaded.
 8. **There are no slot numbers.** The photo is the identity; the numbered chips are gone. Do not
    reintroduce per-slot labelling.
 
-| what                  | value                                                     |
-| --------------------- | --------------------------------------------------------- |
-| slot box              | 66 × 66 units (18.57 × 18.57 mm)                          |
-| cut-line              | dashed circle, r = 33 units, centred in the slot box      |
-| white halo            | ≈ 2.4 units (0.68 mm), follows the subject's silhouette   |
-| cutout format         | **transparent RGBA PNG** — required, alpha must be intact |
-| cutout size           | 512 × 512 px target (min 220 = 300 DPI, max 768)          |
-| payload cap           | < 1,000,000 base64 chars (`deck_html.BG_MIN_CHARS`)       |
-| clipping              | none — the subject may cross the cut-line                 |
-| `preserveAspectRatio` | `xMidYMid meet` (contain — never crops)                   |
+| what                  | value                                                      |
+| --------------------- | ---------------------------------------------------------- |
+| slot box              | 66 × 66 units (18.57 × 18.57 mm)                           |
+| cut-line              | dashed circle, r = 33 units, centred in the slot box       |
+| white halo            | ≈ 2.4 units (0.68 mm), follows the image's alpha           |
+| cutout format         | **transparent RGBA PNG** — required, alpha must be intact  |
+| cutout size           | 512 × 512 px target (min 220 = 300 DPI, max 768)           |
+| payload cap           | < 1,000,000 base64 chars (`deck_html.BG_MIN_CHARS`)        |
+| clipping              | in the IMAGE — a disc of 0.90 × the square, generator-side |
+| `preserveAspectRatio` | `xMidYMid meet` (contain — never crops)                    |
+
+## How the generator frames a photo
+
+`generator/build.py` → `square_photo()`, one photo in, one square RGBA PNG out. There is no
+guess about where the head is anywhere in it: with a cutout, the alpha says where the person is.
+
+1. **Find the subject** — `subject_box()`. The bounding box of every pixel at or above
+   `PHOTO_ALPHA_MIN` (24, low on purpose: a hair matte fades to zero over a few pixels and all of
+   it is subject). If the cut left more than one blob, the one whose centre of mass is **nearest
+   the centre of the frame** wins, and the others are erased from the alpha — not the biggest,
+   because a bystander standing behind the honoree is easily the larger of the two. Blobs under
+   `PHOTO_BLOB_MIN_SHARE` (8%) of the biggest are dropped as specks before that choice, so a
+   20-pixel scrap at dead centre cannot beat a person. The blob walk runs on a 200 px mask —
+   numpy is test-only here, the production image ships `py3-pillow` and nothing else.
+2. **Frame it** — `subject_window()`. A square window sized on the subject's **width**, so a wide
+   subject is never cropped left or right; we know where the top of a person is, we have no such
+   handle on which side of them matters. Vertically, a subject shorter than the disc is centred
+   and a taller one is pinned near the top with `PHOTO_SUBJECT_HEADROOM` (11%) of air above it,
+   the rest running out of the bottom of the circle — which is usually the photo's own edge, i.e.
+   exactly the straight cut we are getting rid of. Past `PHOTO_SUBJECT_MAX_ASPECT` (2:1 wide) the
+   sides are allowed to go rather than shrink the subject to a sliver. The window may fall outside
+   the photo; cropping past the edge pads with transparency, which is what a sticker wants.
+3. **Clip it** — a disc of `PHOTO_DISC_FILL` × the square, anti-aliased, multiplied into the
+   alpha.
+
+**No usable alpha is a supported state**, not an error: an opaque photo, or a cut that collapsed.
+`subject_box()` returns `None` and the old head-anchored square crop (`PHOTO_SUBJECT_Y`) stands,
+**unclipped and unchanged**. That is deliberate — point 1 of this contract wants an uncut photo to
+print as an obvious white-edged rectangle rather than quietly look almost right, and the wizard
+has already told the buyer we will cut it by hand.
 
 ## Geometry
 
@@ -80,8 +127,11 @@ rather than hardcoding them, so a theme is free to ship a different layout later
 
 ## The sticker
 
-Each slot is a **die-cut sticker**: a white outline that follows the subject's own silhouette,
-over a dashed circle that marks where to cut. Per slot, in paint order:
+Each slot is a **die-cut sticker**: a white outline dilated from the image's own alpha, over a
+dashed circle that marks where to cut. Since the generator hands the slot a disc-clipped image
+(point 5 above), that outline reads as a white ring wherever the subject fills the disc and as
+the subject's silhouette wherever it does not — and it always lands INSIDE the dashes. Per slot,
+in paint order:
 
 ```xml
 <g class="photo-sticker" data-slot="1">
@@ -160,7 +210,11 @@ Recommended fill rule:
   order with two photos gets two faces plus pawns 3 and 4.
 
 The fallbacks are 200 × 200 SVGs, each pawn centred and drawn at 1.2× so it fills the cut-line
-and spills a little past it, the way a cutout portrait does. Chrome (the generator's rasteriser)
+and spills a little past it. **That 1.2× is now out of step with the customer photos** and is the
+one thing this contract still owes: a customer's photo is clipped to 0.90 of the slot and its
+halo sits inside the dashes, while a fallback pawn crosses them, so a half-filled card mixes the
+two. The fallbacks are artwork and pass through `square_photo()` untouched — redrawing them at
+roughly 0.9× is an artwork change, not a generator one. Chrome (the generator's rasteriser)
 renders an SVG inside `<image href="data:image/svg+xml;base64,…">` fine; if a future renderer does
 not, rasterise them to **RGBA** PNG first — do not inline them as markup, since their internal ids
 (`lower`, `pawn`) would collide with the host document. They are drawn from bold silhouettes and

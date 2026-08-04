@@ -144,10 +144,11 @@ describe('photo card templates', () => {
         }
       });
 
-      // The reference sticker lets the subject cross its own cut-line. A clip
-      // back to the circle would shave exactly that off, so the slot must NOT
-      // reintroduce one.
-      it('does not clip the subject back to the circle', () => {
+      // The image ARRIVES round: the generator frames each photo on its subject
+      // and clips it to a disc (docs/photo-card.md). A clip-path here would be
+      // applied to the halo `<use>` as well and shave the white outline off the
+      // sticker, so the artwork must NOT add one.
+      it('does not clip the slot — the generator hands it a round image', () => {
         for (const id of SLOT_IDS) {
           expect(slotTag(svg, id)).not.toMatch(/\bclip-path=/);
         }
