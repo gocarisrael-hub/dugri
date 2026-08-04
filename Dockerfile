@@ -26,7 +26,8 @@ RUN apk add --no-cache \
       ghostscript \
       chromium \
       font-noto-hebrew \
-      ttf-dejavu
+      ttf-dejavu \
+      tini
 
 # Guarantee a stable chromium path regardless of the package's binary name, then
 # expose a tiny wrapper that always injects the container-required flags. Running
@@ -73,4 +74,12 @@ ENV CHROME=/usr/local/bin/chrome-headless \
     PYTHON=python3
 # Railway sets $PORT; set a volume + DATA_DIR=/data in the Railway dashboard.
 EXPOSE 3000
+# tini as PID 1 — a reaper, not a nicety. Without it node is PID 1, and node
+# only waits on processes it spawned itself: any Chrome helper that outlives the
+# generator gets reparented to node and stays a ZOMBIE forever, holding a slot in
+# the cgroup's PID budget. That budget running out is what took staging down
+# (see killGenerator in server/index.js). The process-group kill is the fix; this
+# is the backstop for anything that dies out of order anyway. tini also forwards
+# SIGTERM, so Railway's stop signal still reaches node.
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "server/index.js"]

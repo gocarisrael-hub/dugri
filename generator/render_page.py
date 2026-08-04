@@ -10,25 +10,21 @@ import functools
 import itertools
 import os
 import re
-import subprocess
 import sys
 import csv as csvmod
 
+import chrome
 import config
 import deck_html
 
-CHROME = os.environ.get(
-    "CHROME", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+# Chrome itself lives in generator/chrome.py — ONE module owns the binary, the
+# flag set, the timeout and the kill-on-expiry, so no render path can be added
+# without them (a Chrome that never exits used to orphan itself and eat the
+# container's whole PID budget). These two names are re-exported because callers
+# and tests across the generator read them from here.
+CHROME = chrome.CHROME
+CHROME_FONT_WAIT = chrome.FONT_WAIT
 HERE = os.path.dirname(os.path.abspath(__file__))
-
-# Headless Chrome screenshots a large SVG BEFORE its base64 data:-URL @font-face
-# fonts finish loading, so the word/title text silently falls back to a default
-# heavy Hebrew face instead of the theme font (Cafe, Mr Dafoe, …). Advancing a
-# virtual clock forces Chrome to wait for the fonts (and all resources) to settle
-# before capturing, so the calibrated fonts actually render. Kept as a shared
-# constant so every production render path stays in lock-step. Verified: without
-# it Cafe renders as a bold fallback; with it the real Cafe face renders.
-CHROME_FONT_WAIT = "--virtual-time-budget=15000"
 
 # Chrome grid-fits/stem-darkens (hints) a live @font-face at the small on-card
 # render sizes, painting glyphs ~25% heavier than their true outline weight. The
@@ -1924,11 +1920,7 @@ def render_single_card(theme, clean_svg, words, title_lines, out_png,
     with open(svg_path, "w", encoding="utf-8") as f:
         f.write(svg)
     w, h = dims(clean_svg)
-    subprocess.run([CHROME, "--headless", "--no-sandbox",
-                    "--disable-dev-shm-usage", "--disable-gpu", CHROME_FONT_WAIT,
-                    "--force-device-scale-factor=2", f"--screenshot={out_png}",
-                    f"--window-size={w},{h}", svg_path],
-                   check=True, stderr=subprocess.DEVNULL)
+    chrome.screenshot(svg_path, out_png, w, h, scale=2, what="the preview card")
     return out_png
 
 
@@ -1988,20 +1980,9 @@ def render_fronts_strip(theme, fronts, words, title_lines, out_dir,
     with open(page, "w", encoding="utf-8") as f:
         f.write(html)
     shot = os.path.join(out_dir, "fronts.png")
-    proc = subprocess.run(
-        [CHROME, "--headless", "--no-sandbox", "--disable-dev-shm-usage",
-         "--disable-gpu", CHROME_FONT_WAIT,
-         f"--force-device-scale-factor={scale}",
-         f"--screenshot={shot}",
-         f"--window-size={w * len(cards)},{h}", page],
-        capture_output=True, text=True, errors="replace")
-    if proc.returncode != 0 or not os.path.exists(shot):
-        tail = (proc.stderr or proc.stdout or "").strip()
-        raise RuntimeError(
-            f"Chrome could not render the {len(cards)}-front strip "
-            f"({w * len(cards)}x{h} at scale {scale}, exit {proc.returncode}). "
-            + (f"Chrome said: {tail[-500:]}" if tail else "Chrome printed nothing.")
-        )
+    chrome.screenshot(page, shot, w * len(cards), h, scale=scale,
+                      what=(f"the {len(cards)}-front strip "
+                            f"({w * len(cards)}x{h} at scale {scale})"))
     from PIL import Image
     strip = Image.open(shot)
     # Slice from the ACTUAL rendered width rather than assuming w*scale: Chrome
@@ -2109,11 +2090,8 @@ def render(theme, clean_svg, words_by_card, title_lines, out_png, word_font=None
     svg_path = out_png.replace(".png", ".svg")
     open(svg_path, "w", encoding="utf-8").write(svg)
     w, h = dims(clean_svg)
-    subprocess.run([CHROME, "--headless", "--no-sandbox",
-                    "--disable-dev-shm-usage", "--disable-gpu", CHROME_FONT_WAIT,
-                    "--force-device-scale-factor=2", f"--screenshot={out_png}",
-                    f"--window-size={w},{h}", svg_path],
-                   check=True, stderr=subprocess.DEVNULL)
+    chrome.screenshot(svg_path, out_png, w, h, scale=2,
+                      what=f"the page {os.path.basename(clean_svg)}")
     return out_png
 
 

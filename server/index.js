@@ -4,7 +4,6 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
-const { spawn } = require('child_process');
 const { pathToFileURL } = require('url');
 const express = require('express');
 const db = require('./db');
@@ -27,6 +26,7 @@ const messagePreview = require('./message-preview');
 const storeImport = require('./store-import');
 const templateImport = require('./template-import');
 const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
+const generatorProc = require('./generator-proc');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -78,8 +78,17 @@ const CONTENT_IMAGE_UPLOAD_LIMIT = process.env.CONTENT_IMAGE_UPLOAD_LIMIT || '6m
 // capped at ~4MB by the store (server/content.js IMAGE_CAP), plus envelope room.
 const PAWN_UPLOAD_LIMIT = process.env.PAWN_UPLOAD_LIMIT || '20mb';
 // Hard cap on a single generation run (Chrome renders one page at a time, so a
-// large deck is slow); the child is SIGKILLed past this and the request 504s.
+// large deck is slow); the child's whole process group is SIGKILLed past this
+// and the request 504s.
 const GENERATE_TIMEOUT_MS = Number(process.env.GENERATE_TIMEOUT_MS || 120000);
+
+// EVERY generator spawn goes through this, never through `spawn` directly: the
+// child is started as its own process-GROUP leader so killGenerator can take
+// Chrome and its helpers down with it. See server/generator-proc.js for the
+// outage this exists to prevent.
+const spawnGenerator = (args, opts) =>
+  generatorProc.spawnGenerator(PYTHON_BIN, args, { cwd: REPO_ROOT, ...opts });
+const killGenerator = generatorProc.killGenerator;
 
 // --- The board artifact ---------------------------------------------------
 // One order now produces TWO deliverables: the card-deck PDF at <id>.pdf, and
@@ -189,13 +198,13 @@ function runGenerator({
     // The customer's pawn photos for the deck's photo card (v2 templates). A v1
     // theme ignores them, so passing them is always safe.
     for (const photo of photos || []) args.push('--photo', photo);
-    const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
+    const child = spawnGenerator(args);
     let stdout = '';
     let stderr = '';
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGKILL');
+      killGenerator(child);
     }, GENERATE_TIMEOUT_MS);
     child.stdout.on('data', (d) => (stdout += d));
     child.stderr.on('data', (d) => (stderr += d));
@@ -332,13 +341,13 @@ function runPreview({ theme, name, wordFont, extraFields, chasers, customTitle, 
     // --title=<value> (single token) so a title that starts with '-' (e.g. "-40",
     // "-רווקות") is never parsed by argparse as an option and crash the generator.
     if (customTitle) args.push('--title=' + customTitle);
-    const child = spawn(PYTHON_BIN, args, { cwd: REPO_ROOT });
+    const child = spawnGenerator(args);
     let stdout = '';
     let stderr = '';
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGKILL');
+      killGenerator(child);
     }, PREVIEW_TIMEOUT_MS);
     child.stdout.on('data', (d) => (stdout += d));
     child.stderr.on('data', (d) => (stderr += d));
@@ -860,14 +869,10 @@ app.post('/api/admin/collections/:id/press', (req, res) => {
     PRESS_ICC,
   ];
   if (c.custom_title) args.push('--title=' + c.custom_title);
-  const child = spawn(PYTHON_BIN, args, {
-    cwd: REPO_ROOT,
-    detached: true,
-    stdio: ['ignore', 'ignore', 'pipe'],
-  });
+  const child = spawnGenerator(args, { stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = '';
   child.stderr.on('data', (d) => (stderr += d));
-  const timer = setTimeout(() => child.kill('SIGKILL'), PRESS_TIMEOUT_MS);
+  const timer = setTimeout(() => killGenerator(child), PRESS_TIMEOUT_MS);
   child.on('close', (code) => {
     clearTimeout(timer);
     try {

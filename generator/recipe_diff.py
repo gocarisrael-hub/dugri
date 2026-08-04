@@ -25,15 +25,15 @@ both — only what it is fed changes:
 import json
 import os
 import statistics
-import subprocess
 import sys
 import re
 import tempfile
 from collections import Counter
 from PIL import Image, ImageDraw, ImageChops
 
-CHROME = os.environ.get(
-    "CHROME", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+import chrome
+
+CHROME = chrome.CHROME  # see generator/chrome.py — one owner for the browser
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCALE = 2
 
@@ -49,39 +49,16 @@ def dims(svg):
 def render(svg, png, w, h):
     """Screenshot one SVG, raising an ACTIONABLE error when Chrome fails.
 
-    This used to pass ``check=True, stderr=subprocess.DEVNULL``, which discards
-    the only explanation of what went wrong and surfaces a bare
-    CalledProcessError. That was survivable while detection was a local CLI
-    step; it stopped being survivable when detection started running
-    server-side on template upload, where the failure reaches the owner as an
-    opaque traceback in the admin panel with nothing to act on.
-
-    Also checks the screenshot actually EXISTS: headless Chrome can exit 0 and
-    write nothing (it has done so on a missing font or an unloadable
-    sub-resource), and the next step would then fail further away on a file
-    that was never created.
+    The actionable-error handling this function used to carry by itself (name
+    the binary when it can't be run, name the file and quote Chrome's own stderr
+    when it fails, and check the screenshot actually EXISTS because Chrome can
+    exit 0 and write nothing) now lives in ``chrome._run`` — detection is not
+    the only path that reaches the owner as an opaque traceback in the admin
+    panel, so every path gets it. font_wait is off: the original artwork's text
+    is already outlined paths, so there is no webfont to wait for.
     """
-    try:
-        proc = subprocess.run(
-            [CHROME, "--headless", "--disable-gpu",
-             f"--force-device-scale-factor={SCALE}",
-             f"--screenshot={png}", f"--window-size={w},{h}", svg],
-            capture_output=True, text=True, errors="replace")
-    except OSError as exc:
-        # The binary itself is missing/unrunnable — say WHICH one, since CHROME
-        # is env-configured and differs between a laptop and the container.
-        raise RuntimeError(
-            f"could not run Chrome at {CHROME!r} ({exc}). Set the CHROME "
-            "environment variable to the browser binary."
-        ) from exc
-    if proc.returncode != 0 or not os.path.exists(png):
-        tail = (proc.stderr or proc.stdout or "").strip()
-        raise RuntimeError(
-            f"Chrome could not render {os.path.basename(svg)} "
-            f"(exit {proc.returncode}, screenshot "
-            f"{'written' if os.path.exists(png) else 'MISSING'}). "
-            + (f"Chrome said: {tail[-600:]}" if tail else "Chrome printed nothing.")
-        )
+    chrome.screenshot(svg, png, w, h, scale=SCALE, font_wait=False,
+                      what=os.path.basename(svg))
 
 
 def diff_mask(text_img, clean_img, thr=45):

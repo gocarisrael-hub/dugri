@@ -15,12 +15,12 @@ import base64
 import glob
 import os
 import re
-import subprocess
+
+import chrome
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-CHROME = os.environ.get(
-    "CHROME", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+CHROME = chrome.CHROME  # see generator/chrome.py — one owner for the browser
 
 # --- calibrated recipe for the bachelorette card (from fit.py) ---
 VIEWBOX = "9.5 10 192 277"           # crop of the deck page to one card
@@ -113,11 +113,8 @@ def build_svg(title_lines, words):
 def render(title_lines, words, out_png):
     svg_path = out_png.replace(".png", ".svg")
     open(svg_path, "w", encoding="utf-8").write(build_svg(title_lines, words))
-    subprocess.run([CHROME, "--headless", "--no-sandbox",
-                    "--disable-dev-shm-usage", "--disable-gpu",
-                    "--force-device-scale-factor=2", f"--screenshot={out_png}",
-                    "--window-size=576,831", svg_path],
-                   check=True, stderr=subprocess.DEVNULL)
+    chrome.screenshot(svg_path, out_png, OUT_W, OUT_H, scale=2, font_wait=False,
+                      what="the sample card")
     return out_png
 
 

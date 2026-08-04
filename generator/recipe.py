@@ -14,13 +14,13 @@ onto the background SVG regardless of render resolution.
 """
 import json
 import os
-import subprocess
 import sys
 from collections import Counter
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-CHROME = os.environ.get(
-    "CHROME", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+import chrome
+
+CHROME = chrome.CHROME  # see generator/chrome.py — one owner for the browser
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCALE = 2
 
@@ -35,10 +35,9 @@ def page_dims(svg):
 
 
 def render(svg, png, w, h):
-    subprocess.run([CHROME, "--headless", "--disable-gpu",
-                    f"--force-device-scale-factor={SCALE}",
-                    f"--screenshot={png}", f"--window-size={w},{h}", svg],
-                   check=True, stderr=subprocess.DEVNULL)
+    # font_wait off: detection screenshots the original artwork, whose text is
+    # already outlined paths — there is no webfont to wait for.
+    chrome.screenshot(svg, png, w, h, scale=SCALE, font_wait=False)
 
 
 def dist(a, b):
