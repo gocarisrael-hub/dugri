@@ -1479,10 +1479,13 @@ def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0,
     and the renderer must be left on its own step rather than pinned to a number
     this never measured.
 
-    ``pitch`` short-circuits the search when the leading is ALREADY known — the
-    deck's later surfaces (board, backs) are painted with the leading the fronts
-    measured, because ``title_style`` carries one, so their sizes have to be
-    fitted at that same spacing or they pin a size the renderer will never draw.
+    ``pitch`` short-circuits the grid when the caller already knows the spacing
+    and only wants the size fitted at it. Every surface here solves its own —
+    a design's front, board and backs are separate text boxes and are spaced
+    separately — so nothing in this module passes it; it exists so that a size
+    can be re-fitted against a spacing without the search paying for the answer
+    twice, and it returns the pitch it was given so the pair always leaves
+    together.
     """
     target = ink.size[1]
     lines = [ln for ln in (samples[0] if samples else []) if ln and ln.strip()]
@@ -1556,10 +1559,12 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
     WITH, as a fraction of the type size, or None for a single-line title that
     has none. The size and the leading are inseparable in the ink, so they leave
     together: pinning the size without it would print the measured type at the
-    wrong spacing, which is the whole defect this pair exists to fix.
+    wrong spacing, which is the whole defect this pair exists to fix. Each
+    surface measures its own — טריפה's back stacks its two lines a third further
+    apart than its front does.
 
-    ``leading`` IN says the spacing is already settled (the fronts measured it)
-    and this surface must be fitted at it rather than solving its own.
+    ``leading`` IN says the spacing is already known and only the size is
+    wanted; it is then returned unchanged, so the caller still gets the pair.
 
     ``ring`` is the outline thickness the title is painted with, as a fraction of
     the size. The origin's ink includes its ring, so a bare-glyph candidate is

@@ -1492,10 +1492,15 @@ def title_paint_pad(outline_w, arch, shadow, bold=False, bold_w=None,
 
     The ring (and any synthetic-bold fatten) grow every line on all four sides,
     the drop shadow adds a second copy of the line 0.06 lower, and the arch
-    lifts a line's middle by ``arch``. Shared so the collision floor, the
-    height-fit headroom and the owner's health check all reserve the same room —
-    a health check that predicted a different footprint from the one the card
-    prints would be worse than none.
+    lifts a line's middle by ``arch``. Shared between the collision floor and
+    the owner's health check so the two reserve the same room — a check that
+    predicted a different footprint from the one the card prints would be worse
+    than none.
+
+    NOT the height-fit's headroom a few lines below, which counts only the ring
+    and the shadow. That is the narrower reservation every shipped design was
+    fitted against, and widening it would resize them; this one is free to be
+    complete because it only ever pushes lines apart.
     """
     fat = (bold_w if bold_w else _BOLD_WEIGHT) if bold else 0.0
     return (fat + (2 * (outline_w or 0.0) if ring_visible else 0.0)
