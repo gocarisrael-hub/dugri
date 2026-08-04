@@ -92,6 +92,39 @@ def test_the_word_fit_returns_the_size_its_rows_were_painted_at():
     assert "word_size" in note
 
 
+def test_a_word_font_lighter_than_the_design_is_named_not_swallowed():
+    """There is no word-weight knob, so this cannot be calibrated away — which is
+    precisely why it must be said. Otherwise the size measures perfectly, the
+    words still print lighter than the original, and nothing tells the owner that
+    the font FILE is the wrong cut.
+
+    Built by painting the "origin" with a synthetic stroke our own cut has no way
+    to reach."""
+    size, words = 18.0, ["מסיבה", "חברים", "ריקודים", "צחוקים"]
+
+    def sheet(stroke):
+        rows = [C._paint(HEBREW_FONT, [w], size * PPU, ALPHA, stroke=stroke,
+                         marker=i + 1) for i, w in enumerate(words)]
+        pad, gap = 40, 30
+        width = max(r.size[0] for r in rows)
+        mask = Image.new("L", (width + 2 * pad,
+                               sum(r.size[1] for r in rows) + gap * 5), 0)
+        regions, y = [], gap
+        for row in rows:
+            mask.paste(row, (pad, y))
+            regions.append((pad, y, pad + row.size[0], y + row.size[1]))
+            y += row.size[1] + gap
+        return mask, regions
+
+    mask, regions = sheet(2.0)
+    said = C.word_weight_gap(mask, regions, HEBREW_FONT, words, size, PPU, ALPHA)
+    assert said and "LIGHTER cut" in said, said
+    # ...and the same face against itself says nothing at all.
+    mask, regions = sheet(0.0)
+    assert C.word_weight_gap(mask, regions, HEBREW_FONT, words, size, PPU,
+                             ALPHA) is None
+
+
 # ---- the refusals -----------------------------------------------------------
 
 

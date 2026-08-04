@@ -1201,6 +1201,48 @@ def fit_bold(mask, region, font_path, samples, size, ppu, alpha):
     return True, round(best, 3), None
 
 
+# How much heavier the original's word strokes have to be before it is worth
+# telling the owner. Below this the difference is rasterising, above it the font
+# file is a different cut from the one the design was set in.
+_WEIGHT_GAP = 0.10
+
+
+def word_weight_gap(mask, regions, font_path, words, size, ppu, alpha):
+    """A sentence naming the word STROKE WEIGHT gap, or None when there is none.
+
+    There is no word-weight knob to set — the deck's words are drawn at the
+    font's own weight, and only the title has a synthetic-bold option — so this
+    cannot be fixed by calibration. That is exactly why it has to be SAID: the
+    size can be measured perfectly and the words still print lighter than the
+    original, and without a word for it the owner is left comparing two cards and
+    unable to name what differs.
+
+    Measured on the strokes alone (``_stroke_ratio``: mean distance from an ink
+    pixel to the background, per unit of ink height), which is a property of the
+    weight and not of how long the text is — the original's words are not ours.
+    """
+    if not (regions and words and size):
+        return None
+    origin = [_stroke_ratio(mask.crop(r)) for r in regions]
+    origin = [v for v in origin if v]
+    ours = []
+    for i, word in enumerate(words):
+        ink = _paint(font_path, [word], size * ppu, alpha, marker=i % 4 + 1)
+        got = _stroke_ratio(ink) if ink else None
+        if got:
+            ours.append(got)
+    if not origin or not ours:
+        return None
+    ratio = statistics.median(origin) / statistics.median(ours)
+    if ratio <= 1 + _WEIGHT_GAP:
+        return None
+    return (f"The original's words are drawn about {ratio:.0%} of this font's "
+            "stroke weight — i.e. the file this theme ships is a LIGHTER cut "
+            "than the design was set in. Nothing here can correct that (the "
+            "words carry no weight knob); the fix is to upload the right cut of "
+            "the word font.")
+
+
 def title_samples(cfg):
     """The sample titles a fit is measured over, as lists of lines.
 
@@ -1374,6 +1416,9 @@ def fit_word_size(mask, image, slots, ppu, ox, oy, font_path, words):
             "rows — the part of the ink every letter occupies, so it does not "
             "move with whichever ascenders and descenders the original's own "
             "words happened to carry — against this theme's wordlist.")
+    weight = word_weight_gap(mask, regions, font_path, words, size, ppu, alpha)
+    if weight:
+        note += " " + weight
     if scatter is None:
         return size, "medium", note
     if scatter <= 0.05:
