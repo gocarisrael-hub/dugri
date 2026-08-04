@@ -64,6 +64,65 @@ def test_a_whole_surface_fit_returns_that_size_and_grades_it_high():
     assert ctx and len(ctx) == 2
 
 
+# ---- the LEADING, solved beside the size ------------------------------------
+#
+# A design stacks its title lines at its own spacing, the renderer at a fixed
+# 0.78. Fitting the BLOCK's height with the renderer's step charges the whole
+# difference to the size, which is every one of the multi-line errors measured
+# against the owner's Canva numbers. So the leading is solved for as well.
+
+_TWO = [["נעמה", "מסיבה גדולה"]]
+
+
+def test_a_title_set_tighter_or_looser_than_the_renderer_still_fits_its_size():
+    for leading in (0.55, 0.78, 1.30):
+        size = 24.0
+        ink = C._paint(HEBREW_FONT, _TWO[0], size * PPU, ALPHA, pitch=leading)
+        got, found, _score = C.solve_size_and_leading(
+            ink, HEBREW_FONT, _TWO, PPU, ALPHA)
+        assert abs(got - size) / size <= 0.03, (leading, size, got)
+        assert abs(found - leading) <= 0.06, (leading, found)
+
+
+def test_the_old_single_bisection_would_have_missed_those_sizes():
+    """The point of the pair: with the renderer's own step assumed, a title set
+    at another spacing reports a size that is wrong by the whole difference."""
+    size = 24.0
+    ink = C._paint(HEBREW_FONT, _TWO[0], size * PPU, ALPHA, pitch=1.30)
+    naive = C._fit_size(ink.size[1], HEBREW_FONT, _TWO, PPU, ALPHA)
+    assert naive > size * 1.15, naive
+
+
+def test_a_single_line_title_keeps_the_renderers_own_step():
+    # There is no leading to solve for, so this stays the one bisection that
+    # shipped — which is why the single-line templates do not move.
+    ink = C._paint(HEBREW_FONT, LINES, 26.0 * PPU, ALPHA)
+    got, found, score = C.solve_size_and_leading(
+        ink, HEBREW_FONT, [LINES], PPU, ALPHA)
+    assert found == C.RENDER_PITCH and score is None
+    assert abs(got - 26.0) <= 0.5, got
+
+
+def test_a_leading_unlike_the_renderers_is_reported_to_the_owner():
+    size = 24.0
+    ink = C._paint(HEBREW_FONT, _TWO[0], size * PPU, ALPHA, pitch=1.30)
+    mask, image, box = _origin(ink)
+    got, grade, note, _ctx = C.fit_title_size(
+        mask, image, box, PPU, 0.0, 0.0, HEBREW_FONT, _TWO, "#000000")
+    assert abs(got - size) / size <= 0.03, got
+    assert grade in ("high", "medium")
+    assert note and "stacks its title lines" in note
+
+
+def test_the_profile_match_compares_shape_and_not_amount():
+    # The origin says another honoree's name, so the AMOUNT of ink can never
+    # agree; where down the block it sits can.
+    a = [0, 4, 8, 4, 0, 0, 2, 6, 2]
+    assert C._profile_match(a, a) > 0.99
+    assert C._profile_match(a, [2 * v for v in a]) > 0.99
+    assert C._profile_match(a, list(reversed(a))) < 0.85
+
+
 def test_the_word_fit_returns_the_size_its_rows_were_painted_at():
     size = 18.0
     words = ["מסיבה", "חברים", "ריקודים", "צחוקים"]

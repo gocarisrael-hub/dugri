@@ -314,6 +314,35 @@ def test_background_that_reaches_the_edge_is_not_filled_in():
     assert sum(1 for v in got.getdata() if v) == 400
 
 
+def test_the_artwork_colour_is_read_outside_the_glyphs_not_in_their_counters():
+    """``_background`` takes the mode of every un-inked pixel in the crop, and on
+    a hollow mask — a pale fill that never cleared the diff threshold — that is
+    mostly the title's own FILL. Reading it as the background then throws the
+    fill away as "the card's colour". Only an unenclosed pixel is background."""
+    img, mask = _hollow(ring=8)
+    # the crop's un-inked pixels are dominated by the enclosed fill...
+    assert C._background(img, mask, _RINGED_BOX) == (164, 233, 255)
+    # ...but the artwork AROUND the ink is the page, and that is the answer.
+    assert C.artwork_around(img, mask, (0, 0, 140, 140)) == (255, 241, 222)
+
+
+def test_the_card_background_is_never_read_as_a_title_paint():
+    """A Canva export re-emits the card's own background inside the personalized
+    layer, so it arrives as a candidate paint — and as the commonest fill on the
+    card it wins. A title cannot be painted in the colour it is drawn ON."""
+    cands = [("#ffc6d7", 40), ("#b28c97", 9), ("#ff78a0", 4)]
+    kept = C.drop_background(cands, (255, 198, 215))     # #ffc6d7
+    assert [c for c, _ in kept] == ["#b28c97", "#ff78a0"]
+    # order (which is the count order) is preserved, so the caller still sees
+    # the most-added paint first
+    assert kept[0][1] == 9
+    # nothing to compare against leaves the list alone
+    assert C.drop_background(cands, None) == cands
+    # and a title drawn a shade off its background still reports its colour
+    only = [("#ffc6d7", 40)]
+    assert C.drop_background(only, (255, 198, 215)) == only
+
+
 def test_a_light_fill_inside_a_dark_ring_is_read_as_fill_and_ring():
     """The whole point: without hole-filling this measures as a solid dark title
     with no ring, which is how two shipped decks came to print one."""

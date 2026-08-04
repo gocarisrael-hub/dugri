@@ -461,6 +461,66 @@ def candidate_paints(filled_svg, clean_svg, exclude=()):
     return out
 
 
+# How close a candidate paint has to sit to the artwork UNDER the title before it
+# is read as the background rather than as a paint. The same RGB radius the
+# clustering uses, so "this pixel is that paint" and "that paint is the
+# background" are decided on one scale.
+_BG_PAINT_DIST = _MIN_CLUSTER_DIST
+
+
+def artwork_around(image, mask, region):
+    """The artwork colour the title sits ON, read OUTSIDE the glyphs.
+
+    Not ``_background``: that one takes the mode of every un-inked pixel in the
+    crop, and on a title whose pale fill is too close to the artwork to clear
+    the diff threshold the mask is a hollow ring — so its "un-inked" pixels are
+    mostly the title's own FILL, and the answer comes back as the very colour
+    the caller is trying to identify. ``solid_ink`` already knows the
+    difference: a hole is enclosed, the background is not. So fill the holes
+    first and read what is left over.
+    """
+    im = image.crop(region)
+    mk = solid_ink(mask.crop(region))
+    px, mp = im.load(), mk.load()
+    counts = Counter()
+    for y in range(im.size[1]):
+        for x in range(im.size[0]):
+            if not mp[x, y]:
+                counts[px[x, y]] += 1
+    return counts.most_common(1)[0][0] if counts else None
+
+
+def drop_background(candidates, bg):
+    """``candidates`` without the colour of the artwork the title sits on.
+
+    A Canva export re-emits the card's own background inside the personalized
+    layer, so the background colour is one of the colours the filled sheet uses
+    MORE than the clean one — it arrives as a candidate paint indistinguishable
+    from the title's own. It then wins, because it is the most common fill on the
+    card by a wide margin.
+
+    That is not a tie-break the depth pass can settle either, and it is worse than
+    it looks: ``solid_ink`` fills a glyph's enclosed counters (the hole in an 'a',
+    the loop of a 'B') so a pale fill inside a dark ring survives into the mask,
+    and those counters are BACKGROUND-coloured and sit at the deepest depth. A
+    ringless title therefore reads as "background inside, text colour around it"
+    — the two paints exactly inverted. Measured on bachelorette, whose front
+    title came back filled in its own card's pink with the real ink demoted to a
+    ring, and whose back did the same one shade darker.
+
+    A title cannot be painted in the colour it is drawn ON — it would be
+    invisible — so a candidate that matches the artwork under it is never one of
+    its paints, whatever the vector's counts say.
+    """
+    if not bg:
+        return list(candidates)
+    kept = [(c, n) for c, n in candidates
+            if _rgb_dist(_hex_to_rgb(c), bg) > _BG_PAINT_DIST]
+    # Never strip the LAST candidate: a title genuinely drawn a shade off its
+    # background still has to report the colour it is drawn in.
+    return kept or list(candidates)
+
+
 def assign_paints(candidates, image, mask, box):
     """Decide which of two KNOWN paints is the fill and which is the outline.
 
@@ -807,6 +867,32 @@ _FIT_SIZE_BOX = (0.25, 4.0)
 _BOLD_W_GRID = [i / 200.0 for i in range(0, 17)]        # 0 .. 0.08 by 0.005
 _BOLD_W_MIN = 0.01
 
+# ---- THE LEADING, which the size fit must not be charged for ----------------
+#
+# ``render_page.title_block`` stacks a title's lines one FIXED step apart —
+# 0.78 of the type size — while the design the title is copied from set its own.
+# On a two-line title the two are simply added together in the ink:
+#
+#     block ink height  =  (lines - 1) * leading * size  +  ascent + descent
+#
+# so fitting the block's height with the renderer's step charges the WHOLE
+# leading difference to the size. That is not a small correction. Measured
+# against the owner's Canva numbers it is every one of the multi-line errors:
+# קליפורניה came out +11% (its design leads at ~0.95, we assume 0.78),
+# סנטוריני −16% (it leads TIGHTER than we assume), and טריפה +139%, where the
+# theme's title template had gone stale at one line against artwork that plainly
+# sets two — so the fit matched one line of ours against two of theirs.
+#
+# A single-line title has no leading, which is exactly why קופקבנה measures
+# right to a third of a percent while its neighbours do not. So the leading is
+# solved FOR, as a second unknown, against a second reading of the same ink.
+RENDER_PITCH = 0.78
+# The leadings a design can plausibly be set at. Canva's own spacing control
+# spans well under one to well over two; below half the type size the lines
+# would overprint, and above this they read as separate blocks.
+_PITCH_COARSE = [round(0.50 + 0.10 * i, 2) for i in range(16)]   # 0.50 .. 2.00
+_PITCH_FINE = 0.02
+
 
 def _alpha_threshold(ink_hex, bg_rgb):
     """The alpha at which OUR raster carries as much ink as the diff mask shows.
@@ -1043,13 +1129,18 @@ def _covers(font_path, text):
     return True
 
 
-def _paint(font_path, lines, em, alpha, stroke=0.0, marker=None):
+def _paint(font_path, lines, em, alpha, stroke=0.0, marker=None,
+           pitch=RENDER_PITCH):
     """Our renderer's painted text at ``em`` DEVICE pixels, as an ink mask.
 
-    Mirrors what ``render_page`` will draw: title lines stacked on the same
-    ``0.78 * size`` baseline spacing, or one numbered word line with its marker
-    at ``0.9 * size`` (``word_text``'s own fractions). Cropped to the ink, so the
-    caller measures the glyphs and never the canvas.
+    Mirrors what ``render_page`` will draw: title lines stacked on the
+    ``pitch * size`` baseline spacing (the renderer's own ``RENDER_PITCH`` by
+    default), or one numbered word line with its marker at ``0.9 * size``
+    (``word_text``'s own fractions). Cropped to the ink, so the caller measures
+    the glyphs and never the canvas.
+
+    ``pitch`` is a parameter and not the renderer's constant because the ORIGIN
+    was not set with the renderer's leading — see ``fit_title_size``.
     """
     try:
         font = _fit_font(font_path, round(em))
@@ -1059,12 +1150,15 @@ def _paint(font_path, lines, em, alpha, stroke=0.0, marker=None):
     if not lines:
         return None
     width = int(max(font.getlength(ln) for ln in lines)) + int(em * 3) + 80
-    height = int(em * (len(lines) + 3) * 1.4) + 80
+    # Exactly the room the stack needs: the first baseline, the leading between
+    # the lines, and the deepest descender under the last. Sized rather than
+    # over-allocated because the leading search paints a few hundred of these.
+    height = int(em * (2.0 + (len(lines) - 1) * pitch + 1.5)) + 80
     img = Image.new("L", (max(60, width), max(60, height)), 0)
     draw = ImageDraw.Draw(img)
-    base = int(em * 1.6)
+    base = int(em * 2.0)
     for i, line in enumerate(lines):
-        draw.text((40, base + i * 0.78 * em), line, font=font, fill=255,
+        draw.text((40, base + i * pitch * em), line, font=font, fill=255,
                   anchor="ls", stroke_width=stroke, stroke_fill=255)
     if marker is not None:
         small = _fit_font(font_path, round(em * 0.9))
@@ -1077,7 +1171,7 @@ def _paint(font_path, lines, em, alpha, stroke=0.0, marker=None):
 
 
 def _painted(font_path, samples, size, ppu, alpha, marker=False, axis=0,
-             ring=0.0):
+             ring=0.0, pitch=RENDER_PITCH):
     """Median painted extent (0 = height, 1 = width) of ``samples`` at ``size``.
 
     ``ring`` is the outline thickness as a fraction of the size, and it is part
@@ -1090,7 +1184,7 @@ def _painted(font_path, samples, size, ppu, alpha, marker=False, axis=0,
     for i, lines in enumerate(samples):
         ink = _paint(font_path, lines, size * ppu, alpha,
                      stroke=ring * size * ppu,
-                     marker=(i % 4 + 1) if marker else None)
+                     marker=(i % 4 + 1) if marker else None, pitch=pitch)
         if ink:
             value = _extent_of(ink, axis)
             if value:
@@ -1099,7 +1193,7 @@ def _painted(font_path, samples, size, ppu, alpha, marker=False, axis=0,
 
 
 def _fit_size(target_px, font_path, samples, ppu, alpha, marker=False, axis=0,
-              ring=0.0):
+              ring=0.0, pitch=RENDER_PITCH):
     """The size (in recipe user units) whose painted ink measures ``target_px``.
 
     Bisection rather than a closed form: the painted extent is very nearly linear
@@ -1110,11 +1204,13 @@ def _fit_size(target_px, font_path, samples, ppu, alpha, marker=False, axis=0,
     lo, hi = 3.0, 160.0
     if not target_px or target_px <= 0:
         return None
-    if _painted(font_path, samples, lo, ppu, alpha, marker, axis, ring) is None:
+    if _painted(font_path, samples, lo, ppu, alpha, marker, axis, ring,
+                pitch) is None:
         return None
     for _ in range(22):
         mid = (lo + hi) / 2
-        got = _painted(font_path, samples, mid, ppu, alpha, marker, axis, ring)
+        got = _painted(font_path, samples, mid, ppu, alpha, marker, axis, ring,
+                       pitch)
         if got is None:
             return None
         if got < target_px:
@@ -1285,6 +1381,128 @@ def sample_words(cfg):
 _FIT_STABLE = 0.06
 
 
+def _row_ink(ink):
+    """Per row: ``(ink coverage, horizontal extent)`` — the block's two profiles.
+
+    The DENSITY says how much ink a row carries; the EXTENT says how wide the
+    line at that row runs, which is the steadier of the two — it is set by the
+    first and last glyph's edges, so it does not move with how tightly the
+    letters in between happen to pack.
+
+    Both come out of Pillow rather than a Python loop over the pixels: this runs
+    once per candidate leading inside a search, and a per-pixel loop over a
+    few hundred candidates is the difference between a calibration the owner
+    waits a moment for and one they give up on. A box-resize to a single column
+    IS the per-row mean, and a one-row crop's bounding box IS that row's extent.
+    """
+    w, h = ink.size
+    if not w or not h:
+        return [], []
+    dens = list(ink.resize((1, h), Image.BOX).getdata())
+    ext = []
+    for y in range(h):
+        bb = ink.crop((0, y, w, y + 1)).getbbox()
+        ext.append((bb[2] - bb[0]) if bb else 0)
+    return dens, ext
+
+
+def _resample(v, n):
+    m = len(v)
+    if m == n or not m:
+        return list(v)
+    return [v[min(m - 1, int(i * m / n))] for i in range(n)]
+
+
+def _profile_match(a, b):
+    """How alike two row profiles are, 0..1, independent of their scale.
+
+    Each is normalised by its own total (density) or peak (extent) first, so the
+    comparison is of SHAPE — where down the block the ink sits — and not of how
+    much ink there is. The origin's title says another honoree's name, so the
+    amount can never agree; where the lines fall can.
+    """
+    n = max(len(a), len(b))
+    if not n:
+        return 0.0
+    a, b = _resample(a, n), _resample(b, n)
+    sa, sb = float(sum(a)) or 1.0, float(sum(b)) or 1.0
+    return sum(min(p / sa, q / sb) for p, q in zip(a, b))
+
+
+def _extent_match(a, b):
+    n = max(len(a), len(b))
+    if not n:
+        return 0.0
+    a, b = _resample(a, n), _resample(b, n)
+    ma, mb = float(max(a)) or 1.0, float(max(b)) or 1.0
+    return 1.0 - sum(abs(p / ma - q / mb) for p, q in zip(a, b)) / n
+
+
+def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0):
+    """``(size, leading, score)`` reproducing one title block's ink.
+
+    Two unknowns, so two readings of the same ink:
+
+      * its total HEIGHT pins the size once a leading is assumed — one bisection
+        per candidate leading, because the painted height is monotone in the size;
+      * its row PROFILE then says which of those (size, leading) pairs actually
+        lays the lines out where the original has them.
+
+    A single-line title has no leading to solve for, so it takes the renderer's
+    own step and this is exactly the one-bisection fit that shipped before —
+    which is why the shipped single-line templates do not move.
+    """
+    target = ink.size[1]
+    lines = [ln for ln in (samples[0] if samples else []) if ln and ln.strip()]
+    if len(lines) < 2:
+        size = _fit_size(target, font_path, samples, ppu, alpha, ring=ring)
+        return size, RENDER_PITCH, None
+    o_dens, o_ext = _row_ink(ink)
+
+    def at(pitch):
+        """``(size, score)`` for one candidate leading, on ONE sample title.
+
+        One sample, not all four: the leading is a property of the DESIGN and
+        does not move with which honoree name is set, so searching it four times
+        over would cost four times as much to answer the same question. The size
+        is re-fitted across every sample once the leading is settled.
+        """
+        size = _fit_size(target, font_path, samples[:1], ppu, alpha, ring=ring,
+                         pitch=pitch)
+        if not size:
+            return None, None
+        cand = _paint(font_path, lines, size * ppu, alpha,
+                      stroke=ring * size * ppu, pitch=pitch)
+        if not cand:
+            return None, None
+        c_dens, c_ext = _row_ink(cand)
+        return size, _profile_match(o_dens, c_dens) + _extent_match(o_ext, c_ext)
+
+    # Coarse then fine. The score moves smoothly with the leading — one step
+    # slides every line below the first by the same amount — so a coarse pass
+    # finds the neighbourhood and a fine pass finds the step inside it, for a
+    # fifth of the renders a flat sweep of the same resolution would need.
+    best = None
+    for pitch in _PITCH_COARSE:
+        size, score = at(pitch)
+        if score is not None and (best is None or score > best[2]):
+            best = (size, pitch, score)
+    if best is None:
+        return None, RENDER_PITCH, None
+    around = best[1]
+    for i in range(-4, 5):
+        pitch = round(around + i * _PITCH_FINE, 3)
+        if pitch < _PITCH_COARSE[0] or pitch > _PITCH_COARSE[-1]:
+            continue
+        size, score = at(pitch)
+        if score is not None and score > best[2]:
+            best = (size, pitch, score)
+    leading = round(best[1], 3)
+    size = _fit_size(target, font_path, samples, ppu, alpha, ring=ring,
+                     pitch=leading)
+    return size, leading, best[2]
+
+
 def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
                    ring=0.0):
     """Fit one surface's title size. -> ``(size, grade, note, ctx)``.
@@ -1323,7 +1541,8 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
         return (None, None,
                 "size: the theme's title font has no glyphs for this title's own "
                 "text, so its size could not be measured — check the font.", None)
-    size = _fit_size(ink_h, font_path, samples, ppu, alpha, ring=ring)
+    size, leading, _score = solve_size_and_leading(
+        solid_ink(mask.crop(region)), font_path, samples, ppu, alpha, ring=ring)
     box_h = box["y1"] - box["y0"]
     if not _in_box(size, box_h):
         return (None, None,
@@ -1337,19 +1556,28 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
     # a button the owner waits on.
     each = []
     for one in samples:
-        ink = _paint(font_path, one, size * ppu, alpha, stroke=ring * size * ppu)
+        ink = _paint(font_path, one, size * ppu, alpha, stroke=ring * size * ppu,
+                     pitch=leading)
         got = _extent_of(ink, 0) if ink else None
         if got:
             each.append(got)
     spread = ((max(each) - min(each)) / statistics.median(each)) if each else None
-    wide = _fit_size(ink_w, font_path, samples, ppu, alpha, axis=1, ring=ring)
+    wide = _fit_size(ink_w, font_path, samples, ppu, alpha, axis=1, ring=ring,
+                     pitch=leading)
     note = None
+    if leading is not None and abs(leading - RENDER_PITCH) > 0.02:
+        note = (f"size: the original stacks its title lines {leading} of the type "
+                f"size apart, where the renderer stacks them {RENDER_PITCH}. The "
+                "size below is the one the ORIGINAL is set at, measured with the "
+                "original's own spacing — so our block prints a little taller or "
+                "shorter than the artwork's even though the type matches.")
     if wide and abs(wide - size) / size > 0.12:
-        note = (f"size: fitted from the height of the original's title ink. Its "
-                f"WIDTH says {wide}, not {size} — the title font is not quite the "
-                "one the design was made in (a lookalike, or Canva condensed the "
-                "text box), or the original's title is simply a different length "
-                "of text. Only one of the two axes can match; check the preview.")
+        wnote = (f"size: fitted from the height of the original's title ink. Its "
+                 f"WIDTH says {wide}, not {size} — the title font is not quite the "
+                 "one the design was made in (a lookalike, or Canva condensed the "
+                 "text box), or the original's title is simply a different length "
+                 "of text. Only one of the two axes can match; check the preview.")
+        note = (note + " " + wnote) if note else wnote
     if spread is None:
         return size, "medium", note, (region, alpha)
     if spread <= _FIT_STABLE:
@@ -1645,7 +1873,6 @@ def calibrate(theme_key, workdir=None):
     workdir = workdir or tempfile.mkdtemp(prefix="dugri-calibrate-")
     notes, confidence = [], {}
     out = {"title_style": {}, "board": None, "back": None, "word_size": None}
-    board_paints = None
     single = is_single_card(cfg, tdir)
     # The size fits need the two things the renderer itself renders with: the
     # theme's own title font, and the titles this theme actually prints.
@@ -1674,179 +1901,15 @@ def calibrate(theme_key, workdir=None):
         confidence[f"title_style.{key}"] = grade
 
     try:
-        # --- BOARD: one title on the page; fractions are of the page viewBox ---
-        bf, bc = sheet("board", "filled"), sheet("board", "clean")
-        if os.path.exists(bf) and os.path.exists(bc):
-            slot, box, vb, mask, image = _slot(bf, bc, workdir)
-            if slot:
-                w, h = mask.size
-                # Geometry and colour are graded SEPARATELY: the box is measured
-                # far more reliably than the paints, and a design whose colours
-                # can't be read still gets its slot placed correctly.
-                fill, outline = slot["fill"], slot["outline"]
-                if fill and outline and fill != outline:
-                    confidence["board.colors"] = "high"
-                    # The board title is the LARGEST rendering of this design's
-                    # title, so it is the one surface where both paints are
-                    # reliably legible — the fronts can borrow from it below.
-                    board_paints = (fill, outline, slot["outline_w"])
-                else:
-                    fill = outline = fill or _dominant_color(image, mask, box)
-                    notes.append("board: the title box is measured, but its two "
-                                 "paints could not be told apart — fill and "
-                                 "outline are both set to the dominant ink colour "
-                                 "and need confirming.")
-                    confidence["board.colors"] = "low"
-                out["board"] = {
-                    "frac": {"x0": round(box[0] / w, 4), "y0": round(box[1] / h, 4),
-                             "x1": round(box[2] / w, 4), "y1": round(box[3] / h, 4)},
-                    "fill": fill, "outline": outline,
-                }
-                confidence["board.frac"] = "high"
-                # The board is the LARGEST rendering of this title, so its ink is
-                # the cleanest size measurement of the three surfaces.
-                ppu, ox, oy = _viewport(mask, vb)
-                record("board_size", *fit_title_size(
-                    mask, image, units(box, ppu, ox, oy), ppu, ox, oy,
-                    title_font, samples, fill)[:3])
-            else:
-                notes.append("board: could not isolate a title — either this "
-                             "design carries no board title, or the filled and "
-                             "clean boards differ across the whole sheet. Set the "
-                             "board slot by hand.")
-                confidence["board"] = "none"
-        else:
-            notes.append("board: filled/clean pair missing, skipped.")
-            confidence["board"] = "none"
-
-        # --- BACKS: one title per card; fractions are of the CARD CELL ---
-        # v2 needs NO recipe to find that cell: the back is one whole card
-        # (``clean/1.svg``), so the cell IS the page. Everything downstream — the
-        # shrink-to-clean-border guard, the plausibility check, the vector-first
-        # paint reading — is the v1 body unchanged, just handed one cell instead
-        # of eight.
-        #
-        # A template whose eight styles each have their OWN back (#315) is
-        # measured ONCE PER BACK. The knobs the fronts share (paints, ring,
-        # alignment) genuinely are one deck-wide answer, but the back's title BOX
-        # is not: each back is separate artwork, so the name may sit somewhere
-        # else on each — or on none of them. Measuring one and repeating it is
-        # how seven cards in eight get the name in the wrong place.
         recipe_path = config.recipe_path(cfg["recipe"])
-
-        def measure_back(kf, kc, label):
-            """One back's slot — ``(slot|None, size, grade, note)``.
-
-            ``label`` prefixes this back's notes and confidence keys so a deck
-            with eight of them says WHICH one it could not read.
-            """
-            mask, image, vb = _diff(kf, kc, workdir)
-            w, h = mask.size
-            if single:
-                cells = [(0.0, 0.0, float(w), float(h))]
-            else:
-                recipe = json.load(open(recipe_path, encoding="utf-8"))
-                ppu = w / vb[2]
-                cells = [tuple(v * ppu for v in card["cell"])
-                         for card in recipe["cards"] if card]
-            for cx0, cy0, cx1, cy1 in cells:
-                region = _shrink_to_clean_border(
-                    mask, (int(cx0), int(cy0), int(cx1), int(cy1)))
-                box = _bbox(mask, region)
-                if not box or not _plausible(box, region):
-                    continue
-                cw, ch = cx1 - cx0, cy1 - cy0
-                # Prefer the paints named by the vector source; the backs sheet
-                # carries ONLY the title, so nothing needs excluding.
-                fill, outline = assign_paints(
-                    candidate_paints(kf, kc), image, mask, box)
-                if fill and outline and fill != outline:
-                    # Settle WHICH of the two is the ring by how deep each sits,
-                    # the same reading the fronts get. It matters as much here:
-                    # the back is drawn with the ring width the fronts measured,
-                    # so a title whose two paints are the wrong way round paints
-                    # its fill in the colour that was meant to enclose it — and
-                    # on bachelorette that colour is the back's own background.
-                    dfill, doutline, _dring = ring_by_depth(
-                        image, mask, box, [fill, outline],
-                        _background(image, mask, box), None)
-                    if dfill and doutline:
-                        fill, outline = dfill, doutline
-                if not (fill and outline):
-                    fill, outline, _ = _fill_and_outline(image, mask, box)
-                if fill and outline:
-                    confidence[label + ".colors"] = "high" if fill != outline else "low"
-                else:
-                    fill = outline = fill or _dominant_color(image, mask, box)
-                    notes.append(label + ": the title box is measured, but its two "
-                                 "paints could not be told apart — fill and "
-                                 "outline are both set to the dominant ink colour "
-                                 "and need confirming.")
-                    confidence[label + ".colors"] = "low"
-                slot = {
-                    "frac": {"x0": round((box[0] - cx0) / cw, 4),
-                             "y0": round((box[1] - cy0) / ch, 4),
-                             "x1": round((box[2] - cx0) / cw, 4),
-                             "y1": round((box[3] - cy0) / ch, 4)},
-                    "fill": fill, "outline": outline,
-                }
-                # The back's title is its own surface with its own box, so it
-                # gets its own size — pinning the front's here would size the
-                # back title to a box it was never measured against.
-                bppu, box_, boy = _viewport(mask, vb)
-                size, grade, note = fit_title_size(
-                    mask, image, units(box, bppu, box_, boy), bppu, box_, boy,
-                    title_font, samples, fill)[:3]
-                return slot, size, grade, note
-            return None, None, None, None
-
-        def back_pair(index):
-            """The filled/clean pair for one back, sheet or single-card."""
-            if single:
-                return (config.card_path(theme_key, index, filled=True),
-                        config.card_path(theme_key, index))
-            return sheet("backs", "filled"), sheet("backs", "clean")
-
-        def unreadable(label):
-            notes.append(label + ": could not isolate a title — this design may "
-                         "carry no title on the card back (several don't), or "
-                         "its filled and clean backs differ across the whole "
-                         "surface.")
-
-        # Distinct backs, in printing order. A one-back deck yields exactly one,
-        # so it takes the SAME path and writes the same `back` blob it always did.
-        back_list = list(dict.fromkeys(config.back_indices(cfg))) if single else [None]
-        paired = single and config.has_per_front_backs(cfg)
-        if paired:
-            out["backs"] = {}
-        for bi in back_list:
-            label = f"backs.{bi}" if paired else "back"
-            kf, kc = back_pair(bi)
-            if not (os.path.exists(kf) and os.path.exists(kc)
-                    and (single or os.path.exists(recipe_path))):
-                notes.append(label + ": filled/clean pair or recipe missing, skipped.")
-                confidence[label] = "none"
-                if paired:
-                    out["backs"][str(bi)] = None
-                continue
-            slot, size, grade, note = measure_back(kf, kc, label)
-            confidence[label + ".frac"] = "high" if slot else "none"
-            if not slot:
-                unreadable(label)
-            if paired:
-                # Each back's size belongs to that back: eight separately drawn
-                # backs give the title eight different rooms, and one shared pin
-                # fits only the box it was measured against.
-                if slot and size is not None:
-                    slot["size"] = size
-                if note:
-                    notes.append(note)
-                confidence[label + ".size"] = grade if size is not None else "none"
-                out["backs"][str(bi)] = slot
-            else:
-                record("back_size", size, grade, note)
-                out["back"] = slot
-
+        # --- FRONTS FIRST, and that ORDER is load-bearing --------------------
+        # The fronts are where the deck's RING is measured, and the ring is not
+        # only a style knob: the origin's ink on every surface is the glyph plus
+        # its ring, so a size fitted against a bare-glyph candidate comes out
+        # about two ring-widths too large. The board and the back are painted
+        # with the same ring the fronts measured, so measuring them first — as
+        # this used to — fitted both of them ringless against ringed ink. On
+        # סיישל that alone put the back's size 20% over.
         # --- FRONTS: the title's paint colours, ring thickness and alignment ---
         # These knobs are SHARED across the whole deck (docs/card-structure-schema.md),
         # so ONE front settles them — v1 already worked that way, taking the first
@@ -1878,7 +1941,9 @@ def calibrate(theme_key, workdir=None):
                 # front carries both the title and the words, so exclude the word
                 # colours the recipe already recorded — what is left is the
                 # title's own fill and ring.
-                cands = candidate_paints(ff, fc, exclude=_word_colours(recipe))
+                cands = drop_background(
+                    candidate_paints(ff, fc, exclude=_word_colours(recipe)),
+                    artwork_around(image, mask, tight))
                 fill, outline = assign_paints(cands, image, mask, tight)
                 source = "vector"
                 # The raster reading is the FALLBACK for the ring, kept because
@@ -2055,6 +2120,185 @@ def calibrate(theme_key, workdir=None):
                 notes.append("title: no card in the recipe carries a title slot.")
         else:
             notes.append("fronts: filled/clean pair or recipe missing, skipped.")
+
+        # The ring the fronts just measured, as a fraction of the type size. It
+        # is a DECK-wide knob (docs/card-structure-schema.md), so the board and
+        # back titles are painted with it too and their sizes must be fitted
+        # with it. 0.0 when the fronts said there is no ring, or could not be
+        # read at all — which is the ringless fit these surfaces always got.
+        deck_ring = out["title_style"].get("outline_w") or 0.0
+
+        # --- BOARD: one title on the page; fractions are of the page viewBox ---
+        bf, bc = sheet("board", "filled"), sheet("board", "clean")
+        if os.path.exists(bf) and os.path.exists(bc):
+            slot, box, vb, mask, image = _slot(bf, bc, workdir)
+            if slot:
+                w, h = mask.size
+                # Geometry and colour are graded SEPARATELY: the box is measured
+                # far more reliably than the paints, and a design whose colours
+                # can't be read still gets its slot placed correctly.
+                fill, outline = slot["fill"], slot["outline"]
+                if fill and outline and fill != outline:
+                    confidence["board.colors"] = "high"
+                else:
+                    fill = outline = fill or _dominant_color(image, mask, box)
+                    notes.append("board: the title box is measured, but its two "
+                                 "paints could not be told apart — fill and "
+                                 "outline are both set to the dominant ink colour "
+                                 "and need confirming.")
+                    confidence["board.colors"] = "low"
+                out["board"] = {
+                    "frac": {"x0": round(box[0] / w, 4), "y0": round(box[1] / h, 4),
+                             "x1": round(box[2] / w, 4), "y1": round(box[3] / h, 4)},
+                    "fill": fill, "outline": outline,
+                }
+                confidence["board.frac"] = "high"
+                # The board is the LARGEST rendering of this title, so its ink is
+                # the cleanest size measurement of the three surfaces.
+                ppu, ox, oy = _viewport(mask, vb)
+                record("board_size", *fit_title_size(
+                    mask, image, units(box, ppu, ox, oy), ppu, ox, oy,
+                    title_font, samples, fill, ring=deck_ring)[:3])
+            else:
+                notes.append("board: could not isolate a title — either this "
+                             "design carries no board title, or the filled and "
+                             "clean boards differ across the whole sheet. Set the "
+                             "board slot by hand.")
+                confidence["board"] = "none"
+        else:
+            notes.append("board: filled/clean pair missing, skipped.")
+            confidence["board"] = "none"
+
+        # --- BACKS: one title per card; fractions are of the CARD CELL ---
+        # v2 needs NO recipe to find that cell: the back is one whole card
+        # (``clean/1.svg``), so the cell IS the page. Everything downstream — the
+        # shrink-to-clean-border guard, the plausibility check, the vector-first
+        # paint reading — is the v1 body unchanged, just handed one cell instead
+        # of eight.
+        #
+        # A template whose eight styles each have their OWN back (#315) is
+        # measured ONCE PER BACK. The knobs the fronts share (paints, ring,
+        # alignment) genuinely are one deck-wide answer, but the back's title BOX
+        # is not: each back is separate artwork, so the name may sit somewhere
+        # else on each — or on none of them. Measuring one and repeating it is
+        # how seven cards in eight get the name in the wrong place.
+
+        def measure_back(kf, kc, label):
+            """One back's slot — ``(slot|None, size, grade, note)``.
+
+            ``label`` prefixes this back's notes and confidence keys so a deck
+            with eight of them says WHICH one it could not read.
+            """
+            mask, image, vb = _diff(kf, kc, workdir)
+            w, h = mask.size
+            if single:
+                cells = [(0.0, 0.0, float(w), float(h))]
+            else:
+                recipe = json.load(open(recipe_path, encoding="utf-8"))
+                ppu = w / vb[2]
+                cells = [tuple(v * ppu for v in card["cell"])
+                         for card in recipe["cards"] if card]
+            for cx0, cy0, cx1, cy1 in cells:
+                region = _shrink_to_clean_border(
+                    mask, (int(cx0), int(cy0), int(cx1), int(cy1)))
+                box = _bbox(mask, region)
+                if not box or not _plausible(box, region):
+                    continue
+                cw, ch = cx1 - cx0, cy1 - cy0
+                # Prefer the paints named by the vector source; the backs sheet
+                # carries ONLY the title, so nothing needs excluding — except
+                # the artwork the title is drawn ON, which the export re-emits
+                # inside the personalized layer and which no title is painted in.
+                bg = artwork_around(image, mask, box)
+                fill, outline = assign_paints(
+                    drop_background(candidate_paints(kf, kc), bg),
+                    image, mask, box)
+                if fill and outline and fill != outline:
+                    # Settle WHICH of the two is the ring by how deep each sits,
+                    # the same reading the fronts get. It matters as much here:
+                    # the back is drawn with the ring width the fronts measured,
+                    # so a title whose two paints are the wrong way round paints
+                    # its fill in the colour that was meant to enclose it — and
+                    # on bachelorette that colour is the back's own background.
+                    dfill, doutline, _dring = ring_by_depth(
+                        image, mask, box, [fill, outline],
+                        bg or _background(image, mask, box), None)
+                    if dfill and doutline:
+                        fill, outline = dfill, doutline
+                if not (fill and outline):
+                    fill, outline, _ = _fill_and_outline(image, mask, box)
+                if fill and outline:
+                    confidence[label + ".colors"] = "high" if fill != outline else "low"
+                else:
+                    fill = outline = fill or _dominant_color(image, mask, box)
+                    notes.append(label + ": the title box is measured, but its two "
+                                 "paints could not be told apart — fill and "
+                                 "outline are both set to the dominant ink colour "
+                                 "and need confirming.")
+                    confidence[label + ".colors"] = "low"
+                slot = {
+                    "frac": {"x0": round((box[0] - cx0) / cw, 4),
+                             "y0": round((box[1] - cy0) / ch, 4),
+                             "x1": round((box[2] - cx0) / cw, 4),
+                             "y1": round((box[3] - cy0) / ch, 4)},
+                    "fill": fill, "outline": outline,
+                }
+                # The back's title is its own surface with its own box, so it
+                # gets its own size — pinning the front's here would size the
+                # back title to a box it was never measured against.
+                bppu, box_, boy = _viewport(mask, vb)
+                size, grade, note = fit_title_size(
+                    mask, image, units(box, bppu, box_, boy), bppu, box_, boy,
+                    title_font, samples, fill, ring=deck_ring)[:3]
+                return slot, size, grade, note
+            return None, None, None, None
+
+        def back_pair(index):
+            """The filled/clean pair for one back, sheet or single-card."""
+            if single:
+                return (config.card_path(theme_key, index, filled=True),
+                        config.card_path(theme_key, index))
+            return sheet("backs", "filled"), sheet("backs", "clean")
+
+        def unreadable(label):
+            notes.append(label + ": could not isolate a title — this design may "
+                         "carry no title on the card back (several don't), or "
+                         "its filled and clean backs differ across the whole "
+                         "surface.")
+
+        # Distinct backs, in printing order. A one-back deck yields exactly one,
+        # so it takes the SAME path and writes the same `back` blob it always did.
+        back_list = list(dict.fromkeys(config.back_indices(cfg))) if single else [None]
+        paired = single and config.has_per_front_backs(cfg)
+        if paired:
+            out["backs"] = {}
+        for bi in back_list:
+            label = f"backs.{bi}" if paired else "back"
+            kf, kc = back_pair(bi)
+            if not (os.path.exists(kf) and os.path.exists(kc)
+                    and (single or os.path.exists(recipe_path))):
+                notes.append(label + ": filled/clean pair or recipe missing, skipped.")
+                confidence[label] = "none"
+                if paired:
+                    out["backs"][str(bi)] = None
+                continue
+            slot, size, grade, note = measure_back(kf, kc, label)
+            confidence[label + ".frac"] = "high" if slot else "none"
+            if not slot:
+                unreadable(label)
+            if paired:
+                # Each back's size belongs to that back: eight separately drawn
+                # backs give the title eight different rooms, and one shared pin
+                # fits only the box it was measured against.
+                if slot and size is not None:
+                    slot["size"] = size
+                if note:
+                    notes.append(note)
+                confidence[label + ".size"] = grade if size is not None else "none"
+                out["backs"][str(bi)] = slot
+            else:
+                record("back_size", size, grade, note)
+                out["back"] = slot
 
         # --- card_slots: hand the DETECTED geometry back to the admin form ---
         # The form pre-fills from this blob, but it reads slot geometry from
