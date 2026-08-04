@@ -43,11 +43,32 @@ def test_chrome_font_wait_is_a_virtual_time_budget():
 
 def test_build_render_svg_passes_the_font_wait_flag():
     # The production board/back render path (build.render_svg) must carry the same
-    # font-load wait so titles/words don't fall back there either.
+    # font-load wait so titles/words don't fall back there either. Checked by
+    # running it against a stub Chrome and reading the ACTUAL argv, rather than
+    # grepping build.py for the constant's name — the flag now comes from the
+    # shared generator/chrome.py, and the old source-grep would have "passed"
+    # just as happily if the render had stopped passing it at all.
+    import tempfile
+
     import build
-    src = open(os.path.join(HERE, "build.py"), encoding="utf-8").read()
-    assert "rp.CHROME_FONT_WAIT" in src
     assert build.CHROME  # sanity: build shares render_page's Chrome binary
+    with tempfile.TemporaryDirectory() as tmp:
+        argfile = os.path.join(tmp, "argv")
+        stub = os.path.join(tmp, "fake-chrome")
+        with open(stub, "w", encoding="utf-8") as f:
+            f.write('#!/bin/sh\nprintf "%s\\n" "$@" > "' + argfile + '"\n'
+                    'for x in "$@"; do\n'
+                    '  case "$x" in --screenshot=*) : > "${x#--screenshot=}";; esac\n'
+                    'done\n')
+        os.chmod(stub, 0o755)
+        os.environ["CHROME"] = stub
+        try:
+            build.render_svg('<svg xmlns="http://www.w3.org/2000/svg"/>', 100, 80,
+                             os.path.join(tmp, "board.png"))
+        finally:
+            os.environ.pop("CHROME", None)
+        argv = open(argfile, encoding="utf-8").read().split("\n")
+    assert rp.CHROME_FONT_WAIT in argv
 
 
 # --- 2. uniform word sizing + shrink guard -----------------------------------

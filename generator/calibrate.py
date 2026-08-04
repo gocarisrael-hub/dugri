@@ -71,7 +71,6 @@ import json
 import os
 import re
 import statistics
-import subprocess
 import sys
 import tempfile
 from collections import Counter
@@ -79,12 +78,12 @@ from collections import Counter
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 import calibration_health
+import chrome
 import config
 import recipe_diff
 import topup
 
-CHROME = os.environ.get(
-    "CHROME", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+CHROME = chrome.CHROME  # see generator/chrome.py — one owner for the browser
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCALE = 2
 # Per-channel delta above which a pixel counts as "the text changed here". Same
@@ -104,10 +103,10 @@ def _dims(svg):
 
 
 def _render(svg, png, w, h):
-    subprocess.run([CHROME, "--headless", "--disable-gpu",
-                    f"--force-device-scale-factor={SCALE}",
-                    f"--screenshot={png}", f"--window-size={w},{h}", svg],
-                   check=True, stderr=subprocess.DEVNULL)
+    # font_wait off: this screenshots the ORIGINAL artwork as-is to detect where
+    # its text sits — the fonts are already outlined paths in the export, and
+    # sitting out a virtual clock would only slow every calibration down.
+    chrome.screenshot(svg, png, w, h, scale=SCALE, font_wait=False)
 
 
 def _diff(filled_svg, clean_svg, workdir):

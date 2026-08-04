@@ -12,12 +12,12 @@ NAME is the honoree; the title is built from the theme's title_lines template
 (e.g. trip comeback: OZ -> "OZ'S / WELCOME / PARTY").
 """
 import os
-import subprocess
 import sys
 import re
 from PIL import Image
 
 import card_assets
+import chrome
 import config
 import deck_html
 import pack
@@ -40,9 +40,10 @@ def svg_dims(svg):
 def render_svg(svg_text, w, h, out_png):
     p = out_png.replace(".png", ".svg")
     open(p, "w", encoding="utf-8").write(svg_text)
-    subprocess.run([CHROME, "--headless", "--disable-gpu", rp.CHROME_FONT_WAIT,
-                    "--force-device-scale-factor=2", f"--screenshot={out_png}",
-                    f"--window-size={w},{h}", p], check=True, stderr=subprocess.DEVNULL)
+    # font_wait on: this is the production board/back render, so its title must
+    # not fall back to a default face while the embedded @font-face loads.
+    chrome.screenshot(p, out_png, w, h, scale=2, font_wait=True,
+                      what=f"the board/back {os.path.basename(out_png)}")
     return out_png
 
 
@@ -185,37 +186,19 @@ def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
 # minutes for the same deck.
 
 # Chrome may sit on a print job if the page never settles; cap it so a stuck
-# render surfaces as an error instead of hanging a paid order.
-DECK_TIMEOUT_S = float(os.environ.get("DUGRI_DECK_TIMEOUT_S", "180"))
+# render surfaces as an error instead of hanging a paid order. Re-exported from
+# the shared Chrome module so the deck's budget and the screenshot budget can
+# never drift apart (same DUGRI_DECK_TIMEOUT_S env var as before).
+DECK_TIMEOUT_S = chrome.PRINT_TIMEOUT_S
 
 
 def print_to_pdf(html, out_pdf, workdir, tag="deck"):
-    """Print one HTML document to ``out_pdf`` with headless Chrome.
-
-    Chrome waits for webfonts to load before printing, so the deck's @font-face
-    faces are in place — unlike the screenshot path, which needs an explicit
-    virtual-time budget. A budget is deliberately NOT passed here: it makes
-    Chrome sit out the whole clock, turning a 3-second deck into minutes.
-    """
+    """Print one HTML document to ``out_pdf`` with headless Chrome."""
     os.makedirs(workdir, exist_ok=True)
     html_path = os.path.join(workdir, f"{tag}.html")
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(html)
-    try:
-        subprocess.run(
-            [CHROME, "--headless", "--no-sandbox", "--disable-dev-shm-usage",
-             "--disable-gpu", "--no-pdf-header-footer",
-             f"--print-to-pdf={out_pdf}", html_path],
-            check=True, stderr=subprocess.DEVNULL, timeout=DECK_TIMEOUT_S)
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(
-            f"rendering {tag} timed out after {DECK_TIMEOUT_S:.0f}s. The deck is "
-            "one Chrome print pass, which normally takes seconds; a timeout here "
-            "usually means the template embeds an asset that never finishes "
-            "loading."
-        )
-    if not os.path.exists(out_pdf):
-        raise RuntimeError(f"Chrome produced no {tag} PDF at {out_pdf}")
+    chrome.print_pdf(html_path, out_pdf, what=tag)
     return out_pdf
 
 
