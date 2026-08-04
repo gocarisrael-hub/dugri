@@ -430,6 +430,17 @@ function publicView(c, { owner = false } = {}) {
     // Whether online card payment is available (PeleCard credentials present).
     // Lets collect.html show the credit-card button only when it will work.
     card_enabled: pelecard.isConfigured(),
+    // Free word quota. `free_word_limit` is null when this collection isn't
+    // subject to it at all (paid, or created before the gate shipped, or the gate
+    // is switched off) — the page then shows its ordinary uncapped counter.
+    // `free_limit_locked` is the live "adding is refused right now" state.
+    ...(() => {
+      const fl = db.freeLimitState(c, words.length);
+      return {
+        free_word_limit: fl.applies ? fl.limit : null,
+        free_limit_locked: fl.locked,
+      };
+    })(),
     count: words.length,
     words: words.map((w) => ({
       id: w.id,
@@ -1502,9 +1513,39 @@ app.post('/api/collections/:id/words', (req, res) => {
   const words = Array.isArray(req.body && req.body.words) ? req.body.words : [];
   if (!words.length) return res.status(400).json({ error: 'words required' });
   if (words.length > 500) return res.status(400).json({ error: 'too many words at once' });
+  // The free-quota gate is enforced HERE, server-side — collect.html also hides
+  // the add box at the limit, but a client-side lock is bypassable and the whole
+  // point of the quota is that it can't be walked around.
+  const before = db.freeLimit(req.params.id);
+  if (before && before.locked) {
+    return res.status(402).json({
+      error: 'free_limit_reached',
+      free_word_limit: before.limit,
+      count: db.countWords(req.params.id),
+    });
+  }
   const r = db.addWords(req.params.id, words, req.body && req.body.added_by);
   if (r && r.closed) return res.status(409).json({ error: 'collection closed' });
-  res.json({ added: r.added, skipped: r.skipped, count: db.countWords(req.params.id) });
+  const count = db.countWords(req.params.id);
+  const after = db.freeLimit(req.params.id);
+  // Just filled the quota (this request is what tipped it over): one email to the
+  // buyer explaining the lock, with the pay CTA. markFreeLimitNotified is the
+  // once-only guard, so a later add attempt can never re-send it.
+  if (after && after.locked && db.markFreeLimitNotified(req.params.id)) {
+    notify
+      .sendFreeLimitReached(db.getCollection(req.params.id), paymentBaseUrl(), after.limit)
+      .catch(() => {});
+  }
+  res.json({
+    added: r.added,
+    skipped: r.skipped,
+    // How many words the quota refused (0 when no quota applies). The page uses
+    // this to say "5 of your 50 words were added" instead of failing silently.
+    blocked: r.blocked || 0,
+    count,
+    free_word_limit: after && after.applies ? after.limit : null,
+    free_limit_locked: !!(after && after.locked),
+  });
 });
 
 // Owner-only: close collection.
@@ -2079,6 +2120,15 @@ async function handleWaEvent(ev, base) {
     const words = whatsapp.splitWords(ev.text);
     if (words.length) {
       db.addWords(cid, words, ev.fromName);
+      // Words arriving from the group count against the free quota exactly like
+      // words typed on the page (db.addWords enforces it), so filling it here
+      // must fire the same one-time "pay to keep adding" email to the buyer.
+      const fl = db.freeLimit(cid);
+      if (fl && fl.locked && db.markFreeLimitNotified(cid)) {
+        notify
+          .sendFreeLimitReached(db.getCollection(cid), paymentBaseUrl(), fl.limit)
+          .catch(() => {});
+      }
       waState.touchActivityWithEvent(ev.groupId, ev.id);
       await sendWaTrigger(ev.groupId, 'word_added', {
         honoree: gv.honoree,
