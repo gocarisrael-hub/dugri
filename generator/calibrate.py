@@ -890,8 +890,15 @@ RENDER_PITCH = 0.78
 # The leadings a design can plausibly be set at. Canva's own spacing control
 # spans well under one to well over two; below half the type size the lines
 # would overprint, and above this they read as separate blocks.
-_PITCH_COARSE = [round(0.50 + 0.10 * i, 2) for i in range(16)]   # 0.50 .. 2.00
-_PITCH_FINE = 0.02
+_PITCH_GRID = [round(0.50 + 0.02 * i, 2) for i in range(76)]     # 0.50 .. 2.00
+# How much of a vote the DENSITY profile gets beside the EXTENT one. The extent
+# is the reading that decides: it is set by the first and last glyph's edges, so
+# it survives the fact that PIL packs a line differently from the browser (no
+# kerning, no shaping). The density corroborates and breaks the extent's ties,
+# so it gets a minority say — anywhere from a fifth to a half picks the same
+# leading on every shipped template, which is what "minority" has to mean for
+# the number not to be a tuned constant.
+_DENS_VOTE = 1 / 3.0
 
 
 def _alpha_threshold(ink_hex, bg_rgb):
@@ -1460,47 +1467,53 @@ def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0):
     o_dens, o_ext = _row_ink(ink)
 
     def at(pitch):
-        """``(size, score)`` for one candidate leading, on ONE sample title.
+        """``(size, score)`` for one candidate leading.
 
-        One sample, not all four: the leading is a property of the DESIGN and
-        does not move with which honoree name is set, so searching it four times
-        over would cost four times as much to answer the same question. The size
-        is re-fitted across every sample once the leading is settled.
+        The size is bisected against ONE sample — the leading is a property of
+        the design and does not move with which honoree name is set, so a
+        four-fold bisection would pay four times over for the same answer — but
+        the SCORE is the median across every sample. That matters: the title's
+        first line carries the name, so its width is the one part of the profile
+        our sample cannot reproduce, and letting a single name decide is what
+        chose a leading 16% out on סיישל. A median over names that straddle the
+        range cannot be swung by any one of them.
         """
         size = _fit_size(target, font_path, samples[:1], ppu, alpha, ring=ring,
                          pitch=pitch)
         if not size:
             return None, None
-        cand = _paint(font_path, lines, size * ppu, alpha,
-                      stroke=ring * size * ppu, pitch=pitch)
-        if not cand:
+        scored = []
+        for one in samples:
+            drawn = [ln for ln in one if ln and ln.strip()]
+            cand = _paint(font_path, drawn, size * ppu, alpha,
+                          stroke=ring * size * ppu, pitch=pitch)
+            if not cand:
+                continue
+            c_dens, c_ext = _row_ink(cand)
+            scored.append((_extent_match(o_ext, c_ext)
+                           + _DENS_VOTE * _profile_match(o_dens, c_dens)))
+        if not scored:
             return None, None
-        c_dens, c_ext = _row_ink(cand)
-        return size, _profile_match(o_dens, c_dens) + _extent_match(o_ext, c_ext)
+        return size, statistics.median(scored)
 
-    # Coarse then fine. The score moves smoothly with the leading — one step
-    # slides every line below the first by the same amount — so a coarse pass
-    # finds the neighbourhood and a fine pass finds the step inside it, for a
-    # fifth of the renders a flat sweep of the same resolution would need.
+    # The WHOLE grid, not a coarse pass refined around its winner. The score is
+    # smooth in the leading but NOT unimodal — a two-line block scores a second,
+    # lower bump where our candidate's descender lands on the original's next
+    # line — so a coarse pass can settle in the wrong basin and a fine pass that
+    # only looks next door can never leave it. The flat sweep costs about twice
+    # what the two-stage one did, which is a few seconds inside a calibration
+    # that already spends most of its time in the browser.
     best = None
-    for pitch in _PITCH_COARSE:
+    for pitch in _PITCH_GRID:
         size, score = at(pitch)
-        if score is not None and (best is None or score > best[2]):
-            best = (size, pitch, score)
+        if score is not None and (best is None or score > best[1]):
+            best = (pitch, score)
     if best is None:
         return None, RENDER_PITCH, None
-    around = best[1]
-    for i in range(-4, 5):
-        pitch = round(around + i * _PITCH_FINE, 3)
-        if pitch < _PITCH_COARSE[0] or pitch > _PITCH_COARSE[-1]:
-            continue
-        size, score = at(pitch)
-        if score is not None and score > best[2]:
-            best = (size, pitch, score)
-    leading = round(best[1], 3)
+    leading = round(best[0], 3)
     size = _fit_size(target, font_path, samples, ppu, alpha, ring=ring,
                      pitch=leading)
-    return size, leading, best[2]
+    return size, leading, best[1]
 
 
 def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
