@@ -734,6 +734,22 @@ def _box_from_frac(frac, cell):
             "x1": x0 + frac["x1"] * w, "y1": y0 + frac["y1"] * h}
 
 
+def word_bold_w(cfg, default):
+    """Synthetic-bold stroke for this theme's card WORDS, as a size fraction.
+
+    ``0.0`` unless the theme opts in with ``word_bold: true`` — the shipped
+    templates were all calibrated against the face's own weight, so bolding by
+    default would silently re-weight nine live designs. ``word_bold_w`` overrides
+    the house weight for a face that needs more or less.
+    """
+    if not cfg.get("word_bold"):
+        return 0.0
+    try:
+        return float(cfg.get("word_bold_w") or default)
+    except (TypeError, ValueError):
+        return default
+
+
 def _default_ink(cfg):
     """Fallback ink colour when no detected recipe supplies one.
 
