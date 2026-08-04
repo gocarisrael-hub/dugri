@@ -146,13 +146,31 @@ function sendBoardFile(res, id) {
 // is a better outcome than failing a paid order over a missing photo.
 const PAWN_UPLOAD_PATH_RE = /^\/content-uploads\/[a-f0-9]{16}\.(webp|jpe?g|png)$/;
 
+// Absolute path on disk for one of our own /content-uploads paths, or null when
+// the shape is wrong or the file is gone.
+function uploadFileFor(p) {
+  if (typeof p !== 'string' || !PAWN_UPLOAD_PATH_RE.test(p)) return null;
+  const file = path.join(content._uploadDir, path.basename(p));
+  return fs.existsSync(file) ? file : null;
+}
+
+// Which photo actually goes on the card: the background-removed CUTOUT when we
+// have one, else the original. The photo card's white sticker outline is traced
+// from the image's own alpha (docs/photo-card.md), so an original prints as a
+// white-bordered rectangle — but printing that is still better than failing a
+// paid order, and the miss is recorded so the owner can cut it by hand.
 function pawnPhotoFiles(collection) {
   const paths = Array.isArray(collection && collection.pawn_images) ? collection.pawn_images : [];
+  const cuts =
+    collection && collection.pawn_cutouts && typeof collection.pawn_cutouts === 'object'
+      ? collection.pawn_cutouts
+      : {};
   const out = [];
   for (const p of paths) {
-    if (typeof p !== 'string' || !PAWN_UPLOAD_PATH_RE.test(p)) continue;
-    const file = path.join(content._uploadDir, path.basename(p));
-    if (fs.existsSync(file)) out.push(file);
+    const original = uploadFileFor(p);
+    if (!original) continue;
+    const cutPath = Object.prototype.hasOwnProperty.call(cuts, p) ? cuts[p] : null;
+    out.push(uploadFileFor(cutPath) || original);
   }
   return out.slice(0, 4);
 }
@@ -1173,13 +1191,20 @@ app.post(
 // by the collection's owner token) and the ADMIN one below (authenticated by the
 // admin key, then acting with the collection's own owner token). Everything after
 // authentication is identical, so the cap/orphan-reclaim rules can't drift apart.
+// A cutout part is named after the original it belongs to: "cut:pawn0" carries the
+// cutout for the "pawn0" original. Pairing by NAME rather than by position keeps
+// the two lists from sliding against each other when one photo is skipped.
+const CUTOUT_PREFIX = 'cut:';
+
 function handlePawnUpload(req, res, id, ownerToken) {
   const boundary = templates.boundaryFromContentType(req.headers['content-type']);
   if (!boundary || !Buffer.isBuffer(req.body)) {
     return res.status(400).json({ error: 'expected multipart/form-data upload' });
   }
-  const { files } = templates.parseMultipart(req.body, boundary);
-  const parts = Object.values(files).filter((f) => f && Buffer.isBuffer(f.data));
+  const { fields, files } = templates.parseMultipart(req.body, boundary);
+  const parts = Object.entries(files).filter(
+    ([name, f]) => f && Buffer.isBuffer(f.data) && !name.startsWith(CUTOUT_PREFIX)
+  );
   // Reject an over-large batch UP FRONT so a single request can never write dozens
   // of files before the cap check (the buyer UI only ever sends up to 4).
   if (parts.length > 4) return res.status(400).json({ error: 'too many images (max 4)' });
@@ -1187,10 +1212,10 @@ function handlePawnUpload(req, res, id, ownerToken) {
   // full collection writes nothing at all — the DoS fix.
   const c = db.getCollection(id);
   const room = Math.max(0, 4 - (Array.isArray(c.pawn_images) ? c.pawn_images.length : 0));
-  const written = []; // { path, created } for every file THIS request actually wrote
-  for (const f of parts.slice(0, room)) {
+  const written = []; // { name, path, created } for every file THIS request wrote
+  for (const [name, f] of parts.slice(0, room)) {
     try {
-      written.push(content.saveImageBytes(f.data));
+      written.push({ name, ...content.saveImageBytes(f.data) });
     } catch {
       // Oversized/unsupported image — skip this file, keep the rest (fail-soft).
     }
@@ -1210,7 +1235,64 @@ function handlePawnUpload(req, res, id, ownerToken) {
     }
   }
   if (stored == null) return res.status(403).json({ error: 'forbidden' });
-  res.json({ ok: true, pawn_images: stored });
+  storePawnCutouts({ id, ownerToken, written, kept, files, fields });
+  const fresh = db.getCollection(id);
+  res.json({
+    ok: true,
+    pawn_images: stored,
+    pawn_cutouts: (fresh && fresh.pawn_cutouts) || {},
+  });
+}
+
+// --- background removal for the pawn photos ---------------------------------
+// The photo card draws each pawn as a die-cut sticker whose white outline is
+// generated from the image's OWN alpha (docs/photo-card.md): the halo is a <use>
+// of the slot through a filter that dilates SourceAlpha. A photo straight off a
+// phone is opaque, so it has no silhouette to trace and prints as a white-bordered
+// RECTANGLE. Every pawn photo therefore has to become a transparent RGBA cutout.
+//
+// The cut itself happens in the BUYER'S BROWSER (site/js/pawn-cutout.js, MediaPipe
+// + a self-hosted Apache-2.0 model), so it costs nothing per order, adds nothing to
+// this container, and the buyer SEES the sticker and can retry a bad one before
+// paying. The server's whole job is to keep the two files straight: pawn_images
+// holds the untouched ORIGINALS, pawn_cutouts maps each original's path to its
+// cutout — or to null when the browser tried and could not.
+//
+// Nothing here can fail an order. A missing, malformed or non-PNG cutout is simply
+// a miss: the original photo is used and the owner sees the flag in the orders table.
+function storePawnCutouts({ id, ownerToken, written, kept, files, fields }) {
+  // Which originals the browser tried to cut and failed on, by part name. Sent as
+  // a plain field because there is no file to attach for a failure.
+  const failed = new Set(
+    String((fields && fields.cutfail) || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+  for (const w of written) {
+    if (!kept.has(w.path)) continue; // the original itself wasn't recorded
+    const part = files[CUTOUT_PREFIX + w.name];
+    if (!part || !Buffer.isBuffer(part.data)) {
+      // No cutout came with this photo. Only record a MISS when the client said it
+      // tried — an older client that knows nothing about cutouts must leave the map
+      // untouched (key absent = never attempted), exactly as before this existed.
+      if (failed.has(w.name)) db.setPawnCutout(id, ownerToken, w.path, null);
+      continue;
+    }
+    // PNG only. A JPEG cannot carry alpha, so accepting one would record "cut ✓"
+    // for an image that still prints as a white rectangle — a silent failure, which
+    // is the one outcome this whole feature exists to prevent.
+    let saved = null;
+    try {
+      if (content.extFromMagic(part.data) === '.png') saved = content.saveImageBytes(part.data);
+    } catch {
+      saved = null; // oversized/unreadable — record the miss
+    }
+    const recorded = db.setPawnCutout(id, ownerToken, w.path, saved ? saved.path : null);
+    if (saved && recorded == null && saved.created && !content.isImageReferenced(saved.path)) {
+      content.deleteUpload(saved.path); // couldn't record it — don't orphan the file
+    }
+  }
 }
 
 // Admin: ADD pawn photos to an order from the orders table — the owner receives a
@@ -1237,6 +1319,56 @@ app.put('/api/admin/collections/:id/pawns', (req, res) => {
   const imgs = db.adminSetPawnImages(req.params.id, (req.body || {}).pawn_images);
   if (imgs == null) return res.status(404).json({ error: 'not found' });
   res.json({ ok: true, pawn_images: imgs });
+});
+
+// The vendored background-removal runtime (site/vendor/mediapipe — MediaPipe Tasks
+// Vision + the selfie_multiclass model, both Apache-2.0). Served from OUR origin,
+// never a CDN, so the buyer's browser can cut a photo with the outside world
+// unreachable.
+//
+// This route exists for ONE reason: the wasm is stored brotli-precompressed
+// (2.4MB on disk against 11.8MB raw) and express.static has no idea what a .br
+// sibling is. Everything else in the directory falls through to express.static
+// untouched. The model is NOT precompressed — tflite float32 weights only give up
+// ~9% and the second copy would cost more in the repo than it saves on the wire.
+const VENDOR_DIR = path.join(SITE_DIR, 'vendor');
+const VENDOR_TYPES = {
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.wasm': 'application/wasm',
+  '.tflite': 'application/octet-stream',
+};
+const vendorInflated = new Map();
+
+app.get('/vendor/:dir/:file', (req, res, next) => {
+  const { dir, file } = req.params;
+  // Plain names only — no traversal, no dotfiles, no nested paths.
+  if (!/^[A-Za-z0-9._-]+$/.test(dir) || !/^[A-Za-z0-9._-]+$/.test(file)) return next();
+  if (dir.includes('..') || file.includes('..')) return next();
+  const type = VENDOR_TYPES[path.extname(file)];
+  if (!type) return next(); // let express.static serve LICENSE/README as it likes
+  const raw = path.join(VENDOR_DIR, dir, file);
+  const br = raw + '.br';
+  if (!fs.existsSync(br)) return next(); // no precompressed sibling — static's job
+  // Content-addressed by hand: these files change only when we deliberately
+  // re-vendor them, and a stale wasm is the difference between a cut and a miss.
+  res.setHeader('Content-Type', type);
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('Vary', 'Accept-Encoding');
+  if (/\bbr\b/.test(String(req.headers['accept-encoding'] || ''))) {
+    res.setHeader('Content-Encoding', 'br');
+    return res.sendFile(br);
+  }
+  // A client that can't take brotli (rare enough that it isn't worth a second copy
+  // on disk) gets it inflated once and cached in memory.
+  try {
+    if (!vendorInflated.has(br)) {
+      vendorInflated.set(br, require('zlib').brotliDecompressSync(fs.readFileSync(br)));
+    }
+    return res.send(vendorInflated.get(br));
+  } catch {
+    return res.status(500).end();
+  }
 });
 
 // Public order PREVIEW: render a REAL sample card + board for a theme with the
@@ -4146,3 +4278,7 @@ module.exports.isGroupWebhook = isGroupWebhook;
 module.exports.ilPhoneToWaId = ilPhoneToWaId;
 module.exports.waIdDigits = waIdDigits;
 module.exports.buyerLandedInGroup = buyerLandedInGroup;
+// Which pawn files the generator is handed for a collection (the cutout when we
+// have one, the original otherwise) — exposed so the choice can be asserted
+// directly instead of through a full generation run.
+module.exports.pawnPhotoFiles = pawnPhotoFiles;

@@ -920,11 +920,16 @@
           none.textContent = 'אין תמונות';
           box.appendChild(none);
         }
+        const cuts =
+          (editing && editing.pawn_cutouts && typeof editing.pawn_cutouts === 'object'
+            ? editing.pawn_cutouts
+            : null) || {};
         editPhotos.forEach((p, i) => {
           const wrap = document.createElement('div');
           wrap.className = 'photo';
           const img = document.createElement('img');
-          img.src = p;
+          // Show what will PRINT: the cutout when we have one, else the original.
+          img.src = (Object.prototype.hasOwnProperty.call(cuts, p) && cuts[p]) || p;
           const x = document.createElement('button');
           x.type = 'button';
           x.textContent = '×';
@@ -1035,13 +1040,34 @@
 
       // Upload photos straight away (the bytes have to reach the server) — the
       // response is the authoritative stored list, so it replaces the working copy.
+      //
+      // The background is cut out HERE, in this browser, exactly as it is in the
+      // buyer's wizard (site/js/pawn-cutout.js) — the owner attaches photos the
+      // customer sent on WhatsApp, and those need the same transparent sticker or
+      // they print as white rectangles (docs/photo-card.md). A cut that fails is
+      // reported as a miss, never an upload error.
       el('e-photo-file').onchange = async () => {
         const files = [...(el('e-photo-file').files || [])];
         if (!files.length || !editing) return;
         const msg = el('e-photo-msg');
-        msg.textContent = 'מעלה…';
+        msg.textContent = 'מסירים רקע…';
         const fd = new FormData();
-        files.slice(0, 4).forEach((f, i) => fd.append('file' + i, f, f.name));
+        const failed = [];
+        let cutPawnPhoto = null;
+        try {
+          ({ cutPawnPhoto } = await import('./js/pawn-cutout.js'));
+        } catch {
+          cutPawnPhoto = null;
+        }
+        for (const [i, f] of files.slice(0, 4).entries()) {
+          const name = 'file' + i;
+          fd.append(name, f, f.name);
+          const cut = cutPawnPhoto ? await cutPawnPhoto(f) : null;
+          if (cut) fd.append('cut:' + name, cut, name + '-cut.png');
+          else failed.push(name);
+        }
+        if (failed.length) fd.append('cutfail', failed.join(','));
+        msg.textContent = 'מעלה…';
         try {
           const r = await fetch(
             '/api/admin/collections/' + editing.id + '/pawns?key=' + encodeURIComponent(key),
@@ -1056,6 +1082,11 @@
           // The row's stored list moved on; keep the working copy in step so a
           // later save doesn't re-remove what was just uploaded.
           editing.pawn_images = [...editPhotos];
+          // ...and the freshly recorded cutouts, so the thumbnails show the
+          // sticker rather than the original the moment the upload returns.
+          if (data.pawn_cutouts && typeof data.pawn_cutouts === 'object') {
+            editing.pawn_cutouts = data.pawn_cutouts;
+          }
           msg.textContent = 'הועלה ✓';
           renderEditPhotos();
         } catch {
@@ -1260,16 +1291,31 @@
 
           // Optional customer photos ("פיונים"): thumbnails linking to the full
           // image. These are our own /content-uploads/ paths, so they're safe.
+          // The thumbnail shows the background-removed CUTOUT when there is one —
+          // that is what actually prints. A photo whose cut FAILED is flagged in
+          // red: the card traces its sticker outline from the image's own alpha, so
+          // an uncut photo prints as a white rectangle and needs a manual cut.
           const tdPawns = document.createElement('td');
           if (Array.isArray(c.pawn_images) && c.pawn_images.length) {
+            const cuts =
+              (c.pawn_cutouts && typeof c.pawn_cutouts === 'object' && c.pawn_cutouts) || {};
             for (const p of c.pawn_images) {
+              const hasRecord = Object.prototype.hasOwnProperty.call(cuts, p);
+              const cut = hasRecord ? cuts[p] : null;
               const a = document.createElement('a');
-              a.href = p;
+              a.href = cut || p;
               a.target = '_blank';
+              a.title = cut
+                ? 'הרקע הוסר אוטומטית'
+                : hasRecord
+                  ? 'הסרת הרקע נכשלה - צריך חיתוך ידני'
+                  : 'לא נוסתה הסרת רקע';
               const img = document.createElement('img');
-              img.src = p;
+              img.src = cut || p;
               img.style.cssText =
-                'width:34px;height:34px;object-fit:cover;border-radius:4px;border:1px solid #ddd;margin:2px';
+                'width:34px;height:34px;object-fit:cover;border-radius:4px;border:1px solid ' +
+                (cut ? '#ddd' : '#c00') +
+                ';margin:2px';
               a.appendChild(img);
               tdPawns.appendChild(a);
             }

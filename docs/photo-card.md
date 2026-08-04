@@ -17,6 +17,16 @@ generator never branches on which template it loaded.
    image with an opaque background has no silhouette to follow: it renders as a white-bordered
    **rectangle** and the card looks broken. There is no graceful degradation here by design —
    the failure is meant to be obvious rather than subtly wrong.
+   **Where the cutout comes from.** It is produced in the BUYER'S BROWSER at upload time, not
+   on the server and not at generate time — `site/js/pawn-cutout.js` runs MediaPipe's
+   ImageSegmenter over the self-hosted `selfie_multiclass_256x256` model (both Apache-2.0,
+   vendored under `site/vendor/mediapipe`, no CDN and no third-party API). The collection then
+   keeps BOTH files: `pawn_images` is always the untouched ORIGINAL, and `pawn_cutouts` maps
+   each original's path to its cutout path — or to `null` when a cut was attempted and failed,
+   which the admin orders table flags in red. `pawnPhotoFiles()` hands the generator the cutout
+   when there is one and the original otherwise, so the generator itself never knows the
+   difference and never makes a network call. A browser too old to segment simply produces no
+   cutout: the original prints (as the rectangle above) and the owner cuts it by hand.
 2. **Alpha must survive the generator's own photo prep.** As of today it does not:
    `generator/build.py` → `square_photo()` ends with `im.convert("RGB").crop(box).save(out)`, and
    `convert("RGB")` flattens the alpha channel away. Every customer photo therefore reaches the
