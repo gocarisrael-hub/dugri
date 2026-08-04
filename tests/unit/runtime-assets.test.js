@@ -139,32 +139,75 @@ describe('.dockerignore resolves last-match-wins', () => {
     expect(inBuildContext('resources/print shop/dugri-press-sample.pdf')).toBe(false);
   });
 
-  // filled/ is a RUNTIME INPUT, not a reference export: since #253 the server runs
-  // generator/recipe_diff.py at template upload and diffs clean/ against filled/
-  // to detect the card slots. Stripping it from the image meant detection could
-  // only ever work on files uploaded in the same session — and worse, "שחזור
-  // למקור" deletes the owner's assets and falls back to the shipped ones, so with
-  // no shipped filled/ to fall back to the owner lost all nine SVGs outright.
+  // The SHIPPED THEMES are deliberately out of the image now. They were the
+  // image's copy of designs the owner has since re-onboarded through the admin,
+  // and the volume copy (DATA_DIR/templates) shadows the image one — so what the
+  // image carried had stopped being what renders, at a cost of 131MB in the image
+  // and 131MB in every `railway up` upload.
+  //
+  // This inverts an older guard that pinned filled/ INTO the image. That guard was
+  // right for its time: the server diffs clean/ against filled/ to detect slots,
+  // and "שחזור למקור" restored from the shipped copy, so stripping filled/ once
+  // cost the owner nine SVGs outright. Both of those now read the volume, which is
+  // the single source of artwork — and the reason scripts/backup-templates.mjs
+  // exists. Restoring these lines would put the 131MB back.
   const themesDir = path.join(repo, 'resources', 'canva', 'templates');
   const templateDirs = fs
     .readdirSync(themesDir, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
+    .filter((d) => d.isDirectory() && d.name !== '_shared')
     .map((d) => d.name);
 
   for (const t of templateDirs) {
-    const filled = path.join(themesDir, t, 'filled');
-    if (!fs.existsSync(filled)) continue;
-    it(`ships ${t}/filled/ — recipe_diff reads it server-side`, () => {
-      const one = fs.readdirSync(filled).find((f) => f.endsWith('.svg'));
-      expect(one).toBeTruthy();
-      expect(inBuildContext(`resources/canva/templates/${t}/filled/${one}`)).toBe(true);
+    it(`keeps ${t}/ out of the image — the volume's copy is what renders`, () => {
+      expect(inBuildContext(`resources/canva/templates/${t}/clean/fronts.svg`)).toBe(false);
+      expect(inBuildContext(`resources/canva/templates/${t}/fonts/Any.ttf`)).toBe(false);
     });
   }
 
-  it('still ships clean/ and fonts/ alongside it', () => {
-    const t = templateDirs[0];
-    expect(inBuildContext(`resources/canva/templates/${t}/clean/fronts.svg`)).toBe(true);
-    expect(inBuildContext(`resources/canva/templates/${t}/fonts/Any.ttf`)).toBe(true);
+  // _shared is NOT a theme and must survive the exclusion above: the photo card
+  // falls back to its pawns on any order with fewer than four customer photos, so
+  // an image without it fails an order that renders perfectly in dev.
+  it('still ships _shared/ — the photo card reads it per order', () => {
+    expect(inBuildContext('resources/canva/templates/_shared/photo-fallback/1.svg')).toBe(true);
+    expect(inBuildContext('resources/canva/templates/_shared/photo-card/photo.svg')).toBe(true);
+  });
+});
+
+// The upload is a THIRD filter, after .dockerignore and the COPY list, and it is
+// the one that broke: `railway up` tars the working directory, so a file the
+// image never sees still crosses the wire. It reached ~250MB and stopped
+// completing at all.
+describe('.railwayignore keeps the upload in step with the image', () => {
+  const railwayignore = fs
+    .readFileSync(path.join(repo, '.railwayignore'), 'utf8')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'));
+
+  const uploadRules = railwayignore.map((line) => ({
+    negated: line.startsWith('!'),
+    re: ruleRegex(line.replace(/^!/, '').replace(/\/$/, '')),
+  }));
+
+  const inUpload = (rel) => {
+    let included = true;
+    for (const r of uploadRules) if (r.re.test(rel)) included = r.negated;
+    return included;
+  };
+
+  it('uploads everything the Dockerfile copies', () => {
+    expect(inUpload('server/index.js')).toBe(true);
+    expect(inUpload('site/index.html')).toBe(true);
+    expect(inUpload('generator/build.py')).toBe(true);
+    expect(inUpload('content/wordlists/generic-350.txt')).toBe(true);
+    expect(inUpload('resources/print shop/SWOP2006_Coated3v2.icc')).toBe(true);
+    expect(inUpload('resources/canva/templates/_shared/photo-fallback/1.svg')).toBe(true);
+  });
+
+  it('does not upload what the image no longer contains', () => {
+    expect(inUpload('resources/canva/templates/grapefruit/clean/2.svg')).toBe(false);
+    expect(inUpload('resources/canva/staging/neon/front.svg')).toBe(false);
+    expect(inUpload('tests/unit/runtime-assets.test.js')).toBe(false);
   });
 });
 
@@ -173,7 +216,9 @@ describe('runtime assets are packaged into the image', () => {
   const RUNTIME_DIRS = [
     'generator', // the code, recipes/, themes.json, word-fonts/
     'content', // topup.py's seed word pools
-    'resources/canva/templates', // per-theme clean art + fonts
+    // The per-theme artwork is NOT here any more — it lives on the volume and is
+    // shadowed there. Only _shared (the photo card's fallback pawns) still ships.
+    'resources/canva/templates/_shared',
   ];
 
   for (const dir of RUNTIME_DIRS) {

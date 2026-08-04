@@ -1,0 +1,42 @@
+# What `railway up` UPLOADS. Distinct from .dockerignore, which only controls
+# what the BUILD CONTEXT sees: the CLI tars this whole directory first, so a file
+# excluded there is still sent over the wire. That upload reached ~250MB and
+# stopped completing ("operation timed out", deployment FAILED with no build).
+#
+# Keep in step with the Dockerfile's COPY list:
+#   server/  site/  generator/  content/
+#   resources/canva/templates/_shared/   <- the photo card's fallback pawns
+#   resources/print shop/SWOP2006_Coated3v2.icc
+#
+# The nine shipped THEMES are excluded here for the same reason .dockerignore
+# drops them: the volume's copy is what renders, so uploading the image's copy
+# moved 131MB per deploy to build something nothing reads. They stay in git as
+# test fixtures — this file only keeps them off the wire.
+resources/canva/templates/*
+!resources/canva/templates/_shared/
+!resources/canva/templates/_shared/**
+
+# Canva working files that were never a shipped template: staging exports, one-off
+# design folders, loose screenshots. ~68MB, nothing reads any of it.
+resources/canva/staging/
+resources/canva/dugri*/
+resources/*.png
+resources/*.jpeg
+resources/*.jpg
+
+# The press folder's sample PDFs. The ICC profile beside them IS copied by the
+# Dockerfile, so re-include exactly that one file.
+resources/print shop/*
+!resources/print shop/SWOP2006_Coated3v2.icc
+
+# Test + docs trees: never copied into the image.
+tests/
+docs/
+.github/
+
+# Local build/editor cruft.
+node_modules/
+**/node_modules/
+**/__pycache__/
+.DS_Store
+**/.DS_Store

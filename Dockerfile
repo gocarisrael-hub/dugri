@@ -54,7 +54,15 @@ COPY site/ ./site/
 # theme's clean/ background SVGs + fonts/ (the heavy filled/ reference exports are
 # excluded via .dockerignore, so this stays lean).
 COPY generator/ ./generator/
-COPY resources/canva/templates/ ./resources/canva/templates/
+# _shared ONLY, not the themes. The shipped theme artwork used to be copied here
+# wholesale; the owner has re-onboarded those designs through the admin, so the
+# volume copy (DATA_DIR/templates) shadows the image one and the image's version
+# had stopped being what renders. Dropping it takes 131MB out of the image AND
+# out of every `railway up` upload. _shared stays because it is not a theme: the
+# photo card reads its fallback pawns per order. See .dockerignore for the full
+# trade — the volume is now the only source of theme artwork, so
+# scripts/backup-templates.mjs is the safety net.
+COPY resources/canva/templates/_shared/ ./resources/canva/templates/_shared/
 # The press export's ICC profile (see PRESS_ICC in server/index.js). A
 # .dockerignore re-include alone would not put it in the image — nothing copies
 # it — and the pair is the whole reason this class of bug keeps recurring.
