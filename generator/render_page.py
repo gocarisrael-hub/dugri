@@ -483,17 +483,59 @@ def _font_lead(font, ref):
     return (bottom - top) / ref + _WRAP_GAP
 
 
-def _card_lead(font, ref, lines):
-    """The pitch for one card: the font's fixed one, floored by these glyphs.
+# The digits and stop every card prints in its line markers (``word_lines``).
+# They are set from the same face on the same baseline, so they belong in the
+# card's own glyph repertoire even though they are drawn as a separate run.
+_MARKER_GLYPHS = "1234567890."
 
-    The font's number is the answer (see ``_font_lead``). ``_lead_for`` stays as a
-    guard for text outside ``_LEAD_REPERTOIRE`` — a Cyrillic or emoji character
-    that draws deeper than anything measured — because two letters touching is a
-    worse fault than one card in a deck spacing wider than its neighbours. On
-    ordinary Hebrew, Latin or numeric input it can never bite, so the gap is fixed
-    in practice as well as in principle.
+
+def _card_lead(font, ref, lines):
+    """The pitch this card's own type needs, as a multiple of the size.
+
+    The owner's rule: "the minimum gap (that obeys the rule that no 2 letters
+    touch each other) between the most descent letter (above) and the most ascent
+    letter (bottom) … applied between all lines". Two halves, and they pull
+    against each other:
+
+      NOT TOUCHING is about the glyphs that are actually set. The deepest
+      descender that can sit above a line and the tallest ascender that can sit
+      below it are properties of the TEXT ON THIS CARD, because those are the only
+      letters that can ever be adjacent on it.
+
+      ONE GAP FOR ALL LINES is about the card, and it is satisfied by taking the
+      worst pair over the whole card and spacing every line by it — which is what
+      this returns.
+
+    This USED to reserve the worst case over an abstract repertoire of every
+    glyph a card could ever print (``_font_lead``) — Hebrew, Latin, digits and
+    punctuation together — and that is a different, much larger number, because
+    the deepest descender in the repertoire and the tallest ascender in it almost
+    never appear on the same card. Measured across the ten shipped word faces,
+    the repertoire reserve is 15% wider than a real card needs on Cafe, 25% on
+    Comix, 40% on FtPilKahol and 52% on Asakim. Every one of those percent went
+    into the line pitch, and the deck then printed its words at that much SMALLER
+    a size to fit — which is precisely the "our type is too small and our leading
+    too airy, and the two cancel" that the originals were being measured against.
+
+    Measured over ALL the card's lines rather than adjacent pairs, so the answer
+    does not move when the same four words arrive in a different order — a card's
+    rhythm should not depend on which slot a word landed in.
+
+    Still provably safe: the pitch it returns carries the deepest ink any line on
+    this card puts below its baseline, plus the highest any line puts above its
+    own, plus ``_WRAP_GAP`` of clear air on top. No two glyphs of this card can
+    touch at that pitch, whatever order they are set in.
     """
-    return max(_font_lead(font, ref), _lead_for(font, ref, lines))
+    texts = [ln for ln in lines if ln and ln.strip()]
+    if not texts:
+        return _font_lead(font, ref)
+    texts.append(_MARKER_GLYPHS)
+    boxes = [font.getbbox(t) for t in texts]
+    top = min(b[1] for b in boxes)
+    bottom = max(b[3] for b in boxes)
+    if bottom <= top:
+        return _font_lead(font, ref)
+    return (bottom - top) / ref + _WRAP_GAP
 
 
 def _slot_pitch(slots, i):

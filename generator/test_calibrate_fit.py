@@ -84,9 +84,12 @@ def test_the_word_fit_returns_the_size_its_rows_were_painted_at():
     got, grade, note = C.fit_word_size(mask, image, slots, PPU, 0.0, 0.0,
                                        HEBREW_FONT, words)
     assert abs(got - size) <= 1.0, got
-    # never better than "low": the origin's words are unknown text, so the match
-    # rests on the theme's wordlist being typical of what it printed
-    assert grade == "low" and "word_size" in note
+    # The grade is now how far the FOUR ROWS disagree, which is a real question
+    # about the artwork, rather than a blanket "low" that dropped every fit and
+    # left the words auto-fitting from a constant. Four rows set at one size —
+    # which is what these are — must agree, so this must not grade itself out.
+    assert grade in ("high", "medium"), (grade, note)
+    assert "word_size" in note
 
 
 # ---- the refusals -----------------------------------------------------------
@@ -254,3 +257,43 @@ def test_high_and_medium_fits_are_kept():
     assert dropped == []
     assert out["title_style"]["size"] == 28.0
     assert out["word_size"] == 21.3
+
+
+# --- re-detecting may never leave a template worse than it was ---------------
+# "זהה מחדש" re-measures from the artwork, and a measurement can come back empty.
+# title_style is written to the theme as a WHOLE dict, so a knob missing from the
+# new blob is ERASED and that surface silently reverts to auto-fit — a button
+# called "detect again" undoing a calibration the owner had signed off.
+
+def test_a_knob_this_pass_could_not_measure_keeps_its_calibrated_value():
+    out = {"title_style": {"fill": "#111111"}, "word_size": None}
+    cfg = {"title_style": {"size": 28.0, "back_size": 23.4, "outline_w": 0.05},
+           "word_size": 21.3}
+    notes, conf = [], {}
+    kept = C._carry_forward(out, cfg, notes, conf)
+    assert out["title_style"]["size"] == 28.0
+    assert out["title_style"]["back_size"] == 23.4
+    assert out["title_style"]["outline_w"] == 0.05
+    assert out["word_size"] == 21.3
+    assert len(kept) == 4
+    assert conf["word_size"] == "carried"
+    assert notes and "KEPT" in notes[0]
+
+
+def test_a_fresh_measurement_always_beats_the_carried_one():
+    """The guard fills gaps. It must never be able to freeze a template against
+    a better reading, or every future improvement would stop at the first
+    calibration the template ever got."""
+    out = {"title_style": {"size": 31.0}, "word_size": 19.0}
+    cfg = {"title_style": {"size": 28.0}, "word_size": 21.3}
+    kept = C._carry_forward(out, cfg, [], {})
+    assert kept == []
+    assert out["title_style"]["size"] == 31.0
+    assert out["word_size"] == 19.0
+
+
+def test_nothing_is_invented_for_a_template_with_no_calibration_yet():
+    out = {"title_style": {}, "word_size": None}
+    kept = C._carry_forward(out, {"title_style": {}}, [], {})
+    assert kept == []
+    assert "size" not in out["title_style"] and out["word_size"] is None

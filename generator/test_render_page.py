@@ -822,11 +822,19 @@ def test_the_free_room_below_the_last_line_is_real():
 
 def test_the_extra_room_is_what_keeps_the_type_at_full_size():
     """Her card, with and without the room: the same words, the same wrap, and a
-    third of the type size riding on which envelope is used."""
+    tenth of the type size riding on which envelope is used.
+
+    It used to be a third. The room did not shrink — the OTHER thing squeezing a
+    wrapped card got smaller: the line pitch now reserves what this card's own
+    glyphs need instead of the worst case over every glyph a card could ever
+    print, so the penned card recovered most of the height it was spending on
+    leading and the two envelopes moved closer together. The room still matters,
+    and this pins that it does; what it no longer has to do is compensate for a
+    pitch that was too wide in the first place."""
     font, ref = _cafe()
     penned = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN, room=None)
     roomy = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN)
-    assert roomy[0].size > penned[0].size * 1.2, (
+    assert roomy[0].size > penned[0].size * 1.10, (
         f"{penned[0].size:.2f} -> {roomy[0].size:.2f}")
 
 
@@ -896,21 +904,20 @@ _BP_FLOOR_PITCH = (((_BP_SLOTS[-1]["y0"] + _BP_SLOTS[-1]["y1"]) / 2
                    / (len(_BP_SLOTS) - 1))
 
 
-def test_the_line_gap_comes_from_the_font_not_the_cards_own_glyphs():
-    """``_lead_for`` answered per card, so two cards of one deck got two rhythms
-    (30.56 against 29.39 on the owner's own pair). The pitch is now the FONT's
-    need, floored by the origin's own entry spacing and capped by the paper left
-    below the card — three quantities, none of which knows which letters this
-    particular card happens to carry.
+def test_the_line_gap_clears_every_glyph_this_card_actually_sets():
+    """The rule is that no two letters touch, and the letters that can touch are
+    the ones ON THE CARD. So the pitch carries the deepest ink any of the card's
+    own lines puts below its baseline plus the highest any of them puts above it,
+    and never less — whatever the card says.
 
-    At the shipped 8 mm bottom margin the CAP binds on her wrapped card: six
-    lines no longer fit under the origin's spacing, so the pitch comes off the
-    floor and takes the value the room dictates — which shows as the last line's
-    ink landing exactly on ``room_bottom``. That is the documented order (the
-    floor is a preference, the font's need is the rule), so both branches are
-    pinned here rather than the floor alone."""
+    It used to reserve that worst case over an ABSTRACT repertoire of every glyph
+    a card could ever print. That is a different and much larger number, because
+    the repertoire's deepest descender and its tallest ascender are rarely on the
+    same card: 15% larger on Cafe, 25% on Comix, 40% on FtPilKahol, 52% on Asakim.
+    Every one of those percent was spent on line pitch and then taken back out of
+    the type size, which is exactly the "type too small, leading too airy, and the
+    two cancel" the originals were measured against."""
     font, ref = _cafe()
-    lead = rp._font_lead(font, ref)
     for words in (_CARD_HAPOEL, _CARD_ARZOT,
                   ["ים", "ים", "ים", "ים"],            # nothing descends or rises
                   ["לקחת", "לקחת", "לקחת", "לקחת"]):   # both, at their extremes
@@ -918,12 +925,13 @@ def test_the_line_gap_comes_from_the_font_not_the_cards_own_glyphs():
         live = [l for l in layouts if l is not None]
         size = live[0].size
         pitch = live[0].lead * size
-        want = max(_BP_FLOOR_PITCH, lead * size)
+        flat = [ln for l in live for ln in l.lines]
+        need = rp._card_lead(font, ref, flat) * size
+        want = max(_BP_FLOOR_PITCH, need)
         ink = (_line_centers(layouts, _BP_SLOTS)[-1]
                + rp._ink_reach(font, ref, live[-1].lines[-1])[1] * size)
-        assert pitch >= lead * size - 1e-9, (
-            f"{words}: the font's need is the rule and may not be undercut — "
-            f"{pitch} < {lead * size}")
+        assert pitch >= need - 1e-9, (
+            f"{words}: this card's own glyphs need {need} and got {pitch}")
         assert pitch <= want + 1e-9, (
             f"{words}: nothing may spread the lines past the origin's own "
             f"spacing — {pitch} > {want}")
@@ -936,6 +944,57 @@ def test_the_line_gap_comes_from_the_font_not_the_cards_own_glyphs():
                 f"room being the reason — ink {ink}, room {_bp_room()}")
         else:
             assert ink <= _bp_room() + 1e-6, f"{words}: ink {ink} past the room"
+
+
+def test_the_cards_own_gap_is_tighter_than_the_whole_repertoires():
+    """The saving is the point of the change, so it is pinned rather than
+    assumed: a real Hebrew card must need materially less than the repertoire."""
+    font, ref = _cafe()
+    card = rp._card_lead(font, ref, _CARD_HAPOEL)
+    assert card < rp._font_lead(font, ref), (card, rp._font_lead(font, ref))
+
+
+def test_the_gap_does_not_depend_on_which_slot_a_word_landed_in():
+    """Measured over ALL the card's lines, not adjacent pairs, so re-ordering the
+    same four words cannot change the card's rhythm."""
+    font, ref = _cafe()
+    words = ["לקחת", "ים", "מסיבה", "קרן"]
+    a = rp._card_lead(font, ref, words)
+    b = rp._card_lead(font, ref, list(reversed(words)))
+    assert abs(a - b) < 1e-12, (a, b)
+
+
+def test_no_two_lines_of_a_card_can_touch_at_the_pitch_it_is_given():
+    """The owner's rule, checked on the GLYPHS: for every card, every pair of
+    lines that end up adjacent, the upper line's lowest ink must stop above the
+    lower line's highest ink — with clear air between them, not merely equal.
+
+    Checked over cards chosen to be adversarial (a deep final letter set against
+    a tall lamed, and a card that wraps), because the whole risk of tightening the
+    pitch is that some pairing collides."""
+    font, ref = _cafe()
+    cards = [_CARD_HAPOEL, _CARD_ARZOT,
+             ["לקחת", "ךףץ", "לקחת", "ךףץ"],
+             ["ךףץ", "לקחת", "ךףץ", "לקחת"],
+             ["להקת שבעת הכוכבים", "ים", "לקחת", "ךףץ"]]
+    for words in cards:
+        layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+        live = [l for l in layouts if l is not None]
+        size = live[0].size
+        centers = _line_centers(layouts, _BP_SLOTS)
+        flat = [ln for l in live for ln in l.lines]
+        assert len(centers) == len(flat), (words, len(centers), len(flat))
+        asc, _desc = font.getmetrics()
+        for i in range(len(flat) - 1):
+            # Where each line's ink actually reaches, in card units, using the
+            # same centre-to-baseline convention word_lines draws with.
+            upper_bottom = (centers[i]
+                            + rp._ink_reach(font, ref, flat[i])[1] * size)
+            lower_top = (centers[i + 1]
+                         - rp._ink_reach(font, ref, flat[i + 1])[0] * size)
+            assert upper_bottom < lower_top, (
+                f"{words}: line {i} ink reaches {upper_bottom:.3f} and line "
+                f"{i + 1} starts at {lower_top:.3f} — they touch")
 
 
 def test_two_cards_that_set_at_one_size_show_one_gap():

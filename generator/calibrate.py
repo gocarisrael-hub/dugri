@@ -209,6 +209,202 @@ def _rgb_dist(a, b):
     return sum(abs(p - q) for p, q in zip(a, b))
 
 
+# ---- the OUTLINE RING, measured by depth ------------------------------------
+#
+# ``outline_w`` is the one style knob nothing measured. ``_fill_and_outline``
+# returned it as a by-product of whichever colour path happened to run, and on a
+# small front-card title that path is the CLUSTERING one — which, when the ring
+# covers the fill, finds a single colour cluster and reports "no ring, 0.0". The
+# vector source meanwhile knows perfectly well there are two paints. The two
+# disagreed silently and the 0.0 won, so three shipped decks printed a pale fill
+# with no ring at all against pale artwork: an unreadable title.
+#
+# The ring is not a colour question, it is a DEPTH one. The renderer strokes each
+# glyph with ``2 * outline_w * size`` under a fill painted on top
+# (``render_page.title_block``), so the painted ink is the glyph dilated by the
+# ring and:
+#
+#     every RING pixel lies within the ring's thickness of the ink's outer edge
+#     every FILL pixel lies deeper than that
+#
+# So the ring is ONE threshold on distance-to-background, and the honest value of
+# that threshold is the one that best sorts the pixels that are the outline
+# colour from the pixels that are the fill colour. Successive erosions of the ink
+# mask give that distance directly — each erosion peels exactly one pixel — and
+# the same pass answers WHICH paint is the ring, because the ring is by
+# definition the paint that owns the outer shells. That is a stronger
+# discriminator than ``assign_paints``' boundary count, which asks the same
+# question one pixel deep.
+#
+# Expressed against the type SIZE, never against the ink height: ``outline_w`` is
+# a fraction of the em in ``title_block``, and a Hebrew face's ink is anywhere
+# from 0.46 to 1.13 of its em (measured across the ten shipped word faces), so
+# dividing by the ink would be wrong by up to a factor of two either way.
+
+# Ink shells to walk before giving up. A ring thicker than this share of the em
+# is not a ring; the cap only stops the loop running away on a saturated diff.
+_MAX_RING_SHELLS = 40
+
+
+def _paint_class(colour, paints, bg):
+    """Which of ``paints`` a pixel belongs to, or None for background/blend."""
+    best, dist = None, None
+    for i, p in enumerate(paints + [bg]):
+        d = _rgb_dist(p, colour)
+        if dist is None or d < dist:
+            best, dist = i, d
+    if best is None or best >= len(paints) or dist > _MIN_CLUSTER_DIST:
+        return None
+    return best
+
+
+def solid_ink(region):
+    """``region`` with any enclosed hole filled in — the glyph as a solid shape.
+
+    The ink mask is ``|filled - clean|`` through a fixed threshold, so it only
+    records ink that DIFFERS from the artwork by enough to see. A title painted
+    as a light fill inside a dark ring breaks that assumption from the inside:
+    the ring clears the threshold easily, and the fill — pale ink over pale
+    artwork — does not. What comes back is a hollow outline with the fill missing
+    from the mask entirely.
+
+    Every measurement downstream then reads that title as a single-paint dark
+    one: no fill pixels at any depth, so no ring, so the renderer paints the dark
+    ring colour as a solid title. Two shipped decks (קליפורניה, סיישל) print a
+    light title inside a dark ring and were coming out solid dark.
+
+    A hole is not ambiguous, though — background reaches the edge of the crop and
+    an enclosed pocket does not. So flood the background inward from the border
+    and take everything it cannot reach as ink, whatever its contrast. The
+    colours are then read from the ARTWORK at those pixels, which is where the
+    fill has been all along.
+    """
+    w, h = region.size
+    if w < 3 or h < 3:
+        return region
+    # Pad by one so the flood always has a border to start from, even for ink
+    # that runs flush to the crop's edge.
+    padded = Image.new("L", (w + 2, h + 2), 0)
+    padded.paste(region, (1, 1))
+    outside = padded.point(lambda v: 0 if v else 255)
+    ImageDraw.floodfill(outside, (0, 0), 128)
+    # 255 now marks background the flood could not reach: enclosed holes.
+    holes = outside.point(lambda v: 255 if v == 255 else 0)
+    filled = ImageChops.lighter(padded, holes)
+    return filled.crop((1, 1, w + 1, h + 1))
+
+
+def _depth_profile(image, mask, box, paints, bg):
+    """Per-depth pixel counts for each paint: ``[[at depth 1], [at depth 2], ...]``.
+
+    Depth is the chessboard distance from the ink's outer boundary, obtained by
+    peeling the mask one erosion at a time — the shell that comes off at step
+    ``k`` is exactly the ink at depth ``k + 1``. Padded, because ``box`` is the
+    ink's tight bounding box and a bare crop has ink flush against the edge,
+    where the filter replicates rather than erodes and the outermost shell would
+    never come off at all.
+    """
+    pad = 2
+    bw, bh = box[2] - box[0], box[3] - box[1]
+    if bw < 4 or bh < 4:
+        return []
+    region = Image.new("L", (bw + 2 * pad, bh + 2 * pad), 0)
+    region.paste(solid_ink(mask.crop(box)), (pad, pad))
+    crop = Image.new("RGB", region.size, bg)
+    crop.paste(image.crop(box), (pad, pad))
+    px = crop.load()
+    shells = []
+    cur = region
+    for _ in range(_MAX_RING_SHELLS):
+        nxt = cur.filter(ImageFilter.MinFilter(3))
+        shell = ImageChops.difference(cur, nxt)
+        bbox = shell.getbbox()
+        if not bbox:
+            break
+        sp = shell.load()
+        counts = [0] * len(paints)
+        for y in range(bbox[1], bbox[3]):
+            for x in range(bbox[0], bbox[2]):
+                if not sp[x, y]:
+                    continue
+                which = _paint_class(px[x, y], paints, bg)
+                if which is not None:
+                    counts[which] += 1
+        shells.append(counts)
+        if not nxt.getbbox():
+            break
+        cur = nxt
+    return shells
+
+
+def _best_depth_split(shells, outer, inner):
+    """``(score, ring_depth)`` for reading paint ``outer`` as the ring.
+
+    ``ring_depth`` is fractional: the whole shells that go to the ring, plus the
+    ring's share of the shell the boundary falls in, so a ring is not quantised
+    to whole pixels on a title only forty pixels tall.
+    """
+    total_inner = sum(s[inner] for s in shells)
+    best, depth, run = None, 0.0, 0
+    for k in range(len(shells) + 1):
+        score = run + total_inner
+        if best is None or score > best:
+            hit = shells[k] if k < len(shells) else None
+            share = 0.0
+            if hit and (hit[outer] + hit[inner]):
+                share = hit[outer] / float(hit[outer] + hit[inner])
+            best, depth = score, k + share
+        if k < len(shells):
+            run += shells[k][outer]
+            total_inner -= shells[k][inner]
+    return best, depth
+
+
+def ring_by_depth(image, mask, box, paints, bg, em_px):
+    """``(fill, outline, outline_w)`` read off how deep each paint sits.
+
+    ``paints`` are the two colours the title is painted in, in either order —
+    this decides which is the ring. Returns ``(None, None, None)`` when there is
+    too little classified ink to tell, and ``outline_w`` of ``0.0`` when the two
+    paints are the same colour or no shell prefers the outer reading, which is a
+    measured answer: that title has no ring.
+    """
+    if len(paints) == 1 or (len(paints) == 2 and paints[0] == paints[1]):
+        return paints[0], paints[0], 0.0
+    if len(paints) != 2:
+        return None, None, None
+    rgb = [_hex_to_rgb(p) for p in paints]
+    shells = _depth_profile(image, mask, box, rgb, bg)
+    total = sum(sum(s) for s in shells)
+    if total < 40:
+        return None, None, None
+    # ONE PAINT SURVIVED. The other is not "underneath" — nothing can be said
+    # about what is underneath — it is simply not in this rendering, so the
+    # honest answer is the single visible colour with no ring, and the renderer
+    # paints exactly what the original shows.
+    #
+    # This is the whole unreadable-title bug. On three decks the vector offers
+    # two paints and the FRONT title uses only the dark one; ``assign_paints``
+    # nonetheless nominated the light one as the fill, the ring measured zero, so
+    # the renderer painted a pale fill and nothing else — on bachelorette in
+    # #ffc6d7, which is the back­ground of its own card to the byte.
+    for i in (0, 1):
+        if sum(s[i] for s in shells) < _MIN_CLUSTER_SHARE * total:
+            seen = paints[1 - i]
+            return seen, seen, 0.0
+    a_score, a_depth = _best_depth_split(shells, 0, 1)
+    b_score, b_depth = _best_depth_split(shells, 1, 0)
+    # A tie means the shells do not prefer either paint on the outside; take the
+    # THINNER ring, because a ring is something the pixels have to demand.
+    if (a_score, -a_depth) >= (b_score, -b_depth):
+        outline, fill, depth = paints[0], paints[1], a_depth
+    else:
+        outline, fill, depth = paints[1], paints[0], b_depth
+    if not em_px or em_px <= 0:
+        return fill, outline, None
+    return fill, outline, round(depth / em_px, 3)
+
+
 _FILL_ATTR_RE = re.compile(r'fill="(#[0-9a-fA-F]{3,6})"')
 
 
@@ -651,9 +847,143 @@ def _ink_extent(mask, box, ppu, ox, oy, pad=0.3):
              region[0] + ink[2], region[1] + ink[3]))
 
 
+def word_rows(mask, slots, ppu, ox, oy):
+    """One ink region per declared word slot — ``[region | None, ...]``.
+
+    ``_ink_extent`` cannot do this job for the WORDS, and that is why the word
+    size went unmeasured on most templates. It pads the slot by 30% of its own
+    height and then REFUSES if ink reaches the pad's edge — a sound guard for the
+    title, which sits alone at the top of the card, but the word rows are stacked
+    a third of a slot-height apart, so the pad reaches into the neighbouring row
+    on almost every deck and the neighbour's ink trips the guard. Three of four
+    rows were refused, fewer than two survived, and the fit reported "the rows
+    could not be isolated" on template after template.
+
+    The declared slots already say where each row is, so the rows can be SPLIT
+    instead of padded: give each slot the paper up to the midpoint between it and
+    its neighbour, and no two rows can reach into each other by construction.
+    Inside its own band, a row is the run of inked lines containing the densest
+    one — so a stray mark elsewhere in the band cannot extend it either.
+    """
+    if not slots:
+        return []
+    mids = sorted(((s["y0"] + s["y1"]) / 2.0) for s in slots)
+    order = sorted(range(len(slots)), key=lambda i: (slots[i]["y0"] + slots[i]["y1"]))
+    span = ((mids[-1] - mids[0]) / (len(mids) - 1)) if len(mids) > 1 else None
+    out = [None] * len(slots)
+    for rank, i in enumerate(order):
+        slot = slots[i]
+        mid = (slot["y0"] + slot["y1"]) / 2.0
+        half_up = ((mid - mids[rank - 1]) / 2.0 if rank > 0
+                   else (span / 2.0 if span else (mid - slot["y0"])))
+        half_dn = ((mids[rank + 1] - mid) / 2.0 if rank + 1 < len(mids)
+                   else (span / 2.0 if span else (slot["y1"] - mid)))
+        bw = (slot["x1"] - slot["x0"]) * ppu
+        region = (max(0, int(slot["x0"] * ppu + ox - bw * 0.06)),
+                  max(0, int((mid - half_up) * ppu + oy)),
+                  min(mask.size[0], int(slot["x1"] * ppu + ox + bw * 0.06)),
+                  min(mask.size[1], int((mid + half_dn) * ppu + oy)))
+        if region[2] - region[0] < 4 or region[3] - region[1] < 6:
+            continue
+        sub = mask.crop(region)
+        w, h = sub.size
+        px = sub.load()
+        rows = [sum(1 for x in range(w) if px[x, y]) for y in range(h)]
+        peak = max(rows) if rows else 0
+        if not peak:
+            continue
+        top = rows.index(peak)
+        bottom = top
+        while top > 0 and rows[top - 1]:
+            top -= 1
+        while bottom + 1 < h and rows[bottom + 1]:
+            bottom += 1
+        if bottom - top < 3:
+            continue
+        xs = [x for y in range(top, bottom + 1) for x in range(w) if px[x, y]]
+        if not xs:
+            continue
+        out[i] = (region[0] + min(xs), region[1] + top,
+                  region[0] + max(xs) + 1, region[1] + bottom + 1)
+    return out
+
+
 @functools.lru_cache(maxsize=64)
 def _fit_font(path, px):
     return ImageFont.truetype(path, max(4, int(px)))
+
+
+# ---- measuring a row of type without knowing what it says -------------------
+#
+# The origin's words are unknown text, so anything measured about them has to be
+# a property of the TYPE and not of the letters that happen to appear. The ink's
+# outer bounding box is not: a Hebrew line's bbox height swings by a third on
+# whether the word carries a ל (ascender) or a final ק/ן/ך/ף/ץ (descender), and
+# a four-row sample lands anywhere in that swing. Matching one such accident
+# against another is why the word fit graded itself "low" by construction, was
+# dropped every time, and left every deck's words auto-fitted from a hardcoded
+# constant instead — up to 60% under the original.
+#
+# What IS a property of the type is where the BULK of the ink sits: Hebrew has no
+# case, so essentially every letter occupies the band from the baseline to the
+# letter height, and only the few extremes leave it. So measure the band that
+# carries the bulk — the rows whose ink density is at least half the row's peak —
+# and both sides are then measuring the same thing whatever they say.
+
+# Share of the densest row's ink a row must carry to count as body rather than as
+# one letter's ascender. A half cut needs at least two of a word's letters to
+# reach a row before it counts, which no single ascender can do.
+_BODY_SHARE = 0.5
+
+
+def _band_height(ink, region=None):
+    """Height of the band carrying the bulk of a text row's ink, in pixels.
+
+    Works on any single-channel ink image — the diff mask cropped to an origin
+    row, or our own painted candidate — so the origin and the candidate are put
+    through exactly the same measurement.
+
+    SUB-PIXEL, by interpolating where the row-density profile crosses the cut
+    rather than counting whole rows. A card word's band is only ~16 pixels tall
+    at the sizes these decks print, so a whole-row answer is a staircase with
+    6% steps, and a fit bisecting against a staircase lands on the step EDGE —
+    systematically under, by up to half a step. Interpolating costs nothing and
+    makes the measurement continuous, which is what bisection assumes.
+    """
+    sub = ink.crop(region) if region else ink
+    w, h = sub.size
+    if w < 1 or h < 1:
+        return None
+    px = sub.load()
+    rows = [sum(1 for x in range(w) if px[x, y]) for y in range(h)]
+    peak = max(rows) if rows else 0
+    if not peak:
+        return None
+    cut = _BODY_SHARE * peak
+    live = [y for y, c in enumerate(rows) if c >= cut]
+    if not live:
+        return None
+    top, bottom = live[0], live[-1]
+
+    def cross(inside, outside):
+        """Where the profile crosses ``cut`` between two neighbouring rows."""
+        if outside < 0 or outside >= h:
+            return float(inside)
+        hi, lo = rows[inside], rows[outside]
+        if hi <= lo:
+            return float(inside)
+        return outside + (cut - lo) / float(hi - lo)
+
+    return cross(bottom, bottom + 1) - cross(top, top - 1)
+
+
+def _extent_of(ink, axis):
+    """One painted candidate's measurement: 0 height, 1 width, 2 body band."""
+    if axis == 1:
+        return ink.size[0]
+    if axis == 2:
+        return _band_height(ink)
+    return ink.size[1]
 
 
 def _covers(font_path, text):
@@ -713,18 +1043,30 @@ def _paint(font_path, lines, em, alpha, stroke=0.0, marker=None):
     return ink.crop(box) if box else None
 
 
-def _painted(font_path, samples, size, ppu, alpha, marker=False, axis=0):
-    """Median painted extent (0 = height, 1 = width) of ``samples`` at ``size``."""
+def _painted(font_path, samples, size, ppu, alpha, marker=False, axis=0,
+             ring=0.0):
+    """Median painted extent (0 = height, 1 = width) of ``samples`` at ``size``.
+
+    ``ring`` is the outline thickness as a fraction of the size, and it is part
+    of the measurement rather than an afterthought: the origin's ink INCLUDES its
+    ring, so fitting a bare glyph against it inflates the size by twice the ring
+    on every outlined title. That is most of why the one template with a measured
+    ring drew half again too much ink.
+    """
     got = []
     for i, lines in enumerate(samples):
         ink = _paint(font_path, lines, size * ppu, alpha,
+                     stroke=ring * size * ppu,
                      marker=(i % 4 + 1) if marker else None)
         if ink:
-            got.append(ink.size[1 - axis] if axis == 0 else ink.size[0])
+            value = _extent_of(ink, axis)
+            if value:
+                got.append(value)
     return statistics.median(got) if got else None
 
 
-def _fit_size(target_px, font_path, samples, ppu, alpha, marker=False, axis=0):
+def _fit_size(target_px, font_path, samples, ppu, alpha, marker=False, axis=0,
+              ring=0.0):
     """The size (in recipe user units) whose painted ink measures ``target_px``.
 
     Bisection rather than a closed form: the painted extent is very nearly linear
@@ -735,11 +1077,11 @@ def _fit_size(target_px, font_path, samples, ppu, alpha, marker=False, axis=0):
     lo, hi = 3.0, 160.0
     if not target_px or target_px <= 0:
         return None
-    if _painted(font_path, samples, lo, ppu, alpha, marker, axis) is None:
+    if _painted(font_path, samples, lo, ppu, alpha, marker, axis, ring) is None:
         return None
     for _ in range(22):
         mid = (lo + hi) / 2
-        got = _painted(font_path, samples, mid, ppu, alpha, marker, axis)
+        got = _painted(font_path, samples, mid, ppu, alpha, marker, axis, ring)
         if got is None:
             return None
         if got < target_px:
@@ -838,23 +1180,62 @@ def title_samples(cfg):
 
 
 def sample_words(cfg):
-    """A sample of the words this theme actually prints, for the word-size fit."""
+    """A sample of the words this theme actually prints, for the word-size fit.
+
+    Resolved the way ``topup.fill`` resolves it, and for the same reason: a theme
+    that names no wordlist is not a theme with no words, it is a theme whose deck
+    is filled from ``generic-350`` — so that IS the pool its cards print. Reading
+    ``cfg["wordlist"]`` alone returned an empty list for two of the shipped
+    templates, the fit had nothing to measure against, and their word size went
+    unpinned on artwork that measures perfectly well.
+    """
     words = [w.strip() for w in topup._read_wordlist(cfg.get("wordlist"))]
-    return [w for w in words if w][:_FIT_WORD_SAMPLE]
+    words = [w for w in words if w]
+    if len(words) < _FIT_WORD_SAMPLE:
+        seen = set(words)
+        for w in topup._read_wordlist(topup.GENERIC):
+            w = w.strip()
+            if w and w not in seen:
+                seen.add(w)
+                words.append(w)
+    return words[:_FIT_WORD_SAMPLE]
 
 
-def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex):
+# How far the per-sample title fits may spread around their median before the
+# answer is taken to depend on WHICH honoree name is set rather than on the
+# design. The samples are chosen (by ``calibration_health.sample_titles``) to
+# straddle the ascender/descender extremes on purpose, so a face whose ink height
+# is a property of the FACE agrees across them to a couple of percent, and one
+# whose is a property of the TEXT does not.
+_FIT_STABLE = 0.06
+
+
+def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
+                   ring=0.0):
     """Fit one surface's title size. -> ``(size, grade, note, ctx)``.
 
     ``ctx`` is ``(ink_region, alpha)`` — what ``fit_bold`` needs to go on and
     weigh the same ink — or None when nothing was measured.
 
-    The grade comes from a SECOND, independent fit against the ink's WIDTH. The
-    two agree to within a couple of percent when the theme's font really is the
-    one the design was made in (measured: bachelorette 20.91 tall / 20.80 wide,
-    trip comeback 24.63 / 24.55). They diverge when it is a lookalike or when
-    Canva condensed the text box (grapefruit: 27.56 / 21.19), and that is worth
-    telling the owner, because then only one of the two axes can match.
+    ``ring`` is the outline thickness the title is painted with, as a fraction of
+    the size. The origin's ink includes its ring, so a bare-glyph candidate is
+    fitted about two ring-widths too large on every outlined title.
+
+    THE GRADE IS STABILITY, NOT WIDTH. It used to come from a second fit against
+    the ink's WIDTH, and that check cannot work: it compares OUR sample title's
+    width against the width of the ORIGIN's own title, which is different text
+    (the origin says one honoree's name, the sample says another). It agrees only
+    when the two happen to set to the same length, so it graded five of the ten
+    shipped templates "low" purely for having a different name in the artwork —
+    and low fits are dropped, which is why those five titles were auto-fitted
+    with no measurement at all and came back up to 2.1x off.
+
+    What CAN be asked without knowing the origin's text is whether the answer
+    depends on the text at all: fit each sample separately and see whether they
+    agree. The samples deliberately straddle the ascender/descender extremes, so
+    agreement across them means the ink height is a property of the face and the
+    single number is safe to pin. The width comparison stays, demoted to a note,
+    because a large disagreement still says something real about the font.
     """
     if not samples:
         return None, None, "title: no sample title could be built for this theme.", None
@@ -867,22 +1248,41 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex):
         return (None, None,
                 "size: the theme's title font has no glyphs for this title's own "
                 "text, so its size could not be measured — check the font.", None)
-    size = _fit_size(ink_h, font_path, samples, ppu, alpha)
+    size = _fit_size(ink_h, font_path, samples, ppu, alpha, ring=ring)
     box_h = box["y1"] - box["y0"]
     if not _in_box(size, box_h):
         return (None, None,
                 "size: the measured title ink is not a plausible size for its "
                 "box, so nothing was pinned — the renderer auto-fits.", None)
-    wide = _fit_size(ink_w, font_path, samples, ppu, alpha, axis=1)
-    if wide and abs(wide - size) / size <= 0.12:
-        return size, "high", None, (region, alpha)
-    note = ("size: fitted from the height of the original's title ink. Its WIDTH "
-            f"says {wide}, not {size} — the title font is not quite the one the "
-            "design was made in (a lookalike, or Canva condensed the text box), "
-            "so check the preview." if wide else
-            "size: fitted from the height of the original's title ink; its width "
-            "could not be cross-checked.")
-    return size, "low", note, (region, alpha)
+    # How far the answer moves with the honoree's name, measured by painting each
+    # sample ONCE at the fitted size rather than bisecting a fit per sample. The
+    # painted extent is very nearly linear in the size, so the relative spread of
+    # the extents IS the relative spread of the sizes they would fit — the same
+    # signal for a twentieth of the work, which matters because this runs behind
+    # a button the owner waits on.
+    each = []
+    for one in samples:
+        ink = _paint(font_path, one, size * ppu, alpha, stroke=ring * size * ppu)
+        got = _extent_of(ink, 0) if ink else None
+        if got:
+            each.append(got)
+    spread = ((max(each) - min(each)) / statistics.median(each)) if each else None
+    wide = _fit_size(ink_w, font_path, samples, ppu, alpha, axis=1, ring=ring)
+    note = None
+    if wide and abs(wide - size) / size > 0.12:
+        note = (f"size: fitted from the height of the original's title ink. Its "
+                f"WIDTH says {wide}, not {size} — the title font is not quite the "
+                "one the design was made in (a lookalike, or Canva condensed the "
+                "text box), or the original's title is simply a different length "
+                "of text. Only one of the two axes can match; check the preview.")
+    if spread is None:
+        return size, "medium", note, (region, alpha)
+    if spread <= _FIT_STABLE:
+        return size, "high", note, (region, alpha)
+    extra = (f"size: the fit moves {spread:.0%} across sample honoree names, so "
+             f"{size} is the median rather than one exact answer — this face's "
+             "ink height depends on which letters the name carries.")
+    return size, "medium", (note + " " + extra) if note else extra, (region, alpha)
 
 
 def fit_word_size(mask, image, slots, ppu, ox, oy, font_path, words):
@@ -898,13 +1298,15 @@ def fit_word_size(mask, image, slots, ppu, ox, oy, font_path, words):
     """
     if not words or not slots:
         return None, None, None
-    heights, regions = [], []
-    for slot in slots:
-        extent = _ink_extent(mask, slot, ppu, ox, oy)
-        if extent:
-            heights.append(extent[0])
-            regions.append(extent[2])
-    if len(heights) < 2:
+    bands, regions = [], []
+    for region in word_rows(mask, slots, ppu, ox, oy):
+        if not region:
+            continue
+        band = _band_height(mask, region)
+        if band:
+            bands.append(band)
+            regions.append(region)
+    if len(bands) < 2:
         return (None, None,
                 "word_size: the original's word rows could not be isolated "
                 "cleanly, so the words keep auto-fitting their slots.")
@@ -914,19 +1316,44 @@ def fit_word_size(mask, image, slots, ppu, ox, oy, font_path, words):
                 "own wordlist — check the font.")
     alpha = _alpha_threshold(slots[0].get("color") or "#000000",
                              _background(image, mask, regions[0]))
-    size = _fit_size(statistics.median(heights), font_path, [[w] for w in words],
-                     ppu, alpha, marker=True)
+    samples = [[w] for w in words]
+    size = _fit_size(statistics.median(bands), font_path, samples, ppu, alpha,
+                     marker=True, axis=2)
     box_h = statistics.median([s["y1"] - s["y0"] for s in slots])
     if not _in_box(size, box_h):
         return (None, None,
                 "word_size: the measured word ink is not a plausible size for its "
                 "slots, so nothing was pinned — the words auto-fit.")
-    # Graded "low" by construction, never higher: unlike the title, whose text is
-    # known up to the honoree's name, the origin's words are unknown text, so the
-    # match rests on the theme's wordlist being typical of what it printed.
-    return size, "low", ("word_size: fitted by matching the original's word-row "
-                         "ink heights against this theme's own wordlist — check "
-                         "one card in the preview before trusting it.")
+    # HOW MUCH THE ROWS AGREE is the confidence, and it is a real question rather
+    # than a formality: the origin set all four at one size (Canva Bulk Create
+    # fills fixed-size boxes), so bands that agree mean the measurement found the
+    # type, and bands that scatter mean it found something else — a row that
+    # merged with its neighbour, or a diff that caught artwork.
+    #
+    # Judged by the median deviation, NOT by the full spread. One row in four can
+    # legitimately sit well off the others (a word of only short letters measures
+    # a shorter body than one carrying a lamed), and a full-spread test lets that
+    # single row veto a reading the other three agree on to within 3%. It did
+    # exactly that on two templates.
+    med = statistics.median(bands)
+    scatter = statistics.median([abs(b - med) for b in bands]) / med if med else None
+    note = ("word_size: fitted by matching the body band of the original's word "
+            "rows — the part of the ink every letter occupies, so it does not "
+            "move with whichever ascenders and descenders the original's own "
+            "words happened to carry — against this theme's wordlist.")
+    if scatter is None:
+        return size, "medium", note
+    if scatter <= 0.05:
+        return size, "high", note
+    if scatter <= 0.15:
+        return size, "medium", (
+            note + f" The rows scatter {scatter:.0%} around their median, so "
+            f"{size} is a median rather than one exact answer.")
+    return (None, None,
+            note + f" But the rows scatter {scatter:.0%} around their median, "
+            "which they cannot if the original set them all in one box — so "
+            "nothing was pinned. Check that the clean and filled fronts differ "
+            "ONLY in the words.")
 
 
 def _slot(filled_svg, clean_svg, workdir, cell=None):
@@ -1065,6 +1492,60 @@ def _drop_low_confidence(out, confidence, notes):
         )
     return dropped
 
+# Knobs a re-detect may never silently DROP. Each is a value the renderer prints
+# with; losing one sends that surface back to auto-fit, which is a visible change
+# to a template the owner had already signed off.
+_CARRIED = (("title_style", "size"), ("title_style", "board_size"),
+            ("title_style", "back_size"), ("title_style", "outline_w"),
+            ("title_style", "align"), ("word_size",))
+
+
+def _carry_forward(out, cfg, notes, confidence):
+    """Keep any calibrated value this pass could NOT measure. -> [labels kept].
+
+    The regression guard on "זהה מחדש". Pressing it re-measures everything from
+    the artwork, and a measurement can legitimately come back empty — a front
+    whose diff caught the background, a font swapped for one without the glyphs,
+    an export re-saved at another size. But ``title_style`` is written to the
+    theme as a WHOLE dict, so a knob missing from the new blob does not stay as
+    it was: it is erased, and that surface silently reverts to auto-fit. A button
+    labelled "detect again" must not be able to make a template worse than it was
+    before it was pressed.
+
+    So a knob the pass could not measure is carried forward from the calibration
+    already in place, and SAID so — the owner needs to know which numbers are
+    fresh and which are inherited. A knob it COULD measure always wins: this
+    guard only ever fills gaps, so it can never freeze a template against a
+    genuine improvement.
+    """
+    kept = []
+    for path in _CARRIED:
+        source = cfg
+        for key in path[:-1]:
+            source = (source or {}).get(key) if isinstance(source, dict) else None
+        old = (source or {}).get(path[-1]) if isinstance(source, dict) else None
+        if old is None:
+            continue
+        target = out
+        for key in path[:-1]:
+            target = target.get(key) if isinstance(target, dict) else None
+        if not isinstance(target, dict):
+            continue
+        if target.get(path[-1]) is None:
+            target[path[-1]] = old
+            label = ".".join(path)
+            confidence[label] = "carried"
+            kept.append(f"{label} = {old}")
+    if kept:
+        notes.append(
+            "could not be measured this time, so the value already calibrated "
+            "was KEPT rather than cleared: " + ", ".join(sorted(kept))
+            + ". Re-detecting must never leave a template worse than it was, so "
+            "these are inherited, not fresh — if the artwork has changed, clear "
+            "them by hand.")
+    return kept
+
+
 def calibrate(theme_key, workdir=None):
     """Derive the calibration blob for a theme from its filled/clean art."""
     cfg = config.theme(theme_key)
@@ -1188,6 +1669,18 @@ def calibrate(theme_key, workdir=None):
                 # carries ONLY the title, so nothing needs excluding.
                 fill, outline = assign_paints(
                     candidate_paints(kf, kc), image, mask, box)
+                if fill and outline and fill != outline:
+                    # Settle WHICH of the two is the ring by how deep each sits,
+                    # the same reading the fronts get. It matters as much here:
+                    # the back is drawn with the ring width the fronts measured,
+                    # so a title whose two paints are the wrong way round paints
+                    # its fill in the colour that was meant to enclose it — and
+                    # on bachelorette that colour is the back's own background.
+                    dfill, doutline, _dring = ring_by_depth(
+                        image, mask, box, [fill, outline],
+                        _background(image, mask, box), None)
+                    if dfill and doutline:
+                        fill, outline = dfill, doutline
                 if not (fill and outline):
                     fill, outline, _ = _fill_and_outline(image, mask, box)
                 if fill and outline:
@@ -1289,7 +1782,6 @@ def calibrate(theme_key, workdir=None):
                        int(max(b["y1"] for b in t) * ppu + oy))
                 tight = _bbox(mask, box) or box
                 ts = out["title_style"]
-                _, _, outline_w = _fill_and_outline(image, mask, tight)
 
                 # Read the title's paints from the VECTOR, not the pixels. The
                 # front carries both the title and the words, so exclude the word
@@ -1298,13 +1790,16 @@ def calibrate(theme_key, workdir=None):
                 cands = candidate_paints(ff, fc, exclude=_word_colours(recipe))
                 fill, outline = assign_paints(cands, image, mask, tight)
                 source = "vector"
+                # The raster reading is the FALLBACK for the ring, kept because
+                # ``outline_w`` is part of the title_style contract and a blob
+                # missing one field is rejected whole. The depth measurement
+                # below replaces it whenever the size it must be expressed
+                # against could be measured.
+                rfill, routline, outline_w = _fill_and_outline(image, mask, tight)
                 if not (fill and outline):
                     # The sheet encodes colour some other way (style block,
                     # inherited group fill). Fall back to reading the render.
-                    fill, outline, _ow = _fill_and_outline(image, mask, tight)
-                    source = "raster"
-                    if outline_w is None:
-                        outline_w = _ow
+                    fill, outline, source = rfill, routline, "raster"
 
                 if fill and outline:
                     ts["fill"], ts["outline"] = fill, outline
@@ -1332,9 +1827,64 @@ def calibrate(theme_key, workdir=None):
                                  "— set fill and outline by hand.")
                     confidence["title_style.fill"] = "none"
                     confidence["title_style.outline"] = "none"
+
+                # --- the size and the ring, solved TOGETHER ------------------
+                # Neither can be measured without the other. The origin's ink is
+                # the glyph PLUS its ring, so a size fitted against a bare glyph
+                # comes out about two ring-widths too large; and the ring is a
+                # fraction of the size, so it cannot be expressed until the size
+                # is known. Two passes settle it — the ring is small next to the
+                # glyph, so the correction converges immediately — and the joint
+                # answer is what both the ink mass and the colour depend on.
+                tbox = {"x0": min(b["x0"] for b in t), "y0": min(b["y0"] for b in t),
+                        "x1": max(b["x1"] for b in t), "y1": max(b["y1"] for b in t)}
+                ring = 0.0
+                size = tgrade = tnote = ctx = None
+                for _pass in range(3):
+                    size, tgrade, tnote, ctx = fit_title_size(
+                        mask, image, tbox, ppu, ox, oy, title_font, samples,
+                        (t[0].get("color") or fill), ring=ring)
+                    if not (size and fill and outline):
+                        break
+                    dfill, doutline, dring = ring_by_depth(
+                        image, mask, tight, [fill, outline],
+                        _background(image, mask, tight), size * ppu)
+                    if dring is None:
+                        break
+                    # The depth pass sees the ring from the outside in, which is a
+                    # stronger reading of which paint IS the ring than a
+                    # one-pixel-deep boundary count — so it also settles the
+                    # fill/outline order the vector left ambiguous.
+                    fill, outline = dfill, doutline
+                    if abs(dring - ring) < 0.002:
+                        ring = dring
+                        break
+                    ring = dring
+                if fill and outline:
+                    ts["fill"], ts["outline"] = fill, outline
+                    if fill == outline and confidence.get(
+                            "title_style.fill") in ("high", "medium"):
+                        # The vector offered two paints and the render shows only
+                        # one of them. Say so — it is a real reading (that is what
+                        # this title prints) but a weaker one than "two paints,
+                        # and here is which encloses which".
+                        confidence["title_style.fill"] = "medium"
+                        confidence["title_style.outline"] = "medium"
+                        notes.append(
+                            "title: the design names two paints for this title "
+                            "but only one of them survives into the artwork, so "
+                            "the title is drawn in that one with no ring. If the "
+                            "original really does have an outline here, it is "
+                            "hidden underneath and has to be set by eye.")
+                if size and fill and outline:
+                    outline_w = 0.0 if fill == outline else ring
                 if outline_w is not None:
                     ts["outline_w"] = outline_w
-                    confidence["title_style.outline_w"] = "low"
+                    # Measured off the artwork's own depth profile rather than
+                    # inferred from whichever colour path happened to run, so it
+                    # is as good as the size it is expressed against.
+                    confidence["title_style.outline_w"] = (
+                        "high" if (size and fill and outline) else "low")
                 else:
                     notes.append("title: ring thickness (outline_w) could not be "
                                  "measured — set it by eye against the original.")
@@ -1360,13 +1910,8 @@ def calibrate(theme_key, workdir=None):
                     ts["align"] = align
                     confidence["title_style.align"] = "medium"
 
-                # --- the fitted sizes and the synthetic-bold weight ----------
-                tbox = {"x0": min(b["x0"] for b in t), "y0": min(b["y0"] for b in t),
-                        "x1": max(b["x1"] for b in t), "y1": max(b["y1"] for b in t)}
-                size, grade, note, ctx = fit_title_size(
-                    mask, image, tbox, ppu, ox, oy, title_font, samples,
-                    (t[0].get("color") or fill))
-                record("size", size, grade, note)
+                # --- the fitted size, and the synthetic-bold weight -----------
+                record("size", size, tgrade, tnote)
                 if size and ctx:
                     # WEIGHT, only where the title has no visible ring. A ringed
                     # title's ink is mostly its OUTLINE, and the candidate painted
@@ -1452,15 +1997,6 @@ def calibrate(theme_key, workdir=None):
                              "the form opens on its defaults. Re-run detection "
                              "for this template.")
 
-        # Say which sizes stayed unset, and only those: "left unset" used to be
-        # printed unconditionally, which read as "this pass never measures them"
-        # and sent the owner to Canva's UI even for the ones it now measures.
-        unset = [name for name in ("size", "board_size", "back_size")
-                 if name not in out["title_style"]]
-        if unset:
-            notes.append(", ".join(unset) + " left unset — the renderer auto-fits "
-                         "the title to its box; pin one only if that over- or "
-                         "under-shoots.")
         notes.append("arch is set flat (0) — raise it in the form only if this "
                      "title genuinely curves. offset stays a visual call.")
         # NEVER write a low-confidence fit. "Leave it unset when you cannot
@@ -1481,6 +2017,16 @@ def calibrate(theme_key, workdir=None):
         # themselves low — so honour that grade rather than shipping the number.
         # A fitter earns its way in by grading medium or better.
         _drop_low_confidence(out, confidence, notes)
+        # AFTER the drop, never before: a value this pass declined to write is
+        # exactly the gap the guard exists to fill.
+        _carry_forward(out, cfg, notes, confidence)
+        # Reported last so it reflects what actually survived both passes.
+        unset = [name for name in ("size", "board_size", "back_size")
+                 if name not in out["title_style"]]
+        if unset:
+            notes.append(", ".join(unset) + " left unset — the renderer auto-fits "
+                         "the title to its box; pin one only if that over- or "
+                         "under-shoots.")
         out["confidence"] = confidence
         out["notes"] = notes
         return out
