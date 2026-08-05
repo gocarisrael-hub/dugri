@@ -287,58 +287,124 @@ _TITLE_SAMPLES = [["נעמה", "מסיבה גדולה"], ["לירן", "מסיב�
                   ["דן", "מסיבה גדולה"], ["לילך", "מסיבה גדולה"]]
 
 
-def _surface(lines, size, pitch, ppu=PPU):
-    """One surface's leading curve, off a block painted at a known spacing."""
-    ink = C._paint(HEBREW_FONT, lines, size * ppu, ALPHA, pitch=pitch)
-    return ink, C.leading_curve(ink, HEBREW_FONT, _TITLE_SAMPLES, ppu, ALPHA)
+def _curve(peak, scatter=0.0, sharpness=0.4, n=4):
+    """A leading curve with a KNOWN peak and a known per-name scatter.
+
+    The decision `couple_leadings` makes is arithmetic over the curves, so it is
+    tested on curves rather than on painted ink: a real block's argmax depends
+    on FreeType's rasterisation, which differs between a dev machine and CI by
+    enough to move it a step or two (this file's own header says as much), and a
+    test of the ARITHMETIC must not fail for that reason. The painted round trip
+    below covers the physical half.
+
+    ``scatter`` is how far apart the sample honoree names score, which is what
+    `_score_noise` reads the noise floor off. ``sharpness`` is how fast the
+    score falls away from the peak — a surface whose ink pins its spacing
+    tightly, against one whose ink barely can.
+    """
+    rows = []
+    for pitch in C._PITCH_GRID:
+        score = 1.0 - sharpness * abs(pitch - peak)
+        half = scatter / 2.0
+        # Symmetric about the median, so the median IS ``score`` and only the
+        # spread — the noise floor — changes with ``scatter``.
+        samples = [score - half, score - half, score + half, score + half][:n]
+        rows.append((pitch, 24.0, score, samples))
+    return rows
 
 
 def test_surfaces_that_are_one_block_at_two_scales_share_one_leading():
-    # The real case: the same title, set at the same spacing, printed large on
-    # one surface and small on another. Each is read on its own first, and the
-    # shared answer has to be the spacing they were both painted at.
-    origin = _TITLE_SAMPLES[1]
-    _big, big = _surface(origin, 34.0, 0.92)
-    _small, small = _surface(origin, 22.0, 0.92)
-    shared, why = C.couple_leadings({"front": small, "back": big})
+    # פריז: its front settles one grid step from its back, and the ink of each
+    # is content at the other's. The shared answer is their median, and it is a
+    # value on the grid they were scored at.
+    front, back = _curve(0.72, scatter=0.04), _curve(0.74, scatter=0.04)
+    shared, why = C.couple_leadings({"front": front, "back": back})
     assert why is None, why
-    assert shared is not None and abs(shared - 0.92) <= 0.06, shared
+    assert shared in C._PITCH_GRID and 0.72 <= shared <= 0.74, shared
 
 
 def test_a_surface_stacked_differently_is_left_alone():
-    # טריפה: its back stacks its two lines a third further apart than its front.
-    # Sharing a leading across those would put one of the two sizes far out, so
-    # the whole set keeps what its own ink said — and the owner is told which
-    # surface disagreed and what it reads.
-    origin = _TITLE_SAMPLES[1]
-    _f, front = _surface(origin, 26.0, 0.78)
-    _b, back = _surface(origin, 26.0, 1.30)
+    # טריפה: its back stacks its two lines a third further apart than its front,
+    # and both surfaces pin their own spacing tightly. Sharing one would put a
+    # size far out, so the whole set keeps what its own ink said — and the owner
+    # is told WHICH surface disagreed and what it reads.
+    front, back = _curve(1.00, scatter=0.001), _curve(1.40, scatter=0.001)
     shared, why = C.couple_leadings({"front": front, "back": back})
     assert shared is None
     assert why and "NOT one block" in why
     assert "front" in why or "back" in why, why
 
 
+def test_a_third_surface_that_agrees_with_neither_stops_the_whole_set():
+    # סנטוריני: its front and back both read 0.50 and its board 0.98. The two
+    # that agree do not get to couple over the one that does not — the claim
+    # being tested is "this design reuses ONE block", and a surface that plainly
+    # does not refutes it for the design.
+    curves = {"front": _curve(0.50, scatter=0.001),
+              "back": _curve(0.50, scatter=0.001),
+              "board": _curve(0.98, scatter=0.001)}
+    shared, why = C.couple_leadings(curves)
+    assert shared is None
+    assert why and "board" in why, why
+
+
+def test_surfaces_whose_names_scatter_too_far_to_tell_apart_are_coupled():
+    # The other side of the same rule, stated honestly: the refusal is "the ink
+    # can TELL these apart", not "the peaks differ". Identical peaks to the
+    # refusal above, but sample names that disagree far more than the peaks do —
+    # so nothing here is evidence about the spacing, and the design's several
+    # readings are pooled rather than each trusted on its own.
+    front, back = _curve(1.00, scatter=0.9), _curve(1.40, scatter=0.9)
+    shared, why = C.couple_leadings({"front": front, "back": back})
+    assert why is None, why
+    assert shared is not None and 1.00 <= shared <= 1.40, shared
+
+
 def test_one_surface_on_its_own_has_nothing_to_couple():
-    _f, front = _surface(_TITLE_SAMPLES[1], 26.0, 0.90)
+    front = _curve(0.90, scatter=0.01)
     assert C.couple_leadings({"front": front}) == (None, None)
     assert C.couple_leadings({}) == (None, None)
+    assert C.couple_leadings(None) == (None, None)
     # ...and a surface whose fit produced no curve at all (a single-line title)
     # cannot drag the others: it simply is not one of the readings.
     assert C.couple_leadings({"front": front, "back": []}) == (None, None)
+
+
+def test_the_painted_round_trip_couples_two_scales_of_one_block():
+    # The physical half: the SAME block painted large and small at one spacing.
+    # Asserted against what the two surfaces themselves answered rather than
+    # against the number they were painted at — FreeType moves an argmax by a
+    # step between machines, and what this has to guarantee is that the shared
+    # answer sits among its surfaces' own readings and that re-solving each
+    # size at it returns that surface to the size it was painted at.
+    origin, pitch = _TITLE_SAMPLES[1], 0.92
+    sizes = {"front": 22.0, "back": 34.0}
+    inks = {k: C._paint(HEBREW_FONT, origin, v * PPU, ALPHA, pitch=pitch)
+            for k, v in sizes.items()}
+    curves = {k: C.leading_curve(v, HEBREW_FONT, _TITLE_SAMPLES, PPU, ALPHA)
+              for k, v in inks.items()}
+    own = {k: max(v, key=lambda row: row[2])[0] for k, v in curves.items()}
+    shared, why = C.couple_leadings(curves)
+    assert why is None, (why, own)
+    assert min(own.values()) <= shared <= max(own.values()), (shared, own)
+    for key, ink in inks.items():
+        fit = {"ink": ink, "font": HEBREW_FONT, "samples": _TITLE_SAMPLES,
+               "ppu": PPU, "alpha": ALPHA, "ring": 0.0}
+        got = C.refit_at_leading(fit, pitch)
+        assert abs(got - sizes[key]) / sizes[key] <= 0.03, (key, got)
 
 
 def test_the_shared_leading_is_one_the_curves_were_actually_swept_at():
     # The median of an even number of surfaces lands between two grid steps, and
     # no score was ever measured there — so the answer is snapped back onto the
     # grid the curves were swept on rather than interpolated onto a value no
-    # surface was scored at.
-    origin = _TITLE_SAMPLES[1]
-    _a, one = _surface(origin, 30.0, 0.90)
-    _b, two = _surface(origin, 24.0, 0.92)
+    # surface was scored at. Two surfaces a single step apart is exactly that
+    # case: their median is half a step, which is not on the grid.
+    one, two = _curve(0.90, scatter=0.04), _curve(0.92, scatter=0.04)
     shared, why = C.couple_leadings({"front": one, "back": two})
     assert why is None, why
     assert shared in C._PITCH_GRID, shared
+    assert shared in (0.90, 0.92), shared
 
 
 def test_a_coupled_surface_is_re_solved_at_the_shared_leading():
