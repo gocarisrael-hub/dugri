@@ -34,6 +34,8 @@ const browserGlobals = {
   gtag: 'readonly',
   dataLayer: 'readonly',
   FileReader: 'readonly',
+  // The pawn-photo background cut decodes the buyer's file to a canvas.
+  createImageBitmap: 'readonly',
   // vitest/jsdom unit tests run with Node's `global`/`process`/`Buffer` too.
   global: 'writable',
   process: 'readonly',

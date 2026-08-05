@@ -8,6 +8,9 @@ package-lock.json
 # binary / exported assets — not source to format
 resources
 site/assets
+# third-party code vendored verbatim (see site/vendor/*/README.md) — reformatting
+# it would make the next re-vendor a diff nobody can read
+site/vendor
 **/*.svg
 **/*.png
 **/*.jpg
