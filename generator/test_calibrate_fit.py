@@ -159,6 +159,27 @@ def test_a_title_with_no_name_in_it_cannot_be_moved_by_matching():
             == C._fit_size(ink.size[1], HEBREW_FONT, samples, PPU, ALPHA))
 
 
+def test_the_leading_is_scored_at_the_size_the_fit_answers_over_every_name():
+    """The block painted for the profile score is painted AT the candidate size.
+
+    So bisecting that size against one sample name let that name decide the
+    spacing after all — the very thing scoring over every name exists to prevent
+    — and scored a (size, leading) pair the fit would never return.
+
+    Built as a two-line block set at a leading the renderer does not use, with a
+    first line whose name is NOT the one that comes first in the samples.
+    """
+    size, leading = 24.0, 1.10
+    origin = ["לירון", "מסיבה גדולה"]
+    samples = [["נעמה", "מסיבה גדולה"], origin,
+               ["דן", "מסיבה גדולה"], ["לילך", "מסיבה גדולה"]]
+    ink = C._paint(HEBREW_FONT, origin, size * PPU, ALPHA, pitch=leading)
+    got, found, _score = C.solve_size_and_leading(ink, HEBREW_FONT, samples,
+                                                  PPU, ALPHA)
+    assert abs(found - leading) <= 0.06, found
+    assert abs(got - size) / size <= 0.03, got
+
+
 def test_a_leading_unlike_the_renderers_is_reported_to_the_owner():
     size = 24.0
     ink = C._paint(HEBREW_FONT, _TWO[0], size * PPU, ALPHA, pitch=1.30)

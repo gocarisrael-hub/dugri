@@ -1565,19 +1565,41 @@ def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0,
     def at(pitch):
         """``(size, score)`` for one candidate leading.
 
-        The size is bisected against ONE sample — the leading is a property of
-        the design and does not move with which honoree name is set, so a
-        four-fold bisection would pay four times over for the same answer — but
-        the SCORE is the median across every sample. That matters: the title's
-        first line carries the name, so its width is the one part of the profile
-        our sample cannot reproduce, and letting a single name decide is what
-        chose a leading 16% out on סיישל. A median over names that straddle the
-        range cannot be swung by any one of them.
+        BOTH halves are taken over every sample. The score has to be: the
+        title's first line carries the name, so its width is the one part of the
+        profile our sample cannot reproduce, and letting a single name decide is
+        what chose a leading 16% out on סיישל. A median over names that straddle
+        the range cannot be swung by any one of them.
+
+        The SIZE used to be bisected against ``samples[:1]`` alone, on the
+        argument that the leading does not move with which honoree name is set
+        and a four-fold bisection would pay four times for one answer. The
+        measurement says otherwise, and the argument was self-defeating besides:
+        the candidate block painted for the score is painted AT that size, so
+        scoring one name's size let that one name decide the spacing after all —
+        the very thing the median score exists to prevent. It also scored a
+        (size, leading) pair the fit would never return. Fitting the size over
+        the whole spread moves פריז's back from 0.76 to 0.72 (its size −4.3% ->
+        −1.8% against Canva), טריפה's back from 1.32 to 1.36 (+2.1% -> +0.3%)
+        and סנטוריני's from 0.48 to 0.52 (+2.5% -> −0.1%), and leaves every
+        other shipped surface where it was.
+
+        And it costs one painting per sample, not a bisection per sample: the
+        painted extent is very nearly linear in the size (``fit_title_size``
+        already leans on that for its stability grade), so bisecting ONE sample
+        and then rescaling by the samples' median extent lands on the same
+        answer the four-fold bisection would — for a twentieth of the work,
+        inside a grid that runs eighty-six times per surface.
         """
-        size = _fit_size(target, font_path, samples[:1], ppu, alpha, ring=ring,
-                         pitch=pitch)
-        if not size:
+        one = _fit_size(target, font_path, samples[:1], ppu, alpha, ring=ring,
+                        pitch=pitch)
+        if not one:
             return None, None
+        spread = _painted(font_path, samples, one, ppu, alpha, axis=0, ring=ring,
+                          pitch=pitch)
+        if not spread:
+            return None, None
+        size = round(one * target / spread, 2)
         scored = []
         for one in samples:
             drawn = [ln for ln in one if ln and ln.strip()]
