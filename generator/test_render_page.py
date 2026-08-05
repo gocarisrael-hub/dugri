@@ -1982,21 +1982,27 @@ def test_a_leading_tighter_than_the_glyphs_need_is_opened_up():
                / _emitted_size(wide) - 1.60) < 0.01
 
 
-def test_the_collision_floor_counts_the_painted_ring_not_just_the_glyph():
-    # The ring is painted around every glyph, so two lines set as close as their
-    # bare ink allows would still overlap once both are ringed.
+def test_the_collision_floor_counts_the_letterform_not_the_ring():
+    # What must stay legible is the letterform, so that — and only that — is
+    # what the floor keeps daylight between. The synthetic-bold stroke thickens
+    # the body and counts; the outline RING does not, because the designs weld
+    # theirs on purpose (סיישל's original runs its dark ring unbroken from one
+    # line into the next). Charging the floor for the ring printed סיישל's
+    # lines 0.887 apart against the 0.75 its design sets.
     font = _hebrew_title_font()
     f, ref = rp._title_metrics(font)
     lines = ["לתמר", "מזל טוב"]
     bare = rp._min_line_pitch(f, ref, lines, 0.0)
-    ringed = rp._min_line_pitch(f, ref, lines, 0.10)
-    assert abs((ringed - bare) - 0.10) < 1e-9
-    # A same-colour "outline" is never painted as a ring, so it must not push
-    # the lines apart to clear a ring that is not there.
-    tight = _block(lines, leading=0.50, font=font, outline_w=0.10,
-                   fill="#111111", outline="#111111")
-    step = (_baselines(tight)[1] - _baselines(tight)[0]) / _emitted_size(tight)
-    assert abs(step - bare) < 0.01, step
+    fattened = rp._min_line_pitch(f, ref, lines, 0.10)
+    assert abs((fattened - bare) - 0.10) < 1e-9
+    assert rp.title_collision_pad(0.0, False, bold=True, bold_w=0.05) == 0.05
+    # A ring of any thickness, in any colour, leaves the floor exactly where the
+    # bare glyphs put it — both the visible-ring and the same-colour case.
+    for fill, outline in (("#eeeeee", "#111111"), ("#111111", "#111111")):
+        tight = _block(lines, leading=0.50, font=font, outline_w=0.10,
+                       fill=fill, outline=outline)
+        step = (_baselines(tight)[1] - _baselines(tight)[0]) / _emitted_size(tight)
+        assert abs(step - bare) < 0.01, (fill, outline, step, bare)
 
 
 # --- the collision rule, proved on the RENDERED card -------------------------
@@ -2008,6 +2014,15 @@ def test_the_collision_floor_counts_the_painted_ring_not_just_the_glyph():
 # tightest leading the store will accept, carrying the longest honoree name that
 # can be constructed, and the rendered pixels are asked whether any two lines
 # touch.
+#
+# What "touch" means is the LETTERFORM, not every pixel the title paints. An
+# outlined title is drawn ring-first and body-second, and the designs weld their
+# rings deliberately — סיישל's original runs one unbroken dark ring through
+# OZ'S / WELCOME / PARTY while the pale bodies stay clearly apart. So the rows
+# are counted in the FILL paint: a pixel closer to the title's fill colour than
+# to its ring colour, and different from the page. On a design whose two paints
+# are the same colour that reduces to every pixel of ink, which is the old test
+# unchanged.
 
 # The longest name a buyer can realistically enter, in each script, chosen to
 # hang ink BOTH ways across the gap: the Hebrew ends in a final-kaf that dives
@@ -2021,8 +2036,17 @@ _LONG_NAMES = {"hebrew": "אלכסנדרה-מרגריטה־לך",
 _TIGHTEST_ALLOWED_LEADING = 0.50
 
 
-def _chrome_ink_rows(svg_text, w, h, scale, out_png):
-    """Row ink profile of an SVG rendered through the production rasterizer."""
+def _hex(c):
+    c = c.lstrip("#")
+    return [int(c[i:i + 2], 16) for i in (0, 2, 4)]
+
+
+def _chrome_ink_rows(svg_text, w, h, scale, out_png, fill=None, outline=None):
+    """Row ink profile of an SVG rendered through the production rasterizer.
+
+    With ``fill``/``outline`` given, only pixels belonging to the FILL paint are
+    counted — nearer the fill colour than the ring colour, and not the page.
+    """
     import subprocess
 
     import numpy as np
@@ -2032,8 +2056,30 @@ def _chrome_ink_rows(svg_text, w, h, scale, out_png):
                     rp.CHROME_FONT_WAIT, f"--force-device-scale-factor={scale}",
                     f"--screenshot={out_png}", f"--window-size={w},{h}", sp],
                    check=True, stderr=subprocess.DEVNULL)
-    a = np.asarray(Image.open(out_png).convert("L")) < 200
-    return a.sum(axis=1)
+    im = Image.open(out_png)
+    if not fill or not outline or fill.lower() == outline.lower():
+        return (np.asarray(im.convert("L")) < 200).sum(axis=1)
+    # Nearer the fill than ANY blend of the ring with the page. Comparing
+    # against the two endpoints alone is not enough: the ring's antialiased rim
+    # against a white page is mid-grey, and mid-grey is nearer a pale cyan fill
+    # than it is to either black or white, so a rim pixel would count as
+    # letterform. The rim lies ON the ring-page segment by construction, so
+    # measuring to the segment puts every one of them where it belongs.
+    rgb = np.asarray(im.convert("RGB")).astype(float)
+    a = np.array(_hex(outline), dtype=float)
+    b = np.array([255.0, 255.0, 255.0])
+    ab = b - a
+    span = float((ab * ab).sum())
+    # A ring painted in the page's own colour is a segment of zero length; the
+    # nearest point on it is simply the ring colour. (Projected with an explicit
+    # sum rather than ``@``: numpy's matmul raises a spurious divide-by-zero
+    # RuntimeWarning on this shape, and a warning nobody can act on is worse
+    # than the arithmetic being written out.)
+    t = (np.clip(((rgb - a) * ab).sum(axis=2) / span, 0.0, 1.0)[..., None] if span
+         else np.zeros(rgb.shape[:2] + (1,)))
+    d_rim = np.linalg.norm(rgb - (a + t * ab), axis=2)
+    d_fill = np.linalg.norm(rgb - np.array(_hex(fill), dtype=float), axis=2)
+    return (d_fill < d_rim).sum(axis=1)
 
 
 def test_no_two_title_lines_touch_at_the_tightest_leading_on_any_template():
@@ -2063,7 +2109,8 @@ def test_no_two_title_lines_touch_at_the_tightest_leading_on_any_template():
                f'height="{H}" viewBox="0 0 {W} {H}">'
                f'<style>{rp.font_face("TitleFont", font)}</style>'
                f'<rect width="{W}" height="{H}" fill="white"/>{block}</svg>')
-        rows = _chrome_ink_rows(svg, W, H, SCALE, os.path.join(d, key + ".png"))
+        rows = _chrome_ink_rows(svg, W, H, SCALE, os.path.join(d, key + ".png"),
+                                ts["fill"], ts["outline"])
         bl = _baselines(block)
         # A clear row must exist between EVERY neighbouring pair of baselines,
         # not merely somewhere on the card: three lines can be fine at the top
@@ -2072,8 +2119,8 @@ def test_no_two_title_lines_touch_at_the_tightest_leading_on_any_template():
             lo, hi = int(min(a, b) * SCALE), int(max(a, b) * SCALE)
             band = rows[lo:hi]
             assert len(band) and band.min() == 0, (
-                f"{key}: lines touch between baselines {a} and {b} — the "
-                f"tightest ink row in the gap still carries {band.min()} pixels")
+                f"{key}: letterforms touch between baselines {a} and {b} — the "
+                f"tightest fill row in the gap still carries {band.min()} pixels")
         assert rows.max() > 0, f"{key}: nothing rendered at all"
         checked += 1
     assert checked >= 6, f"only {checked} multi-line templates were proved"

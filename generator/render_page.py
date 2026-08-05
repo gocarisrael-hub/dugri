@@ -1471,12 +1471,10 @@ def _min_line_pitch(f, ref, lines, pad):
     leading is a target that is clamped to this, per title, with the real text
     that is about to be drawn.
 
-    ``pad`` is everything painted BEYOND the glyph outline, as a fraction of the
-    size: the outline ring and any synthetic-bold fatten (a stroke is centred on
-    the outline, so it grows each line by half the width top and bottom, and two
-    neighbours need the whole width between their baselines), the drop shadow's
-    drop, and the arch — a bulged path lifts the lower line's ascenders by up to
-    ``arch`` toward the line above.
+    ``pad`` is everything that fattens the LETTERFORM itself beyond its glyph
+    outline, as a fraction of the size (``title_collision_pad``): the
+    synthetic-bold stroke, the drop shadow's drop, and the arch — a bulged path
+    lifts the lower line's ascenders by up to ``arch`` toward the line above.
     """
     asc, _desc = f.getmetrics()
     worst = 0.0
@@ -1487,25 +1485,38 @@ def _min_line_pitch(f, ref, lines, pad):
     return worst + pad + _INK_CLEARANCE
 
 
-def title_paint_pad(outline_w, arch, shadow, bold=False, bold_w=None,
-                    ring_visible=True):
-    """Everything a title paints BEYOND its glyph outlines, per unit of size.
+def title_collision_pad(arch, shadow, bold=False, bold_w=None):
+    """How much fatter than its glyph outline a title's LETTERFORM is drawn.
 
-    The ring (and any synthetic-bold fatten) grow every line on all four sides,
-    the drop shadow adds a second copy of the line 0.06 lower, and the arch
-    lifts a line's middle by ``arch``. Shared between the collision floor and
-    the owner's health check so the two reserve the same room — a check that
+    Per unit of type size, and the room the collision floor reserves on top of
+    the raw ink. The synthetic-bold stroke thickens the body itself, the drop
+    shadow adds a second copy of the line 0.06 lower, and the arch lifts a
+    line's middle by ``arch``. Shared between the collision floor and the
+    owner's health check so the two reserve the same room — a check that
     predicted a different footprint from the one the card prints would be worse
     than none.
 
-    NOT the height-fit's headroom a few lines below, which counts only the ring
-    and the shadow. That is the narrower reservation every shipped design was
-    fitted against, and widening it would resize them; this one is free to be
-    complete because it only ever pushes lines apart.
+    THE OUTLINE RING IS DELIBERATELY NOT IN HERE, and the designs are the
+    argument. Reserving it made "no two lines may touch" mean "no two lines'
+    RINGS may touch", and that is not how these titles are drawn: סיישל's
+    original stacks OZ'S / WELCOME / PARTY with its dark ring running unbroken
+    from one line into the next while the pale letter bodies stay clearly apart
+    — a welded ring is the look, not a defect. Charging the floor for it opened
+    that title from the 0.75 the design sets to 0.887 and printed the lines
+    visibly further apart than the artwork has them, and did the same to
+    מרקאנה. What has to stay legible is the letterform, so that is what the
+    floor keeps daylight between; the ring is free to do what the design does
+    with it. (The height reservation a few lines below still counts the ring in
+    full — the ring must not spill off the card, it may only meet its
+    neighbour.)
+
+    NOT the height-fit's headroom below, which counts the ring and the shadow.
+    That is the narrower reservation every shipped design was fitted against,
+    and widening it would resize them; this one is free to be complete because
+    it only ever pushes lines apart.
     """
     fat = (bold_w if bold_w else _BOLD_WEIGHT) if bold else 0.0
-    return (fat + (2 * (outline_w or 0.0) if ring_visible else 0.0)
-            + (0.06 if shadow else 0.0) + max(0.0, arch or 0.0))
+    return fat + (0.06 if shadow else 0.0) + max(0.0, arch or 0.0)
 
 
 def back_leading(ts, back_slot=None):
@@ -1589,11 +1600,11 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     n = len(lines)
     # --- the LEADING: how far apart the baselines sit -----------------------
     # A same-colour "outline" (monochrome themes) is never painted as a ring, so
-    # it adds no width to the glyph and no room between the lines either.
+    # it adds no width to the glyph. (Neither ring counts toward the collision
+    # floor either way — see ``title_collision_pad``.)
     visible_outline = outline_w > 0 and outline != fill
     fat = (bold_w if bold_w else _BOLD_WEIGHT) if bold else 0.0
-    paint_pad = title_paint_pad(outline_w, arch, shadow, bold, bold_w,
-                                ring_visible=visible_outline)
+    paint_pad = title_collision_pad(arch, shadow, bold, bold_w)
     pitch = title_pitch(f, ref, lines, leading, paint_pad)
     # size to fill the WIDTH, capped so the stacked lines still fit the box HEIGHT.
     # The height cap comes from the REAL font metrics, not a fixed per-line

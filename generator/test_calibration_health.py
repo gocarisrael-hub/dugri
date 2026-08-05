@@ -348,6 +348,30 @@ def test_a_theme_with_no_leading_is_judged_exactly_as_before():
         assert absent == explicit
 
 
+def test_a_leading_the_glyphs_cannot_be_drawn_at_is_reported_to_the_owner():
+    # The one calibrated number the card visibly does NOT print. A design may
+    # stack its lines tighter than OUR glyphs can be drawn without touching —
+    # our honoree's name is not the original's — and the renderer then opens the
+    # spacing up. Without a word about it, a title set at 0.5 and printed at 1.18
+    # reads as the calibration having been ignored.
+    with Fixture() as fx:
+        cfg = config.theme(fx.key)
+        ts = fx.entry["title_style"]
+        samples = H.sample_titles(cfg)
+        multi = [s for s in samples if len(H._drawn(s[0])) > 1]
+        assert multi, "this fixture must set a multi-line title"
+        pad = rp.title_collision_pad(ts.get("arch"), ts.get("shadow"),
+                                     ts.get("bold"), ts.get("bold_w"))
+        f, ref = H._metrics(fx.font_path())
+        floor = max(rp._min_line_pitch(f, ref, H._drawn(s[0]), pad) for s in multi)
+        # Set well under the floor: the renderer must open it, and say so.
+        got = H.leading_opened(fx.font_path(), samples, round(floor / 2, 2), ts)
+        assert got and got[0] > floor / 2, got
+        # ...and a spacing the glyphs can actually be drawn at stays silent.
+        assert H.leading_opened(fx.font_path(), samples, floor + 0.5, ts) is None
+        assert H.leading_opened(fx.font_path(), samples, None, ts) is None
+
+
 def test_an_unpinned_theme_raises_no_fit_verdict():
     # With nothing pinned the renderer auto-fits to the box, so there is no
     # stored number that can go stale — and nothing to report.

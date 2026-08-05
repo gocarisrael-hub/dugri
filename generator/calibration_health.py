@@ -207,11 +207,45 @@ def _paint_ratio(font_path, lines, outline_w, shadow, leading=None, arch=0.0,
         return None
     f, ref = got
     pitch = rp.title_pitch(f, ref, drawn, leading,
-                           rp.title_paint_pad(outline_w, arch, shadow, bold,
-                                              bold_w))
+                           rp.title_collision_pad(arch, shadow, bold, bold_w))
     stack = rp._title_ink_stack(f, ref, drawn, pitch)
     pad = 2 * (outline_w or 0) + (0.06 if shadow else 0.0)
     return stack / ref + pad
+
+
+def leading_opened(font_path, samples, leading, ts):
+    """``(printed_pitch, sample_name)`` where the floor overrides the design.
+
+    None when the measured spacing survives to the card, which is the normal
+    case and the only one worth staying quiet about.
+
+    A verdict only where the WHOLE spread of reference names agrees — the same
+    rule ``_fit`` reaches its verdicts by, and for the same reason. The floor is
+    recomputed per title against the text actually being drawn, so a name
+    carrying a descender over an ascender can push the lines apart on a design
+    that prints exactly as measured for every other name. That is the clamp
+    doing its job on one order, not a template the owner can do anything about.
+    What she needs told is the case she CANNOT fix: a spacing no name she could
+    enter will ever print. So the least demanding sample decides, and it is the
+    one reported — "even at best, this is what the card prints".
+    """
+    got = _metrics(font_path)
+    if not got or not leading:
+        return None
+    f, ref = got
+    pad = rp.title_collision_pad(ts.get("arch"), ts.get("shadow"),
+                                 ts.get("bold"), ts.get("bold_w"))
+    best = None
+    for lines, name in samples:
+        drawn = _drawn(lines)
+        if len(drawn) < 2:
+            continue
+        pitch = rp.title_pitch(f, ref, drawn, leading, pad)
+        if pitch <= leading + 0.01:
+            return None                 # some name prints it as measured
+        if best is None or pitch < best[0]:
+            best = (pitch, name)
+    return best
 
 
 def _width_ratio(font_path, lines):
@@ -295,6 +329,19 @@ def _fit(surface, pinned, box, font_path, font_name, samples, named, ts,
             f"בגובה {h_hi * pinned:.1f} בלבד בתוך תיבה בגובה {bh:.1f} "
             f"({fh_hi * 100:.0f}% מהתיבה). התיבה יכולה להכיל כ-{bh / h_hi:.1f}. "
             f"זה בדיוק מה שקורה כשמחליפים את פונט הכותרת בלי לכייל מחדש.")
+    # The design's own line spacing, opened up because our glyphs cannot be drawn
+    # that tight. The owner needs telling: it is the one calibrated number the
+    # card visibly does NOT print, and without a word about it a title she set
+    # at 0.5 and sees at 1.18 reads as the calibration having been ignored.
+    opened = leading_opened(font_path, samples, leading, ts)
+    if opened:
+        got, name = opened
+        notes.append(
+            f"{label}: העיצוב מסדר את שורות הכותרת במרווח {leading:g} מגובה "
+            f'הגופן, אבל האותיות שלנו לא נכנסות כל כך צפוף — עם השם "{name}" '
+            f"השורות נדחקות ל-{got:.2f} כדי שלא ייגעו זו בזו. הכותרת תודפס "
+            f"מרווחת יותר מהמקור. אפשר להקטין את הפער רק בפונט כותרת שהאותיות "
+            f"שלו נמוכות יותר.")
     if named:
         nlines, nname = named
         nw = _width_ratio(font_path, nlines)

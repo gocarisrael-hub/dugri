@@ -378,9 +378,27 @@ def compare_calibration(cfg, blob, tol=GEOM_TOLERANCE, color_tol=COLOR_TOLERANCE
     # compared rather than listed as unchecked. Absent on both sides = a
     # single-line title, which has no spacing to report; the row reads
     # "unmeasured" and says so.
+    #
+    # Except where the ink turns out not to pin one at all. A title whose
+    # outline ring welds its lines into one blob has no valleys for a baseline
+    # to be located by, and every candidate spacing then reproduces its ink
+    # equally well; calibration recognises that, keeps whatever the template is
+    # already set at, and grades the knob "none". Comparing the two then reads
+    # "same" — perfectly true and exactly the wrong thing to tell the owner,
+    # because it presents an inherited number as a fresh confirmation of it.
+    # She is the only remaining source for the value, so the row has to say it
+    # was not measured. That is why סיישל sat at 0.70 against the 0.75 its
+    # design sets while every re-detect reported no drift.
+    conf = (blob or {}).get("confidence") or {}
     for _k in ("leading", "back_leading", "board_leading"):
-        rows.append(_num_row("title_style." + _k, sts.get(_k), dts.get(_k),
-                             ref=1.0, tol=tol))
+        path = "title_style." + _k
+        if dts.get(_k) is not None and conf.get(path) == "none":
+            rows.append(_row(path, GEOMETRY, sts.get(_k), None, UNMEASURED,
+                             note="this title's ink does not pin its line "
+                                  "spacing — the stored value stands, and only "
+                                  "the original design can settle it"))
+            continue
+        rows.append(_num_row(path, sts.get(_k), dts.get(_k), ref=1.0, tol=tol))
     rows.append(_flag_row("title_style.align", sts.get("align"), dts.get("align")))
     rows.append(_flag_row("title_style.shadow", sts.get("shadow"),
                           dts.get("shadow")))

@@ -800,3 +800,117 @@ def test_nothing_is_invented_for_a_template_with_no_calibration_yet():
     kept = C._carry_forward(out, {"title_style": {}}, [], {})
     assert kept == []
     assert "size" not in out["title_style"] and out["word_size"] is None
+
+
+# ---- the leading the ink cannot decide --------------------------------------
+#
+# The argmax of a flat curve is noise wearing a measurement's clothes. A thick
+# ring welds neighbouring lines into one blob, the row profile loses the valleys
+# that locate a baseline, and every candidate spacing then reproduces the ink
+# about as well as every other. סיישל is exactly that: its Canva ring slider is
+# at 111 and its three title lines print as a single mass.
+
+
+def _grid(points, scatter=0.001):
+    """A leading curve of ``(pitch, size, score)`` with per-sample scores.
+
+    ``scatter`` is how far the sample honoree names disagree, which is the noise
+    floor ``_score_noise`` reads the plateau against.
+    """
+    return [(p, s, sc, [sc - scatter, sc, sc + scatter]) for p, s, sc in points]
+
+
+def test_a_peaked_curve_reads_its_leading_off_its_own_ink():
+    curve = _grid([(0.70, 26.0, 1.00), (0.72, 25.0, 1.10), (0.74, 24.0, 1.20),
+                    (0.76, 23.5, 1.10), (0.78, 23.0, 1.00)])
+    lo, hi, steps, span = C.leading_plateau(curve)
+    assert (lo, hi, steps) == (0.74, 0.74, 1), (lo, hi, steps)
+    assert span == 0.0
+    assert C.leading_is_readable(curve)
+
+
+def test_a_flat_curve_is_refused_however_confident_its_argmax_looks():
+    # Every candidate scores within the noise of the winner, and the sizes they
+    # answer run from 20 to 30 — a quarter of the winner's size either way.
+    curve = _grid([(0.50, 30.0, 1.2000), (0.60, 26.0, 1.2005),
+                   (0.70, 24.0, 1.2010), (0.80, 22.0, 1.2004),
+                   (0.90, 20.0, 1.2001)], scatter=0.01)
+    lo, hi, steps, span = C.leading_plateau(curve)
+    assert (lo, hi, steps) == (0.50, 0.90, 5)
+    assert span > C._LEADING_SPAN_TOL
+    assert not C.leading_is_readable(curve)
+
+
+def test_the_plateau_is_the_run_around_the_winner_not_every_tie_on_the_grid():
+    # The score is smooth but not unimodal: a second, lower bump appears where
+    # our candidate's descender lands on the original's next line. A far-off
+    # bump that sneaks under the noise says nothing about how sharply the winner
+    # is pinned, so only the CONTIGUOUS run counts.
+    curve = _grid([(0.60, 30.0, 1.2009), (0.62, 29.0, 1.1000),
+                   (0.64, 28.0, 1.1000), (0.66, 27.0, 1.2005),
+                   (0.68, 26.0, 1.2010), (0.70, 25.0, 1.2008)])
+    lo, hi, steps, _span = C.leading_plateau(curve)
+    assert (lo, hi, steps) == (0.66, 0.70, 3), (lo, hi, steps)
+
+
+_WELD_RING = 0.09
+_WELD_LINES = ["נעמה", "מסיבה גדולה", "בתל אביב"]
+_WELD_SAMPLES = [_WELD_LINES, ["לירן", "מסיבה גדולה", "בתל אביב"],
+                 ["דן", "מסיבה גדולה", "בתל אביב"],
+                 ["לילך", "מסיבה גדולה", "בתל אביב"]]
+
+
+def _welded_origin(size=24.0, pitch=0.62):
+    ink = C._paint(HEBREW_FONT, _WELD_LINES, size * PPU, ALPHA,
+                   stroke=_WELD_RING * size * PPU, pitch=pitch)
+    return _origin(ink)
+
+
+def test_a_welded_title_falls_back_on_the_spacing_the_template_is_set_at():
+    """The whole point: when the ink cannot decide, the set number wins.
+
+    The origin here is painted with a ring thick enough to close the gaps
+    between its lines — the condition that makes the leading unreadable — and
+    the fit is handed the spacing the template is already set at. It must come
+    back with THAT spacing, and with the size solved at it rather than at the
+    argmax of a curve it just refused.
+    """
+    mask, image, box = _welded_origin()
+    fit = {}
+    _got, _grade, note, _ctx, lead = C.fit_title_size(
+        mask, image, box, PPU, 0.0, 0.0, HEBREW_FONT, _WELD_SAMPLES, "#000000",
+        ring=_WELD_RING, fit_out=fit, set_leading=0.62)
+    assert fit["declined"] is True, "this ink must not pin a leading"
+    assert lead == 0.62, lead
+    assert note and "does not pin its line spacing" in note
+    assert "KEPT" in note
+
+
+def test_a_welded_title_with_nothing_set_asks_the_owner_for_the_number():
+    # She cannot supply a value she is never told is missing — which is how
+    # סיישל sat silently at 0.70 against the 0.75 its design sets.
+    mask, image, box = _welded_origin()
+    fit = {}
+    _got, _grade, note, _ctx, _lead = C.fit_title_size(
+        mask, image, box, PPU, 0.0, 0.0, HEBREW_FONT, _WELD_SAMPLES, "#000000",
+        ring=_WELD_RING, fit_out=fit)
+    assert fit["declined"] is True
+    assert note and "read the line spacing off the original" in note
+
+
+def test_a_clean_title_still_measures_its_own_spacing_and_ignores_the_setting():
+    """Ten of the eleven shipped templates must keep deriving their own.
+
+    A fit that CAN measure the spacing must not be overridden by whatever the
+    template happens to be set at, or no calibration could ever correct one.
+    """
+    size = 24.0
+    ink = C._paint(HEBREW_FONT, _TWO[0], size * PPU, ALPHA, pitch=1.30)
+    mask, image, box = _origin(ink)
+    fit = {}
+    got, _grade, _note, _ctx, lead = C.fit_title_size(
+        mask, image, box, PPU, 0.0, 0.0, HEBREW_FONT, _TWO, "#000000",
+        fit_out=fit, set_leading=0.42)
+    assert fit["declined"] is False
+    assert abs(lead - 1.30) <= 0.06, lead
+    assert abs(got - size) / size <= 0.03, got

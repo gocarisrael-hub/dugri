@@ -1685,6 +1685,78 @@ def _score_noise(sample_scores):
     return _MEDIAN_SE * statistics.pstdev(sample_scores) / (n ** 0.5)
 
 
+# ---- WHEN THE INK CANNOT DECIDE -------------------------------------------
+#
+# The leading is solved for by taking the argmax of a score curve, and an argmax
+# is an answer whether or not the curve has a peak. On most surfaces it does:
+# the score falls away from the winner within a few grid steps, because moving
+# the baselines shifts whole rows of ink and the row profile notices. On some it
+# does not, and the reason is visible in the artwork — a thick outline RING
+# closes the gaps between the lines, so the original's title ink is one
+# connected blob with no valleys for a baseline to be located by. סיישל's ring
+# is 0.071 of its type size (the owner's Canva slider at 111) and its three
+# lines are welded into a single mass; טיימס סקוור's is 0.116 and worse.
+#
+# A curve with no peak still returns an argmax, and that argmax is noise dressed
+# as a measurement. It has to be recognised and SAID, because the owner is the
+# only remaining source for the number — and she cannot supply a value she is
+# never told is missing. This one sat silently wrong for סיישל at 0.70 against
+# the design's 0.75, and nothing in the calibration reported any difficulty.
+#
+# "No peak" is asked in the units that matter, not in grid steps. The leading is
+# only ever wanted because it pins the SIZE — the two are one reading of one
+# block of ink — so the question to ask of the flat band is what it costs the
+# size. Take the run of leadings around the argmax that the surface's own noise
+# cannot separate from it (``_score_noise``), and look at the sizes they solve
+# to. A band that answers one size is a measurement; a band that answers a
+# quarter's worth of sizes is not.
+#
+# Measured across all thirty-odd multi-line surfaces in the shipped set the two
+# cases do not overlap and are not close. Surfaces whose lines are drawn clear of
+# one another answer within 3-11% across their band — טריפה 3.2/3.5, טוקיו 3.9,
+# מרקאנה 4.0-9.2, פריז 4.1-8.3, קליפורניה 6.0-8.7, סנטוריני 1.0/3.7/11.4 (the
+# widest genuine reading anywhere). Surfaces whose ring welds the lines answer
+# 17-24% (סיישל's five: 17.0/19.6/20.9/23.7/24.2) and טיימס סקוור, whose ring is
+# half again as thick, sweeps 20-21 of the 86 grid steps for 21.9/22.2%. So the
+# bar is 0.15 — above every genuine reading, below every welded one, and the two
+# clusters are half a bar apart on either side of it.
+_LEADING_SPAN_TOL = float(os.environ.get("DUGRI_LEADING_SPAN_TOL", "0.15"))
+
+
+def leading_plateau(curve):
+    """The band of leadings one surface's ink cannot tell apart.
+
+    ``(lo, hi, steps, size_span)`` over the CONTIGUOUS run around the argmax
+    whose score is within the surface's own noise of the best, or None for a
+    curve with nothing in it. ``size_span`` is how much the size the fit answers
+    moves across that run, relative to the size at the argmax.
+
+    Contiguous on purpose: the score is smooth but not unimodal — a two-line
+    block scores a second, lower bump where our candidate's descender lands on
+    the original's next line — and a far-off bump that happens to sneak under
+    the noise says nothing about how sharply the winner is pinned.
+    """
+    if not curve:
+        return None
+    top = max(range(len(curve)), key=lambda i: curve[i][2])
+    noise = _score_noise(curve[top][3])
+    lo = hi = top
+    while lo > 0 and curve[top][2] - curve[lo - 1][2] <= noise:
+        lo -= 1
+    while hi + 1 < len(curve) and curve[top][2] - curve[hi + 1][2] <= noise:
+        hi += 1
+    sizes = [curve[i][1] for i in range(lo, hi + 1) if curve[i][1]]
+    best_size = curve[top][1]
+    span = ((max(sizes) - min(sizes)) / best_size) if sizes and best_size else 0.0
+    return curve[lo][0], curve[hi][0], hi - lo + 1, span
+
+
+def leading_is_readable(curve):
+    """Whether a surface's ink pins its leading well enough to pin a size."""
+    band = leading_plateau(curve)
+    return bool(band) and band[3] <= _LEADING_SPAN_TOL
+
+
 def couple_leadings(curves):
     """One leading for surfaces whose ink agrees on it. -> ``(leading, note)``.
 
@@ -1745,11 +1817,18 @@ def refit_at_leading(fit, leading):
 
 
 def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
-                   ring=0.0, leading=None, fit_out=None):
+                   ring=0.0, leading=None, fit_out=None, set_leading=None):
     """Fit one surface's title size. -> ``(size, grade, note, ctx, leading)``.
 
     ``ctx`` is ``(ink_region, alpha)`` — what ``fit_bold`` needs to go on and
     weigh the same ink — or None when nothing was measured.
+
+    ``set_leading`` is the spacing THIS SURFACE is already set at in the theme —
+    the owner's own reading of the Canva original, or an earlier pass's. It is
+    used only where the ink turns out not to pin a leading at all
+    (``leading_is_readable``), and there it wins: a number somebody read off the
+    design beats an argmax taken of a flat curve. Where the ink does decide, it
+    is ignored, so a pass can always improve on a value it can actually measure.
 
     ``fit_out``, when a dict, receives this surface's whole reading — the ink,
     what it was painted against, and the leading curve swept over it — so that
@@ -1805,10 +1884,38 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
     size, leading, _score = solve_size_and_leading(
         ink, font_path, samples, ppu, alpha, ring=ring, pitch=leading,
         curve_out=curve)
+    # The curve is swept only when the leading was NOT handed in, so an empty one
+    # here means the caller already knew the spacing and there is nothing to
+    # judge. A curve that IS there and does not decide is the case this handles.
+    declined = bool(curve) and not leading_is_readable(curve)
+    declined_note = None
+    if declined:
+        band = leading_plateau(curve)
+        where = (f"every spacing from {band[0]} to {band[1]} of the type size "
+                 f"reproduces this title's ink equally well, and they answer "
+                 f"sizes {band[3]:.0%} apart")
+        if set_leading is not None:
+            leading = round(float(set_leading), 3)
+            size = size_from_matching_samples(ink, font_path, samples, ppu,
+                                              alpha, ring, leading)
+            declined_note = (
+                "leading: this title's ink does not pin its line spacing — "
+                f"{where} — so the {leading} already set on this template was "
+                "KEPT and the size was solved at it, rather than at an argmax "
+                "of a flat curve. A ring thick enough to weld the lines "
+                "together is the usual cause; the spacing then has to be read "
+                "off the design itself.")
+        else:
+            declined_note = (
+                "leading: this title's ink does not pin its line spacing — "
+                f"{where}. The number below is the best of a flat curve, not a "
+                "measurement: read the line spacing off the original design and "
+                "set it by hand, and the size will be re-solved at it.")
     if fit_out is not None:
         fit_out.update({"ink": ink, "font": font_path, "samples": samples,
                         "ppu": ppu, "alpha": alpha, "ring": ring,
                         "curve": curve, "size": size, "leading": leading,
+                        "declined": declined,
                         "box_h": box["y1"] - box["y0"]})
     # Every measurement below repaints the same block, so it has to be repainted
     # at the spacing the block was fitted at. A single-line title has no spacing,
@@ -1835,14 +1942,15 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
     spread = ((max(each) - min(each)) / statistics.median(each)) if each else None
     wide = _fit_size(ink_w, font_path, samples, ppu, alpha, axis=1, ring=ring,
                      pitch=pitch)
-    note = None
+    note = declined_note
     if leading is not None and abs(leading - RENDER_PITCH) > 0.02:
-        note = (f"size: the original stacks its title lines {leading} of the type "
-                f"size apart, where this renderer's default is {RENDER_PITCH}. "
-                "The measured spacing is pinned alongside the size and printed "
-                "with it, so the block matches the artwork — but the two were "
-                "read off the same ink and only make sense together: changing "
-                "one by hand without the other resizes the block.")
+        spaced = (f"size: the original stacks its title lines {leading} of the type "
+                  f"size apart, where this renderer's default is {RENDER_PITCH}. "
+                  "The measured spacing is pinned alongside the size and printed "
+                  "with it, so the block matches the artwork — but the two were "
+                  "read off the same ink and only make sense together: changing "
+                  "one by hand without the other resizes the block.")
+        note = (note + " " + spaced) if note else spaced
     if wide and abs(wide - size) / size > 0.12:
         wnote = (f"size: fitted from the height of the original's title ink. Its "
                  f"WIDTH says {wide}, not {size} — the title font is not quite the "
@@ -2219,6 +2327,40 @@ def _carry_forward(out, cfg, notes, confidence):
     return kept
 
 
+_SURFACE_WORD = {"leading": "the card fronts", "back_leading": "the card backs",
+                 "board_leading": "the board"}
+
+
+def _report_opened_leadings(ts, cfg, theme_key, notes):
+    """Say where the renderer will print a spacing WIDER than the one measured.
+
+    ``render_page.title_pitch`` clamps a leading up to whatever the glyphs about
+    to be drawn actually need, because the spacing was read off the original's
+    honoree name and we print somebody else's. That clamp is right — two lines
+    must never touch — but it is silent, and a number that is measured, stored,
+    shown in the form and then not printed is the most confusing kind of wrong.
+    So every surface is asked, against the same sample names the fit used,
+    whether its spacing survives to the card.
+    """
+    try:
+        font = config.font_path(theme_key, cfg.get("title_font") or "")
+    except (KeyError, RuntimeError):
+        return
+    samples = calibration_health.sample_titles(cfg)
+    for key, word in _SURFACE_WORD.items():
+        got = calibration_health.leading_opened(font, samples, ts.get(key),
+                                                 ts)
+        if not got:
+            continue
+        pitch, name = got
+        notes.append(
+            f"leading: {word} are set at {ts[key]} of the type size, but this "
+            f'title font cannot be drawn that tight — on the sample name "{name}" '
+            f"the lines have to open to {pitch:.2f} or they touch. The card will "
+            "print the wider spacing. Only a title face with shorter letters can "
+            "close the gap.")
+
+
 def calibrate(theme_key, workdir=None):
     """Derive the calibration blob for a theme from its filled/clean art."""
     cfg = config.theme(theme_key)
@@ -2244,6 +2386,33 @@ def calibrate(theme_key, workdir=None):
         return {"x0": (box[0] - ox) / ppu, "y0": (box[1] - oy) / ppu,
                 "x1": (box[2] - ox) / ppu, "y1": (box[3] - oy) / ppu}
 
+    def set_lead(key="leading", back_slot=None):
+        """The line spacing this surface is ALREADY set at in the theme, or None.
+
+        Resolved down the same chain the renderer resolves it (``render_page
+        .back_leading`` / ``.board_leading``), so what a declined fit falls back
+        on is exactly what that surface would have printed with.
+        """
+        ts = cfg.get("title_style") or {}
+        chain = [(back_slot or {}).get("leading")] if back_slot else []
+        chain += [ts.get(key), ts.get("leading")]
+        for v in chain:
+            if isinstance(v, (int, float)) and v > 0:
+                return float(v)
+        return None
+
+    def lead_grade(fit, grade):
+        """The grade a surface's LEADING earns, which is not always its size's.
+
+        A declined fit still writes a spacing — the one the template is already
+        set at — but it did not MEASURE it, and the owner has to be able to see
+        which of the two happened. "none" is the level this module already uses
+        for "no reading here", and it is safe to attach to a written value: only
+        "low" is shredded by ``_drop_low_confidence``, and ``_carry_forward``
+        only ever fills a gap.
+        """
+        return "none" if (fit or {}).get("declined") else grade
+
     def record(key, size, grade, note):
         """Store one fitted size, or say why it stayed unset."""
         if note:
@@ -2263,9 +2432,17 @@ def calibrate(theme_key, workdir=None):
     surface_fits = []
 
     def couple():
-        """Share one leading across the surfaces whose ink agrees on it."""
+        """Share one leading across the surfaces whose ink agrees on it.
+
+        A surface whose ink DECLINED to pin a leading takes no part. Its curve
+        has no peak to weigh — that is what declining means — so letting it vote
+        would put the design's shared answer back on the flat argmax the decline
+        just refused, and letting it be re-written would throw away the spacing
+        the owner read off the design itself.
+        """
         curves = {label: (fit.get("curve") or [])
-                  for label, fit, _write in surface_fits if fit.get("size")}
+                  for label, fit, _write in surface_fits
+                  if fit.get("size") and not fit.get("declined")}
         shared, why = couple_leadings(curves)
         if why:
             notes.append(why)
@@ -2273,7 +2450,7 @@ def calibrate(theme_key, workdir=None):
             return
         moved = []
         for label, fit, write in surface_fits:
-            if not fit.get("size") or not fit.get("curve"):
+            if not fit.get("size") or not fit.get("curve") or fit.get("declined"):
                 continue
             if fit["leading"] == shared:
                 continue
@@ -2401,7 +2578,7 @@ def calibrate(theme_key, workdir=None):
                     size, tgrade, tnote, ctx, tlead = fit_title_size(
                         mask, image, tbox, ppu, ox, oy, title_font, samples,
                         (t[0].get("color") or fill), ring=ring,
-                        fit_out=front_fit)
+                        fit_out=front_fit, set_leading=set_lead())
                     if not (size and fill and outline):
                         break
                     dfill, doutline, dring = ring_by_depth(
@@ -2502,7 +2679,8 @@ def calibrate(theme_key, workdir=None):
                 # spacing put its size 21% over the Canva value it had been
                 # matching to 2%.
                 if size is not None:
-                    record("leading", tlead, tgrade, None)
+                    record("leading", tlead,
+                           lead_grade(front_fit, tgrade), None)
 
                     def _write_front(new_size, new_lead):
                         out["title_style"]["size"] = new_size
@@ -2596,10 +2774,11 @@ def calibrate(theme_key, workdir=None):
                 bsize, bgrade, bnote, _bctx, blead = fit_title_size(
                     mask, image, units(box, ppu, ox, oy), ppu, ox, oy,
                     title_font, samples, fill, ring=deck_ring,
-                    fit_out=board_fit)
+                    fit_out=board_fit, set_leading=set_lead("board_leading"))
                 record("board_size", bsize, bgrade, bnote)
                 if bsize is not None:
-                    record("board_leading", blead, bgrade, None)
+                    record("board_leading", blead,
+                           lead_grade(board_fit, bgrade), None)
 
                     def _write_board(new_size, new_lead):
                         out["title_style"]["board_size"] = new_size
@@ -2630,11 +2809,13 @@ def calibrate(theme_key, workdir=None):
         # else on each — or on none of them. Measuring one and repeating it is
         # how seven cards in eight get the name in the wrong place.
 
-        def measure_back(kf, kc, label, fit_out=None):
+        def measure_back(kf, kc, label, fit_out=None, old_slot=None):
             """One back's slot — ``(slot|None, size, grade, note, leading)``.
 
             ``label`` prefixes this back's notes and confidence keys so a deck
-            with eight of them says WHICH one it could not read.
+            with eight of them says WHICH one it could not read. ``old_slot`` is
+            what this back is already calibrated as, so a fit whose ink cannot
+            pin a leading can fall back on the spacing this very back prints at.
             """
             mask, image, vb = _diff(kf, kc, workdir)
             w, h = mask.size
@@ -2700,7 +2881,8 @@ def calibrate(theme_key, workdir=None):
                 bppu, box_, boy = _viewport(mask, vb)
                 size, grade, note, _bctx, lead = fit_title_size(
                     mask, image, units(box, bppu, box_, boy), bppu, box_, boy,
-                    title_font, samples, fill, ring=deck_ring, fit_out=fit_out)
+                    title_font, samples, fill, ring=deck_ring, fit_out=fit_out,
+                    set_leading=set_lead("back_leading", old_slot))
                 return slot, size, grade, note, lead
             return None, None, None, None, None
 
@@ -2734,7 +2916,10 @@ def calibrate(theme_key, workdir=None):
                     out["backs"][str(bi)] = None
                 continue
             back_fit = {}
-            slot, size, grade, note, lead = measure_back(kf, kc, label, back_fit)
+            old_slot = ((cfg.get("backs") or {}).get(str(bi)) if paired
+                        else cfg.get("back")) or None
+            slot, size, grade, note, lead = measure_back(kf, kc, label, back_fit,
+                                                         old_slot)
             confidence[label + ".frac"] = "high" if slot else "none"
             if not slot:
                 unreadable(label)
@@ -2761,7 +2946,8 @@ def calibrate(theme_key, workdir=None):
             else:
                 record("back_size", size, grade, note)
                 if size is not None:
-                    record("back_leading", lead, grade, None)
+                    record("back_leading", lead,
+                           lead_grade(back_fit, grade), None)
 
                     def _write_back(new_size, new_lead):
                         out["title_style"]["back_size"] = new_size
@@ -2838,6 +3024,13 @@ def calibrate(theme_key, workdir=None):
         # AFTER the drop, never before: a value this pass declined to write is
         # exactly the gap the guard exists to fill.
         _carry_forward(out, cfg, notes, confidence)
+        # The one measured number the card may visibly NOT print. A design's
+        # spacing is read off ITS honoree's name and printed with a different
+        # one, so a title our glyphs cannot be drawn that tight in is opened up
+        # by the renderer's collision floor. Said here rather than left to be
+        # noticed on a proof: an owner who set 0.5 and sees 1.18 has no way to
+        # tell "the calibration was ignored" from "these letters do not fit".
+        _report_opened_leadings(out["title_style"], cfg, theme_key, notes)
         # Reported last so it reflects what actually survived both passes.
         unset = [name for name in ("size", "board_size", "back_size")
                  if name not in out["title_style"]]

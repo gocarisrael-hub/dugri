@@ -722,6 +722,84 @@ def regularise_word_slots(slots, vb, log=print, declined=None):
     return [_clamp_into_card(slot, vb) for slot in out]
 
 
+# How far one front's title box may differ in SIZE from the other fronts' before
+# it stops being the same text box, as a fraction of the card's width/height.
+#
+# The title MOVES per front — that is the whole reason it is recorded per front —
+# but it does not RESIZE: it is one Canva text box the design slides around the
+# artwork to keep clear of each card's illustration. Measured across the shipped
+# decks the fronts' boxes agree far inside a printed hair: סיישל's eight widths
+# span 0.0001 of the card, קליפורניה's 0.0001, פריז's 0.0018 (the widest genuine
+# spread anywhere in the set). So 0.02 — the same "invisible in print" scale
+# ``_EDGE_TOL`` is set on, ~4.5 units on a 224-unit card — sits an order of
+# magnitude above every real spread.
+#
+# And an order of magnitude BELOW the failure it has to catch. Where a template's
+# clean plate is missing artwork its filled plate has, the diff hands the row
+# grouper the missing decoration instead of text: קליפורניה's clean/9.svg lost
+# the card's frame and a sparkle, so front 9's "title" swallowed the frame's top
+# edge and every row stretched to the frame's right stile — a box 0.72 of the
+# card wide against its siblings' 0.3148, at a y0 of 0.0793 against their 0.138.
+# סיישל and פריז did the same on their own front 9, both landing on the
+# identical x0 0.1089 / y0 0.0721 — two unrelated designs cannot have measured
+# the same box, which is what says this is a runaway rather than a reading.
+_TITLE_BOX_TOL = float(os.environ.get("DUGRI_TITLE_BOX_TOL", "0.02"))
+
+
+def _title_union(boxes):
+    """The one box a front's title bands are fitted into, or None."""
+    if not boxes:
+        return None
+    return (min(b["x0"] for b in boxes), min(b["y0"] for b in boxes),
+            max(b["x1"] for b in boxes), max(b["y1"] for b in boxes))
+
+
+def reconcile_front_titles(front_titles, vb, log=print, declined=None):
+    """Drop any front whose title box is not the same box as its siblings'.
+
+    -> ``{index: boxes}`` without the refusals. One design, one text box: the
+    fronts differ in where it sits, never in how big it is, so a front whose box
+    is a different SIZE did not measure a title at all — it measured whatever
+    else the filled/clean pair happens to disagree about. Pinning a size and a
+    leading to that box mis-fits the honoree's name on a card the owner cannot
+    see is broken until it prints.
+
+    Refused rather than repaired: the position such a front reports is no more
+    trustworthy than the size, and the schema already defines what a front with
+    no box of its own falls back to. Every refusal goes to ``declined`` so it
+    reaches the owner instead of a log line.
+    """
+    def refuse(message):
+        log(message)
+        if declined is not None:
+            declined.append(message)
+
+    unions = {i: _title_union(b) for i, b in front_titles.items()}
+    sized = {i: u for i, u in unions.items() if u}
+    if len(sized) < 3:
+        # Two fronts disagreeing say which of them is wrong only by majority, and
+        # there is no majority in two. Below three this abstains rather than
+        # guessing, which is the same thing the word-slot vote does.
+        return dict(front_titles)
+    med_w = _median([u[2] - u[0] for u in sized.values()])
+    med_h = _median([u[3] - u[1] for u in sized.values()])
+    out = dict(front_titles)
+    for index, u in sorted(sized.items(), key=lambda kv: int(kv[0])):
+        off_w, off_h = abs((u[2] - u[0]) - med_w), abs((u[3] - u[1]) - med_h)
+        if off_w <= _TITLE_BOX_TOL * vb[2] and off_h <= _TITLE_BOX_TOL * vb[3]:
+            continue
+        refuse(
+            f"front {index}: its title box is {u[2] - u[0]:.1f}x{u[3] - u[1]:.1f}u "
+            f"where the other fronts all measure about {med_w:.1f}x{med_h:.1f}u — "
+            "that is not the same text box moved, so this front's diff caught "
+            "something other than the title (usually a clean/ plate missing "
+            "artwork its filled/ twin has, which then reads as text). REFUSED: "
+            "this front keeps no box of its own and falls back to the others'. "
+            "Re-export the pair if the title really does differ here.")
+        out.pop(index, None)
+    return out
+
+
 def assemble_single_recipe(theme, vb, words, front_titles,
                            back_title=None, photo_slots=None):
     """Build the v2 recipe dict — the shape docs/card-structure-schema.md locks.
@@ -859,6 +937,11 @@ def detect_single_card(theme, template_dir, fronts=None,
         # Straight after the vote and BEFORE anything is written: what goes into
         # the recipe is the layout the design meant, not the origin's ink boxes.
         words = regularise_word_slots(words, vb0, log=log, declined=declined)
+        # Same idea for the per-front titles: what goes into the recipe is the
+        # one text box this design moves around, not whatever else a front's
+        # filled/clean pair happened to disagree about.
+        front_titles = reconcile_front_titles(front_titles, vb0, log=log,
+                                              declined=declined)
 
         back_title = []
         bclean = os.path.join(template_dir, "clean", f"{back_index}.svg")

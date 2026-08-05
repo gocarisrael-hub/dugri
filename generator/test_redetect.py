@@ -200,6 +200,32 @@ def test_a_surface_absent_from_both_sides_is_unmeasured_not_in_sync():
     assert row["status"] == R.UNMEASURED
 
 
+def test_a_leading_the_ink_could_not_pin_is_unmeasured_not_in_sync():
+    # Calibration keeps whatever the template is set at where the artwork cannot
+    # decide, so stored and detected AGREE — and reporting that agreement as "no
+    # drift" presents an inherited number as a fresh confirmation of it. The
+    # owner is the only remaining source for the value, so the row has to say so.
+    cfg = {"title_style": dict(_CFG["title_style"], leading=0.75),
+           "board": _CFG["board"], "back": None}
+    blob = _blob()
+    blob["title_style"]["leading"] = 0.75
+    blob["confidence"] = {"title_style.leading": "none"}
+    row = _row(R.compare_calibration(cfg, blob), "title_style.leading")
+    assert row["status"] == R.UNMEASURED, row
+    assert row["stored"] == 0.75 and row["detected"] is None
+    assert "does not pin its line spacing" in row["note"]
+
+
+def test_a_leading_the_ink_DID_pin_is_still_compared():
+    cfg = {"title_style": dict(_CFG["title_style"], leading=0.75),
+           "board": _CFG["board"], "back": None}
+    blob = _blob()
+    blob["title_style"]["leading"] = 0.92
+    blob["confidence"] = {"title_style.leading": "high"}
+    row = _row(R.compare_calibration(cfg, blob), "title_style.leading")
+    assert row["status"] == R.CHANGED, row
+
+
 def test_align_and_shadow_compare_categorically():
     blob = _blob()
     blob["title_style"]["align"] = "center"

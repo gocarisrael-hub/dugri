@@ -865,3 +865,70 @@ def test_a_clean_detection_reports_nothing_refused():
     R.regularise_word_slots(_measured(_GRAPEFRUIT_MIDS), _VB,
                             log=_quiet, declined=declined)
     assert declined == [], declined
+
+
+# ---- one design, one title text box -----------------------------------------
+#
+# The title moves per front; it does not resize. Where a template's clean plate
+# is missing artwork its filled twin has, the diff hands the row grouper that
+# decoration instead of text, and the front reports a title box several times
+# the size of its siblings' — קליפורניה's front 9 measured 0.72 of the card wide
+# against the other seven's 0.3148, because clean/9.svg lost the card frame.
+
+
+def _titles(widths, heights=None, x0=0.34, y0=0.12):
+    """Per-front title boxes built from fractions of the card, as detected."""
+    heights = heights or [0.135] * len(widths)
+    return {str(2 + i): [{"x0": x0 * _VB[2], "x1": (x0 + w) * _VB[2],
+                          "y0": y0 * _VB[3], "y1": (y0 + h) * _VB[3],
+                          "color": "#711d20"}]
+            for i, (w, h) in enumerate(zip(widths, heights))}
+
+
+def test_a_front_whose_title_box_is_a_different_size_is_refused():
+    declined = []
+    got = R.reconcile_front_titles(
+        _titles([0.3148, 0.3148, 0.3148, 0.3149, 0.3148, 0.3149, 0.3149, 0.7218]),
+        _VB, log=_quiet, declined=declined)
+    assert "9" not in got, sorted(got)
+    assert len(got) == 7, sorted(got)
+    assert declined and "front 9" in declined[0] and "REFUSED" in declined[0]
+
+
+def test_a_front_whose_title_box_is_the_right_size_elsewhere_is_kept():
+    # The box MOVES per front — that is the whole reason it is recorded per
+    # front — so a box in a different place with the same size is untouched.
+    boxes = _titles([0.3148] * 8)
+    boxes["5"][0]["x0"] += 60.0
+    boxes["5"][0]["x1"] += 60.0
+    declined = []
+    got = R.reconcile_front_titles(boxes, _VB, log=_quiet, declined=declined)
+    assert sorted(got) == sorted(boxes) and declined == []
+
+
+def test_the_real_spread_between_fronts_is_nowhere_near_a_refusal():
+    # פריז's eight widths are the widest genuine disagreement in the shipped
+    # set. If this ever refuses one of them the tolerance has gone wrong.
+    declined = []
+    got = R.reconcile_front_titles(
+        _titles([0.4740, 0.4740, 0.4723, 0.4722, 0.4722, 0.4723, 0.4723, 0.4740],
+                [0.0974, 0.0974, 0.0974, 0.0961, 0.0961, 0.0974, 0.0974, 0.0974]),
+        _VB, log=_quiet, declined=declined)
+    assert len(got) == 8 and declined == []
+
+
+def test_a_title_that_is_the_wrong_HEIGHT_is_refused_too():
+    declined = []
+    got = R.reconcile_front_titles(
+        _titles([0.3148] * 8, [0.135] * 7 + [0.42]),
+        _VB, log=_quiet, declined=declined)
+    assert "9" not in got and declined
+
+
+def test_two_fronts_have_no_majority_so_nothing_is_refused():
+    # Which of two disagreeing fronts is wrong is not something two fronts can
+    # answer. Abstain rather than guess — the same rule the word-slot vote uses.
+    declined = []
+    got = R.reconcile_front_titles(_titles([0.31, 0.72]), _VB, log=_quiet,
+                                   declined=declined)
+    assert len(got) == 2 and declined == []
