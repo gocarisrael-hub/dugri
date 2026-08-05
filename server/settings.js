@@ -173,23 +173,6 @@ const REGISTRY = {
         body: 'לא הצלחנו להפיק את הקובץ של {honoree} — יש לתקן את הנקודות הבאות:',
       },
     },
-    // The WhatsApp group's JOIN LINK, emailed to the buyer once their collection
-    // group is open. This is how the buyer reaches their group in the default
-    // (safe) invite_link mode — the bot never adds anyone and never DMs, so the
-    // link has to travel over a channel we own. See server/wa-guard.js.
-    group_invite: {
-      kind: 'email',
-      tokens: ['honoree'],
-      default: {
-        enabled: true,
-        subject: 'דוגרי · קבוצת המילים של {honoree} מוכנה',
-        body:
-          'פתחנו קבוצת וואטסאפ לאיסוף המילים על {honoree}.\n' +
-          '\n' +
-          'הצטרפו לקבוצה מהקישור למטה, וצרפו אליה את כל מי שמכיר/ה את {honoree} — ' +
-          'כל אחד/ת יכול/ה לכתוב מילים ישירות בקבוצה, ואנחנו אוספים אותן משם.',
-      },
-    },
     words_reminder: {
       kind: 'email',
       tokens: ['honoree'],

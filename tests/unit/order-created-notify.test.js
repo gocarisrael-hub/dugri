@@ -110,11 +110,9 @@ async function post(urlPath, body) {
 }
 
 // Wait until every one of `subjects` has arrived. Deliberately NOT a plain
-// count: order creation also opens the WhatsApp group, and in the default
-// invite_link mode that sends its own "join the group" email, which races the
-// two order emails. Waiting for a COUNT could therefore be satisfied by
-// [owner, group_invite] while the buyer's confirmation is still in flight.
-// Waiting for the actual subjects is race-free however many other mails fire.
+// count — order creation fires several independent side effects, so a count can
+// be satisfied by the wrong combination while the mail under test is still in
+// flight. Waiting for the actual subjects is race-free however many mails fire.
 async function waitForMailSubjects(subjects, timeout = 1000) {
   const deadline = Date.now() + timeout;
   const found = () => subjects.every((s) => sent.some((m) => m.subject && m.subject.includes(s)));
@@ -123,8 +121,6 @@ async function waitForMailSubjects(subjects, timeout = 1000) {
 }
 const OWNER_SUBJECT = 'התקבלה הזמנה חדשה';
 const BUYER_SUBJECT = 'ההזמנה שלכם התקבלה';
-// Opening the group also emails the buyer its join link (the invite_link flow).
-const INVITE_SUBJECT = 'קבוצת המילים';
 const tick = () => new Promise((r) => setTimeout(r, 20));
 
 describe('order creation fires owner + buyer emails and opens the WhatsApp group', () => {
@@ -158,10 +154,7 @@ describe('order creation fires owner + buyer emails and opens the WhatsApp group
       owner_token: c.owner_token,
       version: 'pdf',
     });
-    // Includes the group-invite mail: `sent` is cleared below to prove the SECOND
-    // order sends nothing, so every first-order mail must have landed before the
-    // reset or a late arrival would look like a re-send.
-    await waitForMailSubjects([OWNER_SUBJECT, BUYER_SUBJECT, INVITE_SUBJECT]);
+    await waitForMailSubjects([OWNER_SUBJECT, BUYER_SUBJECT]);
     await tick();
     expect(createCalls).toHaveLength(1);
 

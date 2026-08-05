@@ -2077,11 +2077,14 @@ async function alertOwnerViaWhatsApp(subject, lines) {
 //   3. createGroup(subject, [buyer]); on success link the group ↔ collection with
 //      the buyer + bot recorded as initial members (so they're never greeted as
 //      joining friends), and announce with the `group_opened` trigger;
-//   4. privacy-block fallback — if the buyer wasn't added, DM them an invite link
-//      (group_opened text, link = the group invite) and record it; if that DM also
-//      fails, escalate to the owner — by email (notify.sendSystemAlert) AND, when
-//      email is unavailable, by a WhatsApp DM to the owner's own number — so a
-//      human is always reached even on an email-off deployment.
+//   4. fetch + persist the group's join link. In the default invite_link mode
+//      that link IS the delivery: it appears as a WhatsApp button on the buyer's
+//      own order page, which they tap to join. NOTHING is sent to the buyer here
+//      — no DM, no email — so the bot contacts nobody and there is no reachout to
+//      be restricted for. In auto_add mode the link is the privacy-block fallback.
+//   5. escalate to the owner — by email (notify.sendSystemAlert), falling back to
+//      a WhatsApp DM to the owner's own number — only when the buyer has been left
+//      with no way in at all.
 async function openWhatsappGroup(collection, base) {
   if (!collection || !collection.id) return;
   if (waState.groupForCollection(collection.id)) return; // already have a group — no-op
@@ -2093,7 +2096,7 @@ async function openWhatsappGroup(collection, base) {
     const mode = whatsapp.groupMode();
     const buyerWa = ilPhoneToWaId(collection.owner_phone);
     // auto_add needs a usable buyer number to add. invite_link does NOT — the
-    // link travels by email / the buyer's order page, so a collection with an
+    // buyer taps the join link on their own order page, so a collection with an
     // unusable phone still gets its group.
     if (mode === 'auto_add' && !buyerWa) return;
     const honoree = collection.honoree_name || '';
@@ -2182,13 +2185,12 @@ async function openWhatsappGroup(collection, base) {
     if (inviteLink) waState.setInviteLink(groupId, inviteLink);
 
     if (mode === 'invite_link') {
-      // The safe path: no DM, no add — the buyer gets the link by email and on
-      // their own order page. The bot has now contacted precisely nobody.
-      if (inviteLink) {
-        if (await notify.sendGroupInvite(collection, inviteLink, base)) {
-          waState.setInviteDmSent(groupId);
-        }
-      } else {
+      // The safe path, and the reason this mode is the default: nothing is sent
+      // to the buyer at all. The stored link surfaces as a WhatsApp button on
+      // their own order page (publicView.wa_invite_link) and they tap it to join.
+      // The bot has now contacted precisely nobody, so there is no reachout for
+      // WhatsApp to restrict. The only failure worth a human is having no link.
+      if (!inviteLink) {
         const alertSubject = 'קבוצת וואטסאפ — לא הופק קישור הצטרפות';
         const alertLines = [
           'נפתחה קבוצה לאיסוף מילים אבל לא הצלחנו להפיק קישור הצטרפות, ולכן הלקוח/ה לא קיבל/ה דרך להיכנס.',
@@ -2211,11 +2213,8 @@ async function openWhatsappGroup(collection, base) {
         dmSent = (await sendWaTrigger(buyerWa, 'group_opened', { honoree, link: inviteLink })).ok;
         if (dmSent) waState.setInviteDmSent(groupId);
       }
-      // A DM the guard refused is not a delivery failure to escalate blindly —
-      // email the link instead, which reaches the buyer with no reachout at all.
-      if (!dmSent && inviteLink) {
-        if (await notify.sendGroupInvite(collection, inviteLink, base)) dmSent = true;
-      }
+      // The buyer still has the join button on their own order page, so this is
+      // not "no way in" — but nobody told them, so it needs a human.
       if (!dmSent) {
         const alertSubject = 'קבוצת וואטסאפ — צריך צירוף ידני';
         const alertLines = [

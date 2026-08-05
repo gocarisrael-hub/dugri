@@ -1326,6 +1326,33 @@
             העתק
           </button>
         </div>
+        <!-- The WhatsApp word-collection group. Shown only once the bot has opened
+             one and produced a join link (an owner-only field). This BUTTON is how
+             the buyer gets into their group: the bot never adds anyone and never
+             DMs, so nothing is sent to them — they tap here and WhatsApp lets them
+             in. See server/wa-guard.js for why it has to work this way. -->
+        <div id="waGroupPanel" class="hidden" style="margin-top: 16px">
+          <p class="muted" data-edit="collect-wa-group-hint">
+            💬 פתחנו לכם קבוצת וואטסאפ לאיסוף המילים. הצטרפו אליה וצרפו את כל מי שמכיר/ה — אפשר
+            לכתוב מילים ישירות בקבוצה:
+          </p>
+          <a
+            class="share-wa"
+            id="joinWaGroup"
+            href="#"
+            target="_blank"
+            rel="noopener"
+            data-testid="join-wa-group"
+          >
+            <svg class="share-wa-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                fill="currentColor"
+                d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.86 9.86 0 0 0 12.04 2Zm0 1.8c2.16 0 4.19.84 5.72 2.37a8.05 8.05 0 0 1 2.37 5.72c0 4.47-3.64 8.11-8.12 8.11a8.2 8.2 0 0 1-4.14-1.13l-.3-.18-3.1.81.83-3.02-.19-.31a8.06 8.06 0 0 1-1.26-4.36c0-4.47 3.64-8.11 8.11-8.11ZM8.55 7.33c-.16 0-.42.06-.64.3-.22.24-.85.83-.85 2.02 0 1.2.87 2.35.99 2.51.12.16 1.7 2.6 4.14 3.65.58.25 1.03.4 1.38.51.58.19 1.11.16 1.53.1.47-.07 1.44-.59 1.64-1.16.2-.57.2-1.06.14-1.16-.06-.1-.22-.16-.46-.28-.24-.12-1.44-.71-1.66-.79-.22-.08-.38-.12-.55.12-.16.24-.63.79-.77.95-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.34-1.67-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.32-.76-1.8-.18-.4-.37-.4-.55-.41-.14 0-.3-.01-.46-.01Z"
+              />
+            </svg>
+            <span data-edit="collect-wa-group-label">הצטרפו לקבוצת המילים</span>
+          </a>
+        </div>
         <p class="muted" style="margin-top: 12px" data-edit="collect-owner-link-hint">
           🔑 הקישור הפרטי שלך לניהול (שמרו אותו לעצמכם - דרכו סוגרים את האיסוף):
         </p>
@@ -1737,6 +1764,9 @@
         $('#title').textContent = 'אוספים מילים על ' + honoree();
         // Now that the honoree name is known, personalize the owner's share invite.
         if (isOwner) updateShareInvite();
+        // The group is opened asynchronously after the order, so its link can
+        // appear on any later poll — re-check on every render, not just at setup.
+        updateWaGroupLink();
         const n = state.count;
         // Free quota (server-projected): a number while this collection is capped,
         // null once it's paid / exempt / the gate is switched off. While capped the
@@ -2348,6 +2378,23 @@
       // so this single branch covers both a lone name and two names. An
       // empty/missing name falls back to the generic wording (never "undefined").
       // Called from setupOwner (initial, generic) and render (once state loads).
+      // Reveal the "join your WhatsApp group" button once the bot has opened a
+      // group and we have its invite link. `wa_invite_link` is an OWNER-ONLY field
+      // (a contributor holding the public collect link must not walk into the
+      // buyer's private group), and it is absent entirely when the bot is dormant
+      // or no group exists — in which case the panel simply stays hidden.
+      function updateWaGroupLink() {
+        const panel = $('#waGroupPanel');
+        const btn = $('#joinWaGroup');
+        if (!panel || !btn) return;
+        const link = state && state.wa_invite_link ? String(state.wa_invite_link) : '';
+        if (!isOwner || !link) {
+          panel.classList.add('hidden');
+          return;
+        }
+        btn.href = link;
+        panel.classList.remove('hidden');
+      }
       function updateShareInvite() {
         const waBtn = $('#shareWhatsapp');
         if (!waBtn) return;
@@ -2366,7 +2413,9 @@
         // updateShareInvite() once the collection state (and its honoree name) is
         // loaded; seed a generic default here so the button always has a target.
         updateShareInvite();
+        updateWaGroupLink();
         $('#shareWhatsapp').onclick = () => track('share_link_whatsapp', { link_type: 'friends' });
+        $('#joinWaGroup').onclick = () => track('join_wa_group', { link_type: 'group_invite' });
         $('#copyFriends').onclick = () =>
           copy($('#friendsLink').value, $('#copyFriends'), 'friends');
         $('#copyOwner').onclick = () => copy($('#ownerLink').value, $('#copyOwner'), 'owner');

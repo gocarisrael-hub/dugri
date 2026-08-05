@@ -3,10 +3,11 @@
 // flow (see server/wa-guard.js for the incident this encodes).
 //
 // Two modes, owner-selected via settings wa.group_mode:
-//   invite_link (DEFAULT) — create an EMPTY group and hand the buyer a join LINK
-//     by email / their order page. The bot adds nobody and DMs nobody, so there
-//     is no "reachout" for WhatsApp to restrict. This is what makes the flow
-//     survivable on a fresh SIM.
+//   invite_link (DEFAULT) — create an EMPTY group and PERSIST its join link, which
+//     surfaces as a WhatsApp button on the buyer's own order page. Nothing is sent
+//     to the buyer at all: no group-add, no DM, no email. The bot therefore
+//     contacts nobody, so there is no "reachout" for WhatsApp to restrict, which
+//     is what makes the flow survivable on a fresh SIM.
 //   auto_add — the original flow: the buyer is a participant on the create call.
 //     Nicer UX, but it is exactly the action the previous number was banned for,
 //     so it is opt-in AND still passes through the breaker + daily cap.
@@ -25,13 +26,22 @@ const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
 
+// Captured before the fetch stub replaces it, so the test's own HTTP calls to the
+// app aren't answered by the stub meant for the app's outbound calls.
+const realFetch = globalThis.fetch;
 let app;
 let db;
 let waState;
 let settings;
 let guard;
+let server;
+let base;
 // Every Whapi request the app made during a test: { method, path, body }.
 let calls;
+// Every email the app tried to send, so we can assert the group invite is NOT
+// one of them — the owner's requirement is that this feature lives entirely in
+// WhatsApp and nothing about it goes out by mail.
+let mails;
 
 beforeAll(async () => {
   process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-wa-mode-'));
@@ -40,9 +50,11 @@ beforeAll(async () => {
   process.env.WHAPI_TOKEN = 'tok-secret';
   process.env.WHAPI_BASE_URL = 'https://gate.example.test';
   process.env.WHAPI_WEBHOOK_SECRET = 'hook-secret';
-  // Email dormant: these tests are about what goes over WhatsApp, and a dormant
-  // notify keeps sendGroupInvite a no-op returning false without any network.
-  delete process.env.RESEND_API_KEY;
+  // Email deliberately ARMED here (it is dormant in most suites): the point is to
+  // prove that even with email fully working, opening a group sends none.
+  process.env.RESEND_API_KEY = 're_test_key';
+  process.env.NOTIFY_TO = 'owner@dugri.example';
+  process.env.NOTIFY_FROM = 'Dugri <orders@dugri.example>';
 
   for (const f of [
     'db.js',
@@ -65,6 +77,11 @@ beforeAll(async () => {
     'fetch',
     vi.fn(async (url, opts) => {
       const u = String(url);
+      if (u.includes('api.resend.com')) {
+        const msg = opts && opts.body ? JSON.parse(opts.body) : {};
+        mails.push({ to: Array.isArray(msg.to) ? msg.to[0] : msg.to, subject: msg.subject });
+        return { ok: true, status: 200, text: async () => '{"id":"stub"}' };
+      }
       const p = u.replace('https://gate.example.test', '');
       calls.push({
         method: (opts && opts.method) || 'GET',
@@ -86,14 +103,23 @@ beforeAll(async () => {
       };
     })
   );
+
+  await new Promise((resolve) => {
+    server = app.listen(0, () => {
+      base = 'http://127.0.0.1:' + server.address().port;
+      resolve();
+    });
+  });
 });
 
 afterAll(() => {
   vi.unstubAllGlobals();
+  if (server) server.close();
 });
 
 beforeEach(() => {
   calls = [];
+  mails = [];
   guard.clear();
   settings.reset('wa', 'group_mode');
 });
@@ -128,10 +154,23 @@ describe('invite_link mode (the default)', () => {
     for (const s of textSends()) expect(String(s.body.to)).toMatch(/@g\.us$/);
   });
 
-  it('fetches and PERSISTS the join link so the buyer can be given a way in', async () => {
+  it('PERSISTS the join link, which is the buyer’s only way in', async () => {
     const c = makeCollection();
     await app.openWhatsappGroup(c, 'https://test.dugri.example');
     expect(waState.inviteLinkForCollection(c.id)).toBe('https://chat.whatsapp.com/INVITE123');
+  });
+
+  it('exposes that link to the OWNER only, never to a contributor', async () => {
+    const c = makeCollection();
+    await app.openWhatsappGroup(c, 'https://test.dugri.example');
+    // The owner (their token) sees the join button; anyone holding the public
+    // collect link must not be able to walk into the buyer's private group.
+    const owner = await realFetch(
+      base + '/api/collections/' + c.id + '?k=' + encodeURIComponent(c.owner_token)
+    ).then((r) => r.json());
+    const contributor = await realFetch(base + '/api/collections/' + c.id).then((r) => r.json());
+    expect(owner.wa_invite_link).toBe('https://chat.whatsapp.com/INVITE123');
+    expect(contributor.wa_invite_link).toBeUndefined();
   });
 
   it('opens a group even when the buyer has NO usable phone — nothing is dialled', async () => {
@@ -149,6 +188,14 @@ describe('invite_link mode (the default)', () => {
     await app.openWhatsappGroup(c, 'https://test.dugri.example');
     expect(groupCreates()).toHaveLength(1);
     expect(waState.groupForCollection(c.id)).toBe('120363999@g.us');
+  });
+
+  it('sends NO email about the group, even with email fully armed', async () => {
+    // The feature lives entirely in WhatsApp: the buyer joins from the button on
+    // their order page. Opening a group must not put anything in their inbox.
+    const c = makeCollection();
+    await app.openWhatsappGroup(c, 'https://test.dugri.example');
+    expect(mails).toHaveLength(0);
   });
 
   it('spends no reachout budget', async () => {
