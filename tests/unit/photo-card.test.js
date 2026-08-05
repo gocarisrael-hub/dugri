@@ -144,10 +144,11 @@ describe('photo card templates', () => {
         }
       });
 
-      // The reference sticker lets the subject cross its own cut-line. A clip
-      // back to the circle would shave exactly that off, so the slot must NOT
-      // reintroduce one.
-      it('does not clip the subject back to the circle', () => {
+      // The image ARRIVES round: the generator frames each photo on its subject
+      // and clips it to a disc (docs/photo-card.md). A clip-path here would be
+      // applied to the halo `<use>` as well and shave the white outline off the
+      // sticker, so the artwork must NOT add one.
+      it('does not clip the slot — the generator hands it a round image', () => {
         for (const id of SLOT_IDS) {
           expect(slotTag(svg, id)).not.toMatch(/\bclip-path=/);
         }
@@ -364,10 +365,21 @@ describe('photo card documentation', () => {
     for (const id of SLOT_IDS) expect(doc).toContain(id);
   });
 
-  // Without a white disc there is no graceful degradation: an opaque photo
-  // prints as a rectangle. That has to be stated, not implied.
-  it('states that a transparent cutout is REQUIRED', () => {
-    expect(doc).toMatch(/transparent cutout is REQUIRED/i);
+  // The doc used to say the opposite — an uncut photo was meant to print as an
+  // obvious white-edged rectangle. The owner rejected that, so the generator
+  // clips EVERY photo to the disc. Stating the reversal is the whole point:
+  // someone reading the old rule would happily "restore" it as a bug fix.
+  it('states that a photo never prints as a rectangle', () => {
+    expect(doc).toMatch(/never prints as a rectangle/i);
+    expect(doc).toMatch(/unconditionally/i);
+    expect(doc).toMatch(/do not restore it/i);
     expect(doc).toMatch(/alpha/i);
+  });
+
+  // The card no longer advertises a failed cut, so the RECORD is what catches
+  // it. If that stops being documented, the miss becomes invisible.
+  it('says a failed cut is still recorded on the collection', () => {
+    expect(doc).toMatch(/pawn_cutouts/);
+    expect(doc).toMatch(/null/);
   });
 });

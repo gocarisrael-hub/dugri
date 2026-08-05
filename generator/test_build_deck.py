@@ -512,11 +512,16 @@ if __name__ == "__main__":
     print(f"all {len(fns)} tests passed")
 
 
-# --- a customer photo must keep the person's head ---------------------------
-# The card's slots are square and crop with `slice`, CENTRED. A phone photo of a
-# person is portrait, so the middle band is their torso and the crop beheaded
-# them. square_photo crops to a square anchored near the top instead, which also
-# keeps the template's disc/ring/clip untouched.
+# --- a customer photo is framed on the subject, not on a fixed square --------
+# docs/photo-card.md. A cutout's alpha says exactly where the person is, so
+# square_photo frames on THAT: subject bbox -> scaled onto the slot's disc ->
+# clipped to it. The fixed square it replaced sliced through arms and legs, and
+# because the sticker halo is dilated from the image's own alpha it then traced
+# that ruler-straight cut instead of the subject.
+#
+# The head-anchored square survives for one case only — a photo with no usable
+# alpha, where there is nothing to look at and the old guess is still the best
+# available. Those tests are grouped at the end of this block.
 
 def _portrait(path, w=900, h=1600):
     """A stand-in person: head in the upper part of the frame, body below.
@@ -543,7 +548,76 @@ def _head_fraction(img):
     return hits / len(px)
 
 
+# --- cutout helpers ----------------------------------------------------------
+# A cutout is what the wizard actually hands the generator: the subject opaque,
+# everything else alpha 0. `_cutout` draws a stand-in person — head on top of a
+# body — anywhere in the frame, and by default runs the body off the BOTTOM
+# edge, which is where real photos get their ruler-straight cut.
+
+HEAD = (250, 220, 190, 255)
+BODY = (220, 60, 60, 255)
+
+
+def _cutout(path, w=900, h=1600, box=None, run_off_bottom=True, extra=None):
+    """A transparent PNG with one opaque person in it.
+
+    ``box`` is where the person goes, in pixels (l, t, r, b); it defaults to a
+    plausible off-centre portrait. ``extra`` is a list of extra opaque blobs
+    ``(l, t, r, b, colour)`` — a bystander, or a speck the segmenter left.
+    """
+    from PIL import Image, ImageDraw
+    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    if box is None:
+        box = (int(w * 0.2), int(h * 0.12), int(w * 0.8), h if run_off_bottom else int(h * 0.75))
+    left, top, right, bottom = box
+    # The head has to fit the box in BOTH directions — a wide subject (a dog)
+    # gets a small head on a long body, not an ellipse taller than the frame.
+    hr = min((right - left) * 0.30, (bottom - top) * 0.30)
+    hx = (left + right) / 2.0
+    hy = top + hr
+    d.ellipse([hx - hr, hy - hr, hx + hr, hy + hr], fill=HEAD)
+    d.rectangle([left, min(hy + hr * 0.6, bottom - 1), right, bottom], fill=BODY)
+    for bl, bt, br, bb, colour in (extra or []):
+        d.rectangle([bl, bt, br, bb], fill=colour)
+    im.save(path)
+    return path
+
+
+def _alpha_runs(img, thresh=24):
+    """Per row, the widest run of opaque pixels. Empty rows are 0."""
+    a = img.getchannel("A")
+    w, h = a.size
+    px = a.load()
+    out = []
+    for y in range(h):
+        best = run = 0
+        for x in range(w):
+            run = run + 1 if px[x, y] >= thresh else 0
+            if run > best:
+                best = run
+        out.append(best)
+    return out
+
+
+def _opaque_outside_disc(img, fill=None, slack=2):
+    """Opaque pixels beyond the clip disc — must be none."""
+    import math
+    fill = build.PHOTO_DISC_FILL if fill is None else fill
+    a = img.getchannel("A")
+    side = a.size[0]
+    px = a.load()
+    c = side / 2.0
+    r = side * fill / 2.0 + slack
+    return sum(1 for y in range(side) for x in range(side)
+               if px[x, y] >= 24 and math.hypot(x - c, y - c) > r)
+
+
 def test_a_portrait_photo_is_squared_keeping_the_head():
+    # DEGRADED PATH (_portrait is opaque): the clip to the disc is unconditional,
+    # but the FRAMING still falls back to the PHOTO_SUBJECT_Y guess, and that is
+    # the one place the guess still earns its keep — it decides which part of the
+    # person the circle keeps. A plain centre crop would keep her torso.
     from PIL import Image
     with Store() as tmp:
         src = _portrait(os.path.join(tmp, "p.png"))
@@ -582,28 +656,34 @@ def test_the_square_matches_the_photo_card_contract_size():
 
 
 def test_the_subject_lands_inside_the_slot_s_visible_disc():
-    # Only the INSCRIBED CIRCLE of the square is visible (docs/photo-card.md), so
-    # a subject pinned near the top edge gets its head clipped by the circle.
+    # DEGRADED PATH — an opaque photo, so the head-anchored square is all we
+    # have. The square IS clipped to the disc now (a photo never prints as a
+    # rectangle), so anything the guess leaves outside the circle is not merely
+    # covered, it is cut off the sticker: the head has to land inside the disc by
+    # itself or the buyer gets a shaved crown. Measured against the real
+    # PHOTO_DISC_FILL, and on VISIBLE pixels — clipping only zeroes the alpha,
+    # the RGB underneath survives a convert("RGB").
     import math
     from PIL import Image
     with Store() as tmp:
         src = _portrait(os.path.join(tmp, "p.png"))
         out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
         with Image.open(out) as sq:
-            px = sq.convert("RGB").load()
+            px = sq.convert("RGBA").load()
             side = sq.size[0]
             cx = cy = side / 2.0
+            r_disc = side * build.PHOTO_DISC_FILL / 2.0
             inside = outside = 0
             for y in range(0, side, 4):
                 for x in range(0, side, 4):
-                    r, g, b = px[x, y]
+                    r, g, b, a = px[x, y]
                     if abs(r - 250) < 25 and abs(g - 220) < 25 and abs(b - 190) < 25:
-                        if math.hypot(x - cx, y - cy) <= side / 2.0:
-                            inside += 1
+                        if math.hypot(x - cx, y - cy) <= r_disc:
+                            inside += a >= 24
                         else:
                             outside += 1
         assert inside > 0, "the test photo's head should be in the crop at all"
-        assert outside == 0, f"{outside} head pixels fall outside the visible disc"
+        assert outside == 0, f"{outside} head pixels are clipped away by the disc"
 
 
 def test_an_unreadable_photo_falls_back_to_the_original():
@@ -644,26 +724,278 @@ def test_a_transparent_photo_keeps_its_alpha():
     # they looked right while real customer photos did not.
     from PIL import Image
     with Store() as tmp:
-        src = os.path.join(tmp, "cut.png")
-        im = Image.new("RGBA", (900, 1600), (0, 0, 0, 0))
-        im.putpixel((450, 300), (255, 0, 0, 255))
-        im.save(src)
+        src = _cutout(os.path.join(tmp, "cut.png"))
         out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
         with Image.open(out) as sq:
             assert sq.mode == "RGBA", sq.mode
-            assert sq.getextrema()[3][0] == 0, "fully transparent pixels must survive"
+            lo, hi = sq.getchannel("A").getextrema()
+            assert lo == 0, "fully transparent pixels must survive"
+            assert hi == 255, "the subject must still be fully opaque"
 
 
 def test_a_photo_stays_under_the_deck_hoist_threshold():
     # deck_html hoists any <image> past BG_MIN_CHARS into shared defs, which
-    # would strip the photo-slot id and orphan the sticker halo.
+    # would strip the photo-slot id and orphan the sticker halo. Both paths: a
+    # cutout is the normal case and an opaque photo the degraded one, and the
+    # opaque one is the heavier of the two (no transparency to compress).
     import deck_html
     with Store() as tmp:
-        src = _portrait(os.path.join(tmp, "huge.png"), w=3000, h=4000)
+        for name, src in (("cut", _cutout(os.path.join(tmp, "big-cut.png"), 3000, 4000)),
+                          ("opaque", _portrait(os.path.join(tmp, "huge.png"), 3000, 4000))):
+            out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+            chars = build._b64_chars(out)
+            assert chars <= build.PHOTO_MAX_B64_CHARS, (name, chars)
+            assert chars < deck_html.BG_MIN_CHARS, (name, chars, deck_html.BG_MIN_CHARS)
+
+
+# --- the subject-aware crop --------------------------------------------------
+
+def test_the_crop_is_framed_on_the_subject_not_on_the_frame():
+    # The whole point: a subject sitting off to one side of the photo comes out
+    # CENTRED on the slot's disc. The old fixed square took the same rectangle
+    # out of every photo no matter where the person stood.
+    from PIL import Image
+    with Store() as tmp:
+        # Far left, and well down the frame — the old crop would have shown mostly
+        # empty background and sliced her at the square's edge.
+        src = _cutout(os.path.join(tmp, "c.png"), 1200, 1600,
+                      box=(60, 700, 460, 1600))
         out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
-        chars = build._b64_chars(out)
-        assert chars <= build.PHOTO_MAX_B64_CHARS, chars
-        assert chars < deck_html.BG_MIN_CHARS, (chars, deck_html.BG_MIN_CHARS)
+        with Image.open(out) as sq:
+            side = sq.size[0]
+            a = sq.getchannel("A")
+            px = a.load()
+            n = sx = sy = 0
+            for y in range(0, side, 2):
+                for x in range(0, side, 2):
+                    if px[x, y] >= 24:
+                        n += 1
+                        sx += x
+                        sy += y
+        assert n > 0, "the subject vanished"
+        # Centre of mass within a fifth of the square of the middle. Not dead
+        # centre: a person is bottom-heavy, and the top of them is anchored, not
+        # their middle.
+        assert abs(sx / n - side / 2) < side * 0.2, sx / n
+        assert abs(sy / n - side / 2) < side * 0.2, sy / n
+
+
+def test_the_photo_is_clipped_to_the_slot_s_disc():
+    # docs/photo-card.md point 5. Everything outside the disc is cut away, so the
+    # halo dilated from this alpha can only ever be a round edge.
+    from PIL import Image
+    with Store() as tmp:
+        src = _cutout(os.path.join(tmp, "c.png"))
+        out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+        with Image.open(out) as sq:
+            stray = _opaque_outside_disc(sq)
+            side = sq.size[0]
+            a = sq.getchannel("A").load()
+            corners = [a[0, 0], a[side - 1, 0], a[0, side - 1], a[side - 1, side - 1]]
+        assert stray == 0, f"{stray} opaque pixels outside the clip disc"
+        assert corners == [0, 0, 0, 0], corners
+
+
+def test_the_disc_stops_short_of_the_dashed_cut_line():
+    # The halo dilates ~2.4 units outward and the cut-line sits at r=33 of a
+    # 66-unit slot. A disc filling the whole square would put the white ring ON
+    # the dashes — hiding the line you are meant to cut and leaving the ring
+    # outside the cut, where it is trimmed off the finished pawn.
+    halo_share = 2.4 / 33.0
+    assert build.PHOTO_DISC_FILL <= 1 - halo_share, build.PHOTO_DISC_FILL
+    # …and not so small that the pawn rattles around inside its cut-line.
+    assert build.PHOTO_DISC_FILL >= 0.85, build.PHOTO_DISC_FILL
+
+
+def test_the_photo_s_own_edge_no_longer_cuts_the_sticker_in_a_straight_line():
+    # THE BUG. Real photos run the person off the bottom of the frame, so the
+    # cutout's alpha ends in a ruler-straight line — and the halo traced it. The
+    # subject is now scaled and placed so that edge falls OUTSIDE the disc, which
+    # leaves the bottom of the sticker as a short circular chord instead of a
+    # full-width straight run.
+    from PIL import Image
+    with Store() as tmp:
+        src = _cutout(os.path.join(tmp, "c.png"), run_off_bottom=True)
+        out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+        with Image.open(out) as sq:
+            side = sq.size[0]
+            runs = _alpha_runs(sq)
+        opaque_rows = [y for y, r in enumerate(runs) if r > 0]
+        assert opaque_rows, "nothing opaque at all"
+        last = opaque_rows[-1]
+        assert runs[last] < side * 0.35, (
+            f"the bottom row of the sticker is {runs[last]}px of {side} wide — "
+            "that is the photo's own straight edge, not a circular chord")
+
+
+def test_the_blob_nearest_the_centre_wins_and_the_others_are_erased():
+    # A segmenter happily keeps a bystander. Nearest-to-centre, not biggest: the
+    # person standing behind the honoree is easily the larger of the two, and the
+    # one being photographed is the one in the middle.
+    from PIL import Image
+    with Store() as tmp:
+        src = _cutout(
+            os.path.join(tmp, "c.png"), 1400, 1400,
+            box=(560, 480, 840, 900),                       # the subject, centred
+            run_off_bottom=False,
+            extra=[(0, 100, 380, 1300, (0, 200, 0, 255))])  # a BIGGER bystander
+        out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+        with Image.open(out) as sq:
+            px = sq.convert("RGBA").load()
+            side = sq.size[0]
+            green = subject = 0
+            for y in range(0, side, 2):
+                for x in range(0, side, 2):
+                    r, g, b, alpha = px[x, y]
+                    if alpha < 24:
+                        continue
+                    if g > 150 and r < 80 and b < 80:
+                        green += 1
+                    else:
+                        subject += 1
+        assert subject > 0, "the subject was erased"
+        assert green == 0, f"{green} bystander pixels came along for the ride"
+
+
+def test_a_speck_at_dead_centre_cannot_beat_the_subject():
+    # Nearest-to-centre on its own would let a 20-pixel scrap of background win.
+    # Anything under PHOTO_BLOB_MIN_SHARE of the biggest blob is dropped first.
+    from PIL import Image
+    with Store() as tmp:
+        src = _cutout(
+            os.path.join(tmp, "c.png"), 1200, 1200,
+            box=(120, 150, 560, 1000), run_off_bottom=False,
+            extra=[(596, 596, 604, 604, (0, 200, 0, 255))])  # 8px speck, dead centre
+        out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+        with Image.open(out) as sq:
+            assert _head_fraction(sq) > 0.01, "the person was dropped for a speck"
+
+
+def test_a_tall_subject_keeps_its_head_rather_than_its_torso():
+    # A standing person is much taller than the disc, so something has to go.
+    # The alpha tells us where the TOP of them is, so the bottom goes.
+    from PIL import Image
+    with Store() as tmp:
+        # Standing, and low in a tall frame: the head is nowhere near the old
+        # 0.30-of-the-height guess, so only the alpha can find it.
+        src = _cutout(os.path.join(tmp, "c.png"), 1000, 2400,
+                      box=(380, 1400, 620, 2400))
+        out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+        with Image.open(out) as sq:
+            side = sq.size[0]
+            px = sq.convert("RGBA").load()
+            head_ys = [y for y in range(0, side, 2) for x in range(0, side, 2)
+                       if px[x, y][3] >= 24 and abs(px[x, y][0] - 250) < 25
+                       and abs(px[x, y][1] - 220) < 25 and abs(px[x, y][2] - 190) < 25]
+        assert head_ys, "the head was cropped out of a standing figure"
+        assert min(head_ys) > 0, "the head is flush with the top — no headroom"
+        assert sum(head_ys) / len(head_ys) < side * 0.5, "the head sank below the middle"
+
+
+def test_a_wide_subject_is_not_cropped_left_or_right():
+    # We know where the top of a person is; we have no handle on which SIDE of a
+    # wide subject matters — a dog's head can be at either end — so the window is
+    # sized on the subject's width and both ends survive.
+    from PIL import Image
+    with Store() as tmp:
+        # Both ends of the subject are tagged, and both have to survive. The old
+        # centre square took 1000px out of a 1600px frame and lost both.
+        left_mark, right_mark = (0, 0, 255, 255), (255, 0, 255, 255)
+        src = _cutout(os.path.join(tmp, "c.png"), 1600, 1000,
+                      box=(200, 300, 1400, 1000), run_off_bottom=False,
+                      extra=[(200, 500, 280, 700, left_mark),
+                             (1320, 500, 1400, 700, right_mark)])
+        out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+        with Image.open(out) as sq:
+            side = sq.size[0]
+            px = sq.convert("RGBA").load()
+            seen = set()
+            for y in range(0, side, 2):
+                for x in range(0, side, 2):
+                    r, g, b, a = px[x, y]
+                    if a < 24:
+                        continue
+                    if b > 150 and r < 80 and g < 80:
+                        seen.add("left")
+                    elif r > 150 and b > 150 and g < 80:
+                        seen.add("right")
+        assert seen == {"left", "right"}, f"lost an end of a wide subject: {seen}"
+
+
+def test_subject_window_may_run_off_the_photo():
+    # A subject standing at the very edge needs canvas that is not in the photo.
+    # Cropping past the edge pads with transparency, which is what a sticker
+    # wants — the alternative is sliding the window and off-centring the person.
+    win = build.subject_window((0, 0, 100, 400))
+    assert win[0] < 0 and win[1] < 0, win
+    assert win[2] - win[0] == win[3] - win[1], win
+
+
+# --- no usable alpha: the head-anchored square, clipped to the disc anyway ---
+# A photo NEVER prints as a rectangle (docs/photo-card.md point 1). The framing
+# degrades when the cut fails — PHOTO_SUBJECT_Y guesses the square instead of the
+# alpha measuring it — but the CLIP does not: the slot always gets a round PNG.
+
+def test_a_photo_with_no_usable_alpha_is_still_clipped_to_the_disc():
+    # THE RULE. An uncut photo used to fall through unclipped, so the halo —
+    # dilated from the image's own alpha — traced the square and the card printed
+    # a white-edged rectangle. The owner has seen that rendered and does not want
+    # it: every slot is round, always. Do not restore the rectangle.
+    import math
+    from PIL import Image
+    with Store() as tmp:
+        src = _portrait(os.path.join(tmp, "p.png"))
+        assert build.subject_box(Image.open(src).convert("RGBA")) is None
+        out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+        with Image.open(out) as sq:
+            side = sq.size[0]
+            a = sq.getchannel("A").load()
+            corners = [a[0, 0], a[side - 1, 0], a[0, side - 1], a[side - 1, side - 1]]
+            stray = _opaque_outside_disc(sq)
+            # …and the disc is FILLED, not a ring of stray alpha: an opaque photo
+            # has no silhouette of its own, so the whole circle is subject.
+            c = side / 2.0
+            r = side * build.PHOTO_DISC_FILL / 2.0 - 3
+            holes = sum(1 for y in range(0, side, 3) for x in range(0, side, 3)
+                        if math.hypot(x - c, y - c) <= r and a[x, y] < 250)
+        assert corners == [0, 0, 0, 0], (
+            f"an uncut photo reached the slot as a rectangle ({corners}) — the "
+            "halo would trace its corners and print a white-edged box")
+        assert stray == 0, f"{stray} opaque pixels outside the clip disc"
+        assert holes == 0, f"{holes} transparent pixels inside the disc"
+
+
+def test_a_collapsed_cut_falls_back_instead_of_framing_on_nothing():
+    # A cut that found almost nothing (one stray pixel) must not be framed on:
+    # it would zoom that pixel to fill the disc. Below PHOTO_SUBJECT_MIN_COVER we
+    # treat the photo as uncut, crop it by the guess and clip it like any other.
+    from PIL import Image
+    with Store() as tmp:
+        src = os.path.join(tmp, "empty.png")
+        im = Image.new("RGBA", (900, 1600), (0, 0, 0, 0))
+        im.putpixel((450, 300), (255, 0, 0, 255))
+        im.save(src)
+        assert build.subject_box(Image.open(src)) is None
+        out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
+        with Image.open(out) as sq:
+            assert sq.size == (build.PHOTO_SLOT_PX, build.PHOTO_SLOT_PX)
+            assert sq.mode == "RGBA"
+            assert _opaque_outside_disc(sq) == 0
+
+
+def test_the_shipped_fallback_pawns_survive_the_unconditional_clip():
+    # The generic pawns are SVG artwork drawn at 1.2x so they cross the cut-line,
+    # and they reach the slot WITHOUT passing through square_photo — resolve_photos
+    # tops up with them untouched. Clipping every customer photo must not start
+    # clipping (or corrupting) them: Pillow cannot open an SVG, and square_photo's
+    # own catch-all returns the original path rather than failing an order.
+    with Store() as tmp:
+        paths = config.photo_fallback_paths("demo")
+        assert len(paths) == 4, paths
+        got = build.resolve_photos("demo", [], workdir=os.path.join(tmp, "sq"))
+        assert got == paths, "a fallback pawn was rewritten on its way to the slot"
+        for p in paths:
+            assert build.square_photo(p, os.path.join(tmp, "sq"), 0) == p
 
 
 # --- a template with no recipe yet ------------------------------------------
