@@ -2057,6 +2057,19 @@ function validateTitleStyle(input) {
     if (typeof input.italic !== 'boolean') return { error: 'title_style.italic must be a boolean' };
     out.italic = input.italic;
   }
+  // one_block: the design sets this title as ONE text box, so the renderer
+  // stacks its lines at exactly `leading` and does NOT open them up to keep
+  // their outlines clear of one another. Set by calibration where the original's
+  // title ink has no row structure left to read, which is what a ring thick
+  // enough to weld the lines together looks like from outside (סיישל). Passed
+  // through as a plain boolean — the value it changes is `leading`, which is
+  // validated above.
+  if (input.one_block != null) {
+    if (typeof input.one_block !== 'boolean') {
+      return { error: 'title_style.one_block must be a boolean' };
+    }
+    out.one_block = input.one_block;
+  }
   // The instance of a VARIABLE title face the design was set in, on the CSS
   // 100..900 weight scale. Absent for a static face — there is only one cut.
   if (input.font_weight != null) {

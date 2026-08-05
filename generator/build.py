@@ -96,7 +96,8 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
                                   italic=ts.get("italic", False),
                                   bold=ts.get("bold", False),
                                   bold_w=ts.get("bold_w"),
-                                  leading=rp.board_leading(ts))
+                                  leading=rp.board_leading(ts),
+                                  one_block=bool(ts.get("one_block")))
     return render_svg(svg.replace("</svg>", body + "</svg>"), w, h, out_png)
 
 
@@ -130,7 +131,8 @@ def render_backs(theme, backs_clean, title_lines, out_png):
                                    italic=ts.get("italic", False),
                                    bold=ts.get("bold", False),
                                    bold_w=ts.get("bold_w"),
-                                   leading=rp.back_leading(ts, bk)))
+                                   leading=rp.back_leading(ts, bk),
+                                   one_block=bool(ts.get("one_block"))))
     return render_svg(svg.replace("</svg>", "".join(body) + "</svg>"), w, h, out_png)
 
 
@@ -252,7 +254,8 @@ def build_board_pdf(theme, out_pdf, title_lines, workdir, chasers=False):
                                  italic=ts.get("italic", False),
                                  bold=ts.get("bold", False),
                                  bold_w=ts.get("bold_w"),
-                                 leading=rp.board_leading(ts))
+                                 leading=rp.board_leading(ts),
+                                 one_block=bool(ts.get("one_block")))
     doc.add_page("board", overlay)
     vbs = " ".join(_fmt(v) for v in vb)
     return print_to_pdf(doc.html(vbs), out_pdf, workdir, tag="board")

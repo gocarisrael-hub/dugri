@@ -1301,7 +1301,8 @@
           field('היסט X', num('ts.offset_x', ts.offset ? ts.offset[0] : '', 0.01, '0')),
           field('היסט Y', num('ts.offset_y', ts.offset ? ts.offset[1] : '', 0.01, '0')),
           rowField('צל', check('ts.shadow', ts.shadow)),
-          rowField('נטוי', check('ts.italic', ts.italic))
+          rowField('נטוי', check('ts.italic', ts.italic)),
+          rowField('תיבת טקסט אחת', check('ts.one_block', ts.one_block))
         );
         titleG.append(titleGrid);
         body.append(titleG);
@@ -1642,6 +1643,10 @@
           shadow: calBool(card, 'ts.shadow'),
           align: calStr(card, 'ts.align') || 'center',
           italic: calBool(card, 'ts.italic'),
+          // One text box: stack the title's lines at exactly the spacing above,
+          // touching if that is what the design does, instead of opening them up
+          // to keep their outlines clear of each other.
+          one_block: calBool(card, 'ts.one_block'),
         };
         const size = calNum(card, 'ts.size');
         if (size != null) title_style.size = size;
