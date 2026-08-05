@@ -85,7 +85,8 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
     box = {k: (frac[k] * vb[2] if "x" in k else frac[k] * vb[3]) for k in frac}
     svg = board_svg
     style = ("<style>" + rp.GEOMETRIC_TEXT_STYLE
-             + rp.font_face("TitleFont", title_font) + "</style>")
+             + rp.font_face("TitleFont", title_font,
+                              config.title_font_weight(cfg)) + "</style>")
     body = style + rp.title_block(box, title_lines, bd["fill"], bd["outline"],
                                   title_font, ts["outline_w"], ts["arch"], ts["shadow"],
                                   rtl=rp.title_is_rtl(cfg),
@@ -111,7 +112,8 @@ def render_backs(theme, backs_clean, title_lines, out_png):
     recipe = config.load_recipe(cfg["recipe"])
     svg = open(backs_clean, encoding="utf-8").read()
     body = ["<style>" + rp.GEOMETRIC_TEXT_STYLE
-            + rp.font_face("TitleFont", title_font) + "</style>"]
+            + rp.font_face("TitleFont", title_font,
+                             config.title_font_weight(cfg)) + "</style>"]
     for card in recipe["cards"]:
         if not card:
             continue
@@ -231,7 +233,9 @@ def build_board_pdf(theme, out_pdf, title_lines, workdir, chasers=False):
     vb = deck_html.view_box(raw)
     doc = deck_html.DeckDocument(vb[2], vb[3])
     title_font = config.font_path(theme, cfg["title_font"])
-    doc.add_style(rp.GEOMETRIC_TEXT_STYLE + deck_html.font_face("TitleFont", title_font))
+    doc.add_style(rp.GEOMETRIC_TEXT_STYLE
+                  + deck_html.font_face("TitleFont", title_font,
+                                        config.title_font_weight(cfg)))
     doc.add_design("board", raw)
     bd, ts = cfg.get("board"), cfg["title_style"]
     overlay = ""
@@ -316,7 +320,8 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
     title_font_path = config.font_path(theme, cfg["title_font"])
     doc.add_style(rp.GEOMETRIC_TEXT_STYLE
                   + deck_html.font_face("HebWord", word_font_path)
-                  + deck_html.font_face("TitleFont", title_font_path))
+                  + deck_html.font_face("TitleFont", title_font_path,
+                                       config.title_font_weight(cfg)))
     for i, svg in back_svgs.items():
         doc.add_design(f"back{i}", svg)
     for i in fronts:

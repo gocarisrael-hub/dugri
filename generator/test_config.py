@@ -138,7 +138,7 @@ def test_board_and_backs_render_paths_wire_rtl():
             json.dump(recipe, f)
         config.ensure_calibrated = lambda c: None
         config.font_path = lambda name, fn: font
-        rp.font_face = lambda name, path: ""
+        rp.font_face = lambda name, path, weight=None: ""
         rp.title_block = spy_title_block
         build.render_svg = lambda svg_text, w, h, out_png: out_png
 
@@ -460,7 +460,7 @@ def test_render_board_chasers_falls_back_when_viewbox_differs():
         config.ensure_calibrated = lambda c: None
         config.theme_dir = lambda name: tmp
         config.font_path = lambda name, fn: fn
-        rp.font_face = lambda name, path: ""
+        rp.font_face = lambda name, path, weight=None: ""
         rp.title_block = lambda *a, **k: "<g/>"
         build.render_svg = lambda svg_text, w, h, out: captured.setdefault("svg", svg_text)
 
@@ -591,7 +591,7 @@ def test_custom_title_routes_through_board_title_block():
         config.theme = lambda name: cfg
         config.ensure_calibrated = lambda c: None
         config.font_path = lambda name, fn: font
-        rp.font_face = lambda name, path: ""
+        rp.font_face = lambda name, path, weight=None: ""
         rp.title_block = spy_title_block
         build.render_svg = lambda svg_text, w, h, out_png: out_png
 

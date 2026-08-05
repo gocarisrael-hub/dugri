@@ -43,9 +43,48 @@ def dims(svg):
     return w, h
 
 
-def font_face(name, path):
+@functools.lru_cache(maxsize=32)
+def weight_axis(path):
+    """``(minimum, default, maximum)`` of a font file's weight axis, or None.
+
+    A VARIABLE font is nine cuts in one file and picks one by an axis value.
+    Nothing here used to ask, so an uploaded variable face was drawn at its
+    axis DEFAULT — and League Spartan's default is 100, Thin, the lightest of
+    its nine. The owner's מרקאנה title, set Bold in the design, printed as a
+    hairline. Static faces have no axis and answer None, so they take exactly
+    the path they always did.
+    """
+    try:
+        from PIL import ImageFont
+        for axis in ImageFont.truetype(path, 32).get_variation_axes():
+            if (axis.get("name") or b"").strip().lower() in (b"weight", b"wght"):
+                return (axis["minimum"], axis["default"], axis["maximum"])
+    except Exception:      # noqa: BLE001 — a static face raises; that is the answer
+        return None
+    return None
+
+
+def font_face(name, path, weight=None):
+    """An @font-face rule embedding a font file as base64.
+
+    A variable face declares its WHOLE weight range rather than a flat 400. Two
+    things follow, both of them fixes: Chrome stops synthesising a fake bold for
+    it (asked for 700 against a 400-only face it smears the outline — measured,
+    the ink grows 4% taller and stays the same width, which is not a heavier
+    cut), and the ``wght`` instance the design was set in can be selected. The
+    instance is declared on the FACE, so every element using the family gets it
+    with no per-call plumbing.
+    """
     b64 = base64.b64encode(open(path, "rb").read()).decode()
-    return (f"@font-face{{font-family:'{name}';font-weight:400;font-style:normal;"
+    axis = weight_axis(path)
+    if axis:
+        lo, default, hi = axis
+        pick = default if weight is None else min(hi, max(lo, float(weight)))
+        span = (f"font-weight:{lo:g} {hi:g};"
+                f"font-variation-settings:'wght' {pick:g};")
+    else:
+        span = "font-weight:400;"
+    return (f"@font-face{{font-family:'{name}';{span}font-style:normal;"
             f"src:url(data:font/ttf;base64,{b64}) format('truetype');}}")
 
 
@@ -1450,16 +1489,140 @@ def _title_ink_stack(f, ref, lines, pitch=RENDER_PITCH):
 # ink merely ABUTS, as a fraction of the type size. Touching is not a safe floor:
 # the rasterizer paints an antialiased rim about a device pixel wide onto each
 # glyph edge, so two outlines that exactly meet come out of Chrome as one welded
-# mass. A card at the coarsest scale anything renders it at (3x over a ~460-unit
-# page, on a ~24-unit title) puts a device pixel at ~0.014 of the type size, so
-# this clears one with room over — and every finer raster, print included, has a
-# relatively thinner rim and is safer still. Proved on the real rasterizer for
-# every shipped template by
-# ``test_no_two_title_lines_touch_at_the_tightest_leading_on_any_template``.
-_INK_CLEARANCE = 0.02
+# mass.
+#
+# THREE device pixels, not one. At the coarsest scale anything renders a card at
+# (3x over a ~460-unit page, on a ~24-unit title; the buyer's preview is
+# comparable at 2x over a 224-unit card) a device pixel is ~0.015 of the type
+# size, and the gap has to survive the rim on the upper line's edge, the rim on
+# the lower line's, and the pixel of slack between them that keeps the two rims
+# from blending at all. One pixel was enough only while the floor was read off
+# whole-line bounding boxes, which over-reserved by so much that the clearance
+# never bound; read column by column it is the clearance that decides, and
+# ``test_no_two_title_lines_touch_at_the_tightest_leading_on_any_template``
+# catches סנטוריני welding at one pixel and clear at three.
+_INK_CLEARANCE = 0.05
 
 
-def _min_line_pitch(f, ref, lines, pad):
+def visual_order(line, rtl):
+    """``line`` in the order it will be PAINTED, left to right.
+
+    Pillow lays a string out in logical order, one character after the next;
+    Chrome, handed ``direction="rtl"``, reorders it — the Hebrew runs run right
+    to left and any digit run inside them stays left to right, all of it placed
+    from the right edge. So a per-column reading of a Hebrew title taken off
+    Pillow's raster is a reading of the wrong picture: it puts the final-nun of
+    "נישואין" where Chrome puts the "10".
+
+    One bidi level is all these titles ever have — Hebrew words with an optional
+    number in them — which is exactly the case the Unicode algorithm resolves by
+    reversing the run order and each right-to-left run's own characters.
+    Verified against the real rasterizer: fed this, Pillow's column profile
+    tracks Chrome's to ~3px on a 200px em, against ~33px fed the logical string.
+    Neutrals (spaces, punctuation) join the run beside them, which is what the
+    algorithm's neutral resolution does between two runs of the same direction.
+    """
+    if not rtl:
+        return line
+    import unicodedata
+    runs, cur, kind = [], "", None
+    for ch in line:
+        klass = unicodedata.bidirectional(ch)
+        if klass in ("R", "AL"):
+            k = "R"
+        elif klass in ("L",):
+            k = "L"
+        elif klass in ("EN", "AN", "ET"):
+            k = "N"          # a number: drawn left-to-right inside an RTL line
+        else:
+            k = kind or "R"  # a neutral takes the direction it sits beside
+        if k != kind and cur:
+            runs.append((kind, cur))
+            cur = ""
+        kind, cur = k, cur + ch
+    if cur:
+        runs.append((kind, cur))
+    return "".join(txt[::-1] if k == "R" else txt for k, txt in reversed(runs))
+
+
+@functools.lru_cache(maxsize=512)
+def _ink_skyline(font_path, ref, line):
+    """Per column of the RASTERIZED line, its ink's deepest and highest row.
+
+    Returns ``(x_left, below, above)`` — the column the profiles start at
+    (relative to the line's pen origin), then per column the lowest inked row
+    BELOW the baseline and the highest inked row ABOVE it, in ref-size pixels,
+    ``None`` where that column carries no ink at all.
+
+    Measured on real rasterized pixels rather than on the line's bounding BOX,
+    because a box is not a shape. "PARTY" over a line whose tallest letter is an
+    L reads, box against box, as a full descender depth against a full ascender
+    height — when the two are nowhere near one another horizontally and the
+    design stacks them happily. Reading each column separately is what lets a
+    title be set as tight as its own artwork sets it.
+
+    Cached on (face, size, text): a deck asks this of the same handful of title
+    lines on all 104 cards, and rasterizing an em-sized line per card would cost
+    more than the whole rest of the page.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+    f = ImageFont.truetype(font_path, ref)
+    pad = int(ref) + 8
+    w = int(f.getlength(line)) + 2 * pad
+    h = 4 * int(ref) + 2 * pad
+    base = 2 * int(ref) + pad
+    img = Image.new("L", (max(8, w), max(8, h)), 0)
+    ImageDraw.Draw(img).text((pad, base), line, font=f, fill=255, anchor="ls")
+    ink = img.getbbox()
+    if not ink:
+        return -pad, (), ()
+    below, above = [], []
+    for x in range(img.size[0]):
+        if x < ink[0] or x >= ink[2]:
+            below.append(None)
+            above.append(None)
+            continue
+        col = img.crop((x, ink[1], x + 1, ink[3])).getbbox()
+        if col:
+            below.append(ink[1] + col[3] - 1 - base)   # +ve: ink under baseline
+            above.append(base - (ink[1] + col[1]))     # +ve: ink over baseline
+        else:
+            below.append(None)
+            above.append(None)
+    return -pad, tuple(below), tuple(above)
+
+
+def _min_line_pitch_by_box(f, ref, lines, pad):
+    """The pre-skyline floor: the two lines' bounding BOXES may not overlap.
+
+    Strictly safer than the per-column reading and strictly less faithful, so it
+    is the fallback for a font object this module cannot re-open by path (a test
+    double, a face loaded from a stream). Nothing in production reaches it.
+    """
+    asc, _desc = f.getmetrics()
+    worst = 0.0
+    for upper, lower in zip(lines, lines[1:]):
+        below = f.getbbox(upper)[3] - asc      # ink under the upper line's baseline
+        above = asc - f.getbbox(lower)[1]      # ink over the lower line's baseline
+        worst = max(worst, (below + above) / ref)
+    return worst + pad + _INK_CLEARANCE
+
+
+def _dilate(profile, radius):
+    """Grow each column's extent over its ``radius`` neighbours (max, skipping
+    empty columns) — what a ring or a synthetic-bold stroke does horizontally."""
+    if radius <= 0:
+        return profile
+    n = len(profile)
+    out = []
+    for i in range(n):
+        window = [v for v in profile[max(0, i - radius):i + radius + 1]
+                  if v is not None]
+        out.append(max(window) if window else None)
+    return out
+
+
+def _min_line_pitch(f, ref, lines, pad, align="center", grow=0.0, rtl=False):
     """The tightest baseline step that still leaves DAYLIGHT between two lines.
 
     As a fraction of the type size, so it can be compared with a leading
@@ -1470,19 +1633,52 @@ def _min_line_pitch(f, ref, lines, pad):
     leading is a target that is clamped to this, per title, with the real text
     that is about to be drawn.
 
+    THE MEASUREMENT IS PER COLUMN, on rasterized pixels. Two lines collide only
+    where they are ABOVE ONE ANOTHER, so the question is asked of each column of
+    the stacked block and not of the two lines' bounding boxes. Boxes said סיישל
+    needed 0.887 where its design sets 0.68, and סנטוריני 1.180 against 0.50 —
+    not because any glyph met any other, but because SOMEWHERE on the upper line
+    there was a descender and SOMEWHERE on the lower one an ascender. The owner's
+    rule is that glyphs must never touch, and that is what this now measures.
+
     ``pad`` is everything painted BEYOND the glyph outline, as a fraction of the
     size: the outline ring and any synthetic-bold fatten (a stroke is centred on
     the outline, so it grows each line by half the width top and bottom, and two
     neighbours need the whole width between their baselines), the drop shadow's
     drop, and the arch — a bulged path lifts the lower line's ascenders by up to
-    ``arch`` toward the line above.
+    ``arch`` toward the line above. ``grow`` is the HORIZONTAL half of the same
+    paint (ring + half the bold stroke), which widens every glyph and so can
+    bring two columns into each other's way that the bare outlines miss;
+    ``align`` says how the lines are laid out against each other, since a column
+    of the upper line only meets the lower one if the layout puts them in line.
     """
-    asc, _desc = f.getmetrics()
+    path = getattr(f, "path", None)
+    if not path:
+        return _min_line_pitch_by_box(f, ref, lines, pad)
     worst = 0.0
-    for upper, lower in zip(lines, lines[1:]):
-        below = f.getbbox(upper)[3] - asc      # ink under the upper line's baseline
-        above = asc - f.getbbox(lower)[1]      # ink over the lower line's baseline
-        worst = max(worst, (below + above) / ref)
+    radius = max(0, int(round((grow or 0.0) * ref)))
+    drawn = [visual_order(ln, rtl) for ln in lines]
+    for upper, lower in zip(drawn, drawn[1:]):
+        ux, u_below, _u_above = _ink_skyline(path, ref, upper)
+        lx, _l_below, l_above = _ink_skyline(path, ref, lower)
+        u_below, l_above = _dilate(u_below, radius), _dilate(l_above, radius)
+        # Where the pen starts for each line, relative to a shared origin. The
+        # renderer anchors a centred line on its ADVANCE (text-anchor="middle"),
+        # a right-aligned one on its end, a left-aligned one on its start — so
+        # this is the same arithmetic the block itself lays out with.
+        if align == "left":
+            u_pen, l_pen = 0.0, 0.0
+        elif align == "right":
+            u_pen, l_pen = -f.getlength(upper), -f.getlength(lower)
+        else:
+            u_pen, l_pen = -f.getlength(upper) / 2, -f.getlength(lower) / 2
+        shift = int(round((u_pen + ux) - (l_pen + lx)))
+        for i, below in enumerate(u_below):
+            if below is None:
+                continue
+            j = i + shift
+            if 0 <= j < len(l_above) and l_above[j] is not None:
+                worst = max(worst, (below + l_above[j]) / ref)
     return worst + pad + _INK_CLEARANCE
 
 
@@ -1507,6 +1703,18 @@ def title_paint_pad(outline_w, arch, shadow, bold=False, bold_w=None,
             + (0.06 if shadow else 0.0) + max(0.0, arch or 0.0))
 
 
+def title_paint_grow(outline_w, bold=False, bold_w=None, ring_visible=True):
+    """How far a title's paint spreads SIDEWAYS from each glyph edge, per unit
+    of size: the ring's full thickness plus half the synthetic-bold stroke (a
+    stroke is centred on the outline). The collision floor needs this separately
+    from ``title_paint_pad`` because vertical padding and horizontal spread play
+    different parts once the floor reads the block column by column — the
+    vertical part opens the baselines, the horizontal part decides WHICH columns
+    can reach each other in the first place."""
+    fat = (bold_w if bold_w else _BOLD_WEIGHT) if bold else 0.0
+    return fat / 2 + ((outline_w or 0.0) if ring_visible else 0.0)
+
+
 def back_leading(ts, back_slot=None):
     """The line spacing a card BACK's title is stacked at, or None.
 
@@ -1526,7 +1734,7 @@ def board_leading(ts):
     return (ts or {}).get("board_leading") or (ts or {}).get("leading")
 
 
-def title_pitch(f, ref, lines, leading, pad):
+def title_pitch(f, ref, lines, leading, pad, align="center", grow=0.0, rtl=False):
     """The baseline step ``title_block`` will actually stack ``lines`` at.
 
     ``leading`` unset — an uncalibrated theme, or a single-line title with no
@@ -1535,10 +1743,17 @@ def title_pitch(f, ref, lines, leading, pad):
     is clamped up to what these particular glyphs need (``_min_line_pitch``);
     the clamp can only ever loosen, so a design that leads generously keeps its
     air.
+
+    ``align``/``grow`` describe the block the floor is being asked about — how
+    the lines sit against each other, and how far the paint spreads beyond them.
+    Both default to the plainest case so an existing caller measures exactly
+    what it did before.
     """
     if leading is None:
         return RENDER_PITCH
-    return max(float(leading), _min_line_pitch(f, ref, lines, pad))
+    return max(float(leading),
+               _min_line_pitch(f, ref, lines, pad, align=align, grow=grow,
+                               rtl=rtl))
 
 
 # How far a title's real glyph ink may overrun its calibrated box height before we
@@ -1593,7 +1808,10 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     fat = (bold_w if bold_w else _BOLD_WEIGHT) if bold else 0.0
     paint_pad = title_paint_pad(outline_w, arch, shadow, bold, bold_w,
                                 ring_visible=visible_outline)
-    pitch = title_pitch(f, ref, lines, leading, paint_pad)
+    paint_grow = title_paint_grow(outline_w, bold, bold_w,
+                                  ring_visible=visible_outline)
+    pitch = title_pitch(f, ref, lines, leading, paint_pad,
+                        align=align, grow=paint_grow, rtl=rtl)
     # size to fill the WIDTH, capped so the stacked lines still fit the box HEIGHT.
     # The height cap comes from the REAL font metrics, not a fixed per-line
     # fraction: some display title faces (e.g. the japanese/neon fonts) draw
@@ -1808,7 +2026,7 @@ def _nudge_title_box(tbox, cell, offset):
 
 
 def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
-                   fixed_size=None):
+                   fixed_size=None, align=None):
     """The stacked-title markup for one card, or "" when there is nothing to draw.
 
     ``tbox_list`` may hold ONE BOX PER TITLE LINE (birthday-girls records two);
@@ -1827,7 +2045,7 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                        ts["outline_w"], ts["arch"], ts["shadow"],
                        rtl=title_is_rtl(cfg),
                        fixed_size=fixed_size if fixed_size is not None else ts.get("size"),
-                       align=ts.get("align", "center"),
+                       align=align or ts.get("align", "center"),
                        italic=ts.get("italic", False),
                        bold=ts.get("bold", False),
                        bold_w=ts.get("bold_w"),
@@ -1913,7 +2131,8 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
             if card_svg and cell else None)
     return (_title_overlay(config.card_title_boxes(cfg, recipe, front_index, cell),
                            title_lines, cfg, title_font_path, cell,
-                           offset=config.front_offset(cfg, front_index))
+                           offset=config.front_offset(cfg, front_index),
+                           align=config.front_align(cfg, front_index))
             + _words_overlay(config.card_word_boxes(cfg, recipe, cell), words,
                              cfg, word_font_path, cell, room=room))
 
@@ -2068,7 +2287,8 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
         return fill_photo_slots(svg, photos or [])
     style = ("<style>" + GEOMETRIC_TEXT_STYLE
              + font_face("HebWord", config.resolve_word_font(theme, word_font))
-             + font_face("TitleFont", config.font_path(theme, cfg["title_font"]))
+             + font_face("TitleFont", config.font_path(theme, cfg["title_font"]),
+                          config.title_font_weight(cfg))
              + "</style>")
     if kind == "back":
         # Which back this is decides where its title goes on a paired template.
@@ -2128,7 +2348,8 @@ def render_fronts_strip(theme, fronts, words, title_lines, out_dir,
     # same reason.
     style = (GEOMETRIC_TEXT_STYLE
              + font_face("HebWord", config.resolve_word_font(theme, word_font))
-             + font_face("TitleFont", config.font_path(theme, cfg["title_font"])))
+             + font_face("TitleFont", config.font_path(theme, cfg["title_font"]),
+                           config.title_font_weight(cfg)))
     cards = []
     for front in fronts:
         svg = card_assets.read_svg(config.card_path(theme, front))
@@ -2202,7 +2423,8 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
     ts = cfg["title_style"]
     svg = open(clean_svg, encoding="utf-8").read()
     style = ("<style>" + GEOMETRIC_TEXT_STYLE + font_face("HebWord", word_font)
-             + font_face("TitleFont", title_font) + "</style>")
+             + font_face("TitleFont", title_font,
+                         config.title_font_weight(cfg)) + "</style>")
     overlay = [style]
     for ci, card in enumerate(recipe["cards"]):
         if not card:
@@ -2234,7 +2456,7 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
                                        ts["outline_w"], ts["arch"], ts["shadow"],
                                        rtl=title_is_rtl(cfg),
                                        fixed_size=ts.get("size"),
-                                       align=ts.get("align", "center"),
+                                       align=config.front_align(cfg, ci + 1),
                                        italic=ts.get("italic", False),
                                        bold=ts.get("bold", False),
                                        bold_w=ts.get("bold_w"),

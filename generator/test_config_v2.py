@@ -271,15 +271,22 @@ def test_a_multi_line_title_survives_as_several_boxes():
     assert config.recipe_front_title(recipe, 2) == lines
 
 
-def test_a_front_missing_from_the_title_map_falls_back_to_the_union():
+def test_a_front_missing_from_the_title_map_falls_back_to_a_typical_box():
     # A partly-calibrated template must still print the honoree's name, roughly
     # where the calibrated fronts put it — never drop it.
+    #
+    # The MEDIAN of the recorded fronts, not their union. A deck's fronts carry
+    # the same title in different PLACES, so their union is a box far wider than
+    # any real title box, and a title centred in it lands nowhere the design puts
+    # it — קליפורניה's title moves a third of the card across the deck.
     recipe = _recipe_v2(title={"2": [_box(20.0, 10.0, 100.0, 40.0)],
-                               "3": [_box(60.0, 14.0, 200.0, 50.0)]})
+                               "3": [_box(60.0, 14.0, 140.0, 44.0)],
+                               "4": [_box(100.0, 18.0, 180.0, 48.0)]})
     got = config.recipe_front_title(recipe, 7)
     assert len(got) == 1
     assert (got[0]["x0"], got[0]["y0"], got[0]["x1"], got[0]["y1"]) == (
-        20.0, 10.0, 200.0, 50.0)
+        60.0, 14.0, 140.0, 44.0)
+    assert got[0]["x1"] - got[0]["x0"] == 80.0, "a real title's width, not a union"
 
 
 def test_a_shared_title_list_places_every_front():
@@ -300,7 +307,7 @@ def test_the_legacy_per_front_block_is_still_read():
                         "3": {"title": [_box(12.0, 10.0)]}}
     assert config.recipe_front_title(recipe, 2)[0]["x0"] == 11.0
     got = config.recipe_front_title(recipe, 9)
-    assert len(got) == 1 and got[0]["x0"] == 11.0, "union of the recorded fronts"
+    assert len(got) == 1 and got[0]["x0"] == 11.5, "median of the recorded fronts"
 
 
 def test_a_recipe_with_no_title_anywhere_returns_nothing():
@@ -550,3 +557,35 @@ def test_a_legacy_sheet_is_still_a_sheet():
     assert not config.is_single_card({"card_structure": "sheet"})
     assert not config.is_single_card({"cards": None})
     assert not config.is_single_card({"cards": []})
+
+
+# --- alignment is per FRONT ---------------------------------------------------
+
+def test_front_align_prefers_the_fronts_own_answer():
+    cfg = {"title_style": {"align": "center",
+                           "front_align": {"3": "left", "5": "right"}}}
+    assert config.front_align(cfg, 3) == "left"
+    assert config.front_align(cfg, 5) == "right"
+    # ...and a front with no answer of its own takes the deck's
+    assert config.front_align(cfg, 2) == "center"
+
+
+def test_front_align_falls_all_the_way_back_to_centre():
+    # every title took this step before alignment was measured at all
+    assert config.front_align({}, 2) == "center"
+    assert config.front_align({"title_style": {}}, 2) == "center"
+
+
+def test_front_align_accepts_an_int_key_as_well_as_a_string():
+    cfg = {"title_style": {"front_align": {4: "right"}}}
+    assert config.front_align(cfg, 4) == "right"
+
+
+# --- the instance a VARIABLE title face is drawn at ---------------------------
+
+def test_title_font_weight_reads_the_measured_instance():
+    assert config.title_font_weight({"title_style": {"font_weight": 700}}) == 700.0
+    # a static face has one cut, so there is nothing to say
+    assert config.title_font_weight({"title_style": {}}) is None
+    assert config.title_font_weight({}) is None
+    assert config.title_font_weight({"title_style": {"font_weight": "x"}}) is None

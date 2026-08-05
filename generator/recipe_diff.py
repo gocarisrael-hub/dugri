@@ -491,6 +491,66 @@ def _median(values):
     return float(statistics.median(values))
 
 
+# How far a front's title box may differ from its siblings' before the reading
+# is refused. Every front of a deck carries the SAME title — the same words in
+# the same face at the same size — so the box around it is the same size on
+# every front, wherever on the card it sits. A quarter is far beyond the couple
+# of percent a descender or a swash moves it, and far below what a diff that
+# caught artwork produces: card 9's clean plate is missing artwork its filled
+# twin has on three unrelated designs, and `filled − clean` reads that as text —
+# giving a box 2.3x wide (סיישל), 1.7x (פריז) and 2.3x (קליפורניה) with an
+# identical runaway origin (y0 0.0721, x0 0.1089) on two designs that share
+# nothing else.
+_TITLE_BOX_TOL = 0.25
+
+
+def _title_union(boxes):
+    return {"x0": min(b["x0"] for b in boxes), "y0": min(b["y0"] for b in boxes),
+            "x1": max(b["x1"] for b in boxes), "y1": max(b["y1"] for b in boxes)}
+
+
+def reconcile_front_titles(front_titles, log=None, declined=None):
+    """Drop any front whose title box does not look like the rest of the deck's.
+
+    Detection reads one front at a time and has, per front, no way to tell the
+    honoree's name from a patch of artwork the clean export happens to be
+    missing. Read together the fronts DO tell: the title is the same text on all
+    eight, so a box half again wider or taller than the median is not a title.
+
+    Refusing is the whole point — a refused front falls back to the shape its
+    siblings agree on (``config.recipe_front_title``), which is the design's own
+    answer, where writing the runaway box printed the honoree's name at the wrong
+    size in the wrong place on that card. Says so out loud, in ``declined``, so
+    the owner is told rather than left to spot it on one card in eight.
+    """
+    usable = {i: b for i, b in front_titles.items() if b}
+    if len(usable) < 3:
+        return front_titles          # too few to have a consensus to differ from
+    sizes = {i: _title_union(b) for i, b in usable.items()}
+    wide = _median([u["x1"] - u["x0"] for u in sizes.values()])
+    tall = _median([u["y1"] - u["y0"] for u in sizes.values()])
+    out = dict(front_titles)
+    for index, u in sorted(sizes.items(), key=lambda kv: str(kv[0])):
+        w, h = u["x1"] - u["x0"], u["y1"] - u["y0"]
+        off = max(abs(w / wide - 1) if wide else 0.0,
+                  abs(h / tall - 1) if tall else 0.0)
+        if off <= _TITLE_BOX_TOL:
+            continue
+        out.pop(index, None)
+        why = (f"front {index}: its title box measures {w:.1f}x{h:.1f} against "
+               f"{wide:.1f}x{tall:.1f} on the rest of the deck — the same title "
+               f"cannot be {off * 100:.0f}% off its own size, so the diff caught "
+               f"artwork rather than text. Refused; this front falls back to the "
+               f"box its siblings agree on. Check clean/{index}.svg against "
+               f"filled/{index}.svg — a clean plate missing artwork the filled "
+               f"one has reads as text.")
+        if log:
+            log(why)
+        if declined is not None:
+            declined.append(why)
+    return out
+
+
 def reconcile_word_slots(per_front):
     """Fold the fronts' word slots into the ONE shared set the deck prints with.
 
@@ -849,6 +909,8 @@ def detect_single_card(theme, template_dir, fronts=None,
                 f"template must ship clean/ and filled/ copies of "
                 f"{fronts[0]}.svg..{fronts[-1]}.svg")
 
+        front_titles = reconcile_front_titles(front_titles, log=log,
+                                              declined=declined)
         words = reconcile_word_slots(per_front)
         if len(words) != 4:
             raise RuntimeError(
