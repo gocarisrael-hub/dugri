@@ -273,6 +273,131 @@ def test_the_calibrators_and_the_renderers_block_are_the_same_block():
         assert abs(moved - want) < 1e-6, (pitch, moved, want)
 
 
+# ---- ONE TEXT BOX, SEVERAL SURFACES -----------------------------------------
+#
+# A design's front, board and card back are usually the same title laid out once
+# and reused at three scales, and a block reused at another scale is stacked at
+# the same leading. Measured on the shipped set: פריז's front settles at 0.72
+# and its back one step away at 0.74, and that ONE STEP is the whole of the
+# back's error against the owner's Canva value (−3.2% at 0.74, −1.4% at 0.72).
+# But טריפה's back genuinely stacks a third wider than its front, so the sharing
+# has to be tested against the ink rather than assumed.
+
+_TITLE_SAMPLES = [["נעמה", "מסיבה גדולה"], ["לירן", "מסיבה גדולה"],
+                  ["דן", "מסיבה גדולה"], ["לילך", "מסיבה גדולה"]]
+
+
+def _surface(lines, size, pitch, ppu=PPU):
+    """One surface's leading curve, off a block painted at a known spacing."""
+    ink = C._paint(HEBREW_FONT, lines, size * ppu, ALPHA, pitch=pitch)
+    return ink, C.leading_curve(ink, HEBREW_FONT, _TITLE_SAMPLES, ppu, ALPHA)
+
+
+def test_surfaces_that_are_one_block_at_two_scales_share_one_leading():
+    # The real case: the same title, set at the same spacing, printed large on
+    # one surface and small on another. Each is read on its own first, and the
+    # shared answer has to be the spacing they were both painted at.
+    origin = _TITLE_SAMPLES[1]
+    _big, big = _surface(origin, 34.0, 0.92)
+    _small, small = _surface(origin, 22.0, 0.92)
+    shared, why = C.couple_leadings({"front": small, "back": big})
+    assert why is None, why
+    assert shared is not None and abs(shared - 0.92) <= 0.06, shared
+
+
+def test_a_surface_stacked_differently_is_left_alone():
+    # טריפה: its back stacks its two lines a third further apart than its front.
+    # Sharing a leading across those would put one of the two sizes far out, so
+    # the whole set keeps what its own ink said — and the owner is told which
+    # surface disagreed and what it reads.
+    origin = _TITLE_SAMPLES[1]
+    _f, front = _surface(origin, 26.0, 0.78)
+    _b, back = _surface(origin, 26.0, 1.30)
+    shared, why = C.couple_leadings({"front": front, "back": back})
+    assert shared is None
+    assert why and "NOT one block" in why
+    assert "front" in why or "back" in why, why
+
+
+def test_one_surface_on_its_own_has_nothing_to_couple():
+    _f, front = _surface(_TITLE_SAMPLES[1], 26.0, 0.90)
+    assert C.couple_leadings({"front": front}) == (None, None)
+    assert C.couple_leadings({}) == (None, None)
+    # ...and a surface whose fit produced no curve at all (a single-line title)
+    # cannot drag the others: it simply is not one of the readings.
+    assert C.couple_leadings({"front": front, "back": []}) == (None, None)
+
+
+def test_the_shared_leading_is_one_the_curves_were_actually_swept_at():
+    # The median of an even number of surfaces lands between two grid steps, and
+    # no score was ever measured there — so the answer is snapped back onto the
+    # grid the curves were swept on rather than interpolated onto a value no
+    # surface was scored at.
+    origin = _TITLE_SAMPLES[1]
+    _a, one = _surface(origin, 30.0, 0.90)
+    _b, two = _surface(origin, 24.0, 0.92)
+    shared, why = C.couple_leadings({"front": one, "back": two})
+    assert why is None, why
+    assert shared in C._PITCH_GRID, shared
+
+
+def test_a_coupled_surface_is_re_solved_at_the_shared_leading():
+    # The size and the leading are one answer, so a surface handed a spacing
+    # from elsewhere must have its SIZE re-solved at it — not kept from the fit
+    # that assumed a different one. Painted at 26 and 0.92, a size re-solved at
+    # 0.92 has to come back to 26 whatever the surface's own argmax was.
+    size, pitch = 26.0, 0.92
+    ink = C._paint(HEBREW_FONT, _TITLE_SAMPLES[1], size * PPU, ALPHA, pitch=pitch)
+    fit = {"ink": ink, "font": HEBREW_FONT, "samples": _TITLE_SAMPLES,
+           "ppu": PPU, "alpha": ALPHA, "ring": 0.0}
+    got = C.refit_at_leading(fit, pitch)
+    assert abs(got - size) / size <= 0.03, got
+    assert C.refit_at_leading(fit, None) is None
+    assert C.refit_at_leading(None, pitch) is None
+
+
+def test_a_score_difference_smaller_than_the_names_disagree_is_not_evidence():
+    # The noise floor the agreement is tested against: the score IS a median
+    # over the sample honoree names, so how much those names disagree is how
+    # finely it can be read at all. Names that agree exactly leave no room —
+    # anything can then be told apart — and names that scatter leave a lot.
+    assert C._score_noise([0.5, 0.5, 0.5, 0.5]) == 0.0
+    assert C._score_noise([0.5]) == 0.0
+    assert C._score_noise([0.4, 0.6, 0.4, 0.6]) > C._score_noise(
+        [0.49, 0.51, 0.49, 0.51])
+
+
+def test_the_leading_curve_leaves_the_solve_rather_than_being_swept_twice():
+    # Sweeping the grid is the whole cost of the title fit, and the coupling
+    # needs every surface's curve — so the solve hands out the one it took its
+    # argmax of instead of the caller measuring it again.
+    ink = C._paint(HEBREW_FONT, _TWO[0], 24.0 * PPU, ALPHA, pitch=1.10)
+    curve = []
+    size, lead, score = C.solve_size_and_leading(ink, HEBREW_FONT, _TWO, PPU,
+                                                 ALPHA, curve_out=curve)
+    assert curve, "the curve must come back out"
+    best = max(curve, key=lambda row: row[2])
+    assert abs(best[0] - lead) < 1e-9 and abs(best[2] - score) < 1e-9
+    assert all(row[0] in C._PITCH_GRID for row in curve)
+    assert size is not None
+
+
+def test_a_surfaces_whole_reading_is_recorded_for_the_coupling():
+    # ...and it has to be the reading, not a copy of some of it: the coupling
+    # re-solves the size off exactly the ink, ring and alpha the first fit used.
+    ink = C._paint(HEBREW_FONT, _TWO[0], 24.0 * PPU, ALPHA, pitch=1.10)
+    mask, image, box = _origin(ink)
+    fit = {}
+    size, _grade, _note, _ctx, lead = C.fit_title_size(
+        mask, image, box, PPU, 0.0, 0.0, HEBREW_FONT, _TWO, "#000000",
+        fit_out=fit)
+    for field in ("ink", "font", "samples", "ppu", "alpha", "ring", "curve",
+                  "size", "leading", "box_h"):
+        assert field in fit, field
+    assert fit["size"] == size and fit["leading"] == lead
+    assert abs(C.refit_at_leading(fit, lead) - size) < 1e-9
+
+
 def test_the_profile_match_compares_shape_and_not_amount():
     # The origin says another honoree's name, so the AMOUNT of ink can never
     # agree; where down the block it sits can.
