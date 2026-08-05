@@ -88,10 +88,37 @@ def font_face(name, path, weight=None):
             f"src:url(data:font/ttf;base64,{b64}) format('truetype');}}")
 
 
+
+# THE MEASURING INSTRUMENT MUST DRAW THE SAME PICTURE EVERYWHERE.
+#
+# Pillow lays text out with one of two engines. BASIC walks the string in
+# LOGICAL order, one glyph after the next. RAQM — bundled in the manylinux
+# wheels, absent from the macOS ones — runs the full Unicode bidi algorithm and
+# reorders a Hebrew run itself.
+#
+# Every reading in this module compensates for BASIC. ``visual_order`` exists
+# precisely because Pillow does not reorder and Chrome does, so it puts the
+# string into paint order by hand before rasterizing it. Hand that already
+# reordered string to RAQM and it reorders it a SECOND time: the measurement is
+# then taken of a picture nothing ever prints. Measured on the same four Hebrew
+# words, the per-column row floor came back 0.92 of the type size under BASIC
+# and 1.49 under RAQM — a 62% difference in a number that decides how far apart
+# a card's rows sit, purely from which wheel was installed.
+#
+# So the engine is PINNED. Not to whichever is better — to the one every
+# calibrated constant in this module and in ``calibrate`` was measured against,
+# so a card renders identically on a developer's laptop, in CI and in the
+# production image. Chrome, which does the real rendering, is unaffected by any
+# of this; only the ruler is being held still.
+def _measuring_font(font_path, size):
+    from PIL import ImageFont
+    return ImageFont.truetype(font_path, size,
+                              layout_engine=ImageFont.Layout.BASIC)
+
+
 @functools.lru_cache(maxsize=8)
 def _word_metrics(font_path, ref=200):
-    from PIL import ImageFont
-    return ImageFont.truetype(font_path, ref), ref
+    return _measuring_font(font_path, ref), ref
 
 
 # How many times the metric size a glyph is rendered at when its ink edges are
@@ -113,8 +140,8 @@ def _glyph_bearings(font, ref, ch):
     9 / 8 / 8 / 9, so advance and ink are genuinely different spans and pinning
     one does not pin the other. Nine glyphs per face, cached for the process.
     """
-    from PIL import Image, ImageDraw, ImageFont
-    big = ImageFont.truetype(font.path, ref * _BEARING_SS)
+    from PIL import Image, ImageDraw
+    big = _measuring_font(font.path, ref * _BEARING_SS)
     pad = ref * _BEARING_SS
     im = Image.new("L", (pad * 3, pad * 3), 0)
     ImageDraw.Draw(im).text((pad, pad), ch, font=big, fill=255)
@@ -528,7 +555,7 @@ def _font_lead(font, ref):
 _MARKER_GLYPHS = "1234567890."
 
 
-def _card_lead(font, ref, lines):
+def _card_lead(font, ref, lines, count=None, bold_w=0.0):
     """The pitch this card's own type needs, as a multiple of the size.
 
     The owner's rule: "the minimum gap (that obeys the rule that no 2 letters
@@ -547,34 +574,61 @@ def _card_lead(font, ref, lines):
 
     This USED to reserve the worst case over an abstract repertoire of every
     glyph a card could ever print (``_font_lead``) — Hebrew, Latin, digits and
-    punctuation together — and that is a different, much larger number, because
-    the deepest descender in the repertoire and the tallest ascender in it almost
-    never appear on the same card. Measured across the ten shipped word faces,
-    the repertoire reserve is 15% wider than a real card needs on Cafe, 25% on
-    Comix, 40% on FtPilKahol and 52% on Asakim. Every one of those percent went
-    into the line pitch, and the deck then printed its words at that much SMALLER
-    a size to fit — which is precisely the "our type is too small and our leading
-    too airy, and the two cancel" that the originals were being measured against.
+    punctuation together. #327 narrowed that to the card's own glyphs, and the
+    reading was still taken off the lines' bounding BOXES: the deepest ink any
+    line on the card puts below its baseline, plus the highest any line puts
+    above its own, wherever on the line either happens to be.
 
-    Measured over ALL the card's lines rather than adjacent pairs, so the answer
-    does not move when the same four words arrive in a different order — a card's
-    rhythm should not depend on which slot a word landed in.
+    A BOX IS NOT A SHAPE, and on Hebrew that is most of the number. "1. סיף"
+    carries its ink 0.15 of the size ABOVE the ascender line, at the yod; "3. חתן"
+    hangs its final nun 0.5 of the size below the baseline, at the far end of the
+    word. Boxed, those two lines demand 1.74 of the size between their baselines
+    — and the two pieces of ink are nowhere near one another horizontally. Read
+    COLUMN BY COLUMN on the rasterized glyphs, the same card asks 1.05, and the
+    design's own row spacing (1.27 on סנטוריני) is then what sets the card. Boxed,
+    it was not: 36% of that deck's cards came out spaced wider than the origin
+    spaces its own, which is the "the word rows are too far apart" the owner read
+    off her preview. Column by column, 2% do, and those are the cards whose
+    letters really would have met.
 
-    Still provably safe: the pitch it returns carries the deepest ink any line on
-    this card puts below its baseline, plus the highest any line puts above its
-    own, plus ``_WRAP_GAP`` of clear air on top. No two glyphs of this card can
-    touch at that pitch, whatever order they are set in.
+    THE MARKER COLUMN IS MEASURED SEPARATELY, because it is separate on the card:
+    ``word_lines`` sets the digit and its stop as their own right-anchored runs, a
+    clear ``_WORD_GAP`` of the size to the right of every word, so a marker can
+    only ever meet another marker. Boxed is the honest reading there — a column
+    one glyph wide has no shape to read — over the digits this card actually sets.
+
+    Every word run shares ONE right anchor (``_card_right_edge``), which is what
+    makes the per-column reading the right one: two rows overlap exactly where
+    their ink shares a column of that shared edge.
+
+    Asked of every ORDERED pair rather than of the pairs a particular deal made
+    adjacent, so the answer does not move when the same four words arrive in a
+    different order — a card's rhythm should not depend on which slot a word
+    landed in, which is the property #327's card-wide reading had and a
+    neighbours-only one would lose.
+
+    ``bold_w`` is the synthetic-bold stroke, as a fraction of the size. It is
+    centred on the outline, so it grows each line by half its width top and bottom
+    and two neighbours need the whole of it between their baselines — and half of
+    it sideways, which can bring two columns into each other's reach that the bare
+    outlines miss.
+
+    Still provably safe, and now provable on the pixels rather than on a metric:
+    no column of one row's ink reaches within ``_WRAP_GAP`` of the row below it.
     """
     texts = [ln for ln in lines if ln and ln.strip()]
     if not texts:
         return _font_lead(font, ref)
-    texts.append(_MARKER_GLYPHS)
-    boxes = [font.getbbox(t) for t in texts]
-    top = min(b[1] for b in boxes)
-    bottom = max(b[3] for b in boxes)
-    if bottom <= top:
-        return _font_lead(font, ref)
-    return (bottom - top) / ref + _WRAP_GAP
+    marker = _MARKER_GLYPHS if not count else (
+        "".join(str(n) for n in range(1, max(int(count), 1) + 1)) + ".")
+    mbox = font.getbbox(marker)
+    markers = (mbox[3] - mbox[1]) / ref * _MARKER_SCALE + _WRAP_GAP
+    if len(texts) < 2:
+        return max(markers, _WRAP_GAP)
+    words = _min_line_pitch(font, ref, texts, bold_w or 0.0, align="right",
+                            grow=(bold_w or 0.0) / 2, rtl=True, clear=_WRAP_GAP,
+                            every_pair=True)
+    return max(words, markers)
 
 
 def _slot_pitch(slots, i):
@@ -882,10 +936,19 @@ def room_bottom(theme, front_index, svg_text, cell, safe_bottom):
 # the space above it belongs to the title, and a card that needs more lines grows
 # DOWNWARD into the paper that was empty.
 #
-# The pitch is then a fixed multiple of the type size (``_font_lead``), floored by
-# the origin's own entry spacing, rather than whatever a fixed height leaves over.
-# So every gap is equal down the card AND the same from card to card — the
-# owner's rule — and the type keeps its size.
+# WHERE THE PITCH COMES FROM: the design, not this renderer. The origin's own
+# entry spacing is a measurement of the artwork — the calibrated word slots'
+# centres, which is where the design put its four rows — and that is the pitch a
+# card sets at. It is only ever opened, never tightened, by what the card's own
+# glyphs need to keep clear of one another (``_card_lead``). So every gap is equal
+# down the card AND the same from card to card — the owner's rule — the type keeps
+# its size, and the deck is spaced the way the design is.
+#
+# On סנטוריני the design leads its rows at 1.27 of the type size; the owner reads
+# 1.4 off Canva's line-spacing control, and the two agree — Canva's slider is not
+# a baseline multiplier, and across the two designs whose Canva spacing she has
+# read to us it runs about a tenth above the baseline step the artwork actually
+# sets (סיישל's title: 0.75 on the slider, 0.68 in the ink).
 #
 # WHERE IT APPLIES, AND FOR HOW LONG. Only to a card with a DECLARED words column
 # (``card_slots``), which today means the v2 single-card templates. The eight v1
@@ -902,8 +965,9 @@ def room_bottom(theme, front_index, svg_text, cell, safe_bottom):
 def _grid_pitch(centers, gaps, lead, size, cap=None):
     """The single centre-to-centre distance for every pair of lines on a card.
 
-    What the font needs (``lead`` x size, fixed per face — see ``_font_lead``),
-    floored by the calibrated span divided by ``gaps`` and capped by ``cap``.
+    The DESIGN's own spacing — the calibrated span divided by ``gaps`` — opened
+    where this card's own glyphs need more (``lead`` x size, see ``_card_lead``)
+    and capped by ``cap``.
 
     ``gaps`` is what makes the rhythm the same on every card of a deck: pass the
     number of gaps between the card's ENTRIES and the floor is the origin's own
@@ -1203,7 +1267,7 @@ def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
 
 
 def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
-              vbounds=None, room=None):
+              vbounds=None, room=None, count=None, bold_w=0.0):
     """Solve ONE font size for the whole card, and each entry's line count.
 
     Every word on a card renders at the SAME size — that is the origin
@@ -1256,7 +1320,7 @@ def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
         if grid:
             flat = [ln for i in live for ln in cands[i][counts[i]][0]]
             live_c = [centers[i] for i in live]
-            lead = _card_lead(font, ref, flat)
+            lead = _card_lead(font, ref, flat, count=count, bold_w=bold_w)
             span = max(live_c) - min(live_c)
             if room:
                 # The card's real envelope: the first calibrated line down to the
@@ -1388,7 +1452,8 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
         room = (vbounds[0], min(vbounds[1], room_bottom))
     size, counts, lead = _fit_card(cands, pitches, centers, uniform,
                                    font=font, ref=ref, grid=declared_band,
-                                   vbounds=vbounds, room=room)
+                                   vbounds=vbounds, room=room,
+                                   count=len(slots), bold_w=bold_w)
     if not declared_band:
         return [None if wi not in cands
                 else Layout(size, cands[wi][counts[wi]][0], lead)
@@ -1430,8 +1495,7 @@ def _word_sizes(slots, words, font, ref, cell=None, word_size=None):
 
 @functools.lru_cache(maxsize=8)
 def _title_metrics(font_path, ref=200):
-    from PIL import ImageFont
-    return ImageFont.truetype(font_path, ref), ref
+    return _measuring_font(font_path, ref), ref
 
 
 # Synthetic-bold stroke width as a fraction of the glyph size. Sized to read as
@@ -1565,8 +1629,8 @@ def _ink_skyline(font_path, ref, line):
     lines on all 104 cards, and rasterizing an em-sized line per card would cost
     more than the whole rest of the page.
     """
-    from PIL import Image, ImageDraw, ImageFont
-    f = ImageFont.truetype(font_path, ref)
+    from PIL import Image, ImageDraw
+    f = _measuring_font(font_path, ref)
     pad = int(ref) + 8
     w = int(f.getlength(line)) + 2 * pad
     h = 4 * int(ref) + 2 * pad
@@ -1592,7 +1656,8 @@ def _ink_skyline(font_path, ref, line):
     return -pad, tuple(below), tuple(above)
 
 
-def _min_line_pitch_by_box(f, ref, lines, pad):
+def _min_line_pitch_by_box(f, ref, lines, pad, clear=_INK_CLEARANCE,
+                           every_pair=False):
     """The pre-skyline floor: the two lines' bounding BOXES may not overlap.
 
     Strictly safer than the per-column reading and strictly less faithful, so it
@@ -1601,11 +1666,16 @@ def _min_line_pitch_by_box(f, ref, lines, pad):
     """
     asc, _desc = f.getmetrics()
     worst = 0.0
-    for upper, lower in zip(lines, lines[1:]):
+    if every_pair:
+        couples = [(lines[i], lines[j]) for i in range(len(lines))
+                   for j in range(len(lines)) if i != j]
+    else:
+        couples = list(zip(lines, lines[1:]))
+    for upper, lower in couples:
         below = f.getbbox(upper)[3] - asc      # ink under the upper line's baseline
         above = asc - f.getbbox(lower)[1]      # ink over the lower line's baseline
         worst = max(worst, (below + above) / ref)
-    return worst + pad + _INK_CLEARANCE
+    return worst + pad + clear
 
 
 def _dilate(profile, radius):
@@ -1622,7 +1692,8 @@ def _dilate(profile, radius):
     return out
 
 
-def _min_line_pitch(f, ref, lines, pad, align="center", grow=0.0, rtl=False):
+def _min_line_pitch(f, ref, lines, pad, align="center", grow=0.0, rtl=False,
+                    clear=_INK_CLEARANCE, every_pair=False):
     """The tightest baseline step that still leaves DAYLIGHT between two lines.
 
     As a fraction of the type size, so it can be compared with a leading
@@ -1651,14 +1722,33 @@ def _min_line_pitch(f, ref, lines, pad, align="center", grow=0.0, rtl=False):
     bring two columns into each other's way that the bare outlines miss;
     ``align`` says how the lines are laid out against each other, since a column
     of the upper line only meets the lower one if the layout puts them in line.
+
+    ``clear`` is the daylight demanded on top of the ink itself. It is a
+    parameter and not a constant because the two things this measures do not ask
+    for the same air: a title's lines are one block and want only enough that the
+    rasterizer's rim cannot weld them, while a card's numbered word rows are four
+    separate ITEMS and are given the wider ``_WRAP_GAP`` a wrapped entry already
+    uses, so a card reads as a list rather than as a paragraph.
+
+    ``every_pair`` asks the question of every ORDERED pair of lines rather than
+    of the ones that happen to be adjacent. A title's lines are a fixed block and
+    only ever meet their neighbours; a card's four word rows are the same four
+    words whichever slot each landed in, so its rhythm must not change when a
+    shuffle deals them in a different order.
     """
     path = getattr(f, "path", None)
     if not path:
-        return _min_line_pitch_by_box(f, ref, lines, pad)
+        return _min_line_pitch_by_box(f, ref, lines, pad, clear=clear,
+                                      every_pair=every_pair)
     worst = 0.0
     radius = max(0, int(round((grow or 0.0) * ref)))
     drawn = [visual_order(ln, rtl) for ln in lines]
-    for upper, lower in zip(drawn, drawn[1:]):
+    if every_pair:
+        couples = [(drawn[i], drawn[j]) for i in range(len(drawn))
+                   for j in range(len(drawn)) if i != j]
+    else:
+        couples = list(zip(drawn, drawn[1:]))
+    for upper, lower in couples:
         ux, u_below, _u_above = _ink_skyline(path, ref, upper)
         lx, _l_below, l_above = _ink_skyline(path, ref, lower)
         u_below, l_above = _dilate(u_below, radius), _dilate(l_above, radius)
@@ -1679,7 +1769,7 @@ def _min_line_pitch(f, ref, lines, pad, align="center", grow=0.0, rtl=False):
             j = i + shift
             if 0 <= j < len(l_above) and l_above[j] is not None:
                 worst = max(worst, (below + l_above[j]) / ref)
-    return worst + pad + _INK_CLEARANCE
+    return worst + pad + clear
 
 
 def title_paint_pad(outline_w, arch, shadow, bold=False, bold_w=None,
@@ -1734,7 +1824,8 @@ def board_leading(ts):
     return (ts or {}).get("board_leading") or (ts or {}).get("leading")
 
 
-def title_pitch(f, ref, lines, leading, pad, align="center", grow=0.0, rtl=False):
+def title_pitch(f, ref, lines, leading, pad, align="center", grow=0.0, rtl=False,
+                one_block=False):
     """The baseline step ``title_block`` will actually stack ``lines`` at.
 
     ``leading`` unset — an uncalibrated theme, or a single-line title with no
@@ -1748,9 +1839,29 @@ def title_pitch(f, ref, lines, leading, pad, align="center", grow=0.0, rtl=False
     the lines sit against each other, and how far the paint spreads beyond them.
     Both default to the plainest case so an existing caller measures exactly
     what it did before.
+
+    ``one_block`` DROPS the floor, and it is the only thing that can. The clamp
+    exists because a title is set on one honoree's name and printed on another's,
+    so a spacing measured on "Alma" has to survive a name that hangs a final-kaf
+    where Alma had none. That is the right rule for a title whose lines stand
+    clear of one another — and the wrong one for a title whose lines do NOT: on
+    סיישל the ring is 0.075 of the type size, the three words are one text box,
+    and their outlines run together into the single graffiti mass the design is.
+    Prising them apart to satisfy a rule the artwork never obeyed is precisely
+    the inter-row space the owner asked to be rid of ("make this in 1 textbox …
+    so there will be no spacing between rows").
+
+    So the flag is a reading of the design, not a licence: calibration sets it
+    only where the original's own title ink has lost its row structure AND the
+    design paints a ring wide enough to have been what closed the rows up
+    (``calibrate.sets_one_block``). Where it is set, the design's step stands
+    exactly as measured — including where that means two lines touch, because
+    they touch in the original.
     """
     if leading is None:
         return RENDER_PITCH
+    if one_block:
+        return float(leading)
     return max(float(leading),
                _min_line_pitch(f, ref, lines, pad, align=align, grow=grow,
                                rtl=rtl))
@@ -1776,7 +1887,7 @@ def title_is_rtl(cfg):
 
 def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
                 rtl=False, fixed_size=None, align="center", italic=False,
-                bold=False, bold_w=None, leading=None):
+                bold=False, bold_w=None, leading=None, one_block=False):
     _TITLE_UID[0] += 1
     uid = _TITLE_UID[0]
     """Graffiti-style stacked title: sized so the WIDEST line fills the box
@@ -1786,7 +1897,16 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     size), ``arch`` (upward bulge fraction), ``shadow`` (draw the drop shadow
     layer or not) and ``leading`` (the baseline step, as a fraction of the type
     size, measured off the design — unset keeps this renderer's own fixed
-    step)."""
+    step).
+
+    ``one_block`` says this design's title IS one text box: the lines are stacked
+    at exactly ``leading``, touching if that is what the design does, instead of
+    being opened up to keep their outlines clear (see ``title_pitch``). The lines
+    are still PLACED one by one, which is what an arch, a per-line alignment and
+    a per-front title box all need — and a text box lays its lines out on exactly
+    this constant baseline step, so placing them individually at that step and
+    letting one element wrap produce the same picture. What made ours differ from
+    a text box was never the markup, it was the floor."""
     x0, y0, x1, y1 = box["x0"], box["y0"], box["x1"], box["y1"]
     cx = (x0 + x1) / 2
     bw, bh = x1 - x0, y1 - y0
@@ -1811,7 +1931,8 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     paint_grow = title_paint_grow(outline_w, bold, bold_w,
                                   ring_visible=visible_outline)
     pitch = title_pitch(f, ref, lines, leading, paint_pad,
-                        align=align, grow=paint_grow, rtl=rtl)
+                        align=align, grow=paint_grow, rtl=rtl,
+                        one_block=one_block)
     # size to fill the WIDTH, capped so the stacked lines still fit the box HEIGHT.
     # The height cap comes from the REAL font metrics, not a fixed per-line
     # fraction: some display title faces (e.g. the japanese/neon fonts) draw
@@ -2049,7 +2170,8 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                        italic=ts.get("italic", False),
                        bold=ts.get("bold", False),
                        bold_w=ts.get("bold_w"),
-                       leading=ts.get("leading"))
+                       leading=ts.get("leading"),
+                       one_block=bool(ts.get("one_block")))
 
 
 def _words_overlay(slots, words, cfg, word_font, cell, room=None):
@@ -2460,7 +2582,8 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
                                        italic=ts.get("italic", False),
                                        bold=ts.get("bold", False),
                                        bold_w=ts.get("bold_w"),
-                                       leading=ts.get("leading")))
+                                       leading=ts.get("leading"),
+                                       one_block=bool(ts.get("one_block"))))
         words = words_by_card[ci] if ci < len(words_by_card) else []
         # A card may carry a title but no word slots (its title was drawn above);
         # skip the word pass so the sizing below can't crash the whole page.
