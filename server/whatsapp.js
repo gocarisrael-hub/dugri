@@ -25,6 +25,10 @@
 // per Whapi's "incoming webhooks format" docs: a `messages` array for message
 // events and a `groups_participants` array (action:"add") for member-added events.
 const settings = require('./settings');
+// The reachout circuit breaker. Gates ONLY the calls that contact someone new
+// (creating a group WITH participants, DMing a non-group chat) — the exact
+// actions that got the previous number banned. In-group sends are never gated.
+const guard = require('./wa-guard');
 
 // --- config (read once at require time — dormant until set) -------------------
 const WHAPI_TOKEN = process.env.WHAPI_TOKEN || '';
@@ -76,6 +80,12 @@ function status() {
     baseUrl: BASE_URL,
     configured,
     ready: configured && webhookSecretPresent,
+    // How groups are opened, and the live reachout-breaker state. Both are
+    // non-secret and belong on the same banner the owner already reads — a
+    // tripped breaker is the single most important thing to surface, because
+    // orders keep flowing while no groups are being opened.
+    groupMode: groupMode(),
+    guard: guard.snapshot(),
   };
 }
 
@@ -136,12 +146,19 @@ async function whapiRequest(method, path, opts = {}) {
     const res = await fetchImpl(BASE_URL + path, init);
     const data = res && typeof res.json === 'function' ? await res.json().catch(() => ({})) : {};
     if (!res || !res.ok) {
-      return {
+      const failure = {
         ok: false,
         status: res ? res.status : 0,
         error: 'whapi http ' + (res && res.status),
         data,
       };
+      // Every non-2xx is inspected for an account-restriction signal, not just
+      // the ones from reachout calls: the restriction can surface on ANY request
+      // (a health probe, an in-group send), and catching it at the first sighting
+      // is what stops us retrying into it. A bare rate-limit 429 is not a
+      // restriction and does not trip — see wa-guard.classify.
+      guard.noteResult(failure, method + ' ' + path);
+      return failure;
     }
     return { ok: true, status: res.status, data };
   } catch (e) {
@@ -161,6 +178,19 @@ async function createGroup(subject, participants, opts = {}) {
     subject: String(subject == null ? '' : subject),
     participants: Array.isArray(participants) ? participants.map((p) => String(p)) : [],
   };
+  // Creating an EMPTY group contacts nobody, so it is not a reachout and is
+  // never gated — that is what makes the invite-link flow safe. Adding a
+  // participant is the reachout, and is gated + counted against the daily cap.
+  const isReachout = body.participants.length > 0;
+  if (isReachout) {
+    const allowed = guard.canReachOut();
+    if (!allowed.ok) {
+      return { ok: false, blocked: true, reason: allowed.reason, detail: allowed.detail };
+    }
+    // Spend the budget on the ATTEMPT. A restricted account can act and still
+    // answer not-ok, so counting successes would under-count real reachouts.
+    guard.recordReachout();
+  }
   const r = await whapiRequest('POST', '/groups', { body, fetchImpl: opts.fetchImpl });
   if (!r.ok) return r;
   const data = r.data || {};
@@ -173,6 +203,19 @@ async function createGroup(subject, participants, opts = {}) {
 // messageId, data } or a soft failure. No-op when unconfigured.
 async function sendMessage(to, text, opts = {}) {
   if (!isConfigured()) return { ok: false, skipped: true, reason: 'not configured' };
+  // A send into a GROUP is ordinary in-group traffic and is never gated — those
+  // kept working right through the previous ban, and gating them would break
+  // live orders for no safety gain. A 1:1 send is a cold DM (a reachout) and is
+  // gated + counted. opts.exempt bypasses the gate for the owner's OWN number:
+  // an escalation DM to the operator is not a stranger reachout, and it is
+  // precisely the message that must still get out when the breaker trips.
+  if (!guard.isGroupChat(to) && !opts.exempt) {
+    const allowed = guard.canReachOut();
+    if (!allowed.ok) {
+      return { ok: false, blocked: true, reason: allowed.reason, detail: allowed.detail };
+    }
+    guard.recordReachout();
+  }
   const body = { to: String(to == null ? '' : to), body: String(text == null ? '' : text) };
   const r = await whapiRequest('POST', '/messages/text', { body, fetchImpl: opts.fetchImpl });
   if (!r.ok) return r;
@@ -279,7 +322,31 @@ async function health(opts = {}) {
   let connection = 'unknown';
   if (hasUser || WA_CONNECTED_STATES.includes(state)) connection = 'connected';
   else if (WA_DISCONNECTED_STATES.includes(state)) connection = 'disconnected';
+  // A channel that reports itself BANNED is the terminal stage of the signature
+  // from the last incident. Trip the reachout breaker on sight so a redeploy or
+  // a re-link doesn't quietly resume opening groups on a dead number.
+  if (state === 'banned') guard.trip('health: channel reports banned');
   return { ok: true, connection, state };
+}
+
+// How should a word-collection group be opened? Owner-controlled, read lazily so
+// a settings change takes effect without a restart:
+//   'invite_link' (DEFAULT) — create an EMPTY group and hand the buyer a join
+//      LINK (in their confirmation email / order page). The bot contacts nobody,
+//      so there is no reachout to be restricted for. This is the safe default.
+//   'auto_add' — the original flow: create the group with the buyer already in
+//      it. Better UX, but it is the exact action that got the last number banned,
+//      so it stays behind this flag AND the breaker + daily cap.
+// Anything unrecognised falls back to the safe mode rather than the risky one.
+function groupMode(opts = {}) {
+  const store = opts.settings || settings;
+  try {
+    const v = store.get('wa', 'group_mode');
+    if (v === 'auto_add') return 'auto_add';
+  } catch {
+    /* fall through to the safe default */
+  }
+  return 'invite_link';
 }
 
 // --- pure helpers (no network) ------------------------------------------------
@@ -517,6 +584,8 @@ module.exports = {
   isConfigured,
   status,
   health,
+  groupMode,
+  guard,
   verifyWebhookSecret,
   createGroup,
   sendMessage,

@@ -776,6 +776,38 @@ function buildWordsReminder(collection, baseUrl) {
   return { subject, text: lines.join('\n'), html };
 }
 
+// Pure builder: "your words group is ready — here's the link to join it". The
+// CTA is the WhatsApp group's public invite link, NOT a site link, because this
+// email IS the delivery mechanism for the group in invite_link mode: the bot
+// adds nobody and DMs nobody, so without this the buyer has no way in.
+// `inviteLink` is the chat.whatsapp.com URL; `baseUrl` only builds the hosted
+// logo. Returns {subject, text, html}.
+function buildGroupInvite(collection, inviteLink, baseUrl) {
+  const name = honoreeName(collection);
+  const tpl = emailTpl('group_invite');
+  const ft = footer();
+  const values = { honoree: name };
+  const subject = interpolate(tpl.subject, values);
+  const bodyLines = interpolate(tpl.body, values).split('\n');
+  const lines = bodyLines.slice();
+  const link = String(inviteLink == null ? '' : inviteLink).trim();
+  if (link) {
+    lines.push('');
+    lines.push('הצטרפות לקבוצה:');
+    lines.push(link);
+  }
+  lines.push('');
+  lines.push(ft.line1);
+  lines.push(ft.line2);
+  const html = renderEmailHtml({
+    title: 'קבוצת המילים של ' + name + ' מוכנה',
+    bodyLines,
+    cta: link ? { label: 'הצטרפות לקבוצה', url: link } : null,
+    baseUrl,
+  });
+  return { subject, text: lines.join('\n'), html };
+}
+
 // Pure builder: the "your order is still waiting for payment" reminder — sent to
 // the buyer when an order has sat unpaid past the configured delay. The CTA links
 // to the buyer's own pay page (the collect page with their owner token, which
@@ -989,6 +1021,23 @@ async function sendWordsReminder(collection, baseUrl) {
   }
 }
 
+// Send the buyer their WhatsApp group's join link. Returns true only when the
+// mail actually went out, so the caller can escalate when the buyer would
+// otherwise be left with no way into their own group. Skips gracefully with no
+// address or no link, and stays dormant when Resend is unconfigured. Never throws.
+async function sendGroupInvite(collection, inviteLink, baseUrl) {
+  try {
+    if (!settings.emailEnabled('group_invite')) return false;
+    const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
+    if (!to) return false;
+    if (!inviteLink) return false;
+    return await send({ ...buildGroupInvite(collection, inviteLink, baseUrl), to });
+  } catch (e) {
+    console.warn('[notify] sendGroupInvite failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
 // Fire the "complete your payment" reminder to the buyer (owner_email). Skips
 // gracefully when that address is missing, and stays dormant when Resend is
 // unconfigured. `baseUrl` is the normalized public origin (optional). Never throws.
@@ -1172,6 +1221,7 @@ module.exports = {
   buildWordsReminder,
   buildPaymentReminder,
   buildFreeLimitReached,
+  buildGroupInvite,
   buildSystemAlert,
   sendSystemAlert,
   sendOrderPaid,
@@ -1183,6 +1233,7 @@ module.exports = {
   sendPdfReady,
   sendProductionError,
   sendWordsReminder,
+  sendGroupInvite,
   sendPaymentReminder,
   sendFreeLimitReached,
   sendReminderEmail,

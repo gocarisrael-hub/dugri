@@ -5,7 +5,7 @@
 // (deterministic window gate). Asserts a due unpaid order gets an email + a
 // WhatsApp DM once, is idempotent, respects the master switch, and skips paid
 // orders.
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -82,6 +82,16 @@ beforeEach(() => {
     enabled: true,
     timing: { delays: [24], window: [9, 21] },
   });
+  // The WhatsApp half of this reminder is a COLD DM to a buyer who never
+  // messaged the bot — a reachout, and one of the actions the previous number
+  // was banned for. It is therefore skipped entirely in the default invite_link
+  // mode, so these cases opt into auto_add to exercise it. (The email half runs
+  // in both modes; see wa-group-mode.test.js for the safe-mode behaviour.)
+  settings.set('wa', 'group_mode', 'auto_add');
+});
+
+afterEach(() => {
+  settings.reset('wa', 'group_mode');
 });
 
 // Unique contact per test — the db accumulates across tests in one file, so

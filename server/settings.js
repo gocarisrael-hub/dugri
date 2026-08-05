@@ -173,6 +173,23 @@ const REGISTRY = {
         body: 'לא הצלחנו להפיק את הקובץ של {honoree} — יש לתקן את הנקודות הבאות:',
       },
     },
+    // The WhatsApp group's JOIN LINK, emailed to the buyer once their collection
+    // group is open. This is how the buyer reaches their group in the default
+    // (safe) invite_link mode — the bot never adds anyone and never DMs, so the
+    // link has to travel over a channel we own. See server/wa-guard.js.
+    group_invite: {
+      kind: 'email',
+      tokens: ['honoree'],
+      default: {
+        enabled: true,
+        subject: 'דוגרי · קבוצת המילים של {honoree} מוכנה',
+        body:
+          'פתחנו קבוצת וואטסאפ לאיסוף המילים על {honoree}.\n' +
+          '\n' +
+          'הצטרפו לקבוצה מהקישור למטה, וצרפו אליה את כל מי שמכיר/ה את {honoree} — ' +
+          'כל אחד/ת יכול/ה לכתוב מילים ישירות בקבוצה, ואנחנו אוספים אותן משם.',
+      },
+    },
     words_reminder: {
       kind: 'email',
       tokens: ['honoree'],
@@ -404,6 +421,29 @@ const REGISTRY = {
         timing: { delays: [48, 120, 168], window: [9, 21] },
       },
     },
+    // --- Ban-safety knobs (NOT message copy; see server/wa-guard.js) ----------
+    // These two exist because the previous bot number was banned for REACHOUT —
+    // adding people to groups and DMing them cold. They are rendered by their own
+    // admin panel, not as trigger cards (see HIDDEN_WA in admin-texts.html).
+    //
+    // group_mode — how a word-collection group is opened:
+    //   'invite_link' (default, safe): open an EMPTY group and give the buyer a
+    //     JOIN LINK in their confirmation email / order page. The bot contacts
+    //     nobody, so there is no reachout to be restricted for.
+    //   'auto_add' (risky): create the group with the buyer already added. Nicer
+    //     for the buyer, but it is exactly what got the last number banned — so it
+    //     is opt-in AND still subject to the breaker and the daily cap.
+    group_mode: {
+      kind: 'choice',
+      choices: ['invite_link', 'auto_add'],
+      tokens: [],
+      default: 'invite_link',
+    },
+    // The most reachouts (group-adds + cold DMs) allowed in one Israel-time day.
+    // Small on purpose: real volume is a few orders a day, so this only bites on a
+    // runaway loop, a backlog replay, or a second instance sharing the channel —
+    // the shapes that burn a number. 0 disables reachout entirely.
+    reachout_daily_max: { kind: 'count', min: 0, max: 200, tokens: [], default: 5 },
   },
   // --- Buyer-wizard feature flags -------------------------------------------
   // Owner-controlled on/off switches for four buyer-facing wizard features that
@@ -658,8 +698,13 @@ function validateValue(section, key, value) {
     // keys carry min:1 — a CHARGED price can never be 0 (a 0 total is treated as a
     // free/paid order downstream). Rejects strings ('199'), floats (1.5), values
     // below min, and null so a bad write can never reach the charge path.
+    // An optional `max` bounds the upper end too. Only keys that declare one are
+    // affected (wa.reachout_daily_max, where an absurd cap would defeat the point
+    // of having a safety cap at all); keys without a `max` behave as before.
     const min = Number.isInteger(spec.min) ? spec.min : 0;
-    if (!Number.isInteger(value) || value < min) {
+    const max = Number.isInteger(spec.max) ? spec.max : null;
+    if (!Number.isInteger(value) || value < min || (max !== null && value > max)) {
+      if (max !== null) return 'value must be an integer between ' + min + ' and ' + max;
       return min > 0 ? 'value must be a positive integer' : 'value must be a non-negative integer';
     }
     return null;
@@ -684,6 +729,17 @@ function validateValue(section, key, value) {
     // 1/0, null, {}, []) so the wizard's gate condition is never truthy-by-
     // accident from a mis-typed override.
     if (typeof value !== 'boolean') return 'value must be a boolean';
+    return null;
+  }
+  if (kind === 'choice') {
+    // One of a fixed set of strings. Rejecting anything else matters here: an
+    // unrecognised wa.group_mode would fall back to the SAFE mode at read time,
+    // so a typo'd write would silently ignore the owner's intent rather than
+    // erroring — better to refuse the write and say so.
+    const choices = Array.isArray(spec.choices) ? spec.choices : [];
+    if (typeof value !== 'string' || !choices.includes(value)) {
+      return 'value must be one of: ' + choices.join(', ');
+    }
     return null;
   }
   if (kind === 'reminders') {
