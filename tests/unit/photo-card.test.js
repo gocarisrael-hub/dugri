@@ -365,10 +365,21 @@ describe('photo card documentation', () => {
     for (const id of SLOT_IDS) expect(doc).toContain(id);
   });
 
-  // Without a white disc there is no graceful degradation: an opaque photo
-  // prints as a rectangle. That has to be stated, not implied.
-  it('states that a transparent cutout is REQUIRED', () => {
-    expect(doc).toMatch(/transparent cutout is REQUIRED/i);
+  // The doc used to say the opposite — an uncut photo was meant to print as an
+  // obvious white-edged rectangle. The owner rejected that, so the generator
+  // clips EVERY photo to the disc. Stating the reversal is the whole point:
+  // someone reading the old rule would happily "restore" it as a bug fix.
+  it('states that a photo never prints as a rectangle', () => {
+    expect(doc).toMatch(/never prints as a rectangle/i);
+    expect(doc).toMatch(/unconditionally/i);
+    expect(doc).toMatch(/do not restore it/i);
     expect(doc).toMatch(/alpha/i);
+  });
+
+  // The card no longer advertises a failed cut, so the RECORD is what catches
+  // it. If that stops being documented, the miss becomes invisible.
+  it('says a failed cut is still recorded on the collection', () => {
+    expect(doc).toMatch(/pawn_cutouts/);
+    expect(doc).toMatch(/null/);
   });
 });

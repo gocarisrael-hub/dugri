@@ -614,6 +614,10 @@ def _opaque_outside_disc(img, fill=None, slack=2):
 
 
 def test_a_portrait_photo_is_squared_keeping_the_head():
+    # DEGRADED PATH (_portrait is opaque): the clip to the disc is unconditional,
+    # but the FRAMING still falls back to the PHOTO_SUBJECT_Y guess, and that is
+    # the one place the guess still earns its keep — it decides which part of the
+    # person the circle keeps. A plain centre crop would keep her torso.
     from PIL import Image
     with Store() as tmp:
         src = _portrait(os.path.join(tmp, "p.png"))
@@ -653,30 +657,33 @@ def test_the_square_matches_the_photo_card_contract_size():
 
 def test_the_subject_lands_inside_the_slot_s_visible_disc():
     # DEGRADED PATH — an opaque photo, so the head-anchored square is all we
-    # have. The slot's cut-line is the square's inscribed circle, so a subject
-    # pinned near the top edge would be cut in half by it. Nothing clips this
-    # crop (docs/photo-card.md wants an uncut photo to look obviously wrong),
-    # which is exactly why the head has to land near the middle by itself.
+    # have. The square IS clipped to the disc now (a photo never prints as a
+    # rectangle), so anything the guess leaves outside the circle is not merely
+    # covered, it is cut off the sticker: the head has to land inside the disc by
+    # itself or the buyer gets a shaved crown. Measured against the real
+    # PHOTO_DISC_FILL, and on VISIBLE pixels — clipping only zeroes the alpha,
+    # the RGB underneath survives a convert("RGB").
     import math
     from PIL import Image
     with Store() as tmp:
         src = _portrait(os.path.join(tmp, "p.png"))
         out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
         with Image.open(out) as sq:
-            px = sq.convert("RGB").load()
+            px = sq.convert("RGBA").load()
             side = sq.size[0]
             cx = cy = side / 2.0
+            r_disc = side * build.PHOTO_DISC_FILL / 2.0
             inside = outside = 0
             for y in range(0, side, 4):
                 for x in range(0, side, 4):
-                    r, g, b = px[x, y]
+                    r, g, b, a = px[x, y]
                     if abs(r - 250) < 25 and abs(g - 220) < 25 and abs(b - 190) < 25:
-                        if math.hypot(x - cx, y - cy) <= side / 2.0:
-                            inside += 1
+                        if math.hypot(x - cx, y - cy) <= r_disc:
+                            inside += a >= 24
                         else:
                             outside += 1
         assert inside > 0, "the test photo's head should be in the crop at all"
-        assert outside == 0, f"{outside} head pixels fall outside the visible disc"
+        assert outside == 0, f"{outside} head pixels are clipped away by the disc"
 
 
 def test_an_unreadable_photo_falls_back_to_the_original():
@@ -924,12 +931,17 @@ def test_subject_window_may_run_off_the_photo():
     assert win[2] - win[0] == win[3] - win[1], win
 
 
-# --- no usable alpha: the old square crop, unclipped -------------------------
+# --- no usable alpha: the head-anchored square, clipped to the disc anyway ---
+# A photo NEVER prints as a rectangle (docs/photo-card.md point 1). The framing
+# degrades when the cut fails — PHOTO_SUBJECT_Y guesses the square instead of the
+# alpha measuring it — but the CLIP does not: the slot always gets a round PNG.
 
-def test_a_photo_with_no_usable_alpha_keeps_the_old_square_crop():
-    # docs/photo-card.md point 1 — an uncut photo must print as an obvious
-    # white-edged rectangle, not quietly look almost right. So the degraded path
-    # is byte-for-byte the crop we shipped before, and is NOT clipped to a disc.
+def test_a_photo_with_no_usable_alpha_is_still_clipped_to_the_disc():
+    # THE RULE. An uncut photo used to fall through unclipped, so the halo —
+    # dilated from the image's own alpha — traced the square and the card printed
+    # a white-edged rectangle. The owner has seen that rendered and does not want
+    # it: every slot is round, always. Do not restore the rectangle.
+    import math
     from PIL import Image
     with Store() as tmp:
         src = _portrait(os.path.join(tmp, "p.png"))
@@ -939,15 +951,24 @@ def test_a_photo_with_no_usable_alpha_keeps_the_old_square_crop():
             side = sq.size[0]
             a = sq.getchannel("A").load()
             corners = [a[0, 0], a[side - 1, 0], a[0, side - 1], a[side - 1, side - 1]]
-        assert corners == [255, 255, 255, 255], (
-            f"the degraded path clipped the photo to a disc ({corners}) — an "
-            "uncut photo is meant to look broken, not almost right")
+            stray = _opaque_outside_disc(sq)
+            # …and the disc is FILLED, not a ring of stray alpha: an opaque photo
+            # has no silhouette of its own, so the whole circle is subject.
+            c = side / 2.0
+            r = side * build.PHOTO_DISC_FILL / 2.0 - 3
+            holes = sum(1 for y in range(0, side, 3) for x in range(0, side, 3)
+                        if math.hypot(x - c, y - c) <= r and a[x, y] < 250)
+        assert corners == [0, 0, 0, 0], (
+            f"an uncut photo reached the slot as a rectangle ({corners}) — the "
+            "halo would trace its corners and print a white-edged box")
+        assert stray == 0, f"{stray} opaque pixels outside the clip disc"
+        assert holes == 0, f"{holes} transparent pixels inside the disc"
 
 
 def test_a_collapsed_cut_falls_back_instead_of_framing_on_nothing():
     # A cut that found almost nothing (one stray pixel) must not be framed on:
     # it would zoom that pixel to fill the disc. Below PHOTO_SUBJECT_MIN_COVER we
-    # treat the photo as uncut and print it.
+    # treat the photo as uncut, crop it by the guess and clip it like any other.
     from PIL import Image
     with Store() as tmp:
         src = os.path.join(tmp, "empty.png")
@@ -959,6 +980,22 @@ def test_a_collapsed_cut_falls_back_instead_of_framing_on_nothing():
         with Image.open(out) as sq:
             assert sq.size == (build.PHOTO_SLOT_PX, build.PHOTO_SLOT_PX)
             assert sq.mode == "RGBA"
+            assert _opaque_outside_disc(sq) == 0
+
+
+def test_the_shipped_fallback_pawns_survive_the_unconditional_clip():
+    # The generic pawns are SVG artwork drawn at 1.2x so they cross the cut-line,
+    # and they reach the slot WITHOUT passing through square_photo — resolve_photos
+    # tops up with them untouched. Clipping every customer photo must not start
+    # clipping (or corrupting) them: Pillow cannot open an SVG, and square_photo's
+    # own catch-all returns the original path rather than failing an order.
+    with Store() as tmp:
+        paths = config.photo_fallback_paths("demo")
+        assert len(paths) == 4, paths
+        got = build.resolve_photos("demo", [], workdir=os.path.join(tmp, "sq"))
+        assert got == paths, "a fallback pawn was rewritten on its way to the slot"
+        for p in paths:
+            assert build.square_photo(p, os.path.join(tmp, "sq"), 0) == p
 
 
 # --- a template with no recipe yet ------------------------------------------
