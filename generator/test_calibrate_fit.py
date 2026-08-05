@@ -106,6 +106,80 @@ def test_a_single_line_title_keeps_the_renderers_own_step():
     assert abs(got - 26.0) <= 0.5, got
 
 
+def test_the_fit_answers_over_the_sample_names_the_artwork_looks_like():
+    """The artwork carries ONE honoree name; the samples straddle the extremes.
+
+    A Hebrew line with a lamed is much taller than one without, so a median over
+    the whole spread charges the size with the difference between the original's
+    name and ours — three percent under Canva on ברוקלין. The row profile can
+    tell which samples the artwork is like, so the fit answers over those.
+
+    Built as the real case: an "original" painted in a name with NO ascender,
+    fitted against four samples of which half carry one.
+    """
+    size = 26.0
+    plain = ["חן בן 30"]
+    tall = ["לירן בן 30"]
+    samples = [plain, tall, ["דן בן 30"], ["לילך בן 30"]]
+    ink = C._paint(HEBREW_FONT, plain, size * PPU, ALPHA)
+    naive = C._fit_size(ink.size[1], HEBREW_FONT, samples, PPU, ALPHA)
+    matched = C.size_from_matching_samples(ink, HEBREW_FONT, samples, PPU, ALPHA,
+                                           0.0, None)
+    # The ascender-carrying samples paint taller ink, so the blanket median fits
+    # the size DOWN; matching must land closer to what the ink was painted at.
+    assert abs(C._paint(HEBREW_FONT, tall, size * PPU, ALPHA).size[1]
+               - ink.size[1]) > 2, "the samples must differ in ink height"
+    assert abs(matched - size) < abs(naive - size), (naive, matched)
+    assert abs(matched - size) / size <= 0.03, matched
+
+
+def test_matching_cannot_let_one_sample_decide():
+    """It stays a MEDIAN over the better-matching half, never a single pick.
+
+    With four samples the half is two, so the answer is their midpoint — a lone
+    sample that matches best cannot carry the size on its own.
+    """
+    size = 22.0
+    samples = [["נעמה"], ["לירן"], ["יונתן"], ["לירון"]]
+    ink = C._paint(HEBREW_FONT, samples[0], size * PPU, ALPHA)
+    got = C.size_from_matching_samples(ink, HEBREW_FONT, samples, PPU, ALPHA,
+                                       0.0, None)
+    each = sorted(C._fit_size(ink.size[1], HEBREW_FONT, [s], PPU, ALPHA)
+                  for s in samples)
+    assert each[0] <= got <= each[-1], (each, got)
+
+
+def test_a_title_with_no_name_in_it_cannot_be_moved_by_matching():
+    # קופקבנה's title says the same thing whoever the honoree is, so its four
+    # samples are identical and the matching pass has nothing to choose between.
+    samples = [LINES, LINES, LINES, LINES]
+    ink = C._paint(HEBREW_FONT, LINES, 24.0 * PPU, ALPHA)
+    assert (C.size_from_matching_samples(ink, HEBREW_FONT, samples, PPU, ALPHA,
+                                         0.0, None)
+            == C._fit_size(ink.size[1], HEBREW_FONT, samples, PPU, ALPHA))
+
+
+def test_the_leading_is_scored_at_the_size_the_fit_answers_over_every_name():
+    """The block painted for the profile score is painted AT the candidate size.
+
+    So bisecting that size against one sample name let that name decide the
+    spacing after all — the very thing scoring over every name exists to prevent
+    — and scored a (size, leading) pair the fit would never return.
+
+    Built as a two-line block set at a leading the renderer does not use, with a
+    first line whose name is NOT the one that comes first in the samples.
+    """
+    size, leading = 24.0, 1.10
+    origin = ["לירון", "מסיבה גדולה"]
+    samples = [["נעמה", "מסיבה גדולה"], origin,
+               ["דן", "מסיבה גדולה"], ["לילך", "מסיבה גדולה"]]
+    ink = C._paint(HEBREW_FONT, origin, size * PPU, ALPHA, pitch=leading)
+    got, found, _score = C.solve_size_and_leading(ink, HEBREW_FONT, samples,
+                                                  PPU, ALPHA)
+    assert abs(found - leading) <= 0.06, found
+    assert abs(got - size) / size <= 0.03, got
+
+
 def test_a_leading_unlike_the_renderers_is_reported_to_the_owner():
     size = 24.0
     ink = C._paint(HEBREW_FONT, _TWO[0], size * PPU, ALPHA, pitch=1.30)
@@ -199,6 +273,197 @@ def test_the_calibrators_and_the_renderers_block_are_the_same_block():
         assert abs(moved - want) < 1e-6, (pitch, moved, want)
 
 
+# ---- ONE TEXT BOX, SEVERAL SURFACES -----------------------------------------
+#
+# A design's front, board and card back are usually the same title laid out once
+# and reused at three scales, and a block reused at another scale is stacked at
+# the same leading. Measured on the shipped set: פריז's front settles at 0.72
+# and its back one step away at 0.74, and that ONE STEP is the whole of the
+# back's error against the owner's Canva value (−3.2% at 0.74, −1.4% at 0.72).
+# But טריפה's back genuinely stacks a third wider than its front, so the sharing
+# has to be tested against the ink rather than assumed.
+
+_TITLE_SAMPLES = [["נעמה", "מסיבה גדולה"], ["לירן", "מסיבה גדולה"],
+                  ["דן", "מסיבה גדולה"], ["לילך", "מסיבה גדולה"]]
+
+
+def _curve(peak, scatter=0.0, sharpness=0.4, n=4):
+    """A leading curve with a KNOWN peak and a known per-name scatter.
+
+    The decision `couple_leadings` makes is arithmetic over the curves, so it is
+    tested on curves rather than on painted ink: a real block's argmax depends
+    on FreeType's rasterisation, which differs between a dev machine and CI by
+    enough to move it a step or two (this file's own header says as much), and a
+    test of the ARITHMETIC must not fail for that reason. The painted round trip
+    below covers the physical half.
+
+    ``scatter`` is how far apart the sample honoree names score, which is what
+    `_score_noise` reads the noise floor off. ``sharpness`` is how fast the
+    score falls away from the peak — a surface whose ink pins its spacing
+    tightly, against one whose ink barely can.
+    """
+    rows = []
+    for pitch in C._PITCH_GRID:
+        score = 1.0 - sharpness * abs(pitch - peak)
+        half = scatter / 2.0
+        # Symmetric about the median, so the median IS ``score`` and only the
+        # spread — the noise floor — changes with ``scatter``.
+        samples = [score - half, score - half, score + half, score + half][:n]
+        rows.append((pitch, 24.0, score, samples))
+    return rows
+
+
+def test_surfaces_that_are_one_block_at_two_scales_share_one_leading():
+    # פריז: its front settles one grid step from its back, and the ink of each
+    # is content at the other's. The shared answer is their median, and it is a
+    # value on the grid they were scored at.
+    front, back = _curve(0.72, scatter=0.04), _curve(0.74, scatter=0.04)
+    shared, why = C.couple_leadings({"front": front, "back": back})
+    assert why is None, why
+    assert shared in C._PITCH_GRID and 0.72 <= shared <= 0.74, shared
+
+
+def test_a_surface_stacked_differently_is_left_alone():
+    # טריפה: its back stacks its two lines a third further apart than its front,
+    # and both surfaces pin their own spacing tightly. Sharing one would put a
+    # size far out, so the whole set keeps what its own ink said — and the owner
+    # is told WHICH surface disagreed and what it reads.
+    front, back = _curve(1.00, scatter=0.001), _curve(1.40, scatter=0.001)
+    shared, why = C.couple_leadings({"front": front, "back": back})
+    assert shared is None
+    assert why and "NOT one block" in why
+    assert "front" in why or "back" in why, why
+
+
+def test_a_third_surface_that_agrees_with_neither_stops_the_whole_set():
+    # סנטוריני: its front and back both read 0.50 and its board 0.98. The two
+    # that agree do not get to couple over the one that does not — the claim
+    # being tested is "this design reuses ONE block", and a surface that plainly
+    # does not refutes it for the design.
+    curves = {"front": _curve(0.50, scatter=0.001),
+              "back": _curve(0.50, scatter=0.001),
+              "board": _curve(0.98, scatter=0.001)}
+    shared, why = C.couple_leadings(curves)
+    assert shared is None
+    assert why and "board" in why, why
+
+
+def test_surfaces_whose_names_scatter_too_far_to_tell_apart_are_coupled():
+    # The other side of the same rule, stated honestly: the refusal is "the ink
+    # can TELL these apart", not "the peaks differ". Identical peaks to the
+    # refusal above, but sample names that disagree far more than the peaks do —
+    # so nothing here is evidence about the spacing, and the design's several
+    # readings are pooled rather than each trusted on its own.
+    front, back = _curve(1.00, scatter=0.9), _curve(1.40, scatter=0.9)
+    shared, why = C.couple_leadings({"front": front, "back": back})
+    assert why is None, why
+    assert shared is not None and 1.00 <= shared <= 1.40, shared
+
+
+def test_one_surface_on_its_own_has_nothing_to_couple():
+    front = _curve(0.90, scatter=0.01)
+    assert C.couple_leadings({"front": front}) == (None, None)
+    assert C.couple_leadings({}) == (None, None)
+    assert C.couple_leadings(None) == (None, None)
+    # ...and a surface whose fit produced no curve at all (a single-line title)
+    # cannot drag the others: it simply is not one of the readings.
+    assert C.couple_leadings({"front": front, "back": []}) == (None, None)
+
+
+def test_the_painted_round_trip_couples_two_scales_of_one_block():
+    # The physical half: the SAME block painted large and small at one spacing.
+    # Asserted against what the two surfaces themselves answered rather than
+    # against the number they were painted at — FreeType moves an argmax by a
+    # step between machines, and what this has to guarantee is that the shared
+    # answer sits among its surfaces' own readings and that re-solving each
+    # size at it returns that surface to the size it was painted at.
+    origin, pitch = _TITLE_SAMPLES[1], 0.92
+    sizes = {"front": 22.0, "back": 34.0}
+    inks = {k: C._paint(HEBREW_FONT, origin, v * PPU, ALPHA, pitch=pitch)
+            for k, v in sizes.items()}
+    curves = {k: C.leading_curve(v, HEBREW_FONT, _TITLE_SAMPLES, PPU, ALPHA)
+              for k, v in inks.items()}
+    own = {k: max(v, key=lambda row: row[2])[0] for k, v in curves.items()}
+    shared, why = C.couple_leadings(curves)
+    assert why is None, (why, own)
+    assert min(own.values()) <= shared <= max(own.values()), (shared, own)
+    for key, ink in inks.items():
+        fit = {"ink": ink, "font": HEBREW_FONT, "samples": _TITLE_SAMPLES,
+               "ppu": PPU, "alpha": ALPHA, "ring": 0.0}
+        got = C.refit_at_leading(fit, pitch)
+        assert abs(got - sizes[key]) / sizes[key] <= 0.03, (key, got)
+
+
+def test_the_shared_leading_is_one_the_curves_were_actually_swept_at():
+    # The median of an even number of surfaces lands between two grid steps, and
+    # no score was ever measured there — so the answer is snapped back onto the
+    # grid the curves were swept on rather than interpolated onto a value no
+    # surface was scored at. Two surfaces a single step apart is exactly that
+    # case: their median is half a step, which is not on the grid.
+    one, two = _curve(0.90, scatter=0.04), _curve(0.92, scatter=0.04)
+    shared, why = C.couple_leadings({"front": one, "back": two})
+    assert why is None, why
+    assert shared in C._PITCH_GRID, shared
+    assert shared in (0.90, 0.92), shared
+
+
+def test_a_coupled_surface_is_re_solved_at_the_shared_leading():
+    # The size and the leading are one answer, so a surface handed a spacing
+    # from elsewhere must have its SIZE re-solved at it — not kept from the fit
+    # that assumed a different one. Painted at 26 and 0.92, a size re-solved at
+    # 0.92 has to come back to 26 whatever the surface's own argmax was.
+    size, pitch = 26.0, 0.92
+    ink = C._paint(HEBREW_FONT, _TITLE_SAMPLES[1], size * PPU, ALPHA, pitch=pitch)
+    fit = {"ink": ink, "font": HEBREW_FONT, "samples": _TITLE_SAMPLES,
+           "ppu": PPU, "alpha": ALPHA, "ring": 0.0}
+    got = C.refit_at_leading(fit, pitch)
+    assert abs(got - size) / size <= 0.03, got
+    assert C.refit_at_leading(fit, None) is None
+    assert C.refit_at_leading(None, pitch) is None
+
+
+def test_a_score_difference_smaller_than_the_names_disagree_is_not_evidence():
+    # The noise floor the agreement is tested against: the score IS a median
+    # over the sample honoree names, so how much those names disagree is how
+    # finely it can be read at all. Names that agree exactly leave no room —
+    # anything can then be told apart — and names that scatter leave a lot.
+    assert C._score_noise([0.5, 0.5, 0.5, 0.5]) == 0.0
+    assert C._score_noise([0.5]) == 0.0
+    assert C._score_noise([0.4, 0.6, 0.4, 0.6]) > C._score_noise(
+        [0.49, 0.51, 0.49, 0.51])
+
+
+def test_the_leading_curve_leaves_the_solve_rather_than_being_swept_twice():
+    # Sweeping the grid is the whole cost of the title fit, and the coupling
+    # needs every surface's curve — so the solve hands out the one it took its
+    # argmax of instead of the caller measuring it again.
+    ink = C._paint(HEBREW_FONT, _TWO[0], 24.0 * PPU, ALPHA, pitch=1.10)
+    curve = []
+    size, lead, score = C.solve_size_and_leading(ink, HEBREW_FONT, _TWO, PPU,
+                                                 ALPHA, curve_out=curve)
+    assert curve, "the curve must come back out"
+    best = max(curve, key=lambda row: row[2])
+    assert abs(best[0] - lead) < 1e-9 and abs(best[2] - score) < 1e-9
+    assert all(row[0] in C._PITCH_GRID for row in curve)
+    assert size is not None
+
+
+def test_a_surfaces_whole_reading_is_recorded_for_the_coupling():
+    # ...and it has to be the reading, not a copy of some of it: the coupling
+    # re-solves the size off exactly the ink, ring and alpha the first fit used.
+    ink = C._paint(HEBREW_FONT, _TWO[0], 24.0 * PPU, ALPHA, pitch=1.10)
+    mask, image, box = _origin(ink)
+    fit = {}
+    size, _grade, _note, _ctx, lead = C.fit_title_size(
+        mask, image, box, PPU, 0.0, 0.0, HEBREW_FONT, _TWO, "#000000",
+        fit_out=fit)
+    for field in ("ink", "font", "samples", "ppu", "alpha", "ring", "curve",
+                  "size", "leading", "box_h"):
+        assert field in fit, field
+    assert fit["size"] == size and fit["leading"] == lead
+    assert abs(C.refit_at_leading(fit, lead) - size) < 1e-9
+
+
 def test_the_profile_match_compares_shape_and_not_amount():
     # The origin says another honoree's name, so the AMOUNT of ink can never
     # agree; where down the block it sits can.
@@ -208,10 +473,9 @@ def test_the_profile_match_compares_shape_and_not_amount():
     assert C._profile_match(a, list(reversed(a))) < 0.85
 
 
-def test_the_word_fit_returns_the_size_its_rows_were_painted_at():
-    size = 18.0
-    words = ["מסיבה", "חברים", "ריקודים", "צחוקים"]
-    rows = [C._paint(HEBREW_FONT, [w], size * PPU, ALPHA, marker=i + 1)
+def _word_surface(words, size, marker_from=1):
+    """One front's ``(mask, image, slots, ppu, ox, oy)`` painted at ``size``."""
+    rows = [C._paint(HEBREW_FONT, [w], size * PPU, ALPHA, marker=marker_from + i)
             for i, w in enumerate(words)]
     width = max(r.size[0] for r in rows)
     pad, gap = 40, 30
@@ -225,7 +489,13 @@ def test_the_word_fit_returns_the_size_its_rows_were_painted_at():
                       "y1": (y + row.size[1]) / PPU, "color": "#000000"})
         y += row.size[1] + gap
     image = Image.new("RGB", mask.size, (255, 255, 255))
-    got, grade, note = C.fit_word_size(mask, image, slots, PPU, 0.0, 0.0,
+    return (mask, image, slots, PPU, 0.0, 0.0)
+
+
+def test_the_word_fit_returns_the_size_its_rows_were_painted_at():
+    size = 18.0
+    words = ["מסיבה", "חברים", "ריקודים", "צחוקים"]
+    got, grade, note = C.fit_word_size([_word_surface(words, size)],
                                        HEBREW_FONT, words)
     assert abs(got - size) <= 1.0, got
     # The grade is now how far the FOUR ROWS disagree, which is a real question
@@ -325,11 +595,52 @@ def test_the_word_fit_refuses_degenerate_input():
     blank = Image.new("L", (200, 200), 0)
     image = Image.new("RGB", blank.size, (255, 255, 255))
     slot = {"x0": 10, "y0": 10, "x1": 80, "y1": 30, "color": "#000000"}
-    assert C.fit_word_size(blank, image, [], PPU, 0, 0, HEBREW_FONT, ["a"])[0] is None
-    assert C.fit_word_size(blank, image, [slot], PPU, 0, 0, HEBREW_FONT, [])[0] is None
-    got, grade, note = C.fit_word_size(blank, image, [slot, slot], PPU, 0, 0,
+    assert C.fit_word_size([(blank, image, [], PPU, 0, 0)],
+                           HEBREW_FONT, ["a"])[0] is None
+    assert C.fit_word_size([(blank, image, [slot], PPU, 0, 0)],
+                           HEBREW_FONT, [])[0] is None
+    got, grade, note = C.fit_word_size([(blank, image, [slot, slot], PPU, 0, 0)],
                                        HEBREW_FONT, ["מסיבה"])
     assert got is None and grade is None and "auto-fit" in note
+
+
+def test_the_word_fit_reads_every_front_and_not_only_the_first():
+    """The deck sets ONE word size, so every front's rows are evidence about it.
+
+    Reading one card makes the answer a median of four rows, and a numbered row's
+    body band moves with how long its entry is (the marker is set at 0.9 of the
+    word size beside a word set at it). So a card whose four entries are unusually
+    short pulls the whole deck's size off — which is exactly what happened on פריז
+    (−4.5%) and סיישל (−12.3%) against the owner's Canva values.
+
+    Proved on two fronts deliberately painted at DIFFERENT sizes, which real
+    artwork never is: read alone, the first answers its own size, and read
+    together the pair answers between the two. A fit that still looked at one
+    card would return the same number both times.
+    """
+    words = ["מסיבה", "חברים", "ריקודים", "צחוקים"]
+    one = _word_surface(words, 18.0)
+    two = _word_surface(words, 20.0)
+    from_one = C.fit_word_size([one], HEBREW_FONT, words)[0]
+    from_both = C.fit_word_size([one, two], HEBREW_FONT, words)[0]
+    assert abs(from_one - 18.0) <= 1.0, from_one
+    assert from_one < from_both < 20.0, (from_one, from_both)
+
+
+def test_a_v1_sheet_pays_no_extra_render_for_its_other_cards():
+    """A sheet holds all eight cards in ONE raster, so pooling them is free.
+
+    The surfaces it returns must all be that same already-rendered mask, with only
+    the recipe's per-cell slots differing — anything else would mean the pass had
+    gone back to Chrome for artwork it already has.
+    """
+    mask, image, slots, ppu, ox, oy = _word_surface(["מסיבה", "חברים"], 18.0)
+    first = (mask, image, slots, ppu, ox, oy)
+    recipe = {"cards": [{"words": slots}, {"words": slots}, None,
+                        {"words": []}]}
+    got = C.word_surfaces("t", {}, recipe, False, "/nonexistent", first)
+    assert len(got) == 2
+    assert all(s[0] is mask and s[1] is image for s in got)
 
 
 # ---- bold ------------------------------------------------------------------
