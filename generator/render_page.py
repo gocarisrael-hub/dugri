@@ -1970,10 +1970,12 @@ def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
         style["outline"] = bk.get("outline", ts["outline"])
     # ...and the back's own LINE SPACING, resolved down the same chain the size
     # is: this back's own, then the deck-wide back spacing, then the fronts'.
-    # A design's surfaces are separate text boxes and are spaced separately —
+    # Most designs reuse one block on every surface and the calibrator writes
+    # them all the same number (calibrate.couple_leadings), but not all do —
     # tarifa's back stacks its two lines a third further apart than its front —
-    # and the back's pinned SIZE was measured at the back's spacing, so drawing
-    # it at the front's would print a size that was never measured.
+    # and the back's pinned SIZE was measured at whichever spacing it ended up
+    # with, so drawing it at another one would print a size that was never
+    # measured.
     style["leading"] = back_leading(ts, bk)
     cfg_back = {**cfg, "title_style": style}
     # A paired back may need its own size: eight separately drawn backs give the

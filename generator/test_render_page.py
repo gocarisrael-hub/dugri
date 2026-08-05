@@ -1940,12 +1940,14 @@ def test_a_single_line_title_is_unaffected_by_the_leading():
 
 
 def test_each_surface_is_stacked_at_its_own_measured_spacing():
-    # A design's front, board and backs are separate text boxes and are spaced
-    # separately — tarifa's back stacks its two lines a third further apart than
-    # its front. Each surface's pinned SIZE was fitted at its own spacing, so
-    # drawing a back at the front's prints a size nobody measured: forcing one
-    # deck-wide leading put tarifa's back 21% over the Canva value it had been
-    # matching to 2%.
+    # A design's front, board and backs CAN be spaced separately — tarifa's back
+    # stacks its two lines a third further apart than its front — and where the
+    # calibrator finds that (calibrate.couple_leadings refuses to share a
+    # leading its surfaces' ink disagrees on) each surface carries its own.
+    # Each surface's pinned SIZE was fitted at whatever spacing it ended up
+    # with, so drawing a back at the front's prints a size nobody measured:
+    # forcing one deck-wide leading put tarifa's back 21% over the Canva value
+    # it had been matching to 2%.
     ts = {"leading": 0.90, "back_leading": 1.30, "board_leading": 1.10}
     assert rp.back_leading(ts) == 1.30
     assert rp.board_leading(ts) == 1.10
