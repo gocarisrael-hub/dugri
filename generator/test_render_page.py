@@ -2008,6 +2008,16 @@ def test_the_collision_floor_counts_the_painted_ring_not_just_the_glyph():
 # tightest leading the store will accept, carrying the longest honoree name that
 # can be constructed, and the rendered pixels are asked whether any two lines
 # touch.
+#
+# WHAT "TOUCH" MEANS. This used to demand a fully CLEAR ROW between every pair
+# of baselines, which is not the rule — it is a much stronger one, and it is the
+# rule that printed סנטוריני at 1.18 where its design sets 0.50 and סיישל at
+# 0.887 against 0.68. A design is entitled to let one line's descender hang
+# BESIDE the next line's ascender: no row is clear, and no glyph is anywhere
+# near another. So the lines are now drawn on separate layers and the question
+# put exactly as the owner puts it — does any pixel of one line meet any pixel
+# of the next. Each layer is dilated a pixel first, because Chrome's antialiased
+# rim welds two outlines that merely abut (#329).
 
 # The longest name a buyer can realistically enter, in each script, chosen to
 # hang ink BOTH ways across the gap: the Hebrew ends in a final-kaf that dives
@@ -2021,23 +2031,45 @@ _LONG_NAMES = {"hebrew": "אלכסנדרה-מרגריטה־לך",
 _TIGHTEST_ALLOWED_LEADING = 0.50
 
 
-def _chrome_ink_rows(svg_text, w, h, scale, out_png):
-    """Row ink profile of an SVG rendered through the production rasterizer."""
-    import subprocess
+_TEXT_RE = re.compile(r"<text\b.*?</text>", re.S)
+_LINE_RE = re.compile(r'href="#t\d+m(\d+)"')
 
-    import numpy as np
+
+def _chrome_mask(svg_text, w, h, scale, out_png):
+    """Binary ink mask of an SVG rendered through the production rasterizer."""
+    import subprocess
     sp = out_png.replace(".png", ".svg")
     open(sp, "w", encoding="utf-8").write(svg_text)
     subprocess.run([rp.CHROME, "--headless", "--no-sandbox", "--disable-gpu",
                     rp.CHROME_FONT_WAIT, f"--force-device-scale-factor={scale}",
                     f"--screenshot={out_png}", f"--window-size={w},{h}", sp],
                    check=True, stderr=subprocess.DEVNULL)
-    a = np.asarray(Image.open(out_png).convert("L")) < 200
-    return a.sum(axis=1)
+    return (Image.open(out_png).convert("L")
+            .point(lambda v: 255 if v < 200 else 0))
+
+
+def _line_layers(block):
+    """The block's markup, once per title LINE, with only that line's <text>.
+
+    Every ``<text>`` rides a ``<textPath href="#t<uid>m<line>">``, so the line a
+    layer belongs to is written into the markup and does not have to be guessed
+    from the element order (a shadowed title emits more than one element per
+    line). Everything that is not a ``<text>`` — the ``<defs>`` the paths live
+    in — stays in every layer, so each renders at exactly the position it has in
+    the whole block.
+    """
+    defs = _TEXT_RE.sub("", block)
+    per = {}
+    for el in _TEXT_RE.findall(block):
+        m = _LINE_RE.search(el)
+        if m:
+            per.setdefault(int(m.group(1)), []).append(el)
+    return [defs + "".join(per[i]) for i in sorted(per)]
 
 
 def test_no_two_title_lines_touch_at_the_tightest_leading_on_any_template():
     import tempfile
+    from PIL import ImageChops, ImageFilter
     W, H, SCALE = 460, 300, 3
     d = tempfile.mkdtemp(prefix="dugri-leadtest-")
     shipped = json.load(open(os.path.join(HERE, "themes.json"), encoding="utf-8"))
@@ -2059,21 +2091,166 @@ def test_no_two_title_lines_touch_at_the_tightest_leading_on_any_template():
             align=ts.get("align", "center"), italic=ts.get("italic", False),
             bold=ts.get("bold", False), bold_w=ts.get("bold_w"),
             leading=_TIGHTEST_ALLOWED_LEADING)
-        svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" '
-               f'height="{H}" viewBox="0 0 {W} {H}">'
-               f'<style>{rp.font_face("TitleFont", font)}</style>'
-               f'<rect width="{W}" height="{H}" fill="white"/>{block}</svg>')
-        rows = _chrome_ink_rows(svg, W, H, SCALE, os.path.join(d, key + ".png"))
-        bl = _baselines(block)
-        # A clear row must exist between EVERY neighbouring pair of baselines,
-        # not merely somewhere on the card: three lines can be fine at the top
-        # and welded together at the bottom.
-        for a, b in zip(bl, bl[1:]):
-            lo, hi = int(min(a, b) * SCALE), int(max(a, b) * SCALE)
-            band = rows[lo:hi]
-            assert len(band) and band.min() == 0, (
-                f"{key}: lines touch between baselines {a} and {b} — the "
-                f"tightest ink row in the gap still carries {band.min()} pixels")
-        assert rows.max() > 0, f"{key}: nothing rendered at all"
+        layers = _line_layers(block)
+        assert len(layers) == len(lines), f"{key}: {len(layers)} layers"
+        masks = []
+        for i, body in enumerate(layers):
+            svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" '
+                   f'height="{H}" viewBox="0 0 {W} {H}">'
+                   f'<style>{rp.font_face("TitleFont", font)}</style>'
+                   f'<rect width="{W}" height="{H}" fill="white"/>{body}</svg>')
+            masks.append(_chrome_mask(svg, W, H, SCALE,
+                                      os.path.join(d, f"{key}-{i}.png")))
+        for i, m in enumerate(masks):
+            assert m.getbbox(), f"{key}: line {i} rendered nothing at all"
+        # NEIGHBOURING pairs, not merely somewhere on the card: three lines can
+        # be clear at the top and welded together at the bottom.
+        for i, (a, b) in enumerate(zip(masks, masks[1:])):
+            grown = a.filter(ImageFilter.MaxFilter(3))
+            hit = ImageChops.multiply(grown, b).getbbox()
+            assert not hit, (
+                f"{key}: title lines {i} and {i + 1} touch at leading "
+                f"{_TIGHTEST_ALLOWED_LEADING} — their ink meets around {hit}")
         checked += 1
     assert checked >= 6, f"only {checked} multi-line templates were proved"
+
+
+# --- the floor reads COLUMNS, not boxes --------------------------------------
+
+def test_the_floor_lets_a_short_line_tuck_under_a_descender_beside_it():
+    """Two lines only collide where they are ABOVE ONE ANOTHER.
+
+    The old floor compared the upper line's bounding BOX against the lower's, so
+    a descender anywhere on one line was charged against an ascender anywhere on
+    the other — however far apart the two sat across the card. That is what
+    printed סנטוריני at 1.18 where its design sets 0.50, and סיישל at 0.887
+    against 0.68.
+
+    Here the upper line's only descender is at its far LEFT and the lower line's
+    only ink at its far RIGHT: nothing on one is over anything on the other. Read
+    column by column the pair needs less room than the boxes claim.
+    """
+    font = config.font_path("bachelorette", "MrDafoe-Regular.ttf")
+    f, ref = rp._title_metrics(font)
+    lines = ["gy                    l", "                       l"]
+    by_box = rp._min_line_pitch_by_box(f, ref, lines, 0.0)
+    by_column = rp._min_line_pitch(f, ref, lines, 0.0, align="left")
+    assert by_column < by_box, (by_column, by_box)
+
+
+def test_the_floor_still_refuses_a_leading_the_glyphs_cannot_take():
+    """The point is a TRUER floor, not a smaller one — a column really stacked
+    over another still reserves the whole of both lines' ink."""
+    font = config.font_path("bachelorette", "MrDafoe-Regular.ttf")
+    f, ref = rp._title_metrics(font)
+    lines = ["gggg", "llll"]                 # descenders directly over ascenders
+    floor = rp._min_line_pitch(f, ref, lines, 0.0, align="left")
+    assert floor > 0.9, floor
+    assert rp.title_pitch(f, ref, lines, 0.30, 0.0, align="left") == floor
+
+
+def test_a_thicker_ring_pushes_the_floor_further_apart():
+    font = config.font_path("bachelorette", "MrDafoe-Regular.ttf")
+    f, ref = rp._title_metrics(font)
+    lines = ["gggg", "llll"]
+    bare = rp._min_line_pitch(f, ref, lines, 0.0)
+    ringed = rp._min_line_pitch(f, ref, lines, 0.10, grow=0.05)
+    assert ringed > bare + 0.09, (bare, ringed)
+
+
+def test_title_paint_grow_is_the_sideways_half_of_the_paint():
+    assert rp.title_paint_grow(0.05) == 0.05
+    assert abs(rp.title_paint_grow(0.05, bold=True, bold_w=0.04) - 0.07) < 1e-9
+    # a same-colour "outline" is never painted as a ring, so it spreads nothing
+    assert rp.title_paint_grow(0.05, ring_visible=False) == 0.0
+
+
+# --- Hebrew is measured in the order it is DRAWN -----------------------------
+
+def test_visual_order_reverses_a_hebrew_run_and_keeps_its_digits_forward():
+    # Chrome, handed direction="rtl", draws the words right to left and the
+    # number inside them left to right. Pillow draws the string as given, so the
+    # per-column reading has to be handed the picture, not the string.
+    assert rp.visual_order("שלום", True) == "םולש"
+    assert rp.visual_order("10 שנה", True).endswith("10 ")
+    assert rp.visual_order("10 שנה", True)[:3] == "הנש"
+    # an LTR title is untouched, whatever it says
+    assert rp.visual_order("Shira's", False) == "Shira's"
+    assert rp.visual_order("שלום", False) == "שלום"
+
+
+def test_the_hebrew_floor_is_read_in_visual_order():
+    """The final-nun of נישואין is at the LEFT of the drawn line and the 10 at
+    its right; fed the logical string Pillow puts them the other way round, and
+    the floor is then a reading of a picture nobody prints."""
+    font = os.path.join(HERE, "word-fonts", "PlaypenSansHebrew-Medium.ttf")
+    f, ref = rp._title_metrics(font)
+    lines = ["10 שנה נישואין", "דנה ועומר"]
+    as_drawn = rp._min_line_pitch(f, ref, lines, 0.0, rtl=True)
+    as_stored = rp._min_line_pitch(f, ref, lines, 0.0, rtl=False)
+    assert as_drawn != as_stored, "the two orders are not the same block"
+
+
+# --- a variable title face draws the cut the design was set in ---------------
+
+def _as_variable(monkeypatch, axis=(100, 100, 900)):
+    """Make a real font file answer as a variable one.
+
+    The owner's variable face lives on her volume, not in the repo — and the
+    behaviour under test is what the CSS says about an axis, not which file
+    carries it. ``weight_axis`` is the single place the axis is read, so
+    substituting its answer exercises every caller with a font CI actually has.
+    """
+    monkeypatch.setattr(rp, "weight_axis", lambda _path: axis)
+    return os.path.join(HERE, "MrDafoe-Regular.ttf")
+
+
+def test_a_variable_font_face_declares_its_range_and_its_instance(monkeypatch):
+    path = _as_variable(monkeypatch)
+    css = rp.font_face("TitleFont", path, 700)
+    # the RANGE stops Chrome synthesising a fake bold over a 400-only face —
+    # measured, that fake grows the ink 4% TALLER at the same width, which is
+    # not what a heavier cut looks like...
+    assert "font-weight:100 900" in css, css[:200]
+    # ...and the instance is the cut the design was actually set in
+    assert "font-variation-settings:'wght' 700" in css, css[:200]
+
+
+def test_a_variable_font_with_no_measured_weight_keeps_its_own_default(monkeypatch):
+    path = _as_variable(monkeypatch, (100, 400, 900))
+    assert "font-variation-settings:'wght' 400" in rp.font_face("TitleFont", path)
+
+
+def test_a_weight_outside_the_axis_is_clamped_onto_it(monkeypatch):
+    path = _as_variable(monkeypatch, (300, 400, 700))
+    assert "'wght' 700" in rp.font_face("TitleFont", path, 900)
+    assert "'wght' 300" in rp.font_face("TitleFont", path, 100)
+
+
+def test_the_real_shipped_variable_face_is_read_when_the_volume_has_it():
+    """The owner's own upload, when this runs somewhere the volume is mounted.
+
+    Skipped in CI, which has no template volume — the assertion above covers the
+    behaviour; this covers the FILE, and it is the file that surprised us.
+    """
+    import pytest
+    try:
+        path = config.font_path("football-boys",
+                                "LeagueSpartan-VariableFont_wght.ttf")
+    except Exception:                                    # noqa: BLE001
+        pytest.skip("no template volume")
+    if not os.path.exists(path):
+        pytest.skip("no template volume")
+    assert rp.weight_axis(path) == (100, 100, 900), (
+        "League Spartan's default instance is Thin — the whole reason nothing "
+        "may be left to a variable font's default")
+
+
+def test_a_static_font_face_is_untouched_by_any_of_this():
+    path = os.path.join(HERE, "Cafe-Regular.ttf")
+    assert rp.weight_axis(path) is None
+    css = rp.font_face("TitleFont", path)
+    assert "font-weight:400;" in css
+    assert "font-variation-settings" not in css
+    # ...and a weight handed to a static face changes nothing about it
+    assert rp.font_face("TitleFont", path, 700) == css

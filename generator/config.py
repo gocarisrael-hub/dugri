@@ -675,6 +675,38 @@ def front_offset(cfg, front_index):
     return [float(off[0]), float(off[1])]
 
 
+def title_font_weight(cfg):
+    """The weight instance a VARIABLE title face is drawn at, or None.
+
+    ``title_style.font_weight``, measured off the design's own ink. None for a
+    static face (there is only one cut) and for a variable one nothing has
+    measured yet — which draws the file's own default instance, exactly as
+    before.
+    """
+    try:
+        got = (cfg.get("title_style") or {}).get("font_weight")
+        return float(got) if got else None
+    except (TypeError, ValueError):
+        return None
+
+
+def front_align(cfg, front_index):
+    """How this front's title lines are aligned against each other.
+
+    ``title_style.front_align["<n>"]`` when that front differs from the rest of
+    the deck, else the deck-wide ``title_style.align``, else "center" — the step
+    every title took before alignment was measured at all. Per front because a
+    deck's fronts are separate artboards: טוקיו sets its two lines flush RIGHT on
+    four of its eight fronts and flush LEFT on the other four, so one answer
+    misprints half the deck. Same shape as ``front_offset``, and for the same
+    reason.
+    """
+    ts = cfg.get("title_style") or {}
+    per = ts.get("front_align") or {}
+    got = per.get(str(front_index), per.get(front_index))
+    return got or ts.get("align") or "center"
+
+
 def is_single_card_recipe(recipe):
     """True when a recipe describes ONE card rather than a v1 8-up sheet.
 
@@ -914,9 +946,17 @@ def recipe_front_title(recipe, front_index):
             boxes.extend(other["title"])
     if not boxes:
         return []
-    return [{"x0": min(b["x0"] for b in boxes), "y0": min(b["y0"] for b in boxes),
-             "x1": max(b["x1"] for b in boxes), "y1": max(b["y1"] for b in boxes),
-             "color": boxes[0].get("color", "#000000")}]
+    # The MEDIAN of the other fronts' boxes, not their union. A deck's fronts
+    # carry the same title in different PLACES (קליפורניה's moves 130 units
+    # across the card), so their union is a box far wider than any real title
+    # box, and a title centred in it lands nowhere the design puts it. The
+    # median is the shape and position a typical front actually uses, which is
+    # the best available answer for a front that measured none of its own.
+    import statistics
+    box = {k: statistics.median([b[k] for b in boxes])
+           for k in ("x0", "y0", "x1", "y1")}
+    box["color"] = boxes[0].get("color", "#000000")
+    return [box]
 
 
 # Inset of the default photo grid from the card edge, as a fraction of the card.

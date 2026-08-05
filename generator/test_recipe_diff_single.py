@@ -865,3 +865,51 @@ def test_a_clean_detection_reports_nothing_refused():
     R.regularise_word_slots(_measured(_GRAPEFRUIT_MIDS), _VB,
                             log=_quiet, declined=declined)
     assert declined == [], declined
+
+
+# --- a per-front title box that does not look like the rest of the deck --------
+#
+# Detection reads one front at a time and cannot, per front, tell the honoree's
+# name from a patch of artwork the clean export happens to be missing. Read
+# together the fronts DO tell: the title is the same text on every one of them,
+# so its box is the same SIZE wherever on the card it sits. Card 9's clean plate
+# is missing artwork its filled twin has on three unrelated designs, and
+# ``filled − clean`` reads that as text — giving a box 2.3x wide on סיישל, 1.7x
+# on פריז and 2.3x on קליפורניה, with an identical runaway origin on two designs
+# that share nothing else.
+
+def _tbox(x0, y0, w=80.0, h=30.0):
+    return [{"x0": x0, "y0": y0, "x1": x0 + w, "y1": y0 + h, "color": "#111111"}]
+
+
+def test_a_runaway_title_box_is_refused_and_reported():
+    titles = {2: _tbox(20.0, 10.0), 3: _tbox(60.0, 11.0), 4: _tbox(100.0, 10.0),
+              5: _tbox(20.0, 12.0), 9: _tbox(5.0, 4.0, w=190.0, h=70.0)}
+    said, declined = [], []
+    got = R.reconcile_front_titles(titles, log=said.append, declined=declined)
+    assert 9 not in got, "the runaway box must not be written"
+    assert set(got) == {2, 3, 4, 5}
+    assert declined and "front 9" in declined[0]
+    assert "clean/9.svg" in declined[0], "say WHERE to look"
+
+
+def test_fronts_that_merely_move_across_the_card_are_all_kept():
+    # קליפורניה's title moves a third of the card between fronts; its SIZE does
+    # not, which is the whole signal.
+    titles = {2: _tbox(20.0, 10.0), 3: _tbox(60.0, 11.0), 4: _tbox(120.0, 10.0),
+              5: _tbox(150.0, 12.0)}
+    declined = []
+    assert R.reconcile_front_titles(titles, declined=declined) == titles
+    assert not declined
+
+
+def test_a_box_within_tolerance_of_its_siblings_is_kept():
+    # a descender or a swash moves the box a few percent; that is not a runaway
+    titles = {2: _tbox(20.0, 10.0), 3: _tbox(60.0, 11.0),
+              4: _tbox(100.0, 10.0, w=88.0), 5: _tbox(20.0, 12.0, h=33.0)}
+    assert R.reconcile_front_titles(titles) == titles
+
+
+def test_too_few_fronts_to_have_a_consensus_are_left_alone():
+    titles = {2: _tbox(20.0, 10.0), 3: _tbox(5.0, 4.0, w=190.0, h=70.0)}
+    assert R.reconcile_front_titles(titles) == titles

@@ -712,21 +712,43 @@ if __name__ == "__main__":
 # grade is honoured rather than the number shipped.
 
 def test_a_low_confidence_fit_is_dropped():
-    out = {"title_style": {"size": 27.56, "bold": True, "bold_w": 0.015}, "word_size": 14.81}
+    out = {"title_style": {"size": 27.56, "italic": True}, "word_size": 14.81}
     conf = {
         "title_style.size": "low",
-        "title_style.bold": "medium",
-        "title_style.bold_w": "low",
         "word_size": "low",
     }
     notes = []
     C._drop_low_confidence(out, conf, notes)
     assert "size" not in out["title_style"]
-    assert "bold_w" not in out["title_style"]
     assert "word_size" not in out
-    # ...and the one it DOES believe survives.
-    assert out["title_style"]["bold"] is True
-    assert conf["title_style.bold"] == "medium"
+    # ...and a knob it was not asked about survives.
+    assert out["title_style"]["italic"] is True
+
+
+def test_dropping_the_bold_weight_drops_the_bold_flag_with_it():
+    """``bold`` without ``bold_w`` is not a smaller answer, it is a different one.
+
+    The renderer falls back to its HOUSE weight (0.035 of the type size) for a
+    bold with no measured stroke, and the house weight is another design's
+    answer: טריפה measured 0.015 and סנטוריני 0.010, so both shipped titles more
+    than twice as fat as the artwork they were fitted to — which is exactly the
+    "too bold" the owner reported on both. The weight is graded low by
+    construction (whole-pixel strokes), so half this pair was ALWAYS dropped;
+    the flag has to leave with it.
+    """
+    out = {"title_style": {"bold": True, "bold_w": 0.015}}
+    conf = {"title_style.bold": "medium", "title_style.bold_w": "low"}
+    dropped = C._drop_low_confidence(out, conf, [])
+    assert "bold_w" not in out["title_style"]
+    assert "bold" not in out["title_style"]
+    assert set(dropped) == {"title_style.bold", "title_style.bold_w"}
+
+
+def test_a_believed_bold_keeps_both_halves():
+    out = {"title_style": {"bold": True, "bold_w": 0.015}}
+    conf = {"title_style.bold": "medium", "title_style.bold_w": "medium"}
+    C._drop_low_confidence(out, conf, [])
+    assert out["title_style"] == {"bold": True, "bold_w": 0.015}
 
 
 def test_dropping_says_so_in_the_notes():
@@ -800,3 +822,206 @@ def test_nothing_is_invented_for_a_template_with_no_calibration_yet():
     kept = C._carry_forward(out, {"title_style": {}}, [], {})
     assert kept == []
     assert "size" not in out["title_style"] and out["word_size"] is None
+
+
+class _FakeMask:
+    def crop(self, _box):
+        return _ORIGIN
+
+
+_ORIGIN = object()
+_CANDIDATE = object()
+
+
+# --- the weight is read per unit of SIZE, not per unit of block height --------
+#
+# ``_stroke_ratio`` divided by the ink's HEIGHT, and a stacked title's ink height
+# is mostly its LEADING. So the weight reading was a reading of the line spacing:
+# our own unfattened טריפה measured HEAVIER than its origin at the renderer's
+# 0.78 and LIGHTER at the 1.0 its design sets — same glyphs, same strokes,
+# opposite verdicts — and סנטוריני, which leads at 0.5, came out "bold" and
+# printed a title the owner could see was too fat.
+
+def test_stroke_per_size_does_not_move_with_the_leading():
+    from PIL import Image, ImageDraw
+    ink = Image.new("L", (60, 20), 0)
+    ImageDraw.Draw(ink).rectangle((5, 5, 55, 12), fill=255)
+    tight = C.stroke_per_size(ink, 40.0)
+    # the same strokes in a block twice as tall (a looser leading) weigh the same
+    tall = Image.new("L", (60, 40), 0)
+    tall.paste(ink, (0, 0))
+    assert abs(C.stroke_per_size(tall, 40.0) - tight) < 1e-9
+    # ...whereas the old per-ink-height reading halves
+    assert C._stroke_ratio(tall) < C._stroke_ratio(ink) * 0.75
+
+
+def test_stroke_per_size_scales_with_the_type_size():
+    from PIL import Image, ImageDraw
+    ink = Image.new("L", (60, 20), 0)
+    ImageDraw.Draw(ink).rectangle((5, 5, 55, 12), fill=255)
+    assert C.stroke_per_size(ink, 80.0) == C.stroke_per_size(ink, 40.0) / 2
+
+
+class _Curve:
+    """A fit_bold stand-in: paints whose measured weight we control."""
+
+    def __init__(self, values):
+        self.values = values
+
+
+def test_fit_bold_refuses_a_grid_the_raster_cannot_resolve(monkeypatch):
+    """A fatter stroke that measures THINNER is not a measurement.
+
+    A card title is drawn about one device pixel of stroke wide and
+    ``_mean_stroke`` counts whole-pixel erosions, so on a light face one step of
+    the grid can move the reading less than rasterising noise does. טריפה is
+    exactly that — 0.0131, 0.0162, 0.0140, 0.0130 for 0.000, 0.005, 0.010,
+    0.015 of the size — and the search picked a weight out of that noise and
+    shipped a design that is not bold as bold.
+    """
+    from PIL import Image
+    noisy = [0.0131, 0.0162, 0.0140, 0.0130, 0.0134] + [0.0143] * 12
+    seq = iter(noisy)
+    monkeypatch.setattr(C, "stroke_per_size",
+                        lambda ink, em: 0.0140 if ink is _ORIGIN else next(seq, 0.0143))
+    monkeypatch.setattr(C, "_paint", lambda *a, **k: _CANDIDATE)
+    mask = _FakeMask()
+    bold, bold_w, note = C.fit_bold(mask, (0, 0, 1, 1), "f.ttf", [["a"]], 10, 1, 128)
+    assert bold is None and bold_w is None
+    assert note and "one device pixel" in note
+
+
+def test_fit_bold_answers_when_the_grid_does_climb(monkeypatch):
+    rising = [0.010 + 0.002 * i for i in range(len(C._BOLD_W_GRID))]
+    seq = iter(rising)
+    monkeypatch.setattr(C, "stroke_per_size",
+                        lambda ink, em: 0.020 if ink is _ORIGIN else next(seq, 0.05))
+    monkeypatch.setattr(C, "_paint", lambda *a, **k: _CANDIDATE)
+    bold, bold_w, note = C.fit_bold(_FakeMask(), (0, 0, 1, 1), "f.ttf", [["a"]],
+                                    10, 1, 128)
+    assert bold is True and bold_w and note is None
+
+
+# --- the leading a design does not show ---------------------------------------
+
+def _flat_curve(rows):
+    """A leading curve in the shape ``leading_curve`` produces:
+    ``(pitch, size, score, per_sample_scores)``."""
+    return [(p, 20.0, s, [s]) for p, s in rows]
+
+
+def test_a_flat_sweep_is_reported_as_undetermined_not_as_its_argmax():
+    """A band of spacings that all reproduce the ink equally well means the
+    artwork does not say — not that the middle of the band is the answer.
+
+    Measured on the shipped set: every surface whose title ink has row structure
+    comes back under a tenth; סיישל, whose ring welds its three lines into one
+    mass, comes back at 21-29% on all three of its surfaces.
+    """
+    flat = [(0.60 + 0.02 * i, 1.0) for i in range(14)]
+    curve = _flat_curve([(0.30, 0.2)] + flat + [(0.90, 0.2)])
+    assert C.leading_plateau(curve, 0.70) > C._PLATEAU_MAX
+
+
+def test_a_peaked_sweep_measures_a_narrow_plateau():
+    curve = _flat_curve([(0.60, 0.5), (0.62, 0.8), (0.64, 1.0),
+                         (0.66, 0.8), (0.68, 0.5)])
+    assert C.leading_plateau(curve, 0.64) < C._PLATEAU_MAX
+
+
+def test_a_sweep_with_no_range_at_all_says_nothing():
+    curve = _flat_curve([(0.60, 1.0), (0.62, 1.0), (0.64, 1.0)])
+    assert C.leading_plateau(curve, 0.62) == float("inf")
+
+
+def test_undetermined_is_not_none():
+    """None means "there is no spacing to measure" (a one-line title);
+    UNDETERMINED means "there is one and this ink cannot show it". Only the
+    second is a reason to ask the owner."""
+    assert C.UNDETERMINED is not None
+    assert not C.UNDETERMINED
+    assert isinstance(C.UNDETERMINED, C.Undetermined)
+    # ...and it carries the argmax it declined to trust, so a template with no
+    # owner value keeps a guess rather than losing its spacing altogether
+    got = C.Undetermined(0.70, 22.3, 0.21)
+    assert (got.leading, got.size) == (0.70, 22.3)
+    assert "21%" in repr(got)
+
+
+# --- per-front alignment ------------------------------------------------------
+#
+# Every other title knob is one deck-wide answer. Alignment is not: טוקיו sets
+# the same two lines flush RIGHT on four of its eight fronts and flush LEFT on
+# the other four, so one answer misprints half the deck. The owner reported it
+# twice — "the titles are centered in the preview and they are not like this in
+# the origin" — and it stayed unaddressed because nothing asked per front.
+
+def _block(lines, w=200, h=120):
+    """A mask with one horizontal bar per line at the given (x0, x1)."""
+    from PIL import Image, ImageDraw
+    im = Image.new("L", (w, h), 0)
+    d = ImageDraw.Draw(im)
+    step = h // (len(lines) + 1)
+    for i, (x0, x1) in enumerate(lines):
+        top = step * i + 6
+        d.rectangle((x0, top, x1, top + step - 12), fill=255)
+    return im
+
+
+def test_alignment_reads_left_right_and_centre():
+    from PIL import Image
+    def align(lines, want=2):
+        m = Image.new("L", (220, 140), 0)
+        m.paste(_block(lines), (10, 10))
+        return C._alignment(m, (0, 0, 220, 140), want)
+    assert align([(0, 190), (0, 90)]) == "left"
+    assert align([(0, 190), (100, 190)]) == "right"
+    assert align([(0, 190), (50, 140)]) == "center"
+
+
+def test_a_near_tie_is_refused_rather_than_guessed():
+    """פריז's eight identical titles scored "left" on three fronts and "centre"
+    on four, on spreads of 0.4-6% of the block width — a coin flip. טוקיו, which
+    really does align, wins by 28%. The bar sits in the empty band between."""
+    from PIL import Image
+    m = Image.new("L", (220, 140), 0)
+    m.paste(_block([(0, 190), (4, 186)]), (10, 10))
+    assert C._alignment(m, (0, 0, 220, 140), 2) is None
+
+
+def test_lines_whose_ink_touches_are_still_split_into_bands():
+    """טוקיו's second line starts on the row the first one's ink ends, so the
+    whole title reads as ONE run and every per-line question went unanswered.
+    Where the clear row is missing the boundary is still in the block's shape."""
+    from PIL import Image, ImageDraw
+    m = Image.new("L", (200, 100), 0)
+    d = ImageDraw.Draw(m)
+    d.rectangle((10, 10, 190, 54), fill=255)      # wide upper line
+    d.rectangle((120, 55, 190, 90), fill=255)     # short lower line, abutting
+    assert len(C._row_runs(m)) == 1, "the fixture must have no clear row"
+    assert len(C._line_bands(m, 2)) == 2
+    assert C._alignment(m, (0, 0, 200, 100), 2) == "right"
+
+
+def test_the_band_split_leaves_a_block_that_already_reads_alone():
+    from PIL import Image
+    m = Image.new("L", (220, 140), 0)
+    m.paste(_block([(0, 190), (0, 90)]), (10, 10))
+    assert C._line_bands(m, 2) == C._row_runs(m)
+
+
+def test_the_deck_wide_alignment_is_the_commonest_reading():
+    assert C._majority_alignment({2: "center", 3: "center", 4: "left"}) == "center"
+    assert C._majority_alignment({2: None, 3: None}) is None
+    # a deck that splits down the middle answers deterministically — and the
+    # other half is recorded per front, so which way the tie falls prints nothing
+    assert C._majority_alignment({2: "right", 3: "left", 4: "right",
+                                  5: "left"}) == "right"
+
+
+# --- a variable title face's own cut ------------------------------------------
+
+def test_a_static_face_has_no_weight_to_fit():
+    got, note = C.fit_font_weight(_FakeMask(), (0, 0, 1, 1), LATIN_FONT,
+                                  [["a"]], 10, 1, 128)
+    assert got is None and note is None

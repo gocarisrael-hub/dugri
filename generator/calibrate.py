@@ -82,6 +82,7 @@ import calibration_health
 import chrome
 import config
 import recipe_diff
+import render_page
 import topup
 
 CHROME = chrome.CHROME  # see generator/chrome.py — one owner for the browser
@@ -743,16 +744,85 @@ def _line_count(region):
     return len(_row_runs(region))
 
 
-def _alignment(mask, box):
+# How much better the winning alignment must fit than the runner-up, as a
+# fraction of the title block's width, before it is believed.
+#
+# It used to be 2%, which is under the noise: a two-line title whose lines happen
+# to be near the same width scores almost the same left, right and centre, and
+# whichever wins is an accident of a few pixels of swash. Measured over every
+# shipped front — the winner's margin is 28% where a design really does align its
+# lines (טוקיו, whose title alternates right and left down the deck), 11-18%
+# where they really are centred, and 0.4-6% on the fronts whose reading is noise
+# (פריז, whose eight identical titles scored "left" on three and "centre" on
+# four). A tenth of the width sits in the empty band between the two groups, so a
+# design that means it is heard and a coin flip is not.
+_ALIGN_MARGIN = 0.10
+
+
+def _edges(region, y0, y1):
+    """``(leftmost, rightmost)`` inked column over rows ``y0..y1``, or None."""
+    px = region.load()
+    w = region.size[0]
+    xs = [x for y in range(y0, y1) for x in range(w) if px[x, y]]
+    return (min(xs), max(xs)) if xs else None
+
+
+def _line_bands(region, want):
+    """The rows each title LINE occupies — even when two lines' ink touches.
+
+    ``_row_runs`` finds a line boundary by a clear row, and a design is entitled
+    not to leave one: טוקיו sets "TOMER'S" over "30S" with the second line's caps
+    starting on the row the first line's ink ends, so the whole title reads as
+    ONE band and every question asked per line (its alignment, above all) goes
+    unanswered. Where the clear row is missing the boundary is still visible in
+    the block's SHAPE — a new line starts where the ink's left or right edge
+    jumps, which is precisely what having a different line there means.
+
+    So: take the clear-row runs when they already account for every line (every
+    template that reads today keeps exactly the bands it had), and otherwise
+    split the tallest band at its biggest edge jump until the count is right.
+    Returns whatever it could reach, so a caller still sees fewer bands than it
+    asked for rather than a fabricated split.
+    """
+    bands = _row_runs(region)
+    if not bands or want is None or len(bands) >= want:
+        return bands
+    guard = 0
+    while len(bands) < want and guard < want:
+        guard += 1
+        tallest = max(range(len(bands)), key=lambda i: bands[i][1] - bands[i][0])
+        y0, y1 = bands[tallest]
+        margin = max(1, int(0.2 * (y1 - y0)))
+        best, at = 0, None
+        prev = _edges(region, y0, y0 + 1)
+        for y in range(y0 + 1, y1):
+            cur = _edges(region, y, y + 1)
+            if prev and cur and y0 + margin <= y <= y1 - margin:
+                jump = abs(cur[0] - prev[0]) + abs(cur[1] - prev[1])
+                if jump > best:
+                    best, at = jump, y
+            prev = cur or prev
+        if at is None:
+            break
+        bands = sorted(bands[:tallest] + [(y0, at), (at, y1)]
+                       + bands[tallest + 1:])
+    return bands
+
+
+def _alignment(mask, box, want=None):
     """Infer the title's alignment from how its lines stack.
 
     Left-aligned lines share a left edge and ragged right; right-aligned the
     mirror; centred lines are ragged on both sides but share a midpoint. Needs
     at least two lines — a single-line title carries no alignment signal at all,
     so this returns None and the caller leaves the default in place.
+
+    ``want`` is how many lines the template's title has, which lets the band
+    split fall back on the block's shape when the design leaves no clear row
+    between two of them.
     """
     region = mask.crop(box)
-    runs = _row_runs(region)
+    runs = _line_bands(region, want)
     if len(runs) < 2:
         return None
     px = region.load()
@@ -776,7 +846,7 @@ def _alignment(mask, box):
     # Require a clear winner; near-ties mean the lines happen to be similar
     # widths and the signal is meaningless.
     others = sorted([sl, sr, sm])
-    if others[1] - others[0] < 0.02 * w:
+    if others[1] - others[0] < _ALIGN_MARGIN * w:
         return None
     return {sl: "left", sr: "right", sm: "center"}[best]
 
@@ -1052,8 +1122,68 @@ def word_rows(mask, slots, ppu, ox, oy):
 
 
 @functools.lru_cache(maxsize=64)
-def _fit_font(path, px):
-    return ImageFont.truetype(path, max(4, int(px)))
+def _fit_font(path, px, weight=None):
+    font = ImageFont.truetype(path, max(4, int(px)))
+    if weight is not None and render_page.weight_axis(path):
+        try:
+            font.set_variation_by_axes([float(weight)])
+        except (OSError, ValueError):
+            pass
+    return font
+
+
+# The weight instances a variable face is offered at. The nine CSS steps, which
+# is what a designer picking "Bold" in Canva actually chose from — a finer grid
+# would only be reading the raster's noise (see ``fit_bold``).
+_WEIGHT_GRID = (100, 200, 300, 400, 500, 600, 700, 800, 900)
+
+
+def fit_font_weight(mask, region, font_path, samples, size, ppu, alpha,
+                    pitch=None, ring=0.0):
+    """Which cut of a VARIABLE title face the design was set in, or None.
+
+    A variable font is nine weights in one file, and the file names one of them
+    its default — League Spartan's is Thin, the lightest. Nothing chose, so
+    every variable face an owner uploads printed at whatever the file happened
+    to default to: מרקאנה's title is Bold in the design and drew as a hairline.
+
+    Chosen the way ``fit_bold`` chooses a synthetic stroke, and against the same
+    evidence — the ORIGIN'S OWN INK. Each instance is painted at the size and
+    leading already fitted, its stroke measured per unit of type size, and the
+    instance whose strokes come closest to the artwork's wins. A static face has
+    no axis and returns None, so nothing about it changes.
+
+    UNLIKE ``fit_bold`` this can answer for a RINGED title, and the ``ring`` is
+    why. A ringed title's ink is mostly its outline, so a bare-glyph candidate
+    reads as far lighter than the artwork whatever cut it is drawn in — measured
+    on מרקאנה, that pinned the top of the axis. Painting the candidate with the
+    same ring puts the same ink on both sides of the comparison, and what is
+    left of the difference is the cut. The synthetic stroke ``fit_bold`` weighs
+    cannot be separated from a ring like that, because it IS one.
+    """
+    if not render_page.weight_axis(font_path):
+        return None, None
+    em = size * ppu
+    origin = stroke_per_size(mask.crop(region), em)
+    if not origin:
+        return None, None
+    kw = {} if pitch is None else {"pitch": pitch}
+    scored = []
+    for wght in _WEIGHT_GRID:
+        got = [stroke_per_size(_paint(font_path, lines, em, alpha,
+                                      stroke=ring * em, weight=wght, **kw), em)
+               for lines in samples]
+        got = [g for g in got if g]
+        if got:
+            scored.append((abs(statistics.median(got) - origin), wght))
+    if not scored:
+        return None, None
+    best = min(scored)[1]
+    return best, (f"title font: this is a VARIABLE font ({len(_WEIGHT_GRID)} "
+                  f"weights in one file) and nothing had chosen one, so it was "
+                  f"drawing the file's own default. Matched against the "
+                  f"original's strokes it is weight {best} — check it in the "
+                  f"preview.")
 
 
 # ---- measuring a row of type without knowing what it says -------------------
@@ -1154,7 +1284,7 @@ def _covers(font_path, text):
 
 
 def _paint(font_path, lines, em, alpha, stroke=0.0, marker=None,
-           pitch=RENDER_PITCH):
+           pitch=RENDER_PITCH, weight=None):
     """Our renderer's painted text at ``em`` DEVICE pixels, as an ink mask.
 
     Mirrors what ``render_page`` will draw: title lines stacked on the
@@ -1167,7 +1297,7 @@ def _paint(font_path, lines, em, alpha, stroke=0.0, marker=None,
     was not set with the renderer's leading — see ``fit_title_size``.
     """
     try:
-        font = _fit_font(font_path, round(em))
+        font = _fit_font(font_path, round(em), weight)
     except (OSError, ValueError):
         return None
     lines = [ln for ln in lines if ln and ln.strip()]
@@ -1185,7 +1315,7 @@ def _paint(font_path, lines, em, alpha, stroke=0.0, marker=None,
         draw.text((40, base + i * pitch * em), line, font=font, fill=255,
                   anchor="ls", stroke_width=stroke, stroke_fill=255)
     if marker is not None:
-        small = _fit_font(font_path, round(em * 0.9))
+        small = _fit_font(font_path, round(em * 0.9), weight)
         draw.text((40 + int(font.getlength(lines[0]) + em * 0.30), base),
                   f"{marker}.", font=small, fill=255, anchor="ls",
                   stroke_width=stroke, stroke_fill=255)
@@ -1282,29 +1412,70 @@ def _stroke_ratio(ink):
     return _mean_stroke(ink) / ink.size[1]
 
 
-def fit_bold(mask, region, font_path, samples, size, ppu, alpha):
+def stroke_per_size(ink, em_px):
+    """``_mean_stroke`` per unit of TYPE SIZE — the weight, and nothing else.
+
+    NOT per unit of ink height, which is what this used to divide by. On a
+    single line the two agree closely enough; on a STACK they do not agree at
+    all, because a block's ink height is mostly its LEADING. Dividing by it made
+    the weight reading a reading of the line spacing: at the renderer's fixed
+    0.78 our own unfattened טריפה measured heavier than its origin, and at the
+    1.0 its design actually sets, lighter — same glyphs, same strokes, opposite
+    verdicts. סנטוריני, which leads at 0.5, came out "bold" for the same reason
+    and printed a title the owner could see was too fat.
+
+    The type size is also the unit ``bold_w`` is expressed in, so the number
+    this compares is the number the renderer will be handed.
+    """
+    if not ink or not em_px or em_px <= 0:
+        return None
+    return _mean_stroke(ink) / em_px
+
+
+def fit_bold(mask, region, font_path, samples, size, ppu, alpha, pitch=None):
     """``(bold, bold_w, note)`` for a title; ``bold`` is None when unmeasurable.
 
     Compares the ORIGIN's stroke weight against our own cut painted at the size
-    that was just fitted, and walks the synthetic-bold grid for the weight that
-    reproduces it. ``bold`` comes back False — never True with a token weight —
-    when our unfattened cut already carries that weight, because emboldening a
-    design that is not bold is the one outcome this must never produce.
+    AND the leading that were just fitted, and walks the synthetic-bold grid for
+    the weight that reproduces it. ``bold`` comes back False — never True with a
+    token weight — when our unfattened cut already carries that weight, because
+    emboldening a design that is not bold is the one outcome this must never
+    produce.
+
+    It also comes back None when the raster cannot resolve the question. A card
+    title is drawn at roughly one device pixel of stroke, and ``_mean_stroke``
+    counts whole-pixel erosions — so on a light face one step of the grid can
+    move the reading LESS than rasterising noise does, and the search then picks
+    a weight out of that noise. The tell is a candidate curve that does not
+    climb: a fatter stroke that measures thinner than a thinner one is not a
+    measurement. טריפה is exactly that (0.0131, 0.0162, 0.0140, 0.0130, … for
+    0.000, 0.005, 0.010, 0.015 of the size), and it is why a design whose title
+    is not bold was shipped bold.
     """
-    origin = _stroke_ratio(mask.crop(region))
+    em = size * ppu
+    origin = stroke_per_size(mask.crop(region), em)
     if not origin:
         return None, None, None
+    kw = {} if pitch is None else {"pitch": pitch}
 
     def weigh(weight):
-        got = [_stroke_ratio(_paint(font_path, lines, size * ppu, alpha,
-                                    stroke=weight * size * ppu))
+        got = [stroke_per_size(_paint(font_path, lines, em, alpha,
+                                      stroke=weight * em, **kw), em)
                for lines in samples]
         return statistics.median([g for g in got if g]) if any(got) else None
 
-    scored = [(abs(got - origin), weight)
-              for weight, got in ((w, weigh(w)) for w in _BOLD_W_GRID) if got]
+    curve = [(w, weigh(w)) for w in _BOLD_W_GRID]
+    scored = [(abs(got - origin), weight) for weight, got in curve if got]
     if not scored:
         return None, None, None
+    live = [got for _w, got in curve if got]
+    if any(b < a for a, b in zip(live, live[1:])):
+        return (None, None,
+                "bold: at this title's size the artwork is drawn about one "
+                "device pixel of stroke wide, which is too coarse to tell one "
+                "weight step from the next — fattening it more measured "
+                "THINNER than fattening it less. Left unset; set it by eye "
+                "against the original.")
     if weigh(_BOLD_W_GRID[-1]) < origin:
         # The origin is heavier than this face can be fattened to. That is not a
         # weight step, it is the wrong CUT (measured on 'anniversary': its own
@@ -1588,6 +1759,74 @@ def leading_curve(ink, font_path, samples, ppu, alpha, ring=0.0):
     return out
 
 
+class Undetermined:
+    """The answer "this artwork does not say", which is not the same as None.
+
+    None means "nothing to measure" — a single-line title has no spacing at all.
+    This means "there IS a spacing and the ink cannot show it", which is the one
+    case where the owner has to be asked, and asking requires telling the two
+    apart.
+
+    It carries the argmax it declined to trust (``leading``, ``size``) and how
+    wide the flat was (``plateau``), because declining is not the same as having
+    nothing: with no owner value to use instead, the argmax is still the best
+    available guess and is kept — with the flat SAID, so the owner knows there is
+    a number only she can supply.
+    """
+
+    def __init__(self, leading=None, size=None, plateau=0.0):
+        self.leading, self.size, self.plateau = leading, size, plateau
+
+    def __repr__(self):
+        return f"UNDETERMINED(leading={self.leading}, plateau={self.plateau:.0%})"
+
+    def __bool__(self):
+        return False
+
+
+UNDETERMINED = Undetermined()
+
+
+# How near the top of the score range still counts as "this leading fits too",
+# as a fraction of the sweep's own range (best - worst). Relative to the range
+# rather than absolute, because the range is set by how much structure the ink
+# has and that differs by an order of magnitude between a crisp two-line title
+# and a welded blob.
+_PLATEAU_EPS = 0.02
+# How wide that band of equally-good leadings may be, as a fraction of the
+# winning leading, before the answer is refused. A design sets ONE spacing, so a
+# measurement that scores a quarter-wide range of spacings equally has not found
+# it — it has found that this artwork does not say.
+_PLATEAU_MAX = 0.15
+
+
+def leading_plateau(curve, leading):
+    """How wide the band of equally-good leadings is, per unit of the winner.
+
+    A leading is only measurable if the artwork's rows say where the lines are.
+    On a title whose ring is thick enough that the lines WELD — סיישל's outline
+    is 0.071 of the type size, the owner's Canva slider at 111 — there are no
+    rows to read: the block is one mass whose height any (size, leading) pair on
+    a whole diagonal reproduces, and the sweep comes back with a flat top a
+    dozen grid steps wide. Picking its argmax is picking noise, and it picked
+    0.70 where the design is set at three quarters.
+
+    So the width of the flat is the measurement's own error bar, and this
+    reports it. Every surface whose ink has row structure comes back well under
+    a tenth; the one that has none comes back at a quarter.
+    """
+    scored = [(row[0], row[2]) for row in curve or () if row[2] is not None]
+    if len(scored) < 3 or not leading:
+        return 0.0
+    hi = max(s for _p, s in scored)
+    lo = min(s for _p, s in scored)
+    if hi <= lo:
+        return float("inf")            # a perfectly flat sweep says nothing
+    bar = hi - _PLATEAU_EPS * (hi - lo)
+    near = [p for p, s in scored if s >= bar]
+    return (max(near) - min(near)) / leading if near else 0.0
+
+
 def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0,
                            pitch=None, curve_out=None):
     """``(size, leading, score)`` reproducing one title block's ink.
@@ -1635,6 +1874,13 @@ def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0,
     leading = round(best[0], 3)
     size = size_from_matching_samples(ink, font_path, samples, ppu, alpha, ring,
                                       leading)
+    plateau = leading_plateau(curve, leading)
+    if plateau > _PLATEAU_MAX:
+        # The ink cannot tell one spacing from another here, so the argmax of
+        # that flat is not an answer — it is a coin toss between a dozen grid
+        # steps. Say so, and hand the argmax over as what it is: the best guess
+        # available until somebody reads the real number off the design.
+        return size, Undetermined(leading, size, plateau), best[2]
     return size, leading, best[2]
 
 
@@ -1745,7 +1991,7 @@ def refit_at_leading(fit, leading):
 
 
 def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
-                   ring=0.0, leading=None, fit_out=None):
+                   ring=0.0, leading=None, fit_out=None, owner_leading=None):
     """Fit one surface's title size. -> ``(size, grade, note, ctx, leading)``.
 
     ``ctx`` is ``(ink_region, alpha)`` — what ``fit_bold`` needs to go on and
@@ -1766,6 +2012,14 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
 
     ``leading`` IN says the spacing is already known and only the size is
     wanted; it is then returned unchanged, so the caller still gets the pair.
+
+    ``owner_leading`` is the spacing already on the theme — the number the owner
+    set, or a previous pass measured. It is used ONLY where the artwork cannot
+    decide the spacing itself (see ``leading_plateau``), and the size is then
+    fitted at it, which is the whole point: a spacing without a size refitted to
+    it prints type that was measured against a different picture. Where the ink
+    CAN decide, the measurement wins — this can never freeze a template against
+    a genuine reading.
 
     ``ring`` is the outline thickness the title is painted with, as a fraction of
     the size. The origin's ink includes its ring, so a bare-glyph candidate is
@@ -1805,11 +2059,47 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
     size, leading, _score = solve_size_and_leading(
         ink, font_path, samples, ppu, alpha, ring=ring, pitch=leading,
         curve_out=curve)
+    undecided = None
+    owner_set = False
+    if isinstance(leading, Undetermined):
+        # The sweep found a flat top: a band of spacings reproduces this ink
+        # equally well, so the artwork does not say which one the design uses.
+        # Whichever way out is taken, SAY so — the owner cannot supply a number
+        # she is never told is missing.
+        flat = (f"leading: this title's ink has no row structure to read the "
+                f"line spacing off — a band of spacings {leading.plateau:.0%} "
+                f"of the value wide reproduces it equally well, because a ring "
+                f"thick enough welds the lines into one mass. ")
+        if owner_leading:
+            # Her reading of the design beats any inference from ink that cannot
+            # tell one spacing from another — and the SIZE is refitted at it,
+            # because a spacing without a size fitted to it prints type that was
+            # measured against a different picture.
+            size, leading, _score = solve_size_and_leading(
+                ink, font_path, samples, ppu, alpha, ring=ring,
+                pitch=float(owner_leading), curve_out=curve)
+            owner_set = True
+            undecided = flat + (
+                f"The line spacing already set on this template, {leading}, was "
+                f"used instead, and the size beside it is fitted AT it. Read it "
+                f"off the design (Canva shows it in the text panel) if it is "
+                f"wrong.")
+        else:
+            leading = leading.leading
+            undecided = flat + (
+                f"Nothing has been set on this template, so the best of the flat "
+                f"({leading}) is kept — it is a guess, not a reading. Read the "
+                f"line spacing off the design (Canva shows it in the text panel) "
+                f"and set title_style.leading; the size is then fitted to it.")
     if fit_out is not None:
         fit_out.update({"ink": ink, "font": font_path, "samples": samples,
                         "ppu": ppu, "alpha": alpha, "ring": ring,
                         "curve": curve, "size": size, "leading": leading,
-                        "box_h": box["y1"] - box["y0"]})
+                        "box_h": box["y1"] - box["y0"],
+                        # An OWNER-set spacing is not a reading to be weighed
+                        # against the other surfaces' — it is the answer. The
+                        # coupling pass leaves it exactly where she put it.
+                        "owner_leading": owner_set})
     # Every measurement below repaints the same block, so it has to be repainted
     # at the spacing the block was fitted at. A single-line title has no spacing,
     # and the renderer's own step is what it will be drawn with.
@@ -1835,9 +2125,10 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
     spread = ((max(each) - min(each)) / statistics.median(each)) if each else None
     wide = _fit_size(ink_w, font_path, samples, ppu, alpha, axis=1, ring=ring,
                      pitch=pitch)
-    note = None
+    note = undecided
     if leading is not None and abs(leading - RENDER_PITCH) > 0.02:
-        note = (f"size: the original stacks its title lines {leading} of the type "
+        note = ((note + " ") if note else "") + (
+                f"size: the original stacks its title lines {leading} of the type "
                 f"size apart, where this renderer's default is {RENDER_PITCH}. "
                 "The measured spacing is pinned alongside the size and printed "
                 "with it, so the block matches the artwork — but the two were "
@@ -2094,6 +2385,59 @@ def word_surfaces(theme_key, cfg, recipe, single, workdir, first):
     return out
 
 
+def _front_alignments(theme_key, cfg, recipe, single, workdir, first):
+    """``{front index: alignment or None}`` read off each front's own artwork.
+
+    ``first`` is the (mask, tight box) the caller already measured for the first
+    front, so that surface is not rendered twice. A front whose diff cannot be
+    made, or whose title box the recipe does not record, is simply absent.
+    """
+    want = len(cfg.get("title_lines") or []) or None
+    fronts = config.fronts(cfg)
+    out = {}
+    if fronts:
+        out[fronts[0]] = _alignment(first[0], first[1], want)
+    if not single:
+        return out
+    titles = (recipe.get("card") or {}).get("title") or {}
+    for index in fronts[1:]:
+        boxes = titles.get(str(index)) or titles.get(index)
+        ff = config.card_path(theme_key, index, filled=True)
+        fc = config.card_path(theme_key, index)
+        if not boxes or not (os.path.exists(ff) and os.path.exists(fc)):
+            continue
+        try:
+            mask, _image, vb = _diff(ff, fc, workdir)
+        except (OSError, ValueError, chrome.ChromeTimeout):
+            continue
+        ppu, ox, oy = _viewport(mask, vb)
+        box = (int(min(b["x0"] for b in boxes) * ppu + ox),
+               int(min(b["y0"] for b in boxes) * ppu + oy),
+               int(max(b["x1"] for b in boxes) * ppu + ox),
+               int(max(b["y1"] for b in boxes) * ppu + oy))
+        out[index] = _alignment(mask, _bbox(mask, box) or box, want)
+    return out
+
+
+def _majority_alignment(per_front):
+    """The alignment most of the fronts read, or None when none of them did.
+
+    Ties go to the lowest-numbered front's answer, so the result does not depend
+    on dict ordering — and on a deck that genuinely splits down the middle
+    (טוקיו: four right, four left) the other half is recorded per front, so
+    which way the tie falls changes nothing that prints.
+    """
+    votes = [v for v in per_front.values() if v]
+    if not votes:
+        return None
+    best = max(Counter(votes).values())
+    for index in sorted(per_front):
+        v = per_front[index]
+        if v and Counter(votes)[v] == best:
+            return v
+    return None
+
+
 def _word_colours(recipe):
     """Every word-slot colour a recipe records, lowercased, either structure."""
     cards = recipe.get("cards")
@@ -2121,6 +2465,15 @@ _FITTED_KEYS = (
     ("word_size", ("word_size",)),
 )
 
+# Values that may not be dropped alone. ``bold`` without ``bold_w`` is not a
+# smaller answer, it is a DIFFERENT one: the renderer falls back to its house
+# weight (0.035 of the size), and the house weight is another design's answer.
+# Shipped that way, טריפה and סנטוריני printed titles fattened more than twice
+# what calibration had measured for them (0.015 and 0.010), which is exactly the
+# "too bold" the owner saw on both. So the weight leaving takes the flag with
+# it, the way a leading leaves with the size it was solved beside.
+_DROP_TOGETHER = {"title_style.bold_w": ("title_style.bold",)}
+
 
 def _drop_low_confidence(out, confidence, notes):
     """Remove any fitted value the calibrator graded ``low``.
@@ -2136,9 +2489,15 @@ def _drop_low_confidence(out, confidence, notes):
     # the case cannot arise; naming it explicitly means a future reorder cannot
     # quietly reintroduce the bug.
     carried = set(out.get("carried") or ())
+    doomed = [label for label, _p in _FITTED_KEYS
+              if confidence.get(label) == "low" and label not in carried]
+    for label in list(doomed):
+        for partner in _DROP_TOGETHER.get(label, ()):
+            if partner not in doomed and partner not in carried:
+                doomed.append(partner)
     dropped = []
     for label, path in _FITTED_KEYS:
-        if confidence.get(label) != "low" or label in carried:
+        if label not in doomed:
             continue
         target = out
         for key in path[:-1]:
@@ -2264,8 +2623,13 @@ def calibrate(theme_key, workdir=None):
 
     def couple():
         """Share one leading across the surfaces whose ink agrees on it."""
+        # A surface whose spacing the OWNER set is not one more reading to be
+        # weighed — it is the answer, and it neither votes nor moves. Coupling a
+        # measurement over it would put back exactly the inference she was asked
+        # for because the ink could not make it.
         curves = {label: (fit.get("curve") or [])
-                  for label, fit, _write in surface_fits if fit.get("size")}
+                  for label, fit, _write in surface_fits
+                  if fit.get("size") and not fit.get("owner_leading")}
         shared, why = couple_leadings(curves)
         if why:
             notes.append(why)
@@ -2274,6 +2638,8 @@ def calibrate(theme_key, workdir=None):
         moved = []
         for label, fit, write in surface_fits:
             if not fit.get("size") or not fit.get("curve"):
+                continue
+            if fit.get("owner_leading"):
                 continue
             if fit["leading"] == shared:
                 continue
@@ -2401,7 +2767,8 @@ def calibrate(theme_key, workdir=None):
                     size, tgrade, tnote, ctx, tlead = fit_title_size(
                         mask, image, tbox, ppu, ox, oy, title_font, samples,
                         (t[0].get("color") or fill), ring=ring,
-                        fit_out=front_fit)
+                        fit_out=front_fit,
+                        owner_leading=(cfg.get("title_style") or {}).get("leading"))
                     if not (size and fill and outline):
                         break
                     dfill, doutline, dring = ring_by_depth(
@@ -2477,10 +2844,31 @@ def calibrate(theme_key, workdir=None):
                 else:
                     ts["shadow"] = bool(shadow)
                     confidence["title_style.shadow"] = "medium"
-                align = _alignment(mask, tight)
+                # ALIGNMENT, per front. Every other title knob is one deck-wide
+                # answer, and alignment looked like one too until the owner put
+                # טוקיו's preview beside its original: its eight fronts carry the
+                # same two lines aligned RIGHT on four of them and LEFT on the
+                # other four, and one answer prints four cards wrong whichever
+                # one it is. So each front is read on its own artwork; the
+                # deck-wide value is the commonest of those readings, and it is
+                # what a front whose own reading was not decisive falls back to.
+                per_align = _front_alignments(theme_key, cfg, recipe, single,
+                                              workdir, (mask, tight))
+                align = _majority_alignment(per_align)
                 if align:
                     ts["align"] = align
                     confidence["title_style.align"] = "medium"
+                    odd = {str(k): v for k, v in per_align.items()
+                           if v and v != align}
+                    if odd:
+                        ts["front_align"] = odd
+                        confidence["title_style.front_align"] = "medium"
+                        notes.append(
+                            "align: this deck does not align its title the same "
+                            "way on every front — "
+                            + ", ".join(f"{k}:{v}" for k, v in sorted(odd.items()))
+                            + f" against {align} elsewhere. Check those fronts in "
+                            "the preview.")
 
                 # --- the fitted size, and the synthetic-bold weight -----------
                 record("size", size, tgrade, tnote)
@@ -2510,6 +2898,20 @@ def calibrate(theme_key, workdir=None):
 
                     surface_fits.append(("front", front_fit, _write_front))
                 if size and ctx:
+                    # A VARIABLE face's own cut comes first, because it is a
+                    # real weight the file already carries and the synthetic
+                    # stroke below is a fake one — reaching for the fake while
+                    # eight real cuts sit unused in the same file is how a Bold
+                    # design printed Thin.
+                    fw, fwnote = fit_font_weight(
+                        mask, ctx[0], title_font, samples, size, ppu, ctx[1],
+                        pitch=tlead, ring=(ring if fill != outline else 0.0))
+                    if fw:
+                        ts["font_weight"] = fw
+                        confidence["title_style.font_weight"] = "medium"
+                        if fwnote:
+                            notes.append(fwnote)
+                if size and ctx:
                     # WEIGHT, only where the title has no visible ring. A ringed
                     # title's ink is mostly its OUTLINE, and the candidate painted
                     # here carries no ring — so the comparison would read the ring
@@ -2520,8 +2922,13 @@ def calibrate(theme_key, workdir=None):
                                      "bold was left alone. Set it by eye.")
                         confidence["title_style.bold"] = "none"
                     else:
+                        # At the leading the block was fitted at, not the
+                        # renderer's own: the candidate has to be the same
+                        # PICTURE as the original for its strokes to be
+                        # comparable with the original's.
                         bold, bold_w, bnote = fit_bold(
-                            mask, ctx[0], title_font, samples, size, ppu, ctx[1])
+                            mask, ctx[0], title_font, samples, size, ppu,
+                            ctx[1], pitch=tlead)
                         if bold is None:
                             if bnote:
                                 notes.append(bnote)
@@ -2596,7 +3003,9 @@ def calibrate(theme_key, workdir=None):
                 bsize, bgrade, bnote, _bctx, blead = fit_title_size(
                     mask, image, units(box, ppu, ox, oy), ppu, ox, oy,
                     title_font, samples, fill, ring=deck_ring,
-                    fit_out=board_fit)
+                    fit_out=board_fit,
+                    owner_leading=render_page.board_leading(
+                        cfg.get("title_style") or {}))
                 record("board_size", bsize, bgrade, bnote)
                 if bsize is not None:
                     record("board_leading", blead, bgrade, None)
@@ -2700,7 +3109,9 @@ def calibrate(theme_key, workdir=None):
                 bppu, box_, boy = _viewport(mask, vb)
                 size, grade, note, _bctx, lead = fit_title_size(
                     mask, image, units(box, bppu, box_, boy), bppu, box_, boy,
-                    title_font, samples, fill, ring=deck_ring, fit_out=fit_out)
+                    title_font, samples, fill, ring=deck_ring, fit_out=fit_out,
+                    owner_leading=render_page.back_leading(
+                        cfg.get("title_style") or {}))
                 return slot, size, grade, note, lead
             return None, None, None, None, None
 
