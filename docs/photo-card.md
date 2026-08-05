@@ -221,6 +221,82 @@ stays `#ffffff`** — that is what makes the sticker read on a patterned card.
 The cards carry **no font dependency**: every piece of static copy is already baked to vector
 paths. Rendering one needs no `@font-face` injection, unlike `clean/fronts.svg`.
 
+## The paper — measured off the template's front card
+
+The pawn card ships inside the buyer's deck, so it is printed on **that template's own front-card
+paper**, not on white and not on one colour for every template. `generator/card_paper.py` measures
+it and `render_page.photo_card_svg` applies it; both the deck and the single-card preview compose
+the card through that one helper, so they cannot drift.
+
+**It is measured, not read out of the vector, and grapefruit is why.** Its `clean/2.svg` opens with
+two full-bleed paths, `#ffffff` then `#f4f1eb`, and neither is the paper: a rounded panel covers
+~78% of the card in `#fffdf1`. "Take the fill of the full-bleed rect" answers `#f4f1eb`; the card a
+buyer holds is `#fffdf1`. So the front is rendered once and the paper is **the mode of its pixels**
+— the same question `calibrate._background` asks ("the mode of the un-inked pixels"), and a
+`clean/` card is un-inked by definition, so the whole card is the crop.
+
+Measured across the nine shipped templates:
+
+| template                 | front paper | share |
+| ------------------------ | ----------- | ----- |
+| trip comeback            | `#d0e4d7`   | 71.7% |
+| bachelorette             | `#ffc6d7`   | 78.4% |
+| birthday-girls           | `#fff1de`   | 72.5% |
+| birthday-girls-neon      | `#f6d5ff`   | 75.5% |
+| birthday-boys-basketball | `#ffffff`   | 73.3% |
+| anniversary              | `#f4f1eb`   | 92.8% |
+| japanese                 | `#fdfcf7`   | 77.9% |
+| football-boys            | `#a4e9ff`   | 75.8% |
+| grapefruit               | `#fffdf1`   | 73.5% |
+
+**A front with no paper answers nothing.** A photographic or continuous-tone front has no colour
+holding a large share of the card, so its mode is just the luckiest pixel. `PAPER_MIN_SHARE` (0.25
+— far below every row above) is the line: under it, and on any Chrome failure, `front_paper`
+returns `None` and the pawn card **keeps the background it was drawn with**. An unmeasurable colour
+must never cost a customer their deck, and an arbitrary sampled pixel is worse than white.
+
+Repapering moves **every element painted in the card's own paper colour**, not only the full-bleed
+rectangle. Grapefruit's pawn card paints its paper twice — the full-bleed base, and again as the
+rounded panel the pawns actually sit on — and repainting only the base would change a colour that
+is hidden under the stripes and the fruit, i.e. produce a diff that renders identically. Only
+`fill` attributes move; `flood-color` is left alone, because the halo is `#ffffff` by contract and
+on the generic card that is also the paper.
+
+A v1 (8-up sheet) template has no numbered fronts; `clean/fronts.svg` carries the same eight cards
+on one sheet and the cards cover enough of it that the mode is still the card paper rather than the
+gutter. That is not tidiness — v1 is what the owner's store is being migrated FROM, and a
+half-migrated template must not answer "no paper".
+
+## The static copy — outlines, with the words kept in the markup
+
+Two lines print on every pawn card: a heading (`החיילים שלכם`) and a caption
+(`גזרו אותם לפי הקווים`). They are **outlined paths**, which is what makes the "no font dependency"
+rule above true. The cost is that the words are not editable by hand, so each copy path carries the
+sentence it draws — and how it is set — as attributes:
+
+```xml
+<path data-copy="גזרו אותם לפי הקווים"
+      data-font="site/assets/fonts/heebo-300-hebrew.*.woff2"
+      data-size="7" data-track="0.3" data-baseline="70" data-cx="111.96"
+      d="…" fill="#111111" fill-opacity="0.6"/>
+```
+
+`scripts/set_photo_card_copy.py` regenerates `d` from `data-copy`: **edit the words in the SVG, run
+the script, commit.** `--check` rewrites nothing and fails if any `d` has drifted from its words,
+which is what `generator/test_photo_card_copy.py` runs. `data-font` is a repo-relative path, a glob
+so a content-hashed web font can be named without freezing its hash. It needs `fonttools` — a dev
+dependency; the production image only ever prints the paths the script leaves behind.
+
+Each card is set in **its own template's face**, not one house font: the generic card is
+Heebo (the brand face, self-hosted under `site/assets/fonts/`) at 7 units with 0.3 tracking, and
+grapefruit's is Cafe Regular — its own word font — at 7.2 with none. Both sit on baseline 70,
+centred on the card's advance width at x = 111.96.
+
+**There is no `דוגרי` wordmark on the card**, and no rule above where it was: the owner had both
+removed. Nothing prints below the pawn grid at all now, which is what
+`test_nothing_prints_below_the_pawn_grid` pins — searching for the word cannot catch a
+reintroduction, because it would come back as outlines.
+
 ## Resolution order — which photo card to use
 
 1. `DATA_DIR/templates/<key>/clean/photo.svg` — the owner template overlay, if `DATA_DIR` is set

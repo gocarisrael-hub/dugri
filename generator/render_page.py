@@ -13,6 +13,7 @@ import re
 import sys
 import csv as csvmod
 
+import card_paper
 import chrome
 import config
 import deck_html
@@ -2033,6 +2034,26 @@ def fill_photo_slots(svg_text, photo_paths):
     return _PHOTO_SLOT.sub(fill, svg_text)
 
 
+def photo_card_svg(theme, photos, paper=None):
+    """The theme's pawn card, printed on ``paper`` and filled with ``photos``.
+
+    The ONE place a pawn card is composed, so the deck and the single-card
+    preview cannot drift apart on what it looks like. Resolution of WHICH card
+    (owner overlay, the theme's own, the generic) stays in ``config``.
+
+    ``paper`` is the colour the card prints on — the front card's own paper, so
+    the sheet of pawns matches the deck it ships with instead of being white
+    under every template. It is passed IN rather than measured here because
+    measuring means rendering the front (``card_paper.front_paper``), and
+    ``build.deck_document`` is contractually Chrome-free: it assembles deck
+    STRUCTURE, and structure does not depend on colour. ``None`` prints the card
+    exactly as shipped, which is also what an unmeasurable front yields.
+    """
+    import card_assets
+    svg = card_assets.read_svg(config.photo_card_path(theme))
+    return fill_photo_slots(card_paper.repaper(svg, paper), photos or [])
+
+
 def _index_from_card_path(path):
     """The card number a ``clean/13.svg`` path names, or None if it isn't one."""
     stem = os.path.splitext(os.path.basename(path or ""))[0]
@@ -2064,8 +2085,12 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
     if kind == "photo":
         # The photo card carries no text — every piece of its static copy is
         # already baked to vector paths — so it needs no @font-face injection at
-        # all. Its slots are filled in the artwork itself, not overlaid.
-        return fill_photo_slots(svg, photos or [])
+        # all. Its slots are filled in the artwork itself, not overlaid, and its
+        # paper follows the theme's front card, so it is composed by the shared
+        # helper rather than from the ``clean_svg`` handed in here. This path
+        # renders through Chrome anyway, so measuring the paper here costs it
+        # nothing it was not already paying.
+        return photo_card_svg(theme, photos, paper=card_paper.front_paper(theme))
     style = ("<style>" + GEOMETRIC_TEXT_STYLE
              + font_face("HebWord", config.resolve_word_font(theme, word_font))
              + font_face("TitleFont", config.font_path(theme, cfg["title_font"]))

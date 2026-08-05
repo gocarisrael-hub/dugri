@@ -17,6 +17,7 @@ import re
 from PIL import Image
 
 import card_assets
+import card_paper
 import chrome
 import config
 import deck_html
@@ -259,12 +260,18 @@ def _fmt(v):
 
 
 def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
-                  progress=False, workdir=None, press_geom=None):
+                  progress=False, workdir=None, press_geom=None, paper=None):
     """Assemble the whole deck as a ``(DeckDocument, viewBox_string)`` pair.
 
     Split out from ``build_deck`` so the deck's STRUCTURE — page count, duplex
     ordering, front cycling, the photo card — can be asserted without spawning
     Chrome, which CI may not have.
+
+    ``paper`` is the colour the PAWN card prints on, which ``build_deck``
+    measures off the front artwork (``card_paper.front_paper``) and hands in.
+    It is a parameter and not a lookup precisely to keep the promise above:
+    measuring means rendering a card, and structure does not depend on colour.
+    ``None`` leaves the pawn card on the background it was drawn with.
     """
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
@@ -351,8 +358,8 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
             # The photo card's slots live in the artwork and are filled in place
             # (docs/photo-card.md), so the FILLED card is the design — there is
             # no text overlay to lay on top of it, and it needs no font.
-            doc.add_design("photo", rp.fill_photo_slots(
-                card_assets.read_svg(config.photo_card_path(theme)), photo_paths))
+            doc.add_design("photo", rp.photo_card_svg(theme, photo_paths,
+                                                      paper=paper))
             doc.add_page("photo")
         else:
             doc.add_page(f"front{front}",
@@ -408,9 +415,13 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
         geom = press.PressGeometry(vb[2], vb[3], **kw)
         if progress:
             print("press: " + geom.describe())
+    # The pawn card prints on the FRONT card's own paper, so the sheet of pawns
+    # matches the deck it ships in. One render, cached on the front's content
+    # (docs/photo-card.md); an unmeasurable front leaves the card as shipped.
     doc, vbs = deck_document(theme, csvp, title_lines, word_font=word_font,
                              photos=photos, progress=progress, workdir=workdir,
-                             press_geom=geom)
+                             press_geom=geom,
+                             paper=card_paper.front_paper(theme, workdir=workdir))
     print_to_pdf(doc.html(vbs), out_pdf, workdir, tag="deck")
     if geom is not None:
         # Ghostscript is minutes of work on a full deck, so this deliberately
