@@ -1967,8 +1967,17 @@ function isFrac(v) {
 }
 const TITLE_ALIGNS = ['center', 'left', 'right'];
 
+// The span of title line spacings that count as a reading rather than a
+// mis-measurement, as a fraction of the type size. These ARE calibrate.py's
+// `_PITCH_GRID` end points — a value the measurement can return must not be
+// refused here, or one rejected field throws away the whole title_style
+// (colours and sizes included) and the template reports itself uncalibrated.
+const TITLE_LEADING_MIN = 0.3;
+const TITLE_LEADING_MAX = 2;
+
 // Validate a title_style blob. Required: fill, outline (hex), outline_w + arch
-// (0..1 fractions), shadow (bool). Optional: size / board_size / back_size
+// (0..1 fractions), shadow (bool). Optional: size / board_size / back_size,
+// leading / board_leading / back_leading
 // (positive px, absent = auto-fit), align (center/left/right), offset ([dx,dy]
 // fractions -1..1), italic (bool). Returns a FRESH, key-whitelisted object so no
 // stray field reaches themes.json. { value } | { error }.
@@ -1991,6 +2000,36 @@ function validateTitleStyle(input) {
     if (input[k] == null) continue;
     if (!isFiniteNum(input[k]) || input[k] <= 0 || input[k] > 400) {
       return { error: 'title_style.' + k + ' must be a positive size' };
+    }
+    out[k] = input[k];
+  }
+  // leading / back_leading / board_leading: the baseline step between a title's
+  // lines, as a fraction of the type size, measured off the design's own
+  // artwork. One per SURFACE, exactly like the sizes above — a design's front,
+  // board and backs are separate text boxes and are spaced separately, and each
+  // surface's pinned size was fitted at its own spacing. Absent = fall through
+  // to the fronts', then to the renderer's own fixed step, which is what every
+  // uncalibrated (and every single-line) title uses.
+  //
+  // The bounds are calibrate.py's own search grid, deliberately: a value the
+  // measurement can legitimately return must not be refused here, because
+  // title_style is validated as a WHOLE and one rejected field throws away the
+  // colours and sizes measured beside it. סנטוריני's back really does measure
+  // 0.48. Outside the grid it is not a design, it is a mis-measurement, and it
+  // would print on every card of a paid order.
+  for (const k of ['leading', 'back_leading', 'board_leading']) {
+    if (input[k] == null) continue;
+    if (!isFiniteNum(input[k]) || input[k] < TITLE_LEADING_MIN || input[k] > TITLE_LEADING_MAX) {
+      return {
+        error:
+          'title_style.' +
+          k +
+          ' must be a fraction ' +
+          TITLE_LEADING_MIN +
+          '..' +
+          TITLE_LEADING_MAX +
+          ' of the type size',
+      };
     }
     out[k] = input[k];
   }
@@ -2150,6 +2189,24 @@ function validateBacks(input, label) {
         return { error: slotLabel + '.size must be a positive number or null' };
       }
       v.value.size = size;
+    }
+    // ...and the spacing that size was measured at. It travels WITH the size:
+    // separately drawn backs are separately spaced text boxes, and a size
+    // pinned away from its own spacing prints a block nobody measured.
+    const lead = input[key].leading;
+    if (lead != null && lead !== '') {
+      if (!isFiniteNum(lead) || lead < TITLE_LEADING_MIN || lead > TITLE_LEADING_MAX) {
+        return {
+          error:
+            slotLabel +
+            '.leading must be a fraction ' +
+            TITLE_LEADING_MIN +
+            '..' +
+            TITLE_LEADING_MAX +
+            ' of the type size',
+        };
+      }
+      v.value.leading = lead;
     }
     out[key] = v.value;
   }

@@ -314,6 +314,40 @@ def test_board_and_back_pins_are_checked_on_their_own_boxes():
         assert not r["ok"] and "back_size" in _texts(r), _texts(r)
 
 
+def test_the_fit_verdict_is_measured_at_the_themes_own_leading():
+    # A theme calibrated at a WIDE leading paints a visibly taller block out of
+    # the same type, and the health check has to predict the block the card
+    # prints. Predicting the renderer's default step instead would pass a pin
+    # that overflows the box — which is the one thing this check exists to catch.
+    with Fixture() as fx:
+        ts = fx.entry["title_style"]
+        lines = H.sample_titles(config.theme(fx.key))[0][0]
+        flat = H._paint_ratio(fx.font_path(), lines, ts["outline_w"], ts["shadow"])
+        wide = H._paint_ratio(fx.font_path(), lines, ts["outline_w"], ts["shadow"],
+                              leading=1.60)
+        assert wide > flat * 1.2, (flat, wide)
+        # ...and a size that fits at the default step is flagged at the wide one.
+        fitting, _big, _small = _pins(fx)
+        ts["size"] = round(fitting, 2)
+        fx.write()
+        assert fx.check()["ok"]
+        ts["leading"] = 1.60
+        fx.write()
+        assert not fx.check()["ok"], "a wide leading overflowing the box must show"
+
+
+def test_a_theme_with_no_leading_is_judged_exactly_as_before():
+    # The nine live designs carry no measured leading. Their verdict must not
+    # move: absent and "the renderer's own step" are the same prediction.
+    with Fixture() as fx:
+        ts = fx.entry["title_style"]
+        lines = H.sample_titles(config.theme(fx.key))[0][0]
+        absent = H._paint_ratio(fx.font_path(), lines, ts["outline_w"], ts["shadow"])
+        explicit = H._paint_ratio(fx.font_path(), lines, ts["outline_w"],
+                                  ts["shadow"], leading=None)
+        assert absent == explicit
+
+
 def test_an_unpinned_theme_raises_no_fit_verdict():
     # With nothing pinned the renderer auto-fits to the box, so there is no
     # stored number that can go stale — and nothing to report.

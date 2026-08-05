@@ -17,6 +17,7 @@ generated cards match the origin Canva templates:
 
 Run: python3 generator/test_render_page.py   (or via pytest)
 """
+import json
 import os
 import re
 
@@ -822,11 +823,19 @@ def test_the_free_room_below_the_last_line_is_real():
 
 def test_the_extra_room_is_what_keeps_the_type_at_full_size():
     """Her card, with and without the room: the same words, the same wrap, and a
-    third of the type size riding on which envelope is used."""
+    tenth of the type size riding on which envelope is used.
+
+    It used to be a third. The room did not shrink — the OTHER thing squeezing a
+    wrapped card got smaller: the line pitch now reserves what this card's own
+    glyphs need instead of the worst case over every glyph a card could ever
+    print, so the penned card recovered most of the height it was spending on
+    leading and the two envelopes moved closer together. The room still matters,
+    and this pins that it does; what it no longer has to do is compensate for a
+    pitch that was too wide in the first place."""
     font, ref = _cafe()
     penned = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN, room=None)
     roomy = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN)
-    assert roomy[0].size > penned[0].size * 1.2, (
+    assert roomy[0].size > penned[0].size * 1.10, (
         f"{penned[0].size:.2f} -> {roomy[0].size:.2f}")
 
 
@@ -896,21 +905,20 @@ _BP_FLOOR_PITCH = (((_BP_SLOTS[-1]["y0"] + _BP_SLOTS[-1]["y1"]) / 2
                    / (len(_BP_SLOTS) - 1))
 
 
-def test_the_line_gap_comes_from_the_font_not_the_cards_own_glyphs():
-    """``_lead_for`` answered per card, so two cards of one deck got two rhythms
-    (30.56 against 29.39 on the owner's own pair). The pitch is now the FONT's
-    need, floored by the origin's own entry spacing and capped by the paper left
-    below the card — three quantities, none of which knows which letters this
-    particular card happens to carry.
+def test_the_line_gap_clears_every_glyph_this_card_actually_sets():
+    """The rule is that no two letters touch, and the letters that can touch are
+    the ones ON THE CARD. So the pitch carries the deepest ink any of the card's
+    own lines puts below its baseline plus the highest any of them puts above it,
+    and never less — whatever the card says.
 
-    At the shipped 8 mm bottom margin the CAP binds on her wrapped card: six
-    lines no longer fit under the origin's spacing, so the pitch comes off the
-    floor and takes the value the room dictates — which shows as the last line's
-    ink landing exactly on ``room_bottom``. That is the documented order (the
-    floor is a preference, the font's need is the rule), so both branches are
-    pinned here rather than the floor alone."""
+    It used to reserve that worst case over an ABSTRACT repertoire of every glyph
+    a card could ever print. That is a different and much larger number, because
+    the repertoire's deepest descender and its tallest ascender are rarely on the
+    same card: 15% larger on Cafe, 25% on Comix, 40% on FtPilKahol, 52% on Asakim.
+    Every one of those percent was spent on line pitch and then taken back out of
+    the type size, which is exactly the "type too small, leading too airy, and the
+    two cancel" the originals were measured against."""
     font, ref = _cafe()
-    lead = rp._font_lead(font, ref)
     for words in (_CARD_HAPOEL, _CARD_ARZOT,
                   ["ים", "ים", "ים", "ים"],            # nothing descends or rises
                   ["לקחת", "לקחת", "לקחת", "לקחת"]):   # both, at their extremes
@@ -918,12 +926,13 @@ def test_the_line_gap_comes_from_the_font_not_the_cards_own_glyphs():
         live = [l for l in layouts if l is not None]
         size = live[0].size
         pitch = live[0].lead * size
-        want = max(_BP_FLOOR_PITCH, lead * size)
+        flat = [ln for l in live for ln in l.lines]
+        need = rp._card_lead(font, ref, flat) * size
+        want = max(_BP_FLOOR_PITCH, need)
         ink = (_line_centers(layouts, _BP_SLOTS)[-1]
                + rp._ink_reach(font, ref, live[-1].lines[-1])[1] * size)
-        assert pitch >= lead * size - 1e-9, (
-            f"{words}: the font's need is the rule and may not be undercut — "
-            f"{pitch} < {lead * size}")
+        assert pitch >= need - 1e-9, (
+            f"{words}: this card's own glyphs need {need} and got {pitch}")
         assert pitch <= want + 1e-9, (
             f"{words}: nothing may spread the lines past the origin's own "
             f"spacing — {pitch} > {want}")
@@ -936,6 +945,57 @@ def test_the_line_gap_comes_from_the_font_not_the_cards_own_glyphs():
                 f"room being the reason — ink {ink}, room {_bp_room()}")
         else:
             assert ink <= _bp_room() + 1e-6, f"{words}: ink {ink} past the room"
+
+
+def test_the_cards_own_gap_is_tighter_than_the_whole_repertoires():
+    """The saving is the point of the change, so it is pinned rather than
+    assumed: a real Hebrew card must need materially less than the repertoire."""
+    font, ref = _cafe()
+    card = rp._card_lead(font, ref, _CARD_HAPOEL)
+    assert card < rp._font_lead(font, ref), (card, rp._font_lead(font, ref))
+
+
+def test_the_gap_does_not_depend_on_which_slot_a_word_landed_in():
+    """Measured over ALL the card's lines, not adjacent pairs, so re-ordering the
+    same four words cannot change the card's rhythm."""
+    font, ref = _cafe()
+    words = ["לקחת", "ים", "מסיבה", "קרן"]
+    a = rp._card_lead(font, ref, words)
+    b = rp._card_lead(font, ref, list(reversed(words)))
+    assert abs(a - b) < 1e-12, (a, b)
+
+
+def test_no_two_lines_of_a_card_can_touch_at_the_pitch_it_is_given():
+    """The owner's rule, checked on the GLYPHS: for every card, every pair of
+    lines that end up adjacent, the upper line's lowest ink must stop above the
+    lower line's highest ink — with clear air between them, not merely equal.
+
+    Checked over cards chosen to be adversarial (a deep final letter set against
+    a tall lamed, and a card that wraps), because the whole risk of tightening the
+    pitch is that some pairing collides."""
+    font, ref = _cafe()
+    cards = [_CARD_HAPOEL, _CARD_ARZOT,
+             ["לקחת", "ךףץ", "לקחת", "ךףץ"],
+             ["ךףץ", "לקחת", "ךףץ", "לקחת"],
+             ["להקת שבעת הכוכבים", "ים", "לקחת", "ךףץ"]]
+    for words in cards:
+        layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+        live = [l for l in layouts if l is not None]
+        size = live[0].size
+        centers = _line_centers(layouts, _BP_SLOTS)
+        flat = [ln for l in live for ln in l.lines]
+        assert len(centers) == len(flat), (words, len(centers), len(flat))
+        asc, _desc = font.getmetrics()
+        for i in range(len(flat) - 1):
+            # Where each line's ink actually reaches, in card units, using the
+            # same centre-to-baseline convention word_lines draws with.
+            upper_bottom = (centers[i]
+                            + rp._ink_reach(font, ref, flat[i])[1] * size)
+            lower_top = (centers[i + 1]
+                         - rp._ink_reach(font, ref, flat[i + 1])[0] * size)
+            assert upper_bottom < lower_top, (
+                f"{words}: line {i} ink reaches {upper_bottom:.3f} and line "
+                f"{i + 1} starts at {lower_top:.3f} — they touch")
 
 
 def test_two_cards_that_set_at_one_size_show_one_gap():
@@ -1712,3 +1772,308 @@ def test_the_sheet_reads_the_per_front_nudge():
                            "front_offset": {"5": [0.30, 0.06]}}}
     assert config.front_offset(cfg, 1) == [0.06, 0.06]
     assert config.front_offset(cfg, 5) == [0.30, 0.06]
+
+
+# --- 11. the LEADING: the spacing calibration measures is the spacing we print -
+#
+# `title_block` stacked every title's lines one fixed step apart — 0.78 of the
+# type size — whatever spacing the design they were copied from was set at. The
+# calibrator now MEASURES that spacing (calibrate.solve_size_and_leading), and
+# these are the tests that it reaches the ink: the measured number is what the
+# baselines are laid out on, a theme without one is untouched, and a spacing
+# tighter than the glyphs need is opened up rather than printed as a collision.
+
+LEAD_BOX = {"x0": 20.0, "y0": 30.0, "x1": 210.0, "y1": 120.0}
+LEAD_LINES = ["מסיבת רווקות", "לשירה"]
+_UNSET = object()
+
+
+def _hebrew_title_font():
+    # A face that really can DRAW the lines below. A Latin-only title font
+    # (bachelorette's Mr Dafoe) answers getbbox on Hebrew with the empty
+    # .notdef box, which makes the collision floor measure zero and every
+    # assertion about it vacuously true.
+    return config.font_path("anniversary",
+                            config.theme("anniversary")["title_font"])
+
+
+def _block(lines, leading=_UNSET, font=None, outline_w=0.0, **kw):
+    """One title block's markup, with the UID reset so two calls compare."""
+    rp._TITLE_UID[0] = 0
+    args = {"fixed_size": 24.0}
+    args.update(kw)
+    if leading is not _UNSET:
+        args["leading"] = leading
+    return rp.title_block(LEAD_BOX, list(lines), args.pop("fill", "#111111"),
+                          args.pop("outline", "#111111"),
+                          font or _hebrew_title_font(), outline_w, 0.0, False,
+                          **args)
+
+
+def _baselines(svg):
+    """The y of each line's MAIN arc path, in the order they were emitted.
+
+    The `m` in the id matters: a shadowed title also emits an `s` path per line,
+    dropped 0.06 of the size lower, and taking every path would read a line's
+    own shadow as the next line.
+    """
+    return [float(y) for y in
+            re.findall(r'id="t\d+m\d+" fill="none" d="M [-0-9.]+ ([-0-9.]+) Q', svg)]
+
+
+def _emitted_size(svg):
+    return float(re.findall(r'font-size="([0-9.]+)"', svg)[0])
+
+
+def test_a_measured_leading_is_what_the_lines_are_stacked_at():
+    # The point of the whole change: the number calibration read off the design
+    # is the number the baselines are laid out on, not 0.78. Every value here is
+    # above this face's collision floor, so the clamp is not what is being
+    # measured — the leading is passed straight through.
+    font = _hebrew_title_font()
+    f, ref = rp._title_metrics(font)
+    floor = rp._min_line_pitch(f, ref, LEAD_LINES, 0.0)
+    for want in (round(floor + 0.10, 2), round(floor + 0.50, 2),
+                 round(floor + 1.00, 2)):
+        assert want > floor, (want, floor)
+        svg = _block(LEAD_LINES, leading=want, font=font)
+        size = _emitted_size(svg)
+        got = _baselines(svg)
+        step = got[1] - got[0]
+        assert abs(step - want * size) < 0.15, (want, size, step)
+
+
+def test_a_theme_with_no_measured_leading_stacks_at_the_renderers_own_step():
+    # An uncalibrated theme — and every theme calibrated before the leading was
+    # measured — must be laid out exactly as it was. `leading=None` and omitting
+    # the argument are the same thing, and both mean 0.78.
+    omitted = _block(LEAD_LINES)
+    explicit = _block(LEAD_LINES, leading=None)
+    assert omitted == explicit
+    size = _emitted_size(omitted)
+    got = _baselines(omitted)
+    assert abs((got[1] - got[0]) - rp.RENDER_PITCH * size) < 0.15
+    assert rp.RENDER_PITCH == 0.78
+
+
+def test_no_shipped_theme_carries_a_leading_yet():
+    # Nine designs are in production. None of them has been re-calibrated, so
+    # none may have picked one up by side effect — the test below pins what they
+    # render, and this pins WHY they are entitled to be unchanged.
+    shipped = json.load(open(os.path.join(HERE, "themes.json"), encoding="utf-8"))
+    with_leading = [k for k, e in shipped.items()
+                    if (e.get("title_style") or {}).get("leading") is not None]
+    assert not with_leading, with_leading
+
+
+# Two lines of Hebrew, two of Latin, one alone — so the sweep below covers the
+# stacked path, the RTL and LTR splits, and the single-line path that has no
+# spacing at all.
+_TITLE_MARKUP_CASES = (["מסיבת רווקות", "לשירה"],
+                       ["Alma's", "Birthday"],
+                       ["דנה"])
+
+
+def _shipped_title(entry, key, lines, **kw):
+    ts = entry["title_style"]
+    rp._TITLE_UID[0] = 0
+    return rp.title_block(
+        LEAD_BOX, list(lines), ts["fill"], ts["outline"],
+        config.font_path(key, entry["title_font"]),
+        ts["outline_w"], ts["arch"], ts["shadow"],
+        rtl=(entry.get("language") == "hebrew"),
+        fixed_size=ts.get("size"), align=ts.get("align", "center"),
+        italic=ts.get("italic", False), bold=ts.get("bold", False),
+        bold_w=ts.get("bold_w"), **kw)
+
+
+def test_the_shipped_themes_titles_render_exactly_as_before():
+    # Nine designs are live; re-spacing one by side effect would reprint every
+    # card of every order placed against it. So: for every shipped theme, over
+    # every shape of title, the markup with the theme's leading (none of them
+    # has one) is byte-identical to the markup produced without the argument at
+    # all, and the lines come out on exactly the fixed step this renderer has
+    # always used. Those two together are the whole guarantee — with no measured
+    # leading, `pitch` IS `RENDER_PITCH`, and every place the pitch reaches
+    # (the ink stack, the height cap's per-line share, the baseline gap) then
+    # sees the identical constant it saw before.
+    #
+    # Deliberately not a hash of the output: the emitted coordinates come from
+    # FreeType's metrics, which differ by a fraction of a unit between a dev
+    # machine and CI, so a golden hash would fail for a reason that has nothing
+    # to do with this change.
+    shipped = json.load(open(os.path.join(HERE, "themes.json"), encoding="utf-8"))
+    assert len(shipped) >= 9, "the shipped set shrank — check what was removed"
+    for key, entry in sorted(shipped.items()):
+        ts = entry["title_style"]
+        assert ts.get("leading") is None, key
+        for lines in _TITLE_MARKUP_CASES:
+            with_arg = _shipped_title(entry, key, lines, leading=ts.get("leading"))
+            without = _shipped_title(entry, key, lines)
+            assert with_arg == without, f"{key}: {lines} moved"
+            got = _baselines(with_arg)
+            if len(got) < 2:
+                continue
+            size = _emitted_size(with_arg)
+            for a, b in zip(got, got[1:]):
+                assert abs((b - a) - rp.RENDER_PITCH * size) < 0.15, (
+                    f"{key}: {lines} is no longer stacked at {rp.RENDER_PITCH}")
+
+
+def test_the_pitch_falls_back_to_the_renderers_own_step_whatever_is_asked_of_it():
+    # The other half of the guarantee above: with no measured leading the clamp
+    # cannot fire, for any font, any text and any amount of paint — so there is
+    # no input on which an uncalibrated theme picks up a spacing it did not have.
+    f, ref = rp._title_metrics(_hebrew_title_font())
+    for lines in (["לתמר", "מזל טוב"], ["דנה"], ["א", "ב", "ג"]):
+        for pad in (0.0, 0.1, 0.5, 2.0):
+            assert rp.title_pitch(f, ref, lines, None, pad) == rp.RENDER_PITCH
+
+
+def test_a_single_line_title_is_unaffected_by_the_leading():
+    # There is no gap between one line and nothing, so the spacing cannot reach
+    # the markup — the single-line templates are entitled to be untouched no
+    # matter what the theme carries.
+    plain = _block(["דנה"])
+    for lead in (None, 0.50, 0.78, 1.90):
+        assert _block(["דנה"], leading=lead) == plain, lead
+
+
+def test_each_surface_is_stacked_at_its_own_measured_spacing():
+    # A design's front, board and backs CAN be spaced separately — tarifa's back
+    # stacks its two lines a third further apart than its front — and where the
+    # calibrator finds that (calibrate.couple_leadings refuses to share a
+    # leading its surfaces' ink disagrees on) each surface carries its own.
+    # Each surface's pinned SIZE was fitted at whatever spacing it ended up
+    # with, so drawing a back at the front's prints a size nobody measured:
+    # forcing one deck-wide leading put tarifa's back 21% over the Canva value
+    # it had been matching to 2%.
+    ts = {"leading": 0.90, "back_leading": 1.30, "board_leading": 1.10}
+    assert rp.back_leading(ts) == 1.30
+    assert rp.board_leading(ts) == 1.10
+    # A paired deck measures each back on its own, and that wins over both.
+    assert rp.back_leading(ts, {"leading": 1.55}) == 1.55
+    # ...and each falls through to the fronts' when it has none of its own,
+    # exactly as back_size falls through to size.
+    assert rp.back_leading({"leading": 0.90}) == 0.90
+    assert rp.board_leading({"leading": 0.90}) == 0.90
+    assert rp.back_leading({"leading": 0.90}, {}) == 0.90
+    # Nothing measured anywhere is None — the renderer's own step.
+    assert rp.back_leading({}) is None and rp.board_leading({}) is None
+
+
+def test_a_leading_tighter_than_the_glyphs_need_is_opened_up():
+    # A measured leading is read against the ORIGINAL's honoree name, and we do
+    # not print that name. The owner's rule: the lines may never touch.
+    font = _hebrew_title_font()
+    f, ref = rp._title_metrics(font)
+    lines = ["לתמר", "מזל טוב"]
+    floor = rp._min_line_pitch(f, ref, lines, 0.0)
+    assert floor > 0.50, ("the face must actually draw these lines, or the "
+                          "clamp is never exercised")
+    svg = _block(lines, leading=0.50, font=font)
+    size = _emitted_size(svg)
+    got = _baselines(svg)
+    # 0.01 of slack because the path's y is emitted to one decimal place.
+    assert (got[1] - got[0]) / size >= floor - 0.01, "the clamp did not hold"
+    # ...and it only ever LOOSENS: a design that leads generously keeps its air.
+    wide = _block(lines, leading=1.60, font=font)
+    assert abs((_baselines(wide)[1] - _baselines(wide)[0])
+               / _emitted_size(wide) - 1.60) < 0.01
+
+
+def test_the_collision_floor_counts_the_painted_ring_not_just_the_glyph():
+    # The ring is painted around every glyph, so two lines set as close as their
+    # bare ink allows would still overlap once both are ringed.
+    font = _hebrew_title_font()
+    f, ref = rp._title_metrics(font)
+    lines = ["לתמר", "מזל טוב"]
+    bare = rp._min_line_pitch(f, ref, lines, 0.0)
+    ringed = rp._min_line_pitch(f, ref, lines, 0.10)
+    assert abs((ringed - bare) - 0.10) < 1e-9
+    # A same-colour "outline" is never painted as a ring, so it must not push
+    # the lines apart to clear a ring that is not there.
+    tight = _block(lines, leading=0.50, font=font, outline_w=0.10,
+                   fill="#111111", outline="#111111")
+    step = (_baselines(tight)[1] - _baselines(tight)[0]) / _emitted_size(tight)
+    assert abs(step - bare) < 0.01, step
+
+
+# --- the collision rule, proved on the RENDERED card -------------------------
+#
+# The owner's rule: a measured leading may never be tighter than the glyphs
+# need, and "may never" is not a claim a green arithmetic test settles — the
+# spacing is arithmetic but the collision is ink. So every shipped template is
+# driven through the SAME headless Chrome the cards are printed with, at the
+# tightest leading the store will accept, carrying the longest honoree name that
+# can be constructed, and the rendered pixels are asked whether any two lines
+# touch.
+
+# The longest name a buyer can realistically enter, in each script, chosen to
+# hang ink BOTH ways across the gap: the Hebrew ends in a final-kaf that dives
+# below the baseline and opens with a lamed that climbs above it; the Latin
+# carries a descender (p, y) over an ascender (l, d).
+_LONG_NAMES = {"hebrew": "אלכסנדרה-מרגריטה־לך",
+               "english": "Alexandrina-Poppylde",
+               "english-caps": "ALEXANDRINA-POPPYLDE"}
+# The floor of the range validateTitleStyle accepts — the worst case the
+# renderer can ever be handed by the store.
+_TIGHTEST_ALLOWED_LEADING = 0.50
+
+
+def _chrome_ink_rows(svg_text, w, h, scale, out_png):
+    """Row ink profile of an SVG rendered through the production rasterizer."""
+    import subprocess
+
+    import numpy as np
+    sp = out_png.replace(".png", ".svg")
+    open(sp, "w", encoding="utf-8").write(svg_text)
+    subprocess.run([rp.CHROME, "--headless", "--no-sandbox", "--disable-gpu",
+                    rp.CHROME_FONT_WAIT, f"--force-device-scale-factor={scale}",
+                    f"--screenshot={out_png}", f"--window-size={w},{h}", sp],
+                   check=True, stderr=subprocess.DEVNULL)
+    a = np.asarray(Image.open(out_png).convert("L")) < 200
+    return a.sum(axis=1)
+
+
+def test_no_two_title_lines_touch_at_the_tightest_leading_on_any_template():
+    import tempfile
+    W, H, SCALE = 460, 300, 3
+    d = tempfile.mkdtemp(prefix="dugri-leadtest-")
+    shipped = json.load(open(os.path.join(HERE, "themes.json"), encoding="utf-8"))
+    checked = 0
+    for key, entry in sorted(shipped.items()):
+        ts, tmpl = entry["title_style"], entry.get("title_lines") or []
+        name = _LONG_NAMES[entry.get("name_form", "english")]
+        lines = [ln.replace("{NAME}", name).replace("{NAME1}", name)
+                 .replace("{NAME2}", name).replace("{AGE}", "40")
+                 .replace("{YEARS}", "40") for ln in tmpl]
+        if len(lines) < 2:
+            continue          # one line cannot collide with anything
+        font = config.font_path(key, entry["title_font"])
+        box = {"x0": 20.0, "y0": 20.0, "x1": W - 20.0, "y1": H - 20.0}
+        rp._TITLE_UID[0] = 0
+        block = rp.title_block(
+            box, lines, ts["fill"], ts["outline"], font, ts["outline_w"],
+            ts["arch"], ts["shadow"], rtl=(entry.get("language") == "hebrew"),
+            align=ts.get("align", "center"), italic=ts.get("italic", False),
+            bold=ts.get("bold", False), bold_w=ts.get("bold_w"),
+            leading=_TIGHTEST_ALLOWED_LEADING)
+        svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" '
+               f'height="{H}" viewBox="0 0 {W} {H}">'
+               f'<style>{rp.font_face("TitleFont", font)}</style>'
+               f'<rect width="{W}" height="{H}" fill="white"/>{block}</svg>')
+        rows = _chrome_ink_rows(svg, W, H, SCALE, os.path.join(d, key + ".png"))
+        bl = _baselines(block)
+        # A clear row must exist between EVERY neighbouring pair of baselines,
+        # not merely somewhere on the card: three lines can be fine at the top
+        # and welded together at the bottom.
+        for a, b in zip(bl, bl[1:]):
+            lo, hi = int(min(a, b) * SCALE), int(max(a, b) * SCALE)
+            band = rows[lo:hi]
+            assert len(band) and band.min() == 0, (
+                f"{key}: lines touch between baselines {a} and {b} — the "
+                f"tightest ink row in the gap still carries {band.min()} pixels")
+        assert rows.max() > 0, f"{key}: nothing rendered at all"
+        checked += 1
+    assert checked >= 6, f"only {checked} multi-line templates were proved"

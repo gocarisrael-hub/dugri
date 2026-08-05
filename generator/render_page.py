@@ -483,17 +483,59 @@ def _font_lead(font, ref):
     return (bottom - top) / ref + _WRAP_GAP
 
 
-def _card_lead(font, ref, lines):
-    """The pitch for one card: the font's fixed one, floored by these glyphs.
+# The digits and stop every card prints in its line markers (``word_lines``).
+# They are set from the same face on the same baseline, so they belong in the
+# card's own glyph repertoire even though they are drawn as a separate run.
+_MARKER_GLYPHS = "1234567890."
 
-    The font's number is the answer (see ``_font_lead``). ``_lead_for`` stays as a
-    guard for text outside ``_LEAD_REPERTOIRE`` — a Cyrillic or emoji character
-    that draws deeper than anything measured — because two letters touching is a
-    worse fault than one card in a deck spacing wider than its neighbours. On
-    ordinary Hebrew, Latin or numeric input it can never bite, so the gap is fixed
-    in practice as well as in principle.
+
+def _card_lead(font, ref, lines):
+    """The pitch this card's own type needs, as a multiple of the size.
+
+    The owner's rule: "the minimum gap (that obeys the rule that no 2 letters
+    touch each other) between the most descent letter (above) and the most ascent
+    letter (bottom) … applied between all lines". Two halves, and they pull
+    against each other:
+
+      NOT TOUCHING is about the glyphs that are actually set. The deepest
+      descender that can sit above a line and the tallest ascender that can sit
+      below it are properties of the TEXT ON THIS CARD, because those are the only
+      letters that can ever be adjacent on it.
+
+      ONE GAP FOR ALL LINES is about the card, and it is satisfied by taking the
+      worst pair over the whole card and spacing every line by it — which is what
+      this returns.
+
+    This USED to reserve the worst case over an abstract repertoire of every
+    glyph a card could ever print (``_font_lead``) — Hebrew, Latin, digits and
+    punctuation together — and that is a different, much larger number, because
+    the deepest descender in the repertoire and the tallest ascender in it almost
+    never appear on the same card. Measured across the ten shipped word faces,
+    the repertoire reserve is 15% wider than a real card needs on Cafe, 25% on
+    Comix, 40% on FtPilKahol and 52% on Asakim. Every one of those percent went
+    into the line pitch, and the deck then printed its words at that much SMALLER
+    a size to fit — which is precisely the "our type is too small and our leading
+    too airy, and the two cancel" that the originals were being measured against.
+
+    Measured over ALL the card's lines rather than adjacent pairs, so the answer
+    does not move when the same four words arrive in a different order — a card's
+    rhythm should not depend on which slot a word landed in.
+
+    Still provably safe: the pitch it returns carries the deepest ink any line on
+    this card puts below its baseline, plus the highest any line puts above its
+    own, plus ``_WRAP_GAP`` of clear air on top. No two glyphs of this card can
+    touch at that pitch, whatever order they are set in.
     """
-    return max(_font_lead(font, ref), _lead_for(font, ref, lines))
+    texts = [ln for ln in lines if ln and ln.strip()]
+    if not texts:
+        return _font_lead(font, ref)
+    texts.append(_MARKER_GLYPHS)
+    boxes = [font.getbbox(t) for t in texts]
+    top = min(b[1] for b in boxes)
+    bottom = max(b[3] for b in boxes)
+    if bottom <= top:
+        return _font_lead(font, ref)
+    return (bottom - top) / ref + _WRAP_GAP
 
 
 def _slot_pitch(slots, i):
@@ -1380,19 +1422,123 @@ def _ink_bearings(f, ref, line, size):
     return bb[0] / ref * size, (adv - bb[2]) / ref * size
 
 
-def _title_ink_stack(f, ref, lines):
+# The baseline step this renderer has always stacked title lines at, as a
+# fraction of the type size. It is a fallback now, not the rule: a theme whose
+# artwork was MEASURED (``title_style.leading``) is stacked at the leading the
+# design itself sets. A theme without that measurement keeps this exact number,
+# so nothing already shipped moves.
+RENDER_PITCH = 0.78
+
+
+def _title_ink_stack(f, ref, lines, pitch=RENDER_PITCH):
     """Total stacked title-ink height at the metric ``ref`` size.
 
     Measured over ALL lines, not just the first and last: a 3+ line title can
     carry its tallest ascender or deepest descender on a MIDDLE line, so the
     extreme ink extent is taken across every line (a first/last-only measure would
     under-count and let the middle line spill). (Finding #6.) The middle gaps are
-    the ``0.78*size`` baseline spacing used by the renderer below.
+    ``pitch * size`` — whatever spacing the caller is actually going to stack the
+    lines at, so the height this reports is the height that gets painted.
     """
     asc, _desc = f.getmetrics()
     ink_above = asc - min(f.getbbox(ln)[1] for ln in lines)  # tallest ink above baseline
     ink_below = max(f.getbbox(ln)[3] for ln in lines) - asc  # deepest ink below baseline
-    return ink_above + 0.78 * ref * (len(lines) - 1) + ink_below
+    return ink_above + pitch * ref * (len(lines) - 1) + ink_below
+
+
+# Daylight the collision floor insists on beyond the point where the two lines'
+# ink merely ABUTS, as a fraction of the type size. Touching is not a safe floor:
+# the rasterizer paints an antialiased rim about a device pixel wide onto each
+# glyph edge, so two outlines that exactly meet come out of Chrome as one welded
+# mass. A card at the coarsest scale anything renders it at (3x over a ~460-unit
+# page, on a ~24-unit title) puts a device pixel at ~0.014 of the type size, so
+# this clears one with room over — and every finer raster, print included, has a
+# relatively thinner rim and is safer still. Proved on the real rasterizer for
+# every shipped template by
+# ``test_no_two_title_lines_touch_at_the_tightest_leading_on_any_template``.
+_INK_CLEARANCE = 0.02
+
+
+def _min_line_pitch(f, ref, lines, pad):
+    """The tightest baseline step that still leaves DAYLIGHT between two lines.
+
+    As a fraction of the type size, so it can be compared with a leading
+    directly. A design's measured leading is a reading of ITS artwork with ITS
+    honoree's name in it, and the name we print is not that name: a title set
+    tight on "Alma" collides on a name whose first line hangs a final-kaf under
+    the baseline and whose next line carries a lamed above it. So the measured
+    leading is a target that is clamped to this, per title, with the real text
+    that is about to be drawn.
+
+    ``pad`` is everything painted BEYOND the glyph outline, as a fraction of the
+    size: the outline ring and any synthetic-bold fatten (a stroke is centred on
+    the outline, so it grows each line by half the width top and bottom, and two
+    neighbours need the whole width between their baselines), the drop shadow's
+    drop, and the arch — a bulged path lifts the lower line's ascenders by up to
+    ``arch`` toward the line above.
+    """
+    asc, _desc = f.getmetrics()
+    worst = 0.0
+    for upper, lower in zip(lines, lines[1:]):
+        below = f.getbbox(upper)[3] - asc      # ink under the upper line's baseline
+        above = asc - f.getbbox(lower)[1]      # ink over the lower line's baseline
+        worst = max(worst, (below + above) / ref)
+    return worst + pad + _INK_CLEARANCE
+
+
+def title_paint_pad(outline_w, arch, shadow, bold=False, bold_w=None,
+                    ring_visible=True):
+    """Everything a title paints BEYOND its glyph outlines, per unit of size.
+
+    The ring (and any synthetic-bold fatten) grow every line on all four sides,
+    the drop shadow adds a second copy of the line 0.06 lower, and the arch
+    lifts a line's middle by ``arch``. Shared between the collision floor and
+    the owner's health check so the two reserve the same room — a check that
+    predicted a different footprint from the one the card prints would be worse
+    than none.
+
+    NOT the height-fit's headroom a few lines below, which counts only the ring
+    and the shadow. That is the narrower reservation every shipped design was
+    fitted against, and widening it would resize them; this one is free to be
+    complete because it only ever pushes lines apart.
+    """
+    fat = (bold_w if bold_w else _BOLD_WEIGHT) if bold else 0.0
+    return (fat + (2 * (outline_w or 0.0) if ring_visible else 0.0)
+            + (0.06 if shadow else 0.0) + max(0.0, arch or 0.0))
+
+
+def back_leading(ts, back_slot=None):
+    """The line spacing a card BACK's title is stacked at, or None.
+
+    Resolved down the same chain the back's SIZE is: this back's own (a paired
+    deck measures each back separately), then the deck-wide back spacing, then
+    the fronts'. The pair matters — a back's pinned size was fitted at the
+    back's own spacing, so pulling one without the other prints a size that was
+    never measured.
+    """
+    return ((back_slot or {}).get("leading")
+            or (ts or {}).get("back_leading")
+            or (ts or {}).get("leading"))
+
+
+def board_leading(ts):
+    """The line spacing the BOARD's title is stacked at, or None."""
+    return (ts or {}).get("board_leading") or (ts or {}).get("leading")
+
+
+def title_pitch(f, ref, lines, leading, pad):
+    """The baseline step ``title_block`` will actually stack ``lines`` at.
+
+    ``leading`` unset — an uncalibrated theme, or a single-line title with no
+    spacing to measure — is the fixed step this renderer has always used, so a
+    theme without the measurement is laid out exactly as it was. A measured one
+    is clamped up to what these particular glyphs need (``_min_line_pitch``);
+    the clamp can only ever loosen, so a design that leads generously keeps its
+    air.
+    """
+    if leading is None:
+        return RENDER_PITCH
+    return max(float(leading), _min_line_pitch(f, ref, lines, pad))
 
 
 # How far a title's real glyph ink may overrun its calibrated box height before we
@@ -1415,15 +1561,17 @@ def title_is_rtl(cfg):
 
 def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
                 rtl=False, fixed_size=None, align="center", italic=False,
-                bold=False, bold_w=None):
+                bold=False, bold_w=None, leading=None):
     _TITLE_UID[0] += 1
     uid = _TITLE_UID[0]
     """Graffiti-style stacked title: sized so the WIDEST line fills the box
     width, tight line spacing, an optional drop shadow + thick dark outline
     behind a light fill — the 3D bubble look. All style knobs come from the
     theme config: ``outline_w`` (dark ring thickness as a fraction of glyph
-    size), ``arch`` (upward bulge fraction) and ``shadow`` (draw the drop
-    shadow layer or not)."""
+    size), ``arch`` (upward bulge fraction), ``shadow`` (draw the drop shadow
+    layer or not) and ``leading`` (the baseline step, as a fraction of the type
+    size, measured off the design — unset keeps this renderer's own fixed
+    step)."""
     x0, y0, x1, y1 = box["x0"], box["y0"], box["x1"], box["y1"]
     cx = (x0 + x1) / 2
     bw, bh = x1 - x0, y1 - y0
@@ -1438,6 +1586,14 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     f, ref = _title_metrics(font_path)
     ratios = [f.getlength(ln) / ref for ln in lines]      # width per unit size
     n = len(lines)
+    # --- the LEADING: how far apart the baselines sit -----------------------
+    # A same-colour "outline" (monochrome themes) is never painted as a ring, so
+    # it adds no width to the glyph and no room between the lines either.
+    visible_outline = outline_w > 0 and outline != fill
+    fat = (bold_w if bold_w else _BOLD_WEIGHT) if bold else 0.0
+    paint_pad = title_paint_pad(outline_w, arch, shadow, bold, bold_w,
+                                ring_visible=visible_outline)
+    pitch = title_pitch(f, ref, lines, leading, paint_pad)
     # size to fill the WIDTH, capped so the stacked lines still fit the box HEIGHT.
     # The height cap comes from the REAL font metrics, not a fixed per-line
     # fraction: some display title faces (e.g. the japanese/neon fonts) draw
@@ -1447,7 +1603,7 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # Measure the ink extent over ALL lines, not just the first/last: a 3+ line
     # title can carry its tallest ascender or deepest descender on a MIDDLE line,
     # which the first/last-only measure under-counts. (Finding #6.)
-    stack = _title_ink_stack(f, ref, lines)               # full stacked ink at ref
+    stack = _title_ink_stack(f, ref, lines, pitch)        # full stacked ink at ref
     # The PAINTED title is taller than its raw ink: a dark outline RING of
     # size*outline_w rings every glyph (top & bottom), and (when enabled) the drop
     # shadow drops a further size*0.06 below. Reserve that headroom so the whole
@@ -1470,7 +1626,17 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # tolerance is well above every shipped theme's ~10% overrun and well below a
     # real display face's ~100%, so current themes render exactly as the origin
     # while an extreme future face is still reined in. (Findings #1, #5, #6.)
-    old_cap = bh / (0.80 * n) * 1.02
+    #
+    # The 0.80 is the per-line share of the box this cap has always assumed, and
+    # it is only right while the lines are stacked ~0.78 apart. A design that
+    # leads WIDER stacks a taller block out of the same type, so the cap has to
+    # come down with it or the auto-fit overflows the box by exactly the extra
+    # leading. Taking the larger of the two leaves the fallback path — pitch
+    # 0.78 — on the identical 0.80 it always used, and only a genuinely wide
+    # measured leading moves it. (A tighter leading is left alone: the block is
+    # then shorter than the cap assumes, so the cap is merely conservative, and
+    # ``ink_fit`` is the binding constraint anyway.)
+    old_cap = bh / (max(0.80, pitch) * n) * 1.02
     size_h = old_cap if old_cap <= ink_fit * (1 + _TITLE_OVERFLOW_TOL) else ink_fit
     denom_w = max(ratios)
     size = min(bw * 0.89 / denom_w, size_h) if denom_w > 0 else size_h
@@ -1492,7 +1658,7 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
         size = fixed_size
         if denom_w > 0:
             size = min(size, bw * 0.89 / denom_w * (1 + _TITLE_OVERFLOW_TOL))
-    gap = size * 0.78
+    gap = size * pitch
     total = gap * (n - 1)
     top = (y0 + y1) / 2 - total / 2
     dx, dy = size * 0.035, size * 0.06                    # drop-shadow offset
@@ -1512,13 +1678,13 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # ships Medium only, Canva sets Bold), renders too light without it. Opt-in
     # per theme via title_style "bold": true, and it fattens in the FILL colour
     # so it thickens the letter rather than adding a visible ring.
-    visible_outline = outline_w > 0 and outline != fill
+    # (``visible_outline`` is settled above, where the line spacing needs it.)
     # Per-theme weight when the design needs one: how much stroke it takes to
     # read as the origin's Bold depends on the face, so a single global number
     # cannot be right for every template. Measured against grapefruit's Canva
     # original by ink coverage in the title band (8.72%): 0.035 gave 7.41%,
     # 0.06 gave 9.28%.
-    w_fat = size * (bold_w if bold_w else _BOLD_WEIGHT) if bold else 0.0
+    w_fat = size * fat                                    # synthetic-bold fatten
     t_ring = size * outline_w                             # dark outline ring
     outer = w_fat + 2 * t_ring
     defs, out = [], []
@@ -1664,7 +1830,8 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                        align=ts.get("align", "center"),
                        italic=ts.get("italic", False),
                        bold=ts.get("bold", False),
-                       bold_w=ts.get("bold_w"))
+                       bold_w=ts.get("bold_w"),
+                       leading=ts.get("leading"))
 
 
 def _words_overlay(slots, words, cfg, word_font, cell, room=None):
@@ -1801,6 +1968,15 @@ def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
     if bk:
         style["fill"] = bk.get("fill", ts["fill"])
         style["outline"] = bk.get("outline", ts["outline"])
+    # ...and the back's own LINE SPACING, resolved down the same chain the size
+    # is: this back's own, then the deck-wide back spacing, then the fronts'.
+    # Most designs reuse one block on every surface and the calibrator writes
+    # them all the same number (calibrate.couple_leadings), but not all do —
+    # tarifa's back stacks its two lines a third further apart than its front —
+    # and the back's pinned SIZE was measured at whichever spacing it ended up
+    # with, so drawing it at another one would print a size that was never
+    # measured.
+    style["leading"] = back_leading(ts, bk)
     cfg_back = {**cfg, "title_style": style}
     # A paired back may need its own size: eight separately drawn backs give the
     # title eight differently sized rooms, and one pin fits only the box it was
@@ -2060,8 +2236,9 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
                                        fixed_size=ts.get("size"),
                                        align=ts.get("align", "center"),
                                        italic=ts.get("italic", False),
-                       bold=ts.get("bold", False),
-                       bold_w=ts.get("bold_w")))
+                                       bold=ts.get("bold", False),
+                                       bold_w=ts.get("bold_w"),
+                                       leading=ts.get("leading")))
         words = words_by_card[ci] if ci < len(words_by_card) else []
         # A card may carry a title but no word slots (its title was drawn above);
         # skip the word pass so the sizing below can't crash the whole page.
