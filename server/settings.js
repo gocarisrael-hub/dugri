@@ -80,6 +80,7 @@ function interpolate(template, values, opts) {
 //   'footer' — the shared two-line email sign-off.
 //   'trigger'— a WhatsApp trigger { enabled, text, timing? }.
 //   'price'  — a non-negative integer NIS amount (store price / per-version price).
+//   'count'  — a non-negative integer quantity (the free word quota).
 //   'flag'   — a boolean on/off switch (a checkout version's enabled state).
 const REGISTRY = {
   email: {
@@ -197,6 +198,23 @@ const REGISTRY = {
           'קיבלנו את ההזמנה שלך למשחק של {honoree}, אבל היא עדיין ממתינה לתשלום.\n' +
           '\n' +
           'כדי שנתחיל להכין את המשחק, יש להשלים את התשלום — זה לוקח רק כמה שניות.',
+      },
+    },
+    // Sent ONCE, the moment a collection fills its free word quota
+    // (pricing.free_word_limit). Explains that adding is locked until payment and
+    // carries the pay CTA. {limit} is the quota that was just reached.
+    free_limit_reached: {
+      kind: 'email',
+      tokens: ['honoree', 'limit'],
+      default: {
+        enabled: true,
+        subject: 'דוגרי · הגעתם ל-{limit} מילים על {honoree} — כדי להמשיך, משלימים תשלום',
+        body:
+          'אספתם כבר {limit} מילים על {honoree} — מספיק כדי לראות איך המשחק הולך להיראות. {limit} המילים הראשונות הן על חשבוננו.\n' +
+          '\n' +
+          'כדי להמשיך להוסיף מילים — ולקבל את המשחק — משלימים את התשלום. האיסוף נפתח מיד, ואפשר להמשיך להוסיף מילים בלי הגבלה.\n' +
+          '\n' +
+          'שום דבר לא הולך לאיבוד: כל המילים שאספתם ממתינות לכם בקישור.',
       },
     },
     // The Hebrew display label for each order version (used in every order-detail
@@ -422,6 +440,14 @@ const REGISTRY = {
     delivery_price: { kind: 'price', min: 1, tokens: [], default: 199 },
     custom_enabled: { kind: 'flag', tokens: [], default: false },
     custom_price: { kind: 'price', min: 1, tokens: [], default: 599 },
+    // Free word quota: how many words a collection may gather before payment is
+    // required, and whether hitting it actually BLOCKS further adds. `min: 1` — a
+    // 0 quota would lock every collection at its very first word, before the
+    // buyer has any idea what the product looks like. Turning
+    // `lock_after_free_limit` off keeps the counter/messaging but stops enforcing,
+    // which is the escape hatch if the gate ever hurts conversion.
+    free_word_limit: { kind: 'count', min: 1, tokens: [], default: 20 },
+    lock_after_free_limit: { kind: 'flag', tokens: [], default: true },
   },
   // --- Owner-managed reminder list (email + WhatsApp) -----------------------
   // A flexible replacement for the fixed wa daily/quiet triggers: ONE key holding
@@ -626,8 +652,9 @@ function validateValue(section, key, value) {
     if (!isPlainObject(value)) return 'value must be an object';
     return null;
   }
-  if (kind === 'price') {
-    // A NIS amount: an integer >= the key's `min` (default 0). Version `*_price`
+  if (kind === 'price' || kind === 'count') {
+    // A NIS amount ('price') or a plain quantity ('count' — e.g. the free word
+    // quota): an integer >= the key's `min` (default 0). Version `*_price`
     // keys carry min:1 — a CHARGED price can never be 0 (a 0 total is treated as a
     // free/paid order downstream). Rejects strings ('199'), floats (1.5), values
     // below min, and null so a bad write can never reach the charge path.

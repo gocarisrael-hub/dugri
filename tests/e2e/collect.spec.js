@@ -502,8 +502,25 @@ test('card disabled: no dead pay CTA, neutral note instead, and no top nag', asy
   await expect(page.locator('#cardSoonNote')).toContainText('ייפתח בקרוב');
 });
 
+// The two-stage minimum/maximum counter is the UNCAPPED view — what a buyer sees
+// once payment (or an admin exception) lifts the free word quota. A capped
+// collection reframes its counter around the quota instead; that behaviour lives
+// in free-word-limit.spec.js. Admin has no "mark as paid" on purpose, so these
+// specs lift the quota on their own collection through the admin PATCH — which is
+// per-collection, so it can't disturb a spec running in parallel.
+async function liftFreeQuota(page) {
+  const c = new URL(page.url()).searchParams.get('c');
+  const res = await page.request.patch(`/api/admin/collections/${c}?key=dugri-admin`, {
+    data: { free_limit_applies: false },
+  });
+  if (!res.ok()) throw new Error('could not lift the free quota: HTTP ' + res.status());
+  await page.reload();
+  return c;
+}
+
 test('below 70 words: Stage-1 bar is scaled to the 70-word minimum', async ({ page }) => {
   await createCollection(page, 'Shira');
+  await liftFreeQuota(page);
   // Stage 1 frames the 70-word minimum (not the 412 max) below the goal.
   await expect(page.locator('.count-pill')).toContainText('/ 70');
   await expect(page.locator('.count-pill')).toContainText('מינימום');
@@ -523,8 +540,7 @@ test('at 70+ words: Stage-2 bar replaces Stage-1 and is scaled to the 412 max', 
   page,
 }) => {
   await createCollection(page, 'Shira');
-  const url = new URL(page.url());
-  const c = url.searchParams.get('c');
+  const c = await liftFreeQuota(page);
   // Reach exactly the 70-word minimum in one API call.
   const words = Array.from({ length: 70 }, (_, i) => 'w' + i);
   const res = await page.request.post(`/api/collections/${c}/words`, { data: { words } });
@@ -547,8 +563,7 @@ test('over the 412 cap: counter shows 412 max (no fraction over cap), bar full',
   page,
 }) => {
   await createCollection(page, 'Shira');
-  const url = new URL(page.url());
-  const c = url.searchParams.get('c');
+  const c = await liftFreeQuota(page);
   // Push the count past the cap in one API call (413 unique words).
   const words = Array.from({ length: 413 }, (_, i) => 'w' + i);
   const res = await page.request.post(`/api/collections/${c}/words`, { data: { words } });

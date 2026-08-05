@@ -270,6 +270,10 @@
           <p class="section-title">אפשרויות תשלום בקופה</p>
           <div id="versionCards"></div>
         </div>
+        <div class="section-group">
+          <p class="section-title">מכסת מילים חינם</p>
+          <div id="quotaCards"></div>
+        </div>
       </div>
 
       <footer>נשמר בשרת (DATA_DIR) · גלוי רק עם מפתח הניהול · לא מקושר מהאתר.</footer>
@@ -324,13 +328,20 @@
 
       let state = null; // last full settings.all() response
 
-      // --- a single price (number) field ----------------------------------------
-      function priceFieldHtml(k, label, value) {
+      // --- a single number field ------------------------------------------------
+      // `unit` is the parenthesised suffix on the label: '₪' for a price, 'מילים'
+      // for the free quota. Every such input posts through the same integer
+      // validation, so a quota field can't be saved as a float or a negative.
+      function priceFieldHtml(k, label, value, unit, min) {
         return (
           '<label class="fld">' +
           esc(label) +
-          ' (₪)</label>' +
-          '<input type="number" min="0" step="1" inputmode="numeric" data-price="' +
+          ' (' +
+          esc(unit || '₪') +
+          ')</label>' +
+          '<input type="number" min="' +
+          esc(Number.isInteger(min) ? min : 0) +
+          '" step="1" inputmode="numeric" data-price="' +
           esc(k) +
           '" value="' +
           esc(value) +
@@ -389,10 +400,37 @@
         );
       }
 
+      // --- free word quota card (limit + enforce flag) ---------------------------
+      function quotaCardHtml(eff) {
+        const on = !!eff.lock_after_free_limit;
+        return (
+          '<div class="card' +
+          (on ? '' : ' off') +
+          '" data-card="quota" data-keys="free_word_limit,lock_after_free_limit">' +
+          '<div class="card-head"><h3 class="card-title">מכסת מילים לפני תשלום</h3>' +
+          '<span class="card-id">pricing.free_word_limit</span></div>' +
+          '<label class="toggle"><input type="checkbox" data-flag="lock_after_free_limit"' +
+          (on ? ' checked' : '') +
+          ' /> נועלים את האיסוף כשמגיעים למכסה</label>' +
+          // min 1 — a 0 quota would lock every collection at its first word (the
+          // server rejects it too; this stops the round-trip).
+          priceFieldHtml('free_word_limit', 'מספר מילים חינם', eff.free_word_limit, 'מילים', 1) +
+          '<p class="hint">כמה מילים אפשר לאסוף לפני שנדרש תשלום. כשהמכסה מתמלאת ההוספה ננעלת ' +
+          'ונשלח מייל עם כפתור תשלום. כיבוי המתג משאיר את הספירה אבל מפסיק לחסום. ' +
+          'השינוי חל על איסופים פתוחים; איסופים שנפתחו לפני שהמכסה הופעלה נשארים ללא הגבלה.</p>' +
+          '<div class="actions">' +
+          '<button class="primary" data-save type="button">שמירה</button>' +
+          '<button class="danger" data-reset type="button">אפס לברירת מחדל</button>' +
+          '<span class="meta status" role="status" aria-live="polite"></span>' +
+          '</div></div>'
+        );
+      }
+
       function render() {
         const eff = state.effective.pricing;
         qs('storeCards').innerHTML = storeCardHtml(eff);
         qs('versionCards').innerHTML = VERSIONS.map((v) => versionCardHtml(v, eff)).join('');
+        qs('quotaCards').innerHTML = quotaCardHtml(eff);
       }
 
       function setStatus(card, text, cls) {
@@ -406,7 +444,12 @@
       function rerenderCard(card) {
         const id = card.dataset.card;
         const eff = state.effective.pricing;
-        const html = id === 'store' ? storeCardHtml(eff) : versionCardHtml(byId(id), eff);
+        const html =
+          id === 'store'
+            ? storeCardHtml(eff)
+            : id === 'quota'
+              ? quotaCardHtml(eff)
+              : versionCardHtml(byId(id), eff);
         card.outerHTML = html;
       }
       function byId(id) {
@@ -421,8 +464,9 @@
         for (const inp of card.querySelectorAll('[data-price]')) {
           const raw = inp.value.trim();
           const n = Number(raw);
-          if (raw === '' || !Number.isInteger(n) || n < 0) {
-            return { error: 'כל מחיר חייב להיות מספר שלם 0 ומעלה' };
+          const min = Number(inp.min || 0);
+          if (raw === '' || !Number.isInteger(n) || n < min) {
+            return { error: 'הערך חייב להיות מספר שלם ' + min + ' ומעלה' };
           }
           values[inp.dataset.price] = n;
         }
