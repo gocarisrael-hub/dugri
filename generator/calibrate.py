@@ -1137,9 +1137,18 @@ def _fit_font(path, px, weight=None):
 # would only be reading the raster's noise (see ``fit_bold``).
 _WEIGHT_GRID = (100, 200, 300, 400, 500, 600, 700, 800, 900)
 
+# How far the height fit and the width fit may still disagree at the axis's best
+# instance before the weight is refused (``fit_font_weight``). The same 12% at
+# which ``fit_title_size`` already tells the owner the two axes cannot both be
+# right — one threshold for one question, asked in two places. On a face that IS
+# the design's there is nothing like this much left over: מרקאנה's winning cut
+# reproduces its artwork's width exactly, and one STEP of the axis is worth
+# about 2%.
+_WEIGHT_DISAGREE = 0.12
 
-def fit_font_weight(mask, region, font_path, samples, size, ppu, alpha,
-                    pitch=None, ring=0.0):
+
+def fit_font_weight(ink, font_path, samples, size, ppu, alpha, pitch=None,
+                    ring=0.0):
     """Which cut of a VARIABLE title face the design was set in, or None.
 
     A variable font is nine weights in one file, and the file names one of them
@@ -1147,42 +1156,149 @@ def fit_font_weight(mask, region, font_path, samples, size, ppu, alpha,
     every variable face an owner uploads printed at whatever the file happened
     to default to: מרקאנה's title is Bold in the design and drew as a hairline.
 
-    Chosen the way ``fit_bold`` chooses a synthetic stroke, and against the same
-    evidence — the ORIGIN'S OWN INK. Each instance is painted at the size and
-    leading already fitted, its stroke measured per unit of type size, and the
-    instance whose strokes come closest to the artwork's wins. A static face has
-    no axis and returns None, so nothing about it changes.
+    THE WEIGHT AND THE SIZE ARE ONE ANSWER, and this solves them as one — the
+    same reason the size and the LEADING leave ``fit_title_size`` together. What
+    makes them inseparable is a property of the axis, measured on this file: as
+    ``wght`` runs 100 -> 900 the ink's HEIGHT does not move at all (90px at size
+    100 at every instance) and only its WIDTH does, by 19%. So:
 
-    UNLIKE ``fit_bold`` this can answer for a RINGED title, and the ``ring`` is
-    why. A ringed title's ink is mostly its outline, so a bare-glyph candidate
-    reads as far lighter than the artwork whatever cut it is drawn in — measured
-    on מרקאנה, that pinned the top of the axis. Painting the candidate with the
-    same ring puts the same ink on both sides of the comparison, and what is
-    left of the difference is the cut. The synthetic stroke ``fit_bold`` weighs
-    cannot be separated from a ring like that, because it IS one.
+      * the size fitted from the ink's HEIGHT cannot see the weight — which is
+        why an earlier round measured the height across the axis, saw it flat,
+        and concluded the weight did not matter to the size;
+      * and the size fitted from the ink's WIDTH sees nothing BUT the weight.
+
+    Two readings of one ink that must answer the same size, and exactly one knob
+    that makes them agree. So the weight is the instance at which the height fit
+    and the width fit converge, and the size is then re-solved at it. Neither
+    number means anything without the other: pinning the size against the wrong
+    cut charges the whole width error to the size, and pinning the cut at the
+    wrong size does the reverse.
+
+    NOT from the stroke weight, which is what this used to compare and what put
+    מרקאנה at 800 against the artwork's 600. A ringed title's ink is mostly its
+    OUTLINE; painting the candidate with the same ring was supposed to put the
+    same ink on both sides, but the two rings are rasterised by different
+    engines — the original's by Chrome out of a Canva vector, ours by Pillow's
+    ``stroke_width`` — and the residue of that mismatch is far larger than one
+    step of the axis. Measured on מרקאנה's own artwork, painting the ORIGINAL'S
+    OWN two lines: the strokes say 700 and the samples' strokes say 800, while
+    the ink geometry says 600 and reproduces the original's block to the pixel
+    (182x122 against 182x122). Geometry survives the mismatch because a ring
+    adds a couple of pixels to an extent of a couple of hundred, where a stroke
+    reading is the ring almost entirely.
+
+    ``ink`` is the ORIGIN's ink block — the same ``solid_ink`` crop the size is
+    fitted against, so that both fits see one picture — and ``size`` is what the
+    HEIGHT fit answered over it. So the question reduces to one width comparison
+    at that size, which is the same answer as bisecting the width for a
+    fortieth of the work: the painted extent is very nearly linear in the size
+    (this module already leans on that twice), so the size the width would fit
+    is the target width over the width painted at any one reference size, and
+    the ratio of the two fits is just the ratio of the two widths. Bisecting
+    both axes at all nine instances costs some 4,700 paintings per pass, which
+    the owner waits on behind a button.
+
+    ``size`` has to be the fitted size rather than an arbitrary reference: the
+    RING is a fraction of the type size, so a reference far from the truth would
+    compare widths carrying the wrong ring.
+
+    MEASURED ON THE LINES THE HONOREE NAME DOES NOT TOUCH. The width of a line
+    is a property of the type AND of what it says, and the artwork says another
+    honoree's name than our samples do — the objection that demoted the width
+    comparison in ``fit_title_size`` to a note. But a title is usually not all
+    name: מרקאנה sets "{NAME}'s" over "B-day", and the second line says "B-day"
+    in the artwork and in every sample alike. Those lines are found without
+    knowing the template's placeholders — a line that reads the SAME in all four
+    samples is a line no name reaches — and matching only them compares text we
+    know the original's word for. It is worth the trouble: over the whole block
+    the sample names' extra width drags מרקאנה's answer to 500, and over its
+    literal line the cut that reproduces the artwork's 182px to the pixel is 600.
+
+    The line SPLIT is used for the widths only, never for the heights. A ringed
+    title's rows weld into one mass, so ``_line_bands`` places the boundary from
+    the block's shape rather than from a clear row — good to a few rows, which
+    a width does not care about (the band still holds that whole line) and a
+    height very much does (67px against the 69 the line really occupies, which
+    is a whole step of the axis).
+
+    Falls back to the whole block where every line carries the name, since there
+    is then nothing better to compare — still the geometry, and still far better
+    than the strokes.
+
+    Returns ``(weight, note)``. The weight is refused (None) when no instance
+    reaches the original's width at the size its height fitted, because a face
+    whose two axes agree at no cut at all is not the design's face and one of its
+    cuts is not worth pinning.
     """
-    if not render_page.weight_axis(font_path):
+    axis = render_page.weight_axis(font_path)
+    if not axis or not ink or not size or not samples:
         return None, None
-    em = size * ppu
-    origin = stroke_per_size(mask.crop(region), em)
-    if not origin:
-        return None, None
+    low, _default, high = axis
     kw = {} if pitch is None else {"pitch": pitch}
+    em = size * ppu
+    nlines = len(samples[0])
+    if not nlines or not ink.size[0]:
+        return None, None
+    # Each entry is one width to reproduce and the candidate text that must
+    # reproduce it: ``(origin width, [line groups to paint])``.
+    targets = []
+    literal = [i for i in range(nlines)
+               if all(len(s) == nlines and s[i] == samples[0][i]
+                      for s in samples)]
+    if literal:
+        bands = (_line_bands(ink, nlines) if nlines > 1
+                 else [(0, ink.size[1])])
+        if len(bands) == nlines:
+            for i in literal:
+                top, bot = bands[i]
+                bb = ink.crop((0, top, ink.size[0], bot)).getbbox()
+                if bb and bb[2] - bb[0] > 0:
+                    targets.append((bb[2] - bb[0], [[samples[0][i]]]))
+    on_literal = bool(targets)
+    if not targets:
+        targets = [(ink.size[0], samples)]
+    # Only the instances this file actually offers. The grid is the nine CSS
+    # steps a designer picks from in Canva; a file with a narrower axis simply
+    # has fewer of them, and nothing here may name one the file does not carry.
     scored = []
     for wght in _WEIGHT_GRID:
-        got = [stroke_per_size(_paint(font_path, lines, em, alpha,
-                                      stroke=ring * em, weight=wght, **kw), em)
-               for lines in samples]
-        got = [g for g in got if g]
-        if got:
-            scored.append((abs(statistics.median(got) - origin), wght))
+        if not low <= wght <= high:
+            continue
+        errs = []
+        for target_w, groups in targets:
+            got = []
+            for lines in groups:
+                cand = _paint(font_path, lines, em, alpha, stroke=ring * em,
+                              weight=wght, **kw)
+                if cand and cand.size[0]:
+                    got.append(cand.size[0])
+            if got:
+                # A MEDIAN over the group, for the reason every other fit here
+                # takes one: where the text IS name-dependent, no single name
+                # may decide the answer. A literal line is one painting and its
+                # median is itself.
+                errs.append(abs(target_w / statistics.median(got) - 1))
+        if errs:
+            scored.append((statistics.median(errs), wght))
     if not scored:
         return None, None
-    best = min(scored)[1]
+    off, best = min(scored)
+    on = ("the lines of this title no honoree name reaches" if on_literal
+          else "this title's ink")
+    if off > _WEIGHT_DISAGREE:
+        return None, (
+            f"title font: this is a VARIABLE font and nothing had chosen a "
+            f"weight, so it draws the file's own default. It was left alone: at "
+            f"the size the original's title height fits ({size}), no cut of this "
+            f"file sets {on} to the width the artwork has — the closest ({best}) "
+            f"is still {off:.0%} out. That is a different typeface, not a "
+            f"different weight. Check the title font against the design, and set "
+            f"the weight by eye if the font is right.")
     return best, (f"title font: this is a VARIABLE font ({len(_WEIGHT_GRID)} "
                   f"weights in one file) and nothing had chosen one, so it was "
-                  f"drawing the file's own default. Matched against the "
-                  f"original's strokes it is weight {best} — check it in the "
+                  f"drawing the file's own default. Weight {best} is the cut "
+                  f"that sets {on} to the width the artwork has, at the size its "
+                  f"height fits ({size}) — matched to {off:.1%}. Check it in the "
                   f"preview.")
 
 
@@ -1325,7 +1441,7 @@ def _paint(font_path, lines, em, alpha, stroke=0.0, marker=None,
 
 
 def _painted(font_path, samples, size, ppu, alpha, marker=False, axis=0,
-             ring=0.0, pitch=RENDER_PITCH):
+             ring=0.0, pitch=RENDER_PITCH, weight=None):
     """Median painted extent (0 = height, 1 = width) of ``samples`` at ``size``.
 
     ``ring`` is the outline thickness as a fraction of the size, and it is part
@@ -1333,12 +1449,17 @@ def _painted(font_path, samples, size, ppu, alpha, marker=False, axis=0,
     ring, so fitting a bare glyph against it inflates the size by twice the ring
     on every outlined title. That is most of why the one template with a measured
     ring drew half again too much ink.
+
+    ``weight`` is the instance of a VARIABLE face to paint, and it is here for
+    the same reason the ring is: it changes the ink being matched. A static face
+    has no axis and takes None, which is the whole of what it ever did.
     """
     got = []
     for i, lines in enumerate(samples):
         ink = _paint(font_path, lines, size * ppu, alpha,
                      stroke=ring * size * ppu,
-                     marker=(i % 4 + 1) if marker else None, pitch=pitch)
+                     marker=(i % 4 + 1) if marker else None, pitch=pitch,
+                     weight=weight)
         if ink:
             value = _extent_of(ink, axis)
             if value:
@@ -1347,7 +1468,7 @@ def _painted(font_path, samples, size, ppu, alpha, marker=False, axis=0,
 
 
 def _fit_size(target_px, font_path, samples, ppu, alpha, marker=False, axis=0,
-              ring=0.0, pitch=RENDER_PITCH):
+              ring=0.0, pitch=RENDER_PITCH, weight=None):
     """The size (in recipe user units) whose painted ink measures ``target_px``.
 
     Bisection rather than a closed form: the painted extent is very nearly linear
@@ -1359,12 +1480,12 @@ def _fit_size(target_px, font_path, samples, ppu, alpha, marker=False, axis=0,
     if not target_px or target_px <= 0:
         return None
     if _painted(font_path, samples, lo, ppu, alpha, marker, axis, ring,
-                pitch) is None:
+                pitch, weight) is None:
         return None
     for _ in range(22):
         mid = (lo + hi) / 2
         got = _painted(font_path, samples, mid, ppu, alpha, marker, axis, ring,
-                       pitch)
+                       pitch, weight)
         if got is None:
             return None
         if got < target_px:
@@ -1432,7 +1553,8 @@ def stroke_per_size(ink, em_px):
     return _mean_stroke(ink) / em_px
 
 
-def fit_bold(mask, region, font_path, samples, size, ppu, alpha, pitch=None):
+def fit_bold(mask, region, font_path, samples, size, ppu, alpha, pitch=None,
+             weight=None):
     """``(bold, bold_w, note)`` for a title; ``bold`` is None when unmeasurable.
 
     Compares the ORIGIN's stroke weight against our own cut painted at the size
@@ -1458,9 +1580,13 @@ def fit_bold(mask, region, font_path, samples, size, ppu, alpha, pitch=None):
         return None, None, None
     kw = {} if pitch is None else {"pitch": pitch}
 
-    def weigh(weight):
+    def weigh(bold_w):
+        # ``weight`` is the VARIABLE face's own cut — a real weight the file
+        # carries — and the synthetic stroke is fattening applied ON TOP of it.
+        # Weighing the fattening against a different cut than the one that will
+        # be printed would charge the difference between the cuts to the stroke.
         got = [stroke_per_size(_paint(font_path, lines, em, alpha,
-                                      stroke=weight * em, **kw), em)
+                                      stroke=bold_w * em, weight=weight, **kw), em)
                for lines in samples]
         return statistics.median([g for g in got if g]) if any(got) else None
 
@@ -1634,13 +1760,13 @@ def _extent_match(a, b):
 
 
 def _sample_scores(o_dens, o_ext, font_path, samples, size, ppu, alpha, ring,
-                   pitch):
+                   pitch, weight=None):
     """How alike each sample's painted block is to the original's, or None."""
     out = []
     for one in samples:
         drawn = [ln for ln in one if ln and ln.strip()]
         cand = _paint(font_path, drawn, size * ppu, alpha,
-                      stroke=ring * size * ppu, pitch=pitch)
+                      stroke=ring * size * ppu, pitch=pitch, weight=weight)
         if not cand:
             out.append(None)
             continue
@@ -1650,7 +1776,8 @@ def _sample_scores(o_dens, o_ext, font_path, samples, size, ppu, alpha, ring,
     return out
 
 
-def size_from_matching_samples(ink, font_path, samples, ppu, alpha, ring, pitch):
+def size_from_matching_samples(ink, font_path, samples, ppu, alpha, ring, pitch,
+                               weight=None):
     """The size, fitted over the samples the original's own ink LOOKS like.
 
     THE SAMPLES ARE NOT INTERCHANGEABLE. ``sample_titles`` straddles the
@@ -1675,13 +1802,15 @@ def size_from_matching_samples(ink, font_path, samples, ppu, alpha, ring, pitch)
     identical samples and cannot move.
     """
     kw = {} if pitch is None else {"pitch": pitch}
+    kw["weight"] = weight
     target = ink.size[1]
     size = _fit_size(target, font_path, samples, ppu, alpha, ring=ring, **kw)
     if not size or len(samples) < 2:
         return size
     o_dens, o_ext = _row_ink(ink)
     scores = _sample_scores(o_dens, o_ext, font_path, samples, size, ppu, alpha,
-                            ring, RENDER_PITCH if pitch is None else pitch)
+                            ring, RENDER_PITCH if pitch is None else pitch,
+                            weight)
     live = []
     for score, one in zip(scores, samples):
         if score is None:
@@ -1696,7 +1825,7 @@ def size_from_matching_samples(ink, font_path, samples, ppu, alpha, ring, pitch)
     return round(statistics.median(keep), 2) if keep else size
 
 
-def leading_curve(ink, font_path, samples, ppu, alpha, ring=0.0):
+def leading_curve(ink, font_path, samples, ppu, alpha, ring=0.0, weight=None):
     """How well every candidate leading reproduces one title block's ink.
 
     ``[(pitch, size, score, per_sample_scores), ...]`` over the whole grid, in
@@ -1743,16 +1872,17 @@ def leading_curve(ink, font_path, samples, ppu, alpha, ring=0.0):
         # same answer the four-fold bisection would — for a twentieth of the
         # work, inside a grid that runs eighty-six times per surface.
         base = _fit_size(target, font_path, samples[:1], ppu, alpha, ring=ring,
-                         pitch=pitch)
+                         pitch=pitch, weight=weight)
         if not base:
             continue
         spread = _painted(font_path, samples, base, ppu, alpha, axis=0,
-                          ring=ring, pitch=pitch)
+                          ring=ring, pitch=pitch, weight=weight)
         if not spread:
             continue
         size = round(base * target / spread, 2)
         scored = [s for s in _sample_scores(o_dens, o_ext, font_path, samples,
-                                            size, ppu, alpha, ring, pitch)
+                                            size, ppu, alpha, ring, pitch,
+                                            weight)
                   if s is not None]
         if scored:
             out.append((pitch, size, statistics.median(scored), scored))
@@ -1828,7 +1958,7 @@ def leading_plateau(curve, leading):
 
 
 def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0,
-                           pitch=None, curve_out=None):
+                           pitch=None, curve_out=None, weight=None):
     """``(size, leading, score)`` reproducing one title block's ink.
 
     Two unknowns, so two readings of the same ink:
@@ -1859,13 +1989,13 @@ def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0,
     lines = [ln for ln in (samples[0] if samples else []) if ln and ln.strip()]
     if len(lines) < 2:
         size = size_from_matching_samples(ink, font_path, samples, ppu, alpha,
-                                          ring, None)
+                                          ring, None, weight)
         return size, None, None
     if pitch is not None:
         size = size_from_matching_samples(ink, font_path, samples, ppu, alpha,
-                                          ring, pitch)
+                                          ring, pitch, weight)
         return size, pitch, None
-    curve = leading_curve(ink, font_path, samples, ppu, alpha, ring)
+    curve = leading_curve(ink, font_path, samples, ppu, alpha, ring, weight)
     if curve_out is not None:
         curve_out[:] = curve
     if not curve:
@@ -1873,7 +2003,7 @@ def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0,
     best = max(curve, key=lambda row: row[2])
     leading = round(best[0], 3)
     size = size_from_matching_samples(ink, font_path, samples, ppu, alpha, ring,
-                                      leading)
+                                      leading, weight)
     plateau = leading_plateau(curve, leading)
     if plateau > _PLATEAU_MAX:
         # The ink cannot tell one spacing from another here, so the argmax of
@@ -1980,18 +2110,20 @@ def refit_at_leading(fit, leading):
     """One surface's size, re-solved at a leading settled somewhere else.
 
     ``fit`` is what ``fit_title_size`` records into its ``fit_out``. Only the
-    size is re-solved: the ink, the ring and the alpha are the same reading they
-    always were, and the leading is the one thing coming from outside it.
+    size is re-solved: the ink, the ring, the alpha and the weight are the same
+    reading they always were, and the leading is the one thing coming from
+    outside it.
     """
     if not fit or leading is None:
         return None
     return size_from_matching_samples(fit["ink"], fit["font"], fit["samples"],
                                       fit["ppu"], fit["alpha"], fit["ring"],
-                                      leading)
+                                      leading, fit.get("weight"))
 
 
 def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
-                   ring=0.0, leading=None, fit_out=None, owner_leading=None):
+                   ring=0.0, leading=None, fit_out=None, owner_leading=None,
+                   weight=None):
     """Fit one surface's title size. -> ``(size, grade, note, ctx, leading)``.
 
     ``ctx`` is ``(ink_region, alpha)`` — what ``fit_bold`` needs to go on and
@@ -2024,6 +2156,12 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
     ``ring`` is the outline thickness the title is painted with, as a fraction of
     the size. The origin's ink includes its ring, so a bare-glyph candidate is
     fitted about two ring-widths too large on every outlined title.
+
+    ``weight`` is the instance of a VARIABLE title face to fit against, and it
+    belongs to the same family of arguments as the ring: the number this returns
+    is only the size of the type that will actually be PRINTED, so the candidate
+    has to be painted in the cut that will be printed. See ``fit_font_weight``
+    for how the pair is solved together.
 
     THE GRADE IS STABILITY, NOT WIDTH. It used to come from a second fit against
     the ink's WIDTH, and that check cannot work: it compares OUR sample title's
@@ -2058,7 +2196,7 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
     curve = []
     size, leading, _score = solve_size_and_leading(
         ink, font_path, samples, ppu, alpha, ring=ring, pitch=leading,
-        curve_out=curve)
+        curve_out=curve, weight=weight)
     undecided = None
     owner_set = False
     if isinstance(leading, Undetermined):
@@ -2077,7 +2215,7 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
             # measured against a different picture.
             size, leading, _score = solve_size_and_leading(
                 ink, font_path, samples, ppu, alpha, ring=ring,
-                pitch=float(owner_leading), curve_out=curve)
+                pitch=float(owner_leading), curve_out=curve, weight=weight)
             owner_set = True
             undecided = flat + (
                 f"The line spacing already set on this template, {leading}, was "
@@ -2094,6 +2232,7 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
     if fit_out is not None:
         fit_out.update({"ink": ink, "font": font_path, "samples": samples,
                         "ppu": ppu, "alpha": alpha, "ring": ring,
+                        "weight": weight,
                         "curve": curve, "size": size, "leading": leading,
                         "box_h": box["y1"] - box["y0"],
                         # An OWNER-set spacing is not a reading to be weighed
@@ -2118,13 +2257,13 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
     each = []
     for one in samples:
         ink = _paint(font_path, one, size * ppu, alpha, stroke=ring * size * ppu,
-                     pitch=pitch)
+                     pitch=pitch, weight=weight)
         got = _extent_of(ink, 0) if ink else None
         if got:
             each.append(got)
     spread = ((max(each) - min(each)) / statistics.median(each)) if each else None
     wide = _fit_size(ink_w, font_path, samples, ppu, alpha, axis=1, ring=ring,
-                     pitch=pitch)
+                     pitch=pitch, weight=weight)
     note = undecided
     if leading is not None and abs(leading - RENDER_PITCH) > 0.02:
         note = ((note + " ") if note else "") + (
@@ -2744,17 +2883,27 @@ def calibrate(theme_key, workdir=None):
                     confidence["title_style.fill"] = "none"
                     confidence["title_style.outline"] = "none"
 
-                # --- the size and the ring, solved TOGETHER ------------------
-                # Neither can be measured without the other. The origin's ink is
+                # --- the size, the ring and the WEIGHT, solved TOGETHER -------
+                # None can be measured without the others. The origin's ink is
                 # the glyph PLUS its ring, so a size fitted against a bare glyph
                 # comes out about two ring-widths too large; and the ring is a
                 # fraction of the size, so it cannot be expressed until the size
                 # is known. Two passes settle it — the ring is small next to the
                 # glyph, so the correction converges immediately — and the joint
                 # answer is what both the ink mass and the colour depend on.
+                #
+                # The WEIGHT of a variable face joins them for the same reason
+                # (``fit_font_weight``): the cut changes how wide the same type
+                # sets, so a size fitted against the wrong cut charges that cut's
+                # width error to the size. It is re-read on every pass at the
+                # ring and leading that pass settled, and fed back into the next
+                # pass's size fit. A STATIC face has no axis, answers None every
+                # time, and this whole strand is a no-op over it.
                 tbox = {"x0": min(b["x0"] for b in t), "y0": min(b["y0"] for b in t),
                         "x1": max(b["x1"] for b in t), "y1": max(b["y1"] for b in t)}
                 ring = 0.0
+                weight = used_weight = None
+                fwnote = None
                 size = tgrade = tnote = ctx = tlead = None
                 front_fit = {}
                 for _pass in range(3):
@@ -2764,27 +2913,44 @@ def calibrate(theme_key, workdir=None):
                     # before measured changes what spacing best reproduces the
                     # original's rows. The last pass — the one whose ring has
                     # converged — is the answer both numbers come from.
+                    used_weight = weight
                     size, tgrade, tnote, ctx, tlead = fit_title_size(
                         mask, image, tbox, ppu, ox, oy, title_font, samples,
-                        (t[0].get("color") or fill), ring=ring,
+                        (t[0].get("color") or fill), ring=ring, weight=weight,
                         fit_out=front_fit,
                         owner_leading=(cfg.get("title_style") or {}).get("leading"))
                     if not (size and fill and outline):
                         break
+                    got, fwnote = fit_font_weight(
+                        front_fit.get("ink"), title_font, samples, size, ppu,
+                        front_fit.get("alpha"), pitch=tlead,
+                        ring=(ring if fill != outline else 0.0))
                     dfill, doutline, dring = ring_by_depth(
                         image, mask, tight, [fill, outline],
                         _background(image, mask, tight), size * ppu)
                     if dring is None:
+                        weight = got
                         break
                     # The depth pass sees the ring from the outside in, which is a
                     # stronger reading of which paint IS the ring than a
                     # one-pixel-deep boundary count — so it also settles the
                     # fill/outline order the vector left ambiguous.
                     fill, outline = dfill, doutline
-                    if abs(dring - ring) < 0.002:
+                    if abs(dring - ring) < 0.002 and got == weight:
                         ring = dring
                         break
-                    ring = dring
+                    ring, weight = dring, got
+                if size and weight != used_weight:
+                    # The loop ran out of passes (or stopped on the ring) with
+                    # the weight still moving, so the size in hand was fitted
+                    # against a cut that is not the one being pinned. They only
+                    # mean anything together — re-solve it at the answer.
+                    used_weight = weight
+                    size, tgrade, tnote, ctx, tlead = fit_title_size(
+                        mask, image, tbox, ppu, ox, oy, title_font, samples,
+                        (t[0].get("color") or fill), ring=ring, weight=weight,
+                        fit_out=front_fit,
+                        owner_leading=(cfg.get("title_style") or {}).get("leading"))
                 if fill and outline:
                     ts["fill"], ts["outline"] = fill, outline
                     if fill == outline and confidence.get(
@@ -2897,20 +3063,20 @@ def calibrate(theme_key, workdir=None):
                         out["title_style"]["leading"] = new_lead
 
                     surface_fits.append(("front", front_fit, _write_front))
-                if size and ctx:
+                if size and weight:
                     # A VARIABLE face's own cut comes first, because it is a
                     # real weight the file already carries and the synthetic
                     # stroke below is a fake one — reaching for the fake while
                     # eight real cuts sit unused in the same file is how a Bold
-                    # design printed Thin.
-                    fw, fwnote = fit_font_weight(
-                        mask, ctx[0], title_font, samples, size, ppu, ctx[1],
-                        pitch=tlead, ring=(ring if fill != outline else 0.0))
-                    if fw:
-                        ts["font_weight"] = fw
-                        confidence["title_style.font_weight"] = "medium"
-                        if fwnote:
-                            notes.append(fwnote)
+                    # design printed Thin. Already solved beside the size above,
+                    # because neither is a reading on its own.
+                    ts["font_weight"] = weight
+                    confidence["title_style.font_weight"] = "medium"
+                if size and fwnote:
+                    # Said whether the cut was pinned or refused: a variable face
+                    # left on the file's default is the defect the owner sees,
+                    # and she cannot check a choice she is never told about.
+                    notes.append(fwnote)
                 if size and ctx:
                     # WEIGHT, only where the title has no visible ring. A ringed
                     # title's ink is mostly its OUTLINE, and the candidate painted
@@ -2928,7 +3094,7 @@ def calibrate(theme_key, workdir=None):
                         # comparable with the original's.
                         bold, bold_w, bnote = fit_bold(
                             mask, ctx[0], title_font, samples, size, ppu,
-                            ctx[1], pitch=tlead)
+                            ctx[1], pitch=tlead, weight=weight)
                         if bold is None:
                             if bnote:
                                 notes.append(bnote)
@@ -2970,6 +3136,13 @@ def calibrate(theme_key, workdir=None):
         # with it. 0.0 when the fronts said there is no ring, or could not be
         # read at all — which is the ringless fit these surfaces always got.
         deck_ring = out["title_style"].get("outline_w") or 0.0
+        # The variable face's cut, likewise deck-wide: one text box reused at
+        # several scales is one CUT at several scales, so the board and back
+        # sizes must be fitted against the same instance the fronts pinned —
+        # otherwise their widths are measured against a face that sets to a
+        # different length and the error lands on their size. None for a static
+        # face, which is every other shipped template.
+        deck_weight = out["title_style"].get("font_weight")
 
         # --- BOARD: one title on the page; fractions are of the page viewBox ---
         bf, bc = sheet("board", "filled"), sheet("board", "clean")
@@ -3003,7 +3176,7 @@ def calibrate(theme_key, workdir=None):
                 bsize, bgrade, bnote, _bctx, blead = fit_title_size(
                     mask, image, units(box, ppu, ox, oy), ppu, ox, oy,
                     title_font, samples, fill, ring=deck_ring,
-                    fit_out=board_fit,
+                    weight=deck_weight, fit_out=board_fit,
                     owner_leading=render_page.board_leading(
                         cfg.get("title_style") or {}))
                 record("board_size", bsize, bgrade, bnote)
@@ -3109,7 +3282,8 @@ def calibrate(theme_key, workdir=None):
                 bppu, box_, boy = _viewport(mask, vb)
                 size, grade, note, _bctx, lead = fit_title_size(
                     mask, image, units(box, bppu, box_, boy), bppu, box_, boy,
-                    title_font, samples, fill, ring=deck_ring, fit_out=fit_out,
+                    title_font, samples, fill, ring=deck_ring,
+                    weight=deck_weight, fit_out=fit_out,
                     owner_leading=render_page.back_leading(
                         cfg.get("title_style") or {}))
                 return slot, size, grade, note, lead
