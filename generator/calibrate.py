@@ -3437,13 +3437,29 @@ def calibrate(theme_key, workdir=None):
                 # it here, where the form already shows what to check, and grade
                 # the geometry down so it is flagged rather than presented as a
                 # confident reading.
+                # Two different things travel in ``declined`` now, and one note
+                # cannot serve both. A refused SNAP means the word geometry is
+                # raw rather than regularised — "check the spacing" is the right
+                # advice. A refused FRONT means that card has no title box of its
+                # own and is borrowing its siblings', which has nothing to do
+                # with spacing and is not fixed on the preview; it is fixed by
+                # re-exporting a plate. Reading the second through the first
+                # sends the owner to the wrong screen.
                 for message in _declined_snaps(cfg):
                     confidence["card_slots"] = "low"
-                    notes.append(
-                        "card_slots: detection did NOT regularise this — "
-                        + message
-                        + ". The geometry below is the raw measurement, so "
-                        "check the spacing on the preview before saving.")
+                    if message.startswith("front "):
+                        notes.append(
+                            "card_slots: one of the cards could not be measured "
+                            "— " + message
+                            + " Its title box below is BORROWED from the other "
+                            "cards, not measured, so check that card in the "
+                            "preview before saving.")
+                    else:
+                        notes.append(
+                            "card_slots: detection did NOT regularise this — "
+                            + message
+                            + ". The geometry below is the raw measurement, so "
+                            "check the spacing on the preview before saving.")
             else:
                 notes.append("card_slots: no single-card recipe detected yet, so "
                              "the form opens on its defaults. Re-run detection "
@@ -3511,6 +3527,24 @@ def _card_slots_from_recipe(cfg):
     ``{"words": [4 boxes], "titles": {"<front>": box}}``. Returns None when the
     template has no usable single-card recipe, so the caller can say so rather
     than writing half a calibration.
+
+    ``titles`` covers EVERY front the theme declares, not only the fronts that
+    were measured. That is not cosmetic — it is what makes the save work at all.
+    ``server/templates.js`` (``validateCardSlots``) rejects a titles map that is
+    missing any of ``cards.fronts``, and ``applyCalibration`` then drops the
+    whole ``card_slots`` block silently, keeping the entry's stale geometry while
+    still reporting ``calibrated: true``. So on מרקאנה, whose front 9 cannot be
+    measured (its clean plate is exported at a different scale — see
+    ``recipe_diff.viewbox_mismatch``), the map came out 2..8, was refused, and
+    nothing at all was written: the owner pressed "זהה מחדש", was told it
+    succeeded, and the card never changed.
+
+    An unmeasured front is filled from ``config.recipe_front_title`` — the
+    median of the fronts that WERE measured, which is exactly what the renderer
+    falls back to for that front anyway. So the stored value equals what gets
+    printed either way; what it buys is a map that validates, so the fronts that
+    were measured actually reach themes.json. The front is still reported as
+    unmeasured in ``notes``, because a plausible box is not a measured one.
     """
     try:
         recipe = config.load_recipe(cfg.get("recipe"))
@@ -3532,7 +3566,12 @@ def _card_slots_from_recipe(cfg):
                 "x1": round(b["x1"] / w, 4), "y1": round(b["y1"] / h, 4)}
 
     titles = {}
-    for front, boxes in (card.get("title") or {}).items():
+    for front in config.fronts(cfg):
+        # ``recipe_front_title`` returns this front's OWN boxes when it has
+        # them, and the median of its siblings' when it does not — the same
+        # answer the renderer uses, so filling the gap here changes nothing that
+        # prints while making the map complete enough to save.
+        boxes = config.recipe_front_title(recipe, front)
         if not boxes:
             continue
         # A title may be recorded as one box PER LINE; the form holds a single
