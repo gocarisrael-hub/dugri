@@ -1461,6 +1461,69 @@ def _extent_match(a, b):
     return 1.0 - sum(abs(p / ma - q / mb) for p, q in zip(a, b)) / n
 
 
+def _sample_scores(o_dens, o_ext, font_path, samples, size, ppu, alpha, ring,
+                   pitch):
+    """How alike each sample's painted block is to the original's, or None."""
+    out = []
+    for one in samples:
+        drawn = [ln for ln in one if ln and ln.strip()]
+        cand = _paint(font_path, drawn, size * ppu, alpha,
+                      stroke=ring * size * ppu, pitch=pitch)
+        if not cand:
+            out.append(None)
+            continue
+        c_dens, c_ext = _row_ink(cand)
+        out.append(_extent_match(o_ext, c_ext)
+                   + _DENS_VOTE * _profile_match(o_dens, c_dens))
+    return out
+
+
+def size_from_matching_samples(ink, font_path, samples, ppu, alpha, ring, pitch):
+    """The size, fitted over the samples the original's own ink LOOKS like.
+
+    THE SAMPLES ARE NOT INTERCHANGEABLE. ``sample_titles`` straddles the
+    ascender/descender extremes on purpose, so that a face whose ink height is a
+    property of the FACE can be told from one whose is a property of the TEXT.
+    But the artwork carries ONE honoree name, not the spread, and its ink is
+    exactly as tall as that name's letters make it — so a median over the whole
+    spread charges the size with the difference between the original's name and
+    ours. Measured on ברוקלין, whose artwork reads "חן בן 13" — a final nun and
+    no lamed: the two sample names carrying a lamed fit 29.06, the two without
+    fit 32.44, and the median splits the difference at 31.31, three percent under
+    Canva's 32.3.
+
+    Which of them the artwork is like is measurable, and by the reading this
+    module already trusts to pick the leading: the row profile. So score every
+    sample against the original's, keep the half that matches at least as well as
+    the median sample does, and answer with the median of THEIR fits. Still a
+    median — no single name may decide — it has simply stopped averaging in the
+    names the artwork visibly is not. Re-measured across every shipped surface it
+    moves ברוקלין −3.1% -> +0.4% and tightens קליפורניה, טריפה and סנטוריני
+    besides; the templates whose title carries no name at all (קופקבנה) have four
+    identical samples and cannot move.
+    """
+    kw = {} if pitch is None else {"pitch": pitch}
+    target = ink.size[1]
+    size = _fit_size(target, font_path, samples, ppu, alpha, ring=ring, **kw)
+    if not size or len(samples) < 2:
+        return size
+    o_dens, o_ext = _row_ink(ink)
+    scores = _sample_scores(o_dens, o_ext, font_path, samples, size, ppu, alpha,
+                            ring, RENDER_PITCH if pitch is None else pitch)
+    live = []
+    for score, one in zip(scores, samples):
+        if score is None:
+            continue
+        own = _fit_size(target, font_path, [one], ppu, alpha, ring=ring, **kw)
+        if own:
+            live.append((score, own))
+    if len(live) < 2:
+        return size
+    cut = statistics.median([s for s, _ in live])
+    keep = [v for s, v in live if s >= cut]
+    return round(statistics.median(keep), 2) if keep else size
+
+
 def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0,
                            pitch=None):
     """``(size, leading, score)`` reproducing one title block's ink.
@@ -1490,11 +1553,12 @@ def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0,
     target = ink.size[1]
     lines = [ln for ln in (samples[0] if samples else []) if ln and ln.strip()]
     if len(lines) < 2:
-        size = _fit_size(target, font_path, samples, ppu, alpha, ring=ring)
+        size = size_from_matching_samples(ink, font_path, samples, ppu, alpha,
+                                          ring, None)
         return size, None, None
     if pitch is not None:
-        size = _fit_size(target, font_path, samples, ppu, alpha, ring=ring,
-                         pitch=pitch)
+        size = size_from_matching_samples(ink, font_path, samples, ppu, alpha,
+                                          ring, pitch)
         return size, pitch, None
     o_dens, o_ext = _row_ink(ink)
 
@@ -1543,8 +1607,8 @@ def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0,
     if best is None:
         return None, None, None
     leading = round(best[0], 3)
-    size = _fit_size(target, font_path, samples, ppu, alpha, ring=ring,
-                     pitch=leading)
+    size = size_from_matching_samples(ink, font_path, samples, ppu, alpha, ring,
+                                      leading)
     return size, leading, best[1]
 
 
@@ -1653,27 +1717,53 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
             (region, alpha), leading)
 
 
-def fit_word_size(mask, image, slots, ppu, ox, oy, font_path, words):
+def fit_word_size(surfaces, font_path, words):
     """Fit the deck's single word size. -> ``(size, grade, note)``.
 
-    The origin prints every word on a card at ONE size (Canva Bulk Create fills a
-    fixed-size box), so one number settles the card — but WHICH words it printed
-    is unknown, and a Hebrew line's ink height swings ~30% on whether it happens
-    to carry a lamed or a final-descender. So the match is median-to-median: the
-    median ink height of the origin's rows against the median of a sample of the
-    words this theme prints. Verified on bachelorette, whose 19 was pinned by
-    hand against its original: this fit returns 18.93.
+    ``surfaces`` is ``[(mask, image, slots, ppu, ox, oy), ...]`` — one entry per
+    FRONT the deck prints, and that plural is the point. The origin sets every
+    word in the deck at ONE size (Canva Bulk Create fills a fixed-size box, and
+    fills the same one on all eight cards), so every row on every front is
+    evidence about the same number. This used to read one card, which made the
+    answer a median of FOUR rows — and the rows are not interchangeable samples:
+    a numbered line is a marker set at 0.9 of the word size beside a word set at
+    it, so how much the marker weighs in the row's body band depends on how LONG
+    that row's entry happens to be. Four rows of the customer's own phrases land
+    wherever that customer's phrases landed.
+
+    Measured against the owner's Canva values, reading all eight fronts instead
+    of one moves פריז from −4.5% to −1.2% and סיישל from −12.3% to −1.2%, and
+    does not move a single other template by one step of the fit — because the
+    templates it does not move are the ones whose one card already happened to
+    be representative of their eight.
+
+    WHICH words the origin printed is still unknown, and a Hebrew line's ink
+    height swings ~30% on whether it happens to carry a lamed or a
+    final-descender. So the match stays median-to-median: the median body band of
+    the origin's rows against the median of a sample of the words this theme
+    prints.
     """
-    if not words or not slots:
+    surfaces = [s for s in surfaces if s and s[2]]
+    if not words or not surfaces:
         return None, None, None
     bands, regions = [], []
-    for region in word_rows(mask, slots, ppu, ox, oy):
-        if not region:
-            continue
-        band = _band_height(mask, region)
-        if band:
+    first = None
+    for mask, image, slots, ppu, ox, oy in surfaces:
+        for region in word_rows(mask, slots, ppu, ox, oy):
+            if not region:
+                continue
+            band = _band_height(mask, region)
+            if not band:
+                continue
             bands.append(band)
-            regions.append(region)
+            if first is None:
+                # The paints, the artwork under them and the render scale are
+                # deck-wide, so the alpha cut and the stroke-weight comparison
+                # are read off the first front that carried a row rather than
+                # re-derived per surface.
+                first = (mask, image, slots, ppu, ox, oy)
+            if first[0] is mask:
+                regions.append(region)
     if len(bands) < 2:
         return (None, None,
                 "word_size: the original's word rows could not be isolated "
@@ -1682,6 +1772,7 @@ def fit_word_size(mask, image, slots, ppu, ox, oy, font_path, words):
         return (None, None,
                 "word_size: the theme's word font has no glyphs for this theme's "
                 "own wordlist — check the font.")
+    mask, image, slots, ppu, ox, oy = first
     alpha = _alpha_threshold(slots[0].get("color") or "#000000",
                              _background(image, mask, regions[0]))
     samples = [[w] for w in words]
@@ -1693,7 +1784,7 @@ def fit_word_size(mask, image, slots, ppu, ox, oy, font_path, words):
                 "word_size: the measured word ink is not a plausible size for its "
                 "slots, so nothing was pinned — the words auto-fit.")
     # HOW MUCH THE ROWS AGREE is the confidence, and it is a real question rather
-    # than a formality: the origin set all four at one size (Canva Bulk Create
+    # than a formality: the origin set them all at one size (Canva Bulk Create
     # fills fixed-size boxes), so bands that agree mean the measurement found the
     # type, and bands that scatter mean it found something else — a row that
     # merged with its neighbour, or a diff that caught artwork.
@@ -1811,6 +1902,52 @@ def _front_word_slots(recipe, cfg, single):
         if card and card.get("title"):
             return card.get("words") or []
     return []
+
+
+def word_surfaces(theme_key, cfg, recipe, single, workdir, first):
+    """Every front's ``(mask, image, slots, ppu, ox, oy)``, ``first`` included.
+
+    The deck's word size is ONE number, so the honest sample for it is EVERY row
+    the deck prints — thirty-two of them — not the four on whichever card the
+    paints happened to be read off. See ``fit_word_size`` for what that buys.
+
+    The two card structures pay very different prices for it, and neither pays
+    one it need not:
+
+      * a v1 SHEET already carries all eight cards in the single render this
+        pass has in hand, so the extra rows cost nothing at all — the recipe
+        just names a different set of slots per cell;
+      * a v2 deck is eight separate files, so each extra front is one more
+        filled/clean diff. That is the cost of the measurement being real.
+
+    A front whose pair is missing, or whose render fails, is SKIPPED rather than
+    fatal: the fit only needs two rows to answer, and losing one card of eight
+    must not turn a measurable template into an unmeasured one.
+    """
+    if not single:
+        mask, image, _slots, ppu, ox, oy = first
+        out = []
+        for card in recipe.get("cards") or []:
+            slots = (card or {}).get("words") or []
+            if slots:
+                out.append((mask, image, slots, ppu, ox, oy))
+        return out or [first]
+    out = [first]
+    slots = (recipe.get("card") or {}).get("words") or []
+    if not slots:
+        return out
+    for index in config.fronts(cfg)[1:]:
+        ff = config.card_path(theme_key, index, filled=True)
+        fc = config.card_path(theme_key, index)
+        if not (os.path.exists(ff) and os.path.exists(fc)):
+            continue
+        try:
+            mask, image, vb = _diff(ff, fc, workdir)
+        except (OSError, ValueError, chrome.ChromeTimeout):
+            continue
+        ppu, ox, oy = _viewport(mask, vb)
+        out.append((mask, image, slots, ppu, ox, oy))
+    return out
 
 
 def _word_colours(recipe):
@@ -2214,7 +2351,8 @@ def calibrate(theme_key, workdir=None):
 
                 wslots = _front_word_slots(recipe, cfg, single)
                 wsize, wgrade, wnote = fit_word_size(
-                    mask, image, wslots, ppu, ox, oy,
+                    word_surfaces(theme_key, cfg, recipe, single, workdir,
+                                  (mask, image, wslots, ppu, ox, oy)),
                     config.resolve_word_font(theme_key), sample_words(cfg))
                 if wnote:
                     notes.append(wnote)

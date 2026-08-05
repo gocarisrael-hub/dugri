@@ -106,6 +106,59 @@ def test_a_single_line_title_keeps_the_renderers_own_step():
     assert abs(got - 26.0) <= 0.5, got
 
 
+def test_the_fit_answers_over_the_sample_names_the_artwork_looks_like():
+    """The artwork carries ONE honoree name; the samples straddle the extremes.
+
+    A Hebrew line with a lamed is much taller than one without, so a median over
+    the whole spread charges the size with the difference between the original's
+    name and ours — three percent under Canva on ברוקלין. The row profile can
+    tell which samples the artwork is like, so the fit answers over those.
+
+    Built as the real case: an "original" painted in a name with NO ascender,
+    fitted against four samples of which half carry one.
+    """
+    size = 26.0
+    plain = ["חן בן 30"]
+    tall = ["לירן בן 30"]
+    samples = [plain, tall, ["דן בן 30"], ["לילך בן 30"]]
+    ink = C._paint(HEBREW_FONT, plain, size * PPU, ALPHA)
+    naive = C._fit_size(ink.size[1], HEBREW_FONT, samples, PPU, ALPHA)
+    matched = C.size_from_matching_samples(ink, HEBREW_FONT, samples, PPU, ALPHA,
+                                           0.0, None)
+    # The ascender-carrying samples paint taller ink, so the blanket median fits
+    # the size DOWN; matching must land closer to what the ink was painted at.
+    assert abs(C._paint(HEBREW_FONT, tall, size * PPU, ALPHA).size[1]
+               - ink.size[1]) > 2, "the samples must differ in ink height"
+    assert abs(matched - size) < abs(naive - size), (naive, matched)
+    assert abs(matched - size) / size <= 0.03, matched
+
+
+def test_matching_cannot_let_one_sample_decide():
+    """It stays a MEDIAN over the better-matching half, never a single pick.
+
+    With four samples the half is two, so the answer is their midpoint — a lone
+    sample that matches best cannot carry the size on its own.
+    """
+    size = 22.0
+    samples = [["נעמה"], ["לירן"], ["יונתן"], ["לירון"]]
+    ink = C._paint(HEBREW_FONT, samples[0], size * PPU, ALPHA)
+    got = C.size_from_matching_samples(ink, HEBREW_FONT, samples, PPU, ALPHA,
+                                       0.0, None)
+    each = sorted(C._fit_size(ink.size[1], HEBREW_FONT, [s], PPU, ALPHA)
+                  for s in samples)
+    assert each[0] <= got <= each[-1], (each, got)
+
+
+def test_a_title_with_no_name_in_it_cannot_be_moved_by_matching():
+    # קופקבנה's title says the same thing whoever the honoree is, so its four
+    # samples are identical and the matching pass has nothing to choose between.
+    samples = [LINES, LINES, LINES, LINES]
+    ink = C._paint(HEBREW_FONT, LINES, 24.0 * PPU, ALPHA)
+    assert (C.size_from_matching_samples(ink, HEBREW_FONT, samples, PPU, ALPHA,
+                                         0.0, None)
+            == C._fit_size(ink.size[1], HEBREW_FONT, samples, PPU, ALPHA))
+
+
 def test_a_leading_unlike_the_renderers_is_reported_to_the_owner():
     size = 24.0
     ink = C._paint(HEBREW_FONT, _TWO[0], size * PPU, ALPHA, pitch=1.30)
@@ -208,10 +261,9 @@ def test_the_profile_match_compares_shape_and_not_amount():
     assert C._profile_match(a, list(reversed(a))) < 0.85
 
 
-def test_the_word_fit_returns_the_size_its_rows_were_painted_at():
-    size = 18.0
-    words = ["מסיבה", "חברים", "ריקודים", "צחוקים"]
-    rows = [C._paint(HEBREW_FONT, [w], size * PPU, ALPHA, marker=i + 1)
+def _word_surface(words, size, marker_from=1):
+    """One front's ``(mask, image, slots, ppu, ox, oy)`` painted at ``size``."""
+    rows = [C._paint(HEBREW_FONT, [w], size * PPU, ALPHA, marker=marker_from + i)
             for i, w in enumerate(words)]
     width = max(r.size[0] for r in rows)
     pad, gap = 40, 30
@@ -225,7 +277,13 @@ def test_the_word_fit_returns_the_size_its_rows_were_painted_at():
                       "y1": (y + row.size[1]) / PPU, "color": "#000000"})
         y += row.size[1] + gap
     image = Image.new("RGB", mask.size, (255, 255, 255))
-    got, grade, note = C.fit_word_size(mask, image, slots, PPU, 0.0, 0.0,
+    return (mask, image, slots, PPU, 0.0, 0.0)
+
+
+def test_the_word_fit_returns_the_size_its_rows_were_painted_at():
+    size = 18.0
+    words = ["מסיבה", "חברים", "ריקודים", "צחוקים"]
+    got, grade, note = C.fit_word_size([_word_surface(words, size)],
                                        HEBREW_FONT, words)
     assert abs(got - size) <= 1.0, got
     # The grade is now how far the FOUR ROWS disagree, which is a real question
@@ -325,11 +383,52 @@ def test_the_word_fit_refuses_degenerate_input():
     blank = Image.new("L", (200, 200), 0)
     image = Image.new("RGB", blank.size, (255, 255, 255))
     slot = {"x0": 10, "y0": 10, "x1": 80, "y1": 30, "color": "#000000"}
-    assert C.fit_word_size(blank, image, [], PPU, 0, 0, HEBREW_FONT, ["a"])[0] is None
-    assert C.fit_word_size(blank, image, [slot], PPU, 0, 0, HEBREW_FONT, [])[0] is None
-    got, grade, note = C.fit_word_size(blank, image, [slot, slot], PPU, 0, 0,
+    assert C.fit_word_size([(blank, image, [], PPU, 0, 0)],
+                           HEBREW_FONT, ["a"])[0] is None
+    assert C.fit_word_size([(blank, image, [slot], PPU, 0, 0)],
+                           HEBREW_FONT, [])[0] is None
+    got, grade, note = C.fit_word_size([(blank, image, [slot, slot], PPU, 0, 0)],
                                        HEBREW_FONT, ["מסיבה"])
     assert got is None and grade is None and "auto-fit" in note
+
+
+def test_the_word_fit_reads_every_front_and_not_only_the_first():
+    """The deck sets ONE word size, so every front's rows are evidence about it.
+
+    Reading one card makes the answer a median of four rows, and a numbered row's
+    body band moves with how long its entry is (the marker is set at 0.9 of the
+    word size beside a word set at it). So a card whose four entries are unusually
+    short pulls the whole deck's size off — which is exactly what happened on פריז
+    (−4.5%) and סיישל (−12.3%) against the owner's Canva values.
+
+    Proved on two fronts deliberately painted at DIFFERENT sizes, which real
+    artwork never is: read alone, the first answers its own size, and read
+    together the pair answers between the two. A fit that still looked at one
+    card would return the same number both times.
+    """
+    words = ["מסיבה", "חברים", "ריקודים", "צחוקים"]
+    one = _word_surface(words, 18.0)
+    two = _word_surface(words, 20.0)
+    from_one = C.fit_word_size([one], HEBREW_FONT, words)[0]
+    from_both = C.fit_word_size([one, two], HEBREW_FONT, words)[0]
+    assert abs(from_one - 18.0) <= 1.0, from_one
+    assert from_one < from_both < 20.0, (from_one, from_both)
+
+
+def test_a_v1_sheet_pays_no_extra_render_for_its_other_cards():
+    """A sheet holds all eight cards in ONE raster, so pooling them is free.
+
+    The surfaces it returns must all be that same already-rendered mask, with only
+    the recipe's per-cell slots differing — anything else would mean the pass had
+    gone back to Chrome for artwork it already has.
+    """
+    mask, image, slots, ppu, ox, oy = _word_surface(["מסיבה", "חברים"], 18.0)
+    first = (mask, image, slots, ppu, ox, oy)
+    recipe = {"cards": [{"words": slots}, {"words": slots}, None,
+                        {"words": []}]}
+    got = C.word_surfaces("t", {}, recipe, False, "/nonexistent", first)
+    assert len(got) == 2
+    assert all(s[0] is mask and s[1] is image for s in got)
 
 
 # ---- bold ------------------------------------------------------------------
