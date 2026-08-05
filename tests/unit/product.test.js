@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Unit tests for the pure per-design override helpers in site/js/product.js.
 // Importing the module in jsdom does NOT boot the page (boot only auto-runs when a
@@ -23,13 +26,13 @@ const P2 = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
 
 // The fixed-section fields tagged data-edit-pd in product.html, namespaced per
 // design so each product page persists its OWN copy (not one shared value).
+// The "what's inside" list ends at inside-4 — see the list-shape test below.
 const PD_FIELDS = [
   'about-heading',
   'inside-1',
   'inside-2',
   'inside-3',
   'inside-4',
-  'inside-5',
   'buy-cta',
   'buy-note',
   'related-heading',
@@ -395,5 +398,37 @@ describe('galleryAspect — picture-box shape per card era', () => {
     // (scripts/render-design-assets.mjs) before updating it.
     expect(DESIGNS.filter((d) => d.portrait).map((d) => d.id)).toEqual([]);
     expect(DESIGNS.every((d) => galleryAspect(d) === LANDSCAPE_ASPECT)).toBe(true);
+  });
+});
+
+describe('"what\'s inside" list — shape of the shipped HTML', () => {
+  // Read the real page: this list is plain markup, and the point of the change
+  // was the MARKUP, so asserting against a fixture would pin nothing.
+  const html = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'site', 'product.html'),
+    'utf8'
+  );
+  const list = html.slice(html.indexOf('<ul class="pdp-list">'), html.indexOf('</ul>'));
+
+  it('ships FOUR rows, each a tick beside its own editable text', () => {
+    expect(list.match(/<li>/g) || []).toHaveLength(4);
+    expect(list.match(/class="tick"/g) || []).toHaveLength(4);
+    expect(list.match(/data-edit-pd="inside-\d"/g)).toEqual([
+      'data-edit-pd="inside-1"',
+      'data-edit-pd="inside-2"',
+      'data-edit-pd="inside-3"',
+      'data-edit-pd="inside-4"',
+    ]);
+  });
+
+  it('carries NO fifth row — the row is retired for every design, present and future', () => {
+    // Retiring it in the markup is what makes it stick: applyPerDesignFields only
+    // stamps overrides onto elements present in the DOM, so a design that had saved
+    // its own inside-5 text has nothing left to apply it to. Re-adding the element
+    // would silently resurrect those stored values on exactly those designs.
+    // The ATTRIBUTE is what resurrects the row — prose mentioning the retired
+    // field (the explanatory comment in the markup) is documentation, not markup.
+    expect(list).not.toContain('data-edit-pd="inside-5"');
+    expect(html).not.toContain('data-edit-pd="inside-5"');
   });
 });

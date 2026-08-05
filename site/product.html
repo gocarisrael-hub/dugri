@@ -979,10 +979,16 @@
               <span class="tick" aria-hidden="true">✓</span>
               <span data-edit-pd="inside-4">הוראות הדפסה וגזירה</span>
             </li>
-            <li>
-              <span class="tick" aria-hidden="true">✓</span>
-              <span data-edit-pd="inside-5">דף עזר לאיסוף מילים</span>
-            </li>
+            <!--
+              The list ends at FOUR. A fifth row used to sit here; removing the
+              markup is what retires it everywhere at once, including on designs
+              that had saved their own text for it: applyPerDesignFields (see
+              site/js/product.js) only stamps overrides onto elements it finds in
+              the DOM, so with no inside-5 element a stored
+              `product-<design>-inside-5` value has nothing to apply to and stays
+              inert. No per-design cleanup is needed, and new designs never
+              inherit the row.
+            -->
           </ul>
         </section>
 
