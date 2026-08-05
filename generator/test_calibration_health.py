@@ -633,3 +633,80 @@ if __name__ == "__main__":
         fn()
         print("ok", fn.__name__)
     print(f"\nall {len(fns)} tests passed")
+
+
+# ---- every front needs a title box of its own --------------------------------
+#
+# When one does not have one, config.recipe_front_title substitutes the median of
+# the fronts that do and says nothing — right only while the missing front's
+# title sits roughly where its siblings' do. On מרקאנה it does not: front 9
+# carries the name at the FOOT of the card while 2-8 carry it at the top, so the
+# substitute printed it on empty artwork. The owner found it by eye because no
+# check looked. This is that check.
+
+
+def _cov_cfg(fronts, saved=None):
+    cfg = {"cards": {"fronts": list(fronts)}}
+    if saved is not None:
+        cfg["card_slots"] = {"titles": saved}
+    return cfg
+
+
+def _cov_recipe(title):
+    return {"format": 2, "card": {"words": [], "title": title}}
+
+
+def test_a_deck_where_every_front_has_its_own_title_is_quiet():
+    warnings, m = H._front_title_coverage(
+        _cov_cfg([2, 3, 4]),
+        _cov_recipe({"2": [{}], "3": [{}], "4": [{}]}))
+    assert warnings == []
+    assert m == {"fronts": 3, "with_own_title": 3}
+
+
+def test_a_front_with_no_title_of_its_own_is_named():
+    warnings, m = H._front_title_coverage(
+        _cov_cfg([2, 3, 9]), _cov_recipe({"2": [{}], "3": [{}]}))
+    assert len(warnings) == 1
+    assert "9.svg" in warnings[0], warnings
+    assert m["missing"] == ["9"]
+    assert m["with_own_title"] == 2
+
+
+def test_a_title_saved_in_themes_json_counts_even_when_the_recipe_lacks_it():
+    # The two places a title can live. A front covered by either is not a gap —
+    # the owner may have set it by hand in the admin form after a failed detect.
+    warnings, _ = H._front_title_coverage(
+        _cov_cfg([2, 3, 9], saved={"9": {"x0": 0.1}}),
+        _cov_recipe({"2": [{}], "3": [{}]}))
+    assert warnings == []
+
+
+def test_an_empty_box_does_not_count_as_a_title():
+    warnings, _ = H._front_title_coverage(
+        _cov_cfg([2, 3]), _cov_recipe({"2": [{}], "3": []}))
+    assert len(warnings) == 1 and "3.svg" in warnings[0]
+
+
+def test_a_shared_title_list_covers_every_front_by_construction():
+    # card.title as a plain LIST means "the same slot on all fronts" — a deck
+    # whose title does not move. Nothing can be missing.
+    warnings, m = H._front_title_coverage(
+        _cov_cfg([2, 3, 4]), _cov_recipe([{"x0": 1.0}]))
+    assert warnings == [] and m == {}
+
+
+def test_a_template_with_no_titles_recorded_at_all_is_left_to_other_checks():
+    # An uncalibrated or v1 sheet template: reporting "every front is missing"
+    # here would bury the real fault, which the structure/asset checks report.
+    warnings, m = H._front_title_coverage(_cov_cfg([2, 3]), _cov_recipe({}))
+    assert warnings == [] and m == {}
+
+
+def test_the_live_defect_is_caught_on_a_seven_of_eight_map():
+    # מרקאנה exactly as it stands in the owner store: fronts 2..9, titles 2..8.
+    warnings, m = H._front_title_coverage(
+        _cov_cfg(range(2, 10)),
+        _cov_recipe({str(n): [{}] for n in range(2, 9)}))
+    assert m == {"fronts": 8, "with_own_title": 7, "missing": ["9"]}
+    assert warnings and "9.svg" in warnings[0]

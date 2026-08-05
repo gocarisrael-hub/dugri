@@ -28,6 +28,9 @@ What is checked (each independently; one unmeasurable item never hides another):
               was last saved (read out of git history — no new state stored)
   word slots  whether the theme's own wordlist still fits its word slots with
               the current word font, or is being silently shrunk word by word
+  front title whether EVERY front has a title box of its own, or is silently
+              borrowing the median of its siblings' — which is wrong wherever
+              that front's title sits somewhere they do not
 
 Read-only, always: this module never writes ``themes.json`` and never flips
 ``calibrated``. It reports; a human decides.
@@ -687,6 +690,60 @@ def _front_boxes(recipe, ts):
     return boxes
 
 
+def _front_title_coverage(cfg, recipe):
+    """Fronts that carry no title of their own, as ``(warnings, measurements)``.
+
+    A v2 deck's title is the ONE thing that moves per front, so every front needs
+    its own box. When one is missing, ``config.recipe_front_title`` substitutes
+    the median of the fronts that have one and says nothing — a fallback that is
+    right only while the missing front's title sits roughly where its siblings'
+    do. On מרקאנה it does not: front 9 carries ``Ben's B-day`` at the FOOT of the
+    card while fronts 2-8 carry it at the top, so the substitute put the honoree's
+    name on empty artwork, and the owner found it by eye because no check looked.
+
+    Both places a title can be recorded are counted — ``card_slots.titles`` in
+    themes.json (what the admin form saves and the renderer prefers) and
+    ``card.title`` in the recipe (what detection wrote) — because a front covered
+    by either one is not the gap this is looking for.
+
+    A WARNING, never a problem: the deck still renders, and on a design whose
+    title genuinely does not move the substitute is correct. It is exactly the
+    "worth a look" this report exists to raise.
+    """
+    if not isinstance(recipe, dict):
+        return [], {}
+    card = recipe.get("card") if isinstance(recipe.get("card"), dict) else {}
+    titles = card.get("title")
+    if isinstance(titles, list) and titles:
+        # A plain LIST means "the same slot on every front" — a deck whose title
+        # does not move. Nothing is missing by construction.
+        return [], {}
+    recorded = set()
+    if isinstance(titles, dict):
+        recorded |= {str(k) for k, v in titles.items() if v}
+    saved = (cfg.get("card_slots") or {}).get("titles")
+    if isinstance(saved, dict):
+        recorded |= {str(k) for k, v in saved.items() if v}
+    if not recorded:
+        # Nothing recorded anywhere is a different fault (an uncalibrated or
+        # sheet-format template), already reported by the structure/asset checks.
+        return [], {}
+    wanted = [str(n) for n in config.fronts(cfg)]
+    missing = [n for n in wanted if n not in recorded]
+    measurements = {"fronts": len(wanted), "with_own_title": len(wanted) - len(missing)}
+    if not missing:
+        return [], measurements
+    measurements["missing"] = missing
+    return ([
+        "לקלפים הבאים אין מיקום כותרת משלהם: "
+        + ", ".join(f"{n}.svg" for n in missing)
+        + f" (מתוך {len(wanted)}). הכותרת שלהם תודפס לפי המיקום החציוני של שאר "
+        "הקלפים — נכון רק אם הכותרת לא זזה בין הקלפים. בדקו את הקלפים האלה "
+        "בתצוגה המקדימה; אם הכותרת שלהם במקום אחר, הריצו זיהוי מחדש ובדקו את "
+        "ההודעות שלו."
+    ], measurements)
+
+
 def _back_boxes(recipe, frac):
     """Every card-back title box, exactly as ``build.render_backs`` computes them."""
     boxes = []
@@ -855,6 +912,11 @@ def check(theme_key, name=None):
             report["measurements"]["title_font"] = dm
 
     if recipe:
+        cw, cm = _front_title_coverage(cfg, recipe)
+        report["warnings"] += cw
+        if cm:
+            report["measurements"]["front_titles"] = cm
+
         wp, ww, wu, wm = _word_health(theme_key, cfg, recipe)
         report["problems"] += wp
         report["warnings"] += ww
