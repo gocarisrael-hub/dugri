@@ -248,6 +248,35 @@ def test_end_to_end_calibrates_a_single_card_template():
     assert blob["word_size"] is None
 
 
+def test_redetecting_does_not_straighten_a_curved_title():
+    # Nothing in this pass MEASURES the arch, so writing a flat 0.0 over a
+    # template the owner had curved is not a reading, it is an erasure. It
+    # happened: pressing "detect again" straightened סיישל's graffiti title,
+    # whose design plainly arcs, and nothing anywhere said so. The shadow beside
+    # it already inherits; the arch must too.
+    chrome = _chrome()
+    if not chrome:
+        print("  (skip curved-title re-detect: Chrome not found)")
+        return
+    with _owner_store() as store:
+        recipe = R.detect_single_card(store.key, config.theme_dir(store.key),
+                                      fronts=[2, 3], log=lambda *a: None)
+        with open(store.recipe_path, "w", encoding="utf-8") as f:
+            json.dump(recipe, f, ensure_ascii=False)
+        themes_path = os.path.join(store.root, "templates", "themes.json")
+        themes = json.load(open(themes_path, encoding="utf-8"))
+        themes[store.key]["title_style"] = {
+            "fill": _FILL, "outline": _OUTLINE, "outline_w": 0.05,
+            "arch": 0.11, "shadow": False}
+        themes[store.key]["calibrated"] = True
+        with open(themes_path, "w", encoding="utf-8") as f:
+            json.dump(themes, f, ensure_ascii=False)
+        config._THEMES_CACHE = None
+        blob = C.calibrate(store.key)
+    assert blob["title_style"]["arch"] == 0.11, (
+        "a re-detect flattened a curved title: " + repr(blob["title_style"]))
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

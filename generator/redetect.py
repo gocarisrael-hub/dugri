@@ -371,6 +371,16 @@ def compare_calibration(cfg, blob, tol=GEOM_TOLERANCE, color_tol=COLOR_TOLERANCE
     # dimensionless — compared against 1.0 with the same tolerance.
     rows.append(_num_row("title_style.outline_w", sts.get("outline_w"),
                          dts.get("outline_w"), ref=1.0, tol=tol))
+    # The line spacing of each surface's title, as a fraction of the type size —
+    # dimensionless like outline_w, so it compares the same way. Unlike the
+    # SIZES below it IS read off the artwork on every pass (a re-export of a
+    # re-spaced title block is exactly what these rows are for), so it is
+    # compared rather than listed as unchecked. Absent on both sides = a
+    # single-line title, which has no spacing to report; the row reads
+    # "unmeasured" and says so.
+    for _k in ("leading", "back_leading", "board_leading"):
+        rows.append(_num_row("title_style." + _k, sts.get(_k), dts.get(_k),
+                             ref=1.0, tol=tol))
     rows.append(_flag_row("title_style.align", sts.get("align"), dts.get("align")))
     rows.append(_flag_row("title_style.shadow", sts.get("shadow"),
                           dts.get("shadow")))

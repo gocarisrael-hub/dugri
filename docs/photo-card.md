@@ -35,6 +35,18 @@ generator never branches on which template it loaded.
    so the halo is a plain ring rather than the subject's silhouette, and the framing falls back to
    a guess (point 5).
 
+   **Where the cutout comes from.** It is produced in the BUYER'S BROWSER at upload time, not
+   on the server and not at generate time — `site/js/pawn-cutout.js` runs MediaPipe's
+   ImageSegmenter over the self-hosted `selfie_multiclass_256x256` model (both Apache-2.0,
+   vendored under `site/vendor/mediapipe`, no CDN and no third-party API). The collection then
+   keeps BOTH files: `pawn_images` is always the untouched ORIGINAL, and `pawn_cutouts` maps
+   each original's path to its cutout path — or to `null` when a cut was attempted and failed,
+   which the admin orders table flags in red. `pawnPhotoFiles()` hands the generator the cutout
+   when there is one and the original otherwise, so the generator itself never knows the
+   difference and never makes a network call. A browser too old to segment simply produces no
+   cutout: the original still prints round and ringed like every other pawn, background and all
+   (point 1), and the owner cuts it by hand off the `null` in the record.
+
 2. **Alpha must survive the generator's own photo prep.** `square_photo()` works in `RGBA`
    throughout and saves `RGBA` — `convert("RGB")` anywhere in that function flattens the alpha
    away and every customer photo reaches the slot opaque, whatever was done upstream. It is also

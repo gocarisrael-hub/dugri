@@ -1004,6 +1004,50 @@ async function sendPaymentReminder(collection, baseUrl) {
   }
 }
 
+// The "you've filled the free word quota" email — sent ONCE, the moment the
+// collection reaches pricing.free_word_limit. Carries the pay CTA on the owner
+// link (the same link the pay panel lives on). `limit` is the quota reached.
+function buildFreeLimitReached(collection, baseUrl, limit) {
+  const name = honoreeName(collection);
+  const tpl = emailTpl('free_limit_reached');
+  const cta = ctaLabels();
+  const ft = footer();
+  const values = { honoree: name, limit };
+  const subject = interpolate(tpl.subject, values);
+  const bodyLines = interpolate(tpl.body, values).split('\n');
+  const lines = bodyLines.slice();
+  const link = ownerLink(collection, baseUrl);
+  if (link) {
+    lines.push('');
+    lines.push('להשלמת התשלום ולהמשך האיסוף:');
+    lines.push(link);
+  }
+  lines.push('');
+  lines.push(ft.line1);
+  lines.push(ft.line2);
+  const html = renderEmailHtml({
+    title: limit + ' מילים בפנים — ' + name,
+    bodyLines,
+    cta: link ? { label: cta.pay, url: link } : null,
+    baseUrl,
+  });
+  return { subject, text: lines.join('\n'), html };
+}
+
+// Fire the one-time "free quota reached" email to the BUYER. Never throws; the
+// once-only guard lives in db.markFreeLimitNotified, not here.
+async function sendFreeLimitReached(collection, baseUrl, limit) {
+  try {
+    if (!settings.emailEnabled('free_limit_reached')) return false;
+    const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
+    if (!to) return false;
+    return await send({ ...buildFreeLimitReached(collection, baseUrl, limit), to });
+  } catch (e) {
+    console.warn('[notify] sendFreeLimitReached failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
 // Fire the "order finished" notification. `baseUrl` is the normalized public
 // origin (optional). Never throws.
 async function sendOrderFinished(collection, baseUrl) {
@@ -1127,6 +1171,7 @@ module.exports = {
   buildProductionError,
   buildWordsReminder,
   buildPaymentReminder,
+  buildFreeLimitReached,
   buildSystemAlert,
   sendSystemAlert,
   sendOrderPaid,
@@ -1139,5 +1184,6 @@ module.exports = {
   sendProductionError,
   sendWordsReminder,
   sendPaymentReminder,
+  sendFreeLimitReached,
   sendReminderEmail,
 };

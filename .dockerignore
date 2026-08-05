@@ -54,7 +54,36 @@ resources/
 !resources/
 !resources/canva/
 !resources/canva/templates/
-!resources/canva/templates/**
+# Then carve the THEMES back out. Rules resolve last-match-wins, so this has to
+# come AFTER the re-include above and BEFORE the _shared one below.
+resources/canva/templates/*
+# _shared ONLY. It is not a theme: photo-fallback/ is the shipped pawn set the
+# photo card falls back to (generator/config.py reads it per order) and
+# photo-card/ is the slot reference. Both are read at request time, so they must
+# be in the image.
+!resources/canva/templates/_shared/
+!resources/canva/templates/_shared/**
+
+# The nine SHIPPED THEMES are deliberately NOT here any more.
+#
+# They were the image's copy of designs the owner has since re-onboarded through
+# the admin, which writes to the volume (DATA_DIR/templates) and SHADOWS the
+# image copy — so the image's version had stopped being what renders. Measured
+# against the live store: the volume holds its own copy of every one of them
+# except birthday-girls-neon, which the owner has retired.
+#
+# Carrying them cost 131MB in the image and, worse, 131MB of every `railway up`
+# upload — an upload that got big enough to stop completing at all.
+#
+# What this gives up, stated plainly: the image no longer has a shipped copy to
+# fall back TO. A theme that exists in themes.json but has no files on the volume
+# will fail to render rather than quietly using the image's art, and "שחזור
+# למקור" has nothing to restore for those keys. That is the deliberate trade —
+# the volume is now the single source of truth for artwork, which is why
+# scripts/backup-templates.mjs exists and must actually be run.
+#
+# They REMAIN in git as test fixtures and dev data (the generator suite renders
+# against them); this rule only keeps them out of the image and the upload.
 
 # The press export (generator/press.py) converts an order to CMYK against this
 # ICC profile, read off disk at request time. It lives under resources/, which

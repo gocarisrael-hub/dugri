@@ -692,6 +692,7 @@ describe('templates.js full editing (status / rename / replace)', () => {
       size: 23.9,
       board_size: 20,
       back_size: 18,
+      leading: 1.13,
       align: 'center',
       italic: false,
     },

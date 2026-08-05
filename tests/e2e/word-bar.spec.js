@@ -14,6 +14,14 @@ async function makeCollection(request, name, count = 0) {
   const created = await request.post('/api/collections', { data: { honoree_name: name } });
   expect(created.ok()).toBeTruthy();
   const { id, owner_token: k } = await created.json();
+  // The two-stage bar is the UNCAPPED view — the free word quota caps a fresh
+  // collection at 20 words and reframes the counter around it (that behaviour is
+  // covered in free-word-limit.spec.js). Lift the quota on THIS collection only
+  // (admin, per-collection, so a parallel spec is unaffected) before seeding.
+  const lifted = await request.patch(`/api/admin/collections/${id}?key=dugri-admin`, {
+    data: { free_limit_applies: false },
+  });
+  expect(lifted.ok()).toBeTruthy();
   if (count > 0) {
     const words = Array.from({ length: count }, (_, i) => 'w' + i);
     const res = await request.post(`/api/collections/${id}/words`, { data: { words } });

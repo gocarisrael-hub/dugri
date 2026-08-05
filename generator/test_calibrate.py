@@ -211,6 +211,231 @@ def test_assign_paints_passes_a_single_paint_through():
     assert C.assign_paints([], img, mask, _RINGED_BOX) == (None, None)
 
 
+# --- the outline ring, measured by depth -------------------------------------
+# outline_w was the one style knob nothing measured: it fell out of whichever
+# colour path happened to run, and on a small front-card title that path finds a
+# single colour cluster and reports "no ring". Three shipped decks then printed a
+# pale fill with no ring against pale artwork — an unreadable title. The ring is
+# a DEPTH question: it is the band within its own thickness of the ink's outer
+# edge, so it is one threshold on distance-to-background.
+
+_WHITE = (255, 255, 255)
+
+
+def test_the_ring_is_measured_at_the_thickness_it_was_drawn():
+    for ring in (4, 8, 14):
+        img, mask = _ringed(ring=ring, fill=(164, 233, 255), outline=(0, 0, 0))
+        fill, outline, width = C.ring_by_depth(
+            img, mask, _RINGED_BOX, ["#a4e9ff", "#000000"], _WHITE, 100.0)
+        assert (fill, outline) == ("#a4e9ff", "#000000"), (fill, outline)
+        # em is 100 px here, so the fraction IS the ring in pixels over 100.
+        assert abs(width - ring / 100.0) <= 0.02, (ring, width)
+
+
+def test_the_depth_pass_decides_which_paint_is_the_ring_whatever_the_order():
+    img, mask = _ringed(ring=9, fill=(164, 233, 255), outline=(0, 0, 0))
+    a = C.ring_by_depth(img, mask, _RINGED_BOX, ["#a4e9ff", "#000000"], _WHITE, 100.0)
+    b = C.ring_by_depth(img, mask, _RINGED_BOX, ["#000000", "#a4e9ff"], _WHITE, 100.0)
+    assert a == b, (a, b)
+    assert a[0] == "#a4e9ff" and a[1] == "#000000"
+
+
+def test_a_paint_that_does_not_survive_into_the_artwork_is_not_asserted():
+    """THE unreadable-title bug. The vector names two paints and the front only
+    ever draws the dark one; the old reading nominated the light one as the FILL,
+    the ring measured zero, and the renderer painted the fill alone — on
+    bachelorette in #ffc6d7, which is that card's own background to the byte.
+
+    The honest answer when one paint is absent is the single visible colour with
+    no ring: nothing can be said about what is underneath it."""
+    img, mask = _ringed(ring=0, fill=(13, 62, 67), outline=(13, 62, 67))
+    fill, outline, width = C.ring_by_depth(
+        img, mask, _RINGED_BOX, ["#97d8e6", "#0d3e43"], _WHITE, 100.0)
+    assert fill == "#0d3e43", f"the paint that is actually there must win: {fill}"
+    assert outline == "#0d3e43"
+    assert width == 0.0
+
+
+def test_an_unringed_title_measures_as_having_no_ring():
+    img, mask = _ringed(ring=0)
+    assert C.ring_by_depth(img, mask, _RINGED_BOX, ["#96dce6"], _WHITE, 100.0) == (
+        "#96dce6", "#96dce6", 0.0)
+
+
+def test_the_ring_is_a_fraction_of_the_TYPE_SIZE_not_of_the_ink():
+    """``outline_w`` is a fraction of the em in render_page.title_block, and a
+    Hebrew face's ink runs anywhere from 0.46 to 1.13 of its em across the ten
+    shipped faces — so expressing the ring against the ink would be wrong by up
+    to a factor of two. Halving the em must double the fraction."""
+    img, mask = _ringed(ring=8, fill=(164, 233, 255), outline=(0, 0, 0))
+    wide = C.ring_by_depth(img, mask, _RINGED_BOX,
+                           ["#a4e9ff", "#000000"], _WHITE, 100.0)[2]
+    half = C.ring_by_depth(img, mask, _RINGED_BOX,
+                           ["#a4e9ff", "#000000"], _WHITE, 50.0)[2]
+    assert abs(half - 2 * wide) < 1e-9, (wide, half)
+
+
+def _hollow(size=100, ring=8, pad=20):
+    """A ringed glyph whose FILL never reached the ink mask.
+
+    What a light fill inside a dark ring actually produces: the ring clears the
+    diff threshold, the pale fill over pale artwork does not, and the mask comes
+    back hollow. The image still carries the fill colour — it is only the mask
+    that lost it.
+    """
+    dim = size + 2 * pad
+    img = Image.new("RGB", (dim, dim), (255, 241, 222))
+    mask = Image.new("L", (dim, dim), 0)
+    for y in range(size):
+        for x in range(size):
+            edge = x < ring or y < ring or x >= size - ring or y >= size - ring
+            img.putpixel((x + pad, y + pad), (0, 0, 0) if edge else (164, 233, 255))
+            if edge:
+                mask.putpixel((x + pad, y + pad), 255)
+    return img, mask
+
+
+def test_a_hole_inside_the_ink_is_ink():
+    img, mask = _hollow()
+    before = sum(1 for v in mask.crop(_RINGED_BOX).getdata() if v)
+    after = sum(1 for v in C.solid_ink(mask.crop(_RINGED_BOX)).getdata() if v)
+    assert after == 100 * 100, f"the enclosed fill was not recovered: {after}"
+    assert before < after
+
+
+def test_background_that_reaches_the_edge_is_not_filled_in():
+    """Only an ENCLOSED pocket is ink. Background that the flood can reach from
+    the border is background, however much of the crop it is."""
+    mask = Image.new("L", (40, 40), 0)
+    for y in range(10, 30):
+        for x in range(10, 30):
+            mask.putpixel((x, y), 255)
+    got = C.solid_ink(mask)
+    assert sum(1 for v in got.getdata() if v) == 400
+
+
+def test_the_artwork_colour_is_read_outside_the_glyphs_not_in_their_counters():
+    """``_background`` takes the mode of every un-inked pixel in the crop, and on
+    a hollow mask — a pale fill that never cleared the diff threshold — that is
+    mostly the title's own FILL. Reading it as the background then throws the
+    fill away as "the card's colour". Only an unenclosed pixel is background."""
+    img, mask = _hollow(ring=8)
+    # the crop's un-inked pixels are dominated by the enclosed fill...
+    assert C._background(img, mask, _RINGED_BOX) == (164, 233, 255)
+    # ...but the artwork AROUND the ink is the page, and that is the answer.
+    assert C.artwork_around(img, mask, (0, 0, 140, 140)) == (255, 241, 222)
+
+
+def test_the_card_background_is_never_read_as_a_title_paint():
+    """A Canva export re-emits the card's own background inside the personalized
+    layer, so it arrives as a candidate paint — and as the commonest fill on the
+    card it wins. A title cannot be painted in the colour it is drawn ON."""
+    cands = [("#ffc6d7", 40), ("#b28c97", 9), ("#ff78a0", 4)]
+    kept = C.drop_background(cands, (255, 198, 215))     # #ffc6d7
+    assert [c for c, _ in kept] == ["#b28c97", "#ff78a0"]
+    # order (which is the count order) is preserved, so the caller still sees
+    # the most-added paint first
+    assert kept[0][1] == 9
+    # nothing to compare against leaves the list alone
+    assert C.drop_background(cands, None) == cands
+    # and a title drawn a shade off its background still reports its colour
+    only = [("#ffc6d7", 40)]
+    assert C.drop_background(only, (255, 198, 215)) == only
+
+
+def test_a_light_fill_inside_a_dark_ring_is_read_as_fill_and_ring():
+    """The whole point: without hole-filling this measures as a solid dark title
+    with no ring, which is how two shipped decks came to print one."""
+    img, mask = _hollow(ring=8)
+    fill, outline, width = C.ring_by_depth(
+        img, mask, _RINGED_BOX, ["#a4e9ff", "#000000"], (255, 241, 222), 100.0)
+    assert fill == "#a4e9ff", f"the enclosed paint is the fill, got {fill}"
+    assert outline == "#000000"
+    assert abs(width - 0.08) <= 0.02, width
+
+
+# --- the drop shadow ---------------------------------------------------------
+# The old test was "a thin low-density tail in the bottom 12% of the ink", which
+# is not a shadow — it is a DESCENDER, and almost every title has one. Turned on
+# for a design that has none it prints an offset second copy of the whole title.
+
+def _shadowed(size=100, ring=8, pad=30, drop=0):
+    """A ringed glyph, optionally with its own silhouette repeated below-right."""
+    dim = size + 2 * pad
+    img = Image.new("RGB", (dim, dim), (255, 255, 255))
+    mask = Image.new("L", (dim, dim), 0)
+    if drop:
+        for y in range(size):
+            for x in range(size):
+                img.putpixel((x + pad + drop, y + pad + drop), (0, 0, 0))
+                mask.putpixel((x + pad + drop, y + pad + drop), 255)
+    for y in range(size):
+        for x in range(size):
+            edge = x < ring or y < ring or x >= size - ring or y >= size - ring
+            img.putpixel((x + pad, y + pad), (0, 0, 0) if edge else (164, 233, 255))
+            mask.putpixel((x + pad, y + pad), 255)
+    return img, mask
+
+
+def test_a_plain_ring_is_not_reported_as_a_shadow():
+    img, mask = _shadowed(drop=0)
+    got = C.detect_shadow(img, mask, (0, 0, 160, 160),
+                          "#a4e9ff", "#000000", (255, 255, 255), 100.0)
+    assert got is False, "a concentric ring is not a shadow"
+
+
+def test_a_real_offset_copy_is_reported_as_a_shadow():
+    img, mask = _shadowed(drop=10)
+    got = C.detect_shadow(img, mask, (0, 0, 160, 160),
+                          "#a4e9ff", "#000000", (255, 255, 255), 100.0)
+    assert got is True
+
+
+def test_a_single_paint_title_cannot_be_asked_about_its_shadow():
+    """No ring means nothing to compare the fill against, so the answer is
+    "unknown" — which must not be written down as "no shadow"."""
+    img, mask = _ringed(ring=0)
+    assert C.detect_shadow(img, mask, _RINGED_BOX, "#96dce6", "#96dce6",
+                           (255, 255, 255), 100.0) is None
+
+
+def test_too_little_ink_is_refused_rather_than_measured():
+    img = Image.new("RGB", (12, 12), (255, 255, 255))
+    mask = Image.new("L", (12, 12), 0)
+    mask.putpixel((6, 6), 255)
+    assert C.ring_by_depth(img, mask, (0, 0, 12, 12),
+                           ["#a4e9ff", "#000000"], _WHITE, 40.0) == (None, None, None)
+
+
+# --- the body band: measuring a row of type without knowing what it says ------
+
+def test_the_body_band_is_the_bulk_of_the_ink_not_its_extremes():
+    """A single tall spike — one letter's ascender — must not become the band."""
+    mask = Image.new("L", (60, 40), 0)
+    for y in range(20, 36):                    # the body every letter occupies
+        for x in range(4, 56):
+            mask.putpixel((x, y), 255)
+    for y in range(4, 20):                     # one lamed, two pixels wide
+        for x in range(10, 12):
+            mask.putpixel((x, y), 255)
+    band = C._band_height(mask)
+    assert 15 <= band <= 18, f"the band followed the ascender: {band}"
+    assert mask.getbbox()[3] - mask.getbbox()[1] == 32, "the bbox would say 32"
+
+
+def test_the_body_band_is_sub_pixel():
+    """A whole-row answer is a staircase with ~6% steps at the sizes these decks
+    print, and a bisection against a staircase lands on the step EDGE — always
+    under. Two shapes a pixel apart must not report the same band."""
+    def band(depth):
+        mask = Image.new("L", (60, 60), 0)
+        for y in range(10, 10 + depth):
+            for x in range(4, 56):
+                mask.putpixel((x, y), 255)
+        return C._band_height(mask)
+    assert band(21) > band(20) > band(19)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

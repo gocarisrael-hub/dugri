@@ -92,7 +92,9 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
                                   fixed_size=ts.get("board_size"),
                                   align=ts.get("align", "center"),
                                   italic=ts.get("italic", False),
-                                 bold=ts.get("bold", False))
+                                  bold=ts.get("bold", False),
+                                  bold_w=ts.get("bold_w"),
+                                  leading=rp.board_leading(ts))
     return render_svg(svg.replace("</svg>", body + "</svg>"), w, h, out_png)
 
 
@@ -123,7 +125,9 @@ def render_backs(theme, backs_clean, title_lines, out_png):
                                    fixed_size=ts.get("back_size") or ts.get("size"),
                                    align=ts.get("align", "center"),
                                    italic=ts.get("italic", False),
-                                 bold=ts.get("bold", False)))
+                                   bold=ts.get("bold", False),
+                                   bold_w=ts.get("bold_w"),
+                                   leading=rp.back_leading(ts, bk)))
     return render_svg(svg.replace("</svg>", "".join(body) + "</svg>"), w, h, out_png)
 
 
@@ -241,7 +245,9 @@ def build_board_pdf(theme, out_pdf, title_lines, workdir, chasers=False):
                                  fixed_size=ts.get("board_size"),
                                  align=ts.get("align", "center"),
                                  italic=ts.get("italic", False),
-                                 bold=ts.get("bold", False))
+                                 bold=ts.get("bold", False),
+                                 bold_w=ts.get("bold_w"),
+                                 leading=rp.board_leading(ts))
     doc.add_page("board", overlay)
     vbs = " ".join(_fmt(v) for v in vb)
     return print_to_pdf(doc.html(vbs), out_pdf, workdir, tag="board")

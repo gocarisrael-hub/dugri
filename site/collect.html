@@ -629,6 +629,54 @@
       .msg-modal-actions button {
         flex: 1;
       }
+      /* ===== FREE-QUOTA LOCK =====
+         Once a collection fills its free word quota the add controls stay VISIBLE
+         but go inert behind a veil: seeing the box you can't use is what makes
+         the offer legible ("this is the thing payment unlocks"), where hiding it
+         would just look broken. The controls are also disabled in JS — the veil
+         is presentation, never the gate (the real gate is server-side). */
+      #addCard {
+        position: relative;
+      }
+      #addCard.locked > *:not(.lock-veil) {
+        opacity: 0.3;
+        filter: grayscale(1);
+        pointer-events: none;
+        user-select: none;
+      }
+      .lock-veil {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 14px;
+        text-align: center;
+        background: color-mix(in srgb, var(--surface) 80%, transparent);
+      }
+      .lock-veil.hidden {
+        display: none;
+      }
+      .lock-chip {
+        border: 1px solid var(--ink);
+        background: var(--section);
+        font-weight: 700;
+        font-size: 14px;
+        padding: 6px 14px;
+      }
+      .lock-veil small {
+        color: var(--muted);
+        max-width: 30ch;
+        line-height: 1.5;
+      }
+      .lock-cta {
+        margin-top: 2px;
+      }
+      .lock-cta.hidden {
+        display: none;
+      }
       /* Top pay reminder (owner, unpaid only) — nudges toward the pay panel.
          A flat sand card read as just another section and got skipped, so the
          mark and the copy are split: a solid ink block carries the "!" while
@@ -1159,6 +1207,18 @@
           <input type="file" id="fileInput" accept=".txt,.csv,text/plain,text/csv" />
           <p class="muted" data-edit="collect-file-hint">קובץ טקסט או CSV - מילה בכל שורה.</p>
         </div>
+
+        <!-- Free-quota lock. Covers the add controls (which are also dimmed +
+             inert via #addCard.locked) once the collection fills its free word
+             quota. Copy is set in JS: the owner is pointed at the pay panel,
+             a contributor is told the organizer has to complete payment. -->
+        <div class="lock-veil hidden" id="lockVeil" data-testid="free-limit-lock">
+          <span class="lock-chip" id="lockChip">🔒 ההוספה נעולה</span>
+          <small id="lockNote"></small>
+          <button class="lock-cta hidden" id="lockPayBtn" type="button" data-testid="lock-pay-btn">
+            לתשלום — ופותחים את האיסוף
+          </button>
+        </div>
       </div>
 
       <!-- the words (with the live counter) -->
@@ -1663,6 +1723,11 @@
       // re-render and never detaches the focused input mid-edit.
       let wordEditOpen = false;
 
+      // True once the free-quota lock has auto-expanded the pay panel, so the 5s
+      // poll can't keep re-opening a panel the owner chose to collapse. Reset
+      // when the lock lifts (payment, or the quota being raised).
+      let freeLockPayOpened = false;
+
       function render() {
         if (!state) return;
         // Now that the collection (and its event theme) is loaded, make sure the
@@ -1673,6 +1738,19 @@
         // Now that the honoree name is known, personalize the owner's share invite.
         if (isOwner) updateShareInvite();
         const n = state.count;
+        // Free quota (server-projected): a number while this collection is capped,
+        // null once it's paid / exempt / the gate is switched off. While capped the
+        // counter reframes around the quota — promising "412 words" to someone who
+        // can only add 20 of them right now would be a lie.
+        const freeLimit = Number.isInteger(state.free_word_limit) ? state.free_word_limit : null;
+        const freeLocked = !!state.free_limit_locked;
+        applyFreeLimit(freeLimit, freeLocked, n);
+        if (freeLimit !== null) {
+          renderFreeCounter(freeLimit, freeLocked, n);
+          renderWords();
+          renderOwnerState();
+          return;
+        }
         const atMax = n >= MAX_WORDS;
         // Stage 2 kicks in once the 70-word minimum is met: the pill/hint reframe
         // around the max and the bar swaps to one scaled to MAX_WORDS.
@@ -1718,7 +1796,57 @@
           ? 'הגעתם למקסימום — יש לכם משחק מפוצץ!'
           : 'המינימום מאחוריכם — ממשיכים למקסימום (' + MAX_WORDS + ')';
 
-        // words
+        renderWords();
+        renderOwnerState();
+      }
+
+      // The counter while a FREE QUOTA is in force: one bar scaled to the quota,
+      // and copy that says what the quota actually is. The two-stage
+      // minimum/maximum framing resumes automatically once payment lifts the cap.
+      function renderFreeCounter(limit, locked, n) {
+        const shown = Math.min(n, limit);
+        $('#count').textContent = shown;
+        $('#countMax').textContent = ' / ' + limit + ' מילים חינם';
+        $('#countHint').textContent = locked
+          ? 'ניצלתם את כל ' +
+            limit +
+            ' המילים החינמיות. אחרי התשלום אפשר להמשיך עד ' +
+            MAX_WORDS +
+            '.'
+          : 'עוד ' +
+            (limit - n) +
+            ' מילים בחינם — אחר כך משלימים תשלום וממשיכים עד ' +
+            MAX_WORDS +
+            '.';
+        $('#stage1').classList.remove('hidden');
+        $('#stage2').classList.add('hidden');
+        $('#barFill1').style.width = Math.min(100, (shown / limit) * 100) + '%';
+      }
+
+      // Engage / release the lock on the add controls. Presentation only — the
+      // server refuses over-quota words regardless of what the page shows — but
+      // the controls are genuinely disabled so nobody types into a dead box.
+      function applyFreeLimit(limit, locked, n) {
+        const card = $('#addCard');
+        const veil = $('#lockVeil');
+        const payBtn = $('#lockPayBtn');
+        card.classList.toggle('locked', locked);
+        veil.classList.toggle('hidden', !locked);
+        for (const el of card.querySelectorAll('input, textarea, button:not(.lock-cta)')) {
+          el.disabled = locked;
+        }
+        if (!locked) return;
+        $('#lockChip').textContent = '🔒 ההוספה נעולה · ' + Math.min(n, limit) + '/' + limit;
+        // The owner can act on this (pay); a contributor can't, so they're told
+        // who can — never handed a pay button for someone else's order.
+        $('#lockNote').textContent = isOwner
+          ? 'המילים שאספתם שמורות. התשלום פותח את האיסוף מיד.'
+          : 'הגעתם למכסת המילים החינמית. המילים שאספתם שמורות — ' +
+            'ברגע שהמארגנ/ת תשלים את התשלום אפשר יהיה להמשיך.';
+        payBtn.classList.toggle('hidden', !isOwner);
+      }
+
+      function renderWords() {
         const wrap = $('#wordsWrap');
         if (!state.words.length) {
           wrap.innerHTML = '<span class="muted">עוד אין מילים - היו הראשונים!</span>';
@@ -1775,7 +1903,9 @@
             wrap.appendChild(el);
           }
         }
+      }
 
+      function renderOwnerState() {
         const open = state.status === 'open';
         setOpenState(open);
         if (isOwner) {
@@ -1808,6 +1938,18 @@
           if (applyPricingRef) applyPricingRef();
           // Now that the panel's real state is known, honour a ?pay=1 arrival.
           maybeAutoOpenPay(paid);
+          // Quota reached and still unpaid: the pay panel IS the next step, so
+          // expand it rather than leaving the owner to find the collapsed summary.
+          // ONCE per lock — the 5s poll re-renders, and re-opening on every pass
+          // would fight an owner who deliberately collapsed it.
+          if (open && !paid && state.free_limit_locked) {
+            if (!freeLockPayOpened) {
+              freeLockPayOpened = true;
+              $('#payPanel').open = true;
+            }
+          } else {
+            freeLockPayOpened = false;
+          }
         } else {
           $('#ownerControls').classList.add('hidden');
         }
@@ -1844,7 +1986,19 @@
           await refresh();
           const added = res && typeof res.added === 'number' ? res.added : clean.length;
           const skipped = (res && res.skipped) || 0;
-          track('word_added', { method: method || 'single', count: added, skipped });
+          // Words the free quota refused. A partial batch (5 of 50 stored) is a
+          // success with a caveat, not a failure — say exactly what landed.
+          const blocked = (res && res.blocked) || 0;
+          track('word_added', { method: method || 'single', count: added, skipped, blocked });
+          if (blocked) {
+            const limit = res && res.free_word_limit;
+            toast(
+              added
+                ? 'נוספו ' + added + ' מילים — והגעתם למכסת החינם'
+                : 'הגעתם למכסת ' + (limit || '') + ' המילים החינמיות'
+            );
+            return true;
+          }
           if (added >= 1) {
             // Something was added → confirm with a non-blocking toast. If part of
             // a batch was skipped, note it inline (no popup, so we don't interrupt
@@ -1879,6 +2033,15 @@
           if (e.status === 409) {
             alert('האיסוף נסגר - אי אפשר להוסיף עוד מילים.');
             await refresh();
+          } else if (e.status === 402) {
+            // Free quota already full when the request landed (someone else's
+            // word got there first, or a stale tab). refresh() engages the lock.
+            await refresh();
+            openDialog(
+              isOwner
+                ? 'הגעתם למכסת המילים החינמית. אחרי התשלום אפשר להמשיך להוסיף.'
+                : 'הגעתם למכסת המילים החינמית. ברגע שהמארגנ/ת תשלים את התשלום אפשר יהיה להמשיך.'
+            );
           } else {
             // Network drop, HTTP 500, or the server's 400 (too many words):
             // never swallow it — the word was NOT saved, so tell the user and
@@ -2338,6 +2501,12 @@
         };
         // Top reminder opens the pay panel and scrolls to it.
         $('#payReminder').addEventListener('click', () => openPayPanel('center'));
+        // ...and so does the free-quota lock's own CTA (owner only — a
+        // contributor's veil carries no button, so this never fires for them).
+        $('#lockPayBtn').addEventListener('click', () => {
+          track('free_limit_pay_click', {});
+          openPayPanel('start');
+        });
         // ...and so does arriving with ?pay=1 (the order email's pay button).
         openPayPanelRef = () => openPayPanel('start');
         const opts = Array.from(document.querySelectorAll('.pay-opt'));

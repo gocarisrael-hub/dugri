@@ -135,6 +135,59 @@ function effectivePricing() {
   return { store: { now: storeValue('store_now'), was: storeValue('store_was') }, versions };
 }
 
+// --- free word quota ---------------------------------------------------------
+// A collection may gather `pricing.free_word_limit` words before payment; past
+// that, adding is blocked until the order is paid. Both knobs are owner-editable
+// (see the pricing registry). A corrupt/non-integer override falls back to the
+// registry default rather than to "no limit" OR to 0 — a 0 would lock every
+// collection at its first word.
+const FREE_WORD_LIMIT_DEFAULT = (() => {
+  const reg = (settings && settings.REGISTRY && settings.REGISTRY.pricing) || {};
+  const d = reg.free_word_limit && reg.free_word_limit.default;
+  return Number.isInteger(d) && d >= 1 ? d : 20;
+})();
+
+function freeWordLimit() {
+  try {
+    const v = settings.get('pricing', 'free_word_limit');
+    if (Number.isInteger(v) && v >= 1) return v;
+  } catch {
+    /* settings unavailable — use the built-in default below */
+  }
+  return FREE_WORD_LIMIT_DEFAULT;
+}
+
+// Is the quota ENFORCED right now? Off => the counter still shows but adds are
+// never blocked. Fails closed to the registry default (on) only if the read throws.
+function freeLimitEnforced() {
+  try {
+    return settings.get('pricing', 'lock_after_free_limit') === true;
+  } catch {
+    return true;
+  }
+}
+
+// The quota state for one collection, given its current word count.
+//   applies   — is this collection subject to the quota at all? Collections
+//               created BEFORE the feature shipped carry no `free_limit_applies`
+//               stamp and are grandfathered in (never locked). A paid order is
+//               likewise exempt — payment is exactly what lifts the gate.
+//   remaining — how many more words may still be added (Infinity when exempt).
+//   locked    — the gate is closed right now: adding anything is refused.
+function freeLimitState(c, count) {
+  const limit = freeWordLimit();
+  const paid = !!(c && c.order && c.order.paid);
+  const applies = !!(c && c.free_limit_applies) && !paid && freeLimitEnforced();
+  const n = Number.isInteger(count) ? count : 0;
+  return {
+    limit,
+    applies,
+    paid,
+    remaining: applies ? Math.max(0, limit - n) : Infinity,
+    locked: applies && n >= limit,
+  };
+}
+
 function loadDb() {
   try {
     if (!fs.existsSync(DB_FILE)) return { ...DEFAULTS };
@@ -324,7 +377,18 @@ const db = {
       // Up to 4 optional customer photos ("פיונים") attached to the collection,
       // stored as public "/content-uploads/<hash>.<ext>" path strings. Appended
       // via addPawnImages (owner-token gated). Empty on a fresh collection.
+      // These are always the ORIGINALS exactly as the buyer uploaded them — the
+      // background-removed cutouts live beside them in pawn_cutouts, so a cut can
+      // always be redone (or reverted) without asking the buyer for the photo again.
       pawn_images: [],
+      // Background-removed cutouts, keyed BY THE ORIGINAL'S PATH rather than by
+      // slot index, so removing/reordering pawn_images (adminSetPawnImages) can
+      // never mis-pair a photo with someone else's cutout. Three states per photo:
+      //   • key absent      — never attempted (an older browser, or a legacy order)
+      //   • value = path    — the "/content-uploads/<hash>.png" transparent cutout
+      //   • value = null    — attempted and FAILED; the original is used instead
+      //                       and the admin table flags it for a manual cut.
+      pawn_cutouts: {},
       // Optional free-form custom title (F7) overriding the theme's derived title
       // on the cards + board. Sanitized/capped; null when empty so the theme
       // default is used. The generator receives this via its --title CLI arg.
@@ -348,6 +412,13 @@ const db = {
       // legacy one-shot timestamp is kept for continuity (see markPaymentReminderSent).
       payment_reminders_sent: 0,
       payment_reminded_at: null,
+      // Free word quota (pricing.free_word_limit): stamped true at creation so the
+      // gate applies ONLY to collections started after the feature shipped —
+      // older rows lack the field and stay uncapped, exactly as they were sold.
+      free_limit_applies: true,
+      // One-time "you've hit the free quota, pay to keep adding" email marker.
+      // Null until markFreeLimitNotified sets it; keeps the mail to one send.
+      free_limit_notified_at: null,
       // Admin soft-cancel (reversible); a hard delete removes the row entirely.
       cancelled: false,
       cancelled_at: null,
@@ -397,16 +468,25 @@ const db = {
   },
 
   // Add a batch of words. Dedupes (case/space-insensitive) within the
-  // collection. Returns {added, skipped} or {closed:true} if not open.
+  // collection, and stops at the free quota when one applies (see
+  // freeLimitState): a 50-word paste onto a collection with 5 slots left stores
+  // those 5 and reports the rest as `blocked` — partial acceptance beats
+  // rejecting the whole list and losing the buyer's typing. Returns
+  // {added, skipped, blocked} or {closed:true} if not open.
   addWords(id, words, addedBy) {
     const c = this.getCollection(id);
     if (!c) return null;
-    if (effectiveStatus(c) !== 'open') return { closed: true, added: 0, skipped: 0 };
+    if (effectiveStatus(c) !== 'open') return { closed: true, added: 0, skipped: 0, blocked: 0 };
 
-    const existing = new Set(_db.words.filter((w) => w.collection_id === id).map((w) => w.norm));
+    const existingWords = _db.words.filter((w) => w.collection_id === id);
+    const existing = new Set(existingWords.map((w) => w.norm));
+    // Room left under the quota, computed from the CURRENT count (Infinity when
+    // the collection is exempt/paid or the gate is switched off).
+    let room = freeLimitState(c, existingWords.length).remaining;
     const by = addedBy ? String(addedBy).trim().slice(0, 40) : null;
     let added = 0;
     let skipped = 0;
+    let blocked = 0;
     for (const raw of Array.isArray(words) ? words : []) {
       const text = String(raw).trim().replace(/\s+/g, ' ').slice(0, 80);
       if (!text) continue;
@@ -415,6 +495,13 @@ const db = {
         skipped += 1;
         continue;
       }
+      // Quota exhausted: count the remainder as blocked, never stored. A
+      // duplicate above is NOT counted here — it was never going to be stored.
+      if (room <= 0) {
+        blocked += 1;
+        continue;
+      }
+      room -= 1;
       existing.add(n);
       _db.words.push({
         id: uid(),
@@ -427,7 +514,26 @@ const db = {
       added += 1;
     }
     if (added) saveDb();
-    return { added, skipped };
+    return { added, skipped, blocked };
+  },
+
+  // The free-quota state for a collection, from its live word count. Exposed so
+  // the API can project it to collect.html and gate the add route.
+  freeLimit(id) {
+    const c = this.getCollection(id);
+    if (!c) return null;
+    return freeLimitState(c, this.countWords(id));
+  },
+
+  // Mark the one-time "free quota reached" email as sent. Returns true only for
+  // the FIRST call — the caller uses that as the send/don't-send decision, so a
+  // second word landing on a full collection can never re-trigger the mail.
+  markFreeLimitNotified(id) {
+    const c = this.getCollection(id);
+    if (!c || c.free_limit_notified_at) return false;
+    c.free_limit_notified_at = nowIso();
+    saveDb();
+    return true;
   },
 
   deleteWord(id, wordId, ownerToken) {
@@ -518,6 +624,28 @@ const db = {
     return c.pawn_images;
   },
 
+  // Record the background-removed cutout for ONE stored pawn photo, owner-token
+  // gated exactly like addPawnImages. `cutPath` is our own "/content-uploads/…"
+  // path on success, or null to record "we tried and could not cut this one" —
+  // which is what makes a failed cut VISIBLE to the owner instead of silently
+  // shipping a photo that will print as a white rectangle (docs/photo-card.md).
+  //
+  // Keyed by the ORIGINAL's path, and only ever for a path this collection
+  // actually stores, so a stale key can't accumulate. Returns the cutout map, or
+  // null on a bad owner token / unknown collection / a path we don't hold.
+  setPawnCutout(id, ownerToken, origPath, cutPath) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return null;
+    if (!Array.isArray(c.pawn_images) || !c.pawn_images.includes(origPath)) return null;
+    if (cutPath != null && !pawnPathOk(cutPath)) return null;
+    if (!c.pawn_cutouts || typeof c.pawn_cutouts !== 'object' || Array.isArray(c.pawn_cutouts)) {
+      c.pawn_cutouts = {};
+    }
+    c.pawn_cutouts[origPath] = cutPath == null ? null : cutPath;
+    saveDb();
+    return c.pawn_cutouts;
+  },
+
   // Admin: soft-cancel a collection (reversible). With undo=true it restores
   // the collection. Returns false when the collection doesn't exist.
   cancelCollection(id, undo = false) {
@@ -600,6 +728,12 @@ const db = {
     }
     if (has('chasers')) c.chasers = !!p.chasers;
     if (has('custom_title')) c.custom_title = sanitizeCustomTitle(p.custom_title);
+    // Lift (or re-apply) the free word quota for THIS collection only. Admin has
+    // deliberately no "mark as paid" — an order becomes paid only through a real
+    // payment — so this is the narrow, money-free way to let a particular
+    // collection keep collecting: a goodwill exception, or an order settled
+    // off-system. Global quota changes live in settings (pricing.free_word_limit).
+    if (has('free_limit_applies')) c.free_limit_applies = !!p.free_limit_applies;
     saveDb();
     return c;
   },
@@ -625,6 +759,19 @@ const db = {
       if (out.length === 4) break;
     }
     c.pawn_images = out;
+    // Drop cutout records for photos that are no longer attached, so the map can
+    // never outgrow the (max 4) list it annotates. Keyed by path, so the photos
+    // that SURVIVE a removal/reorder keep their own cutout — no re-cut needed.
+    const cuts = c.pawn_cutouts;
+    if (cuts && typeof cuts === 'object' && !Array.isArray(cuts)) {
+      const kept = {};
+      for (const p of out) {
+        if (Object.prototype.hasOwnProperty.call(cuts, p)) kept[p] = cuts[p];
+      }
+      c.pawn_cutouts = kept;
+    } else {
+      c.pawn_cutouts = {};
+    }
     saveDb();
     return c.pawn_images;
   },
@@ -1197,3 +1344,6 @@ module.exports.ORDER_PRICES = ORDER_PRICES;
 module.exports.effectivePricing = effectivePricing;
 // The short order number to print for a collection (falls back to its id).
 module.exports.orderRef = orderRef;
+// Pure free-quota projection (collection + word count -> {limit, applies, paid,
+// remaining, locked}), exposed for the API's public view and for unit tests.
+module.exports.freeLimitState = freeLimitState;
