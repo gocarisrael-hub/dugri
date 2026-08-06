@@ -916,6 +916,136 @@
         border-radius: var(--radius);
       }
 
+      /* ---- the deck pictures under the collapsed summary ------------------
+         Three at most (all fronts / all backs / the board), each a button that
+         opens the fullscreen viewer. Only rendered for a design whose owner
+         uploaded them, so this whole row is absent on most designs and the step
+         looks exactly as it did before. */
+      .deck-row {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: repeat(var(--deck-n, 3), 1fr);
+        gap: 8px;
+      }
+      /* `display: grid` beats the `hidden` attribute's default `display: none`, so
+         without this the row kept its margin on every step and every design that
+         has no pictures — enough to push the design step past the sticky bar and
+         make the phone layout scroll (caught by wizard-noscroll, not by the row's
+         own test: an empty grid has no size, so Playwright already called it
+         hidden). ANY display: rule on an element toggled with `hidden` needs this
+         guard. */
+      .deck-row[hidden] {
+        display: none;
+      }
+      .deck-thumb {
+        appearance: none;
+        -webkit-appearance: none;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        padding: 0;
+        cursor: zoom-in;
+        overflow: hidden;
+        /* Square, so three sit in a row on a phone without dictating the shape of
+           the owner's photo — the picture is contained, never cropped. */
+        aspect-ratio: 1 / 1;
+        display: block;
+        transition: border-color 0.15s;
+      }
+      .deck-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+      .deck-thumb:hover,
+      .deck-thumb:focus-visible {
+        border-color: var(--sage);
+      }
+
+      /* Fullscreen viewer for those pictures. Deliberately NOT the #zoomOverlay
+         above: that one clones the LIVE preview panels (SVG + palette vars) and
+         is bound to the front/back/board tabs, so it cannot show a photograph.
+         This is the image viewer the product page already uses — same swipe, same
+         pinch (js/pinch-zoom.js) — so the two enlarge gestures behave alike. */
+      .deck-view {
+        position: fixed;
+        inset: 0;
+        /* Matches #zoomOverlay: above nav (80), wiz-bar (70) and the gender modal
+           (90). At 70 the nav sat on top and ate the close button. */
+        z-index: 120;
+        /* Nearly opaque: at 0.94 the wizard read through the overlay and the
+           photograph had to compete with the page behind it. */
+        background: rgba(20, 18, 20, 0.98);
+      }
+      .deck-view[hidden] {
+        display: none;
+      }
+      /* The track FILLS the overlay and the slides are full-size, exactly as the
+         product page's viewer does it. A flex-column overlay with a `flex: 1`
+         track was the obvious alternative and it does not work: the carousel
+         positions its arrows against the track's offset parent and sizes slides
+         off its own box, so the picture landed off-centre with the arrows adrift
+         over the page. Keep this structure. */
+      #deckViewTrack {
+        position: absolute;
+        inset: 0;
+      }
+      #deckViewTrack.carousel-track {
+        gap: 0;
+      }
+      #deckViewTrack > * {
+        flex: 0 0 100%;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        /* Clear of the close button at the top and the dots at the bottom. */
+        padding: max(env(safe-area-inset-top, 0px), 64px) 20px 64px;
+        /* A pinch-zoomed photo is transformed well past its slide; clip it so the
+           overflow cannot grow the track's scrollable width and let the carousel
+           drift off its snapped slide mid-pan. */
+        overflow: hidden;
+      }
+      #deckViewTrack img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        display: block;
+        /* js/pinch-zoom.js scales/translates this node; centre origin is what its
+           focal-point maths assumes. */
+        transform-origin: center center;
+        will-change: transform;
+      }
+      /* While a photo is zoomed in the finger is panning it, so a sideways drag
+         must stop meaning "next picture". */
+      .deck-view.is-zoomed #deckViewTrack {
+        touch-action: none;
+      }
+      .deck-view-close {
+        position: absolute;
+        top: 10px;
+        inset-inline-start: 10px;
+        z-index: 3;
+        width: 40px;
+        height: 40px;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        background: rgba(0, 0, 0, 0.5);
+        color: #fff;
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .deck-view-dots {
+        position: absolute;
+        inset-inline: 0;
+        bottom: 18px;
+        z-index: 3;
+        display: flex;
+        justify-content: center;
+        gap: 6px;
+      }
+
       /* ---- colour-step preview carousel (front / back / board) ----------
          A swipeable slideshow of the current design's views in the current
          colour, on the SHARED carousel engine (css/carousel.css +
@@ -1884,6 +2014,27 @@
         <div class="preview-chip" id="previewChip" hidden>
           <span class="continue-summary" id="continueSummary" data-testid="continue-summary"></span>
         </div>
+        <!-- The whole deck, as photographed: all eight fronts, all eight backs,
+             the board. Sits under the collapsed summary on the name/contact steps,
+             where the live preview has shrunk to a reminder and the shopper is
+             deciding whether this is really the product. Tapping one opens the
+             fullscreen viewer below.
+
+             Owner-uploaded (admin-images.html), and shown only for a design that
+             HAS them — no placeholder, because nothing generates these and a
+             stand-in would promise a picture the deck does not have. A design with
+             none renders no row at all, so the step looks exactly as it does now.
+
+             NO captions, by the owner's instruction: the pictures say what they
+             are. The accessible name still does, via each button's aria-label. -->
+        <div
+          class="deck-row"
+          id="deckRow"
+          data-testid="deck-row"
+          role="group"
+          aria-label="תמונות החפיסה"
+          hidden
+        ></div>
       </section>
 
       <!-- STEP 1 — design -->
@@ -3222,6 +3373,32 @@
       </div>
     </div>
 
+    <!-- Fullscreen viewer for the owner's deck photographs. Separate from
+         #zoomOverlay above, which clones the LIVE preview panels and is bound to
+         the front/back/board tabs — it cannot show a photograph. This one is the
+         product page's image viewer: swipe between the pictures, pinch to zoom. -->
+    <div
+      class="deck-view"
+      id="deckView"
+      data-testid="deck-view"
+      role="dialog"
+      aria-modal="true"
+      aria-label="תמונות החפיסה"
+      hidden
+    >
+      <button
+        class="deck-view-close"
+        type="button"
+        id="deckViewClose"
+        data-testid="deck-view-close"
+        aria-label="סגירה"
+      >
+        ×
+      </button>
+      <div id="deckViewTrack"></div>
+      <div class="deck-view-dots" id="deckViewDots"></div>
+    </div>
+
     <script type="module">
       import {
         DESIGNS,
@@ -3247,6 +3424,8 @@
       } from './js/configurator.js';
       import { track } from './js/analytics.js';
       import { initCarousel } from './js/carousel.js';
+      import { initPinchZoom } from './js/pinch-zoom.js';
+      import { loadDesignImages, deckFor } from './js/design-images.js';
       import { fetchPricing } from './js/pricing.js';
       import {
         CARD_CELL,
@@ -5109,6 +5288,148 @@
         }
       }
 
+      /* ---- the deck pictures under the collapsed summary -------------------
+         The owner photographs her deck and uploads three pictures per design in
+         admin-images.html: all eight fronts, all eight backs, the board. They are
+         shown here — the last screen before the buyer commits — and nowhere else.
+
+         Entirely additive and fail-soft. The map is fetched once, in the
+         background; until it lands (or if it never does) `deckImages` stays {},
+         `deckFor` returns [] and NO row is drawn. Nothing on this page waits for
+         it, so a slow or dead endpoint costs the wizard nothing.
+
+         No captions, by the owner's instruction. Each thumb is still a real
+         button with an accessible name, so the row is operable by keyboard and
+         announced by a screen reader. */
+      const deckRow = document.getElementById('deckRow');
+      const deckView = document.getElementById('deckView');
+      const deckViewTrack = document.getElementById('deckViewTrack');
+      const deckViewDots = document.getElementById('deckViewDots');
+      const deckViewClose = document.getElementById('deckViewClose');
+      // The picture's accessible name — admin-only labels, never drawn on screen.
+      const DECK_A11Y = {
+        deckFronts: 'שמונת הקלפים',
+        deckBacks: 'שמונת הגבים',
+        deckBoard: 'לוח המשחק',
+      };
+      let deckImages = {};
+      let deckShots = [];
+      let deckViewApi = null;
+      let deckViewPinch = null;
+      let deckViewOpener = null;
+
+      function paintDeckRow(collapsed) {
+        if (!deckRow) return;
+        const d = DESIGNS[designIndex];
+        deckShots = collapsed ? deckFor(deckImages, d) : [];
+        deckRow.replaceChildren();
+        if (!deckShots.length) {
+          deckRow.hidden = true;
+          return;
+        }
+        // Track the real count: two uploaded pictures must sit as two, not two
+        // thirds of a row with a hole where the third would be.
+        deckRow.style.setProperty('--deck-n', String(deckShots.length));
+        deckShots.forEach((shot, i) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'deck-thumb';
+          btn.dataset.testid = 'deck-thumb';
+          btn.dataset.deckIndex = String(i);
+          btn.setAttribute('aria-label', `${DECK_A11Y[shot.key] || 'תמונה'} — הגדלה`);
+          const img = document.createElement('img');
+          img.src = shot.src;
+          img.alt = '';
+          img.loading = 'lazy';
+          img.decoding = 'async';
+          // An upload that 404s drops its own thumb rather than showing a broken
+          // picture — the row is a promise about the product, so a gap beats a
+          // torn image. The others stay.
+          img.addEventListener('error', () => btn.remove(), { once: true });
+          btn.appendChild(img);
+          deckRow.appendChild(btn);
+        });
+        deckRow.hidden = false;
+      }
+
+      function openDeckView(index) {
+        if (!deckShots.length || !deckView) return;
+        deckViewOpener = document.activeElement;
+        deckViewTrack.replaceChildren();
+        for (const shot of deckShots) {
+          const slide = document.createElement('div');
+          const img = document.createElement('img');
+          img.src = shot.src;
+          img.alt = DECK_A11Y[shot.key] || '';
+          slide.appendChild(img);
+          deckViewTrack.appendChild(slide);
+        }
+        deckView.hidden = false;
+        document.body.style.overflow = 'hidden';
+        // Built AFTER the overlay is visible: a carousel measured while its
+        // container is display:none reads every slide as zero-wide and cannot
+        // place them.
+        deckViewApi = initCarousel(deckViewTrack, {
+          mode: 'slideshow',
+          autoplay: false,
+          loop: false,
+          dots: true,
+          dotsInto: deckViewDots,
+          // Slideshow mode adds arrows by default; the product page's viewer turns
+          // them off for the same reason. Unstyled, they landed across the close
+          // button. Swipe and the dots cover it.
+          arrows: false,
+        });
+        if (index > 0 && deckViewApi && deckViewApi.goTo) deckViewApi.goTo(index);
+        deckViewPinch = initPinchZoom(deckView, { imgSelector: 'img' });
+        document.addEventListener('keydown', onDeckViewKey);
+        deckViewClose.focus();
+        track('open_deck_view', { index });
+      }
+
+      function closeDeckView() {
+        if (!deckView || deckView.hidden) return;
+        // Tear the carousel down: initCarousel is idempotent and would otherwise
+        // hand back the dead instance on the next open, leaving the fresh slides
+        // unstamped (the fault that flattened the product gallery, #345).
+        if (deckViewPinch) deckViewPinch.reset();
+        if (deckViewApi && deckViewApi.destroy) deckViewApi.destroy();
+        deckViewApi = null;
+        deckViewPinch = null;
+        deckViewTrack.replaceChildren();
+        deckViewDots.replaceChildren();
+        deckView.hidden = true;
+        document.body.style.overflow = '';
+        document.removeEventListener('keydown', onDeckViewKey);
+        if (deckViewOpener && typeof deckViewOpener.focus === 'function') deckViewOpener.focus();
+      }
+
+      function onDeckViewKey(e) {
+        if (e.key === 'Escape') closeDeckView();
+      }
+
+      if (deckRow) {
+        deckRow.addEventListener('click', (e) => {
+          const btn = e.target.closest('.deck-thumb');
+          if (btn) openDeckView(Number(btn.dataset.deckIndex) || 0);
+        });
+        deckViewClose.addEventListener('click', closeDeckView);
+        // Anywhere but the picture closes. Testing `e.target === deckView` (the
+        // obvious version) was almost unclickable: each slide stretches across the
+        // whole track, so the dark area around the photo IS the slide, and only a
+        // few pixels of true backdrop remained. The picture itself is excluded so
+        // a pinch or drag that ends on it is never read as "done looking", and the
+        // controls keep their own handlers.
+        deckView.addEventListener('click', (e) => {
+          if (e.target.closest('img, button')) return;
+          closeDeckView();
+        });
+        loadDesignImages().then((map) => {
+          deckImages = map || {};
+          paintDeckRow(previewCard.classList.contains('is-collapsed'));
+        });
+      }
+
       function goStep(n, opts = {}) {
         // any step change dismisses the gender prompt so its full-screen overlay
         // never lingers on top of an unrelated step (e.g. after navigating back).
@@ -5122,6 +5443,11 @@
         const collapsed = currentStep >= 3; // name/contact steps shrink the preview
         previewCard.classList.toggle('is-collapsed', collapsed);
         previewChip.hidden = !collapsed;
+        // The deck pictures ride the same collapse: they belong to the steps where
+        // the live preview has shrunk to a reminder and the shopper is deciding
+        // whether this is really the product. paintDeckRow re-checks whether THIS
+        // design has any, so switching design between steps can't strand a row.
+        paintDeckRow(collapsed);
         // the colour step carries its own swipe preview carousel — but ONLY when
         // colour picking is on (with colour off + chasers on, step 2 is still
         // active yet the carousel is hidden by applyFeatureFlags). Mark the body
