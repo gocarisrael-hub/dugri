@@ -3401,13 +3401,14 @@
 
     <script type="module">
       import {
-        DESIGNS,
+        DESIGNS as BUILTIN_DESIGNS,
         MAIN_COLORS,
         themeForDesign,
         extraFieldsForDesign,
         languageForDesign,
         fetchDesignNames,
         applyDesignNames,
+        loadCustomDesigns,
       } from './js/designs.js';
       import {
         applyPalette,
@@ -3433,6 +3434,17 @@
         fluidSvg,
         fitNameFontPx,
       } from './js/name-preview-instant.js';
+
+      // The CUSTOM designs — owner-uploaded templates that the store already sells
+      // (products.html and product.html both render them from /api/custom-designs).
+      // The wizard used to know ONLY the bundled catalog, so arriving from an
+      // uploaded design's "קנו עכשיו" (options.html?design=<custom id>&step=2) found
+      // no match in DESIGNS and silently left designIndex at 0 — the buyer was put
+      // into the FIRST built-in design's order flow and could pay for a product they
+      // never chose. Kicked off here, before the FEATURES await, so the two
+      // same-origin fetches overlap and this costs no extra round trip; both are
+      // timeout-bounded and fail-safe ([] / all-false).
+      const customDesignsPromise = loadCustomDesigns();
 
       // Owner-controlled buyer-wizard feature flags. Fetched once, BEFORE the
       // wizard builds its steps/nav, so a gated-off feature is never painted and
@@ -3474,10 +3486,21 @@
       // when name-preview is also on (owner decision).
       const fontChoiceOn = FEATURES.font_choice && FEATURES.name_preview;
 
+      // The wizard's catalog: the bundled designs FIRST (so every built-in index
+      // stays exactly where it was) plus the uploaded templates on sale. Everything
+      // below reads this one list, so a custom design is picked, previewed, priced
+      // and ORDERED through the same code path as a built-in one — no branch. A
+      // failed/slow /api/custom-designs simply yields the bundled catalog.
+      const DESIGNS = BUILTIN_DESIGNS.concat(await customDesignsPromise);
+
       // Validate the manifest once at load. Don't hard-crash the page on a bad
       // manifest - just surface a clear console error so it's caught in dev/CI.
+      // Only the BUNDLED catalog is validated: it is the shipped manifest this
+      // check exists to police. A custom design is server data, already validated
+      // and shape-normalized by loadCustomDesigns, and may legitimately ship a
+      // subset of slots (e.g. no board) that the manifest rules would reject.
       try {
-        const manifestErrors = validateManifest(DESIGNS, MAIN_COLORS);
+        const manifestErrors = validateManifest(BUILTIN_DESIGNS, MAIN_COLORS);
         if (manifestErrors.length) {
           console.error('Invalid designs manifest:\n' + manifestErrors.join('\n'));
         }
@@ -4170,7 +4193,10 @@
       // The generator theme key for the currently selected design (or null).
       function currentTheme() {
         const d = DESIGNS[designIndex] || {};
-        return themeForDesign(d.id);
+        // Pass the DESIGN, not just its id: a custom (uploaded) design carries its
+        // own theme key and is absent from the built-in id→theme map, so resolving
+        // by id alone would send the order a null theme.
+        return themeForDesign(d);
       }
 
       // The name LANGUAGE ('english' | 'hebrew') the current design requires, from
@@ -6201,6 +6227,16 @@
       );
 
       /* ---- init ---- */
+      // Set when the URL named a design this wizard could NOT select (an id that
+      // isn't in the catalog at all — e.g. /api/custom-designs failed — or a
+      // PRIVATE design that needs its access code). designIndex then still points
+      // at the first design, which is NOT what the shopper asked for, so a deep
+      // link like ?design=<unknown>&step=2 must never sail past the design picker
+      // into checkout: goStep is clamped back to step 1 below and the shopper picks
+      // deliberately. Silently ordering a different design is the failure this
+      // guards against.
+      let urlDesignUnresolved = false;
+
       // restore a prior color choice from the URL if present
       (function restore() {
         const dId = params.get('design');
@@ -6212,6 +6248,7 @@
           // unlockDesign); a shared ?design=<private id> link must never bypass
           // that and reveal it. Treat a private id as if it weren't supplied.
           if (di >= 0 && DESIGNS[di].public) designIndex = di;
+          else urlDesignUnresolved = true;
         }
         // When colour-picking is gated off, force the original colours (submits
         // color:"מקורי") and ignore any restored/shared ?color= choice.
@@ -6264,9 +6301,15 @@
       // normalizeStep snaps a shared ?step=2 to the next active step when step 2
       // is gated out, so a link never lands the wizard on a hidden step.
       const stepParam = parseInt(params.get('step') || '1', 10);
-      const initialStep = normalizeStep(
-        Number.isNaN(stepParam) ? 1 : Math.min(TOTAL_STEPS, Math.max(1, stepParam))
-      );
+      // A ?design= we could not honour (see urlDesignUnresolved) pins the wizard to
+      // the design picker whatever ?step= says — better to make the shopper choose
+      // than to skip the picker with someone else's design selected.
+      const requestedStep = urlDesignUnresolved
+        ? 1
+        : Number.isNaN(stepParam)
+          ? 1
+          : Math.min(TOTAL_STEPS, Math.max(1, stepParam));
+      const initialStep = normalizeStep(requestedStep);
 
       // Hide the gated-off regions once, before the first paint, so a rough
       // feature is never shown and then removed.

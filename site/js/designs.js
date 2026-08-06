@@ -120,9 +120,20 @@ function designId(design) {
   return own ? own.id : design;
 }
 
-/** Resolve a design id to its generator theme key, or null when unknown. */
-export function themeForDesign(id) {
-  return THEME_BY_DESIGN[id] || null;
+/**
+ * Resolve a design to its generator theme key, or null when unknown.
+ *
+ * Accepts an id OR a whole design object, like languageForDesign /
+ * extraFieldsForDesign. THEME_BY_DESIGN covers only the BUILT-IN designs, so a
+ * CUSTOM design (an owner-uploaded template) resolved to null — and the buyer
+ * wizard sends this value as the order's `theme`, i.e. the deck would have been
+ * ordered with no template to render it from. A design object's own `theme` wins;
+ * passing an id behaves exactly as before.
+ */
+export function themeForDesign(design) {
+  const own = ownMeta(design);
+  if (own && typeof own.theme === 'string' && own.theme) return own.theme;
+  return THEME_BY_DESIGN[designId(design)] || null;
 }
 
 /**
@@ -344,10 +355,32 @@ export async function loadCustomDesigns({ fetchImpl, timeoutMs = 2500 } = {}) {
         public: true,
         recolor: 'fixed',
         accent: null,
+        // A custom design has no tokenized anchors (its SVG is baked at its own
+        // colours). Declared as an EMPTY array rather than left undefined so it
+        // satisfies validateManifest's shape and every `d.anchors` reader alike.
+        anchors: [],
         // thumbs mirrors the catalog shape so designShipsBoard(d) works uniformly.
         thumb: img.front || img.back || img.board,
         thumbs: { front: img.front, back: img.back, board: img.board },
+        // `products` is the catalog's SVG-source map — what the buyer wizard
+        // inlines for its previews (options.html ensurePanel / ccViews /
+        // designZoomViews / the name-preview teaser) and what the board tab keys
+        // off. A custom design's SVG source IS its template picture, so mirror it
+        // here: the wizard then reads one field for every design and needs no
+        // custom/built-in branch. `img` is kept as the custom-only alias the
+        // storefront gallery resolver (design-images.js) already reads.
+        products: { ...img },
         img,
+        // Theme metadata the buyer wizard MUST honour for a custom design:
+        // extraFieldsForDesign / languageForDesign believe a design object's own
+        // values over the built-in static maps (which know nothing about an
+        // uploaded template), but only if they survive this normalization. Dropped
+        // here, an english template would be asked for a Hebrew name and a
+        // template needing {AGE} would never be asked for it.
+        extra_fields: Array.isArray(d.extra_fields)
+          ? d.extra_fields.filter((k) => typeof k === 'string')
+          : [],
+        language: d.language === 'english' ? 'english' : 'hebrew',
       });
     }
     return out;
