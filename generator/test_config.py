@@ -216,18 +216,88 @@ def test_title_block_rtl_reorders_digit_in_raster():
 
 
 def test_uncalibrated_raises():
-    # all real themes are now calibrated, so use a synthetic uncalibrated config
+    # A theme with NO title_style has nothing to render a title with, whatever
+    # its flag says — the one gap that is always fatal.
     cfg = {"slug": "x", "calibrated": False}
     raised = False
     try:
         config.ensure_calibrated(cfg)
     except RuntimeError:
         raised = True
-    assert raised, "expected ensure_calibrated to raise for a non-calibrated theme"
+    assert raised, "expected ensure_calibrated to raise for a theme with no title_style"
 
 
 def test_trip_is_calibrated():
     config.ensure_calibrated(config.theme("trip comeback"))  # must not raise
+
+
+# ---- the calibrated flag DRIFTS from the values; the values are what count ---
+# Eight of eleven live designs on staging carried a full title_style + board +
+# back + card_slots behind `calibrated: false` and refused every name preview AND
+# every order generation. Switching a template's card_structure/front list/back
+# mode each blank the flag deliberately, and the re-detection that follows writes
+# fresh geometry back without restoring it — so the flag can only ever drift
+# downwards away from geometry that is present and correct.
+
+
+def _sheet_cfg(**over):
+    """A calibrated SHEET (v1) theme config — no single-card geometry needed."""
+    cfg = {"slug": "t", "calibrated": True,
+           "title_style": {"font": "F", "size": 40, "outline": "#000"}}
+    cfg.update(over)
+    return cfg
+
+
+def test_calibrated_false_still_renders_when_the_values_are_there():
+    # The exact staging shape: every measured value present, flag stale-false.
+    cfg = _sheet_cfg(calibrated=False, board={"frac": [0, 0, 1, 1]}, back={"frac": [0, 0, 1, 1]})
+    config.ensure_calibrated(cfg)  # must not raise
+    assert config.calibration_gaps(cfg) == []
+
+
+def test_null_board_and_back_are_answers_not_gaps():
+    # Shipped daniel-amit and grapefruit both render with board null: "no title
+    # on that surface" is a real answer. The old message named these as the
+    # failure, which is what sent everyone hunting for data that was present.
+    cfg = _sheet_cfg(board=None, back=None)
+    assert config.calibration_gaps(cfg) == []
+    config.ensure_calibrated(cfg)  # must not raise
+
+
+def test_missing_card_geometry_is_not_this_guards_business():
+    # A single-card theme with no card_slots and no recipe must still PREVIEW —
+    # the calibration screen is the thing that fixes that geometry, so refusing
+    # here would make the fix unreachable. The ORDER path refuses it instead,
+    # with a better message (build.deck_document: "no word-slot geometry").
+    cfg = _sheet_cfg(calibrated=False, card_structure="cards", recipe="no-such-recipe-xyz")
+    assert config.calibration_gaps(cfg) == []
+    config.ensure_calibrated(cfg)  # must not raise
+
+
+def test_error_names_the_real_gap_not_board_and_back():
+    # The message is the fix as much as the check is: "title_style/board/back are
+    # null" on a theme whose board and back are populated cost hours of hunting.
+    cfg = {"slug": "bare", "calibrated": False, "board": {"frac": [0, 0, 1, 1]}}
+    try:
+        config.ensure_calibrated(cfg)
+    except RuntimeError as exc:
+        msg = str(exc)
+    else:
+        raise AssertionError("expected ensure_calibrated to raise")
+    assert "title_style" in msg
+    assert "board" not in msg, f"must not blame a populated board: {msg}"
+    assert "bare" in msg, "the failing theme must be named"
+
+
+def test_flipping_the_flag_alone_does_not_make_a_bare_theme_render():
+    # The other direction of the same invariant: the boolean is not the gate, so
+    # a theme with no title_style cannot be waved through by setting it true.
+    raised = False
+    try:
+        config.ensure_calibrated({"slug": "x", "calibrated": True})
+    except RuntimeError:
+        raised = True
+    assert raised, "calibrated:true must not render a theme with no title_style"
 
 
 def test_word_font_options_are_five_with_files():

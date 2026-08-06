@@ -118,8 +118,8 @@ def load_themes():
 #
 # Process-local by design: the server spawns a fresh Python per preview request,
 # so knobs can never leak between requests, and NO production entry point
-# (order_to_pdf / build) installs them — a real print-ready PDF still requires a
-# genuine ``calibrated: true`` in themes.json.
+# (order_to_pdf / build) installs them — a real print-ready PDF still requires
+# the theme's OWN stored geometry in themes.json (``ensure_calibrated``).
 _PREVIEW_OVERRIDES = {}
 
 # Only the render knobs the calibration form owns may be overridden. Everything
@@ -990,25 +990,90 @@ def photo_slots(recipe, cell):
     return out
 
 
-def ensure_calibrated(cfg):
-    """Raise a clear error if a theme has no calibrated render style yet.
+def calibration_gaps(cfg):
+    """The measured values this theme is MISSING for a render, as phrases.
 
-    A PREVIEW carrying unsaved calibration knobs is the one exception: it may
-    render an uncalibrated template so the owner can see the look before saving.
-    That exemption requires the knobs to actually supply a usable ``title_style``
-    dict — otherwise the render would only get further before dying on a missing
-    fill/outline. Production is unaffected: it never installs overrides, so a
-    real PDF still needs ``calibrated: true``.
+    Empty list = renderable. Exactly ONE value belongs here — ``title_style`` —
+    because it is the only one with no guard further down: every render path
+    dereferences ``cfg["title_style"]`` for the face, size and paints, and there
+    is no fallback to reach.
+
+    What is deliberately NOT here, and why:
+
+    * ``board`` / ``back`` null — a real ANSWER, "no title on that surface".
+      Shipped daniel-amit and grapefruit both render with board null. The old
+      message named these as the failure, which is exactly why a theme whose
+      board and back were fully populated read as "board/back are null".
+    * ``card_slots`` / the detected recipe — missing card geometry is already
+      caught, per surface and with a better message, by ``build.deck_document``
+      ("no word-slot geometry ... זהה מחדש"). Refusing it here too would break
+      the documented split that guard states: a PREVIEW may render a bare card,
+      because the calibration screen is the very thing that fixes the geometry;
+      an ORDER may not print 104 blank ones.
+
+    This is also the same condition server/templates.js already enforces before
+    it will let ``calibrated`` be flipped true, so nothing that could legally be
+    marked calibrated is refused here.
+    """
+    gaps = []
+    if not isinstance(cfg.get("title_style"), dict):
+        gaps.append(
+            "title_style — the face, size and colour every title renders with"
+        )
+    return gaps
+
+
+def ensure_calibrated(cfg):
+    """Raise a clear error when a theme lacks what a render actually consumes.
+
+    This checks the VALUES, not the stored ``calibrated`` boolean. The boolean is
+    the admin's "I have eyeballed this" badge and it DRIFTS from the values: two
+    different writers set the geometry (the calibration form and automatic
+    detection) while several admin actions reset the flag — switching a template's
+    card_structure, front list or back mode each blank it deliberately, and the
+    re-detection that follows writes fresh measurements back without ever
+    restoring it. The result was eight of eleven live designs on staging carrying
+    a full, correct title_style/board/back/card_slots behind ``calibrated:
+    false``, refusing every name preview AND every order generation — while the
+    error insisted those very fields were null.
+
+    Reading the values removes the drift entirely: the gate is now the same
+    condition the admin enforces before it will let the flag go true, so it is
+    the flag that follows the geometry rather than the other way round.
+
+    What this gives up, stated plainly: a template whose title_style was written
+    by automatic detection and never eyeballed by the owner will now render
+    instead of failing hard. That is the deliberate trade, and it is a narrow one
+    — the deck's own geometry guard (``build.deck_document``) still refuses an
+    ORDER with no word slots, so what this lets through is a card that may be
+    mis-STYLED, never one that prints blank. The failure it replaces was not "we
+    caught a bad-looking card": it was a total refusal on designs whose
+    calibration was present and correct, under a message that sent everyone
+    hunting for data that was already there.
+
+    A PREVIEW carrying unsaved calibration knobs keeps its own exemption: it may
+    render a template with NO stored geometry at all so the owner can see the look
+    before saving. That still requires the knobs to supply a usable ``title_style``
+    dict — otherwise the render only gets further before dying on a missing
+    fill/outline.
     """
     if cfg.get(_PREVIEW_MARK) and isinstance(cfg.get("title_style"), dict):
         return
-    if not cfg.get("calibrated"):
-        raise RuntimeError(
-            f"theme {cfg.get('slug', '?')!r} is not calibrated yet — "
-            "title_style/board/back are null. Calibrate it (fill title_style, "
-            "board and back in themes.json and set calibrated:true) before "
-            "rendering."
-        )
+    gaps = calibration_gaps(cfg)
+    if not gaps:
+        return
+    # The phrase "not calibrated" is load-bearing, not prose: server/index.js
+    # classifies a generator failure by matching /not calibrated|unknown theme/i
+    # to answer 400 rather than 500, so rewording the opening would turn an
+    # actionable "measure this" into an opaque server error.
+    raise RuntimeError(
+        f"theme {cfg.get('slug', '?')!r} is not calibrated for rendering — "
+        "it is missing: " + "; ".join(gaps)
+        + ". Open the template's calibration form, measure what is listed above "
+        "and save. (The stored calibrated flag is not what is checked here — "
+        f"this theme's is {bool(cfg.get('calibrated'))!r} — so flipping it "
+        "changes nothing until the values themselves are there.)"
+    )
 
 
 def _form_name(value, name_form):

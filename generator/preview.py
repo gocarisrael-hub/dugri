@@ -186,7 +186,8 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
                   saved. The blob is the full source of truth for the look, so an
                   explicit ``board``/``back`` of null previews as "no title on that
                   surface". Production never passes this, so a real print-ready
-                  PDF still requires ``calibrated: true``.
+                  PDF still requires the theme to carry its OWN stored geometry
+                  (see ``config.ensure_calibrated``) rather than borrowed knobs.
     """
     # Install BEFORE the first config.theme() read: render_page/build re-read the
     # config themselves, and they must all see the same overridden values.
