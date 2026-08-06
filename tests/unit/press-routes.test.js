@@ -72,7 +72,9 @@ beforeAll(async () => {
       'printf "call\\n" >> "$out.calls"',
       'printf "%s\\n" "$@" > "$out.args"',
       'case "$theme" in',
-      '  *fail*) echo "ghostscript exploded" 1>&2; exit 1;;',
+      // A long traceback whose MESSAGE is on the last line, like the real
+      // generator's — the reported detail has to keep that end, not the frames.
+      '  *fail*) i=0; while [ $i -lt 60 ]; do echo "  File \\"/app/generator/build.py\\", line $i" 1>&2; i=$((i+1)); done; echo "ghostscript exploded" 1>&2; exit 1;;',
       // The RGB deck lands FIRST and stays there for the whole render, which is
       // the window every mid-build download used to fall into.
       `  *slow*) cp "${rgbFixture}" "$out"; sleep 1; cp "${pressFixture}" "$out";;`,
@@ -387,7 +389,10 @@ describe('press routes: a build that fails', () => {
     expect(failed.status).toBe(409);
     const body = await failed.json();
     expect(body.status).toBe('failed');
+    // The reported detail is the END of the failure, where the message is —
+    // 800 characters of stack frames tell the owner nothing.
     expect(body.detail).toContain('ghostscript exploded');
+    expect(body.detail.length).toBeLessThanOrEqual(800);
     expect(fs.existsSync(pressFile(c.id))).toBe(false);
     // the in-flight marker is gone, so the button is not stuck on "building"
     expect(fs.existsSync(path.join(genDir, c.id + '.press.building'))).toBe(false);

@@ -1126,7 +1126,11 @@ app.get('/api/admin/collections/:id/press', (req, res) => {
     } catch {
       /* unreadable is still a failure */
     }
-    return res.status(409).json({ status: 'failed', detail: detail.slice(0, 800) });
+    // The TAIL, not the head. A Python traceback puts the actual error on its
+    // LAST line, and the head is 800 characters of frames that say nothing —
+    // which is what a staging failure just reported back: eight frames and no
+    // message.
+    return res.status(409).json({ status: 'failed', detail: detail.slice(-800) });
   }
   // A marker too old to be live, with no file and no error: the process died
   // without running its close handler (a restart, an OOM kill). Say that,
