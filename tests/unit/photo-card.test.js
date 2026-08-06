@@ -53,6 +53,85 @@ function withoutNamespaces(svg) {
   return svg.replace(/\sxmlns(:\w+)?="[^"]*"/g, '');
 }
 
+// --- how far a fallback pawn reaches from the centre of its slot -------------
+//
+// The fallbacks are 200 × 200 SVGs dropped into a 66-unit slot whose cut-line is
+// the inscribed circle, so "radius 100" IS the dashed line and everything here
+// is in that 200-unit space.
+
+const PAWN_ARGC = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 };
+
+/** Every point a path's commands name, control points INCLUDED.
+ *  A bézier stays inside the convex hull of its control points, so a bound built
+ *  from these is an over-estimate — the safe direction for "must not cross". */
+function pathPoints(d) {
+  const out = [];
+  let cur = [0, 0];
+  let start = [0, 0];
+  for (const [, cmd, args] of d.matchAll(/([MmLlHhVvCcSsQqTtAaZz])([^A-Za-z]*)/g)) {
+    const up = cmd.toUpperCase();
+    const rel = cmd !== up;
+    const n = PAWN_ARGC[up];
+    if (n === 0) {
+      cur = start;
+      out.push(cur);
+      continue;
+    }
+    const v = (args.match(/-?\d*\.?\d+(?:[eE][-+]?\d+)?/g) || []).map(Number);
+    for (let i = 0; i + n <= v.length; i += n) {
+      const a = v.slice(i, i + n);
+      let pts;
+      if (up === 'H') pts = [[rel ? cur[0] + a[0] : a[0], cur[1]]];
+      else if (up === 'V') pts = [[cur[0], rel ? cur[1] + a[0] : a[0]]];
+      else if (up === 'A') pts = [rel ? [cur[0] + a[5], cur[1] + a[6]] : [a[5], a[6]]];
+      else {
+        pts = [];
+        for (let j = 0; j + 1 < n; j += 2) {
+          pts.push(rel ? [cur[0] + a[j], cur[1] + a[j + 1]] : [a[j], a[j + 1]]);
+        }
+      }
+      out.push(...pts);
+      cur = pts[pts.length - 1];
+      if (up === 'M') start = cur;
+    }
+  }
+  return out;
+}
+
+/** The group transform as [scale, tx, ty] — translate/scale only, which is all
+ *  these hand-drawn files ever use. */
+function pawnTransform(svg) {
+  const spec = svg.match(/<g\s+transform="([^"]*)"/)?.[1] ?? '';
+  let s = 1;
+  let tx = 0;
+  let ty = 0;
+  for (const [, kind, args] of spec.matchAll(/(translate|scale)\(([^)]*)\)/g)) {
+    const v = (args.match(/-?\d*\.?\d+/g) || []).map(Number);
+    if (kind === 'scale') {
+      s *= v[0];
+    } else {
+      tx += s * v[0];
+      ty += s * (v[1] ?? 0);
+    }
+  }
+  return [s, tx, ty];
+}
+
+/** How far the pawn's ink reaches from the centre of the slot (100, 100). */
+function pawnReach(svg) {
+  const [s, tx, ty] = pawnTransform(svg);
+  // A stroked pawn paints half its width outside its own outline.
+  const strokes = [...svg.matchAll(/stroke-width="([\d.]+)"/g)].map((m) => Number(m[1]));
+  const pad = (s * Math.max(0, ...strokes, 0)) / 2;
+  let worst = 0;
+  for (const [, d] of svg.matchAll(/\bd="([^"]+)"/g)) {
+    for (const [x, y] of pathPoints(d)) {
+      worst = Math.max(worst, Math.hypot(s * x + tx - 100, s * y + ty - 100));
+    }
+  }
+  return worst === 0 ? 0 : worst + pad;
+}
+
 /** {x, y, width, height} of a slot, as numbers. */
 function slotBox(svg, id) {
   const tag = slotTag(svg, id);
@@ -314,13 +393,30 @@ describe('generic pawn fallback set', () => {
         expect(fs.statSync(abs).size).toBeLessThan(4 * 1024);
       });
 
-      // A pawn floating small inside its box reads as a missing image. It is
-      // drawn at ≥ 1× so it fills the cut-line and spills a little past it, the
-      // way a cutout portrait does.
-      it('fills the sticker instead of sitting in it like a placeholder', () => {
-        const scale = Number(svg.match(/\bscale\(([\d.]+)\)/)?.[1]);
-        expect(Number.isFinite(scale), 'no scale() on the pawn group').toBe(true);
-        expect(scale).toBeGreaterThanOrEqual(1);
+      // NEVER OUTSIDE OR ON THE DOTTED LINE — the owner's words.
+      //
+      // This used to assert the opposite: the pawns were drawn at 1.2× "so it
+      // fills the cut-line and spills a little past it". They did spill, and the
+      // owner rejected it on a real render. `docs/photo-card.md` had already
+      // logged the same thing as the one debt the contract still owed: a
+      // customer's photo is clipped to 0.90 of the slot (`PHOTO_DISC_FILL`) and
+      // its halo lands INSIDE the dashes, so a fallback crossing them made a
+      // half-filled card look like two different products.
+      //
+      // Measured as a CONVEX-HULL bound: every point a path command names,
+      // control points included. A bézier never leaves the hull of its control
+      // points, so this over-estimates and can only be too strict — which is the
+      // safe direction for a "must not cross" rule.
+      it('stays inside the cut-line, like a customer photo does', () => {
+        const reach = pawnReach(svg);
+        expect(reach, 'no drawable path in the pawn').toBeGreaterThan(0);
+        // 0.90 × the 200-unit box's radius: the disc a customer photo is
+        // clipped to. The cut-line itself is at 100 and the halo spreads ~7
+        // further, so this leaves the white ring just inside the dashes.
+        expect(reach).toBeLessThanOrEqual(90);
+        // …and a floor, because a pawn floating small in its box reads as a
+        // missing image.
+        expect(reach).toBeGreaterThan(60);
       });
     });
   }

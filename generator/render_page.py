@@ -2359,6 +2359,10 @@ def back_draws_title(theme, clean_svg, back_index=None):
     return bool(overlay.strip())
 
 
+# "nobody said" — distinct from ``None``, which a caller uses to say "print this
+# card exactly as it shipped". Only the default measures. (photo_card_svg)
+_MEASURE = object()
+
 # The photo card's four slots ship in the artwork as <image> elements with NO
 # href — id="photo-slot-1".."photo-slot-4" — already carrying their geometry,
 # their xMidYMid-meet fit and their circular clip (see docs/photo-card.md).
@@ -2406,7 +2410,7 @@ def fill_photo_slots(svg_text, photo_paths):
     return _PHOTO_SLOT.sub(fill, svg_text)
 
 
-def photo_card_svg(theme, photos, paper=None):
+def photo_card_svg(theme, photos, paper=None, frame=_MEASURE):
     """The theme's pawn card, printed on ``paper`` and filled with ``photos``.
 
     The ONE place a pawn card is composed, so the deck and the single-card
@@ -2420,10 +2424,22 @@ def photo_card_svg(theme, photos, paper=None):
     ``build.deck_document`` is contractually Chrome-free: it assembles deck
     STRUCTURE, and structure does not depend on colour. ``None`` prints the card
     exactly as shipped, which is also what an unmeasurable front yields.
+
+    ``frame`` is the SHAPE it prints in — the deck's own frame box, corner radius
+    and border stroke (``card_frame``), so the pawn card is the same size and
+    roundness as the cards it ships with. Unlike the paper this is MEASURED HERE
+    by default, because reading it is a parse of the front card's vector and
+    needs no browser: there is nothing for ``deck_document`` to hand down and one
+    fewer place for the deck and the preview to drift. Pass an explicit value (or
+    ``None``) to override.
     """
     import card_assets
+    import card_frame
     svg = card_assets.read_svg(config.photo_card_path(theme))
-    return fill_photo_slots(card_paper.repaper(svg, paper), photos or [])
+    if frame is _MEASURE:
+        frame = card_frame.front_frame(theme)
+    svg = card_frame.reframe(card_paper.repaper(svg, paper), frame)
+    return fill_photo_slots(svg, photos or [])
 
 
 def _index_from_card_path(path):
