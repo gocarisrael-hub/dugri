@@ -3195,3 +3195,49 @@ def test_a_combining_mark_never_splits_the_glyph_it_belongs_to():
     instead of a handful of examples.
     """
     assert rp.script_runs("🅿️") == [(True, "🅿️")]
+
+
+# ---- Face: two fonts measured as one ---------------------------------------
+
+
+def _faces():
+    cafe = os.path.join(HERE, "word-fonts", "Cafe Regular.ttf")
+    f, ref = rp._word_metrics(cafe)
+    return f, ref
+
+
+def test_with_no_alt_face_the_measurement_is_the_primary_font_itself():
+    """Not "equivalent" — the same call returning the same float.
+
+    This is what makes an un-uploaded second font byte-identical rather than
+    approximately unchanged. A sum over a one-element list would be free to
+    reassociate and move a last digit; there is no sum.
+    """
+    f, ref = _faces()
+    face = rp.Face(f, None, ref)
+    for s in ("מסיבה", "מסיבה 40", "1. עפיפון", "בית ספר"):
+        assert face.length(s) == f.getlength(s)
+        assert face.bbox(s) == f.getbbox(s)
+        assert face.runs(s) == [(f, s)]
+
+
+def test_splitting_a_line_into_runs_does_not_change_its_width():
+    """Hand the SAME font in as the alt, so any drift is the code, not the face.
+
+    A mixed line is measured run by run and summed; a single-face line is
+    measured whole. If the run arithmetic lost or double-counted a boundary the
+    two would disagree — and the fit would reserve a width the renderer does not
+    paint, which is how lines end up over the trim.
+    """
+    f, ref = _faces()
+    single, dual = rp.Face(f, None, ref), rp.Face(f, f, ref)
+    for s in ("מסיבה", "מסיבה 40", "40 מתחת ל-BBQ", "Tel Aviv", "1. עפיפון"):
+        assert dual.length(s) == single.length(s), s
+        assert dual.bbox(s) == single.bbox(s), s
+
+
+def test_a_mixed_line_really_is_measured_in_two_pieces():
+    """Guards the test above from passing because nothing was ever split."""
+    f, ref = _faces()
+    assert len(rp.Face(f, f, ref).runs("40 מתחת ל-BBQ")) == 2
+    assert len(rp.Face(f, f, ref).runs("מסיבה 40")) == 1
