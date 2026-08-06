@@ -111,7 +111,12 @@ describe('galleryFor — resolved per-surface gallery', () => {
     expect(keys(items)).not.toContain('p1');
   });
 
-  it('falls back to the shipped renders when the owner hid everything', () => {
+  // REVERSED on purpose. This used to assert the opposite — hiding everything fell
+  // back to the shipped renders, so the shopper always saw something. That rescue
+  // was itself a mandatory-picture rule: it made "remove them all" impossible. The
+  // owner asked for no picture to be mandatory and confirmed the consequence, so
+  // her explicit choice now outranks the default.
+  it('respects the owner hiding everything — no shipped render is resurrected', () => {
     const map = {
       posttrip: {
         base: {
@@ -122,13 +127,43 @@ describe('galleryFor — resolved per-surface gallery', () => {
         },
       },
     };
-    expect(keys(galleryFor(map, BOARDED, 'products'))).toEqual(['store', 'front', 'back', 'board']);
+    expect(galleryFor(map, BOARDED, 'products')).toEqual([]);
   });
 
   it('tolerates a garbage map and a design without an id', () => {
     expect(galleryFor(null, BOARDED, 'products').length).toBe(4);
     expect(galleryFor({ posttrip: 'nope' }, BOARDED, 'products').length).toBe(4);
     expect(galleryFor({}, {}, 'products')).toEqual([]); // no id → nothing
+  });
+
+  // NO PICTURE IS MANDATORY: the owner can take every picture off a surface,
+  // store cover included, and she confirmed the consequence — that design's shop
+  // tile carries no picture. An EMPTY gallery is therefore a legitimate answer,
+  // not a bug, and the reader must return it plainly rather than resurrecting a
+  // shipped render to fill the gap. products.html renders the tile's name, price
+  // and link regardless and wires no carousel below two slides, so the tile
+  // degrades to a caption instead of breaking.
+  it('returns an empty gallery when the owner hid every picture on that surface', () => {
+    const allOff = {
+      posttrip: {
+        base: {
+          store: { onProducts: false, onProduct: false },
+          front: { onProducts: false, onProduct: false },
+          back: { onProducts: false, onProduct: false },
+          board: { onProducts: false, onProduct: false },
+        },
+      },
+    };
+    expect(galleryFor(allOff, BOARDED, 'products')).toEqual([]);
+    expect(galleryFor(allOff, BOARDED, 'product')).toEqual([]);
+  });
+
+  it('hiding a picture on ONE surface leaves the other surface untouched', () => {
+    // The two flags are independent — removing the store cover from the shop grid
+    // must not also strip the card renders from the detail page.
+    const storeOff = { posttrip: { base: { store: { onProducts: false } } } };
+    expect(keys(galleryFor(storeOff, BOARDED, 'products'))).toEqual(['front', 'back', 'board']);
+    expect(keys(galleryFor(storeOff, BOARDED, 'product'))).toEqual(['front', 'back', 'board']);
   });
 });
 
@@ -252,7 +287,9 @@ describe('galleryFor — a CUSTOM design (uploaded template)', () => {
     expect(keys(galleryFor(map, TPL, 'product'))).toEqual(['back', 'front', 'board']);
   });
 
-  it('never blanks: hiding everything falls back to the template SVGs', () => {
+  // Same reversal as the built-in case above: an uploaded template's SVGs are its
+  // shipped renders, and they are no more mandatory than a built-in's rasters.
+  it('hiding everything leaves an uploaded template empty too — no SVG is resurrected', () => {
     const map = {
       grapefruit: {
         base: {
@@ -262,7 +299,7 @@ describe('galleryFor — a CUSTOM design (uploaded template)', () => {
         },
       },
     };
-    expect(keys(galleryFor(map, TPL, 'products'))).toEqual(['front', 'back', 'board']);
+    expect(galleryFor(map, TPL, 'products')).toEqual([]);
   });
 });
 

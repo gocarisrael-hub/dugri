@@ -164,17 +164,19 @@ export function galleryFor(map, design, surface) {
     }
   }
 
-  // Never blank: if the owner hid everything for this surface, fall back to the
-  // shipped renders visible by default on it (so the shopper always sees the
-  // product, and the detail page still won't lead with the shop cover). Only
-  // slots that actually ship a render qualify (never a phantom board).
-  if (items.length === 0) {
-    for (const key of avail) {
-      const shipped = baseDefault(key, flag) ? shippedSrc(design, key) : null;
-      if (!shipped) continue;
-      items.push({ key, src: shipped, fallback: shipped, name: '', droppable: false });
-    }
-  }
+  // An EMPTY gallery is an answer, not an accident. This used to end with a
+  // "never blank" rescue: when the owner had hidden everything for this surface,
+  // the shipped renders were pushed back in so a shopper always saw something.
+  // That rescue is itself a mandatory-picture rule — it made "remove them all"
+  // impossible — and the owner asked for no picture to be mandatory, having
+  // confirmed the consequence (a design with nothing left shows no picture).
+  // Her explicit choice now outranks the default.
+  //
+  // It can only be reached deliberately: with no config every slot is visible, so
+  // an empty result means each one was turned off by hand. Both surfaces degrade
+  // rather than break — products.html still renders the tile's name, price and
+  // link and wires no carousel below two slides; product.html falls back to the
+  // design's picker thumb. Nothing 404s and no layout collapses.
   return items;
 }
 
