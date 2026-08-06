@@ -352,7 +352,7 @@ _CENTER_DROP = 0.34
 # House-style minimum right margin for a numbered line, as a fraction of the card
 # cell width. A numbered line is right-anchored: its DIGIT (rightmost glyph) is
 # pinned to the line's right edge. Recipe auto-detection normally records that
-# edge with a healthy inset, but on some templates (japanese, neon) it collapsed
+# edge with a healthy inset, but on some templates (japanese) it collapsed
 # the slot's right edge onto the CELL EDGE, so the digit rendered ON the border
 # and got clipped. Clamping every numbered line to at least this right margin
 # keeps the marker inside the card for ANY template — a no-op for already-inset
@@ -1873,7 +1873,7 @@ def title_pitch(f, ref, lines, leading, pad, align="center", grow=0.0, rtl=False
 # stop trusting the original ``old_cap`` size and shrink to the metric ink-fit.
 # The recipe title boxes are approximate regions (the origin's own ink/outline
 # overrun them by ~10%), so anything up to this tolerance keeps the origin-matching
-# size; only a genuine display face whose ink is FAR taller (japanese/neon-class,
+# size; only a genuine display face whose ink is FAR taller (japanese-class,
 # ~2x) crosses it and gets shrunk to fit. (Finding #1.)
 _TITLE_OVERFLOW_TOL = float(os.environ.get("DUGRI_TITLE_OVERFLOW_TOL", "0.25"))
 
@@ -1937,7 +1937,7 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
                         one_block=one_block)
     # size to fill the WIDTH, capped so the stacked lines still fit the box HEIGHT.
     # The height cap comes from the REAL font metrics, not a fixed per-line
-    # fraction: some display title faces (e.g. the japanese/neon fonts) draw
+    # fraction: some display title faces (e.g. the japanese font) draw
     # glyphs far taller than their em, so a stacked title could spill well past its
     # calibrated box. Measure the actual ink stack and scale it to fill the box.
     #
@@ -1962,7 +1962,7 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # enlarged (the ink-fit-only regression that grew MrDafoe/bachelorette) nor
     # shrunk (ink-fit under-sized CooperLtBT/birthday etc.). Fall to the metric
     # ``ink_fit`` ONLY when the ink overflows ``old_cap`` by more than a wide
-    # tolerance — i.e. a genuine display face (japanese/neon-class) whose glyphs
+    # tolerance — i.e. a genuine display face (japanese-class) whose glyphs
     # are far taller than their em and would otherwise spill dramatically. The
     # tolerance is well above every shipped theme's ~10% overrun and well below a
     # real display face's ~100%, so current themes render exactly as the origin

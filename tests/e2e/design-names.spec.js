@@ -160,7 +160,7 @@ test.describe('design-name propagation to the storefront', () => {
     await page.route('**/api/design-names', (route) => route.abort());
 
     await page.goto('/products.html');
-    await expect(page.getByTestId('product-card')).toHaveCount(7);
+    await expect(page.getByTestId('product-card')).toHaveCount(6);
     const bach = page.locator('.product-card[data-design-id="bachelorette"] .product-name');
     await expect(bach).not.toHaveText('');
     await expect(bach).not.toHaveText(CUSTOM);

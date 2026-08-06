@@ -104,7 +104,7 @@ describe('POST /api/admin/content/photos — reclaim guard (created-only)', () =
 
   it('does NOT delete a pre-existing orphan when an at-cap upload matches its bytes', async () => {
     const page = 'product.html';
-    const key = 'product-neon-photos';
+    const key = 'product-japanese-photos';
 
     // Fill the carousel to PHOTO_CAP with distinct real uploads (all referenced).
     for (let i = 0; i < content.PHOTO_CAP; i++) {

@@ -79,13 +79,13 @@ describe('createDesignCode validation', () => {
 
 describe('validateDesignCode', () => {
   it('returns valid + the unlocked design_id for an active, unexpired code', () => {
-    db.createDesignCode({ code: 'GOOD10', design_id: 'neon', valid_until: dateOffset(30) });
+    db.createDesignCode({ code: 'GOOD10', design_id: 'japanese', valid_until: dateOffset(30) });
     const r = db.validateDesignCode('good10');
-    expect(r).toEqual({ valid: true, design_id: 'neon' });
+    expect(r).toEqual({ valid: true, design_id: 'japanese' });
   });
 
   it('returns valid for a code whose valid_until is today (inclusive)', () => {
-    db.createDesignCode({ code: 'TODAY', design_id: 'neon', valid_until: dateOffset(0) });
+    db.createDesignCode({ code: 'TODAY', design_id: 'japanese', valid_until: dateOffset(0) });
     expect(db.validateDesignCode('TODAY').valid).toBe(true);
   });
 
@@ -94,13 +94,13 @@ describe('validateDesignCode', () => {
   });
 
   it('returns inactive when the code is disabled', () => {
-    const c = db.createDesignCode({ code: 'OFF', design_id: 'neon' });
+    const c = db.createDesignCode({ code: 'OFF', design_id: 'japanese' });
     db.setDesignCodeActive(c.id, false);
     expect(db.validateDesignCode('OFF')).toEqual({ valid: false, reason: 'inactive' });
   });
 
   it('returns expired when today is after valid_until', () => {
-    db.createDesignCode({ code: 'PAST', design_id: 'neon', valid_until: dateOffset(-1) });
+    db.createDesignCode({ code: 'PAST', design_id: 'japanese', valid_until: dateOffset(-1) });
     expect(db.validateDesignCode('PAST')).toEqual({ valid: false, reason: 'expired' });
   });
 });
@@ -114,8 +114,8 @@ describe('validateDesignCode expiry uses the Israel calendar date', () => {
     // while one through 2026-07-02 is still valid (inclusive).
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-01T22:30:00Z'));
-    db.createDesignCode({ code: 'TZJUL1', design_id: 'neon', valid_until: '2026-07-01' });
-    db.createDesignCode({ code: 'TZJUL2', design_id: 'neon', valid_until: '2026-07-02' });
+    db.createDesignCode({ code: 'TZJUL1', design_id: 'japanese', valid_until: '2026-07-01' });
+    db.createDesignCode({ code: 'TZJUL2', design_id: 'japanese', valid_until: '2026-07-02' });
     expect(db.validateDesignCode('TZJUL1')).toEqual({ valid: false, reason: 'expired' });
     expect(db.validateDesignCode('TZJUL2').valid).toBe(true);
   });
@@ -123,14 +123,14 @@ describe('validateDesignCode expiry uses the Israel calendar date', () => {
 
 describe('setDesignCodeActive / deleteDesignCode / listDesignCodes', () => {
   it('toggles active and returns the code; null for unknown id', () => {
-    const c = db.createDesignCode({ code: 'TOGGLE', design_id: 'neon' });
+    const c = db.createDesignCode({ code: 'TOGGLE', design_id: 'japanese' });
     expect(db.setDesignCodeActive(c.id, false).active).toBe(false);
     expect(db.setDesignCodeActive(c.id, true).active).toBe(true);
     expect(db.setDesignCodeActive('nope', false)).toBe(null);
   });
 
   it('deletes a code; false for unknown id', () => {
-    const c = db.createDesignCode({ code: 'DELME', design_id: 'neon' });
+    const c = db.createDesignCode({ code: 'DELME', design_id: 'japanese' });
     expect(db.deleteDesignCode(c.id)).toBe(true);
     expect(db.getDesignCodeByCode('DELME')).toBe(null);
     expect(db.deleteDesignCode('nope')).toBe(false);
@@ -147,7 +147,7 @@ describe('setDesignCodeActive / deleteDesignCode / listDesignCodes', () => {
 
 describe('incrementDesignCodeUses', () => {
   it('bumps the use counter and returns false for an unknown code', () => {
-    db.createDesignCode({ code: 'USES', design_id: 'neon' });
+    db.createDesignCode({ code: 'USES', design_id: 'japanese' });
     expect(db.incrementDesignCodeUses('USES')).toBe(true);
     expect(db.getDesignCodeByCode('USES').uses).toBe(1);
     expect(db.incrementDesignCodeUses('USES')).toBe(true);

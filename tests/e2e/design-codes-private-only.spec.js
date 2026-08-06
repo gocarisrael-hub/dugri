@@ -31,7 +31,7 @@ test.describe('design codes — only designs a code can unlock', () => {
   test('lists PRIVATE designs and leaves public ones out', async ({ page }) => {
     await stub(page, [
       design(),
-      design({ id: 'neon', name: 'ניאון', visibility: 'private', public: false }),
+      design({ id: 'japanese', name: 'יפני', visibility: 'private', public: false }),
       // An owner-uploaded template is a legitimate target like any other — the
       // built-in/custom distinction must not reach this screen.
       design({
@@ -46,14 +46,14 @@ test.describe('design codes — only designs a code can unlock', () => {
 
     const opts = page.locator('#design option');
     await expect(opts).toHaveCount(2);
-    await expect(opts.nth(0)).toHaveAttribute('value', 'neon');
+    await expect(opts.nth(0)).toHaveAttribute('value', 'japanese');
     await expect(opts.nth(1)).toHaveAttribute('value', 'grapefruit');
     await expect(page.locator('#design')).toBeEnabled();
     await expect(page.locator('#submitBtn')).toBeEnabled();
   });
 
   test('with NO private design it explains why, instead of an empty box', async ({ page }) => {
-    await stub(page, [design(), design({ id: 'neon', name: 'ניאון' })]);
+    await stub(page, [design(), design({ id: 'japanese', name: 'יפני' })]);
     await page.goto(`/design-codes.html?key=${KEY}`);
 
     await expect(page.locator('#design option')).toHaveCount(0);
@@ -66,7 +66,13 @@ test.describe('design codes — only designs a code can unlock', () => {
     // The validate route rejects a code for a withdrawn design, so listing one
     // would mint a code that can never work.
     await stub(page, [
-      design({ id: 'neon', name: 'ניאון', visibility: 'private', public: false, inStore: false }),
+      design({
+        id: 'japanese',
+        name: 'יפני',
+        visibility: 'private',
+        public: false,
+        inStore: false,
+      }),
     ]);
     await page.goto(`/design-codes.html?key=${KEY}`);
 
@@ -79,7 +85,7 @@ test.describe('design codes — only designs a code can unlock', () => {
     // keeps its old codes, and they must not degrade to a raw id.
     await stub(
       page,
-      [design(), design({ id: 'neon', name: 'ניאון', visibility: 'private', public: false })],
+      [design(), design({ id: 'japanese', name: 'יפני', visibility: 'private', public: false })],
       [{ code: 'OLDCODE', design_id: 'bachelorette', uses: 0, valid_until: null }]
     );
     await page.goto(`/design-codes.html?key=${KEY}`);

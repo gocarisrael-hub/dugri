@@ -151,58 +151,6 @@
   },
   "calibrated": true
  },
- "birthday-girls-neon": {
-  "slug": "birthday-girls-neon",
-  "wordlist": "generic-350.txt",
-  "display_he": "דוגרי יום הולדת בנות ניאון",
-  "dir": "resources/canva/templates/birthday-girls-neon",
-  "recipe": "birthday-girls-neon",
-  "visibility": "public",
-  "title_text": "XOXO {NAME}'S BIRTHDAY",
-  "title_lines": [
-   "{NAME}'S",
-   "BIRTHDAY"
-  ],
-  "language": "english",
-  "name_form": "english-caps",
-  "extra_fields": [],
-  "title_font": "NeoNeon.otf",
-  "word_font": "Cafe.ttf",
-  "title_style": {
-   "fill": "#ffdff9",
-   "outline": "#ff2ec4",
-   "outline_w": 0.03,
-   "arch": 0,
-   "shadow": true,
-   "size": 25.9,
-   "align": "right",
-   "offset": [
-    -0.09,
-    0.0
-   ]
-  },
-  "board": {
-   "frac": {
-    "x0": 0.019,
-    "y0": 0.908,
-    "x1": 0.146,
-    "y1": 0.975
-   },
-   "fill": "#fff9ff",
-   "outline": "#ff52ff"
-  },
-  "back": {
-   "frac": {
-    "x0": 0.167,
-    "y0": 0.377,
-    "x1": 0.812,
-    "y1": 0.542
-   },
-   "fill": "#ffe3ff",
-   "outline": "#e634f3"
-  },
-  "calibrated": true
- },
  "birthday-boys-basketball": {
   "slug": "birthday-boys-basketball",
   "wordlist": "generic-350.txt",

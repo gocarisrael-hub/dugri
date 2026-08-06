@@ -8,7 +8,7 @@
 #   resources/canva/templates/_shared/   <- the photo card's fallback pawns
 #   resources/print shop/SWOP2006_Coated3v2.icc
 #
-# The nine shipped THEMES are excluded here for the same reason .dockerignore
+# The shipped THEMES are excluded here for the same reason .dockerignore
 # drops them: the volume's copy is what renders, so uploading the image's copy
 # moved 131MB per deploy to build something nothing reads. They stay in git as
 # test fixtures — this file only keeps them off the wire.

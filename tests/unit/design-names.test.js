@@ -75,8 +75,8 @@ describe('GET /api/design-names — public storefront name map', () => {
 
   it('omits designs whose theme is not in themes.json (page keeps built-in name)', async () => {
     const body = await (await fetch(base + '/api/design-names')).json();
-    // japanese/posttrip/neon/kids themes are absent from the crafted config.
-    for (const id of ['japanese', 'posttrip', 'neon', 'kids', 'birthday']) {
+    // japanese/posttrip/kids themes are absent from the crafted config.
+    for (const id of ['japanese', 'posttrip', 'kids', 'birthday']) {
       expect(id in body.names).toBe(false);
     }
   });

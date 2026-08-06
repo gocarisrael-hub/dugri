@@ -50,7 +50,6 @@ describe('languageForDesign', () => {
     expect(languageForDesign('birthday')).toBe('english'); // birthday-girls
     expect(languageForDesign('japanese')).toBe('english');
     expect(languageForDesign('posttrip')).toBe('english'); // trip comeback
-    expect(languageForDesign('neon')).toBe('english'); // birthday-girls-neon
     expect(languageForDesign('kids')).toBe('hebrew'); // birthday-boys-basketball
   });
 

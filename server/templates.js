@@ -1845,8 +1845,8 @@ function normalizeExtraFields(input) {
 //                generator: it appears only in fixtures).
 //
 // They could therefore DRIFT, and in the shipped file they already have
-// (birthday-girls-neon: title_text "XOXO {NAME}'S BIRTHDAY" against title_lines
-// ["{NAME}'S","BIRTHDAY"] — the XOXO prints nowhere). So every write here derives
+// (bachelorette: title_text "{NAME}'S BACHELORETTE" against title_lines
+// ["{NAME}'s","Bachelorette"] — the all-caps form prints nowhere). So every write here derives
 // title_text FROM the lines rather than storing two independent values: edit the
 // lines, and the two can never disagree again.
 //

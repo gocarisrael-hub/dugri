@@ -1,6 +1,29 @@
 import { test, expect } from '@playwright/test';
 import { ALL_ON, stubFeatures } from './feature-flags.js';
 
+// ---- fixed-colour designs --------------------------------------------------
+// `recolor:'fixed'` (a design whose baked-in art can't be recoloured) hides the
+// whole swatch picker and shows the "colours are fixed" note instead. The only
+// built-in that was ever fixed — neon / "טיימס סקוור" — was RETIRED, so no shipped
+// design exercises the branch any more. Rather than drop the coverage, these tests
+// inject a fixed design by rewriting the generated manifest ON THE WIRE: japanese
+// is served back as anchors:[] + recolor:'fixed'. Fails loudly if the manifest
+// shape changes so the patch can never silently become a no-op.
+const FIXED_ID = 'japanese';
+const FIXED_ACCENT = '#d42a2a';
+async function stubFixedDesign(page) {
+  await page.route('**/js/designs.generated.js', async (route) => {
+    const res = await route.fetch();
+    const body = await res.text();
+    const patched = body.replace(
+      /japanese: \{\s*anchors: \[[^\]]*\],\s*hasRaster: (true|false),\s*recolor: 'slider',/,
+      "japanese: { anchors: [], hasRaster: $1, recolor: 'fixed',"
+    );
+    if (patched === body) throw new Error('manifest shape changed — fixed-design stub is a no-op');
+    return route.fulfill({ contentType: 'application/javascript', body: patched });
+  });
+}
+
 // The e2e server defaults every buyer-wizard feature flag OFF; this spec relies
 // on the (now gated) wizard features, so stub GET /api/features to ALL_ON — the
 // pre-flag behaviour. Declared first so the route is registered before any
@@ -302,17 +325,18 @@ test.describe('order wizard', () => {
     await page.waitForURL(/products\.html/);
   });
 
-  test('?design=neon&step=2 lands on the merged step with the colour picker hidden but chasers shown', async ({
+  test('a fixed-colour design deep-linked to step=2 hides the colour picker but still shows chasers', async ({
     page,
   }) => {
-    await page.goto('/options.html?design=neon&step=2');
+    await stubFixedDesign(page);
+    await page.goto(`/options.html?design=${FIXED_ID}&step=2`);
     await expect(page.getByTestId('step-2')).toBeVisible();
     await expect(page.getByTestId('step-now')).toHaveText('2');
-    await expect(page.locator('.design[data-design-id="neon"]')).toHaveAttribute(
+    await expect(page.locator(`.design[data-design-id="${FIXED_ID}"]`)).toHaveAttribute(
       'aria-pressed',
       'true'
     );
-    // neon is fixed-colour: the swatch picker is hidden and the fixed note shows…
+    // fixed-colour: the swatch picker is hidden and the fixed note shows…
     await expect(page.getByTestId('color-list')).toBeHidden();
     await expect(page.getByTestId('raster-note')).toBeVisible();
     // …but the chasers add-on (merged into this step) is still offered.
@@ -320,6 +344,20 @@ test.describe('order wizard', () => {
     // Stepping Back reaches the design step.
     await page.getByTestId('back-btn').click();
     await expect(page.getByTestId('step-1')).toBeVisible();
+  });
+
+  test('the RETIRED neon design is gone: no tile, and ?design=neon does not select it', async ({
+    page,
+  }) => {
+    await page.goto('/options.html?design=neon&step=2');
+    // no picker tile for it…
+    await expect(page.locator('.design[data-design-id="neon"]')).toHaveCount(0);
+    // …and the unknown id falls back to a real design rather than selecting nothing
+    await expect(page.locator('.design[aria-pressed="true"]')).toHaveCount(1);
+    await expect(page.locator('.design[aria-pressed="true"]')).not.toHaveAttribute(
+      'data-design-id',
+      'neon'
+    );
   });
 
   test('step 3 blocks Next until a name is entered', async ({ page }) => {
@@ -522,23 +560,16 @@ test.describe('order wizard', () => {
     await expect(page.getByTestId('raster-note')).toBeHidden();
   });
 
-  test('neon is FIXED: the colour picker is hidden and its colours never change', async ({
+  test('a FIXED design: the colour picker is hidden and a "colours are fixed" note shows', async ({
     page,
   }) => {
+    await stubFixedDesign(page);
     await page.goto('/options.html');
-    const neonTile = page.locator('.design[data-design-id="neon"]');
-    await expect(neonTile).toBeVisible();
-    await neonTile.click();
+    const fixedTile = page.locator(`.design[data-design-id="${FIXED_ID}"]`);
+    await expect(fixedTile).toBeVisible();
+    await fixedTile.click();
 
-    const frontSvg = page.getByTestId('preview-front').locator('svg').first();
-    await expect(frontSvg).toBeVisible();
-    const readC0 = () =>
-      frontSvg.evaluate((svg) => getComputedStyle(svg).getPropertyValue('--c0').trim());
-    const before = await readC0();
-
-    // Its SVG carries NO var(--cN) recolor tokens — it's baked at original colours.
-    const hasTokens = await frontSvg.evaluate((svg) => svg.outerHTML.includes('var(--c'));
-    expect(hasTokens).toBe(false);
+    await expect(page.getByTestId('preview-front').locator('svg').first()).toBeVisible();
 
     // On the colour step the swatch picker is hidden and a fixed-colour note shows.
     await page.getByTestId('next-btn').click();
@@ -546,14 +577,14 @@ test.describe('order wizard', () => {
     await expect(page.getByTestId('color-list')).toBeHidden();
     await expect(page.getByTestId('raster-note')).toBeVisible();
     await expect(page.getByTestId('raster-note')).toContainText('קבוע');
-
-    // There is no picker to change the colours, so they stay put.
-    expect(await readC0()).toBe(before);
+    // …and there is no swatch to press, so nothing can recolour it.
+    await expect(page.locator('.swatch').first()).toBeHidden();
   });
 
-  test('selecting neon after a slider switches the page accent to neon (not stale)', async ({
+  test('selecting a FIXED design after a slider switches the page accent to it (not stale)', async ({
     page,
   }) => {
+    await stubFixedDesign(page);
     await page.goto('/options.html');
     const accent = () =>
       page.evaluate(() =>
@@ -569,14 +600,14 @@ test.describe('order wizard', () => {
     const sliderAccent = await accent();
     expect(sliderAccent).toMatch(/^#|rgb/);
 
-    // Now switch to neon (fixed). Its OWN accent must take over — not the stale
+    // Now switch to the fixed design. Its OWN accent must take over — not the stale
     // slider tint (the regression: empty anchors made recolor() bail before the
     // page theme was set).
     await page.getByTestId('back-btn').click();
-    await page.locator('.design[data-design-id="neon"]').click();
+    await page.locator(`.design[data-design-id="${FIXED_ID}"]`).click();
     await expect.poll(accent).not.toBe(sliderAccent);
-    // and it matches neon's manifest accent (#ff00db)
-    expect((await accent()).toLowerCase()).toBe('#ff00db');
+    // and it matches the design's manifest accent
+    expect((await accent()).toLowerCase()).toBe(FIXED_ACCENT);
   });
 
   test('picking a colour does NOT tint the preview stage background (stays the original)', async ({

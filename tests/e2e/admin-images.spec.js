@@ -53,18 +53,10 @@ test.describe('admin gallery page', () => {
     await page.goto(`/admin-images.html?key=${KEY}`);
     await expect(page.locator('#app')).toBeVisible();
 
-    // Every design in the merged catalog gets a section — the 7 built-ins plus every
+    // Every design in the merged catalog gets a section — the 6 built-ins plus every
     // uploaded template (asserted by id below, not by a count, so registering a new
     // template doesn't fail this test).
-    for (const id of [
-      'bachelorette',
-      'marriage',
-      'birthday',
-      'japanese',
-      'posttrip',
-      'neon',
-      'kids',
-    ])
+    for (const id of ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'kids'])
       await expect(page.locator(`.design[data-design="${id}"]`)).toHaveCount(1);
 
     // Five base slots: store/front/back/photo/board. posttrip ships a board.

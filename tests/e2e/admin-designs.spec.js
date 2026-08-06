@@ -27,7 +27,7 @@ test.describe('admin designs — asset inventory', () => {
     expect(r.ok()).toBeTruthy();
     const { designs } = await r.json();
     expect(Array.isArray(designs)).toBeTruthy();
-    expect(designs.length).toBeGreaterThanOrEqual(7);
+    expect(designs.length).toBeGreaterThanOrEqual(6);
 
     const byId = Object.fromEntries(designs.map((d) => [d.id, d]));
     // Expected designs are present with Hebrew names + theme.
@@ -89,10 +89,10 @@ test.describe('admin designs — asset inventory', () => {
     await page.goto(`/admin-designs.html?key=${KEY}`);
     await expect(page.locator('#app')).toBeVisible();
 
-    // one card per design (>= 7 designs in the catalog).
+    // one card per design (>= 6 built-in designs in the catalog).
     const cards = page.locator('.card');
     await expect(async () => {
-      expect(await cards.count()).toBeGreaterThanOrEqual(7);
+      expect(await cards.count()).toBeGreaterThanOrEqual(6);
     }).toPass();
 
     // bachelorette card shows a green "מלא" state.

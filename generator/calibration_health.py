@@ -79,9 +79,10 @@ _OVERFLOW = 1.0 + rp._TITLE_OVERFLOW_TOL
 # to be loose, because a calibrated box is not a tight bound on the intended
 # title: a detected box can be much larger than the title that sits in it, and
 # an ``offset`` nudges the box rather than resizing it. Measured over the same
-# eight themes the smallest genuine fill is birthday-girls-neon's front title at
-# 0.525 of its box, so the floor sits well below every known-good value and still
-# catches a font swap that halves the ink.
+# eight themes the smallest genuine fill is japanese's front title at 0.686 of
+# its box (birthday-girls-neon, previously the smallest at 0.525, was retired), so
+# the floor sits well below every known-good value and still catches a font swap
+# that halves the ink.
 _TOO_SMALL = 0.35
 
 # Share of a theme's own wordlist that may be shrunk by the per-word clamp

@@ -42,7 +42,6 @@ const ROOT = resolve(__dirname, '..');
 //   birthday     <- full deck/with backgrounf/דוגרי יום הולדת בנות חדש/{1,2,3}.svg
 //   japanese     <- full deck/with backgrounf/דוגרי יפני חדש/{1,2,3}.svg
 //   posttrip     <- full deck/with backgrounf/דוגרי מסיבת חזרה מטיול/{1,2,3}.svg
-//   neon         <- full deck/with backgrounf/דוגרי יום הולדת בנות ניאון חדש/{1,2,3}.svg
 //   kids         <- full deck/dugri birthday kids/{פני כרטיסים,גב כרטיסים}.svg (no board)
 const CANVA = resolve(ROOT, 'resources/canva/staging');
 const OUT_ASSETS = resolve(ROOT, 'site/assets/designs');
@@ -51,8 +50,10 @@ const OUT_JS = resolve(ROOT, 'site/js/designs.generated.js');
 // ---- design manifest -------------------------------------------------------
 // Every source is a full-page landscape export (fullPage:true → no viewBox crop).
 // recolor: 'slider' → the live colour slider recolors it; 'fixed' → locked to its
-// original colours (neon's baked-in raster glow can't be recoloured). board is
-// optional (kids has none yet).
+// original colours (a baked-in raster glow can't be recoloured). No design ships
+// 'fixed' today — the only one that did (neon) was retired — but the mode is kept
+// for the next design whose art can't be tokenized. board is optional (kids has
+// none yet).
 const DESIGNS = [
   {
     id: 'bachelorette',
@@ -88,13 +89,6 @@ const DESIGNS = [
     files: { front: 'front.svg', back: 'back.svg', board: 'board.svg' },
     fullPage: true,
     recolor: 'slider',
-  },
-  {
-    id: 'neon',
-    folder: 'neon',
-    files: { front: 'front.svg', back: 'back.svg', board: 'board.svg' },
-    fullPage: true,
-    recolor: 'fixed',
   },
   {
     // kids: no board template yet — front + back only.
@@ -209,7 +203,7 @@ function collectThemeColors(svgFiles) {
 
 // Pick a design's representative "accent" colour — the most saturated, breaking
 // ties toward mid-lightness (mirrors configurator.js mostSaturatedIndex). Used to
-// theme the page accent/background for EVERY design, including 'fixed' ones (neon)
+// theme the page accent/background for EVERY design, including 'fixed' ones
 // which have no anchors but still need their own page tint.
 function representativeColor(hexes) {
   if (!hexes.length) return null;
@@ -462,7 +456,7 @@ for (const d of DESIGNS) {
   }
 
   // Theme colours drive both the SVG token recolor AND the design's page accent.
-  // 'fixed' designs (neon) are never recoloured, so they get NO var(--cN) tokens
+  // 'fixed' designs are never recoloured, so they get NO var(--cN) tokens
   // and an EMPTY anchor list — but they still keep their own page accent.
   const isFixed = d.recolor === 'fixed';
   const themeColors = collectThemeColors(Object.values(srcs));

@@ -151,12 +151,12 @@ def _texts(report):
 # ---- the real shipped themes ----------------------------------------------
 
 def test_every_shipped_theme_reports_healthy():
-    # The whole point of the checker is that a WARNING CAN BE TRUSTED. Five of
-    # the eight shipped themes pin a title size ('trip comeback' 23.9,
-    # bachelorette 21.9, birthday-girls 23.0 + back 30.0, neon 25.9, japanese
-    # 23.9) and every one of them is correct as shipped, so the checker must be
-    # silent on all eight. If this ever fails, the threshold is wrong before the
-    # theme is.
+    # The whole point of the checker is that a WARNING CAN BE TRUSTED. Six of
+    # the eight shipped themes pin a title size ('trip comeback' 22.3,
+    # bachelorette 21.9, birthday-girls 23.0 + back 30.0, japanese 23.9,
+    # football-boys 30.5 + back 37.3, grapefruit 28) and every one of them is
+    # correct as shipped, so the checker must be silent on all eight. If this ever
+    # fails, the threshold is wrong before the theme is.
     #
     # A theme staged for a redesign is skipped: it is visibility:private +
     # calibrated:false precisely BECAUSE it is not ready yet (grapefruit, during
