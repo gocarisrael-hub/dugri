@@ -677,7 +677,7 @@ def test_a_one_front_template_measures_only_the_front_it_has():
     """detect_single_card over a one-element list touches 2.svg and nothing else."""
     seen = []
 
-    def fake_card_diff(filled, clean, workdir, tag=None):
+    def fake_card_diff(filled, clean, workdir, tag=None, reg=None):
         seen.append(os.path.basename(clean))
         raise RuntimeError("stop once the walked file list is known")
 
@@ -1081,6 +1081,203 @@ def test_a_mismatched_front_is_declined_by_name_without_rendering_it():
         assert any("224.25" in m for m in said), said
     finally:
         shutil.rmtree(d, ignore_errors=True)
+
+
+# ---- ...and a mismatch that CAN be registered is measured, not refused --------
+#
+# Reporting the mismatch is the last resort, not the answer. The two plates draw
+# the same shapes, so the similarity between them is arithmetic on their own path
+# geometry (generator/svg_register.py); rendering the clean plate through it puts
+# them back on one pixel grid and the diff is the text again. On מרקאנה that is
+# the difference between front 9's title being measured at the FOOT of the card,
+# where the design puts it, and the card silently inheriting its siblings' box at
+# the top.
+
+_REG_SCALE = 1.002384          # מרקאנה's two export passes, to the digit
+_REG_SHIFT = -0.4646
+_REG_CLEAN_VB = "0 0 224.25 311.999995"
+
+# Artwork both plates carry, in the four margins so it never touches the text.
+# Four different aspect ratios, so each shape is findable in the other plate.
+_REG_ART = [(4, 4, 52, 306), (176, 4, 220, 306),
+            (60, 4, 164, 24), (60, 292, 164, 306)]
+# Four word rows sharing ONE right edge, the way a rendered card's "N." markers
+# do — that shared edge is what ``_marker_aligned`` reads to tell a word row from
+# a title, so the title is set to end well clear of it.
+_REG_WORDS = "".join(
+    f'<rect x="{70 + 8 * i}" y="{110 + 30 * i}" width="{80 - 8 * i}" '
+    f'height="16" fill="#711d20"/>' for i in range(4))
+_REG_HIGH_TITLE = '<rect x="75" y="40" width="60" height="30" fill="#711d20"/>'
+_REG_LOW_TITLE = '<rect x="75" y="250" width="60" height="30" fill="#711d20"/>'
+
+
+def _reg_art(scale=1.0, shift=0.0):
+    """The margin artwork as ONE plate draws it: filled = scale*clean + shift."""
+    out = []
+    for x0, y0, x1, y1 in _REG_ART:
+        cx0, cx1 = (x0 - 0.0) / scale, (x1 - 0.0) / scale
+        cy0, cy1 = (y0 - shift) / scale, (y1 - shift) / scale
+        out.append(f'<path fill="#2340a0" d="M {cx0} {cy0} L {cx1} {cy0} '
+                   f'L {cx1} {cy1} L {cx0} {cy1} Z"/>')
+    return "".join(out)
+
+
+def _reg_plate(path, vb, art, ink):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write('<svg xmlns="http://www.w3.org/2000/svg" width="299" '
+                f'height="416" viewBox="{vb}" '
+                'preserveAspectRatio="xMidYMid meet">'
+                '<rect width="100%" height="100%" fill="#fdf6ec"/>'
+                + art + ink + "</svg>")
+
+
+def _reg_template():
+    """A deck whose front 3 is exported exactly the way Canva broke מרקאנה's 9.
+
+    Front 2 is an ordinary matching pair. Front 3's clean plate declares the
+    other viewBox and draws the artwork at the other scale — and carries the
+    title LOW, so a fallback to its sibling's box would be visible.
+    """
+    d = tempfile.mkdtemp(prefix="dugri-reg-")
+    for half in ("clean", "filled"):
+        os.makedirs(os.path.join(d, half))
+    good = _reg_art()
+    _reg_plate(os.path.join(d, "clean", "2.svg"), "0 0 223.92 312", good, "")
+    _reg_plate(os.path.join(d, "filled", "2.svg"), "0 0 223.92 312", good,
+               _REG_WORDS + _REG_HIGH_TITLE)
+    _reg_plate(os.path.join(d, "clean", "3.svg"), _REG_CLEAN_VB,
+               _reg_art(_REG_SCALE, _REG_SHIFT), "")
+    _reg_plate(os.path.join(d, "filled", "3.svg"), "0 0 223.92 312", good,
+               _REG_WORDS + _REG_LOW_TITLE)
+    return d
+
+
+def test_a_mismatched_front_is_registered_and_measured_not_refused():
+    if not _chrome():
+        print("  (skip registered front: Chrome not found)")
+        return
+    d = _reg_template()
+    said = []
+    try:
+        recipe = R.detect_single_card("reg", d, fronts=[2, 3], log=said.append)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    low = recipe["card"]["title"].get("3")
+    assert low, "the mis-exported front must be MEASURED, not dropped"
+    box = {k: min(b[k] for b in low) if k[1] == "0" else max(b[k] for b in low)
+           for k in ("x0", "y0", "x1", "y1")}
+    assert abs(box["y0"] - 250) < 2, box
+    assert abs(box["x0"] - 75) < 2 and abs(box["x1"] - 135) < 2, box
+    assert box["y0"] > recipe["card"]["words"][-1]["y0"], "below the words"
+    assert not [m for m in recipe.get("declined") or []
+                if m.startswith("front 3")], recipe.get("declined")
+    assert any("registered" in m for m in said), said
+
+
+def test_registering_one_front_leaves_its_matching_siblings_alone():
+    """The correction must reach ONLY the pair that needs it.
+
+    Front 2's plates agree, so nothing is derived and nothing is applied — its
+    boxes must come out exactly as they do in a deck with no mismatch at all.
+    """
+    if not _chrome():
+        print("  (skip registration blast radius: Chrome not found)")
+        return
+    d = _reg_template()
+    clean = tempfile.mkdtemp(prefix="dugri-reg-ok-")
+    try:
+        for half in ("clean", "filled"):
+            os.makedirs(os.path.join(clean, half))
+        for src in ("clean/2.svg", "filled/2.svg"):
+            shutil.copy(os.path.join(d, src), os.path.join(clean, src))
+        with_mismatch = R.detect_single_card("reg", d, fronts=[2],
+                                             log=lambda *a: None)
+        without = R.detect_single_card("ok", clean, fronts=[2],
+                                       log=lambda *a: None)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+        shutil.rmtree(clean, ignore_errors=True)
+    assert with_mismatch["card"] == without["card"]
+
+
+def test_a_registered_front_does_not_move_the_shared_word_slots():
+    """It answers the question only it can, and nothing else.
+
+    The four word slots are the SAME on every front by contract, so a registered
+    front tells the deck nothing about them its siblings have not already said
+    directly — while its title box is per-front and has no other source at all.
+    Letting the corrected reading into the shared vote moves the words on every
+    card of the deck for no gain (``_median`` of eight averages the two middle
+    values where seven takes the middle one), so it is kept out.
+    """
+    if not _chrome():
+        print("  (skip shared-slot blast radius: Chrome not found)")
+        return
+    both = _reg_template()
+    alone = tempfile.mkdtemp(prefix="dugri-reg-alone-")
+    try:
+        for half in ("clean", "filled"):
+            os.makedirs(os.path.join(alone, half))
+        for src in ("clean/2.svg", "filled/2.svg"):
+            shutil.copy(os.path.join(both, src), os.path.join(alone, src))
+        with_nine = R.detect_single_card("reg", both, fronts=[2, 3],
+                                         log=lambda *a: None)
+        without = R.detect_single_card("ok", alone, fronts=[2],
+                                       log=lambda *a: None)
+    finally:
+        shutil.rmtree(both, ignore_errors=True)
+        shutil.rmtree(alone, ignore_errors=True)
+    assert with_nine["card"]["words"] == without["card"]["words"]
+    assert with_nine["card"]["title"].get("3"), "...but its title IS recorded"
+
+
+def test_a_deck_read_only_through_registration_still_gets_word_slots():
+    """Keeping a corrected reading out of the vote must not mean discarding it.
+
+    A deck whose EVERY plate pair needs registering has no direct reading to
+    prefer, and refusing the corrected ones would fail a template that is
+    perfectly measurable.
+    """
+    if not _chrome():
+        print("  (skip registered-only deck: Chrome not found)")
+        return
+    d = tempfile.mkdtemp(prefix="dugri-reg-only-")
+    try:
+        for half in ("clean", "filled"):
+            os.makedirs(os.path.join(d, half))
+        for index in (2, 3):
+            _reg_plate(os.path.join(d, "clean", f"{index}.svg"), _REG_CLEAN_VB,
+                       _reg_art(_REG_SCALE, _REG_SHIFT), "")
+            _reg_plate(os.path.join(d, "filled", f"{index}.svg"),
+                       "0 0 223.92 312", _reg_art(),
+                       _REG_WORDS + _REG_HIGH_TITLE)
+        recipe = R.detect_single_card("only", d, fronts=[2, 3],
+                                      log=lambda *a: None)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    words = recipe["card"]["words"]
+    assert len(words) == 4, words
+    for i, slot in enumerate(words):
+        assert abs(slot["y0"] - (110 + 30 * i)) < 2, slot
+
+
+def test_the_page_edge_is_not_read_as_ink():
+    """The last pixel column is paper on one plate and card on the other.
+
+    מרקאנה's clean/9 has the window's exact aspect so its card is drawn edge to
+    edge; its filled twin is a hair narrower and gets 0.22px of paper down each
+    side. Registered, that column differs on every row — and it stretched EVERY
+    band on the card out to the right edge, turning a title 68 units wide into
+    one 144 units wide that ``_TITLE_BOX_TOL`` then refused.
+    """
+    mask = Image.new("L", (598, 832), 0)
+    for y in range(832):
+        mask.putpixel((597, y), 255)          # the page-edge column
+    mask.putpixel((300, 400), 255)            # real ink, well inside the card
+    out = R._both_plates_drawn(
+        mask, (1.002384, 0.2209, -0.6195), [0, 0, 223.92, 312],
+        (299, 416, [0, 0, 224.25, 311.999995]), 299, 416)
+    assert out.getbbox() == (300, 400, 301, 401), out.getbbox()
 
 
 # ---- a front that yielded nothing must say so --------------------------------

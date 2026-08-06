@@ -40,6 +40,18 @@ output file.
 
 Card geometry is `viewBox="0 0 223.92 312"` (portrait, ~0.718 aspect).
 
+**A plate may disagree about that, and detection copes.** Four of the shipped
+decks (מרקאנה, סיישל, פריז, קליפורניה) ship a `clean/9.svg` Canva exported from a
+different layout pass than its `filled/9.svg` twin: `viewBox="0 0 224.25
+311.999995"`, artwork matrix `0.747953` against `0.749732`, path coordinates
+scaled to match. Both plates are drawn into the same window, so `filled − clean`
+came out as the whole design ghosted against itself and the card measured
+nothing. `generator/svg_register.py` recovers the similarity between the two
+plates from the shapes they share and re-renders the clean one through it, so the
+diff is the text again; only a pair with no measurable shared artwork falls
+through to "re-export this plate". Nothing is applied to a pair whose viewBoxes
+agree.
+
 ## 2. Single-card geometry — `card_slots` on the theme entry
 
 A `card_structure: "cards"` theme carries its calibration on the themes.json

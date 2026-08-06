@@ -3533,11 +3533,13 @@ def _card_slots_from_recipe(cfg):
     ``server/templates.js`` (``validateCardSlots``) rejects a titles map that is
     missing any of ``cards.fronts``, and ``applyCalibration`` then drops the
     whole ``card_slots`` block silently, keeping the entry's stale geometry while
-    still reporting ``calibrated: true``. So on מרקאנה, whose front 9 cannot be
-    measured (its clean plate is exported at a different scale — see
-    ``recipe_diff.viewbox_mismatch``), the map came out 2..8, was refused, and
-    nothing at all was written: the owner pressed "זהה מחדש", was told it
-    succeeded, and the card never changed.
+    still reporting ``calibrated: true``. So on מרקאנה, whose front 9 could not
+    be measured (its clean plate is exported at a different scale), the map came
+    out 2..8, was refused, and nothing at all was written: the owner pressed
+    "זהה מחדש", was told it succeeded, and the card never changed. That front IS
+    measured now — ``svg_register`` puts the odd plate back in register with its
+    twin before the diff — but the guarantee here is the one that has to hold
+    whatever detection manages: every declared front gets a key.
 
     An unmeasured front is filled from ``config.recipe_front_title`` — the
     median of the fronts that WERE measured, which is exactly what the renderer
