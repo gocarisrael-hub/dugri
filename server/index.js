@@ -27,6 +27,7 @@ const storeImport = require('./store-import');
 const templateImport = require('./template-import');
 const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
 const generatorProc = require('./generator-proc');
+const pressVerify = require('./press-verify');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -838,11 +839,28 @@ app.get('/api/admin/collections/:id/board', (req, res) => {
 //
 // That is a full RE-RENDER plus a Ghostscript pass: measured at ~200s for a
 // 208-page deck, far past GENERATE_TIMEOUT_MS. So it cannot run inside a
-// request, and it is a background job whose entire state is three files — which
-// beats a job table precisely because it survives a restart for free:
-//   <id>.press.pdf       the finished artifact
-//   <id>.press.building  written before the spawn, removed when the child exits
-//   <id>.press.err       the failure detail, for the admin to read
+// request, and it is a background job whose entire state is files on the volume
+// — which beats a job table precisely because it survives a restart for free:
+//   <id>.press.pdf          the finished artifact, and ONLY ever that
+//   <id>.press.partial.pdf  where the build actually writes
+//   <id>.press.building     the in-flight marker: JSON {started, theme}
+//   <id>.press.err          the failure detail, for the admin to read
+//   <id>.press.rejected.pdf a build that finished but did not verify, kept for
+//                           diagnosis and never served
+//
+// THE BUILD NEVER WRITES TO THE DOWNLOAD PATH. It writes to <id>.press.partial
+// .pdf, and the server renames that onto <id>.press.pdf only after the child
+// exits 0 AND the file verifies as a press copy. Both halves are needed:
+//
+//  * The build passes through the wrong artifact. Chrome prints the RGB deck
+//    first and Ghostscript replaces it with the CMYK one minutes later, so for
+//    most of a build there IS a complete, openable PDF at the output path that
+//    is NOT the press copy — no CMYK, no TrimBox, no OutputIntent, no crop
+//    marks. Served, it reaches a print shop looking perfectly fine.
+//  * A killed run leaves a truncated file. Chrome prints straight to the path
+//    it is given, so a timeout/OOM/PID-ceiling kill leaves a half-written PDF
+//    behind. On the partial path that is inert; on the download path it is a
+//    corrupt file that every "does it exist?" check passes.
 const PRESS_ICC =
   process.env.PRESS_ICC ||
   path.join(REPO_ROOT, 'resources', 'print shop', 'SWOP2006_Coated3v2.icc');
@@ -853,27 +871,154 @@ const PRESS_STALE_MS = PRESS_TIMEOUT_MS + 60000;
 
 function pressPaths(id) {
   const base = path.join(GENERATED_DIR, id + '.press');
-  return { pdf: base + '.pdf', building: base + '.building', err: base + '.err' };
+  return {
+    pdf: base + '.pdf',
+    partial: base + '.partial.pdf',
+    // The generator derives the board's path from the deck's (build.py
+    // board_pdf_path), so the partial run writes its board here.
+    partialBoard: base + '.partial.board.pdf',
+    board: base + '.board.pdf',
+    rejected: base + '.rejected.pdf',
+    building: base + '.building',
+    err: base + '.err',
+  };
 }
 
-function pressBuilding(id) {
+// The in-flight build for `id`, or null when nothing is running.
+//
+// The marker carries WHICH THEME is being built, because the job is keyed by
+// collection and a collection can be asked for a different theme's press copy
+// while one is in flight. Without the theme, the second request could only be
+// answered with the first one's file — a different design, under this order's
+// name. An older marker (written before this field existed) reads as null,
+// which the caller treats as "cannot prove it is the same build".
+function pressRunning(id) {
+  const p = pressPaths(id).building;
+  let st;
   try {
-    return Date.now() - fs.statSync(pressPaths(id).building).mtimeMs < PRESS_STALE_MS;
+    st = fs.statSync(p);
+  } catch {
+    return null;
+  }
+  // Older than the whole timeout budget: the container restarted mid-build and
+  // no child is coming back, so the button must not stay stuck on "building".
+  if (Date.now() - st.mtimeMs >= PRESS_STALE_MS) return null;
+  let meta = null;
+  try {
+    meta = JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch {
+    /* pre-JSON marker (a bare timestamp), or a partial write: fall back to mtime */
+  }
+  return {
+    theme: (meta && typeof meta.theme === 'string' && meta.theme) || null,
+    started: (meta && Number(meta.started)) || st.mtimeMs,
+  };
+}
+
+// What a "still building" answer tells the caller beyond the word itself: when
+// it started and how long it has been going. The admin UI shows the elapsed
+// minutes, so a build that takes three minutes reads as progress rather than as
+// a button that stopped responding.
+function runningInfo(running) {
+  return { started: running.started, elapsedMs: Math.max(0, Date.now() - running.started) };
+}
+
+// A marker that is too old to be a live build — the signature of a restart or a
+// kill that never got to run the child's close handler. Reported honestly
+// rather than as "no press pdf", which would read as "you never asked for one".
+function pressAbandoned(id) {
+  const p = pressPaths(id).building;
+  try {
+    return Date.now() - fs.statSync(p).mtimeMs >= PRESS_STALE_MS;
   } catch {
     return false;
   }
 }
 
+function pressUnlink(...files) {
+  for (const f of files) {
+    try {
+      fs.unlinkSync(f);
+    } catch {
+      /* nothing stale to clear */
+    }
+  }
+}
+
+// Publish a finished build: verify what the child actually produced, and only
+// then rename it onto the download path. Returns null on success, or the reason
+// it was refused.
+//
+// The rename is the last step and it is atomic within the volume, so the
+// download path holds either the previous finished file or the new one — never
+// a file mid-write. The verification is what stops the OTHER failure, the one
+// that looks fine: a complete, openable PDF that is the RGB intermediate rather
+// than the press copy.
+function pressPublish(id) {
+  const paths = pressPaths(id);
+  if (!fs.existsSync(paths.partial)) return 'the build produced no file';
+  const v = pressVerify.checkPressFile(paths.partial);
+  if (!v.ok) {
+    // Keep the artifact: a rejected file is the only evidence of WHY, and it is
+    // out of reach of every download route where it now sits.
+    try {
+      fs.renameSync(paths.partial, paths.rejected);
+    } catch {
+      pressUnlink(paths.partial);
+    }
+    pressUnlink(paths.partialBoard);
+    return v.reason || 'the built file did not verify as a press copy';
+  }
+  fs.renameSync(paths.partial, paths.pdf);
+  try {
+    if (fs.existsSync(paths.partialBoard)) fs.renameSync(paths.partialBoard, paths.board);
+  } catch {
+    /* the board is a by-product of the press run; nothing serves it */
+  }
+  return null;
+}
+
 // Admin: START the press build. 202 immediately; the child outlives the
-// request. Re-posting while one is in flight is a no-op rather than a second
-// Chrome+Ghostscript pair racing for the same output file.
+// request.
+//
+// A second POST while one is in flight is answered by WHAT IS RUNNING, never by
+// starting a second Chrome+Ghostscript pair over the same paths:
+//   * same theme  -> 202 building. The caller asked for the file that is
+//                    already being built, so this is genuinely idempotent.
+//   * other theme -> 409. This is the case that used to silently no-op: the
+//                    request was dropped, the poll then found the FIRST theme's
+//                    file at this order's press path, and downloaded it. Same
+//                    order, wrong artwork, and nothing anywhere said so. A
+//                    build cannot be re-aimed mid-flight, so the honest answer
+//                    is to refuse and name the theme that is running.
 app.post('/api/admin/collections/:id/press', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const c = db.getCollection(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
-  if (pressBuilding(c.id)) return res.status(202).json({ status: 'building' });
   const theme = String((req.body && req.body.theme) || c.theme || '').trim();
   if (!theme) return res.status(400).json({ error: 'theme required' });
+  const running = pressRunning(c.id);
+  if (running) {
+    // An unknown theme (a marker from before this field existed) cannot be
+    // proven to match, so it is treated as a conflict rather than assumed
+    // identical — the assumption is exactly what shipped the wrong file.
+    if (running.theme === theme) {
+      return res
+        .status(202)
+        .json({ status: 'building', theme: running.theme, ...runningInfo(running) });
+    }
+    return res.status(409).json({
+      error: 'a press build is already running for this order',
+      status: 'building',
+      theme: running.theme,
+      requested: theme,
+      ...runningInfo(running),
+      detail:
+        'בנייה לבית דפוס כבר רצה להזמנה הזאת' +
+        (running.theme ? ' (עיצוב: ' + running.theme + ')' : '') +
+        '. יש לחכות שתסתיים ואז לבקש את העיצוב השני.',
+    });
+  }
   const words = db.listWords(c.id).map((w) => w.text);
   if (!words.length) return res.status(400).json({ error: 'no words to generate' });
   if (!fs.existsSync(PRESS_ICC)) {
@@ -883,19 +1028,25 @@ app.post('/api/admin/collections/:id/press', (req, res) => {
     return res.status(500).json({ error: 'press ICC profile missing', detail: PRESS_ICC });
   }
   const paths = pressPaths(c.id);
+  const started = Date.now();
   let wordsFile;
   try {
     fs.mkdirSync(GENERATED_DIR, { recursive: true });
     wordsFile = path.join(os.tmpdir(), 'dugri-press-' + crypto.randomUUID() + '.txt');
     fs.writeFileSync(wordsFile, words.join('\n') + '\n', 'utf8');
-    for (const f of [paths.err, paths.pdf]) {
-      try {
-        fs.unlinkSync(f);
-      } catch {
-        /* nothing stale to clear */
-      }
-    }
-    fs.writeFileSync(paths.building, String(Date.now()), 'utf8');
+    // The finished file goes FIRST: from here until this build verifies, this
+    // order has no press copy, and every poll says so. Serving the previous
+    // theme's file while a new theme renders is the same wrong-artwork failure
+    // by another route.
+    pressUnlink(
+      paths.err,
+      paths.pdf,
+      paths.board,
+      paths.partial,
+      paths.partialBoard,
+      paths.rejected
+    );
+    fs.writeFileSync(paths.building, JSON.stringify({ started, theme }), 'utf8');
   } catch (e) {
     return res.status(500).json({ error: 'could not start', detail: String(e.message || e) });
   }
@@ -904,7 +1055,9 @@ app.post('/api/admin/collections/:id/press', (req, res) => {
     theme,
     c.honoree_name || '',
     wordsFile,
-    paths.pdf,
+    // NOT paths.pdf: the child writes to the partial path, and the server
+    // renames it into place only once it verifies (see pressPublish).
+    paths.partial,
     '--press',
     PRESS_ICC,
   ];
@@ -915,42 +1068,57 @@ app.post('/api/admin/collections/:id/press', (req, res) => {
   const timer = setTimeout(() => killGenerator(child), PRESS_TIMEOUT_MS);
   child.on('close', (code) => {
     clearTimeout(timer);
-    try {
-      fs.unlinkSync(wordsFile);
-    } catch {
-      /* temp file already gone */
-    }
+    pressUnlink(wordsFile);
+    let failure = null;
     if (code !== 0) {
+      failure = stderr.slice(-2000) || 'exit ' + code;
+      // A non-zero exit can still leave a half-written sheet on the partial
+      // path (a killed Chrome, a Ghostscript that died mid-convert). It is
+      // evidence, not a deliverable: keep it out of the download path.
+      pressUnlink(paths.partial, paths.partialBoard);
+    } else {
+      failure = pressPublish(c.id);
+    }
+    if (failure) {
       try {
-        fs.writeFileSync(paths.err, stderr.slice(-2000) || 'exit ' + code, 'utf8');
+        fs.writeFileSync(paths.err, String(failure), 'utf8');
       } catch {
         /* nothing more we can do */
       }
     }
-    try {
-      fs.unlinkSync(paths.building);
-    } catch {
-      /* marker already gone */
-    }
+    pressUnlink(paths.building);
   });
   child.unref();
-  res.status(202).json({ status: 'building' });
+  res.status(202).json({ status: 'building', theme, started });
 });
 
-// Admin: poll for / download the press copy. 200 streams the finished PDF, 202
-// while it builds, 409 carries the failure detail, 404 when none was requested.
+// Admin: poll for / download the press copy. 202 while it builds, 200 streams
+// the finished PDF, 409 carries a failure (or an interrupted build), 404 when
+// none was requested.
+//
+// THE ORDER OF THESE CHECKS IS THE FIX. It used to ask "is there a file?" before
+// "is a build running?", so a poll landing mid-build was answered with whatever
+// sat at the press path — the previous build's file, or (before the partial
+// path existed) the RGB intermediate of the run still in progress. Both are
+// complete, openable PDFs; both are the wrong artwork. "Building" first means a
+// download during a build can only ever say "still building".
 app.get('/api/admin/collections/:id/press', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const c = db.getCollection(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
   const paths = pressPaths(c.id);
+  const running = pressRunning(c.id);
+  if (running) {
+    return res
+      .status(202)
+      .json({ status: 'building', theme: running.theme, ...runningInfo(running) });
+  }
   if (fs.existsSync(paths.pdf)) {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + c.id + '-press.pdf"');
     return res.sendFile(paths.pdf);
   }
-  if (pressBuilding(c.id)) return res.status(202).json({ status: 'building' });
   if (fs.existsSync(paths.err)) {
     let detail = '';
     try {
@@ -959,6 +1127,15 @@ app.get('/api/admin/collections/:id/press', (req, res) => {
       /* unreadable is still a failure */
     }
     return res.status(409).json({ status: 'failed', detail: detail.slice(0, 800) });
+  }
+  // A marker too old to be live, with no file and no error: the process died
+  // without running its close handler (a restart, an OOM kill). Say that,
+  // rather than "no press pdf" — which reads as "you never asked".
+  if (pressAbandoned(c.id)) {
+    return res.status(409).json({
+      status: 'interrupted',
+      detail: 'הבנייה לבית דפוס נקטעה (השרת כנראה הופעל מחדש באמצע). אפשר להריץ אותה שוב.',
+    });
   }
   res.status(404).json({ error: 'no press pdf' });
 });
