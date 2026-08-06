@@ -122,6 +122,71 @@ def _word_metrics(font_path, ref=200):
     return _measuring_font(font_path, ref), ref
 
 
+class Face:
+    """One or two fonts, measured as if they were one.
+
+    A template ships a Hebrew word face. The owner may upload a Latin one beside
+    it; when she has, Latin runs are set in it — her choice, applied outright,
+    not "when the Hebrew face can't cope".
+
+    Every width and ink reading in the fitter goes through here so that the
+    number the fit reserves is the number the renderer paints. Get that wrong
+    and lines cross the trim, which is the whole reason the fit measures at all.
+
+    WITH NO ALT FACE THIS IS THE PRIMARY FONT, NOT A WRAPPER OVER IT. ``length``
+    returns ``primary.getlength(text)`` — the same call, the same float, no sum
+    over a one-element list that could reassociate and move a last digit. That
+    is what makes an un-uploaded second font byte-identical rather than merely
+    equivalent, and it is asserted in the tests.
+    """
+
+    __slots__ = ("primary", "alt", "ref", "rtl")
+
+    def __init__(self, primary, alt=None, ref=200, rtl=True):
+        self.primary = primary
+        self.alt = alt
+        self.ref = ref
+        self.rtl = rtl
+
+    @property
+    def single(self):
+        return self.alt is None
+
+    def runs(self, text):
+        """``[(font, substring)]`` in logical order, covering ``text`` exactly."""
+        if self.alt is None:
+            return [(self.primary, text)]
+        return [(self.alt if lat else self.primary, t)
+                for lat, t in script_runs(text, base_rtl=self.rtl)]
+
+    def length(self, text):
+        if self.alt is None:
+            return self.primary.getlength(text)
+        return sum(f.getlength(t) for f, t in self.runs(text))
+
+    def bbox(self, text):
+        """The union box, expressed against a pen starting at x=0.
+
+        Runs advance one after another, so each run's own box is offset by the
+        width of everything before it. The vertical extremes are the union: a
+        Latin descender under a Hebrew line still has to be cleared.
+        """
+        if self.alt is None:
+            return self.primary.getbbox(text)
+        x = 0.0
+        x0 = y0 = x1 = y1 = None
+        for f, t in self.runs(text):
+            b = f.getbbox(t)
+            if b is not None:
+                bx0, by0, bx1, by1 = b[0] + x, b[1], b[2] + x, b[3]
+                x0 = bx0 if x0 is None else min(x0, bx0)
+                y0 = by0 if y0 is None else min(y0, by0)
+                x1 = bx1 if x1 is None else max(x1, bx1)
+                y1 = by1 if y1 is None else max(y1, by1)
+            x += f.getlength(t)
+        return (0, 0, 0, 0) if x0 is None else (x0, y0, x1, y1)
+
+
 # How many times the metric size a glyph is rendered at when its ink edges are
 # measured. A bitmap answers in whole pixels, so measuring at the metric size
 # alone quantises the bearings to 1 unit of 200 — 0.1 user units at card sizes.
