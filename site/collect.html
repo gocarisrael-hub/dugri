@@ -551,6 +551,19 @@
       .panel {
         margin-top: 4px;
       }
+      /* Live length feedback under the single-word input. Hidden until the entry
+         is actually over the cap, so it never nags a normal-length word. */
+      .len-hint {
+        display: block;
+        margin-top: 6px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--ink);
+      }
+      .row input.too-long {
+        outline: 2px solid var(--ink);
+        outline-offset: -2px;
+      }
       .words-head {
         display: flex;
         align-items: center;
@@ -1180,9 +1193,19 @@
         <div class="panel" id="panel-single">
           <div class="idea" id="ideaBox"></div>
           <div class="row">
-            <input type="text" id="wordInput" autocomplete="off" aria-label="מילה להוספה" />
+            <input
+              type="text"
+              id="wordInput"
+              autocomplete="off"
+              aria-label="מילה להוספה"
+              aria-describedby="wordLenHint"
+            />
             <button id="addBtn" type="button" data-edit="collect-add-btn">הוסף</button>
           </div>
+          <!-- Live over-length warning. Deliberately NOT a maxlength attribute:
+               typing that silently stops at 25 leaves the customer guessing, so
+               we let the entry be typed and say what is wrong and by how much. -->
+          <small class="len-hint hidden" id="wordLenHint" role="status" aria-live="polite"></small>
           <div class="actions">
             <button class="soft" id="ideaBtn" type="button" data-edit="collect-idea-btn">
               תני לי רעיון 💡
@@ -1618,7 +1641,16 @@
 
     <script type="module">
       import { categoriesForTheme, promptsForTheme, renderQuestion } from './js/word-prompts.js';
-      import { parseWordText, newestFirst } from './js/collect.js';
+      import {
+        parseWordText,
+        newestFirst,
+        MAX_WORD_LEN,
+        cleanWord,
+        isWordTooLong,
+        wordLengthMessage,
+        splitByLength,
+        batchLengthMessage,
+      } from './js/collect.js';
       import { track } from './js/analytics.js';
       import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
 
@@ -1712,7 +1744,10 @@
       function api(path, opts) {
         return fetch('/api/collections/' + id + path, opts).then(async (r) => {
           const body = await r.json().catch(() => ({}));
-          if (!r.ok) throw Object.assign(new Error(body.error || r.status), { status: r.status });
+          // `body` rides along so a caller can use a server-supplied Hebrew
+          // `message` (e.g. the word-length rejection) instead of the error code.
+          if (!r.ok)
+            throw Object.assign(new Error(body.error || r.status), { status: r.status, body });
           return body;
         });
       }
@@ -2004,8 +2039,27 @@
       // or skipped as a duplicate), false on any failure so callers can keep the
       // typed word for a retry instead of clearing it.
       async function addWords(words, method) {
-        const clean = parseWordText(Array.isArray(words) ? words.join('\n') : words);
-        if (!clean.length) return true; // nothing to submit — not a failure
+        const parsed = parseWordText(Array.isArray(words) ? words.join('\n') : words);
+        if (!parsed.length) return true; // nothing to submit — not a failure
+        // Hold every entry to the length cap HERE, before the request, so the
+        // person typing is the one who fixes it. The server enforces the same cap
+        // (a client check is only a suggestion), but catching it now is the whole
+        // point: otherwise a too-long word surfaces hours later as a broken PDF
+        // and someone has to go back and ask the customer to rewrite it.
+        const { ok: clean, tooLong } = splitByLength(parsed);
+        if (!clean.length) {
+          // Nothing left to submit — report and return false so the caller KEEPS
+          // the text, which is exactly what the customer needs in order to shorten
+          // it rather than retype it.
+          toast(batchLengthMessage(tooLong));
+          return false;
+        }
+        // A PARTIAL batch (some entries fit, some didn't) still submits the good
+        // words — losing them because a neighbour was too long would be worse.
+        // Every outcome toast below carries the note about what was left behind,
+        // so a partial add never looks like a clean success.
+        const lenNote = batchLengthMessage(tooLong);
+        const say = (msg) => toast(lenNote ? msg + ' · ' + lenNote : msg);
         const added_by = $('#byName').value.trim() || null;
         try {
           const res = await api('/words', {
@@ -2022,7 +2076,7 @@
           track('word_added', { method: method || 'single', count: added, skipped, blocked });
           if (blocked) {
             const limit = res && res.free_word_limit;
-            toast(
+            say(
               added
                 ? 'נוספו ' + added + ' מילים — והגעתם למכסת החינם'
                 : 'הגעתם למכסת ' + (limit || '') + ' המילים החינמיות'
@@ -2042,9 +2096,9 @@
                 skipped === 1
                   ? 'מילה אחת לא נוספה (כפילות)'
                   : skipped + ' מילים לא נוספו (כפילויות)';
-              toast(base + ' · ' + dup);
+              say(base + ' · ' + dup);
             } else {
-              toast(base);
+              say(base);
             }
           } else if (skipped) {
             // Nothing was added. For a single word from the input box this can
@@ -2053,10 +2107,13 @@
             // count mixes causes, so use neutral wording.
             if (skipped === 1 && clean.length === 1) {
               const shown = clean[0].replace(/\s+/g, ' ');
-              toast('המילה "' + shown + '" כבר קיימת ברשימה');
+              say('המילה "' + shown + '" כבר קיימת ברשימה');
             } else {
-              toast('המילים כבר קיימות ולא נוספו שוב');
+              say('המילים כבר קיימות ולא נוספו שוב');
             }
+          } else if (lenNote) {
+            // Nothing added, nothing duplicated — the length note is the whole story.
+            toast(lenNote);
           }
           return true;
         } catch (e) {
@@ -2113,6 +2170,11 @@
           // case refresh() below restores the old text, so nothing is lost.
           if (e.status === 409) {
             toast('כבר יש מילה כזאת ברשימה');
+          } else if (e.body && e.body.error === 'too_long') {
+            // Pre-checked on commit, so this is the backstop (a stale tab, or the
+            // cap having moved) — still show the server's reason, never a generic
+            // failure.
+            toast(e.body.message);
           } else if (e.status !== 400) {
             toast('עריכת המילה נכשלה, נסו שוב');
           }
@@ -2129,6 +2191,10 @@
         input.type = 'text';
         input.className = 'word-edit';
         input.value = w.text;
+        // Left at the OLD 80 rather than MAX_WORD_LEN on purpose: a grandfathered
+        // word can be up to 80 chars, and a maxLength below its current length
+        // would let the browser fight the owner as she edits it. The cap is
+        // enforced on commit (and again server-side), where it can be explained.
         input.maxLength = 80;
         input.setAttribute('autocomplete', 'off');
         input.setAttribute('aria-label', 'עריכת המילה ' + w.text);
@@ -2146,12 +2212,22 @@
           if (settled) return;
           settled = true;
           wordEditOpen = false;
-          // A word is a SINGLE token — clean it the way the server does (trim +
-          // collapse inner whitespace + 80 cap). Do NOT use parseWordText here: it
-          // splits on commas/newlines, which would truncate a word like "טוב, אמיתי".
-          const val = input.value.trim().replace(/\s+/g, ' ').slice(0, 80);
-          // Trimmed to empty, or unchanged → restore the pill, no request.
+          // A word is a SINGLE entry — clean it the way the server does (trim +
+          // collapse inner whitespace). Do NOT use parseWordText here: it splits
+          // on commas/newlines, which would truncate a word like "טוב, אמיתי".
+          const val = cleanWord(input.value);
+          // Trimmed to empty, or unchanged → restore the pill, no request. The
+          // unchanged case is what lets a GRANDFATHERED over-length word (stored
+          // before the cap existed) be opened and closed without being rewritten.
           if (!val || val === w.text) {
+            render();
+            return;
+          }
+          // A NEW value is held to the cap, even when the word being edited was
+          // already over it: this is an entry, and entries are capped. Revert +
+          // explain, matching how a duplicate edit is handled.
+          if (isWordTooLong(val)) {
+            toast(wordLengthMessage(val));
             render();
             return;
           }
@@ -2176,12 +2252,37 @@
       }
 
       // ---- add interactions ----
+      // Live length check on the single-word box: the entry is measured on every
+      // keystroke and the customer is told the moment it goes over, while the word
+      // is still in front of them and trivially shortened.
+      function syncWordLen() {
+        const input = $('#wordInput');
+        const hint = $('#wordLenHint');
+        const over = isWordTooLong(input.value);
+        input.classList.toggle('too-long', over);
+        hint.classList.toggle('hidden', !over);
+        hint.textContent = over ? wordLengthMessage(input.value) : '';
+        // Block the add outright rather than letting it fail on submit — but only
+        // for length; an empty box keeps its existing (silent) no-op behaviour.
+        // The free-quota lock (applyFreeLimit) also disables this button, and it
+        // wins: the word that TIPS the quota over runs refresh() → applyFreeLimit
+        // and then returns here, so ignoring the lock would quietly re-enable
+        // adding on a collection that just locked.
+        const locked = $('#addCard').classList.contains('locked');
+        $('#addBtn').disabled = over || locked;
+        return over;
+      }
+      $('#wordInput').addEventListener('input', syncWordLen);
       $('#addBtn').onclick = async () => {
         const v = $('#wordInput').value;
         if (!v.trim()) return;
+        // Belt to the live check: Enter can reach here before an `input` event on
+        // a paste, so re-measure instead of trusting the disabled state.
+        if (syncWordLen()) return;
         const ok = await addWords(v, 'single');
         // Keep the typed word on failure so the user can retry; clear on success.
         if (ok) $('#wordInput').value = '';
+        syncWordLen();
         $('#wordInput').focus();
       };
       $('#wordInput').addEventListener('keydown', (e) => {

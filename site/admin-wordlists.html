@@ -575,10 +575,16 @@
         if (!name) return setMsg(qs('createMsg'), 'צריך שם לרשימה', 'err');
         qs('createBtn').disabled = true;
         try {
-          await api('POST', '/api/admin/wordlists', { name, text });
+          const r = await api('POST', '/api/admin/wordlists', { name, text });
           qs('newName').value = '';
           qs('newWords').value = '';
-          setMsg(qs('createMsg'), 'נוצר ✓', 'ok');
+          // A save that silently dropped over-length words would look like a clean
+          // success and the owner would only find out when the pool came up short.
+          setMsg(
+            qs('createMsg'),
+            r && r.warning ? 'נוצר ✓ · ' + r.warning : 'נוצר ✓',
+            r && r.warning ? 'err' : 'ok'
+          );
           await load();
         } catch (e) {
           setMsg(qs('createMsg'), e.message, 'err');
@@ -591,9 +597,15 @@
         const text = qs('editWords').value;
         qs('saveBtn').disabled = true;
         try {
-          await api('PUT', '/api/admin/wordlists/' + encodeURIComponent(openName), { text });
+          const r = await api('PUT', '/api/admin/wordlists/' + encodeURIComponent(openName), {
+            text,
+          });
           await load();
-          setMsg(qs('editMsg'), 'נשמר ✓', 'ok');
+          setMsg(
+            qs('editMsg'),
+            r && r.warning ? 'נשמר ✓ · ' + r.warning : 'נשמר ✓',
+            r && r.warning ? 'err' : 'ok'
+          );
         } catch (e) {
           setMsg(qs('editMsg'), e.message, 'err');
         } finally {

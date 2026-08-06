@@ -1883,6 +1883,13 @@ app.post('/api/collections/:id/words', (req, res) => {
     // How many words the quota refused (0 when no quota applies). The page uses
     // this to say "5 of your 50 words were added" instead of failing silently.
     blocked: r.blocked || 0,
+    // How many entries were over the length cap and therefore NOT stored. The
+    // page normally filters these out before submitting (so the customer is told
+    // while typing), but a paste from an old tab or a non-browser client still
+    // lands here — the count plus `max_word_len` lets any caller say exactly what
+    // was refused and why.
+    too_long: r.tooLong || 0,
+    max_word_len: validate.MAX_WORD_LEN,
     count,
     free_word_limit: after && after.applies ? after.limit : null,
     free_limit_locked: !!(after && after.locked),
@@ -1932,10 +1939,10 @@ app.delete('/api/collections/:id/words/:wordId', (req, res) => {
   res.json({ ok: true });
 });
 
-// Owner-only: edit a word's text (fix a typo). Same normalization + 80-char cap
-// as the add path (never trust the client); rejects an empty result and a
-// collision with another existing word. token in the body (not the URL) so it
-// isn't logged, mirroring the delete route.
+// Owner-only: edit a word's text (fix a typo). Same normalization + entry-length
+// cap as the add path (never trust the client); rejects an empty result, an
+// over-length result and a collision with another existing word. token in the
+// body (not the URL) so it isn't logged, mirroring the delete route.
 app.patch('/api/collections/:id/words/:wordId', (req, res) => {
   const b = req.body || {};
   const r = db.editWord(req.params.id, req.params.wordId, b.text, b.owner_token);
@@ -1943,6 +1950,14 @@ app.patch('/api/collections/:id/words/:wordId', (req, res) => {
   if (r.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
   if (r.error === 'not_found') return res.status(404).json({ error: 'word not found' });
   if (r.error === 'empty') return res.status(400).json({ error: 'text required' });
+  if (r.error === 'too_long') {
+    return res.status(400).json({
+      error: 'too_long',
+      message: validate.wordLengthMessageForLen(r.len),
+      len: r.len,
+      max_word_len: validate.MAX_WORD_LEN,
+    });
+  }
   if (r.error === 'duplicate') return res.status(409).json({ error: 'duplicate' });
   res.json({ ok: true, word: { id: r.id, text: r.text, added_by: r.added_by } });
 });

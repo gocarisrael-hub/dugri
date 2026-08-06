@@ -21,6 +21,7 @@ const SHIPPED_DIR = path.join(__dirname, '..', '..', 'content', 'wordlists');
 const ADMIN_KEY = 'test-admin-key';
 let app;
 let store;
+let validate;
 let server;
 let base;
 let dataDir;
@@ -33,10 +34,18 @@ beforeAll(async () => {
   process.env.ADMIN_KEY = ADMIN_KEY;
   process.env.PUBLIC_BASE_URL = 'https://test.dugri.example';
 
-  for (const f of ['db.js', 'pelecard.js', 'notify.js', 'wordlists.js', 'index.js']) {
+  for (const f of [
+    'db.js',
+    'pelecard.js',
+    'notify.js',
+    'wordlists.js',
+    'validate.js',
+    'index.js',
+  ]) {
     delete require.cache[require.resolve(path.join(serverDir, f))];
   }
   store = require(path.join(serverDir, 'wordlists.js'));
+  validate = require(path.join(serverDir, 'validate.js'));
   app = require(path.join(serverDir, 'index.js'));
 
   await new Promise((resolve) => {
@@ -198,10 +207,84 @@ describe('wordlists store — paste parsing, dedup, normalization', () => {
     expect(store.normKey('  Two   Words  ')).toBe('two words');
   });
 
-  it('caps a single word and the total list length', () => {
-    expect(store.parseWords(['x'.repeat(200)])[0].length).toBe(store.MAX_WORD_LEN);
+  it('caps the total list length', () => {
     const many = Array.from({ length: store.MAX_WORDS + 50 }, (_, i) => 'w' + i);
     expect(store.parseWords(many).length).toBe(store.MAX_WORDS);
+  });
+
+  it('parseWords no longer truncates a long word — splitByLength decides its fate', () => {
+    // parseWords deliberately does NOT apply the length cap: it is also used to
+    // re-parse a pool's EXISTING words, and filtering there would silently delete
+    // the shipped pools' legacy long entries on any re-save.
+    expect(store.parseWords(['x'.repeat(200)])[0].length).toBe(200);
+  });
+});
+
+describe('wordlists store — the per-entry length cap', () => {
+  // Literal 25/26 rather than store.MAX_WORD_LEN: describe bodies evaluate before
+  // beforeAll has required the module. The first test below pins the literal to
+  // the real constant, so these can't quietly stop testing the boundary.
+  const AT_LIMIT = 'x'.repeat(25);
+  const OVER_LIMIT = 'x'.repeat(26);
+
+  it('shares ONE cap with the collection words (validate.MAX_WORD_LEN)', () => {
+    // Pool words are printed on cards exactly like a buyer's own words, so a
+    // second, drifting number here would mean filler could be longer than
+    // anything a customer is allowed to type.
+    expect(store.MAX_WORD_LEN).toBe(validate.MAX_WORD_LEN);
+    expect(store.MAX_WORD_LEN).toBe(25);
+  });
+
+  it('splitByLength keeps exactly 25 and refuses exactly 26', () => {
+    const { kept, tooLong } = store.splitByLength([AT_LIMIT, OVER_LIMIT], []);
+    expect(kept).toEqual([AT_LIMIT]);
+    expect(tooLong).toEqual([OVER_LIMIT]);
+  });
+
+  it('GRANDFATHERS an over-length word that is already in the pool', () => {
+    // The shipped pools contain 46 entries over the cap (longest 41 chars) and the
+    // admin editor round-trips the whole list on every save. Without this, fixing
+    // one typo in a shipped pool would silently delete those 46 words.
+    const { kept, tooLong } = store.splitByLength([OVER_LIMIT], [OVER_LIMIT]);
+    expect(kept).toEqual([OVER_LIMIT]);
+    expect(tooLong).toEqual([]);
+  });
+
+  it('a NEW pool holds every word to the cap and reports what it dropped', () => {
+    const rec = store.create({ name: 'len-new', text: ['מים', OVER_LIMIT, AT_LIMIT].join('\n') });
+    expect(rec.words).toEqual(['מים', AT_LIMIT]);
+    expect(rec.too_long).toEqual([OVER_LIMIT]);
+    // The owner is told, rather than the pool quietly coming up short.
+    expect(rec.warning).toContain('25');
+    expect(rec.warning).toMatch(/[֐-׿]/);
+  });
+
+  it('re-saving a pool keeps its legacy long words but refuses new ones', () => {
+    // Seed a pool that already contains an over-length word (as the shipped ones
+    // do), by writing it through a path that predates the cap.
+    const legacy = 'ל'.repeat(41);
+    store.create({ name: 'len-legacy', text: 'מים' });
+    const seeded = store.update('len-legacy.txt', { words: ['מים'] });
+    expect(seeded.words).toEqual(['מים']);
+    // Simulate the pre-cap file by writing it directly, then re-saving it whole.
+    fs.writeFileSync(path.join(storeDir, 'len-legacy.txt'), 'מים\n' + legacy + '\n', 'utf8');
+
+    const resaved = store.update('len-legacy.txt', { words: ['מים', legacy] });
+    expect(resaved.words).toEqual(['מים', legacy]); // legacy survives untouched
+    expect(resaved.too_long).toEqual([]);
+
+    // ...but a brand-new over-length word in the same save is still refused.
+    const withNew = store.update('len-legacy.txt', { words: ['מים', legacy, OVER_LIMIT] });
+    expect(withNew.words).toEqual(['מים', legacy]);
+    expect(withNew.too_long).toEqual([OVER_LIMIT]);
+  });
+
+  it('appending only an over-length word is a 400 that explains itself', () => {
+    store.create({ name: 'len-append', text: 'מים' });
+    const r = store.update('len-append.txt', { append: OVER_LIMIT });
+    expect(r.httpStatus).toBe(400);
+    expect(r.error).toContain('25');
+    expect(store.read('len-append.txt').words).toEqual(['מים']);
   });
 
   it('append adds one word without disturbing existing order, and rejects a dup', () => {
