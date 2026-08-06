@@ -747,7 +747,33 @@ def _path_points(d):
 # PREDICATES are separate: widening ``frame_box`` to see icons would have made it
 # answer a question it is pinned against (a frame is fill="none", an icon is
 # filled; see ``test_a_filled_shape_is_not_a_frame``).
-Shape = collections.namedtuple("Shape", "name attrs box clip mat")
+class Shape:
+    """One drawn element, in the root's coordinates.
+
+    ``box`` IS PARSED ON DEMAND, and that is the difference between this being a
+    shared walk and being a tax on one. Reading an element's outline means
+    pulling every number out of its ``d`` — thousands of them on a Canva export,
+    and the eight sheets carry about 13,000 elements each. Both callers reject
+    most of what the walk yields before they care where it is (``frame_box`` on
+    "no fill, has a stroke", ``card_obstacles`` on "paints anything at all"), so
+    parsing eagerly did that work for elements nobody asked about: it made
+    ``frame_box`` — which matches a handful of outlines per sheet — 30x slower
+    than it had been, and a deck's layout 70x. Deferred, each caller pays only
+    for the elements its own predicate let through.
+    """
+
+    __slots__ = ("name", "attrs", "clip", "mat", "_box")
+
+    def __init__(self, name, attrs, clip, mat):
+        self.name, self.attrs, self.clip, self.mat = name, attrs, clip, mat
+        self._box = ()                    # () is "not read yet"; None is "cannot"
+
+    @property
+    def box(self):
+        if self._box == ():
+            pts = _shape_points(self.name, self.attrs)
+            self._box = _box_of(self.mat, pts) if pts else None
+        return self._box
 
 
 def _shape_points(name, attrs):
@@ -784,6 +810,7 @@ def _intersect(a, b):
     return [max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])]
 
 
+@functools.lru_cache(maxsize=16)
 def _clip_boxes(svg_text):
     """Each ``<clipPath id=…>``'s bounding box, in its own user space.
 
@@ -798,6 +825,10 @@ def _clip_boxes(svg_text):
 
     The box, not the outline: a clip is a mask of arbitrary shape and this scan
     reserves rectangles, so a clipped element is reported over the clip's extent.
+
+    Cached on the artwork text: a sheet declares its clips once and every walk
+    over it wants the same answer, so re-reading them per card was 104 passes
+    over the ``<defs>`` for one dictionary.
     """
     out = {}
     for cid, body in _CLIPPATH.findall(svg_text):
@@ -818,11 +849,11 @@ def _clip_boxes(svg_text):
 def _svg_shapes(svg_text):
     """Every drawn element of ``svg_text`` as a ``Shape`` in root coordinates.
 
-    ``box`` is the element's own bounding box (None when unreadable, see
-    ``_shape_points``); ``clip`` is the box of the clip in force on it, or None;
-    ``mat`` is the matrix its own coordinates were resolved through, which is
-    what scales a ``stroke-width``.
-    They are kept APART rather than pre-intersected because the two callers want
+    ``box`` is the element's own bounding box, read on first ask and None when
+    it cannot be read (see ``Shape`` and ``_shape_points``); ``clip`` is the box
+    of the clip in force on it, or None; ``mat`` is the matrix its own
+    coordinates were resolved through, which is what scales a ``stroke-width``.
+    Box and clip are kept APART rather than pre-intersected because the callers want
     different answers: the frame scan measures the border's own geometry, which
     is what it was calibrated against, while the obstacle scan wants the paper
     the element actually covers.
@@ -850,11 +881,31 @@ def _svg_shapes(svg_text):
             continue
         if close:
             continue
-        a = dict(_ATTR.findall(attrs))
         t = _mat_mul(stack[-1][0], _parse_transform(attrs))
-        pts = _shape_points(name, a)
-        yield Shape(name, a, _box_of(t, pts) if pts else None,
+        yield Shape(name, dict(_ATTR.findall(attrs)),
                     clipped(t, attrs, stack[-1][1]), t)
+
+
+@functools.lru_cache(maxsize=2)
+def svg_shapes(svg_text):
+    """``_svg_shapes`` for one piece of artwork, walked once.
+
+    The WALK IS A PROPERTY OF THE SHEET and every question asked of it is about
+    ONE CARD: a v1 sheet holds eight, so the same 13,000 elements were being
+    re-parsed eight times to answer eight questions about eight corners of it —
+    and each card asks twice, once for its frame and once for its icons. Held
+    here, the artwork is read once and the ``Shape``s' deferred boxes memoise
+    across every card that goes on to want them.
+
+    TWO entries, which is all it needs and was measured to be: ``card_frame_box``
+    and ``card_obstacle_rects`` already memoise their ANSWERS per (theme, front),
+    so a walk is only ever repeated within one artwork — the eight cards of a
+    sheet, or the two questions each of them asks. Raising it to 4 or 12 moved a
+    104-card deck by under 2%, on either the v1 sheet or the nine-front v2 deck,
+    so the smaller working set is the one to hold: an entry is a sheet's elements
+    with their attributes, and these files run to four megabytes.
+    """
+    return tuple(_svg_shapes(svg_text))
 
 
 # How much of the card a stroked outline must span, and how far it must be inset
@@ -884,7 +935,7 @@ def frame_box(svg_text, cell):
     if w <= 0 or h <= 0:
         return None
     best = None
-    for shape in _svg_shapes(svg_text):
+    for shape in svg_shapes(svg_text):
         a = shape.attrs
         # A frame is a STROKE, not a fill: an outline that paints no interior.
         if (a.get("fill") or "").strip() != "none":
@@ -1114,7 +1165,7 @@ def card_obstacles(svg_text, cell):
 
     small = min(w, h)
     painted, unreadable = [], 0
-    for shape in _svg_shapes(svg_text):
+    for shape in svg_shapes(svg_text):
         if not _paints(shape):
             continue
         if shape.box is None:
@@ -1425,22 +1476,45 @@ def _ink_reach_left(font, ref, line):
     That is not a rounding error, it is the whole of a bug this once had. Fitted
     so its advance stopped exactly on an icon's edge, the entry printed five
     pixels of ink on the icon — the fit measuring advances while the rasteriser
-    painted outlines. Measured here on the RASTERIZED glyphs (``_ink_skyline``,
-    the same per-column reading the line-pitch floor is measured with) the two
-    now agree, and no clearance is being spent to paper over a wrong number.
+    painted outlines. Measured here on the rasterized glyphs, the same way the
+    line-pitch floor is (``_ink_skyline``), so the two now agree and no clearance
+    is being spent to paper over a wrong number.
 
     The line is measured in VISUAL order, because the leftmost glyph of a
     right-to-left line is its last character and the reading has to be of the
     line as it is actually painted. Falls back to the box for a font object with
     no path to re-open — a test double; nothing in production reaches it.
     """
-    adv = font.getlength(line)
     path = getattr(font, "path", None)
+    adv = font.getlength(line)
     if not path:
         return adv - min(0.0, font.getbbox(line)[0])
-    x0, below, _above = _ink_skyline(path, ref, visual_order(line, True))
-    inked = [i for i, v in enumerate(below) if v is not None]
-    return adv - min(0.0, float(x0 + inked[0])) if inked else adv
+    return adv - min(0.0, _ink_left(path, ref, visual_order(line, True)))
+
+
+@functools.lru_cache(maxsize=1024)
+def _ink_left(font_path, ref, line):
+    """The leftmost inked column of a rasterized line, relative to its pen origin.
+
+    Negative when the line's ink hangs off the front of its own advance.
+
+    ``_ink_skyline`` answers this too, and answers far more: it reads every
+    column's depth so two stacked lines can be tested where they actually meet.
+    A left bound needs one number, and the loop that builds the profile is the
+    expensive part of that function — over a deck it was the single largest cost
+    of the icon rule. Same rasterization, same pad, just ``getbbox`` instead of
+    the per-column walk.
+    """
+    from PIL import Image, ImageDraw
+    f = _measuring_font(font_path, ref)
+    pad = int(ref) + 8
+    w = int(f.getlength(line)) + 2 * pad
+    h = 4 * int(ref) + 2 * pad
+    img = Image.new("L", (max(8, w), max(8, h)), 0)
+    ImageDraw.Draw(img).text((pad, 2 * int(ref) + pad), line, font=f, fill=255,
+                             anchor="ls")
+    ink = img.getbbox()
+    return 0.0 if not ink else float(ink[0] - pad)
 
 
 def _grid_cap(centers, counts, flat, lead, font, ref, vbounds):
