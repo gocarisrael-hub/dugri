@@ -124,6 +124,42 @@ function readExtraField(collection, field) {
   return null;
 }
 
+// The extra fields a render should ACTUALLY use for an order, as one flat
+// {FIELD: value} dict — the same sources `readExtraField` consults, plus an
+// optional per-request `override`.
+//
+// This exists because "what we validated" and "what we rendered" were read from
+// two different places. The generate route took the fields from the REQUEST BODY
+// alone and defaulted to {}, while the validator read them off the stored order —
+// and the admin "produce" button posts nothing but `{theme}`. So every produced
+// order rendered with an empty dict: טוקיו's title ("{NAME}'S" / "{AGE}S") lost
+// its age and printed a lone "S", because config.py's title_lines() strips any
+// placeholder it cannot fill. Silent, and only visible on the finished PDF.
+//
+// Precedence, lowest first: order.extra_fields, then collection.extra_fields
+// (matching readExtraField's collection-first result), then `override`. A BLANK
+// value never wins — a layer can only supply a field, never erase one, so a
+// caller that omits (or blanks) a field falls back to what the buyer chose
+// instead of silently dropping it from a paid order. To actually change a
+// field, edit the order (PATCH /api/admin/collections/:id) — the stored order
+// stays the single source of truth for what the buyer bought.
+function effectiveExtraFields(collection, override) {
+  const order = (collection && collection.order) || null;
+  const out = {};
+  const layers = [order && order.extra_fields, collection && collection.extra_fields, override];
+  for (const src of layers) {
+    if (!src || typeof src !== 'object' || Array.isArray(src)) continue;
+    for (const [k, v] of Object.entries(src)) {
+      if (v == null) continue;
+      const key = String(k).trim();
+      const val = String(v).trim();
+      if (!key || !val) continue;
+      out[key] = val;
+    }
+  }
+  return out;
+}
+
 // Check ONE name against a theme's expected script. Returns a human-readable
 // Hebrew warning string when the name doesn't fit the theme's name_form, or null
 // when it fits (or there is nothing to check). Shared by the pre-production
@@ -184,6 +220,8 @@ module.exports = {
   loadThemes,
   getTheme,
   checkNameLanguage,
+  readExtraField,
+  effectiveExtraFields,
   validateOrderForProduction,
   MAX_WORD_LEN,
   normalizeWordText,
