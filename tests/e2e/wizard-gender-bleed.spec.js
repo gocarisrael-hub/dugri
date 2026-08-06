@@ -135,6 +135,40 @@ test.describe('honoree gender', () => {
     await page.getByTestId('next-btn').click(); // create
     await expect.poll(() => captured.body && captured.body.gender).toBe('male');
   });
+
+  test('the pick is sent with the PREVIEW and re-renders when it changes', async ({ page }) => {
+    // A Hebrew title carrying a "{m:בן|f:בת}" marker prints a different word per
+    // gender, so the sample card on this very step is stale the moment the pick
+    // changes. The buyer approves what she sees here — it has to be her card.
+    const seen = [];
+    await page.route('**/api/preview', async (route) => {
+      seen.push(route.request().postDataJSON().gender);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          card: PNG,
+          back: PNG,
+          board: PNG,
+          warning: null,
+          word_font: null,
+          word_font_options: [],
+        }),
+      });
+    });
+    await page.goto('/options.html?plan=base');
+    await expect(page.getByTestId('step-1')).toBeVisible();
+    await page.getByTestId('next-btn').click();
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('step-3')).toBeVisible();
+    await page.getByTestId('honoree-input').fill('Shira');
+
+    await page.getByTestId('gender-female').check();
+    await expect.poll(() => seen.includes('female')).toBe(true);
+    // switching the pick must trigger a FRESH render for the other gender
+    await page.getByTestId('gender-male').check();
+    await expect.poll(() => seen.includes('male')).toBe(true);
+  });
 });
 
 test.describe('full-page preview has no fake bleed frame', () => {

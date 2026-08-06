@@ -29,7 +29,7 @@ from topup import topup
 def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                  word_font=None, workdir=None, progress=False, chasers=False,
                  custom_title=None, photos=None, press_icc=None,
-                 press_bleed=None):
+                 press_bleed=None, gender=None):
     """Render an order and return ``(out_pdf, page_count, board_pdf)``.
 
     ``board_pdf`` is the separate board file a v2 (single-card) template
@@ -49,6 +49,11 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
     photos        absolute paths to the customer's pawn photos for the final
                   photo card (v2 only); fewer than four are topped up from the
                   theme's generic Dugri fallback set
+    gender        the honoree's gender ('male' / 'female' / None), which resolves
+                  the title's {feminine|masculine} markers — Hebrew is gendered,
+                  so "{NAME} {בת|בן} {AGE}" prints בת for a girl and בן for a
+                  boy. None takes the FIRST (feminine) form; a title carrying no
+                  marker renders exactly as it always did.
     """
     cfg = config.theme(theme_key)
     config.ensure_calibrated(cfg)  # fail fast on an uncalibrated theme
@@ -91,7 +96,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                 extra_fields=extra_fields or {}, word_font=word_font,
                 workdir=os.path.join(workdir, "build"), progress=progress,
                 chasers=chasers, custom_title=custom_title, photos=photos,
-                press_icc=press_icc, press_bleed=press_bleed,
+                press_icc=press_icc, press_bleed=press_bleed, gender=gender,
             )
 
         fronts = config.clean_path(theme_key, "fronts")
@@ -103,7 +108,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
             theme_key, fronts, board, csv_path, name, out_pdf,
             backs=backs, extra_fields=extra_fields or {}, word_font=word_font,
             workdir=os.path.join(workdir, "build"), progress=progress,
-            chasers=chasers, custom_title=custom_title,
+            chasers=chasers, custom_title=custom_title, gender=gender,
         )
         return pdf, pages, None
     except BaseException:
@@ -152,6 +157,10 @@ def main():
                     help="bleed depth in mm for --press (default: the agreed 3)")
     ap.add_argument("--title", default=None,
                     help="optional custom title overriding the theme-derived title")
+    ap.add_argument("--gender", default=None, choices=["male", "female"],
+                    help="the honoree's gender, resolving the title's "
+                         "{feminine|masculine} markers (e.g. {בת|בן}). Omitted "
+                         "takes the first (feminine) form")
     ap.add_argument("--photo", action="append", default=[], metavar="PATH",
                     help="a customer pawn photo for the photo card (repeatable, up to 4)")
     args = ap.parse_args()
@@ -161,7 +170,7 @@ def main():
         args.theme, args.name, _parse_fields(args.field), personal,
         out_pdf=args.out_pdf, word_font=args.word_font, progress=True,
         chasers=args.chasers, custom_title=args.title, photos=args.photo,
-        press_icc=args.press, press_bleed=args.bleed,
+        press_icc=args.press, press_bleed=args.bleed, gender=args.gender,
     )
     print(f"\nwrote {pdf} ({pages} pages)")
     # Printed on its own line so the server can pick the board artifact out of

@@ -4984,6 +4984,13 @@
               name,
               extra_fields: collectedExtraFields(),
               word_font: chosenWordFont,
+              // The honoree's gender, picked one control above this preview.
+              // Hebrew titles are gendered ("{NAME} {בת|בן} {AGE}"), so without
+              // it the buyer would approve a card that prints the wrong word —
+              // and the whole point of this step is that what she sees is what
+              // gets printed. null until she picks (the step can't be left
+              // without picking), which renders the feminine form.
+              gender: selectedGender(),
               // The chasers add-on toggle (step 2) drives which board variant the
               // server renders, so the name-step board preview matches the order.
               chasers,
@@ -5661,10 +5668,30 @@
       genderModal.addEventListener('click', (e) => {
         if (e.target === genderModal) closeGenderModal();
       });
-      // picking a gender clears the prompt if it's up
-      document
-        .querySelectorAll('input[name="gender"]')
-        .forEach((el) => el.addEventListener('change', closeGenderModal));
+      // Picking a gender clears the prompt if it's up — and RE-RENDERS the
+      // preview: a gendered Hebrew title ("{NAME} {m:בן|f:בת} {AGE}") prints a
+      // different word per gender, so the card on screen is stale the moment the
+      // pick changes.
+      //
+      // Deliberately NOT requestPreview(): that re-closes the create gate
+      // (resetPreviewGate), which would DISABLE "הבא" on this very step until a
+      // second render landed — so every buyer would pick a gender and find the
+      // wizard locked behind another spinner. The gate exists so nobody creates a
+      // game having seen NO preview; this buyer has already seen one for this name
+      // and design, and a gender swaps at most one word of the title. So we bump
+      // the sequence (making any in-flight render inert) and fetch the new image
+      // straight away, leaving the current card on screen until it swaps in.
+      function refreshPreviewForGender() {
+        if (!FEATURES.name_preview || !previewReady()) return;
+        clearTimeout(previewTimer);
+        doPreview(0, ++previewSeq);
+      }
+      document.querySelectorAll('input[name="gender"]').forEach((el) =>
+        el.addEventListener('change', () => {
+          closeGenderModal();
+          refreshPreviewForGender();
+        })
+      );
 
       function next() {
         if (!validateStep(currentStep)) return;

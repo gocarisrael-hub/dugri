@@ -192,6 +192,7 @@ function runGenerator({
   chasers,
   customTitle,
   photos,
+  gender,
 }) {
   return new Promise((resolve, reject) => {
     let wordsFile;
@@ -220,6 +221,12 @@ function runGenerator({
     // --title=<value> (single token) so a title that starts with '-' (e.g. "-40",
     // "-רווקות") is never parsed by argparse as an option and crash the generator.
     if (customTitle) args.push('--title=' + customTitle);
+    // Honoree gender: resolves the title's {feminine|masculine} markers, so a
+    // Hebrew birthday title prints בת for a girl and בן for a boy from one
+    // template. Only ever the two validated values (the collection stores
+    // 'male'/'female'/null) — argparse `choices` would kill the run on anything
+    // else, and a title with no marker is unaffected either way.
+    if (gender === 'male' || gender === 'female') args.push('--gender', gender);
     // The customer's pawn photos for the deck's photo card (v2 templates). A v1
     // theme ignores them, so passing them is always safe.
     for (const photo of photos || []) args.push('--photo', photo);
@@ -333,6 +340,7 @@ function runPreview({
   customTitle,
   calibration,
   withBoard = true,
+  gender,
 }) {
   return new Promise((resolve, reject) => {
     let outDir;
@@ -378,6 +386,11 @@ function runPreview({
     // --title=<value> (single token) so a title that starts with '-' (e.g. "-40",
     // "-רווקות") is never parsed by argparse as an option and crash the generator.
     if (customTitle) args.push('--title=' + customTitle);
+    // Honoree gender: resolves the title's {feminine|masculine} markers. Passed
+    // for the SAME reason the custom title is — the preview is the buyer's (and
+    // the owner's) look at what will be printed, so it has to resolve the title
+    // exactly the way production will, or a girl approves a card that prints בן.
+    if (gender === 'male' || gender === 'female') args.push('--gender', gender);
     const child = spawnGenerator(args);
     let stdout = '';
     let stderr = '';
@@ -802,6 +815,12 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       chasers: !!c.chasers,
       customTitle: c.custom_title || null,
       photos: pawnPhotoFiles(c),
+      // From the STORED collection, never the request body. The wizard asks the
+      // buyer for the honoree's gender once and it is validated to
+      // 'male'/'female'/null at the door (db.createCollection), so the order
+      // itself is the only place that knows it — an admin clicking "produce"
+      // posts an empty body and must still get בת on a girl's cards.
+      gender: c.gender || null,
     });
     // The board is a second, separate artifact — recorded on production so the
     // admin UI knows whether to offer it, and left null for a generator run that
@@ -1737,6 +1756,12 @@ app.post('/api/preview', async (req, res) => {
   // Custom title (F7): the buyer's optional overriding title. Sanitized with the
   // SAME rule stored orders use, so the live preview is WYSIWYG for production.
   const customTitle = db.sanitizeCustomTitle(b.title);
+  // Honoree gender, resolving the title's {feminine|masculine} markers. Unlike
+  // the generate route there is no stored collection to read here — the wizard
+  // previews BEFORE the order exists — so it comes from the body, narrowed to
+  // the same two values db.createCollection accepts. Anything else is null,
+  // which takes the feminine form rather than defaulting to the masculine one.
+  const gender = b.gender === 'male' || b.gender === 'female' ? b.gender : null;
 
   // Owner CALIBRATION preview: when the admin form sends unsaved look-knobs
   // (`calibration`), render the theme with those overrides so the owner sees the
@@ -1770,6 +1795,9 @@ app.post('/api/preview', async (req, res) => {
     extraFields,
     chasers,
     customTitle,
+    // A gendered title renders DIFFERENT text per gender, so the same name must
+    // not be served the other gender's cached card.
+    gender,
     // Distinct knob sets must not collide, and a calibration preview must never
     // be served a plain (uncalibrated) cache entry or vice-versa.
     calibration,
@@ -1817,6 +1845,7 @@ app.post('/api/preview', async (req, res) => {
       customTitle,
       calibration,
       withBoard,
+      gender,
     });
     previewCache.set(cacheKey, imgs);
     res.json({
@@ -1897,6 +1926,10 @@ app.get('/api/collections/:id/summary', async (req, res) => {
           word_font: c.word_font || null,
           title: c.custom_title || null,
           chasers: !!c.chasers,
+          // The stored honoree gender, so the confirmation page's re-render
+          // resolves a gendered title (בת/בן) the same way the wizard's preview
+          // and the printed deck do.
+          gender: c.gender || null,
         }
       : null,
   });

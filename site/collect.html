@@ -1298,8 +1298,8 @@
               ><span data-edit="collect-cat-jokes-eg">סיפורים שרק אתם מבינים</span>
             </div>
             <div class="cat">
-              <b data-edit="collect-cat-sayings-title">ביטויים שלו</b
-              ><span data-edit="collect-cat-sayings-eg">מה שהוא תמיד אומר</span>
+              <b data-edit="collect-cat-sayings-title">ביטויים שלו/שלה</b
+              ><span data-edit="collect-cat-sayings-eg">מה שהוא/היא תמיד אומר/ת</span>
             </div>
             <div class="cat">
               <b data-edit="collect-cat-habits-title">הרגלים</b
@@ -1325,7 +1325,7 @@
       <div class="card share hidden" id="sharePanel">
         <div class="sec-h" data-edit="collect-share-heading">📨 שתפו עם החברות</div>
         <p class="muted" data-edit="collect-share-hint">
-          שלחו את הקישור הזה לכל מי שמכיר/ה את בעלת השמחה:
+          שלחו את הקישור הזה לכל מי שמכיר/ה את בעל/ת השמחה:
         </p>
         <a
           class="share-wa"
@@ -1752,8 +1752,12 @@
         });
       }
 
-      // Honoree gender drives phrasing on the prompts. The public view may not
-      // expose it yet (feature landing separately); default to feminine wording.
+      // Honoree gender drives phrasing on the prompts. publicView ships `gender`
+      // on every read now (owner AND contributor), so this is the buyer's own
+      // answer whenever the order has one; the fallback covers a legacy row that
+      // predates the required picker. Anything on this page that is NOT rendered
+      // through renderQ() must use the neutral "בעל/ת השמחה" slash form rather
+      // than pick a gender — a static string cannot know which order it is on.
       function gender() {
         return (state && state.gender) || 'female';
       }

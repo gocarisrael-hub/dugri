@@ -122,6 +122,22 @@ describe('per-event prompt sets', () => {
     }
   });
 
+  it('no single-honoree prompt hardcodes a gendered Hebrew verb form', () => {
+    // Regression: 'האוכל ש{name} מסרבת בכל תוקף לאכול' shipped the FEMININE verb
+    // with no alternation, sitting between two prompts that had one — so a boy's
+    // order was asked a question phrased for a girl. The rule for these banks is
+    // that a gendered word carries a {feminine|masculine} alternation; couple
+    // prompts are exempt (they are about the pair, covered above).
+    //
+    // Feminine verb endings common in these prompts. Cheap and specific: a real
+    // alternation removes the ending from the rendered masculine text.
+    const FEMININE = /(אוהבת|חוגגת|קוראת|גדלה|חולמת|גרה|סומכת|מסרבת|משתמשת|אומרת|נחה|שונאת)/;
+    for (const p of PROMPTS.concat(KIDS_PROMPTS)) {
+      const male = renderQuestion(p.text, 'שם', 'male');
+      expect(male, p.text).not.toMatch(FEMININE);
+    }
+  });
+
   it('flat kids/couple banks match their nested category sources', () => {
     expect(KIDS_PROMPTS.length).toBe(KIDS_CATEGORIES.flatMap((c) => c.questions).length);
     expect(COUPLE_PROMPTS.length).toBe(COUPLE_CATEGORIES.flatMap((c) => c.questions).length);
