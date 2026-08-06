@@ -109,7 +109,9 @@ describe('GET /api/admin/designs — merged built-in + template catalog', () => 
   it('reports the built-in designs exactly as before (names, assets, kids board gap)', async () => {
     const { byId } = await load();
     expect(byId.bachelorette).toMatchObject({
-      name: 'מסיבת רווקות',
+      // The theme's LIVE display_he ('רווקות' in the crafted themes.json above) —
+      // NOT the name baked into site/js/designs.js. See the naming block below.
+      name: 'רווקות',
       theme: 'bachelorette',
       custom: false,
       public: true,
@@ -284,6 +286,69 @@ describe('GET /api/admin/designs — merged built-in + template catalog', () => 
     expect(byId['owner-tpl'].slots.front).toBe('/api/template-image/owner-tpl/front');
 
     fs.rmSync(storeRoot, { recursive: true, force: true });
+  });
+
+  // ---- ONE display-name rule for both kinds -------------------------------
+  //
+  // The drift the owner reported: every design had been renamed through the admin
+  // (the rename lands in themes.json display_he, on the VOLUME), and the admin
+  // screens still showed the name hardcoded in site/js/designs.js — so the same
+  // design was "פריז" on the storefront and "מסיבת רווקות" in the admin. The merge
+  // used two rules: `d.name` (bundled catalog) for a built-in, `display_he` for a
+  // template. Now BOTH resolve through templates.displayNameForDesign.
+
+  it('names a BUILT-IN design from its theme display_he, exactly like a template', async () => {
+    const { byId } = await load();
+    // bachelorette's theme IS `bachelorette`, renamed to 'רווקות' in the crafted
+    // themes.json — the bundled catalog name must not win here.
+    expect(byId.bachelorette.name).toBe('רווקות');
+    expect(byId.bachelorette.custom).toBe(false);
+    // ...and a template still reports its own display_he: one rule, both kinds.
+    expect(byId['my-custom'].name).toBe('עיצוב שלי');
+  });
+
+  it('agrees with GET /api/design-names on every design that endpoint names', async () => {
+    // The invariant that keeps the two screens from drifting again: whatever the
+    // storefront calls a design, the admin calls it too. Asserted as id=name pairs
+    // so a mismatch names the offending design in the failure output.
+    const { byId } = await load();
+    const { names } = await (await fetch(base + '/api/design-names')).json();
+    expect(Object.keys(names).length).toBeGreaterThan(0);
+    for (const [id, name] of Object.entries(names)) {
+      expect(byId[id]).toBeTruthy();
+      expect(id + '=' + byId[id].name).toBe(id + '=' + name);
+    }
+  });
+
+  it('falls back to the bundled catalog name when the theme carries no display_he', async () => {
+    // `kids` maps to the birthday-boys-basketball theme, which the crafted
+    // themes.json does not define — the admin must still show a readable name
+    // rather than blanking the row or printing the id.
+    const { byId } = await load();
+    const { DESIGNS } = await import('../../site/js/designs.js');
+    const bundled = DESIGNS.find((d) => d.id === 'kids');
+    expect(byId.kids.name).toBe(bundled.name);
+    expect('kids' in (await (await fetch(base + '/api/design-names')).json()).names).toBe(false);
+  });
+
+  it('picks up a RENAME of a built-in design with no restart', async () => {
+    const themesFile = path.join(root, 'generator', 'themes.json');
+    const good = fs.readFileSync(themesFile, 'utf8');
+    const themes = JSON.parse(good);
+    themes.bachelorette.display_he = 'פריז';
+    fs.writeFileSync(themesFile, JSON.stringify(themes, null, 1) + '\n', 'utf8');
+    const future = new Date(Date.now() + 5000);
+    fs.utimesSync(themesFile, future, future);
+    try {
+      const { byId } = await load();
+      expect(byId.bachelorette.name).toBe('פריז');
+      const { names } = await (await fetch(base + '/api/design-names')).json();
+      expect(names.bachelorette).toBe('פריז');
+    } finally {
+      fs.writeFileSync(themesFile, good, 'utf8');
+      const later = new Date(Date.now() + 10000);
+      fs.utimesSync(themesFile, later, later);
+    }
   });
 
   it('degrades to the built-ins when themes.json is unreadable', async () => {

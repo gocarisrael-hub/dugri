@@ -3381,7 +3381,11 @@ app.get('/api/custom-designs', async (req, res) => {
       if (!img.front && !img.back && !img.board) continue;
       out.push({
         id: key,
-        name: (typeof t.display_he === 'string' && t.display_he.trim()) || key,
+        // The ONE display-name rule (templates.displayNameForDesign) — a custom
+        // design IS its own theme, so this is its live `display_he`, resolved the
+        // same way /api/design-names and the admin catalog resolve every other
+        // design's name.
+        name: templates.displayNameForDesign(themes, { id: key, theme: key }),
         theme: key,
         custom: true,
         public: true,

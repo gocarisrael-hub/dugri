@@ -1080,12 +1080,7 @@
 
     <script type="module">
       import { initCarousel } from './js/carousel.js';
-      import {
-        PUBLIC_DESIGNS,
-        fetchDesignNames,
-        applyDesignNames,
-        loadCustomDesigns,
-      } from './js/designs.js';
+      import { PUBLIC_DESIGNS, syncDesignNames, loadCustomDesigns } from './js/designs.js';
       import { fetchPricing } from './js/pricing.js';
       import { loadDesignImages, galleryFor } from './js/design-images.js';
 
@@ -1228,13 +1223,18 @@
         // First paint from the bundled catalog — never blocks on the network.
         paintRail();
 
-        // Fail-soft: the fetcher resolves to {} on timeout/error, applyDesignNames
-        // then changes nothing and the built-in names stand.
-        fetchDesignNames().then((names) => {
-          railNames = names || {};
-          applyDesignNames(railNames, railDesigns);
-          applyRailNames();
-        });
+        // The ONE name-sync helper (js/designs.js): it writes the live names onto
+        // the rail's design objects, then this callback re-stamps the cards that
+        // were already painted. Fail-soft: {} on timeout/error changes nothing and
+        // the built-in names stand. `railNames` is kept because a CUSTOM design
+        // can join the rail after this resolves.
+        syncDesignNames(
+          (names) => {
+            railNames = names || {};
+            applyRailNames();
+          },
+          { lists: [railDesigns] }
+        );
 
         // Timeout-bounded + fail-safe (js/design-images.js): a slow/failed fetch
         // leaves the shipped renders in place.

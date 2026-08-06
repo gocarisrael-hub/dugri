@@ -3017,6 +3017,36 @@ function revertTemplate({ root, key }) {
   return { ok: true, key, reverted: true };
 }
 
+// ---- THE display-name rule -------------------------------------------------
+//
+// ONE question — "what is this design called RIGHT NOW?" — answered in ONE place,
+// because answering it twice is exactly how the site drifted: the storefront read
+// the live themes.json label while the admin catalog read the name baked into
+// site/js/designs.js at build time, so the same design was "פריז" on the shop
+// floor and "מסיבת רווקות" in the admin. A rename is stored on the VOLUME
+// (DATA_DIR/templates/themes.json, laid over the shipped file — see loadThemes),
+// so the REPO can only ever hold a DEFAULT; the live label has to be resolved,
+// never hardcoded. Every surface that shows a design name resolves it through the
+// two functions below, so the next rename propagates with no code change:
+//   • designDisplayNames() — the public { id: name } map (GET /api/design-names)
+//   • displayNameForDesign() — one design's name WITH its built-in fallback
+//     (server/design-catalog.js, GET /api/custom-designs)
+// Both are pure (no fs/network), expose ONLY names — never any other theme field
+// — and route their theme lookup through `ownTheme`, which rejects
+// prototype-pollution keys.
+
+// The owner-set label of a generator theme, trimmed; '' when `themes` is missing,
+// the key is unknown, or the entry carries no usable `display_he`. '' means "the
+// owner has not named this" — it is NEVER a name, so callers can safely treat it
+// as "fall back".
+function themeDisplayName(themes, theme) {
+  if (!themes || typeof themes !== 'object') return '';
+  if (typeof theme !== 'string' || !theme) return '';
+  const entry = ownTheme(themes, theme);
+  const name = entry && typeof entry.display_he === 'string' ? entry.display_he.trim() : '';
+  return name;
+}
+
 // Build the PUBLIC { <designId>: displayName } map the storefront uses to show a
 // current, owner-renamable name. Each orderable design (from site/js/designs.js,
 // passed in as [{ id, theme }]) is resolved to its generator theme, and that
@@ -3025,21 +3055,33 @@ function revertTemplate({ root, key }) {
 // products.html / the product page without a rebuild. This is the slug↔product-id
 // BRIDGE: designs carry `theme` (the themes.json key), so no separate mapping is
 // needed. A design whose theme is unmapped, missing, or has no `display_he` is
-// OMITTED (the page keeps its built-in catalog name). Pure (no fs/network) and
-// exposes ONLY names — never any other theme field — so it is safe to serialize
-// to any visitor and trivial to unit-test. `ownTheme` guards the theme lookup
-// against prototype-pollution keys.
+// OMITTED (the page keeps its built-in catalog name) — that omission is the
+// contract the buyer-side fetcher relies on, so this map stays "owner-set names
+// only". Callers that need a name for EVERY design use displayNameForDesign.
 function designDisplayNames(themes, designs) {
   const out = {};
-  if (!themes || typeof themes !== 'object') return out;
   const list = Array.isArray(designs) ? designs : [];
   for (const d of list) {
-    if (!d || typeof d.id !== 'string' || typeof d.theme !== 'string') continue;
-    const entry = ownTheme(themes, d.theme);
-    const name = entry && typeof entry.display_he === 'string' ? entry.display_he.trim() : '';
+    if (!d || typeof d.id !== 'string') continue;
+    const name = themeDisplayName(themes, d.theme);
     if (name) out[d.id] = name;
   }
   return out;
+}
+
+// The display name of ONE design, always a usable string: the owner's current
+// themes.json label if there is one, else the design's own built-in catalog name,
+// else its id. This is what a screen listing designs (the admin catalog, the
+// custom-design storefront feed) asks for — it must render SOMETHING for a design
+// whose theme was never named, and that something must be the same string
+// /api/design-names would serve whenever a name exists.
+function displayNameForDesign(themes, design) {
+  if (!design || typeof design !== 'object') return '';
+  const live = themeDisplayName(themes, design.theme);
+  if (live) return live;
+  const own = typeof design.name === 'string' ? design.name.trim() : '';
+  if (own) return own;
+  return typeof design.id === 'string' ? design.id : '';
 }
 
 // The FILLED SVG a storefront picture slot (front|back|board) maps to, RELATIVE
@@ -3408,6 +3450,8 @@ module.exports = {
   titleLinesFrom,
   replaceAsset,
   designDisplayNames,
+  displayNameForDesign,
+  themeDisplayName,
   LANGUAGES,
   VISIBILITIES,
 };

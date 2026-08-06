@@ -3441,8 +3441,7 @@
         themeForDesign,
         extraFieldsForDesign,
         languageForDesign,
-        fetchDesignNames,
-        applyDesignNames,
+        syncDesignNames,
         loadCustomDesigns,
       } from './js/designs.js';
       import {
@@ -3926,30 +3925,34 @@
       window.addEventListener('resize', capDesignPicker);
 
       // An admin rename (themes.json display_he) has to reach the wizard too —
-      // otherwise the shopper picks "מסיבת רווקות" in the store and lands on a tile
-      // still labelled with the built-in name. applyDesignNames writes onto the
-      // catalog objects, so it also fixes what is read AFTER this point: the
-      // select_design analytics label and the `designName` stored on the order.
-      // Tiles are re-stamped here because they were already painted. Fail-soft: {}
-      // on timeout/error leaves every built-in name exactly as it is.
-      fetchDesignNames().then((names) => {
-        if (!applyDesignNames(names, DESIGNS).length) return;
-        for (const d of DESIGNS) {
-          const btn = designButtons.get(d.id);
-          if (!btn) continue;
-          btn.setAttribute('aria-label', d.name);
-          const dname = btn.querySelector('.dname');
-          if (dname) dname.textContent = d.name;
-          const img = btn.querySelector('.thumb img');
-          if (img) img.alt = d.name;
-          else {
-            const thumb = btn.querySelector('.thumb');
-            // Text-only tile (no raster thumb, or its load failed) — the label IS
-            // the thumb, so it has to move with the rename.
-            if (thumb && thumb.textContent.trim()) thumb.textContent = d.name;
+      // otherwise the shopper picks a design called "פריז" in the store and lands
+      // on a tile still labelled with the bundled default. syncDesignNames (the ONE
+      // name-sync helper, js/designs.js) writes onto the catalog objects FIRST, so
+      // it also fixes what is read AFTER this point: the select_design analytics
+      // label and the `designName` stored on the order. Tiles are re-stamped in the
+      // callback because they were already painted. Fail-soft: {} on timeout/error
+      // leaves every built-in name exactly as it is.
+      syncDesignNames(
+        (names, changed) => {
+          if (!changed.length) return;
+          for (const d of DESIGNS) {
+            const btn = designButtons.get(d.id);
+            if (!btn) continue;
+            btn.setAttribute('aria-label', d.name);
+            const dname = btn.querySelector('.dname');
+            if (dname) dname.textContent = d.name;
+            const img = btn.querySelector('.thumb img');
+            if (img) img.alt = d.name;
+            else {
+              const thumb = btn.querySelector('.thumb');
+              // Text-only tile (no raster thumb, or its load failed) — the label IS
+              // the thumb, so it has to move with the rename.
+              if (thumb && thumb.textContent.trim()) thumb.textContent = d.name;
+            }
           }
-        }
-      });
+        },
+        { lists: [DESIGNS] }
+      );
 
       /* ---- private-design access code ("יש לך קוד?") ---- */
       // Validate a code against the server; on success reveal that (hidden)

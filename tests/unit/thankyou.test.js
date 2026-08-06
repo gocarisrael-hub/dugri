@@ -2,6 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { selectionNamesFromIds, PLAN_LABELS } from '../../site/js/configurator.js';
 import { DESIGNS, MAIN_COLORS } from '../../site/js/designs.js';
 
+// A design's display name is owner-renamable (generator/themes.json display_he,
+// mirrored as the bundled first-paint default in site/js/designs.js), so the
+// expected name is READ FROM THE CATALOG rather than hardcoded here — a hardcoded
+// copy would just be one more place a rename has to be chased through.
+const nameOf = (id) => DESIGNS.find((d) => d.id === id).name;
+
 describe('selectionNamesFromIds (thankyou.html URL fallback)', () => {
   it('translates real design/color/plan ids to Hebrew names', () => {
     const out = selectionNamesFromIds(
@@ -10,7 +16,7 @@ describe('selectionNamesFromIds (thankyou.html URL fallback)', () => {
       MAIN_COLORS,
       PLAN_LABELS
     );
-    expect(out.designName).toBe('יום הולדת');
+    expect(out.designName).toBe(nameOf('birthday'));
     expect(out.colorName).toBe('סגול');
     expect(out.planLabel).toBe('החבילה המלאה');
     expect(out.plan).toBe('base');
@@ -23,7 +29,7 @@ describe('selectionNamesFromIds (thankyou.html URL fallback)', () => {
       MAIN_COLORS,
       PLAN_LABELS
     );
-    expect(out.designName).toBe('יום הולדת לילדים');
+    expect(out.designName).toBe(nameOf('kids'));
     expect(out.colorName).toBe('מקורי');
     expect(out.planLabel).toBe('החבילה המלאה');
   });

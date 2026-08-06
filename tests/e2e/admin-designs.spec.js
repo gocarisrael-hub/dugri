@@ -30,9 +30,13 @@ test.describe('admin designs — asset inventory', () => {
     expect(designs.length).toBeGreaterThanOrEqual(6);
 
     const byId = Object.fromEntries(designs.map((d) => [d.id, d]));
-    // Expected designs are present with Hebrew names + theme.
+    // Expected designs are present with a non-empty name + their theme. The name
+    // ITSELF is asserted against the storefront's in the test below: it is
+    // owner-renamable, so hardcoding it here would just be one more place to
+    // update on a rename — which is the drift this endpoint is supposed to end.
     expect(byId.bachelorette).toBeTruthy();
-    expect(byId.bachelorette.name).toBe('מסיבת רווקות');
+    expect(byId.bachelorette.name).toBeTruthy();
+    expect(byId.bachelorette.theme).toBe('bachelorette');
     expect(byId.kids).toBeTruthy();
 
     // kids ships without a board: board.svg / thumb-board / gallery-board missing.
@@ -55,6 +59,36 @@ test.describe('admin designs — asset inventory', () => {
     const bach = byId.bachelorette;
     expect(bach.complete).toBe(true);
     expect(bach.missing).toEqual([]);
+  });
+
+  // The owner's report: "different names for the same template". Every design had
+  // been renamed through the admin (the rename lands in generator/themes.json
+  // display_he), the storefront picked the new name up from /api/design-names, and
+  // the admin screens kept showing the name hardcoded in site/js/designs.js —
+  // because the merge used `d.name` for a built-in and `display_he` for a
+  // template. Both now resolve through templates.displayNameForDesign, so this
+  // parity holds for every design the storefront can name.
+  test('the admin catalog names every design exactly as the storefront does', async ({
+    request,
+  }) => {
+    const [adminRes, publicRes] = await Promise.all([
+      request.get(`/api/admin/designs?key=${KEY}`),
+      request.get('/api/design-names'),
+    ]);
+    const { designs } = await adminRes.json();
+    const { names } = await publicRes.json();
+    // The storefront must actually name something, or this test proves nothing.
+    expect(Object.keys(names).length).toBeGreaterThan(0);
+
+    const byId = Object.fromEntries(designs.map((d) => [d.id, d]));
+    for (const [id, name] of Object.entries(names)) {
+      expect(byId[id]).toBeTruthy();
+      // id=name pairs so a mismatch names the offending design in the output.
+      expect(`${id}=${byId[id].name}`).toBe(`${id}=${name}`);
+    }
+    // ...and specifically for a BUILT-IN design, which is the branch that drifted.
+    expect(byId.bachelorette.custom).toBe(false);
+    expect(byId.bachelorette.name).toBe(names.bachelorette);
   });
 
   // An uploaded template is a design like any other here. It used to be absent —

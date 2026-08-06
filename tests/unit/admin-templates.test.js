@@ -1908,6 +1908,48 @@ describe('templates.designDisplayNames — the storefront name bridge', () => {
     expect(templates.designDisplayNames(themes, [{ id: 'x', theme: '__proto__' }])).toEqual({});
     expect(templates.designDisplayNames(themes, [{ id: 'x', theme: 'constructor' }])).toEqual({});
   });
+
+  // displayNameForDesign answers the SAME question for ONE design, with the
+  // fallback a listing screen needs (it must render something for every row).
+  // Both functions read through themeDisplayName, so the admin catalog and
+  // /api/design-names can never disagree about what a design is called.
+  describe('templates.displayNameForDesign — one design, always a usable name', () => {
+    it('prefers the theme display_he, trimmed', () => {
+      expect(
+        templates.displayNameForDesign(themes, { id: 'birthday', theme: 'birthday-girls' })
+      ).toBe('יום הולדת בנות');
+    });
+
+    it('agrees with designDisplayNames wherever that map has an entry', () => {
+      const map = templates.designDisplayNames(themes, designs);
+      for (const d of designs) {
+        if (!(d.id in map)) continue;
+        expect(templates.displayNameForDesign(themes, d)).toBe(map[d.id]);
+      }
+    });
+
+    it('falls back to the built-in catalog name, then the id', () => {
+      // theme absent from themes.json
+      expect(
+        templates.displayNameForDesign(themes, { id: 'ghost', theme: 'nope', name: 'שם מובנה' })
+      ).toBe('שם מובנה');
+      // theme present but unnamed, and no usable built-in name either
+      expect(
+        templates.displayNameForDesign(themes, { id: 'blank', theme: 'no-name', name: '  ' })
+      ).toBe('blank');
+      expect(templates.displayNameForDesign(null, { id: 'solo', name: 'רק שם' })).toBe('רק שם');
+    });
+
+    it('is defensive: junk input and dangerous theme keys never throw', () => {
+      expect(templates.displayNameForDesign(themes, null)).toBe('');
+      expect(templates.displayNameForDesign(themes, 'nope')).toBe('');
+      expect(
+        templates.displayNameForDesign(themes, { id: 'x', theme: '__proto__', name: 'n' })
+      ).toBe('n');
+      expect(templates.themeDisplayName(themes, 'constructor')).toBe('');
+      expect(templates.themeDisplayName(null, 'bachelorette')).toBe('');
+    });
+  });
 });
 
 // An over-sized upload is rejected by body-parser (express.raw) with a 413 BEFORE

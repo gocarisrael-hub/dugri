@@ -2,7 +2,7 @@
  "trip comeback": {
   "slug": "trip-comeback",
   "wordlist": "friends-350.txt",
-  "display_he": "דוגרי מסיבת חזרה מטיול",
+  "display_he": "סיישל",
   "dir": "resources/canva/templates/trip comeback",
   "recipe": "trip",
   "visibility": "public",
@@ -57,7 +57,7 @@
  "bachelorette": {
   "slug": "bachelorette",
   "wordlist": "bachelorette-350.txt",
-  "display_he": "דוגרי רווקות",
+  "display_he": "פריז",
   "dir": "resources/canva/templates/bachelorette",
   "recipe": "bachelorette",
   "visibility": "public",
@@ -105,7 +105,7 @@
  "birthday-girls": {
   "slug": "birthday-girls",
   "wordlist": "generic-350.txt",
-  "display_he": "דוגרי יום הולדת בנות",
+  "display_he": "קליפורניה",
   "dir": "resources/canva/templates/birthday-girls",
   "recipe": "birthday-girls",
   "visibility": "public",
@@ -154,7 +154,7 @@
  "birthday-boys-basketball": {
   "slug": "birthday-boys-basketball",
   "wordlist": "generic-350.txt",
-  "display_he": "דוגרי יום הולדת בנים כדורסל",
+  "display_he": "ברוקלין",
   "dir": "resources/canva/templates/birthday-boys-basketball",
   "recipe": "birthday-boys-basketball",
   "fix_ring_discs": true,
@@ -184,7 +184,7 @@
  "anniversary": {
   "slug": "anniversary",
   "wordlist": "anniversary-350.txt",
-  "display_he": "דוגרי יום נישואין",
+  "display_he": "סנטוריני",
   "dir": "resources/canva/templates/anniversary",
   "recipe": "anniversary",
   "visibility": "public",
@@ -234,7 +234,7 @@
  "japanese": {
   "slug": "japanese",
   "wordlist": "generic-350.txt",
-  "display_he": "דוגרי יפני",
+  "display_he": "טוקיו",
   "dir": "resources/canva/templates/japanese",
   "recipe": "japanese",
   "visibility": "public",
@@ -297,7 +297,7 @@
  "football-boys": {
   "slug": "football-boys",
   "wordlist": "generic-350.txt",
-  "display_he": "דוגרי כדורגל בנים",
+  "display_he": "מרקאנה",
   "dir": "resources/canva/templates/football-boys",
   "recipe": "football-boys",
   "visibility": "public",
@@ -345,7 +345,7 @@
  "grapefruit": {
   "slug": "grapefruit",
   "wordlist": "bachelorette-350.txt",
-  "display_he": "דוגרי אשכוליות",
+  "display_he": "אואזיס",
   "dir": "resources/canva/templates/grapefruit",
   "recipe": "grapefruit",
   "visibility": "public",
