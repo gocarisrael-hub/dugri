@@ -167,6 +167,85 @@ every photo card** — so the generator never has to branch on which template it
 The values above are documentation, not an API: **read `x`/`y`/`width`/`height` off the element**
 rather than hardcoding them, so a theme is free to ship a different layout later.
 
+## The frame — measured off the template's own front card
+
+The owner's words: "the card with the pawns should be exactly same size and roundness as the rest
+of the cards in this template." Two separate promises, and they are kept in two different places.
+
+**Outer size is kept by the viewBox, and was never the problem.** Every card in a v2 deck is drawn
+on `0 0 223.92 312`; `deck_html.DeckDocument` inlines each design into one shared page box and the
+printed page is that viewBox in points, so a card's own `width`/`height` attributes never reach the
+PDF. Nothing may change that — these cards are printed and cut in a stack, and a pawn card of
+another size is a mismatched card whatever it looks like. `generator/test_card_frame.py` pins it.
+
+**Roundness is the frame**, the rounded outline every one of these designs draws just inside the
+card, which is the shape a buyer reads as "the card". The shared generic pawn card drew a
+SHARP-cornered rectangle at grapefruit's frame box on every deck. Measured off the shipped
+artwork, the real frames are:
+
+| template                 | frame box (x, y, w × h)       | radius | stroke          |
+| ------------------------ | ----------------------------- | ------ | --------------- |
+| grapefruit               | 24.34, 22.44, 175.18 × 266.93 | 7.50   | 1.50 `#711d20`  |
+| bachelorette             | −0.71, 0.12, 224.34 × 312.12  | 31.35  | 3.46 `#6b4d56`  |
+| birthday-girls           | −0.71, 0.12, 224.34 × 312.12  | 31.35  | 12.10 `#ff7aa9` |
+| birthday-boys-basketball | −0.71, 0.12, 224.34 × 312.12  | 31.35  | 12.10 `#e9062a` |
+| anniversary              | −0.71, 0.12, 224.34 × 312.12  | 31.35  | 3.46 `#004aad`  |
+| japanese                 | −0.71, 0.12, 224.34 × 312.12  | 31.35  | 5.18 `#d42a2a`  |
+| trip comeback            | −0.71, 0.12, 224.34 × 312.12  | 31.35  | 10.37 `#7dac9b` |
+| football-boys            | −3.92, −3.78, 231.64 × 319.50 | 32.09  | 7.11 `#e90f0f`  |
+
+(The seven sheet-format rows are read off each design's first card and expressed in card units;
+the six that share a radius are cut from one Canva master.)
+
+**Two radii over eight designs is why this is not drawn into the file.** One shared `photo.svg`
+serves every template that ships no `clean/photo.svg` of its own, and it cannot be 7.5 and 31.35 at
+once. So the geometry is applied at COMPOSITION time, per deck: `generator/card_frame.py` reads the
+frame off the deck's own front card and `render_page.photo_card_svg` redraws the pawn card's frame
+as that one — box, corner radius, stroke width and stroke colour, all four, because a black
+hairline at a 12-unit pink band's centreline is neither the same size nor recognisably the same
+card. The artwork only has to say WHICH element is its frame:
+
+```xml
+<rect class="card-frame" x="24.34" y="22.44" width="175.18" height="266.93" rx="0" ry="0"
+      fill="none" stroke="#111111" stroke-width="1"/>
+<path class="card-frame-rule" d="M24.34 78.44H199.52" .../>
+```
+
+`card-frame` is the frame; `card-frame-rule` is anything anchored to it (the generic card's rule
+under the heading), re-spanned across the new frame at its own height. The card's own `fill` does
+NOT move — grapefruit fills its frame with the paper and the generic card leaves it open, and that
+is each card's decision. `card_paper` owns colour of paper; `card_frame` owns shape of frame.
+
+**It is read off the vector, not a render** — unlike the paper, this needs no browser. A frame is a
+stroked outline (`fill="none"` plus a `stroke`) spanning most of the card: the same test
+`render_page.frame_box` uses for word layout, and the same transform-resolving reader, reused
+rather than rewritten. Two deliberate differences: this answers with the stroke's CENTRELINE (the
+pawn card has to redraw that stroke, not sit inside it), and it does NOT require the frame to be
+inset from the card edge, because six of the eight designs draw theirs flush with the trim and
+rejecting those would no-op the fix on exactly the templates that need it. A full-bleed FILLED rect
+is still never mistaken for a frame — it has no stroke.
+
+**The path reader is the one genuinely new piece, and the radius is why.** Canva writes a rounded
+corner as a cubic, and a cubic's first control point sits on the same horizontal as the corner's
+on-curve point, 0.4477 × r along the top edge. Reading every number in `d` as a coordinate pair
+therefore reports grapefruit's radius as **3.36 instead of 7.50**. `card_frame._on_curve` walks the
+path commands and keeps only the points the curve passes through.
+
+**Everything degrades to "leave the card exactly as it shipped":** a template with no measurable
+frame, a pawn card that marks none, or a frame whose interior would not contain the card's own
+pawns and copy — a border drawn THROUGH the pawn grid is worse than one that merely does not match.
+A v1 (8-up sheet) template answers None and correctly so: it has no numbered cards, and the v2 deck
+is the only thing that prints a pawn card at all.
+
+The check that matters: grapefruit's pawn card was authored BY HAND to match its deck, and
+measuring that deck and redrawing from the measurement reproduces it **byte for byte**. That is the
+strongest evidence available that the measurement is right, and `test_card_frame.py` pins it.
+
+What still differs, stated plainly: outside the frame, a pawn card shows its deck's PAPER colour
+where a word card shows that design's outer bleed (grapefruit's stripes, bachelorette's cream).
+Matching that too means copying the front's whole background, which is a redesign of the shared
+card rather than a question of size and roundness.
+
 ## The sticker
 
 Each slot is a **die-cut sticker**: a white outline dilated from the image's own alpha, over a
@@ -334,12 +413,22 @@ Recommended fill rule:
   `photo-fallback/3.svg`. An order with zero photos therefore gets the full generic set, and an
   order with two photos gets two faces plus pawns 3 and 4.
 
-The fallbacks are 200 × 200 SVGs, each pawn centred and drawn at 1.2× so it fills the cut-line
-and spills a little past it. **That 1.2× is now out of step with the customer photos** and is the
-one thing this contract still owes: a customer's photo is clipped to 0.90 of the slot and its
-halo sits inside the dashes, while a fallback pawn crosses them, so a half-filled card mixes the
-two. The fallbacks are artwork and pass through `square_photo()` untouched — redrawing them at
-roughly 0.9× is an artwork change, not a generator one. Chrome (the generator's rasteriser)
+The fallbacks are 200 × 200 SVGs, each pawn centred on the slot and **drawn inside the cut-line —
+never outside it and never on it**, which is the owner's rule and this contract's debt now paid.
+
+They used to be blown up 1.2×, on the theory that a pawn should fill the cut-line and spill a
+little past it the way a cropped portrait does. It does not read that way on paper: a customer's
+photo is clipped to 0.90 of the slot (`PHOTO_DISC_FILL`) with its halo landing just inside the
+dashes, so a fallback crossing them made a half-filled card look like two different products, and
+the owner rejected it on a real render. **Do not restore the blow-up.** The drawings were always
+sized to fit — at 1× the furthest ink reaches r ≈ 89.7 of the 100-unit cut-line against the disc's
+90 — so the fix was to delete the `scale(1.2)` and keep only the re-centring `translate(0 -1.6)`;
+the halo then spreads to ≈ 97, still inside the dashes. `tests/unit/photo-card.test.js` bounds each
+pawn's reach with a convex hull over its path's control points, which over-estimates and so can
+only ever be too strict — the safe direction for a "must not cross" rule.
+
+The fallbacks are artwork and pass through `square_photo()` untouched, so this is the only place
+the rule can be enforced for them. Chrome (the generator's rasteriser)
 renders an SVG inside `<image href="data:image/svg+xml;base64,…">` fine; if a future renderer does
 not, rasterise them to **RGBA** PNG first — do not inline them as markup, since their internal ids
 (`lower`, `pawn`) would collide with the host document. They are drawn from bold silhouettes and
