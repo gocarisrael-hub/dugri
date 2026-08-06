@@ -51,6 +51,17 @@ const DESIGN_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 // server rejects would silently drop the owner's setting for it on save.
 const BASE_SLOTS = ['store', 'front', 'back', 'photo', 'board'];
 const BASE_SLOT_SET = new Set(BASE_SLOTS);
+// The DECK pictures — the whole deck laid out, shown only in the buyer's wizard:
+// all eight fronts, all eight backs, and the board. Owner-uploaded; nothing
+// generates them, so a design has one only once she uploads it.
+//
+// These are STORABLE slots but NOT gallery slots. They stay out of BASE_SLOTS —
+// which is simultaneously the allow-list AND the shop/product display order — so
+// they can never leak onto the storefront, while still riding the existing
+// upload, reset, normalize, prune and image-GC paths. No second storage shape to
+// keep in sync. MUST match DECK_SLOTS in site/js/design-images.js.
+const DECK_SLOTS = ['deckFronts', 'deckBacks', 'deckBoard'];
+const DECK_SLOT_SET = new Set(DECK_SLOTS);
 // A stored path must be EXACTLY one content.saveImageBytes produced (16-hex
 // content hash + a raster ext). Validating on write means a picture can never
 // become an off-origin / stored-XSS vector.
@@ -61,8 +72,12 @@ const NAME_MAX = 60;
 function designOk(id) {
   return DESIGN_RE.test(String(id || '')) ? String(id) : null;
 }
+// A storable slot: a gallery slot or a deck picture. Both live under `base`, so
+// upload/reset/normalize treat them identically; only the READERS differ, and
+// each reader names the set it wants rather than trusting this one.
 function slotOk(slot) {
-  return BASE_SLOT_SET.has(String(slot || '')) ? String(slot) : null;
+  const s = String(slot || '');
+  return BASE_SLOT_SET.has(s) || DECK_SLOT_SET.has(s) ? s : null;
 }
 function pathOk(p) {
   return UPLOAD_PATH_RE.test(String(p || '')) ? String(p) : null;
@@ -448,6 +463,7 @@ module.exports = {
   designOk,
   slotOk,
   BASE_SLOTS,
+  DECK_SLOTS,
   UPLOAD_PATH_RE,
   NAME_MAX,
   _file: FILE,

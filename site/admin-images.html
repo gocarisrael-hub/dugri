@@ -121,6 +121,27 @@
         grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
         gap: 14px;
       }
+      /* The deck pictures, set apart from the gallery above by a rule and their
+         own caption — they go to a different place (the wizard) and carry none of
+         the gallery's per-surface controls, so reading as one list would mislead. */
+      .deck-title {
+        margin: 22px 0 10px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--muted);
+      }
+      /* Exactly three, and they never reorder — a fixed 3-up that collapses on
+         narrow screens rather than the gallery's auto-fill. */
+      .deck-items {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      @media (max-width: 620px) {
+        .deck-items {
+          grid-template-columns: 1fr;
+        }
+      }
       /* A non-design section that still reads as part of the page. Deliberately
          NOT .design: that class means "one design's gallery", and reusing it
          would make the pawn panel count as an eighth design. */
@@ -375,6 +396,16 @@
         photo: 'קלף התמונות',
         board: 'לוח המשחק',
       };
+      // The three DECK pictures the buyer's wizard shows, in that fixed order.
+      // These labels are the ADMIN's only — they name an empty upload box so the
+      // owner knows which picture goes where. Nothing labels them for the buyer.
+      // MUST match DECK_SLOTS in site/js/design-images.js + server/design-images.js.
+      const DECK_SLOTS = ['deckFronts', 'deckBacks', 'deckBoard'];
+      const DECK_LABELS = {
+        deckFronts: '8 הקלפים',
+        deckBacks: '8 הגבים',
+        deckBoard: 'הלוח',
+      };
       // The slot's noun INSIDE the "you can upload one yourself" placeholder
       // sentence — SLOT_LABELS reads as a heading and is clumsy mid-sentence.
       const SLOT_UPLOAD_NOUN = { photo: 'קלף תמונות', board: 'לוח' };
@@ -524,7 +555,34 @@
               <input type="file" class="add-file" accept="image/png,image/jpeg,image/webp" hidden />
               <div class="status add-status"></div>
             </div>
+            <p class="deck-title">תמונות החפיסה — מוצגות באשף בלבד</p>
+            <div class="items deck-items">${DECK_SLOTS.map((s) => deckHtml(d, g, s)).join('')}</div>
           </section>`;
+      }
+
+      // The three DECK pictures — the whole deck laid out, shown only in the buyer's
+      // wizard. Their own group, because the two gallery checkboxes ("בעמוד החנות" /
+      // "בעמוד המוצר") are meaningless for a picture that appears on neither, and
+      // ordering is fixed at fronts → backs → board.
+      //
+      // Nothing generates these, so an empty one is genuinely empty: no shipped
+      // render behind it and therefore no איפוס, only upload / replace / remove.
+      function deckHtml(d, g, slot) {
+        const src = (g.base && g.base[slot] && g.base[slot].img) || '';
+        const preview = src
+          ? `<img class="preview" alt="${esc(DECK_LABELS[slot])}" src="${esc(src)}" onerror="this.style.visibility='hidden'" />`
+          : `<div class="preview preview-empty">${esc(DECK_LABELS[slot])}</div>`;
+        return `
+          <div class="item" data-design="${esc(d.id)}" data-key="${esc(slot)}" data-type="deck"
+               role="group" aria-label="${esc(DECK_LABELS[slot])}">
+            ${preview}
+            <div class="row">
+              <button data-act="upload">${src ? 'החלף' : 'העלה תמונה'}</button>
+              <button class="ghost" data-act="reset" ${src ? '' : 'disabled'}>הסר</button>
+            </div>
+            <input type="file" accept="image/png,image/jpeg,image/webp" hidden />
+            <div class="status"></div>
+          </div>`;
       }
 
       function render() {

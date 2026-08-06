@@ -327,6 +327,58 @@ test.describe('admin gallery page', () => {
     }
   });
 
+  // The three DECK pictures — the whole deck laid out, shown only in the buyer's
+  // wizard. Their own group: the gallery's two per-surface checkboxes are
+  // meaningless for a picture that appears on neither surface.
+  test('every design offers the three deck uploads, without the gallery controls', async ({
+    page,
+  }) => {
+    await stubGet(page, {});
+    await page.goto(`/admin-images.html?key=${KEY}`);
+    const deck = page.locator('.design[data-design="posttrip"] .item[data-type="deck"]');
+    await expect(deck).toHaveCount(3);
+    // Fixed order — fronts, backs, board — never the owner's gallery ordering.
+    await expect(deck.nth(0)).toHaveAttribute('data-key', 'deckFronts');
+    await expect(deck.nth(1)).toHaveAttribute('data-key', 'deckBacks');
+    await expect(deck.nth(2)).toHaveAttribute('data-key', 'deckBoard');
+    // No per-surface flags and no reordering on these.
+    await expect(deck.locator('input[data-flag]')).toHaveCount(0);
+    await expect(deck.locator('button[data-act="up"]')).toHaveCount(0);
+    // Nothing generates them, so they start empty and there is nothing to remove.
+    await expect(deck.nth(0).locator('.preview-empty')).toBeVisible();
+    await expect(deck.nth(0).locator('button[data-act="reset"]')).toBeDisabled();
+  });
+
+  test('uploading a deck picture posts its slot and fills that tile only', async ({ page }) => {
+    await stubGet(page, {});
+    await stubUploads(page);
+    let posted = null;
+    await page.route('**/api/admin/design-images/base/image*', (route) => {
+      posted = route.request().postData() || '';
+      route.fulfill({
+        json: { ok: true, img: UPLOADED, gallery: { base: { deckFronts: { img: UPLOADED } } } },
+      });
+    });
+
+    await page.goto(`/admin-images.html?key=${KEY}`);
+    const fronts = page.locator('.item[data-design="posttrip"][data-key="deckFronts"]');
+    await fronts.locator('input[type=file]').setInputFiles({
+      name: 'fronts.png',
+      mimeType: 'image/png',
+      buffer: PNG,
+    });
+
+    await expect.poll(() => posted).not.toBeNull();
+    expect(posted).toContain('deckFronts');
+    const after = page.locator('.item[data-design="posttrip"][data-key="deckFronts"]');
+    await expect(after.locator('img.preview')).toHaveAttribute('src', UPLOADED);
+    await expect(after.locator('button[data-act="reset"]')).toBeEnabled();
+    // The other two stay empty — one upload must not imply the rest of the deck.
+    await expect(
+      page.locator('.item[data-design="posttrip"][data-key="deckBacks"] .preview-empty')
+    ).toBeVisible();
+  });
+
   test('adding a named photo appends a photo item to the gallery', async ({ page }) => {
     await stubGet(page, {});
     await stubUploads(page);

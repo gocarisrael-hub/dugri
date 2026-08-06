@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 // Unit tests for the buyer-facing gallery reader (site/js/design-images.js):
 // galleryFor resolution (order, per-surface visibility, overrides, extras,
 // fail-safe fallback) and loadDesignImages fail-safe behaviour.
-import { galleryFor, baseSrc, loadDesignImages } from '../../site/js/design-images.js';
+import { galleryFor, deckFor, baseSrc, loadDesignImages } from '../../site/js/design-images.js';
 
 const P1 = '/content-uploads/aaaaaaaaaaaaaaaa.png';
 const P2 = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
@@ -332,5 +332,65 @@ describe('loadDesignImages — timeout-bounded + fail-safe (never rejects)', () 
       Promise.resolve({ ok: true, json: () => Promise.resolve({ nope: 1 }) })
     );
     await expect(loadDesignImages()).resolves.toEqual({});
+  });
+});
+
+// The DECK pictures — the whole deck laid out (all eight fronts, all eight backs,
+// the board), shown ONLY in the buyer's wizard. Owner-uploaded: nothing renders
+// them, so "not uploaded" is the normal state and must stay visibly empty rather
+// than borrow a card render that would promise the buyer the wrong thing.
+describe('deckFor — the wizard-only deck pictures', () => {
+  const D = { id: 'posttrip', thumbs: { front: 'f', back: 'b', board: 'brd' } };
+  const deck = (base) => deckFor({ posttrip: { base } }, D);
+
+  it('returns the uploaded pictures in wizard order: fronts, backs, board', () => {
+    const items = deck({
+      deckBoard: { img: P2 },
+      deckFronts: { img: P1 },
+      deckBacks: { img: P2 },
+    });
+    // Stored order is irrelevant — the sequence is the deck's own, always.
+    expect(items.map((i) => i.key)).toEqual(['deckFronts', 'deckBacks', 'deckBoard']);
+    expect(items.map((i) => i.src)).toEqual([P1, P2, P2]);
+  });
+
+  it('returns only what was uploaded — a partial set is a partial row', () => {
+    expect(deck({ deckFronts: { img: P1 } }).map((i) => i.key)).toEqual(['deckFronts']);
+    expect(deck({ deckFronts: { img: P1 }, deckBoard: { img: P2 } }).map((i) => i.key)).toEqual([
+      'deckFronts',
+      'deckBoard',
+    ]);
+  });
+
+  it('is EMPTY for a design with none — the wizard shows no row at all', () => {
+    expect(deckFor({}, D)).toEqual([]);
+    expect(deck({})).toEqual([]);
+    // A design whose gallery is fully configured still has no deck pictures until
+    // they are uploaded: the card renders are NOT a stand-in for the deck sheets.
+    expect(deck({ front: { img: P1 }, back: { img: P2 }, board: { img: P1 } })).toEqual([]);
+  });
+
+  it('never yields an unvalidated src, and never throws on a garbage map', () => {
+    expect(deck({ deckFronts: { img: 'https://evil.example/x.png' } })).toEqual([]);
+    expect(deck({ deckFronts: { img: '' } })).toEqual([]);
+    expect(deck({ deckFronts: 'nope' })).toEqual([]);
+    expect(deckFor(null, D)).toEqual([]);
+    expect(deckFor({ posttrip: 'nope' }, D)).toEqual([]);
+    expect(deckFor({}, {})).toEqual([]); // no id → nothing
+  });
+
+  it('deck pictures NEVER reach the shop grid or the product page', () => {
+    // They are stored beside the gallery slots, so the guarantee that they stay
+    // out of the storefront is worth pinning rather than assuming.
+    const map = {
+      posttrip: {
+        base: { deckFronts: { img: P1 }, deckBacks: { img: P2 }, deckBoard: { img: P1 } },
+      },
+    };
+    for (const surface of ['products', 'product']) {
+      const ks = galleryFor(map, D, surface).map((i) => i.key);
+      expect(ks.some((k) => k.startsWith('deck'))).toBe(false);
+      expect(galleryFor(map, D, surface).map((i) => i.src)).not.toContain(P1);
+    }
   });
 });

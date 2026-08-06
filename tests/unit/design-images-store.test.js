@@ -56,9 +56,45 @@ describe('design-images gallery store', () => {
     // while the client happily orders and renders it.
     for (const slot of ['store', 'front', 'back', 'photo', 'board'])
       expect(s.slotOk(slot)).toBe(slot);
+    // The three DECK pictures are storable too — they ride the same upload/reset
+    // path — even though they are NOT gallery slots and never reach the storefront.
+    for (const slot of ['deckFronts', 'deckBacks', 'deckBoard']) expect(s.slotOk(slot)).toBe(slot);
     expect(s.slotOk('cover')).toBe(null);
     expect(s.slotOk('fronts')).toBe(null);
+    expect(s.slotOk('deck')).toBe(null);
     expect(s.slotOk('')).toBe(null);
+  });
+
+  // The deck pictures are stored beside the gallery slots under `base`, which is
+  // what lets them reuse upload, reset, normalize, prune and the image-reclaim
+  // guard. The cost of that reuse is that BASE_SLOTS (the storefront display
+  // order) and the allow-list are no longer the same set — so pin both halves.
+  it('stores the deck pictures and keeps them OUT of the storefront order', async () => {
+    const s = await store();
+    expect(s.BASE_SLOTS).toEqual(['store', 'front', 'back', 'photo', 'board']);
+    expect(s.DECK_SLOTS).toEqual(['deckFronts', 'deckBacks', 'deckBoard']);
+    for (const d of s.DECK_SLOTS) expect(s.BASE_SLOTS).not.toContain(d);
+
+    expect(s.setBaseImg('posttrip', 'deckFronts', P1)).toMatchObject({ ok: true });
+    expect(s.getAll().posttrip.base.deckFronts).toEqual({ img: P1 });
+    // The reclaim guard must see it, or the file would be garbage-collected out
+    // from under a picture the wizard is still showing.
+    expect(s.isImageReferenced(P1)).toBe(true);
+
+    // Removing it is the ordinary base reset: it hands back the old path for the
+    // caller to reclaim, and prunes the design once nothing is left.
+    expect(s.resetBaseImg('posttrip', 'deckFronts')).toMatchObject({ ok: true, prev: P1 });
+    expect(s.getAll().posttrip).toBeUndefined();
+    expect(s.isImageReferenced(P1)).toBe(false);
+  });
+
+  it('a deck picture survives a save/load round-trip', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    let s = await loadStore(dir);
+    s.setBaseImg('posttrip', 'deckBoard', P2);
+    s = await loadStore(dir);
+    expect(s.getAll().posttrip.base.deckBoard).toEqual({ img: P2 });
   });
 
   it('curates an UPLOADED TEMPLATE (its themes.json key is the design id) like any other design', async () => {

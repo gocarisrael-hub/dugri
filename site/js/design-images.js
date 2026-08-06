@@ -25,6 +25,17 @@ const FETCH_TIMEOUT_MS = 3000;
 // with the other card renders, ahead of the board.
 const DEFAULT_ORDER = ['store', 'front', 'back', 'photo', 'board'];
 
+// The DECK pictures, in the order the wizard shows them: all eight fronts, all
+// eight backs, the board. Owner-uploaded only — nothing renders them — so a
+// design has one only once she uploads it, and a design with none shows no row
+// at all rather than a gap or a placeholder.
+//
+// They are stored beside the gallery slots (server/design-images.js keeps both
+// under `base`) but are deliberately absent from DEFAULT_ORDER, so they can never
+// appear on the shop grid or the product page. MUST match DECK_SLOTS in
+// server/design-images.js.
+const DECK_SLOTS = ['deckFronts', 'deckBacks', 'deckBoard'];
+
 // Slots a design may or may not ship. `board`: a design can have no board at all
 // (kids). `photo`: only a PORTRAIT card-structure design renders a photo card,
 // and only once the generic fallback art exists. Both are surfaced from
@@ -178,6 +189,32 @@ export function galleryFor(map, design, surface) {
   // link and wires no carousel below two slides; product.html falls back to the
   // design's picker thumb. Nothing 404s and no layout collapses.
   return items;
+}
+
+/**
+ * The DECK pictures for `design`, in wizard order — `[{ key, src }]`.
+ *
+ * Only the ones the owner actually uploaded, so the result is 0..3 long. There is
+ * no shipped fallback and no placeholder: nothing generates these pictures, so a
+ * missing one means "not photographed yet", and inventing a stand-in would show
+ * the buyer a promise the deck does not keep. A design with none returns `[]` and
+ * the wizard renders no row at all.
+ *
+ * Same fail-soft contract as `galleryFor`: any shape of `map` (missing, garbage,
+ * a slot holding a non-object or an off-origin path) yields fewer pictures, never
+ * a throw and never an unvalidated src.
+ */
+export function deckFor(map, design) {
+  const id = design && design.id;
+  if (!id) return [];
+  const cfg = (map && typeof map === 'object' && map[id]) || {};
+  const baseCfg = cfg.base && typeof cfg.base === 'object' ? cfg.base : {};
+  const out = [];
+  for (const key of DECK_SLOTS) {
+    const c = baseCfg[key];
+    if (c && typeof c === 'object' && validImg(c.img)) out.push({ key, src: c.img });
+  }
+  return out;
 }
 
 /** Fetch the whole gallery-config map { designId: config }. NEVER rejects: a
