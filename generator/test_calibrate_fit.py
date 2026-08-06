@@ -1020,8 +1020,233 @@ def test_the_deck_wide_alignment_is_the_commonest_reading():
 
 
 # --- a variable title face's own cut ------------------------------------------
+#
+# THE WEIGHT AND THE SIZE ARE ONE ANSWER. What makes them inseparable is the one
+# property of a weight axis these tests model: running `wght` 100 -> 900 leaves
+# the ink's HEIGHT untouched and moves only its WIDTH (measured on League
+# Spartan: 90px tall at size 100 at every instance, 19% wider across the axis).
+# So the height fit cannot see the weight and the width fit sees nothing else,
+# and the design's cut is the one at which the two answer the same size.
+#
+# The repo ships no variable font — the only one in play is a file the OWNER
+# uploaded into her template — so the axis is modelled here instead of loaded.
+# That is not a weaker test: the model IS the measured property, and pinning it
+# in a fixture is what keeps the next change to the fit honest about it.
+
+_MODEL_WIDTH_PER_WGHT = {100: 2.20, 200: 2.24, 300: 2.28, 400: 2.34,
+                         500: 2.39, 600: 2.44, 700: 2.49, 800: 2.55, 900: 2.60}
+# The model paints whole pixels, so the fits below are run at a title big enough
+# that one raster step is worth well under a step of the axis — which is also
+# true of the artwork this measures (מרקאנה's title ink is 182x122 device px).
+_MODEL_SIZE = 100.0
+# How long each line of the model's text sets, per unit of the face's own width.
+# A line not named here sets 1.0. Used to give the NAME line a different length
+# from the artwork's name, which is the whole difficulty the literal-line
+# reading exists to sidestep.
+_MODEL_LINE_LEN = {"NAME1": 1.8, "NAME2": 1.8, "BEN": 1.0, "ANA": 1.0,
+                   "lit": 1.4}
+
+
+def _variable_face(monkeypatch, axis=(100, 100, 900), drawn=None):
+    """Pretend ``"var.ttf"`` is a variable face whose width alone tracks wght.
+
+    Paints a real multi-line block — a filled band per line with a clear row
+    between — so that the line split the fit relies on has something to find.
+
+    Returns the list every ``_paint`` call is recorded into, so a test can also
+    assert WHICH cut the size fit was measured against.
+    """
+    from PIL import ImageDraw
+    drawn = [] if drawn is None else drawn
+    monkeypatch.setattr(C.render_page, "weight_axis",
+                        lambda path: axis if path == "var.ttf" else None)
+    real = C._paint
+
+    def paint(font_path, lines, em, alpha, stroke=0.0, marker=None,
+              pitch=C.RENDER_PITCH, weight=None):
+        if font_path != "var.ttf":
+            return real(font_path, lines, em, alpha, stroke=stroke,
+                        marker=marker, pitch=pitch, weight=weight)
+        drawn.append(weight)
+        # Width per em tracks the axis; the band HEIGHT does not, which is the
+        # measured property this whole strand turns on.
+        w = _MODEL_WIDTH_PER_WGHT[weight if weight is not None else axis[1]]
+        drawn_lines = [ln for ln in lines if ln and ln.strip()]
+        if not drawn_lines:
+            return None
+        band, gap = max(1, round(em * 0.6)), max(1, round(em * 0.3))
+        widths = [max(1, round(em * w * _MODEL_LINE_LEN.get(ln, 1.0)))
+                  for ln in drawn_lines]
+        img = Image.new(
+            "L", (max(widths),
+                  band * len(widths) + gap * (len(widths) - 1)), 0)
+        d = ImageDraw.Draw(img)
+        y = 0
+        for one in widths:
+            d.rectangle((0, y, one - 1, y + band - 1), fill=255)
+            y += band + gap
+        return img
+
+    monkeypatch.setattr(C, "_paint", paint)
+    return drawn
+
 
 def test_a_static_face_has_no_weight_to_fit():
-    got, note = C.fit_font_weight(_FakeMask(), (0, 0, 1, 1), LATIN_FONT,
-                                  [["a"]], 10, 1, 128)
+    ink = C._paint(HEBREW_FONT, LINES, 26.0 * PPU, ALPHA)
+    got, note = C.fit_font_weight(ink, LATIN_FONT, [["a"]], 26.0, PPU, ALPHA)
     assert got is None and note is None
+
+
+def test_a_static_face_paints_identically_whatever_weight_is_passed():
+    """The whole variable-font strand must be a NO-OP over a static face.
+
+    Every fit below now carries a ``weight`` argument, and a static face is nine
+    of the ten shipped templates — so the guarantee that matters is not "it still
+    works" but "it is the same bytes". A face with no axis has one cut and there
+    is nothing to select, so asking for one may not change a single pixel.
+    """
+    bare = C._paint(HEBREW_FONT, LINES, 26.0 * PPU, ALPHA)
+    for weight in (None, 100, 400, 900):
+        got = C._paint(HEBREW_FONT, LINES, 26.0 * PPU, ALPHA, weight=weight)
+        assert got.tobytes() == bare.tobytes(), weight
+        assert got.size == bare.size
+    # and the same through the fit that calls it
+    assert (C._fit_size(bare.size[1], HEBREW_FONT, [LINES], PPU, ALPHA)
+            == C._fit_size(bare.size[1], HEBREW_FONT, [LINES], PPU, ALPHA,
+                           weight=900))
+
+
+def _model_ink(cut, lines=("x",), size=_MODEL_SIZE):
+    """The artwork, as the model's face sets it at a known cut. Painted rather
+    than constructed, so the fit is held to reproducing a real round trip."""
+    return C._paint("var.ttf", list(lines), size * PPU, ALPHA, weight=cut)
+
+
+def test_the_cut_is_the_one_where_the_height_fit_and_the_width_fit_agree(monkeypatch):
+    """מרקאנה: the artwork's own ink says 600, not the 800 the strokes said."""
+    _variable_face(monkeypatch)
+    got, note = C.fit_font_weight(_model_ink(600), "var.ttf", [["x"]],
+                                  _MODEL_SIZE, PPU, ALPHA)
+    assert got == 600, got
+    assert "600" in note and "width" in note
+
+
+def test_every_cut_of_the_axis_answers_the_same_size_by_HEIGHT(monkeypatch):
+    """The premise, pinned: this is why the size fit alone cannot see the cut.
+
+    An earlier round measured the ink height across the axis, saw it flat, and
+    concluded the weight did not matter to the size. The height genuinely does
+    not move — the WIDTH does, and the width is the half that was not measured.
+    """
+    _variable_face(monkeypatch)
+    ink = _model_ink(600)
+    by_height = {w: C._fit_size(ink.size[1], "var.ttf", [["x"]], PPU, ALPHA,
+                                weight=w)
+                 for w in _MODEL_WIDTH_PER_WGHT}
+    assert len(set(by_height.values())) == 1, by_height
+    by_width = {w: C._fit_size(ink.size[0], "var.ttf", [["x"]], PPU, ALPHA,
+                               axis=1, weight=w)
+                for w in _MODEL_WIDTH_PER_WGHT}
+    assert len(set(by_width.values())) == len(by_width), by_width
+
+
+def test_the_size_is_fitted_against_the_cut_that_will_be_printed(monkeypatch):
+    """A size measured against the file's DEFAULT cut is measured against the
+    wrong picture — which is the defect, since League Spartan defaults to Thin."""
+    drawn = _variable_face(monkeypatch)
+    ink = _model_ink(600)
+    drawn.clear()
+    C.size_from_matching_samples(ink, "var.ttf", [["x"], ["y"]], PPU, ALPHA,
+                                 0.0, None, 600)
+    assert drawn and set(drawn) == {600}, set(drawn)
+
+
+def test_a_cut_the_file_does_not_carry_is_never_named(monkeypatch):
+    """The grid is the nine CSS steps; a narrower axis simply has fewer of them.
+
+    Nothing here may answer with an instance outside the file's own range — the
+    renderer would clamp it and print a cut nobody chose.
+    """
+    _variable_face(monkeypatch, axis=(300, 300, 500))
+    # artwork set in a cut heavier than this file carries: the answer must still
+    # be one of ITS instances, and the heaviest of them is the nearest
+    ink = _model_ink(900)
+    got, _note = C.fit_font_weight(ink, "var.ttf", [["x"]], _MODEL_SIZE, PPU,
+                                   ALPHA)
+    assert got == 500, got
+
+
+def test_a_face_that_reaches_the_width_at_no_cut_at_all_is_refused(monkeypatch):
+    """A width no instance can reach is not a cut, it is the wrong FONT — and
+    pinning one of its cuts would print the wrong face confidently."""
+    _variable_face(monkeypatch)
+    ink = _model_ink(600)
+    # far wider than the heaviest cut of this face sets at the fitted size
+    ink = ink.resize((ink.size[0] * 2, ink.size[1]))
+    got, note = C.fit_font_weight(ink, "var.ttf", [["x"]], _MODEL_SIZE, PPU,
+                                  ALPHA)
+    assert got is None
+    assert "left alone" in note and "different typeface" in note
+
+
+def test_the_width_at_the_fitted_size_answers_what_bisecting_both_axes_would(
+        monkeypatch):
+    """The shortcut is a shortcut, not a different question.
+
+    "The cut where the height fit and the width fit agree" is what this means;
+    one width comparison at the fitted size is how it is computed, because the
+    painted extent is linear in the size and the reference cancels out of the
+    ratio of the two fits. Bisecting both axes at every instance is the literal
+    reading — some 4,700 paintings a pass against 36 — so it is written out here
+    once and the cheap answer is held to it.
+    """
+    _variable_face(monkeypatch)
+    for cut in (300, 600, 900):
+        ink = _model_ink(cut)
+        by_bisection = []
+        for wght in _MODEL_WIDTH_PER_WGHT:
+            by_h = C._fit_size(ink.size[1], "var.ttf", [["x"]], PPU, ALPHA,
+                               axis=0, weight=wght)
+            by_w = C._fit_size(ink.size[0], "var.ttf", [["x"]], PPU, ALPHA,
+                               axis=1, weight=wght)
+            by_bisection.append((abs(by_w / by_h - 1), wght))
+        got, _note = C.fit_font_weight(ink, "var.ttf", [["x"]], _MODEL_SIZE,
+                                       PPU, ALPHA)
+        assert got == min(by_bisection)[1] == cut, (cut, got, min(by_bisection))
+
+
+def test_the_cut_is_read_off_the_lines_no_honoree_name_reaches(monkeypatch):
+    """מרקאנה sets "{NAME}'s" over "B-day", and the artwork says "B-day" too.
+
+    Matching the whole BLOCK instead lets the sample names' own length decide:
+    where the artwork's honoree name is short and ours are long, the block we
+    paint is wider than the artwork's at the very cut that is correct, and the
+    fit walks down the axis to compensate. That is the real measured effect —
+    it drags מרקאנה's answer to 500 where its literal line says 600.
+    """
+    _variable_face(monkeypatch)
+    # A line that reads the SAME in every sample is a line no name reaches —
+    # which is how the literal line is found without knowing the placeholders.
+    samples = [["NAME1", "lit"], ["NAME2", "lit"]]
+    # The artwork: a SHORT honoree name over the same literal line, set at 600.
+    ink = _model_ink(600, lines=("BEN", "lit"))
+    # The block is the literal line's width here, and the samples' name line is
+    # wider than it — so a whole-block match cannot see the right cut at all.
+    assert (_MODEL_LINE_LEN["NAME1"] > _MODEL_LINE_LEN["lit"]
+            > _MODEL_LINE_LEN["BEN"]), "the fixture must have that shape"
+    got, note = C.fit_font_weight(ink, "var.ttf", samples, _MODEL_SIZE, PPU,
+                                  ALPHA)
+    assert got == 600, got
+    assert "no honoree name reaches" in note
+
+
+def test_a_title_that_is_all_name_still_answers_from_its_geometry(monkeypatch):
+    """Every line carries the name, so there is no literal line to prefer. The
+    whole block is then the best available reading — still geometry, and still
+    far better than the strokes it replaced."""
+    _variable_face(monkeypatch)
+    ink = _model_ink(600, lines=("BEN",))
+    got, note = C.fit_font_weight(ink, "var.ttf", [["BEN"], ["ANA"]],
+                                  _MODEL_SIZE, PPU, ALPHA)
+    assert got == 600, got
+    assert "no honoree name reaches" not in note
