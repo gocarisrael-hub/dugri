@@ -23,6 +23,7 @@ both — only what it is fed changes:
   python3 generator/recipe_diff.py --single <template_dir> <theme>  # v2 deck
 """
 import json
+import math
 import os
 import statistics
 import sys
@@ -32,6 +33,7 @@ from collections import Counter
 from PIL import Image, ImageDraw, ImageChops
 
 import chrome
+import svg_register
 
 CHROME = chrome.CHROME  # see generator/chrome.py — one owner for the browser
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -392,17 +394,42 @@ def _renderable(svg_path, workdir, tag):
     A temp copy is only written when reading actually changed something, so an
     unmigrated template still hands Chrome the original file untouched.
     """
-    try:
-        import card_assets
-    except ImportError:  # card_assets is optional for the v1 path
-        return svg_path
-    text = card_assets.read_svg(svg_path)
+    text = _svg_text(svg_path)
     with open(svg_path, encoding="utf-8") as f:
         if f.read() == text:
             return svg_path
     out = os.path.join(workdir, tag)
     with open(out, "w", encoding="utf-8") as f:
         f.write(text)
+    return out
+
+
+def _svg_text(svg_path):
+    """One card's markup, with any de-duplicated background made absolute."""
+    try:
+        import card_assets
+    except ImportError:  # card_assets is optional for the v1 path
+        with open(svg_path, encoding="utf-8") as f:
+            return f.read()
+    return card_assets.read_svg(svg_path)
+
+
+def _clean_plate(clean_svg, reg, w, h, workdir, tag):
+    """The clean half of a pair as Chrome should render it.
+
+    Unregistered — the normal case, and every pair in the store but four — this
+    is the file itself, untouched. When the pair needs registering it is the same
+    markup nested inside ``svg_register.wrap``'s corrective transform, so Chrome
+    RASTERISES the correction instead of us resampling a finished PNG: the plate
+    lands on its twin's pixel grid with the crisp edges it was drawn with, which
+    is the whole reason the diff comes back as text rather than as the design
+    ghosted against itself by half a pixel.
+    """
+    if not reg:
+        return _renderable(clean_svg, workdir, f"{tag}_clean.svg")
+    out = os.path.join(workdir, f"{tag}_clean.svg")
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(svg_register.wrap(_svg_text(clean_svg), reg, w, h))
     return out
 
 
@@ -422,6 +449,10 @@ def _renderable(svg_path, workdir, tag):
 # 1e-4 is far below the artifact and far above float noise: the four affected
 # plates are off by 1.5e-3 (224.25 against 223.92) while a matching pair agrees
 # to the last digit Canva prints.
+#
+# Tripping this is now a QUESTION rather than a verdict — ``detect_single_card``
+# asks ``svg_register`` whether the two plates can be put back in register from
+# the artwork they share, and only reports the mismatch when they cannot.
 _VIEWBOX_TOL = 1e-4
 
 
@@ -436,8 +467,17 @@ def viewbox_mismatch(filled_svg, clean_svg):
     where its ``filled/9.svg`` twin — and every other plate in the same deck — is
     223.92x312. The artwork inside is scaled to match (0.747953 against
     0.749732), so the two plates genuinely draw the card at different sizes and
-    no threshold, erosion or raster registration recovers a clean diff; the
+    no threshold, erosion or RASTER registration recovers a clean diff; the
     card's own border survives every one of them as a full-height ghost.
+
+    What does recover it is not a search over the pixels but arithmetic on the
+    files: both plates draw the same shapes, so the similarity between them
+    falls out of their own path geometry, and re-rendering the clean plate
+    through it puts them back on one grid (``svg_register``). This function's
+    answer is therefore the input to that question, and its MESSAGE is what is
+    reported only when the answer cannot be derived — a pair sharing no
+    measurable artwork, where a guess would print the honoree's name in the
+    wrong place.
 
     Checked BEFORE rendering because the cost is two file headers against two
     Chrome screenshots, and because the answer is more actionable: "these two
@@ -477,24 +517,76 @@ def viewbox_mismatch(filled_svg, clean_svg):
             f"its siblings agree on.")
 
 
-def card_diff(filled_svg, clean_svg, workdir, tag="card"):
+def card_diff(filled_svg, clean_svg, workdir, tag="card", reg=None):
     """Render one card's filled/clean pair and return the ink and its mapping.
 
     Returns ``(mask, filled_image, vb, ppu, ox, oy)``. ``mask`` is white exactly
     where the filled card differs from the clean one — i.e. the personalized
     text and nothing else.
+
+    ``reg`` is ``svg_register.registration``'s answer for a pair Canva exported
+    at two different scales, and passing it changes which plate defines the
+    coordinate space: the FILLED one, because that is the space the clean plate
+    is being drawn into and therefore the space the measured boxes come out in.
+    That is also the space the rest of the deck is measured in, so front 9's
+    title box becomes directly comparable with its siblings' — where reading it
+    against the clean plate's own 224.25-wide viewBox would have put it in a
+    coordinate system nothing else in the recipe uses.
     """
-    w, h, vb = dims(clean_svg)
+    w, h, vb = dims(filled_svg if reg else clean_svg)
     fp = os.path.join(workdir, f"{tag}_filled.png")
     cp = os.path.join(workdir, f"{tag}_clean.png")
     render(_renderable(filled_svg, workdir, f"{tag}_filled.svg"), fp, w, h)
-    render(_renderable(clean_svg, workdir, f"{tag}_clean.svg"), cp, w, h)
+    render(_clean_plate(clean_svg, reg, w, h, workdir, tag), cp, w, h)
     fim = Image.open(fp).convert("RGB")
     cim = Image.open(cp).convert("RGB")
     if fim.size != cim.size:
         cim = cim.resize(fim.size)
     ppu, ox, oy = viewport(vb, w, h)
-    return diff_mask(fim, cim), fim, vb, ppu, ox, oy
+    mask = diff_mask(fim, cim)
+    if reg:
+        mask = _both_plates_drawn(mask, reg, vb, dims(clean_svg), w, h)
+    return mask, fim, vb, ppu, ox, oy
+
+
+def _both_plates_drawn(mask, reg, fvb, clean_dims, w, h):
+    """Blank the diff where only ONE of the two plates painted the card.
+
+    A registered pair's two plates no longer cover the same window. מרקאנה's
+    clean/9 declares a viewBox whose aspect matches the 299x416 window exactly,
+    so its card is drawn edge to edge; its filled twin is a hair narrower and
+    gets centred with 0.22px of paper down each side. Registering the clean plate
+    onto the filled one keeps that difference — and the last pixel column is then
+    solid card on one plate and part paper on the other, which the diff reports
+    as a full-height line of "text" and which stretched every band on the card
+    out to the right edge (a title 144 units wide where the deck's is 68).
+
+    That column is not ink either plate disagrees about; it is the edge of the
+    paper. So the comparison is restricted to the pixels BOTH plates fully
+    painted — the intersection of the two page rectangles, rounded inward to
+    whole pixels. Only reached for a registered pair: when the plates share a
+    viewBox their pages coincide and this would be a no-op.
+    """
+    _cw, _ch, cvb = clean_dims
+    a, dx, dy = reg
+    fppu, fox, foy = viewport(fvb, w, h)
+    cppu, cox, coy = viewport(cvb, w, h)
+    # The clean page, in its own screenshot pixels, then through the correction.
+    clean_page = (a * cox + dx * SCALE, a * coy + dy * SCALE,
+                  a * (cox + cvb[2] * cppu) + dx * SCALE,
+                  a * (coy + cvb[3] * cppu) + dy * SCALE)
+    filled_page = (fox, foy, fox + fvb[2] * fppu, foy + fvb[3] * fppu)
+    lo_x = max(clean_page[0], filled_page[0], 0.0)
+    lo_y = max(clean_page[1], filled_page[1], 0.0)
+    hi_x = min(clean_page[2], filled_page[2], float(mask.size[0]))
+    hi_y = min(clean_page[3], filled_page[3], float(mask.size[1]))
+    keep = (int(math.ceil(lo_x)), int(math.ceil(lo_y)),
+            int(math.floor(hi_x)), int(math.floor(hi_y)))
+    if keep[2] - keep[0] < 1 or keep[3] - keep[1] < 1:
+        return mask               # nothing overlaps: leave the evidence alone
+    out = Image.new("L", mask.size, 0)
+    out.paste(mask.crop(keep), keep[:2])
+    return out
 
 
 def to_units(f, ppu, ox, oy):
@@ -1034,16 +1126,31 @@ def detect_single_card(theme, template_dir, fronts=None,
     """Detect a whole v2 deck: shared word slots, per-front titles, back, photo.
 
     The card's viewBox comes from the FIRST front, because that is the surface
-    the shared word slots are measured against. The reference export's ``9.svg``
-    is 224.25x312 where the rest are 223.92x312 — a Canva rounding artifact the
-    schema already calls harmless, and it stays harmless here because it moves a
-    slot by well under a fifth of a user unit.
+    the shared word slots are measured against. Four decks' ``clean/9.svg`` is
+    224.25x311.999995 where every other plate is 223.92x312; that front is
+    registered onto its own filled twin before it is diffed
+    (``svg_register``) and its boxes come out in the FILLED plate's space, which
+    is the space this viewBox describes — so the odd plate contributes to the
+    shared vote in the same coordinates as its siblings.
     """
     fronts = list(fronts or DEFAULT_FRONTS)
     own = workdir is None
     workdir = workdir or tempfile.mkdtemp(prefix="dugri-recipe-diff-")
     try:
         per_front, front_titles, vb0 = [], {}, None
+        # Word rows read off a REGISTERED front are kept apart from the shared
+        # vote, and used only if no front could be read directly. The word slots
+        # are the same on all eight fronts by contract, so a registered front
+        # tells the deck nothing about them its siblings have not already said
+        # directly — while the title box is per-front and has no other source at
+        # all, which is the whole reason this front is being read. Letting the
+        # corrected reading into the vote moves the words on EVERY card of the
+        # deck for no gain: ``_median`` of eight averages the two middle values
+        # where seven takes the middle one, so the shared slots shift by ~0.7
+        # units on סיישל and קליפורניה purely because the count went from odd to
+        # even. A reconstructed measurement answers only the question nothing
+        # else can.
+        registered_words = []
         reasons = []
         declined = []
         first_render = None
@@ -1054,16 +1161,32 @@ def detect_single_card(theme, template_dir, fronts=None,
                 log(f"front {index}: missing filled/clean pair, skipped")
                 continue
             # Before Chrome, not after: a pair whose two plates draw the card at
-            # different scales cannot produce a readable diff, and saying so by
-            # name beats spending two screenshots to report "no text measured".
+            # different scales cannot produce a readable diff as it stands, and
+            # both file headers cost less than one screenshot to read.
+            #
+            # A mismatch is a question, not a verdict. The two plates draw the
+            # SAME shapes, so the similarity between them is recoverable from
+            # their own path geometry — and a clean plate re-rendered through it
+            # lands back on its twin's pixel grid, which is how מרקאנה's front 9
+            # yields its low title instead of one page-high band. Only when that
+            # cannot be derived does the pair fall through to being reported,
+            # because at that point there is genuinely nothing to measure and a
+            # guess would print the honoree's name in the wrong place.
+            reg = None
             off = viewbox_mismatch(filled, clean)
             if off:
-                why = f"front {index}: {off}"
-                log(why)
-                declined.append(why)
-                continue
+                reg = svg_register.registration(
+                    dims(filled), dims(clean), filled, clean)
+                if not reg:
+                    why = f"front {index}: {off}"
+                    log(why)
+                    declined.append(why)
+                    continue
+                log(f"front {index}: clean plate exported at a different scale "
+                    f"— registered onto its filled twin (x{reg[0]:.6f}, "
+                    f"{reg[1]:+.2f},{reg[2]:+.2f}px) from the artwork they share")
             mask, image, vb, ppu, ox, oy = card_diff(
-                filled, clean, workdir, tag=f"f{index}")
+                filled, clean, workdir, tag=f"f{index}", reg=reg)
             if vb0 is None:
                 vb0, first_render = vb, (image, mask, ppu, ox, oy)
             got = detect_front(mask, image, vb, ppu, ox, oy)
@@ -1092,7 +1215,7 @@ def detect_single_card(theme, template_dir, fronts=None,
                     f"card's title sits somewhere they do not. Check "
                     f"clean/{index}.svg against filled/{index}.svg.")
                 continue
-            per_front.append(got["words"])
+            (registered_words if reg else per_front).append(got["words"])
             front_titles[index] = got["title"]
             log(f"front {index}: 4 words + {len(got['title'])} title box(es)")
             if not got["title"]:
@@ -1118,7 +1241,10 @@ def detect_single_card(theme, template_dir, fronts=None,
 
         front_titles = reconcile_front_titles(front_titles, log=log,
                                               declined=declined)
-        words = reconcile_word_slots(per_front)
+        words = reconcile_word_slots(per_front or registered_words)
+        if not per_front and registered_words:
+            log("word slots: no front could be read directly — voting the "
+                f"{len(registered_words)} registered front(s) instead")
         if len(words) != 4:
             raise RuntimeError(
                 "not one front yielded four word slots, so there is nothing to "
