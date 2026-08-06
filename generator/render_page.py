@@ -2338,6 +2338,74 @@ def _title_ink_stack(f, ref, lines, pitch=RENDER_PITCH):
 _INK_CLEARANCE = 0.05
 
 
+def script_runs(line, base_rtl=True):
+    """``line`` split into runs that want the Hebrew face vs the Latin one.
+
+    Returns ``[(is_latin, text), ...]`` in LOGICAL order, covering the line
+    exactly (concatenating the texts gives ``line`` back).
+
+    The rule, and why each half of it matters:
+
+    * A strong Latin letter wants the Latin face. That is the whole feature —
+      the owner uploads a Latin face and English words are set in it.
+    * A strong Hebrew letter wants the Hebrew face.
+    * **Everything else is neutral, and that deliberately includes DIGITS.**
+      Unicode calls them ``EN``/``AN``, not ``L``. Treating a digit as Latin
+      would split "40 מתחת" into two runs and re-emit the markup of every
+      shipped card that prints a number — for no visible gain, since the Hebrew
+      faces all draw digits. A neutral joins the run beside it; between two runs
+      that disagree, or at either edge, it takes the base direction.
+
+    So "40 מתחת ל-BBQ" is two runs — ``40 מתחת ל-`` in Hebrew and ``BBQ`` in
+    Latin — with the hyphen staying beside the ``ל`` it belongs to, and
+    "מסיבה 40" is ONE run, exactly as today.
+    """
+    import unicodedata
+
+    base = "R" if base_rtl else "L"
+    kinds = []
+    for ch in line:
+        klass = unicodedata.bidirectional(ch)
+        if klass == "NSM":
+            # Unicode W1: a combining mark takes the class of the character it
+            # combines with. Real data depends on this — the shipped wordlist
+            # carries "🅿️", a squared Latin P (class L) plus an invisible
+            # variation selector; resolving that selector as a free-standing
+            # neutral splits one glyph across two faces.
+            kinds.append(kinds[-1] if kinds else None)
+        elif klass in ("R", "AL"):
+            kinds.append("R")
+        elif klass == "L":
+            kinds.append("L")
+        else:
+            kinds.append(None)          # neutral, resolved below
+    # Resolve neutrals: a run of them takes the kind on BOTH sides when those
+    # agree, else the base. This is Unicode's N1/N2, and it is what keeps a
+    # number or a space inside a Hebrew phrase from breaking the phrase up.
+    n = len(kinds)
+    i = 0
+    while i < n:
+        if kinds[i] is not None:
+            i += 1
+            continue
+        j = i
+        while j < n and kinds[j] is None:
+            j += 1
+        before = kinds[i - 1] if i > 0 else None
+        after = kinds[j] if j < n else None
+        kinds[i:j] = [(before if before == after and before else base)] * (j - i)
+        i = j
+    runs, cur, kind = [], "", None
+    for ch, k in zip(line, kinds):
+        if kind is not None and k != kind:
+            runs.append((kind == "L", cur))
+            cur = ""
+        kind, cur = k, cur + ch
+    if cur:
+        runs.append((kind == "L", cur))
+    return runs
+
+
 def visual_order(line, rtl):
     """``line`` in the order it will be PAINTED, left to right.
 
