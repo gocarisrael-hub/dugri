@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { buildWords, PROFILE_NAMES, WORD_MAX } from '../../scripts/stress/words.js';
-import { checkPdf } from '../../scripts/stress/pdfcheck.js';
+import { checkPdf, checkPressPdf } from '../../scripts/stress/pdfcheck.js';
 
 // The stress harness (scripts/stress/) is only as trustworthy as its two pure
 // parts: the word generators that decide WHAT gets rendered, and the PDF
@@ -107,5 +107,51 @@ describe('stress PDF validator', () => {
     const v = checkPdf(makePdf({ badOffset: true }));
     expect(v.ok).toBe(false);
     expect(v.reason).toMatch(/outside/);
+  });
+
+  describe('press copy', () => {
+    // The press artifact and the home-print deck are byte-different and look
+    // IDENTICAL in a viewer — the difference only surfaces at the print shop.
+    // The press route can serve the intermediate RGB deck (it checks that the
+    // output file exists before checking whether the build is still running,
+    // and generator/press.py writes Ghostscript's result to that path only at
+    // the very end), so a structural check alone reports a clean pass on a file
+    // that would come back from the printer wrong.
+    const pressMarkers = ' /TrimBox [1 2 3 4] /OutputIntents [5 0 R] /DeviceCMYK ';
+
+    function pressPdf(markers) {
+      const body =
+        `%PDF-1.3\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n` +
+        `2 0 obj\n<< /Type /Pages /Count 208 /Kids [] ${markers} >>\nendobj\n`;
+      const offset = body.indexOf('2 0 obj');
+      return Buffer.from(body + `trailer\nstartxref\n${offset}\n%%EOF\n`, 'latin1');
+    }
+
+    it('accepts a real press copy', () => {
+      const v = checkPressPdf(pressPdf(pressMarkers));
+      expect(v.ok).toBe(true);
+      expect(v.trimBox && v.outputIntents && v.cmyk).toBe(true);
+    });
+
+    it('REJECTS the intermediate RGB deck served at the press path', () => {
+      const v = checkPressPdf(pressPdf(''));
+      expect(v.ok).toBe(false);
+      expect(v.reason).toMatch(/NOT a press copy/);
+      // Every missing property is named — "it failed" is not actionable, "no
+      // TrimBox, no ICC condition, still RGB" is.
+      expect(v.reason).toMatch(/TrimBox/);
+      expect(v.reason).toMatch(/OutputIntents/);
+      expect(v.reason).toMatch(/DeviceCMYK/);
+    });
+
+    it('rejects a press copy that is CMYK but has no TrimBox', () => {
+      const v = checkPressPdf(pressPdf(' /OutputIntents [5 0 R] /DeviceCMYK '));
+      expect(v.ok).toBe(false);
+      expect(v.reason).toMatch(/TrimBox/);
+    });
+
+    it('still reports plain structural damage first', () => {
+      expect(checkPressPdf(Buffer.from('nope')).reason).toMatch(/not a PDF/);
+    });
   });
 });

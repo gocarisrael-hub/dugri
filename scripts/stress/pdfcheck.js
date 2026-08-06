@@ -111,4 +111,44 @@ function countPages(buf) {
   return { count: null, source: 'unknown' };
 }
 
-export { checkPdf, countPages };
+// Is this actually the PRESS copy, or the ordinary home-print deck wearing its
+// filename?
+//
+// WHY THIS IS SEPARATE: the two artifacts are byte-different but LOOK identical
+// in a viewer, and the difference only shows up at the print shop — after the
+// job is on press. The press pass (generator/press.py) stages Ghostscript's CMYK
+// output in a temp dir and only moves it to the final path at the very end, so
+// anything served from that path before the move is the un-converted RGB deck.
+// A structural check alone happily passes it.
+//
+// Three properties only the finished press file has:
+//   * /TrimBox on every page — where the card is cut out of the larger sheet.
+//     press.py calls this "the part a shop's imposition software actually reads".
+//   * /OutputIntents — the named ICC condition the CMYK was separated against.
+//   * DeviceCMYK — Ghostscript's -sColorConversionStrategy=CMYK result. Chrome
+//     emits DeviceRGB.
+function checkPressPdf(buf) {
+  const base = checkPdf(buf);
+  const out = { ...base, trimBox: false, outputIntents: false, cmyk: false };
+  if (!base.ok) return out;
+  const text = buf.toString('latin1');
+  out.trimBox = /\/TrimBox\b/.test(text);
+  out.outputIntents = /\/OutputIntents\b/.test(text);
+  out.cmyk = /\/DeviceCMYK\b/.test(text) || /\/DefaultCMYK\b/.test(text);
+  const missing = [
+    !out.trimBox && 'TrimBox (no statement of where to cut)',
+    !out.outputIntents && 'OutputIntents (no ICC condition)',
+    !out.cmyk && 'DeviceCMYK (still RGB)',
+  ].filter(Boolean);
+  if (missing.length) {
+    out.ok = false;
+    out.reason =
+      'this is NOT a press copy — missing ' +
+      missing.join(', ') +
+      '. It is almost certainly the intermediate RGB deck, served before the ' +
+      'Ghostscript pass finished.';
+  }
+  return out;
+}
+
+export { checkPdf, checkPressPdf, countPages };

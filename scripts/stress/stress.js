@@ -31,8 +31,12 @@
 //  USAGE
 //    node scripts/stress/stress.js --base <url> --key <admin key> [options]
 //
-//    --suite <a,b,...>   matrix | glyphs | extremes | variants | press |
-//                        concurrency | preview-race   (default: all but press)
+//    --suite <a,b,...>   catalog | matrix | glyphs | extremes | variants |
+//                        press | concurrency | preview-race
+//                        (default: everything except press, which is slow)
+//                        `catalog` alone is a one-second audit that needs no
+//                        rendering: it flags every design that is ON SALE while
+//                        uncalibrated, i.e. unproducible.
 //    --themes <a,b>      restrict to these theme keys (default: every public one)
 //    --counts <n,n>      word counts for the matrix suite (default 70,224,416)
 //    --profiles <a,b>    word profiles (see scripts/stress/words.js)
@@ -51,7 +55,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Api } from './api.js';
 import { buildWords, PROFILE_NAMES } from './words.js';
-import { checkPdf } from './pdfcheck.js';
+import { checkPdf, checkPressPdf } from './pdfcheck.js';
 import { Probe } from './probe.js';
 
 // --- argument parsing --------------------------------------------------------
@@ -151,7 +155,46 @@ async function loadThemes() {
     nameForm: t.name_form || null,
     extraFields: Array.isArray(t.extra_fields) ? t.extra_fields : [],
     visibility: t.visibility,
+    inStore: t.in_store !== false,
+    calibrated: !!t.calibrated,
   }));
+}
+
+// The cheapest check in the file, and the one that found the outage: a design
+// can be ON SALE and UNPRODUCIBLE at the same time.
+//
+// `calibrated` and "sellable" are independent flags. The generator hard-refuses
+// an uncalibrated theme (config.ensure_calibrated) before Chrome even starts, so
+// every order for such a design dies at production with a raw Python traceback —
+// after the customer has paid and sent their words. Nothing in the storefront,
+// the wizard or the admin blocks the sale, and several ordinary admin actions
+// (switching card_structure, changing the front/back mode) deliberately reset
+// calibrated to false on a design that was working yesterday.
+//
+// This runs in about a second and needs no rendering at all, so it belongs at
+// the FRONT of any run — and is worth running on its own after any template
+// edit.
+async function suiteCatalog(themes) {
+  log('\n== suite: catalog (is everything on sale actually producible?) ==');
+  for (const theme of themes) {
+    const sellable = theme.inStore && (theme.visibility || 'public') === 'public';
+    const row = {
+      case: `catalog-${theme.key}`.replace(/\s+/g, '_'),
+      suite: 'catalog',
+      theme: theme.key,
+      themeLabel: theme.label,
+      at: new Date().toISOString(),
+      status: 200,
+      sellable,
+      calibrated: theme.calibrated,
+      pass: !sellable || theme.calibrated,
+      reason:
+        sellable && !theme.calibrated
+          ? 'ON SALE but calibrated:false — every order for this design fails at production'
+          : null,
+    };
+    record(row);
+  }
 }
 
 // A honoree name in the script the theme demands — a mismatch is refused by
@@ -479,13 +522,16 @@ async function suitePress(themes, opts) {
     // Poll to completion. 202 = still building, 409 = failed with detail,
     // 200 = the finished PDF streamed back.
     let done = null;
+    let polls = 0;
     while (Date.now() - t0 < timeout) {
       await new Promise((r) => setTimeout(r, 5000));
+      polls += 1;
       const s = await api.pressGet(c.id);
       if (s.status === 202) continue;
       done = s;
       break;
     }
+    row.polls = polls;
     row.ms = Date.now() - t0;
     Object.assign(row, probe.window(t0, Date.now()));
     if (!done) {
@@ -501,7 +547,12 @@ async function suitePress(themes, opts) {
       continue;
     }
     row.bytes = done.buf.length;
-    const v = checkPdf(done.buf);
+    // NOT checkPdf: a structurally perfect PDF is the easy half. The press copy
+    // has to be CMYK against a named ICC condition with a TrimBox stating where
+    // to cut — and the ONE artifact that satisfies "structurally valid PDF at
+    // the press path" while being none of those is the intermediate RGB deck,
+    // which is what a poll answered too early actually returns.
+    const v = checkPressPdf(done.buf);
     row.pdf = v;
     row.pdfPages = v.pages;
     if (!v.ok) {
@@ -616,6 +667,7 @@ async function suitePreviewRace(themes, opts) {
 }
 
 const SUITES = {
+  catalog: suiteCatalog,
   matrix: suiteMatrix,
   glyphs: suiteGlyphs,
   extremes: suiteExtremes,
@@ -677,6 +729,7 @@ async function main() {
   }
 
   const suites = list(args.suite, [
+    'catalog',
     'matrix',
     'glyphs',
     'extremes',
