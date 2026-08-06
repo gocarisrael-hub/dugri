@@ -479,11 +479,22 @@ function renderInfo(d, overrides) {
   }
 }
 
+// The rail's catalog: the bundled public designs, plus the UPLOADED templates on
+// sale once /api/custom-designs resolves (see mergeCustomDesigns). Kept as its own
+// list rather than mutating PUBLIC_DESIGNS, which the module's other readers
+// (resolveDesign, the name overlay) treat as the bundled manifest.
+const relatedCatalog = PUBLIC_DESIGNS.slice();
+
 function renderRelated(current) {
   const track = document.getElementById('relatedTrack');
   if (!track) return;
+  // Tear the previous instance down before replacing its slides. initCarousel is
+  // idempotent — handed a track it already owns it returns early, BEFORE the loop
+  // that stamps `carousel-slide` on each slide — so re-rendering into a live track
+  // leaves the new cards unstamped (the #345 collapse, here on the related rail).
+  if (track.__carousel) track.__carousel.destroy();
   track.textContent = '';
-  for (const d of PUBLIC_DESIGNS) {
+  for (const d of relatedCatalog) {
     const card = el('a', 'pdp-rel-card', {
       href: `product.html?design=${encodeURIComponent(d.id)}`,
       'data-label': d.name,
@@ -745,9 +756,31 @@ function boot() {
     } catch {
       id = '';
     }
+    // Fold the uploaded templates into the rail's catalog FIRST, so whichever
+    // branch below re-renders it already offers every design the store sells.
+    const grew = mergeCustomDesigns(customs);
     const custom = (customs || []).find((c) => c.id === id);
     if (custom && custom.id !== currentDesign.id) switchToDesign(custom);
+    else if (grew) renderRelated(currentDesign);
   });
+}
+
+// Fold the uploaded templates into the related rail's catalog. The rail used to
+// list ONLY the bundled designs, so an uploaded template the store already sells
+// was never offered from a product page — and on its OWN page the rail didn't even
+// include the design being viewed. Returns whether anything was added, so the
+// caller only pays for a re-render when the rail actually changed.
+function mergeCustomDesigns(customs) {
+  if (!Array.isArray(customs) || !customs.length) return false;
+  const known = new Set(relatedCatalog.map((d) => d.id));
+  let grew = false;
+  for (const c of customs) {
+    if (!c || known.has(c.id)) continue;
+    relatedCatalog.push(c);
+    known.add(c.id);
+    grew = true;
+  }
+  return grew;
 }
 
 // Re-render the whole detail page for `d` (used when a custom design resolves after

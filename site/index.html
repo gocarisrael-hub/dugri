@@ -1080,7 +1080,12 @@
 
     <script type="module">
       import { initCarousel } from './js/carousel.js';
-      import { PUBLIC_DESIGNS, fetchDesignNames, applyDesignNames } from './js/designs.js';
+      import {
+        PUBLIC_DESIGNS,
+        fetchDesignNames,
+        applyDesignNames,
+        loadCustomDesigns,
+      } from './js/designs.js';
       import { fetchPricing } from './js/pricing.js';
       import { loadDesignImages, galleryFor } from './js/design-images.js';
 
@@ -1113,7 +1118,18 @@
           .join(' ');
       const productsTrack = document.getElementById('productsTrack');
       if (productsTrack) {
-        for (const d of PUBLIC_DESIGNS) {
+        // The rail's catalog: the bundled public designs, plus the UPLOADED
+        // templates the store already sells, appended once /api/custom-designs
+        // resolves. The homepage used to know only the bundled manifest, so a
+        // design on sale in /products was missing from the shop window the whole
+        // site funnels through — the shopper was simply never shown it.
+        const railDesigns = PUBLIC_DESIGNS.slice();
+        // Last resolved async overlays, replayed onto a rebuilt rail so a late
+        // custom design can't undo a rename or an owner picture that landed first.
+        let railNames = {};
+        let railImages = {};
+
+        function buildCard(d) {
           const card = document.createElement('a');
           card.className = 'home-prod-card';
           card.href = `product.html?design=${encodeURIComponent(d.id)}`;
@@ -1125,7 +1141,12 @@
           const thumb = document.createElement('div');
           thumb.className = 'home-prod-thumb';
           const img = document.createElement('img');
-          img.src = `assets/designs/${d.id}/store.webp`;
+          // The shipped cover, via the SAME resolver /products leads its cards
+          // with: a built-in design's committed store.webp, an uploaded
+          // template's own picture (it has no store cover). galleryFor with an
+          // empty config returns exactly the shipped render.
+          const shipped = galleryFor({}, d, 'products')[0];
+          img.src = (shipped && (shipped.fallback || shipped.src)) || '';
           img.setAttribute('data-store-default', img.src);
           img.alt = d.name;
           img.loading = 'lazy';
@@ -1140,25 +1161,34 @@
           price.textContent = `${PRICE} ₪`;
 
           card.append(thumb, name, price);
-          productsTrack.appendChild(card);
+          return card;
         }
-        // Endless rail: loop:true wraps seamlessly in BOTH directions (a free
-        // drag/fling past the last card keeps going into the first, and vice
-        // versa) instead of hitting an edge. The cards are layer-promoted in CSS
-        // so the seamless-loop recenter is a cheap reposition, not a repaint.
-        initCarousel(productsTrack, { mode: 'scroller', loop: true, dots: false });
+
+        // (Re)paint the whole rail from railDesigns. Endless rail: loop:true wraps
+        // seamlessly in BOTH directions (a free drag/fling past the last card keeps
+        // going into the first, and vice versa) instead of hitting an edge. The
+        // cards are layer-promoted in CSS so the seamless-loop recenter is a cheap
+        // reposition, not a repaint.
+        //
+        // A repaint MUST tear the old instance down first: initCarousel is
+        // idempotent — handed a track it already owns it returns early, BEFORE the
+        // loop that stamps `carousel-slide` on each card — so appending into a live
+        // track would leave the new cards unstamped beside stale loop clones.
+        function paintRail() {
+          if (productsTrack.__carousel) productsTrack.__carousel.destroy();
+          productsTrack.textContent = '';
+          for (const d of railDesigns) productsTrack.appendChild(buildCard(d));
+          initCarousel(productsTrack, { mode: 'scroller', loop: true, dots: false });
+        }
 
         // An admin rename edits themes.json display_he, which lands long after this
         // page's catalog was built — so without this the rail keeps showing the
         // built-in name while the store and the product page show the new one.
         // Re-stamped AFTER initCarousel so the loop's CLONED cards (also matched by
-        // the selector) are corrected too. Fail-soft: the fetcher resolves to {} on
-        // timeout/error, applyDesignNames then changes nothing and the built-in
-        // names stand.
-        fetchDesignNames().then((names) => {
-          applyDesignNames(names, PUBLIC_DESIGNS);
+        // the selector) are corrected too.
+        function applyRailNames() {
           for (const card of productsTrack.querySelectorAll('.home-prod-card[data-design-id]')) {
-            const nm = names[card.getAttribute('data-design-id')];
+            const nm = railNames[card.getAttribute('data-design-id')];
             if (!nm) continue;
             card.dataset.label = nm;
             const img = card.querySelector('img');
@@ -1166,39 +1196,81 @@
             const nameEl = card.querySelector('.home-prod-name');
             if (nameEl) nameEl.textContent = shortLabel(nm);
           }
-        });
+        }
 
         // Overlay the owner's per-design STORE-tile overrides so the homepage rail
         // shows the SAME picture as /products (else one design would show two
         // different images). Runs after the rail (incl. any loop clones) is built.
+        // A broken override file degrades to the shipped default via the onerror.
+        function applyRailImages() {
+          for (const img of productsTrack.querySelectorAll('.home-prod-thumb img')) {
+            const id = img.closest('[data-design-id]')?.getAttribute('data-design-id');
+            const design = railDesigns.find((x) => x.id === id);
+            if (!design) continue;
+            // The store-tile COVER is the first picture of the products-surface
+            // gallery — the same image /products leads each card with. galleryFor
+            // returns the shipped render when the owner set no override, so only
+            // swap when it actually differs from the default already set.
+            const cover = galleryFor(railImages, design, 'products')[0];
+            const staticDefault = img.getAttribute('data-store-default');
+            if (!cover || !cover.src || cover.src === staticDefault) continue;
+            img.addEventListener(
+              'error',
+              () => {
+                if (staticDefault && img.src !== staticDefault) img.src = staticDefault;
+              },
+              { once: true }
+            );
+            img.src = cover.src;
+          }
+        }
+
+        // First paint from the bundled catalog — never blocks on the network.
+        paintRail();
+
+        // Fail-soft: the fetcher resolves to {} on timeout/error, applyDesignNames
+        // then changes nothing and the built-in names stand.
+        fetchDesignNames().then((names) => {
+          railNames = names || {};
+          applyDesignNames(railNames, railDesigns);
+          applyRailNames();
+        });
+
         // Timeout-bounded + fail-safe (js/design-images.js): a slow/failed fetch
-        // leaves the static store.webp in place; a broken override file degrades to
-        // the static default via the onerror below.
+        // leaves the shipped renders in place.
         loadDesignImages()
           .then((map) => {
-            for (const img of productsTrack.querySelectorAll('.home-prod-thumb img')) {
-              const id = img.closest('[data-design-id]')?.getAttribute('data-design-id');
-              const design = PUBLIC_DESIGNS.find((x) => x.id === id);
-              if (!design) continue;
-              // The store-tile COVER is the first picture of the products-surface
-              // gallery — the same image /products leads each card with. galleryFor
-              // returns the shipped render when the owner set no override, so only
-              // swap when it actually differs from the static store.webp already set.
-              const cover = galleryFor(map, design, 'products')[0];
-              const staticDefault = img.getAttribute('data-store-default');
-              if (!cover || !cover.src || cover.src === staticDefault) continue;
-              img.addEventListener(
-                'error',
-                () => {
-                  if (staticDefault && img.src !== staticDefault) img.src = staticDefault;
-                },
-                { once: true }
-              );
-              img.src = cover.src;
-            }
+            railImages = map || {};
+            applyRailImages();
           })
           .catch(() => {
-            /* fail-safe: static store.webp stays */
+            /* fail-safe: the shipped renders stay */
+          });
+
+        // Append the UPLOADED templates on sale, then repaint so they ride the same
+        // rail as the bundled designs. Fail-safe ([] on error / timeout): the rail
+        // just keeps the bundled catalog, exactly as before.
+        loadCustomDesigns()
+          .then((customs) => {
+            if (!customs || !customs.length) return;
+            const known = new Set(railDesigns.map((d) => d.id));
+            let grew = false;
+            for (const c of customs) {
+              if (!c || known.has(c.id)) continue;
+              railDesigns.push(c);
+              known.add(c.id);
+              grew = true;
+            }
+            if (!grew) return;
+            paintRail();
+            // Replay whatever already resolved onto the new cards. The price needs
+            // no replay: buildCard reads the live PRICE, and if /api/pricing lands
+            // later it stamps every .home-prod-price on the page anyway.
+            applyRailNames();
+            applyRailImages();
+          })
+          .catch(() => {
+            /* fail-safe: the bundled rail stays */
           });
       }
 
