@@ -541,15 +541,11 @@ function writeTemplateFiles({ root, slug, clean, filled, fonts, assets }) {
 // the OWNER recipes dir when DATA_DIR is set (it inherits the env), so the
 // success check accepts a recipe that landed in EITHER layer rather than only
 // the image's.
-function runRecipeDiff({
-  root,
-  slug,
-  recipeName,
-  pythonBin = 'python3',
-  timeoutMs = 120000,
-  runner,
-  cards = false,
-}) {
+// The argv + output path for one detection run, WITHOUT running it. Split out so
+// the synchronous caller below and the asynchronous job runner
+// (server/redetect-job.js) build exactly the same command — a second hand-rolled
+// argv is how the recipe-name-vs-key bug below would come back on one path only.
+function recipeDiffPlan({ root, slug, recipeName, cards = false }) {
   const script = path.join(root, 'generator', 'recipe_diff.py');
   const dir = resolveTemplateDirBySlug(root, slug);
   const filled = path.join(dir, 'filled', 'fronts.svg');
@@ -570,13 +566,13 @@ function runRecipeDiff({
   // four shared word slots across the eight fronts and keeping each front's own
   // title box.
   const args = cards ? [script, '--single', dir, name] : [script, filled, clean, name];
-  let result;
-  try {
-    const run = runner || spawnSync;
-    result = run(pythonBin, args, { cwd: root, timeout: timeoutMs, encoding: 'utf8' });
-  } catch (e) {
-    return { ok: false, recipe: out, detail: String((e && e.message) || e) };
-  }
+  return { script, args, out };
+}
+
+// What a finished detection run MEANS, given the spawn result. `result` is the
+// spawnSync-shaped { status, stdout, stderr } — the async runner normalises to
+// the same shape, so success/failure is decided in one place for both.
+function recipeDiffOutcome({ root, slug, out, result }) {
   const ok = !!result && result.status === 0 && !!resolveRecipePath(root, slug);
   return {
     ok,
@@ -585,6 +581,26 @@ function runRecipeDiff({
       ? null
       : String((result && (result.stderr || result.stdout)) || 'recipe failed').slice(0, 800),
   };
+}
+
+function runRecipeDiff({
+  root,
+  slug,
+  recipeName,
+  pythonBin = 'python3',
+  timeoutMs = 120000,
+  runner,
+  cards = false,
+}) {
+  const { args, out } = recipeDiffPlan({ root, slug, recipeName, cards });
+  let result;
+  try {
+    const run = runner || spawnSync;
+    result = run(pythonBin, args, { cwd: root, timeout: timeoutMs, encoding: 'utf8' });
+  } catch (e) {
+    return { ok: false, recipe: out, detail: String((e && e.message) || e) };
+  }
+  return recipeDiffOutcome({ root, slug, out, result });
 }
 
 // Best-effort CALIBRATION auto-detection: run generator/calibrate.py, which
@@ -599,20 +615,16 @@ function runRecipeDiff({
 // also carries per-field `confidence` and `notes`, which the form already renders
 // as "check this one" flags — several values (arch, offset, pinned sizes) are not
 // measurable at all and are left for the owner by design.
-function runCalibrate({ root, slug, pythonBin = 'python3', timeoutMs = 180000, runner }) {
+// Argv + scratch path for one calibration run — the counterpart to
+// `recipeDiffPlan`, shared by the synchronous and asynchronous callers.
+function calibratePlan({ root, slug }) {
   const script = path.join(root, 'generator', 'calibrate.py');
   const out = path.join(os.tmpdir(), 'dugri-calibrate-' + Date.now() + '.json');
-  let result;
-  try {
-    const run = runner || spawnSync;
-    result = run(pythonBin, [script, slug, '--out', out], {
-      cwd: root,
-      timeout: timeoutMs,
-      encoding: 'utf8',
-    });
-  } catch (e) {
-    return { ok: false, detail: String((e && e.message) || e) };
-  }
+  return { script, args: [script, slug, '--out', out], out };
+}
+
+// What a finished calibration run means, and the cleanup of its scratch file.
+function calibrateOutcome({ out, result }) {
   if (!result || result.status !== 0 || !fs.existsSync(out)) {
     return {
       ok: false,
@@ -634,6 +646,22 @@ function runCalibrate({ root, slug, pythonBin = 'python3', timeoutMs = 180000, r
       /* best-effort cleanup */
     }
   }
+}
+
+function runCalibrate({ root, slug, pythonBin = 'python3', timeoutMs = 180000, runner }) {
+  const { args, out } = calibratePlan({ root, slug });
+  let result;
+  try {
+    const run = runner || spawnSync;
+    result = run(pythonBin, args, {
+      cwd: root,
+      timeout: timeoutMs,
+      encoding: 'utf8',
+    });
+  } catch (e) {
+    return { ok: false, detail: String((e && e.message) || e) };
+  }
+  return calibrateOutcome({ out, result });
 }
 
 // Merge auto-detected calibration into a theme entry. Only the keys the detector
@@ -2779,6 +2807,40 @@ function deleteTemplate({ root, key, inUseThemes }) {
 //
 // Detection PROPOSES: the measured values are written, but `calibrated` is left
 // exactly as it was, so this can never flip an unfinished template on sale.
+// What re-detection needs to know about a template before it spawns anything —
+// or the 404 it must answer with instead. Shared by the synchronous function
+// below and the asynchronous job, so a key that does not exist is refused
+// identically on both, BEFORE a job is ever registered for it.
+function redetectPlan({ root, key }) {
+  const themes = loadThemes(themesPathFor(root));
+  const entry = ownTheme(themes, key);
+  if (!entry) return { error: 'template not found', httpStatus: 404 };
+  return {
+    cards: cardStructureOf(entry) === 'cards',
+    recipeName: entry.recipe || key,
+    themesPath: themesPathFor(root),
+  };
+}
+
+// The report the button shows, assembled from the two runs' outcomes. Pure —
+// it neither spawns nor writes — so both callers say exactly the same thing
+// about the same pair of results.
+function redetectReport({ key, recipe, calibration }) {
+  return {
+    key,
+    recipe: recipe.recipe,
+    calibrated: !!calibration.ok,
+    // Surfaced rather than swallowed: a recipe that detected fine while
+    // calibration did not is a real, actionable state.
+    detail: calibration.ok ? null : calibration.detail || null,
+    // So is a run that succeeded while REFUSING to regularise something. That
+    // combination is what let grapefruit come back with unevenly spaced words
+    // from press after press of this button: the detector declined the spacing
+    // snap every time, said "ok", and the only record was a container log.
+    declined: declinedSnapsOf(recipe.recipe),
+  };
+}
+
 function redetectTemplate({ root, key, pythonBin, recipeRunner, calibrateRunner }) {
   const themes = loadThemes(themesPathFor(root));
   const entry = ownTheme(themes, key);
@@ -2800,19 +2862,7 @@ function redetectTemplate({ root, key, pythonBin, recipeRunner, calibrateRunner 
   }
   const calibration = runCalibrate({ root, slug: key, pythonBin, runner: calibrateRunner });
   if (calibration.ok) applyCalibration(themesPathFor(root), key, calibration.blob);
-  return {
-    key,
-    recipe: recipe.recipe,
-    calibrated: !!calibration.ok,
-    // Surfaced rather than swallowed: a recipe that detected fine while
-    // calibration did not is a real, actionable state.
-    detail: calibration.ok ? null : calibration.detail || null,
-    // So is a run that succeeded while REFUSING to regularise something. That
-    // combination is what let grapefruit come back with unevenly spaced words
-    // from press after press of this button: the detector declined the spacing
-    // snap every time, said "ok", and the only record was a container log.
-    declined: declinedSnapsOf(recipe.recipe),
-  };
+  return redetectReport({ key, recipe, calibration });
 }
 
 // The regularisations detection refused, read back off the recipe it just wrote.
@@ -3207,6 +3257,15 @@ module.exports = {
   writeTemplateFiles,
   runRecipeDiff,
   runCalibrate,
+  // The pieces re-detection is assembled from, so server/redetect-job.js can run
+  // the SAME two commands off the event loop without a second copy of the argv,
+  // the success test, or the report shape.
+  recipeDiffPlan,
+  recipeDiffOutcome,
+  calibratePlan,
+  calibrateOutcome,
+  redetectPlan,
+  redetectReport,
   applyCalibration,
   shrinkSvgImages,
   normalizeMetadata,
