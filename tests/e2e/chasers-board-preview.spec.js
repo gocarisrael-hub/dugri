@@ -37,7 +37,9 @@ function mockPreview(page) {
         body: JSON.stringify({
           card: CARD,
           back: CARD,
-          board: body.chasers ? BOARD_CHASERS : BOARD_PLAIN,
+          // A board comes back only when the request asked for one, as the real
+          // route behaves — the name preview asks only for the chasers add-on.
+          ...(body.board ? { board: body.chasers ? BOARD_CHASERS : BOARD_PLAIN } : {}),
           warning: null,
           word_font: body.word_font || null,
           word_font_options: [],
@@ -71,7 +73,7 @@ test.describe('chasers add-on drives the name-step board preview', () => {
     expect(reqs[reqs.length - 1].chasers).toBe(true);
   });
 
-  test('toggling chasers off re-requests the preview and swaps back to the plain board', async ({
+  test('toggling chasers off re-requests the preview and takes the board away', async ({
     page,
   }) => {
     const reqs = await mockPreview(page);
@@ -90,21 +92,28 @@ test.describe('chasers add-on drives the name-step board preview', () => {
     await expect(page.getByTestId('chasers-toggle')).not.toBeChecked();
     await page.getByTestId('next-btn').click(); // -> step 3
 
-    // a fresh preview is requested with chasers:false and the PLAIN board is shown
-    await expect(page.getByTestId('name-preview-board')).toHaveAttribute('src', BOARD_PLAIN);
+    // A fresh preview is requested with chasers:false — and with the add-on gone
+    // the board goes with it, rather than reverting to the plain board.
+    await expect(page.getByTestId('name-preview-board')).toBeHidden();
     expect(reqs[reqs.length - 1].chasers).toBe(false);
+    expect(reqs[reqs.length - 1].board).toBe(false);
   });
 
-  test('with chasers off the plain board is shown and the flag is false', async ({ page }) => {
+  // With the add-on off there is no board on this step AT ALL — the name preview
+  // is the card and its back. The plain board is what the deck ships and what
+  // the design carousel shows; it is not what this step is for.
+  test('with chasers off no board is requested and none is shown', async ({ page }) => {
     const reqs = await mockPreview(page);
     await page.goto('/options.html?plan=base');
     await page.getByTestId('design-0').click();
     await page.getByTestId('next-btn').click(); // -> step 2
     await page.getByTestId('next-btn').click(); // -> step 3 (chasers left OFF)
     await page.getByTestId('honoree-input').fill('Shira');
+    await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
-    await expect(page.getByTestId('name-preview-board')).toHaveAttribute('src', BOARD_PLAIN);
+    await expect(page.getByTestId('name-preview-board')).toBeHidden();
     await expect.poll(() => reqs.length).toBeGreaterThanOrEqual(1);
     expect(reqs[reqs.length - 1].chasers).toBe(false);
+    expect(reqs[reqs.length - 1].board).toBe(false);
   });
 });

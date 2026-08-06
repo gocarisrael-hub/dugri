@@ -30,6 +30,11 @@ const FONT_OPTIONS = [
 
 // Intercept /api/preview: record each request body, reply with the fake images +
 // options (echoing the requested word_font, like the real route does).
+//
+// The board is returned ONLY when the request asked for one, exactly as the real
+// route behaves — `board:false` makes the server skip that render entirely. A
+// mock that shipped a board regardless would let a regression through: every
+// board assertion here would keep passing while the live page showed nothing.
 function mockPreview(page) {
   const reqs = [];
   return page
@@ -42,7 +47,7 @@ function mockPreview(page) {
         body: JSON.stringify({
           card: PNG,
           back: PNG,
-          board: PNG,
+          ...(body.board ? { board: PNG } : {}),
           warning: null,
           word_font: body.word_font || null,
           word_font_options: FONT_OPTIONS,
@@ -53,11 +58,17 @@ function mockPreview(page) {
 }
 
 // design-0 = bachelorette -> theme "bachelorette" (no extra fields, english).
-async function toNameStep(page) {
+// `chasers` turns the add-on on at step 2 — the one case where the name preview
+// still carries a board, because that board IS what the add-on sells.
+async function toNameStep(page, { chasers = false } = {}) {
   await page.goto('/options.html?plan=base');
   await expect(page.getByTestId('step-1')).toBeVisible();
   await page.getByTestId('design-0').click();
   await page.getByTestId('next-btn').click(); // -> step 2 (colour + add-ons)
+  if (chasers) {
+    await page.getByTestId('chasers-toggle').check();
+    await expect(page.getByTestId('chasers-toggle')).toBeChecked();
+  }
   await page.getByTestId('next-btn').click(); // -> step 3 (name)
   await expect(page.getByTestId('step-3')).toBeVisible();
 }
@@ -78,7 +89,12 @@ test.describe('name-step live preview + font picker', () => {
     // the design's real card back renders too, alongside the card + board
     await expect(page.getByTestId('name-preview-back')).toHaveAttribute('src', /^data:image\/png/);
     await expect(page.getByTestId('name-preview-back')).toBeVisible();
-    await expect(page.getByTestId('name-preview-board')).toHaveAttribute('src', /^data:image\/png/);
+    // ...and NO board. The name preview is the card and its back; the board is
+    // not merely hidden here, it is never asked for — so the server never pays
+    // to render the heaviest image in the response.
+    await expect(page.getByTestId('name-preview-board')).toBeHidden();
+    await expect.poll(() => reqs.length).toBeGreaterThanOrEqual(1);
+    expect(reqs[reqs.length - 1].board).toBe(false);
 
     // the name was sent to the preview endpoint
     await expect.poll(() => reqs.length).toBeGreaterThanOrEqual(1);
@@ -301,7 +317,9 @@ test.describe('OPTION C — the board slide fills the full preview width', () =>
     // — we then measure the final geometry, never a mid-animation frame.
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mockPreview(page);
-    await toNameStep(page);
+    // The board reaches this preview only via the chasers add-on now, so that is
+    // the state its layout has to be measured in.
+    await toNameStep(page, { chasers: true });
     await page.getByTestId('honoree-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
@@ -366,5 +384,37 @@ test.describe('OPTION C — the board slide fills the full preview width', () =>
       .evaluate((el) => parseFloat(getComputedStyle(el).maxWidth));
     expect(cardMaxW).toBe(400);
     expect(backMaxW).toBe(400);
+  });
+});
+
+// The board was removed from this step at the owner's request — but the chasers
+// add-on's whole product IS a different board, and this preview is the only
+// place a buyer sees the thing they are paying extra for. So the exception has
+// to be pinned in both directions, or a later tidy-up quietly sells an add-on
+// with nothing to show for it.
+test.describe('the name preview carries a board only for the chasers add-on', () => {
+  test('with the add-on OFF the board is never requested and never shown', async ({ page }) => {
+    const reqs = await mockPreview(page);
+    await toNameStep(page);
+    await page.getByTestId('honoree-input').fill('Shira');
+    await expect(page.getByTestId('name-preview-card')).toBeVisible();
+
+    await expect.poll(() => reqs.length).toBeGreaterThanOrEqual(1);
+    expect(reqs[reqs.length - 1].board).toBe(false);
+    await expect(page.getByTestId('name-preview-board')).toBeHidden();
+    // ...and the carousel offers no board slide to swipe to.
+    await expect(page.getByTestId('name-preview-dot-board')).toHaveCount(0);
+  });
+
+  test('with the add-on ON the board is requested and shown', async ({ page }) => {
+    const reqs = await mockPreview(page);
+    await toNameStep(page, { chasers: true });
+    await page.getByTestId('honoree-input').fill('Shira');
+    await expect(page.getByTestId('name-preview-card')).toBeVisible();
+
+    await expect.poll(() => reqs.length).toBeGreaterThanOrEqual(1);
+    expect(reqs[reqs.length - 1].board).toBe(true);
+    await expect(page.getByTestId('name-preview-board')).toHaveAttribute('src', /^data:image\/png/);
+    await expect(page.getByTestId('name-preview-dot-board')).toBeVisible();
   });
 });

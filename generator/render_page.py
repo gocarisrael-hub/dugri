@@ -2329,6 +2329,36 @@ def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
                                       or ts.get("back_size") or ts.get("size")))
 
 
+def back_draws_title(theme, clean_svg, back_index=None):
+    """Whether this back will be printed WITH the honoree's name on it.
+
+    Answered by ASKING :func:`back_overlay` — the function that actually draws
+    it — rather than by re-reading the theme/recipe here. The three-way rule it
+    applies (detected boxes / an explicit "no text on this back" / nothing
+    calibrated yet) is subtle enough that a second copy would drift, and a
+    report that drifts from the render is worse than no report: it would tell
+    the owner her back is titled while the deck prints it bare.
+
+    Cheap — this builds an overlay string and throws it away; no Chrome, no
+    fonts, no file written.
+    """
+    import card_assets
+    cfg = config.theme(theme)
+    recipe = config.recipe_or_empty(cfg)
+    svg = card_assets.read_svg(clean_svg)
+    try:
+        card_vb = deck_html.view_box(svg)
+    except Exception:
+        card_vb = None
+    if back_index is None:
+        back_index = _index_from_card_path(clean_svg)
+    # A non-empty name, so an overlay that IS drawn can never come back blank
+    # for want of text and be misread as "this back carries no title".
+    overlay = back_overlay(theme, recipe, ["X"], card_vb=card_vb,
+                           back_index=back_index)
+    return bool(overlay.strip())
+
+
 # The photo card's four slots ship in the artwork as <image> elements with NO
 # href — id="photo-slot-1".."photo-slot-4" — already carrying their geometry,
 # their xMidYMid-meet fit and their circular clip (see docs/photo-card.md).

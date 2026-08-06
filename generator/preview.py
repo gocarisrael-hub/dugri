@@ -13,9 +13,9 @@ exactly like the real output — including the chosen ``word_font``.
   imgs = preview("trip comeback", "OZ", {}, word_font="Fredoka-Medium.ttf")
   # -> {"card": "/tmp/.../card.png", "board": "/tmp/.../board.png"}
 
-CLI (prints the two PNG paths as JSON):
+CLI (prints the produced PNG paths as JSON, plus any ``notes``):
   python3 generator/preview.py <theme> <name> <out_dir> \
-          [--word-font FONT.ttf] [--field KEY=VALUE ...]
+          [--word-font FONT.ttf] [--field KEY=VALUE ...] [--no-board]
 """
 import argparse
 import json
@@ -45,6 +45,29 @@ BOARD_MAX_W = 1000
 
 def _recipe(cfg):
     return config.load_recipe(cfg["recipe"])
+
+
+# Codes for ``notes`` (see _note). Stable strings — the admin UI keys its Hebrew
+# wording off them, so they are part of the preview's contract, not debug text.
+NOTE_NO_TITLE = "no_title"     # surface rendered, but with NO personalized name
+NOTE_FAILED = "failed"         # surface could not be rendered at all
+
+
+def _note(notes, surface, code, detail):
+    """Record something the owner MUST be told about this preview.
+
+    A preview is the approval step before a deck is printed, so anything it
+    quietly leaves out is a promise it cannot keep. Two things used to vanish
+    here: a back that failed to render (swallowed whole, leaving a two-panel
+    preview that looked complete) and a surface rendered with no title at all
+    because nothing is calibrated for it (which looks exactly like a design
+    that was never meant to carry a name). Both now come back with the images
+    so the caller can say so out loud.
+
+    Neither is fatal: a partial preview still beats no preview, and a title-less
+    back is what the deck would genuinely print. They are reported, not raised.
+    """
+    notes.append({"surface": surface, "code": code, "detail": detail})
 
 
 def _sample_card_index(recipe):
@@ -87,7 +110,7 @@ def _crop_card(full_png, cell, viewbox, out_png):
 
 
 def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
-                         chasers=False, all_fronts=False):
+                         chasers=False, all_fronts=False, with_board=True):
     """The v2 preview: the front card(s), the back, and the board.
 
     A BUYER preview renders the theme's FIRST front only: the fronts differ by
@@ -101,6 +124,7 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
     """
     fronts = config.fronts(cfg)
     out = {}
+    notes = []
     paths = []
     if all_fronts and len(fronts) > 1:
         # Showing every front is an ENHANCEMENT for calibration. It must never
@@ -117,6 +141,12 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
             print(f"all-fronts preview failed, falling back to one card: {exc}",
                   file=sys.stderr)
             paths = []
+            # Degrading is right; degrading SILENTLY is not. The owner asked to
+            # see every front because she is adjusting a per-front value, so a
+            # preview that quietly answers with one card leaves her editing
+            # front 8 while looking at front 2 — the exact failure this strip
+            # exists to prevent.
+            _note(notes, "cards", NOTE_FAILED, str(exc))
     if paths:
         for path in paths:
             _downscale(path, CARD_MAX_W)
@@ -135,38 +165,59 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
     out["card"] = card_png
 
     board_clean = config.board_clean_path(theme, chasers=chasers)
-    if os.path.exists(board_clean):
+    if with_board and os.path.exists(board_clean):
         board_png = buildmod.render_board(
             theme, board_clean, title_lines, os.path.join(workdir, "board.png"),
             chasers=chasers)
         _downscale(board_png, BOARD_MAX_W)
         out["board"] = board_png
+        # Same test build.render_board itself makes ("if not bd": no board slot
+        # -> print the clean board untouched), so the note cannot claim a title
+        # the board render did not draw.
+        if not cfg.get("board"):
+            _note(notes, "board", NOTE_NO_TITLE,
+                  "no board title slot is calibrated for this design, so the "
+                  "printed board will carry no name either")
 
     # Best-effort, exactly as the v1 path: a back that fails to render must never
-    # cost the buyer their card+board preview.
+    # cost the buyer their card+board preview. It must not vanish in SILENCE
+    # either — see _note.
     try:
         # The FIRST back, which on a one-back deck is the only one. A paired
         # template has no shared back file at all, so asking for `back_path`
         # here would look for a `1.svg` it was never meant to ship.
         bi = config.back_indices(config.theme(theme))[0]
+        back_path = config.card_path(theme, bi)
         back_png = rp.render_single_card(
-            theme, config.card_path(theme, bi), [], title_lines,
+            theme, back_path, [], title_lines,
             os.path.join(workdir, "back.png"), kind="back", word_font=word_font,
             back_index=bi)
         _downscale(back_png, CARD_MAX_W)
         out["back"] = back_png
-    except Exception:
-        pass
+        if not rp.back_draws_title(theme, back_path, back_index=bi):
+            _note(notes, "back", NOTE_NO_TITLE,
+                  "no back title slot is calibrated for this design, so the "
+                  "printed backs will carry no name either")
+    except Exception as exc:  # noqa: BLE001 - degrades to no back, never fatal
+        _note(notes, "back", NOTE_FAILED, str(exc))
+    if notes:
+        out["notes"] = notes
     return out
 
 
 def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
-            chasers=False, custom_title=None, calibration=None):
+            chasers=False, custom_title=None, calibration=None, with_board=True):
     """Render a preview and return ``{"card": path, "board": path, "back": path}``.
 
     ``board`` and ``back`` are included only when the theme has that artwork; the
     single run produces the front card, the game board AND the personalized card
     back together (one Chrome per product, no separate back process).
+
+    A ``notes`` key is added (and only added) when something about this preview
+    has to be said out loud rather than left for the owner to spot: a surface
+    rendered with NO personalized name on it, or a back that could not be
+    rendered at all. See :func:`_note`. The images are still returned in both
+    cases — a note is information, not an error.
 
     theme         a key in generator/themes.json (must be calibrated, UNLESS
                   ``calibration`` supplies the missing style — see below)
@@ -187,6 +238,14 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
                   explicit ``board``/``back`` of null previews as "no title on that
                   surface". Production never passes this, so a real print-ready
                   PDF still requires ``calibrated: true``.
+    with_board    render the game board at all. The buyer's name preview shows
+                  the card and its back only, and the board is by far the most
+                  expensive image in the response — a full landscape artboard,
+                  roughly eight times the card's bytes and its own Chrome page.
+                  A caller that will not show it must not pay to make it, so
+                  this SKIPS THE RENDER rather than dropping the result: hiding
+                  it client-side would keep every bit of the cost and none of
+                  the benefit. The owner's calibration screen leaves it on.
     """
     # Install BEFORE the first config.theme() read: render_page/build re-read the
     # config themselves, and they must all see the same overridden values.
@@ -211,7 +270,8 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
             # public endpoint, and a stable image as they retype the name.
             return _preview_single_card(theme, cfg, title_lines, workdir,
                                         word_font=word_font, chasers=chasers,
-                                        all_fronts=bool(calibration))
+                                        all_fronts=bool(calibration),
+                                        with_board=with_board)
 
         recipe = _recipe(cfg)
         # BELT AND BRACES. The theme config said "legacy sheet", but the recipe
@@ -226,7 +286,8 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
         if config.is_single_card_recipe(recipe):
             return _preview_single_card(theme, cfg, title_lines, workdir,
                                         word_font=word_font, chasers=chasers,
-                                        all_fronts=bool(calibration))
+                                        all_fronts=bool(calibration),
+                                        with_board=with_board)
 
         idx = _sample_card_index(recipe)
 
@@ -246,22 +307,28 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
         _downscale(card_png, CARD_MAX_W)
 
         out = {"card": card_png}
+        notes = []
 
         board_clean = config.clean_path(theme, "board")
-        if os.path.exists(board_clean):
+        if with_board and os.path.exists(board_clean):
             board_png = buildmod.render_board(
                 theme, board_clean, title_lines, os.path.join(workdir, "board.png"),
                 chasers=chasers,
             )
             _downscale(board_png, BOARD_MAX_W)
             out["board"] = board_png
+            if not cfg.get("board"):
+                _note(notes, "board", NOTE_NO_TITLE,
+                      "no board title slot is calibrated for this design, so the "
+                      "printed board will carry no name either")
 
         # The design's REAL personalized card BACK, produced in this SAME preview
         # run (no second Chrome process). Uses the production duplex path
         # (build.render_backs -> centered title on the clean back sheet), then
         # crops the SAME sample card cell used for the front so the back mirrors
         # the card exactly. Best-effort: a theme with no back art — or any failure
-        # rendering it — omits "back" and never breaks the card+board result.
+        # rendering it — omits "back" and never breaks the card+board result. The
+        # failure is REPORTED rather than swallowed (see _note).
         backs_clean = config.clean_path(theme, "backs")
         if os.path.exists(backs_clean):
             try:
@@ -273,9 +340,17 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
                 )
                 _downscale(back_png, CARD_MAX_W)
                 out["back"] = back_png
-            except Exception:
-                pass
+                # Same test build.render_backs itself makes ("if not bk": no back
+                # slot -> print the clean backs untouched).
+                if not cfg.get("back"):
+                    _note(notes, "back", NOTE_NO_TITLE,
+                          "no back title slot is calibrated for this design, so "
+                          "the printed backs will carry no name either")
+            except Exception as exc:  # noqa: BLE001 - degrades, never fatal
+                _note(notes, "back", NOTE_FAILED, str(exc))
 
+        if notes:
+            out["notes"] = notes
         return out
     except BaseException:
         # The produced PNGs live INSIDE workdir, so we only clean up a workdir WE
@@ -311,6 +386,10 @@ def main():
                     help="path to a JSON file of UNSAVED calibration knobs "
                          "(title_style/board/back/word_size) to render with, so an "
                          "uncalibrated template can be previewed before saving")
+    ap.add_argument("--no-board", action="store_true",
+                    help="skip the game board entirely (card + back only). The "
+                         "board is the most expensive image in a preview, so a "
+                         "caller that will not show it should not pay to render it")
     args = ap.parse_args()
 
     calibration = None
@@ -322,6 +401,7 @@ def main():
         args.theme, args.name, _parse_fields(args.field),
         word_font=args.word_font, workdir=args.out_dir, chasers=args.chasers,
         custom_title=args.title, calibration=calibration,
+        with_board=not args.no_board,
     )
     # The server parses this JSON line to locate the produced PNGs.
     print(json.dumps(imgs))
