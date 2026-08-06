@@ -26,7 +26,15 @@
 //
 // Usage: node scripts/tokenize-svg.mjs
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, statSync } from 'node:fs';
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+  statSync,
+  readdirSync,
+} from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
@@ -448,7 +456,48 @@ if (!REGEN_THUMBS) {
   }
 }
 
+// …and preserve everything ELSE in a current design's folder for the same reason.
+// This script owns exactly four files per design — front/back/board.svg and
+// thumb.webp — but the rmSync below takes the whole tree, and a design folder also
+// holds files this script cannot produce: `store.webp` and `cover.webp` are
+// hand-authored (render-design-assets.mjs says so in as many words: "cannot
+// regenerate it"), and `gallery-*.webp` / `thumb-{front,back,board}.webp` come
+// from product-thumbs.mjs. Running this script therefore used to delete eight of
+// the twelve files in EVERY design's folder — including two that exist nowhere
+// else — and the loss was silent, because the SVGs it did rewrite made the run
+// look successful. It cost a retirement pass real time to notice and recover by
+// hand (`git checkout -- site/assets/designs`).
+//
+// So: snapshot EVERY file under the tree, and afterwards put back the ones this
+// run did not write. The script becomes non-destructive — it replaces its own
+// output and touches nothing else.
+//
+// Scoping the snapshot to designs in the MANIFEST is not enough, and that was the
+// first attempt: `site/assets/designs/` also holds folders for UPLOADED templates
+// (grapefruit ships committed `gallery-*.webp`), which are deliberately absent
+// from this manifest because nothing here builds them. Restoring only manifest
+// designs still deleted those. The manifest says what this script BUILDS, not what
+// the folder is allowed to contain.
+//
+// Retiring a design therefore no longer leans on this rmSync to drop its artwork —
+// whoever retires it deletes the folder in the same change (which is what the last
+// retirement did anyway). That is the right place for it: an intentional deletion,
+// visible in the diff, rather than a side effect of an unrelated build step.
+const preservedOther = new Map(); // absolute path -> bytes
+if (existsSync(OUT_ASSETS)) {
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const p = resolve(dir, name);
+      if (statSync(p).isDirectory()) walk(p);
+      else preservedOther.set(p, readFileSync(p));
+    }
+  };
+  walk(OUT_ASSETS);
+}
+
 rmSync(OUT_ASSETS, { recursive: true, force: true });
+// Every path this run writes, so the restore never clobbers fresh output.
+const writtenPaths = new Set();
 const report = [];
 const thumbJobs = [];
 let rawTotal = 0;
@@ -488,6 +537,7 @@ for (const d of DESIGNS) {
     sizes[kind] = { raw: rawBytes, out: outBytes };
     const outPath = resolve(outDir, `${kind}.svg`);
     writeFileSync(outPath, data);
+    writtenPaths.add(outPath);
     products[kind] = `assets/designs/${d.id}/${kind}.svg`;
   }
 
@@ -495,6 +545,7 @@ for (const d of DESIGNS) {
   // (re)render. `thumb` is ALWAYS the path — never null — so the picker never
   // silently falls back to text; a missing thumb + no renderer fails loudly below.
   const thumbPath = resolve(outDir, 'thumb.webp');
+  writtenPaths.add(thumbPath);
   if (!REGEN_THUMBS && preservedThumbs[d.id]) {
     writeFileSync(thumbPath, preservedThumbs[d.id]);
   } else {
@@ -523,6 +574,19 @@ for (const d of DESIGNS) {
 // Render any thumbnails that were regenerated or missing (fails loudly if a
 // renderer is unavailable or a result comes out near-blank).
 await renderThumbnails(thumbJobs);
+
+// Put back every preserved file this run did not write itself — the hand-authored
+// store/cover pictures and product-thumbs.mjs's output. Restoring AFTER the
+// renders means a freshly rendered thumb always wins over its snapshot; restoring
+// before would have handed the old bytes back over the new ones.
+let restored = 0;
+for (const [p, bytes] of preservedOther) {
+  if (writtenPaths.has(p)) continue;
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileSync(p, bytes);
+  restored++;
+}
+if (restored) console.log(`preserved ${restored} committed file(s) this script does not produce`);
 for (const r of report) {
   const tb = statSync(r.thumbPath).size;
   outTotal += tb;
