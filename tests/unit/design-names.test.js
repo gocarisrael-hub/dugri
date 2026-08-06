@@ -339,4 +339,39 @@ describe('repo defaults — the bundled catalog name matches themes.json display
     // fail loudly instead of silently checking nothing.
     expect(checked.length).toBe(DESIGNS.length);
   });
+
+  // The themes that reach the storefront as UPLOADED TEMPLATES (GET
+  // /api/custom-designs) instead of built-in designs. They have no META entry to
+  // cross-check — themes.json display_he IS their only repo-side default — so the
+  // current names are pinned here explicitly. Taken from GET /api/custom-designs
+  // on staging, which is where an uploaded template carries its label
+  // (/api/design-names covers built-ins only).
+  //
+  // NOTE this pins the shipped DEFAULT, not the live name: a rename is stored on
+  // the volume and wins over the repo (server/templates.js loadThemes). Updating
+  // this literal is a deliberate "refresh the shipped default" act, never
+  // something a rename should require.
+  const TEMPLATE_DEFAULTS = { 'football-boys': 'מרקאנה', grapefruit: 'אואזיס' };
+
+  it('every uploaded-template theme ships its current default name', () => {
+    const themesPath = path.join(__dirname, '..', '..', 'generator', 'themes.json');
+    const themes = JSON.parse(fs.readFileSync(themesPath, 'utf8'));
+    for (const [key, name] of Object.entries(TEMPLATE_DEFAULTS)) {
+      expect(themes[key]).toBeTruthy();
+      expect(key + '=' + themes[key].display_he).toBe(key + '=' + name);
+    }
+  });
+
+  it('no shipped theme is left without a name', () => {
+    // A template with no display_he falls all the way back to its slug, so the
+    // storefront would sell "football-boys" instead of a Hebrew name. Cheap to
+    // assert, and it catches a new template added without one.
+    const themesPath = path.join(__dirname, '..', '..', 'generator', 'themes.json');
+    const themes = JSON.parse(fs.readFileSync(themesPath, 'utf8'));
+    expect(Object.keys(themes).length).toBeGreaterThan(0);
+    for (const [key, entry] of Object.entries(themes)) {
+      expect(key + ' has a name: ' + typeof entry.display_he).toBe(key + ' has a name: string');
+      expect(key + '=' + entry.display_he.trim()).not.toBe(key + '=');
+    }
+  });
 });

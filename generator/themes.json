@@ -297,7 +297,7 @@
  "football-boys": {
   "slug": "football-boys",
   "wordlist": "generic-350.txt",
-  "display_he": "דוגרי כדורגל בנים",
+  "display_he": "מרקאנה",
   "dir": "resources/canva/templates/football-boys",
   "recipe": "football-boys",
   "visibility": "public",
@@ -345,7 +345,7 @@
  "grapefruit": {
   "slug": "grapefruit",
   "wordlist": "bachelorette-350.txt",
-  "display_he": "דוגרי אשכוליות",
+  "display_he": "אואזיס",
   "dir": "resources/canva/templates/grapefruit",
   "recipe": "grapefruit",
   "visibility": "public",
