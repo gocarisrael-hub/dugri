@@ -676,8 +676,15 @@ def _slot_pitch(slots, i):
 # template whose border is drawn some other way (a filled ring, an image) simply
 # reports no frame, and the caller falls back to the trim-safe area.
 _DEFS_BLOCK = re.compile(r"<defs\b.*?</defs>", re.S)
-_GEOM_TAG = re.compile(r"<(/?)(g|path|rect)\b([^>]*?)(/?)>", re.S)
+# ``image`` is in the list because a template may place a raster: Canva exports
+# one whenever a decoration is not vector art, and a scan that cannot see it
+# would report that corner of the card as empty paper. Its box is the placement
+# rectangle, transparent margin included, so it reserves a little more than the
+# picture's own ink — the safe direction, and noted where it is used.
+_GEOM_TAG = re.compile(r"<(/?)(g|path|rect|image)\b([^>]*?)(/?)>", re.S)
 _ATTR = re.compile(r'([a-zA-Z:-]+)\s*=\s*"([^"]*)"')
+_CLIPPATH = re.compile(r'<clipPath\b[^>]*\bid="([^"]+)"[^>]*>(.*?)</clipPath>', re.S)
+_CLIP_REF = re.compile(r"url\(#([^)]+)\)")
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
 _TRANSFORM = re.compile(r"(matrix|translate|scale)\s*\(([^)]*)\)")
 # Any relative path command (lowercase), or one whose arguments are not xy pairs
@@ -732,6 +739,124 @@ def _path_points(d):
     return list(zip(v[0::2], v[1::2]))
 
 
+# ONE WALK OVER THE ARTWORK, TWO QUESTIONS. ``frame_box`` asks "where is the
+# printed border"; ``card_obstacles`` asks "where is the artwork the words must
+# stay off". Both need the same thing first — every drawn element, in the root's
+# coordinates, with the nested <g transform=…> stack resolved — and only then do
+# they disagree about which elements matter. So the walk is shared and the
+# PREDICATES are separate: widening ``frame_box`` to see icons would have made it
+# answer a question it is pinned against (a frame is fill="none", an icon is
+# filled; see ``test_a_filled_shape_is_not_a_frame``).
+Shape = collections.namedtuple("Shape", "name attrs box clip mat")
+
+
+def _shape_points(name, attrs):
+    """An element's own corner points, or None when they cannot be read.
+
+    None is a REPORT, not an empty shape: the element is drawn and we could not
+    say where. ``frame_box`` may drop it (a frame it cannot read is a frame it
+    cannot trust), but ``card_obstacles`` counts it, because silently treating
+    unreadable artwork as absent is how words end up printed on top of it.
+    """
+    if name in ("rect", "image"):
+        try:
+            x, y = float(attrs.get("x", 0)), float(attrs.get("y", 0))
+            w, h = float(attrs["width"]), float(attrs["height"])
+        except (KeyError, ValueError):
+            return None
+        return [(x, y), (x + w, y), (x, y + h), (x + w, y + h)]
+    return _path_points(attrs.get("d"))
+
+
+def _box_of(t, pts):
+    """The bounding box of ``pts`` under transform ``t``."""
+    xs = [t[0] * x + t[2] * y + t[4] for x, y in pts]
+    ys = [t[1] * x + t[3] * y + t[5] for x, y in pts]
+    return [min(xs), min(ys), max(xs), max(ys)]
+
+
+def _intersect(a, b):
+    """``a`` clipped by ``b``; either may be None (meaning "no bound")."""
+    if a is None:
+        return b if b is None else list(b)
+    if b is None:
+        return list(a)
+    return [max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])]
+
+
+def _clip_boxes(svg_text):
+    """Each ``<clipPath id=…>``'s bounding box, in its own user space.
+
+    A CLIP IS NOT DECORATION, it is the shape that is actually painted. Canva
+    exports a confetti dot as a full-sheet ``<rect>`` inside a ``<g
+    clip-path=…>`` whose clipPath is the dot: read without the clip, one
+    birthday-girls sprinkle measures 1212 x 858 units and swallows the entire
+    sheet. Every ``<g>`` in the eight shipped templates carries a clip and none
+    carries a transform as well, so the clip is composed with the group's own
+    matrix — which is what SVG asks for and, with no transform in play anywhere,
+    is not a reading the artwork can disagree with.
+
+    The box, not the outline: a clip is a mask of arbitrary shape and this scan
+    reserves rectangles, so a clipped element is reported over the clip's extent.
+    """
+    out = {}
+    for cid, body in _CLIPPATH.findall(svg_text):
+        boxes = []
+        for m in _GEOM_TAG.finditer(body):
+            close, name, attrs, _selfclose = m.groups()
+            if close or name == "g":
+                continue
+            pts = _shape_points(name, dict(_ATTR.findall(attrs)))
+            if pts:
+                boxes.append(_box_of(_parse_transform(attrs), pts))
+        if boxes:
+            out[cid] = [min(b[0] for b in boxes), min(b[1] for b in boxes),
+                        max(b[2] for b in boxes), max(b[3] for b in boxes)]
+    return out
+
+
+def _svg_shapes(svg_text):
+    """Every drawn element of ``svg_text`` as a ``Shape`` in root coordinates.
+
+    ``box`` is the element's own bounding box (None when unreadable, see
+    ``_shape_points``); ``clip`` is the box of the clip in force on it, or None;
+    ``mat`` is the matrix its own coordinates were resolved through, which is
+    what scales a ``stroke-width``.
+    They are kept APART rather than pre-intersected because the two callers want
+    different answers: the frame scan measures the border's own geometry, which
+    is what it was calibrated against, while the obstacle scan wants the paper
+    the element actually covers.
+    """
+    clips = _clip_boxes(svg_text)
+    body = _DEFS_BLOCK.sub("", svg_text)
+    stack = [(_IDENTITY, None)]
+
+    def clipped(t, attrs, inherited):
+        ref = _CLIP_REF.search(attrs)
+        if not ref or ref.group(1) not in clips:
+            return inherited
+        c = clips[ref.group(1)]
+        return _intersect(inherited, _box_of(t, [(c[0], c[1]), (c[2], c[3])]))
+
+    for m in _GEOM_TAG.finditer(body):
+        close, name, attrs, selfclose = m.groups()
+        if name == "g":
+            if close:
+                if len(stack) > 1:
+                    stack.pop()
+            elif not selfclose:
+                t = _mat_mul(stack[-1][0], _parse_transform(attrs))
+                stack.append((t, clipped(t, attrs, stack[-1][1])))
+            continue
+        if close:
+            continue
+        a = dict(_ATTR.findall(attrs))
+        t = _mat_mul(stack[-1][0], _parse_transform(attrs))
+        pts = _shape_points(name, a)
+        yield Shape(name, a, _box_of(t, pts) if pts else None,
+                    clipped(t, attrs, stack[-1][1]), t)
+
+
 # How much of the card a stroked outline must span, and how far it must be inset
 # from every edge, to count as the printed frame.
 _FRAME_MIN_SPAN = 0.50
@@ -758,41 +883,17 @@ def frame_box(svg_text, cell):
     w, h = x1c - x0c, y1c - y0c
     if w <= 0 or h <= 0:
         return None
-    body = _DEFS_BLOCK.sub("", svg_text)
-    stack = [_IDENTITY]
     best = None
-    for m in _GEOM_TAG.finditer(body):
-        close, name, attrs, selfclose = m.groups()
-        if name == "g":
-            if close:
-                if len(stack) > 1:
-                    stack.pop()
-            elif not selfclose:
-                stack.append(_mat_mul(stack[-1], _parse_transform(attrs)))
-            continue
-        if close:
-            continue
-        a = dict(_ATTR.findall(attrs))
+    for shape in _svg_shapes(svg_text):
+        a = shape.attrs
         # A frame is a STROKE, not a fill: an outline that paints no interior.
         if (a.get("fill") or "").strip() != "none":
             continue
         if not (a.get("stroke") or "").strip() or a["stroke"].strip() == "none":
             continue
-        t = _mat_mul(stack[-1], _parse_transform(attrs))
-        if name == "rect":
-            try:
-                rx, ry = float(a.get("x", 0)), float(a.get("y", 0))
-                rw, rh = float(a["width"]), float(a["height"])
-            except (KeyError, ValueError):
-                continue
-            pts = [(rx, ry), (rx + rw, ry), (rx, ry + rh), (rx + rw, ry + rh)]
-        else:
-            pts = _path_points(a.get("d"))
-            if not pts:
-                continue
-        xs = [t[0] * x + t[2] * y + t[4] for x, y in pts]
-        ys = [t[1] * x + t[3] * y + t[5] for x, y in pts]
-        box = [min(xs), min(ys), max(xs), max(ys)]
+        if shape.box is None:
+            continue
+        box = list(shape.box)
         if box[2] - box[0] < _FRAME_MIN_SPAN * w or box[3] - box[1] < _FRAME_MIN_SPAN * h:
             continue
         inset = min(box[0] - x0c, box[1] - y0c, x1c - box[2], y1c - box[3])
@@ -802,11 +903,275 @@ def frame_box(svg_text, cell):
             sw = float(a.get("stroke-width", 1))
         except ValueError:
             sw = 1.0
+        t = shape.mat
         sw *= abs(t[0] * t[3] - t[1] * t[2]) ** 0.5     # the transform's scale
         box = [box[0] + sw, box[1] + sw, box[2] - sw, box[3] - sw]
         if best is None or box[3] < best[3]:
             best = box
     return best
+
+
+# THE ICONS. The owner's rule, in her words: "the words are covering the icon …
+# the best is to take the words that are covering the icon to a new line (of
+# course not if it's a 1 word word), or make the font smaller (and keep all the
+# rules like same font for all words in a card)". So the artwork's decorations
+# are paper the words may not use, and the fitter has to know where they are.
+#
+# WHY THE DETECTOR CANNOT ANSWER THIS. Slot detection reads ``recipe_diff`` —
+# the clean plate subtracted from the filled one — so it sees exactly what the
+# two plates DISAGREE about, which is the origin's own words and nothing else.
+# The icons are drawn identically on both plates and cancel to zero. Detection
+# is structurally blind to them; the only place they exist is the clean plate's
+# own geometry, so that is what is read here.
+#
+# READ OFF THE SVG, NOT A RASTER, for the reason ``frame_box`` gives: the layout
+# runs 104 times per order and inside unit tests, and neither may need a browser.
+#
+# WHAT COUNTS AS AN ICON — the whole difficulty, and the owner settled it by
+# looking at the two templates that bracket the question:
+#
+#   * מרקאנה (football-boys) draws a light-blue panel over the whole card and
+#     scatters badges, balls and players on top of it. She ruled the PANEL is
+#     legitimate text area — it is the card's field, the words are meant to sit
+#     on it — and only the badges are off limits.
+#   * סנטוריני (anniversary) is a drawn scene, and she ruled it has NO icons at
+#     all: its art is background, and its words print over it by design.
+#
+# Both rulings say the same thing: SCENERY IS NOT AN OBSTACLE. And on this
+# artwork scenery turns out to be answerable geometrically, in two steps.
+#
+# PAINT ORDER FIRST, and it does most of the work. A v1 sheet is eight cards on
+# one page, and the page's own decoration runs UNDER them: מרקאנה tiles
+# footballs across the whole sheet and then lays each card's light-blue field on
+# top, opaque, hiding every ball that falls inside a card. Read without paint
+# order, card 1 reported 29 obstacles of which 25 were footballs nobody can see —
+# the first contact sheet drew them, which is what contact sheets are for.
+#
+# So an element is dropped when a LATER opaque element's box CONTAINS it: later
+# means painted over, opaque means it hides what it paints over, and contains
+# means all of it. Stated that way rather than as "the card's field", because the
+# field is not always the whole card and a rule written around that missed it —
+# אשכוליות pages a card with bleed, so its cream panel covers 0.78 x 0.86 of the
+# page and buries four shapes a whole-card test walked straight past (the second
+# contact sheet drew those). Containment by the box treats a rounded panel's
+# corners as covered, which is a quarter-millimetre of over-claim in four corners
+# no word reaches.
+#
+# That is also the whole of the סנטוריני answer, and it is worth saying plainly
+# because it is the strongest evidence the rule is the right one: her scene is
+# drawn on the SHEET, and each card lays an opaque cream panel over it. Every one
+# of its eight cards reports zero obstacles — not because a threshold was tuned
+# until it did, but because there is genuinely nothing painted on those cards.
+# She said סנטוריני has no icons; the geometry says the same thing unprompted.
+#
+# THEN SIZE, for what is painted on top of the field. A badge is an object
+# sitting somewhere; a wash, a second panel or the printed border reaches across
+# the card in BOTH directions. Measured on the shipped artwork the two
+# populations are nowhere near each other — on מרקאנה the field layers span the
+# card exactly (1.00 x 1.00 of the cell) and the largest badge is 0.37 x 0.31 —
+# so _OBSTACLE_SPAN has a wide gap to sit in. It is deliberately a BOTH-axis
+# test: a long flat object is still an object, and reading either axis alone
+# dropped מרקאנה's bunting of hanging footballs (0.85 x 0.13) and the hull out
+# from under the three passengers on טיול's banana boat (0.63 x 0.16), both of
+# which the owner would have found on the contact sheet.
+#
+# Applied per element AND to each merged group: per element because otherwise a
+# card-spanning wash merges with everything it touches and the whole card becomes
+# one obstacle, per group because a backdrop drawn as a mosaic of small pieces
+# (which is what a Canva scene export is) would otherwise pass through in
+# fragments.
+#
+# RECTANGLES, NOT A SINGLE BOUND. An icon at x 43..69 does not obstruct an entry
+# whose ink stops at x 130. A scalar "leftmost safe x" would charge every entry
+# on the card for the worst icon on it, and shrink three cards in four for
+# nothing. So the scan answers with a LIST of boxes and the fitter asks each
+# entry about the ones in its own band.
+_OBSTACLE_SPAN = 0.60
+# Elements are merged into one obstacle when they touch, or come within this much
+# of the smaller side of the card. An icon arrives as dozens of separate paths —
+# מרקאנה's card 1 is 259 of them — and reserving each on its own would leave
+# hairline alleys between a badge's pieces that no word could ever use. The gap
+# is small enough that two icons a visible distance apart stay separate.
+_OBSTACLE_MERGE = 0.01
+# Below this (of the smaller side) an element is a speck: a rounding sliver, a
+# 1-unit registration tick. Reserving it would cost real type for ink nobody can
+# see. Applied to merged groups, so a cloud of specks that IS an icon survives.
+_OBSTACLE_MIN = 0.02
+# How much of the card an opaque element must cover before it is taken to bury
+# even the elements this scan could not place (see ``card_obstacles``).
+_OBSTACLE_COVER = 0.99
+# Slack on "contains", as a fraction of the smaller side of the card. The card
+# ``cell`` is a MEASUREMENT of where the card is — detected, or typed into the
+# calibration form — and the artwork does not have to agree with it to the unit.
+# It does not: סנטוריני's cream panel stops 0.23 units short of its cell's right
+# edge, so read exactly, every piece of the scene that runs to that edge came out
+# UNBURIED and eight cards the owner called empty reported three to six obstacles
+# each. Containment is judged to the tolerance of the measurement it is made
+# against. At 0.005 that is a third of a millimetre on these cards.
+_OBSTACLE_SLOP = 0.005
+
+Obstacles = collections.namedtuple("Obstacles", "rects unreadable")
+
+
+def _paints(shape):
+    """True when this element puts ink on the card.
+
+    A fill of anything but "none" paints, and so does a stroke — an icon drawn
+    as an outline is still an icon. Only an element with neither is invisible.
+
+    An ``<image>`` is the exception and has to be named, because it carries
+    NEITHER: a raster paints its own pixels, and read by the fill/stroke rule it
+    would be silently invisible — which is the exact failure the walk was widened
+    to fix. Its box is the placement rectangle, transparent margin included, so
+    it reserves a little more than the picture's own ink; that is the safe
+    direction, and the only direction available without opening the raster.
+    """
+    if shape.name == "image":
+        return True
+    fill = (shape.attrs.get("fill") or "").strip()
+    stroke = (shape.attrs.get("stroke") or "").strip()
+    return (fill and fill != "none") or (stroke and stroke != "none")
+
+
+def _opaque(shape):
+    """True when this element hides whatever is painted under it.
+
+    A raster counts, and has to: אשכוליות's card is a PHOTOGRAPH placed over the
+    card, and the outlined static copy the photo is laid on top of is drawn
+    before it. Read as see-through, the photo buries nothing and that buried copy
+    comes back as an icon across two of the four word slots — a keep-out over
+    artwork no eye can find, because the picture is on top of it.
+
+    The trade is stated rather than hidden: a raster with an alpha channel does
+    NOT hide what it covers, and this cannot tell the difference without opening
+    the file (which the layout may not do — see THE ICONS). It errs toward
+    burying, which is the direction that costs a guarantee rather than a card,
+    and it is the right way round here only because a raster that fully CONTAINS
+    another element's box is a backdrop in every template we ship. A cut-out
+    sticker dropped over a decoration would be the case to revisit, and the
+    contact sheet is where it would show up.
+    """
+    if shape.name == "image":
+        return True
+    fill = (shape.attrs.get("fill") or "").strip()
+    if not fill or fill == "none":
+        return False
+    for key in ("fill-opacity", "opacity"):
+        try:
+            if float(shape.attrs.get(key, 1)) < 1:
+                return False
+        except ValueError:
+            return False
+    return True
+
+
+def _merge_boxes(boxes, pad):
+    """Union every group of boxes that touches within ``pad``."""
+    out = [list(b) for b in boxes]
+    merged = True
+    while merged:
+        merged = False
+        i = 0
+        while i < len(out):
+            j = i + 1
+            while j < len(out):
+                a, b = out[i], out[j]
+                if (a[0] - pad <= b[2] and b[0] - pad <= a[2]
+                        and a[1] - pad <= b[3] and b[1] - pad <= a[3]):
+                    out[i] = [min(a[0], b[0]), min(a[1], b[1]),
+                              max(a[2], b[2]), max(a[3], b[3])]
+                    out.pop(j)
+                    merged = True
+                else:
+                    j += 1
+            i += 1
+    return out
+
+
+def card_obstacles(svg_text, cell):
+    """The artwork one card's words must not print over.
+
+    ``Obstacles(rects, unreadable)``: boxes in card units, and how many drawn
+    elements this scan could not place. An unreadable element is REPORTED rather
+    than assumed empty (see ``_shape_points``) — the caller decides what to do
+    about it, but nothing here pretends the card is clear where it is not.
+
+    Scenery is dropped, twice: an element that runs across the card is the
+    background or a panel or a border band, and so is a group of elements that
+    does. See THE ICONS above for why that is the rule and where the threshold
+    came from.
+    """
+    if not svg_text or not cell:
+        return Obstacles([], 0)
+    x0, y0, x1, y1 = cell
+    w, h = x1 - x0, y1 - y0
+    if w <= 0 or h <= 0:
+        return Obstacles([], 0)
+
+    def scenery(box):
+        return (box[2] - box[0] >= _OBSTACLE_SPAN * w
+                and box[3] - box[1] >= _OBSTACLE_SPAN * h)
+
+    small = min(w, h)
+    painted, unreadable = [], 0
+    for shape in _svg_shapes(svg_text):
+        if not _paints(shape):
+            continue
+        if shape.box is None:
+            unreadable += 1
+            continue
+        box = _intersect(_intersect(shape.box, shape.clip), cell)
+        if box[2] - box[0] <= 0 or box[3] - box[1] <= 0:
+            continue              # clipped away, or on another card of the sheet
+        opaque = _opaque(shape)
+        if (opaque and box[2] - box[0] >= _OBSTACLE_COVER * w
+                and box[3] - box[1] >= _OBSTACLE_COVER * h):
+            # This one covers the card, so it buries even what we could not place.
+            unreadable = 0
+        painted.append((box, opaque))
+    # Painted over and out of sight (see PAINT ORDER). Done before the size test,
+    # because the layer doing the burying is usually scenery itself and would
+    # otherwise have been dropped before it could bury anything.
+    slop = _OBSTACLE_SLOP * small
+    kept = [b for i, (b, _) in enumerate(painted)
+            if not any(o and c[0] <= b[0] + slop and c[1] <= b[1] + slop
+                       and c[2] >= b[2] - slop and c[3] >= b[3] - slop
+                       for c, o in painted[i + 1:])]
+    rects = [b for b in _merge_boxes([b for b in kept if not scenery(b)],
+                                     _OBSTACLE_MERGE * small)
+             if not scenery(b)
+             and (b[2] - b[0] >= _OBSTACLE_MIN * small
+                  or b[3] - b[1] >= _OBSTACLE_MIN * small)]
+    rects.sort(key=lambda b: (b[0], b[1]))
+    return Obstacles(rects, unreadable)
+
+
+# Cached like ``_FRAME_BOXES``, and for the same reason: the icons are a property
+# of the ARTWORK and one deck renders the same eight fronts 104 times, while the
+# scan walks every path in the file.
+_OBSTACLES = {}
+
+
+def card_obstacle_rects(theme, front_index, svg_text, cell):
+    """``card_obstacles`` for one card, computed once per (theme, front).
+
+    An unreadable element is reported to stderr ONCE per card rather than
+    swallowed: it means this scan has a blind spot on that card, and a blind spot
+    is the one failure mode that puts words back on top of the artwork. It is not
+    fatal — every other icon on the card is still reserved — but it must be
+    visible, because the fix is a parser change and nobody will make it if the
+    scan quietly says the corner is empty. No shipped template hits this today.
+    """
+    key = (theme, front_index, len(svg_text or ""), tuple(cell or ()))
+    if key not in _OBSTACLES:
+        found = card_obstacles(svg_text, cell)
+        if found.unreadable:
+            print(f"[render_page] {theme} front {front_index}: "
+                  f"{found.unreadable} drawn element(s) could not be placed by "
+                  f"the icon scan; words are NOT guaranteed clear of them",
+                  file=sys.stderr)
+        _OBSTACLES[key] = found.rects
+    return _OBSTACLES[key]
 
 
 # RESERVED BOTTOM MARGIN. The owner's words: "i want to get some empty space from
@@ -1045,6 +1410,39 @@ def _ink_reach(font, ref, line):
     return (asc - bb[1]) / ref - _CENTER_DROP, (bb[3] - asc) / ref + _CENTER_DROP
 
 
+def _ink_reach_left(font, ref, line):
+    """How far a line's INK reaches back from the end of its own advance.
+
+    In ``ref`` units, like ``getlength``, and never less than the advance itself.
+
+    A LINE IS WIDER THAN THE WIDTH A FONT REPORTS. ``getlength`` is a sum of
+    ADVANCES — where the pen ends up — and the press paints outlines, which hang
+    off the pen wherever a glyph has a negative left side bearing. On the word
+    face רווקות is set in, "הכלה במסיבת" advances 984 units of a 200 em and its
+    ink starts at -17: seventeen units, 1.7% of the line, printed left of where
+    the arithmetic says the line begins.
+
+    That is not a rounding error, it is the whole of a bug this once had. Fitted
+    so its advance stopped exactly on an icon's edge, the entry printed five
+    pixels of ink on the icon — the fit measuring advances while the rasteriser
+    painted outlines. Measured here on the RASTERIZED glyphs (``_ink_skyline``,
+    the same per-column reading the line-pitch floor is measured with) the two
+    now agree, and no clearance is being spent to paper over a wrong number.
+
+    The line is measured in VISUAL order, because the leftmost glyph of a
+    right-to-left line is its last character and the reading has to be of the
+    line as it is actually painted. Falls back to the box for a font object with
+    no path to re-open — a test double; nothing in production reaches it.
+    """
+    adv = font.getlength(line)
+    path = getattr(font, "path", None)
+    if not path:
+        return adv - min(0.0, font.getbbox(line)[0])
+    x0, below, _above = _ink_skyline(path, ref, visual_order(line, True))
+    inked = [i for i, v in enumerate(below) if v is not None]
+    return adv - min(0.0, float(x0 + inked[0])) if inked else adv
+
+
 def _grid_cap(centers, counts, flat, lead, font, ref, vbounds):
     """Largest size at which the grid's ink still stays inside ``vbounds``.
 
@@ -1235,7 +1633,7 @@ def _hard_split(font, text, n, hyphen=_BREAK_HYPHEN):
 
 
 def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
-                advance=None, uniform=None):
+                advance=None, uniform=None, ink=False):
     """Every way to set one entry: ``{line_count: (lines, lead, max_size_ref)}``.
 
     ``max_size_ref`` is the largest font size at which that wrapping still fits
@@ -1248,11 +1646,19 @@ def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
     ``uniform`` is the card's target size, and it is what decides whether an entry
     with too few spaces may be BROKEN mid-word: only when keeping it whole would
     drag the card below ``_BREAK_BELOW`` of that target.
+
+    ``ink`` measures each line by the paper its OUTLINES cover rather than by the
+    advance the font reports (see ``_ink_reach_left``). Set for an entry whose
+    left bound is an ICON, where the difference is the difference between a
+    guarantee and a near miss; left off elsewhere, where the bound is the card's
+    own safe area — a soft edge that a hair of overhang has never troubled, and
+    where changing the measure would re-fit eight shipped decks for nothing.
     """
     marker_ref = _line_width_at(font, ref, num, "", advance=advance)
+    reach = (lambda ln: _ink_reach_left(font, ref, ln)) if ink else font.getlength
 
     def budget(lines):
-        widest = max(font.getlength(ln) for ln in lines)
+        widest = max(reach(ln) for ln in lines)
         # Every line is anchored inside the same band: the first after the
         # marker, the continuations under the first line's text. So one budget
         # covers them all.
@@ -1280,7 +1686,7 @@ def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
 
 
 def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
-              vbounds=None, room=None, count=None, bold_w=0.0):
+              vbounds=None, room=None, count=None, bold_w=0.0, rows=None):
     """Solve ONE font size for the whole card, and each entry's line count.
 
     Every word on a card renders at the SAME size — that is the origin
@@ -1324,6 +1730,13 @@ def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
     that is actually free below the last calibrated line instead of squeezing the
     pitch. Without it (no cell, no artwork to scan) the old calibrated-span
     envelope stands, which is the conservative answer.
+
+    ``rows`` is the un-gridded counterpart: ``{slot: (top, bottom)}``, the strip
+    of card each entry owns. The v1 sheet could not wrap, so it never needed a
+    vertical bound and had none; an entry that wraps to dodge an icon does, or its
+    second line lands on the row below — and on the icon in it. Passed only for a
+    card the icons actually constrain, so every other card takes the pairwise
+    solve exactly as before.
     """
     live = sorted(cands)
     best = None
@@ -1357,17 +1770,245 @@ def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
             for a, b in zip(live, live[1:]):
                 spans = sum((counts[i] - 1) * lead + 1.0 / _WORD_SIZE_K
                             for i in (a, b))
-                room = min(pitches[a], abs(centers[b] - centers[a]))
-                size = min(size, room / (spans / 2 + _WRAP_CLEAR))
+                gap = min(pitches[a], abs(centers[b] - centers[a]))
+                size = min(size, gap / (spans / 2 + _WRAP_CLEAR))
+            for i in (rows or {}):
+                # Each entry's block, centred on its slot, kept inside the row
+                # that entry owns — the bound that lets a card wrap here at all
+                # without an extra line landing on the row below, or below the
+                # card's own frame. Off (rows is None) this branch is the
+                # untouched pairwise solve and nothing on the card can move.
+                #
+                # Measured on the entry's OWN first and last lines, not on
+                # ``_WORD_SIZE_K``. That constant is a reading of the recipe's
+                # boxes — the height a typical origin word came out — and it is
+                # what the pairwise solve above compares two entries by, which is
+                # fine when both sides of the comparison use it. Against an ICON
+                # it is not: an icon is a fixed place on the paper, and a card
+                # word whose last line ends in a descender prints a third of its
+                # size lower than the constant allows for. כדורסל's bottom entry
+                # cleared the player by 0.27 units on that model and still put
+                # eight pixels on him.
+                if i not in counts:
+                    continue
+                lines = cands[i][counts[i]][0]
+                grow = (counts[i] - 1) * lead / 2
+                if font is not None and ref is not None and lines:
+                    up = grow + _ink_reach(font, ref, lines[0])[0]
+                    down = grow + _ink_reach(font, ref, lines[-1])[1]
+                else:
+                    up = down = grow + 0.5 / _WORD_SIZE_K
+                for reach, need in ((centers[i] - rows[i][0], up),
+                                    (rows[i][1] - centers[i], down)):
+                    if need > 0:
+                        size = min(size, max(reach, 0.0) / need)
         key = (size, -sum(combo))
         if best is None or key > best[0]:
             best = (key, size, counts, lead)
     return best[1], best[2], best[3]
 
 
+# THE WORDS' SIDE OF THE ICON RULE. The scan says where the artwork is; this says
+# what an entry does about it, and the owner set the order: "take the words that
+# are covering the icon to a new line (of course not if it's a 1 word word), or
+# make the font smaller (and keep all the rules like same font for all words in a
+# card)". WRAP FIRST, SHRINK AS THE FALLBACK, ONE SIZE PER CARD.
+#
+# All three fall out of the fitter that is already here, which is why this adds
+# no preference of its own. Every line of an entry is anchored at the card's
+# right edge and grows LEFT, so an icon to the left of that edge is simply a
+# nearer left bound: it makes the entry's band NARROWER, and nothing else about
+# it changes. A narrower band lowers the size at which each wrapping still fits —
+# which is exactly ``_candidates``'s ``max_size_ref`` — so wrapping an entry, by
+# making its widest line shorter, buys back size it would otherwise have to give
+# up. ``_fit_card`` already scores every combination of line counts by
+# ``(size, -total_lines)``, so it takes the extra line when the extra line keeps
+# the type bigger and refuses it when it does not: wrap first, shrink second, and
+# no new term in the objective. One size per card is untouched because the icon's
+# cap joins the same card-wide ``min``.
+#
+# A ONE-WORD ENTRY CANNOT WRAP, and does not: ``_candidates`` stops as soon as
+# ``_balanced_split`` runs out of spaces, so such an entry offers a single
+# one-line candidate and the card's size drops to fit it. That is the owner's
+# parenthesis, and it needs no code — what it needs is for the mid-word breaker
+# to stay switched off on this path (``uniform`` is passed only for a declared
+# band), or eight decks would start hyphenating words that have never been
+# hyphenated.
+#
+# WHICH ICONS AN ENTRY HAS TO CLEAR: the ones beside it, not the ones on the
+# card. An icon at x 43..69 does not obstruct an entry whose ink stops at x 130,
+# and an icon in the top corner does not obstruct the bottom row. So each entry
+# asks about the obstacles crossing ITS ROW — its slot centre plus and minus half
+# the distance to the nearest neighbouring slot, which is the paper that row owns
+# — and takes the rightmost edge among them as its left bound.
+#
+# The row is a bound the fit then honours: ``_fit_card`` is told to keep every
+# entry's block inside its own row, so an entry cannot wrap its way down into the
+# next row's icon. On the v1 sheet that is also the first vertical bound this path
+# has ever had — it could not wrap, so it never needed one — and it comes with the
+# card's real envelope (``room_bottom``, the printed frame less clear air) for the
+# same reason.
+#
+# AND ONLY WHERE THERE IS SOMETHING TO DODGE. A card no icon reaches keeps
+# ``max_lines`` of 1 and no vertical bound: byte for byte the render it produced
+# before this existed. That is not timidity, it is the scope the owner set — she
+# ruled סנטוריני has no icons, and every one of its cards must come out
+# unchanged. Turning wrapping on for the whole v1 sheet is a separate migration
+# (see WHERE IT APPLIES, AND FOR HOW LONG) and would rewrap eight decks against
+# boxes their designers never drew.
+#
+# AN ICON THE ENTRY CANNOT DODGE SIDEWAYS. Every line is anchored at ``right``
+# and grows left, so an entry clears an icon exactly when its widest line stops
+# right of the icon's right edge. An icon whose right edge is PAST the anchor
+# cannot be cleared that way at all: the marker digit is pinned at the anchor and
+# is on the icon at any size, on any number of lines. Narrowing the entry does
+# nothing, and asking for it is actively harmful — ``_candidates`` reads a
+# non-positive width as "unconstrained" and answers infinity, which is how
+# כדורסל came out setting LARGER on the cards that have an icon than on the ones
+# that do not.
+#
+# There is still a remedy, and it is the other axis. כדורסל's player stands in
+# the bottom corner and its box reaches 24 units left of the anchor — but only
+# its TOP four units fall inside the last entry's row. The entry does not need to
+# be narrower, it needs to stop higher: clip the row at the icon's top edge and
+# the entry's ink is clear of it with its width and its alignment untouched. Same
+# for an icon above the entry, from the other side.
+#
+# Only when an icon straddles the entry's own centre is there nothing left to
+# try, because the row cannot be clipped past the line it is centred on.
+# ``unclearable_icons`` names those, and ``test_no_icon_sits_under_a_word_column``
+# holds every shipped template to having none.
+#
+# CLEAR AIR AROUND AN ICON, AND WHAT IT IS NOT FOR. Fitted to an icon's edge
+# exactly, two decks first came out with a handful of pixels over it — five on
+# רווקות's champagne tower, eight under כדורסל's player. Both were WRONG
+# ARITHMETIC, not bad luck at the boundary, and both are now measured rather than
+# padded: the fit was reading advances where the press paints outlines
+# (``_ink_reach_left``) and a box-model line height where the face draws a
+# descender a third of its size deep (``_ink_reach``, in ``_fit_card``'s row
+# bound). With those two right, every card clears with its ink to spare and this
+# margin is not carrying the guarantee.
+#
+# It is still here, for the thing that genuinely cannot be measured in advance:
+# the rasterizer's own rim. A glyph edge landing ON a boundary is antialiased
+# ACROSS it, so at any resolution the outermost row of pixels can be a partial
+# coverage of paper the outline never entered — and the resolution is not one
+# number (a screen preview, a 300 dpi press sheet, a customer's home printer all
+# differ). Half a millimetre is more than a pixel at every one of them.
+#
+# And it is what the owner actually asked for. "the words are covering the icon"
+# is not a complaint about overlap measured in pixels; a word that stops one hair
+# short of a champagne glass still reads as printed on it. So the icons are grown
+# by a stated margin before the FIT consults them, while the test asserts against
+# the icons' true boxes — the margin is slack in the guarantee, never the reason
+# it holds.
+#
+# HOW THE NUMBER WAS PICKED. The floor is measured, not chosen: rendering all
+# seven sheet decks with worst-case entries and counting word-ink pixels inside
+# the icons (``test_no_word_ink_lands_on_an_icon``, which is the real assertion)
+# gives 9 at 0 mm, 4 at 0.25 mm and NONE at 0.5 mm. So 0.5 is where the rim
+# closes, and it is the default.
+#
+# It is not necessarily where the owner wants it. Above the rim this is an
+# aesthetic call about a printed card — how much white reads as "not on the
+# picture" — and that is hers, the same way ``_BOTTOM_RESERVE_MM`` was picked off
+# a rendered 0/4/8/12 proof. ``scripts/icon-clearance-proof.py`` renders the
+# decks at 0 / 0.25 / 0.5 / 1 mm with the type cost of each: 0.5 costs nothing on
+# five decks and about 4% of the type on רווקות and טיול, whose worst cards have
+# an icon directly beside the entry. Widening it is one environment variable.
+_ICON_CLEAR_MM = float(os.environ.get("DUGRI_ICON_CLEAR_MM", "0.5"))
+
+
+def _grown(obstacles, pad):
+    """``obstacles`` with ``pad`` of clear air added on every side."""
+    return [[o[0] - pad, o[1] - pad, o[2] + pad, o[3] + pad]
+            for o in obstacles or []]
+
+
+# A BOX IS NOT A SILHOUETTE, and at the anchor that difference decides a card.
+# This scan reserves rectangles, and the corner of a rectangle round a figure is
+# usually blank paper: כדורסל's player is drawn mid-jump, so the top edge of his
+# box is the ball in his raised hands and the box's top-left corner is nothing at
+# all. On card 1 that empty corner passes the words' anchor by 1.8 units — and
+# read literally it says the bottom entry stands on the icon, which no shrinking
+# and no wrapping can undo, so the entry was clipped to the 0.2 units of row above
+# the box and the card set at 0.49 instead of 11.7. The words became a grey smear
+# to protect a piece of paper with nothing printed on it.
+#
+# So an icon that passes the anchor by less than this fraction of the card's WIDTH
+# is read as the box over-claiming, and that entry ignores it. Measured across the
+# shipped artwork the two populations are 12x apart — the only slop overlap is
+# that 0.96% corner, and the real ones (the same player genuinely standing under
+# the column on cards 2 and 7) are 12.5% and 17.1% — so this sits in a wide gap,
+# like ``_OBSTACLE_SPAN``. It applies ONLY at the anchor: an icon beside the
+# entry is still reserved to its box, where over-claiming costs a little type and
+# nothing else. Here it costs the whole card.
+_ANCHOR_SLOP = float(os.environ.get("DUGRI_ANCHOR_SLOP", "0.05"))
+
+
+def _at_anchor(obstacles, band, right, width):
+    """Icons in ``band`` that genuinely reach past the anchor ``right``.
+
+    ``width`` is the card's, for ``_ANCHOR_SLOP``. These are the ones no
+    narrowing can clear, because the marker digit is pinned at the anchor.
+    """
+    return [o for o in obstacles or []
+            if o[1] < band[1] and band[0] < o[3]
+            and o[2] >= right and o[0] < right - _ANCHOR_SLOP * width]
+
+
+def _row_clip(obstacles, row, center, right, width):
+    """``row`` shortened away from icons in it that no narrowing can clear.
+
+    Clipped to the icon's near edge, never past ``center`` — an entry is set
+    around its own centre, so a row that excluded it would describe no layout.
+    """
+    top, bottom = row
+    for o in _at_anchor(obstacles, row, right, width):
+        if o[1] >= center:
+            bottom = min(bottom, o[1])
+        elif o[3] <= center:
+            top = max(top, o[3])
+    return (min(top, center), max(bottom, center))
+
+
+def _obstacle_left(obstacles, band, right):
+    """The rightmost icon edge an entry in ``band`` must stay clear of, or None.
+
+    ``band`` is the entry's row ``(top, bottom)``; ``right`` is the anchor its
+    lines are set from.
+    """
+    edges = [o[2] for o in obstacles or []
+             if o[1] < band[1] and band[0] < o[3] and o[2] < right]
+    return max(edges) if edges else None
+
+
+def unclearable_icons(obstacles, band, center, right, width):
+    """Icons in ``band`` that neither narrowing nor clipping the row can dodge.
+
+    Worst first, each as ``(depth left of the anchor, box)`` in card units.
+
+    An icon reaching past the anchor ``right`` cannot be cleared sideways — the
+    marker digit is pinned there and sits on the icon at any size, on any number
+    of lines (see AN ICON THE ENTRY CANNOT DODGE). The remedy is the other axis,
+    and it works for every such icon that lies wholly above or wholly below the
+    entry's ``center``: the row is clipped to its near edge and the entry sets
+    smaller in the strip that is left. An icon STRADDLING the centre is the one
+    case with nothing left, because a row clipped past the line it is centred on
+    describes no layout at all. Those are what this reports, and what
+    ``test_no_icon_sits_under_a_word_column`` holds the shipped artwork to having
+    none of. A box that only grazes the anchor is not one of them — that is
+    ``_ANCHOR_SLOP``, and it is read as the box over-claiming rather than as
+    artwork under the words.
+    """
+    return sorted((right - o[0], o)
+                  for o in _at_anchor(obstacles, band, right, width)
+                  if o[1] < center < o[3])[::-1]
+
+
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
                   declared_band=False, safe=_CELL_SAFE, room_bottom=None,
-                  bold_w=0.0):
+                  bold_w=0.0, obstacles=None):
     """Per-slot ``(size, [lines])`` for a card's words, or None for an empty slot.
 
     One UNIFORM font size is the target for every word (matching the origin's
@@ -1423,7 +2064,34 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     if floor is not None and bold_w:
         floor += uniform * bold_w
     advance = _marker_advance(font, len(slots)) if declared_band else None
-    cands = {}
+    centers = [(s["y0"] + s["y1"]) / 2 for s in slots]
+    vbounds = ((cell[1] + (cell[3] - cell[1]) * safe,
+                cell[3] - (cell[3] - cell[1]) * safe) if cell else None)
+    # THE ROW each entry owns: its centre plus and minus half the way to the
+    # nearest neighbouring slot, held inside the card's safe area and above the
+    # printed frame's clear air. It answers both halves of the icon question —
+    # which icons this entry can meet, and how far its own block may grow before
+    # it reaches the next row's.
+    rows = {}
+    for wi in range(len(slots)):
+        half = _slot_pitch(slots, wi) / 2
+        top, bottom = centers[wi] - half, centers[wi] + half
+        if vbounds:
+            top, bottom = max(top, vbounds[0]), min(bottom, vbounds[1])
+        if room_bottom is not None and room_bottom > centers[wi]:
+            bottom = min(bottom, room_bottom)
+        rows[wi] = (min(top, centers[wi]), max(bottom, centers[wi]))
+    # Each live entry's band, before and after the icons beside it have taken
+    # their bite. Measured for the whole card first, because whether ANY entry is
+    # blocked decides whether THIS CARD may wrap at all (see AND ONLY WHERE THERE
+    # IS SOMETHING TO DODGE) and that answer has to be one answer for the card.
+    bands, blocked = {}, False
+    # The fit meets the icons with their clear air already on them; every
+    # assertion, and the contact sheet, meets their true boxes (see CLEAR AIR
+    # AROUND AN ICON). Stated in millimetres because that is the unit the
+    # complaint is in — a margin you can see on the printed card — and converted
+    # once here.
+    obstacles = _grown(obstacles, _ICON_CLEAR_MM * _PT_PER_MM)
     for wi, slot in enumerate(slots):
         word = words[wi] if wi < len(words) else ""
         if not word:
@@ -1438,22 +2106,34 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
             left = floor if floor is not None else slot["x0"]
         if left >= right:                 # degenerate slot: fall back to the floor
             left = floor if floor is not None else slot["x0"]
-        # Wrapping needs a text box to wrap INSIDE. Only a declared column is
-        # one; a detected slot is just where the origin word's ink happened to
-        # land, so reflowing to it would rewrap all eight live sheet themes
-        # against a box their designer never drew. Without a column the old
-        # guarantee stands unchanged: one line, shrunk if that is what it takes
-        # to stay inside the card.
-        cands[wi] = _candidates(font, ref, wi + 1, word, right - left,
-                                max_lines=_WRAP_MAX_LINES if declared_band else 1,
-                                advance=advance,
-                                uniform=uniform if declared_band else None)
-    if not cands:
+        # The row is shortened first, because an icon it no longer reaches is an
+        # icon this entry no longer has to be narrow for.
+        clipped = _row_clip(obstacles, rows[wi], centers[wi], right,
+                            cell[2] - cell[0] if cell else 0.0)
+        if clipped != rows[wi]:
+            rows[wi] = clipped
+            blocked = True
+        edge = _obstacle_left(obstacles, rows[wi], right)
+        on_icon = edge is not None and edge > left
+        if on_icon:
+            left = edge
+            blocked = True
+        bands[wi] = (word, right, left, on_icon)
+    if not bands:
         return [None] * len(slots)
-    centers = [(s["y0"] + s["y1"]) / 2 for s in slots]
+    # Wrapping needs a text box to wrap INSIDE. A declared column is one. A
+    # detected slot is not — it is just where the origin word's ink happened to
+    # land — but an icon beside the entry IS a real edge, stated by the artwork,
+    # and an entry that has to dodge one has earned the right to use a second
+    # line rather than shrink the whole card.
+    wrap = declared_band or blocked
+    cands = {wi: _candidates(font, ref, wi + 1, word, right - left,
+                             max_lines=_WRAP_MAX_LINES if wrap else 1,
+                             advance=advance,
+                             uniform=uniform if declared_band else None,
+                             ink=on_icon)
+             for wi, (word, right, left, on_icon) in bands.items()}
     pitches = {i: _slot_pitch(slots, i) for i in cands}
-    vbounds = ((cell[1] + (cell[3] - cell[1]) * safe,
-                cell[3] - (cell[3] - cell[1]) * safe) if cell else None)
     live_c = [centers[i] for i in sorted(cands)]
     # The room below is only usable when it IS below, and only when there are two
     # calibrated centres to read a spacing from. A bound that lands above the last
@@ -1466,7 +2146,9 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     size, counts, lead = _fit_card(cands, pitches, centers, uniform,
                                    font=font, ref=ref, grid=declared_band,
                                    vbounds=vbounds, room=room,
-                                   count=len(slots), bold_w=bold_w)
+                                   count=len(slots), bold_w=bold_w,
+                                   rows=rows if (blocked and not declared_band)
+                                   else None)
     if not declared_band:
         return [None if wi not in cands
                 else Layout(size, cands[wi][counts[wi]][0], lead)
@@ -2176,11 +2858,14 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                        one_block=bool(ts.get("one_block")))
 
 
-def _words_overlay(slots, words, cfg, word_font, cell, room=None):
+def _words_overlay(slots, words, cfg, word_font, cell, room=None,
+                   obstacles=None):
     """The four numbered word lines for one card, as SVG markup.
 
     ``room`` is the lowest y a line's ink may reach (see ``room_bottom``) — the
     card's real vertical envelope, which a wrapping card may grow down into.
+    ``obstacles`` are the artwork's icons on this card (see THE ICONS), which no
+    line may print over.
     """
     if not slots:
         return ""
@@ -2192,7 +2877,7 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None):
     layouts = _word_layouts(slots, words, wf_metrics, wf_ref, cell=cell,
                             word_size=cfg.get("word_size"), safe=_CARD_SAFE,
                             declared_band=declared, room_bottom=room,
-                            bold_w=bold_w)
+                            bold_w=bold_w, obstacles=obstacles)
     # One anchor and one digit column for the whole card, so the four numbers sit
     # in a column and the four words start at the same x. Both must match what
     # _word_layouts fitted against, or the render would overflow the band it was
@@ -2253,12 +2938,15 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
     safe_bottom = cell[3] - (cell[3] - cell[1]) * _CARD_SAFE if cell else None
     room = (room_bottom(theme, front_index, card_svg, cell, safe_bottom)
             if card_svg and cell else None)
+    icons = (card_obstacle_rects(theme, front_index, card_svg, cell)
+             if card_svg and cell else None)
     return (_title_overlay(config.card_title_boxes(cfg, recipe, front_index, cell),
                            title_lines, cfg, title_font_path, cell,
                            offset=config.front_offset(cfg, front_index),
                            align=config.front_align(cfg, front_index))
             + _words_overlay(config.card_word_boxes(cfg, recipe, cell), words,
-                             cfg, word_font_path, cell, room=room))
+                             cfg, word_font_path, cell, room=room,
+                             obstacles=icons))
 
 
 def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
@@ -2647,9 +3335,19 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
             continue
         wf_metrics, wf_ref = _word_metrics(word_font)
         bold_w = config.word_bold_w(cfg, _WORD_BOLD_W)
+        # The icons are on the CLEAN plate and only there (see THE ICONS), and
+        # this is the plate. The frame's clear air comes with them: a card allowed
+        # a second line needs a floor, and the v1 sheet has never had one.
+        cell = card.get("cell")
+        icons = (card_obstacle_rects(theme, ci + 1, svg, cell) if cell else None)
+        room = None
+        if icons and cell:
+            safe_bottom = cell[3] - (cell[3] - cell[1]) * _CARD_SAFE
+            room = room_bottom(theme, ci + 1, svg, cell, safe_bottom)
         layouts = _word_layouts(card["words"], words, wf_metrics, wf_ref,
-                                cell=card.get("cell"), word_size=cfg.get("word_size"),
-                                bold_w=bold_w)
+                                cell=cell, word_size=cfg.get("word_size"),
+                                bold_w=bold_w, obstacles=icons,
+                                room_bottom=room)
         for wi, slot in enumerate(card["words"]):
             if layouts[wi] is None:
                 continue
