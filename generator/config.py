@@ -1031,12 +1031,112 @@ def custom_title_lines(custom_title):
     return lines or None
 
 
-def title_lines(cfg, name, extra_fields_dict=None, custom_title=None):
+# ---- Gender-aware title markers -------------------------------------------
+# Hebrew is gendered, so one title template cannot serve both honorees: a boy's
+# card says "בן 30" and a girl's says "בת 30". A title may therefore carry an
+# ALTERNATION MARKER, whose two forms are LABELLED and resolved from the order's
+# stored honoree gender:
+#
+#     "{NAME} {m:בן|f:בת} {AGE}"   gender='male'   -> "דני בן 30"
+#                                  gender='female' -> "שירה בת 30"
+#                                  gender=None     -> "דני בן 30"   (see below)
+#
+# TWO RULES, and they are separate:
+#
+#  1. THE BUYER'S SELECTION WINS. The wizard asks for the honoree's gender on the
+#     name step and requires an answer; that answer is DATA. The form carrying
+#     the matching label is printed. Nothing is ever inferred from the name, the
+#     design, or anything else — this is a lookup, not a guess.
+#
+#  2. THE FALLBACK BELONGS TO THE TEMPLATE, and is WHICHEVER FORM IS WRITTEN
+#     FIRST. An order with no recorded gender (legacy rows, admin-created ones,
+#     an order that predates the required picker) prints the first form. So a
+#     boys' design like "ברוקלין" writes the masculine form first and an unknown
+#     gender prints בן; a girls' design writes the feminine one first and gets בת.
+#     The owner gets the right default for each template by the ORDER she types
+#     the two forms — there is no extra field to set and nothing to remember.
+#
+# WHY THE LABELS. Rule 2 needs the order to be free, and rule 1 needs to know
+# which form is which — and "בן" and "בת" are just two Hebrew words to a program.
+# Position alone cannot carry both meanings, so each form names its own gender:
+# `m:` (also `male:`) and `f:` (also `female:`), case-insensitive. The server
+# REJECTS an unlabelled marker in a saved title (server/templates.js
+# `badGenderMarker`) rather than guessing at a printed card's wording.
+#
+# This is a stricter cousin of the alternation the site's word prompts use
+# (site/js/word-prompts.js `renderQuestion`, positional "{female|male}"): prompts
+# are on-screen copy with no template to take a default from, a title is printed
+# on 200 cards. Keep the two in step when either changes.
+#
+# A marker is NOT a placeholder: it carries its own literal forms and needs no
+# extra field, which is why server/templates.js validates it separately from the
+# `{TOKEN}` placeholders.
+_GENDER_MARKER_RE = re.compile(r"\{([^{}]*\|[^{}]*)\}")
+# The SAME marker with its closing brace never typed, at end of line. Salvaged
+# rather than left alone: the intent is unambiguous, and the alternative is a
+# raw "{" printed on a paying customer's card.
+_GENDER_MARKER_OPEN_RE = re.compile(r"\{([^{}]*\|[^{}]*)$")
+# "m:", "male:", "f:", "female:" — the gender each form is for.
+_GENDER_LABEL_RE = re.compile(r"^\s*(m|male|f|female)\s*:", re.IGNORECASE)
+_GENDER_LABELS = {"m": "male", "male": "male", "f": "female", "female": "female"}
+
+
+def _split_gender_form(part):
+    """Split one marker form into ``(gender_or_None, text)``.
+
+    Text is stripped: the marker sits inside a title line whose surrounding text
+    already carries the spacing, so whitespace typed inside the braces is a slip
+    that would otherwise print as a double space in an auto-fitted title.
+    """
+    m = _GENDER_LABEL_RE.match(part)
+    if not m:
+        return None, part.strip()
+    return _GENDER_LABELS[m.group(1).lower()], part[m.end():].strip()
+
+
+def _gender_form(body, gender):
+    """Resolve one marker body ("m:בן|f:בת") for ``gender``.
+
+    The form LABELLED with the requested gender wins (rule 1). Failing that —
+    no gender recorded, or a marker the server would have rejected — the FIRST
+    form is used, because that is the template's own default (rule 2). Extra
+    forms beyond the two are only reachable via an unvalidated custom title, and
+    are covered by the same lookup.
+    """
+    forms = [_split_gender_form(p) for p in body.split("|")]
+    if gender:
+        for label, text in forms:
+            if label == gender:
+                return text
+    return forms[0][1]
+
+
+def resolve_gender_markers(text, gender):
+    """Resolve every "{m:…|f:…}" marker in one line of title text.
+
+    ``gender`` is ``'male'`` / ``'female'`` / ``None``. A recorded gender selects
+    its own labelled form; an unrecorded one takes the first form written, which
+    is the template's own default. See the module note above.
+    """
+    gender = gender if gender in ("male", "female") else None
+
+    def pick(m):
+        return _gender_form(m.group(1), gender)
+
+    return _GENDER_MARKER_OPEN_RE.sub(pick, _GENDER_MARKER_RE.sub(pick, str(text)))
+
+
+def title_lines(cfg, name, extra_fields_dict=None, custom_title=None, gender=None):
     """Substitute the theme's title_lines template.
 
     ``{NAME}`` comes from ``name`` (cased per ``name_form``); ``{NAME1}`` and
     ``{NAME2}`` come from ``extra_fields_dict`` and are cased the same way;
     ``{AGE}``/``{YEARS}`` (and any other extra field) are substituted verbatim.
+
+    ``gender`` (``'male'``/``'female'``/``None``) resolves the title's
+    ``{m:…|f:…}`` markers — see ``resolve_gender_markers``. A title with no
+    marker is unaffected, so every theme that predates this renders
+    byte-identically whatever the gender is.
 
     ``custom_title`` (F7) is an OPTIONAL per-order free-form title: when the
     buyer supplies one it REPLACES the theme-derived lines everywhere the title
@@ -1047,7 +1147,13 @@ def title_lines(cfg, name, extra_fields_dict=None, custom_title=None):
     """
     custom = custom_title_lines(custom_title)
     if custom is not None:
-        return custom
+        # Gender markers resolve in a BUYER-typed title too: a Hebrew title the
+        # buyer wrote themselves is exactly where "{m:בן|f:בת}" belongs, and the
+        # alternative is a mechanism that works only for titles the owner types.
+        # NOTHING ELSE about a custom title changes — it stays literal, so
+        # {NAME}/{AGE} are still not substituted there and its other braces are
+        # left exactly as typed.
+        return [resolve_gender_markers(ln, gender) for ln in custom]
     extra = dict(extra_fields_dict or {})
     name_form = cfg.get("name_form")
     values = {"NAME": _form_name(name, name_form) if name is not None else ""}
@@ -1056,11 +1162,18 @@ def title_lines(cfg, name, extra_fields_dict=None, custom_title=None):
         values[key] = _form_name(val, name_form) if key in ("NAME1", "NAME2") else val
     out = []
     for line in cfg["title_lines"]:
+        # BEFORE the value substitution, so a substituted value that happens to
+        # contain a brace or a pipe can never be re-read as a marker.
+        line = resolve_gender_markers(line, gender)
         for key, val in values.items():
             line = line.replace("{" + key + "}", val)
         # Defense-in-depth: strip any placeholder we couldn't fill so the title
         # never prints raw braces like "{AGE}" (server validation already blocks
         # this case, but a missing extra field must never leak into the render).
         line = re.sub(r"\{[^{}]*\}", "", line)
+        # Last resort: an UNCLOSED brace ("{NAME") survives the strip above and
+        # would print raw on the card. Drop the brace characters and keep the
+        # text — a visible "NAME" is a bad title, "{NAME" is a broken product.
+        line = line.replace("{", "").replace("}", "")
         out.append(line)
     return out

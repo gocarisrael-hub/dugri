@@ -206,7 +206,8 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
 
 
 def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
-            chasers=False, custom_title=None, calibration=None, with_board=True):
+            chasers=False, custom_title=None, calibration=None, with_board=True,
+            gender=None):
     """Render a preview and return ``{"card": path, "board": path, "back": path}``.
 
     ``board`` and ``back`` are included only when the theme has that artwork; the
@@ -246,13 +247,19 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
                   this SKIPS THE RENDER rather than dropping the result: hiding
                   it client-side would keep every bit of the cost and none of
                   the benefit. The owner's calibration screen leaves it on.
+    gender        the honoree's gender ('male'/'female'/None), resolving the
+                  title's {feminine|masculine} markers. The preview is the
+                  approval step before a deck is printed, so it takes the same
+                  argument production does — a girl's preview must show בת for
+                  the same reason her printed cards must.
     """
     # Install BEFORE the first config.theme() read: render_page/build re-read the
     # config themselves, and they must all see the same overridden values.
     config.set_preview_overrides(theme, calibration)
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    title_lines = config.title_lines(cfg, name, extra_fields or {}, custom_title=custom_title)
+    title_lines = config.title_lines(cfg, name, extra_fields or {}, custom_title=custom_title,
+                                     gender=gender)
 
     own_workdir = workdir is None
     if own_workdir:
@@ -382,6 +389,10 @@ def main():
                     help="show the theme's chasers board variant when available")
     ap.add_argument("--title", default=None,
                     help="optional custom title overriding the theme-derived title")
+    ap.add_argument("--gender", default=None, choices=["male", "female"],
+                    help="the honoree's gender, resolving the title's "
+                         "{feminine|masculine} markers (e.g. {בת|בן}). Omitted "
+                         "takes the first (feminine) form")
     ap.add_argument("--calibration", default=None, metavar="FILE",
                     help="path to a JSON file of UNSAVED calibration knobs "
                          "(title_style/board/back/word_size) to render with, so an "
@@ -401,7 +412,7 @@ def main():
         args.theme, args.name, _parse_fields(args.field),
         word_font=args.word_font, workdir=args.out_dir, chasers=args.chasers,
         custom_title=args.title, calibration=calibration,
-        with_board=not args.no_board,
+        with_board=not args.no_board, gender=args.gender,
     )
     # The server parses this JSON line to locate the produced PNGs.
     print(json.dumps(imgs))

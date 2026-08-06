@@ -46,6 +46,7 @@ function paidCollection() {
     theme: 'birthday-girls',
     extra_fields: { AGE: '30' },
     chasers: true,
+    gender: 'female',
   });
   db.setOrder(c.id, c.owner_token, { version: 'pickup' });
   db.markPaid(c.id, { method: 'card', charged_total: 149, coupon: 'SAVE25', discount_pct: 25 });
@@ -89,6 +90,10 @@ describe('GET /api/collections/:id/summary', () => {
       word_font: null,
       title: null,
       chasers: true,
+      // The honoree's gender is one of those inputs: a Hebrew title carrying a
+      // {m:בן|f:בת} marker renders a different word per gender, so leaving it out
+      // would show a card whose title differs from the one being printed.
+      gender: 'female',
     });
   });
 

@@ -61,6 +61,16 @@ function previewCacheKey(parts = {}) {
     ef,
     !!parts.chasers,
     String(parts.customTitle || ''),
+    // The honoree's gender. A title carrying a {feminine|masculine} marker
+    // renders DIFFERENT TEXT per gender ("שירה בת 30" vs "דני בן 30"), so the
+    // two are different renders of the same name and must not share a slot.
+    String(parts.gender || ''),
+    // Whether the board was rendered at all. `/api/preview` documents that a
+    // board-less render must never be served to a caller that asked for the
+    // board (it would silently lose a panel) nor the reverse — but the flag was
+    // never part of the key, so the two collided on identical inputs and
+    // whichever ran first won for the whole TTL.
+    parts.withBoard !== false,
     // Owner calibration-preview knobs (null for a normal buyer preview) — folded
     // in so distinct knob sets never collide and a calibrated override is never
     // served from (or into) a plain preview's slot. The blob is built in a fixed

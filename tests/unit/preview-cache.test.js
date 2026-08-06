@@ -67,6 +67,29 @@ describe('previewCacheKey', () => {
     expect(previewCacheKey({ ...base, chasers: true })).not.toBe(key);
     expect(previewCacheKey({ ...base, customTitle: 'hi' })).not.toBe(key);
   });
+
+  it('separates the two GENDERS — they render different words', () => {
+    // A title carrying a {m:בן|f:בת} marker prints a different word per gender,
+    // so the same name at two genders is two renders, not one.
+    const base = { theme: 't', name: 'X' };
+    const none = previewCacheKey(base);
+    const f = previewCacheKey({ ...base, gender: 'female' });
+    const m = previewCacheKey({ ...base, gender: 'male' });
+    expect(new Set([none, f, m]).size).toBe(3);
+    expect(previewCacheKey({ ...base, gender: 'female' })).toBe(f);
+  });
+
+  it('separates a board-less render from one WITH the board', () => {
+    // The route documents that these must never be served to each other (one
+    // silently loses a panel), but the flag was missing from the key, so on
+    // identical inputs whichever ran first won for the whole TTL.
+    const base = { theme: 't', name: 'X' };
+    expect(previewCacheKey({ ...base, withBoard: false })).not.toBe(
+      previewCacheKey({ ...base, withBoard: true })
+    );
+    // absent means "with board" — the default every existing caller relies on
+    expect(previewCacheKey(base)).toBe(previewCacheKey({ ...base, withBoard: true }));
+  });
 });
 
 describe('preview result cache', () => {

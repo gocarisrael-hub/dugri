@@ -159,9 +159,9 @@
   "recipe": "birthday-boys-basketball",
   "fix_ring_discs": true,
   "visibility": "public",
-  "title_text": "{NAME} בן {AGE}",
+  "title_text": "{NAME} {m:בן|f:בת} {AGE}",
   "title_lines": [
-   "{NAME} בן {AGE}"
+   "{NAME} {m:בן|f:בת} {AGE}"
   ],
   "language": "hebrew",
   "name_form": "hebrew",

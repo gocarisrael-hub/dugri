@@ -1151,3 +1151,153 @@ def test_a_shipped_variable_title_face_never_renders_at_its_own_default():
     assert not unpinned, (
         "variable title face with no weight pinned (draws its own default "
         f"instance): {', '.join(unpinned)}")
+
+
+# ---- Gendered titles ({m:…|f:…} markers) -----------------------------------
+# Hebrew is gendered: a boy's card must say בן and a girl's בת. The title carries
+# ONE template with a labelled alternation marker. The buyer's recorded gender
+# picks the matching form; an order with NO recorded gender falls back to the
+# form written FIRST, which is the TEMPLATE's own default (a boys' design writes
+# the masculine form first, a girls' design the feminine one).
+
+
+def test_gender_marker_picks_the_form_the_buyer_selected():
+    cfg = {"name_form": "hebrew", "title_lines": ["{NAME} {m:בן|f:בת} {AGE}"]}
+    assert config.title_lines(cfg, "דני", {"AGE": "30"}, gender="male") == ["דני בן 30"]
+    assert config.title_lines(cfg, "שירה", {"AGE": "30"}, gender="female") == ["שירה בת 30"]
+
+
+def test_the_selection_wins_regardless_of_which_form_is_written_first():
+    # The label decides which form a gender gets — never the position. Writing the
+    # feminine form first (a girls' design) must NOT flip what a boy's deck prints.
+    a = {"name_form": "hebrew", "title_lines": ["{m:בן|f:בת}"]}
+    b = {"name_form": "hebrew", "title_lines": ["{f:בת|m:בן}"]}
+    for cfg in (a, b):
+        assert config.title_lines(cfg, "x", {}, gender="male") == ["בן"]
+        assert config.title_lines(cfg, "x", {}, gender="female") == ["בת"]
+    # Labels are case-insensitive and the long spellings work too.
+    long_form = {"name_form": "hebrew", "title_lines": ["{Male: בן |FEMALE: בת }"]}
+    assert config.title_lines(long_form, "x", {}, gender="female") == ["בת"]
+    assert config.title_lines(long_form, "x", {}, gender="male") == ["בן"]
+
+
+def test_an_unrecorded_gender_falls_back_to_the_TEMPLATES_default():
+    # Not a site-wide guess: whichever form the template writes FIRST. A boys'
+    # design defaults masculine, a girls' design feminine, by that order alone.
+    boys = {"name_form": "hebrew", "title_lines": ["{NAME} {m:בן|f:בת} {AGE}"]}
+    girls = {"name_form": "hebrew", "title_lines": ["{NAME} {f:בת|m:בן} {AGE}"]}
+    for unknown in (None, "", "other", "MALE", 0):
+        assert config.title_lines(boys, "דני", {"AGE": "30"}, gender=unknown) == ["דני בן 30"]
+        assert config.title_lines(girls, "שירה", {"AGE": "30"}, gender=unknown) == ["שירה בת 30"]
+
+
+def test_the_shipped_basketball_theme_is_gendered_and_defaults_masculine():
+    # Regression: "ברוקלין" hardcoded בן, so a GIRL's deck printed the masculine
+    # word on every card and on the board. It is a boys' design, so a missing
+    # gender still prints בן — but a girl now gets בת.
+    cfg = config.theme("birthday-boys-basketball")
+    assert config.title_lines(cfg, "שירה", {"AGE": "30"}, gender="female") == ["שירה בת 30"]
+    assert config.title_lines(cfg, "דני", {"AGE": "30"}, gender="male") == ["דני בן 30"]
+    assert config.title_lines(cfg, "דני", {"AGE": "30"}) == ["דני בן 30"]
+
+
+def test_no_shipped_title_hardcodes_a_gendered_hebrew_word():
+    # The audit the fix is really about: any theme whose title contains a bare
+    # בן/בת OUTSIDE a marker is the same bug wearing another template's clothes.
+    import re
+
+    offenders = []
+    for key, cfg in _themes().items():
+        for line in cfg.get("title_lines") or []:
+            bare = re.sub(r"\{[^{}]*\|[^{}]*\}", "", str(line))
+            if re.search(r"(?<![֐-׿])(בן|בת)(?![֐-׿])", bare):
+                offenders.append(f"{key}: {line}")
+    assert not offenders, (
+        "title hardcodes a gendered Hebrew word — write it as a {m:בן|f:בת} marker "
+        "so the order's gender picks the form: " + "; ".join(offenders)
+    )
+
+
+def test_every_shipped_marker_is_labelled_on_both_sides():
+    # An unlabelled marker would print its first form to EVERY buyer, which is
+    # the original defect. The server rejects one at the write; this catches a
+    # hand-edited themes.json.
+    import re
+
+    bad = []
+    for key, cfg in _themes().items():
+        for line in cfg.get("title_lines") or []:
+            for marker in re.findall(r"\{[^{}]*\|[^{}]*\}", str(line)):
+                forms = [config._split_gender_form(p) for p in marker[1:-1].split("|")]
+                if len(forms) != 2 or {f[0] for f in forms} != {"male", "female"}:
+                    bad.append(f"{key}: {marker}")
+    assert not bad, "gender marker missing its m:/f: labels: " + "; ".join(bad)
+
+
+def test_titles_without_a_marker_are_byte_identical_at_every_gender():
+    # Every theme that predates the marker must render exactly as it did, whatever
+    # the gender is — the feature is additive or it is a regression.
+    for key, cfg in _themes().items():
+        if any("|" in str(ln) for ln in cfg.get("title_lines") or []):
+            continue
+        extra = {f: "30" for f in cfg.get("extra_fields") or []}
+        base = config.title_lines(cfg, "דני", extra)
+        for g in ("male", "female", None):
+            assert config.title_lines(cfg, "דני", extra, gender=g) == base, key
+
+
+def test_gender_marker_resolves_inside_a_buyer_custom_title():
+    # A custom title REPLACES the theme lines, and a Hebrew title the buyer typed
+    # herself is exactly where a gendered word belongs.
+    cfg = config.theme("birthday-boys-basketball")
+    t = "ליאת {f:בת|m:בן} 40"
+    assert config.title_lines(cfg, "x", {}, custom_title=t, gender="male") == ["ליאת בן 40"]
+    assert config.title_lines(cfg, "x", {}, custom_title=t, gender="female") == ["ליאת בת 40"]
+    # no recorded gender -> the first form the title itself writes
+    assert config.title_lines(cfg, "x", {}, custom_title=t) == ["ליאת בת 40"]
+    # a custom title stays LITERAL otherwise: no {NAME}/{AGE} substitution, and
+    # its other braces are left exactly as typed (unchanged behavior).
+    assert config.title_lines(cfg, "oz", {"AGE": "9"},
+                              custom_title="{NAME} party") == ["{NAME} party"]
+
+
+def test_a_malformed_marker_degrades_instead_of_printing_raw_braces():
+    hebrew = {"name_form": "hebrew"}
+    # closing brace never typed -> resolved as if it were closed
+    assert config.title_lines({**hebrew, "title_lines": ["{NAME} {m:בן|f:בת"]},
+                              "שירה", {}, gender="female") == ["שירה בת"]
+    # UNLABELLED (the server rejects this at the write): every buyer gets the
+    # first form. Wrong for half of them, but text on a card rather than "{בן|בת}".
+    assert config.title_lines({**hebrew, "title_lines": ["{בן|בת}"]},
+                              "x", {}, gender="female") == ["בן"]
+    # a third form, unreachable via the admin, is simply never selected
+    assert config.title_lines({**hebrew, "title_lines": ["{m:בן|f:בת|זה}"]},
+                              "x", {}, gender="female") == ["בת"]
+    # an empty side is honoured (a gendered suffix), not turned into braces
+    suffix = {**hebrew, "title_lines": ["חוגג{m:|f:ת}"]}
+    assert config.title_lines(suffix, "x", {}, gender="male") == ["חוגג"]
+    assert config.title_lines(suffix, "x", {}, gender="female") == ["חוגגת"]
+
+
+def test_no_title_can_print_a_raw_brace():
+    # Last-resort guard: an unclosed PLACEHOLDER used to survive every strip and
+    # print "{NAME" on a paying customer's card.
+    for line, want in [
+        ("{NAME's Birthday", "NAME's Birthday"),
+        ("היי }", "היי "),
+        ("{NAME} {AGE", "oz AGE"),
+    ]:
+        out = config.title_lines({"name_form": "english", "title_lines": [line]}, "oz", {})
+        assert out == [want]
+        assert "{" not in out[0] and "}" not in out[0]
+
+
+def test_a_substituted_value_is_never_re_read_as_a_marker():
+    # Markers resolve BEFORE substitution, so a name/field value that happens to
+    # contain a pipe is inert text — never half of it silently dropped.
+    cfg = {"name_form": "english", "title_lines": ["{NAME}"]}
+    assert config.title_lines(cfg, "a|b", {}, gender="male") == ["a|b"]
+    assert config.title_lines(cfg, "a|b", {}, gender="female") == ["a|b"]
+    # ...and a value carrying braces is still treated as the unfillable
+    # placeholder it looks like (unchanged), not as a marker to resolve.
+    assert config.title_lines(cfg, "{a|b}", {}, gender="male") == [""]

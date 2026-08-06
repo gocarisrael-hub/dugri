@@ -148,6 +148,75 @@ describe('validateTitle (the placeholder contract)', () => {
       'NAME2',
     ]);
   });
+
+  // ---- Gender alternation markers ----------------------------------------
+  // Hebrew is gendered, so a birthday title has to say בן for a boy and בת for a
+  // girl from ONE template. "{m:בן|f:בת}" is a MARKER, not a placeholder: it
+  // needs no extra field and resolves from the order's gender in config.py. The
+  // buyer's selection picks the labelled form; an order with no recorded gender
+  // takes whichever form is written FIRST — the template's own default. The
+  // whole mechanism is useless unless it survives the admin title box.
+
+  it('ACCEPTS a gender marker — it names no field, so it needs none', () => {
+    const v = templates.validateTitle({
+      titleText: '{NAME} {m:בן|f:בת} {AGE}',
+      extraFields: ['AGE'],
+    });
+    expect(v.error).toBeUndefined();
+    // The marker is NOT reported as a placeholder — there is no "m:בן|f:בת" field.
+    expect(v.placeholders).toEqual(['NAME', 'AGE']);
+    expect(v.title_lines).toEqual(['{NAME} {m:בן|f:בת} {AGE}']);
+  });
+
+  it('accepts either order — the first form is just the template default', () => {
+    // A boys' design writes masculine first, a girls' design feminine first, and
+    // both are legal: the ORDER only decides the no-recorded-gender fallback.
+    for (const t of ['{NAME} {m:בן|f:בת}', '{NAME} {f:בת|m:בן}']) {
+      expect(templates.validateTitle({ titleText: t, extraFields: [] }).error).toBeUndefined();
+    }
+  });
+
+  it('does not mistake a marker for a missing extra field', () => {
+    // Before the marker was understood, this rejected with "the template does
+    // not collect m:בן|f:בת" — so the owner could not save the very fix she needed.
+    expect(templates.titlePlaceholders(['{NAME} {m:בן|f:בת} {AGE}'])).toEqual(['NAME', 'AGE']);
+  });
+
+  it('REFUSES an UNLABELLED marker rather than guessing which word is which', () => {
+    // "{בן|בת}" is two Hebrew words to a program. Accepting it would print the
+    // first form to everyone — a girl's deck carrying the boy's word, which is
+    // the exact defect the marker exists to remove.
+    const v = templates.validateTitle({ titleText: '{NAME} {בן|בת}', extraFields: [] });
+    expect(v.error).toMatch(/which form is which/);
+    expect(v.error).toMatch(/m:בן\|f:בת/);
+    // Half-labelled is no better.
+    expect(
+      templates.validateTitle({ titleText: '{NAME} {m:בן|בת}', extraFields: [] }).error
+    ).toMatch(/which form is which/);
+  });
+
+  it('REFUSES a marker that labels both forms the same gender', () => {
+    const v = templates.validateTitle({ titleText: '{NAME} {m:בן|male:בת}', extraFields: [] });
+    expect(v.error).toMatch(/both forms/);
+  });
+
+  it('still REFUSES an unclosed marker (it would print a raw brace)', () => {
+    expect(
+      templates.validateTitle({ titleText: '{NAME} {m:בן|f:בת', extraFields: [] }).error
+    ).toMatch(/unclosed/);
+  });
+
+  it('REFUSES a marker with more than two forms — the extras would vanish', () => {
+    const v = templates.validateTitle({ titleText: '{NAME} {m:בן|f:בת|זה}', extraFields: [] });
+    expect(v.error).toMatch(/3 forms/);
+    expect(v.error).toMatch(/m:בן\|f:בת/);
+  });
+
+  it('accepts ONE empty side — a gendered suffix (חוגג / חוגגת)', () => {
+    expect(
+      templates.validateTitle({ titleText: '{NAME} חוגג{m:|f:ת}', extraFields: [] }).error
+    ).toBeUndefined();
+  });
 });
 
 describe('updateTemplateSettings — editing the title after creation', () => {
@@ -202,6 +271,25 @@ describe('updateTemplateSettings — editing the title after creation', () => {
     // break an order that already resolved to it.
     expect(saved.slug).toBe('fix-me');
     expect(saved.dir).toBe('resources/canva/templates/fix-me');
+  });
+
+  it('ROUND-TRIPS a gender marker through the admin title editor', () => {
+    // The owner's actual fix for "ברוקלין": swap the hardcoded בן for a marker.
+    // It has to save, persist verbatim, and read back byte-for-byte — a mangled
+    // or rejected marker means the generator never sees it.
+    onboardBroken('gendered');
+    const themesPath = templates.themesPathFor(root);
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'gendered',
+      patch: { title_lines: ['{NAME} {m:בן|f:בת} {AGE}'], extra_fields: ['AGE'] },
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.settings.title_lines).toEqual(['{NAME} {m:בן|f:בת} {AGE}']);
+    expect(r.settings.title_text).toBe('{NAME} {m:בן|f:בת} {AGE}');
+    const saved = templates.loadThemes(themesPath)['gendered'];
+    expect(saved.title_lines).toEqual(['{NAME} {m:בן|f:בת} {AGE}']);
+    expect(saved.title_text).toBe('{NAME} {m:בן|f:בת} {AGE}');
   });
 
   it('accepts title_text and derives the lines from it', () => {

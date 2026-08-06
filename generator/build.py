@@ -138,7 +138,7 @@ def render_backs(theme, backs_clean, title_lines, out_png):
 
 def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
               extra_fields=None, word_font=None, workdir="/tmp/gen/build",
-              progress=True, chasers=False, custom_title=None):
+              progress=True, chasers=False, custom_title=None, gender=None):
     """Assemble the full order PDF and return (out_pdf, page_count).
 
     ``extra_fields`` feeds the theme's title template (e.g. AGE/YEARS/NAME1);
@@ -147,10 +147,13 @@ def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
     did) so a caller can stream progress; pass False to stay quiet.
     ``custom_title`` (F7) optionally overrides the theme-derived title on every
     surface (fronts/backs/board); empty/absent keeps the theme default.
+    ``gender`` ('male'/'female'/None) resolves the title's {feminine|masculine}
+    markers (config.resolve_gender_markers); a title without one is unaffected.
     """
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
-    title_lines = config.title_lines(cfg, name, extra_fields or {}, custom_title=custom_title)
+    title_lines = config.title_lines(cfg, name, extra_fields or {}, custom_title=custom_title,
+                                     gender=gender)
     os.makedirs(workdir, exist_ok=True)
     import csv as csvmod
     data = list(csvmod.DictReader(open(csvp, encoding="utf-8-sig")))
@@ -382,7 +385,8 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
 
 def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
                workdir="/tmp/gen/deck", progress=True, chasers=False,
-               custom_title=None, photos=None, press_icc=None, press_bleed=None):
+               custom_title=None, photos=None, press_icc=None, press_bleed=None,
+               gender=None):
     """Assemble a v2 order: the card deck PDF + the board PDF.
 
     Returns ``(out_pdf, page_count, board_pdf)``. The deck is
@@ -391,11 +395,13 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
 
     ``photos`` are absolute paths to the customer's pawn photos for the final
     card; short/empty is topped up from the theme's generic fallback set.
+    ``gender`` ('male'/'female'/None) resolves the title's {feminine|masculine}
+    markers (config.resolve_gender_markers); a title without one is unaffected.
     """
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
     title_lines = config.title_lines(cfg, name, extra_fields or {},
-                                     custom_title=custom_title)
+                                     custom_title=custom_title, gender=gender)
     os.makedirs(workdir, exist_ok=True)
     # Check the board artwork BEFORE rendering the deck. An order owes the
     # customer BOTH artifacts, so a missing board is a failed order, not a deck

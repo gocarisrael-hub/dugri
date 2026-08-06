@@ -1897,6 +1897,36 @@ const PLACEHOLDER_ANY_RE = /\{[^{}]*\}/g;
 // The one placeholder every theme can always use: the honoree's name.
 const NAME_PLACEHOLDER = 'NAME';
 
+// ---- Gender alternation markers -------------------------------------------
+// A brace group containing a `|` is NOT a placeholder — it is a GENDER MARKER,
+// "{m:בן|f:בת}", carrying its own two labelled forms and resolved from the
+// order's honoree gender by generator/config.py `resolve_gender_markers`.
+// Hebrew is gendered, so a birthday title has to be able to say בן for a boy and
+// בת for a girl from ONE template.
+//
+// The buyer's recorded gender selects the form with the matching label. An order
+// with NO recorded gender falls back to whichever form is written FIRST — the
+// template's own default, so a boys' design writes the masculine form first and
+// a girls' design the feminine one, with no extra field to configure.
+//
+// Which is why the labels are MANDATORY here and an unlabelled "{בן|בת}" is
+// rejected: the fallback needs the order to be free, so position alone cannot
+// also say which form is masculine — and guessing the wording of a word printed
+// on 200 cards is not something this should do quietly.
+//
+// A marker needs no extra field and names no token, so every placeholder check
+// below strips markers out first. Otherwise the owner typing "{NAME} {m:בן|f:בת}
+// {AGE}" into the admin title box would be told the template does not collect a
+// field called "m:בן|f:בת" and the save would be rejected — which is exactly the
+// round trip this mechanism depends on.
+//
+// A stricter cousin of the positional "{female|male}" alternation the site's word
+// prompts use (site/js/word-prompts.js `renderQuestion`). Keep the three in step.
+const GENDER_MARKER_ANY_RE = /\{[^{}]*\|[^{}]*\}/g;
+// "m:" / "male:" / "f:" / "female:" (case-insensitive), mirroring config.py.
+const GENDER_FORM_LABEL_RE = /^\s*(m|male|f|female)\s*:/i;
+const GENDER_LABEL_OF = { m: 'male', male: 'male', f: 'female', female: 'female' };
+
 // Split a title into render lines: newline-separated, trimmed, blanks dropped.
 // Mirrors buildThemeEntry's original split so an edited title lands in exactly
 // the shape onboarding produces.
@@ -1905,16 +1935,79 @@ function titleLinesFrom(input) {
   return raw.map((s) => String(s == null ? '' : s).trim()).filter(Boolean);
 }
 
-// Every `{TOKEN}` used by a title, in order of first appearance.
+// One title line with its gender markers removed, so placeholder/brace checks
+// see only the `{TOKEN}` groups they are about.
+function withoutGenderMarkers(line) {
+  return String(line == null ? '' : line).replace(GENDER_MARKER_ANY_RE, '');
+}
+
+// Every `{TOKEN}` used by a title, in order of first appearance. Gender markers
+// are not tokens and are excluded.
 function titlePlaceholders(lines) {
   const out = [];
   for (const line of titleLinesFrom(lines)) {
-    for (const m of String(line).match(PLACEHOLDER_ANY_RE) || []) {
+    for (const m of withoutGenderMarkers(line).match(PLACEHOLDER_ANY_RE) || []) {
       const token = m.slice(1, -1).trim();
       if (!out.includes(token)) out.push(token);
     }
   }
   return out;
+}
+
+// The SHAPE a usable gender marker has, quoted in every rejection so the fix is
+// always in front of whoever hit it. Masculine first here purely as the example.
+const GENDER_MARKER_SHAPE = '{m:בן|f:בת}';
+
+// Reject a gender marker the renderer could not honour as written. Every case
+// here would otherwise print a wrong or missing word on 200 cards, so it is
+// caught at the WRITE, where it can be explained, rather than at the render,
+// where it can only be absorbed. Returns an error string, or null when every
+// marker is usable.
+function badGenderMarker(lines) {
+  for (const line of titleLinesFrom(lines)) {
+    for (const m of String(line).match(GENDER_MARKER_ANY_RE) || []) {
+      const parts = m.slice(1, -1).split('|');
+      if (parts.length !== 2) {
+        return (
+          'the gender marker ' +
+          m +
+          ' has ' +
+          parts.length +
+          ' forms — write exactly two, one masculine and one feminine: ' +
+          GENDER_MARKER_SHAPE
+        );
+      }
+      const labels = parts.map((p) => {
+        const hit = GENDER_FORM_LABEL_RE.exec(p);
+        return hit ? GENDER_LABEL_OF[hit[1].toLowerCase()] : null;
+      });
+      // Unlabelled. The generator would print the first form to EVERYONE, so a
+      // girl's deck would silently carry the boy's word — the exact defect the
+      // marker exists to remove. Refuse rather than guess which word is which.
+      if (labels.some((l) => !l)) {
+        return (
+          'the gender marker ' +
+          m +
+          ' does not say which form is which — label them ' +
+          GENDER_MARKER_SHAPE +
+          ' (m: masculine, f: feminine). The form written FIRST is what prints ' +
+          'when an order has no recorded gender, so put this template’s own ' +
+          'default first.'
+        );
+      }
+      if (labels[0] === labels[1]) {
+        return (
+          'the gender marker ' +
+          m +
+          ' labels both forms ' +
+          labels[0] +
+          ' — one has to be masculine and the other feminine: ' +
+          GENDER_MARKER_SHAPE
+        );
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -1944,6 +2037,11 @@ function validateTitle({ titleText, titleLines, extraFields, allowNoName }) {
   if (tooLong) {
     return { error: 'title line too long (max ' + MAX_TITLE_LINE + ' chars): ' + tooLong };
   }
+  // Gender markers first: they are brace groups too, so an unusable one has to
+  // be named as a MARKER problem before the placeholder checks below report it
+  // as a mysterious unknown field.
+  const markerError = badGenderMarker(lines);
+  if (markerError) return { error: 'title has ' + markerError };
   const fields = Array.isArray(extraFields) ? extraFields : [];
   const known = new Set([NAME_PLACEHOLDER, ...fields]);
   const used = titlePlaceholders(lines);
@@ -1962,8 +2060,11 @@ function validateTitle({ titleText, titleLines, extraFields, allowNoName }) {
     }
   }
   // A leftover brace after removing every group means an unclosed one ("{NAME"),
-  // which would print raw on the card.
-  const leftover = lines.join('\n').replace(PLACEHOLDER_ANY_RE, '');
+  // which would print raw on the card. Gender markers are removed first — they
+  // are legitimate brace groups that PLACEHOLDER_ANY_RE also matches, but an
+  // unclosed one ("{בת|בן") must still be caught here rather than left to the
+  // generator's last-resort brace stripping.
+  const leftover = withoutGenderMarkers(lines.join('\n')).replace(PLACEHOLDER_ANY_RE, '');
   if (leftover.includes('{') || leftover.includes('}')) {
     return { error: 'title has an unclosed { or } — write placeholders as {NAME}' };
   }
