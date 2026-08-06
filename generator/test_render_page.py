@@ -2657,3 +2657,88 @@ def test_the_row_floor_does_not_depend_on_which_pillow_wheel_is_installed():
     font, ref = rp._word_metrics(os.path.join(HERE, "word-fonts",
                                               "Cafe Regular.ttf"))
     assert abs(rp._card_lead(font, ref, _SPREAD_CARD, count=4) - 0.92) < 0.01
+
+
+# ---- the second (Latin) face -----------------------------------------------
+# Every template ships a Hebrew word face. The owner may upload a Latin one
+# beside it, and when she does it wins for Latin runs outright — she chose the
+# face, so the renderer does not second-guess her by measuring glyph coverage.
+# ``script_runs`` is the split that feeds it, and its whole burden is to leave
+# TODAY'S cards alone: every shipped card is Hebrew words with the occasional
+# number, and none of them may gain a run.
+
+
+def test_a_pure_hebrew_entry_is_one_run():
+    assert rp.script_runs("מסיבה") == [(False, "מסיבה")]
+    assert rp.script_runs("בית ספר") == [(False, "בית ספר")]
+
+
+def test_a_number_inside_a_hebrew_phrase_does_not_split_it():
+    """The byte-identity case, and the reason digits are neutral not Latin.
+
+    Unicode classes a digit EN/AN, never L. Reading one as Latin would split
+    "מסיבה 40" in two and re-emit the markup of every shipped card that prints a
+    number, for no gain — the Hebrew faces all draw digits.
+    """
+    assert rp.script_runs("מסיבה 40") == [(False, "מסיבה 40")]
+    assert rp.script_runs("40 מסיבה") == [(False, "40 מסיבה")]
+
+
+def test_the_numbered_marker_stays_one_run():
+    """"1. עפיפון" is what every card's entry looks like once numbered."""
+    assert rp.script_runs("1. עפיפון") == [(False, "1. עפיפון")]
+
+
+def test_a_latin_word_inside_a_hebrew_entry_is_its_own_run():
+    """The owner's own example. The hyphen belongs to the ל beside it."""
+    assert rp.script_runs("40 מתחת ל-BBQ") == [
+        (False, "40 מתחת ל-"),
+        (True, "BBQ"),
+    ]
+
+
+def test_a_pure_latin_entry_is_one_latin_run():
+    assert rp.script_runs("Tel Aviv") == [(True, "Tel Aviv")]
+
+
+def test_segmentation_never_loses_or_reorders_a_character():
+    for s in ("מסיבה", "40 מתחת ל-BBQ", "HADAR ו-דני", "Tel Aviv",
+              "1. עפיפון", "רווקות לטל", "מכבי חיפה 2024"):
+        assert "".join(t for _, t in rp.script_runs(s)) == s
+
+
+def test_every_shipped_wordlist_entry_stays_a_single_run():
+    """The guarantee, stated over the real corpus rather than a sample.
+
+    If any shipped entry gained a run, its card's markup would change and the
+    fallback would not be inert. Read the filler pools the generator actually
+    tops decks up with.
+    """
+    import glob
+    import topup
+    pools = glob.glob(os.path.join(topup.WORDLISTS_DIR, "*.txt"))
+    assert pools, "no wordlist pools found — the guarantee is untested"
+    checked, split = 0, []
+    for path in pools:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                w = line.strip()
+                if not w:
+                    continue
+                checked += 1
+                if len(rp.script_runs(w)) != 1:
+                    split.append((os.path.basename(path), w))
+    assert checked > 100, f"only {checked} entries checked"
+    assert not split, f"{len(split)} shipped entries would gain a run: {split[:8]}"
+
+
+def test_a_combining_mark_never_splits_the_glyph_it_belongs_to():
+    """Unicode W1, and it is not academic: the shipped pool carries "🅿️".
+
+    That is a squared Latin P (bidi class L) followed by an invisible variation
+    selector. Resolving the selector as a free-standing neutral put it in the
+    other face — one glyph, split across two runs and two @font-face families.
+    Found by the corpus test above, which is why that test reads the real pools
+    instead of a handful of examples.
+    """
+    assert rp.script_runs("🅿️") == [(True, "🅿️")]

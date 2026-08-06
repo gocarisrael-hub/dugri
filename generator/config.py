@@ -267,6 +267,79 @@ def resolve_word_font(theme_name, filename=None):
     return default_path
 
 
+def resolve_word_font_alt(theme_name):
+    """The theme's LATIN word face, or ``None`` when it ships none.
+
+    The owner uploads this per template and it is optional: every template today
+    sets a Hebrew face in ``word_font``, and a card whose words are all Hebrew
+    never needs a second one. When it IS uploaded her instruction is that it wins
+    for Latin runs outright — not "when the Hebrew face can't cope". She chose the
+    face; that is the answer, and second-guessing it by measuring glyph coverage
+    would silently ignore a deliberate choice.
+
+    ``None`` on miss rather than ``resolve_word_font``'s fall-back-to-default: an
+    absent alt face is not an error to paper over, it is the ordinary case, and
+    the caller's ``None`` branch is what keeps a one-face card byte-identical.
+    """
+    name = (theme(theme_name).get("word_font_alt") or "").strip()
+    if not name:
+        return None
+    own = font_path(theme_name, name)
+    if os.path.exists(own):
+        return own
+    shared = os.path.join(WORD_FONTS_DIR, name)
+    return shared if os.path.exists(shared) else None
+
+
+def resolve_title_font(theme_name):
+    """The theme's title face, checked to exist.
+
+    ``title_font`` had no resolver at all: nine call sites each did a bare
+    ``font_path(theme, cfg["title_font"])`` and a missing file surfaced as an
+    OSError from inside PIL, naming neither the theme nor the key. This raises
+    with both.
+
+    Deliberately NOT a fallback chain like ``resolve_word_font``'s. Falling back
+    to some other face would print the wrong typeface on all 104 cards of a paid
+    order — the failure the League Spartan v1/v2 mix-up already cost us once.
+    A missing title font is a stop, not a substitution.
+    """
+    cfg = theme(theme_name)
+    name = (cfg.get("title_font") or "").strip()
+    if not name:
+        raise RuntimeError(
+            f"theme {theme_name!r} has no title_font — upload one in the admin "
+            "template screen before rendering it."
+        )
+    path = font_path(theme_name, name)
+    if not os.path.exists(path):
+        raise RuntimeError(
+            f"theme {theme_name!r} title_font {name!r} is not in its fonts/ dir "
+            f"(looked for {path}). Re-upload it in the admin template screen."
+        )
+    return path
+
+
+def resolve_title_font_alt(theme_name):
+    """The theme's SECOND title face, or ``None`` when it ships none.
+
+    A buyer may type a custom title in any language, so a template drawn with a
+    Hebrew title face can be asked to set an English one and vice versa. The
+    honoree-name script guards do not apply to a custom title (they check the
+    NAME), so this case reaches the renderer today and prints through whatever
+    face the theme has — Chrome quietly substituting a system font for glyphs the
+    face lacks. This is the face to use instead when the title's script is not
+    the one the template is set in.
+
+    Optional, and ``None`` on miss for the same reason as the word alt.
+    """
+    name = (theme(theme_name).get("title_font_alt") or "").strip()
+    if not name:
+        return None
+    path = font_path(theme_name, name)
+    return path if os.path.exists(path) else None
+
+
 def display_path(path):
     """A path as it should be SHOWN to a human: repo-relative, or absolute.
 
