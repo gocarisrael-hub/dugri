@@ -625,6 +625,12 @@
       .design {
         flex: 0 1 130px;
         max-width: 150px;
+        /* A flex item's automatic minimum size is its MIN-CONTENT width, so one long
+           unbreakable word in the label — and an uploaded template's name is
+           owner-typed and unbounded — would push the tile past its basis, drop the
+           row from four tiles to three and add a row the phone has no space for.
+           Pin the minimum so tile width is decided by the layout, never by the text. */
+        min-width: 0;
         background: var(--surface);
         border: 2px solid var(--line);
         border-radius: var(--radius);
@@ -674,6 +680,10 @@
         font-size: 13.5px;
         color: var(--sage-deeper);
         text-align: center;
+        /* …and the label itself wraps inside the tile rather than setting its
+           width (see .design min-width above). */
+        max-width: 100%;
+        overflow-wrap: anywhere;
       }
 
       /* fixed-colour designs (neon) hide the whole swatch picker. The id+attr
@@ -1477,6 +1487,29 @@
         /* design tiles: compact wrapping grid instead of a tall stack */
         .designs {
           gap: 8px;
+          /* …and a CEILING, because the catalog GROWS: every template the owner
+             uploads adds a tile, and past two rows the grid pushed the whole step
+             below the fixed Back/Next bar and made the page scroll — which the
+             phone wizard must never do (tests/e2e/wizard-noscroll.spec.js). The
+             picker takes its own bounded scroll instead of handing the overflow to
+             the page, so the step stays put however many designs exist.
+             The cap itself is stamped by capDesignPicker() from the tiles' REAL
+             measured geometry (exactly two rows) rather than a vh guess: row height
+             moves with the font that actually loaded, and a guess that is right on
+             one machine is wrong on another. Below three rows nothing is stamped at
+             all, so with the seven bundled designs the picker is untouched and looks
+             exactly as it always has. */
+          overflow-y: auto;
+          /* don't let a flick at the end of the list start scrolling the page */
+          overscroll-behavior: contain;
+        }
+        /* There is more below: fade the bottom edge so the cut is legible as "keep
+           scrolling" instead of reading as the end of the list. Costs no height —
+           which is the whole point, there is none to spare. Cleared once the
+           shopper reaches the bottom. */
+        .designs[data-more] {
+          -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+          mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
         }
         .design {
           flex: 0 1 78px;
@@ -3401,13 +3434,14 @@
 
     <script type="module">
       import {
-        DESIGNS,
+        DESIGNS as BUILTIN_DESIGNS,
         MAIN_COLORS,
         themeForDesign,
         extraFieldsForDesign,
         languageForDesign,
         fetchDesignNames,
         applyDesignNames,
+        loadCustomDesigns,
       } from './js/designs.js';
       import {
         applyPalette,
@@ -3433,6 +3467,17 @@
         fluidSvg,
         fitNameFontPx,
       } from './js/name-preview-instant.js';
+
+      // The CUSTOM designs — owner-uploaded templates that the store already sells
+      // (products.html and product.html both render them from /api/custom-designs).
+      // The wizard used to know ONLY the bundled catalog, so arriving from an
+      // uploaded design's "קנו עכשיו" (options.html?design=<custom id>&step=2) found
+      // no match in DESIGNS and silently left designIndex at 0 — the buyer was put
+      // into the FIRST built-in design's order flow and could pay for a product they
+      // never chose. Kicked off here, before the FEATURES await, so the two
+      // same-origin fetches overlap and this costs no extra round trip; both are
+      // timeout-bounded and fail-safe ([] / all-false).
+      const customDesignsPromise = loadCustomDesigns();
 
       // Owner-controlled buyer-wizard feature flags. Fetched once, BEFORE the
       // wizard builds its steps/nav, so a gated-off feature is never painted and
@@ -3474,10 +3519,29 @@
       // when name-preview is also on (owner decision).
       const fontChoiceOn = FEATURES.font_choice && FEATURES.name_preview;
 
+      // The wizard's catalog: the bundled designs FIRST (so every built-in index
+      // stays exactly where it was); the uploaded templates on sale are APPENDED
+      // when /api/custom-designs resolves (see customsReady below). Everything below
+      // reads this one list, so a custom design is picked, previewed, priced and
+      // ORDERED through the same code path as a built-in one — no branch. Mutated in
+      // place rather than replaced so every closure keeps the same array.
+      //
+      // Deliberately NOT awaited here: the wizard must become interactive on exactly
+      // the round trips it needed before (the FEATURES fetch), because a shopper —
+      // and the e2e that drives the funnel — can press Next the instant the buttons
+      // paint, and a click that lands before init is a click that does nothing. Only
+      // the ONE case that cannot proceed without the answer waits for it: a ?design=
+      // the bundled catalog does not contain (see the await before restore()).
+      const DESIGNS = BUILTIN_DESIGNS.slice();
+
       // Validate the manifest once at load. Don't hard-crash the page on a bad
       // manifest - just surface a clear console error so it's caught in dev/CI.
+      // Only the BUNDLED catalog is validated: it is the shipped manifest this
+      // check exists to police. A custom design is server data, already validated
+      // and shape-normalized by loadCustomDesigns, and may legitimately ship a
+      // subset of slots (e.g. no board) that the manifest rules would reject.
       try {
-        const manifestErrors = validateManifest(DESIGNS, MAIN_COLORS);
+        const manifestErrors = validateManifest(BUILTIN_DESIGNS, MAIN_COLORS);
         if (manifestErrors.length) {
           console.error('Invalid designs manifest:\n' + manifestErrors.join('\n'));
         }
@@ -3800,7 +3864,7 @@
       // private tile. Private tiles are built but hidden — keeping DESIGNS
       // indices stable so all the index-based state below stays correct.
       const designButtons = new Map();
-      DESIGNS.forEach((d, i) => {
+      function addDesignTile(d, i) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'design';
@@ -3833,7 +3897,30 @@
           thumb.textContent = d.name;
         }
         btn.addEventListener('click', () => selectDesign(i));
+      }
+      BUILTIN_DESIGNS.forEach(addDesignTile);
+
+      // Append the uploaded templates the owner put on sale as soon as they arrive.
+      // Appending (never inserting) keeps every bundled design at the index it has
+      // always had, so all the index-keyed state above stays correct, and keeps the
+      // DOM tile order identical to the catalog order — which the aria-pressed
+      // stamping relies on. Fail-safe: [] leaves the bundled catalog exactly as it
+      // is. Resolves to nothing useful; it exists to be AWAITED by the one caller
+      // that cannot proceed without it.
+      const customsReady = customDesignsPromise.then((customs) => {
+        for (const c of customs || []) {
+          if (DESIGNS.some((d) => d.id === c.id)) continue;
+          DESIGNS.push(c);
+          addDesignTile(c, DESIGNS.length - 1);
+        }
+        capDesignPicker();
       });
+
+      // Keep the bottom fade honest while the shopper scrolls the picker, and
+      // re-measure the cap when the viewport changes (rotation, browser chrome
+      // collapsing) since both the row count and the row height can change with it.
+      designList.addEventListener('scroll', updateDesignScrollHint, { passive: true });
+      window.addEventListener('resize', capDesignPicker);
 
       // An admin rename (themes.json display_he) has to reach the wizard too —
       // otherwise the shopper picks "מסיבת רווקות" in the store and lands on a tile
@@ -3928,6 +4015,61 @@
         });
       }
 
+      // How many rows of design tiles a phone screen has room for above the fixed
+      // Back/Next bar. Two is what the layout has always shown; the catalog growing
+      // past it is what pushed the step off the screen.
+      const DESIGN_ROWS_ON_PHONE = 2;
+      const PHONE_MQ = '(max-width: 600px), (max-height: 820px)';
+
+      // Cap the picker to DESIGN_ROWS_ON_PHONE rows on a phone, measured from the
+      // tiles themselves so the number is right whatever the loaded font does to row
+      // height. Only bites when the tiles actually wrap past the cap: fewer rows →
+      // no cap, no scroller, no visual change. Re-run on resize/orientation change.
+      function capDesignPicker() {
+        if (!designList) return;
+        designList.style.maxHeight = '';
+        delete designList.dataset.more;
+        if (typeof window.matchMedia !== 'function' || !window.matchMedia(PHONE_MQ).matches) return;
+        const tiles = Array.from(designList.querySelectorAll('.design')).filter((t) => !t.hidden);
+        if (tiles.length < 2) return;
+        // Distinct row offsets = the number of rows the flex grid wrapped into.
+        const rows = Array.from(new Set(tiles.map((t) => Math.round(t.offsetTop)))).sort(
+          (a, b) => a - b
+        );
+        if (rows.length <= DESIGN_ROWS_ON_PHONE) return; // already fits
+        const rowH = tiles[0].getBoundingClientRect().height;
+        const gap = Math.max(0, rows[1] - rows[0] - rowH);
+        designList.style.maxHeight =
+          Math.round(DESIGN_ROWS_ON_PHONE * rowH + (DESIGN_ROWS_ON_PHONE - 1) * gap) + 'px';
+        updateDesignScrollHint();
+      }
+
+      // Show the bottom fade only while there is still list below the fold.
+      function updateDesignScrollHint() {
+        if (!designList) return;
+        const more = designList.scrollHeight - designList.clientHeight - designList.scrollTop > 2;
+        if (more) designList.dataset.more = '1';
+        else delete designList.dataset.more;
+      }
+
+      // On a phone the picker is a bounded scroller (see capDesignPicker), so the
+      // selected tile can sit outside its visible band — most obviously when the
+      // shopper arrives from a design's "קנו עכשיו" and that design is the last one
+      // in the catalog. Bring it into view WITHIN the picker only: adjusting
+      // scrollTop by the overshoot can't scroll the page (scrollIntoView can), which
+      // matters because this step must not move under the shopper. A no-op on
+      // desktop, where the picker never overflows.
+      function revealSelectedTile() {
+        const d = DESIGNS[designIndex];
+        const btn = d && designButtons.get(d.id);
+        if (!btn || !designList || designList.scrollHeight <= designList.clientHeight) return;
+        const tile = btn.getBoundingClientRect();
+        const box = designList.getBoundingClientRect();
+        if (tile.bottom > box.bottom) designList.scrollTop += tile.bottom - box.bottom;
+        else if (tile.top < box.top) designList.scrollTop -= box.top - tile.top;
+        updateDesignScrollHint();
+      }
+
       function selectDesign(i) {
         designIndex = i;
         colorIndex = -1; // always show a newly picked design in its original colors first
@@ -3938,6 +4080,7 @@
         updateColorControls();
         setActiveSwatch(-1);
         renderExtraFields(); // the theme's required extra inputs may change
+        revealSelectedTile();
         const d = DESIGNS[i] || {};
         track('select_design', { design: d.name || d.id || i });
         renderDesign().then(persist);
@@ -4170,7 +4313,10 @@
       // The generator theme key for the currently selected design (or null).
       function currentTheme() {
         const d = DESIGNS[designIndex] || {};
-        return themeForDesign(d.id);
+        // Pass the DESIGN, not just its id: a custom (uploaded) design carries its
+        // own theme key and is absent from the built-in id→theme map, so resolving
+        // by id alone would send the order a null theme.
+        return themeForDesign(d);
       }
 
       // The name LANGUAGE ('english' | 'hebrew') the current design requires, from
@@ -5457,6 +5603,14 @@
         const onColorCarouselStep = currentStep === 2 && FEATURES.color_picking;
         document.body.classList.toggle('is-step-color', onColorCarouselStep);
         if (onColorCarouselStep) ensureColorCarousel();
+        // The design picker can only be MEASURED while its step is on screen (a
+        // hidden .wiz-step is display:none, so every tile reports a zero box). Cap
+        // it here, the moment step 1 is shown — including the first time the shopper
+        // walks BACK to it from a deep link that opened on a later step.
+        if (currentStep === 1) {
+          capDesignPicker();
+          revealSelectedTile();
+        }
         stepNow.textContent = String(stepPos(currentStep));
         barFill.style.width = Math.round((stepPos(currentStep) / activeSteps.length) * 100) + '%';
         refreshControls();
@@ -6201,6 +6355,28 @@
       );
 
       /* ---- init ---- */
+      // Set when the URL named a design this wizard could NOT select (an id that
+      // isn't in the catalog at all — e.g. /api/custom-designs failed — or a
+      // PRIVATE design that needs its access code). designIndex then still points
+      // at the first design, which is NOT what the shopper asked for, so a deep
+      // link like ?design=<unknown>&step=2 must never sail past the design picker
+      // into checkout: goStep is clamped back to step 1 below and the shopper picks
+      // deliberately. Silently ordering a different design is the failure this
+      // guards against.
+      let urlDesignUnresolved = false;
+
+      // The ONE case that has to wait for /api/custom-designs: the URL names a
+      // design the bundled catalog does not have, i.e. the shopper arrived from an
+      // uploaded design's "קנו עכשיו". Selecting the right design is the whole point
+      // of that link, so here the round trip is worth it — while a cold
+      // /options.html (and any built-in ?design=) becomes interactive with no extra
+      // wait at all. Already-resolved by now in practice; the fetch was started at
+      // the top of this module, before the FEATURES one.
+      {
+        const wanted = params.get('design') || '';
+        if (wanted && !BUILTIN_DESIGNS.some((d) => d.id === wanted)) await customsReady;
+      }
+
       // restore a prior color choice from the URL if present
       (function restore() {
         const dId = params.get('design');
@@ -6212,6 +6388,7 @@
           // unlockDesign); a shared ?design=<private id> link must never bypass
           // that and reveal it. Treat a private id as if it weren't supplied.
           if (di >= 0 && DESIGNS[di].public) designIndex = di;
+          else urlDesignUnresolved = true;
         }
         // When colour-picking is gated off, force the original colours (submits
         // color:"מקורי") and ignore any restored/shared ?color= choice.
@@ -6253,6 +6430,8 @@
           .forEach((el, idx) =>
             el.setAttribute('aria-pressed', idx === designIndex ? 'true' : 'false')
           );
+        // NB: no capDesignPicker() here — restore() runs before any step is shown,
+        // and a display:none step measures as nothing. goStep does it instead.
         updateOrigChip();
         updateColorControls();
         setActiveSwatch(colorIndex);
@@ -6264,9 +6443,15 @@
       // normalizeStep snaps a shared ?step=2 to the next active step when step 2
       // is gated out, so a link never lands the wizard on a hidden step.
       const stepParam = parseInt(params.get('step') || '1', 10);
-      const initialStep = normalizeStep(
-        Number.isNaN(stepParam) ? 1 : Math.min(TOTAL_STEPS, Math.max(1, stepParam))
-      );
+      // A ?design= we could not honour (see urlDesignUnresolved) pins the wizard to
+      // the design picker whatever ?step= says — better to make the shopper choose
+      // than to skip the picker with someone else's design selected.
+      const requestedStep = urlDesignUnresolved
+        ? 1
+        : Number.isNaN(stepParam)
+          ? 1
+          : Math.min(TOTAL_STEPS, Math.max(1, stepParam));
+      const initialStep = normalizeStep(requestedStep);
 
       // Hide the gated-off regions once, before the first paint, so a rough
       // feature is never shown and then removed.
