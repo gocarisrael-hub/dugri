@@ -179,6 +179,75 @@ test.describe('admin templates — single-card layout (read-only)', () => {
     await expect(cal.locator('.cal-card-thumb.active')).toHaveCount(1);
   });
 
+  // The owner's requirement, in her words: "when i choose card 8 i want to see
+  // it in the preview". The thumbnails are a 104px PICKER — enough to choose
+  // from, nowhere near enough to judge a title position against. Selecting a
+  // front has to put THAT front on screen at full size, or she is adjusting
+  // front 8's title box while the largest card in front of her is front 2.
+  test('selecting a front shows THAT front at full preview size', async ({ page }) => {
+    // A different image per front, so "the selected front is on screen" is a
+    // real assertion and not just "some image is on screen".
+    const shotFor = (n) => `data:image/png;base64,front${n}`;
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({ json: { templates: [cardsTemplate()] } })
+    );
+    await page.route('**/api/preview*', (route) => {
+      const cards = {};
+      for (const n of [2, 3, 4, 5, 6, 7, 8, 9]) cards[String(n)] = shotFor(n);
+      return route.fulfill({ json: { cards, card: cards['2'], board: SHOT } });
+    });
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const cal = page.locator('.tpl-card[data-key="cards-x"] .tpl-cal');
+    await cal.locator('.cal-preview-btn').click();
+
+    // It opens on the selected front (front 2 by default), labelled like the picker.
+    const shot = cal.locator('.cal-front-shot');
+    await expect(shot).toBeVisible();
+    await expect(shot.locator('img')).toHaveAttribute('src', shotFor(2));
+    await expect(shot.locator('figcaption')).toHaveText('פנים 1');
+
+    // 'פנים 8' is front 9 — the card whose title sits at the FOOT on מרקאנה,
+    // and the one she could never see.
+    await cal.locator('.cal-front-btn[data-front="9"]').click();
+    await expect(shot.locator('img')).toHaveAttribute('src', shotFor(9));
+    await expect(shot.locator('figcaption')).toHaveText('פנים 8');
+
+    // It is the large view, not another thumbnail: the thumbnails are capped far
+    // smaller, and this one has to be readable.
+    const thumbW = await cal
+      .locator('.cal-card-thumb img')
+      .first()
+      .evaluate((el) => parseFloat(getComputedStyle(el).maxWidth));
+    const shotW = await shot
+      .locator('img')
+      .evaluate((el) => parseFloat(getComputedStyle(el).maxWidth));
+    expect(shotW).toBeGreaterThan(thumbW);
+
+    // Choosing from the STRIP is the same gesture and must move it too.
+    await cal.locator('.cal-card-thumb[data-front="5"]').click();
+    await expect(shot.locator('img')).toHaveAttribute('src', shotFor(5));
+    await expect(shot.locator('figcaption')).toHaveText('פנים 4');
+  });
+
+  test('dismissing the preview drops the renders behind it', async ({ page }) => {
+    // Otherwise a later front selection repaints from a preview that is no
+    // longer on screen and may no longer match the knobs.
+    await page.route('**/api/admin/templates?key=*', (route) =>
+      route.fulfill({ json: { templates: [cardsTemplate()] } })
+    );
+    await page.route('**/api/preview*', (route) => route.fulfill({ json: allFronts() }));
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    const cal = page.locator('.tpl-card[data-key="cards-x"] .tpl-cal');
+    await cal.locator('.cal-preview-btn').click();
+    await expect(cal.locator('.cal-front-shot')).toBeVisible();
+
+    await cal.locator('.cal-preview-close').click();
+    await expect(cal.locator('.cal-front-shot')).toHaveCount(0);
+    // Selecting a front now must not resurrect anything.
+    await cal.locator('.cal-front-btn[data-front="7"]').click();
+    await expect(cal.locator('.cal-front-shot')).toHaveCount(0);
+  });
+
   test('a preview WITHOUT a cards map still shows the single card', async ({ page }) => {
     // An older generator, or a buyer preview, returns only `card`. The panel must
     // keep working exactly as it did rather than rendering an empty strip.

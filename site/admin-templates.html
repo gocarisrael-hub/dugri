@@ -677,6 +677,25 @@
         background: #f3e6e3;
         color: #8a5a52;
       }
+      /* The preview rendered, but it is not showing everything the owner is
+         about to approve — louder than 'ok', not an error. */
+      .tpl-msg.warn {
+        display: block;
+        background: #fbf1dc;
+        color: #7a5a1d;
+      }
+      /* Sits with the renders it is about, so "the back has no name on it" is
+         read next to the bare back rather than in a banner further down. */
+      .cal-preview-notes {
+        flex: 1 0 100%;
+        margin: 0;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: #fbf1dc;
+        color: #7a5a1d;
+        font-size: 12px;
+        line-height: 1.5;
+      }
     </style>
     <script src="js/editor.js" defer></script>
   </head>
@@ -1167,6 +1186,38 @@
         const m = card.querySelector('.tpl-msg');
         m.className = 'tpl-msg ' + kind;
         m.textContent = text;
+      }
+
+      // Show the front the owner has SELECTED, at full preview size.
+      //
+      // The per-front strip is a PICKER, drawn at thumbnail size (104px) — big
+      // enough to choose from, far too small to judge a title position against.
+      // The picker and the render were built separately and never wired
+      // together, so choosing 'פנים 8' moved the form fields and the highlight
+      // but left the large view showing the board and the back only. She was
+      // adjusting front 8's title box while the biggest card on screen was
+      // front 2 — which is exactly why front 9's corrected low title still
+      // looked wrong to her.
+      //
+      // Pure DOM: the strip render already fetched EVERY front, so the selected
+      // one is a lookup against images we already hold — never another render.
+      function paintSelectedFront(card) {
+        const fig = card.querySelector('.cal-front-shot');
+        const shots = card._calCardShots;
+        if (!fig) return;
+        const btns = [...card.querySelectorAll('.cal-front-btn')];
+        const active = card.querySelector('.cal-front-btn.active') || btns[0];
+        const n = active ? active.dataset.front : '';
+        const src = shots && shots[String(n)];
+        fig.hidden = !src;
+        if (!src) return;
+        // Same label as the picker button and the thumbnail — three views of
+        // one choice must agree.
+        const label = btns.length > 1 ? 'פנים ' + (Number(n) - 1) : 'פנים';
+        const img = fig.querySelector('img');
+        img.src = src;
+        img.alt = label;
+        fig.querySelector('figcaption').textContent = label;
       }
 
       // Build the CALIBRATION panel: every title look-knob (title_style) + the
@@ -2234,6 +2285,8 @@
           for (const t of card.querySelectorAll('.cal-card-thumb')) {
             t.classList.toggle('active', t.dataset.front === n);
           }
+          // ...and put the front she just chose in front of her at full size.
+          paintSelectedFront(card);
           redrawCardMap(card);
           return;
         }
@@ -2403,6 +2456,10 @@
           const card = calPreviewClose.closest('.tpl-card');
           const previewEl = card.querySelector('.tpl-cal .cal-preview');
           if (previewEl) previewEl.textContent = '';
+          // Dismissing the images drops the renders they came from too, so a
+          // later front selection cannot repaint a card from a preview that is
+          // no longer on screen (and may no longer match the knobs).
+          card._calCardShots = null;
           // No kind: '.tpl-msg' is display:none, while '.ok' would force it
           // visible and leave an empty green bar behind.
           tplMsg(card, '', '');
@@ -2508,6 +2565,18 @@
               }
               if (thumbs.children.length) previewEl.append(thumbs);
             }
+            // The SELECTED front, at the same size as the board and the back.
+            // The strip above is the picker; this is the card being judged. Held
+            // on the element so changing the selection is a src swap against
+            // images already in hand, with no second round-trip.
+            card._calCardShots = cardShots;
+            if (cardShots) {
+              const sel = document.createElement('figure');
+              sel.className = 'cal-front-shot';
+              sel.append(document.createElement('img'), document.createElement('figcaption'));
+              previewEl.append(sel);
+              paintSelectedFront(card);
+            }
             for (const [k, label] of [
               ...(cardShots ? [] : [['card', 'קלף']]),
               ['board', 'לוח'],
@@ -2523,7 +2592,34 @@
               fig.append(img, cap);
               previewEl.append(fig);
             }
-            tplMsg(card, 'ok', 'זו תצוגה מקדימה — בדקו ואז שמרו, או סגרו בלי לשמור.');
+            // What the render could NOT show. A preview is the approval step
+            // before a deck is printed, so a surface that came back without the
+            // honoree's name — or a back that failed to render at all — has to
+            // be said out loud: bare artwork looks like a finished design, and
+            // the difference only turns up on the printed cards. `notes` is
+            // absent from an older generator, and then this is a no-op.
+            const notes = Array.isArray(data.notes) ? data.notes : [];
+            if (notes.length) {
+              const SURFACE = { card: 'הקלף', board: 'הלוח', back: 'הגב' };
+              const box = document.createElement('p');
+              box.className = 'cal-preview-notes';
+              box.textContent = notes
+                .map((n) => {
+                  const where = SURFACE[n && n.surface] || n.surface || '';
+                  return n && n.code === 'failed'
+                    ? `${where}: הרינדור נכשל — התצוגה לא מציגה אותו כלל.`
+                    : `${where}: אין שם מותאם — כך גם יודפס. הגדירו את המשבצת ושמרו.`;
+                })
+                .join('\n');
+              previewEl.append(box);
+            }
+            tplMsg(
+              card,
+              notes.length ? 'warn' : 'ok',
+              notes.length
+                ? 'זו תצוגה מקדימה, והיא לא שלמה — ראו ההערות שמתחת לתמונות.'
+                : 'זו תצוגה מקדימה — בדקו ואז שמרו, או סגרו בלי לשמור.'
+            );
           } catch (err) {
             previewEl.textContent = '';
             tplMsg(card, 'err', 'שגיאת רשת: ' + err);

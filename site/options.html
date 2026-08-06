@@ -4554,11 +4554,23 @@
         if (cardRes === 'stale') return 'stale';
         if (cardRes !== 'ok') return 'fail';
         showInstantView('card', seq);
+        // Card and back only — the same view list the server render is asked
+        // for, so the instant approximation never draws a slide the exact
+        // render will not fill (a board that appears and then vanishes reads as
+        // a bug). The chasers add-on keeps its board, for the reason given at
+        // the `board:` field of the /api/preview request.
         const rest = [
           { view: 'back', path: d.products.back, crop: true },
-          { view: 'board', path: d.products.board, crop: false },
+          // `skip` rather than omitting the entry: turning the chasers add-on
+          // back OFF has to take a board that is already drawn back off screen,
+          // and a view that is simply absent from this list is never touched.
+          { view: 'board', path: d.products.board, crop: false, skip: !chasers },
         ];
         for (const s of rest) {
+          if (s.skip) {
+            hideInstantView(s.view);
+            continue;
+          }
           const res = await drawInstantView(seq, s.view, s);
           if (seq !== previewSeq) return 'stale';
           if (res === 'ok') showInstantView(s.view, seq);
@@ -4646,6 +4658,19 @@
               // The chasers add-on toggle (step 2) drives which board variant the
               // server renders, so the name-step board preview matches the order.
               chasers,
+              // The name preview shows the CARD and its BACK only. Asking the
+              // server not to RENDER the board (rather than hiding it here) is
+              // the point: the board is a full landscape artboard and by far the
+              // heaviest thing in this response — roughly eight times the card's
+              // bytes, plus its own Chrome page on a container that is already
+              // contended. Hiding it client-side would keep every bit of that
+              // cost and deliver none of the benefit.
+              //
+              // The ONE exception is the chasers add-on. Its board variant is
+              // the only thing that add-on changes, and this preview is the only
+              // place a buyer sees what they are paying for — so when chasers is
+              // on, the board is the product and it stays.
+              board: chasers,
               // Optional custom title (F7) — the server renders the EXACT title so
               // the buyer sees WYSIWYG before paying. Empty = the theme default.
               title: customTitle,

@@ -322,7 +322,16 @@ function wordFontOptions() {
 // card back into a private temp dir; we read them back as base64 and always
 // remove the dir. Enforces a timeout and never leaks the child process. board
 // and back are present only when the theme has that artwork (card is required).
-function runPreview({ theme, name, wordFont, extraFields, chasers, customTitle, calibration }) {
+function runPreview({
+  theme,
+  name,
+  wordFont,
+  extraFields,
+  chasers,
+  customTitle,
+  calibration,
+  withBoard = true,
+}) {
   return new Promise((resolve, reject) => {
     let outDir;
     try {
@@ -359,6 +368,9 @@ function runPreview({ theme, name, wordFont, extraFields, chasers, customTitle, 
     // Chasers add-on: preview the theme's chasers board variant when it ships one
     // (else the normal board — additive), matching what production will generate.
     if (chasers) args.push('--chasers');
+    // Skip the board RENDER (not just its delivery) when the caller will not
+    // show it — see the withBoard note on the /api/preview route.
+    if (!withBoard) args.push('--no-board');
     // Custom title (F7): preview the EXACT overriding title (WYSIWYG), matching
     // what production will render.
     // --title=<value> (single token) so a title that starts with '-' (e.g. "-40",
@@ -397,6 +409,15 @@ function runPreview({ theme, name, wordFont, extraFields, chasers, customTitle, 
           if (produced[key] && fs.existsSync(produced[key])) {
             out[key] = 'data:image/png;base64,' + fs.readFileSync(produced[key]).toString('base64');
           }
+        }
+        // Anything the render had to say about itself — a surface that came back
+        // with no personalized name on it, or a back that could not be rendered.
+        // Carried through with the images (and INTO the preview cache, so a
+        // cache hit says the same thing a fresh render did): the preview is the
+        // approval step before a deck is printed, so what it leaves out is
+        // exactly what the owner would otherwise discover on the printed cards.
+        if (Array.isArray(produced.notes) && produced.notes.length) {
+          out.notes = produced.notes;
         }
         cleanup();
         if (!out.card) return reject(new Error('preview produced no card image'));
@@ -1486,6 +1507,15 @@ app.post('/api/preview', async (req, res) => {
   // Chasers add-on toggle from the order flow — when on, preview the theme's
   // chasers board variant (server falls back to the normal board if none).
   const chasers = !!b.chasers;
+  // The buyer's name preview shows the card and its back only, so it asks for
+  // the board to be SKIPPED. That is a render the server then never performs:
+  // the board is a full landscape artboard and by far the heaviest thing in
+  // this response (~715KB of base64 against the card's ~84KB, plus its own
+  // Chrome page), so dropping it client-side would keep the whole cost and lose
+  // only the benefit. Opt-OUT rather than opt-in, so every existing caller —
+  // the owner's calibration screen included, where the board is still wanted —
+  // keeps the board without being changed.
+  const withBoard = b.board !== false;
   // Custom title (F7): the buyer's optional overriding title. Sanitized with the
   // SAME rule stored orders use, so the live preview is WYSIWYG for production.
   const customTitle = db.sanitizeCustomTitle(b.title);
@@ -1525,6 +1555,9 @@ app.post('/api/preview', async (req, res) => {
     // Distinct knob sets must not collide, and a calibration preview must never
     // be served a plain (uncalibrated) cache entry or vice-versa.
     calibration,
+    // A board-less render must never be served to a caller that asked for the
+    // board (it would silently lose a panel), nor the reverse.
+    withBoard,
     // ...and neither may an entry outlive the artwork it was rendered from.
     assets: templateFingerprint(theme),
   });
@@ -1565,6 +1598,7 @@ app.post('/api/preview', async (req, res) => {
       chasers,
       customTitle,
       calibration,
+      withBoard,
     });
     previewCache.set(cacheKey, imgs);
     res.json({
