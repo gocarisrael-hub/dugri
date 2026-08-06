@@ -532,4 +532,41 @@ test.describe('admin gallery page', () => {
     expect(orderBody.designId).toBe('posttrip');
     expect(orderBody.order.slice(0, 2)).toEqual(['front', 'store']);
   });
+
+  // Every preview used to be forced into a 3:2 box (aspect-ratio + object-fit:
+  // contain + a tinted background), so anything that wasn't 3:2 — and most card
+  // renders are portrait — sat between pale filler bars. Pictures now size
+  // themselves. The EMPTY placeholder is the exception that has to keep a box:
+  // it is a <div> with nothing inside to give it height.
+  test('a picture keeps its own aspect ratio; only the empty placeholder gets a fixed box', async ({
+    page,
+  }) => {
+    const portrait =
+      'data:image/svg+xml,' +
+      encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="400" height="600" fill="#7a4fd6"/></svg>'
+      );
+    await stubGet(page, {});
+    await stubCatalog(page, [entry('posttrip', 'חזרה מטיול', { front: portrait })]);
+    await page.goto(`/admin-images.html?key=${KEY}`);
+
+    const img = page.locator('.item[data-design="posttrip"][data-key="front"] img.preview');
+    await expect(img).toBeVisible();
+    const m = await img.evaluate((el) => ({
+      w: el.clientWidth,
+      h: el.clientHeight,
+      nw: el.naturalWidth,
+      nh: el.naturalHeight,
+    }));
+    expect(m.w).toBeGreaterThan(0);
+    expect(m.nw).toBe(400);
+    // The rendered box follows the FILE's ratio (2:3 here), not a 3:2 frame.
+    expect(m.h / m.w).toBeCloseTo(m.nh / m.nw, 1);
+
+    // A slot with no picture still reads as a tile, not a collapsed line.
+    const empty = page.locator('.item[data-design="posttrip"][data-key="board"] .preview-empty');
+    await expect(empty).toBeVisible();
+    const emptyBox = await empty.boundingBox();
+    expect(emptyBox.height).toBeGreaterThan(60);
+  });
 });
