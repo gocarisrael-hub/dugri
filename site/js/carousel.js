@@ -23,7 +23,12 @@
 // Advances are geometry-free (scrollIntoView) and dot-sync uses relative center
 // distances, so both are correct in LTR and RTL across every browser's
 // scrollLeft sign convention. Keyboard arrows are mapped visually (in RTL,
-// ArrowLeft advances, ArrowRight goes back).
+// ArrowLeft advances, ArrowRight goes back). The prev/next BUTTONS follow the
+// same visual mapping: prev points — and travels — toward the track's start,
+// physically RIGHT in RTL. Their icon is an inline SVG, never a `‹`/`›`
+// character: those are bidi-mirrored and get painted backwards on an RTL page.
+// Arrows render only on a fine-pointer device (see isCoarsePointer) — on a phone
+// the finger is already the control and the buttons would only cover the picture.
 
 // ---- pure helpers (exported, unit-tested) --------------------------------
 
@@ -80,6 +85,50 @@ export function loopJumpCount(d, period) {
   return -Math.trunc(d / period) || 0; // `|| 0` normalises −0 → 0
 }
 
+// True when the environment SAYS the primary pointer is coarse (a finger) or
+// cannot hover — i.e. a phone / tablet. Prev-next arrows exist for people who
+// CANNOT swipe: with a mouse there is no gesture, so without a visible control
+// the rail reads as a single static card. A touch screen already has the
+// control (the finger), and the buttons only cover the picture — so arrows are
+// gated on POINTER CAPABILITY, not on viewport width: a tablet is wide but
+// still touch-only, and a small desktop window is narrow but still a mouse.
+// Detection is AFFIRMATIVE — we hide only when the environment answers "coarse".
+// Anything that cannot answer (jsdom, ancient engines) reports false, so the
+// arrows stay rather than silently vanishing on a desktop.
+export function isCoarsePointer(win) {
+  const w = win || (typeof window !== 'undefined' ? window : null);
+  if (!w || typeof w.matchMedia !== 'function') return false;
+  try {
+    const coarse = w.matchMedia('(pointer: coarse)');
+    const noHover = w.matchMedia('(hover: none)');
+    return !!((coarse && coarse.matches) || (noHover && noHover.matches));
+  } catch {
+    return false;
+  }
+}
+
+// The two chevron icons, as INLINE SVG — never as text. `›` / `‹` (and `>` / `<`)
+// are bidi-MIRRORED characters: inside a dir="rtl" container the browser paints
+// them flipped, so a button whose markup said "points right" rendered pointing
+// LEFT on this RTL site. That is exactly the reversed-arrows bug the owner saw.
+// An SVG path is NOT mirrored by bidi — it is only re-ORDERED with its siblings —
+// so the painted direction is precisely what we author here, and it cannot flip
+// again the day a container's direction changes. (Swapping one mirrored glyph for
+// the other would have "worked" only by accident.)
+const CHEVRON_PATH = {
+  right: 'M9.5 4.5 17 12l-7.5 7.5',
+  left: 'M14.5 4.5 7 12l7.5 7.5',
+};
+export function chevronSvg(point) {
+  const d = CHEVRON_PATH[point] || CHEVRON_PATH.right;
+  return (
+    `<svg class="carousel-arrow-icon" data-point="${point}" viewBox="0 0 24 24"` +
+    ` width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"` +
+    ` stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"` +
+    ` focusable="false"><path d="${d}" /></svg>`
+  );
+}
+
 /** A safe no-op API, returned for a missing / empty / already-torn-down root. */
 function noopApi() {
   const noop = () => {};
@@ -106,7 +155,7 @@ function noopApi() {
  * @param {boolean} [opts.autoplay=true]  slideshow only: auto-advance on a timer
  * @param {boolean} [opts.loop]           default: true for slideshow, false for scroller
  * @param {boolean} [opts.dots=true]
- * @param {boolean} [opts.arrows]         default: true for slideshow, false for scroller
+ * @param {boolean} [opts.arrows]         default true; always off on a coarse pointer
  * @param {Element} [opts.dotsInto]       render dots into this element (else after root)
  * @param {Element} [opts.arrowsInto]     render arrows into this element (else after root)
  */
@@ -122,7 +171,12 @@ export function initCarousel(root, opts = {}) {
   const timed = mode === 'slideshow' || mode === 'fade';
   const loop = opts.loop != null ? !!opts.loop : timed;
   const showDots = opts.dots !== false;
-  const showArrows = opts.arrows != null ? !!opts.arrows : mode === 'slideshow';
+  // Arrows are ON by default for every mode now (a mouse user has no swipe), and
+  // OFF on any coarse-pointer device whatever the caller asked for — the finger
+  // is already the control there and the buttons only cover the picture. A call
+  // site can still opt out entirely with arrows:false (the full-bleed hero and the
+  // fullscreen viewers do).
+  const showArrows = (opts.arrows != null ? !!opts.arrows : true) && !isCoarsePointer();
 
   const slides = Array.from(root.children);
   const n = slides.length;
@@ -401,19 +455,40 @@ export function initCarousel(root, opts = {}) {
   }
 
   if (showArrows) {
-    const arrowsWrap = opts.arrowsInto || null;
-    const makeArrow = (dir, label, glyph) => {
+    // Default placement: ONE centered row right after the track. Without a wrapper
+    // each button was inserted at root.nextSibling in turn, so `next` landed BEFORE
+    // `prev` in the DOM and the two sides came out swapped — which is what
+    // products.html shipped (there they also fell outside an overflow:hidden media
+    // box and were invisible). A page can still pass arrowsInto to drop them into
+    // its own controls box (the reviews rail shares one row with the dots).
+    let arrowsWrap = opts.arrowsInto || null;
+    if (!arrowsWrap) {
+      arrowsWrap = document.createElement('div');
+      arrowsWrap.className = 'carousel-arrows';
+      placeControl(arrowsWrap, null);
+      const wrapRef = arrowsWrap;
+      cleanups.push(() => wrapRef.remove());
+    }
+    const makeArrow = (dir, label, icon) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = `carousel-arrow carousel-arrow--${dir}`;
       b.setAttribute('aria-label', label);
-      b.innerHTML = `<span aria-hidden="true">${glyph}</span>`;
+      b.innerHTML = icon;
       placeControl(b, arrowsWrap);
       cleanups.push(() => b.remove());
       return b;
     };
-    prevBtn = makeArrow('prev', 'הקודם', '›'); // visual: prev points toward start (RTL: right)
-    nextBtn = makeArrow('next', 'הבא', '‹');
+    // Physical side, painted direction and travel direction all agree: `prev` is
+    // the EARLIER slide, which sits toward the track's START — physically RIGHT in
+    // RTL, LEFT in LTR — and clicking it travels that way, so the right-hand button
+    // points right and moves the rail right. The aria-labels stay LOGICAL
+    // (הקודם / הבא): a screen-reader user navigates by slide order, not by which
+    // side of the screen a button sits on, and in RTL "previous" IS the one on the
+    // right — so the two readings agree rather than conflict.
+    const rtl = isRTL();
+    prevBtn = makeArrow('prev', 'הקודם', chevronSvg(rtl ? 'right' : 'left'));
+    nextBtn = makeArrow('next', 'הבא', chevronSvg(rtl ? 'left' : 'right'));
     on(prevBtn, 'click', prev);
     on(nextBtn, 'click', next);
   }

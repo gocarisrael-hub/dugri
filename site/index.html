@@ -586,27 +586,20 @@
         height: auto;
         /* the screenshots keep their own dark chat background + timestamp */
       }
-      /* Reviews controls: prev-arrow ‹ dots › next-arrow on one centered row. The
-         rail shows ONE screenshot per view; on desktop there is no touch, so
-         without arrows a mouse user cannot swipe and the tiny dots are easy to
-         miss — the other three testimonials look unreachable ("no reviews"). The
-         arrows give every viewport a clear, obvious way to move through all four.
-         The engine appends the dots first, then the two arrows, into this box, so
-         flex `order` re-sequences them into ‹ dots ›. */
+      /* Reviews controls: prev-arrow, dots, next-arrow on one centered row. The
+         rail shows ONE screenshot per view; with a mouse there is no swipe, so
+         without arrows a desktop visitor cannot move the rail and the tiny dots
+         are easy to miss — the other three testimonials look unreachable ("no
+         reviews"). The engine appends the dots first, then the two arrows, into
+         this box; the flex `order` that re-sequences them (and puts prev on the
+         physical right in RTL) lives in css/carousel.css so every controls row
+         gets it. Arrows are absent on a touch device — the finger is the control
+         there — which the engine decides by pointer capability. */
       .rv-controls {
         display: flex;
         align-items: center;
         justify-content: center;
         gap: 14px;
-      }
-      .rv-controls .carousel-arrow--prev {
-        order: -1;
-      }
-      .rv-controls .carousel-dots {
-        order: 0;
-      }
-      .rv-controls .carousel-arrow--next {
-        order: 1;
       }
 
       /* ============ FOUNDER STORY (#story) ============ */
