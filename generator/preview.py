@@ -51,6 +51,7 @@ def _recipe(cfg):
 # wording off them, so they are part of the preview's contract, not debug text.
 NOTE_NO_TITLE = "no_title"     # surface rendered, but with NO personalized name
 NOTE_FAILED = "failed"         # surface could not be rendered at all
+NOTE_FONT_GAPS = "font_gaps"   # the title face cannot draw this title's letters
 
 
 def _note(notes, surface, code, detail):
@@ -68,6 +69,51 @@ def _note(notes, surface, code, detail):
     back is what the deck would genuinely print. They are reported, not raised.
     """
     notes.append({"surface": surface, "code": code, "detail": detail})
+
+
+def _font_gap_note(cfg, theme, title_lines):
+    """The one note a preview must never omit, or None.
+
+    An order REFUSES a title its own face cannot draw (build.build_deck ->
+    render_page.assert_title_drawable). A preview does not: this is the screen
+    the owner is looking at when she notices something is wrong with her design,
+    and a 500 with a traceback tells her less than the broken picture does. So
+    she gets the picture AND the reason — which is the pair she needs, because
+    the picture alone is exactly what fooled her: the title comes back set in a
+    system fallback face with its first and last letter missing, and nothing on
+    the card says so.
+
+    Reported here rather than per-surface because it is a property of the theme
+    and its title, not of any one render: every surface that carries the title
+    is wrong in the same way.
+    """
+    font = config.font_path(theme, cfg.get("title_font") or "")
+    if not cfg.get("title_font") or not os.path.exists(font):
+        return None                     # a missing font is _assets' complaint
+    gaps = rp.title_font_gaps(font, title_lines)
+    if not gaps:
+        return None
+    return {"surface": "title", "code": NOTE_FONT_GAPS,
+            "detail": (f"the title font {os.path.basename(font)!r} has no "
+                       f"letters for {''.join(gaps)!r}, so the title above is "
+                       f"NOT this design's typeface — the browser substituted a "
+                       f"system font, and letters that overrun their line are "
+                       f"dropped without a trace. An order in this state is "
+                       f"refused; upload a title font that covers this design's "
+                       f"language.")}
+
+
+def _prepend_note(out, note):
+    """Put ``note`` FIRST in a result's notes, creating the list if need be.
+
+    First because the notes are a list the admin renders in order, and this one
+    invalidates every other thing the preview shows: there is no point telling
+    the owner her board carries no name while the name itself is being printed
+    in the wrong typeface with letters missing.
+    """
+    if note:
+        out["notes"] = [note] + list(out.get("notes") or [])
+    return out
 
 
 def _sample_card_index(recipe):
@@ -260,6 +306,7 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
     config.ensure_calibrated(cfg)
     title_lines = config.title_lines(cfg, name, extra_fields or {}, custom_title=custom_title,
                                      gender=gender)
+    gap_note = _font_gap_note(cfg, theme, title_lines)
 
     own_workdir = workdir is None
     if own_workdir:
@@ -275,10 +322,11 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
             # the title position is per front — so show them every front. A
             # buyer preview (no blob) stays a single card: one Chrome run on a
             # public endpoint, and a stable image as they retype the name.
-            return _preview_single_card(theme, cfg, title_lines, workdir,
-                                        word_font=word_font, chasers=chasers,
-                                        all_fronts=bool(calibration),
-                                        with_board=with_board)
+            return _prepend_note(
+                _preview_single_card(theme, cfg, title_lines, workdir,
+                                     word_font=word_font, chasers=chasers,
+                                     all_fronts=bool(calibration),
+                                     with_board=with_board), gap_note)
 
         recipe = _recipe(cfg)
         # BELT AND BRACES. The theme config said "legacy sheet", but the recipe
@@ -291,10 +339,11 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
         # config.is_single_card for the three of them). Rendering the card is a far
         # better answer than crashing the owner's preview with a traceback.
         if config.is_single_card_recipe(recipe):
-            return _preview_single_card(theme, cfg, title_lines, workdir,
-                                        word_font=word_font, chasers=chasers,
-                                        all_fronts=bool(calibration),
-                                        with_board=with_board)
+            return _prepend_note(
+                _preview_single_card(theme, cfg, title_lines, workdir,
+                                     word_font=word_font, chasers=chasers,
+                                     all_fronts=bool(calibration),
+                                     with_board=with_board), gap_note)
 
         idx = _sample_card_index(recipe)
 
@@ -358,7 +407,7 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
 
         if notes:
             out["notes"] = notes
-        return out
+        return _prepend_note(out, gap_note)
     except BaseException:
         # The produced PNGs live INSIDE workdir, so we only clean up a workdir WE
         # created — and only on the error path (a caller passing its own workdir,

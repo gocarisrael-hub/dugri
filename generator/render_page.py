@@ -8,6 +8,7 @@ import base64
 import collections
 import functools
 import itertools
+import math
 import os
 import re
 import sys
@@ -2634,6 +2635,174 @@ def title_pitch(f, ref, lines, leading, pad, align="center", grow=0.0, rtl=False
 _TITLE_OVERFLOW_TOL = float(os.environ.get("DUGRI_TITLE_OVERFLOW_TOL", "0.25"))
 
 
+# ---- the title path, and the letters that fall off the end of it ------------
+#
+# THE FAILURE. Every title line rides a ``<textPath>``. SVG does not clip a glyph
+# that runs past the end of its path — it DROPS it, whole, and says nothing. A
+# CENTRED run (``startOffset="50%"`` + ``text-anchor="middle"``, which is what
+# every centre-aligned title here uses) overflows by half at each end, so it
+# loses letters from BOTH ends at once. The owner's report was exactly that:
+# "no matter what name I put it removes the first and final letter" — אואזיס
+# printed "ווקות לט" where the buyer had asked for "רווקות לטל".
+#
+# Measured through the production rasterizer at the top of this work, on the
+# straight (``arch: 0``) path every shipped and owner-onboarded design uses:
+#
+#     path length      rendered ink span
+#     2.00 x the run   119.7 units   (all ten glyphs)
+#     1.00 x the run   119.7 units   (all ten glyphs)
+#     0.55 x the run    63.7 units   (two glyphs gone)
+#     0.30 x the run    23.0 units   (six glyphs gone)
+#
+# A straight path is NOT lenient about this, whatever an arched one does. There
+# is no version of this the renderer can survive: a card that prints a plausible
+# but WRONG name is worse than an order that stops, because nothing downstream —
+# not the preview, not the proof, not the customer — can tell it went wrong,
+# and it goes wrong identically on all 104 cards of a paid order.
+#
+# WHY A PATH IS EVER TOO SHORT. The run is MEASURED here, by Pillow, and LAID
+# OUT there, by Chrome, and the two are not obliged to agree. The catastrophic
+# disagreement is a title face that has no glyph for the title's own script:
+# Pillow answers with the face's ``.notdef`` advance while Chrome silently
+# substitutes a system face with real advances. Measured on the design that
+# produced the report — League Spartan Bold, which carries not one Hebrew letter,
+# against "רווקות לטל" — Pillow says 93.2 user units and Chrome draws 120: 29%
+# more run than the geometry reserved, in a chord that only ever carried
+# ``0.3 * size`` (0.15 em a side) of margin. That case is now REFUSED outright
+# (``assert_title_drawable``), because a face that cannot draw the text makes
+# every OTHER number about the title wrong too, not just this one — the size,
+# the centring and the box fit are all measured off the same phantom.
+#
+# What is left after the refusal is ordinary disagreement — shaping, kerning,
+# mark composition — and the answer to that is room. Half the run per free end
+# is far past anything measurable across the shipped faces, and it is free: the
+# path is never painted, and the extension is EXACT (see ``_extend_quadratic``),
+# so not one glyph moves by a subpixel. Verified pixel-for-pixel against the
+# pre-extension render of every shipped theme.
+#
+# Floored at zero, and that is not defensiveness about typos. The invariant
+# below asserts the emitted path against ``wln * (1 + sides * SLACK)``, so a
+# NEGATIVE value here would lower the bar it is checked against in exact step
+# with the path it is checking — the assertion would pass while the path shrank
+# under the run, which is the one thing it exists to catch. Clamped, the floor
+# is always at least the run itself whatever this knob says.
+_TITLE_PATH_SLACK = max(0.0, float(os.environ.get("DUGRI_TITLE_PATH_SLACK",
+                                                  "0.5")))
+
+
+def _extend_quadratic(p0, p1, p2, a, b):
+    """Control points for the ``t in [a, b]`` piece of a quadratic Bezier.
+
+    A quadratic IS a parabola, and a parabola extends itself: passing ``a < 0``
+    or ``b > 1`` returns a LONGER piece of exactly the same curve, so anything
+    already drawn on the shared part stays exactly where it was. That is what
+    lets a title path be lengthened for safety without moving a glyph — and it
+    is why the lengthening is done this way rather than by nudging the endpoints
+    outward, which would flatten the arch the design was measured at.
+
+    ``a == 0, b == 1`` is the identity and returns the input unchanged.
+    """
+    def at(t):
+        u = 1 - t
+        return (u * u * p0[0] + 2 * t * u * p1[0] + t * t * p2[0],
+                u * u * p0[1] + 2 * t * u * p1[1] + t * t * p2[1])
+
+    def deriv(t):
+        return (2 * ((1 - t) * (p1[0] - p0[0]) + t * (p2[0] - p1[0])),
+                2 * ((1 - t) * (p1[1] - p0[1]) + t * (p2[1] - p1[1])))
+
+    q0, q2 = at(a), at(b)
+    dx, dy = deriv(a)
+    half = (b - a) / 2
+    return q0, (q0[0] + half * dx, q0[1] + half * dy), q2
+
+
+def _quad_length(p0, p1, p2, steps=64):
+    """Arc length of a quadratic Bezier — the room a ``<textPath>`` on it has.
+
+    Sampled rather than solved in closed form: the closed form degenerates when
+    the control point is collinear with the ends, which is EVERY shipped and
+    owner design (``arch: 0`` — a dead straight path), and this is measuring a
+    safety margin, not placing ink. Sampling is exact on the straight case and
+    a slight under-read on a curved one, which errs toward reserving more room.
+    """
+    total, prev = 0.0, p0
+    for i in range(1, steps + 1):
+        t = i / steps
+        u = 1 - t
+        pt = (u * u * p0[0] + 2 * t * u * p1[0] + t * t * p2[0],
+              u * u * p0[1] + 2 * t * u * p1[1] + t * t * p2[1])
+        total += math.hypot(pt[0] - prev[0], pt[1] - prev[1])
+        prev = pt
+    return total
+
+
+def title_font_gaps(font_path, lines):
+    """The characters of ``lines`` this title face cannot draw, sorted.
+
+    Empty means the face can set the whole title itself, which is the only case
+    in which anything measured off that face describes what Chrome will draw.
+
+    A character with no glyph is read as "a non-space character with no ink of
+    its own" — the same reading ``calibrate._covers`` takes, and for the same
+    reason: a font without the glyph draws ``.notdef``, which reports a
+    zero-height box. Pillow is the only font library the production image
+    carries (no fontTools — see requirements-dev.txt), so the cmap cannot be
+    consulted directly. It is the right reading anyway: a mapped-but-blank glyph
+    prints blank whatever the cmap claims.
+
+    NOT cached. Every other font reading in this module is memoised by PATH, and
+    that is exactly wrong here: the owner fixes this fault by re-uploading a font
+    — very often under the SAME filename — and a cached answer would go on
+    refusing her corrected template for the life of the process. One font open
+    per order is not a cost worth that.
+    """
+    try:
+        font = _measuring_font(font_path, 200)
+    except (OSError, ValueError):
+        return []                    # an unopenable face is _assets' complaint
+    out = []
+    for ch in sorted(set("".join(lines))):
+        if ch.isspace():
+            continue
+        try:
+            box = font.getbbox(ch)
+        except (OSError, ValueError):
+            continue
+        if box[3] - box[1] <= 0:
+            out.append(ch)
+    return out
+
+
+def assert_title_drawable(font_path, lines, theme=None):
+    """Refuse a title whose own face cannot draw it.
+
+    ``calibrate`` already refuses to MEASURE against such a face ("a fit against
+    such a sample measures the wrong typeface entirely and must be refused").
+    This is the same refusal one step later, where it decides what gets printed:
+    Chrome falls back to a system face for the missing glyphs, so the title is
+    set in a typeface nobody chose, at a size fitted to a different one, on a
+    path measured for a third — and the first casualty is the letters that fall
+    off the end of that path (see ``_TITLE_PATH_SLACK``).
+
+    Raised rather than warned because there is no good degraded form. A title
+    the owner can SEE is wrong costs one re-upload; a title that merely looks
+    plausible costs a printed order and the customer's name on it.
+    """
+    gaps = title_font_gaps(font_path, lines)
+    if not gaps:
+        return
+    where = f"theme {theme!r}: " if theme else ""
+    raise RuntimeError(
+        f"{where}the title font {os.path.basename(font_path)!r} has no glyphs "
+        f"for {''.join(gaps)!r}, which the title {' / '.join(lines)!r} is made "
+        f"of. Chrome would substitute a system face for those letters and the "
+        f"title would print in a typeface nobody chose, at a size fitted to a "
+        f"different one — and letters that overrun the path are dropped in "
+        f"silence, so the card would look right and read wrong. Upload a title "
+        f"font that covers this design's language, or change the title text.")
+
+
 def title_is_rtl(cfg):
     # A title is right-to-left when the theme's language is Hebrew. RTL matters
     # for any title that mixes digits with Hebrew (e.g. anniversary "30 שנה
@@ -2857,10 +3026,40 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
             xl = cx - skew - wln / 2 - size * 0.15
             xr = cx - skew + wln / 2 + size * 0.15
         cxp = (xl + xr) / 2
+        # The geometry above ANCHORS the run; the path below only HOSTS it, and
+        # it is emitted far longer than the glyphs are measured to need — see
+        # _TITLE_PATH_SLACK for what silently goes missing when it is not.
+        #
+        # Only the ends the ANCHOR does not pin are extended, so no run moves.
+        # A centred line is anchored at the path's arc-length midpoint, which a
+        # symmetric extension of a symmetric parabola leaves exactly where it
+        # was; a left-aligned one starts at the path's start, so only its far
+        # end grows; a right-aligned one ends at the path's end.
+        span = xr - xl
+        grow = (_TITLE_PATH_SLACK * wln / span) if span > 0 else 0.0
+        t0 = 0.0 if left_align else -grow
+        t1 = 1.0 if right_align else 1.0 + grow
+        # ...and the room really is there. The invariant is asserted on the
+        # EMITTED curve rather than on the arithmetic that produced it, so a
+        # later change to how the path is built cannot quietly reintroduce a
+        # short one: whatever the shape, a run of ``wln`` has to fit with its
+        # slack on every side it is free to grow toward.
+        sides = 1 if (left_align or right_align) else 2
+        need = wln * (1 + sides * _TITLE_PATH_SLACK)
 
         def arc(pid, ox, oy):
-            defs.append(f'<path id="{pid}" fill="none" d="M {xl+ox:.1f} {by+oy:.1f} '
-                        f'Q {cxp+ox:.1f} {by+oy-2*bulge:.1f} {xr+ox:.1f} {by+oy:.1f}"/>')
+            q0, q1, q2 = _extend_quadratic((xl + ox, by + oy),
+                                           (cxp + ox, by + oy - 2 * bulge),
+                                           (xr + ox, by + oy), t0, t1)
+            have = _quad_length(q0, q1, q2)
+            if have + 1e-6 < need:
+                raise RuntimeError(
+                    "the title path is shorter than the text it carries, and a "
+                    "glyph that falls off a textPath is DROPPED by the "
+                    f"rasterizer without a word: {line!r} needs {need:.1f} user "
+                    f"units of path and this one is {have:.1f}.")
+            defs.append(f'<path id="{pid}" fill="none" d="M {q0[0]:.3f} {q0[1]:.3f} '
+                        f'Q {q1[0]:.3f} {q1[1]:.3f} {q2[0]:.3f} {q2[1]:.3f}"/>')
 
         if shadow:
             arc(f"t{uid}s{k}", dx, dy)                    # shadow path

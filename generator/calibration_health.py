@@ -172,6 +172,35 @@ def sample_titles(cfg, names=None):
     return out
 
 
+def _title_font_coverage(font_path, font_name, samples):
+    """Whether the title font can draw this design's own title. -> problems.
+
+    The one font problem that is not a question of FIT. Every other check here
+    asks whether a pinned size still suits the current face; this asks whether
+    the face is the one that will be used at all. It will not be, for any letter
+    it has no glyph for: Chrome substitutes a system font per glyph, so the title
+    prints in a typeface nobody chose, at a size fitted to a different one — and
+    letters that overrun their line are dropped in silence (see
+    ``render_page.assert_title_drawable``, which refuses the order outright).
+
+    Measured on the design this came from: אואזיס's title font had been set to
+    League Spartan Bold, which carries not one Hebrew letter, against the title
+    "רווקות ל{NAME}". Every geometry check in this file passed — the artwork had
+    not moved and the pin still fit its box — while the printed card read
+    "ווקות לט". Nothing else here could have caught it, which is why this is
+    asked separately and graded a problem rather than a warning.
+    """
+    gaps = sorted({ch for lines, _name in samples
+                   for ch in rp.title_font_gaps(font_path, lines)})
+    if not gaps:
+        return []
+    return [f"פונט הכותרת ({font_name}) לא מכיל את האותיות {''.join(gaps)!r} "
+            f"שהכותרת של התבנית בנויה מהן. הדפדפן מחליף אותן בפונט מערכת, "
+            f"ואותיות שחורגות מהשורה נעלמות בלי הודעה — הכרטיס ייראה תקין "
+            f"ויודפס עם שם שגוי. הזמנה במצב הזה נדחית. יש להעלות פונט כותרת "
+            f"שמכסה את שפת התבנית."]
+
+
 def _metrics(font_path):
     """``(font, ref)`` for a title font, or None when PIL cannot open it."""
     try:
@@ -889,6 +918,8 @@ def check(theme_key, name=None):
             report["measurements"]["named_title"] = {"name": named[1],
                                                      "lines": named[0]}
         font_name = os.path.basename(paths["title_font"])
+        report["problems"] += _title_font_coverage(paths["title_font"],
+                                                   font_name, samples)
         if not _metrics(paths["title_font"]):
             report["unknown"]["title_font"] = (
                 f"לא ניתן לקרוא את קובץ פונט הכותרת ({font_name}) — הגדלים "

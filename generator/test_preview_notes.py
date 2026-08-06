@@ -177,3 +177,63 @@ if __name__ == "__main__":
             print(name)
             fn()
     print("ok")
+
+
+# --- the title's own font cannot draw the title -----------------------------
+#
+# An ORDER refuses this outright (test_build_deck). A preview does not: this is
+# the screen the owner is on when she notices something is wrong with her
+# design, and a 500 tells her less than the broken picture does. So she gets the
+# picture AND the reason — which is the pair she needs, because the picture
+# alone is exactly what fooled her. אואזיס's title font had been set to League
+# Spartan Bold, which carries not one Hebrew letter, and the preview came back
+# reading "ווקות לט" for "רווקות לטל" — right typeface-ish, right colour, right
+# position, first and last letter gone, nothing anywhere saying so.
+
+
+def _latin_title_font():
+    shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "MrDafoe-Regular.ttf"),
+                _store_path("demo", "fonts", "MrDafoe-Regular.ttf"))
+    _patch_theme(title_font="MrDafoe-Regular.ttf")
+
+
+def test_a_title_font_that_cannot_draw_the_title_says_so():
+    if not _chrome():
+        print("  (skipped: no Chrome)")
+        return
+    with tb.Store() as tmp:
+        _latin_title_font()
+        out = _run(tmp)
+        assert out["card"], "the card still renders; the owner needs to SEE it"
+        notes = _notes_for(out, "title")
+        assert len(notes) == 1 and notes[0]["code"] == pv.NOTE_FONT_GAPS, \
+            out.get("notes")
+        detail = notes[0]["detail"]
+        assert "MrDafoe-Regular.ttf" in detail
+        for ch in "שירה":
+            assert ch in detail, detail
+        # FIRST in the list: it invalidates everything else the preview shows.
+        assert out["notes"][0]["code"] == pv.NOTE_FONT_GAPS
+
+
+def test_the_font_gap_note_comes_first_even_beside_other_notes():
+    if not _chrome():
+        print("  (skipped: no Chrome)")
+        return
+    with tb.Store() as tmp:
+        _latin_title_font()
+        _patch_theme(board=None)
+        out = _run(tmp)
+        codes = [n["code"] for n in out["notes"]]
+        assert codes[0] == pv.NOTE_FONT_GAPS, codes
+        assert pv.NOTE_NO_TITLE in codes, codes
+
+
+def test_a_theme_whose_font_draws_its_title_gets_no_such_note():
+    if not _chrome():
+        print("  (skipped: no Chrome)")
+        return
+    with tb.Store() as tmp:
+        out = _run(tmp)
+        assert not _notes_for(out, "title"), out.get("notes")

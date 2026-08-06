@@ -1154,3 +1154,71 @@ def test_an_all_junk_back_list_falls_back_to_the_single_back():
 def test_a_v1_theme_has_no_per_front_backs():
     assert config.has_per_front_backs({}) is False
     assert config.back_indices({"cards": {"fronts": [2]}}) == [1]
+
+
+# --- a title its own font cannot draw is not an order ------------------------
+
+
+def _use_latin_title_font():
+    """Point the demo theme's TITLE font at a Latin-only face.
+
+    Exactly the state the owner's אואזיס template was in: a Hebrew title
+    ("רווקות ל{NAME}") set in League Spartan Bold, which carries not one Hebrew
+    letter. Every geometry check passed and the printed card still read
+    "ווקות לט" — Chrome substituted a system face per glyph, the run laid out
+    29% wider than the geometry had reserved, and the letters that overran the
+    path were dropped in silence.
+    """
+    root = os.environ["DATA_DIR"]
+    shutil.copy(os.path.join(HERE, "MrDafoe-Regular.ttf"),
+                os.path.join(root, "templates", "demo", "fonts",
+                             "MrDafoe-Regular.ttf"))
+    path = os.path.join(root, "templates", "themes.json")
+    with open(path, encoding="utf-8") as f:
+        themes = json.load(f)
+    themes["demo"]["title_font"] = "MrDafoe-Regular.ttf"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(themes, f)
+    config.clear_preview_overrides()
+
+
+def test_a_deck_refuses_a_title_its_own_font_cannot_draw():
+    """Refused, not rendered — and refused UP FRONT, before a page exists.
+
+    The alternative is 104 cards that look entirely plausible and carry a name
+    the customer never asked for, which nothing downstream can detect: not the
+    preview, not the proof, not the customer until the deck is printed. A failed
+    order costs one re-upload; that one costs the print.
+    """
+    import pytest
+    with Store() as tmp:
+        _use_latin_title_font()
+        csvp = _csv(tmp)
+        out = os.path.join(tmp, "deck.pdf")
+        with pytest.raises(RuntimeError, match="no glyphs"):
+            build.build_deck("demo", csvp, "שירה", out, progress=False)
+        # Nothing half-finished left behind for someone to mistake for a deck.
+        assert not os.path.exists(out)
+
+
+def test_the_v1_sheet_path_refuses_it_too():
+    """Both order paths, because both print the same wrong name."""
+    import pytest
+    with Store() as tmp:
+        _use_latin_title_font()
+        csvp = _csv(tmp)
+        fronts = config.card_path("demo", 2)
+        with pytest.raises(RuntimeError, match="no glyphs"):
+            build.build_pdf("demo", fronts, fronts, csvp, "שירה",
+                            os.path.join(tmp, "sheet.pdf"), progress=False,
+                            workdir=os.path.join(tmp, "wk"))
+
+
+def test_a_font_that_can_draw_the_title_is_not_refused():
+    """The guard must not fire on the catalog it is meant to protect — the
+    demo theme's own Hebrew face draws its own Hebrew title."""
+    import render_page as rp
+    with Store():
+        cfg = config.theme("demo")
+        rp.assert_title_drawable(config.font_path("demo", cfg["title_font"]),
+                                 config.title_lines(cfg, "שירה"), theme="demo")

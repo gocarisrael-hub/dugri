@@ -2642,12 +2642,20 @@
             // absent from an older generator, and then this is a no-op.
             const notes = Array.isArray(data.notes) ? data.notes : [];
             if (notes.length) {
-              const SURFACE = { card: 'הקלף', board: 'הלוח', back: 'הגב' };
+              const SURFACE = { card: 'הקלף', board: 'הלוח', back: 'הגב', title: 'הכותרת' };
               const box = document.createElement('p');
               box.className = 'cal-preview-notes';
               box.textContent = notes
                 .map((n) => {
                   const where = SURFACE[n && n.surface] || n.surface || '';
+                  // font_gaps is NOT a missing slot: the slot is fine and the
+                  // FONT is wrong. It used to fall into the catch-all below and
+                  // tell the owner to set a slot and save, which fixes nothing —
+                  // the title is being drawn in a system fallback face with the
+                  // letters that overran the line silently dropped, and only a
+                  // different font file fixes that.
+                  if (n && n.code === 'font_gaps')
+                    return `${where}: פונט הכותרת לא מכיל את האותיות של הכותרת, ולכן היא נכתבת בפונט מערכת ואותיות נעלמות. הזמנה במצב הזה נדחית — העלו פונט כותרת שמכסה את שפת התבנית.`;
                   return n && n.code === 'failed'
                     ? `${where}: הרינדור נכשל — התצוגה לא מציגה אותו כלל.`
                     : `${where}: אין שם מותאם — כך גם יודפס. הגדירו את המשבצת ושמרו.`;
