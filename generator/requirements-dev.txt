@@ -13,6 +13,13 @@
 #             under generator/ imports it outside tests, which is why the image
 #             ships without it
 #   pytest  — the runner
+#   fonttools — TEST-ONLY and TOOL-ONLY. scripts/set_photo_card_copy.py sets the
+#             pawn card's static copy into outlines from the words written in
+#             the artwork; the test only re-runs it in --check mode to prove the
+#             outlines still say what the SVG says they say. The production image
+#             never runs it — it only prints the paths it left behind. The [woff]
+#             extra pulls brotli, without which the self-hosted Heebo .woff2 the
+#             generic card is set in cannot be opened at all.
 #
 # Ghostscript is a BINARY, not a pip package: press.py shells out to it, and the
 # tests that need it skip when it is absent rather than fail.
@@ -23,3 +30,4 @@ pytest>=8
 pillow>=10
 numpy>=1.26
 pikepdf>=8
+fonttools[woff]>=4.50
