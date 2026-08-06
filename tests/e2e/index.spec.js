@@ -7,6 +7,14 @@ import { test, expect } from '@playwright/test';
 // - a swipeable product rail whose cards open the per-design detail page,
 // - real reviews / contact info, and the brand rule (never the trademarked word).
 
+// These tests assert the BUILT-IN catalog rail. An uploaded template (surfaced by
+// /api/custom-designs) now rides the same rail and would add extra cards — that
+// path is covered in storefront-custom-designs.spec; stub it out here so the
+// built-in counts stay deterministic regardless of which templates the server has.
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/custom-designs', (route) => route.fulfill({ json: { designs: [] } }));
+});
+
 test.describe('landing page hero', () => {
   test('shows a 3-slide hero, each with a sentence and a CTA into the store', async ({ page }) => {
     await page.goto('/index.html');

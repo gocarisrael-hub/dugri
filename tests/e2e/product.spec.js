@@ -7,6 +7,15 @@ import { test, expect } from '@playwright/test';
 
 const DESIGN_IDS = ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'neon', 'kids'];
 
+// These tests assert the BUILT-IN catalog (the page + its related rail). An
+// uploaded template (surfaced by /api/custom-designs) now rides the same rail and
+// would add extra cards — that path is covered in storefront-custom-designs.spec;
+// stub it out here so the built-in counts stay deterministic regardless of which
+// templates the server happens to have.
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/custom-designs', (route) => route.fulfill({ json: { designs: [] } }));
+});
+
 // Pin the owner-editable store price so the price assertions are hermetic (the
 // shared e2e server's settings could be mutated by the admin-pricing spec).
 async function stubPricing(page, now = 199, was = 239) {

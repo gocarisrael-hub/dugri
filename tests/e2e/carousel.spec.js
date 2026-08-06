@@ -12,6 +12,15 @@ import { test, expect } from '@playwright/test';
 //      WITH clones).
 //   3. A loop:false / unset carousel (the PDP photo gallery) is NEVER cloned.
 
+// The home product rail's card count is asserted below against the BUILT-IN
+// catalog. An uploaded template (surfaced by /api/custom-designs) now rides the
+// same rail and would add extra cards — that path is covered in
+// storefront-custom-designs.spec; stub it out so these counts stay deterministic
+// regardless of which templates the server happens to have.
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/custom-designs', (route) => route.fulfill({ json: { designs: [] } }));
+});
+
 // Wait until a carousel has been initialised on `selector`'s track.
 async function waitForCarousel(page, selector) {
   await page.waitForFunction(
