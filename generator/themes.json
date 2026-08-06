@@ -353,24 +353,24 @@
   "dir": "resources/canva/templates/football-boys",
   "recipe": "football-boys",
   "visibility": "public",
-  "title_text": "{NAME}'S B-DAY",
+  "title_text": "{NAME}’S B-DAY",
   "title_lines": [
-   "{NAME}'s",
+   "{NAME}’s",
    "B-day"
   ],
   "language": "english",
   "name_form": "english",
   "extra_fields": [],
-  "title_font": "LeagueSpartan-Bold.ttf",
+  "title_font": "LeagueSpartan-1.000-Bold.ttf",
   "word_font": "PlaypenSansHebrew-Medium.ttf",
   "title_style": {
    "fill": "#f8d078",
    "outline": "#000000",
-   "outline_w": 0.03,
+   "outline_w": 0.0375,
    "arch": 0,
    "shadow": false,
-   "size": 30.5,
-   "back_size": 37.3
+   "size": 24.4,
+   "back_size": 29.84
   },
   "board": {
    "frac": {

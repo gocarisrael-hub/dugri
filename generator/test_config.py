@@ -1040,3 +1040,114 @@ def test_trip_comeback_sets_its_words_in_the_origin_s_heavier_weight():
     cfg = _themes()["trip comeback"]
     assert cfg.get("word_bold") is True
     assert cfg.get("word_size"), "the origin's words are larger than the detected fit"
+
+
+# ---- מרקאנה's title face: League Spartan ONE, not League Spartan TWO -------
+#
+# "League Spartan" names two different typefaces. v1 (League of Movable Type,
+# 2014) is a single heavy cut, upm 1000, cap 825. v2 (Google Fonts, 2021) is a
+# ground-up redesign by another hand: upm 2000, cap 1320, nine weights on a
+# variable axis, looser spacing and lighter stems. Canva serves v1; the owner
+# downloaded v2, so the design was drawn in one face and printed in the other.
+#
+# It survived a whole calibration because a face swap is INVISIBLE TO A WIDTH
+# FIT. v2 was fitted at weight 600 and size 26.82 and matched the artwork's
+# title width to 1.000x — while its stems ran 20% thinner, its 'y' 12% narrower,
+# its letters ~4% further apart, and the block sat 6px low. The tell was the
+# SIZE: 26.82/21.6 = 1.24 and (backs) 35.84/28.6 = 1.25, both of them exactly
+# 0.825/0.66 — the cap-height ratio between the two faces. The fit had spent a
+# 25% size error buying back the cap height the wrong face cost it, which is
+# also why the owner's own Canva numbers (21.6 front, 28.6 back) read as wrong.
+#
+# So the guard is the FACE, pinned by the two numbers that separate the two
+# releases and cannot be argued with.
+_LEAGUE_SPARTAN_V1_UPM = 1000
+_LEAGUE_SPARTAN_V1_CAP = 825
+
+
+def _face(path):
+    import pytest
+    pytest.importorskip("fontTools", reason="fonttools is a dev dependency")
+    from fontTools.ttLib import TTFont
+    return TTFont(path)
+
+
+def test_marcana_title_is_set_in_league_spartan_v1_not_the_google_redesign():
+    cfg = _themes()["football-boys"]
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                        cfg["dir"], "fonts", cfg["title_font"])
+    assert os.path.exists(path), f"{cfg['title_font']} is not in the theme's fonts/"
+    f = _face(path)
+    assert f["head"].unitsPerEm == _LEAGUE_SPARTAN_V1_UPM, (
+        "upm 2000 is the Google redesign — the artwork is set in the 1.000 cut")
+    assert f["OS/2"].sCapHeight == _LEAGUE_SPARTAN_V1_CAP, (
+        "cap 1320 is the Google redesign; v1's cap is 825, and the whole pinned "
+        "size depends on which of the two it is")
+    assert "fvar" not in f, (
+        "v1 is a single static cut. A variable file here is v2, and a weight "
+        "instance cannot turn v2 into v1 — height is weight-invariant on that "
+        "axis, so no cut on it closes the gap")
+
+
+def test_marcanas_pinned_sizes_are_the_ones_its_own_face_asks_for():
+    """The size and the face are ONE reading, and this is the coupling.
+
+    Type size buys cap height through the face's own cap/upm, so the same
+    printed title needs a different number in front of a different face. These
+    two were re-derived against v1 when the face was corrected; a future edit
+    that moves one without the other reintroduces exactly the error above.
+    """
+    cfg = _themes()["football-boys"]
+    ts = cfg["title_style"]
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                        cfg["dir"], "fonts", cfg["title_font"])
+    f = _face(path)
+    cap_em = f["OS/2"].sCapHeight / f["head"].unitsPerEm
+    # The calibration measured a printed cap of 20.13 viewBox units on the
+    # fronts and 24.61 on the backs. Both are face-independent — that is the
+    # point of stating them here rather than the sizes.
+    assert abs(ts["size"] * cap_em - 20.13) < 0.15, (
+        f"size {ts['size']} in front of cap/em {cap_em:.3f} does not print the "
+        "calibrated front cap height")
+    assert abs(ts["back_size"] * cap_em - 24.61) < 0.15, (
+        f"back_size {ts['back_size']} does not print the calibrated back cap "
+        "height")
+
+
+def test_every_shipped_theme_has_the_title_face_it_names():
+    """A title font named but not present is drawn in whatever Chrome falls back
+    to — silently, and in the customer's PDF. Cheap to state, so state it."""
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    missing = []
+    for key, cfg in _themes().items():
+        name = cfg.get("title_font")
+        if not name or not cfg.get("dir"):
+            continue
+        if not os.path.exists(os.path.join(root, cfg["dir"], "fonts", name)):
+            missing.append(f"{key}: {name}")
+    assert not missing, "title font files missing from the shipped store: " + \
+        ", ".join(missing)
+
+
+def test_a_shipped_variable_title_face_never_renders_at_its_own_default():
+    """#335's invariant, kept after the face it was found on stopped being one.
+
+    A variable file declares a whole weight range and draws its DEFAULT instance
+    when nothing picks — League Spartan v2's default is Thin — so any shipped
+    theme whose title face has a weight axis has to pin ``font_weight``.
+    """
+    import render_page as rp
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    unpinned = []
+    for key, cfg in _themes().items():
+        name, d = cfg.get("title_font"), cfg.get("dir")
+        if not name or not d:
+            continue
+        path = os.path.join(root, d, "fonts", name)
+        if not os.path.exists(path) or rp.weight_axis(path) is None:
+            continue
+        if not (cfg.get("title_style") or {}).get("font_weight"):
+            unpinned.append(key)
+    assert not unpinned, (
+        "variable title face with no weight pinned (draws its own default "
+        f"instance): {', '.join(unpinned)}")
