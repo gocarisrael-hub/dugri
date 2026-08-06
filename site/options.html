@@ -625,6 +625,12 @@
       .design {
         flex: 0 1 130px;
         max-width: 150px;
+        /* A flex item's automatic minimum size is its MIN-CONTENT width, so one long
+           unbreakable word in the label — and an uploaded template's name is
+           owner-typed and unbounded — would push the tile past its basis, drop the
+           row from four tiles to three and add a row the phone has no space for.
+           Pin the minimum so tile width is decided by the layout, never by the text. */
+        min-width: 0;
         background: var(--surface);
         border: 2px solid var(--line);
         border-radius: var(--radius);
@@ -674,6 +680,10 @@
         font-size: 13.5px;
         color: var(--sage-deeper);
         text-align: center;
+        /* …and the label itself wraps inside the tile rather than setting its
+           width (see .design min-width above). */
+        max-width: 100%;
+        overflow-wrap: anywhere;
       }
 
       /* fixed-colour designs (neon) hide the whole swatch picker. The id+attr
@@ -1477,6 +1487,29 @@
         /* design tiles: compact wrapping grid instead of a tall stack */
         .designs {
           gap: 8px;
+          /* …and a CEILING, because the catalog GROWS: every template the owner
+             uploads adds a tile, and past two rows the grid pushed the whole step
+             below the fixed Back/Next bar and made the page scroll — which the
+             phone wizard must never do (tests/e2e/wizard-noscroll.spec.js). The
+             picker takes its own bounded scroll instead of handing the overflow to
+             the page, so the step stays put however many designs exist.
+             The cap itself is stamped by capDesignPicker() from the tiles' REAL
+             measured geometry (exactly two rows) rather than a vh guess: row height
+             moves with the font that actually loaded, and a guess that is right on
+             one machine is wrong on another. Below three rows nothing is stamped at
+             all, so with the seven bundled designs the picker is untouched and looks
+             exactly as it always has. */
+          overflow-y: auto;
+          /* don't let a flick at the end of the list start scrolling the page */
+          overscroll-behavior: contain;
+        }
+        /* There is more below: fade the bottom edge so the cut is legible as "keep
+           scrolling" instead of reading as the end of the list. Costs no height —
+           which is the whole point, there is none to spare. Cleared once the
+           shopper reaches the bottom. */
+        .designs[data-more] {
+          -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+          mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
         }
         .design {
           flex: 0 1 78px;
@@ -3858,6 +3891,12 @@
         btn.addEventListener('click', () => selectDesign(i));
       });
 
+      // Keep the bottom fade honest while the shopper scrolls the picker, and
+      // re-measure the cap when the viewport changes (rotation, browser chrome
+      // collapsing) since both the row count and the row height can change with it.
+      designList.addEventListener('scroll', updateDesignScrollHint, { passive: true });
+      window.addEventListener('resize', capDesignPicker);
+
       // An admin rename (themes.json display_he) has to reach the wizard too —
       // otherwise the shopper picks "מסיבת רווקות" in the store and lands on a tile
       // still labelled with the built-in name. applyDesignNames writes onto the
@@ -3951,6 +3990,61 @@
         });
       }
 
+      // How many rows of design tiles a phone screen has room for above the fixed
+      // Back/Next bar. Two is what the layout has always shown; the catalog growing
+      // past it is what pushed the step off the screen.
+      const DESIGN_ROWS_ON_PHONE = 2;
+      const PHONE_MQ = '(max-width: 600px), (max-height: 820px)';
+
+      // Cap the picker to DESIGN_ROWS_ON_PHONE rows on a phone, measured from the
+      // tiles themselves so the number is right whatever the loaded font does to row
+      // height. Only bites when the tiles actually wrap past the cap: fewer rows →
+      // no cap, no scroller, no visual change. Re-run on resize/orientation change.
+      function capDesignPicker() {
+        if (!designList) return;
+        designList.style.maxHeight = '';
+        delete designList.dataset.more;
+        if (typeof window.matchMedia !== 'function' || !window.matchMedia(PHONE_MQ).matches) return;
+        const tiles = Array.from(designList.querySelectorAll('.design')).filter((t) => !t.hidden);
+        if (tiles.length < 2) return;
+        // Distinct row offsets = the number of rows the flex grid wrapped into.
+        const rows = Array.from(new Set(tiles.map((t) => Math.round(t.offsetTop)))).sort(
+          (a, b) => a - b
+        );
+        if (rows.length <= DESIGN_ROWS_ON_PHONE) return; // already fits
+        const rowH = tiles[0].getBoundingClientRect().height;
+        const gap = Math.max(0, rows[1] - rows[0] - rowH);
+        designList.style.maxHeight =
+          Math.round(DESIGN_ROWS_ON_PHONE * rowH + (DESIGN_ROWS_ON_PHONE - 1) * gap) + 'px';
+        updateDesignScrollHint();
+      }
+
+      // Show the bottom fade only while there is still list below the fold.
+      function updateDesignScrollHint() {
+        if (!designList) return;
+        const more = designList.scrollHeight - designList.clientHeight - designList.scrollTop > 2;
+        if (more) designList.dataset.more = '1';
+        else delete designList.dataset.more;
+      }
+
+      // On a phone the picker is a bounded scroller (see capDesignPicker), so the
+      // selected tile can sit outside its visible band — most obviously when the
+      // shopper arrives from a design's "קנו עכשיו" and that design is the last one
+      // in the catalog. Bring it into view WITHIN the picker only: adjusting
+      // scrollTop by the overshoot can't scroll the page (scrollIntoView can), which
+      // matters because this step must not move under the shopper. A no-op on
+      // desktop, where the picker never overflows.
+      function revealSelectedTile() {
+        const d = DESIGNS[designIndex];
+        const btn = d && designButtons.get(d.id);
+        if (!btn || !designList || designList.scrollHeight <= designList.clientHeight) return;
+        const tile = btn.getBoundingClientRect();
+        const box = designList.getBoundingClientRect();
+        if (tile.bottom > box.bottom) designList.scrollTop += tile.bottom - box.bottom;
+        else if (tile.top < box.top) designList.scrollTop -= box.top - tile.top;
+        updateDesignScrollHint();
+      }
+
       function selectDesign(i) {
         designIndex = i;
         colorIndex = -1; // always show a newly picked design in its original colors first
@@ -3961,6 +4055,7 @@
         updateColorControls();
         setActiveSwatch(-1);
         renderExtraFields(); // the theme's required extra inputs may change
+        revealSelectedTile();
         const d = DESIGNS[i] || {};
         track('select_design', { design: d.name || d.id || i });
         renderDesign().then(persist);
@@ -5483,6 +5578,14 @@
         const onColorCarouselStep = currentStep === 2 && FEATURES.color_picking;
         document.body.classList.toggle('is-step-color', onColorCarouselStep);
         if (onColorCarouselStep) ensureColorCarousel();
+        // The design picker can only be MEASURED while its step is on screen (a
+        // hidden .wiz-step is display:none, so every tile reports a zero box). Cap
+        // it here, the moment step 1 is shown — including the first time the shopper
+        // walks BACK to it from a deep link that opened on a later step.
+        if (currentStep === 1) {
+          capDesignPicker();
+          revealSelectedTile();
+        }
         stepNow.textContent = String(stepPos(currentStep));
         barFill.style.width = Math.round((stepPos(currentStep) / activeSteps.length) * 100) + '%';
         refreshControls();
@@ -6290,6 +6393,8 @@
           .forEach((el, idx) =>
             el.setAttribute('aria-pressed', idx === designIndex ? 'true' : 'false')
           );
+        // NB: no capDesignPicker() here — restore() runs before any step is shown,
+        // and a display:none step measures as nothing. goStep does it instead.
         updateOrigChip();
         updateColorControls();
         setActiveSwatch(colorIndex);

@@ -62,6 +62,54 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
     await assertStepFits(page, '[data-testid="design-list"] .design');
   });
 
+  // The catalog GROWS: the picker lists the bundled designs PLUS every template
+  // the owner uploads and puts on sale (/api/custom-designs). Once those tiles
+  // wrapped past two rows the whole step slid under the fixed Back/Next bar and
+  // the page scrolled — a real regression the moment a second template went on
+  // sale. Stub a deliberately GENEROUS set: the picker must cap itself and scroll
+  // internally, so the step fits the same whether there are seven designs or
+  // twenty. An empty custom-designs response would not exercise this at all.
+  //
+  // The names are deliberately LONG and unbreakable: a template's display name is
+  // owner-typed, and a flex item's automatic minimum size is its min-content width,
+  // so a long word could otherwise widen the tiles, drop a row from four tiles to
+  // three and add rows nobody budgeted for.
+  test('step 1 stays put however many uploaded designs are on sale', async ({ page }) => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#eee"/></svg>';
+    const designs = Array.from({ length: 8 }, (_, i) => ({
+      id: `tpl-${i}`,
+      name: `תבניתמאודארוכהללאמרווחים${i}`,
+      theme: `tpl-${i}`,
+      custom: true,
+      public: true,
+      language: 'hebrew',
+      extra_fields: [],
+      img: {
+        front: `/api/template-image/tpl-${i}/front`,
+        back: `/api/template-image/tpl-${i}/back`,
+      },
+    }));
+    await page.route('**/api/custom-designs', (route) => route.fulfill({ json: { designs } }));
+    await page.route('**/api/template-image/**', (route) =>
+      route.fulfill({ contentType: 'image/svg+xml', body: svg })
+    );
+
+    await page.goto('/options.html');
+    await expect(page.getByTestId('step-1')).toBeVisible();
+    // All 15 are offered…
+    await expect(page.locator('[data-testid="design-list"] .design')).toHaveCount(15);
+    // …and the step still fits the phone.
+    await assertStepFits(page, '[data-testid="design-list"] .design');
+    // The overflow went to the picker's OWN scroll, not the page's.
+    expect(
+      await page.evaluate(() => {
+        const el = document.getElementById('designList');
+        return el.scrollHeight > el.clientHeight;
+      })
+    ).toBe(true);
+  });
+
   test('step 2 (color + extras): the add-on (last control) clears the sticky bar', async ({
     page,
   }) => {
