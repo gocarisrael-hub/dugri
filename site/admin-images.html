@@ -120,6 +120,10 @@
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
         gap: 14px;
+        /* Tiles are now as tall as their own picture, so let each card hug its
+           content rather than stretch to the tallest in the row — stretching would
+           re-introduce filler, this time as empty card below the controls. */
+        align-items: start;
       }
       /* The deck pictures, set apart from the gallery above by a rule and their
          own caption — they go to a different place (the wizard) and carry none of
@@ -199,16 +203,25 @@
         color: var(--pink-deep);
         border: 1px solid #f3d9e4;
       }
+      /* Each picture renders at ITS OWN aspect ratio: the tile height follows the
+         picture, never the other way round. A fixed box (aspect-ratio + object-fit:
+         contain + a tinted background) letterboxed everything that isn't 3:2 — and
+         most renders are portrait — so pale bars sat either side of the very artwork
+         the owner opened this page to check. NOT object-fit: cover: cropping to fill
+         would hide part of that artwork, which is the same problem wearing a hat. */
       .preview {
         width: 100%;
-        aspect-ratio: 3 / 2;
-        object-fit: contain;
-        background: #faf7f2;
+        height: auto;
         border: 1px solid var(--line);
         border-radius: 8px;
         display: block;
       }
+      /* The empty placeholder is a <div> with no intrinsic size — drop the ratio and
+         it collapses to a hairline — so it, and only it, keeps the 3:2 box and the
+         tint. Nothing is being fitted inside, so nothing gets letterboxed. */
       .preview-empty {
+        aspect-ratio: 3 / 2;
+        background: #faf7f2;
         display: flex;
         align-items: center;
         justify-content: center;
