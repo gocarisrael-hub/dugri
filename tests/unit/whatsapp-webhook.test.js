@@ -6,7 +6,7 @@
 // so no request ever reaches a real network. The PURE helpers (verifyWebhookSecret,
 // parseWebhook, splitWords, buildTriggerMessage) run for real. Global fetch is
 // stubbed to THROW, so any accidental network call fails the test loudly.
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -337,7 +337,20 @@ describe('POST /api/whatsapp/webhook — participants_added', () => {
   });
 });
 
+// These cases all exercise the AUTO_ADD flow — the bot puts the buyer on the
+// group-create call, and DMs them an invite when WhatsApp refuses to add them.
+// That is no longer the default: it is the reachout pattern the previous bot
+// number was banned for (see server/wa-guard.js), so it now has to be selected
+// explicitly. The default invite_link flow has its own suite in
+// tests/unit/wa-group-mode.test.js.
 describe('paid hook — openWhatsappGroup', () => {
+  beforeEach(() => {
+    settings.set('wa', 'group_mode', 'auto_add');
+  });
+  afterEach(() => {
+    settings.reset('wa', 'group_mode');
+  });
+
   it('creates the group, links state (incl. initial members) and fires group_opened', async () => {
     const c = db.createCollection('אביב', { phone: '052-123-4567' });
     await app.openWhatsappGroup(c, base);
@@ -439,7 +452,9 @@ describe('paid hook — openWhatsappGroup', () => {
     const alertSpy = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
     const c = db.createCollection('עדי', { phone: '0521234567' });
     await app.openWhatsappGroup(c, base);
-    expect(inviteCalls).toHaveLength(0); // no invite-link fetch -> fallback did NOT run
+    // The invite LINK is now fetched and stored on every open (both modes), so
+    // its presence no longer signals the fallback. What proves the fallback did
+    // not run is that nothing was sent TO THE BUYER and nobody was alerted.
     expect(sendCalls.find((s) => s.to === BUYER_WA)).toBeFalsy(); // no invite DM to buyer
     expect(alertSpy).not.toHaveBeenCalled(); // no owner escalation
     // Only the in-group group_opened announcement was sent.
@@ -591,13 +606,16 @@ describe('GET /api/whatsapp/status', () => {
   it('with the key reports the armed bot as ready and leaks no secret values', async () => {
     const r = await getStatus('?key=dugri-admin');
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({
+    expect(r.body).toMatchObject({
       enabled: true,
       tokenPresent: true,
       webhookSecretPresent: true,
       baseUrl: 'https://gate.example.test',
       configured: true,
       ready: true,
+      // The ban-safety readout the admin banner renders alongside arming state.
+      groupMode: expect.any(String),
+      guard: { tripped: expect.any(Boolean) },
     });
     // The token ('tok-secret') and webhook secret ('hook-secret') VALUES must
     // never appear in the response.

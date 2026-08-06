@@ -154,14 +154,33 @@ describe('POST /api/admin/whatsapp/groups/:cid/open', () => {
     expect(waState.groupForCollection(c.id)).toBe('120363777@g.us');
   });
 
-  it('400s with bad_phone when the buyer has no usable IL mobile', async () => {
-    const c = makeCollection('03-1234567'); // landline, not a mobile
+  it('400s with bad_phone when the buyer has no usable IL mobile (auto_add only)', async () => {
+    // The buyer's number only matters when the bot is going to ADD them. In the
+    // default invite_link mode nobody is dialled, so a landline is no obstacle —
+    // this refusal is specific to auto_add.
+    const settings = require(path.join(serverDir, 'settings.js'));
+    settings.set('wa', 'group_mode', 'auto_add');
+    try {
+      const c = makeCollection('03-1234567'); // landline, not a mobile
+      const r = await realFetch(base + '/api/admin/whatsapp/groups/' + c.id + '/open' + qs, {
+        method: 'POST',
+      });
+      const data = await r.json();
+      expect(r.status).toBe(400);
+      expect(data.reason).toBe('bad_phone');
+    } finally {
+      settings.reset('wa', 'group_mode');
+    }
+  });
+
+  it('opens a group for a landline buyer in the default invite_link mode', async () => {
+    const c = makeCollection('03-1234567');
     const r = await realFetch(base + '/api/admin/whatsapp/groups/' + c.id + '/open' + qs, {
       method: 'POST',
     });
     const data = await r.json();
-    expect(r.status).toBe(400);
-    expect(data.reason).toBe('bad_phone');
+    expect(r.status).toBe(200);
+    expect(data.ok).toBe(true);
   });
 
   it('reports the channel connection when Whapi refuses (the 429 case)', async () => {

@@ -109,11 +109,18 @@ async function post(urlPath, body) {
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
-async function waitForMails(n, timeout = 1000) {
+// Wait until every one of `subjects` has arrived. Deliberately NOT a plain
+// count — order creation fires several independent side effects, so a count can
+// be satisfied by the wrong combination while the mail under test is still in
+// flight. Waiting for the actual subjects is race-free however many mails fire.
+async function waitForMailSubjects(subjects, timeout = 1000) {
   const deadline = Date.now() + timeout;
-  while (sent.length < n && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+  const found = () => subjects.every((s) => sent.some((m) => m.subject && m.subject.includes(s)));
+  while (!found() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
   return sent;
 }
+const OWNER_SUBJECT = 'התקבלה הזמנה חדשה';
+const BUYER_SUBJECT = 'ההזמנה שלכם התקבלה';
 const tick = () => new Promise((r) => setTimeout(r, 20));
 
 describe('order creation fires owner + buyer emails and opens the WhatsApp group', () => {
@@ -125,9 +132,9 @@ describe('order creation fires owner + buyer emails and opens the WhatsApp group
     });
     expect(r.status).toBe(200);
 
-    const mails = await waitForMails(2);
-    const owner = mails.find((m) => m.subject.includes('התקבלה הזמנה חדשה'));
-    const buyer = mails.find((m) => m.subject.includes('ההזמנה שלכם התקבלה'));
+    const mails = await waitForMailSubjects([OWNER_SUBJECT, BUYER_SUBJECT]);
+    const owner = mails.find((m) => m.subject.includes(OWNER_SUBJECT));
+    const buyer = mails.find((m) => m.subject.includes(BUYER_SUBJECT));
     expect(owner.to).toBe('owner@dugri.example');
     expect(buyer.to).toBe('buyer@example.com');
     // Order-received wording, no payment claim.
@@ -147,7 +154,7 @@ describe('order creation fires owner + buyer emails and opens the WhatsApp group
       owner_token: c.owner_token,
       version: 'pdf',
     });
-    await waitForMails(2);
+    await waitForMailSubjects([OWNER_SUBJECT, BUYER_SUBJECT]);
     await tick();
     expect(createCalls).toHaveLength(1);
 

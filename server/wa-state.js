@@ -335,6 +335,29 @@ function setInviteDmSent(groupId) {
   save();
 }
 
+// Persist the group's public join link. In invite_link mode (the default, see
+// server/wa-guard.js) this link IS how the buyer reaches their group — the bot
+// never adds anyone — so it has to outlive the request that created it: it is
+// shown on the buyer's order page and emailed to them. Stored rather than
+// re-fetched on every read so a Whapi outage can't blank a link we already have.
+function setInviteLink(groupId, link) {
+  const entry = getGroup(groupId);
+  if (!entry) return;
+  const s = String(link == null ? '' : link).trim();
+  if (!s) return;
+  entry.invite_link = s;
+  save();
+}
+
+// The stored join link for the group backing this collection, or null. Used by
+// the buyer-facing order page and the invite email.
+function inviteLinkForCollection(collectionId) {
+  const groupId = groupForCollection(collectionId);
+  if (!groupId) return null;
+  const entry = getGroup(groupId);
+  return (entry && entry.invite_link) || null;
+}
+
 // Per-slot nudge dedupe. A slotKey is a stable string like
 // "2026-07-15:daily_morning". markNudged records it (and prunes the map to the
 // most recent NUDGE_SLOTS_CAP keys so the file stays bounded); wasNudged reports
@@ -425,6 +448,8 @@ module.exports = {
   touchActivity,
   markWelcomeSent,
   setInviteDmSent,
+  setInviteLink,
+  inviteLinkForCollection,
   markNudged,
   wasNudged,
   recordQuietReminder,

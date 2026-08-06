@@ -5,14 +5,24 @@
 // only impure part: we stub the global fetch and assert the exact request shape,
 // and confirm that with the env unset NO fetch happens at all (CI-safe — nothing
 // here ever touches a real network).
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import os from 'node:os';
+import fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const modPath = path.join(__dirname, '..', '..', 'server', 'whatsapp.js');
+// The reachout breaker (server/wa-guard.js) is a PERSISTED singleton that
+// whatsapp.js consults before every group-create / cold DM, and that this suite's
+// 401 / 429 fixtures legitimately trip. Point its store at a throwaway dir before
+// the first require, and reset it between cases — otherwise one test's simulated
+// restriction blocks every later test's send (and a stray whatsapp-guard.json
+// lands in server/).
+process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-wa-'));
+const guard = require(path.join(__dirname, '..', '..', 'server', 'wa-guard.js'));
 
 function loadFresh() {
   delete require.cache[require.resolve(modPath)];
@@ -37,6 +47,10 @@ function setEnv(on) {
 function jsonRes(obj, { ok = true, status = 200 } = {}) {
   return { ok, status, json: async () => obj };
 }
+
+beforeEach(() => {
+  guard.clear();
+});
 
 afterEach(() => {
   setEnv(false);

@@ -73,3 +73,5 @@ resources/instagram/screenshots/
 .pytest_cache/
 __pycache__/
 *.pyc
+server/whatsapp-guard.json
+server/whatsapp-state.json

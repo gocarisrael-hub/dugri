@@ -464,6 +464,12 @@ function publicView(c, { owner = false } = {}) {
         free_limit_locked: fl.locked,
       };
     })(),
+    // The buyer's WhatsApp group join link, when a group has been opened for this
+    // collection. OWNER-ONLY: anyone holding the public collect link could
+    // otherwise walk into the buyer's private group. In the default invite_link
+    // mode the bot never adds or DMs anyone, so this (plus the invite email) is
+    // how the buyer gets in. null when no group / no link yet.
+    ...(owner ? { wa_invite_link: waState.inviteLinkForCollection(c.id) } : {}),
     count: words.length,
     words: words.map((w) => ({
       id: w.id,
@@ -2043,7 +2049,10 @@ async function alertOwnerViaWhatsApp(subject, lines) {
       );
       return false;
     }
-    const r = await whatsapp.sendMessage(to, text);
+    // exempt: the owner's own number is not a stranger reachout, and this is
+    // exactly the message that must still get out when the breaker has tripped —
+    // gating it would silence the alert that explains the gate.
+    const r = await whatsapp.sendMessage(to, text, { exempt: true });
     if (!r || !r.ok) {
       console.error(
         '[whatsapp] OWNER ESCALATION DM FAILED — intervene manually. Alert: ' +
@@ -2068,11 +2077,14 @@ async function alertOwnerViaWhatsApp(subject, lines) {
 //   3. createGroup(subject, [buyer]); on success link the group ↔ collection with
 //      the buyer + bot recorded as initial members (so they're never greeted as
 //      joining friends), and announce with the `group_opened` trigger;
-//   4. privacy-block fallback — if the buyer wasn't added, DM them an invite link
-//      (group_opened text, link = the group invite) and record it; if that DM also
-//      fails, escalate to the owner — by email (notify.sendSystemAlert) AND, when
-//      email is unavailable, by a WhatsApp DM to the owner's own number — so a
-//      human is always reached even on an email-off deployment.
+//   4. fetch + persist the group's join link. In the default invite_link mode
+//      that link IS the delivery: it appears as a WhatsApp button on the buyer's
+//      own order page, which they tap to join. NOTHING is sent to the buyer here
+//      — no DM, no email — so the bot contacts nobody and there is no reachout to
+//      be restricted for. In auto_add mode the link is the privacy-block fallback.
+//   5. escalate to the owner — by email (notify.sendSystemAlert), falling back to
+//      a WhatsApp DM to the owner's own number — only when the buyer has been left
+//      with no way in at all.
 async function openWhatsappGroup(collection, base) {
   if (!collection || !collection.id) return;
   if (waState.groupForCollection(collection.id)) return; // already have a group — no-op
@@ -2081,12 +2093,45 @@ async function openWhatsappGroup(collection, base) {
   // createGroup; the loser here backs off, so exactly one group is ever created.
   if (!waState.reserveCollection(collection.id)) return;
   try {
+    const mode = whatsapp.groupMode();
     const buyerWa = ilPhoneToWaId(collection.owner_phone);
-    if (!buyerWa) return; // no usable buyer number
+    // auto_add needs a usable buyer number to add. invite_link does NOT — the
+    // buyer taps the join link on their own order page, so a collection with an
+    // unusable phone still gets its group.
+    if (mode === 'auto_add' && !buyerWa) return;
     const honoree = collection.honoree_name || '';
     const subject = 'דוגרי · מילים על ' + (honoree || 'בעל/ת השמחה');
 
-    const created = await whatsapp.createGroup(subject, [buyerWa]);
+    // The whole point of invite_link mode: an EMPTY group contacts nobody, so
+    // WhatsApp has no reachout to restrict. Only auto_add puts a number in the
+    // create call, and whatsapp.createGroup gates exactly that on the breaker.
+    const participants = mode === 'auto_add' && buyerWa ? [buyerWa] : [];
+    const created = await whatsapp.createGroup(subject, participants);
+    if (created && created.blocked) {
+      // The reachout breaker (or the daily cap) held this back. That is the guard
+      // working as designed, but it is NOT silent: orders keep arriving while no
+      // groups open, so the owner has to hear about it.
+      console.error(
+        '[whatsapp] group creation BLOCKED by the reachout guard for collection ' +
+          collection.id +
+          ' (' +
+          created.reason +
+          '). Switch wa.group_mode to invite_link, or clear the breaker in admin ' +
+          'once the number is confirmed healthy.'
+      );
+      const alertSubject = 'וואטסאפ — פתיחת קבוצות נחסמה';
+      const alertLines = [
+        created.reason === 'tripped'
+          ? 'זוהתה הגבלה של וואטסאפ על המספר, ולכן הפסקנו לפתוח קבוצות חדשות כדי לא להחמיר.'
+          : 'הגענו למכסה היומית של פתיחת קבוצות, ולכן ההזמנה הזו לא קיבלה קבוצה.',
+        'מספר הזמנה: ' + collection.id,
+        'אפשר לעבור למצב "קישור הצטרפות" בעמוד הניהול — הוא לא פונה לאף אחד ולכן לא נחסם.',
+      ];
+      if (!(await notify.sendSystemAlert(alertSubject, alertLines))) {
+        await alertOwnerViaWhatsApp(alertSubject, alertLines);
+      }
+      return;
+    }
     if (!created || !created.ok || !created.groupId) {
       // A `skipped` result is the intentional dormant path (bot off by design) —
       // stay silent. But a REAL failure (dropped Whapi channel, HTTP error, or a
@@ -2131,15 +2176,45 @@ async function openWhatsappGroup(collection, base) {
       await whatsapp.pinMessage(opened.messageId).catch(() => {});
     }
 
-    // Privacy-block fallback: the buyer couldn't be added by number.
+    // Always fetch and PERSIST the join link, in both modes. In invite_link mode
+    // it is the only way the buyer reaches the group; in auto_add it is the
+    // privacy-block fallback. Storing it means a later Whapi outage can't blank a
+    // link we already hold.
+    const invite = await whatsapp.getInviteLink(groupId);
+    const inviteLink = invite && invite.ok ? invite.inviteLink : null;
+    if (inviteLink) waState.setInviteLink(groupId, inviteLink);
+
+    if (mode === 'invite_link') {
+      // The safe path, and the reason this mode is the default: nothing is sent
+      // to the buyer at all. The stored link surfaces as a WhatsApp button on
+      // their own order page (publicView.wa_invite_link) and they tap it to join.
+      // The bot has now contacted precisely nobody, so there is no reachout for
+      // WhatsApp to restrict. The only failure worth a human is having no link.
+      if (!inviteLink) {
+        const alertSubject = 'קבוצת וואטסאפ — לא הופק קישור הצטרפות';
+        const alertLines = [
+          'נפתחה קבוצה לאיסוף מילים אבל לא הצלחנו להפיק קישור הצטרפות, ולכן הלקוח/ה לא קיבל/ה דרך להיכנס.',
+          'שם בעל/ת השמחה: ' + (honoree || '—'),
+          'מזהה קבוצה: ' + groupId,
+        ];
+        if (!(await notify.sendSystemAlert(alertSubject, alertLines))) {
+          await alertOwnerViaWhatsApp(alertSubject, alertLines);
+        }
+      }
+      return;
+    }
+
+    // Privacy-block fallback (auto_add only): the buyer couldn't be added by
+    // number. The invite DM below is itself a reachout, so it goes through the
+    // same breaker + cap inside whatsapp.sendMessage.
     if (!buyerLandedInGroup(created, buyerWa)) {
-      const invite = await whatsapp.getInviteLink(groupId);
-      const inviteLink = invite && invite.ok ? invite.inviteLink : null;
       let dmSent = false;
       if (inviteLink) {
         dmSent = (await sendWaTrigger(buyerWa, 'group_opened', { honoree, link: inviteLink })).ok;
         if (dmSent) waState.setInviteDmSent(groupId);
       }
+      // The buyer still has the join button on their own order page, so this is
+      // not "no way in" — but nobody told them, so it needs a human.
       if (!dmSent) {
         const alertSubject = 'קבוצת וואטסאפ — צריך צירוף ידני';
         const alertLines = [
@@ -3908,6 +3983,24 @@ app.get('/api/whatsapp/status', (req, res) => {
   res.json(whatsapp.status());
 });
 
+// Admin: CLEAR the reachout circuit breaker (server/wa-guard.js). The breaker is
+// sticky by design — it survives restarts and never auto-resets, because the
+// last ban escalated precisely by retrying into an account restriction. Only a
+// human who has checked the number's standing in WhatsApp Business should
+// re-open the tap, which is what this route is. Also resets the day's reachout
+// count so a clear is a genuine reset rather than a resume into a spent budget.
+app.post('/api/admin/whatsapp/guard/clear', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const before = whatsapp.guard.snapshot();
+  const after = whatsapp.guard.clear();
+  if (before.tripped) {
+    console.warn(
+      '[wa-guard] breaker cleared by admin — reachout re-enabled. Previous reason: ' + before.reason
+    );
+  }
+  res.json({ ok: true, guard: after });
+});
+
 // Live channel connection probe. Unlike /status (a pure env snapshot), this makes
 // a real Whapi call to check whether the linked phone is still paired — so the
 // admin banner can surface a dropped device ("QR"/disconnected) that otherwise
@@ -4038,10 +4131,24 @@ app.post('/api/admin/whatsapp/groups/:cid/open', async (req, res) => {
   if (!whatsapp.isConfigured()) {
     return res.status(400).json({ error: 'not configured', reason: 'bot_off' });
   }
-  // Checked here rather than left to createGroup because the buyer's number is
-  // what the group is built around; a collection with no usable IL mobile can
-  // never get a group and the owner should be told that, not "try again".
-  if (!ilPhoneToWaId(collection.owner_phone)) {
+  // A tripped breaker means WhatsApp has restricted this number from contacting
+  // people. Refusing the click here (rather than letting it fall through to a
+  // generic "could not create group") is the whole point of the guard: a manual
+  // retry into a live restriction is exactly how the previous ban was escalated.
+  const guardState = whatsapp.guard.snapshot();
+  if (guardState.tripped && whatsapp.groupMode() === 'auto_add') {
+    return res.status(409).json({
+      error: 'reachout blocked',
+      reason: 'guard_tripped',
+      detail: guardState.reason,
+      guard: guardState,
+    });
+  }
+  // In auto_add mode the buyer's number is what the group is built around, so a
+  // collection with no usable IL mobile can never get one and the owner should be
+  // told that, not "try again". invite_link mode adds nobody, so it needs no
+  // phone at all — the link reaches the buyer by email / their order page.
+  if (whatsapp.groupMode() === 'auto_add' && !ilPhoneToWaId(collection.owner_phone)) {
     return res.status(400).json({ error: 'no usable buyer phone', reason: 'bad_phone' });
   }
   try {
@@ -4238,7 +4345,13 @@ async function runPaymentReminderScan(now = Date.now()) {
     for (const c of due) {
       try {
         if (emailOn && c.owner_email) await notify.sendPaymentReminder(c, base);
-        if (waOn && c.owner_phone) {
+        // The WhatsApp half is a COLD DM to a buyer who never messaged the bot —
+        // a reachout, and one of the actions that got the previous number banned.
+        // It is therefore skipped entirely in invite_link mode (the safe default),
+        // and in auto_add mode it still passes through the breaker + daily cap
+        // inside whatsapp.sendMessage. The email above goes either way, so the
+        // buyer is still reminded.
+        if (waOn && c.owner_phone && whatsapp.groupMode() === 'auto_add') {
           const buyerWa = ilPhoneToWaId(c.owner_phone);
           if (buyerWa) {
             // The buyer's OWN pay link (their owner token) — safe in a 1:1 DM.

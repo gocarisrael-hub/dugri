@@ -143,6 +143,66 @@
         margin-top: 4px;
         font-size: 12.5px;
       }
+      /* Ban-safety panel: how groups are opened + the reachout circuit breaker. */
+      .wa-safety {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 16px;
+        margin: 0 0 16px;
+        background: #fff;
+      }
+      .wa-safety h3 {
+        margin: 0 0 6px;
+        font-size: 15px;
+      }
+      .wa-safety label.mode {
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        cursor: pointer;
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+      .wa-safety label.mode.sel {
+        border-color: var(--pink-deep);
+        background: #fff7fa;
+      }
+      .wa-safety label.mode b {
+        display: block;
+        margin-bottom: 2px;
+      }
+      .wa-safety label.mode span {
+        display: block;
+        color: var(--muted);
+        font-weight: 400;
+        font-size: 12.5px;
+      }
+      .wa-safety .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+      .wa-safety input[type='number'] {
+        width: 90px;
+      }
+      .wa-breaker {
+        border-radius: var(--radius);
+        padding: 10px 12px;
+        margin-top: 12px;
+        font-size: 13px;
+        border: 1px solid #bfe6cd;
+        background: #eaf7ef;
+        color: #1e7a45;
+      }
+      .wa-breaker.tripped {
+        border-color: #f3d0d9;
+        background: #fbecef;
+        color: #a23350;
+      }
       .card {
         border: 1px solid var(--line);
         border-radius: var(--radius);
@@ -395,6 +455,36 @@
         <div class="section-group">
           <p class="section-title">וואטסאפ · הודעות ותזמון</p>
           <div id="waStatus" class="wa-status" role="status" aria-live="polite" hidden></div>
+          <div id="waSafety" class="wa-safety" hidden>
+            <h3>בטיחות המספר</h3>
+            <p class="card-when">
+              המספר הקודם של הבוט נחסם בוואטסאפ אחרי שצירף אנשים לקבוצות ושלח להם הודעות ביוזמתו.
+              ההגדרות כאן קובעות עד כמה הבוט פונה מיוזמתו — וזה מה שקובע אם המספר שורד.
+            </p>
+            <label class="mode" data-mode="invite_link">
+              <input type="radio" name="waGroupMode" value="invite_link" />
+              <b>קישור הצטרפות (מומלץ)</b>
+              <span>
+                נפתחת קבוצה ריקה, והלקוח/ה מקבל/ת קישור הצטרפות במייל ובעמוד ההזמנה. הבוט לא מצרף אף
+                אחד ולא שולח הודעות פרטיות — ולכן אין על מה לחסום אותו.
+              </span>
+            </label>
+            <label class="mode" data-mode="auto_add">
+              <input type="radio" name="waGroupMode" value="auto_add" />
+              <b>צירוף אוטומטי</b>
+              <span>
+                הבוט מצרף את הלקוח/ה לקבוצה בעצמו ושולח תזכורות תשלום בוואטסאפ. נוח יותר ללקוח/ה,
+                אבל זו בדיוק הפעולה שבגללה נחסם המספר הקודם. עדיין מוגבל במפסק ובמכסה היומית.
+              </span>
+            </label>
+            <div class="row">
+              <label for="waReachoutMax">מקסימום פניות יזומות ליום</label>
+              <input id="waReachoutMax" type="number" min="0" max="200" step="1" />
+              <button id="saveWaSafety" class="primary" type="button">שמירה</button>
+              <span id="waSafetyStatus" class="meta status" role="status" aria-live="polite"></span>
+            </div>
+            <div id="waBreaker" class="wa-breaker"></div>
+          </div>
           <div id="waCards"></div>
         </div>
         <div class="section-group" id="remindersGroup">
@@ -854,6 +944,11 @@
         'trigger.daily_morning',
         'trigger.daily_evening',
         'trigger.quiet_reminder',
+        // Ban-safety knobs, not message copy — they get their own panel above
+        // (renderWaSafety) rather than a trigger card, which expects {enabled,
+        // text, timing}.
+        'group_mode',
+        'reachout_daily_max',
       ]);
       function render() {
         const { registry, effective } = state;
@@ -864,7 +959,116 @@
         qs('emailCards').innerHTML = Object.keys(registry.email)
           .map((k) => emailCardHtml(k, registry.email[k], effective.email[k]))
           .join('');
+        renderWaSafety();
         renderReminders();
+      }
+
+      // --- Ban-safety panel ------------------------------------------------------
+      // Two owner controls (how groups open, and the daily cap on bot-initiated
+      // contact) plus a read-only view of the reachout circuit breaker, which the
+      // server trips by itself the moment WhatsApp signals a restriction. The
+      // breaker is deliberately NOT self-resetting — retrying into a restriction is
+      // what turned the last one into a permanent ban — so clearing it is an
+      // explicit button, and the copy says what to check before pressing it.
+      function renderWaSafety() {
+        const eff = (state && state.effective && state.effective.wa) || {};
+        const mode = eff.group_mode === 'auto_add' ? 'auto_add' : 'invite_link';
+        for (const el of document.querySelectorAll('#waSafety label.mode')) {
+          const on = el.getAttribute('data-mode') === mode;
+          el.classList.toggle('sel', on);
+          const radio = el.querySelector('input');
+          if (radio) radio.checked = on;
+        }
+        const maxEl = qs('waReachoutMax');
+        if (maxEl && document.activeElement !== maxEl) {
+          maxEl.value = Number.isFinite(eff.reachout_daily_max) ? eff.reachout_daily_max : 5;
+        }
+        qs('waSafety').hidden = false;
+      }
+
+      // Paint the breaker box from the status endpoint's `guard` snapshot.
+      function renderBreaker(guard) {
+        const el = qs('waBreaker');
+        if (!el) return;
+        if (!guard) {
+          el.hidden = true;
+          return;
+        }
+        el.hidden = false;
+        if (guard.tripped) {
+          el.className = 'wa-breaker tripped';
+          el.innerHTML =
+            '<b>המפסק פעיל — הבוט הפסיק לפנות מיוזמתו.</b>' +
+            '<div>' +
+            esc(
+              'זוהתה הגבלה מצד וואטסאפ' +
+                (guard.reason ? ' (' + guard.reason + ')' : '') +
+                '. שליחת הודעות לקבוצות קיימות ממשיכה לעבוד כרגיל.'
+            ) +
+            '</div>' +
+            '<div>' +
+            esc(
+              'לפני איפוס: ודאו באפליקציית וואטסאפ ביזנס שהמספר תקין. איפוס בזמן שההגבלה עדיין ' +
+                'בתוקף הוא בדיוק מה שהפך את החסימה הקודמת לקבועה.'
+            ) +
+            '</div>' +
+            '<div class="row"><button id="clearBreaker" class="danger" type="button">איפוס המפסק</button>' +
+            '<span id="breakerStatus" class="meta status" role="status" aria-live="polite"></span></div>';
+          const btn = qs('clearBreaker');
+          if (btn) btn.addEventListener('click', clearBreaker);
+        } else {
+          el.className = 'wa-breaker';
+          el.textContent =
+            'המפסק סגור — הכול תקין. פניות יזומות היום: ' +
+            (guard.count || 0) +
+            ' מתוך ' +
+            (guard.max || 0) +
+            '.';
+        }
+      }
+
+      async function clearBreaker() {
+        const st = qs('breakerStatus');
+        if (st) st.textContent = 'מאפס…';
+        try {
+          await api('POST', '/api/admin/whatsapp/guard/clear');
+          if (st) st.textContent = 'אופס ✓';
+          renderWaStatus();
+        } catch (e) {
+          if (st) st.textContent = 'שגיאה: ' + e.message;
+        }
+      }
+
+      async function saveWaSafety() {
+        const st = qs('waSafetyStatus');
+        st.textContent = 'שומר…';
+        const picked = document.querySelector('input[name="waGroupMode"]:checked');
+        const mode = picked ? picked.value : 'invite_link';
+        const raw = Number(qs('waReachoutMax').value);
+        if (!Number.isInteger(raw) || raw < 0 || raw > 200) {
+          st.textContent = 'מקסימום פניות ליום חייב להיות מספר שלם בין 0 ל-200';
+          return;
+        }
+        try {
+          const m = await api('POST', '/api/admin/settings', {
+            section: 'wa',
+            key: 'group_mode',
+            value: mode,
+          });
+          const n = await api('POST', '/api/admin/settings', {
+            section: 'wa',
+            key: 'reachout_daily_max',
+            value: raw,
+          });
+          state.effective.wa.group_mode = m.effective;
+          state.effective.wa.reachout_daily_max = n.effective;
+          renderWaSafety();
+          st.textContent = 'נשמר ✓';
+          // The banner shows the mode and the day's reachout budget, so refresh it.
+          renderWaStatus();
+        } catch (e) {
+          st.textContent = 'שגיאה: ' + e.message;
+        }
       }
 
       // --- Owner-managed reminder list (email + WhatsApp) -----------------------
@@ -1192,6 +1396,14 @@
       // Reminder-list section wiring: add/save/reset are section-level buttons;
       // delete + the per-card enable toggle live inside each reminder card.
       qs('addReminder').addEventListener('click', addReminder);
+      qs('saveWaSafety').addEventListener('click', saveWaSafety);
+      // Highlight the picked mode immediately, before the save round-trip.
+      qs('waSafety').addEventListener('change', (e) => {
+        if (e.target.name !== 'waGroupMode') return;
+        for (const el of document.querySelectorAll('#waSafety label.mode')) {
+          el.classList.toggle('sel', el.getAttribute('data-mode') === e.target.value);
+        }
+      });
       qs('saveReminders').addEventListener('click', saveReminders);
       qs('resetReminders').addEventListener('click', resetReminders);
       qs('reminderCards').addEventListener('click', (e) => {
@@ -1276,6 +1488,17 @@
             liveLine = 'חיבור חי: לא הצלחנו לבדוק כרגע.';
           }
         }
+        // A TRIPPED reachout breaker outranks everything above: the bot can be
+        // perfectly armed and connected while quietly opening no groups at all.
+        // That is the failure the owner would otherwise only notice from missing
+        // orders, so it takes over the banner.
+        if (s.guard && s.guard.tripped) {
+          cls = 'off';
+          state = 'המספר מוגבל — פניות יזומות מושהות';
+          detail =
+            'וואטסאפ הגבילה את המספר, ולכן הפסקנו לפתוח קבוצות חדשות ולשלוח הודעות פרטיות. ' +
+            'הודעות לקבוצות קיימות ממשיכות כרגיל. פרטים ואיפוס בפאנל "בטיחות המספר" למטה.';
+        }
         el.className = 'wa-status ' + cls;
         el.innerHTML =
           '<span class="wa-state">וואטסאפ: ' +
@@ -1285,6 +1508,7 @@
           '</div>' +
           (liveLine ? '<div class="wa-detail">' + esc(liveLine) + '</div>' : '');
         el.hidden = false;
+        renderBreaker(s.guard);
       }
 
       async function load() {

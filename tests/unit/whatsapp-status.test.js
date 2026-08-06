@@ -8,10 +8,18 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import os from 'node:os';
+import fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const whatsappPath = path.join(__dirname, '..', '..', 'server', 'whatsapp.js');
+// status() now carries the reachout-breaker snapshot, and the breaker PERSISTS
+// under DATA_DIR. Point it at a throwaway dir BEFORE the first require so the
+// suite never reads or writes real guard state (and never drops a stray
+// whatsapp-guard.json into server/).
+process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-wa-status-'));
+const guard = require(path.join(__dirname, '..', '..', 'server', 'wa-guard.js'));
 const ENV_KEYS = ['WHATSAPP_ENABLED', 'WHAPI_TOKEN', 'WHAPI_WEBHOOK_SECRET', 'WHAPI_BASE_URL'];
 const SAVED = {};
 
@@ -24,6 +32,7 @@ function loadWith(env) {
 
 beforeEach(() => {
   for (const k of ENV_KEYS) SAVED[k] = process.env[k];
+  guard.clear(); // the breaker is a persisted singleton — start every case closed
 });
 afterEach(() => {
   for (const k of ENV_KEYS) {
@@ -41,13 +50,17 @@ describe('whatsapp.status()', () => {
       WHAPI_WEBHOOK_SECRET: 's',
       WHAPI_BASE_URL: 'https://gate.example',
     });
-    expect(wa.status()).toEqual({
+    expect(wa.status()).toMatchObject({
       enabled: true,
       tokenPresent: true,
       webhookSecretPresent: true,
       baseUrl: 'https://gate.example',
       configured: true,
       ready: true,
+      // The ban-safety readout rides along on the same snapshot: the SAFE group
+      // mode is the default, and the reachout breaker starts closed.
+      groupMode: 'invite_link',
+      guard: { tripped: false },
     });
   });
 
@@ -61,13 +74,15 @@ describe('whatsapp.status()', () => {
 
   it('dormant (no env) -> everything false, default gateway base url', () => {
     const wa = loadWith({});
-    expect(wa.status()).toEqual({
+    expect(wa.status()).toMatchObject({
       enabled: false,
       tokenPresent: false,
       webhookSecretPresent: false,
       baseUrl: 'https://gate.whapi.cloud',
       configured: false,
       ready: false,
+      groupMode: 'invite_link',
+      guard: { tripped: false },
     });
   });
 
