@@ -1172,7 +1172,7 @@
         //
         // A repaint MUST tear the old instance down first: initCarousel is
         // idempotent — handed a track it already owns it returns early, BEFORE the
-        // loop that stamps `carousel-slide` on each card — so appending into a live
+        // loop that stamps `carousel-card` on each card — so appending into a live
         // track would leave the new cards unstamped beside stale loop clones.
         function paintRail() {
           if (productsTrack.__carousel) productsTrack.__carousel.destroy();

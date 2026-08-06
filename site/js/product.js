@@ -490,7 +490,7 @@ function renderRelated(current) {
   if (!track) return;
   // Tear the previous instance down before replacing its slides. initCarousel is
   // idempotent — handed a track it already owns it returns early, BEFORE the loop
-  // that stamps `carousel-slide` on each slide — so re-rendering into a live track
+  // that stamps `carousel-card` on each card — so re-rendering into a live track
   // leaves the new cards unstamped (the #345 collapse, here on the related rail).
   if (track.__carousel) track.__carousel.destroy();
   track.textContent = '';
