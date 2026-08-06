@@ -671,18 +671,36 @@ function applyCalibration(themesPath, key, blob) {
   // a title clipped off both card edges. Validated through the same guard the
   // form's own save uses, so a bad blob can't write geometry the form would have
   // rejected.
+  //
+  // A refusal here must SAY SO, exactly like title_style and the slots above.
+  // It used to be the one branch with no `else`, and the gap was not academic:
+  // validateCardSlots refuses a titles map missing any front, so a deck with one
+  // unmeasurable card (מרקאנה's front 9, whose clean plate is exported at a
+  // different scale from its filled twin) had its ENTIRE card_slots block
+  // dropped — words included — while the run still reported calibrated: true.
+  // The owner pressed "זהה מחדש", was told it worked, and the geometry never
+  // moved, with nothing anywhere naming the front that caused it.
   if ('card_slots' in blob) {
     const cs = validateCardSlots(blob.card_slots, entryFrontNumbers(entry));
     if (!cs.error) entry.card_slots = cs.value;
+    else if (blob.card_slots) rejected.push('card_slots (' + cs.error + ')');
   }
   // Advisory, for the form's "check this one" flags — not render inputs.
   if (blob.confidence && typeof blob.confidence === 'object') entry.confidence = blob.confidence;
   if (Array.isArray(blob.notes)) entry.notes = blob.notes.filter((s) => typeof s === 'string');
   if (rejected.length) {
+    // The "cannot render" tail is about title_style specifically, so it is only
+    // said when title_style is what was refused. A rejected card_slots leaves a
+    // template that renders perfectly well on its previous geometry, and telling
+    // the owner it cannot render would send her hunting for a fault that is not
+    // there.
     entry.notes = (entry.notes || []).concat(
       'measured but REJECTED as invalid, so the old value was kept: ' +
         rejected.join('; ') +
-        '. Fill these in by hand — the template cannot render until title_style is set.'
+        '. Fill these in by hand' +
+        (rejected.some((r) => r.startsWith('title_style'))
+          ? ' — the template cannot render until title_style is set.'
+          : '.')
     );
   }
   // persistThemeEntry, NOT writeThemesFile. Two bugs in the old line:

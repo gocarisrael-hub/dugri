@@ -283,3 +283,73 @@ if __name__ == "__main__":
         fn()
         print("ok", fn.__name__)
     print(f"\nall {len(fns)} tests passed")
+
+
+# ---- the card_slots map must cover every front, or nothing is saved at all ----
+#
+# server/templates.js `validateCardSlots` refuses a titles map missing any of
+# cards.fronts, and `applyCalibration` then drops the WHOLE card_slots block
+# silently while still reporting calibrated: true. So a deck with one
+# unmeasurable card used to write nothing at all — on מרקאנה the owner pressed
+# "זהה מחדש", was told it succeeded, and the geometry never moved.
+
+_CARD_VB = [0.0, 0.0, 200.0, 400.0]
+
+
+def _recipe_with(title):
+    return {"theme": "t", "format": 2, "viewBox": list(_CARD_VB),
+            "card": {"cell": [0.0, 0.0, 200.0, 400.0],
+                     "words": [{"x0": 20.0, "y0": 100.0 + 30 * i,
+                                "x1": 160.0, "y1": 120.0 + 30 * i}
+                               for i in range(4)],
+                     "title": title},
+            "back": None}
+
+
+def _slots_for(recipe, fronts):
+    cfg = {"recipe": "t", "cards": {"fronts": list(fronts)}}
+    real = config.load_recipe
+    config.load_recipe = lambda _name: recipe
+    try:
+        return C._card_slots_from_recipe(cfg)
+    finally:
+        config.load_recipe = real
+
+
+def _title(x0, y0, x1, y1):
+    return [{"x0": x0, "y0": y0, "x1": x1, "y1": y1, "color": "#000000"}]
+
+
+def test_card_slots_covers_every_front_the_theme_declares():
+    recipe = _recipe_with({"2": _title(20.0, 10.0, 100.0, 50.0),
+                           "3": _title(30.0, 12.0, 110.0, 52.0),
+                           "4": _title(40.0, 14.0, 120.0, 54.0)})
+    got = _slots_for(recipe, [2, 3, 4, 5])
+    assert got, "a usable recipe must produce card_slots"
+    assert sorted(got["titles"], key=int) == ["2", "3", "4", "5"], got["titles"]
+
+
+def test_an_unmeasured_front_is_filled_with_what_the_renderer_would_use():
+    # Not an invention: config.recipe_front_title is the SAME median the renderer
+    # falls back to for that front, so the stored value equals what prints.
+    recipe = _recipe_with({"2": _title(20.0, 10.0, 100.0, 50.0),
+                           "3": _title(30.0, 12.0, 110.0, 52.0),
+                           "4": _title(40.0, 14.0, 120.0, 54.0)})
+    got = _slots_for(recipe, [2, 3, 4, 9])
+    want = config.recipe_front_title(recipe, 9)
+    assert want, "the fallback is what this test is about"
+    assert got["titles"]["9"] == {
+        "x0": round(want[0]["x0"] / 200.0, 4), "y0": round(want[0]["y0"] / 400.0, 4),
+        "x1": round(want[0]["x1"] / 200.0, 4), "y1": round(want[0]["y1"] / 400.0, 4)}
+
+
+def test_a_measured_front_is_never_replaced_by_the_fallback():
+    recipe = _recipe_with({"2": _title(20.0, 10.0, 100.0, 50.0),
+                           "3": _title(30.0, 12.0, 110.0, 52.0),
+                           "4": _title(40.0, 14.0, 120.0, 54.0)})
+    got = _slots_for(recipe, [2, 3, 4])
+    assert got["titles"]["2"] == {"x0": 0.1, "y0": 0.025, "x1": 0.5, "y1": 0.125}
+
+
+def test_a_recipe_with_no_title_anywhere_still_reports_nothing():
+    assert _slots_for(_recipe_with({}), [2, 3]) is None

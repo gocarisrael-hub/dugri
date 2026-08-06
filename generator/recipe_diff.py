@@ -162,8 +162,33 @@ def _marker_aligned(feats):
     return sorted(best, key=lambda f: f["cy"])
 
 
-def group_words(rows, h):
-    """4 word rows = the 4 marker-aligned rows; title = the rest above."""
+def group_words(rows, h, whole_card=False):
+    """4 word rows = the 4 marker-aligned rows; title = every band OUTSIDE them.
+
+    The title used to be defined as "the bands above the topmost word row", which
+    quietly encoded a layout assumption the designs do not share: מרקאנה puts
+    ``Ben's B-day`` at the FOOT of front 9, under the four words. A title below
+    the words yielded ``title == []``, the front was written with no title box,
+    and ``config.recipe_front_title`` silently substituted the median of the
+    other fronts — landing that card's title at the top, where the design has
+    nothing.
+
+    So position is not the signal; the number MARKER is. Every word row carries
+    its ``N.`` pinned to the slot's right edge (``_marker_aligned``), and a title
+    does not — on מרקאנה all four word slots end at x1 0.697 while the title
+    boxes end at 0.5737 / 0.6557 / 0.7361. Whatever is not one of the four word
+    rows is title ink, above them or below them, and ``plausible_box`` still
+    screens decoration by area.
+
+    ``whole_card`` is what makes "below" safe to read, and only the v2 path can
+    set it. There, the cell IS the card, so ink under the last word is on this
+    card by construction. A v1 cell is a CROP out of an 8-up sheet, where the
+    card below bleeds over the cut line: every cell of טיימס סקוור's front sheet
+    carries a band at its very bottom edge spanning the full cell width, which is
+    the neighbouring card, not a title. So v1 keeps the old "above only" reading
+    — no sheet design has its title under the words, and adopting a neighbour's
+    ink as title would inflate the box on all eight cards.
+    """
     import itertools
     feats = [dict(y0=r[0], y1=r[1], x0=r[2], x1=r[3],
                   cy=(r[0]+r[1])/2/h, bh=(r[1]-r[0])/h) for r in rows]
@@ -190,8 +215,20 @@ def group_words(rows, h):
                 return sum((x-mg)**2 for x in gaps)
             words = sorted(min(itertools.combinations(feats, 4), key=sc),
                            key=lambda f: f["cy"])
-    wtop = words[0]["cy"]
-    title = [f for f in feats if f["cy"] < wtop - 0.02]
+    chosen = {id(f) for f in words}
+    # ...but NOT a band that sits between the first and last word rows. Ink
+    # interleaved with the list is a wrap — the continuation of an entry too long
+    # for its slot, which carries no "N." marker and so is not marker-aligned
+    # either. A title is never threaded through the middle of the words, above or
+    # below them, so this excludes exactly the wraps and nothing a design meant.
+    # (סנטוריני's filled sample wraps its third entry; without this the wrap is
+    # promoted to title ink and drags the title box down over the word list.)
+    top, bottom = words[0]["cy"], words[-1]["cy"]
+    if not whole_card:
+        # A sheet cell: only ink ABOVE the words can be trusted as this card's.
+        bottom = float("inf")
+    title = [f for f in feats
+             if id(f) not in chosen and not (top < f["cy"] < bottom)]
     return dict(words=words, title=title)
 
 
@@ -369,6 +406,77 @@ def _renderable(svg_path, workdir, tag):
     return out
 
 
+# How far the two halves of a pair may disagree about their own viewBox before
+# the diff between them stops being readable, as a fraction of the box.
+#
+# The two plates are the SAME artwork, so ``filled - clean`` is the text only
+# while they register. They stop registering when the exports disagree about the
+# coordinate space: both are drawn into the same window, so a viewBox that is
+# 0.15% wider scales the art by 0.15% less and shifts it half a pixel, and EVERY
+# high-contrast edge in the design — a border, a frame, an icon — then appears in
+# the diff as a hairline ghost. That is not a subtle degradation: on מרקאנה's
+# front 9 it turns a card's worth of text into ONE band spanning the whole page,
+# and detection reports "no text measured" for a pair that is perfectly legible
+# to a human.
+#
+# 1e-4 is far below the artifact and far above float noise: the four affected
+# plates are off by 1.5e-3 (224.25 against 223.92) while a matching pair agrees
+# to the last digit Canva prints.
+_VIEWBOX_TOL = 1e-4
+
+
+def viewbox_mismatch(filled_svg, clean_svg):
+    """A message when a pair's two plates disagree about their coordinate space.
+
+    ``None`` when they agree, which is the normal case and the only one in which
+    ``filled - clean`` is the personalized text and nothing else.
+
+    This is a Canva export artifact, and a REAL one: of the eleven templates in
+    the owner's store, four ship a ``clean/9.svg`` at viewBox 224.25x311.999995
+    where its ``filled/9.svg`` twin — and every other plate in the same deck — is
+    223.92x312. The artwork inside is scaled to match (0.747953 against
+    0.749732), so the two plates genuinely draw the card at different sizes and
+    no threshold, erosion or raster registration recovers a clean diff; the
+    card's own border survives every one of them as a full-height ghost.
+
+    Checked BEFORE rendering because the cost is two file headers against two
+    Chrome screenshots, and because the answer is more actionable: "these two
+    exports disagree, re-export this plate" tells the owner what to do, where
+    "no text measured" sent her looking at a card that is plainly fine.
+
+    Worth stating plainly what this replaces. ``_TITLE_BOX_TOL`` blames the same
+    four decks' front 9 on "a clean plate missing artwork its filled twin has".
+    That was inferred from the symptom and it is not what the files show — the
+    artwork is present in both, at two different scales. The size refusal is
+    still a good backstop for a box that cannot be a title, but it is not this
+    diagnosis, and it cannot say which file to fix.
+    """
+    try:
+        _, _, fvb = dims(filled_svg)
+        _, _, cvb = dims(clean_svg)
+    except (AttributeError, OSError, ValueError):
+        # A header this cannot parse is not a mismatch — it is a different fault,
+        # and ``card_diff``/``chrome`` already report an unreadable SVG with an
+        # actionable message. Never invent a diagnosis from a file not read: a
+        # pre-flight that turns "I could not look" into a hard failure would
+        # block detection on templates that render perfectly well.
+        return None
+    if all(abs(a - b) <= _VIEWBOX_TOL * max(1.0, abs(b))
+           for a, b in zip(fvb, cvb)):
+        return None
+    def fmt(vb):
+        return " ".join(f"{v:g}" for v in vb)
+
+    return (f"filled/{os.path.basename(filled_svg)} draws this card at viewBox "
+            f"[{fmt(fvb)}] but clean/{os.path.basename(clean_svg)} draws it at "
+            f"[{fmt(cvb)}] — the same artwork at two different scales. Their "
+            f"difference is therefore the whole design shifted against itself, "
+            f"not the text, so this card cannot be measured. Re-export "
+            f"clean/{os.path.basename(clean_svg)} from Canva at the same size as "
+            f"the rest of the deck; until then this front falls back to the box "
+            f"its siblings agree on.")
+
+
 def card_diff(filled_svg, clean_svg, workdir, tag="card"):
     """Render one card's filled/clean pair and return the ink and its mapping.
 
@@ -406,9 +514,11 @@ def detect_front(mask, image, vb, ppu, ox, oy):
     """One front's ``{"words": [4], "title": [...]}``, or None when unmeasured.
 
     The whole page is the card, so ``rows_in_cell`` is handed the full render
-    and ``group_words`` picks the four evenly-spaced word rows out of the bands
-    it finds, exactly as it does inside an 8-up cell. Anything above the topmost
-    word is the title — which may be SEVERAL bands, one per title line.
+    and ``group_words`` picks the four marker-aligned word rows out of the bands
+    it finds, exactly as it does inside an 8-up cell. Every band that is NOT one
+    of those four is the title — which may be SEVERAL bands, one per title line,
+    and which may sit above the words or below them (מרקאנה's front 9 puts it at
+    the foot of the card).
 
     None (rather than a partial answer) when the ink cannot be read as text at
     all: fewer than four bands, or a band so large the diff clearly caught the
@@ -417,7 +527,7 @@ def detect_front(mask, image, vb, ppu, ox, oy):
     a fallback for.
     """
     cell = (0, 0) + mask.size
-    grouped = group_words(rows_in_cell(mask, cell), mask.size[1])
+    grouped = group_words(rows_in_cell(mask, cell), mask.size[1], whole_card=True)
     if not grouped:
         return None
 
@@ -509,6 +619,43 @@ def _title_union(boxes):
             "x1": max(b["x1"] for b in boxes), "y1": max(b["y1"] for b in boxes)}
 
 
+def _box_off(union, wide, tall):
+    """How far a union is from the deck's typical title, as a fraction."""
+    w, h = union["x1"] - union["x0"], union["y1"] - union["y0"]
+    return max(abs(w / wide - 1) if wide else 0.0,
+               abs(h / tall - 1) if tall else 0.0)
+
+
+def _title_run(boxes, wide, tall):
+    """The run of this front's title bands that measures like the deck's title.
+
+    ``group_words`` hands over every band that is not one of the four word rows,
+    which is what lets a title be found BELOW the words. The cost of dropping the
+    position assumption is that stray ink now lands in the same bucket: on
+    קליפורניה's front 5 the two real title lines sit at the top and a patch of
+    artwork the diff caught sits near the foot, so the union of "everything that
+    is not a word" spans 244 units where the deck's title measures 42.
+
+    Position cannot separate those two — that is the whole point. The deck can:
+    the same title is on every front, so on THIS front the title is the ink whose
+    extent matches what the other fronts agree a title measures. Lines of one
+    title are consecutive bands, so only contiguous runs are considered; the
+    best-fitting one wins.
+
+    ``None`` when no run matches, which leaves the caller to refuse the front
+    exactly as before.
+    """
+    ordered = sorted(boxes, key=lambda b: (b["y0"], b["x0"]))
+    best = None
+    for i in range(len(ordered)):
+        for j in range(i + 1, len(ordered) + 1):
+            run = ordered[i:j]
+            off = _box_off(_title_union(run), wide, tall)
+            if off <= _TITLE_BOX_TOL and (best is None or off < best[0]):
+                best = (off, run)
+    return best[1] if best else None
+
+
 def reconcile_front_titles(front_titles, log=None, declined=None):
     """Drop any front whose title box does not look like the rest of the deck's.
 
@@ -516,6 +663,12 @@ def reconcile_front_titles(front_titles, log=None, declined=None):
     honoree's name from a patch of artwork the clean export happens to be
     missing. Read together the fronts DO tell: the title is the same text on all
     eight, so a box half again wider or taller than the median is not a title.
+
+    Two outcomes, not one. When only PART of a front's ink is unlike the deck's
+    title, the rest of it still is: ``_title_run`` keeps the bands that measure
+    like a title and sets the others aside, so a front that merely caught a patch
+    of artwork alongside a perfectly good title keeps its own box. Only a front
+    with no title-shaped ink at all is refused outright.
 
     Refusing is the whole point — a refused front falls back to the shape its
     siblings agree on (``config.recipe_front_title``), which is the design's own
@@ -532,9 +685,25 @@ def reconcile_front_titles(front_titles, log=None, declined=None):
     out = dict(front_titles)
     for index, u in sorted(sizes.items(), key=lambda kv: str(kv[0])):
         w, h = u["x1"] - u["x0"], u["y1"] - u["y0"]
-        off = max(abs(w / wide - 1) if wide else 0.0,
-                  abs(h / tall - 1) if tall else 0.0)
+        off = _box_off(u, wide, tall)
         if off <= _TITLE_BOX_TOL:
+            continue
+        # Before refusing the front outright, ask whether PART of its ink is the
+        # title. A front whose real title is fine but which also caught a patch
+        # of artwork has a union that fails this check while the title itself is
+        # perfectly good — dropping the whole front there would throw away a
+        # correct measurement over a stray band.
+        run = _title_run(usable[index], wide, tall)
+        if run:
+            out[index] = run
+            dropped = len(usable[index]) - len(run)
+            if log:
+                log(f"front {index}: set aside {dropped} band(s) of ink that "
+                    f"cannot be part of this title — its title box measures "
+                    f"{_title_union(run)['x1'] - _title_union(run)['x0']:.1f}x"
+                    f"{_title_union(run)['y1'] - _title_union(run)['y0']:.1f} "
+                    f"against {wide:.1f}x{tall:.1f} on the rest of the deck, "
+                    f"where all of its ink together measured {w:.1f}x{h:.1f}.")
             continue
         out.pop(index, None)
         why = (f"front {index}: its title box measures {w:.1f}x{h:.1f} against "
@@ -884,6 +1053,15 @@ def detect_single_card(theme, template_dir, fronts=None,
             if not (os.path.exists(clean) and os.path.exists(filled)):
                 log(f"front {index}: missing filled/clean pair, skipped")
                 continue
+            # Before Chrome, not after: a pair whose two plates draw the card at
+            # different scales cannot produce a readable diff, and saying so by
+            # name beats spending two screenshots to report "no text measured".
+            off = viewbox_mismatch(filled, clean)
+            if off:
+                why = f"front {index}: {off}"
+                log(why)
+                declined.append(why)
+                continue
             mask, image, vb, ppu, ox, oy = card_diff(
                 filled, clean, workdir, tag=f"f{index}")
             if vb0 is None:
@@ -899,15 +1077,44 @@ def detect_single_card(theme, template_dir, fronts=None,
                 why = _diff_shape(mask)
                 reasons.append(f"front {index}: {why}")
                 log(f"front {index}: no text measured — {why}")
+                # ...and TELL THE OWNER. ``reasons`` is only ever raised when the
+                # whole deck fails; a single front that measured nothing while
+                # its siblings succeeded fell out of the loop into silence, got
+                # no ``card.title`` entry, and was quietly handed the median of
+                # the others by ``config.recipe_front_title``. That is how
+                # מרקאנה shipped front 9 with its title at the top of the card
+                # when the design puts it at the foot — nothing, anywhere,
+                # reported that a front had been dropped.
+                declined.append(
+                    f"front {index}: no text could be measured — {why}. This "
+                    f"front gets no title box of its own and falls back to the "
+                    f"box its siblings agree on, which is WRONG wherever this "
+                    f"card's title sits somewhere they do not. Check "
+                    f"clean/{index}.svg against filled/{index}.svg.")
                 continue
             per_front.append(got["words"])
             front_titles[index] = got["title"]
             log(f"front {index}: 4 words + {len(got['title'])} title box(es)")
+            if not got["title"]:
+                # Four words but no title ink at all. Same silent fallback, a
+                # different cause — worth its own sentence so the owner is not
+                # sent looking for a broken export when the pair is fine.
+                declined.append(
+                    f"front {index}: 4 word slots read, but no title ink — this "
+                    f"front falls back to the title box its siblings agree on. "
+                    f"If clean/{index}.svg and filled/{index}.svg differ only in "
+                    f"the words, that is correct; if this card carries a name, "
+                    f"the two plates do not show it.")
         if vb0 is None:
+            # Carry WHY into the exception. A deck whose every plate pair was
+            # refused for a viewBox mismatch would otherwise be reported as
+            # "must ship clean/ and filled/ copies", sending the owner to look
+            # for files that are all present.
             raise RuntimeError(
                 f"no front card could be rendered under {template_dir} — a v2 "
                 f"template must ship clean/ and filled/ copies of "
-                f"{fronts[0]}.svg..{fronts[-1]}.svg")
+                f"{fronts[0]}.svg..{fronts[-1]}.svg"
+                + ("\n  " + "\n  ".join(declined) if declined else ""))
 
         front_titles = reconcile_front_titles(front_titles, log=log,
                                               declined=declined)

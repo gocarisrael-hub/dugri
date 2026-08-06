@@ -864,6 +864,37 @@ describe('applyCalibration — detected card_slots reach themes.json', () => {
     expect(JSON.parse(fs.readFileSync(p, 'utf8')).demo.card_slots).toBeNull();
   });
 
+  // ...and SAYS SO. This was the one merge branch with no `else`, and the gap
+  // was not academic: validateCardSlots refuses a titles map missing any front,
+  // so a deck with a single unmeasurable card (מרקאנה's front 9, whose clean
+  // plate is exported at a different scale from its filled twin) had its ENTIRE
+  // card_slots block dropped — words included — while the run still reported
+  // calibrated: true. The owner pressed "זהה מחדש", was told it worked, and the
+  // geometry never moved, with nothing naming the front that caused it.
+  it('reports a refused card_slots in notes instead of dropping it silently', () => {
+    const p = themesWith({ slug: 'demo', card_structure: 'cards', card_slots: null });
+    templates.applyCalibration(p, 'demo', {
+      card_slots: { words: SLOTS.words, titles: { 2: SLOTS.titles['2'] } },
+    });
+    const entry = JSON.parse(fs.readFileSync(p, 'utf8')).demo;
+    expect(entry.card_slots).toBeNull();
+    const notes = (entry.notes || []).join(' ');
+    expect(notes).toMatch(/card_slots/);
+    expect(notes).toMatch(/9\.svg/); // name the front that is missing
+  });
+
+  it('does not claim the template cannot render when only card_slots was refused', () => {
+    // That tail is about title_style specifically. A rejected card_slots leaves
+    // a template that renders fine on its previous geometry, and saying it
+    // cannot render sends the owner hunting for a fault that is not there.
+    const p = themesWith({ slug: 'demo', card_structure: 'cards', card_slots: null });
+    templates.applyCalibration(p, 'demo', {
+      card_slots: { words: SLOTS.words, titles: { 2: SLOTS.titles['2'] } },
+    });
+    const notes = (JSON.parse(fs.readFileSync(p, 'utf8')).demo.notes || []).join(' ');
+    expect(notes).not.toMatch(/cannot render/);
+  });
+
   // The LEADING — how far apart the title's lines are stacked, as a fraction of
   // the type size. The calibrator measures it off the design's own artwork, and
   // it is inseparable from the size it was measured beside: a size that lands

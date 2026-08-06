@@ -913,3 +913,276 @@ def test_a_box_within_tolerance_of_its_siblings_is_kept():
 def test_too_few_fronts_to_have_a_consensus_are_left_alone():
     titles = {2: _tbox(20.0, 10.0), 3: _tbox(5.0, 4.0, w=190.0, h=70.0)}
     assert R.reconcile_front_titles(titles) == titles
+
+
+# ---- a title that does not sit above the words -------------------------------
+#
+# The detector used to define a title as "ink above the topmost word row", which
+# is a layout assumption, not a measurement. מרקאנה (football-boys) breaks it:
+# its front 9 carries ``Ben's B-day`` at the FOOT of the card, under the four
+# words, where fronts 2-8 carry it at the top. That front therefore detected
+# ``title == []``, was written with no title box, and silently inherited the
+# median of its siblings' — putting the honoree's name at the top of a card whose
+# design puts it at the bottom. The owner found it by eye.
+
+# The same card, with its title band moved BELOW the four word rows.
+_LOW_TITLE_BAND = (80, 520, 320, 580)
+
+
+def test_a_title_below_the_words_is_found():
+    mask, image = _synthetic_card(_WORD_BANDS + [_LOW_TITLE_BAND])
+    got = R.detect_front(mask, image, [0, 0, _CARD_W, _CARD_H], 1.0, 0.0, 0.0)
+    assert got, "a card whose title sits low must still cluster"
+    assert len(got["words"]) == 4
+    assert len(got["title"]) == 1, "the low band is the title, not a fifth word"
+    assert got["title"][0]["y0"] >= got["words"][-1]["y1"], "title sits BELOW word 4"
+    assert abs(got["title"][0]["y0"] - _LOW_TITLE_BAND[1]) < 1e-6
+
+
+def test_the_word_rows_are_the_marker_aligned_ones_wherever_the_title_is():
+    # The signal that replaces the position assumption: the four word rows share
+    # a right edge (each carries its "N." marker), a title does not. Assert it
+    # directly so a future change cannot quietly go back to sorting by cy.
+    for bands in (_WORD_BANDS + [_LOW_TITLE_BAND], [_TITLE_BAND] + _WORD_BANDS):
+        grouped = R.group_words(
+            [[y0, y1, x0, x1] for x0, y0, x1, y1 in bands], _CARD_H,
+            whole_card=True)
+        assert [w["x1"] for w in grouped["words"]] == [300] * 4, bands
+        assert [t["x1"] for t in grouped["title"]] == [320], bands
+
+
+def test_a_title_split_over_two_lines_below_the_words_stays_two_boxes():
+    low = [(80, 500, 320, 540), (100, 550, 310, 590)]
+    mask, image = _synthetic_card(_WORD_BANDS + low)
+    got = R.detect_front(mask, image, [0, 0, _CARD_W, _CARD_H], 1.0, 0.0, 0.0)
+    assert got and len(got["words"]) == 4
+    assert len(got["title"]) == 2, "one box per title line, as for a high title"
+
+
+def test_a_title_above_AND_below_the_words_keeps_both():
+    # Nothing says a design may not do both — a name over the list and a date
+    # under it. Neither band is a word row, so both are title ink.
+    mask, image = _synthetic_card([_TITLE_BAND] + _WORD_BANDS + [_LOW_TITLE_BAND])
+    got = R.detect_front(mask, image, [0, 0, _CARD_W, _CARD_H], 1.0, 0.0, 0.0)
+    assert got and len(got["words"]) == 4
+    assert len(got["title"]) == 2
+    ys = sorted(t["y0"] for t in got["title"])
+    assert abs(ys[0] - _TITLE_BAND[1]) < 1e-6
+    assert abs(ys[1] - _LOW_TITLE_BAND[1]) < 1e-6
+
+
+def test_end_to_end_a_deck_whose_title_sits_under_the_words():
+    # The whole defect, through the real rasterizer: bands drawn low on the card
+    # must come back as this front's OWN title box, not as a missing entry.
+    if not _chrome():
+        print("  (skip end-to-end low title: Chrome not found)")
+        return
+    low = '<rect x="40" y="250" width="140" height="30" fill="#711d20"/>'
+    d = tempfile.mkdtemp(prefix="dugri-e2e-low-")
+    try:
+        for half in ("clean", "filled"):
+            os.makedirs(os.path.join(d, half))
+        for index in (2, 3):
+            _write(d, "clean", index, "")
+            _write(d, "filled", index, _E2E_WORDS + low)
+        recipe = R.detect_single_card("e2e-low", d, fronts=[2, 3],
+                                      log=lambda *a: None)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    for n in (2, 3):
+        title = recipe["card"]["title"][str(n)]
+        assert len(title) == 1, title
+        assert abs(title[0]["y0"] - 250) < 1.5, title
+        assert title[0]["y0"] > recipe["card"]["words"][-1]["y0"], "below the words"
+    # A low title is a NORMAL reading, not a refusal: nothing about this front
+    # may reach ``declined``. (The fixture's word rects are deliberately drawn
+    # with staggered right edges, so the edge SNAP declines — that is the
+    # fixture's geometry, and it is not a complaint about a front.)
+    assert not [m for m in recipe.get("declined") or []
+                if m.startswith("front ")], recipe.get("declined")
+
+
+# ---- a pair whose two plates draw the card at different scales ----------------
+#
+# The REAL reason מרקאנה's front 9 measured nothing. Of the eleven templates in
+# the owner's store, four ship a clean/9.svg at viewBox 224.25x311.999995 whose
+# filled/9.svg twin — and every other plate in the same deck — is 223.92x312, with
+# the artwork inside scaled to match (0.747953 against 0.749732). Both plates are
+# then drawn into the same window at different sizes, so filled-clean is the whole
+# design ghosted against itself rather than the text: on מרקאנה that collapses a
+# card's worth of ink into ONE band spanning the page. The other three
+# (סיישל, פריז, קליפורניה) produce the runaway title box that
+# ``_TITLE_BOX_TOL`` refuses — the same cause, caught one step later and blamed
+# on "a clean plate missing artwork", which is not what the files show.
+
+_VB_SVG = ('<svg xmlns="http://www.w3.org/2000/svg" width="299" height="416" '
+           'viewBox="{vb}" preserveAspectRatio="xMidYMid meet"></svg>')
+
+
+def _plate(path, vb):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(_VB_SVG.format(vb=vb))
+    return path
+
+
+def test_a_matching_pair_reports_no_mismatch():
+    d = tempfile.mkdtemp(prefix="dugri-vb-")
+    try:
+        a = _plate(os.path.join(d, "2.svg"), "0 0 223.92 312")
+        b = _plate(os.path.join(d, "2c.svg"), "0 0 223.92 312")
+        assert R.viewbox_mismatch(a, b) is None
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_the_canva_rounding_artifact_alone_is_not_a_mismatch():
+    # 311.999995 against 312 is float dust in the export, not a different card.
+    d = tempfile.mkdtemp(prefix="dugri-vb-")
+    try:
+        a = _plate(os.path.join(d, "2.svg"), "0 0 223.92 312")
+        b = _plate(os.path.join(d, "2c.svg"), "0 0 223.92 311.999995")
+        assert R.viewbox_mismatch(a, b) is None
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_a_mismatched_pair_names_both_plates_and_says_which_to_re_export():
+    d = tempfile.mkdtemp(prefix="dugri-vb-")
+    try:
+        a = _plate(os.path.join(d, "9.svg"), "0 0 223.92 312")
+        b = _plate(os.path.join(d, "9c.svg"), "0 0 224.25 311.999995")
+        why = R.viewbox_mismatch(a, b)
+        assert why, "a 0.15% difference in the coordinate space must be caught"
+        assert "9.svg" in why and "9c.svg" in why, why
+        assert "223.92" in why and "224.25" in why, "quote both, so it is checkable"
+        assert "Re-export" in why, "say what to DO about it"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_a_mismatched_front_is_declined_by_name_without_rendering_it():
+    # Checked from the two file headers, BEFORE Chrome — so this runs everywhere
+    # and a broken pair costs nothing to diagnose. Every front is mismatched
+    # here, so nothing is measurable and the failure must carry the reason.
+    d = tempfile.mkdtemp(prefix="dugri-vb-")
+    try:
+        for half in ("clean", "filled"):
+            os.makedirs(os.path.join(d, half))
+        for index in (2, 3):
+            _plate(os.path.join(d, "filled", f"{index}.svg"), "0 0 223.92 312")
+            _plate(os.path.join(d, "clean", f"{index}.svg"), "0 0 224.25 312")
+        said = []
+        try:
+            R.detect_single_card("vb", d, fronts=[2, 3], log=said.append)
+            raise AssertionError("an unmeasurable deck must not report success")
+        except RuntimeError as e:
+            assert "224.25" in str(e), str(e)
+            assert "clean/2.svg" in str(e), "name the file to re-export"
+        assert any("224.25" in m for m in said), said
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+# ---- a front that yielded nothing must say so --------------------------------
+#
+# ``reasons`` is only ever raised when the WHOLE deck fails, so a single front
+# that measured nothing while its siblings succeeded fell out of the loop into
+# silence: no card.title entry, no warning, and config.recipe_front_title quietly
+# handing it the median of the others. That is precisely how מרקאנה shipped.
+
+
+def test_a_single_front_that_measured_nothing_is_reported():
+    real = R.detect_front
+
+    def only_the_first(mask, image, vb, ppu, ox, oy):
+        got = real(mask, image, vb, ppu, ox, oy)
+        only_the_first.seen += 1
+        return got if only_the_first.seen == 1 else None
+
+    only_the_first.seen = 0
+    if not _chrome():
+        print("  (skip lone-front report: Chrome not found)")
+        return
+    d = _e2e_template()
+    R.detect_front = only_the_first
+    try:
+        recipe = R.detect_single_card("lone", d, fronts=[2, 3],
+                                      log=lambda *a: None)
+    finally:
+        R.detect_front = real
+        shutil.rmtree(d, ignore_errors=True)
+    assert "3" not in recipe["card"]["title"], "the front measured nothing"
+    said = recipe.get("declined") or []
+    assert any("front 3" in m for m in said), said
+    assert any("clean/3.svg" in m for m in said), "say WHERE to look"
+
+
+def test_a_front_with_words_but_no_title_ink_is_reported():
+    if not _chrome():
+        print("  (skip no-title report: Chrome not found)")
+        return
+    d = tempfile.mkdtemp(prefix="dugri-e2e-notitle-")
+    try:
+        for half in ("clean", "filled"):
+            os.makedirs(os.path.join(d, half))
+        for index in (2, 3):
+            _write(d, "clean", index, "")
+            # front 3 carries the words only — no title band anywhere on it
+            _write(d, "filled", index,
+                   _E2E_WORDS + (_E2E_TITLE if index == 2 else ""))
+        recipe = R.detect_single_card("notitle", d, fronts=[2, 3],
+                                      log=lambda *a: None)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    assert "3" not in recipe["card"]["title"]
+    said = recipe.get("declined") or []
+    assert any("front 3" in m and "no title ink" in m for m in said), said
+
+
+# ---- stray ink alongside a perfectly good title ------------------------------
+#
+# The cost of dropping the "title is above the words" assumption: stray ink now
+# lands in the same bucket as the title. קליפורניה's front 5 has its two real
+# title lines at the top and a patch of artwork the diff caught near the foot, so
+# "everything that is not a word" unions to 244 units where the deck's title
+# measures 42. Position cannot separate those — the DECK can, because the same
+# title is on every front.
+
+
+def test_a_front_that_also_caught_artwork_keeps_its_real_title():
+    good = {n: _tbox(20.0 + 10 * n, 10.0) for n in (2, 3, 4, 6)}
+    stray = _tbox(22.0, 11.0) + [{"x0": 5.0, "y0": 250.0, "x1": 95.0,
+                                  "y1": 300.0, "color": "#111111"}]
+    said = []
+    got = R.reconcile_front_titles({**good, 5: stray}, log=said.append)
+    assert 5 in got, "the front's real title must survive the stray band"
+    assert got[5] == [stray[0]], got[5]
+    assert any("front 5" in m and "set aside" in m for m in said), said
+
+
+def test_the_kept_run_is_the_one_that_measures_like_the_deck():
+    # Two candidate runs, only one of which is title-sized.
+    good = {n: _tbox(20.0, 10.0) for n in (2, 3, 4)}
+    real = {"x0": 30.0, "y0": 12.0, "x1": 110.0, "y1": 42.0, "color": "#111111"}
+    junk = {"x0": 0.0, "y0": 200.0, "x1": 190.0, "y1": 290.0, "color": "#111111"}
+    got = R.reconcile_front_titles({**good, 5: [junk, real]})
+    assert got[5] == [real]
+
+
+def test_a_front_with_no_title_shaped_ink_at_all_is_still_refused():
+    # The backstop must not be softened: a front whose every band is the wrong
+    # size has no title to keep, and inventing one is the bug this guards.
+    good = {n: _tbox(20.0, 10.0) for n in (2, 3, 4)}
+    junk = [{"x0": 0.0, "y0": 200.0, "x1": 190.0, "y1": 290.0, "color": "#111111"}]
+    declined = []
+    got = R.reconcile_front_titles({**good, 5: junk}, declined=declined)
+    assert 5 not in got
+    assert declined and "front 5" in declined[0]
+
+
+def test_a_multi_line_title_is_kept_whole_when_it_already_matches():
+    # Two lines that TOGETHER measure like the deck must not be split apart.
+    two = [{"x0": 20.0, "y0": 10.0, "x1": 100.0, "y1": 22.0, "color": "#111111"},
+           {"x0": 24.0, "y0": 26.0, "x1": 100.0, "y1": 40.0, "color": "#111111"}]
+    titles = {2: two, 3: two, 4: two, 5: two}
+    assert R.reconcile_front_titles(titles) == titles
