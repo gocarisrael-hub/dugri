@@ -1220,6 +1220,47 @@
         fig.querySelector('figcaption').textContent = label;
       }
 
+      // Follow a re-detection job to its end, saying out loud where it is.
+      //
+      // Re-detection is ~61 seconds of real work in the container, and it used
+      // to be held open as ONE request — long enough that the proxy answered
+      // `502` while the detection quietly succeeded behind it. The server now
+      // starts a job and this polls it, so the message on screen is a fact
+      // ("front 5 of 8") rather than a spinner nobody can read.
+      //
+      // Resolves to the finished report, to `{ error }`, or to `null` when the
+      // job is GONE — the server restarted mid-run and the work is lost. That
+      // last case gets said plainly; a job that no longer exists must never look
+      // like one still in progress.
+      const REDETECT_POLL_MS = 2000;
+      async function pollRedetect(url, card, first) {
+        const describe = (job) => {
+          const secs = Math.round((job.elapsedMs || 0) / 1000);
+          let where = job.stageText || 'עובד';
+          if (job.stage === 'detecting' && job.frontsTotal) {
+            where +=
+              ' — קלף ' + Math.min(job.fronts + 1, job.frontsTotal) + ' מתוך ' + job.frontsTotal;
+          }
+          return where + ' (' + secs + ' שניות)';
+        };
+        let job = first;
+        for (;;) {
+          if (job && job.state !== 'running') {
+            if (job.state === 'error') return { error: job.error || 'שגיאה לא ידועה' };
+            return job.result || { error: 'הריצה הסתיימה בלי תוצאה' };
+          }
+          if (job) tplMsg(card, 'ok', describe(job));
+          await new Promise((r) => setTimeout(r, REDETECT_POLL_MS));
+          const res = await fetch(url, { method: 'GET' });
+          // The job row is gone: this process did not start it, i.e. it is a new
+          // process. Nothing was written.
+          if (res.status === 404) return null;
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) return { error: body.error || res.status };
+          job = body.job;
+        }
+      }
+
       // Build the CALIBRATION panel: every title look-knob (title_style) + the
       // board/back honoree-name slots + word_size, with a LIVE preview (POST
       // /api/preview using the UNSAVED knobs) and a save that flips calibrated:true.
@@ -2049,7 +2090,8 @@
           redetectBtn.className = 'link-btn tpl-redetect-btn';
           redetectBtn.textContent = 'זהה מחדש';
           redetectBtn.title =
-            'מודד מחדש את מיקומי הטקסט מתוך הקבצים (clean מול filled). לוקח כדקה.';
+            'מודד מחדש את מיקומי הטקסט מתוך הקבצים (clean מול filled). לוקח כדקה, ' +
+            'רץ ברקע — האתר ממשיך לעבוד בזמן הזה.';
           head.append(redetectBtn);
           card.append(head);
 
@@ -2703,16 +2745,40 @@
           redetectBtn.textContent = 'מזהה…';
           tplMsg(card, 'ok', 'מודד את מיקומי הטקסט מתוך הקבצים — זה לוקח כדקה.');
           try {
-            const res = await fetch(
+            // The server no longer answers this request with the finished work.
+            // It used to, and that request took ~61 seconds in the container —
+            // long enough that the proxy gave up and reported `502` for a
+            // detection that had actually SUCCEEDED. Now the POST only starts
+            // the job; the loop below asks where it has got to.
+            const url =
               '/api/admin/templates/' +
-                encodeURIComponent(card.dataset.key) +
-                '/redetect?key=' +
-                encodeURIComponent(key),
-              { method: 'POST' }
-            );
-            const data = await res.json().catch(() => ({}));
+              encodeURIComponent(card.dataset.key) +
+              '/redetect?key=' +
+              encodeURIComponent(key);
+            const res = await fetch(url, { method: 'POST' });
+            let data = await res.json().catch(() => ({}));
             if (!res.ok) {
               tplMsg(card, 'err', 'הזיהוי נכשל: ' + (data.error || res.status));
+              redetectBtn.disabled = false;
+              redetectBtn.textContent = prev;
+              return;
+            }
+            data = await pollRedetect(url, card, data.job);
+            if (data === null) {
+              // The job vanished — the server restarted mid-run (a deploy, a
+              // crash). Say that, rather than leaving a spinner turning over
+              // work that no longer exists.
+              tplMsg(
+                card,
+                'err',
+                'הזיהוי הופסק באמצע — השרת עלה מחדש. שום דבר לא נשמר. אפשר ללחוץ שוב.'
+              );
+              redetectBtn.disabled = false;
+              redetectBtn.textContent = prev;
+              return;
+            }
+            if (data.error) {
+              tplMsg(card, 'err', 'הזיהוי נכשל: ' + data.error);
             } else if (data.calibrated) {
               // "Detected" is not the same as "regularised everything". A run
               // that refused a snap used to report plain success, so grapefruit

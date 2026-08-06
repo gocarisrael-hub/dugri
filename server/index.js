@@ -11,6 +11,7 @@ const pelecard = require('./pelecard');
 const notify = require('./notify');
 const validate = require('./validate');
 const templates = require('./templates');
+const redetectJob = require('./redetect-job');
 const playbook = require('./playbook');
 const content = require('./content');
 const contentImport = require('./content-import');
@@ -3183,18 +3184,49 @@ app.delete('/api/admin/wordlists/:name', (req, res) => {
 // Re-run detection + auto-calibration for a template already in the catalog.
 // Deliberately a BUTTON, not something that fires on every asset replace: a full
 // pass is 18 Chrome start-ups (each card's clean/filled pair rendered
-// separately), measured at ~38s on a laptop and longer here, and it used to run
-// once per uploaded file. Slow enough to need its own timeout allowance.
+// separately), and it used to run once per uploaded file.
+//
+// It is also a JOB now rather than the answer to this request. Measured in the
+// staging container, one press on מרקאנה is ~61 seconds of work (7-9s detection,
+// 53-59s calibration) and it used to run through spawnSync — which froze the
+// whole server for the duration. A plain page request fired nine seconds into
+// one came back HTTP 408 after 121s, and Railway's edge answers an unanswered
+// request with 502 "Application failed to respond": that is the
+// `הזיהוי נכשל: 502` the owner was getting for work that had actually
+// succeeded. See server/redetect-job.js for the measurements and the fix.
+//
+// So: POST starts it and returns 202 immediately, GET reports where it has got
+// to. Nothing about a slow template is hidden — the panel says which stage is
+// running and which card is being measured, and a run that dies with the
+// process is reported as interrupted, never as permanently "in progress".
 app.post('/api/admin/templates/:key/redetect', (req, res) => {
   if (!requireAdmin(req, res)) return;
-  let result;
+  let job;
   try {
-    result = templates.redetectTemplate({ root: TEMPLATE_ROOT, key: req.params.key });
+    redetectJob.sweepStale();
+    job = redetectJob.start({
+      root: TEMPLATE_ROOT,
+      key: req.params.key,
+      pythonBin: PYTHON_BIN,
+      templates,
+    });
   } catch (e) {
     return res.status(500).json({ error: String((e && e.message) || e) });
   }
-  if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
-  res.json({ ok: true, ...result });
+  if (job.error) return res.status(job.httpStatus || 400).json({ error: job.error });
+  res.status(202).json({ ok: true, job });
+});
+
+// Where the re-detection for this template has got to. 404 when there is no run
+// to report — which, for a job the panel was polling, means the server restarted
+// underneath it. The page says so in those words rather than spinning forever:
+// the work is gone, and the owner needs to know to press again.
+app.get('/api/admin/templates/:key/redetect', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  redetectJob.sweepStale();
+  const job = redetectJob.get(req.params.key);
+  if (!job) return res.status(404).json({ error: 'no re-detection has been started' });
+  res.json({ ok: true, job });
 });
 
 app.post('/api/admin/templates/:key/revert', (req, res) => {
