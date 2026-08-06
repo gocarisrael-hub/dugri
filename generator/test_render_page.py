@@ -965,14 +965,17 @@ def test_the_cards_own_gap_is_tighter_than_the_whole_repertoires():
     assert card < rp._font_lead(font, ref), (card, rp._font_lead(font, ref))
 
 
-def test_the_gap_does_not_depend_on_which_slot_a_word_landed_in():
-    """Measured over ALL the card's lines, not adjacent pairs, so re-ordering the
-    same four words cannot change the card's rhythm."""
+def test_one_gap_is_used_for_every_line_of_a_card():
+    """The owner's rule — "applied between all lines" — so the reading is the
+    worst of the card's stacked pairs and every gap on the card is that one
+    number, not each pair's own."""
     font, ref = _cafe()
-    words = ["לקחת", "ים", "מסיבה", "קרן"]
-    a = rp._card_lead(font, ref, words)
-    b = rp._card_lead(font, ref, list(reversed(words)))
-    assert abs(a - b) < 1e-12, (a, b)
+    words = ["ים", "לקחת", "ךףץ", "מסיבה"]
+    lead = rp._card_lead(font, ref, words, count=4)
+    pairs = [rp._card_lead(font, ref, [a, b], count=4)
+             for a, b in zip(words, words[1:])]
+    assert lead == max(pairs), (lead, pairs)
+    assert max(pairs) > min(pairs), "the fixture must have pairs that disagree"
 
 
 def test_no_two_lines_of_a_card_can_touch_at_the_pitch_it_is_given():
@@ -2326,7 +2329,7 @@ def test_the_card_lead_reads_columns_not_boxes():
     """
     font, ref = _cafe()
     boxed = rp._min_line_pitch_by_box(font, ref, _SPREAD_CARD, 0.0,
-                                      clear=rp._WRAP_GAP, every_pair=True)
+                                      clear=rp._WRAP_GAP)
     lead = rp._card_lead(font, ref, _SPREAD_CARD, count=4)
     assert lead < boxed * 0.7, (lead, boxed)
 
@@ -2338,7 +2341,7 @@ def test_the_card_lead_never_exceeds_the_box_reading():
     for words in (_SPREAD_CARD, _CARD_HAPOEL, _CARD_ARZOT,
                   ["לללל", "קקקק", "לללל", "קקקק"]):
         boxed = rp._min_line_pitch_by_box(font, ref, words, 0.0,
-                                          clear=rp._WRAP_GAP, every_pair=True)
+                                          clear=rp._WRAP_GAP)
         assert rp._card_lead(font, ref, words, count=4) <= boxed + 1e-9, words
 
 
@@ -2350,16 +2353,38 @@ def test_the_card_lead_still_refuses_a_pitch_the_glyphs_cannot_take():
     assert stacked > 1.0, stacked
 
 
-def test_the_card_lead_does_not_move_when_the_words_are_dealt_in_another_order():
-    """A card's rhythm is a property of its four words, not of which slot each
-    landed in — so the reading is taken over every ORDERED pair, not only the
-    pairs a particular shuffle made adjacent."""
+def test_the_card_lead_reads_the_rows_the_card_actually_stacks():
+    """The pitch answers "does any ink of one row meet the row printed under
+    it", so it is read off the pairs the card STACKS and no others.
+
+    #337 asked it of every ORDERED pair, so that a re-deal of the same four words
+    would report the same number. That charges a card for collisions it cannot
+    have, and it is what the owner was still reading as too much air: on her
+    סנטוריני front 2 the deciding pair was "חתן" over "השראה" — a stacking the
+    card does not print, since השראה is set ABOVE חתן — and it opened every gap on
+    the card by 9%.
+
+    The fixture below is the same shape: one ordering stacks its deep descenders
+    over its tall ascenders and must open up, the other does not and must not.
+    """
     font, ref = _cafe()
-    base = rp._card_lead(font, ref, _SPREAD_CARD, count=4)
-    for shuffled in ([_SPREAD_CARD[i] for i in (3, 1, 0, 2)],
-                     list(reversed(_SPREAD_CARD)),
-                     [_SPREAD_CARD[i] for i in (2, 0, 3, 1)]):
-        assert abs(rp._card_lead(font, ref, shuffled, count=4) - base) < 1e-9, shuffled
+    over = rp._card_lead(font, ref, ["קקקק", "לללל"], count=4)
+    under = rp._card_lead(font, ref, ["לללל", "קקקק"], count=4)
+    assert over > under * 1.2, (over, under)
+
+
+def test_a_pair_the_card_never_stacks_does_not_set_its_pitch():
+    """Stated on the owner's own card. Read over every ordered pair these four
+    words demand 1.385 of the size; read in the order the card prints them they
+    demand 1.070, and the design's own row spacing is what sets the card."""
+    font, ref = _cafe()
+    card = ["סיף", "השראה", "חתן", "אמונה"]
+    printed = rp._card_lead(font, ref, card, count=4)
+    every_pair = max(rp._card_lead(font, ref, [a, b], count=4)
+                     for a in card for b in card if a != b)
+    assert printed < every_pair, (printed, every_pair)
+    assert printed == max(rp._card_lead(font, ref, [a, b], count=4)
+                          for a, b in zip(card, card[1:])), printed
 
 
 def test_the_markers_are_measured_over_the_digits_this_card_actually_sets():
@@ -2383,12 +2408,33 @@ def test_the_card_sets_at_the_row_spacing_the_design_uses():
     """
     font, ref = _cafe()
     boxed = rp._min_line_pitch_by_box(font, ref, _SPREAD_CARD, 0.0,
-                                      clear=rp._WRAP_GAP, every_pair=True)
+                                      clear=rp._WRAP_GAP)
     assert boxed * _DESIGN_WORD_SIZE > _DESIGN_PITCH * 1.2, (
         "this fixture must actually reproduce the report — boxed it has to "
         f"overrun the design's spacing, got {boxed * _DESIGN_WORD_SIZE:.1f} "
         f"against {_DESIGN_PITCH}")
     for lay in _design_pitch_layouts(_SPREAD_CARD):
+        assert abs(lay.lead * lay.size - _DESIGN_PITCH) < 1e-6, (
+            lay.lead * lay.size, _DESIGN_PITCH)
+
+
+def test_a_card_sets_at_the_design_s_spacing_when_only_an_unprinted_pair_needs_more():
+    """The owner's remaining 9%, on the anniversary geometry.
+
+    These are the four words her front 2 carries. Read over every ordered pair
+    they demand more than the design's 31.2 and every gap on the card opens; read
+    over the pairs the card prints they demand far less, and the card sets at the
+    design's own row spacing — which is where her original puts its rows.
+    """
+    font, ref = _cafe()
+    card = ["סיף", "השראה", "חתן", "אמונה"]
+    unprinted = max(rp._card_lead(font, ref, [a, b], count=4)
+                    for a in card for b in card if a != b)
+    assert unprinted * _DESIGN_WORD_SIZE > _DESIGN_PITCH, (
+        "this fixture must actually reproduce the report — over every ordered "
+        f"pair it has to overrun the design's spacing, got "
+        f"{unprinted * _DESIGN_WORD_SIZE:.1f} against {_DESIGN_PITCH}")
+    for lay in _design_pitch_layouts(card):
         assert abs(lay.lead * lay.size - _DESIGN_PITCH) < 1e-6, (
             lay.lead * lay.size, _DESIGN_PITCH)
 

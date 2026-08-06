@@ -589,8 +589,27 @@ def _card_lead(font, ref, lines, count=None, bold_w=0.0):
     design's own row spacing (1.27 on סנטוריני) is then what sets the card. Boxed,
     it was not: 36% of that deck's cards came out spaced wider than the origin
     spaces its own, which is the "the word rows are too far apart" the owner read
-    off her preview. Column by column, 2% do, and those are the cards whose
+    off her preview. Column by column, 2.3% do, and those are the cards whose
     letters really would have met.
+
+    OF THE PAIRS THE CARD ACTUALLY STACKS, which is the other half of the same
+    correction and the one the owner was still reading. #337 asked the question of
+    every ORDERED pair instead — so that the same four words dealt into different
+    slots would report the same pitch — and that charges a card for collisions it
+    cannot have. On her front 2 the pair that set the card was "חתן" over "השראה"
+    at 1.385 of the size, a stacking that is not on the card: השראה is printed
+    ABOVE חתן, and read in the order it is printed the card asks 1.070 and the
+    design's 1.27 stands. Over her real deck the every-ordered-pair reading left
+    9.2% of cards spaced wider than the design spaces its own; the printed pairs
+    leave 2.3%.
+
+    The invariant it bought is not one the artwork or the owner asks for. Her
+    rules are "no 2 letters touch" — a question about the letters that end up over
+    one another, and about no others — one gap for every line of a card, and the
+    deck spaced the way the design is. Order-independence serves none of the
+    three and costs the third: it put four times as many cards off the deck's
+    common rhythm. A re-deal of the same four words is a different card and is
+    entitled to its own answer.
 
     THE MARKER COLUMN IS MEASURED SEPARATELY, because it is separate on the card:
     ``word_lines`` sets the digit and its stop as their own right-anchored runs, a
@@ -601,12 +620,6 @@ def _card_lead(font, ref, lines, count=None, bold_w=0.0):
     Every word run shares ONE right anchor (``_card_right_edge``), which is what
     makes the per-column reading the right one: two rows overlap exactly where
     their ink shares a column of that shared edge.
-
-    Asked of every ORDERED pair rather than of the pairs a particular deal made
-    adjacent, so the answer does not move when the same four words arrive in a
-    different order — a card's rhythm should not depend on which slot a word
-    landed in, which is the property #327's card-wide reading had and a
-    neighbours-only one would lose.
 
     ``bold_w`` is the synthetic-bold stroke, as a fraction of the size. It is
     centred on the outline, so it grows each line by half its width top and bottom
@@ -627,8 +640,7 @@ def _card_lead(font, ref, lines, count=None, bold_w=0.0):
     if len(texts) < 2:
         return max(markers, _WRAP_GAP)
     words = _min_line_pitch(font, ref, texts, bold_w or 0.0, align="right",
-                            grow=(bold_w or 0.0) / 2, rtl=True, clear=_WRAP_GAP,
-                            every_pair=True)
+                            grow=(bold_w or 0.0) / 2, rtl=True, clear=_WRAP_GAP)
     return max(words, markers)
 
 
@@ -1657,8 +1669,7 @@ def _ink_skyline(font_path, ref, line):
     return -pad, tuple(below), tuple(above)
 
 
-def _min_line_pitch_by_box(f, ref, lines, pad, clear=_INK_CLEARANCE,
-                           every_pair=False):
+def _min_line_pitch_by_box(f, ref, lines, pad, clear=_INK_CLEARANCE):
     """The pre-skyline floor: the two lines' bounding BOXES may not overlap.
 
     Strictly safer than the per-column reading and strictly less faithful, so it
@@ -1667,12 +1678,7 @@ def _min_line_pitch_by_box(f, ref, lines, pad, clear=_INK_CLEARANCE,
     """
     asc, _desc = f.getmetrics()
     worst = 0.0
-    if every_pair:
-        couples = [(lines[i], lines[j]) for i in range(len(lines))
-                   for j in range(len(lines)) if i != j]
-    else:
-        couples = list(zip(lines, lines[1:]))
-    for upper, lower in couples:
+    for upper, lower in zip(lines, lines[1:]):
         below = f.getbbox(upper)[3] - asc      # ink under the upper line's baseline
         above = asc - f.getbbox(lower)[1]      # ink over the lower line's baseline
         worst = max(worst, (below + above) / ref)
@@ -1694,7 +1700,7 @@ def _dilate(profile, radius):
 
 
 def _min_line_pitch(f, ref, lines, pad, align="center", grow=0.0, rtl=False,
-                    clear=_INK_CLEARANCE, every_pair=False):
+                    clear=_INK_CLEARANCE):
     """The tightest baseline step that still leaves DAYLIGHT between two lines.
 
     As a fraction of the type size, so it can be compared with a leading
@@ -1731,25 +1737,20 @@ def _min_line_pitch(f, ref, lines, pad, align="center", grow=0.0, rtl=False,
     separate ITEMS and are given the wider ``_WRAP_GAP`` a wrapped entry already
     uses, so a card reads as a list rather than as a paragraph.
 
-    ``every_pair`` asks the question of every ORDERED pair of lines rather than
-    of the ones that happen to be adjacent. A title's lines are a fixed block and
-    only ever meet their neighbours; a card's four word rows are the same four
-    words whichever slot each landed in, so its rhythm must not change when a
-    shuffle deals them in a different order.
+    The pairs asked about are the ones the block STACKS — each line over the one
+    printed under it — because that is where the question means anything. Asking
+    it of every ordered pair instead reserves room between two lines that are
+    never neighbours: on a סנטוריני card it was "חתן" over "השראה" (1.385 of the
+    size) deciding the pitch while the card prints השראה above חתן and its real
+    stackings need 1.070. See ``_card_lead``.
     """
     path = getattr(f, "path", None)
     if not path:
-        return _min_line_pitch_by_box(f, ref, lines, pad, clear=clear,
-                                      every_pair=every_pair)
+        return _min_line_pitch_by_box(f, ref, lines, pad, clear=clear)
     worst = 0.0
     radius = max(0, int(round((grow or 0.0) * ref)))
     drawn = [visual_order(ln, rtl) for ln in lines]
-    if every_pair:
-        couples = [(drawn[i], drawn[j]) for i in range(len(drawn))
-                   for j in range(len(drawn)) if i != j]
-    else:
-        couples = list(zip(drawn, drawn[1:]))
-    for upper, lower in couples:
+    for upper, lower in zip(drawn, drawn[1:]):
         ux, u_below, _u_above = _ink_skyline(path, ref, upper)
         lx, _l_below, l_above = _ink_skyline(path, ref, lower)
         u_below, l_above = _dilate(u_below, radius), _dilate(l_above, radius)
