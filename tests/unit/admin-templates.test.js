@@ -783,6 +783,95 @@ describe('templates.js full editing (status / rename / replace)', () => {
     expect(after.title_style).toBeNull();
   });
 
+  // The title knobs the CALIBRATOR measures but the whitelist used to drop on
+  // the floor. A key that never survives validation is a measurement that never
+  // reaches a printed card: the owner's טוקיו alternates its title's alignment
+  // down the deck, and מרקאנה's face is a variable font whose default instance
+  // is Thin.
+  it('updateTemplateSettings keeps the per-front alignment a deck that needs one', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-fa');
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'cal-fa',
+      patch: {
+        title_style: { ...CAL.title_style, align: 'right', front_align: { 3: 'left', 5: 'left' } },
+      },
+    });
+    expect(r.error).toBeFalsy();
+    const after = templates.loadThemes(templates.themesPathFor(root))['cal-fa'];
+    expect(after.title_style.front_align).toEqual({ 3: 'left', 5: 'left' });
+    expect(after.title_style.align).toBe('right');
+  });
+
+  it("updateTemplateSettings keeps a variable face's measured weight instance", () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-fw');
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'cal-fw',
+      patch: { title_style: { ...CAL.title_style, font_weight: 700 } },
+    });
+    expect(r.error).toBeFalsy();
+    expect(
+      templates.loadThemes(templates.themesPathFor(root))['cal-fw'].title_style.font_weight
+    ).toBe(700);
+  });
+
+  // bold WITHOUT bold_w is not a smaller answer, it is a different one: the
+  // renderer falls back to its house weight (0.035 of the type size), which is
+  // more than twice what calibration measured for either template that ships
+  // bold — and that is exactly the "too bold" the owner reported on both.
+  it('updateTemplateSettings refuses a bold with no measured stroke, and keeps the pair', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-bold');
+    const bad = templates.updateTemplateSettings({
+      root,
+      key: 'cal-bold',
+      patch: { title_style: { ...CAL.title_style, bold: true } },
+    });
+    expect(bad.httpStatus).toBe(400);
+    expect(bad.error).toMatch(/bold needs title_style.bold_w/);
+
+    const good = templates.updateTemplateSettings({
+      root,
+      key: 'cal-bold',
+      patch: { title_style: { ...CAL.title_style, bold: true, bold_w: 0.015 } },
+    });
+    expect(good.error).toBeFalsy();
+    const ts = templates.loadThemes(templates.themesPathFor(root))['cal-bold'].title_style;
+    expect(ts.bold).toBe(true);
+    expect(ts.bold_w).toBe(0.015);
+  });
+
+  it('updateTemplateSettings rejects malformed per-front and weight values', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-bad2');
+    const bad = [
+      {
+        patch: { title_style: { ...CAL.title_style, front_align: { 3: 'top' } } },
+        re: /front_align values must be/,
+      },
+      {
+        patch: { title_style: { ...CAL.title_style, front_align: { x: 'left' } } },
+        re: /front_align keys must be front numbers/,
+      },
+      {
+        patch: { title_style: { ...CAL.title_style, font_weight: 0 } },
+        re: /font_weight must be a weight/,
+      },
+      {
+        patch: { title_style: { ...CAL.title_style, front_offset: { 3: [2, 0] } } },
+        re: /front_offset values must be/,
+      },
+    ];
+    for (const c of bad) {
+      const r = templates.updateTemplateSettings({ root, key: 'cal-bad2', patch: c.patch });
+      expect(r.httpStatus).toBe(400);
+      expect(r.error).toMatch(c.re);
+    }
+  });
+
   it('updateTemplateSettings accepts board/back = null (no honoree name on that surface) + drops word_size:null', () => {
     const root = makeScaffold();
     onboard(root, 'cal-null');

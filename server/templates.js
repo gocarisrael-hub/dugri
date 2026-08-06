@@ -2057,6 +2057,79 @@ function validateTitleStyle(input) {
     if (typeof input.italic !== 'boolean') return { error: 'title_style.italic must be a boolean' };
     out.italic = input.italic;
   }
+  // The instance of a VARIABLE title face the design was set in, on the CSS
+  // 100..900 weight scale. Absent for a static face — there is only one cut.
+  if (input.font_weight != null) {
+    if (!isFiniteNum(input.font_weight) || input.font_weight < 1 || input.font_weight > 1000) {
+      return { error: 'title_style.font_weight must be a weight 1..1000' };
+    }
+    out.font_weight = input.font_weight;
+  }
+  // Synthetic bold, and the weight it is drawn at. The PAIR or neither: `bold`
+  // on its own sends render_page to its house weight (0.035 of the type size),
+  // which is another design's answer — twice what calibration measured for the
+  // two templates that ship bold. So a weight without a flag is dropped, and a
+  // flag without a weight is refused rather than silently re-weighted.
+  if (input.bold != null) {
+    if (typeof input.bold !== 'boolean') return { error: 'title_style.bold must be a boolean' };
+    if (input.bold && input.bold_w == null) {
+      return { error: 'title_style.bold needs title_style.bold_w, the measured stroke' };
+    }
+    out.bold = input.bold;
+  }
+  if (input.bold_w != null && out.bold) {
+    if (!isFiniteNum(input.bold_w) || input.bold_w <= 0 || input.bold_w > 0.2) {
+      return { error: 'title_style.bold_w must be a fraction 0..0.2 of the type size' };
+    }
+    out.bold_w = input.bold_w;
+  }
+  // Per-front overrides, keyed by front number. A deck's fronts are separate
+  // artboards: טוקיו aligns its title flush right on four of its eight fronts
+  // and flush left on the other four, and one deck-wide answer misprints half
+  // the deck. `front_offset` is the same shape for the title's position.
+  if (input.front_align != null) {
+    const per = input.front_align;
+    if (!per || typeof per !== 'object' || Array.isArray(per)) {
+      return { error: 'title_style.front_align must be an object keyed by front number' };
+    }
+    const kept = {};
+    for (const [k, v] of Object.entries(per)) {
+      if (!/^[1-9][0-9]?$/.test(String(k))) {
+        return { error: 'title_style.front_align keys must be front numbers' };
+      }
+      if (!TITLE_ALIGNS.includes(v)) {
+        return {
+          error: 'title_style.front_align values must be one of: ' + TITLE_ALIGNS.join(', '),
+        };
+      }
+      kept[String(k)] = v;
+    }
+    if (Object.keys(kept).length) out.front_align = kept;
+  }
+  if (input.front_offset != null) {
+    const per = input.front_offset;
+    if (!per || typeof per !== 'object' || Array.isArray(per)) {
+      return { error: 'title_style.front_offset must be an object keyed by front number' };
+    }
+    const kept = {};
+    for (const [k, o] of Object.entries(per)) {
+      if (!/^[1-9][0-9]?$/.test(String(k))) {
+        return { error: 'title_style.front_offset keys must be front numbers' };
+      }
+      if (
+        !Array.isArray(o) ||
+        o.length !== 2 ||
+        !isFiniteNum(o[0]) ||
+        !isFiniteNum(o[1]) ||
+        Math.abs(o[0]) > 1 ||
+        Math.abs(o[1]) > 1
+      ) {
+        return { error: 'title_style.front_offset values must be [dx,dy] fractions -1..1' };
+      }
+      kept[String(k)] = [o[0], o[1]];
+    }
+    if (Object.keys(kept).length) out.front_offset = kept;
+  }
   return { value: out };
 }
 

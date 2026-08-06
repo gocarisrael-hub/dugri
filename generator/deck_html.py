@@ -350,14 +350,26 @@ def bleed_uses(design_id, vb):
         for b in _BLEED_BANDS)
 
 
-def font_face(name, path):
+def font_face(name, path, weight=None):
     """An @font-face rule embedding a font file as base64.
 
     Declared once per deck (see ``DeckDocument.add_style``) rather than per page.
+    A VARIABLE face declares its whole weight range and the instance the design
+    was set in — see ``render_page.font_face``, which this mirrors, and which
+    explains why a flat 400 prints League Spartan's Thin cut.
     """
     with open(path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("ascii")
-    return (f"@font-face{{font-family:'{name}';font-weight:400;font-style:normal;"
+    import render_page
+    axis = render_page.weight_axis(path)
+    if axis:
+        lo, default, hi = axis
+        pick = default if weight is None else min(hi, max(lo, float(weight)))
+        span = (f"font-weight:{lo:g} {hi:g};"
+                f"font-variation-settings:'wght' {pick:g};")
+    else:
+        span = "font-weight:400;"
+    return (f"@font-face{{font-family:'{name}';{span}font-style:normal;"
             f"src:url(data:font/ttf;base64,{b64}) format('truetype');}}")
 
 
