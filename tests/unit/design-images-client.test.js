@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 // Unit tests for the buyer-facing gallery reader (site/js/design-images.js):
 // galleryFor resolution (order, per-surface visibility, overrides, extras,
 // fail-safe fallback) and loadDesignImages fail-safe behaviour.
-import { galleryFor, baseSrc, loadDesignImages } from '../../site/js/design-images.js';
+import { galleryFor, deckFor, baseSrc, loadDesignImages } from '../../site/js/design-images.js';
 
 const P1 = '/content-uploads/aaaaaaaaaaaaaaaa.png';
 const P2 = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
@@ -111,7 +111,12 @@ describe('galleryFor — resolved per-surface gallery', () => {
     expect(keys(items)).not.toContain('p1');
   });
 
-  it('falls back to the shipped renders when the owner hid everything', () => {
+  // REVERSED on purpose. This used to assert the opposite — hiding everything fell
+  // back to the shipped renders, so the shopper always saw something. That rescue
+  // was itself a mandatory-picture rule: it made "remove them all" impossible. The
+  // owner asked for no picture to be mandatory and confirmed the consequence, so
+  // her explicit choice now outranks the default.
+  it('respects the owner hiding everything — no shipped render is resurrected', () => {
     const map = {
       posttrip: {
         base: {
@@ -122,13 +127,43 @@ describe('galleryFor — resolved per-surface gallery', () => {
         },
       },
     };
-    expect(keys(galleryFor(map, BOARDED, 'products'))).toEqual(['store', 'front', 'back', 'board']);
+    expect(galleryFor(map, BOARDED, 'products')).toEqual([]);
   });
 
   it('tolerates a garbage map and a design without an id', () => {
     expect(galleryFor(null, BOARDED, 'products').length).toBe(4);
     expect(galleryFor({ posttrip: 'nope' }, BOARDED, 'products').length).toBe(4);
     expect(galleryFor({}, {}, 'products')).toEqual([]); // no id → nothing
+  });
+
+  // NO PICTURE IS MANDATORY: the owner can take every picture off a surface,
+  // store cover included, and she confirmed the consequence — that design's shop
+  // tile carries no picture. An EMPTY gallery is therefore a legitimate answer,
+  // not a bug, and the reader must return it plainly rather than resurrecting a
+  // shipped render to fill the gap. products.html renders the tile's name, price
+  // and link regardless and wires no carousel below two slides, so the tile
+  // degrades to a caption instead of breaking.
+  it('returns an empty gallery when the owner hid every picture on that surface', () => {
+    const allOff = {
+      posttrip: {
+        base: {
+          store: { onProducts: false, onProduct: false },
+          front: { onProducts: false, onProduct: false },
+          back: { onProducts: false, onProduct: false },
+          board: { onProducts: false, onProduct: false },
+        },
+      },
+    };
+    expect(galleryFor(allOff, BOARDED, 'products')).toEqual([]);
+    expect(galleryFor(allOff, BOARDED, 'product')).toEqual([]);
+  });
+
+  it('hiding a picture on ONE surface leaves the other surface untouched', () => {
+    // The two flags are independent — removing the store cover from the shop grid
+    // must not also strip the card renders from the detail page.
+    const storeOff = { posttrip: { base: { store: { onProducts: false } } } };
+    expect(keys(galleryFor(storeOff, BOARDED, 'products'))).toEqual(['front', 'back', 'board']);
+    expect(keys(galleryFor(storeOff, BOARDED, 'product'))).toEqual(['front', 'back', 'board']);
   });
 });
 
@@ -252,7 +287,9 @@ describe('galleryFor — a CUSTOM design (uploaded template)', () => {
     expect(keys(galleryFor(map, TPL, 'product'))).toEqual(['back', 'front', 'board']);
   });
 
-  it('never blanks: hiding everything falls back to the template SVGs', () => {
+  // Same reversal as the built-in case above: an uploaded template's SVGs are its
+  // shipped renders, and they are no more mandatory than a built-in's rasters.
+  it('hiding everything leaves an uploaded template empty too — no SVG is resurrected', () => {
     const map = {
       grapefruit: {
         base: {
@@ -262,7 +299,7 @@ describe('galleryFor — a CUSTOM design (uploaded template)', () => {
         },
       },
     };
-    expect(keys(galleryFor(map, TPL, 'products'))).toEqual(['front', 'back', 'board']);
+    expect(galleryFor(map, TPL, 'products')).toEqual([]);
   });
 });
 
@@ -295,5 +332,65 @@ describe('loadDesignImages — timeout-bounded + fail-safe (never rejects)', () 
       Promise.resolve({ ok: true, json: () => Promise.resolve({ nope: 1 }) })
     );
     await expect(loadDesignImages()).resolves.toEqual({});
+  });
+});
+
+// The DECK pictures — the whole deck laid out (all eight fronts, all eight backs,
+// the board), shown ONLY in the buyer's wizard. Owner-uploaded: nothing renders
+// them, so "not uploaded" is the normal state and must stay visibly empty rather
+// than borrow a card render that would promise the buyer the wrong thing.
+describe('deckFor — the wizard-only deck pictures', () => {
+  const D = { id: 'posttrip', thumbs: { front: 'f', back: 'b', board: 'brd' } };
+  const deck = (base) => deckFor({ posttrip: { base } }, D);
+
+  it('returns the uploaded pictures in wizard order: fronts, backs, board', () => {
+    const items = deck({
+      deckBoard: { img: P2 },
+      deckFronts: { img: P1 },
+      deckBacks: { img: P2 },
+    });
+    // Stored order is irrelevant — the sequence is the deck's own, always.
+    expect(items.map((i) => i.key)).toEqual(['deckFronts', 'deckBacks', 'deckBoard']);
+    expect(items.map((i) => i.src)).toEqual([P1, P2, P2]);
+  });
+
+  it('returns only what was uploaded — a partial set is a partial row', () => {
+    expect(deck({ deckFronts: { img: P1 } }).map((i) => i.key)).toEqual(['deckFronts']);
+    expect(deck({ deckFronts: { img: P1 }, deckBoard: { img: P2 } }).map((i) => i.key)).toEqual([
+      'deckFronts',
+      'deckBoard',
+    ]);
+  });
+
+  it('is EMPTY for a design with none — the wizard shows no row at all', () => {
+    expect(deckFor({}, D)).toEqual([]);
+    expect(deck({})).toEqual([]);
+    // A design whose gallery is fully configured still has no deck pictures until
+    // they are uploaded: the card renders are NOT a stand-in for the deck sheets.
+    expect(deck({ front: { img: P1 }, back: { img: P2 }, board: { img: P1 } })).toEqual([]);
+  });
+
+  it('never yields an unvalidated src, and never throws on a garbage map', () => {
+    expect(deck({ deckFronts: { img: 'https://evil.example/x.png' } })).toEqual([]);
+    expect(deck({ deckFronts: { img: '' } })).toEqual([]);
+    expect(deck({ deckFronts: 'nope' })).toEqual([]);
+    expect(deckFor(null, D)).toEqual([]);
+    expect(deckFor({ posttrip: 'nope' }, D)).toEqual([]);
+    expect(deckFor({}, {})).toEqual([]); // no id → nothing
+  });
+
+  it('deck pictures NEVER reach the shop grid or the product page', () => {
+    // They are stored beside the gallery slots, so the guarantee that they stay
+    // out of the storefront is worth pinning rather than assuming.
+    const map = {
+      posttrip: {
+        base: { deckFronts: { img: P1 }, deckBacks: { img: P2 }, deckBoard: { img: P1 } },
+      },
+    };
+    for (const surface of ['products', 'product']) {
+      const ks = galleryFor(map, D, surface).map((i) => i.key);
+      expect(ks.some((k) => k.startsWith('deck'))).toBe(false);
+      expect(galleryFor(map, D, surface).map((i) => i.src)).not.toContain(P1);
+    }
   });
 });
