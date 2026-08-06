@@ -3520,11 +3520,19 @@
       const fontChoiceOn = FEATURES.font_choice && FEATURES.name_preview;
 
       // The wizard's catalog: the bundled designs FIRST (so every built-in index
-      // stays exactly where it was) plus the uploaded templates on sale. Everything
-      // below reads this one list, so a custom design is picked, previewed, priced
-      // and ORDERED through the same code path as a built-in one — no branch. A
-      // failed/slow /api/custom-designs simply yields the bundled catalog.
-      const DESIGNS = BUILTIN_DESIGNS.concat(await customDesignsPromise);
+      // stays exactly where it was); the uploaded templates on sale are APPENDED
+      // when /api/custom-designs resolves (see customsReady below). Everything below
+      // reads this one list, so a custom design is picked, previewed, priced and
+      // ORDERED through the same code path as a built-in one — no branch. Mutated in
+      // place rather than replaced so every closure keeps the same array.
+      //
+      // Deliberately NOT awaited here: the wizard must become interactive on exactly
+      // the round trips it needed before (the FEATURES fetch), because a shopper —
+      // and the e2e that drives the funnel — can press Next the instant the buttons
+      // paint, and a click that lands before init is a click that does nothing. Only
+      // the ONE case that cannot proceed without the answer waits for it: a ?design=
+      // the bundled catalog does not contain (see the await before restore()).
+      const DESIGNS = BUILTIN_DESIGNS.slice();
 
       // Validate the manifest once at load. Don't hard-crash the page on a bad
       // manifest - just surface a clear console error so it's caught in dev/CI.
@@ -3856,7 +3864,7 @@
       // private tile. Private tiles are built but hidden — keeping DESIGNS
       // indices stable so all the index-based state below stays correct.
       const designButtons = new Map();
-      DESIGNS.forEach((d, i) => {
+      function addDesignTile(d, i) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'design';
@@ -3889,6 +3897,23 @@
           thumb.textContent = d.name;
         }
         btn.addEventListener('click', () => selectDesign(i));
+      }
+      BUILTIN_DESIGNS.forEach(addDesignTile);
+
+      // Append the uploaded templates the owner put on sale as soon as they arrive.
+      // Appending (never inserting) keeps every bundled design at the index it has
+      // always had, so all the index-keyed state above stays correct, and keeps the
+      // DOM tile order identical to the catalog order — which the aria-pressed
+      // stamping relies on. Fail-safe: [] leaves the bundled catalog exactly as it
+      // is. Resolves to nothing useful; it exists to be AWAITED by the one caller
+      // that cannot proceed without it.
+      const customsReady = customDesignsPromise.then((customs) => {
+        for (const c of customs || []) {
+          if (DESIGNS.some((d) => d.id === c.id)) continue;
+          DESIGNS.push(c);
+          addDesignTile(c, DESIGNS.length - 1);
+        }
+        capDesignPicker();
       });
 
       // Keep the bottom fade honest while the shopper scrolls the picker, and
@@ -6339,6 +6364,18 @@
       // deliberately. Silently ordering a different design is the failure this
       // guards against.
       let urlDesignUnresolved = false;
+
+      // The ONE case that has to wait for /api/custom-designs: the URL names a
+      // design the bundled catalog does not have, i.e. the shopper arrived from an
+      // uploaded design's "קנו עכשיו". Selecting the right design is the whole point
+      // of that link, so here the round trip is worth it — while a cold
+      // /options.html (and any built-in ?design=) becomes interactive with no extra
+      // wait at all. Already-resolved by now in practice; the fetch was started at
+      // the top of this module, before the FEATURES one.
+      {
+        const wanted = params.get('design') || '';
+        if (wanted && !BUILTIN_DESIGNS.some((d) => d.id === wanted)) await customsReady;
+      }
 
       // restore a prior color choice from the URL if present
       (function restore() {
