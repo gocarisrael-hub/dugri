@@ -685,6 +685,20 @@ app.get('/api/admin/designs', async (req, res) => {
 // collection's words + honoree name, spawns the Python generator, stores the PDF
 // under GENERATED_DIR/<id>.pdf, records order.production, and (when email is
 // configured) mails a download link to the client + Dugri.
+// Map a generator failure to an HTTP status. Two cases are NOT server faults and
+// must not read as 500s:
+//   * a mis-set-up order/theme — the caller has to fix something (400);
+//   * the render-slot cap in generator/chrome.py — Chrome costs ~120 processes
+//     against a 1000-process ceiling, so runs are capped and a run that could
+//     not get a slot never started. Nothing is broken and a retry will work, so
+//     it is a 503 with Retry-After, not a 500. Reporting it as a 500 would send
+//     the next person hunting a crash that did not happen.
+function generatorStatus(detail) {
+  if (/render slots were busy/i.test(detail)) return 503;
+  if (/not calibrated|unknown theme/i.test(detail)) return 400;
+  return 500;
+}
+
 app.post('/api/admin/collections/:id/generate', async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const c = db.getCollection(req.params.id);
@@ -799,8 +813,10 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
     res.json({ ok: true, production, link: adminLink, boardLink: adminBoardLink });
   } catch (e) {
     const detail = String((e && e.message) || e);
-    // A clear, actionable status for the common "theme not calibrated" case.
-    const status = /not calibrated|unknown theme/i.test(detail) ? 400 : 500;
+    // A clear, actionable status for the common "theme not calibrated" case,
+    // and a retryable 503 when the box was simply at its render cap.
+    const status = generatorStatus(detail);
+    if (status === 503) res.setHeader('Retry-After', '30');
     res.status(status).json({ error: 'generation failed', detail: detail.slice(0, 800) });
   }
 });
@@ -1576,7 +1592,8 @@ app.post('/api/preview', async (req, res) => {
     });
   } catch (e) {
     const detail = String((e && e.message) || e);
-    const status = /not calibrated|unknown theme/i.test(detail) ? 400 : 500;
+    const status = generatorStatus(detail);
+    if (status === 503) res.setHeader('Retry-After', '5');
     res.status(status).json({ error: 'preview failed', detail: detail.slice(0, 800) });
   }
 });
