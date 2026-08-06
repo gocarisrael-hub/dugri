@@ -704,8 +704,12 @@ app.get('/api/admin/designs', async (req, res) => {
 // generator/themes.json key) defaults to the one the collection already resolved
 // to when the buyer picked their design, so the admin's one-click "produce"
 // button needn't ask for it; an explicit body theme still overrides.
-// Body: { theme?, word_font?, extra_fields? }. Gathers the
-// collection's words + honoree name, spawns the Python generator, stores the PDF
+// Body: { theme?, word_font?, extra_fields? } — EVERY field is an optional
+// override of what the order already stores. The empty body the admin button
+// posts must produce exactly what the buyer bought, so nothing here is read from
+// the body alone.
+// Gathers the collection's words + honoree name, spawns the Python generator,
+// stores the PDF
 // under GENERATED_DIR/<id>.pdf, records order.production, and (when email is
 // configured) mails a download link to the client + Dugri.
 // Map a generator failure to an HTTP status. Two cases are NOT server faults and
@@ -745,10 +749,31 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
   const themeConfig = validate.getTheme(theme);
   if (!themeConfig) return res.status(400).json({ error: 'unknown theme' });
 
+  // The render inputs the BUYER chose. Both live on the stored order; the body
+  // may only OVERRIDE them, never erase them (validate.effectiveExtraFields
+  // documents the precedence). Reading them from the body alone — which is what
+  // this route used to do, defaulting to {} / null — silently dropped them from
+  // every production run, because the admin "produce" button posts nothing but
+  // `{theme}`: טוקיו printed "HADAR'S" over a bare "S" with the age gone, and
+  // every deck rendered in its theme's default word font rather than the one the
+  // buyer picked in the preview.
+  const extraFields = validate.effectiveExtraFields(c, b.extra_fields);
+  const wordFont = String(b.word_font || c.word_font || '').trim() || null;
+
   // Validate the order BEFORE spending time/money on generation. On any problem
   // we do NOT run the generator: we record an 'error' production status (shown in
   // admin), email the client + Dugri what to fix, and 400 with the problem list.
-  const problems = validate.validateOrderForProduction(c, themeConfig, words);
+  //
+  // Validated against the EXACT dict the generator is about to be handed — not
+  // the stored order it is derived from — so "validated" and "rendered" cannot
+  // drift apart again. That is what makes a genuinely missing required field a
+  // refusal (production.state='error' + a fix-it email) instead of a card that
+  // quietly prints without it.
+  const problems = validate.validateOrderForProduction(
+    { ...c, extra_fields: extraFields },
+    themeConfig,
+    words
+  );
   if (problems.length) {
     const production = db.setProduction(c.id, {
       state: 'error',
@@ -763,11 +788,6 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
     return res.status(400).json({ error: 'validation failed', problems, production });
   }
 
-  const wordFont = b.word_font ? String(b.word_font) : null;
-  const extraFields =
-    b.extra_fields && typeof b.extra_fields === 'object' && !Array.isArray(b.extra_fields)
-      ? b.extra_fields
-      : {};
   // Use the stored (validated) id — never the raw param — for the output path.
   const outPdf = path.join(GENERATED_DIR, c.id + '.pdf');
 

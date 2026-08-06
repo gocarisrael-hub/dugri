@@ -144,6 +144,73 @@ describe('validateOrderForProduction', () => {
   });
 });
 
+// --- effectiveExtraFields (pure) -----------------------------------------
+// The single resolution the generate route and the validator now share. It was
+// two different reads before — the validator looked at the stored order, the
+// renderer at the request body — which is how a validated AGE never reached the
+// card (see tests/unit/generate-stored-fields.test.js).
+describe('effectiveExtraFields', () => {
+  const ef = (c, o) => validate.effectiveExtraFields(c, o);
+
+  it('returns the stored collection fields when there is no override', () => {
+    expect(ef({ extra_fields: { AGE: '30' } })).toEqual({ AGE: '30' });
+    expect(ef({ extra_fields: { AGE: '30' } }, undefined)).toEqual({ AGE: '30' });
+    expect(ef({ extra_fields: { AGE: '30' } }, {})).toEqual({ AGE: '30' });
+  });
+
+  it('lets an override win over the stored value', () => {
+    expect(ef({ extra_fields: { AGE: '30' } }, { AGE: '40' })).toEqual({ AGE: '40' });
+  });
+
+  it('never lets a blank/absent override erase a stored value', () => {
+    expect(ef({ extra_fields: { AGE: '30' } }, { AGE: '' })).toEqual({ AGE: '30' });
+    expect(ef({ extra_fields: { AGE: '30' } }, { AGE: '   ' })).toEqual({ AGE: '30' });
+    expect(ef({ extra_fields: { AGE: '30' } }, { AGE: null })).toEqual({ AGE: '30' });
+  });
+
+  it('merges rather than replaces — an unmentioned field survives', () => {
+    expect(ef({ extra_fields: { NAME1: 'דנה', NAME2: 'רון' } }, { NAME1: 'נועה' })).toEqual({
+      NAME1: 'נועה',
+      NAME2: 'רון',
+    });
+  });
+
+  it('reads fields stored on the ORDER, with the collection winning', () => {
+    // Same source list readExtraField consults, same precedence.
+    expect(ef({ order: { extra_fields: { AGE: '30' } } })).toEqual({ AGE: '30' });
+    expect(ef({ extra_fields: { AGE: '40' }, order: { extra_fields: { AGE: '30' } } })).toEqual({
+      AGE: '40',
+    });
+    expect(ef({ extra_fields: {}, order: { extra_fields: { AGE: '30' } } })).toEqual({ AGE: '30' });
+  });
+
+  it('is always a plain object, whatever the inputs are', () => {
+    expect(ef(null, null)).toEqual({});
+    expect(ef({}, null)).toEqual({});
+    // A JSON body can carry an array or a scalar where an object was expected.
+    expect(ef({ extra_fields: ['AGE'] }, ['AGE'])).toEqual({});
+    expect(ef({ extra_fields: 'AGE=30' }, 7)).toEqual({});
+  });
+
+  it('trims values, so a padded field is not treated as filled-in-name-only', () => {
+    expect(ef({ extra_fields: { AGE: ' 30 ' } })).toEqual({ AGE: '30' });
+  });
+
+  it('agrees with readExtraField on what counts as present', () => {
+    // The two must never disagree: validation uses one, the render the other.
+    for (const c of [
+      { extra_fields: { AGE: '30' } },
+      { extra_fields: { AGE: '  ' } },
+      { extra_fields: {} },
+      { order: { extra_fields: { AGE: '30' } } },
+      {},
+    ]) {
+      const present = validate.readExtraField(c, 'AGE') != null;
+      expect(Object.hasOwn(ef(c), 'AGE')).toBe(present);
+    }
+  });
+});
+
 // --- notify.buildProductionError (pure) ----------------------------------
 describe('buildProductionError', () => {
   const notifyPath = path.join(serverDir, 'notify.js');

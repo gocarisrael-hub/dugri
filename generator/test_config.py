@@ -277,6 +277,23 @@ def test_title_lines_blanks_unfilled_placeholders():
     assert "{" not in out[0] and "}" not in out[0]
 
 
+def test_japanese_title_collapses_to_a_lone_s_without_the_age():
+    # Why the "missing age" bug was silent. טוקיו's two title lines are
+    # "{NAME}'S" / "{AGE}S", so an empty extra-fields dict does not print
+    # "{AGE}S" — the placeholder is blanked and the second line becomes a bare
+    # "S". That is exactly the card the owner received: "HADAR'S" over "S".
+    #
+    # The renderer is right to blank it (raw braces would be worse); the fix
+    # belongs upstream, where the server must hand over the age it validated —
+    # see server/validate.js's effectiveExtraFields and
+    # tests/unit/generate-stored-fields.test.js. This test pins the symptom so
+    # nobody "fixes" it here and hides the real defect again.
+    cfg = config.theme("japanese")
+    assert cfg["title_lines"] == ["{NAME}'S", "{AGE}S"]
+    assert config.title_lines(cfg, "hadar", {"AGE": "30"}) == ["HADAR'S", "30S"]
+    assert config.title_lines(cfg, "hadar", {}) == ["HADAR'S", "S"]
+
+
 def test_build_page_survives_card_with_no_word_slots():
     # A non-null recipe card with an empty "words" list (e.g. a title-only card)
     # used to crash build_page via statistics.median([]) -> StatisticsError. The
