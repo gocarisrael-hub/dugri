@@ -64,13 +64,14 @@ resources/canva/templates/*
 !resources/canva/templates/_shared/
 !resources/canva/templates/_shared/**
 
-# The nine SHIPPED THEMES are deliberately NOT here any more.
+# The SHIPPED THEMES are deliberately NOT here any more.
 #
 # They were the image's copy of designs the owner has since re-onboarded through
 # the admin, which writes to the volume (DATA_DIR/templates) and SHADOWS the
 # image copy — so the image's version had stopped being what renders. Measured
-# against the live store: the volume holds its own copy of every one of them
-# except birthday-girls-neon, which the owner has retired.
+# against the live store: the volume holds its own copy of every one of them.
+# (The one exception at the time, birthday-girls-neon, has since been retired
+# outright — theme, recipe and artwork are gone from the repo.)
 #
 # Carrying them cost 131MB in the image and, worse, 131MB of every `railway up`
 # upload — an upload that got big enough to stop completing at all.

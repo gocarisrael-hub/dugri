@@ -27,7 +27,7 @@ or heavily patterned one. A continuous-tone image has no colour holding a large
 share of the card, so the mode is just the luckiest pixel. ``PAPER_MIN_SHARE``
 is the line: below it this returns None and the pawn card keeps the background
 it was drawn with, rather than being repainted an arbitrary sampled colour.
-Measured across the nine shipped templates the real answers sit at 71.7%-92.8%
+Measured across the shipped templates the real answers sit at 71.7%-92.8%
 (flat, striped, and photographically bordered fronts alike), so the floor is
 nowhere near any of them.
 

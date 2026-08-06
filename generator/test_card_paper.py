@@ -101,7 +101,7 @@ def test_a_front_with_no_dominant_colour_reports_nothing(tmp_path, monkeypatch):
 
 
 def test_the_floor_is_well_below_every_shipped_template():
-    # Measured across the nine shipped templates the real answers sit at
+    # Measured across the shipped templates the real answers sit at
     # 71.7%-92.8%. A floor anywhere near those would start refusing real cards.
     assert 0 < card_paper.PAPER_MIN_SHARE < 0.5
 

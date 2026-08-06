@@ -50,10 +50,10 @@ test.describe('products.html — store-tile override in the card carousel', () =
     await expect(birthdayImg).toHaveAttribute('src', STORE_OVERRIDE);
 
     // A design WITHOUT an override keeps its shipped store.webp on the first slide.
-    const neonImg = page.locator(
-      '.product-card[data-design-id="neon"] [data-testid="product-image"]'
+    const japaneseImg = page.locator(
+      '.product-card[data-design-id="japanese"] [data-testid="product-image"]'
     );
-    await expect(neonImg).toHaveAttribute('src', /assets\/designs\/neon\/store\.webp$/);
+    await expect(japaneseImg).toHaveAttribute('src', /assets\/designs\/japanese\/store\.webp$/);
   });
 
   test('each card is a multi-picture swipe carousel with dots', async ({ page }) => {
@@ -105,7 +105,7 @@ test.describe('products.html — store-tile override in the card carousel', () =
     await page.goto('/products.html');
 
     await expect(page.getByTestId('store-grid')).toBeVisible();
-    await expect(page.getByTestId('product-card')).toHaveCount(7);
+    await expect(page.getByTestId('product-card')).toHaveCount(6);
     const birthdayImg = page.locator(
       '.product-card[data-design-id="birthday"] [data-testid="product-image"]'
     );

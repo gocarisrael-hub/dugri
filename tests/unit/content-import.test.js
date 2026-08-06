@@ -93,7 +93,7 @@ describe('content import from staging', () => {
         'index-hero-bg': { img: imgPath },
       },
       'product.html': {
-        'product-neon-photos': { imgs: [imgPath] },
+        'product-japanese-photos': { imgs: [imgPath] },
       },
     };
 
@@ -117,7 +117,7 @@ describe('content import from staging', () => {
     // The store now MIRRORS staging …
     expect(store.getPage('index.html')['index-hero-title'].text).toBe('כותרת מהסטייג׳ינג');
     expect(store.getPage('index.html')['index-hero-bg'].img).toBe(imgPath);
-    expect(store.getPhotos('product.html', 'product-neon-photos')).toEqual([imgPath]);
+    expect(store.getPhotos('product.html', 'product-japanese-photos')).toEqual([imgPath]);
     // … and the OLD prod-only content is gone (replaced, not merged).
     expect(store.getPage('how.html')).toEqual({});
 
@@ -303,7 +303,7 @@ describe('content import from staging', () => {
     const badPath = pathFor(bad);
     const overrides = {
       'product.html': {
-        'product-neon-photos': { imgs: [goodPath, badPath] },
+        'product-japanese-photos': { imgs: [goodPath, badPath] },
       },
     };
     const result = await imp.importFromStaging({
@@ -317,7 +317,7 @@ describe('content import from staging', () => {
     expect(result.status).toBe(502);
     // Store untouched …
     expect(store.getPage('index.html').k.text).toBe('keepme');
-    expect(store.getPhotos('product.html', 'product-neon-photos')).toEqual([]);
+    expect(store.getPhotos('product.html', 'product-japanese-photos')).toEqual([]);
     // … and NEITHER image file lingers on the volume (the successful one was reclaimed).
     expect(fs.existsSync(path.join(dir, 'content-uploads', goodPath.split('/').pop()))).toBe(false);
     expect(fs.existsSync(path.join(dir, 'content-uploads', badPath.split('/').pop()))).toBe(false);

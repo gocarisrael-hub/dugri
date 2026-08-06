@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 // and a related-designs rail at the bottom. It reads ?design=<id> and renders
 // from js/designs.js; an unknown/missing id falls back to the first design.
 
-const DESIGN_IDS = ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'neon', 'kids'];
+const DESIGN_IDS = ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'kids'];
 
 // These tests assert the BUILT-IN catalog (the page + its related rail). An
 // uploaded template (surfaced by /api/custom-designs) now rides the same rail and
@@ -55,6 +55,31 @@ test.describe('product detail page', () => {
     await expect(buy).toHaveAttribute('href', 'options.html?design=bachelorette&step=2');
   });
 
+  // "טיימס סקוור" (catalog id `neon`) was RETIRED. product.html falls back to the
+  // first design for an unknown id, so the PDP must render SOMETHING — just never
+  // neon, and never a request for its deleted artwork.
+  test('the retired neon design has no product page and 404s nothing', async ({ page }) => {
+    await stubPricing(page);
+    const missed = [];
+    page.on('response', (r) => {
+      if (r.status() === 404 || /assets\/designs\/neon\//.test(r.url())) missed.push(r.url());
+    });
+
+    await page.goto('/product.html?design=neon');
+    await expect(page.getByTestId('pdp-gallery')).toBeVisible();
+    // fell back to a real design rather than rendering the retired one
+    await expect(page.getByTestId('pdp-buy')).not.toHaveAttribute(
+      'href',
+      'options.html?design=neon&step=2'
+    );
+    await expect(page.locator('img[src*="assets/designs/neon/"]')).toHaveCount(0);
+    // …and the related rail no longer carries it either
+    await expect(page.locator('[data-testid="pdp-related"] [data-design-id="neon"]')).toHaveCount(
+      0
+    );
+    expect(missed, `unexpected 404 / neon asset requests: ${missed.join(', ')}`).toEqual([]);
+  });
+
   test('the struck was-price sits to the LEFT of the current price (RTL)', async ({ page }) => {
     await stubPricing(page); // now 199, was 239
     await page.goto('/product.html?design=bachelorette');
@@ -85,12 +110,10 @@ test.describe('product detail page', () => {
   });
 
   test('the buy button reflects whichever design is in the URL', async ({ page }) => {
-    // neon is a fixed-colour design, but colour + add-ons are one step now, so it
-    // lands on the same step 2 as every other design.
-    await page.goto('/product.html?design=neon');
+    await page.goto('/product.html?design=japanese');
     await expect(page.getByTestId('pdp-buy')).toHaveAttribute(
       'href',
-      'options.html?design=neon&step=2'
+      'options.html?design=japanese&step=2'
     );
   });
 
@@ -103,7 +126,7 @@ test.describe('product detail page', () => {
     // Real cards only — the endless-loop engine adds aria-hidden clones
     // ([data-carousel-clone]) so the rail wraps seamlessly.
     const cards = rail.locator('a.pdp-rel-card:not([data-carousel-clone])');
-    await expect(cards).toHaveCount(7);
+    await expect(cards).toHaveCount(6);
 
     const hrefs = await cards.evaluateAll((els) => els.map((a) => a.getAttribute('href')));
     for (const href of hrefs) expect(href).toMatch(/^product\.html\?design=[a-z]+$/);

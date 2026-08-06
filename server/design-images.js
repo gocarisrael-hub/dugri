@@ -41,7 +41,7 @@ const DATA_DIR = process.env.DATA_DIR || __dirname;
 const FILE = path.join(DATA_DIR, 'design-images.json');
 
 // A design id: starts alphanumeric, then kebab. Covers BOTH kinds of design —
-// a built-in catalog id (`neon`) and an owner template's themes.json key
+// a built-in catalog id (`bachelorette`) and an owner template's themes.json key
 // (`grapefruit`), which is the design id for an uploaded template. The length cap
 // matches templates.isSafeSlug (≤64) so a template can never be curatable in the
 // admin yet rejected by this store purely for having a long name.

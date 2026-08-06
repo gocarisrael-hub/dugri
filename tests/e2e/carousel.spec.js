@@ -182,7 +182,7 @@ test.describe('carousel — endless loops (with clones)', () => {
     await waitForLoop(page, '#productsTrack');
     await expect(
       page.locator('#productsTrack .home-prod-card:not([data-carousel-clone])')
-    ).toHaveCount(7);
+    ).toHaveCount(6);
     await expect(
       page.locator('#productsTrack .home-prod-card[data-carousel-clone]').first()
     ).toBeAttached();
@@ -203,7 +203,7 @@ test.describe('carousel — endless loops (with clones)', () => {
       return { current: api.current(), real };
     });
 
-    expect(settled.real).toBe(7);
+    expect(settled.real).toBe(6);
     expect(settled.current).toBe(0); // wrapped back to the first card
   });
 

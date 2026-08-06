@@ -68,18 +68,18 @@ describe('admin design-code CRUD auth', () => {
   it('403 with a wrong key, happy path with the right key', async () => {
     expect((await get('/api/admin/design-codes?key=wrong')).status).toBe(403);
     expect(
-      (await post('/api/admin/design-codes?key=wrong', { code: 'X', design_id: 'neon' })).status
+      (await post('/api/admin/design-codes?key=wrong', { code: 'X', design_id: 'japanese' })).status
     ).toBe(403);
 
     // create
     const created = await post(key('/api/admin/design-codes'), {
-      code: 'vipneon',
-      design_id: 'neon',
+      code: 'vipjp',
+      design_id: 'japanese',
       valid_until: null,
     });
     expect(created.status).toBe(201);
-    expect(created.body.design_code.code).toBe('VIPNEON');
-    expect(created.body.design_code.design_id).toBe('neon');
+    expect(created.body.design_code.code).toBe('VIPJP');
+    expect(created.body.design_code.design_id).toBe('japanese');
     const id = created.body.design_code.id;
 
     // list contains it
@@ -99,11 +99,11 @@ describe('admin design-code CRUD auth', () => {
 
   it('400 on invalid input / duplicate code', async () => {
     expect(
-      (await post(key('/api/admin/design-codes'), { code: 'ok', design_id: 'neon' })).status
+      (await post(key('/api/admin/design-codes'), { code: 'ok', design_id: 'japanese' })).status
     ).toBe(400); // too short
     expect((await post(key('/api/admin/design-codes'), { code: 'NODESIGN' })).status).toBe(400);
-    await post(key('/api/admin/design-codes'), { code: 'DUP', design_id: 'neon' });
-    const dup = await post(key('/api/admin/design-codes'), { code: 'dup', design_id: 'neon' });
+    await post(key('/api/admin/design-codes'), { code: 'DUP', design_id: 'japanese' });
+    const dup = await post(key('/api/admin/design-codes'), { code: 'dup', design_id: 'japanese' });
     expect(dup.status).toBe(400);
     expect(dup.body.error).toBe('duplicate');
   });
@@ -115,10 +115,10 @@ describe('admin design-code CRUD auth', () => {
 
 describe('POST /api/design-code/validate (public unlock)', () => {
   it('unlocks the mapped design and counts the use', async () => {
-    await post(key('/api/admin/design-codes'), { code: 'UNLOCK1', design_id: 'neon' });
+    await post(key('/api/admin/design-codes'), { code: 'UNLOCK1', design_id: 'japanese' });
     const r = await post('/api/design-code/validate', { code: 'unlock1' });
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ valid: true, design: 'neon' });
+    expect(r.body).toEqual({ valid: true, design: 'japanese' });
     // The unlock was counted on the code.
     expect(db.getDesignCodeByCode('UNLOCK1').uses).toBe(1);
   });
@@ -130,7 +130,7 @@ describe('POST /api/design-code/validate (public unlock)', () => {
     expect(unknown.status).toBe(200);
     expect(unknown.body).toEqual({ valid: false });
 
-    await post(key('/api/admin/design-codes'), { code: 'INACTIVE1', design_id: 'neon' });
+    await post(key('/api/admin/design-codes'), { code: 'INACTIVE1', design_id: 'japanese' });
     const created = db.getDesignCodeByCode('INACTIVE1');
     db.setDesignCodeActive(created.id, false);
     const inactive = await post('/api/design-code/validate', { code: 'INACTIVE1' });
@@ -138,7 +138,7 @@ describe('POST /api/design-code/validate (public unlock)', () => {
   });
 
   it('rate-limits by client IP once the per-IP budget is exhausted', async () => {
-    await post(key('/api/admin/design-codes'), { code: 'RLCODE', design_id: 'neon' });
+    await post(key('/api/admin/design-codes'), { code: 'RLCODE', design_id: 'japanese' });
     let saw429 = false;
     for (let i = 0; i < 30; i++) {
       const r = await post('/api/design-code/validate', { code: 'RLCODE' });

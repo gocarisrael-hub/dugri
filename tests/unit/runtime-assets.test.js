@@ -206,7 +206,7 @@ describe('.railwayignore keeps the upload in step with the image', () => {
 
   it('does not upload what the image no longer contains', () => {
     expect(inUpload('resources/canva/templates/grapefruit/clean/2.svg')).toBe(false);
-    expect(inUpload('resources/canva/staging/neon/front.svg')).toBe(false);
+    expect(inUpload('resources/canva/staging/posttrip/front.svg')).toBe(false);
     expect(inUpload('tests/unit/runtime-assets.test.js')).toBe(false);
   });
 });

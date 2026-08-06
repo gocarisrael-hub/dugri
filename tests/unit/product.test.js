@@ -46,29 +46,15 @@ describe('fieldKey — per-design content-override key derivation', () => {
   });
 
   it('gives a DISTINCT key per design for the same field (no cross-product leak)', () => {
-    const keys = [
-      'bachelorette',
-      'marriage',
-      'birthday',
-      'japanese',
-      'posttrip',
-      'neon',
-      'kids',
-    ].map((id) => fieldKey(id, 'buy-cta'));
+    const keys = ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'kids'].map(
+      (id) => fieldKey(id, 'buy-cta')
+    );
     expect(new Set(keys).size).toBe(keys.length);
   });
 
   it('every design × field key stays within the server key shape (alnum start, kebab, ≤61)', () => {
     const KEY_RE = /^[a-z0-9][a-z0-9-]{0,60}$/;
-    for (const id of [
-      'bachelorette',
-      'marriage',
-      'birthday',
-      'japanese',
-      'posttrip',
-      'neon',
-      'kids',
-    ]) {
+    for (const id of ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'kids']) {
       for (const field of PD_FIELDS) expect(KEY_RE.test(fieldKey(id, field))).toBe(true);
     }
   });
@@ -96,7 +82,7 @@ describe('overrideKeys — per-design content-override keys', () => {
       photos: 'product-bachelorette-photos',
     });
     // derived from fieldKey, so name/about/photos match the field derivation
-    expect(overrideKeys('neon').about).toBe(fieldKey('neon', 'about'));
+    expect(overrideKeys('japanese').about).toBe(fieldKey('japanese', 'about'));
     // every key stays within the server's key shape (alnum start, kebab, ≤61)
     const KEY_RE = /^[a-z0-9][a-z0-9-]{0,60}$/;
     for (const id of ['bachelorette', 'marriage', 'kids', 'posttrip']) {
@@ -107,9 +93,9 @@ describe('overrideKeys — per-design content-override keys', () => {
 
 describe('overrideText — a saved text override wins, else null', () => {
   it('returns the override text when present, null otherwise', () => {
-    expect(overrideText({ 'product-neon-about': { text: 'חדש' } }, 'product-neon-about')).toBe(
-      'חדש'
-    );
+    expect(
+      overrideText({ 'product-japanese-about': { text: 'חדש' } }, 'product-japanese-about')
+    ).toBe('חדש');
     // an empty string is a valid (blanked) override, not "absent"
     expect(overrideText({ k: { text: '' } }, 'k')).toBe('');
     expect(overrideText({}, 'k')).toBe(null);
@@ -121,32 +107,32 @@ describe('overrideText — a saved text override wins, else null', () => {
 
 describe('photosFromOverride — the owner’s custom photos (validated)', () => {
   it('returns only our-own upload paths for the design’s photos key', () => {
-    const ov = { 'product-neon-photos': { imgs: [P1, 'https://evil/x.png', P2] } };
-    expect(photosFromOverride(ov, 'neon')).toEqual([P1, P2]); // off-origin dropped
+    const ov = { 'product-japanese-photos': { imgs: [P1, 'https://evil/x.png', P2] } };
+    expect(photosFromOverride(ov, 'japanese')).toEqual([P1, P2]); // off-origin dropped
   });
   it('is [] when there is no override or an empty array', () => {
-    expect(photosFromOverride({}, 'neon')).toEqual([]);
-    expect(photosFromOverride({ 'product-neon-photos': { imgs: [] } }, 'neon')).toEqual([]);
-    expect(photosFromOverride(null, 'neon')).toEqual([]);
+    expect(photosFromOverride({}, 'japanese')).toEqual([]);
+    expect(photosFromOverride({ 'product-japanese-photos': { imgs: [] } }, 'japanese')).toEqual([]);
+    expect(photosFromOverride(null, 'japanese')).toEqual([]);
     // a photos key for a DIFFERENT design must not leak in
-    expect(photosFromOverride({ 'product-kids-photos': { imgs: [P1] } }, 'neon')).toEqual([]);
+    expect(photosFromOverride({ 'product-kids-photos': { imgs: [P1] } }, 'japanese')).toEqual([]);
   });
 });
 
 describe('galleryShots — custom photos replace the defaults, else fall back', () => {
   const design = {
-    id: 'neon',
-    name: 'ניאון',
-    thumb: 'assets/designs/neon/thumb.webp',
+    id: 'japanese',
+    name: 'יפני',
+    thumb: 'assets/designs/japanese/thumb.webp',
     thumbs: {
-      front: 'assets/designs/neon/thumb-front.webp',
-      back: 'assets/designs/neon/thumb-back.webp',
-      board: 'assets/designs/neon/thumb-board.webp',
+      front: 'assets/designs/japanese/thumb-front.webp',
+      back: 'assets/designs/japanese/thumb-back.webp',
+      board: 'assets/designs/japanese/thumb-board.webp',
     },
   };
 
   it('uses the owner’s custom photos when present', () => {
-    const shots = galleryShots(design, { 'product-neon-photos': { imgs: [P1, P2] } });
+    const shots = galleryShots(design, { 'product-japanese-photos': { imgs: [P1, P2] } });
     expect(shots.map((s) => s.src)).toEqual([P1, P2]);
     // each shot carries an accessible per-design label
     expect(shots[0].label).toContain(design.name);
@@ -156,9 +142,9 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     const shots = galleryShots(design, {});
     // front/back/board hi-res renders (never the tiny thumb-*.webp)
     expect(shots.map((s) => s.src)).toEqual([
-      'assets/designs/neon/gallery-front.webp',
-      'assets/designs/neon/gallery-back.webp',
-      'assets/designs/neon/gallery-board.webp',
+      'assets/designs/japanese/gallery-front.webp',
+      'assets/designs/japanese/gallery-back.webp',
+      'assets/designs/japanese/gallery-board.webp',
     ]);
     for (const s of shots) expect(s.src).not.toMatch(/thumb-(front|back|board)\.webp$/);
   });
@@ -198,31 +184,38 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     expect(shots[2].fallback).toBeUndefined();
     // A design that SHIPS a board keeps its static fallback and is NOT droppable
     // (it degrades to the shipped render, never dropped).
-    const neon = { id: 'neon', name: 'ניאון', thumbs: { front: 'f', back: 'b', board: 'brd' } };
-    const shipShots = galleryShots(neon, {}, { neon: { base: { board: { img: P1 } } } });
+    const japanese = {
+      id: 'japanese',
+      name: 'יפני',
+      thumbs: { front: 'f', back: 'b', board: 'brd' },
+    };
+    const shipShots = galleryShots(japanese, {}, { japanese: { base: { board: { img: P1 } } } });
     expect(shipShots[2]).toMatchObject({
       src: P1,
-      fallback: 'assets/designs/neon/gallery-board.webp',
+      fallback: 'assets/designs/japanese/gallery-board.webp',
     });
     expect(shipShots[2].droppable).toBeUndefined();
   });
 
   it('prefers a per-design SLOT override over the static render, else falls back per-slot', () => {
     // Only the board slot is overridden → front/back keep their static renders.
-    const map = { neon: { base: { board: { img: P1 } } } };
+    const map = { japanese: { base: { board: { img: P1 } } } };
     const shots = galleryShots(design, {}, map);
     expect(shots.map((s) => s.src)).toEqual([
-      'assets/designs/neon/gallery-front.webp',
-      'assets/designs/neon/gallery-back.webp',
+      'assets/designs/japanese/gallery-front.webp',
+      'assets/designs/japanese/gallery-back.webp',
       P1, // owner's uploaded board picture
     ]);
   });
 
   it('an override shot carries the static render as `fallback` (broken-file degrade)', () => {
-    const map = { neon: { base: { board: { img: P1 } } } };
+    const map = { japanese: { base: { board: { img: P1 } } } };
     const shots = galleryShots(design, {}, map);
     // The override slide points its onerror at the shipped static asset…
-    expect(shots[2]).toMatchObject({ src: P1, fallback: 'assets/designs/neon/gallery-board.webp' });
+    expect(shots[2]).toMatchObject({
+      src: P1,
+      fallback: 'assets/designs/japanese/gallery-board.webp',
+    });
     // …while a non-overridden slide has no fallback (it IS the static asset).
     expect(shots[0].fallback).toBeUndefined();
     expect(shots[1].fallback).toBeUndefined();
@@ -230,7 +223,7 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
 
   it('ignores a malformed/off-origin override path and keeps the static asset', () => {
     const map = {
-      neon: {
+      japanese: {
         base: {
           front: { img: 'https://evil.example/x.png' },
           back: { img: '/content-uploads/nope.gif' },
@@ -239,15 +232,17 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     };
     const shots = galleryShots(design, {}, map);
     expect(shots.map((s) => s.src)).toEqual([
-      'assets/designs/neon/gallery-front.webp',
-      'assets/designs/neon/gallery-back.webp',
-      'assets/designs/neon/gallery-board.webp',
+      'assets/designs/japanese/gallery-front.webp',
+      'assets/designs/japanese/gallery-back.webp',
+      'assets/designs/japanese/gallery-board.webp',
     ]);
   });
 
   it('curated custom photos still win over per-slot overrides', () => {
-    const map = { neon: { base: { front: { img: P1 }, back: { img: P2 }, board: { img: P1 } } } };
-    const shots = galleryShots(design, { 'product-neon-photos': { imgs: [P2] } }, map);
+    const map = {
+      japanese: { base: { front: { img: P1 }, back: { img: P2 }, board: { img: P1 } } },
+    };
+    const shots = galleryShots(design, { 'product-japanese-photos': { imgs: [P2] } }, map);
     expect(shots.map((s) => s.src)).toEqual([P2]); // the curated carousel wins
   });
 
@@ -290,12 +285,12 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
 });
 
 describe('shouldShowBoard — board slide visibility', () => {
-  const shipsBoard = { id: 'neon', thumbs: { front: 'f', back: 'b', board: 'brd' } };
+  const shipsBoard = { id: 'japanese', thumbs: { front: 'f', back: 'b', board: 'brd' } };
   const boardless = { id: 'kids', thumbs: { front: 'f', back: 'b' } };
 
   it('is true for a design that ships a board (regardless of overrides)', () => {
     expect(shouldShowBoard(shipsBoard, {})).toBe(true);
-    expect(shouldShowBoard(shipsBoard, { neon: { base: { board: { img: P1 } } } })).toBe(true);
+    expect(shouldShowBoard(shipsBoard, { japanese: { base: { board: { img: P1 } } } })).toBe(true);
   });
 
   it('is true for a boardless design once a valid board override exists', () => {
@@ -330,7 +325,7 @@ describe('shouldShowBoard — board slide visibility', () => {
 describe('board "ships a board" is ONE shared field (admin ↔ product agree)', () => {
   // admin shipsSlot(d,'board') === designShipsBoard(d); product shouldShowBoard uses it.
   const shipsBoard = {
-    id: 'neon',
+    id: 'japanese',
     thumbs: { front: 'f', back: 'b', board: 'brd' },
     products: { front: 'f', back: 'b', board: 'b' },
   };

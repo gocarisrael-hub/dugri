@@ -50,7 +50,7 @@ describe('visibilityForDesign / isPublicDesign', () => {
     expect(visibilityForDesign('bachelorette', priv)).toBe('private');
     expect(isPublicDesign('bachelorette', priv)).toBe(false);
     // A different design (mapped to another theme) stays public under that map.
-    expect(isPublicDesign('neon', priv)).toBe(true);
+    expect(isPublicDesign('japanese', priv)).toBe(true);
   });
 });
 

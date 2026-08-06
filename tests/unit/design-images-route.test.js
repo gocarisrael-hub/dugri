@@ -200,24 +200,24 @@ describe('per-design gallery routes', () => {
   });
 
   it('base flags + delete revert a slot to its shipped render', async () => {
-    await uploadBase({ designId: 'neon', slot: 'store', bytes: pngWith('neon1') });
+    await uploadBase({ designId: 'engagement', slot: 'store', bytes: pngWith('engagement1') });
     let { json } = await getImages();
-    expect(json.images.neon.base.store.img).toBeDefined();
+    expect(json.images.engagement.base.store.img).toBeDefined();
 
-    const del = await jsonReq('DELETE', 'base', { designId: 'neon', slot: 'store' });
+    const del = await jsonReq('DELETE', 'base', { designId: 'engagement', slot: 'store' });
     expect(del.status).toBe(200);
     ({ json } = await getImages());
-    expect(json.images.neon).toBeUndefined(); // pruned → static asset
+    expect(json.images.engagement).toBeUndefined(); // pruned → static asset
 
     // A hide flag persists on its own.
     const flags = await jsonReq('POST', 'base/flags', {
-      designId: 'neon',
+      designId: 'engagement',
       slot: 'store',
       onProducts: false,
     });
     expect(flags.status).toBe(200);
     ({ json } = await getImages());
-    expect(json.images.neon.base.store).toEqual({ onProducts: false });
+    expect(json.images.engagement.base.store).toEqual({ onProducts: false });
   });
 
   it('adds a named extra photo, patches it, reorders, and removes it', async () => {

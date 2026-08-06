@@ -12,7 +12,7 @@ generated cards match the origin Canva templates:
      RTL, never Hebrew-letter numerals.
   4. title_block — the stacked title is sized to fit its calibrated box HEIGHT
      even for display fonts whose glyphs are far taller than their em (the
-     japanese/neon title faces), using real font metrics rather than a fixed
+     japanese title face), using real font metrics rather than a fixed
      per-line fraction.
 
 Run: python3 generator/test_render_page.py   (or via pytest)
@@ -1445,7 +1445,7 @@ def test_title_center_straddles_the_ink_not_the_advance():
     1018 advance): the title sat 5.5px right of centre on a 598px card, on BOTH
     faces, margins L=25 R=14, against a Canva original that is centred.
     bachelorette's MrDafoe is the same shape of error at 4.7% of the advance,
-    which is what this fixture uses. Eight of the nine shipped title faces have
+    which is what this fixture uses. Seven of the eight shipped title faces have
     NO asymmetry, so the correction is a no-op for them — hence the guard below
     that the fixture font really does overhang, or the assertion proves nothing.
     """
@@ -1901,7 +1901,7 @@ def _shipped_title(entry, key, lines, **kw):
 
 
 def test_the_shipped_themes_titles_render_exactly_as_before():
-    # Nine designs are live; re-spacing one by side effect would reprint every
+    # Every shipped design is live; re-spacing one by side effect would reprint every
     # card of every order placed against it. So: for every shipped theme, over
     # every shape of title, the markup with the theme's leading (none of them
     # has one) is byte-identical to the markup produced without the argument at
@@ -1916,7 +1916,10 @@ def test_the_shipped_themes_titles_render_exactly_as_before():
     # machine and CI, so a golden hash would fail for a reason that has nothing
     # to do with this change.
     shipped = json.load(open(os.path.join(HERE, "themes.json"), encoding="utf-8"))
-    assert len(shipped) >= 9, "the shipped set shrank — check what was removed"
+    # Eight themes ship since birthday-girls-neon ("טיימס סקוור") was retired — it
+    # could not be produced (its artwork is gone from the volume), so it was pulled
+    # from sale rather than left 500-ing. Any further shrink is unintended.
+    assert len(shipped) >= 8, "the shipped set shrank — check what was removed"
     for key, entry in sorted(shipped.items()):
         ts = entry["title_style"]
         assert ts.get("leading") is None, key

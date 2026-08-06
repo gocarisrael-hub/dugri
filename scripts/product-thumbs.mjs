@@ -15,8 +15,8 @@
 // var(--cN) tokens that only resolve once a <style> supplies them (that's what
 // lets the live colour slider recolor them in the browser). We inject the SAME
 // original-colour <style> the site's paintSvg() builds, so the raster matches
-// the design's ORIGINAL look. 'fixed' designs (neon, empty anchors) already
-// carry literal colours and need no style.
+// the design's ORIGINAL look. 'fixed' designs (empty anchors) already carry
+// literal colours and need no style.
 //
 // It also (re)writes the per-design `thumbs:{front,back[,photo][,board]}` map into
 // site/js/designs.generated.js, keeping `thumb` (= front picker thumb) intact so

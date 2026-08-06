@@ -136,14 +136,13 @@ describe('GET /api/admin/designs — merged built-in + template catalog', () => 
   it('lists the built-ins FIRST, in catalog order, before any template', async () => {
     const { body } = await load();
     const firstCustom = body.designs.findIndex((d) => d.custom);
-    expect(firstCustom).toBe(7); // the 7 built-in designs lead the list
-    expect(body.designs.slice(0, 7).map((d) => d.id)).toEqual([
+    expect(firstCustom).toBe(6); // the 6 built-in designs lead the list
+    expect(body.designs.slice(0, 6).map((d) => d.id)).toEqual([
       'bachelorette',
       'marriage',
       'birthday',
       'japanese',
       'posttrip',
-      'neon',
       'kids',
     ]);
     // `expected` keeps naming the BUILT-IN file list it always did.

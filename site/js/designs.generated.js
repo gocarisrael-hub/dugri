@@ -100,23 +100,6 @@ export const GENERATED = {
       board: 'assets/designs/posttrip/board.svg',
     },
   },
-  neon: {
-    anchors: [],
-    hasRaster: true,
-    recolor: 'fixed',
-    accent: '#ff00db',
-    thumb: 'assets/designs/neon/thumb.webp',
-    thumbs: {
-      front: 'assets/designs/neon/thumb-front.webp',
-      back: 'assets/designs/neon/thumb-back.webp',
-      board: 'assets/designs/neon/thumb-board.webp',
-    },
-    products: {
-      front: 'assets/designs/neon/front.svg',
-      back: 'assets/designs/neon/back.svg',
-      board: 'assets/designs/neon/board.svg',
-    },
-  },
   kids: {
     anchors: ['#004aad', '#1f80ff', '#b0eef0'],
     hasRaster: true,

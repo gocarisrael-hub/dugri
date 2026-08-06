@@ -168,21 +168,21 @@ describe('design-images gallery store', () => {
 
   it('setBaseFlags stores only DEVIATIONS from the slot default', async () => {
     const s = await store();
-    s.setBaseFlags('neon', 'store', { onProducts: false });
-    expect(s.getForDesign('neon')).toEqual({ base: { store: { onProducts: false } } });
+    s.setBaseFlags('japanese', 'store', { onProducts: false });
+    expect(s.getForDesign('japanese')).toEqual({ base: { store: { onProducts: false } } });
     // Re-enabling clears the deviation and prunes the bag.
-    s.setBaseFlags('neon', 'store', { onProducts: true });
+    s.setBaseFlags('japanese', 'store', { onProducts: true });
     expect(s.getAll()).toEqual({});
     // store is hidden on the product page BY DEFAULT: onProduct:false stores nothing,
     // while opting it IN (onProduct:true) is the deviation that persists.
-    s.setBaseFlags('neon', 'store', { onProduct: false });
+    s.setBaseFlags('japanese', 'store', { onProduct: false });
     expect(s.getAll()).toEqual({});
-    s.setBaseFlags('neon', 'store', { onProduct: true });
-    expect(s.getForDesign('neon')).toEqual({ base: { store: { onProduct: true } } });
+    s.setBaseFlags('japanese', 'store', { onProduct: true });
+    expect(s.getForDesign('japanese')).toEqual({ base: { store: { onProduct: true } } });
     // A hide + an override img coexist on the same slot (front hidden on product page).
-    s.setBaseImg('neon', 'front', P1);
-    s.setBaseFlags('neon', 'front', { onProduct: false });
-    expect(s.getForDesign('neon').base.front).toEqual({ img: P1, onProduct: false });
+    s.setBaseImg('japanese', 'front', P1);
+    s.setBaseFlags('japanese', 'front', { onProduct: false });
+    expect(s.getForDesign('japanese').base.front).toEqual({ img: P1, onProduct: false });
   });
 
   it('addPhoto appends a named extra photo with default-on visibility and a stable id', async () => {
@@ -232,7 +232,7 @@ describe('design-images gallery store', () => {
     const s = await store();
     s.setBaseImg('posttrip', 'board', P1);
     s.addPhoto('birthday', P1, 'shared'); // same file, another design (content-addressed)
-    s.addPhoto('neon', P2, 'y');
+    s.addPhoto('japanese', P2, 'y');
     expect(s.isImageReferenced(P1)).toBe(true);
     expect(s.isImageReferenced(P2)).toBe(true);
     expect(s.isImageReferenced(P3)).toBe(false);
@@ -244,11 +244,11 @@ describe('design-images gallery store', () => {
 
   it('getForDesign returns a deep COPY (mutating it cannot corrupt the store)', async () => {
     const s = await store();
-    s.addPhoto('neon', P1, 'a');
-    const got = s.getForDesign('neon');
+    s.addPhoto('japanese', P1, 'a');
+    const got = s.getForDesign('japanese');
     got.photos[0].name = 'tampered';
     got.photos.push({ id: 'pX' });
-    expect(s.getForDesign('neon').photos).toEqual([
+    expect(s.getForDesign('japanese').photos).toEqual([
       { id: 'p1', img: P1, name: 'a', onProducts: true, onProduct: true },
     ]);
   });

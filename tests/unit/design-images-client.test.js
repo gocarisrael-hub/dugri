@@ -10,7 +10,7 @@ const P2 = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
 // A design that ships a board, and one that does not. `thumbs.board` is the
 // canonical board-render indicator (matches designs.js designShipsBoard).
 const BOARDED = { id: 'posttrip', thumbs: { front: 'f', back: 'b', board: 'brd' } };
-const BOARDLESS = { id: 'neon', thumbs: { front: 'f', back: 'b' } };
+const BOARDLESS = { id: 'kids', thumbs: { front: 'f', back: 'b' } };
 const keys = (items) => items.map((i) => i.key);
 const srcs = (items) => items.map((i) => i.src);
 
@@ -45,7 +45,7 @@ describe('galleryFor — resolved per-surface gallery', () => {
   it('surfaces a boardless design’s board from an override alone, tagged droppable (#159)', () => {
     // A boardless design gains a board slide from the OVERRIDE — with NO shipped
     // gallery-board.webp there is no fallback, so it is droppable (drop on error).
-    const map = { neon: { base: { board: { img: P1 } } } };
+    const map = { kids: { base: { board: { img: P1 } } } };
     const board = galleryFor(map, BOARDLESS, 'product').find((i) => i.key === 'board');
     expect(board).toMatchObject({ src: P1, fallback: '', droppable: true });
     // A design that SHIPS a board keeps its static fallback and is NOT droppable.
@@ -312,9 +312,9 @@ describe('loadDesignImages — timeout-bounded + fail-safe (never rejects)', () 
 
   it('returns the images map on a 200', async () => {
     global.fetch = vi.fn(() =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve({ images: { neon: { base: {} } } }) })
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ images: { kids: { base: {} } } }) })
     );
-    await expect(loadDesignImages()).resolves.toEqual({ neon: { base: {} } });
+    await expect(loadDesignImages()).resolves.toEqual({ kids: { base: {} } });
   });
 
   it('resolves to {} on a network error', async () => {

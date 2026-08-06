@@ -176,7 +176,7 @@ test.describe('home product rail', () => {
     await expect(rail).toBeVisible();
 
     const cards = rail.locator('a.home-prod-card:not([data-carousel-clone])');
-    await expect(cards).toHaveCount(7);
+    await expect(cards).toHaveCount(6);
 
     // Every card links to product.html?design=<id> and shows a name + price.
     const hrefs = await cards.evaluateAll((els) => els.map((a) => a.getAttribute('href')));

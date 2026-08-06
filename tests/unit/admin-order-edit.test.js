@@ -116,16 +116,16 @@ describe('PATCH /api/admin/collections/:id — the customer’s choices', () => 
   it('only touches the keys the body actually carries', async () => {
     const c = seed('שירה');
     db.adminUpdateCollection(c.id, {
-      design: 'ניאון',
-      theme: 'birthday-girls-neon',
+      design: 'יפני',
+      theme: 'japanese',
       chasers: true,
     });
     const r = await patch(withKey('/api/admin/collections/' + c.id), { phone: '0500000000' });
     expect(r.status).toBe(200);
     const after = db.getCollection(c.id);
     expect(after.owner_phone).toBe('0500000000');
-    expect(after.design).toBe('ניאון');
-    expect(after.theme).toBe('birthday-girls-neon');
+    expect(after.design).toBe('יפני');
+    expect(after.theme).toBe('japanese');
     expect(after.chasers).toBe(true);
     expect(after.honoree_name).toBe('שירה');
   });

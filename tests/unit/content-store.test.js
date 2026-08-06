@@ -202,18 +202,18 @@ describe('content store — per-key photo array (a product carousel)', () => {
     const dir = freshTmpDir();
     dirs.push(dir);
     const store = await loadStore(dir);
-    expect(store.getPhotos('product.html', 'product-neon-photos')).toEqual([]);
-    expect(store.addPhoto('product.html', 'product-neon-photos', P1)).toEqual([P1]);
-    expect(store.addPhoto('product.html', 'product-neon-photos', P2)).toEqual([P1, P2]);
+    expect(store.getPhotos('product.html', 'product-japanese-photos')).toEqual([]);
+    expect(store.addPhoto('product.html', 'product-japanese-photos', P1)).toEqual([P1]);
+    expect(store.addPhoto('product.html', 'product-japanese-photos', P2)).toEqual([P1, P2]);
     // a duplicate is a no-op-append that still returns the current array
-    expect(store.addPhoto('product.html', 'product-neon-photos', P1)).toEqual([P1, P2]);
+    expect(store.addPhoto('product.html', 'product-japanese-photos', P1)).toEqual([P1, P2]);
     // an off-origin/garbage path is rejected (null), array untouched
-    expect(store.addPhoto('product.html', 'product-neon-photos', 'https://x/y.png')).toBe(null);
-    expect(store.getPhotos('product.html', 'product-neon-photos')).toEqual([P1, P2]);
+    expect(store.addPhoto('product.html', 'product-japanese-photos', 'https://x/y.png')).toBe(null);
+    expect(store.getPhotos('product.html', 'product-japanese-photos')).toEqual([P1, P2]);
     // getPhotos returns a copy — mutating it can't corrupt the store
-    const got = store.getPhotos('product.html', 'product-neon-photos');
+    const got = store.getPhotos('product.html', 'product-japanese-photos');
     got.push(P3);
-    expect(store.getPhotos('product.html', 'product-neon-photos')).toEqual([P1, P2]);
+    expect(store.getPhotos('product.html', 'product-japanese-photos')).toEqual([P1, P2]);
   });
 
   it('setPhotos replaces the whole array (remove + reorder), sanitized', async () => {
@@ -245,14 +245,16 @@ describe('content store — per-key photo array (a product carousel)', () => {
       const bytes = Buffer.concat([PNG, Buffer.from([i])]); // distinct bytes → distinct hash
       paths.push(store.saveImageBytes(bytes).path);
     }
-    for (const p of paths) store.addPhoto('product.html', 'product-neon-photos', p);
-    expect(store.getPhotos('product.html', 'product-neon-photos')).toHaveLength(store.PHOTO_CAP);
+    for (const p of paths) store.addPhoto('product.html', 'product-japanese-photos', p);
+    expect(store.getPhotos('product.html', 'product-japanese-photos')).toHaveLength(
+      store.PHOTO_CAP
+    );
 
     // A NEW upload beyond the cap: the file is written, but addPhoto drops it (the
     // array does not grow) → the route treats it as a drop and reclaims the orphan.
     const overflow = store.saveImageBytes(Buffer.concat([PNG, Buffer.from([99])])).path;
-    const before = store.getPhotos('product.html', 'product-neon-photos');
-    const after = store.addPhoto('product.html', 'product-neon-photos', overflow);
+    const before = store.getPhotos('product.html', 'product-japanese-photos');
+    const after = store.addPhoto('product.html', 'product-japanese-photos', overflow);
     expect(after.length).toBe(before.length); // dropped (still at cap)
     expect(after).not.toContain(overflow);
     // The overflow file is unreferenced anywhere → safe to delete (orphan cleanup).
@@ -267,7 +269,7 @@ describe('content store — per-key photo array (a product carousel)', () => {
     const dupBytes = Buffer.concat([PNG, Buffer.from([0])]); // same as paths[0]
     const dupPath = store.saveImageBytes(dupBytes).path;
     expect(dupPath).toBe(paths[0]); // content-addressed → same path
-    const afterDup = store.addPhoto('product.html', 'product-neon-photos', dupPath);
+    const afterDup = store.addPhoto('product.html', 'product-japanese-photos', dupPath);
     expect(afterDup.length).toBe(store.PHOTO_CAP); // no growth (already present)
     expect(store.isImageReferenced(dupPath)).toBe(true); // still in use → never delete
     expect(fs.existsSync(path.join(dir, 'content-uploads', dupPath.split('/').pop()))).toBe(true);

@@ -1,6 +1,28 @@
 import { test, expect } from '@playwright/test';
 import { ALL_ON, stubFeatures } from './feature-flags.js';
 
+// ---- fixed-colour designs --------------------------------------------------
+// `recolor:'fixed'` (a design whose baked-in art can't be recoloured) hides the
+// whole swatch picker and shows the "colours are fixed" note instead. The only
+// built-in that was ever fixed — neon / "טיימס סקוור" — was RETIRED, so no shipped
+// design exercises the branch any more. Rather than drop the coverage, these tests
+// inject a fixed design by rewriting the generated manifest ON THE WIRE: japanese
+// is served back as anchors:[] + recolor:'fixed'. Fails loudly if the manifest
+// shape changes so the patch can never silently become a no-op.
+const FIXED_ID = 'japanese';
+async function stubFixedDesign(page) {
+  await page.route('**/js/designs.generated.js', async (route) => {
+    const res = await route.fetch();
+    const body = await res.text();
+    const patched = body.replace(
+      /japanese: \{\s*anchors: \[[^\]]*\],\s*hasRaster: (true|false),\s*recolor: 'slider',/,
+      "japanese: { anchors: [], hasRaster: $1, recolor: 'fixed',"
+    );
+    if (patched === body) throw new Error('manifest shape changed — fixed-design stub is a no-op');
+    return route.fulfill({ contentType: 'application/javascript', body: patched });
+  });
+}
+
 // The e2e server defaults every buyer-wizard feature flag OFF; this spec relies
 // on the (now gated) wizard features, so stub GET /api/features to ALL_ON — the
 // pre-flag behaviour. Declared first so the route is registered before any
@@ -73,10 +95,9 @@ test.describe('colour step: front / back / board preview carousel', () => {
     await expect(page.locator(slideFor('board'))).toHaveCount(0);
   });
 
-  test('a fixed-colour design (neon) still shows the carousel in its baked colours', async ({
-    page,
-  }) => {
-    await page.goto('/options.html?design=neon&step=2');
+  test('a fixed-colour design still shows the carousel in its baked colours', async ({ page }) => {
+    await stubFixedDesign(page);
+    await page.goto(`/options.html?design=${FIXED_ID}&step=2`);
     await expect(page.getByTestId('color-carousel')).toBeVisible();
     // a fixed design hides the swatch picker, but the preview carousel still renders
     await expect(page.getByTestId('color-list')).toBeHidden();

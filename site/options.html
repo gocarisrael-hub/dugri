@@ -686,8 +686,10 @@
         overflow-wrap: anywhere;
       }
 
-      /* fixed-colour designs (neon) hide the whole swatch picker. The id+attr
-         selector outranks the .colors display rule so `hidden` actually hides it. */
+      /* fixed-colour designs (recolor:'fixed') hide the whole swatch picker. The
+         id+attr selector outranks the .colors display rule so `hidden` actually
+         hides it. No built-in design is fixed since neon was retired, but the
+         rule stays for the next one. */
       #colorList[hidden] {
         display: none;
       }
@@ -3719,8 +3721,9 @@
         const d = DESIGNS[designIndex];
         if (!d) return;
         const anchors = d.anchors || [];
-        // fixed designs (neon) are locked to their original colours regardless of
-        // any stale colour index.
+        // fixed designs (recolor:'fixed') are locked to their original colours
+        // regardless of any stale colour index. None ship today — neon, the only
+        // one, was retired — but the branch stays for the next fixed design.
         const ci = isFixedDesign() ? -1 : colorIndex;
 
         // 1) PAGE THEME (accent + background). Do this FIRST and for EVERY design,
@@ -4133,8 +4136,9 @@
       }
 
       // Colour controls per design:
-      //  - recolor:'fixed' (neon) — the picker is HIDDEN and the design stays in
-      //    its original colours (baked-in raster glow can't be recoloured).
+      //  - recolor:'fixed' — the picker is HIDDEN and the design stays in its
+      //    original colours (baked-in raster glow can't be recoloured). No
+      //    built-in design is fixed since neon was retired; kept for the next one.
       //  - recolor:'slider' — the picker stays. (No caption is shown for designs
       //    whose background raster stays fixed; only truly fixed designs get a note.)
       const rasterNote = document.getElementById('rasterNote');

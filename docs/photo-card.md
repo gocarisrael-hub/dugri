@@ -235,14 +235,14 @@ buyer holds is `#fffdf1`. So the front is rendered once and the paper is **the m
 — the same question `calibrate._background` asks ("the mode of the un-inked pixels"), and a
 `clean/` card is un-inked by definition, so the whole card is the crop.
 
-Measured across the nine shipped templates:
+Measured across the shipped templates (the row for the since-retired
+`birthday-girls-neon` is dropped):
 
 | template                 | front paper | share |
 | ------------------------ | ----------- | ----- |
 | trip comeback            | `#d0e4d7`   | 71.7% |
 | bachelorette             | `#ffc6d7`   | 78.4% |
 | birthday-girls           | `#fff1de`   | 72.5% |
-| birthday-girls-neon      | `#f6d5ff`   | 75.5% |
 | birthday-boys-basketball | `#ffffff`   | 73.3% |
 | anniversary              | `#f4f1eb`   | 92.8% |
 | japanese                 | `#fdfcf7`   | 77.9% |

@@ -5,8 +5,8 @@ import { test, expect } from '@playwright/test';
 // (product.html?design=<id>). No hero, no "בחרו את העיצוב" chooser, no inline
 // carousel/zoom/add-to-cart — that logic moved to the detail page.
 
-// The catalog ships 7 designs (single source of truth: js/designs.js).
-const DESIGN_IDS = ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'neon', 'kids'];
+// The catalog ships 6 designs (single source of truth: js/designs.js).
+const DESIGN_IDS = ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'kids'];
 
 // These tests assert the BUILT-IN catalog grid. A custom design (an uploaded
 // template surfaced by /api/custom-designs) would add extra cards — that path is
@@ -44,7 +44,7 @@ test.describe('store grid (products.html)', () => {
     await expect(page.getByTestId('store-grid')).toBeVisible();
 
     const cards = page.getByTestId('product-card');
-    await expect(cards).toHaveCount(7);
+    await expect(cards).toHaveCount(6);
 
     for (const id of DESIGN_IDS) {
       const card = page.locator(`.product-card[data-design-id="${id}"]`);
@@ -62,6 +62,28 @@ test.describe('store grid (products.html)', () => {
       await expect(card.locator('.product-name')).not.toHaveText('');
       await expect(card.locator('.product-price')).toContainText('199 ₪');
     }
+  });
+
+  // "טיימס סקוור" (catalog id `neon`) was RETIRED — its artwork is gone, so every
+  // order for it 500'd while it was still publicly on sale. The storefront must
+  // not offer it, and nothing may still request its deleted assets.
+  test('the retired neon design is not on sale and nothing 404s for its assets', async ({
+    page,
+  }) => {
+    await stubPricing(page);
+    const missed = [];
+    page.on('response', (r) => {
+      if (r.status() === 404 || /assets\/designs\/neon\//.test(r.url())) missed.push(r.url());
+    });
+
+    await page.goto('/products.html');
+    await expect(page.getByTestId('store-grid')).toBeVisible();
+
+    await expect(page.locator('.product-card[data-design-id="neon"]')).toHaveCount(0);
+    await expect(page.locator('a[href*="design=neon"]')).toHaveCount(0);
+    // no <img> anywhere still points at the deleted directory
+    await expect(page.locator('img[src*="assets/designs/neon/"]')).toHaveCount(0);
+    expect(missed, `unexpected 404 / neon asset requests: ${missed.join(', ')}`).toEqual([]);
   });
 
   test('the struck was-price sits to the LEFT of the current price (RTL)', async ({ page }) => {
@@ -172,7 +194,7 @@ test.describe('store grid (products.html)', () => {
     // old blocking code would only render at ~2500ms, so a 2000ms bound catches
     // the regression while staying comfortably above instant client render.
     await expect(page.getByTestId('product-card').first()).toBeVisible({ timeout: 2000 });
-    await expect(page.getByTestId('product-card')).toHaveCount(7);
+    await expect(page.getByTestId('product-card')).toHaveCount(6);
     // Shown with the launch-default store price (199 / struck 239), not blank.
     await expect(page.locator('.product-price').first()).toContainText('199 ₪');
   });

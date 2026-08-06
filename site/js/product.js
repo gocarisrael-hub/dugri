@@ -57,7 +57,6 @@ const ABOUT = {
     'עיצוב נקי בהשראה יפנית — קווים מינימליסטיים וטון מרוכז שנותנים למילים ולבדיחות הפנימיות לככב בלי רעש מסביב.',
   posttrip:
     'עיצוב הרפתקני לחזרה מטיול — כרטיס טיסה, חותמות ומפות שממסגרים את כל הרגעים מהמסלול לתוך משחק אחד.',
-  neon: 'עיצוב ניאון זוהר לערב מסיבה — צבעים חשמליים על רקע כהה שמפוצצים את החדר ברגע שמדליקים את האורות הנמוכים.',
   kids: 'עיצוב שובב וצבעוני ליום הולדת של ילדים — איורים גדולים וברורים שמתאימים לגיל, לצחוקים ולמשחק קבוצתי.',
 };
 const GENERIC =
@@ -470,9 +469,11 @@ function renderInfo(d, overrides) {
 
   // Buy now jumps straight into the order flow for this design. It skips the
   // wizard's design-picker (step 1) and lands on the colour + add-ons step
-  // (step 2). Fixed-colour designs (e.g. neon) share the same step — the colour
-  // swatches just show a "background is fixed" note there. Team D's wizard
-  // honours the step param and preselects the design.
+  // (step 2). Fixed-colour designs (recolor:'fixed') share the same step — the
+  // colour swatches just show a "background is fixed" note there. NOTE: no
+  // built-in design is fixed any more (neon, the only one, was retired), so that
+  // branch is currently unexercised; it stays for the next fixed design.
+  // Team D's wizard honours the step param and preselects the design.
   const buy = document.getElementById('pdpBuy');
   if (buy) {
     buy.href = `options.html?design=${encodeURIComponent(d.id)}&step=2`;

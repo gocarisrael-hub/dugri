@@ -25,7 +25,6 @@ const META = {
   birthday: { name: 'יום הולדת' },
   japanese: { name: 'יפני' },
   posttrip: { name: 'חזרה מטיול' },
-  neon: { name: 'ניאון' },
   kids: { name: 'יום הולדת לילדים' },
 };
 
@@ -41,7 +40,6 @@ export const THEME_BY_DESIGN = {
   birthday: 'birthday-girls',
   japanese: 'japanese',
   posttrip: 'trip comeback',
-  neon: 'birthday-girls-neon',
   kids: 'birthday-boys-basketball',
 };
 
@@ -55,7 +53,6 @@ export const THEME_EXTRA_FIELDS = {
   'trip comeback': [],
   bachelorette: [],
   'birthday-girls': [],
-  'birthday-girls-neon': [],
   'birthday-boys-basketball': ['AGE'],
   anniversary: ['YEARS', 'NAME1', 'NAME2'],
   japanese: ['AGE'],
@@ -75,7 +72,6 @@ export const VISIBILITY_BY_THEME = {
   'trip comeback': 'public',
   bachelorette: 'public',
   'birthday-girls': 'public',
-  'birthday-girls-neon': 'public',
   'birthday-boys-basketball': 'public',
   anniversary: 'public',
   japanese: 'public',
@@ -98,7 +94,6 @@ export const LANGUAGE_BY_THEME = {
   'trip comeback': 'english',
   bachelorette: 'english',
   'birthday-girls': 'english',
-  'birthday-girls-neon': 'english',
   'birthday-boys-basketball': 'hebrew',
   anniversary: 'hebrew',
   japanese: 'english',
