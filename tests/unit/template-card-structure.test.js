@@ -910,6 +910,34 @@ describe('applyCalibration — detected card_slots reach themes.json', () => {
     }
   });
 
+  // ONE TEXT BOX. Set by calibration where the original's title ink has no row
+  // structure left to read — a ring thick enough welds the lines into one mass
+  // (סיישל) — and it tells the renderer to stack the lines at exactly the
+  // leading above instead of opening them up to keep the outlines apart. It has
+  // to survive this whitelist for the same reason the leading does: it is the
+  // other half of the same reading, and without it the title re-spaces.
+  it('writes the one_block flag beside the leading it belongs to', () => {
+    const p = themesWith({ slug: 'demo', title_style: null });
+    templates.applyCalibration(p, 'demo', {
+      title_style: { ...TS, leading: 0.75, one_block: true },
+    });
+    const entry = JSON.parse(fs.readFileSync(p, 'utf8')).demo;
+    expect(entry.title_style.one_block).toBe(true);
+    expect(entry.title_style.leading).toBe(0.75);
+  });
+
+  it('leaves one_block absent on a design whose rows can be read', () => {
+    const p = themesWith({ slug: 'demo', title_style: null });
+    templates.applyCalibration(p, 'demo', { title_style: { ...TS, leading: 0.75 } });
+    expect('one_block' in JSON.parse(fs.readFileSync(p, 'utf8')).demo.title_style).toBe(false);
+  });
+
+  it('refuses a one_block that is not a boolean', () => {
+    const p = themesWith({ slug: 'demo', title_style: null });
+    templates.applyCalibration(p, 'demo', { title_style: { ...TS, one_block: 'yes' } });
+    expect(JSON.parse(fs.readFileSync(p, 'utf8')).demo.title_style).toBeNull();
+  });
+
   it('refuses a leading that would overprint or split the title', () => {
     // Outside the grid it is not a design, it is a mis-measurement, and it would
     // print on every card of a paid order — so the whole title_style is refused

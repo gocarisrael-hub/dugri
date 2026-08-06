@@ -1957,6 +1957,31 @@ def leading_plateau(curve, leading):
     return (max(near) - min(near)) / leading if near else 0.0
 
 
+def sets_one_block(welded, ring):
+    """Does this design set its title as ONE text box? Two readings, both needed.
+
+    ``welded`` is the leading sweep coming back with a flat top — this title's
+    ink has no row structure at all (see ``leading_plateau``). ``ring`` is the
+    visible outline thickness the title paints, as a fraction of the type size,
+    zero when the design names one paint and there is no ring to draw.
+
+    The flat top alone is not the finding. It has two possible causes and they
+    call for opposite treatment: either the rows really do run together, or this
+    artwork cannot be read that finely. Turning the renderer's collision floor
+    off is only right for the first, and the first needs positive evidence that
+    something in the design BRIDGES the rows. The only thing that paints past a
+    glyph's own outline is the ring.
+
+    Measured across the shipped set both halves earn their place. סיישל: a flat
+    top a third of the value wide AND a ring 0.075 of the type size — the
+    graffiti mass the owner asked to have back. סנטוריני: a flat top just as wide
+    (32%) and no ring whatsoever, fill and outline the same paint. Its title is a
+    light script the fit cannot resolve, not a welded block, and flagging it
+    would have re-spaced a title nobody complained about from 1.00 to 0.50.
+    """
+    return bool(welded) and bool(ring)
+
+
 def solve_size_and_leading(ink, font_path, samples, ppu, alpha, ring=0.0,
                            pitch=None, curve_out=None, weight=None):
     """``(size, leading, score)`` reproducing one title block's ink.
@@ -2235,6 +2260,11 @@ def fit_title_size(mask, image, box, ppu, ox, oy, font_path, samples, ink_hex,
                         "weight": weight,
                         "curve": curve, "size": size, "leading": leading,
                         "box_h": box["y1"] - box["y0"],
+                        # The sweep could not separate this title's rows. It is
+                        # not only a warning about the MEASUREMENT — it is a
+                        # reading of the DESIGN, and the renderer needs it (see
+                        # ``one_block`` where this is turned into a flag).
+                        "welded": undecided is not None,
                         # An OWNER-set spacing is not a reading to be weighed
                         # against the other surfaces' — it is the answer. The
                         # coupling pass leaves it exactly where she put it.
@@ -2661,6 +2691,12 @@ def _drop_low_confidence(out, confidence, notes):
 _CARRIED = (("title_style", "size"), ("title_style", "board_size"),
             ("title_style", "back_size"), ("title_style", "leading"),
             ("title_style", "back_leading"), ("title_style", "board_leading"),
+            # Carried with the leading it belongs to: it is half of the same
+            # reading (see ``one_block``), and losing it re-spaces a title the
+            # owner has already signed off. The trade is that a design that stops
+            # welding keeps the flag until she clears it in the form — which the
+            # note it is written with tells her to do.
+            ("title_style", "one_block"),
             ("title_style", "outline_w"),
             ("title_style", "align"), ("word_size",))
 
@@ -3057,6 +3093,19 @@ def calibrate(theme_key, workdir=None):
                 # matching to 2%.
                 if size is not None:
                     record("leading", tlead, tgrade, None)
+                    # ONE TEXT BOX, where the design's own artwork says so.
+                    # Derived, never asserted per template (``sets_one_block``).
+                    if sets_one_block(front_fit.get("welded"), outline_w):
+                        ts["one_block"] = True
+                        confidence["title_style.one_block"] = "high"
+                        notes.append(
+                            "one_block: this title's lines run together in the "
+                            "original — the ring is thick enough that they weld "
+                            "into one mass — so the design sets them as a single "
+                            "text box. They are stacked at exactly this spacing "
+                            "and are NOT opened up to keep the outlines apart, "
+                            "which is what the original looks like. Turn it off "
+                            "if the rows should stand clear of each other.")
 
                     def _write_front(new_size, new_lead):
                         out["title_style"]["size"] = new_size

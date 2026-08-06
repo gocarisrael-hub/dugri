@@ -612,10 +612,20 @@ def _assert_one_gap(layouts, slots, what):
 
 
 def test_the_reported_card_wraps_its_last_entry():
-    """Sanity: without the wrap there is no bug to fix."""
+    """Sanity: without the wrap there is no bug to fix.
+
+    WHICH lines it wraps ONTO is not the property — that is the fit's answer and
+    it moves with the pitch. Once the row pitch is read column by column
+    (``_card_lead``) this card is no longer height-bound but WIDTH-bound, and a
+    third line, being shorter, lets the whole card set 3% larger; the standing
+    rule is that wrapping is a cost paid to keep the type big. It only arises at
+    all on the ORIGIN's traced column (0.448 of the card) that this fixture pins:
+    at the house bound production actually uses, nothing here wraps at all.
+    """
     font, ref = _cafe()
     layouts = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN)
-    assert layouts[3].lines == ["הפועל", "תל אביב"]
+    assert len(layouts[3].lines) > 1, layouts[3].lines
+    assert "".join(layouts[3].lines).replace(" ", "") == "הפועלתלאביב"
     assert sum(len(l.lines) for l in layouts) > len(layouts), "something must wrap"
 
 
@@ -2082,6 +2092,12 @@ def test_no_two_title_lines_touch_at_the_tightest_leading_on_any_template():
                  .replace("{YEARS}", "40") for ln in tmpl]
         if len(lines) < 2:
             continue          # one line cannot collide with anything
+        if ts.get("one_block"):
+            # This design sets its title as ONE text box and its lines run
+            # together — the owner asked for exactly that (see ``one_block``).
+            # Holding it to "no two lines touch" would be holding it to a rule
+            # its own artwork does not obey.
+            continue
         font = config.font_path(key, entry["title_font"])
         box = {"x0": 20.0, "y0": 20.0, "x1": W - 20.0, "y1": H - 20.0}
         rp._TITLE_UID[0] = 0
@@ -2182,13 +2198,23 @@ def test_visual_order_reverses_a_hebrew_run_and_keeps_its_digits_forward():
 def test_the_hebrew_floor_is_read_in_visual_order():
     """The final-nun of נישואין is at the LEFT of the drawn line and the 10 at
     its right; fed the logical string Pillow puts them the other way round, and
-    the floor is then a reading of a picture nobody prints."""
+    the floor is then a reading of a picture nobody prints.
+
+    Stated as the IDENTITY it is, rather than as "the two orders give different
+    numbers". That comparison cannot carry the property: reversing both lines of
+    a centred block MIRRORS it, and the widest column overlap is mirror
+    invariant, so the two readings agree to within rasterizer noise by
+    construction. It used to differ by 0.005 on one Pillow build and by nothing
+    at all on the next, which is a coin toss, not a proof. What ``rtl=True``
+    actually means is exact: measure the strings in the order they are PAINTED.
+    """
     font = os.path.join(HERE, "word-fonts", "PlaypenSansHebrew-Medium.ttf")
     f, ref = rp._title_metrics(font)
     lines = ["10 שנה נישואין", "דנה ועומר"]
-    as_drawn = rp._min_line_pitch(f, ref, lines, 0.0, rtl=True)
-    as_stored = rp._min_line_pitch(f, ref, lines, 0.0, rtl=False)
-    assert as_drawn != as_stored, "the two orders are not the same block"
+    drawn = [rp.visual_order(ln, True) for ln in lines]
+    assert drawn != lines, "this fixture must actually be reordered"
+    assert (rp._min_line_pitch(f, ref, lines, 0.0, rtl=True)
+            == rp._min_line_pitch(f, ref, drawn, 0.0, rtl=False))
 
 
 # --- a variable title face draws the cut the design was set in ---------------
@@ -2254,3 +2280,331 @@ def test_a_static_font_face_is_untouched_by_any_of_this():
     assert "font-variation-settings" not in css
     # ...and a weight handed to a static face changes nothing about it
     assert rp.font_face("TitleFont", path, 700) == css
+
+
+# --- the WORD rows are spaced the way the DESIGN spaces them -----------------
+#
+# The owner, beside her סנטוריני original: "the word rows are spaced too far
+# apart". They were, and the reason was the same one the title's leading had
+# already been through — the floor that keeps two rows from touching was read
+# off the lines' bounding BOXES, and a box is not a shape. Read column by column
+# the same card asks for far less, and what then sets the card is the design's
+# own row spacing: the calibrated word slots, which is where the original puts
+# its four rows.
+#
+# Four slots on the anniversary card's real geometry — 223.92 x 312, rows 31.2
+# apart, the type pinned at the size calibration measured. The words are
+# constructed, not sampled: the point is the worst case, so each carries the
+# deepest descenders and tallest ascenders the face has, placed so that boxed
+# they overlap and columnwise they do not.
+_DESIGN_PITCH_SLOTS = _slots([(100.3, 112.2, 161.8, 123.5),
+                              (100.3, 143.4, 161.8, 154.7),
+                              (100.3, 174.6, 161.8, 185.9),
+                              (100.3, 205.8, 161.8, 217.1)])
+_DESIGN_PITCH = 31.2
+_DESIGN_WORD_SIZE = 24.56
+# Descenders (ך ן ץ ק) and ascenders (ל) hung at opposite ends of their lines.
+_SPREAD_CARD = ["קבמ", "סמבק", "קןקק", "ממקסץל"]
+
+
+def _design_pitch_layouts(words):
+    font, ref = _cafe()
+    return rp._word_layouts(_DESIGN_PITCH_SLOTS, words, font, ref,
+                            cell=_BP_CELL, word_size=_DESIGN_WORD_SIZE,
+                            declared_band=True, safe=rp._CARD_SAFE,
+                            room_bottom=_bp_room())
+
+
+def test_the_card_lead_reads_columns_not_boxes():
+    """The defect, isolated: boxed, this card demands 42% more than its ink does.
+
+    Neither reading is arbitrary — both answer "how far apart must the baselines
+    be for no ink of one row to meet the row beside it". The box answers it by
+    charging the deepest descender ANYWHERE on one line against the tallest
+    ascender ANYWHERE on the other, however far apart across the card the two
+    sit. The column answers it where the question is actually asked.
+    """
+    font, ref = _cafe()
+    boxed = rp._min_line_pitch_by_box(font, ref, _SPREAD_CARD, 0.0,
+                                      clear=rp._WRAP_GAP, every_pair=True)
+    lead = rp._card_lead(font, ref, _SPREAD_CARD, count=4)
+    assert lead < boxed * 0.7, (lead, boxed)
+
+
+def test_the_card_lead_never_exceeds_the_box_reading():
+    """The column reading may only ever be TIGHTER: it asks the same question of
+    a subset of the pairs of ink the box charges for."""
+    font, ref = _cafe()
+    for words in (_SPREAD_CARD, _CARD_HAPOEL, _CARD_ARZOT,
+                  ["לללל", "קקקק", "לללל", "קקקק"]):
+        boxed = rp._min_line_pitch_by_box(font, ref, words, 0.0,
+                                          clear=rp._WRAP_GAP, every_pair=True)
+        assert rp._card_lead(font, ref, words, count=4) <= boxed + 1e-9, words
+
+
+def test_the_card_lead_still_refuses_a_pitch_the_glyphs_cannot_take():
+    """A truer floor, not a smaller one: rows really stacked over one another
+    still reserve the whole of both their inks."""
+    font, ref = _cafe()
+    stacked = rp._card_lead(font, ref, ["קקקק", "לללל"], count=2)
+    assert stacked > 1.0, stacked
+
+
+def test_the_card_lead_does_not_move_when_the_words_are_dealt_in_another_order():
+    """A card's rhythm is a property of its four words, not of which slot each
+    landed in — so the reading is taken over every ORDERED pair, not only the
+    pairs a particular shuffle made adjacent."""
+    font, ref = _cafe()
+    base = rp._card_lead(font, ref, _SPREAD_CARD, count=4)
+    for shuffled in ([_SPREAD_CARD[i] for i in (3, 1, 0, 2)],
+                     list(reversed(_SPREAD_CARD)),
+                     [_SPREAD_CARD[i] for i in (2, 0, 3, 1)]):
+        assert abs(rp._card_lead(font, ref, shuffled, count=4) - base) < 1e-9, shuffled
+
+
+def test_the_markers_are_measured_over_the_digits_this_card_actually_sets():
+    """The numbers are their own column — ``word_lines`` sets them as separate
+    right-anchored runs a clear ``_WORD_GAP`` right of every word — so they can
+    only ever meet another number, and a four-entry card reserves for "1..4",
+    not for every digit a card could ever print."""
+    font, ref = _cafe()
+    four = rp._card_lead(font, ref, ["מ"], count=4)
+    ten = rp._card_lead(font, ref, ["מ"], count=10)
+    assert four <= ten, (four, ten)
+
+
+def test_the_card_sets_at_the_row_spacing_the_design_uses():
+    """The fix, stated as the owner reads it: our rows land where hers are.
+
+    The calibrated slots ARE the measurement of the original — they are where
+    detection found the design's four rows — so a card set at their spacing is a
+    card spaced like the original. Boxed, this one could not be: its floor alone
+    was 39.1 against the design's 31.2, and every gap on the card opened by 25%.
+    """
+    font, ref = _cafe()
+    boxed = rp._min_line_pitch_by_box(font, ref, _SPREAD_CARD, 0.0,
+                                      clear=rp._WRAP_GAP, every_pair=True)
+    assert boxed * _DESIGN_WORD_SIZE > _DESIGN_PITCH * 1.2, (
+        "this fixture must actually reproduce the report — boxed it has to "
+        f"overrun the design's spacing, got {boxed * _DESIGN_WORD_SIZE:.1f} "
+        f"against {_DESIGN_PITCH}")
+    for lay in _design_pitch_layouts(_SPREAD_CARD):
+        assert abs(lay.lead * lay.size - _DESIGN_PITCH) < 1e-6, (
+            lay.lead * lay.size, _DESIGN_PITCH)
+
+
+def test_a_card_whose_glyphs_really_need_more_still_gets_more():
+    """The design's spacing is a preference; not touching is the rule. A card
+    whose rows genuinely stack opens past the design's own pitch rather than
+    printing one row into the next."""
+    stacked = ["ללללל", "קקקקק", "ללללל", "קקקקק"]
+    pitches = {round(lay.lead * lay.size, 6)
+               for lay in _design_pitch_layouts(stacked)}
+    assert len(pitches) == 1, pitches
+    assert pitches.pop() > _DESIGN_PITCH, "a colliding card must open up"
+
+
+# --- ONE TEXT BOX ------------------------------------------------------------
+#
+# The owner, on סיישל: "try to make this in 1 textbox the 3 words … so like this
+# there will be no spacing between rows." Her original sets that graffiti title
+# as a single block with the three words tight against each other, and the ring
+# is thick enough that they weld into one mass — which is why calibration cannot
+# read a line spacing off the ink at all (calibrate.leading_plateau) and why she
+# had to read 0.75 off Canva by hand.
+#
+# What kept ours apart was never the markup. The renderer already places every
+# line on one constant baseline step, which is exactly what a text box does; the
+# space between the rows came from the floor that opens a title until no two
+# lines' outlines touch. On a design whose outlines DO touch, that floor is the
+# defect. ``one_block`` turns it off, and nothing else about the title changes —
+# the arch, the per-line alignment and the per-front title boxes all still place
+# the lines one at a time.
+
+def _graffiti():
+    """A ringed three-line title on the shape סיישל has."""
+    font = os.path.join(HERE, "Cafe-Regular.ttf")
+    f, ref = rp._title_metrics(font)
+    return f, ref, ["SHIRA'S", "WELCOME", "PARTY"]
+
+
+def test_one_block_stacks_the_lines_at_exactly_the_design_s_leading():
+    f, ref, lines = _graffiti()
+    pad = rp.title_paint_pad(0.075, 0.0, False)
+    assert rp.title_pitch(f, ref, lines, 0.75, pad, one_block=True) == 0.75
+
+
+def test_without_one_block_the_floor_still_opens_that_same_title():
+    """The fixture has to actually reproduce the complaint: left to the floor,
+    these three lines are prised apart well beyond the design's own spacing."""
+    f, ref, lines = _graffiti()
+    pad = rp.title_paint_pad(0.075, 0.0, False)
+    opened = rp.title_pitch(f, ref, lines, 0.75, pad)
+    assert opened > 0.75 * 1.15, opened
+
+
+def test_one_block_cannot_invent_a_spacing_the_design_never_stated():
+    """It suppresses the floor; it is not itself a spacing. A title with no
+    measured leading still gets the renderer's own step, flag or no flag."""
+    f, ref, lines = _graffiti()
+    assert rp.title_pitch(f, ref, lines, None, 0.0, one_block=True) == rp.RENDER_PITCH
+
+
+_ARC_START_Y = re.compile(r'd="M [-\d.]+ ([-\d.]+)')
+
+
+def test_one_block_reaches_the_rendered_title_block():
+    """End to end through the markup the card prints: the same title, once with
+    the flag and once without, and the flagged one stacks tighter."""
+    font = os.path.join(HERE, "Cafe-Regular.ttf")
+    box = {"x0": 20.0, "y0": 20.0, "x1": 440.0, "y1": 280.0}
+    lines = ["SHIRA'S", "WELCOME", "PARTY"]
+
+    def baselines(one_block):
+        rp._TITLE_UID[0] = 0
+        block = rp.title_block(box, lines, "#97d8e6", "#0d3e43", font,
+                               0.075, 0.0, False, leading=0.75,
+                               one_block=one_block)
+        return sorted({float(v) for v in _ARC_START_Y.findall(block)})
+
+    tight, loose = baselines(True), baselines(False)
+    assert len(tight) == len(loose) == 3, (tight, loose)
+    step_t = tight[1] - tight[0]
+    step_l = loose[1] - loose[0]
+    assert step_t < step_l, (step_t, step_l)
+    # ...and a text box's lines sit one CONSTANT step apart, which is what makes
+    # placing them individually the same picture as wrapping one element. To the
+    # tenth of a unit the path coordinates are written at.
+    assert abs((tight[2] - tight[1]) - step_t) <= 0.11, tight
+
+
+def test_one_block_is_off_everywhere_it_was_not_derived():
+    """It is opt-in per template, never a global change: every other shipped
+    design still gets the floor."""
+    shipped = json.load(open(os.path.join(HERE, "themes.json"), encoding="utf-8"))
+    flagged = [k for k, e in shipped.items()
+               if (e.get("title_style") or {}).get("one_block")]
+    assert len(flagged) <= 1, flagged
+
+
+# --- the collision rule for WORD ROWS, proved on the RENDERED card -----------
+#
+# The same standard the title's leading is held to (see the section above), now
+# that the word pitch is read off the design instead of off a bounding-box
+# reserve. Every shipped template is laid out through the production path, its
+# rows are drawn on separate layers through the SAME headless Chrome the cards
+# are printed with, and the rendered pixels are asked whether any two rows meet.
+#
+# The words are CONSTRUCTED, not sampled. A card carries whatever four words a
+# customer sends, so the proof has to be against the worst four that can be
+# built out of the face: a Hebrew line's ink reaches furthest below its baseline
+# on a final kaf/nun/pe/tsadi/qof and furthest above it on a lamed, so the rows
+# alternate long runs of the two — every descender of one row directly over an
+# ascender of the next, which is precisely the case a per-column reading must
+# not get wrong. They are also long enough to wrap, so the gaps INSIDE an entry
+# are proved beside the gaps between two.
+_COLLIDE_WORDS = ["ךןףץקךןףץק", "לללללללללל", "קץףןךקץףןך", "ללללללללל"]
+
+# Every <text> in a numbered row carries the baseline it is set on, so the row a
+# run belongs to is written into the markup rather than guessed from the order
+# (each row emits a digit run, a stop run and the word itself).
+_TEXT_Y_RE = re.compile(r'<text[^>]*\by="([-\d.]+)"')
+
+
+def _row_layers(overlay):
+    """``overlay``'s markup, once per printed ROW, with only that row's runs."""
+    per = {}
+    for el in _TEXT_RE.findall(overlay):
+        m = _TEXT_Y_RE.search(el)
+        if m:
+            per.setdefault(round(float(m.group(1)), 2), []).append(el)
+    return [(y, "".join(per[y])) for y in sorted(per)]
+
+
+def test_no_two_word_rows_touch_on_any_template():
+    import tempfile
+    import pytest
+    from PIL import ImageChops, ImageFilter
+    SCALE = 3
+    d = tempfile.mkdtemp(prefix="dugri-wordtest-")
+    shipped = json.load(open(os.path.join(HERE, "themes.json"), encoding="utf-8"))
+    checked = 0
+    for key, entry in sorted(shipped.items()):
+        try:
+            cfg = config.theme(key)
+            word_font = config.resolve_word_font(key, None)
+            recipe = config.load_recipe(cfg["recipe"])
+        except Exception:                                    # noqa: BLE001
+            continue
+        card = recipe.get("card")
+        if not isinstance(card, dict) or not card.get("words"):
+            continue                       # v1 sheet: its lines ARE its slots
+        cell = card["cell"]
+        slots = config.card_word_boxes(cfg, recipe, cell)
+        if not slots or len(slots) < 2:
+            continue
+        safe_bottom = cell[3] - (cell[3] - cell[1]) * rp._CARD_SAFE
+        try:
+            art = open(config.card_path(key, config.fronts(cfg)[0]),
+                       encoding="utf-8").read()
+        except Exception:                                    # noqa: BLE001
+            art = ""
+        room = rp.room_bottom(key, config.fronts(cfg)[0], art, cell, safe_bottom)
+        overlay = rp._words_overlay(slots, _COLLIDE_WORDS, cfg, word_font, cell,
+                                    room=room)
+        rows = _row_layers(overlay)
+        assert len(rows) >= len(slots), f"{key}: only {len(rows)} rows drawn"
+        W, H = int(cell[2] - cell[0]), int(cell[3] - cell[1])
+        masks = []
+        for i, (_y, body) in enumerate(rows):
+            svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" '
+                   f'height="{H}" viewBox="{cell[0]} {cell[1]} {W} {H}">'
+                   f'<style>{rp.font_face("HebWord", word_font)}</style>'
+                   f'<rect x="{cell[0]}" y="{cell[1]}" width="{W}" height="{H}" '
+                   f'fill="white"/>{body}</svg>')
+            masks.append(_chrome_mask(svg, W, H, SCALE,
+                                      os.path.join(d, f"{key}-w{i}.png")))
+        for i, m in enumerate(masks):
+            assert m.getbbox(), f"{key}: word row {i} rendered nothing at all"
+        # Neighbours only: three rows can stand clear at the top of the card and
+        # weld at the bottom. Each layer is grown a pixel first, because Chrome's
+        # antialiased rim welds two glyphs that merely abut (#329).
+        for i, (a, b) in enumerate(zip(masks, masks[1:])):
+            hit = ImageChops.multiply(a.filter(ImageFilter.MaxFilter(3)),
+                                      b).getbbox()
+            assert not hit, (
+                f"{key}: word rows {i} and {i + 1} touch — their ink meets "
+                f"around {hit}")
+        checked += 1
+    if not checked:
+        pytest.skip("no single-card template with declared word slots available")
+    assert checked >= 1
+
+
+# --- the ruler has to be the same ruler on every machine ---------------------
+#
+# Pillow lays text out with one of two engines, and which one you get is decided
+# by the WHEEL: the manylinux builds bundle Raqm, the macOS ones do not. BASIC
+# walks the string in logical order; RAQM runs the Unicode bidi algorithm and
+# reorders a Hebrew run itself.
+#
+# Every reading in this module compensates for BASIC — ``visual_order`` exists
+# precisely to put a string into paint order by hand, because Pillow will not.
+# Hand that already-reordered string to RAQM and it is reordered a SECOND time,
+# and the measurement is taken of a picture nothing ever prints. Caught by CI:
+# the same four Hebrew words measured a 0.92 row floor on a Raqm-less laptop and
+# 1.49 on a Raqm CI runner — a 62% difference in the number that decides how far
+# apart a card's rows sit, from nothing but the installed wheel.
+
+def test_every_font_this_module_measures_with_is_pinned_to_one_layout_engine():
+    from PIL import ImageFont
+    cafe = os.path.join(HERE, "word-fonts", "Cafe Regular.ttf")
+    for f, _ref in (rp._word_metrics(cafe), rp._title_metrics(cafe)):
+        assert f.layout_engine == ImageFont.Layout.BASIC, f.layout_engine
+
+
+def test_the_row_floor_does_not_depend_on_which_pillow_wheel_is_installed():
+    """The value itself, so a regression shows up as the number that moved."""
+    font, ref = rp._word_metrics(os.path.join(HERE, "word-fonts",
+                                              "Cafe Regular.ttf"))
+    assert abs(rp._card_lead(font, ref, _SPREAD_CARD, count=4) - 0.92) < 0.01

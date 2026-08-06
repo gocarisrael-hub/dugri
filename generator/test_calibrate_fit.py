@@ -1250,3 +1250,93 @@ def test_a_title_that_is_all_name_still_answers_from_its_geometry(monkeypatch):
                                   _MODEL_SIZE, PPU, ALPHA)
     assert got == 600, got
     assert "no honoree name reaches" not in note
+# --- a title the artwork shows as ONE text box --------------------------------
+#
+# A flat sweep has always been reported as a warning: this ink cannot say what
+# the spacing is, so ask the owner. It is also a positive reading of the DESIGN,
+# and that half went unused. The only thing that can rub a title's row structure
+# out is the rows' own paint running together, so an unreadable spacing means
+# the lines TOUCH — the design sets them as a single text box. The renderer needs
+# to be told, or it opens them back up to keep the outlines clear of each other
+# and prints the inter-row space the owner asked to be rid of.
+
+def test_a_welded_title_is_reported_as_one_block(monkeypatch):
+    flat = [(0.60 + 0.02 * i, 1.0) for i in range(14)]
+    curve = _flat_curve([(0.30, 0.2)] + flat + [(0.90, 0.2)])
+    monkeypatch.setattr(C, "leading_curve", lambda *a, **k: curve)
+    monkeypatch.setattr(C, "size_from_matching_samples",
+                        lambda *a, **k: 21.19)
+    ink = Image.new("L", (40, 30), 0)
+    _size, leading, _score = C.solve_size_and_leading(
+        ink, "f.ttf", [["A", "B", "C"]], 1, 128)
+    assert isinstance(leading, C.Undetermined), leading
+
+
+def test_a_title_whose_rows_can_be_read_is_not_one_block(monkeypatch):
+    curve = _flat_curve([(0.60, 0.5), (0.62, 0.8), (0.64, 1.0),
+                         (0.66, 0.8), (0.68, 0.5)])
+    monkeypatch.setattr(C, "leading_curve", lambda *a, **k: curve)
+    monkeypatch.setattr(C, "size_from_matching_samples", lambda *a, **k: 21.19)
+    ink = Image.new("L", (40, 30), 0)
+    _size, leading, _score = C.solve_size_and_leading(
+        ink, "f.ttf", [["A", "B"]], 1, 128)
+    assert leading == 0.64, leading
+    assert not isinstance(leading, C.Undetermined)
+
+
+def test_the_flag_travels_out_on_the_surface_s_own_reading(monkeypatch):
+    """``fit_title_size`` is where the two halves are still together, so that is
+    where the reading is handed on — ``calibrate`` turns it into
+    ``title_style.one_block`` for the renderer."""
+    flat = [(0.60 + 0.02 * i, 1.0) for i in range(14)]
+    curve = _flat_curve([(0.30, 0.2)] + flat + [(0.90, 0.2)])
+    seen = {}
+
+    def fake_solve(ink, font_path, samples, ppu, alpha, ring=0.0, pitch=None,
+                   curve_out=None, **_kw):
+        if curve_out is not None:
+            curve_out[:] = curve
+        if pitch is not None:
+            return 21.19, pitch, None
+        return 21.19, C.Undetermined(0.70, 21.19, 0.31), 1.0
+
+    monkeypatch.setattr(C, "solve_size_and_leading", fake_solve)
+    monkeypatch.setattr(C, "_ink_extent", lambda *a, **k: (10.0, 20.0, (0, 0, 4, 4)))
+    monkeypatch.setattr(C, "_alpha_threshold", lambda *a, **k: 128)
+    monkeypatch.setattr(C, "_background", lambda *a, **k: (255, 255, 255))
+    monkeypatch.setattr(C, "_covers", lambda *a, **k: True)
+    monkeypatch.setattr(C, "solid_ink", lambda im: im)
+    C.fit_title_size(_FakeMask(), _FakeMask(), {"x0": 0, "y0": 0, "x1": 4, "y1": 4},
+                     1.0, 0.0, 0.0, "f.ttf", [["A", "B", "C"]], "#000",
+                     fit_out=seen, owner_leading=0.75)
+    assert seen["welded"] is True
+    assert seen["leading"] == 0.75, "her reading of the design is what is used"
+
+
+def test_one_block_is_carried_forward_with_the_leading_it_belongs_to():
+    """Half of one reading. A re-detect that cannot re-measure the title must not
+    silently re-space a design the owner has already signed off."""
+    assert ("title_style", "one_block") in C._CARRIED
+
+
+def test_a_welded_ringed_title_is_read_as_one_text_box():
+    """סיישל: a flat top a third of the value wide, and a ring 0.075 of the
+    type size to have welded the rows together."""
+    assert C.sets_one_block(True, 0.075) is True
+
+
+def test_a_flat_sweep_alone_is_not_evidence_of_a_welded_block():
+    """סנטוריני measures a flat top just as wide (32%) with NO ring at all —
+    fill and outline the same paint. Its title is a light script the fit cannot
+    resolve, not a welded mass, and flagging it would have pulled a title nobody
+    complained about from 1.00 down to 0.50."""
+    assert C.sets_one_block(True, 0.0) is False
+    assert C.sets_one_block(True, None) is False
+
+
+def test_a_ring_alone_says_nothing_either():
+    """Four of the shipped designs paint a ring and every one of them has rows
+    the sweep can read. A ring is what makes welding POSSIBLE; the flat top is
+    what says it happened."""
+    assert C.sets_one_block(False, 0.116) is False
+    assert C.sets_one_block(None, 0.075) is False

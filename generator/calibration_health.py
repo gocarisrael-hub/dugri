@@ -187,7 +187,7 @@ def _drawn(lines):
 
 
 def _paint_ratio(font_path, lines, outline_w, shadow, leading=None, arch=0.0,
-                 bold=False, bold_w=None):
+                 bold=False, bold_w=None, one_block=False):
     """Painted title height per unit of font size, for these lines and font.
 
     This is the whole fit calculation in one number: ``title_block`` stacks the
@@ -208,7 +208,8 @@ def _paint_ratio(font_path, lines, outline_w, shadow, leading=None, arch=0.0,
     f, ref = got
     pitch = rp.title_pitch(f, ref, drawn, leading,
                            rp.title_paint_pad(outline_w, arch, shadow, bold,
-                                              bold_w))
+                                              bold_w),
+                           one_block=one_block)
     stack = rp._title_ink_stack(f, ref, drawn, pitch)
     pad = 2 * (outline_w or 0) + (0.06 if shadow else 0.0)
     return stack / ref + pad
@@ -263,7 +264,8 @@ def _fit(surface, pinned, box, font_path, font_name, samples, named, ts,
         return problems, notes, None
     hs = _span([(_paint_ratio(font_path, ln, ts.get("outline_w"),
                               ts.get("shadow"), leading,
-                              ts.get("arch"), ts.get("bold"), ts.get("bold_w")),
+                              ts.get("arch"), ts.get("bold"), ts.get("bold_w"),
+                              bool(ts.get("one_block"))),
                  n) for ln, n in samples])
     ws = _span([(_width_ratio(font_path, ln), n) for ln, n in samples])
     if not hs:
@@ -300,7 +302,8 @@ def _fit(surface, pinned, box, font_path, font_name, samples, named, ts,
         nw = _width_ratio(font_path, nlines)
         nh = _paint_ratio(font_path, nlines, ts.get("outline_w"),
                           ts.get("shadow"), leading, ts.get("arch"),
-                          ts.get("bold"), ts.get("bold_w"))
+                          ts.get("bold"), ts.get("bold_w"),
+                          bool(ts.get("one_block")))
         if nw and nw * pinned > bw:
             notes.append(
                 f'{label}: עם השם "{nname}" הכותרת רחבה מהתיבה '
@@ -442,7 +445,8 @@ def _font_drift(cfg, font_abs, font_name, lines, ts, pinned_any):
         old = _git(["show", f"{themes_c[1]}:{rel_font}"], binary=True)
         now = _paint_ratio(font_abs, lines, ts.get("outline_w"),
                            ts.get("shadow"), ts.get("leading"), ts.get("arch"),
-                           ts.get("bold"), ts.get("bold_w"))
+                           ts.get("bold"), ts.get("bold_w"),
+                           bool(ts.get("one_block")))
         if old and now:
             tmp = tempfile.NamedTemporaryFile(
                 suffix=os.path.splitext(rel_font)[1], delete=False)
@@ -452,7 +456,8 @@ def _font_drift(cfg, font_abs, font_name, lines, ts, pinned_any):
                 before = _paint_ratio(tmp.name, lines, ts.get("outline_w"),
                                       ts.get("shadow"), ts.get("leading"),
                                       ts.get("arch"), ts.get("bold"),
-                                      ts.get("bold_w"))
+                                      ts.get("bold_w"),
+                                      bool(ts.get("one_block")))
             finally:
                 os.unlink(tmp.name)
             if before and before > 0:
