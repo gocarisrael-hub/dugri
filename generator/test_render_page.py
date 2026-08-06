@@ -1824,14 +1824,36 @@ def _block(lines, leading=_UNSET, font=None, outline_w=0.0, **kw):
 
 
 def _baselines(svg):
-    """The y of each line's MAIN arc path, in the order they were emitted.
+    """One y per title line, a FIXED distance from that line's baseline.
+
+    Read as the VERTEX of the parabola each line rides, not as the path's start
+    point. The path is emitted longer than the run needs (see
+    ``render_page._TITLE_PATH_SLACK``) and by a different amount per line, since
+    the extension is a fraction of that line's OWN width — so on an arched title
+    the endpoints sit at their own arbitrary height up the arch, while the vertex
+    is a property of the parabola itself and is invariant under that extension.
+    It sits exactly ``arch * size`` above the baseline for every line in a block,
+    so vertex-to-vertex spacing IS baseline-to-baseline spacing, which is what
+    every caller here measures. (On a flat title, ``arch: 0``, the two readings
+    are the same number.)
 
     The `m` in the id matters: a shadowed title also emits an `s` path per line,
     dropped 0.06 of the size lower, and taking every path would read a line's
     own shadow as the next line.
     """
-    return [float(y) for y in
-            re.findall(r'id="t\d+m\d+" fill="none" d="M [-0-9.]+ ([-0-9.]+) Q', svg)]
+    out = []
+    for _x0, y0, _x1, y1, _x2, y2 in re.findall(
+            r'id="t\d+m\d+" fill="none" d="M ([-0-9.]+) ([-0-9.]+) '
+            r'Q ([-0-9.]+) ([-0-9.]+) ([-0-9.]+) ([-0-9.]+)"', svg):
+        a, b, c = float(y0), float(y1), float(y2)
+        denom = a - 2 * b + c
+        if abs(denom) < 1e-9:            # arch 0: a straight path, y is constant
+            out.append(a)
+            continue
+        t = (a - b) / denom              # where dy/dt == 0
+        u = 1 - t
+        out.append(u * u * a + 2 * t * u * b + t * t * c)
+    return out
 
 
 def _emitted_size(svg):
@@ -2052,14 +2074,20 @@ _LINE_RE = re.compile(r'href="#t\d+m(\d+)"')
 
 
 def _chrome_mask(svg_text, w, h, scale, out_png):
-    """Binary ink mask of an SVG rendered through the production rasterizer."""
-    import subprocess
+    """Binary ink mask of an SVG rendered through the production rasterizer.
+
+    Through ``generator/chrome.py`` — the one place the generator is allowed to
+    invoke Chrome — rather than a hand-rolled ``subprocess.run``. That is not
+    tidiness: the shared helper gives each run its own throwaway profile and
+    caps how many run at once, and without it a test file that screenshots
+    dozens of times in a row loses runs to the profile lock, dying with a
+    SIGKILL that says nothing about the picture (see chrome.py's own notes).
+    """
+    import chrome
     sp = out_png.replace(".png", ".svg")
     open(sp, "w", encoding="utf-8").write(svg_text)
-    subprocess.run([rp.CHROME, "--headless", "--no-sandbox", "--disable-gpu",
-                    rp.CHROME_FONT_WAIT, f"--force-device-scale-factor={scale}",
-                    f"--screenshot={out_png}", f"--window-size={w},{h}", sp],
-                   check=True, stderr=subprocess.DEVNULL)
+    chrome.screenshot(sp, out_png, w, h, scale=scale,
+                      what=os.path.basename(sp))
     return (Image.open(out_png).convert("L")
             .point(lambda v: 255 if v < 200 else 0))
 
@@ -2657,3 +2685,430 @@ def test_the_row_floor_does_not_depend_on_which_pillow_wheel_is_installed():
     font, ref = rp._word_metrics(os.path.join(HERE, "word-fonts",
                                               "Cafe Regular.ttf"))
     assert abs(rp._card_lead(font, ref, _SPREAD_CARD, count=4) - 0.92) < 0.01
+
+
+# --- silent glyph loss: letters that fall off the end of a title path --------
+#
+# The worst failure this renderer has. Every title line rides a `<textPath>`,
+# and a glyph that runs past the end of its path is not clipped by SVG — it is
+# DROPPED, whole, in silence. A centred run (`startOffset="50%"` +
+# `text-anchor="middle"`, which is what every centre-aligned title uses)
+# overflows by half at each end, so it loses letters from BOTH ends at once.
+# That is the owner's report, verbatim: "no matter what name I put it removes
+# the first and final letter" — אואזיס printed "ווקות לט" for "רווקות לטל".
+#
+# Two guards, because there are two ways to get there:
+#
+#   * the path is too short for a run the measurement got RIGHT — guarded by
+#     the room `render_page._TITLE_PATH_SLACK` reserves, checked below both
+#     arithmetically over the whole catalog and pixel-for-pixel through Chrome;
+#   * the path is too short because the MEASUREMENT was of a face that cannot
+#     draw the text at all — refused outright by `assert_title_drawable`, since
+#     nothing else about such a title is right either.
+
+_OFFSET_RE = re.compile(r'startOffset="([^"]+)"')
+_MAIN_PATH_RE = re.compile(
+    r'id="t\d+m\d+" fill="none" d="M ([-0-9.]+) ([-0-9.]+) '
+    r'Q ([-0-9.]+) ([-0-9.]+) ([-0-9.]+) ([-0-9.]+)"')
+_ANY_PATH_RE = re.compile(
+    r'id="(t\d+[ms]\d+)" fill="none" d="M ([-0-9.]+) ([-0-9.]+) '
+    r'Q ([-0-9.]+) ([-0-9.]+) ([-0-9.]+) ([-0-9.]+)"')
+
+
+def _respan(block, a, b):
+    """The block with every arc path re-cut to the ``t`` range ``[a, b]``.
+
+    ``[0, 1]`` is the path as emitted; wider carries the glyphs further, narrower
+    starves them. Cut through the renderer's OWN extension helper, so the curve
+    stays the same parabola either way and only its LENGTH changes — which is
+    precisely the variable under test.
+    """
+    def cut(m):
+        x0, y0, x1, y1, x2, y2 = (float(v) for v in m.groups()[1:])
+        q0, q1, q2 = rp._extend_quadratic((x0, y0), (x1, y1), (x2, y2), a, b)
+        return (f'id="{m.group(1)}" fill="none" d="M {q0[0]:.3f} {q0[1]:.3f} '
+                f'Q {q1[0]:.3f} {q1[1]:.3f} {q2[0]:.3f} {q2[1]:.3f}"')
+
+    return _ANY_PATH_RE.sub(cut, block)
+
+
+def _free_ends(block, extra):
+    """Grow only the path ends the text is NOT anchored to, by ``extra`` of the
+    path. Extending an ANCHORED end moves the run, and a width comparison would
+    then be measuring the move rather than the glyphs."""
+    off = _OFFSET_RE.search(block)
+    off = off.group(1) if off else "50%"
+    a = 0.0 if off == "0" else -extra
+    b = 1.0 if off == "100%" else 1.0 + extra
+    return _respan(block, a, b)
+
+
+_BAND_W, _BAND_H = 460, 140
+_GLYPH_BOX = {"x0": 40.0, "y0": 20.0, "x1": 420.0, "y1": 110.0}
+
+
+def _rekey(block, uid):
+    """The block with every path id (and the hrefs pointing at them) renumbered.
+
+    Load-bearing, and the control below is what proved it. Two bands of one
+    document are usually the SAME block with one thing varied, so they arrive
+    carrying the same ``t1m0`` ids — and a duplicate id is not an error in SVG,
+    it just means every ``href="#t1m0"`` in the document resolves to whichever
+    came FIRST. Both bands then render on the first band's path, every
+    difference under test vanishes, and a comparison of the two passes because
+    it is comparing a picture with itself.
+    """
+    return re.sub(r'(id="|href="#)t\d+([ms]\d+)',
+                  lambda m: f"{m.group(1)}t{uid}{m.group(2)}", block)
+
+
+def _title_doc(*blocks, font_path, weight=None):
+    """One document with each block on its own full-height band.
+
+    Stacked rather than screenshotted one at a time because every extra Chrome
+    run is a second of wall clock and another chance to lose the profile-lock
+    race — the whole catalog fits in one render per theme this way.
+    """
+    h = _BAND_H * len(blocks)
+    body = "".join(f'<g transform="translate(0,{i * _BAND_H})">'
+                   f'{_rekey(b, 900 + i)}</g>'
+                   for i, b in enumerate(blocks))
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" '
+            f'viewBox="0 0 {_BAND_W} {h}" width="{_BAND_W}" height="{h}">'
+            f'<rect width="{_BAND_W}" height="{h}" fill="#fff"/>'
+            f'<style>{rp.GEOMETRIC_TEXT_STYLE}'
+            f'{rp.font_face("TitleFont", font_path, weight)}</style>{body}</svg>')
+
+
+def _ink_span(mask):
+    """(left, right, pixel count) of the ink in a rendered title, or None."""
+    import numpy as np
+    a = np.asarray(mask) > 0
+    cols = np.where(a.any(axis=0))[0]
+    if not len(cols):
+        return None
+    return int(cols[0]), int(cols[-1]), int(a.sum())
+
+
+def _band_spans(mask, count):
+    """``_ink_span`` per band of a stacked render."""
+    band = mask.height // count
+    return [_ink_span(mask.crop((0, i * band, mask.width, (i + 1) * band)))
+            for i in range(count)]
+
+
+def _fill(entry, name):
+    lines = [ln.replace("{NAME}", name).replace("{NAME1}", name)
+             .replace("{NAME2}", name).replace("{AGE}", "40")
+             .replace("{YEARS}", "30") for ln in (entry.get("title_lines") or [])]
+    return [ln for ln in lines if ln.strip()]
+
+
+def _shipped_title_block(key, entry, name, align=None):
+    """One theme's real title block, filled with ``name``."""
+    ts = entry["title_style"]
+    lines = _fill(entry, name)
+    fp = config.font_path(key, entry["title_font"])
+    rp._TITLE_UID[0] = 0
+    return lines, fp, rp.title_block(
+        _GLYPH_BOX, lines, ts["fill"], ts["outline"], fp, ts["outline_w"],
+        ts["arch"], ts["shadow"], rtl=(entry.get("language") == "hebrew"),
+        fixed_size=ts.get("size"), align=align or ts.get("align", "center"),
+        italic=ts.get("italic", False), bold=ts.get("bold", False),
+        bold_w=ts.get("bold_w"), leading=ts.get("leading"),
+        one_block=ts.get("one_block", False))
+
+
+def test_a_title_path_shorter_than_its_text_silently_drops_glyphs():
+    """The positive control: prove the rasterizer really does this.
+
+    Without it the guards below could pass because nothing ever goes wrong
+    rather than because the paths are long enough — a test with no teeth.
+
+    Note WHICH path this uses: a dead STRAIGHT one, ``arch: 0``, which is what
+    every shipped and owner-onboarded design has. A straight path is sometimes
+    assumed to be lenient — to carry the overflow along the tangent instead of
+    dropping it. Measured here, it is not: "רווקות לטל" centred on a straight
+    path a little over half its own width comes back with a letter gone from
+    each end, exactly as an arched one does.
+    """
+    import tempfile
+    d = tempfile.mkdtemp(prefix="dugri-pathdrop-")
+    cfg = config.theme("grapefruit")
+    fp = config.font_path("grapefruit", cfg["title_font"])
+    line, size = "רווקות לטל", 28.0
+    rp._TITLE_UID[0] = 0
+    block = rp.title_block(_GLYPH_BOX, [line], "#000000", "#000000", fp,
+                           0.0, 0.0, False, rtl=True, fixed_size=size)
+    # The SAME <text> the renderer emits — same face, size, direction, anchors —
+    # moved onto a path a little over half the run it has to carry. Only the
+    # path's LENGTH changes, which is the whole point. Cut as a fraction of the
+    # RUN rather than of the emitted path, because the emitted path is already
+    # carrying its slack and 0.55 of THAT is still room enough.
+    f, ref = rp._title_metrics(fp)
+    run = f.getlength(line) / ref * size
+    (x0, y0, x1, y1, x2, y2) = _MAIN_PATH_RE.findall(block)[0]
+    have = rp._quad_length((float(x0), float(y0)), (float(x1), float(y1)),
+                           (float(x2), float(y2)))
+    half = (run * 0.55 / have) / 2
+    full, cut = _band_spans(
+        _chrome_mask(_title_doc(block, _respan(block, 0.5 - half, 0.5 + half),
+                                font_path=fp),
+                     _BAND_W, _BAND_H * 2, 3, os.path.join(d, "control.png")), 2)
+    assert full and cut, "the control rendered no ink at all"
+    assert cut[1] - cut[0] < (full[1] - full[0]) * 0.9, (
+        "a path far shorter than its text no longer loses glyphs — this control "
+        f"has stopped controlling anything (full {full}, starved {cut})")
+
+
+def test_every_shipped_title_draws_every_glyph_through_the_real_rasterizer():
+    """No template, at any name length, may lose ink to the length of its path.
+
+    Differential, and deliberately so: the reference is the SAME block on a much
+    longer path, which cannot drop anything. That compares Chrome against Chrome
+    and needs no opinion about what the string "should" measure — an opinion
+    formed from Pillow's metrics, which is exactly the measurement not trusted
+    here. Anything the emitted path costs shows up as ink the extended one has
+    and it does not.
+
+    Only the FREE ends are extended (see ``_free_ends``), so the run keeps its
+    anchor and the two renders are comparable pixel for pixel.
+    """
+    import tempfile
+    d = tempfile.mkdtemp(prefix="dugri-glyphloss-")
+    shipped = json.load(open(os.path.join(HERE, "themes.json"), encoding="utf-8"))
+    assert len(shipped) >= 8, "the shipped set shrank — check what was removed"
+    checked = 0
+    for key, entry in sorted(shipped.items()):
+        form = entry.get("name_form", "english")
+        # Short, ordinary, and the longest a buyer can realistically enter: the
+        # margin is a fraction of the RUN, so a long name is the tight case.
+        names = {"hebrew": ["רן", "דניאל", _LONG_NAMES["hebrew"]],
+                 "english": ["Dan", "Alexandra", _LONG_NAMES["english"]],
+                 "english-caps": ["DAN", "ALEXANDRA",
+                                  _LONG_NAMES["english-caps"]]}[form]
+        blocks, labels, fp = [], [], None
+        for name in names:
+            lines, fp, block = _shipped_title_block(key, entry, name)
+            if not block:
+                continue
+            # The real path, then the same block with its FREE ends carried far
+            # past anything the glyphs could need: whatever the first loses to
+            # the length of its path, the second keeps.
+            blocks += [block, _free_ends(block, 4.0)]
+            labels.append((name, lines))
+        if not blocks:
+            continue
+        mask = _chrome_mask(
+            _title_doc(*blocks, font_path=fp,
+                       weight=config.title_font_weight(entry)),
+            _BAND_W, _BAND_H * len(blocks), 3,
+            os.path.join(d, re.sub(r"\W", "_", key) + ".png"))
+        spans = _band_spans(mask, len(blocks))
+        for i, (name, lines) in enumerate(labels):
+            got, ref = spans[2 * i], spans[2 * i + 1]
+            assert got and ref, f"{key}/{name}: nothing rendered"
+            checked += 1
+            # A lost glyph is a whole letter of deficit, nothing subtle. The one
+            # pixel of tolerance is antialiasing: a longer path accumulates its
+            # arc length slightly differently, which moves the run's centroid by
+            # ~0.05 device pixels and can flip an edge pixel either way.
+            assert abs(got[0] - ref[0]) <= 1 and abs(got[1] - ref[1]) <= 1, (
+                f"{key}/{name} {lines}: the title loses ink to its own path — "
+                f"drawn {got[0]}..{got[1]}, with room {ref[0]}..{ref[1]}")
+            assert abs(got[2] - ref[2]) <= max(40, ref[2] * 0.01), (
+                f"{key}/{name} {lines}: ink area {got[2]} against {ref[2]} with "
+                "a longer path — glyphs are going missing")
+    assert checked >= 20, f"only {checked} titles were actually rendered"
+
+
+def test_the_path_extension_is_the_same_curve_the_design_was_measured_at():
+    """Extending must add ROOM, never bend the arch.
+
+    A quadratic is a parabola and a parabola extends itself, so the piece the
+    glyphs sit on has to come back point for point — otherwise every arched
+    template would have been re-arched by a safety margin.
+    """
+    p0, p1, p2 = (10.0, 50.0), (60.0, 20.0), (110.0, 50.0)
+
+    def at(pts, t):
+        (ax, ay), (bx, by), (cx, cy) = pts
+        u = 1 - t
+        return (u * u * ax + 2 * t * u * bx + t * t * cx,
+                u * u * ay + 2 * t * u * by + t * t * cy)
+
+    for a, b in ((-0.5, 1.5), (0.0, 1.4), (-0.3, 1.0), (-2.0, 3.0)):
+        ext = rp._extend_quadratic(p0, p1, p2, a, b)
+        for i in range(21):
+            t = i / 20                        # a point of the ORIGINAL segment
+            want = at((p0, p1, p2), t)
+            got = at(ext, (t - a) / (b - a))  # the same point of the extension
+            assert abs(got[0] - want[0]) < 1e-9 and abs(got[1] - want[1]) < 1e-9, (
+                f"extension [{a},{b}] moved t={t}: {got} != {want}")
+    # ...and the identity range is the identity.
+    assert rp._extend_quadratic(p0, p1, p2, 0.0, 1.0) == (p0, p1, p2)
+
+
+def test_the_anchored_end_of_a_path_never_moves():
+    """A left-aligned title starts where the path starts and a right-aligned one
+    ends where it ends, so THOSE ends may not be extended — the run would slide
+    along with them. Only the free end grows."""
+    entry = json.load(open(os.path.join(HERE, "themes.json"),
+                           encoding="utf-8"))["japanese"]
+    got = {}
+    for align in ("left", "right", "center"):
+        _lines, _fp, block = _shipped_title_block("japanese", entry, "DAN",
+                                                  align=align)
+        got[align] = [tuple(round(float(v), 3) for v in m)
+                      for m in _MAIN_PATH_RE.findall(block)]
+    for i, pts in enumerate(got["left"]):
+        assert abs(pts[0] - _GLYPH_BOX["x0"]) < 1e-6, (
+            f"left-aligned line {i} no longer starts at the box's left edge: "
+            f"{pts[0]} != {_GLYPH_BOX['x0']}")
+    for i, pts in enumerate(got["right"]):
+        assert abs(pts[4] - _GLYPH_BOX["x1"]) < 1e-6, (
+            f"right-aligned line {i} no longer ends at the box's right edge: "
+            f"{pts[4]} != {_GLYPH_BOX['x1']}")
+    # A centred line is anchored at the path's MIDPOINT, and a symmetric
+    # extension of a symmetric parabola leaves the midpoint exactly where it was.
+    for i, pts in enumerate(got["center"]):
+        assert abs((pts[0] + pts[4]) / 2 - pts[2]) < 1e-6, (
+            f"centred line {i}'s path is no longer symmetric about its control "
+            f"point, so its 50% anchor has moved: {pts}")
+
+
+def test_every_shipped_title_path_outruns_its_own_text_by_the_slack():
+    """The arithmetic half of the guarantee, over every theme and alignment.
+
+    Cheap enough to run over the whole catalog, so a geometry change that shaves
+    the margin is caught without a rasterizer.
+    """
+    shipped = json.load(open(os.path.join(HERE, "themes.json"), encoding="utf-8"))
+    for key, entry in sorted(shipped.items()):
+        name = _LONG_NAMES[entry.get("name_form", "english")]
+        lines = _fill(entry, name)
+        if not lines:
+            continue
+        for align in ("center", "left", "right"):
+            _l, fp, block = _shipped_title_block(key, entry, name, align=align)
+            size = _emitted_size(block)
+            f, ref = rp._title_metrics(fp)
+            sides = 1 if align in ("left", "right") else 2
+            paths = _MAIN_PATH_RE.findall(block)
+            assert len(paths) == len(lines), f"{key}/{align}: a line lost its path"
+            for line, pts in zip(lines, paths):
+                x0, y0, x1, y1, x2, y2 = (float(v) for v in pts)
+                have = rp._quad_length((x0, y0), (x1, y1), (x2, y2))
+                need = f.getlength(line) / ref * size * (
+                    1 + sides * rp._TITLE_PATH_SLACK)
+                assert have >= need - 1e-6, (
+                    f"{key}/{align} {line!r}: path {have:.1f} < {need:.1f} — a "
+                    "glyph that falls off it is dropped without a word")
+
+
+def test_a_starved_title_path_raises_instead_of_dropping_the_letters():
+    """The invariant must REFUSE, the way ``calibrate._covers`` refuses a face
+    that cannot draw the text, rather than degrade. A card that prints the wrong
+    name is worse than an order that stops and says so."""
+    import pytest
+    cfg = config.theme("grapefruit")
+    fp = config.font_path("grapefruit", cfg["title_font"])
+    real = rp._extend_quadratic
+
+    def starved(p0, p1, p2, a, b):        # hand back a path far too short
+        return real(p0, p1, p2, 0.45, 0.55)
+
+    rp._extend_quadratic = starved
+    try:
+        with pytest.raises(RuntimeError, match="shorter than the text"):
+            rp._TITLE_UID[0] = 0
+            rp.title_block(_GLYPH_BOX, ["רווקות לטל"], "#000000", "#000000", fp,
+                           0.0, 0.0, False, rtl=True, fixed_size=28.0)
+    finally:
+        rp._extend_quadratic = real
+    # ...and with the real helper back, the same title builds fine.
+    rp._TITLE_UID[0] = 0
+    assert rp.title_block(_GLYPH_BOX, ["רווקות לטל"], "#000000", "#000000", fp,
+                          0.0, 0.0, False, rtl=True, fixed_size=28.0)
+
+
+def test_the_slack_knob_cannot_lower_the_bar_it_is_checked_against():
+    """The invariant asserts the path against ``run * (1 + sides * SLACK)``, so
+    a NEGATIVE slack would shrink the path and the requirement together and the
+    check would pass while letters went missing — an assertion that moves with
+    the thing it is asserting is not an assertion. Floored at zero, the bar is
+    never below the run itself."""
+    assert rp._TITLE_PATH_SLACK >= 0.0
+    src = os.path.join(HERE, "render_page.py")
+    body = open(src, encoding="utf-8").read()
+    assert 'max(0.0, float(os.environ.get("DUGRI_TITLE_PATH_SLACK"' in body, (
+        "the slack is no longer floored at zero — a negative value would make "
+        "the path invariant assert against itself")
+
+
+# --- the other way to a path that is too short: a face that cannot draw it ---
+
+
+def test_a_title_face_without_the_titles_letters_is_named_exactly():
+    """The real case, with the real file. אואזיס's title font was set to League
+    Spartan Bold — which carries not one Hebrew letter — while its title is
+    "רווקות ל{NAME}". Pillow answers ``.notdef`` for every letter, Chrome
+    substitutes a system face with real advances, and the run laid out 29% wider
+    than the geometry reserved for it."""
+    latin = config.font_path("bachelorette",
+                             config.theme("bachelorette")["title_font"])
+    hebrew = config.font_path("grapefruit",
+                              config.theme("grapefruit")["title_font"])
+    assert rp.title_font_gaps(latin, ["רווקות לטל"]) == list("וטלקרת")
+    assert rp.title_font_gaps(hebrew, ["רווקות לטל"]) == []
+    assert rp.title_font_gaps(latin, ["Dana's Bachelorette"]) == []
+    # A SPACE is not a gap. It has no ink in any face on earth, so reading ink
+    # alone would condemn every title with two words in it — which is most of
+    # them, and would have made this guard refuse the whole catalog.
+    assert " " in "רווקות לטל" and rp.title_font_gaps(hebrew, ["a b", "  "]) == []
+    # ...and the lines are read TOGETHER, so a gap on the second line counts.
+    assert rp.title_font_gaps(latin, ["Dana's", "רווקות"]) == list("וקרת")
+    # An unopenable file is not this check's complaint to make — a missing or
+    # corrupt font is caught by the asset check, and answering "every character
+    # is a gap" here would bury that under a wall of letters.
+    assert rp.title_font_gaps(os.path.join(HERE, "themes.json"), ["Dan"]) == []
+
+
+def test_every_shipped_theme_can_draw_its_own_title_at_any_name():
+    """The catalog is clean today, and this is what says so — including the
+    punctuation a real name carries (an apostrophe, a hyphen, a diaeresis),
+    which is where a display face is likeliest to have a hole."""
+    shipped = json.load(open(os.path.join(HERE, "themes.json"), encoding="utf-8"))
+    names = {"hebrew": ["רן", "דניאל", "בת-אל", "מיכל'ה", _LONG_NAMES["hebrew"]],
+             "english": ["Dan", "O'Brien", "Jean-Luc", "Zoë",
+                         _LONG_NAMES["english"]],
+             "english-caps": ["DAN", "O'BRIEN", "JEAN-LUC",
+                              _LONG_NAMES["english-caps"]]}
+    for key, entry in sorted(shipped.items()):
+        fp = config.font_path(key, entry["title_font"])
+        for name in names[entry.get("name_form", "english")]:
+            gaps = rp.title_font_gaps(fp, _fill(entry, name))
+            assert not gaps, (
+                f"{key}: the title font {entry['title_font']} cannot draw "
+                f"{''.join(gaps)!r} of the title for {name!r} — orders for this "
+                "design would be refused")
+
+
+def test_an_order_refuses_a_title_its_own_font_cannot_draw():
+    """The refusal itself, and that it names what is wrong well enough to act
+    on: which font, which letters, and what to do about it."""
+    import pytest
+    latin = config.font_path("bachelorette",
+                             config.theme("bachelorette")["title_font"])
+    with pytest.raises(RuntimeError) as e:
+        rp.assert_title_drawable(latin, ["רווקות לטל"], theme="grapefruit")
+    msg = str(e.value)
+    assert "grapefruit" in msg and "MrDafoe" in msg
+    assert "רווקות לטל" in msg
+    for ch in "וטלקרת":
+        assert ch in msg
+    assert "Upload a title font" in msg
+    # ...and a face that CAN draw the title is waved straight through.
+    rp.assert_title_drawable(
+        config.font_path("grapefruit", config.theme("grapefruit")["title_font"]),
+        ["רווקות לטל"], theme="grapefruit")

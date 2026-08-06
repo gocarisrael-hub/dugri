@@ -154,6 +154,15 @@ def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
     config.ensure_calibrated(cfg)
     title_lines = config.title_lines(cfg, name, extra_fields or {}, custom_title=custom_title,
                                      gender=gender)
+    # Before a single page is rendered: can this design's own title face draw
+    # this title at all? See render_page.assert_title_drawable — a face without
+    # the title's script is substituted by Chrome per glyph, and the letters
+    # that overrun the path are then dropped in silence. That is the one failure
+    # an order must never ship, so it is checked here, up front, for the same
+    # reason build_deck checks its board artwork up front: a failed order costs
+    # a re-upload, a plausible-looking one with the wrong name costs the print.
+    rp.assert_title_drawable(config.font_path(theme, cfg["title_font"]),
+                             title_lines, theme=theme)
     os.makedirs(workdir, exist_ok=True)
     import csv as csvmod
     data = list(csvmod.DictReader(open(csvp, encoding="utf-8-sig")))
@@ -402,6 +411,12 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
     config.ensure_calibrated(cfg)
     title_lines = config.title_lines(cfg, name, extra_fields or {},
                                      custom_title=custom_title, gender=gender)
+    # ...and whether the title face can draw that title, before anything is
+    # rendered. Same reasoning as the board check just below: find out up front,
+    # and never hand over an order whose cards carry a name the buyer did not
+    # ask for (render_page.assert_title_drawable).
+    rp.assert_title_drawable(config.font_path(theme, cfg["title_font"]),
+                             title_lines, theme=theme)
     os.makedirs(workdir, exist_ok=True)
     # Check the board artwork BEFORE rendering the deck. An order owes the
     # customer BOTH artifacts, so a missing board is a failed order, not a deck

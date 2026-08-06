@@ -710,3 +710,42 @@ def test_the_live_defect_is_caught_on_a_seven_of_eight_map():
         _cov_recipe({str(n): [{}] for n in range(2, 9)}))
     assert m == {"fronts": 8, "with_own_title": 7, "missing": ["9"]}
     assert warnings and "9.svg" in warnings[0]
+
+
+# ---- a title font that cannot draw the title -------------------------------
+
+
+def test_a_title_font_without_the_titles_letters_is_a_problem():
+    """The one font fault that is not a question of FIT.
+
+    Every other font check here asks whether a pinned size still suits the
+    current face. This asks whether that face is the one Chrome will use at all
+    — and for any letter it has no glyph for, it is not: Chrome substitutes a
+    system font per glyph, so the title prints in a typeface nobody chose, at a
+    size fitted to a different one, and letters that overrun their line are
+    dropped without a word.
+
+    Taken from life. אואזיס's title font had been set to League Spartan Bold,
+    which carries not one Hebrew letter, against the title "רווקות ל{NAME}".
+    Every geometry check in this file passed — the artwork had not moved and the
+    pin still fit its box — while the card printed "ווקות לט".
+    """
+    with Fixture(font=FONT_B, language="hebrew", name_form="hebrew",
+                 title_lines=["רווקות ל{NAME}"], title_text="רווקות ל{NAME}") as fx:
+        report = fx.check()
+        assert not report["ok"], _texts(report)
+        hit = [p for p in report["problems"] if "Title.ttf" in p]
+        assert len(hit) == 1, _texts(report)
+        # It has to NAME the letters, or the owner is told her font is wrong and
+        # left to work out which of them it cannot draw.
+        for ch in "רוקת":
+            assert ch in hit[0], hit[0]
+
+
+def test_a_title_font_that_draws_its_title_raises_no_coverage_problem():
+    """The fixture's own Latin face against its own Latin title — the guard must
+    stay quiet on the case it is meant to protect."""
+    with Fixture() as fx:
+        cfg = config.theme(fx.key)
+        assert H._title_font_coverage(fx.font_path(), "Title.ttf",
+                                      H.sample_titles(cfg)) == []
