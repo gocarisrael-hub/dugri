@@ -75,3 +75,4 @@ __pycache__/
 *.pyc
 server/whatsapp-guard.json
 server/whatsapp-state.json
+stress-results/
