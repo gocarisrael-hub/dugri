@@ -18,14 +18,26 @@ export const MAIN_COLORS = [
   { id: 'coral', name: 'אלמוג', hex: '#FF6A3D' },
 ];
 
-/** Human-friendly (Hebrew) names per design id. */
+/**
+ * DEFAULT (Hebrew) names per design id — the first-paint fallback ONLY.
+ *
+ * The LIVE name of a design is its generator theme's `display_he`, which the owner
+ * renames from the admin and which is stored on the VOLUME (see
+ * server/templates.js, the display-name rule). So this table can never be the
+ * source of truth; it is what a page shows for the few hundred ms before
+ * syncDesignNames() resolves, and what it keeps if that fetch fails.
+ *
+ * Kept in step with the names currently in `generator/themes.json` so the two
+ * eras can't disagree: a page that renders before /api/design-names arrives then
+ * shows today's name rather than one from a previous naming round.
+ */
 const META = {
-  bachelorette: { name: 'מסיבת רווקות' },
-  marriage: { name: 'יום נישואין' },
-  birthday: { name: 'יום הולדת' },
-  japanese: { name: 'יפני' },
-  posttrip: { name: 'חזרה מטיול' },
-  kids: { name: 'יום הולדת לילדים' },
+  bachelorette: { name: 'פריז' },
+  marriage: { name: 'סנטוריני' },
+  birthday: { name: 'קליפורניה' },
+  japanese: { name: 'טוקיו' },
+  posttrip: { name: 'סיישל' },
+  kids: { name: 'ברוקלין' },
 };
 
 /**
@@ -302,6 +314,43 @@ export async function fetchDesignNames({ fetchImpl, timeoutMs = 2500 } = {}) {
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/**
+ * THE buyer-side entry point for owner-renamable design names — fetch the live
+ * names, write them onto the catalog, THEN let the page re-stamp what it painted.
+ *
+ * Every buyer surface that shows a design name calls exactly this, so a page can
+ * no longer end up on the stale side of a rename by forgetting half the dance
+ * (index.html, products.html, options.html and js/product.js each hand-rolled it,
+ * and products.html never updated the catalog at all — so anything read from
+ * `d.name` after its fetch still carried the old name).
+ *
+ * Order matters and is enforced here: the catalog is updated FIRST, so everything
+ * read from it afterwards (analytics labels, the `designName` stored on an order,
+ * a list or carousel built later) carries the new name; the `restamp` callback
+ * then fixes the nodes already on screen. Fail-soft end to end — fetchDesignNames
+ * resolves to `{}` on timeout/error, applyDesignNames then changes nothing, and
+ * the built-in names stand.
+ *
+ * @param {(names: Record<string,string>, changed: string[]) => void} [restamp]
+ *        re-stamp already-painted nodes; called even when nothing changed, so a
+ *        page can also apply a name map it holds for late-arriving custom designs
+ * @param {{lists?: Array<Array<object>>, fetchImpl?: Function, timeoutMs?: number}} [opts]
+ *        `lists` are the catalogs to write onto (default: the built-in DESIGNS)
+ * @returns {Promise<Record<string,string>>} the fetched map (`{}` on any failure)
+ */
+export async function syncDesignNames(restamp, { lists, fetchImpl, timeoutMs } = {}) {
+  const names = await fetchDesignNames({ fetchImpl, timeoutMs });
+  const targets = Array.isArray(lists) && lists.length ? lists : [DESIGNS];
+  const changed = [];
+  for (const list of targets) {
+    for (const id of applyDesignNames(names, list)) {
+      if (!changed.includes(id)) changed.push(id);
+    }
+  }
+  if (typeof restamp === 'function') restamp(names, changed);
+  return names;
 }
 
 // A stored template picture URL must be an our-own /api/template-image/<slug>/<slot>

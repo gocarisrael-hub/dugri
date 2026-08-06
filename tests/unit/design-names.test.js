@@ -240,3 +240,103 @@ describe('applyDesignNames — the rename reaches the catalog itself', () => {
     expect(list[2].name).toBe('ימי הולדת');
   });
 });
+
+// (D) syncDesignNames — the ONE buyer-side entry point. Every page that shows a
+// design name calls exactly this, so no page can end up on the stale side of a
+// rename by doing half the dance (fetch but never write the catalog, or re-stamp
+// nodes before the catalog is updated).
+describe('syncDesignNames — fetch, write the catalog, THEN re-stamp', () => {
+  let syncDesignNames;
+  beforeAll(async () => {
+    ({ syncDesignNames } = await import('../../site/js/designs.js'));
+  });
+
+  const okRes = (obj) => ({ ok: true, status: 200, json: async () => obj });
+  const fetchOk = (names) => async () => okRes({ names });
+
+  it('applies the names to the given lists and reports the changed ids', async () => {
+    const list = [
+      { id: 'bachelorette', name: 'ישן' },
+      { id: 'birthday', name: 'יום הולדת' },
+    ];
+    const seen = [];
+    const names = await syncDesignNames((n, changed) => seen.push([n, changed]), {
+      lists: [list],
+      fetchImpl: fetchOk({ bachelorette: 'פריז' }),
+    });
+    expect(names).toEqual({ bachelorette: 'פריז' });
+    expect(list[0].name).toBe('פריז');
+    expect(list[1].name).toBe('יום הולדת');
+    expect(seen).toEqual([[{ bachelorette: 'פריז' }, ['bachelorette']]]);
+  });
+
+  it('updates the catalog BEFORE the re-stamp callback runs', async () => {
+    // The ordering guarantee is the whole point: a callback that reads d.name (or
+    // anything built from the catalog) must never see the pre-rename value.
+    const list = [{ id: 'bachelorette', name: 'ישן' }];
+    let nameAtCallback = null;
+    await syncDesignNames(
+      () => {
+        nameAtCallback = list[0].name;
+      },
+      { lists: [list], fetchImpl: fetchOk({ bachelorette: 'פריז' }) }
+    );
+    expect(nameAtCallback).toBe('פריז');
+  });
+
+  it('de-duplicates changed ids across several lists sharing the same objects', async () => {
+    const shared = { id: 'bachelorette', name: 'ישן' };
+    let changed = null;
+    await syncDesignNames((n, c) => (changed = c), {
+      lists: [[shared], [shared]],
+      fetchImpl: fetchOk({ bachelorette: 'פריז' }),
+    });
+    expect(changed).toEqual(['bachelorette']);
+  });
+
+  it('still calls back (with no changes) on a failed fetch, so the page can proceed', async () => {
+    const list = [{ id: 'bachelorette', name: 'ישן' }];
+    let called = null;
+    const names = await syncDesignNames((n, c) => (called = [n, c]), {
+      lists: [list],
+      fetchImpl: async () => ({ ok: false, status: 503 }),
+    });
+    expect(names).toEqual({});
+    expect(called).toEqual([{}, []]);
+    expect(list[0].name).toBe('ישן'); // built-in name stands
+  });
+
+  it('works with no callback at all', async () => {
+    const list = [{ id: 'birthday', name: 'ישן' }];
+    await expect(
+      syncDesignNames(null, { lists: [list], fetchImpl: fetchOk({ birthday: 'קליפורניה' }) })
+    ).resolves.toEqual({ birthday: 'קליפורניה' });
+    expect(list[0].name).toBe('קליפורניה');
+  });
+});
+
+// (E) The REPO DEFAULTS. A rename is stored on the volume, so the repo can only
+// ever hold a default — but the two defaults it holds (the META table baked into
+// site/js/designs.js, and generator/themes.json display_he) must agree, or a page
+// that paints before /api/design-names resolves shows a name from a previous
+// naming era while the admin already shows the current one. That is exactly the
+// drift the owner reported, one layer down.
+describe('repo defaults — the bundled catalog name matches themes.json display_he', () => {
+  it('every built-in design defaults to its theme display_he', async () => {
+    const { DESIGNS } = await import('../../site/js/designs.js');
+    const themesPath = path.join(__dirname, '..', '..', 'generator', 'themes.json');
+    const themes = JSON.parse(fs.readFileSync(themesPath, 'utf8'));
+    const checked = [];
+    for (const d of DESIGNS) {
+      const entry =
+        d.theme && Object.prototype.hasOwnProperty.call(themes, d.theme) ? themes[d.theme] : null;
+      const shipped = entry && typeof entry.display_he === 'string' ? entry.display_he.trim() : '';
+      if (!shipped) continue; // a design whose theme names nothing has only one default
+      checked.push(d.id);
+      expect(d.id + '=' + d.name).toBe(d.id + '=' + shipped);
+    }
+    // Guard the guard: if the catalog ever stops resolving themes this test must
+    // fail loudly instead of silently checking nothing.
+    expect(checked.length).toBe(DESIGNS.length);
+  });
+});

@@ -584,7 +584,7 @@
       import { initCarousel } from './js/carousel.js';
       import {
         PUBLIC_DESIGNS as DESIGNS,
-        fetchDesignNames,
+        syncDesignNames,
         loadCustomDesigns,
       } from './js/designs.js';
       import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
@@ -797,7 +797,11 @@
       renderGrid({});
 
       // Overlay the owner-editable names (content override > admin name), fail-soft.
-      Promise.all([fetchDesignNames(), loadContentNames])
+      // syncDesignNames also writes the live names onto the catalog objects, so a
+      // card built AFTER this (a custom design joining the grid) starts from the
+      // renamed value instead of the bundled default. `designNames` is still kept
+      // for the ids the map covers but the catalog doesn't (late customs).
+      Promise.all([syncDesignNames(null, { lists: [allDesigns] }), loadContentNames])
         .then(([names, contentOv]) => {
           designNames = names || {};
           const ov = {};

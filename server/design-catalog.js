@@ -113,7 +113,10 @@ function slotsForBuiltIn(d) {
   return out;
 }
 
-function builtInDesign(d, siteDir) {
+// `themes` is the CURRENT themes.json view (shipped + owner overlay), so the name
+// reported here is the one the owner set — see the display-name rule in
+// server/templates.js. Passing null falls back to the built-in catalog name.
+function builtInDesign(d, siteDir, themes) {
   const dir = path.join(siteDir, 'assets', 'designs', d.id);
   const assets = EXPECTED_DESIGN_ASSETS.map((a) => ({
     ...a,
@@ -122,7 +125,11 @@ function builtInDesign(d, siteDir) {
   const summary = summarize(assets, DESIGN_ASSET_GROUPS);
   return {
     id: d.id,
-    name: d.name,
+    // ONE rule for both kinds (see templates.displayNameForDesign): a built-in
+    // design's name is its theme's live `display_he`, exactly like a template's.
+    // Reading the baked-in catalog name here is the drift bug — the admin then
+    // listed a design the storefront calls "פריז" as "מסיבת רווקות".
+    name: templates.displayNameForDesign(themes, d),
     theme: d.theme,
     custom: false,
     visibility: d.visibility,
@@ -162,7 +169,10 @@ function templateSlotUrl(key, slot) {
   return '/api/template-image/' + encodeURIComponent(key) + '/' + slot;
 }
 
-function templateDesign(key, entry, templateRoot) {
+// A template IS its own theme, so its themes.json entry is the whole name source
+// — `themes` defaults to a one-entry view of it, which keeps the SAME resolution
+// rule (templates.displayNameForDesign) on both branches of the merge.
+function templateDesign(key, entry, templateRoot, themes) {
   const assets = TEMPLATE_ASSET_GROUPS.map((g) => {
     const file = templateSlotFile(templateRoot, key, g.slot);
     return {
@@ -186,7 +196,7 @@ function templateDesign(key, entry, templateRoot) {
   }
   return {
     id: key,
-    name: (typeof entry.display_he === 'string' && entry.display_he.trim()) || key,
+    name: templates.displayNameForDesign(themes || { [key]: entry }, { id: key, theme: key }),
     // A template IS its own theme — the themes.json key is both the design id and
     // the generator theme, so there is no slug↔id table to keep in sync.
     theme: key,
@@ -236,21 +246,27 @@ async function loadBuiltInModule(siteDir) {
 async function mergedDesigns({ siteDir, templateRoot }) {
   const mod = await loadBuiltInModule(siteDir);
   const catalog = mod.DESIGNS || [];
-  const designs = catalog.map((d) => builtInDesign(d, siteDir));
 
-  const builtInThemes = new Set(Object.values(mod.THEME_BY_DESIGN || {}));
+  // Loaded BEFORE the built-ins are shaped: both kinds take their display name
+  // from this one themes view, so the admin can never disagree with the
+  // storefront (/api/design-names reads the same source) about what a design is
+  // called. A missing/corrupt themes.json degrades to "built-ins only", and their
+  // names then fall back to the bundled catalog rather than failing the screen.
   let themes = null;
   try {
     themes = templates.loadThemesCached(templates.themesPathFor(templateRoot));
   } catch {
     themes = null;
   }
+  const designs = catalog.map((d) => builtInDesign(d, siteDir, themes));
+
+  const builtInThemes = new Set(Object.values(mod.THEME_BY_DESIGN || {}));
   for (const key of Object.keys(themes || {})) {
     if (builtInThemes.has(key)) continue; // a built-in design's theme, not a template product
     if (!templates.isSafeSlug(key)) continue;
     const entry = templates.ownTheme(themes, key);
     if (!entry || typeof entry !== 'object') continue;
-    designs.push(templateDesign(key, entry, templateRoot));
+    designs.push(templateDesign(key, entry, templateRoot, themes));
   }
   return designs;
 }
