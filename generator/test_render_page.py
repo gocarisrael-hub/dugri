@@ -3241,3 +3241,69 @@ def test_a_mixed_line_really_is_measured_in_two_pieces():
     f, ref = _faces()
     assert len(rp.Face(f, f, ref).runs("40 מתחת ל-BBQ")) == 2
     assert len(rp.Face(f, f, ref).runs("מסיבה 40")) == 1
+
+
+def test_hand_placed_script_runs_land_where_chrome_would_put_them():
+    """The mechanism the two-face feature stands on, proved against the engine.
+
+    A mixed line cannot be one <text>: Chrome ignores ``direction="rtl"`` for RUN
+    ordering, which is why the "1." marker is already three separate elements.
+    So the renderer computes each run's position itself. If that arithmetic is
+    even slightly wrong the fit reserves a width the render does not paint, and
+    lines cross the trim.
+
+    Compared against the one thing that cannot be wrong: the SAME text as a
+    single element, ordered by Chrome's own bidi. Both must land in the same
+    place. Measured at 2x device scale, so a "1 pixel" difference is half a CSS
+    pixel.
+    """
+    import base64
+    import subprocess
+    import tempfile
+    import numpy as np
+    from PIL import Image
+
+    heb = os.path.join(HERE, "word-fonts", "Cafe Regular.ttf")
+    f, ref = rp._word_metrics(heb)
+    SIZE, X_RIGHT, Y, LINE = 60.0, 560.0, 90.0, "40 מתחת ל-BBQ"
+    runs = rp.script_runs(LINE)
+    assert len(runs) == 2, "the case under test must actually be mixed"
+    widths = [f.getlength(t) / ref * SIZE for _, t in runs]
+
+    style = ("@font-face{font-family:'W';src:url(data:font/ttf;base64,"
+             + base64.b64encode(open(heb, "rb").read()).decode() + ");}")
+
+    def doc(inner):
+        return ('<svg xmlns="http://www.w3.org/2000/svg" width="600" '
+                f'height="200" viewBox="0 0 600 200"><style>{style}</style>'
+                f'<rect width="600" height="200" fill="#fff"/>{inner}</svg>')
+
+    parts, x = [], X_RIGHT - sum(widths)
+    for (lat, t), w in reversed(list(zip(runs, widths))):   # visual order
+        x += w
+        body = t if lat else "‫" + t + "‬"
+        parts.append(f'<text x="{x:.2f}" y="{Y}" font-family="W" '
+                     f'font-size="{SIZE}" text-anchor="end">{body}</text>')
+    whole = (f'<text x="{X_RIGHT}" y="{Y}" font-family="W" font-size="{SIZE}" '
+             f'text-anchor="end">‫{LINE}‬</text>')
+
+    def ink(svg):
+        with tempfile.TemporaryDirectory() as d:
+            s, p = os.path.join(d, "a.svg"), os.path.join(d, "a.png")
+            open(s, "w", encoding="utf-8").write(doc(svg))
+            subprocess.run([rp.CHROME, "--headless", "--no-sandbox",
+                            "--disable-gpu", rp.CHROME_FONT_WAIT,
+                            "--force-device-scale-factor=2",
+                            f"--screenshot={p}", "--window-size=600,200",
+                            "file://" + s], check=True, capture_output=True,
+                           timeout=int(os.environ.get("DUGRI_CHROME_TIMEOUT_S", "120")))
+            m = np.asarray(Image.open(p).convert("L")).astype(int) < 128
+        cols, rows = np.where(m.any(axis=0))[0], np.where(m.any(axis=1))[0]
+        return int(cols.min()), int(cols.max()), int(rows.min()), int(rows.max()), int(m.sum())
+
+    sx0, sx1, sy0, sy1, spx = ink("".join(parts))
+    wx0, wx1, wy0, wy1, wpx = ink(whole)
+    assert abs(sx0 - wx0) <= 2, (sx0, wx0)
+    assert abs(sx1 - wx1) <= 2, (sx1, wx1)
+    assert abs(sy0 - wy0) <= 2 and abs(sy1 - wy1) <= 2
+    assert abs(spx - wpx) / wpx < 0.01, (spx, wpx)
