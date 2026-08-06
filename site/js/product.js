@@ -763,8 +763,16 @@ function switchToDesign(d) {
   const shots = galleryShots(d, currentOverrides, currentDesignImages);
   renderInfo(d, currentOverrides);
   applyGalleryAspect(d);
-  renderGallery(shots);
-  renderZoomSlides(shots);
+  // rebuildCarousels, NOT renderGallery/renderZoomSlides directly: boot() already
+  // wired a carousel onto these tracks, and initCarousel is idempotent — handed a
+  // track it has already claimed it returns early, BEFORE the loop that stamps
+  // `carousel-slide` onto each slide. Rendering straight into the live track
+  // therefore left brand-new slides unstamped inside a track still set to
+  // display:flex, so instead of one slide per view all of them shrank into a
+  // single row: the gallery collapsed to a letterboxed strip of thumbnails, with
+  // the dead instance's dots left underneath. Tearing the instances down first
+  // clears `__carousel`, so the re-init actually re-stamps.
+  rebuildCarousels(shots);
   renderRelated(d);
   markPhotosEditable(d);
   restampPrices();

@@ -87,3 +87,70 @@ test.describe('product.html — a custom design has a working detail page', () =
       ]);
   });
 });
+
+// A custom design resolves AFTER first paint, so switchToDesign re-renders a
+// gallery that boot() has already wired a carousel onto. initCarousel is
+// idempotent: handed a track it has already claimed it returns early, before the
+// loop that stamps `carousel-slide` on each slide. Rendering straight into the
+// live track therefore left the new slides unstamped inside a track still set to
+// display:flex — so instead of one slide per view they all shrank into one row
+// and the gallery collapsed to a letterboxed strip of thumbnails.
+//
+// The race decided whether anyone saw it: /api/design-images arriving LAST
+// silently repaired the damage (that path does tear the carousel down), and both
+// requests are fired back-to-back, so it was a coin flip per page load — and
+// never repaired at all for a custom design with no gallery config.
+test.describe('product.html — the gallery survives a late custom-design switch', () => {
+  // Force the losing order deterministically: design-images first, custom-designs
+  // last. That is the exact sequence the bug needed, and it must now be harmless.
+  async function stubLateCustom(page) {
+    await page.route('**/api/design-images', (route) => route.fulfill({ json: { images: {} } }));
+    await page.route('**/api/template-image/**', (route) =>
+      route.fulfill({ contentType: 'image/svg+xml', body: SVG })
+    );
+    await page.route('**/api/design-names', (route) => route.fulfill({ json: { names: {} } }));
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    await page.route('**/api/custom-designs', async (route) => {
+      await new Promise((r) => setTimeout(r, 600));
+      await route.fulfill({ json: { designs: [CUSTOM] } });
+    });
+  }
+
+  test('every slide is still a carousel slide — one per view, not a squashed row', async ({
+    page,
+  }) => {
+    await stubLateCustom(page);
+    await page.goto('/product.html?design=my-custom');
+    await expect(page.locator('#pdpTitle')).toHaveText('עיצוב מותאם');
+
+    const slides = page.locator('#galleryTrack > *');
+    await expect(slides).toHaveCount(3);
+    // The stamp is the fix: without it the slides keep flex's shrinking default.
+    for (let i = 0; i < 3; i++) {
+      await expect(slides.nth(i)).toHaveClass(/carousel-slide/);
+    }
+    // …and the observable consequence — each slide fills the track, rather than
+    // three of them sharing its width. Asserted on real geometry, because the
+    // class is only the mechanism; this is what the shopper actually sees.
+    const { slideW, trackW } = await page.evaluate(() => {
+      const track = document.getElementById('galleryTrack');
+      return {
+        slideW: track.children[0].getBoundingClientRect().width,
+        trackW: track.getBoundingClientRect().width,
+      };
+    });
+    expect(slideW).toBeGreaterThan(trackW * 0.9);
+  });
+
+  test('the fullscreen zoom slides are re-stamped too', async ({ page }) => {
+    await stubLateCustom(page);
+    await page.goto('/product.html?design=my-custom');
+    await expect(page.locator('#pdpTitle')).toHaveText('עיצוב מותאם');
+
+    const zoomSlides = page.locator('#pdpZoomTrack > *');
+    await expect(zoomSlides).toHaveCount(3);
+    for (let i = 0; i < 3; i++) {
+      await expect(zoomSlides.nth(i)).toHaveClass(/carousel-slide/);
+    }
+  });
+});
