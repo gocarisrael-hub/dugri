@@ -1,5 +1,14 @@
 import { test, expect } from '@playwright/test';
 import { ALL_ON, stubFeatures } from './feature-flags.js';
+import { THEME_BY_DESIGN, isPublicDesign } from '../../site/js/designs.js';
+
+// How many BUILT-IN designs the wizard offers, read from the catalog itself
+// rather than written down here. Hardcoding the total is what broke main: this
+// spec landed asserting 15 (7 built-in + 8 stubbed) and the very next merge
+// retired a design, so the number was wrong before either change was deployed.
+// The subject of the test is the LAYOUT holding at any count — the count itself
+// is incidental, and it should never be the thing that fails.
+const BUILTIN_PUBLIC = Object.keys(THEME_BY_DESIGN).filter((id) => isPublicDesign(id)).length;
 
 // The e2e server defaults every buyer-wizard feature flag OFF; this spec relies
 // on the (now gated) wizard features, so stub GET /api/features to ALL_ON — the
@@ -97,8 +106,10 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
 
     await page.goto('/options.html');
     await expect(page.getByTestId('step-1')).toBeVisible();
-    // All 15 are offered…
-    await expect(page.locator('[data-testid="design-list"] .design')).toHaveCount(15);
+    // Every built-in design PLUS all eight stubbed ones are offered…
+    await expect(page.locator('[data-testid="design-list"] .design')).toHaveCount(
+      BUILTIN_PUBLIC + designs.length
+    );
     // …and the step still fits the phone.
     await assertStepFits(page, '[data-testid="design-list"] .design');
     // The overflow went to the picker's OWN scroll, not the page's.
