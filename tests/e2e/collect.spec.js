@@ -1690,3 +1690,96 @@ test('pay-success ignores an off-site ?back= and keeps its default link', async 
   await page.goto('/pay-success.html?back=' + encodeURIComponent('//evil.example/x'));
   await expect(page.locator('#backBtn')).toHaveAttribute('href', '/');
 });
+
+// --- the per-entry word length cap (25 chars, spaces included) --------------
+// The point of enforcing this on the FORM is that a too-long entry gets fixed by
+// the person typing it, right then. If the only check were at generation time the
+// failure would surface hours later as a broken PDF, and someone would have to go
+// back and ask the customer to rewrite a word.
+const AT_LIMIT = 'אבגדהוזחטיכלמנסעפצקרשתאבג'; // exactly 25
+const OVER_LIMIT = 'אבגדהוזחטיכלמנסעפצקרשתאבגד'; // exactly 26
+
+// These specs are about the WORD FORM, not about how a collection is created, so
+// they seed one straight through the API and open collect.html on it. That skips
+// the multi-step options.html wizard the createCollection() helper above drives —
+// which is worth avoiding here: that walk is independently load-flaky on the
+// design step (it fails the same way on an untouched main), and inheriting its
+// flake would make a length regression look like an unrelated red.
+async function seedCollection(request, page, name) {
+  const res = await request.post('/api/collections', {
+    data: { honoree_name: name, email: 'test@example.com', phone: '0521234567' },
+  });
+  expect(res.status()).toBe(201);
+  const c = await res.json();
+  await page.goto(`/collect.html?c=${c.id}&k=${c.owner_token}`);
+  await expect(page.locator('#addCard')).toBeVisible();
+  return c;
+}
+
+test('the word form accepts a 25-character entry and refuses a 26-character one', async ({
+  page,
+  request,
+}) => {
+  await seedCollection(request, page, 'Shira');
+  expect(AT_LIMIT).toHaveLength(25);
+  expect(OVER_LIMIT).toHaveLength(26);
+
+  // 26 → live warning while typing, add button disabled, nothing submitted.
+  await page.fill('#wordInput', OVER_LIMIT);
+  const hint = page.locator('#wordLenHint');
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText('26'); // the actual length
+  await expect(hint).toContainText('25'); // the limit
+  await expect(page.locator('#addBtn')).toBeDisabled();
+  await expect(page.locator('#count')).toHaveText('0');
+  // the typed text is kept, so it can be shortened rather than retyped
+  await expect(page.locator('#wordInput')).toHaveValue(OVER_LIMIT);
+
+  // Shortening it to exactly 25 clears the warning and lets it through.
+  await page.fill('#wordInput', AT_LIMIT);
+  await expect(hint).toBeHidden();
+  await expect(page.locator('#addBtn')).toBeEnabled();
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('1');
+  await expect(page.locator('#wordsWrap')).toContainText(AT_LIMIT);
+});
+
+test('a pasted list adds its good words and names the ones that were too long', async ({
+  page,
+  request,
+}) => {
+  await seedCollection(request, page, 'Shira');
+  await page.click('#tab-list');
+  await page.fill('#pasteBox', ['מים', OVER_LIMIT, 'אש'].join('\n'));
+  await page.click('#pasteAdd');
+
+  // The good words still land — losing them because a neighbour was too long
+  // would be worse than the problem.
+  await expect(page.locator('#count')).toHaveText('2');
+  await expect(page.locator('#wordsWrap')).toContainText('מים');
+  await expect(page.locator('#wordsWrap')).toContainText('אש');
+  await expect(page.locator('#wordsWrap')).not.toContainText(OVER_LIMIT);
+  // ...and the partial add does not read as a clean success.
+  await expect(page.locator('#toast')).toContainText('26');
+});
+
+test('the server refuses an over-length entry even when the form is bypassed', async ({
+  page,
+  request,
+}) => {
+  // A client-side limit is only a suggestion — this is the route a stale tab or a
+  // non-browser client would take around it.
+  const { id } = await seedCollection(request, page, 'Shira');
+
+  const res = await request.post(`/api/collections/${id}/words`, {
+    data: { words: [OVER_LIMIT, 'ג'.repeat(40)] },
+  });
+  expect(res.status()).toBe(200);
+  const body = await res.json();
+  expect(body.added).toBe(0);
+  expect(body.too_long).toBe(2);
+  expect(body.max_word_len).toBe(25);
+
+  const list = await (await request.get(`/api/collections/${id}`)).json();
+  expect(list.count).toBe(0);
+});

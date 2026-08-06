@@ -65,8 +65,10 @@ const GENERIC = 'generic-350.txt';
 // Caps: a pool is filler for a 412-word deck, so a few thousand words is already
 // far more than any deck can consume — bound it so a paste can't fill the volume.
 const MAX_WORDS = 5000;
-// One word per line; the collection word cap is 80 chars, so match it.
-const MAX_WORD_LEN = 80;
+// One word per line. Pool words are printed on cards exactly like a buyer's own
+// words (topup.py draws filler from here), so they are held to the SAME per-entry
+// cap — one source of truth in validate.js, not a second number that can drift.
+const MAX_WORD_LEN = validate.MAX_WORD_LEN;
 // Bound a single request body's raw text before we even split it.
 const MAX_TEXT = 400 * 1024;
 
@@ -120,8 +122,14 @@ function normKey(word) {
 // share one code path. A blob splits on newlines AND commas (people paste
 // comma-separated lists just as often as line-separated ones); semicolons and
 // tabs come along for free since they are equally common in a paste.
-// Trims, collapses inner whitespace, drops blanks, truncates over-long words,
-// and dedups case/space-insensitively PRESERVING ORDER. Capped at MAX_WORDS.
+// Trims, collapses inner whitespace, drops blanks, and dedups
+// case/space-insensitively PRESERVING ORDER. Capped at MAX_WORDS.
+//
+// It does NOT apply the length cap — splitByLength does, and only to the words a
+// save is ADDING. That split is deliberate: the shipped pools contain 46 entries
+// over the cap (the longest is 41 chars), and they are grandfathered like every
+// other pre-existing word list. If parseWords filtered, merely re-saving a
+// shipped pool from the admin editor would silently delete those 46 words.
 function parseWords(input) {
   let raw;
   if (Array.isArray(input)) {
@@ -134,7 +142,7 @@ function parseWords(input) {
   const seen = new Set();
   const out = [];
   for (const item of raw) {
-    const w = String(item).trim().replace(/\s+/g, ' ').slice(0, MAX_WORD_LEN);
+    const w = validate.normalizeWordText(item);
     if (!w) continue;
     const k = normKey(w);
     if (seen.has(k)) continue;
@@ -143,6 +151,39 @@ function parseWords(input) {
     if (out.length >= MAX_WORDS) break;
   }
   return out;
+}
+
+// Split a parsed list into the words a save may keep and the over-length ones it
+// must refuse. `existing` is the pool's CURRENT words: an over-length entry that
+// is already in the pool passes through untouched, because the admin editor
+// round-trips the whole list on every save and the shipped pools predate the cap
+// — grandfathering by identity is what lets the owner fix a typo in a pool
+// without silently losing its 46 legacy long entries. Only entries that are NEW
+// to this pool are held to the cap.
+function splitByLength(list, existing) {
+  const known = new Set((Array.isArray(existing) ? existing : []).map(normKey));
+  const kept = [];
+  const tooLong = [];
+  for (const w of Array.isArray(list) ? list : []) {
+    if (w.length > MAX_WORD_LEN && !known.has(normKey(w))) tooLong.push(w);
+    else kept.push(w);
+  }
+  return { kept, tooLong };
+}
+
+// The Hebrew warning for words a save refused, or null when none were. Named so
+// the admin screen can show WHICH words were dropped rather than a silent diff.
+function tooLongWarning(tooLong) {
+  if (!tooLong || !tooLong.length) return null;
+  const shown = tooLong.slice(0, 5).map((w) => '"' + w + '"');
+  return (
+    tooLong.length +
+    ' מילים לא נשמרו כי הן ארוכות מדי (המקסימום ' +
+    MAX_WORD_LEN +
+    ' תווים): ' +
+    shown.join(', ') +
+    (tooLong.length > shown.length ? ' ועוד' : '')
+  );
 }
 
 // ---- disk helpers ----------------------------------------------------------
@@ -301,9 +342,10 @@ function create({ name, words, text } = {}) {
       httpStatus: 409,
     };
   }
-  const clean = parseWords(words != null ? words : text);
-  writeStore(n, clean);
-  return read(n);
+  // A brand-new pool has nothing to grandfather, so every word is held to the cap.
+  const { kept, tooLong } = splitByLength(parseWords(words != null ? words : text), []);
+  writeStore(n, kept);
+  return { ...read(n), too_long: tooLong, warning: tooLongWarning(tooLong) };
 }
 
 // REPLACE a pool's contents (the "paste a whole list" save), or APPEND when
@@ -317,13 +359,22 @@ function update(name, { words, text, append } = {}) {
   const hit = resolveWordlist(n);
   if (!hit) return { error: 'הרשימה ' + n + ' לא נמצאה.', httpStatus: 404 };
 
-  const incoming = parseWords(append != null ? append : words != null ? words : text);
+  // The pool as it stands. Its words are the grandfather set: already-stored
+  // over-length entries survive a re-save, new ones are refused (splitByLength).
+  const current = read(n);
+  const currentWords = current ? current.words : [];
+  const parsed = parseWords(append != null ? append : words != null ? words : text);
+  const { kept: incoming, tooLong } = splitByLength(parsed, currentWords);
   let next;
   if (append != null) {
-    // Append: keep the existing order, add only genuinely new words.
-    const current = read(n);
-    next = parseWords((current ? current.words : []).concat(incoming));
-    if (next.length === (current ? current.words.length : 0)) {
+    // Append: keep the existing order, add only genuinely new words. An append of
+    // nothing BUT over-length words is a hard error — there is no "added" outcome
+    // to report and the owner must see why.
+    if (!incoming.length && tooLong.length) {
+      return { error: tooLongWarning(tooLong), httpStatus: 400 };
+    }
+    next = parseWords(currentWords.concat(incoming));
+    if (next.length === currentWords.length) {
       return { error: 'המילה כבר קיימת ברשימה.', httpStatus: 409 };
     }
   } else {
@@ -333,7 +384,7 @@ function update(name, { words, text, append } = {}) {
     }
   }
   writeStore(n, next);
-  return read(n);
+  return { ...read(n), too_long: tooLong, warning: tooLongWarning(tooLong) };
 }
 
 // DELETE a pool. Two hard guards, both with an explanation the owner can act on:
@@ -476,6 +527,8 @@ module.exports = {
   remove,
   revert,
   parseWords,
+  splitByLength,
+  tooLongWarning,
   normKey,
   safeName,
   themesUsing,

@@ -69,16 +69,26 @@ describe('db.editWord', () => {
     expect(after.norm).toBe('סוכר בבא');
   });
 
-  it('trims, collapses inner whitespace, and caps at 80 chars', () => {
+  it('trims and collapses inner whitespace', () => {
     const c = db.createCollection('לקוח');
     db.addWords(c.id, ['מילה'], null);
     const w = onlyWord(c.id);
 
     db.editWord(c.id, w.id, '   הרבה    רווחים   ', c.owner_token);
     expect(onlyWord(c.id).text).toBe('הרבה רווחים');
+  });
 
-    db.editWord(c.id, w.id, 'א'.repeat(200), c.owner_token);
-    expect(onlyWord(c.id).text.length).toBe(80);
+  it('REFUSES an over-length edit instead of truncating it', () => {
+    // This used to .slice(0, 80), which quietly replaced the owner's text with a
+    // different, shorter word. It is now refused with a reason she can act on.
+    // Boundary coverage lives in tests/unit/word-length.test.js.
+    const c = db.createCollection('לקוח');
+    db.addWords(c.id, ['מילה'], null);
+    const w = onlyWord(c.id);
+
+    const r = db.editWord(c.id, w.id, 'א'.repeat(200), c.owner_token);
+    expect(r.error).toBe('too_long');
+    expect(onlyWord(c.id).text).toBe('מילה'); // unchanged
   });
 
   it('rejects an edit that normalizes to empty, leaving the word unchanged', () => {

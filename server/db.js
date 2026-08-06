@@ -6,6 +6,9 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+// The word-entry cap + its normalizer live in validate.js so the collection
+// store, the wordlist pools and the routes all measure entries the same way.
+const validate = require('./validate');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DB_FILE = path.join(DATA_DIR, 'dugri-data.json');
@@ -472,7 +475,15 @@ const db = {
   // freeLimitState): a 50-word paste onto a collection with 5 slots left stores
   // those 5 and reports the rest as `blocked` — partial acceptance beats
   // rejecting the whole list and losing the buyer's typing. Returns
-  // {added, skipped, blocked} or {closed:true} if not open.
+  // {added, skipped, blocked, tooLong} or {closed:true} if not open.
+  //
+  // Entries over validate.MAX_WORD_LEN are REFUSED (counted in `tooLong`), not
+  // truncated. This used to .slice(0, 80) them, which silently changed the
+  // buyer's word into a different one — and 80 is exactly the length measured to
+  // blow up the renderer's fitting loop. Refusing per-entry rather than
+  // per-batch matters for the WhatsApp path, which funnels through here: one
+  // over-long sentence in a group message must not discard the good words
+  // alongside it.
   addWords(id, words, addedBy) {
     const c = this.getCollection(id);
     if (!c) return null;
@@ -487,9 +498,17 @@ const db = {
     let added = 0;
     let skipped = 0;
     let blocked = 0;
+    let tooLong = 0;
     for (const raw of Array.isArray(words) ? words : []) {
-      const text = String(raw).trim().replace(/\s+/g, ' ').slice(0, 80);
+      const text = validate.normalizeWordText(raw);
       if (!text) continue;
+      // Over the entry cap: refused outright, never truncated into a different
+      // word. Counted separately from `skipped` (duplicates) and `blocked`
+      // (quota) so the caller can say WHY it didn't land.
+      if (validate.isWordTooLong(text)) {
+        tooLong += 1;
+        continue;
+      }
       const n = norm(text);
       if (existing.has(n)) {
         skipped += 1;
@@ -514,7 +533,7 @@ const db = {
       added += 1;
     }
     if (added) saveDb();
-    return { added, skipped, blocked };
+    return { added, skipped, blocked, tooLong };
   },
 
   // The free-quota state for a collection, from its live word count. Exposed so
@@ -546,14 +565,19 @@ const db = {
     return true;
   },
 
-  // Owner-only: edit ONE word's text (fix a typo). Trims, collapses inner
-  // whitespace and caps at 80 like addWords; the word keeps its identity and its
-  // added_by/created_at metadata — only `text` (and its dedupe `norm`) change.
+  // Owner-only: edit ONE word's text (fix a typo). Trims and collapses inner
+  // whitespace like addWords, and holds the result to the same entry cap; the
+  // word keeps its identity and its added_by/created_at metadata — only `text`
+  // (and its dedupe `norm`) change.
   // Returns the updated word, or an { error } object:
   //   'forbidden'  bad owner token
   //   'not_found'  no such word in this collection
   //   'empty'      the new text normalizes away to nothing
+  //   'too_long'   the new text is over validate.MAX_WORD_LEN (carries `len`)
   //   'duplicate'  another word in the collection already has this normalized text
+  // NOTE this gates the NEW text only. A grandfathered over-length word that was
+  // stored before the cap existed is left alone until someone edits it — reading
+  // or regenerating it never trips this.
   // Returns null when the collection itself doesn't exist (so the route can 404).
   // Like deleteWord it does NOT gate on open/closed status — the owner can fix a
   // typo at any time. Idempotent: re-saving the same text is a no-op that still
@@ -564,11 +588,9 @@ const db = {
     if (c.owner_token !== ownerToken) return { error: 'forbidden' };
     const w = _db.words.find((x) => x.id === wordId && x.collection_id === id);
     if (!w) return { error: 'not_found' };
-    const clean = String(text == null ? '' : text)
-      .trim()
-      .replace(/\s+/g, ' ')
-      .slice(0, 80);
+    const clean = validate.normalizeWordText(text);
     if (!clean) return { error: 'empty' };
+    if (validate.isWordTooLong(clean)) return { error: 'too_long', len: clean.length };
     const n = norm(clean);
     // Reject a collision with a DIFFERENT word that shares the normalized form.
     // Re-casing/re-spacing the word's own text (same norm, own id) is allowed.

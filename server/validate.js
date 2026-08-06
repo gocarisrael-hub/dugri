@@ -40,6 +40,57 @@ function getTheme(name) {
   return (name && themes[name]) || null;
 }
 
+// ---------------------------------------------------------------------------
+// The word-entry length cap.
+// ---------------------------------------------------------------------------
+// The longest a SINGLE word entry may be, counted over the WHOLE entry with its
+// spaces included — not per unbroken token. "מכבי חיפה" (9) and "בית ספר" (7)
+// pass; a 30-character entry does not. Per-entry is the owner's deliberate
+// choice over per-token (which would have let a 21-character phrase through
+// while only capping one long run): an entry that fits on a card line reads
+// better than one that wraps. It is a design call about the card, so don't
+// quietly relax it to per-token.
+//
+// It also keeps the renderer out of trouble. A long unbreakable token drives an
+// O(n^2) fitting loop in render_page: measured on staging, an 80-character token
+// took `grapefruit` from 4.6s to 61.9s and pushed `daniel-amit` past its 120s
+// timeout into an HTTP 500. NOTE the honest margin — 80 is the only length ever
+// measured to break, and nothing between 25 and 80 was tested. 25 is far below
+// the one known-bad point; it is NOT a measured safe maximum.
+//
+// GRANDFATHERED: this is an ENTRY-time rule only. Word lists stored before it
+// existed (production has orders of 416/224/109 words) keep their entries
+// byte-for-byte and must still generate — nothing in the render path enforces
+// this cap, and no migration rewrites stored data.
+const MAX_WORD_LEN = 25;
+
+// The stored form of an entry: trimmed, inner whitespace runs collapsed. The cap
+// is measured against THIS, so "מכבי  חיפה" (double space) counts as 9 — we
+// measure what actually gets rendered, not what was typed.
+function normalizeWordText(s) {
+  return String(s == null ? '' : s)
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+// True when an entry is over the cap (measured on its normalized form).
+function isWordTooLong(s) {
+  return normalizeWordText(s).length > MAX_WORD_LEN;
+}
+
+// The Hebrew rejection message for an entry of `len` characters: it names the
+// ACTUAL length and the limit, so the person typing knows how much to cut,
+// rather than a bare "invalid input".
+function wordLengthMessageForLen(len) {
+  return 'המילה ארוכה מדי: ' + len + ' תווים, המקסימום הוא ' + MAX_WORD_LEN + '. קצרו ונסו שוב.';
+}
+
+// The same message for an actual entry, or null when the entry fits.
+function wordLengthMessage(s) {
+  const t = normalizeWordText(s);
+  return t.length > MAX_WORD_LEN ? wordLengthMessageForLen(t.length) : null;
+}
+
 // Hebrew block U+0590–U+05FF; Latin ASCII letters. A name is validated against
 // the theme's expected script: it must contain the expected script and none of
 // the other.
@@ -134,4 +185,9 @@ module.exports = {
   getTheme,
   checkNameLanguage,
   validateOrderForProduction,
+  MAX_WORD_LEN,
+  normalizeWordText,
+  isWordTooLong,
+  wordLengthMessage,
+  wordLengthMessageForLen,
 };
