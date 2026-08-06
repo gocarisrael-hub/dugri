@@ -315,10 +315,11 @@
         <p class="kicker">Internal · גלריית מוצר</p>
         <h1>גלריית מוצר</h1>
         <p>
-          כל עיצוב מגיע עם שלוש תמונות קבועות — קלף, גב הקלף ולוח — ותמונת חנות. אפשר להחליף כל
-          תמונה בתמונה משלכם, להוסיף תמונות נוספות עם שם, לבחור לכל תמונה אם תופיע בעמוד החנות ו/או
-          בעמוד המוצר, ולשנות את הסדר. הכול נשמר בשרת ומופיע מיד לכל המבקרים, בלי דפלוי. כל העיצובים
-          כאן — גם תבניות שהעליתם; משבצת שאין לה תמונה מוכנה מתחילה ריקה וממתינה להעלאה.
+          כל עיצוב מגיע עם כמה תמונות מוכנות. אף תמונה אינה חובה: אפשר להחליף כל אחת בתמונה משלכם,
+          להסיר אותה משני העמודים, להוסיף תמונות נוספות, לבחור לכל תמונה אם תופיע בעמוד החנות ו/או
+          בעמוד המוצר, ולשנות את הסדר. "הסר" רק מסתיר — התמונה נשארת, וסימון תיבה מחזיר אותה. הכול
+          נשמר בשרת ומופיע מיד לכל המבקרים, בלי דפלוי. כל העיצובים כאן — גם תבניות שהעליתם; משבצת
+          שאין לה תמונה מוכנה מתחילה ריקה וממתינה להעלאה.
         </p>
       </header>
 
@@ -447,18 +448,28 @@
           // photo card on a design still on the legacy landscape art) has no render:
           // it starts EMPTY, an "upload one" placeholder, until the owner uploads.
           const src = override || (ships ? defaultSrc(d, keyName) : '');
-          const badge = override
-            ? '<span class="badge custom">מותאם</span>'
-            : ships
-              ? '<span class="badge default">ברירת מחדל</span>'
-              : '<span class="badge default">אין תמונה</span>';
           const preview = src
             ? `<img class="preview" alt="${esc(SLOT_LABELS[keyName] || keyName)}" src="${esc(src)}" onerror="this.style.visibility='hidden'" />`
             : `<div class="preview preview-empty">אפשר להעלות ${esc(SLOT_UPLOAD_NOUN[keyName] || 'תמונה')} משלכם</div>`;
           const uploadLabel = src ? 'החלף תמונה' : 'העלה תמונה';
+          // NO picture is mandatory — every one can be taken off both surfaces,
+          // including the store cover and the two card renders, which used to be
+          // fixed. "הסר" is a one-click way to untick both boxes below; it hides
+          // the picture, it does NOT delete the file, so ticking a box brings it
+          // straight back. Disabled once the picture is already off both surfaces,
+          // so the button never claims an action that would do nothing.
+          const shown = baseFlag(g, keyName, 'onProducts') || baseFlag(g, keyName, 'onProduct');
+          // NO visible slot name and NO state badge: the owner asked for the tiles
+          // to be pictures, not a labelled form. The name survives as the preview's
+          // `alt` (above) and as the tile's aria-label, so a screen reader still
+          // announces WHICH picture this is — removing it from sight is a visual
+          // decision, not a reason to make the page unusable without sight.
+          // What the badge used to say is still legible from the controls: only a
+          // picture the owner replaced can be reset, so an enabled איפוס IS
+          // "מותאם", and the empty-state placeholder IS "אין תמונה".
           return `
-            <div class="item" data-design="${esc(d.id)}" data-key="${esc(keyName)}" data-type="base">
-              <h3>${esc(SLOT_LABELS[keyName] || keyName)} ${badge}</h3>
+            <div class="item" data-design="${esc(d.id)}" data-key="${esc(keyName)}" data-type="base"
+                 role="group" aria-label="${esc(SLOT_LABELS[keyName] || keyName)}">
               ${preview}
               <div class="flags">
                 <label><input type="checkbox" data-flag="onProducts" ${baseFlag(g, keyName, 'onProducts') ? 'checked' : ''} /> בעמוד החנות</label>
@@ -471,6 +482,7 @@
               <div class="row">
                 <button data-act="upload">${uploadLabel}</button>
                 <button class="ghost" data-act="reset" ${override ? '' : 'disabled'}>איפוס</button>
+                <button class="ghost" data-act="hide" ${shown ? '' : 'disabled'}>הסר</button>
               </div>
               <input type="file" accept="image/png,image/jpeg,image/webp" hidden />
               <div class="status"></div>
@@ -478,8 +490,8 @@
         }
         const photo = (g.photos || []).find((p) => p.id === keyName) || {};
         return `
-          <div class="item" data-design="${esc(d.id)}" data-key="${esc(keyName)}" data-type="photo">
-            <h3><span class="badge photo">תמונה נוספת</span></h3>
+          <div class="item" data-design="${esc(d.id)}" data-key="${esc(keyName)}" data-type="photo"
+               role="group" aria-label="תמונה נוספת">
             <img class="preview" alt="${esc(photo.name || '')}" src="${esc(photo.img || '')}"
                  onerror="this.style.visibility='hidden'" />
             <input class="name-input" type="text" maxlength="60" placeholder="שם לתמונה (לא חובה)" value="${esc(photo.name || '')}" />
@@ -571,6 +583,26 @@
           rerenderDesign(designId);
         } catch (e) {
           setStatus(itemEl.querySelector('.status'), 'איפוס נכשל: ' + e.message, 'err');
+        }
+      }
+
+      // Take a base picture off BOTH surfaces in one click — the "no picture is
+      // mandatory" action. Both flags go in ONE request, so the two boxes can never
+      // be observed half-cleared, and nothing is deleted: the upload (and the
+      // shipped render behind it) stay put, so re-ticking a box restores it.
+      async function hideBase(itemEl) {
+        const designId = itemEl.dataset.design;
+        const slot = itemEl.dataset.key;
+        try {
+          const j = await api('/api/admin/design-images/base/flags', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ designId, slot, onProducts: false, onProduct: false }),
+          });
+          state[designId] = j.gallery || {};
+          rerenderDesign(designId);
+        } catch (e) {
+          setStatus(itemEl.querySelector('.status'), 'ההסרה נכשלה: ' + e.message, 'err');
         }
       }
 
@@ -676,6 +708,7 @@
         const sectionEl = btn.closest('.add-photo');
         if (act === 'upload') itemEl.querySelector('input[type=file]').click();
         else if (act === 'reset') resetBase(itemEl);
+        else if (act === 'hide') hideBase(itemEl);
         else if (act === 'remove') removePhoto(itemEl);
         else if (act === 'up') reorder(itemEl, 'up');
         else if (act === 'down') reorder(itemEl, 'down');

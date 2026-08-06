@@ -182,9 +182,11 @@ test.describe('admin gallery page', () => {
     await expect.poll(() => posted).not.toBeNull();
     expect(posted).toContain('grapefruit');
     // The store accepted the template id: the slot now shows the owner's picture.
+    // Tiles carry no name and no state badge, so "this one is the owner's" reads
+    // off the picture plus an enabled reset — only a replaced picture can be reset.
     const after = page.locator('.item[data-design="grapefruit"][data-key="store"]');
-    await expect(after.locator('.badge.custom')).toBeVisible();
     await expect(after.locator('img.preview')).toHaveAttribute('src', UPLOADED);
+    await expect(after.locator('button[data-act="reset"]')).toBeEnabled();
   });
 
   test('replacing a base render flips it to "custom" and enables reset', async ({ page }) => {
@@ -198,7 +200,6 @@ test.describe('admin gallery page', () => {
 
     await page.goto(`/admin-images.html?key=${KEY}`);
     const board = page.locator('.item[data-design="posttrip"][data-key="board"]');
-    await expect(board.locator('.badge.default')).toBeVisible();
     await expect(board.locator('button[data-act="reset"]')).toBeDisabled();
 
     await board.locator('input[type=file]').setInputFiles({
@@ -208,7 +209,6 @@ test.describe('admin gallery page', () => {
     });
 
     const after = page.locator('.item[data-design="posttrip"][data-key="board"]');
-    await expect(after.locator('.badge.custom')).toBeVisible();
     await expect(after.locator('img.preview')).toHaveAttribute('src', UPLOADED);
     await expect(after.locator('button[data-act="reset"]')).toBeEnabled();
   });
@@ -238,7 +238,6 @@ test.describe('admin gallery page', () => {
 
     // After upload: the boardless board now carries the owner's picture.
     const after = page.locator('.item[data-design="kids"][data-key="board"]');
-    await expect(after.locator('.badge.custom')).toBeVisible();
     await expect(after.locator('img.preview')).toHaveAttribute('src', UPLOADED);
     await expect(after.locator('button[data-act="reset"]')).toBeEnabled();
   });
@@ -258,6 +257,74 @@ test.describe('admin gallery page', () => {
       .check();
     await expect.poll(() => flagBody).not.toBeNull();
     expect(flagBody).toMatchObject({ designId: 'posttrip', slot: 'store', onProduct: true });
+  });
+
+  // The owner asked for tiles that are pictures, not a labelled form: no slot name
+  // above each one, and no state badge. What a badge used to say is still legible
+  // from the controls, so nothing became unknowable — see the reset assertions in
+  // the upload tests above.
+  test('base tiles carry no visible slot name and no state badge', async ({ page }) => {
+    await stubGet(page, {});
+    await page.goto(`/admin-images.html?key=${KEY}`);
+    const store = page.locator('.item[data-design="posttrip"][data-key="store"]');
+    await expect(store).toBeVisible();
+    await expect(store.locator('h3')).toHaveCount(0);
+    await expect(store.locator('.badge')).toHaveCount(0);
+    // Every design's tiles, not just this one — the ask was "for all".
+    await expect(page.locator('.item[data-type="base"] h3')).toHaveCount(0);
+    await expect(page.locator('.item[data-type="base"] .badge')).toHaveCount(0);
+    // Sighted users lost the name; screen-reader users must not. The tile is a
+    // labelled group and the picture keeps its alt text.
+    await expect(store).toHaveAttribute('aria-label', 'תמונת חנות');
+    await expect(store.locator('img.preview')).toHaveAttribute('alt', 'תמונת חנות');
+  });
+
+  // "No mandatory pictures": every base picture can come off BOTH surfaces —
+  // including the store cover and the card renders, which used to be fixed.
+  test('הסר takes a base picture off both surfaces in ONE request', async ({ page }) => {
+    await stubGet(page, {});
+    let flagBody = null;
+    await page.route('**/api/admin/design-images/base/flags*', (route) => {
+      flagBody = JSON.parse(route.request().postData() || '{}');
+      route.fulfill({
+        json: {
+          ok: true,
+          gallery: { base: { store: { onProducts: false, onProduct: false } } },
+        },
+      });
+    });
+
+    await page.goto(`/admin-images.html?key=${KEY}`);
+    const store = page.locator('.item[data-design="posttrip"][data-key="store"]');
+    await store.locator('button[data-act="hide"]').click();
+
+    await expect.poll(() => flagBody).not.toBeNull();
+    // BOTH flags in one call: two requests could be observed half-applied, leaving
+    // the picture on one surface and off the other.
+    expect(flagBody).toMatchObject({
+      designId: 'posttrip',
+      slot: 'store',
+      onProducts: false,
+      onProduct: false,
+    });
+    // Re-rendered from the server's answer: both boxes clear, and the button is
+    // spent — it must not offer to repeat an action that would change nothing.
+    const after = page.locator('.item[data-design="posttrip"][data-key="store"]');
+    await expect(after.locator('input[data-flag="onProducts"]')).not.toBeChecked();
+    await expect(after.locator('input[data-flag="onProduct"]')).not.toBeChecked();
+    await expect(after.locator('button[data-act="hide"]')).toBeDisabled();
+    // Hiding is NOT deleting — the picture is still there to bring back.
+    await expect(after.locator('img.preview')).toBeVisible();
+  });
+
+  test('הסר is offered on the card renders too — no picture is mandatory', async ({ page }) => {
+    await stubGet(page, {});
+    await page.goto(`/admin-images.html?key=${KEY}`);
+    for (const slot of ['store', 'front', 'back']) {
+      await expect(
+        page.locator(`.item[data-design="posttrip"][data-key="${slot}"] button[data-act="hide"]`)
+      ).toBeEnabled();
+    }
   });
 
   test('adding a named photo appends a photo item to the gallery', async ({ page }) => {
