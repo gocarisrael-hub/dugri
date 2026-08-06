@@ -469,17 +469,27 @@ test.describe('reviews are visible and navigable on desktop', () => {
     // A single screenshot is properly on view at load.
     await expect.poll(() => page.evaluate(centeredReviewSrc)).toBe('review-1.jpg');
 
-    // Both arrows are present AND visible — the clear desktop control that was
-    // missing. Dots stay too (one per review).
-    const arrows = page.locator('#reviews .carousel-arrow');
-    await expect(arrows).toHaveCount(2);
-    await expect(page.locator('#reviews .carousel-arrow--next')).toBeVisible();
-    await expect(page.locator('#reviews .carousel-arrow--prev')).toBeVisible();
+    // Dots stay on EVERY viewport (one per review) — they are not pointer-gated.
     await expect(page.locator('#reviews .carousel-dot')).toHaveCount(4);
 
-    // The next arrow advances the rail (review-1 → review-2), proving the other
-    // testimonials are reachable by clicking (works with a mouse, no swipe needed).
-    await page.locator('#reviews .carousel-arrow--next').click();
+    // Arrows are a fine-pointer affordance. With a mouse there is no swipe, so
+    // both arrows must be there and clickable; on a touch device the finger IS
+    // the control and the owner asked for no arrows at all. Branch on the real
+    // media feature rather than on the project name, since that is the contract.
+    const coarsePointer = await page.evaluate(() => window.matchMedia('(pointer: coarse)').matches);
+    const arrows = page.locator('#reviews .carousel-arrow');
+    if (coarsePointer) {
+      await expect(arrows).toHaveCount(0);
+      // …and the rail is still navigable there: tapping a dot moves it.
+      await page.locator('#reviews .carousel-dot').nth(1).click();
+    } else {
+      await expect(arrows).toHaveCount(2);
+      await expect(page.locator('#reviews .carousel-arrow--next')).toBeVisible();
+      await expect(page.locator('#reviews .carousel-arrow--prev')).toBeVisible();
+      // The next arrow advances the rail (review-1 → review-2), proving the other
+      // testimonials are reachable by clicking (a mouse, no swipe needed).
+      await page.locator('#reviews .carousel-arrow--next').click();
+    }
     await expect.poll(() => page.evaluate(centeredReviewSrc)).toBe('review-2.jpg');
 
     // The centred screenshot fills the rail — visible, not a blank sliver.

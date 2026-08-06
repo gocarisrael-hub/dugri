@@ -371,3 +371,153 @@ test.describe('carousel — looping is opt-in', () => {
     await expect(page.locator('#galleryTrack [data-carousel-clone]')).toHaveCount(0);
   });
 });
+
+// ---- prev/next arrows: side, painted direction, and who gets them ---------
+// The owner reported the reviews arrows as reversed: the button on the RIGHT drew
+// a left-pointing chevron. The sides and the scrolling were already correct — the
+// ICON was wrong, because `›` (U+203A) and `‹` (U+2039) are bidi-MIRRORED
+// characters and this page is dir="rtl", so the browser painted them flipped. The
+// icons are now inline SVG paths, which bidi does not mirror. jsdom cannot see any
+// of this (no layout, no bidi), so it is asserted here in a real browser.
+
+// The review currently centred in the rail, plus the reviews physically to its
+// left and right. Identity-based (filenames), so a seamless-loop recenter jump
+// cannot make it flaky the way a raw pixel delta would.
+function railNeighbours() {
+  const track = document.getElementById('reviewsTrack');
+  const t = track.getBoundingClientRect();
+  const centre = t.left + t.width / 2;
+  const nodes = [...track.children]
+    .map((el) => {
+      const im = el.querySelector('img');
+      const b = el.getBoundingClientRect();
+      return {
+        src: im ? (im.currentSrc || im.src).split('/').pop() : null,
+        x: b.left + b.width / 2,
+      };
+    })
+    .filter((n) => n.src)
+    .sort((a, b) => a.x - b.x);
+  if (!nodes.length) return null;
+  let i = 0;
+  for (let k = 1; k < nodes.length; k++) {
+    if (Math.abs(nodes[k].x - centre) < Math.abs(nodes[i].x - centre)) i = k;
+  }
+  return {
+    centre: nodes[i].src,
+    toTheLeft: i > 0 ? nodes[i - 1].src : null,
+    toTheRight: i < nodes.length - 1 ? nodes[i + 1].src : null,
+  };
+}
+
+test.describe('carousel — arrows point (and travel) the way they sit', () => {
+  test('the RIGHT-hand arrow points right and moves the rail right; the left one, left', async ({
+    page,
+  }) => {
+    await page.goto('/index.html');
+    await page.locator('#reviews').scrollIntoViewIfNeeded();
+    await waitForCarousel(page, '#reviewsTrack');
+    test.skip(
+      await page.evaluate(() => window.matchMedia('(pointer: coarse)').matches),
+      'arrows are a fine-pointer affordance — the touch profile has none by design'
+    );
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('#reviewsTrack .review img')].some((i) => i.naturalWidth > 0)
+    );
+
+    // Which button is physically on the right, and which chevron does it draw?
+    const painted = await page.evaluate(() => {
+      const btns = [...document.querySelectorAll('#reviews .carousel-arrow')].map((b) => ({
+        side: b.getBoundingClientRect().left,
+        role: b.classList.contains('carousel-arrow--prev') ? 'prev' : 'next',
+        point: b.querySelector('svg') && b.querySelector('svg').getAttribute('data-point'),
+        text: b.textContent.trim(),
+      }));
+      btns.sort((a, b) => a.side - b.side);
+      return { left: btns[0], right: btns[1] };
+    });
+    expect(painted.right.point).toBe('right');
+    expect(painted.left.point).toBe('left');
+    // No bidi-mirrored character anywhere in either button — that is what flipped.
+    expect(painted.right.text).toBe('');
+    expect(painted.left.text).toBe('');
+    // On this RTL page the right-hand button is the LOGICAL "previous" one.
+    expect(painted.right.role).toBe('prev');
+
+    // Clicking the right-hand button travels RIGHT: the review that was sitting to
+    // the right of the centred one becomes the centred one.
+    const before = await page.evaluate(railNeighbours);
+    expect(before.toTheRight).toBeTruthy();
+    await page.locator('#reviews .carousel-arrow--prev').click();
+    await expect
+      .poll(async () => (await page.evaluate(railNeighbours)).centre)
+      .toBe(before.toTheRight);
+
+    // And the left-hand button travels LEFT, back to where we started.
+    const mid = await page.evaluate(railNeighbours);
+    expect(mid.toTheLeft).toBeTruthy();
+    await page.locator('#reviews .carousel-arrow--next').click();
+    await expect.poll(async () => (await page.evaluate(railNeighbours)).centre).toBe(mid.toTheLeft);
+  });
+
+  test('a coarse pointer gets NO arrows anywhere on the storefront — dots only', async ({
+    page,
+  }) => {
+    const coarse = await page.evaluate(() => window.matchMedia('(pointer: coarse)').matches);
+    test.skip(!coarse, 'this is the touch-profile half of the pointer gate');
+
+    for (const url of ['/index.html', '/products.html']) {
+      await page.goto(url);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(500);
+      await expect(page.locator('.carousel-arrow')).toHaveCount(0);
+    }
+    // Dots are NOT gated: the phone still gets its position indicator.
+    await page.goto('/index.html');
+    await page.locator('#reviews').scrollIntoViewIfNeeded();
+    await expect(page.locator('#reviews .carousel-dot')).toHaveCount(4);
+  });
+
+  test('store-tile arrows sit in the controls strip and are really clickable', async ({ page }) => {
+    // They used to be dropped straight after the track — i.e. INSIDE
+    // .product-card__media, whose overflow:hidden clipped them into invisible but
+    // still tab-focusable buttons. A hit test (not just toBeVisible, which ignores
+    // clipping) proves they are reachable.
+    await page.goto('/products.html');
+    // Skip BEFORE waiting for an arrow: on a touch profile there is never one.
+    test.skip(
+      await page.evaluate(() => window.matchMedia('(pointer: coarse)').matches),
+      'no arrows on a touch device by design'
+    );
+    await page.waitForFunction(
+      () => !!document.querySelector('.product-card__dots .carousel-arrow')
+    );
+
+    const hit = await page.evaluate(() => {
+      const b = document.querySelector('.product-card__dots .carousel-arrow');
+      b.scrollIntoView({ block: 'center' });
+      const r = b.getBoundingClientRect();
+      const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { inside: !!(el && b.contains(el)), w: Math.round(r.width), h: Math.round(r.height) };
+    });
+    expect(hit.inside).toBe(true);
+    expect(hit.w).toBeGreaterThan(20);
+    expect(hit.h).toBeGreaterThan(20);
+
+    // prev sits physically RIGHT of next on this RTL page (same rule as the rest
+    // of the site), and both draw an SVG chevron rather than a mirrored glyph.
+    const sides = await page.evaluate(() => {
+      const strip = document.querySelector('.product-card__dots');
+      const g = (sel) => strip.querySelector(sel).getBoundingClientRect().left;
+      return {
+        prev: g('.carousel-arrow--prev'),
+        next: g('.carousel-arrow--next'),
+        prevPoint: strip.querySelector('.carousel-arrow--prev svg').getAttribute('data-point'),
+        nextPoint: strip.querySelector('.carousel-arrow--next svg').getAttribute('data-point'),
+      };
+    });
+    expect(sides.prev).toBeGreaterThan(sides.next);
+    expect(sides.prevPoint).toBe('right');
+    expect(sides.nextPoint).toBe('left');
+  });
+});

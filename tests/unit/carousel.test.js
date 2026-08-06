@@ -5,6 +5,8 @@ import {
   turboBoostPx,
   realIndexFromClonedIndex,
   loopJumpCount,
+  isCoarsePointer,
+  chevronSvg,
   TURBO_THRESHOLD,
   TURBO_GAIN,
 } from '../../site/js/carousel.js';
@@ -231,14 +233,19 @@ describe('initCarousel — dots + ARIA wiring', () => {
     expect(root.children[1].getAttribute('aria-label')).toBe('ביקורת של דנה');
   });
 
-  it('renders arrows when arrows:true and none by default in scroller mode', () => {
+  it('renders arrows by default (a mouse user has no swipe) and honours arrows:false', () => {
     const a = buildTrack(3);
     initCarousel(a, { arrows: true });
     expect(document.querySelectorAll('.carousel-arrow').length).toBe(2);
 
     document.body.innerHTML = '';
     const b = buildTrack(3);
-    initCarousel(b); // scroller default → no arrows
+    initCarousel(b); // scroller, no option → arrows now ON by default
+    expect(document.querySelectorAll('.carousel-arrow').length).toBe(2);
+
+    document.body.innerHTML = '';
+    const c = buildTrack(3);
+    initCarousel(c, { arrows: false }); // explicit opt-out still wins
     expect(document.querySelectorAll('.carousel-arrow').length).toBe(0);
   });
 });
@@ -526,5 +533,165 @@ describe('initCarousel — destroy()', () => {
     const api2 = initCarousel(root2);
     api2.destroy();
     expect(root2.getAttribute('tabindex')).toBe('-1');
+  });
+});
+
+// ---- arrows: painted direction, physical side, and who gets them ----------
+// The owner reported the reviews arrows as "the other way round": the button on
+// the right drew a left-pointing chevron. The cause was the GLYPH, not the sides
+// — `›` (U+203A) and `‹` (U+2039) are bidi-MIRRORED characters, so on this
+// dir="rtl" page the browser paints them flipped. These tests lock the fix in:
+// the icon is an SVG path (bidi-immune) whose direction matches the side the
+// button sits on, and no mirrored character survives anywhere in the markup.
+// The bidi-mirrored characters that must never be used as an arrow icon. `<` and
+// `>` are mirrored too, but they are also SVG syntax, so markup is checked
+// against the angle quotes only — the buttons' TEXT content is checked against
+// all four (an icon-only button renders no text at all).
+const MIRRORED_QUOTES = ['›', '‹'];
+const MIRRORED_GLYPHS = [...MIRRORED_QUOTES, '>', '<'];
+
+/** Install a matchMedia stub that answers `true` for the listed queries. */
+function stubMedia(trueQueries = []) {
+  const real = window.matchMedia;
+  const fn = (q) => ({
+    matches: trueQueries.some((t) => String(q).includes(t)),
+    media: q,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+  });
+  window.matchMedia = fn;
+  return () => {
+    window.matchMedia = real;
+  };
+}
+
+describe('chevronSvg — a bidi-immune icon', () => {
+  it('draws an SVG path, never a mirrored character', () => {
+    for (const point of ['left', 'right']) {
+      const svg = chevronSvg(point);
+      expect(svg.startsWith('<svg')).toBe(true);
+      expect(svg).toContain(`data-point="${point}"`);
+      expect(svg).toContain('<path d="');
+      for (const g of MIRRORED_QUOTES) expect(svg).not.toContain(g);
+    }
+    // The two directions are genuinely different geometry, not the same path.
+    expect(chevronSvg('left')).not.toBe(chevronSvg('right'));
+  });
+});
+
+describe('isCoarsePointer — the arrows gate', () => {
+  it('is true when the pointer is coarse or hover is unavailable', () => {
+    let restore = stubMedia(['pointer: coarse']);
+    expect(isCoarsePointer()).toBe(true);
+    restore();
+
+    restore = stubMedia(['hover: none']);
+    expect(isCoarsePointer()).toBe(true);
+    restore();
+  });
+
+  it('is false for a fine pointer, and false when the environment cannot answer', () => {
+    const restore = stubMedia([]); // nothing matches → a mouse
+    expect(isCoarsePointer()).toBe(false);
+    restore();
+
+    // Affirmative detection: no matchMedia at all must NOT hide the arrows.
+    expect(isCoarsePointer({})).toBe(false);
+    expect(isCoarsePointer(null)).toBe(false);
+  });
+});
+
+describe('initCarousel — arrow direction and placement', () => {
+  it('points the RIGHT-hand button right on an RTL page (this is the reported bug)', () => {
+    const root = buildTrack(3, { dir: 'rtl' });
+    initCarousel(root, { arrows: true });
+    const prev = document.querySelector('.carousel-arrow--prev');
+    const next = document.querySelector('.carousel-arrow--next');
+
+    // In RTL `prev` is the physically RIGHT-hand button (it steps toward the
+    // track's start), so it must be drawn pointing RIGHT — and `next`, on the
+    // left, pointing LEFT.
+    expect(prev.querySelector('svg').getAttribute('data-point')).toBe('right');
+    expect(next.querySelector('svg').getAttribute('data-point')).toBe('left');
+
+    // …and NOT with a bidi-mirrored character, which is what flipped on screen.
+    for (const btn of [prev, next]) {
+      for (const g of MIRRORED_GLYPHS) expect(btn.textContent).not.toContain(g);
+      expect(btn.querySelector('svg')).toBeTruthy();
+    }
+  });
+
+  it('mirrors the mapping on an LTR page — prev points left there', () => {
+    const root = buildTrack(3, { dir: 'ltr' });
+    initCarousel(root, { arrows: true });
+    expect(document.querySelector('.carousel-arrow--prev svg').getAttribute('data-point')).toBe(
+      'left'
+    );
+    expect(document.querySelector('.carousel-arrow--next svg').getAttribute('data-point')).toBe(
+      'right'
+    );
+  });
+
+  it('keeps the aria-labels logical (הקודם / הבא) whichever way the icon points', () => {
+    const root = buildTrack(3, { dir: 'rtl' });
+    initCarousel(root, { arrows: true });
+    expect(document.querySelector('.carousel-arrow--prev').getAttribute('aria-label')).toBe(
+      'הקודם'
+    );
+    expect(document.querySelector('.carousel-arrow--next').getAttribute('aria-label')).toBe('הבא');
+  });
+
+  it('wraps default-placed arrows in one row, prev BEFORE next in the DOM', () => {
+    // Without the wrapper each button was inserted at root.nextSibling in turn, so
+    // `next` ended up first and the two sides came out swapped (products.html).
+    const root = buildTrack(3, { dir: 'rtl' });
+    initCarousel(root, { arrows: true });
+    const wrap = document.querySelector('.carousel-arrows');
+    expect(wrap).toBeTruthy();
+    expect(root.nextElementSibling).toBe(wrap);
+    const order = [...wrap.querySelectorAll('.carousel-arrow')].map((b) =>
+      b.classList.contains('carousel-arrow--prev') ? 'prev' : 'next'
+    );
+    expect(order).toEqual(['prev', 'next']);
+  });
+
+  it('renders arrows into arrowsInto when given, and no wrapper row', () => {
+    const root = buildTrack(3);
+    const box = document.createElement('div');
+    document.body.appendChild(box);
+    initCarousel(root, { arrows: true, arrowsInto: box });
+    expect(box.querySelectorAll('.carousel-arrow').length).toBe(2);
+    expect(document.querySelector('.carousel-arrows')).toBe(null);
+  });
+});
+
+describe('initCarousel — arrows are a fine-pointer affordance', () => {
+  it('renders no arrows on a coarse pointer, even when the caller asked for them', () => {
+    const restore = stubMedia(['pointer: coarse']);
+    const root = buildTrack(3);
+    initCarousel(root, { mode: 'slideshow', arrows: true, autoplay: false });
+    expect(document.querySelectorAll('.carousel-arrow').length).toBe(0);
+    expect(document.querySelector('.carousel-arrows')).toBe(null);
+    // Dots are NOT gated — they stay on every viewport.
+    expect(document.querySelectorAll('.carousel-dot').length).toBe(3);
+    restore();
+  });
+
+  it('renders no arrows when the device cannot hover', () => {
+    const restore = stubMedia(['hover: none']);
+    const root = buildTrack(3);
+    initCarousel(root, { arrows: true });
+    expect(document.querySelectorAll('.carousel-arrow').length).toBe(0);
+    restore();
+  });
+
+  it('renders them on a fine pointer', () => {
+    const restore = stubMedia(['pointer: fine', 'hover: hover']);
+    const root = buildTrack(3);
+    initCarousel(root, { arrows: true });
+    expect(document.querySelectorAll('.carousel-arrow').length).toBe(2);
+    restore();
   });
 });

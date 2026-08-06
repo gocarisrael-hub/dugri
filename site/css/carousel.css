@@ -90,6 +90,35 @@
 }
 
 /* ---- arrows -------------------------------------------------------------- */
+/* Default placement: one centered row right after the track. A page that wants
+   the arrows somewhere else (e.g. sharing a row with the dots) passes arrowsInto
+   and this wrapper is never created. */
+.carousel-arrows {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 10px 0;
+}
+.carousel-arrows:empty {
+  display: none;
+}
+
+/* prev · dots · next in ONE flex row, whichever order the engine appended them.
+   `order` is resolved along the WRITING direction, so prev lands toward the
+   track's start — physically right on this RTL site, left in LTR — matching the
+   direction its chevron points and the direction it scrolls. `order` is inert
+   outside a flex container, so these rules are safe wherever the controls land. */
+.carousel-arrow--prev {
+  order: -1;
+}
+.carousel-dots {
+  order: 0;
+}
+.carousel-arrow--next {
+  order: 1;
+}
+
 .carousel-arrow {
   display: inline-flex;
   align-items: center;
@@ -121,6 +150,14 @@
   opacity: 0.4;
   cursor: default;
   box-shadow: none;
+}
+/* The chevron itself. An SVG path is immune to bidi mirroring (unlike `‹` / `›`),
+   so the direction drawn here is the direction the shopper sees on an RTL page. */
+.carousel-arrow-icon {
+  display: block;
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
 }
 
 /* ---- reduced motion: kill smooth scroll + transitions ------------------- */

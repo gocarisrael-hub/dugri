@@ -271,13 +271,30 @@
         -webkit-user-drag: none;
         user-select: none;
       }
-      /* dots strip: a SIBLING below the media (never inside a slide link, never
-         over the overflow:hidden picture). Hidden for single-picture cards. Dot
-         appearance comes from css/carousel.css; this only positions the strip. */
+      /* Controls strip: a SIBLING below the media (never inside a slide link, never
+         over the overflow:hidden picture). Holds the dots AND — on a mouse device —
+         the prev/next arrows, which is why they are passed arrowsInto: this box.
+         Left to its default the engine drops them right after the track, i.e.
+         INSIDE .product-card__media, where overflow:hidden clipped them into
+         invisible-but-focusable buttons. Hidden for single-picture cards. Dot and
+         arrow appearance (and the prev/dots/next ordering) come from
+         css/carousel.css; this only positions and sizes the strip. */
       .product-card__dots {
         display: flex;
+        align-items: center;
         justify-content: center;
+        gap: 10px;
         margin-top: 8px;
+      }
+      /* Tile-sized arrows: the site-wide 44px control is too heavy under a grid
+         tile, and it must not push the caption down. */
+      .product-card__dots .carousel-arrow {
+        width: 32px;
+        height: 32px;
+      }
+      .product-card__dots .carousel-arrow-icon {
+        width: 18px;
+        height: 18px;
       }
       .product-card__dots:empty {
         display: none;
@@ -720,6 +737,12 @@
             loop: false,
             dots: true,
             dotsInto: dots,
+            // Arrows share the dots strip. They must NOT land in their default
+            // slot (straight after the track), which is inside the
+            // overflow:hidden .product-card__media — there they were clipped away
+            // while still being tab-focusable. The engine renders them only on a
+            // fine pointer, so a phone shopper still just swipes.
+            arrowsInto: dots,
           });
         }
         return article;
