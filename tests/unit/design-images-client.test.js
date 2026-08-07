@@ -3,7 +3,15 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 // Unit tests for the buyer-facing gallery reader (site/js/design-images.js):
 // galleryFor resolution (order, per-surface visibility, overrides, extras,
 // fail-safe fallback) and loadDesignImages fail-safe behaviour.
-import { galleryFor, deckFor, baseSrc, loadDesignImages } from '../../site/js/design-images.js';
+import {
+  galleryFor,
+  deckFor,
+  baseSrc,
+  loadDesignImages,
+  srcsetFor,
+  SIZES,
+  _setSrcsets,
+} from '../../site/js/design-images.js';
 
 const P1 = '/content-uploads/aaaaaaaaaaaaaaaa.png';
 const P2 = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
@@ -420,5 +428,94 @@ describe('deckFor — the wizard-only deck pictures', () => {
       expect(ks.some((k) => k.startsWith('deck'))).toBe(false);
       expect(galleryFor(map, D, surface).map((i) => i.src)).not.toContain(P1);
     }
+  });
+});
+
+// The responsive-source manifest. The `w` descriptors are decided in ONE place —
+// server/image-thumbs.js — and shipped in the /api/design-images response, so
+// this module's whole job is to hand back the string it was given, unchanged, for
+// paths it recognises. It must never invent a descriptor: an upload the server
+// could not measure has to fall through to a plain `src`, because a guessed width
+// the resizer would not produce is precisely the bug this design prevents.
+describe('srcsetFor — the server-published responsive sources', () => {
+  const SET =
+    '/design-img/r1/200/aaaaaaaaaaaaaaaa.png 200w, /design-img/r1/400/aaaaaaaaaaaaaaaa.png 400w';
+  afterEach(() => _setSrcsets({}));
+
+  it('returns the server string verbatim for one of our own uploads', () => {
+    _setSrcsets({ 'aaaaaaaaaaaaaaaa.png': SET });
+    expect(srcsetFor(P1)).toBe(SET);
+  });
+
+  it("returns '' — a plain src — for an upload the server did not publish", () => {
+    _setSrcsets({ 'aaaaaaaaaaaaaaaa.png': SET });
+    // The server omits an upload whose dimensions it could not read, so there is
+    // no honest descriptor to emit for it.
+    expect(srcsetFor(P2)).toBe('');
+  });
+
+  it("returns '' for anything that is not one of our uploads", () => {
+    _setSrcsets({ 'aaaaaaaaaaaaaaaa.png': SET });
+    for (const bad of [
+      'assets/designs/kids/store.webp',
+      '/api/template-image/my-tpl/front',
+      'https://evil.example/aaaaaaaaaaaaaaaa.png',
+      '/content-uploads/../../etc/passwd',
+      '',
+      null,
+      undefined,
+    ]) {
+      expect(srcsetFor(bad)).toBe('');
+    }
+  });
+
+  it('is empty until a config has loaded, so a failed fetch just means plain src', () => {
+    expect(srcsetFor(P1)).toBe('');
+  });
+
+  it('every surface declares a `sizes`, or the browser assumes 100vw', () => {
+    // Without `sizes` the browser resolves a `w` ladder against the full viewport
+    // and takes a rung several times larger than the box — which would undo most
+    // of the saving the ladder exists for.
+    for (const key of ['grid', 'pdp', 'rail', 'zoom']) {
+      expect(typeof SIZES[key]).toBe('string');
+      expect(SIZES[key].length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('loadDesignImages — the srcset manifest rides along', () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+    _setSrcsets({});
+    vi.restoreAllMocks();
+  });
+
+  it('stashes the response manifest so srcsetFor can serve it', async () => {
+    const set = '/design-img/r1/400/aaaaaaaaaaaaaaaa.png 400w';
+    global.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({ images: { kids: {} }, srcsets: { 'aaaaaaaaaaaaaaaa.png': set } }),
+      })
+    );
+    await loadDesignImages();
+    expect(srcsetFor(P1)).toBe(set);
+  });
+
+  it('a response with no manifest leaves every picture on a plain src', async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ images: {} }) })
+    );
+    await loadDesignImages();
+    expect(srcsetFor(P1)).toBe('');
+  });
+
+  it('a failed fetch leaves every picture on a plain src too', async () => {
+    global.fetch = vi.fn(() => Promise.reject(new Error('down')));
+    await loadDesignImages();
+    expect(srcsetFor(P1)).toBe('');
   });
 });

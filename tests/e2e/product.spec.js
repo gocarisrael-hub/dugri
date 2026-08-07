@@ -99,7 +99,9 @@ test.describe('product detail page', () => {
     await page.goto('/product.html?design=bachelorette');
     const imgs = page.locator('#galleryTrack img');
     await expect(imgs.first()).toBeVisible();
-    const srcs = await imgs.evaluateAll((els) => els.map((i) => i.getAttribute('src') || ''));
+    const srcs = await imgs.evaluateAll((els) =>
+      els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || '')
+    );
     expect(srcs.length).toBeGreaterThan(0);
     for (const src of srcs) {
       // Must not point at the tiny picker thumbs (thumb-front/back/board.webp),
@@ -255,7 +257,7 @@ test.describe('product detail page', () => {
     // Overlay opens with a swipeable track of the SAME gallery images (no dots).
     await expect(overlay).toBeVisible();
     const slides = overlay.locator('.pdp-zoom-slide img');
-    await expect(slides.first()).toBeVisible();
+    await onScreenZoomPhoto(page);
     expect(await slides.count()).toBeGreaterThan(1);
     await expect(overlay.locator('.carousel-dots .carousel-dot')).toHaveCount(0);
 
@@ -276,6 +278,38 @@ test.describe('product detail page', () => {
     await expect(page.getByTestId('pdp-zoom')).toBeHidden();
   });
 
+  // Wait for the enlarged photo the shopper is actually LOOKING AT to be painted.
+  //
+  // Deliberately hit-tested, not `.first()`. The zoom carousel loops by cloning
+  // its slides, so the first slide in DOM order is an arbitrary off-screen clone
+  // — and since the overlay's pictures are lazily hydrated (only the one on
+  // screen is fetched, which is what keeps opening the zoom to a single photo
+  // rather than the whole gallery), an off-screen clone legitimately has no
+  // image yet. The same hit-testing doPinch already relies on, below.
+  async function onScreenZoomPhoto(page) {
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const cx = window.innerWidth / 2;
+            const cy = window.innerHeight / 2;
+            return [...document.querySelectorAll('#pdpZoomTrack .pdp-zoom-slide img')].some((i) => {
+              const r = i.getBoundingClientRect();
+              return (
+                i.naturalWidth > 0 &&
+                r.width > 0 &&
+                r.left <= cx &&
+                r.right >= cx &&
+                r.top <= cy &&
+                r.bottom >= cy
+              );
+            });
+          }),
+        { timeout: 10_000 }
+      )
+      .toBe(true);
+  }
+
   // Finger zoom inside the enlarge overlay (js/pinch-zoom.js): a shopper checking
   // the fine print on a card pinches the photo like any photo. Real touch events
   // are dispatched at the viewport centre — the carousel loops by cloning slides,
@@ -287,7 +321,7 @@ test.describe('product detail page', () => {
     await page.getByTestId('gallery-enlarge').click();
     const overlay = page.getByTestId('pdp-zoom');
     await expect(overlay).toBeVisible();
-    await expect(overlay.locator('.pdp-zoom-slide img').first()).toBeVisible();
+    await onScreenZoomPhoto(page);
 
     // Dispatch a two-finger gesture spreading from 100px apart to `spread` px.
     const doPinch = (spread) =>
@@ -347,9 +381,12 @@ test.describe('product detail page', () => {
     const overlay = page.getByTestId('pdp-zoom');
 
     await page.getByTestId('gallery-enlarge').click();
-    await expect(overlay.locator('.pdp-zoom-slide img').first()).toBeVisible();
+    await onScreenZoomPhoto(page);
     // Double-click is the mouse path into the same zoom the double-tap drives.
-    await overlay.locator('.pdp-zoom-slide img').first().dblclick();
+    // At the viewport CENTRE, which is where the on-screen photo is — targeting
+    // `.first()` would aim at an off-screen loop clone (see onScreenZoomPhoto).
+    const vp = page.viewportSize();
+    await page.mouse.dblclick(Math.round(vp.width / 2), Math.round(vp.height / 2));
     await expect(overlay).toHaveClass(/is-zoomed/);
 
     await page.getByTestId('pdp-zoom-close').click();
@@ -412,7 +449,11 @@ test.describe('per-product photo carousel + editable content', () => {
     // overrides resolve — poll so we assert the settled state, not the interim one.
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
     await expect
-      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .poll(() =>
+        slides.evaluateAll((els) =>
+          els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || null)
+        )
+      )
       .toEqual(imgs); // custom photos, in order (not the default renders)
     // Dots: one per photo (the shared carousel look).
     await expect(page.locator('#galleryDots .carousel-dot')).toHaveCount(3);
@@ -439,7 +480,7 @@ test.describe('per-product photo carousel + editable content', () => {
     );
     const srcs = await page
       .locator('#galleryTrack .pdp-gallery-slide img')
-      .evaluateAll((els) => els.map((i) => i.getAttribute('src') || ''));
+      .evaluateAll((els) => els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || ''));
     for (const src of srcs) expect(src).toMatch(/(store|gallery-(front|back|board))\.webp$/);
   });
 
@@ -465,7 +506,9 @@ test.describe('per-product photo carousel + editable content', () => {
     await page.goto('/product.html?design=bachelorette');
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
     await expect(slides.first()).toBeVisible();
-    const srcs = await slides.evaluateAll((els) => els.map((i) => i.getAttribute('src') || ''));
+    const srcs = await slides.evaluateAll((els) =>
+      els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || '')
+    );
     for (const src of srcs) expect(src).toMatch(/(store|gallery-(front|back|board))\.webp$/);
   });
 
@@ -738,7 +781,9 @@ test.describe('per-product photo carousel + editable content', () => {
     await expect(page.locator('.dugri-photos__item')).toHaveCount(0);
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
     await expect(async () => {
-      const srcs = await slides.evaluateAll((els) => els.map((i) => i.getAttribute('src') || ''));
+      const srcs = await slides.evaluateAll((els) =>
+        els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || '')
+      );
       expect(srcs.length).toBeGreaterThan(0);
       for (const src of srcs) expect(src).toMatch(/(store|gallery-(front|back|board))\.webp$/);
     }).toPass();
@@ -791,7 +836,7 @@ test.describe('per-product photo carousel + editable content', () => {
       .poll(() =>
         page
           .locator('#galleryTrack .pdp-gallery-slide img')
-          .evaluateAll((els) => els.map((i) => i.getAttribute('src')))
+          .evaluateAll((els) => els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || null))
       )
       .toEqual([B, C, A]);
   });

@@ -34,7 +34,8 @@ import {
 import { initCarousel } from './carousel.js';
 import { initPinchZoom } from './pinch-zoom.js';
 import { fetchPricing } from './pricing.js';
-import { loadDesignImages, galleryFor } from './design-images.js';
+import { loadDesignImages, galleryFor, srcsetFor, SIZES } from './design-images.js';
+import { defer, watchTrack } from './lazy-media.js';
 
 // Owner-editable store price. Seeded with the launch defaults so first paint is
 // correct even before /api/pricing answers (boot re-stamps these once the
@@ -254,49 +255,59 @@ let zoomPinch = null;
 // whenever the gallery is rebuilt from a fresh source (a new override may load).
 let boardOverrideDropped = false;
 
+// Live lazy-media watchers, one per track, so a rebuild can tear them down.
+const trackWatchers = new Map();
+
+// A track's picture failed and had nothing to fall back to. Only a `droppable`
+// shot (a boardless design's override-only board slide, or an extra photo) may be
+// removed this way; anything else keeps its broken slide rather than silently
+// changing the gallery the owner arranged.
+function onUnrecoverable(img) {
+  if (img && img.dataset && img.dataset.droppable === '1') dropBoardSlide();
+}
+
 // Fill a track with slides. Shared by the inline gallery and the fullscreen zoom
-// overlay (same shots, different presentation). Returns the track (or null).
-function fillTrack(trackId, slideClass, shots) {
+// overlay (same shots, different `sizes`). Returns the track (or null).
+//
+// Every picture is DEFERRED (js/lazy-media.js): the slides are laid out
+// horizontally, and `loading="lazy"` defers only on VERTICAL distance, so
+// without this the browser fetches all of them — for the zoom overlay, before it
+// has even been opened. lazy-media hydrates the one that has come near the
+// scrollport, which is what keeps "open the zoom" to a single photo instead of
+// the whole gallery.
+function fillTrack(trackId, slideClass, shots, sizes) {
   const track = document.getElementById(trackId);
   if (!track) return null;
+  const prev = trackWatchers.get(trackId);
+  if (prev) {
+    prev.destroy();
+    trackWatchers.delete(trackId);
+  }
   track.textContent = '';
   for (const shot of shots) {
     const slide = el('div', slideClass, { 'data-label': shot.label });
-    const img = el('img', null, {
-      src: shot.src,
-      alt: shot.label,
-      loading: 'lazy',
-      decoding: 'async',
-    });
+    const img = el('img', null, { alt: shot.label });
     // A shot sourced from an owner OVERRIDE carries the shipped static render as
-    // `fallback`. If the override file is missing/broken, swap to the static asset
-    // once (so a broken upload never shows a broken slide). Guarded by `once` so a
-    // failing fallback can't loop.
-    if (shot.fallback && shot.fallback !== shot.src) {
-      img.addEventListener(
-        'error',
-        () => {
-          img.src = shot.fallback;
-        },
-        { once: true }
-      );
-    } else if (shot.droppable) {
-      // A `droppable` shot is a boardless design's override-only board slide: there
-      // is NO shipped render to fall back to. If the uploaded file is missing/broken
-      // (e.g. the entry exists in design-images.json but the upload isn't present on
-      // this instance), DROP the whole slide + its dot rather than show a broken
-      // image — removing it is the only non-404 degradation. `once` + the module
-      // guard keep it to a single rebuild across both tracks.
-      img.addEventListener('error', dropBoardSlide, { once: true });
-    }
+    // `fallback`, so a missing/broken upload degrades to the static asset instead
+    // of showing a broken slide. lazy-media applies it from ONE capture-phase
+    // handler on the track, and clears `srcset` when it does — a failing srcset
+    // candidate does not make the browser retry `src` by itself.
+    if (shot.droppable) img.dataset.droppable = '1';
+    defer(img, {
+      src: shot.src,
+      srcset: srcsetFor(shot.src),
+      sizes,
+      fallback: shot.fallback && shot.fallback !== shot.src ? shot.fallback : '',
+    });
     slide.appendChild(img);
     track.appendChild(slide);
   }
+  trackWatchers.set(trackId, watchTrack(track, { onUnrecoverable }));
   return track;
 }
 
 function renderGallery(shots) {
-  const track = fillTrack('galleryTrack', 'pdp-gallery-slide', shots);
+  const track = fillTrack('galleryTrack', 'pdp-gallery-slide', shots, SIZES.pdp);
   if (!track) return;
   // Slideshow feel WITH dots (like the other site carousels); swipe/keys drive it.
   // No auto-advance so the shopper controls it.
@@ -311,7 +322,11 @@ function renderGallery(shots) {
 }
 
 function renderZoomSlides(shots) {
-  const track = fillTrack('pdpZoomTrack', 'pdp-zoom-slide', shots);
+  // SIZES.zoom deliberately asks for more pixels than the viewport: this overlay
+  // is where the shopper pinches into the artwork, so it takes the top rung
+  // rather than the fit-to-screen one. It costs nothing until the overlay opens —
+  // the slides are deferred, and only the photo being looked at is hydrated.
+  const track = fillTrack('pdpZoomTrack', 'pdp-zoom-slide', shots, SIZES.zoom);
   if (!track) return;
   zoomApi = initCarousel(track, {
     mode: 'slideshow',
@@ -350,6 +365,12 @@ function wireZoom() {
     // Open on whichever image the inline gallery is showing (no smooth jump).
     if (galleryApi && zoomApi) zoomApi.goTo(galleryApi.current(), false);
     if (zoomPinch) zoomPinch.reset(); // always open at fit
+    // The overlay was `hidden`, so its track had no layout and lazy-media could
+    // not tell which slide was on screen. Now that it does, load THAT ONE photo.
+    // (Not all of them: an earlier attempt hydrated the whole track on open,
+    // which fetched megabytes to look at a single picture.)
+    const zoomWatch = trackWatchers.get('pdpZoomTrack');
+    if (zoomWatch) zoomWatch.refresh();
     opener = document.activeElement;
     closeBtn.focus();
   }
@@ -504,12 +525,13 @@ function renderRelated(current) {
     if (d.id === current.id) card.setAttribute('aria-current', 'true');
 
     const thumb = el('div', 'pdp-rel-thumb');
-    const img = el('img', null, {
-      src: (d.thumbs && d.thumbs.front) || d.thumb || '',
-      alt: d.name,
-      loading: 'lazy',
-      decoding: 'async',
-    });
+    const img = el('img', null, { alt: d.name });
+    // Deferred: this is a horizontal rail, so every card past the first is
+    // clipped sideways and `loading="lazy"` would not hold any of them back. An
+    // uploaded template's front render is its raw SVG — 2.2 MB on the measured
+    // page, the single heaviest request on the whole PDP — for a card the shopper
+    // may never scroll to.
+    defer(img, { src: (d.thumbs && d.thumbs.front) || d.thumb || '' });
     thumb.appendChild(img);
 
     const name = el('span', 'pdp-rel-name');
@@ -526,6 +548,11 @@ function renderRelated(current) {
     dots: false,
     arrows: false,
   });
+  // After initCarousel, so any loop clones it injected are already in the DOM and
+  // get hydrated by the same live-DOM pass as the originals.
+  const prev = trackWatchers.get('relatedTrack');
+  if (prev) prev.destroy();
+  trackWatchers.set('relatedTrack', watchTrack(track));
 }
 
 // Tag the gallery as an owner-editable photo array so the editor renders its

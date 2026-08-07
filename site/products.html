@@ -606,7 +606,8 @@
         loadCustomDesigns,
       } from './js/designs.js';
       import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
-      import { loadDesignImages, galleryFor } from './js/design-images.js';
+      import { loadDesignImages, galleryFor, srcsetFor, SIZES } from './js/design-images.js';
+      import { defer, watchTrack } from './js/lazy-media.js';
       // Reuse the detail page's override helpers so the grid and PDP can never
       // diverge on how a saved (possibly blank) name override is resolved. product.js
       // only auto-boots when a #galleryTrack exists (PDP only), so importing it here
@@ -648,13 +649,11 @@
         el.appendChild(was);
       }
 
-      // A broken override degrades to its shipped fallback (once); a picture with no
-      // shipped fallback (droppable) is left as-is on the grid (rare — a missing
-      // upload) rather than desyncing the fixed dot count.
-      function onImgError(e) {
-        const img = e.currentTarget;
-        const fb = img.dataset.fallback;
-        if (fb && img.getAttribute('src') !== fb) img.src = fb;
+      // Track handles from watchTrack, torn down when the grid is repainted so a
+      // rebuild never leaves listeners on detached tracks.
+      const lazyTracks = [];
+      function resetLazyTracks() {
+        while (lazyTracks.length) lazyTracks.pop().destroy();
       }
 
       // ---- one product card ---------------------------------------------------
@@ -688,23 +687,32 @@
           slide.setAttribute('aria-label', dName);
           slide.dataset.label = shot.name || `${dName} — ${i + 1}`;
           const img = document.createElement('img');
-          img.loading = 'lazy';
-          img.decoding = 'async';
           img.draggable = false;
-          img.src = shot.src;
           img.alt = shot.name || dName;
-          img.dataset.fallback = shot.fallback || '';
+          // DEFERRED, not eager. `loading="lazy"` only defers on VERTICAL
+          // distance, so without this every slide of every tile loads up front —
+          // measured: 20 of 20 horizontally-clipped slides fetched before a tap.
+          // lazy-media hydrates a slide when it nears the scrollport, and the
+          // srcset picks the rung that fits a ~163 px tile instead of the 3021 px
+          // original. A broken picture degrades to its shipped render via the
+          // ONE capture-phase error handler watchTrack binds to this track.
+          defer(img, {
+            src: shot.src,
+            srcset: srcsetFor(shot.src),
+            sizes: SIZES.grid,
+            fallback: shot.fallback || '',
+          });
           // The FIRST slide keeps the product-image test hook + the store fallback.
           if (i === 0) {
             img.setAttribute('data-testid', 'product-image');
             img.setAttribute('data-store-default', shot.fallback || shot.src);
           }
-          img.addEventListener('error', onImgError);
           slide.appendChild(img);
           track.appendChild(slide);
         });
         media.appendChild(track);
         article.appendChild(media);
+        lazyTracks.push(watchTrack(track));
 
         // Dots (rendered by the carousel engine) sit just under the picture.
         const dots = document.createElement('div');
@@ -765,6 +773,9 @@
       function renderGrid(map) {
         try {
           if (!Array.isArray(allDesigns) || !allDesigns.length) throw new Error('empty catalog');
+          // Drop the previous paint's lazy watchers before their tracks are
+          // replaced, so a rebuild never leaves listeners on detached nodes.
+          resetLazyTracks();
           const frag = document.createDocumentFragment();
           for (const d of allDesigns) {
             // Isolate each card so one bad design skips only itself, not the grid.
