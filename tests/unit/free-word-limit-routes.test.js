@@ -107,12 +107,14 @@ async function waitForMails(n, timeout = 1000) {
 }
 
 describe('POST /words enforces the quota', () => {
-  it('adds normally below the quota and reports the quota back', async () => {
+  it('adds normally below the quota, without disclosing the quota', async () => {
     const c = await newCollection();
     const r = await post('/api/collections/' + c.id + '/words', { words: words(3) });
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ added: 3, blocked: 0, count: 3, free_word_limit: 5 });
+    expect(r.body).toMatchObject({ added: 3, blocked: 0, count: 3 });
     expect(r.body.free_limit_locked).toBe(false);
+    // The buyer must not be able to see the cap coming.
+    expect(r.body).not.toHaveProperty('free_word_limit');
   });
 
   it('takes a batch partially, reporting what the quota refused', async () => {
@@ -129,7 +131,8 @@ describe('POST /words enforces the quota', () => {
     const r = await post('/api/collections/' + c.id + '/words', { words: ['עוד'] });
     expect(r.status).toBe(402);
     expect(r.body.error).toBe('free_limit_reached');
-    expect(r.body.free_word_limit).toBe(5);
+    // Not even at the moment it bites — the number is never disclosed.
+    expect(r.body).not.toHaveProperty('free_word_limit');
     // Nothing slipped through.
     expect((await get('/api/collections/' + c.id)).body.count).toBe(5);
   });
@@ -141,27 +144,29 @@ describe('POST /words enforces the quota', () => {
     db.markPaid(c.id);
     const r = await post('/api/collections/' + c.id + '/words', { words: ['אחרי', 'תשלום'] });
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ added: 2, blocked: 0, free_word_limit: null });
+    expect(r.body).toMatchObject({ added: 2, blocked: 0, free_limit_locked: false });
   });
 });
 
-describe('GET /api/collections/:id projects the quota', () => {
-  it('carries the limit and the live locked flag', async () => {
+describe('GET /api/collections/:id projects the LOCK, never the limit', () => {
+  it('carries the live locked flag and no quota number', async () => {
     const c = await newCollection();
     let v = (await get('/api/collections/' + c.id)).body;
-    expect(v.free_word_limit).toBe(5);
     expect(v.free_limit_locked).toBe(false);
+    // The surprise only works if the cap is unknowable in advance — a buyer
+    // reading the Network tab must not find it.
+    expect(v).not.toHaveProperty('free_word_limit');
     await post('/api/collections/' + c.id + '/words', { words: words(5) });
     v = (await get('/api/collections/' + c.id)).body;
     expect(v.free_limit_locked).toBe(true);
+    expect(v).not.toHaveProperty('free_word_limit');
   });
 
-  it('reports no limit at all once paid', async () => {
+  it('never locks a paid collection', async () => {
     const c = await newCollection();
     db.setOrder(c.id, c.owner_token, { version: 'pdf' });
     db.markPaid(c.id);
     const v = (await get('/api/collections/' + c.id)).body;
-    expect(v.free_word_limit).toBe(null);
     expect(v.free_limit_locked).toBe(false);
   });
 });

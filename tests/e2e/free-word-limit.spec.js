@@ -5,7 +5,8 @@ import { ALL_ON, stubFeatures } from './feature-flags.js';
 // pricing.free_word_limit words (20 by default), after which the add controls
 // lock and the pay panel becomes the next step. Drives the REAL server — no
 // stubbed collection state — so the page and the API agree.
-const FREE_LIMIT = 20;
+const FREE_LIMIT = 20; // the server-side cap — never shown to the buyer
+const WORD_GOAL = 70; // the counter keeps its ordinary minimum framing throughout
 
 test.beforeEach(async ({ page }) => {
   await stubFeatures(page, ALL_ON);
@@ -50,18 +51,26 @@ async function pasteWords(page, n, prefix = 'word') {
   await page.click('#pasteAdd');
 }
 
-test('quota: counter reframes to the free quota, then locks the add box at the limit', async ({
-  page,
-}) => {
+test('quota: nothing hints at the cap, then the add box locks at the limit', async ({ page }) => {
   await createCollection(page, 'Quota');
 
-  // Below the quota: the counter measures against the FREE limit, not the
-  // product maximum, and the add box is usable.
+  // Below the quota the page gives NOTHING away: the counter keeps its ordinary
+  // minimum framing, no "free" wording anywhere, and the add box works. The lock
+  // is meant to be a surprise.
   await pasteWords(page, 5);
   await expect(page.locator('#count')).toHaveText('5');
-  await expect(page.locator('#countMax')).toContainText(String(FREE_LIMIT));
+  await expect(page.locator('#countMax')).toContainText(String(WORD_GOAL));
+  await expect(page.locator('#countMax')).not.toContainText(String(FREE_LIMIT));
+  await expect(page.locator('.count-pill')).not.toContainText('חינם');
+  await expect(page.locator('#countHint')).not.toContainText('חינם');
   await expect(page.getByTestId('free-limit-lock')).toBeHidden();
   await expect(page.locator('#wordInput')).toBeEnabled();
+
+  // …and the limit isn't sitting in the API payload either, where a curious
+  // buyer (or a scraper) would find it in the Network tab.
+  const id = new URL(page.url()).searchParams.get('c');
+  const view = await (await page.request.get('/api/collections/' + id)).json();
+  expect(view).not.toHaveProperty('free_word_limit');
 
   // Overshoot the quota in one paste: the server takes only what fits, so the
   // count stops exactly at the limit and the lock engages.

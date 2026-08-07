@@ -1839,20 +1839,14 @@
         // The group is opened asynchronously after the order, so its link can
         // appear on any later poll — re-check on every render, not just at setup.
         updateWaGroupLink();
+        // Free quota: the buyer is NEVER told the number, or that a quota exists,
+        // until they actually hit it — the lock is meant to land as a surprise, and
+        // a "3 of your 20 free words" countdown would both spoil it and cap how
+        // much they bother to write. So the counter keeps its ordinary
+        // minimum/maximum framing throughout; only `free_limit_locked` (a bare
+        // boolean — the server deliberately does not send the limit) changes the UI.
+        applyFreeLimit(!!state.free_limit_locked);
         const n = state.count;
-        // Free quota (server-projected): a number while this collection is capped,
-        // null once it's paid / exempt / the gate is switched off. While capped the
-        // counter reframes around the quota — promising "412 words" to someone who
-        // can only add 20 of them right now would be a lie.
-        const freeLimit = Number.isInteger(state.free_word_limit) ? state.free_word_limit : null;
-        const freeLocked = !!state.free_limit_locked;
-        applyFreeLimit(freeLimit, freeLocked, n);
-        if (freeLimit !== null) {
-          renderFreeCounter(freeLimit, freeLocked, n);
-          renderWords();
-          renderOwnerState();
-          return;
-        }
         const atMax = n >= MAX_WORDS;
         // Stage 2 kicks in once the 70-word minimum is met: the pill/hint reframe
         // around the max and the bar swaps to one scaled to MAX_WORDS.
@@ -1902,33 +1896,12 @@
         renderOwnerState();
       }
 
-      // The counter while a FREE QUOTA is in force: one bar scaled to the quota,
-      // and copy that says what the quota actually is. The two-stage
-      // minimum/maximum framing resumes automatically once payment lifts the cap.
-      function renderFreeCounter(limit, locked, n) {
-        const shown = Math.min(n, limit);
-        $('#count').textContent = shown;
-        $('#countMax').textContent = ' / ' + limit + ' מילים חינם';
-        $('#countHint').textContent = locked
-          ? 'ניצלתם את כל ' +
-            limit +
-            ' המילים החינמיות. אחרי התשלום אפשר להמשיך עד ' +
-            MAX_WORDS +
-            '.'
-          : 'עוד ' +
-            (limit - n) +
-            ' מילים בחינם — אחר כך משלימים תשלום וממשיכים עד ' +
-            MAX_WORDS +
-            '.';
-        $('#stage1').classList.remove('hidden');
-        $('#stage2').classList.add('hidden');
-        $('#barFill1').style.width = Math.min(100, (shown / limit) * 100) + '%';
-      }
-
       // Engage / release the lock on the add controls. Presentation only — the
       // server refuses over-quota words regardless of what the page shows — but
       // the controls are genuinely disabled so nobody types into a dead box.
-      function applyFreeLimit(limit, locked, n) {
+      // Takes only `locked`: the quota NUMBER never reaches the browser, so there
+      // is nothing here that could leak it before the lock lands.
+      function applyFreeLimit(locked) {
         const card = $('#addCard');
         const veil = $('#lockVeil');
         const payBtn = $('#lockPayBtn');
@@ -1938,13 +1911,11 @@
           el.disabled = locked;
         }
         if (!locked) return;
-        $('#lockChip').textContent = '🔒 ההוספה נעולה · ' + Math.min(n, limit) + '/' + limit;
         // The owner can act on this (pay); a contributor can't, so they're told
         // who can — never handed a pay button for someone else's order.
         $('#lockNote').textContent = isOwner
-          ? 'המילים שאספתם שמורות. התשלום פותח את האיסוף מיד.'
-          : 'הגעתם למכסת המילים החינמית. המילים שאספתם שמורות — ' +
-            'ברגע שהמארגנ/ת תשלים את התשלום אפשר יהיה להמשיך.';
+          ? 'המילים שאספתם שמורות. התשלום פותח את האיסוף מיד וממשיכים בלי הגבלה.'
+          : 'המילים שאספתם שמורות — ברגע שהמארגנ/ת תשלים את התשלום אפשר יהיה להמשיך.';
         payBtn.classList.toggle('hidden', !isOwner);
       }
 
@@ -2112,12 +2083,9 @@
           const blocked = (res && res.blocked) || 0;
           track('word_added', { method: method || 'single', count: added, skipped, blocked });
           if (blocked) {
-            const limit = res && res.free_word_limit;
-            say(
-              added
-                ? 'נוספו ' + added + ' מילים — והגעתם למכסת החינם'
-                : 'הגעתם למכסת ' + (limit || '') + ' המילים החינמיות'
-            );
+            // Say what landed, never how many slots there were — the quota number
+            // stays unspoken even at the moment it bites.
+            say(added ? 'נוספו ' + added + ' מילים — וכאן עוצרים לרגע' : 'כאן עוצרים לרגע');
             return true;
           }
           if (added >= 1) {
@@ -2163,8 +2131,8 @@
             await refresh();
             openDialog(
               isOwner
-                ? 'הגעתם למכסת המילים החינמית. אחרי התשלום אפשר להמשיך להוסיף.'
-                : 'הגעתם למכסת המילים החינמית. ברגע שהמארגנ/ת תשלים את התשלום אפשר יהיה להמשיך.'
+                ? 'האיסוף נעצר כאן. אחרי התשלום אפשר להמשיך להוסיף מילים בלי הגבלה.'
+                : 'האיסוף נעצר כאן. ברגע שהמארגנ/ת תשלים את התשלום אפשר יהיה להמשיך.'
             );
           } else {
             // Network drop, HTTP 500, or the server's 400 (too many words):
