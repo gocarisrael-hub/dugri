@@ -111,11 +111,15 @@ def test_word_sizes_bound_by_the_slot_even_without_a_cell():
     font, ref = _cafe()
     slots = _slots([(100, 10, 190, 44)])
     long = "אבגדהוזחטיכלמנסעפצקרשת"
-    uni = rp._word_sizes(slots, [long], font, ref, cell=None)[0]
+    laid = rp._word_layouts(slots, [long], font, ref, cell=None)[0]
     med = (slots[0]["y1"] - slots[0]["y0"]) * rp._WORD_SIZE_K
-    assert uni < med, "an unbreakable word still shrinks into its own slot"
-    rendered = rp._line_width_at(font, ref, 1, long) * uni / ref
-    assert rendered <= (190 - 100) + 1e-6, "the slot is the bound when there is no cell"
+    assert laid.size < med, "an unbreakable word still shrinks into its own slot"
+    # Measured on the widest LINE the entry actually sets: with no cell to mirror
+    # against, the slot itself is the box, and a word too wide for it is broken
+    # rather than run out of the card.
+    rendered = max(rp._line_width_at(font, ref, 1, ln) for ln in laid.lines)
+    assert rendered * laid.size / ref <= (190 - 100) + 1e-6, (
+        "the slot is the bound when there is no cell")
 
 
 def test_word_sizes_skips_empty_and_missing_slots():
@@ -145,7 +149,7 @@ _GF_PHRASE = "להקת שבעת הכוכבים"
 def _gf_layouts(font, ref, words):
     """Lay words out the way the v2 deck does: owner-declared column + bleed floor."""
     return rp._word_layouts(_GF_SLOTS, words, font, ref, cell=_GF_CELL,
-                            declared_band=True, safe=rp._CARD_SAFE)
+                            safe=rp._CARD_SAFE)
 
 
 def _left_edge(font, ref, layout, num, right, advance=None):
@@ -166,12 +170,14 @@ def test_long_phrase_wraps_instead_of_overflowing():
     assert " ".join(lay[1]).split() == _GF_PHRASE.split(), "wrapping must not lose words"
 
 
-def test_wrapped_lines_stay_inside_the_widened_band():
-    """The band is the DECLARED column widened to the house bound, not the cell."""
+def test_wrapped_lines_stay_inside_the_cards_own_line():
+    """The band is the card's mirrored left line, not the cell and not the trace:
+    a wrapped line stops at the same place a first line does."""
     font, ref = _cafe()
     lay = _gf_layouts(font, ref, [_GF_PHRASE])[0]
+    assert len(lay.lines) > 1, "this fixture only means something while it wraps"
     right = rp._card_right_edge(_GF_SLOTS, _GF_CELL)
-    left = rp._declared_left(_GF_SLOTS[0], _GF_CELL)
+    left = rp._card_left_edge(_GF_SLOTS, _GF_CELL)
     assert _left_edge(font, ref, lay, 1, right, _gf_advance(font)) >= left - 1e-6
 
 
@@ -315,34 +321,60 @@ def test_the_marker_runs_are_never_embedded():
     assert "‫4</text>" not in svg and "‫.</text>" not in svg
 
 
-# --- 2d. the declared column is widened to the house bound -------------------
-# A declared column is traced by eye around the ORIGIN card's short words, so its
-# left edge is where those words stopped, not a box anyone drew. On the affected
-# deck it was 0.448 of the card — 21.7 mm — inside a printed frame leaving
-# 61.5 mm clear, so two-word entries wrapped with 27 mm standing empty. The owner
-# chose 0.200 as the bound; _declared_left widens any column that starts right of
-# it and leaves a wider one alone.
+# --- 2d. every card has a text box, and its left line is the mirror ---------
+# The owner's rule, in her words: "all text boxes are aligned to the same
+# invisible left line", on every card of every template. A traced column records
+# where the ORIGIN's short words stopped (0.448 of the card on the affected deck,
+# 21.7 mm, inside a frame leaving 61.5 mm clear) and a detected one is narrower
+# still, so neither can be the line. It is the MIRROR of the card's own numbered
+# column instead: as far from the left edge as the numbers sit from the right.
 
 _BP_CELL = [0, 0, 223.92, 312.0]
 _BP_SLOTS = _slots([(100.3, 112.1, 161.8, 123.4), (100.3, 140.3, 161.8, 152.6),
                     (100.3, 169.9, 161.8, 183.4), (100.3, 194.6, 161.8, 213.0)])
 
 
-def test_a_traced_column_is_widened_to_the_house_bound():
-    left = rp._declared_left(_BP_SLOTS[0], _BP_CELL)
-    assert abs(left - 0.200 * 223.92) < 1e-9, "0.448 of the card must widen to 0.200"
+def test_the_left_line_mirrors_the_cards_own_right_anchor():
+    """The traced 0.448 is ignored: the line is where the numbers say it is."""
+    right = rp._card_right_edge(_BP_SLOTS, _BP_CELL)
+    left = rp._card_left_edge(_BP_SLOTS, _BP_CELL)
+    assert abs((left - _BP_CELL[0]) - (_BP_CELL[2] - right)) < 1e-9, (
+        f"left {left:.2f} and right {right:.2f} must keep the same margin")
 
 
-def test_a_column_already_wider_than_the_bound_is_left_alone():
-    wide = {"x0": 0.05 * 223.92, "y0": 0, "x1": 160.0, "y1": 10, "color": "#000"}
-    assert rp._declared_left(wide, _BP_CELL) == wide["x0"]
+def test_the_design_that_states_its_own_box_gets_its_own_line_back():
+    """אואזיס is the one template that says where its column is, and the mirror
+    reproduces its own trace exactly — which is what says the rule is right and
+    not merely convenient."""
+    left = rp._card_left_edge(_GF_SLOTS, _GF_CELL)
+    assert abs(left - min(sl["x0"] for sl in _GF_SLOTS)) < 0.51, (
+        f"{left:.2f} against its stated {min(sl['x0'] for sl in _GF_SLOTS):.2f}")
+
+
+def test_the_left_line_can_never_crowd_the_printed_border():
+    """By construction, not by a second constant: the anchor is already held
+    ``_LINE_RIGHT_MARGIN`` off the right edge, so its mirror is that far off the
+    left one. Driven with a card whose slots run edge to edge."""
+    cell = [0, 0, 200.0, 300.0]
+    slots = _slots([(1.0, 10, 199.0, 24)])
+    left = rp._card_left_edge(slots, cell)
+    assert left >= rp._LINE_RIGHT_MARGIN * 200.0 - 1e-9, left
+
+
+def test_a_freak_anchor_cannot_mirror_itself_into_a_sliver():
+    """A card whose numbers sat mid-page would mirror to a column too narrow to
+    set a phrase in. ``_MIN_BAND`` is the floor, and it is אואזיס's own width."""
+    cell = [0, 0, 200.0, 300.0]
+    slots = _slots([(40.0, 10, 104.0, 24)])          # anchor at 0.52 of the card
+    right = rp._card_right_edge(slots, cell)
+    assert right - rp._card_left_edge(slots, cell) >= rp._MIN_BAND * 200.0 - 1e-9
 
 
 def test_a_short_two_word_phrase_no_longer_wraps():
     """The reported card: 'סדנה שמית' and 'אפיה שמרי' wrapped with room to spare."""
     font, ref = _cafe()
     layouts = rp._word_layouts(_BP_SLOTS, ["סין", "מחבת", "סדנה שמית", "אפיה שמרי"],
-                               font, ref, cell=_BP_CELL, declared_band=True,
+                               font, ref, cell=_BP_CELL,
                                safe=rp._CARD_SAFE)
     assert [len(l.lines) for l in layouts] == [1, 1, 1, 1]
 
@@ -368,24 +400,11 @@ def test_one_lead_for_every_wrapped_entry_on_a_card():
     assert len(leads) == 1, f"one card, one line gap — got {leads}"
 
 
-def test_the_shared_lead_is_the_widest_pair_a_card_sets():
-    """Uniform must mean the WIDEST need, never an average that collides.
-
-    Driven straight at the solver: two entries that must both wrap, one needing
-    a 1.50 pitch and one needing 0.85. The card has to use 1.50 for both.
-    """
-    cands = {0: {1: (["a"], 0.0, 5.0), 2: (["a", "b"], 1.50, 30.0)},
-             1: {1: (["c"], 0.0, 5.0), 2: (["c", "d"], 0.85, 30.0)}}
-    size, counts, lead = rp._fit_card(cands, {0: 200.0, 1: 200.0}, [50.0, 250.0], 20.0)
-    assert counts == {0: 2, 1: 2}, "both entries must wrap for this fixture to mean anything"
-    assert lead == 1.50
-
-
 def test_every_word_on_a_card_starts_at_the_same_x():
     font, ref = _cafe()
     words = ["סין", "מחבת", "סדנה שמית", _GF_PHRASE]
     layouts = rp._word_layouts(_BP_SLOTS, words, font, ref, cell=_BP_CELL,
-                               declared_band=True, safe=rp._CARD_SAFE)
+                               safe=rp._CARD_SAFE)
     right = rp._card_right_edge(_BP_SLOTS, _BP_CELL)
     adv = rp._marker_advance(font, len(_BP_SLOTS))
     xs = set()
@@ -469,17 +488,14 @@ def test_one_right_anchor_for_a_card_whose_slots_disagree():
     assert rp._card_right_edge(slots, _BP_CELL) == 161.8
 
 
-def test_detected_slots_are_not_treated_as_a_text_column():
-    """The v1 sheet path must be untouched by wrapping.
-
-    Its slots come from auto-detection, so a box is the ink extent of the ORIGIN
-    word — narrow, because the origin words were short. Treating that as a text
-    column wrapped phrases with room to spare and shrank them to a third of the
-    size around them, changing all eight live sheet themes.
-    """
+def test_a_detected_card_is_a_text_column_too():
+    """The v1 sheet used to have no box to wrap inside, so a phrase too wide for
+    its card shrank the whole card onto one line — 11.8 on מרקאנה where the same
+    phrase wrapped at 21.3 on אואזיס. The mirrored left line is a real box, so
+    the sheet card wraps like every other card now."""
     font, ref = _cafe()
     layouts = rp._word_layouts(_GF_SLOTS, [_GF_PHRASE], font, ref, cell=_GF_CELL)
-    assert len(layouts[0][1]) == 1, "a detected slot is not a column; do not wrap to it"
+    assert len(layouts[0][1]) > 1, "a phrase wider than the card's box must wrap"
 
 
 def test_one_font_size_per_card_however_uneven_the_words():
@@ -552,8 +568,15 @@ def test_word_text_still_places_a_single_line_on_its_baseline():
 # anything wraps, and — through the slot wobble below — on cards where nothing
 # does.
 
-_TRACED_COLUMN = 0.448
 _CARD_HAPOEL = ["מונדיאל", "דובונים", "שיר השירים", "הפועל תל אביב"]
+# Two entries wrapping: enough that the paper below the last calibrated line is
+# what the card is being set against, rather than its own pinned size.
+_CARD_WRAPPING = ["מונדיאל", "הפועל תל אביב יפו", "הבדיחה על הנסיעה",
+                  "ארצות הברית"]
+# All four wrapping: now the card is bound by the room and nothing else, which is
+# what makes the reserved bottom margin measurable.
+_CARD_ROOM_BOUND = ["הבדיחה על הנסיעה", "הפועל תל אביב יפו",
+                    "שיר השירים של שלמה", "ארצות הברית ואירופה"]
 _CARD_ARZOT = ["אורגניה", "מוסיקה", "אוסייתי", "ארצות הברית"]
 
 
@@ -568,21 +591,15 @@ def _bp_room():
     return _BP_FRAME_BOTTOM - rp._BOTTOM_RESERVE_MM * rp._PT_PER_MM
 
 
-def _bp_layouts(font, ref, words, band=None, slots=None, room=-1):
-    """Lay a card out the way the affected deck does, at a given column bound.
+def _bp_layouts(font, ref, words, slots=None, room=-1):
+    """Lay a card out the way the affected deck does.
 
     ``room`` defaults to the card's real one (the production path); pass None for
     the legacy no-artwork path.
     """
-    saved = rp._BAND_LEFT_MAX
-    if band is not None:
-        rp._BAND_LEFT_MAX = band
-    try:
-        return rp._word_layouts(slots or _BP_SLOTS, words, font, ref, cell=_BP_CELL,
-                                declared_band=True, safe=rp._CARD_SAFE,
-                                room_bottom=_bp_room() if room == -1 else room)
-    finally:
-        rp._BAND_LEFT_MAX = saved
+    return rp._word_layouts(slots or _BP_SLOTS, words, font, ref, cell=_BP_CELL,
+                            safe=rp._CARD_SAFE,
+                            room_bottom=_bp_room() if room == -1 else room)
 
 
 def _line_centers(layouts, slots):
@@ -623,7 +640,7 @@ def test_the_reported_card_wraps_its_last_entry():
     at the house bound production actually uses, nothing here wraps at all.
     """
     font, ref = _cafe()
-    layouts = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN)
+    layouts = _bp_layouts(font, ref, _CARD_HAPOEL)
     assert len(layouts[3].lines) > 1, layouts[3].lines
     assert "".join(layouts[3].lines).replace(" ", "") == "הפועלתלאביב"
     assert sum(len(l.lines) for l in layouts) > len(layouts), "something must wrap"
@@ -633,7 +650,7 @@ def test_centring_each_entry_on_its_own_slot_is_what_made_the_gaps_uneven():
     """The bug, reproduced from the SAME layout: a wrapped entry centred on its
     slot grows BOTH ways, so its first line rises into the gap above it."""
     font, ref = _cafe()
-    layouts = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN)
+    layouts = _bp_layouts(font, ref, _CARD_HAPOEL)
     slot_centers = [(s["y0"] + s["y1"]) / 2 for s in _BP_SLOTS]
     cs = []
     for i, lay in enumerate(layouts):
@@ -648,7 +665,7 @@ def test_centring_each_entry_on_its_own_slot_is_what_made_the_gaps_uneven():
 
 def test_the_hapoel_card_has_one_gap_everywhere():
     font, ref = _cafe()
-    _assert_one_gap(_bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN),
+    _assert_one_gap(_bp_layouts(font, ref, _CARD_HAPOEL),
                     _BP_SLOTS, "הפועל / תל אביב")
 
 
@@ -656,7 +673,7 @@ def test_the_arzot_habrit_card_has_one_gap_everywhere():
     """Her second card, where the continuation gap was the TIGHTEST of the three
     kinds and the gap into the wrapped entry the second tightest."""
     font, ref = _cafe()
-    _assert_one_gap(_bp_layouts(font, ref, _CARD_ARZOT, band=_TRACED_COLUMN),
+    _assert_one_gap(_bp_layouts(font, ref, _CARD_ARZOT),
                     _BP_SLOTS, "ארצות / הברית")
 
 
@@ -673,15 +690,14 @@ def test_every_shape_of_card_has_one_gap_everywhere():
                                     "להקת שבעת הכוכבים הגדולה של אילת"],
     }
     for what, words in cases.items():
-        _assert_one_gap(_bp_layouts(font, ref, words, band=_TRACED_COLUMN),
+        _assert_one_gap(_bp_layouts(font, ref, words),
                         _BP_SLOTS, what)
 
 
 def test_an_entry_can_still_wrap_to_three_lines_on_one_pitch():
     font, ref = _cafe()
     layouts = _bp_layouts(font, ref, ["מונדיאל", "דובונים", "שיר השירים",
-                                      "להקת שבעת הכוכבים הגדולה של אילת"],
-                          band=_TRACED_COLUMN)
+                                      "להקת שבעת הכוכבים הגדולה של אילת"])
     assert len(layouts[3].lines) == 3, "this fixture must exercise a 3-line entry"
     _assert_one_gap(layouts, _BP_SLOTS, "three-line entry")
 
@@ -689,10 +705,12 @@ def test_an_entry_can_still_wrap_to_three_lines_on_one_pitch():
 def test_the_gap_inside_an_entry_equals_the_gap_between_entries():
     """Her rule, stated directly: the two kinds of gap are ONE number."""
     font, ref = _cafe()
-    layouts = _bp_layouts(font, ref, _CARD_ARZOT, band=_TRACED_COLUMN)
+    layouts = _bp_layouts(font, ref, _CARD_WRAPPING)
+    assert [len(l.lines) for l in layouts] == [1, 2, 2, 1], (
+        "this fixture only means something while two of its entries wrap")
     gaps = _line_gaps(layouts, _BP_SLOTS)
     between = gaps[0]                      # entry 1 -> entry 2
-    inside = gaps[3]                       # ארצות -> הברית, one entry
+    inside = gaps[1]                       # inside the wrapped entry 2
     assert abs(between - inside) < 1e-9, f"{between} vs {inside}"
 
 
@@ -717,7 +735,7 @@ def test_the_grid_is_pinned_to_the_first_calibrated_line_and_grows_downward():
     centers = [(s["y0"] + s["y1"]) / 2 for s in _BP_SLOTS]
     for words in (["מונדיאל", "דובונים", "אוסייתי", "מדונה"], _CARD_HAPOEL,
                   ["מונדיאל", "הפועל תל אביב", "שיר השירים", "ארצות הברית"]):
-        layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+        layouts = _bp_layouts(font, ref, words)
         cs = _line_centers(layouts, _BP_SLOTS)
         assert abs(cs[0] - centers[0]) < 1e-9, "the first line must stay put"
         assert cs[-1] >= centers[-1] - 1e-9, "and the block may only grow downward"
@@ -734,7 +752,7 @@ def test_the_uniform_pitch_clears_the_worst_pair_on_the_card():
     font, ref = _cafe()
     for words in (_CARD_HAPOEL, _CARD_ARZOT,
                   ["לקחת", "הטיול", "לתאילנד ובחזרה", "ים"]):
-        layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+        layouts = _bp_layouts(font, ref, words)
         flat = [ln for l in layouts if l is not None for ln in l.lines]
         pitch = layouts[0].lead * layouts[0].size
         for upper, lower in zip(flat, flat[1:]):
@@ -753,7 +771,7 @@ def test_no_line_on_a_gridded_card_crosses_the_trim():
                   ["מונדיאל", "דובונים", "שיר השירים",
                    "להקת שבעת הכוכבים הגדולה של אילת"],
                   ["", "", "להקת שבעת הכוכבים הגדולה של אילת", ""]):
-        layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+        layouts = _bp_layouts(font, ref, words)
         live = [l for l in layouts if l is not None]
         cs = _line_centers(layouts, _BP_SLOTS)
         flat = [ln for l in live for ln in l.lines]
@@ -843,8 +861,8 @@ def test_the_extra_room_is_what_keeps_the_type_at_full_size():
     and this pins that it does; what it no longer has to do is compensate for a
     pitch that was too wide in the first place."""
     font, ref = _cafe()
-    penned = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN, room=None)
-    roomy = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN)
+    penned = _bp_layouts(font, ref, _CARD_WRAPPING, room=None)
+    roomy = _bp_layouts(font, ref, _CARD_WRAPPING)
     assert roomy[0].size > penned[0].size * 1.10, (
         f"{penned[0].size:.2f} -> {roomy[0].size:.2f}")
 
@@ -854,13 +872,13 @@ def test_the_reserved_bottom_margin_is_kept_clear():
     wont get to there (in this case the font will be smaller)". Measured from the
     last line's INK — a descender must not eat the margin."""
     font, ref = _cafe()
-    words = ["מונדיאל", "הפועל תל אביב", "שיר השירים", "ארצות הברית"]
+    words = _CARD_ROOM_BOUND
     saved = rp._BOTTOM_RESERVE_MM
     try:
         sizes = {}
         for mm in (0, 10):
             rp._BOTTOM_RESERVE_MM = mm
-            layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+            layouts = _bp_layouts(font, ref, words)
             cs = _line_centers(layouts, _BP_SLOTS)
             live = [l for l in layouts if l is not None]
             last = live[-1].lines[-1]
@@ -896,7 +914,7 @@ def test_the_shipped_margin_actually_clears_eight_millimetres_of_ink():
     """The default is only worth pinning if it delivers: her wrapped card's last
     line — descenders and all — must stop a full 8 mm above the frame."""
     font, ref = _cafe()
-    layouts = _bp_layouts(font, ref, _CARD_HAPOEL, band=_TRACED_COLUMN)
+    layouts = _bp_layouts(font, ref, _CARD_HAPOEL)
     live = [l for l in layouts if l is not None]
     ink = (_line_centers(layouts, _BP_SLOTS)[-1]
            + rp._ink_reach(font, ref, live[-1].lines[-1])[1] * live[0].size)
@@ -932,7 +950,7 @@ def test_the_line_gap_clears_every_glyph_this_card_actually_sets():
     for words in (_CARD_HAPOEL, _CARD_ARZOT,
                   ["ים", "ים", "ים", "ים"],            # nothing descends or rises
                   ["לקחת", "לקחת", "לקחת", "לקחת"]):   # both, at their extremes
-        layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+        layouts = _bp_layouts(font, ref, words)
         live = [l for l in layouts if l is not None]
         size = live[0].size
         pitch = live[0].lead * size
@@ -992,7 +1010,7 @@ def test_no_two_lines_of_a_card_can_touch_at_the_pitch_it_is_given():
              ["ךףץ", "לקחת", "ךףץ", "לקחת"],
              ["להקת שבעת הכוכבים", "ים", "לקחת", "ךףץ"]]
     for words in cards:
-        layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+        layouts = _bp_layouts(font, ref, words)
         live = [l for l in layouts if l is not None]
         size = live[0].size
         centers = _line_centers(layouts, _BP_SLOTS)
@@ -1046,8 +1064,7 @@ def test_a_lone_entry_still_sits_on_its_own_slot():
     """With one live slot there is no span to divide, so the block is centred on
     that slot and the pitch falls back to what the glyphs need."""
     font, ref = _cafe()
-    layouts = _bp_layouts(font, ref, ["", "להקת שבעת הכוכבים", "", ""],
-                          band=_TRACED_COLUMN)
+    layouts = _bp_layouts(font, ref, ["", "להקת שבעת הכוכבים", "", ""])
     assert [l is None for l in layouts] == [True, False, True, True]
     slot = _BP_SLOTS[1]
     assert abs(layouts[1].center - (slot["y0"] + slot["y1"]) / 2) < 1e-9
@@ -1058,21 +1075,21 @@ def test_one_font_size_survives_the_grid():
     font, ref = _cafe()
     for words in (_CARD_HAPOEL, _CARD_ARZOT,
                   ["ים", _GF_PHRASE, "הבדיחה על הנסיעה לאילת", "קפה"]):
-        layouts = _bp_layouts(font, ref, words, band=_TRACED_COLUMN)
+        layouts = _bp_layouts(font, ref, words)
         sizes = {round(l.size, 9) for l in layouts if l is not None}
         assert len(sizes) == 1, f"one card, one size — got {sizes}"
 
 
-def test_the_v1_sheet_gets_no_grid_at_all():
-    """An undeclared card keeps its per-slot placement, so the eight live sheet
-    themes render exactly as they did. Verified byte for byte against
-    origin/main by rendering a bachelorette 8-up on both."""
+def test_every_card_is_laid_on_the_grid_now():
+    """The owner picked this off rendered cards: one rhythm per card, on every
+    template, not only on one that states its column. So every card comes back
+    with a grid centre and the renderer places every entry on it."""
     font, ref = _cafe()
     layouts = rp._word_layouts(_GF_SLOTS, ["מסיבה", "חברים", "ריקודים", "צחוקים"],
                                font, ref, cell=_GF_CELL)
-    assert all(l.center is None for l in layouts), (
-        "a detected card must carry no grid centre, so the renderer falls back "
-        "to the slot centre it has always used")
+    assert all(l.center is not None for l in layouts), (
+        "a card without grid centres would fall back to the traced spots, which "
+        "is the layout that was replaced")
 
 
 def test_the_rendered_lines_land_on_the_grid_centre_it_was_given():
@@ -2345,7 +2362,7 @@ def _design_pitch_layouts(words):
     font, ref = _cafe()
     return rp._word_layouts(_DESIGN_PITCH_SLOTS, words, font, ref,
                             cell=_BP_CELL, word_size=_DESIGN_WORD_SIZE,
-                            declared_band=True, safe=rp._CARD_SAFE,
+                            safe=rp._CARD_SAFE,
                             room_bottom=_bp_room())
 
 

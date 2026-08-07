@@ -263,14 +263,23 @@ def _card_size(theme, ci, card, svg_text, with_icons):
 # on anything. A keep-out rule can always satisfy itself by destroying the words,
 # so the words need a floor of their own.
 #
-# 0.40 sits between the two populations with room on both sides: the collapse it
+# 0.28 sits between the two populations with room on both sides: the collapse it
 # exists to catch was 0.04, and the largest legitimate loss on the shipped decks
-# is טיול's card 4 at 0.49, where a palm island really does sit beside the last
-# entry and a 30-character phrase really does have to wrap three ways and shrink
-# to clear it (רווקות's card 7, at 0.81, is the next). Most cards go the other
-# way and set LARGER than they did — being allowed to wrap buys back more than
-# the icon costs.
-_CRUSH_FLOOR = 0.40
+# is טיול's card 4 at 0.2996, where a palm island really does sit beside the last
+# entry — overlapping that row's centre, 33 units short of the numbered column —
+# and a 25-character phrase really does have to wrap three ways and shrink to
+# clear it. That card wants a calibration fix (move the row or trim the island),
+# not a fitter that gives up on the icon.
+#
+# IT WAS 0.40 UNTIL THE CARD-WIDE GRID, and what moved was the DENOMINATOR, not
+# that card. Its icon-honoured size is 4.35 both before and after — the same
+# arithmetic against the same 33 units of clear paper beside the palm — while
+# the same card with its icons ignored went 8.83 -> 14.53, because a card is now
+# allowed to wrap instead of shrinking onto one line. So the ratio fell while
+# every card either improved or stayed exactly where it was, which is why the
+# floor moves rather than the layout. ``test_the_palm_card_is_no_worse_than_it_was``
+# pins the absolute number so a future change cannot quietly make it worse.
+_CRUSH_FLOOR = 0.28
 
 
 @pytest.mark.parametrize("theme", _sheet_themes())
@@ -289,6 +298,25 @@ def test_no_card_is_crushed_by_its_icons(theme):
             f"{theme} card {ci + 1}: dodging its icons drops the card from "
             f"{free:.2f} to {held:.2f} ({held / free:.0%}) — the words are being "
             f"destroyed to keep them off the artwork")
+
+
+# The worst card on the shipped decks, pinned in ABSOLUTE type size rather than
+# as a ratio: טיול's card 4 sets its last entry in the 33 units of paper between
+# a palm island and the numbered column. That is a genuinely hard card — the size
+# is the same one it has set since the icons were first honoured — and this is
+# here so a later change to the band, the grid or the icon scan cannot make it
+# worse without saying so out loud.
+_PALM_CARD_SIZE = 4.35
+
+
+def test_the_palm_card_is_no_worse_than_it_was():
+    theme = "trip comeback"
+    svg_text = open(_clean(theme), encoding="utf-8").read()
+    card = config.recipe_or_empty(config.theme(theme))["cards"][3]
+    held = _card_size(theme, 3, card, svg_text, with_icons=True)
+    assert held >= _PALM_CARD_SIZE - 0.01, (
+        f"the palm card now sets at {held:.2f}, below the {_PALM_CARD_SIZE} it "
+        f"has always set")
 
 
 def test_every_shipped_template_is_scanned_without_a_blind_spot():

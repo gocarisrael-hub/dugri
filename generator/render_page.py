@@ -382,10 +382,10 @@ def _marker_geometry(font, ref, num, msize, advance=None):
     # Ink, not advance: the right edge asked for is the one you can SEE, and the
     # two differ by 8-9 units of a 200 em on this face (see ``_glyph_bearings``).
     #
-    # Only when a fixed column is in play (a declared v2 card, where the four
-    # numbers really do share one anchor). The v1 sheet anchors every line on its
-    # OWN slot, so its digits never shared an x to be ragged about, and it stays
-    # byte for byte as calibrated.
+    # Only when a fixed column is in play — which, since every card is laid on
+    # the card-wide grid, is every card that passes an advance. A caller that
+    # anchors each line on its own slot (no advance) never had an x for its
+    # digits to be ragged about, and reads the same as it always did.
     digit = f"{num}"
     digit_w = font.getlength(digit) / ref * msize
     col_w = digit_w if advance is None else advance / ref * msize
@@ -467,9 +467,9 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
     is the conventional numbered-list shape and keeps the digit column clean. The
     block is centred on ``center_y`` so a wrapped entry grows symmetrically into
     the air above and below rather than drifting down into its neighbour. On a
-    declared card the caller does not pass the slot centre here — it passes the
-    centre the CARD-WIDE line grid put this entry on (see ``_grid_centers``), so
-    every gap on the card, inside an entry or between two, is the same.
+    card the caller does not pass the slot centre here — it passes the centre the
+    CARD-WIDE line grid put this entry on (see ``_grid_centers``), so every gap on
+    the card, inside an entry or between two, is the same.
 
     ``lead`` is the baseline pitch as a multiple of ``size``; omitted, it is
     measured from these very lines (see ``_lead_for``). ``marker_advance`` fixes
@@ -600,7 +600,7 @@ def _line_right_edge(slot_x1, cell):
 
 
 def _card_right_edge(slots, cell):
-    """ONE right anchor for every numbered line on a declared card.
+    """ONE right anchor for every numbered line on a card.
 
     The four slots are supposed to share an anchor — the origin's numbers sit in
     a column — but each recorded box is the INK extent of a different origin
@@ -613,11 +613,41 @@ def _card_right_edge(slots, cell):
     return _line_right_edge(max(s["x1"] for s in slots), cell)
 
 
-def _declared_left(slot, cell):
-    """Left bound of a declared words column, widened to ``_BAND_LEFT_MAX``."""
+# The narrowest text box this will hand a card, as a fraction of the card width.
+# A design whose numbered column sits unusually far in would otherwise mirror
+# itself into a sliver; 0.40 is what אואזיס — the one design that states its own
+# text box — actually uses, so no shipped card is touched by this floor and a
+# freak measurement cannot produce a column too narrow to set a phrase in.
+_MIN_BAND = float(os.environ.get("DUGRI_MIN_BAND", "0.40"))
+
+
+def _card_left_edge(slots, cell):
+    """ONE left line for every entry on a card — the mirror of its right anchor.
+
+    THE OWNER'S RULE, in her words: *all text boxes are aligned to the same
+    invisible left line*. Every card in the shop is drawn that way, and until now
+    only a template that STATED its column (``card_slots``) had one: everything
+    else fell back to the card's trim-safe area, 5% in from the paper edge. So a
+    long entry on פריז ran to within 5% of the card while the same card kept a
+    23% margin on the right — and, having no box to wrap inside, it bought the
+    room by shrinking the whole card to 15.2 where אואזיס set 21.3.
+
+    The line is the MIRROR of the right anchor, because that anchor is measured
+    (``_card_right_edge``: where the origin's numbered column sits) and these
+    designs set their words in a centred box — so the distance the text keeps
+    from the right edge is the distance it keeps from the left. Checked against
+    the one design that says: אואזיס's stated column starts at 0.300 of the card
+    and its anchor sits at 0.700. The mirror reproduces its own line exactly.
+
+    It cannot crowd the printed border, and that is by construction rather than
+    by another constant: the anchor is already held ``_LINE_RIGHT_MARGIN`` off
+    the right edge, so its mirror is at least that far off the left one.
+    """
+    right = _card_right_edge(slots, cell)
     if not cell:
-        return slot["x0"]
-    return min(slot["x0"], cell[0] + _BAND_LEFT_MAX * (cell[2] - cell[0]))
+        return min(s["x0"] for s in slots)
+    left = cell[0] + (cell[2] - right)
+    return min(left, right - _MIN_BAND * (cell[2] - cell[0]))
 
 
 def _line_width_at(font, ref, num, word, advance=None):
@@ -683,25 +713,6 @@ _WRAP_MAX_LINES = int(os.environ.get("DUGRI_WRAP_MAX_LINES", "3"))
 # region the guillotine removes: the reported amputation.
 _CELL_SAFE = float(os.environ.get("DUGRI_CELL_SAFE", "0.02"))
 _CARD_SAFE = float(os.environ.get("DUGRI_CARD_SAFE", "0.05"))
-# How far right a DECLARED words column may start, as a fraction of the card
-# width. The owner's choice, measured on the affected deck.
-#
-# A declared column is traced by eye around the ORIGIN card's words, and the
-# origin words are short, so the traced left edge records where those particular
-# words happened to stop — not a text box anyone drew. On the "Bride in One Pot"
-# deck it came out at 0.448, a column 21.7 mm wide, while the printed frame
-# leaves 61.5 mm of clear paper (0.110..0.890, measured off the artwork). Two-word
-# entries like "סדנה שמית" therefore wrapped with 27 mm standing empty to their
-# left, which is what the owner reported. Grapefruit has the same shape at 0.300
-# (31.6 mm of the same 61.5).
-#
-# Rather than restate the boundary per theme, it is clamped here: the affected
-# deck is an OWNER-UPLOADED template whose calibration lives in the admin store,
-# not in themes.json, so a themes.json edit could not reach it — and every future
-# upload would arrive with the same too-narrow trace. 0.200 leaves the ink about
-# 15.8 mm from the page edge, 7 mm clear of the frame stroke, so nothing lands on
-# the printed border. A column that already starts further LEFT is untouched.
-_BAND_LEFT_MAX = float(os.environ.get("DUGRI_BAND_LEFT_MAX", "0.200"))
 
 
 Layout = collections.namedtuple("Layout", "size lines lead center")
@@ -1626,16 +1637,13 @@ def room_bottom(theme, front_index, svg_text, cell, safe_bottom):
 # read to us it runs about a tenth above the baseline step the artwork actually
 # sets (סיישל's title: 0.75 on the slider, 0.68 in the ink).
 #
-# WHERE IT APPLIES, AND FOR HOW LONG. Only to a card with a DECLARED words column
-# (``card_slots``), which today means the v2 single-card templates. The eight v1
-# sheet themes have no declared column yet, so they cannot wrap and are not
-# gridded — their lines are their slots and they render exactly as calibrated.
-#
-# That split is a MIGRATION STATE, not a design: the owner's plan is that "every
-# template will move to card slots". As each sheet theme gains a column it starts
-# wrapping and gridding like the rest, and once none are left the undeclared
-# branches below (and the ``declared_band`` flag itself) can be deleted outright.
-# Nothing here is written to keep two worlds working forever.
+# WHERE IT APPLIES: EVERY CARD. It used to be only a card with a DECLARED words
+# column (``card_slots``) — the v2 single-card templates — because the v1 sheet
+# themes had no column, so they could not wrap and were not gridded; their lines
+# were their slots. That was called a migration state here, and it ended the day
+# every card got a text box of its own (``_card_left_edge``): the owner picked
+# the grid for all of them off rendered cards, and the undeclared branches went
+# with the flag that selected them.
 
 
 def _grid_pitch(centers, gaps, lead, size, cap=None):
@@ -2006,8 +2014,8 @@ def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
     return out
 
 
-def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
-              vbounds=None, room=None, count=None, bold_w=0.0, rows=None):
+def _fit_card(cands, centers, uniform, font=None, ref=None,
+              vbounds=None, room=None, count=None, bold_w=0.0):
     """Solve ONE font size for the whole card, and each entry's line count.
 
     Every word on a card renders at the SAME size — that is the origin
@@ -2038,91 +2046,50 @@ def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
     above it (the collision this mechanism exists to prevent) while making the
     gap the same everywhere.
 
-    ``grid`` switches the HEIGHT constraint from "these two entries must not
-    collide" to "every line on the card sits on one pitch" (see THE LINE GRID
-    above). The pairs are measured over the card's WHOLE line sequence,
+    The HEIGHT constraint is "every line on the card sits on one pitch" (see
+    THE LINE GRID above), measured over the card's WHOLE line sequence,
     continuations included, so a gap that straddles two entries is held to the
-    same clearance as a gap inside one. Off (the v1 sheet, and any card that
-    cannot wrap) the original pairwise solve runs untouched.
+    same clearance as a gap inside one. There is no second answer to weigh it
+    against any more: the pairwise solve this used to fall back to — each entry
+    centred on its own traced spot and merely kept clear of its neighbours —
+    was what the v1 sheet used while it had no text box to wrap inside. Every
+    card has one now (``_card_left_edge``), and the owner picked the grid off
+    rendered cards: it is what pays for a wrapped line in paper rather than in
+    type size.
 
-    ``room`` is the card's real vertical envelope — the safe top and
-    ``room_bottom`` (the printed frame's inner edge less clear air). A card whose
-    wrapping ADDS lines is solved against it, so the extra lines go into the paper
-    that is actually free below the last calibrated line instead of squeezing the
-    pitch. Without it (no cell, no artwork to scan) the old calibrated-span
-    envelope stands, which is the conservative answer.
-
-    ``rows`` is the un-gridded counterpart: ``{slot: (top, bottom)}``, the strip
-    of card each entry owns. The v1 sheet could not wrap, so it never needed a
-    vertical bound and had none; an entry that wraps to dodge an icon does, or its
-    second line lands on the row below — and on the icon in it. Passed only for a
-    card the icons actually constrain, so every other card takes the pairwise
-    solve exactly as before.
+    ``room`` is the card's real vertical envelope — the safe top, and the lower
+    of the printed frame's clear air and the first icon under the words. A card
+    whose wrapping ADDS lines is solved against it, so the extra lines go into
+    the paper that is actually free below the last calibrated line instead of
+    squeezing the pitch. Without it (no cell, no artwork to scan) the calibrated
+    span stands, which is the conservative answer.
     """
     live = sorted(cands)
     best = None
     for combo in itertools.product(*(sorted(cands[i]) for i in live)):
         counts = dict(zip(live, combo))
         size = min([uniform] + [cands[i][counts[i]][2] for i in live])
-        if grid:
-            flat = [ln for i in live for ln in cands[i][counts[i]][0]]
-            live_c = [centers[i] for i in live]
-            lead = _card_lead(font, ref, flat, count=count, bold_w=bold_w)
-            span = max(live_c) - min(live_c)
-            if room:
-                # The card's real envelope: the first calibrated line down to the
-                # printed frame. Applied whether the card wraps or not, because
-                # the fixed font pitch can spread a plain card too.
-                size = min(size, _room_cap(live_c, len(flat), lead, flat,
-                                           font, ref, room))
-            elif len(flat) > len(live) and span > 0 and lead > 0:
-                # No card to measure: the calibrated span is the envelope, as it
-                # was before the frame could be read. ONLY the lines the wrap ADDS
-                # are ours to fit — a card that wraps nothing sets exactly the
-                # entries the origin template set.
-                size = min(size, span / ((len(flat) - 1) * lead))
-                size = min(size, _grid_cap(live_c, counts, flat, lead, font,
-                                           ref, vbounds))
-            else:
-                size = min(size, _grid_cap(live_c, counts, flat, lead, font, ref,
-                                           vbounds))
+        flat = [ln for i in live for ln in cands[i][counts[i]][0]]
+        live_c = [centers[i] for i in live]
+        lead = _card_lead(font, ref, flat, count=count, bold_w=bold_w)
+        span = max(live_c) - min(live_c)
+        if room:
+            # The card's real envelope: the first calibrated line down to the
+            # printed frame. Applied whether the card wraps or not, because
+            # the fixed font pitch can spread a plain card too.
+            size = min(size, _room_cap(live_c, len(flat), lead, flat,
+                                       font, ref, room))
+        elif len(flat) > len(live) and span > 0 and lead > 0:
+            # No card to measure: the calibrated span is the envelope, as it
+            # was before the frame could be read. ONLY the lines the wrap ADDS
+            # are ours to fit — a card that wraps nothing sets exactly the
+            # entries the origin template set.
+            size = min(size, span / ((len(flat) - 1) * lead))
+            size = min(size, _grid_cap(live_c, counts, flat, lead, font,
+                                       ref, vbounds))
         else:
-            lead = max([0.0] + [cands[i][counts[i]][1] for i in live])
-            for a, b in zip(live, live[1:]):
-                spans = sum((counts[i] - 1) * lead + 1.0 / _WORD_SIZE_K
-                            for i in (a, b))
-                gap = min(pitches[a], abs(centers[b] - centers[a]))
-                size = min(size, gap / (spans / 2 + _WRAP_CLEAR))
-            for i in (rows or {}):
-                # Each entry's block, centred on its slot, kept inside the row
-                # that entry owns — the bound that lets a card wrap here at all
-                # without an extra line landing on the row below, or below the
-                # card's own frame. Off (rows is None) this branch is the
-                # untouched pairwise solve and nothing on the card can move.
-                #
-                # Measured on the entry's OWN first and last lines, not on
-                # ``_WORD_SIZE_K``. That constant is a reading of the recipe's
-                # boxes — the height a typical origin word came out — and it is
-                # what the pairwise solve above compares two entries by, which is
-                # fine when both sides of the comparison use it. Against an ICON
-                # it is not: an icon is a fixed place on the paper, and a card
-                # word whose last line ends in a descender prints a third of its
-                # size lower than the constant allows for. כדורסל's bottom entry
-                # cleared the player by 0.27 units on that model and still put
-                # eight pixels on him.
-                if i not in counts:
-                    continue
-                lines = cands[i][counts[i]][0]
-                grow = (counts[i] - 1) * lead / 2
-                if font is not None and ref is not None and lines:
-                    up = grow + _ink_reach(font, ref, lines[0])[0]
-                    down = grow + _ink_reach(font, ref, lines[-1])[1]
-                else:
-                    up = down = grow + 0.5 / _WORD_SIZE_K
-                for reach, need in ((centers[i] - rows[i][0], up),
-                                    (rows[i][1] - centers[i], down)):
-                    if need > 0:
-                        size = min(size, max(reach, 0.0) / need)
+            size = min(size, _grid_cap(live_c, counts, flat, lead, font, ref,
+                                       vbounds))
         key = (size, -sum(combo))
         if best is None or key > best[0]:
             best = (key, size, counts, lead)
@@ -2151,10 +2118,12 @@ def _fit_card(cands, pitches, centers, uniform, font=None, ref=None, grid=False,
 # A ONE-WORD ENTRY CANNOT WRAP, and does not: ``_candidates`` stops as soon as
 # ``_balanced_split`` runs out of spaces, so such an entry offers a single
 # one-line candidate and the card's size drops to fit it. That is the owner's
-# parenthesis, and it needs no code — what it needs is for the mid-word breaker
-# to stay switched off on this path (``uniform`` is passed only for a declared
-# band), or eight decks would start hyphenating words that have never been
-# hyphenated.
+# parenthesis, and it holds for as long as the entry can be set at a size worth
+# reading. Past that the mid-word breaker takes over (``_BREAK_BELOW``): a single
+# 25-character word that would drag the whole card under 85% of its size is
+# broken with a hyphen rather than allowed to shrink the other three entries
+# with it. That rule used to apply only to a card that stated its column; it
+# applies to every card now, for the same reason the grid does.
 #
 # WHICH ICONS AN ENTRY HAS TO CLEAR: the ones beside it, not the ones on the
 # card. An icon at x 43..69 does not obstruct an entry whose ink stops at x 130,
@@ -2328,8 +2297,8 @@ def unclearable_icons(obstacles, band, center, right, width):
 
 
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
-                  declared_band=False, safe=_CELL_SAFE, room_bottom=None,
-                  bold_w=0.0, obstacles=None):
+                  safe=_CELL_SAFE, room_bottom=None, bold_w=0.0,
+                  obstacles=None):
     """Per-slot ``(size, [lines])`` for a card's words, or None for an empty slot.
 
     One UNIFORM font size is the target for every word (matching the origin's
@@ -2340,27 +2309,22 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     uniform look.
 
     A word that does not FIT is wrapped rather than pushed out of the card (see
-    the WRAPPING note above). What it has to fit is the question:
+    the WRAPPING note above), and EVERY card now has a box to wrap inside: the
+    four entries share one left line, the mirror of the card's own numbered
+    column (``_card_left_edge``). That is the owner's rule for every template —
+    wrap first, shrink second — where before only a template that stated its
+    column in ``card_slots`` had a box at all and everything else answered a wide
+    phrase by shrinking the whole card onto one line.
 
-    * ``declared_band`` — the slots came from the owner's ``card_slots``, which
-      states where the words' COLUMN is. That is a real text box, so a phrase
-      wider than it wraps inside it — but its left edge is only ever traced
-      around the ORIGIN's short words, so it is widened to at least
-      ``_BAND_LEFT_MAX`` of the card first.
-    * otherwise the slots were auto-detected, and a detected box is the ink
-      extent of the ORIGIN word, not a column: the origin words were short, so
-      the boxes are narrow and treating them as a text box wraps phrases that
-      have room to spare. Those fall back to the card-wide safe area and set one
-      line per entry. This is the UN-MIGRATED path — every template is moving to
-      ``card_slots``, and when the last one has, it goes.
+    ``safe`` floors the bound, so no line can reach the trim edge and be cut off
+    the printed card.
 
-    Either way ``safe`` floors the bound, so no line can reach the trim edge and
-    be cut off the printed card.
-
-    A declared card also gets ONE right anchor and ONE digit column for all four
-    entries (see ``_card_right_edge`` / ``_marker_advance``), so the numbers and
-    the words line up down the card instead of each entry landing where its own
-    slot and its own digit put it.
+    Every card also gets ONE right anchor and ONE digit column for its four
+    entries (``_card_right_edge`` / ``_marker_advance``), and its lines are
+    placed on a card-wide grid — one rhythm for every gap on the card — instead
+    of each entry sitting on its own traced spot. The owner chose that off
+    rendered cards: it is what lets a wrapped entry grow into the paper at the
+    foot of the card instead of paying for the second line in type size.
 
     ``room_bottom`` is the lowest y a line's ink may reach on this card — the
     printed frame's inner edge less clear air (see ``room_bottom``). It is what
@@ -2384,7 +2348,7 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     # the fraction of a millimetre this costs is invisible.
     if floor is not None and bold_w:
         floor += uniform * bold_w
-    advance = _marker_advance(_primary(font), len(slots)) if declared_band else None
+    advance = _marker_advance(_primary(font), len(slots))
     centers = [(s["y0"] + s["y1"]) / 2 for s in slots]
     vbounds = ((cell[1] + (cell[3] - cell[1]) * safe,
                 cell[3] - (cell[3] - cell[1]) * safe) if cell else None)
@@ -2417,14 +2381,13 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
         word = words[wi] if wi < len(words) else ""
         if not word:
             continue
-        if declared_band:
-            right = _card_right_edge(slots, cell)
-            left = _declared_left(slot, cell)
-            if floor is not None:
-                left = max(left, floor)
-        else:
-            right = _line_right_edge(slot["x1"], cell)
-            left = floor if floor is not None else slot["x0"]
+        right = _card_right_edge(slots, cell)
+        # ONE left line for the card, whether or not the template states its
+        # column: see ``_card_left_edge``. The trim-safe floor still holds it off
+        # the paper edge on a card with no cell to mirror against.
+        left = _card_left_edge(slots, cell)
+        if floor is not None:
+            left = max(left, floor)
         if left >= right:                 # degenerate slot: fall back to the floor
             left = floor if floor is not None else slot["x0"]
         # The row is shortened first, because an icon it no longer reaches is an
@@ -2442,16 +2405,24 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
         bands[wi] = (word, right, left, on_icon)
     if not bands:
         return [None] * len(slots)
-    # Wrapping needs a text box to wrap INSIDE. A declared column is one. A
-    # detected slot is not — it is just where the origin word's ink happened to
-    # land — but an icon beside the entry IS a real edge, stated by the artwork,
-    # and an entry that has to dodge one has earned the right to use a second
-    # line rather than shrink the whole card.
-    wrap = declared_band or blocked
+    # The card's column, as the fit settled it: the widest right anchor and the
+    # nearest left bound of any live entry. It is what decides which icons are
+    # UNDER the words rather than merely low on the card.
+    band_right = max(b[1] for b in bands.values())
+    band_left = min(b[2] for b in bands.values())
+    # Wrapping needs a text box to wrap INSIDE, and now every card has one: the
+    # left line is the mirror of the card's own numbered column
+    # (``_card_left_edge``), not a guess at where the origin's short words
+    # happened to stop. So the owner's rule applies to every template alike —
+    # WRAP FIRST, SHRINK SECOND — instead of only where an icon forced the issue.
+    # The v1 sheet used to answer a phrase too wide for its card by shrinking the
+    # whole card onto one line (11.8 on מרקאנה where the same phrase wraps at
+    # 21.3 on אואזיס); the type stays up now, and the second line is what pays.
+    wrap = True
     cands = {wi: _candidates(font, ref, wi + 1, word, right - left,
                              max_lines=_WRAP_MAX_LINES if wrap else 1,
                              advance=advance,
-                             uniform=uniform if declared_band else None,
+                             uniform=uniform,
                              ink=on_icon)
              for wi, (word, right, left, on_icon) in bands.items()}
     pitches = {i: _slot_pitch(slots, i) for i in cands}
@@ -2463,21 +2434,26 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     room = None
     if (vbounds and room_bottom is not None and len(live_c) > 1
             and max(live_c) > min(live_c) and room_bottom > max(live_c)):
-        room = (vbounds[0], min(vbounds[1], room_bottom))
-    size, counts, lead = _fit_card(cands, pitches, centers, uniform,
-                                   font=font, ref=ref, grid=declared_band,
-                                   vbounds=vbounds, room=room,
-                                   count=len(slots), bold_w=bold_w,
-                                   rows=rows if (blocked and not declared_band)
-                                   else None)
-    if not declared_band:
-        return [None if wi not in cands
-                else Layout(size, cands[wi][counts[wi]][0], lead)
-                for wi in range(len(slots))]
-    # Declared card: place every line on the card-wide grid and hand each entry
-    # the centre the grid put it on, plus the grid pitch as its lead — so the gap
-    # inside a wrapped entry IS the gap between two entries, and the gap on THIS
-    # card is the gap on every other card of the deck.
+        floor_y = min(vbounds[1], room_bottom)
+        # ...AND ONLY DOWN TO THE FIRST ICON UNDER THE COLUMN. The frame says how
+        # much paper is left at the foot of the card; it does not say what is
+        # DRAWN on it. פריז's shoes sit in exactly that paper, so a block growing
+        # into it printed its last entry across them. An icon that lies under the
+        # word column and below the last calibrated line is therefore a ceiling on
+        # the room, which keeps the icon rule the owner set — wrap first, shrink
+        # second, never on top of the artwork — true of a card laid on the grid.
+        for o in obstacles or []:
+            if o[1] > max(live_c) and o[0] < band_right and o[2] > band_left:
+                floor_y = min(floor_y, o[1])
+        if floor_y > max(live_c):
+            room = (vbounds[0], floor_y)
+    size, counts, lead = _fit_card(cands, centers, uniform,
+                                   font=font, ref=ref, vbounds=vbounds,
+                                   room=room, count=len(slots), bold_w=bold_w)
+    # Every line on the card-wide grid, each entry handed the centre the grid put
+    # it on and the grid pitch as its lead — so the gap inside a wrapped entry IS
+    # the gap between two entries, and the gap on THIS card is the gap on every
+    # other card of the deck.
     lines = sum(counts.values())
     # With a card to measure, the pitch floor is the origin's ENTRY spacing (a
     # constant per template) and the ceiling is the paper left below the first
@@ -3598,30 +3574,25 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
     if not slots:
         return ""
     face = _word_face(word_font, word_font_alt)
-    # card_slots is the owner's own statement of where the words' column sits, so
-    # when it is set the slots ARE a text box and a long phrase wraps inside it.
-    declared = bool((cfg.get("card_slots") or {}).get("words"))
     bold_w = config.word_bold_w(cfg, _WORD_BOLD_W)
     layouts = _word_layouts(slots, words, face, face.ref, cell=cell,
                             word_size=cfg.get("word_size"), safe=_CARD_SAFE,
-                            declared_band=declared, room_bottom=room,
-                            bold_w=bold_w, obstacles=obstacles)
+                            room_bottom=room, bold_w=bold_w,
+                            obstacles=obstacles)
     # One anchor and one digit column for the whole card, so the four numbers sit
     # in a column and the four words start at the same x. Both must match what
     # _word_layouts fitted against, or the render would overflow the band it was
     # measured for.
-    x_right = _card_right_edge(slots, cell) if declared else None
-    advance = _marker_advance(face.primary, len(slots)) if declared else None
+    x_right = _card_right_edge(slots, cell)
+    advance = _marker_advance(face.primary, len(slots))
     out = []
     for wi, slot in enumerate(slots):
         if layouts[wi] is None:
             continue
         lay = layouts[wi]
-        # A declared card carries its own grid centre (one pitch for every gap on
-        # the card); without one the entry sits on its slot centre as before.
+        # The card's own grid centre — one pitch for every gap on the card.
         center = lay.center if lay.center is not None else (slot["y0"] + slot["y1"]) / 2
-        right = x_right if x_right is not None else _line_right_edge(slot["x1"], cell)
-        out.append(word_lines(right, center, lay.size, slot["color"],
+        out.append(word_lines(x_right, center, lay.size, slot["color"],
                               wi + 1, lay.lines, word_font, lead=lay.lead,
                               marker_advance=advance, bold_w=bold_w,
                               alt_font_path=word_font_alt))
@@ -4094,22 +4065,34 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
         cell = card.get("cell")
         icons = (card_obstacle_rects(theme, ci + 1, svg, cell) if cell else None)
         room = None
-        if icons and cell:
+        if cell:
+            # EVERY card, not only one with an icon beside its words. The floor is
+            # the owner's clear air at the foot of the card — "8 mm of empty paper
+            # under the last line" — and it belongs to the card, not to its icons.
+            # It only ever bound a card that could wrap, and until now only an
+            # icon let a sheet card wrap at all; now that every card has a text
+            # box, a card with no icon can grow a second line too, and it must
+            # grow it into the same paper as every other card.
             safe_bottom = cell[3] - (cell[3] - cell[1]) * _CARD_SAFE
             room = room_bottom(theme, ci + 1, svg, cell, safe_bottom)
         layouts = _word_layouts(card["words"], words, face, face.ref,
                                 cell=cell, word_size=cfg.get("word_size"),
                                 bold_w=bold_w, obstacles=icons,
                                 room_bottom=room)
+        # The sheet card sets on the same grid as every other card: one right
+        # anchor, one digit column, and the centres the grid put the lines on.
+        x_right = _card_right_edge(card["words"], cell)
+        advance = _marker_advance(face.primary, len(card["words"]))
         for wi, slot in enumerate(card["words"]):
             if layouts[wi] is None:
                 continue
             lay = layouts[wi]
-            center = (slot["y0"] + slot["y1"]) / 2
-            x_right = _line_right_edge(slot["x1"], card.get("cell"))
+            center = (lay.center if lay.center is not None
+                      else (slot["y0"] + slot["y1"]) / 2)
             overlay.append(word_lines(x_right, center, lay.size, slot["color"],
                                       wi + 1, lay.lines, word_font, lead=lay.lead,
-                                      bold_w=bold_w, alt_font_path=word_alt))
+                                      bold_w=bold_w, alt_font_path=word_alt,
+                                      marker_advance=advance))
     body = "".join(overlay)
     return svg.replace("</svg>", body + "</svg>")
 
