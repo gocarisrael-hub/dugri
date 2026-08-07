@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
-import { pressPdf, rgbDeckPdf, truncate } from './press-pdf-fixture.js';
+import { pressPdf, rgbDeckPdf, passthroughPdf, truncate } from './press-pdf-fixture.js';
 
 // The PRESS routes: the print-shop copy of an order (CMYK, flattened, bleed +
 // crop marks). Unlike the customer deck it is a BACKGROUND job — a full
@@ -24,8 +24,14 @@ import { pressPdf, rgbDeckPdf, truncate } from './press-pdf-fixture.js';
 //   *rgb*       finishes successfully having produced only the RGB deck.
 //   *truncated* leaves a half-written file behind, like a killed Chrome.
 //   *fail*      exits non-zero.
+// Otherwise it produces what the REQUESTED MODE would produce: the CMYK press
+// copy for --press, and the boxed-but-unseparated one for --press-passthrough.
 // It records every invocation ("<out>.calls") and its argv ("<out>.args") so
-// the tests can prove both that only ONE child ran and that --press was passed.
+// the tests can prove both that only ONE child ran and which mode was asked for.
+//
+// The registry default for press.cmyk_pass is OFF (pass-through), so this suite
+// turns it ON in beforeAll: everything below the pass-through block is the FULL
+// press contract, unchanged, and is meant to keep proving that it is.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
@@ -33,6 +39,7 @@ const serverDir = path.join(__dirname, '..', '..', 'server');
 const ADMIN_KEY = 'test-admin-key';
 let app;
 let db;
+let settings;
 let server;
 let base;
 let genDir;
@@ -56,9 +63,11 @@ beforeAll(async () => {
   // where the real ones differ.
   const pressFixture = path.join(fakeDir, 'press.pdf');
   const rgbFixture = path.join(fakeDir, 'rgb.pdf');
+  const ptFixture = path.join(fakeDir, 'passthrough.pdf');
   const cutFixture = path.join(fakeDir, 'cut.pdf');
   fs.writeFileSync(pressFixture, pressPdf());
   fs.writeFileSync(rgbFixture, rgbDeckPdf());
+  fs.writeFileSync(ptFixture, passthroughPdf());
   fs.writeFileSync(cutFixture, truncate(pressPdf()));
 
   const fake = path.join(fakeDir, 'fake-generator.sh');
@@ -66,21 +75,28 @@ beforeAll(async () => {
     fake,
     [
       '#!/bin/sh',
-      '# $1=script $2=theme $3=name $4=wordsfile $5=outpdf, then --press <icc>',
+      '# $1=script $2=theme $3=name $4=wordsfile $5=outpdf, then the press mode',
+      '# flag: either "--press <icc>" or "--press-passthrough".',
       'theme="$2"',
       'out="$5"',
       'printf "call\\n" >> "$out.calls"',
       'printf "%s\\n" "$@" > "$out.args"',
+      // Which artifact a successful build produces follows the MODE it was
+      // asked for, exactly as the real generator's does.
+      'made="' + pressFixture + '"',
+      'for a in "$@"; do',
+      '  if [ "$a" = "--press-passthrough" ]; then made="' + ptFixture + '"; fi',
+      'done',
       'case "$theme" in',
       // A long traceback whose MESSAGE is on the last line, like the real
       // generator's — the reported detail has to keep that end, not the frames.
       '  *fail*) i=0; while [ $i -lt 60 ]; do echo "  File \\"/app/generator/build.py\\", line $i" 1>&2; i=$((i+1)); done; echo "ghostscript exploded" 1>&2; exit 1;;',
       // The RGB deck lands FIRST and stays there for the whole render, which is
       // the window every mid-build download used to fall into.
-      `  *slow*) cp "${rgbFixture}" "$out"; sleep 1; cp "${pressFixture}" "$out";;`,
+      `  *slow*) cp "${rgbFixture}" "$out"; sleep 1; cp "$made" "$out";;`,
       `  *rgb*) cp "${rgbFixture}" "$out";;`,
       `  *truncated*) cp "${cutFixture}" "$out";;`,
-      `  *) cp "${pressFixture}" "$out";;`,
+      '  *) cp "$made" "$out";;',
       'esac',
       'echo "wrote $out (3 pages)"',
       '',
@@ -93,7 +109,12 @@ beforeAll(async () => {
     delete require.cache[require.resolve(path.join(serverDir, f))];
   }
   db = require(path.join(serverDir, 'db.js'));
+  settings = require(path.join(serverDir, 'settings.js'));
   app = require(path.join(serverDir, 'index.js'));
+  // The full press contract is what most of this file is about, and it is no
+  // longer the default — turn the colour pass on explicitly rather than let the
+  // suite silently drift into testing the other mode.
+  settings.set('press', 'cmyk_pass', true);
 
   await new Promise((resolve) => {
     server = app.listen(0, () => {
@@ -377,6 +398,158 @@ describe('press routes: verifying the artifact before publishing it', () => {
     const body = await failed.json();
     expect(body.detail).toContain('truncated');
     expect(fs.existsSync(pressFile(c.id))).toBe(false);
+  }, 20000);
+});
+
+// PASS-THROUGH: the owner's switch over the colour pass (settings
+// press.cmyk_pass). The print shop separates the colour itself, so the ~2
+// minutes of Ghostscript buy nothing; the bleed, the crop marks and the TrimBox
+// are not part of what was dropped, and neither is the release gate.
+describe('press routes: the colour pass switched off', () => {
+  const modeFile = (id) => path.join(genDir, id + '.press.mode.json');
+
+  beforeAll(() => settings.set('press', 'cmyk_pass', false));
+  afterAll(() => settings.set('press', 'cmyk_pass', true));
+
+  it('builds without a profile, publishes the RGB copy, and names it as such', async () => {
+    const c = seed('Fast Path', ['מים', 'אש'], { theme: 'trip comeback' });
+    const r = await post(key(pressPath(c.id)), {});
+    expect(r.status).toBe(202);
+    expect(r.body.mode).toBe('passthrough');
+
+    const done = await settle(c.id);
+    expect(done.status).toBe(200);
+    const got = Buffer.from(await done.arrayBuffer());
+    expect(got.equals(passthroughPdf())).toBe(true);
+    // Both kinds land in the same orders folder and look identical in a viewer,
+    // so the difference is recorded where it is still free: in the name.
+    expect(done.headers.get('content-disposition')).toContain('dugri-' + c.id + '-press-rgb.pdf');
+    expect(done.headers.get('x-dugri-press-mode')).toBe('passthrough');
+
+    // The child was asked for pass-through, and NOT handed an ICC path it would
+    // never open — an argv that names a profile it ignores is a trap for the
+    // next reader.
+    const args = argv(c.id);
+    expect(args).toContain('--press-passthrough');
+    expect(args).not.toContain('--press');
+    expect(args).not.toContain(iccPath);
+  }, 20000);
+
+  it('starts even when the ICC profile is missing', async () => {
+    // The profile guard exists so Ghostscript can never fall back to a built-in
+    // one and ship the wrong colour. Pass-through runs no Ghostscript, so an
+    // absent profile is not a reason to refuse the owner her file.
+    const real = process.env.PRESS_ICC;
+    try {
+      fs.unlinkSync(iccPath);
+      const c = seed('No Profile', ['a', 'b'], { theme: 'trip comeback' });
+      expect((await post(key(pressPath(c.id)), {})).status).toBe(202);
+      expect((await settle(c.id)).status).toBe(200);
+    } finally {
+      fs.writeFileSync(iccPath, 'not really a profile');
+      process.env.PRESS_ICC = real;
+    }
+  }, 20000);
+
+  it('still refuses a truncated build', async () => {
+    const c = seed('Killed Fast', ['a', 'b'], { theme: 'truncated-theme' });
+    expect((await post(key(pressPath(c.id)), {})).status).toBe(202);
+    const failed = await settle(c.id);
+    expect(failed.status).toBe(409);
+    expect((await failed.json()).detail).toContain('truncated');
+    expect(fs.existsSync(pressFile(c.id))).toBe(false);
+  }, 20000);
+
+  it('still refuses an unboxed sheet — skipping colour is not skipping the cut', async () => {
+    // The bare Chrome intermediate: no TrimBox anywhere. In pass-through that is
+    // the ONLY thing separating it from a finished file, which is exactly why
+    // the gate must not be relaxed into a no-op here.
+    const c = seed('No Boxes', ['a', 'b'], { theme: 'rgb-theme' });
+    expect((await post(key(pressPath(c.id)), {})).status).toBe(202);
+    const failed = await settle(c.id);
+    expect(failed.status).toBe(409);
+    const body = await failed.json();
+    expect(body.detail).toContain('TrimBox');
+    expect(body.detail).toContain('pass-through');
+    expect(fs.existsSync(pressFile(c.id))).toBe(false);
+    // the evidence is still kept out of every download route
+    expect(fs.existsSync(rejectedFile(c.id))).toBe(true);
+  }, 20000);
+
+  it('still refuses to hand over another design mid-build, and never mixes modes', async () => {
+    // The wrong-artwork failure is about WHICH ORDER's file is served, not about
+    // colour, so it is unaffected by the switch — and this proves it under the
+    // fast path too.
+    const c = seed('Two Themes Fast', ['a', 'b'], { theme: 'slow-theme' });
+    expect((await post(key(pressPath(c.id)), {})).status).toBe(202);
+    await untilPartialExists(c.id);
+    // The intermediate is sitting there, complete and openable, and is not
+    // served.
+    const mid = await fetch(base + key(pressPath(c.id)));
+    expect(mid.status).toBe(202);
+    expect((await mid.json()).mode).toBe('passthrough');
+
+    const other = await post(key(pressPath(c.id)), { theme: 'bachelorette' });
+    expect(other.status).toBe(409);
+    expect(other.body.theme).toBe('slow-theme');
+    expect(callCount(c.id)).toBe(1);
+
+    const done = await settle(c.id);
+    expect(done.status).toBe(200);
+    expect(argv(c.id)[1]).toBe('slow-theme');
+  }, 25000);
+
+  it('judges a finished file by the mode it was STARTED in, not the current switch', async () => {
+    // A build starts in pass-through and the owner flips the switch on while it
+    // runs. The file it produces is a pass-through file; failing it against a
+    // contract nobody built it for would throw away a perfectly good deck.
+    const c = seed('Flipped Mid Build', ['a', 'b'], { theme: 'slow-theme' });
+    expect((await post(key(pressPath(c.id)), {})).status).toBe(202);
+    await untilPartialExists(c.id);
+    settings.set('press', 'cmyk_pass', true);
+    try {
+      const done = await settle(c.id);
+      expect(done.status).toBe(200);
+      expect(Buffer.from(await done.arrayBuffer()).equals(passthroughPdf())).toBe(true);
+    } finally {
+      settings.set('press', 'cmyk_pass', false);
+    }
+  }, 25000);
+
+  it('a rebuild in the other mode replaces the file AND its recorded mode', async () => {
+    // Otherwise the download keeps the old name: a CMYK file called -press-rgb,
+    // or worse the reverse, which is the same "looks fine, is wrong" shape the
+    // whole press path is built to avoid.
+    const c = seed('Switch Back', ['a', 'b'], { theme: 'trip comeback' });
+    await post(key(pressPath(c.id)), {});
+    expect((await settle(c.id)).status).toBe(200);
+    expect(JSON.parse(fs.readFileSync(modeFile(c.id), 'utf8')).cmyk).toBe(false);
+
+    settings.set('press', 'cmyk_pass', true);
+    try {
+      expect((await post(key(pressPath(c.id)), {})).status).toBe(202);
+      const done = await settle(c.id);
+      expect(done.status).toBe(200);
+      expect(Buffer.from(await done.arrayBuffer()).equals(pressPdf())).toBe(true);
+      expect(done.headers.get('content-disposition')).toContain('dugri-' + c.id + '-press.pdf');
+      expect(done.headers.get('x-dugri-press-mode')).toBe('cmyk');
+      expect(JSON.parse(fs.readFileSync(modeFile(c.id), 'utf8')).cmyk).toBe(true);
+    } finally {
+      settings.set('press', 'cmyk_pass', false);
+    }
+  }, 25000);
+
+  it('a published file with no mode sidecar keeps the plain name', async () => {
+    // Files published before the sidecar existed were necessarily full CMYK
+    // builds; they must keep downloading under the name they always had.
+    const c = seed('Legacy File', ['a', 'b'], { theme: 'trip comeback' });
+    await post(key(pressPath(c.id)), {});
+    expect((await settle(c.id)).status).toBe(200);
+    fs.unlinkSync(modeFile(c.id));
+    const again = await fetch(base + key(pressPath(c.id)));
+    expect(again.status).toBe(200);
+    expect(again.headers.get('content-disposition')).toContain('dugri-' + c.id + '-press.pdf');
+    expect(again.headers.get('x-dugri-press-mode')).toBe(null);
   }, 20000);
 });
 

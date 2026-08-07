@@ -11,6 +11,12 @@
 //   rgbDeckPdf()        what Chrome leaves at the same path minutes earlier:
 //                       DeviceRGB, no boxes, no intent. Opens fine. Prints
 //                       wrong.
+//   passthroughPdf()    the FINISHED artifact of a pass-through build: still
+//                       DeviceRGB and still no intent (the shop separates it),
+//                       but boxed and marked exactly like the full one. The
+//                       only thing separating it from rgbDeckPdf() is the
+//                       geometry — which is the whole reason the boxes are
+//                       written in both modes.
 //   truncate(buf)       what a killed Chrome leaves: a head with no trailer.
 //
 // Offsets are computed for real, so `startxref` lands on the xref table exactly
@@ -91,8 +97,11 @@ const pressPdf = (opts) => pdf({ pages: 3, ...opts });
 // hand over when a poll landed mid-build.
 const rgbDeckPdf = () => pdf({ pages: 3, cmyk: false, outputIntents: false, trimBox: false });
 
+// The finished PASS-THROUGH copy: the colour pass skipped, the geometry not.
+const passthroughPdf = (opts) => pdf({ pages: 3, cmyk: false, outputIntents: false, ...opts });
+
 // What a killed render leaves: everything up to the point it died, so no
 // trailer and no %%EOF.
 const truncate = (buf) => buf.subarray(0, Math.floor(buf.length * 0.6));
 
-export { pressPdf, rgbDeckPdf, truncate, pdf };
+export { pressPdf, rgbDeckPdf, passthroughPdf, truncate, pdf };

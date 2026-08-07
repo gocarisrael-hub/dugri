@@ -472,6 +472,26 @@ const REGISTRY = {
     free_word_limit: { kind: 'count', min: 1, tokens: [], default: 20 },
     lock_after_free_limit: { kind: 'flag', tokens: [], default: true },
   },
+  // --- The print-shop (press) build -----------------------------------------
+  // `cmyk_pass` is the owner's switch over the SLOW half of the press build:
+  // Ghostscript converting the deck to CMYK, flattening its transparency and
+  // outlining its text (generator/press.py). ~2 minutes on a 208-page deck.
+  //
+  // OFF (the default) is pass-through: the deck is handed over in Chrome's RGB
+  // and the shop separates it, which is what the shop is doing today and does
+  // better than we can guess from here — it knows its own press. The bleed, the
+  // crop marks and the TrimBox are written in BOTH modes; only the colour pass is
+  // skipped, and with it the OutputIntent, which an unseparated file may not
+  // claim (server/press-verify.js).
+  //
+  // A SETTING and not an env var, deliberately. This is an operational choice the
+  // owner makes when a shop's requirements change — from the admin screen, seeing
+  // its current state, with no deploy and no container restart. A Railway
+  // variable would be simpler to read here and invisible to the person whose
+  // decision it is. Turning it back on costs nothing but the two minutes.
+  press: {
+    cmyk_pass: { kind: 'flag', tokens: [], default: false },
+  },
   // --- Owner-managed reminder list (email + WhatsApp) -----------------------
   // A flexible replacement for the fixed wa daily/quiet triggers: ONE key holding
   // an ARRAY the owner can add to / delete from. Each item is {id, enabled, text,

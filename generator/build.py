@@ -395,7 +395,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
 def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
                workdir="/tmp/gen/deck", progress=True, chasers=False,
                custom_title=None, photos=None, press_icc=None, press_bleed=None,
-               gender=None):
+               press_cmyk=True, gender=None):
     """Assemble a v2 order: the card deck PDF + the board PDF.
 
     Returns ``(out_pdf, page_count, board_pdf)``. The deck is
@@ -434,16 +434,23 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
         )
     # A PRESS run renders the same deck onto a bigger sheet — the card artwork
     # keeps its coordinates and the page grows around it to carry bleed and crop
-    # marks — then converts to CMYK and flattens. The customer deck is unchanged
-    # by any of this: press_icc is what turns it on.
+    # marks — and then either converts it to CMYK or hands the RGB over as-is.
+    # The customer deck is unchanged by any of this.
+    #
+    # EITHER argument turns a press run on, because they are two modes of it, not
+    # a flag and its option: press_icc names the profile to separate against, and
+    # press_cmyk=False says not to separate at all (press.press_pdf). Keying only
+    # off press_icc would make pass-through unreachable without naming a profile
+    # it is never going to use.
     geom = None
-    if press_icc is not None:
+    if press_icc is not None or not press_cmyk:
         vb = deck_html.view_box(card_assets.read_svg(
             config.card_path(theme, config.fronts(cfg)[0])))
         kw = {} if press_bleed is None else {"bleed_mm": press_bleed}
         geom = press.PressGeometry(vb[2], vb[3], **kw)
         if progress:
-            print("press: " + geom.describe())
+            mode = "CMYK + flatten" if press_cmyk else "RGB pass-through"
+            print(f"press: {geom.describe()} [{mode}]")
     # The pawn card prints on the FRONT card's own paper, so the sheet of pawns
     # matches the deck it ships in. One render, cached on the front's content
     # (docs/photo-card.md); an unmeasurable front leaves the card as shipped.
@@ -455,8 +462,11 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
     if geom is not None:
         # Ghostscript is minutes of work on a full deck, so this deliberately
         # runs AFTER the render rather than streaming: a failure here leaves the
-        # rendered sheet behind for diagnosis instead of losing both.
-        press.press_pdf(out_pdf, out_pdf, geom, icc=press_icc or None)
+        # rendered sheet behind for diagnosis instead of losing both. In
+        # pass-through mode there is no Ghostscript and this is a box-write over
+        # a copy — seconds, not minutes, which is the entire point of the mode.
+        press.press_pdf(out_pdf, out_pdf, geom, icc=press_icc or None,
+                        cmyk=press_cmyk)
     if progress:
         print(f"deck: {doc.page_count} pages")
     board = build_board_pdf(theme, board_pdf_path(out_pdf), title_lines, workdir,

@@ -192,6 +192,13 @@
         justify-content: space-between;
         margin-bottom: 14px;
       }
+      /* Same trap as .fgrid[hidden] below: `display: flex` on the class outranks
+         the UA's [hidden] rule, so hideControls() would leave the bar on screen
+         — an empty one for the tabs, and a press-mode switch showing a state
+         nobody had loaded. */
+      .controls[hidden] {
+        display: none;
+      }
       .tabs {
         display: flex;
         flex-wrap: wrap;
@@ -480,6 +487,18 @@
           </select>
         </label>
       </div>
+      <!-- The press build's colour pass, on/off. It lives on THIS page rather
+           than in a settings screen because this is where the press button is:
+           the switch that decides what that button produces has to be readable
+           from the page it changes, and its state has to be visible without
+           being hunted for. -->
+      <div class="controls" id="pressmode" hidden>
+        <label class="sortwrap"
+          ><input type="checkbox" id="press-cmyk" />
+          <span>המרת צבע ל‑CMYK בקובץ לבית דפוס</span>
+        </label>
+        <span class="sub" id="press-cmyk-note"></span>
+      </div>
       <div id="content"></div>
     </div>
 
@@ -615,16 +634,17 @@
         return a;
       }
 
-      // A button for the PRINT SHOP copy of an order: CMYK, flattened, with
-      // bleed and crop marks. A separate artifact from the customer's deck, and
-      // minutes to build (a full re-render onto the bigger press sheet, then
-      // Ghostscript over the whole deck) — so this POSTs to start the job and
-      // polls until the file lands, rather than holding a request open.
+      // A button for the PRINT SHOP copy of an order: bleed, crop marks and a
+      // TrimBox, plus the CMYK conversion when the switch above is on. A separate
+      // artifact from the customer's deck, and (with the colour pass on) minutes
+      // to build — a full re-render onto the bigger press sheet, then Ghostscript
+      // over the whole deck — so this POSTs to start the job and polls until the
+      // file lands, rather than holding a request open.
       function pressButton(id) {
         const b = document.createElement('button');
         b.className = 'act';
         b.textContent = 'PDF לבית דפוס';
-        b.title = 'CMYK, שטוח, עם בליד וסימוני חיתוך — הקובץ שנשלח לבית הדפוס';
+        b.title = 'עם בליד וסימוני חיתוך — הקובץ שנשלח לבית הדפוס. המרת הצבע לפי ההגדרה למעלה';
         const url =
           location.origin +
           '/api/admin/collections/' +
@@ -1796,7 +1816,65 @@
       function hideControls() {
         statsEl.textContent = '';
         controlsEl.hidden = true;
+        pressModeEl.hidden = true;
+        pressModeLoaded = false;
       }
+
+      // --- the press build's colour pass ------------------------------------
+      // OFF (the default) hands the print shop the RGB deck with its bleed, crop
+      // marks and TrimBox, and lets the shop separate the colour — which is what
+      // it does today, and it knows its own press. ON adds the Ghostscript pass:
+      // CMYK against our profile, transparency flattened, text outlined, and
+      // roughly two more minutes per deck. The note under the switch says which
+      // of the two the button is currently going to produce, because both kinds
+      // of file end up in the same orders folder.
+      const pressModeEl = document.getElementById('pressmode');
+      const pressCmykEl = document.getElementById('press-cmyk');
+      const pressNoteEl = document.getElementById('press-cmyk-note');
+      function renderPressMode(on) {
+        pressCmykEl.checked = !!on;
+        pressNoteEl.textContent = on
+          ? 'הקובץ יומר ל‑CMYK ויישטח אצלנו (איטי יותר — כ‑2 דקות לחפיסה).'
+          : 'הקובץ יישלח ב‑RGB ובית הדפוס ממיר בעצמו (מהיר). הבליד, סימוני החיתוך וקווי החיתוך נשלחים תמיד.';
+      }
+      // Fetched ONCE, not on every 15-second refresh: /api/admin/settings returns
+      // the whole settings tree, and a periodic re-read would also fight the
+      // owner for the checkbox while she is clicking it.
+      let pressModeLoaded = false;
+      async function loadPressMode() {
+        if (pressModeLoaded) return;
+        try {
+          const r = await fetch('/api/admin/settings?key=' + encodeURIComponent(key));
+          if (!r.ok) return;
+          const s = await r.json();
+          renderPressMode(!!(s.effective && s.effective.press && s.effective.press.cmyk_pass));
+          pressModeEl.hidden = false;
+          pressModeLoaded = true;
+        } catch {
+          /* the orders table is the point of this page; a settings hiccup hides
+             the switch rather than breaking the load */
+        }
+      }
+      pressCmykEl.onchange = async () => {
+        const want = pressCmykEl.checked;
+        pressCmykEl.disabled = true;
+        try {
+          const r = await fetch('/api/admin/settings?key=' + encodeURIComponent(key), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ section: 'press', key: 'cmyk_pass', value: want }),
+          });
+          if (!r.ok) throw new Error(String(r.status));
+          renderPressMode((await r.json()).effective);
+        } catch {
+          // Snap back to what the server actually holds: a switch that shows a
+          // state the server does not have is worse than one that refuses.
+          renderPressMode(!want);
+          alert('לא הצלחתי לשמור את ההגדרה. נסי שוב.');
+        } finally {
+          pressCmykEl.disabled = false;
+        }
+      };
 
       sortSelect.onchange = () => {
         sortBy = sortSelect.value;
@@ -1834,6 +1912,9 @@
           sub.textContent = allCols.length + ' הזמנות';
           controlsEl.hidden = false;
           renderAll();
+          // Best-effort and AFTER the table: the switch is useful context, not a
+          // reason for the orders list to fail to appear.
+          loadPressMode();
         } catch (e) {
           hideControls();
           content.innerHTML = '<div class="msg">שגיאה בטעינה.</div>';

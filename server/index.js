@@ -920,10 +920,22 @@ app.get('/api/admin/collections/:id/board', (req, res) => {
 // — which beats a job table precisely because it survives a restart for free:
 //   <id>.press.pdf          the finished artifact, and ONLY ever that
 //   <id>.press.partial.pdf  where the build actually writes
-//   <id>.press.building     the in-flight marker: JSON {started, theme}
+//   <id>.press.building     the in-flight marker: JSON {started, theme, cmyk}
+//   <id>.press.mode.json    which mode published the finished file
 //   <id>.press.err          the failure detail, for the admin to read
 //   <id>.press.rejected.pdf a build that finished but did not verify, kept for
 //                           diagnosis and never served
+//
+// TWO MODES. The Ghostscript half — CMYK, flattening, outlining — is the owner's
+// switch (settings `press.cmyk_pass`, default OFF), because the print shop
+// separates the colour itself and knows its own press. OFF is pass-through: the
+// deck goes over in Chrome's RGB and the build is seconds rather than the ~2
+// minutes Ghostscript costs on a 208-page deck. What never changes is the
+// geometry — bleed, crop marks and a TrimBox on every page, the only statement
+// in the file of where to cut. The tradeoff the switch buys, stated plainly: in
+// pass-through nothing here guarantees the colour a press lays down, and a shop
+// that does NOT convert would print an RGB file with shifted colour. That is a
+// property of the shop, so it is the owner's call and hers to revisit.
 //
 // THE BUILD NEVER WRITES TO THE DOWNLOAD PATH. It writes to <id>.press.partial
 // .pdf, and the server renames that onto <id>.press.pdf only after the child
@@ -946,11 +958,33 @@ const PRESS_TIMEOUT_MS = Number(process.env.PRESS_TIMEOUT_MS || 900000);
 // restart mid-build cannot leave the button stuck on "building" forever.
 const PRESS_STALE_MS = PRESS_TIMEOUT_MS + 60000;
 
+// Is the SLOW half of the press build (Ghostscript: CMYK + flatten + outline)
+// switched on? The owner's setting, editable from the admin screen with no
+// deploy — see settings.js `press.cmyk_pass` for why it lives there.
+//
+// FAILS TOWARDS CMYK. The two failure directions are not symmetric: falling back
+// to the full pass costs two minutes and produces a file that is a superset of
+// the fast one, while falling back to pass-through would quietly undo a switch
+// the owner had deliberately turned ON and hand the shop RGB it was not
+// expecting. Only a settings read that plainly says false takes the fast path.
+function pressCmyk() {
+  try {
+    return settings.get('press', 'cmyk_pass') !== false;
+  } catch {
+    return true;
+  }
+}
+
 function pressPaths(id) {
   const base = path.join(GENERATED_DIR, id + '.press');
   return {
     pdf: base + '.pdf',
     partial: base + '.partial.pdf',
+    // Which mode built the published file, so a download months later can still
+    // name it honestly. The stamp inside the PDF (press.py MODE_KEY) is the
+    // durable record; this sidecar is the one the server can read without
+    // opening a multi-megabyte deck on every poll.
+    mode: base + '.mode.json',
     // The generator derives the board's path from the deck's (build.py
     // board_pdf_path), so the partial run writes its board here.
     partialBoard: base + '.partial.board.pdf',
@@ -989,6 +1023,10 @@ function pressRunning(id) {
   return {
     theme: (meta && typeof meta.theme === 'string' && meta.theme) || null,
     started: (meta && Number(meta.started)) || st.mtimeMs,
+    // The mode this build was STARTED in. A marker from before the switch
+    // existed has no field and reads as the full pass, which is what those
+    // builds were.
+    cmyk: !(meta && meta.cmyk === false),
   };
 }
 
@@ -997,7 +1035,28 @@ function pressRunning(id) {
 // minutes, so a build that takes three minutes reads as progress rather than as
 // a button that stopped responding.
 function runningInfo(running) {
-  return { started: running.started, elapsedMs: Math.max(0, Date.now() - running.started) };
+  return {
+    started: running.started,
+    elapsedMs: Math.max(0, Date.now() - running.started),
+    // Which build is running, not merely that one is: a pass-through build takes
+    // seconds and a full one takes minutes, so the mode is most of what "how
+    // long should this take?" depends on.
+    mode: running.cmyk ? 'cmyk' : 'passthrough',
+  };
+}
+
+// The mode the published file was built in, read back from its sidecar. Null
+// when there is none — a file published before the sidecar existed, which was
+// necessarily a full CMYK build; the caller decides what to do with that rather
+// than being handed a guess dressed up as a fact.
+function pressMode(id) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(pressPaths(id).mode, 'utf8'));
+    if (raw && typeof raw.cmyk === 'boolean') return raw.cmyk ? 'cmyk' : 'passthrough';
+  } catch {
+    /* no sidecar, or an unreadable one */
+  }
+  return null;
 }
 
 // A marker that is too old to be a live build — the signature of a restart or a
@@ -1031,10 +1090,16 @@ function pressUnlink(...files) {
 // a file mid-write. The verification is what stops the OTHER failure, the one
 // that looks fine: a complete, openable PDF that is the RGB intermediate rather
 // than the press copy.
-function pressPublish(id) {
+// `cmyk` is the mode the build was STARTED in (captured at spawn, not re-read
+// here): the file is held to the contract it was actually asked to meet, so
+// flipping the switch mid-build cannot make a finished file fail against a
+// contract nobody built it for. Pass-through relaxes only the two colour
+// assertions — truncation, a missing TrimBox and a sheet with no room for the
+// crop marks are still refused (server/press-verify.js).
+function pressPublish(id, cmyk) {
   const paths = pressPaths(id);
   if (!fs.existsSync(paths.partial)) return 'the build produced no file';
-  const v = pressVerify.checkPressFile(paths.partial);
+  const v = pressVerify.checkPressFile(paths.partial, { cmyk });
   if (!v.ok) {
     // Keep the artifact: a rejected file is the only evidence of WHY, and it is
     // out of reach of every download route where it now sits.
@@ -1047,6 +1112,17 @@ function pressPublish(id) {
     return v.reason || 'the built file did not verify as a press copy';
   }
   fs.renameSync(paths.partial, paths.pdf);
+  // Record the mode BESIDE the published file. The owner will accumulate both
+  // kinds in her orders folder and they look identical in any viewer, so a press
+  // file has to remain identifiable as the fast or the full one long after the
+  // build that made it — this drives the download's filename, and press.py
+  // stamps the same fact inside the PDF for when the file travels alone.
+  try {
+    fs.writeFileSync(paths.mode, JSON.stringify({ cmyk: !!cmyk, at: Date.now() }), 'utf8');
+  } catch {
+    /* the PDF's own stamp still carries this; a missing sidecar is not a reason
+       to withhold a verified file */
+  }
   try {
     if (fs.existsSync(paths.partialBoard)) fs.renameSync(paths.partialBoard, paths.board);
   } catch {
@@ -1098,10 +1174,15 @@ app.post('/api/admin/collections/:id/press', (req, res) => {
   }
   const words = db.listWords(c.id).map((w) => w.text);
   if (!words.length) return res.status(400).json({ error: 'no words to generate' });
-  if (!fs.existsSync(PRESS_ICC)) {
+  // Read the switch ONCE, here, and carry that value through the spawn, the
+  // marker and the verification. Re-reading it later would let a flip mid-build
+  // judge a finished file by a contract it was never built to.
+  const cmyk = pressCmyk();
+  if (cmyk && !fs.existsSync(PRESS_ICC)) {
     // Refuse rather than let Ghostscript fall back to a built-in profile: a
     // wrong-profile file that LOOKS correct is exactly what reaches a print run
-    // unnoticed.
+    // unnoticed. Only in CMYK mode — pass-through separates nothing, so a
+    // profile it never opens is not a reason to refuse the build.
     return res.status(500).json({ error: 'press ICC profile missing', detail: PRESS_ICC });
   }
   const paths = pressPaths(c.id);
@@ -1118,12 +1199,13 @@ app.post('/api/admin/collections/:id/press', (req, res) => {
     pressUnlink(
       paths.err,
       paths.pdf,
+      paths.mode,
       paths.board,
       paths.partial,
       paths.partialBoard,
       paths.rejected
     );
-    fs.writeFileSync(paths.building, JSON.stringify({ started, theme }), 'utf8');
+    fs.writeFileSync(paths.building, JSON.stringify({ started, theme, cmyk }), 'utf8');
   } catch (e) {
     return res.status(500).json({ error: 'could not start', detail: String(e.message || e) });
   }
@@ -1135,8 +1217,10 @@ app.post('/api/admin/collections/:id/press', (req, res) => {
     // NOT paths.pdf: the child writes to the partial path, and the server
     // renames it into place only once it verifies (see pressPublish).
     paths.partial,
-    '--press',
-    PRESS_ICC,
+    // The two press modes are separate flags rather than a flag plus an option,
+    // so neither argv can say something untrue: pass-through never names a
+    // profile it will not open (order_to_pdf.py --press / --press-passthrough).
+    ...(cmyk ? ['--press', PRESS_ICC] : ['--press-passthrough']),
   ];
   if (c.custom_title) args.push('--title=' + c.custom_title);
   const child = spawnGenerator(args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -1154,7 +1238,7 @@ app.post('/api/admin/collections/:id/press', (req, res) => {
       // evidence, not a deliverable: keep it out of the download path.
       pressUnlink(paths.partial, paths.partialBoard);
     } else {
-      failure = pressPublish(c.id);
+      failure = pressPublish(c.id, cmyk);
     }
     if (failure) {
       try {
@@ -1166,7 +1250,12 @@ app.post('/api/admin/collections/:id/press', (req, res) => {
     pressUnlink(paths.building);
   });
   child.unref();
-  res.status(202).json({ status: 'building', theme, started });
+  res.status(202).json({
+    status: 'building',
+    theme,
+    started,
+    mode: cmyk ? 'cmyk' : 'passthrough',
+  });
 });
 
 // Admin: poll for / download the press copy. 202 while it builds, 200 streams
@@ -1191,9 +1280,16 @@ app.get('/api/admin/collections/:id/press', (req, res) => {
       .json({ status: 'building', theme: running.theme, ...runningInfo(running) });
   }
   if (fs.existsSync(paths.pdf)) {
+    // The DOWNLOAD NAME carries the mode. Both kinds land in the same orders
+    // folder and are indistinguishable on screen, so the one moment the
+    // difference can still be recorded for free is the moment the file is named.
+    // A file with no sidecar keeps the plain name it was published under.
+    const mode = pressMode(c.id);
+    const suffix = mode === 'passthrough' ? '-press-rgb.pdf' : '-press.pdf';
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + c.id + '-press.pdf"');
+    if (mode) res.setHeader('X-Dugri-Press-Mode', mode);
+    res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + c.id + suffix + '"');
     return res.sendFile(paths.pdf);
   }
   if (fs.existsSync(paths.err)) {

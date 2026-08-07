@@ -18,6 +18,27 @@ from Canva instead. That would mean abandoning the generator — every order is
 built here from an SVG, not in Canva — so the flattening belongs in this
 pipeline. What a shop actually wants has a name, PDF/X-1a: CMYK, no live
 transparency, no font dependencies. That is what this produces.
+
+TWO MODES (``press_pdf(..., cmyk=...)``). The colour half of the above is
+OPTIONAL, because our shop separates the colour itself and a shop that knows its
+own press converts better than we can guess from here:
+
+  cmyk=True   the full pass. Ghostscript (CMYK + flatten + outline) then the
+              boxes and the OutputIntent. Minutes of work on a full deck.
+  cmyk=False  PASS-THROUGH. No Ghostscript at all: the RGB deck is handed over
+              as Chrome rendered it, with only the boxes written on top. Seconds.
+
+The GEOMETRY half is not optional in either mode. ``set_boxes`` always runs:
+without a TrimBox nothing in the file says where the card ends, which is the
+question the shop asked in the first place, and writing it costs a second.
+
+What pass-through does NOT get is the OutputIntent. That tag declares which CMYK
+the file was separated against (``/N 4``), and a pass-through file is not
+separated at all — declaring it would be a lie told by the file's own metadata,
+to the one reader that trusts metadata over its eyes: the shop's imposition
+software. So the intent goes only where the conversion went. What both modes DO
+get is ``/DugriPressColour`` in the document info, so a file sitting in the
+orders folder months later still says which of the two it is.
 """
 import os
 import shutil
@@ -174,13 +195,30 @@ def _centred(media_box, w, h):
             min(x1, cx + w / 2), min(y1, cy + h / 2)]
 
 
-def set_boxes(pdf_path, geom, icc=None, condition="SWOP2006_Coated3v2"):
+# Written into the document info of every press file we produce, so which build
+# made it is answerable from the file alone — Acrobat shows it under Document
+# Properties, and `pdfinfo` prints it. The owner will have both kinds in her
+# orders folder; without this they are indistinguishable in any viewer, exactly
+# like the RGB intermediate that the release gate exists to catch.
+MODE_KEY = "/DugriPressColour"
+MODE_CMYK = "CMYK, separated + flattened here (OutputIntent declares the profile)"
+MODE_PASSTHROUGH = "RGB pass-through — NOT separated here; the shop converts"
+
+
+def set_boxes(pdf_path, geom, icc=None, condition="SWOP2006_Coated3v2",
+              mode=None):
     """Write TrimBox/BleedBox on every page, and the OutputIntent once.
 
     The BOXES are the part a shop's imposition software actually reads; drawn
     crop marks are for the human. Without a TrimBox nothing in the file states
     where the A7 card sits inside the larger sheet — which is why the shop had to
-    ask in the first place.
+    ask in the first place. This runs in BOTH modes: it is the cheap half, and it
+    is the half the shop asked for.
+
+    ``icc`` is what adds the OutputIntent, and it is passed ONLY when the file
+    really was converted. See the module docstring: an OutputIntent on an
+    unconverted file is a false colour declaration, not a harmless extra tag.
+    ``mode`` is stamped into the document info (MODE_KEY) either way.
     """
     import pikepdf
     with pikepdf.open(pdf_path, allow_overwriting_input=True) as pdf:
@@ -208,17 +246,41 @@ def set_boxes(pdf_path, geom, icc=None, condition="SWOP2006_Coated3v2"):
                     "/DestOutputProfile": pdf.make_indirect(stream),
                 }))
             ])
+        if mode:
+            pdf.docinfo[pikepdf.Name(MODE_KEY)] = pikepdf.String(mode)
         pdf.save()
     return pdf_path
 
 
-def press_pdf(src_pdf, out_pdf, geom, icc=None):
-    """The whole press pass: CMYK + flatten, then the boxes and OutputIntent."""
+def press_pdf(src_pdf, out_pdf, geom, icc=None, cmyk=True):
+    """Turn the rendered sheet into the print-shop file.
+
+    ``cmyk=True`` is the full pass: Ghostscript (CMYK + flatten + outline), then
+    the boxes and the OutputIntent.
+
+    ``cmyk=False`` is PASS-THROUGH: no Ghostscript, so the deck keeps Chrome's
+    RGB, its live text and its transparency, and only the boxes are written. The
+    shop separates it. The one thing that never varies is the geometry — see the
+    module docstring for why the OutputIntent does not come along for the ride.
+
+    Both modes stage in a temp dir and move the result into place at the end, so
+    a failure anywhere leaves the caller's ``out_pdf`` untouched rather than
+    half-written. (``src_pdf`` and ``out_pdf`` are the same file in the normal
+    build, which is why pass-through copies rather than editing in place: an
+    interrupted in-place edit would destroy the only rendered copy.)
+    """
     tmp = tempfile.mkdtemp(prefix="dugri-press-")
     try:
-        staged = os.path.join(tmp, "cmyk.pdf")
-        cmyk_flatten(src_pdf, staged, icc=icc)
-        set_boxes(staged, geom, icc=icc)
+        staged = os.path.join(tmp, "press.pdf")
+        if cmyk:
+            cmyk_flatten(src_pdf, staged, icc=icc)
+            set_boxes(staged, geom, icc=icc, mode=MODE_CMYK)
+        else:
+            shutil.copyfile(src_pdf, staged)
+            # icc is deliberately NOT forwarded: nothing separated this file, so
+            # there is no condition to declare. Dropping it here rather than at
+            # the call site means no caller can produce the lying combination.
+            set_boxes(staged, geom, mode=MODE_PASSTHROUGH)
         shutil.move(staged, out_pdf)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
