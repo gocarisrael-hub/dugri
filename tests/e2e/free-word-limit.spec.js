@@ -81,8 +81,13 @@ test('quota: counter reframes to the free quota, then locks the add box at the l
   await expect(page.locator('[data-testid="word-text"]').first()).toBeVisible();
 
   // The sharing card is still there while locked: inviting friends is the whole
-  // point of the collection and must not depend on payment.
+  // point of the collection and must not depend on payment. It is the single
+  // PUBLIC link here too — the lock must never push the owner token out.
   await expect(page.getByTestId('share-whatsapp')).toBeVisible();
+  await expect(page.locator('#sharePanel input')).toHaveCount(1);
+  const shared = await page.locator('#friendsLink').inputValue();
+  expect(shared).toContain('/collect.html?c=');
+  expect(shared).not.toContain('k=');
 });
 
 test('quota: a contributor on the public link sees the lock without a pay button', async ({

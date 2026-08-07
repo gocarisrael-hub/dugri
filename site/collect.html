@@ -491,6 +491,27 @@
       .howto summary::-webkit-details-marker {
         display: none;
       }
+      /* The owner's private management link: present but deliberately quiet, so
+         the share card reads as ONE link. Smaller and muted, collapsed by
+         default, and separated from the share link by a hairline. */
+      .owner-private {
+        margin-top: 14px;
+        border-top: 1px solid var(--line);
+        padding-top: 10px;
+        font-size: 13px;
+      }
+      .owner-private summary {
+        cursor: pointer;
+        color: var(--muted);
+        list-style: none;
+      }
+      .owner-private summary::-webkit-details-marker {
+        display: none;
+      }
+      .owner-private p {
+        margin: 8px 0;
+        font-size: 13px;
+      }
       .cats {
         display: grid;
         grid-template-columns: 1fr;
@@ -1245,7 +1266,7 @@
       </div>
 
       <!-- the words (with the live counter) -->
-      <div class="card">
+      <div class="card" id="wordsCard">
         <div class="words-head">
           <span class="sec-h" data-edit="collect-words-heading">המילים שכבר נאספו</span>
           <span class="count-pill"><b id="count">0</b><span id="countMax"> מילים</span></span>
@@ -1264,6 +1285,84 @@
         <div class="words" id="wordsWrap" style="margin-top: 12px">
           <span class="muted" id="emptyWords">עוד אין מילים - היו הראשונים!</span>
         </div>
+      </div>
+
+      <!-- OWNER: the ONE share link (public). Sits directly under the collected
+           words and above the help card: the moment the owner sees words landing
+           is the moment she wants to invite more people. A single link only — the
+           private management link lives collapsed at the bottom of this card. -->
+      <div class="card share hidden" id="sharePanel">
+        <div class="sec-h" data-edit="collect-share-heading">📨 שתפו עם החברות</div>
+        <p class="muted" data-edit="collect-share-hint">
+          שלחו את הקישור הזה לכל מי שמכיר/ה את בעל/ת השמחה:
+        </p>
+        <a
+          class="share-wa"
+          id="shareWhatsapp"
+          href="#"
+          target="_blank"
+          rel="noopener"
+          data-testid="share-whatsapp"
+        >
+          <svg class="share-wa-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              fill="currentColor"
+              d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.86 9.86 0 0 0 12.04 2Zm0 1.8c2.16 0 4.19.84 5.72 2.37a8.05 8.05 0 0 1 2.37 5.72c0 4.47-3.64 8.11-8.12 8.11a8.2 8.2 0 0 1-4.14-1.13l-.3-.18-3.1.81.83-3.02-.19-.31a8.06 8.06 0 0 1-1.26-4.36c0-4.47 3.64-8.11 8.11-8.11ZM8.55 7.33c-.16 0-.42.06-.64.3-.22.24-.85.83-.85 2.02 0 1.2.87 2.35.99 2.51.12.16 1.7 2.6 4.14 3.65.58.25 1.03.4 1.38.51.58.19 1.11.16 1.53.1.47-.07 1.44-.59 1.64-1.16.2-.57.2-1.06.14-1.16-.06-.1-.22-.16-.46-.28-.24-.12-1.44-.71-1.66-.79-.22-.08-.38-.12-.55.12-.16.24-.63.79-.77.95-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.34-1.67-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.32-.76-1.8-.18-.4-.37-.4-.55-.41-.14 0-.3-.01-.46-.01Z"
+            />
+          </svg>
+          <span data-edit="collect-share-wa-label">שתפו בוואטסאפ</span>
+        </a>
+        <div class="row" style="margin-top: 8px">
+          <input type="text" id="friendsLink" readonly />
+          <button class="ghost" id="copyFriends" type="button" data-edit="collect-copy-friends-btn">
+            העתק
+          </button>
+        </div>
+        <!-- The WhatsApp word-collection group. Shown only once the bot has opened
+             one and produced a join link (an owner-only field). This BUTTON is how
+             the buyer gets into their group: the bot never adds anyone and never
+             DMs, so nothing is sent to them — they tap here and WhatsApp lets them
+             in. See server/wa-guard.js for why it has to work this way. -->
+        <div id="waGroupPanel" class="hidden" style="margin-top: 16px">
+          <p class="muted" data-edit="collect-wa-group-hint">
+            💬 פתחנו לכם קבוצת וואטסאפ לאיסוף המילים. הצטרפו אליה וצרפו את כל מי שמכיר/ה — אפשר
+            לכתוב מילים ישירות בקבוצה:
+          </p>
+          <a
+            class="share-wa"
+            id="joinWaGroup"
+            href="#"
+            target="_blank"
+            rel="noopener"
+            data-testid="join-wa-group"
+          >
+            <svg class="share-wa-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                fill="currentColor"
+                d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.86 9.86 0 0 0 12.04 2Zm0 1.8c2.16 0 4.19.84 5.72 2.37a8.05 8.05 0 0 1 2.37 5.72c0 4.47-3.64 8.11-8.12 8.11a8.2 8.2 0 0 1-4.14-1.13l-.3-.18-3.1.81.83-3.02-.19-.31a8.06 8.06 0 0 1-1.26-4.36c0-4.47 3.64-8.11 8.11-8.11ZM8.55 7.33c-.16 0-.42.06-.64.3-.22.24-.85.83-.85 2.02 0 1.2.87 2.35.99 2.51.12.16 1.7 2.6 4.14 3.65.58.25 1.03.4 1.38.51.58.19 1.11.16 1.53.1.47-.07 1.44-.59 1.64-1.16.2-.57.2-1.06.14-1.16-.06-.1-.22-.16-.46-.28-.24-.12-1.44-.71-1.66-.79-.22-.08-.38-.12-.55.12-.16.24-.63.79-.77.95-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.34-1.67-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.32-.76-1.8-.18-.4-.37-.4-.55-.41-.14 0-.3-.01-.46-.01Z"
+              />
+            </svg>
+            <span data-edit="collect-wa-group-label">הצטרפו לקבוצת המילים</span>
+          </a>
+        </div>
+        <!-- The owner's PRIVATE management link. Deliberately NOT a second link
+             box next to the share link: two links side by side is what confused
+             buyers, and this one grants owner powers (delete/edit words, close
+             the collection, open checkout and pay, read the delivery address) —
+             pasted into a friends group it would let anyone wipe the list. It
+             stays reachable, collapsed and labelled as private, because it is
+             also the page the owner is standing on and the link in her
+             confirmation email; the copy button copies the current URL. -->
+        <details class="owner-private" data-testid="owner-private-link">
+          <summary data-edit="collect-owner-link-summary">🔑 הקישור הפרטי שלי לניהול</summary>
+          <p class="muted" data-edit="collect-owner-link-hint">
+            זה בדיוק הקישור שפתוח אצלכם עכשיו, והוא נשלח אליכם גם במייל האישור. אל תשתפו אותו - דרכו
+            אפשר למחוק מילים, לסגור את האיסוף ולשלם.
+          </p>
+          <button class="ghost" id="copyOwner" type="button" data-edit="collect-copy-owner-btn">
+            העתיקו את הקישור הפרטי
+          </button>
+        </details>
       </div>
 
       <!-- word-finding helpers -->
@@ -1319,72 +1418,6 @@
             </div>
           </div>
         </details>
-      </div>
-
-      <!-- OWNER: share links -->
-      <div class="card share hidden" id="sharePanel">
-        <div class="sec-h" data-edit="collect-share-heading">📨 שתפו עם החברות</div>
-        <p class="muted" data-edit="collect-share-hint">
-          שלחו את הקישור הזה לכל מי שמכיר/ה את בעל/ת השמחה:
-        </p>
-        <a
-          class="share-wa"
-          id="shareWhatsapp"
-          href="#"
-          target="_blank"
-          rel="noopener"
-          data-testid="share-whatsapp"
-        >
-          <svg class="share-wa-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path
-              fill="currentColor"
-              d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.86 9.86 0 0 0 12.04 2Zm0 1.8c2.16 0 4.19.84 5.72 2.37a8.05 8.05 0 0 1 2.37 5.72c0 4.47-3.64 8.11-8.12 8.11a8.2 8.2 0 0 1-4.14-1.13l-.3-.18-3.1.81.83-3.02-.19-.31a8.06 8.06 0 0 1-1.26-4.36c0-4.47 3.64-8.11 8.11-8.11ZM8.55 7.33c-.16 0-.42.06-.64.3-.22.24-.85.83-.85 2.02 0 1.2.87 2.35.99 2.51.12.16 1.7 2.6 4.14 3.65.58.25 1.03.4 1.38.51.58.19 1.11.16 1.53.1.47-.07 1.44-.59 1.64-1.16.2-.57.2-1.06.14-1.16-.06-.1-.22-.16-.46-.28-.24-.12-1.44-.71-1.66-.79-.22-.08-.38-.12-.55.12-.16.24-.63.79-.77.95-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.34-1.67-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.32-.76-1.8-.18-.4-.37-.4-.55-.41-.14 0-.3-.01-.46-.01Z"
-            />
-          </svg>
-          <span data-edit="collect-share-wa-label">שתפו בוואטסאפ</span>
-        </a>
-        <div class="row" style="margin-top: 8px">
-          <input type="text" id="friendsLink" readonly />
-          <button class="ghost" id="copyFriends" type="button" data-edit="collect-copy-friends-btn">
-            העתק
-          </button>
-        </div>
-        <!-- The WhatsApp word-collection group. Shown only once the bot has opened
-             one and produced a join link (an owner-only field). This BUTTON is how
-             the buyer gets into their group: the bot never adds anyone and never
-             DMs, so nothing is sent to them — they tap here and WhatsApp lets them
-             in. See server/wa-guard.js for why it has to work this way. -->
-        <div id="waGroupPanel" class="hidden" style="margin-top: 16px">
-          <p class="muted" data-edit="collect-wa-group-hint">
-            💬 פתחנו לכם קבוצת וואטסאפ לאיסוף המילים. הצטרפו אליה וצרפו את כל מי שמכיר/ה — אפשר
-            לכתוב מילים ישירות בקבוצה:
-          </p>
-          <a
-            class="share-wa"
-            id="joinWaGroup"
-            href="#"
-            target="_blank"
-            rel="noopener"
-            data-testid="join-wa-group"
-          >
-            <svg class="share-wa-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path
-                fill="currentColor"
-                d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.86 9.86 0 0 0 12.04 2Zm0 1.8c2.16 0 4.19.84 5.72 2.37a8.05 8.05 0 0 1 2.37 5.72c0 4.47-3.64 8.11-8.12 8.11a8.2 8.2 0 0 1-4.14-1.13l-.3-.18-3.1.81.83-3.02-.19-.31a8.06 8.06 0 0 1-1.26-4.36c0-4.47 3.64-8.11 8.11-8.11ZM8.55 7.33c-.16 0-.42.06-.64.3-.22.24-.85.83-.85 2.02 0 1.2.87 2.35.99 2.51.12.16 1.7 2.6 4.14 3.65.58.25 1.03.4 1.38.51.58.19 1.11.16 1.53.1.47-.07 1.44-.59 1.64-1.16.2-.57.2-1.06.14-1.16-.06-.1-.22-.16-.46-.28-.24-.12-1.44-.71-1.66-.79-.22-.08-.38-.12-.55.12-.16.24-.63.79-.77.95-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.34-1.67-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.32-.76-1.8-.18-.4-.37-.4-.55-.41-.14 0-.3-.01-.46-.01Z"
-              />
-            </svg>
-            <span data-edit="collect-wa-group-label">הצטרפו לקבוצת המילים</span>
-          </a>
-        </div>
-        <p class="muted" style="margin-top: 12px" data-edit="collect-owner-link-hint">
-          🔑 הקישור הפרטי שלך לניהול (שמרו אותו לעצמכם - דרכו סוגרים את האיסוף):
-        </p>
-        <div class="row" style="margin-top: 8px">
-          <input type="text" id="ownerLink" readonly />
-          <button class="ghost" id="copyOwner" type="button" data-edit="collect-copy-owner-btn">
-            העתק
-          </button>
-        </div>
       </div>
 
       <!-- OWNER, paid only: replaces the pay panel — keep adding, then סיום -->
@@ -2511,8 +2544,10 @@
       }
       function setupOwner() {
         $('#sharePanel').classList.remove('hidden');
+        // ONE link in the share card, and it is the PUBLIC one. The owner's own
+        // URL (with the owner token) is never rendered as a shareable box here —
+        // #copyOwner reads location.href on demand instead.
         $('#friendsLink').value = friendsUrl();
-        $('#ownerLink').value = location.href;
         // Primary share: open WhatsApp with a friendly Hebrew invite + the SAME
         // friends link the copy button uses. The href is (re)built by
         // updateShareInvite() once the collection state (and its honoree name) is
@@ -2523,7 +2558,7 @@
         $('#joinWaGroup').onclick = () => track('join_wa_group', { link_type: 'group_invite' });
         $('#copyFriends').onclick = () =>
           copy($('#friendsLink').value, $('#copyFriends'), 'friends');
-        $('#copyOwner').onclick = () => copy($('#ownerLink').value, $('#copyOwner'), 'owner');
+        $('#copyOwner').onclick = () => copy(location.href, $('#copyOwner'), 'owner');
         // סיום: closes the collection. Shared by the pre-pay close card and the
         // post-payment "start production" CTA — closing is what starts production.
         async function closeCollection() {
