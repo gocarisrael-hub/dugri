@@ -675,6 +675,12 @@
         for (const img of media.querySelectorAll('img[data-src]')) {
           const src = img.dataset.src;
           delete img.dataset.src;
+          // EAGER from here on. The shopper is already reaching for this picture,
+          // so there is nothing left to defer — and leaving it lazy would stake
+          // the slide on the very browser behaviour this works around: if a
+          // future engine DID defer a horizontally clipped slide, the shopper
+          // would swipe onto a permanently blank frame.
+          img.loading = 'eager';
           wireThumbs(img, src, CARD_SIZES, () => onImgError(img));
         }
       }

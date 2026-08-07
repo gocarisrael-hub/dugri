@@ -137,6 +137,12 @@ test.describe('products grid — right-sized photographs', () => {
     await expect(imgs.nth(1)).toHaveAttribute('srcset', /\/design-thumb\/400\//);
     await expect(imgs.nth(1)).toHaveAttribute('src', B);
     expect(await imgs.nth(1).getAttribute('data-src')).toBe(null);
+    // …and it really DECODES. Asserting the attributes alone would still pass if
+    // the browser deferred the newly-hydrated slide and left the shopper swiping
+    // onto a blank frame — the exact failure this feature courts.
+    await expect
+      .poll(() => imgs.nth(1).evaluate((el) => el.complete && el.naturalWidth > 0))
+      .toBe(true);
   });
 
   // THE SAFETY PROPERTY. A srcset candidate that 404s does not make the browser
