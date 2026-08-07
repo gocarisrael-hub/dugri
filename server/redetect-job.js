@@ -95,11 +95,23 @@ function runAsync(bin, args, { cwd, timeout, onLine, spawnFn } = {}) {
     let settled = false;
     let timer = null;
 
-    const finish = (status, extraErr) => {
+    const finish = (status, extraErr, timedOut) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      resolve({ status, stdout, stderr: extraErr ? stderr + extraErr : stderr });
+      resolve({
+        status,
+        stdout,
+        stderr: extraErr ? stderr + extraErr : stderr,
+        // A KILLED run and a crashed one are not the same fact and must not read
+        // the same. Reported as a flag rather than as text appended to stderr,
+        // because the outcome functions slice `detail` to 800 characters from
+        // the FRONT — so a Python traceback long enough to fill that slice hid
+        // the "(timed out …)" tail completely, and a run reclaimed by the ceiling
+        // came back looking like an ordinary detector failure.
+        timedOut: !!timedOut,
+        timeoutMs: timedOut ? timeout : null,
+      });
     };
 
     if (child.stdout) {
@@ -134,7 +146,7 @@ function runAsync(bin, args, { cwd, timeout, onLine, spawnFn } = {}) {
             /* already gone */
           }
         }
-        finish(null, `\n(timed out after ${Math.round(timeout / 1000)}s and was killed)`);
+        finish(null, `\n(timed out after ${Math.round(timeout / 1000)}s and was killed)`, true);
       }, timeout);
       // Never hold the process open just to enforce a timeout.
       if (typeof timer.unref === 'function') timer.unref();
@@ -256,12 +268,18 @@ function start({ root, key, pythonBin = 'python3', templates, runner, now = Date
         timeout: CALIBRATE_TIMEOUT_MS,
       });
       const calibration = tpl.calibrateOutcome({ out: cal.out, result: calResult });
+      // The MERGE is where a successful run can still quietly change nothing —
+      // a measured value refused by validation, or a surface the detector could
+      // not read at all — so its outcome is carried into the report rather than
+      // dropped on the floor. A calibration that times out never reaches here,
+      // which is the point: the template is left exactly as it was.
+      let applied = null;
       if (calibration.ok) {
-        tpl.applyCalibration(tpl.themesPathFor(root), key, calibration.blob);
+        applied = tpl.applyCalibration(tpl.themesPathFor(root), key, calibration.blob);
       }
       finishWith({
         state: 'done',
-        result: tpl.redetectReport({ key, recipe, calibration }),
+        result: tpl.redetectReport({ key, recipe, calibration, applied }),
       });
     } catch (e) {
       // A crash in the plumbing is still an outcome the owner must see; it must

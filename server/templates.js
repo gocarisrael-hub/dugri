@@ -577,10 +577,32 @@ function recipeDiffOutcome({ root, slug, out, result }) {
   return {
     ok,
     recipe: resolveRecipePath(root, slug) || out,
-    detail: ok
-      ? null
-      : String((result && (result.stderr || result.stdout)) || 'recipe failed').slice(0, 800),
+    timedOut: !ok && !!(result && result.timedOut),
+    detail: ok ? null : failureDetail(result, 'recipe failed'),
   };
+}
+
+// The one sentence that explains a failed run, with the ONE thing that must never
+// be lost said first.
+//
+// `detail` is sliced to 800 characters so a runaway traceback cannot fill a
+// response — and the runner used to report a kill by APPENDING "(timed out …)"
+// to stderr, i.e. at the very end, which is exactly what that slice throws away.
+// A run reclaimed by its own ceiling then read as an ordinary detector crash, and
+// "the ceiling is too low for this deck" — the actionable half — never reached
+// anybody. Timeouts lead now, and the child's own output follows for context.
+function failureDetail(result, fallback) {
+  const raw = String((result && (result.stderr || result.stdout)) || fallback);
+  if (result && result.timedOut) {
+    const secs = result.timeoutMs ? Math.round(result.timeoutMs / 1000) : null;
+    return (
+      'TIMED OUT' +
+      (secs ? ' after ' + secs + 's' : '') +
+      ' and was killed — nothing was written. ' +
+      raw
+    ).slice(0, 800);
+  }
+  return raw.slice(0, 800);
 }
 
 function runRecipeDiff({
@@ -628,10 +650,8 @@ function calibrateOutcome({ out, result }) {
   if (!result || result.status !== 0 || !fs.existsSync(out)) {
     return {
       ok: false,
-      detail: String((result && (result.stderr || result.stdout)) || 'calibrate failed').slice(
-        0,
-        800
-      ),
+      timedOut: !!(result && result.timedOut),
+      detail: failureDetail(result, 'calibrate failed'),
     };
   }
   try {
@@ -664,11 +684,25 @@ function runCalibrate({ root, slug, pythonBin = 'python3', timeoutMs = 180000, r
   return calibrateOutcome({ out, result });
 }
 
+// Is this knob an ANSWER the owner gave, or the value every untouched template
+// carries? Used only to decide what is worth naming on screen: a warning printed
+// after every run is one nobody reads by the third.
+function isSetKnob(v) {
+  if (v == null || v === false || v === 0) return false;
+  if (Array.isArray(v)) return v.some((n) => n !== 0);
+  return true;
+}
+
 // Merge auto-detected calibration into a theme entry. Only the keys the detector
 // actually measured are written — it deliberately OMITS what it cannot measure
 // rather than guessing, so an absent key must stay absent instead of being
 // written as null and reading like a deliberate "no board title".
 // `calibrated` is never touched here.
+//
+// Returns { entry, rejected, kept } — the merge's own outcome, not just the
+// entry. A calibration that RAN fine and then had half its measurements refused
+// or skipped is the failure the owner actually experiences ("I pressed the
+// button and nothing changed"), and it has to be able to reach her screen.
 function applyCalibration(themesPath, key, blob) {
   if (!blob || typeof blob !== 'object') return null;
   const themes = loadThemes(themesPath);
@@ -682,14 +716,90 @@ function applyCalibration(themesPath, key, blob) {
   // refuses with "not calibrated yet — title_style is null", with nothing
   // anywhere saying a value was produced and thrown away.
   const rejected = [];
+  // Surfaces this run could NOT read, whose previously calibrated value was
+  // therefore left alone. Reported for the same reason `rejected` is: "I did not
+  // measure the board this time" and "the board has no title" are different
+  // facts, and only one of them is a reason for the owner to go and look.
+  const kept = [];
+  // title_style is validated as a WHOLE and written as a whole, so every knob the
+  // measurement does not carry disappeared from the entry on each run. Two of
+  // them — `italic` and `offset` — calibrate.py never emits at all (it says so:
+  // arch, offset and pinned sizes "are not measurable and are left for the owner
+  // by design"), so a knob the owner had set BY HAND was erased every time she
+  // pressed the button, silently, on top of nothing visibly changing. Absent is
+  // "unknown", never "clear it" — here as for board/back below. The old keys are
+  // re-validated with the new ones rather than pasted on afterwards, so the pair
+  // can only land if it is a legal style; if the carried-forward value makes the
+  // whole thing invalid, the measurement alone still wins.
+  const oldStyle =
+    entry.title_style && typeof entry.title_style === 'object' && !Array.isArray(entry.title_style)
+      ? entry.title_style
+      : null;
   const ts = validateTitleStyle(blob.title_style);
-  if (!ts.error) entry.title_style = ts.value;
-  else if (blob.title_style) rejected.push('title_style (' + ts.error + ')');
+  if (!ts.error) {
+    const carried = oldStyle ? Object.keys(oldStyle).filter((k) => !(k in ts.value)) : [];
+    if (carried.length) {
+      const merged = validateTitleStyle({ ...oldStyle, ...blob.title_style });
+      entry.title_style = merged.error ? ts.value : merged.value;
+      // Named on screen only when carrying it forward actually preserved a
+      // CHOICE. Every uncalibrated template carries `italic:false`, and a
+      // warning printed after every single run is one nobody reads by the third.
+      if (!merged.error) {
+        kept.push(...carried.filter((k) => isSetKnob(oldStyle[k])).map((k) => 'title_style.' + k));
+      }
+    } else {
+      entry.title_style = ts.value;
+    }
+  } else if (blob.title_style) rejected.push('title_style (' + ts.error + ')');
   for (const slot of ['board', 'back']) {
     if (!(slot in blob)) continue;
+    // A null here is "unknown", never "clear it". calibrate.py emits
+    // `board: null` with confidence "none" when it cannot isolate a title —
+    // see its own note, "either this design carries no board title, or the
+    // filled and clean boards differ across the whole sheet" — i.e. it does not
+    // know which. Writing that through DELETED a working slot: press
+    // "זהה מחדש" on a template whose board title the detector happens not to
+    // find, and the honoree's name stops printing on the board, from a button
+    // pressed to improve it. Keep what is there, and say the surface went
+    // unmeasured. The owner can still clear it by hand in the form — detection
+    // proposes, she disposes.
+    if (blob[slot] === null) {
+      if (entry[slot]) kept.push(slot);
+      continue;
+    }
     const v = validateSlot(blob[slot], slot);
     if (!v.error) entry[slot] = v.value;
-    else if (blob[slot]) rejected.push(slot + ' (' + v.error + ')');
+    else rejected.push(slot + ' (' + v.error + ')');
+  }
+  // PER-BACK slots. A deck whose eight card styles each have their OWN back
+  // carries its back title geometry in `backs`, keyed by card file number, and
+  // the generator reads it (generator/config.py `_OVERRIDABLE`). calibrate.py
+  // measures every one of them separately — and this merge did not know the key
+  // existed, so all eight measurements were dropped on the floor while the run
+  // reported success. That is most of "I pressed זהה מחדש again and again and
+  // the title never changed": on מרקאנה the card BACK is where the name is
+  // printed large, its box and size live here, and re-detection never wrote them.
+  //
+  // Merged per back rather than replaced wholesale, so one unreadable back
+  // cannot cost the other seven their calibration.
+  if (blob.backs && typeof blob.backs === 'object' && !Array.isArray(blob.backs)) {
+    const measured = {};
+    for (const [n, slot] of Object.entries(blob.backs)) {
+      // Same rule as board/back above: null means "could not read this one".
+      if (slot === null) {
+        if (entry.backs && entry.backs[n]) kept.push('backs.' + n);
+        continue;
+      }
+      measured[n] = slot;
+    }
+    const v = validateBacks(measured, 'backs');
+    if (v.error) rejected.push('backs (' + v.error + ')');
+    else if (Object.keys(v.value).length) {
+      entry.backs = {
+        ...(entry.backs && typeof entry.backs === 'object' ? entry.backs : {}),
+        ...v.value,
+      };
+    }
   }
   if (typeof blob.word_size === 'number' && blob.word_size > 0) entry.word_size = blob.word_size;
   // The detected single-card geometry. Without this the detector measured the
@@ -731,6 +841,13 @@ function applyCalibration(themesPath, key, blob) {
           : '.')
     );
   }
+  if (kept.length) {
+    entry.notes = (entry.notes || []).concat(
+      'NOT MEASURED this run, so the value already calibrated was kept: ' +
+        kept.join('; ') +
+        '. If the artwork changed here, set it by hand.'
+    );
+  }
   // persistThemeEntry, NOT writeThemesFile. Two bugs in the old line:
   //
   // 1. It wrote to the IMAGE themes.json, which on Railway is ephemeral — so a
@@ -744,7 +861,11 @@ function applyCalibration(themesPath, key, blob) {
   // persistThemeEntry writes the single entry to the owner store when there is
   // one, and only falls back to the shipped file when there is not.
   persistThemeEntry(themesPath, key, entry);
-  return entry;
+  // The MERGE'S OWN OUTCOME, handed back so a caller can say it out loud.
+  // `entry` is kept on the report because two callers already read it; what is
+  // new is that "the run succeeded and threw four of its measurements away" can
+  // now reach the screen instead of living only in a note inside themes.json.
+  return { entry, rejected, kept };
 }
 
 // Best-effort: downsample raster images embedded in an uploaded SVG so an
@@ -2908,10 +3029,16 @@ function deleteTemplate({ root, key, inUseThemes }) {
 //
 // Detection PROPOSES: the measured values are written, but `calibrated` is left
 // exactly as it was, so this can never flip an unfinished template on sale.
+//
+// It runs ONLY as a background job (server/redetect-job.js). There is no
+// synchronous twin, deliberately: there was one, it went on calling spawnSync
+// after #354 moved the route off it, and a dead blocking copy of a path that
+// exists because blocking froze the storefront is just a loaded gun. The pieces
+// below (plan / report) are the shared, spawn-free halves.
+//
 // What re-detection needs to know about a template before it spawns anything —
-// or the 404 it must answer with instead. Shared by the synchronous function
-// below and the asynchronous job, so a key that does not exist is refused
-// identically on both, BEFORE a job is ever registered for it.
+// or the 404 it must answer with instead. Checked BEFORE a job is registered, so
+// a typo never leaves a phantom row behind.
 function redetectPlan({ root, key }) {
   const themes = loadThemes(themesPathFor(root));
   const entry = ownTheme(themes, key);
@@ -2926,7 +3053,7 @@ function redetectPlan({ root, key }) {
 // The report the button shows, assembled from the two runs' outcomes. Pure —
 // it neither spawns nor writes — so both callers say exactly the same thing
 // about the same pair of results.
-function redetectReport({ key, recipe, calibration }) {
+function redetectReport({ key, recipe, calibration, applied }) {
   return {
     key,
     recipe: recipe.recipe,
@@ -2934,36 +3061,22 @@ function redetectReport({ key, recipe, calibration }) {
     // Surfaced rather than swallowed: a recipe that detected fine while
     // calibration did not is a real, actionable state.
     detail: calibration.ok ? null : calibration.detail || null,
+    // …and a calibration killed by its own ceiling is a DIFFERENT actionable
+    // state from one that crashed: nothing is wrong with the artwork, the budget
+    // was too small for this deck. The panel says which.
+    timedOut: !calibration.ok && !!calibration.timedOut,
+    // What the merge did with the measurements. A run can succeed end to end and
+    // still change nothing the owner can see — every measured field refused by
+    // validation, or the surface it cares about never measured at all — and until
+    // now that combination reported plain success. This is how she finds out.
+    rejected: (applied && applied.rejected) || [],
+    kept: (applied && applied.kept) || [],
     // So is a run that succeeded while REFUSING to regularise something. That
     // combination is what let grapefruit come back with unevenly spaced words
     // from press after press of this button: the detector declined the spacing
     // snap every time, said "ok", and the only record was a container log.
     declined: declinedSnapsOf(recipe.recipe),
   };
-}
-
-function redetectTemplate({ root, key, pythonBin, recipeRunner, calibrateRunner }) {
-  const themes = loadThemes(themesPathFor(root));
-  const entry = ownTheme(themes, key);
-  if (!entry) return { error: 'template not found', httpStatus: 404 };
-  const cards = cardStructureOf(entry) === 'cards';
-  const recipe = runRecipeDiff({
-    root,
-    slug: key,
-    recipeName: entry.recipe || key,
-    cards,
-    pythonBin,
-    runner: recipeRunner,
-  });
-  if (!recipe.ok) {
-    return {
-      error: 'detection failed: ' + (recipe.detail || 'unknown error'),
-      httpStatus: 422,
-    };
-  }
-  const calibration = runCalibrate({ root, slug: key, pythonBin, runner: calibrateRunner });
-  if (calibration.ok) applyCalibration(themesPathFor(root), key, calibration.blob);
-  return redetectReport({ key, recipe, calibration });
 }
 
 // The regularisations detection refused, read back off the recipe it just wrote.
@@ -3436,7 +3549,6 @@ module.exports = {
   isOwnerTheme,
   isShippedTheme,
   revertTemplate,
-  redetectTemplate,
   computeTemplateStatus,
   listTemplateStatuses,
   validateDisplayName,
