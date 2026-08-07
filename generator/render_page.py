@@ -316,7 +316,7 @@ _RTL_EMBED, _RTL_POP = "‫", "‬"
 
 
 def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
-               marker_advance=None, bold_w=0.0):
+               marker_advance=None, bold_w=0.0, alt_font_path=None):
     """One numbered entry, wrapped over ``lines``, as SVG markup.
 
     RTL numbered line: the marker must sit on the RIGHT (the Hebrew reading
@@ -353,6 +353,11 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
     """
     msize = size * _MARKER_SCALE
     font, ref = _word_metrics(font_path)
+    # The optional Latin face. Absent (every template today) leaves `face` None
+    # and every line below takes the one-face branch, which emits the exact
+    # markup it always has.
+    alt_font = _measuring_font(alt_font_path, ref) if alt_font_path else None
+    face = Face(font, alt_font, ref) if alt_font is not None else None
     digit, digit_x, dot_x, marker_w = _marker_geometry(font, ref, num, msize,
                                                        advance=marker_advance)
     gap = size * _WORD_GAP
@@ -374,12 +379,41 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
         f'xml:space="preserve">.</text>'
     ]
     for i, line in enumerate(lines):
-        out.append(
-            f'<text x="{word_x:.2f}" y="{first + i * lead:.2f}" '
-            f'font-family="HebWord" font-size="{size:.2f}" fill="{color}" '
-            f'{fat}text-anchor="end" xml:space="preserve">'
-            f'{_RTL_EMBED}{escape(line)}{_RTL_POP}</text>'
-        )
+        y = first + i * lead
+        runs = face.runs(line) if face is not None else None
+        if not runs or len(runs) == 1 and runs[0][0] is not alt_font:
+            # The one-face line, and it must emit the EXACT string it always
+            # did — this is the branch every shipped card takes.
+            out.append(
+                f'<text x="{word_x:.2f}" y="{y:.2f}" '
+                f'font-family="HebWord" font-size="{size:.2f}" fill="{color}" '
+                f'{fat}text-anchor="end" xml:space="preserve">'
+                f'{_RTL_EMBED}{escape(line)}{_RTL_POP}</text>'
+            )
+            continue
+        # A line in two faces cannot be one <text>: Chrome ignores
+        # direction="rtl" for RUN ordering (the reason the marker above is
+        # already three elements), so the runs are ordered and placed here.
+        #
+        # Anchored by each run's END, walking VISUAL order left to right, so the
+        # anchoring model that is already proven under Chrome is untouched:
+        #
+        #     x_end(j) = word_x - W + sum(w_i for i <= j)
+        #
+        # One run collapses that to word_x exactly, by algebra.
+        widths = [f.getlength(t) / ref * size for f, t in runs]
+        total = sum(widths)
+        pen = word_x - total
+        for (f, txt), w in reversed(list(zip(runs, widths))):
+            pen += w
+            latin = f is alt_font
+            body = escape(txt) if latin else f"{_RTL_EMBED}{escape(txt)}{_RTL_POP}"
+            fam = "HebWordAlt" if latin else "HebWord"
+            out.append(
+                f'<text x="{pen:.2f}" y="{y:.2f}" font-family="{fam}" '
+                f'font-size="{size:.2f}" fill="{color}" {fat}'
+                f'text-anchor="end" xml:space="preserve">{body}</text>'
+            )
     return "".join(out)
 
 
