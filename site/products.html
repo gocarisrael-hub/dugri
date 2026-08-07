@@ -453,6 +453,7 @@
       }
     </style>
     <script src="js/editor.js" defer></script>
+    <script src="js/start-explainer.js" defer></script>
   </head>
   <body>
     <header class="hdr" aria-label="ניווט ראשי">
@@ -780,7 +781,10 @@
           // Graceful degradation: never leave a blank page — offer the wizard.
           grid.innerHTML =
             '<div class="store-fallback"><p>לא הצלחנו לטעון את גלריית העיצובים כרגע.</p>' +
-            '<a class="btn" href="options.html">להזמנה ובחירת עיצוב ›</a></div>';
+            // data-start-explainer: this fallback enters the WIZARD, so it gets the
+            // same 4-step briefing. The delegated listener in js/start-explainer.js
+            // picks the anchor up even though it is injected here, after load.
+            '<a class="btn" href="options.html" data-start-explainer>להזמנה ובחירת עיצוב ›</a></div>';
           console.error('store grid failed to render:', err);
         }
       }
