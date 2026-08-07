@@ -232,3 +232,157 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
     await assertStepFits(page, '[data-testid="pawn-skip"]');
   });
 });
+
+// THE DECK PICTURES ARE ON MORE THAN THE NAME STEP.
+//
+// The row rides `is-collapsed`, which is every step from 3 up: the name step (3),
+// the details step with the phone field (4) and the optional pawn photos (5). The
+// four tests above are blind to all of that — the e2e server's design-images store
+// is empty, so they run with NO row and pass however tall the row would be.
+//
+// Once the row became a full-width carousel it roughly doubled in height (a 112px
+// square became a 249px 1.414 slide). Steps 4 and 5 do NOT have step 3's licence to
+// scroll, and the extra height pushed the phone field 105px and the skip control
+// 37px BELOW the sticky bar's top — under the bar, where a tap lands on the bar.
+// That is the funnel blocked, so these tests check the only thing that matters: the
+// buyer can put a finger on the control.
+test.describe('the deck pictures never bury a control', () => {
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAeklEQVR4nO3PUQkAIBTAwBfbJGYyliH8OITBAtzmrP11wwUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWPHYB2OhhtC3NOZwAAAAASUVORK5CYII=',
+    'base64'
+  );
+
+  async function withDeckPictures(page) {
+    await page.route('**/content-uploads/*', (r) =>
+      r.fulfill({ contentType: 'image/png', body: PNG })
+    );
+    await page.route('**/api/design-images*', (r) =>
+      r.fulfill({
+        json: {
+          images: {
+            bachelorette: {
+              base: {
+                deckFronts: { img: '/content-uploads/00000000000000a1.webp' },
+                deckBacks: { img: '/content-uploads/00000000000000a2.webp' },
+                deckBoard: { img: '/content-uploads/00000000000000a3.webp' },
+              },
+            },
+          },
+        },
+      })
+    );
+  }
+
+  // `toBeVisible()` passes on a control the sticky bar sits on top of, and a
+  // scrollHeight check says nothing about whether a finger lands. Ask the page the
+  // question the buyer asks: at the middle of this control, what would I hit?
+  async function assertTappable(page, selector) {
+    const hit = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return 'missing';
+      const r = el.getBoundingClientRect();
+      if (r.bottom > window.innerHeight || r.top < 0) return 'outside the viewport';
+      const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (!at) return 'nothing (off-screen)';
+      if (el.contains(at) || at === el) return 'ok';
+      const bar = at.closest('.wiz-bar');
+      return bar ? 'the sticky bar' : `${at.tagName.toLowerCase()}.${at.className}`;
+    }, selector);
+    expect(hit, `tapping ${selector} must land on it`).toBe('ok');
+    // …and the tap itself must go through, with no scrolling to rescue it.
+    await page.locator(selector).first().click({ timeout: 5000 });
+  }
+
+  // Guard against the row quietly not rendering, which would make every assertion
+  // below vacuous — and against "fixing" the overflow by shrinking the pictures to
+  // nothing, the outcome the owner already rejected.
+  async function assertRowWorthLookingAt(page) {
+    await expect(page.getByTestId('deck-row')).toBeVisible();
+    await expect(page.getByTestId('deck-thumb')).toHaveCount(3);
+    const h = await page
+      .getByTestId('deck-thumb')
+      .first()
+      .evaluate((el) => el.getBoundingClientRect().height);
+    expect(h, 'the pictures must stay big enough to be a preview').toBeGreaterThan(60);
+  }
+
+  test('step 4 (details): the phone field is reachable with the pictures on screen', async ({
+    page,
+  }) => {
+    await withDeckPictures(page);
+    await page.goto('/options.html?design=bachelorette&step=4');
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    await assertRowWorthLookingAt(page);
+    // The outcome first: with no scrolling at all, can the buyer put a finger on
+    // the field? (It was 105px under the sticky bar.)
+    await assertTappable(page, '[data-testid="owner-phone"]');
+    // And this step has no licence to scroll in the first place.
+    await expect
+      .poll(async () =>
+        page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
+      )
+      .toBeLessThanOrEqual(4);
+  });
+
+  test('step 5 (pawn photos): the skip control is reachable with the pictures on screen', async ({
+    page,
+  }) => {
+    await withDeckPictures(page);
+    await page.goto('/options.html?design=bachelorette&step=5');
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
+    await assertRowWorthLookingAt(page);
+    // It was 37px under the sticky bar, so the tap landed on the bar's button.
+    await assertTappable(page, '[data-testid="pawn-skip"]');
+    await expect
+      .poll(async () =>
+        page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
+      )
+      .toBeLessThanOrEqual(4);
+  });
+
+  // Step 3 keeps the big picture AND its licence to scroll (owner, 2026-08-06), so
+  // here the buyer is expected to scroll — but having scrolled, the control must be
+  // clear of the sticky bar and the tap must go through.
+  //
+  // Not assertTappable(): with the big picture this step scrolls to its very end,
+  // and there the site's floating WhatsApp button (.wa-help, fixed at 287..374 ×
+  // 718..762) covers the RIGHT half of the first gender option — the option is
+  // still tappable, and the second one is untouched, but the centre pixel is not
+  // free. That overlap is the help button meeting the page's last control, not the
+  // deck row burying it, and it is out of this change's hands (a separate owner).
+  // What this test refuses to let slip is the thing the row DOES control: the
+  // sticky bar swallowing the control the way it did on steps 4 and 5.
+  test('step 3 (name): the control clears the sticky bar once scrolled to', async ({ page }) => {
+    await withDeckPictures(page);
+    await page.goto('/options.html?design=bachelorette&step=3');
+    await expect(page.getByTestId('step-3')).toBeVisible();
+    await assertRowWorthLookingAt(page);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+
+    const gender = page.locator('[data-testid="gender-group"]');
+    await expect(gender).toBeInViewport({ ratio: 1 });
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
+          const el = document.querySelector('[data-testid="gender-group"]').getBoundingClientRect();
+          return Math.round(el.bottom - bar.top);
+        })
+      )
+      .toBeLessThanOrEqual(0);
+    // Nothing of the sticky bar is over either option …
+    const overBar = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[data-testid="gender-group"] label')).some((el) => {
+        const r = el.getBoundingClientRect();
+        for (const x of [r.left + 4, r.left + r.width / 2, r.right - 4]) {
+          const at = document.elementFromPoint(x, r.top + r.height / 2);
+          if (at && at.closest('.wiz-bar')) return true;
+        }
+        return false;
+      })
+    );
+    expect(overBar, 'the sticky bar must not sit on a gender option').toBe(false);
+    // … and the tap lands.
+    await page.locator('[data-testid="gender-group"] label').last().click({ timeout: 5000 });
+  });
+});

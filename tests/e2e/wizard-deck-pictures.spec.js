@@ -182,6 +182,152 @@ test.describe('wizard — the deck pictures under the collapsed summary', () => 
   });
 });
 
+// A picture whose upload 404s is removed from the row. Everything downstream —
+// the dots, "next", the fullscreen viewer — must agree that it is gone. The
+// carousel and the viewer therefore read the SAME thing: the slides currently in
+// #deckTrack. These tests are about that agreement, not about how it is reached.
+test.describe('wizard — a broken picture leaves nothing behind', () => {
+  // Which slide the buyer is actually looking at: the one whose leading edge sits
+  // on the track's. Measured geometrically because that is what the eye sees —
+  // no class or index is consulted, so a lying index cannot make this pass.
+  function onScreenSlide(page) {
+    return page.evaluate(() => {
+      const track = document.getElementById('deckTrack');
+      const trackLeft = track.getBoundingClientRect().left;
+      const slides = Array.from(track.querySelectorAll('.deck-slide'));
+      let best = -1;
+      let bestGap = Infinity;
+      slides.forEach((s, i) => {
+        const gap = Math.abs(s.getBoundingClientRect().left - trackLeft);
+        if (gap < bestGap) {
+          bestGap = gap;
+          best = i;
+        }
+      });
+      return best;
+    });
+  }
+  function activeDot(page) {
+    return page.evaluate(() =>
+      Array.from(document.querySelectorAll('#deckDots .carousel-dot')).findIndex((d) =>
+        d.classList.contains('is-active')
+      )
+    );
+  }
+
+  // Serve the fronts and the board at once, but HOLD the backs until the test
+  // releases it — so the 404 lands after the buyer has already swiped onto it,
+  // which is when the row and the dots can drift apart. Firing the error before
+  // any interaction hides the defect entirely (index 0 is right by luck).
+  async function stubWithHeldBacks(page) {
+    let release;
+    const held = new Promise((r) => (release = r));
+    await page.route('**/content-uploads/*', async (route) => {
+      if (!route.request().url().includes('a2')) {
+        return route.fulfill({ contentType: 'image/png', body: PNG });
+      }
+      await held;
+      return route.fulfill({ status: 404, body: '' });
+    });
+    await stubDeck(page, ALL_THREE);
+    return release;
+  }
+
+  test('the dots keep telling the truth after a picture drops out mid-swipe', async ({ page }) => {
+    const releaseBacks = await stubWithHeldBacks(page);
+    await gotoNameStep(page);
+    await expect(page.locator('#deckTrack .deck-slide')).toHaveCount(3);
+
+    // The buyer swipes to the second picture — the one that is about to 404.
+    await page.locator('#deckDots .carousel-dot').nth(1).click();
+    await expect.poll(() => onScreenSlide(page)).toBe(1);
+
+    releaseBacks();
+
+    // Two pictures survive, so two dots — never a dot for a picture that is gone.
+    await expect(page.locator('#deckTrack .deck-slide')).toHaveCount(2);
+    await expect(page.locator('#deckDots .carousel-dot')).toHaveCount(2);
+
+    // The lit dot must be the picture actually on screen. This is the defect:
+    // the dot said 1 while picture 2 was in view.
+    const shown = await onScreenSlide(page);
+    await expect.poll(() => activeDot(page)).toBe(shown);
+
+    // …and "next" must still go somewhere. It did nothing before: the carousel
+    // thought it was already on the slide the track was showing.
+    const other = shown === 0 ? 1 : 0;
+    await page.locator('#deckDots .carousel-dot').nth(other).click();
+    await expect.poll(() => onScreenSlide(page)).toBe(other);
+    await expect.poll(() => activeDot(page)).toBe(other);
+  });
+
+  test('a picture that dropped out cannot come back in the fullscreen viewer', async ({ page }) => {
+    await page.route('**/content-uploads/*', (route) =>
+      route.request().url().includes('a2')
+        ? route.fulfill({ status: 404, body: '' })
+        : route.fulfill({ contentType: 'image/png', body: PNG })
+    );
+    await stubDeck(page, ALL_THREE);
+    await gotoNameStep(page);
+    await expect(page.getByTestId('deck-thumb')).toHaveCount(2);
+
+    // Open from a picture that survived…
+    await page.getByTestId('deck-thumb').first().click();
+    const view = page.getByTestId('deck-view');
+    await expect(view).toBeVisible();
+
+    // …and the broken one must not be in the viewer at all. It was: the viewer
+    // was built from a list the removal never touched, so the buyer watched a
+    // picture disappear from the row and then met it again, torn, full-screen.
+    const slides = view.locator('#deckViewTrack > *');
+    await expect(slides).toHaveCount(2);
+    const srcs = await view
+      .locator('#deckViewTrack img')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('src')));
+    expect(srcs).toEqual([FRONTS, BOARD]);
+  });
+
+  test('the viewer opens on the picture that was tapped, counted among the survivors', async ({
+    page,
+  }) => {
+    // The FIRST picture 404s, so every surviving picture's position shifted by one.
+    // A tap must open the picture that was tapped — the stored position was read
+    // from before the removal, so the viewer landed on the wrong photograph.
+    await page.route('**/content-uploads/*', (route) =>
+      route.request().url().includes('a1')
+        ? route.fulfill({ status: 404, body: '' })
+        : route.fulfill({ contentType: 'image/png', body: PNG })
+    );
+    await stubDeck(page, ALL_THREE);
+    await gotoNameStep(page);
+    await expect(page.getByTestId('deck-thumb')).toHaveCount(2);
+
+    // Tap the LAST survivor (the board). The viewer must be showing the board.
+    await page.getByTestId('deck-thumb').nth(1).click();
+    const view = page.getByTestId('deck-view');
+    await expect(view).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const track = document.getElementById('deckViewTrack');
+          const left = track.getBoundingClientRect().left;
+          const kids = Array.from(track.children);
+          let best = -1;
+          let bestGap = Infinity;
+          kids.forEach((k, i) => {
+            const gap = Math.abs(k.getBoundingClientRect().left - left);
+            if (gap < bestGap) {
+              bestGap = gap;
+              best = i;
+            }
+          });
+          return kids[best] ? kids[best].querySelector('img').getAttribute('src') : null;
+        })
+      )
+      .toBe(BOARD);
+  });
+});
+
 test.describe('wizard — the fullscreen deck viewer', () => {
   test('a thumb opens the viewer on that picture, and Escape closes it', async ({ page }) => {
     await stubUploads(page);
