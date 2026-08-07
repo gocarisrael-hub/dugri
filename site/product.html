@@ -816,6 +816,7 @@
       }
     </style>
     <script src="js/editor.js" defer></script>
+    <script src="js/start-explainer.js" defer></script>
   </head>
   <body>
     <header class="hdr" aria-label="ניווט ראשי">
@@ -994,15 +995,20 @@
 
         <!-- 3c. BUY NOW -->
         <section class="pdp-sec pdp-buy-sec">
+          <!-- Opens the 4-step explainer (js/start-explainer.js) instead of jumping
+               straight into the wizard. The explainer's continue button carries THIS
+               anchor's live href forward — product.js rewrites it to
+               options.html?design=<id>&step=2 — so design preselection survives. -->
           <a
             class="btn"
             id="pdpBuy"
             href="options.html"
             data-testid="pdp-buy"
+            data-start-explainer
             data-ga="order_started"
             data-ga-cta="pdp"
             data-edit-pd="buy-cta"
-            >קנו עכשיו</a
+            >מתחילים לבנות את המשחק ›</a
           >
           <p class="note" data-edit-pd="buy-note">
             מבצע השקה · אספקה תוך 24 שעות · ללא הגבלת מילים

@@ -840,6 +840,7 @@
       }
     </style>
     <script src="js/editor.js" defer></script>
+    <script src="js/start-explainer.js" defer></script>
   </head>
   <body>
     <header class="hdr" aria-label="ניווט ראשי">
@@ -878,10 +879,15 @@
         role="menu"
         aria-label="תפריט ניווט"
       >
+        <!-- Enters the ORDER WIZARD, so it opens the 4-step explainer first
+             (js/start-explainer.js). The sibling links go to the shop / page
+             anchors and are deliberately left alone — the briefing belongs at the
+             wizard door, not on every CTA. -->
         <a
           href="options.html"
           role="menuitem"
           data-testid="nav-order-flow"
+          data-start-explainer
           data-ga="order_started"
           data-ga-cta="nav-menu"
           data-edit="index-nav-orderflow"

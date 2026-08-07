@@ -539,11 +539,15 @@ test.describe('order flow is reachable from the homepage', () => {
     // shop → a product
     await page.locator('a[href^="product.html?design="]').first().click();
     await expect(page).toHaveURL(/product\.html\?design=/);
-    // product → buy → the order wizard
+    // product → buy → the 4-step explainer → the order wizard. The buy CTA now
+    // opens the briefing first (js/start-explainer.js); its continue button carries
+    // the anchor's href, so the design still rides into the wizard.
     const buy = page.getByTestId('pdp-buy');
     await buy.waitFor();
     await expect.poll(() => buy.getAttribute('href')).toMatch(/^options\.html\?design=/);
     await buy.click();
+    await expect(page.getByTestId('start-explainer')).toBeVisible();
+    await page.getByTestId('start-explainer-continue').click();
     await expect(page).toHaveURL(/options\.html\?design=/);
   });
 });
