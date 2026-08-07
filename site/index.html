@@ -1219,16 +1219,31 @@
             const cover = galleryFor(railImages, design, 'products')[0];
             const staticDefault = img.getAttribute('data-store-default');
             if (!cover || !cover.src || cover.src === staticDefault) continue;
-            // Re-defer rather than assign: a card still off the side of the rail
-            // must stay unloaded, and a card already on screen re-hydrates
-            // immediately on the refresh below. Assigning `src` here would undo
-            // the deferral for every clipped card at once.
-            defer(img, {
-              src: cover.src,
-              srcset: srcsetFor(cover.src),
-              sizes: SIZES.rail,
-              fallback: staticDefault || '',
-            });
+            // A card still off the side of the rail must stay unloaded, so it is
+            // re-deferred. But a card the shopper is ALREADY LOOKING AT must not
+            // be: defer() removes `src`, which erases the painted picture the
+            // instant this runs and leaves a grey box until the override
+            // downloads. Assigning instead keeps the old picture on screen until
+            // the new one has decoded, so the swap stays invisible.
+            const painted = img.complete && img.naturalWidth > 0;
+            if (painted) {
+              // Same two-stage recovery defer() would have armed: the track's
+              // capture-phase error handler drops the ladder first, then reads
+              // this to reach the shipped render.
+              if (staticDefault && staticDefault !== cover.src) {
+                img.dataset.lazyFallback = staticDefault;
+              }
+              img.sizes = SIZES.rail;
+              img.srcset = srcsetFor(cover.src);
+              img.src = cover.src;
+            } else {
+              defer(img, {
+                src: cover.src,
+                srcset: srcsetFor(cover.src),
+                sizes: SIZES.rail,
+                fallback: staticDefault || '',
+              });
+            }
           }
           if (railLazy) railLazy.refresh();
         }

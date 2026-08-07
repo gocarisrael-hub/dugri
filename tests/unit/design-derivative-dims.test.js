@@ -95,6 +95,39 @@ d('source dimensions — the JS header parser agrees with Pillow', () => {
     expect(Math.max(...cands.map((c) => c.w))).toBeLessThanOrEqual(w);
   });
 
+  // Pillow reads these without complaint, so a parser that gave up would take a
+  // derivative AWAY from a picture that had one before the ladder existed — the
+  // page falls back to the multi-MB original and /design-thumb 404s. Lightroom
+  // and Photoshop exports routinely carry an embedded preview plus an ICC
+  // profile ahead of SOF, which is well past a 64 KB first look.
+  it('reads a JPEG whose SOF sits past the first 64 KB, as Pillow does', () => {
+    const r = spawnSync(
+      PY,
+      [
+        '-c',
+        `import json
+from PIL import Image
+tmp = ${JSON.stringify(tmp)}
+im = Image.new("RGB", (1600, 1200), (12, 34, 56))
+# A 40 KB embedded thumbnail in APP1 plus a ~30 KB ICC profile in APP2 pushes
+# SOF beyond 64 KB — ordinary for a photo exported from a desktop editor.
+ex = im.getexif()
+ex[270] = "x" * 40000
+p = tmp + "/fat-header.jpg"
+im.save(p, exif=ex, icc_profile=b"\\0" * 30000)
+print(json.dumps([Image.open(p).size[0], Image.open(p).size[1]]))`,
+      ],
+      { encoding: 'utf8' }
+    );
+    if (r.status !== 0) throw new Error('fixture failed: ' + r.stderr);
+    const [w, h] = JSON.parse(r.stdout);
+    const f = path.join(tmp, 'fat-header.jpg');
+    expect(fs.statSync(f).size).toBeGreaterThan(65536);
+    expect(derivatives.dimsOfFile(f)).toEqual({ w, h });
+    // And with dimensions in hand the ladder is actually produced.
+    expect(derivatives.candidatesForDims({ w, h }).length).toBeGreaterThan(0);
+  });
+
   it('returns null for bytes that are not a raster we can read', () => {
     const junk = path.join(tmp, 'junk.png');
     fs.writeFileSync(junk, Buffer.from('this is not an image at all, not even close'));

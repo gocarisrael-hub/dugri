@@ -214,14 +214,29 @@ function dimsOfFile(file) {
   let fd = null;
   try {
     fd = fs.openSync(file, 'r');
-    // 64 KB is comfortably past IHDR / the JPEG APP1+SOF headers / the WebP
-    // chunk list, without reading a 3 MB photo to learn two numbers.
-    const buf = Buffer.alloc(65536);
-    const read = fs.readSync(fd, buf, 0, 65536, 0);
+    // 64 KB clears IHDR / the WebP chunk list / an ordinary JPEG's SOF without
+    // reading a 3 MB photo to learn two numbers. A JPEG can push SOF far past
+    // that, though: Lightroom and Photoshop exports routinely carry a 40 KB
+    // embedded Exif thumbnail plus a 30 KB ICC profile ahead of it. Those files
+    // parse fine in Pillow, so failing here would take away a derivative the
+    // picture used to get — the srcset AND the carried-over /design-thumb route
+    // both hang off this answer. So JPEG gets a second, larger look before we
+    // give up. 1 MB is past any realistic preview+profile block and still a
+    // fraction of the photo.
+    const FIRST = 65536;
+    const RETRY = 1024 * 1024;
+    const buf = Buffer.alloc(FIRST);
+    const read = fs.readSync(fd, buf, 0, FIRST, 0);
     const head = buf.subarray(0, read);
     if (head.length < 16) return null;
     if (head[0] === 0x89 && head.toString('latin1', 1, 4) === 'PNG') return pngDims(head);
-    if (head[0] === 0xff && head[1] === 0xd8) return jpegDims(head);
+    if (head[0] === 0xff && head[1] === 0xd8) {
+      const d = jpegDims(head);
+      if (d || read < FIRST) return d;
+      const big = Buffer.alloc(RETRY);
+      const got = fs.readSync(fd, big, 0, RETRY, 0);
+      return jpegDims(big.subarray(0, got));
+    }
     if (head.toString('latin1', 0, 4) === 'RIFF') return webpDims(head);
     return null;
   } catch {
