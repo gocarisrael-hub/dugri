@@ -51,6 +51,61 @@ async function gotoNameStep(page) {
   await expect(page.getByTestId('continue-summary')).toBeVisible();
 }
 
+// The three pictures used to sit as three squares side by side, each about a
+// third of the phone's width — too small to see a deck of cards in. The owner
+// asked for the carousel the rest of the site already uses, so they are now one
+// picture per view with dots, the same slideshow as the store tile and the
+// product gallery.
+test.describe('wizard — the deck pictures are a carousel', () => {
+  test('one picture per view, with a dot per picture', async ({ page }) => {
+    await stubUploads(page);
+    await stubDeck(page, ALL_THREE);
+    await gotoNameStep(page);
+
+    const slides = page.locator('#deckTrack .deck-slide');
+    await expect(slides).toHaveCount(3);
+    // One dot per picture, in the shared carousel's own markup.
+    await expect(page.locator('#deckDots .carousel-dot')).toHaveCount(3);
+
+    // Each slide spans the full track: a slideshow, not a row of thumbnails.
+    const trackW = (await page.locator('#deckTrack').boundingBox()).width;
+    const slideW = (await slides.first().boundingBox()).width;
+    expect(Math.abs(slideW - trackW)).toBeLessThan(2);
+    // …and the picture is big enough to be worth looking at, which is the point.
+    expect(slideW).toBeGreaterThan(200);
+  });
+
+  // A lone picture has nothing to swipe between; a single dot would advertise
+  // more than there is.
+  test('a single picture gets no carousel and no dots', async ({ page }) => {
+    await stubUploads(page);
+    await stubDeck(page, { deckBoard: { img: BOARD } });
+    await gotoNameStep(page);
+
+    await expect(page.locator('#deckTrack .deck-slide')).toHaveCount(1);
+    await expect(page.locator('#deckDots .carousel-dot')).toHaveCount(0);
+  });
+
+  // The engine stamps its own "slide N of M" label on whatever element IS the
+  // slide. When the button was the slide that overwrote the picture's real name,
+  // leaving it announced only as a position — so the button now sits INSIDE the
+  // slide, and both labels survive.
+  test('the enlarge button keeps its own accessible name', async ({ page }) => {
+    await stubUploads(page);
+    await stubDeck(page, ALL_THREE);
+    await gotoNameStep(page);
+
+    const thumbs = page.getByTestId('deck-thumb');
+    await expect(thumbs.nth(0)).toHaveAttribute('aria-label', /שמונת הקלפים/);
+    await expect(thumbs.nth(2)).toHaveAttribute('aria-label', /לוח/);
+    // The slide carries the position label, separately.
+    await expect(page.locator('#deckTrack .deck-slide').first()).toHaveAttribute(
+      'aria-label',
+      /שקופית/
+    );
+  });
+});
+
 test.describe('wizard — the deck pictures under the collapsed summary', () => {
   test('shows one thumb per uploaded picture, with no caption text', async ({ page }) => {
     await stubUploads(page);

@@ -933,11 +933,29 @@
          opens the fullscreen viewer. Only rendered for a design whose owner
          uploaded them, so this whole row is absent on most designs and the step
          looks exactly as it did before. */
+      /* ONE picture per view, swiped — the same slideshow the store tiles and the
+         product gallery use, rather than the three postage stamps this used to
+         be. Three squares side by side on a phone gave each picture about a third
+         of the width, which is not enough to see a deck of cards in; the owner
+         asked for the carousel the rest of the site already uses. */
       .deck-row {
         margin-top: 10px;
-        display: grid;
-        grid-template-columns: repeat(var(--deck-n, 3), 1fr);
-        gap: 8px;
+        display: block;
+      }
+      .deck-track {
+        /* Slides sit flush so each snaps cleanly full-frame (as .product-card__track). */
+        --carousel-gap: 0;
+      }
+      .deck-dots {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 8px;
+      }
+      /* A single picture gets no dots; an empty strip must not hold space. */
+      .deck-dots:empty {
+        display: none;
       }
       /* `display: grid` beats the `hidden` attribute's default `display: none`, so
          without this the row kept its margin on every step and every design that
@@ -949,19 +967,34 @@
       .deck-row[hidden] {
         display: none;
       }
+      /* The SLIDE is a plain wrapper, and the button lives inside it. The carousel
+         engine stamps its own "slide N of M" aria-label onto whatever element is
+         the slide — which, when the button WAS the slide, overwrote the picture's
+         real accessible name ("שמונת הקלפים — הגדלה") and left it announced only
+         as a position. Splitting them lets the engine label the position and the
+         button keep its meaning. */
+      .deck-slide {
+        flex: 0 0 100%;
+        display: block;
+      }
       .deck-thumb {
         appearance: none;
         -webkit-appearance: none;
-        border: 1px solid var(--line);
-        background: var(--surface);
+        width: 100%;
+        /* NO border and NO background panel. Both used to show as a framed box
+           around a picture that never filled it — the same pale banding the owner
+           had removed from the store tiles, and it would have come straight back
+           here at full width. The picture is still contained, never cropped, so
+           the spare space simply reads as page. */
+        border: 0;
+        background: none;
         padding: 0;
         cursor: zoom-in;
         overflow: hidden;
-        /* Square, so three sit in a row on a phone without dictating the shape of
-           the owner's photo — the picture is contained, never cropped. */
-        aspect-ratio: 1 / 1;
+        /* The shape matches the store tile so the deck reads as the same kind of
+           object across the site. */
+        aspect-ratio: 841.92 / 595.5;
         display: block;
-        transition: border-color 0.15s;
       }
       .deck-thumb img {
         width: 100%;
@@ -969,9 +1002,11 @@
         object-fit: contain;
         display: block;
       }
-      .deck-thumb:hover,
+      /* With the border gone, focus needs its own ring — the slide is still a
+         button and must stay visibly reachable by keyboard. */
       .deck-thumb:focus-visible {
-        border-color: var(--sage);
+        outline: 2px solid var(--ink, #111);
+        outline-offset: -2px;
       }
 
       /* Fullscreen viewer for those pictures. Deliberately NOT the #zoomOverlay
@@ -2069,7 +2104,10 @@
           role="group"
           aria-label="תמונות החפיסה"
           hidden
-        ></div>
+        >
+          <div class="deck-track" id="deckTrack"></div>
+          <div class="deck-dots" id="deckDots"></div>
+        </div>
       </section>
 
       <!-- STEP 1 — design -->
@@ -5530,6 +5568,9 @@
          button with an accessible name, so the row is operable by keyboard and
          announced by a screen reader. */
       const deckRow = document.getElementById('deckRow');
+      const deckTrack = document.getElementById('deckTrack');
+      const deckDots = document.getElementById('deckDots');
+      let deckRowApi = null;
       const deckView = document.getElementById('deckView');
       const deckViewTrack = document.getElementById('deckViewTrack');
       const deckViewDots = document.getElementById('deckViewDots');
@@ -5548,18 +5589,24 @@
       let deckViewOpener = null;
 
       function paintDeckRow(collapsed) {
-        if (!deckRow) return;
+        if (!deckRow || !deckTrack) return;
         const d = DESIGNS[designIndex];
         deckShots = collapsed ? deckFor(deckImages, d) : [];
-        deckRow.replaceChildren();
+        // Tear the old instance down BEFORE re-filling. initCarousel is idempotent
+        // and would hand back the dead one for a track it has already claimed,
+        // returning before it stamps `carousel-slide` onto the new slides — which
+        // is what once flattened the product gallery into a strip (#345).
+        if (deckRowApi && deckRowApi.destroy) deckRowApi.destroy();
+        deckRowApi = null;
+        deckTrack.replaceChildren();
+        deckDots.replaceChildren();
         if (!deckShots.length) {
           deckRow.hidden = true;
           return;
         }
-        // Track the real count: two uploaded pictures must sit as two, not two
-        // thirds of a row with a hole where the third would be.
-        deckRow.style.setProperty('--deck-n', String(deckShots.length));
         deckShots.forEach((shot, i) => {
+          const slide = document.createElement('div');
+          slide.className = 'deck-slide';
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'deck-thumb';
@@ -5571,14 +5618,52 @@
           img.alt = '';
           img.loading = 'lazy';
           img.decoding = 'async';
-          // An upload that 404s drops its own thumb rather than showing a broken
-          // picture — the row is a promise about the product, so a gap beats a
-          // torn image. The others stay.
-          img.addEventListener('error', () => btn.remove(), { once: true });
+          // An upload that 404s drops its own slide rather than showing a broken
+          // picture — the row is a promise about the product, so one picture fewer
+          // beats a torn one. The others stay. Repainting afterwards re-syncs the
+          // dots to the slides that survived, so the count can never over-promise.
+          img.addEventListener(
+            'error',
+            () => {
+              slide.remove();
+              syncDeckCarousel();
+            },
+            { once: true }
+          );
           btn.appendChild(img);
-          deckRow.appendChild(btn);
+          slide.appendChild(btn);
+          deckTrack.appendChild(slide);
         });
+        // Unhidden BEFORE the carousel is built: a track measured while its
+        // container is display:none reads every slide as zero-wide and cannot
+        // place them (the same rule openDeckView already follows).
         deckRow.hidden = false;
+        syncDeckCarousel();
+      }
+
+      /** (Re)wire the deck carousel to whatever slides are currently in the track.
+       *  Below two pictures there is nothing to swipe between, so no carousel and
+       *  no dots are wired at all — one picture must not sit under a single dot
+       *  pretending there is more to see. */
+      function syncDeckCarousel() {
+        if (!deckTrack) return;
+        if (deckRowApi && deckRowApi.destroy) deckRowApi.destroy();
+        deckRowApi = null;
+        deckDots.replaceChildren();
+        if (deckTrack.querySelectorAll('.deck-slide').length < 2) return;
+        deckRowApi = initCarousel(deckTrack, {
+          // Matches the store tiles and the product gallery: one picture per view,
+          // swipe or dots only — never a timer, which on a wizard step would pull
+          // the eye away from the form.
+          mode: 'slideshow',
+          autoplay: false,
+          loop: false,
+          dots: true,
+          dotsInto: deckDots,
+          // Same call the product card makes: on a phone the gesture IS the swipe,
+          // and arrows here would crowd a step that already carries the form.
+          arrows: false,
+        });
       }
 
       function openDeckView(index) {
