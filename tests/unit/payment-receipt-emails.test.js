@@ -85,14 +85,17 @@ describe('payment receipt builders', () => {
     expect(msg.text).toContain('קופון 100%');
   });
 
-  it('the buyer receipt carries the amount paid, the order details and the order id', () => {
+  it('the buyer receipt confirms payment and links to the words, without itemising', () => {
     const msg = notify.buildBuyerReceipt(collection, BASE, { amountCharged: 149 });
     expect(msg.subject).toBe('דוגרי · התשלום התקבל — שירה');
     expect(msg.text).toContain('התשלום התקבל — תודה רבה!');
-    expect(msg.text).toContain('· שולם: 149 ₪');
-    expect(msg.text).toContain('· עיצוב: קלאסי');
-    expect(msg.text).toContain('· צבע: ורוד');
-    expect(msg.text).toContain('מספר הזמנה: col-1');
+    // The itemised block is gone: the buyer is shown the template photo (asserted
+    // in the HTML case below) rather than read a paid/design/colour/order-id list.
+    // The OWNER's receipt still carries all of it — see the owner cases above.
+    expect(msg.text).not.toContain('· שולם: 149 ₪');
+    expect(msg.text).not.toContain('· עיצוב: קלאסי');
+    expect(msg.text).not.toContain('· צבע: ורוד');
+    expect(msg.text).not.toContain('מספר הזמנה: col-1');
     // The words link is in the plain-text body...
     expect(msg.text).toContain(link);
     // ...and the admin key never is (the buyer's copy gets no admin link).

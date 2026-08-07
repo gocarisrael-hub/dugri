@@ -89,16 +89,14 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
         'תודה רבה על ההזמנה!',
         'קיבלנו את ההזמנה שלך למשחק של שירה.',
         '',
-        'פרטי ההזמנה:',
-        // The buyer's reference leads the shared detail block, so the order
-        // confirmation and the payment receipt quote the same number.
-        'מספר הזמנה: col-1',
-        '· חבילה: משלוח עד הבית',
-        'משחק מודפס ומוכן — חפיסת קלפים, לוח משחק ודף חוקים, שנשלח עד הבית.',
-        '· מחיר: 199 ₪',
-        '· עיצוב: קלאסי',
-        '· צבע: ורוד',
+        // Introduces the template PHOTO in the HTML body. The itemised block that
+        // used to follow (order id, package, description, price, design, colour)
+        // is gone — the buyer is shown what they bought instead of being read a
+        // spec list. The owner's own copy still carries all of it.
+        'זה המשחק שבחרת:',
         '',
+        // The one block kept from the old details section: how the game reaches
+        // them. It is the only place the buyer is told the delivery time.
         'המשחק יישלח אליך בדרך כלל תוך 5–7 ימי עסקים מרגע שרשימת המילים מוכנה.',
         '',
         // This mail goes out at order creation, so the closing line + link send

@@ -103,6 +103,29 @@ const EMAIL_KINDS = [
     build: (n, c, base) => n.buildPaymentReminder(c, base),
   },
   {
+    // The "you've used your free words" mail, sent once when a collection hits
+    // pricing.free_word_limit. `limit` is normally the live setting; the preview
+    // renders the shipped default so it works before the owner has set one.
+    id: 'free_limit_reached',
+    label: 'נגמרו המילים החינמיות',
+    audience: 'buyer',
+    settingsKey: 'free_limit_reached',
+    build: (n, c, base, opts) => n.buildFreeLimitReached(c, base, opts.freeWordLimit),
+  },
+  {
+    // One entry from the owner-managed reminder list (settings reminders.list).
+    // Its text is NOT a registry template — it is per-reminder — so there is no
+    // settingsKey to edit here: the list is edited on the הודעות וטקסטים page and
+    // this preview shows how any one of those texts will actually look. The first
+    // ENABLED reminder is rendered, falling back to the seed default's wording so
+    // the preview is never blank.
+    id: 'reminder_list',
+    label: 'תזכורת מרשימת התזכורות',
+    audience: 'buyer',
+    settingsKey: null,
+    build: (n, c, base, opts) => n.buildReminderEmail(c, opts.reminderText, base),
+  },
+  {
     id: 'pdf_ready',
     label: 'הקובץ מוכן',
     audience: 'buyer',
@@ -235,6 +258,38 @@ function emailEnabledIn(store, key) {
   }
 }
 
+// The live free-word quota, for the "you've used your free words" mail — its
+// {limit} token and its title both carry the number, so a preview showing the
+// wrong one would misrepresent the message. Falls back to the shipped default
+// rather than throwing, so the preview still renders on a broken/absent store.
+function freeWordLimitIn(store) {
+  try {
+    const v = store.get('pricing', 'free_word_limit');
+    if (Number.isInteger(v) && v > 0) return v;
+  } catch {
+    /* fall through */
+  }
+  return 20;
+}
+
+// The text of the first ENABLED entry in the owner's reminder list, which is what
+// a real reminder send would use. Falls back to the first entry whatever its
+// state, then to the seed default's wording, so the preview is never blank just
+// because every reminder happens to be switched off.
+function reminderTextIn(store) {
+  let list = null;
+  try {
+    list = store.get('reminders', 'list');
+  } catch {
+    list = null;
+  }
+  if (Array.isArray(list) && list.length) {
+    const pick = list.find((r) => r && r.enabled && r.text) || list.find((r) => r && r.text);
+    if (pick) return String(pick.text);
+  }
+  return 'בוקר טוב! יש עוד זמן להוסיף מילים על {honoree}:\n{link}';
+}
+
 // Render ONE message. Returns
 //   { id, channel, label, subject, text, html, enabled, settings }
 // or null when the id isn't previewable. `html` is null for WhatsApp and for the
@@ -264,7 +319,12 @@ function render(channel, id, deps = {}) {
   // have no way to tell.
   const email = channel === 'email' ? EMAIL_KINDS.find((k) => k.id === id) : null;
   if (email) {
-    const build = () => email.build(notify, collection, baseUrl, { productImageUrl }) || {};
+    const opts = {
+      productImageUrl,
+      freeWordLimit: freeWordLimitIn(store),
+      reminderText: reminderTextIn(store),
+    };
+    const build = () => email.build(notify, collection, baseUrl, opts) || {};
     // notify.withSettings swaps the store the builders read for the duration of
     // this (synchronous) build. Guarded so an injected test double without it
     // still renders — against the real store, which is what it had before.

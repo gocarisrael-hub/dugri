@@ -113,11 +113,14 @@ const REGISTRY = {
       default: {
         enabled: true,
         subject: 'דוגרי · ההזמנה שלכם התקבלה — {honoree}',
+        // No trailing "פרטי ההזמנה:" heading any more — the buyer emails show the
+        // chosen template as a photo instead of itemising the order, so the
+        // heading would introduce a list that is no longer there.
         body:
           'תודה רבה על ההזמנה!\n' +
           'קיבלנו את ההזמנה שלך למשחק של {honoree}.\n' +
           '\n' +
-          'פרטי ההזמנה:',
+          'זה המשחק שבחרת:',
       },
     },
     // --- payment receipts: fired at the real unpaid->paid transition ONLY -----
@@ -139,11 +142,13 @@ const REGISTRY = {
       default: {
         enabled: true,
         subject: 'דוגרי · התשלום התקבל — {honoree}',
+        // As in buyer_confirmation: the itemised list is gone, so the heading that
+        // introduced it is too.
         body:
           'התשלום התקבל — תודה רבה!\n' +
           'ההזמנה של {honoree} מאושרת ואנחנו מתחילים להכין את המשחק.\n' +
           '\n' +
-          'פרטי ההזמנה:',
+          'זה המשחק שבחרת:',
       },
     },
     pdf_ready: {
