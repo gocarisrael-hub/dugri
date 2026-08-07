@@ -181,6 +181,34 @@ describe('re-detection runs as a job, off the request', () => {
     expect(done.result.calibrated).toBe(false);
   });
 
+  // A calibration can RUN to completion and still change nothing the owner can
+  // see — every measured field refused by validation, or the surface she cares
+  // about never measured at all. That combination reported plain success, which
+  // is what left her pressing the button all day. What the MERGE did has to
+  // travel with the report.
+  it('carries what the merge refused or kept into the finished report', async () => {
+    const applied = { entry: {}, rejected: ['card_slots (front 9 missing)'], kept: ['board'] };
+    const tpl = fakeTemplates({
+      applyCalibration: () => applied,
+      redetectReport: ({ key, applied: a }) => ({
+        key,
+        calibrated: true,
+        rejected: (a && a.rejected) || [],
+        kept: (a && a.kept) || [],
+      }),
+    });
+    job.start({
+      root: '/r',
+      key: 'demo',
+      templates: tpl,
+      runner: () => Promise.resolve({ status: 0, stdout: '' }),
+    });
+    await tick(20);
+    const done = job.get('demo');
+    expect(done.result.rejected).toEqual(['card_slots (front 9 missing)']);
+    expect(done.result.kept).toEqual(['board']);
+  });
+
   // A throw anywhere in the plumbing is still an outcome the owner must see.
   it('never leaves a job stuck on running when the plumbing throws', async () => {
     const tpl = fakeTemplates({
@@ -285,6 +313,35 @@ describe('runAsync', () => {
     expect(r.stderr).toMatch(/timed out/);
     await tick(2500);
     expect(fs.existsSync(marker)).toBe(false);
+  });
+
+  // A KILLED run and a crashed one are not the same fact. The kill used to be
+  // recorded ONLY by appending "(timed out …)" to the END of stderr, and
+  // `detail` is sliced to its first 800 characters — so a child that printed a
+  // long traceback before it was reclaimed came back looking like an ordinary
+  // detector failure, and "the ceiling is too low for this deck" never reached
+  // anyone. It is a flag now, and the flag carries the ceiling it hit.
+  it('says a timeout was a timeout, in a field a slice cannot eat', async () => {
+    const r = await job.runAsync(
+      'sh',
+      ['-c', 'yes xxxxxxxxxxxxxxxxxxxx | head -c 4000 >&2; sleep 5'],
+      {
+        cwd: tmp,
+        timeout: 400,
+      }
+    );
+    expect(r.timedOut).toBe(true);
+    expect(r.timeoutMs).toBe(400);
+  });
+
+  it('a run that simply fails is not reported as a timeout', async () => {
+    const r = await job.runAsync('sh', ['-c', 'echo boom >&2; exit 3'], {
+      cwd: tmp,
+      timeout: 5000,
+    });
+    expect(r.status).toBe(3);
+    expect(r.timedOut).toBe(false);
+    expect(r.timeoutMs).toBeNull();
   });
 
   it('reports an unrunnable binary rather than throwing', async () => {

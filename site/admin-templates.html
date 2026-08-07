@@ -2905,10 +2905,27 @@
         const redetectBtn = e.target.closest('.tpl-redetect-btn');
         if (redetectBtn) {
           const card = redetectBtn.closest('.tpl-card');
+          const tplKey = card.dataset.key;
           const prev = redetectBtn.textContent;
           redetectBtn.disabled = true;
           redetectBtn.textContent = 'מזהה…';
           tplMsg(card, 'ok', 'מודד את מיקומי הטקסט מתוך הקבצים — זה לוקח כדקה.');
+          // SAY IT LAST, AND SAY IT ON THE CARD THAT SURVIVES.
+          //
+          // Every branch below used to write its message and then call
+          // loadTemplates(), which re-renders the whole list — and the fresh card
+          // comes with a fresh, EMPTY .tpl-msg. So the verdict was destroyed a
+          // few hundred milliseconds after it appeared, failures included. The
+          // owner pressed the button, watched the list blink, and was left with
+          // nothing on screen either way. That is a large part of why she thought
+          // the calibration never ran.
+          //
+          // So: refresh FIRST, then write onto the card that now exists.
+          const say = async (kind, text, refresh) => {
+            if (refresh) await loadTemplates();
+            const live = listEl.querySelector('.tpl-card[data-key="' + CSS.escape(tplKey) + '"]');
+            tplMsg(live || card, kind, text);
+          };
           try {
             // The server no longer answers this request with the finished work.
             // It used to, and that request took ~61 seconds in the container —
@@ -2923,7 +2940,7 @@
             const res = await fetch(url, { method: 'POST' });
             let data = await res.json().catch(() => ({}));
             if (!res.ok) {
-              tplMsg(card, 'err', 'הזיהוי נכשל: ' + (data.error || res.status));
+              await say('err', 'הזיהוי נכשל: ' + (data.error || res.status), false);
               redetectBtn.disabled = false;
               redetectBtn.textContent = prev;
               return;
@@ -2933,47 +2950,76 @@
               // The job vanished — the server restarted mid-run (a deploy, a
               // crash). Say that, rather than leaving a spinner turning over
               // work that no longer exists.
-              tplMsg(
-                card,
+              await say(
                 'err',
-                'הזיהוי הופסק באמצע — השרת עלה מחדש. שום דבר לא נשמר. אפשר ללחוץ שוב.'
+                'הזיהוי הופסק באמצע — השרת עלה מחדש. שום דבר לא נשמר. אפשר ללחוץ שוב.',
+                false
               );
               redetectBtn.disabled = false;
               redetectBtn.textContent = prev;
               return;
             }
             if (data.error) {
-              tplMsg(card, 'err', 'הזיהוי נכשל: ' + data.error);
+              await say('err', 'הזיהוי נכשל: ' + data.error, false);
             } else if (data.calibrated) {
-              // "Detected" is not the same as "regularised everything". A run
-              // that refused a snap used to report plain success, so grapefruit
-              // came back with unevenly spaced words press after press with
-              // nothing on screen explaining it. Say what was left alone.
+              // "Detected" is not the same as "everything measured was kept".
+              // THREE different ways a run can succeed and still leave the design
+              // looking exactly as it did, each of which used to report plain
+              // success and send the owner back to press the button again:
+              //
+              //   declined — a regularisation the detector refused (grapefruit's
+              //              word spacing, press after press).
+              //   rejected — a value it DID measure that validation then threw
+              //              away, so the old one stands.
+              //   kept     — a surface it could not read at all this time (the
+              //              board, a card back), left exactly as it was.
+              //
+              // All three are named on screen. A run that changed nothing must
+              // never look like a run that changed everything.
               const declined = Array.isArray(data.declined) ? data.declined : [];
-              if (declined.length) {
-                tplMsg(
-                  card,
+              const rejected = Array.isArray(data.rejected) ? data.rejected : [];
+              const kept = Array.isArray(data.kept) ? data.kept : [];
+              const parts = [];
+              if (declined.length) parts.push('לא יושר אוטומטית: ' + declined.join(' | '));
+              if (rejected.length)
+                parts.push('נמדד אך נדחה כלא תקין (נשמר הערך הקודם): ' + rejected.join(' | '));
+              if (kept.length) parts.push('לא נמדד הפעם, הערך הקודם נשמר: ' + kept.join(', '));
+              if (parts.length) {
+                await say(
                   'err',
-                  'זוהה, אך חלק מהמדידה לא יושרה אוטומטית — ' +
-                    declined.join(' | ') +
-                    ' — בדקו את המרווחים בתצוגה המקדימה לפני שמירה.'
+                  'הזיהוי רץ, אבל לא כל מה שנמדד נכנס — ' +
+                    parts.join(' • ') +
+                    ' — בדקו בתצוגה המקדימה לפני שמירה.',
+                  true
                 );
               } else {
-                tplMsg(card, 'ok', 'זוהה בהצלחה — בדקו בתצוגה המקדימה ושמרו.');
+                await say('ok', 'זוהה בהצלחה — בדקו בתצוגה המקדימה ושמרו.', true);
               }
-              loadTemplates();
+            } else if (data.timedOut) {
+              // Killed by its own ceiling, not broken artwork. Different fault,
+              // different fix, so it gets its own words — and it says plainly
+              // that the template was left untouched, which is the one thing that
+              // decides whether pressing again is worth anything.
+              await say(
+                'err',
+                'הכיול לא הסתיים בזמן והופסק — שום דבר לא נשמר, התבנית לא השתנתה. ' +
+                  'אפשר ללחוץ שוב; אם זה חוזר, צריך להעלות את תקרת הזמן ' +
+                  '(REDETECT_CALIBRATE_TIMEOUT_MS). פירוט: ' +
+                  (data.detail || 'לא ידוע'),
+                true
+              );
             } else {
               // The recipe landed but the style pass did not — a real, actionable
               // state, not a failure worth hiding behind a generic error.
-              tplMsg(
-                card,
+              await say(
                 'err',
-                'המשבצות זוהו, אך הכיול האוטומטי לא הושלם: ' + (data.detail || 'לא ידוע')
+                'המשבצות זוהו, אך הכיול האוטומטי לא הושלם — התבנית לא השתנתה: ' +
+                  (data.detail || 'לא ידוע'),
+                true
               );
-              loadTemplates();
             }
           } catch (err) {
-            tplMsg(card, 'err', 'שגיאת רשת: ' + err);
+            await say('err', 'שגיאת רשת: ' + err, false);
           }
           redetectBtn.disabled = false;
           redetectBtn.textContent = prev;

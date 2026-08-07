@@ -1168,31 +1168,63 @@ describe('replaceAsset — replacing a nested font actually takes effect', () =>
 // start-ups (each card's clean/filled pair rendered separately) — ~38s on a
 // laptop — so re-uploading nine files meant nine full passes before the owner
 // could do anything. It is an explicit button now.
+//
+// These drive the LIVE path — the background job in server/redetect-job.js.
+// They used to drive `templates.redetectTemplate`, a synchronous spawnSync twin
+// that no route had called since #354 moved the button onto the job. A dead
+// blocking copy of the one path that exists BECAUSE blocking froze the storefront
+// is a trap, so the twin is gone and its coverage moved here, onto the code that
+// actually runs.
 describe('re-detection is opt-in, and available on demand', () => {
   let templates;
+  let redetectJob;
   beforeAll(() => {
     templates = require(path.join(serverDir, 'templates.js'));
+    redetectJob = require(path.join(serverDir, 'redetect-job.js'));
   });
 
-  it('exposes redetectTemplate for the button', () => {
-    expect(typeof templates.redetectTemplate).toBe('function');
-  });
+  // Start a run and wait for it to settle. The job is asynchronous on purpose —
+  // the POST returns before the work is done — so a test has to wait the way the
+  // panel does, by asking where it got to.
+  async function runToEnd(opts) {
+    redetectJob.reset();
+    const started = redetectJob.start(opts);
+    if (started && started.error) return started;
+    for (let i = 0; i < 200; i++) {
+      const job = redetectJob.get(opts.key);
+      if (job && job.state !== 'running') {
+        return job.state === 'error'
+          ? { error: job.error, httpStatus: job.httpStatus }
+          : job.result;
+      }
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    throw new Error('job never settled');
+  }
 
-  it('refuses to re-detect a template that does not exist', () => {
+  // A runner in the shape `runAsync` resolves with: one queued answer per spawn,
+  // detection first, then calibration.
+  const runnerOf = (...answers) => {
+    let n = 0;
+    return async () => answers[Math.min(n++, answers.length - 1)];
+  };
+
+  it('refuses to re-detect a template that does not exist', async () => {
     const root = makeScaffold();
-    const r = templates.redetectTemplate({ root, key: 'no-such-template' });
+    const r = await runToEnd({ root, key: 'no-such-template', templates });
     expect(r.error).toBeTruthy();
     expect(r.httpStatus).toBe(404);
   });
 
-  it('reports a detection failure instead of silently leaving stale slots', () => {
+  it('reports a detection failure instead of silently leaving stale slots', async () => {
     const root = makeScaffold();
     const r0 = templates.onboardTemplate({ root, ...cardsUpload(), shrinkImages: false });
     expect(r0.error).toBeUndefined();
-    const r = templates.redetectTemplate({
+    const r = await runToEnd({
       root,
       key: 'card-demo',
-      recipeRunner: () => ({ status: 1, stderr: 'chrome exploded' }),
+      templates,
+      runner: runnerOf({ status: 1, stderr: 'chrome exploded' }),
     });
     expect(r.error).toMatch(/detection failed/);
     expect(r.httpStatus).toBe(422);
@@ -1209,34 +1241,72 @@ describe('re-detection is opt-in, and available on demand', () => {
     fs.writeFileSync(target, JSON.stringify({ theme: 'card-demo', format: 2, ...body }));
   };
 
-  it('reports the regularisations detection refused, not just success', () => {
+  it('reports the regularisations detection refused, not just success', async () => {
     const root = makeScaffold();
     expect(
       templates.onboardTemplate({ root, ...cardsUpload(), shrinkImages: false }).error
     ).toBeUndefined();
     const refusal = 'word slots: mids are not one progression — left as measured';
-    const r = templates.redetectTemplate({
+    const r = await runToEnd({
       root,
       key: 'card-demo',
-      recipeRunner: () => (writeRecipe(root, { declined: [refusal] }), { status: 0 }),
-      calibrateRunner: () => ({ status: 1, stderr: 'not the subject of this test' }),
+      templates,
+      runner: runnerOf((writeRecipe(root, { declined: [refusal] }), { status: 0 }), {
+        status: 1,
+        stderr: 'not the subject of this test',
+      }),
     });
     expect(r.error).toBeUndefined();
     expect(r.declined).toEqual([refusal]);
   });
 
-  it('reports nothing refused when the detection was clean', () => {
+  it('reports nothing refused when the detection was clean', async () => {
     const root = makeScaffold();
     expect(
       templates.onboardTemplate({ root, ...cardsUpload(), shrinkImages: false }).error
     ).toBeUndefined();
-    const r = templates.redetectTemplate({
+    const r = await runToEnd({
       root,
       key: 'card-demo',
-      recipeRunner: () => (writeRecipe(root, {}), { status: 0 }),
-      calibrateRunner: () => ({ status: 1, stderr: 'not the subject of this test' }),
+      templates,
+      runner: runnerOf((writeRecipe(root, {}), { status: 0 }), {
+        status: 1,
+        stderr: 'not the subject of this test',
+      }),
     });
     expect(r.declined).toEqual([]);
+  });
+
+  // The failure path the owner actually hit. A calibration reclaimed by its own
+  // ceiling must leave the template EXACTLY as it was and must say so — both
+  // halves, because "nothing changed" without "and here is why" is precisely
+  // the state she spent a day pressing the button in.
+  it('a timed-out calibration changes nothing and says it timed out', async () => {
+    const root = makeScaffold();
+    expect(
+      templates.onboardTemplate({ root, ...cardsUpload(), shrinkImages: false }).error
+    ).toBeUndefined();
+    const themesPath = path.join(root, 'generator', 'themes.json');
+    const before = fs.readFileSync(themesPath, 'utf8');
+    const r = await runToEnd({
+      root,
+      key: 'card-demo',
+      templates,
+      runner: runnerOf((writeRecipe(root, {}), { status: 0 }), {
+        status: null,
+        // A traceback long enough to fill the 800-char slice on its own: the
+        // timeout used to be APPENDED after this and was cut off entirely.
+        stderr: 'Traceback (most recent call last):\n' + 'x'.repeat(2000),
+        timedOut: true,
+        timeoutMs: 420000,
+      }),
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.calibrated).toBe(false);
+    expect(r.timedOut).toBe(true);
+    expect(r.detail).toMatch(/TIMED OUT after 420s/);
+    // Nothing was written: the entry is byte-for-byte what it was.
+    expect(fs.readFileSync(themesPath, 'utf8')).toBe(before);
   });
 });
 
@@ -1330,6 +1400,195 @@ describe('applyCalibration reports what it rejected', () => {
     });
     expect(e.title_style.fill).toBe('#711d20');
     expect((e.notes || []).join(' ')).not.toMatch(/REJECTED/);
+  });
+
+  // …and it reports the outcome to its CALLER, not only to a note buried in
+  // themes.json. The note is for whoever opens the file later; the caller needs
+  // it to put on the screen of the person who pressed the button.
+  it('hands the caller what it rejected, not only a note in the file', () => {
+    const root = makeScaffold();
+    const p = path.join(root, 'generator', 'themes.json');
+    fs.writeFileSync(p, JSON.stringify({ t1: { slug: 't1', title_style: null } }), 'utf8');
+    const r = templates.applyCalibration(p, 't1', {
+      title_style: { arch: 0, shadow: false, outline_w: 0.05 },
+    });
+    expect(r.rejected.join(' ')).toMatch(/title_style/);
+    expect(r.kept).toEqual([]);
+    expect(r.entry.title_style).toBeNull();
+  });
+});
+
+// The per-back half of the look pass, which this merge did not know existed.
+//
+// A deck whose eight card styles each have their OWN back keeps that geometry in
+// `backs`, keyed by card file number, and the generator reads it
+// (generator/config.py `_OVERRIDABLE`). calibrate.py measures every back
+// SEPARATELY — box, paints, size, spacing — and applyCalibration merged only
+// title_style/board/back/word_size/card_slots, so on מרקאנה all eight
+// measurements were dropped on the floor while the run reported calibrated:true.
+// That is most of "I pressed זהה מחדש again and again and the title never
+// changed": the card back is where the honoree's name is printed large.
+describe('applyCalibration — per-back slots reach themes.json', () => {
+  let templates;
+  beforeAll(() => {
+    delete process.env.DATA_DIR;
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  const SLOT = (y0, size) => ({
+    frac: { x0: 0.3, y0, x1: 0.71, y1: y0 + 0.2 },
+    fill: '#ffd37b',
+    outline: '#000000',
+    size,
+  });
+
+  function seed(entry) {
+    const root = makeScaffold();
+    const p = path.join(root, 'generator', 'themes.json');
+    fs.writeFileSync(p, JSON.stringify({ demo: entry }), 'utf8');
+    return p;
+  }
+
+  it('writes every measured back', () => {
+    const p = seed({ slug: 'demo', card_structure: 'cards', backs: { 10: SLOT(0.38, 31.46) } });
+    templates.applyCalibration(p, 'demo', {
+      backs: { 10: SLOT(0.4, 28.37), 11: SLOT(0.42, 27.1) },
+    });
+    const e = JSON.parse(fs.readFileSync(p, 'utf8')).demo;
+    expect(e.backs['10'].size).toBeCloseTo(28.37, 2);
+    expect(e.backs['10'].frac.y0).toBeCloseTo(0.4, 3);
+    expect(e.backs['11'].size).toBeCloseTo(27.1, 2);
+  });
+
+  // One back the detector could not read must not cost the other seven theirs —
+  // the whole-map-or-nothing shape is what dropped מרקאנה's entire card_slots
+  // block for a single unmeasurable front (#341).
+  it('an unreadable back keeps its old value and leaves the others alone', () => {
+    const p = seed({
+      slug: 'demo',
+      card_structure: 'cards',
+      backs: { 10: SLOT(0.38, 31.46), 11: SLOT(0.39, 30.0) },
+    });
+    const r = templates.applyCalibration(p, 'demo', {
+      backs: { 10: null, 11: SLOT(0.42, 27.1) },
+    });
+    const e = JSON.parse(fs.readFileSync(p, 'utf8')).demo;
+    expect(e.backs['10'].size).toBeCloseTo(31.46, 2); // kept
+    expect(e.backs['11'].size).toBeCloseTo(27.1, 2); // updated
+    expect(r.kept).toContain('backs.10');
+    expect((e.notes || []).join(' ')).toMatch(/NOT MEASURED/);
+  });
+
+  it('an invalid back is refused by name rather than written', () => {
+    const p = seed({ slug: 'demo', card_structure: 'cards', backs: { 10: SLOT(0.38, 31.46) } });
+    const r = templates.applyCalibration(p, 'demo', {
+      backs: {
+        10: { frac: { x0: 0.3, y0: 0.4, x1: 0.71, y1: 0.6 }, fill: 'gold', outline: '#000' },
+      },
+    });
+    const e = JSON.parse(fs.readFileSync(p, 'utf8')).demo;
+    expect(e.backs['10'].size).toBeCloseTo(31.46, 2);
+    expect(r.rejected.join(' ')).toMatch(/backs/);
+    expect((e.notes || []).join(' ')).toMatch(/REJECTED/);
+  });
+});
+
+// A NULL is "I could not read this", never "clear it".
+//
+// calibrate.py emits `board: null` with confidence "none" and says in its own
+// note that it cannot tell whether the design has no board title or whether the
+// two sheets simply differ everywhere. Writing that through DELETED a working
+// slot: press "זהה מחדש" on a template whose board title the detector happens
+// not to find and the honoree's name stops printing on the board — from a button
+// pressed to improve it, with nothing said.
+describe('applyCalibration — an unmeasured surface is kept, not cleared', () => {
+  let templates;
+  beforeAll(() => {
+    delete process.env.DATA_DIR;
+    templates = require(path.join(serverDir, 'templates.js'));
+  });
+
+  const BOARD = {
+    frac: { x0: 0.01, y0: 0.88, x1: 0.11, y1: 0.98 },
+    fill: '#f8d078',
+    outline: '#000000',
+  };
+
+  function apply(seedEntry, blob) {
+    const root = makeScaffold();
+    const p = path.join(root, 'generator', 'themes.json');
+    fs.writeFileSync(p, JSON.stringify({ demo: seedEntry }), 'utf8');
+    const r = templates.applyCalibration(p, 'demo', blob);
+    return { entry: JSON.parse(fs.readFileSync(p, 'utf8')).demo, report: r };
+  }
+
+  it('a null board does not wipe a calibrated one, and says the surface went unread', () => {
+    const { entry, report } = apply({ slug: 'demo', board: BOARD }, { board: null });
+    expect(entry.board).toEqual(BOARD);
+    expect(report.kept).toContain('board');
+    expect((entry.notes || []).join(' ')).toMatch(/NOT MEASURED/);
+  });
+
+  it('a null back on a template that never had one is not reported as kept', () => {
+    const { entry, report } = apply({ slug: 'demo', back: null }, { back: null });
+    expect(entry.back).toBeNull();
+    expect(report.kept).toEqual([]);
+    expect((entry.notes || []).join(' ')).not.toMatch(/NOT MEASURED/);
+  });
+
+  it('a MEASURED board still replaces the old one', () => {
+    const moved = { ...BOARD, frac: { x0: 0.2, y0: 0.3, x1: 0.4, y1: 0.5 } };
+    const { entry, report } = apply({ slug: 'demo', board: BOARD }, { board: moved });
+    expect(entry.board.frac.x0).toBeCloseTo(0.2, 3);
+    expect(report.kept).toEqual([]);
+  });
+
+  // The same rule INSIDE title_style, which is written as a whole. calibrate.py
+  // never emits `italic` or `offset` — it says so itself: they are not
+  // measurable and are left for the owner by design — so every knob she had set
+  // by hand was erased on every press, silently, on top of nothing visibly
+  // changing.
+  const MEASURED = {
+    fill: '#ffd37b',
+    outline: '#000000',
+    outline_w: 0.038,
+    arch: 0,
+    shadow: false,
+    size: 21.23,
+  };
+
+  it('keeps the title knobs calibration never measures', () => {
+    const { entry, report } = apply(
+      {
+        slug: 'demo',
+        title_style: { ...MEASURED, size: 27.6, italic: true, offset: [0, 0.04] },
+      },
+      { title_style: MEASURED }
+    );
+    expect(entry.title_style.italic).toBe(true);
+    expect(entry.title_style.offset).toEqual([0, 0.04]);
+    // …while what WAS measured still moves.
+    expect(entry.title_style.size).toBeCloseTo(21.23, 2);
+    expect(report.kept).toEqual(
+      expect.arrayContaining(['title_style.italic', 'title_style.offset'])
+    );
+  });
+
+  it('does not nag about a knob that was never set', () => {
+    const { report } = apply(
+      { slug: 'demo', title_style: { ...MEASURED, size: 27.6, italic: false } },
+      { title_style: MEASURED }
+    );
+    expect(report.kept).toEqual([]);
+  });
+
+  it('falls back to the measurement alone when the old knobs make it invalid', () => {
+    const { entry } = apply(
+      { slug: 'demo', title_style: { ...MEASURED, leading: 99 } },
+      { title_style: MEASURED }
+    );
+    expect(entry.title_style.leading).toBeUndefined();
+    expect(entry.title_style.size).toBeCloseTo(21.23, 2);
   });
 });
 
