@@ -3307,3 +3307,58 @@ def test_hand_placed_script_runs_land_where_chrome_would_put_them():
     assert abs(sx1 - wx1) <= 2, (sx1, wx1)
     assert abs(sy0 - wy0) <= 2 and abs(sy1 - wy1) <= 2
     assert abs(spx - wpx) / wpx < 0.01, (spx, wpx)
+
+
+# ---- emitting two faces on one line ----------------------------------------
+
+
+def _wl(**kw):
+    base = dict(x_right=200.0, center_y=100.0, size=12.0, color="#111", num=1,
+                font_path=os.path.join(HERE, "word-fonts", "Cafe Regular.ttf"))
+    base.update(kw)
+    return rp.word_lines(**base)
+
+
+def test_without_a_latin_face_the_markup_is_exactly_what_it_always_was():
+    """The branch every shipped card takes. Byte-for-byte, not equivalent."""
+    assert _wl(lines=["40 מתחת ל-BBQ"]) == _wl(lines=["40 מתחת ל-BBQ"],
+                                                alt_font_path=None)
+
+
+def test_uploading_a_latin_face_does_not_touch_a_hebrew_only_card():
+    """Uploading the face must not re-lay-out cards that never needed it.
+
+    The owner's instruction is that the Latin face wins for LATIN runs. A card
+    whose words are Hebrew has no Latin run, so it keeps its single <text> per
+    line and prints identically to before the upload.
+    """
+    lat = os.path.join(HERE, "word-fonts", "Fredoka-Medium.ttf")
+    assert _wl(lines=["מסיבה 40"], alt_font_path=lat) == _wl(lines=["מסיבה 40"])
+
+
+def test_a_mixed_line_is_emitted_as_one_run_per_face():
+    lat = os.path.join(HERE, "word-fonts", "Fredoka-Medium.ttf")
+    out = _wl(lines=["40 מתחת ל-BBQ"], alt_font_path=lat)
+    assert out.count('font-family="HebWordAlt"') == 1
+    # two marker runs (digit + stop) plus the Hebrew half of the words
+    assert out.count('font-family="HebWord"') == 3
+
+
+def test_the_runs_of_a_mixed_line_span_the_same_width_as_one_face_would():
+    """The anchoring invariant, in arithmetic rather than pixels.
+
+    Every run is anchored by its END and placed walking VISUAL order, so the
+    rightmost run must end exactly where the single-face line ends, and the
+    leftmost must start a full line-width to its left. If that drifts, the fit
+    reserves a width the render does not paint and lines cross the trim.
+    """
+    import re
+    lat = os.path.join(HERE, "word-fonts", "Fredoka-Medium.ttf")
+    mixed = _wl(lines=["40 מתחת ל-BBQ"], alt_font_path=lat)
+    single = _wl(lines=["40 מתחת ל-BBQ"])
+    xs = [float(m) for m in re.findall(r'<text x="([-\d.]+)"[^>]*font-family="HebWord(?:Alt)?"',
+                                       mixed)][2:]        # drop the two marker runs
+    ref_x = [float(m) for m in re.findall(r'<text x="([-\d.]+)"[^>]*font-family="HebWord"',
+                                          single)][2:]
+    assert ref_x, "the single-face line should have one word run"
+    assert abs(max(xs) - ref_x[0]) < 0.01, (xs, ref_x)
