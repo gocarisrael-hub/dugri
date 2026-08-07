@@ -210,6 +210,37 @@
         font-size: 17px;
         font-weight: var(--sub-weight);
       }
+      /* The "מה זה דוגרי?" explainer is the ONE paragraph the owner asked to be
+         bold, explicitly overriding the thin-weight brand rule. Three things this
+         rule is deliberately doing:
+          • It sits on the ELEMENT, not on the words. The inline content editor
+            rewrites this node with textContent (editor.js applyOverrides /
+            bindTextNode → plaintext-only contenteditable), so a <strong>/<b>
+            wrapper in the markup would be wiped the first time she edits the
+            paragraph — and would not apply at all to the stored override that
+            already replaces the shipped copy. A CSS weight on the <p> survives
+            every text rewrite.
+          • It is scoped to THIS paragraph by its content key. `.sec-title p` is
+            shared by every section subtitle on the page, so the bold must not be
+            added there or it leaks to products / reviews / FAQ.
+          • `font-variation-settings` — not `font-weight` alone — is what makes it
+            genuinely bold, and it is the ONLY safe way to do it. Assistant is one
+            variable woff2 (wght 200–800) that fonts.css exposes as discrete
+            @font-face rules capped at 600, so every `font-weight: 700/800/bold`
+            on the whole site quietly renders at 600. Declaring a global 700 face
+            to serve this one paragraph would un-cap all of them at once and
+            re-bold prices, buttons and footer links across 14 pages — a site-wide
+            restyle, and the owner's brand direction says thin. Setting the wght
+            axis on THIS element instantiates the real 700 master here (measurably
+            wider than 600, no faux-bold smear) and is unreachable by any other
+            element, because nothing is matched into it by `font-weight`.
+            `font-weight: 700` stays alongside it for semantics and as the
+            graceful fallback (600) if variations are unavailable.
+            Proof + the site-wide clamp guard live in tests/e2e/about-bold.spec.js. */
+      #about .sec-title p[data-edit='index-about-body'] {
+        font-weight: 700;
+        font-variation-settings: 'wght' 700;
+      }
       @media (min-width: 720px) {
         .sec-title h2 {
           font-size: 44px;
