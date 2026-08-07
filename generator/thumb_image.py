@@ -30,6 +30,13 @@ import sys
 from PIL import Image
 
 DEFAULT_MAXPX = 400
+# Tallest a derivative may get, as a multiple of the width cap. Only a picture
+# taller than 3:2 is touched by this, which no product photo here is — it is a
+# guard against one pathological upload, not a shaping rule. When it does bind
+# the result is NARROWER than its srcset descriptor claims; that is the correct
+# trade for a file whose entire purpose is to be small, and the browser simply
+# has slightly more pixels than it needs.
+MAX_ASPECT = 1.5
 # Visually lossless at picker size while staying tens of KB.
 WEBP_Q = 80
 JPEG_Q = 82
@@ -57,10 +64,16 @@ def build(src, dest, maxpx=DEFAULT_MAXPX):
     # descriptor claimed, and the browser, believing it had enough pixels,
     # picked a rung too small and drew it soft. Capping width makes the
     # descriptor exactly true for every shape.
+    #
+    # But width ALONE leaves height unbounded, and these files are sold on being
+    # small: a 2:3 upload at the 400 rung is half again as tall as a landscape
+    # one, and a tall sheet worse still — on the wizard picker, which exists
+    # because that page has to stay in single-digit KB. So height is capped too,
+    # at MAX_ASPECT x the width cap.
     w, h = im.size
-    if w > maxpx:
-        scale = maxpx / w
-        im = im.resize((maxpx, max(1, round(h * scale))), Image.LANCZOS)
+    scale = min(1.0, maxpx / w, (maxpx * MAX_ASPECT) / h)
+    if scale < 1.0:
+        im = im.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
 
     # Keep transparency. This used to convert("RGB") unconditionally, which
     # composites alpha onto BLACK — so a logo or cut-out PNG the owner uploaded

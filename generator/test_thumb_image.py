@@ -181,6 +181,32 @@ def test_caps_the_WIDTH_so_srcset_descriptors_are_honest(tmp_path):
             assert im.size[0] == 800, f"{name}: width {im.size[0]} != descriptor 800"
 
 
+def test_a_very_tall_picture_does_not_grow_unbounded(tmp_path):
+    """Capping width alone leaves height free, and these files are sold on being
+    small — the wizard picker exists at the 400 rung precisely because that page
+    has to stay in single-digit KB. A pathological upload must not blow that."""
+    src = photo(str(tmp_path / "tall.png"), (600, 3000))  # 1:5
+    dest = str(tmp_path / "out")
+    assert run(src, dest, 400).returncode == 0
+    with Image.open(dest) as im:
+        assert im.size[0] <= 400
+        assert im.size[1] <= 400 * 1.5 + 1, f"height {im.size[1]} unbounded"
+    # Still a small file, which is the whole point of the cap.
+    assert os.path.getsize(dest) < 60 * 1024
+
+
+def test_ordinary_product_photos_are_untouched_by_the_height_cap(tmp_path):
+    """The height cap is a guard against one pathological upload, not a shaping
+    rule: nothing the owner actually sells may be silently narrowed by it, or the
+    srcset descriptors would start lying again."""
+    for size in [(2000, 1600), (1600, 2000), (3000, 2124), (2400, 1600)]:
+        src = photo(str(tmp_path / f"p{size[0]}x{size[1]}.png"), size)
+        dest = str(tmp_path / f"o{size[0]}x{size[1]}")
+        assert run(src, dest, 800).returncode == 0
+        with Image.open(dest) as im:
+            assert im.size[0] == 800, f"{size} came out {im.size}, descriptor would lie"
+
+
 def test_even_the_top_rung_is_a_fraction_of_the_camera_original(tmp_path):
     """1200px is the ceiling because a 390px phone at DPR 3 resolves 1170 device
     px. The owner's uploads are ~3000px/~1MB; the point of the top rung is that

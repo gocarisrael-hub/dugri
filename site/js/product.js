@@ -305,13 +305,7 @@ function fillTrack(trackId, slideClass, shots, sizes) {
       // it to a single rebuild across both tracks.
       onFail = dropBoardSlide;
     }
-    // `sizes` empty ⇒ no ladder, load the original (the zoom overlay — see
-    // renderZoomSlides).
-    if (sizes) wireThumbs(img, shot.src, sizes, onFail);
-    else {
-      img.src = shot.src;
-      if (onFail) img.addEventListener('error', onFail, { once: true });
-    }
+    wireThumbs(img, shot.src, sizes, onFail);
     slide.appendChild(img);
     track.appendChild(slide);
   }
@@ -334,14 +328,19 @@ function renderGallery(shots) {
 }
 
 function renderZoomSlides(shots) {
-  // NO ladder here: the FULL original, deliberately.
+  // Built with the SAME ladder and the same `sizes` as the inline gallery, so
+  // every slide here resolves to the identical URL the gallery just fetched —
+  // a cache hit, costing no extra bytes, while still giving the track real
+  // intrinsic sizes to lay out from.
   //
-  // This is the fullscreen zoom, and a shopper opens it to pinch in on the
-  // card's small print — the one place on the site where every pixel is the
-  // point. Feeding it the 1200 px rung and then magnifying 4x would hand her a
-  // soft image exactly where the old behaviour was sharp. It is one picture, on
-  // demand, after a deliberate tap, so the weight is bought knowingly.
-  const track = fillTrack('pdpZoomTrack', 'pdp-zoom-slide', shots, '');
+  // It does NOT stay at that resolution: upgradeZoomToOriginals swaps in the
+  // full-size upload when the overlay is actually opened. Loading the originals
+  // here instead (which is what "opt the overlay out of the ladder" first did)
+  // put every full-size photo of the deck on the page at boot whether or not
+  // anyone ever tapped zoom — about +8 MB on an 8-shot deck, on top of the
+  // derivatives the gallery had already fetched. That is heavier than before
+  // this feature existed, and it defeated the point of the PR.
+  const track = fillTrack('pdpZoomTrack', 'pdp-zoom-slide', shots, '100vw');
   if (!track) return;
   zoomApi = initCarousel(track, {
     mode: 'slideshow',
@@ -356,6 +355,28 @@ function renderZoomSlides(shots) {
 // Fullscreen zoom overlay wiring (open/close/keyboard). Bound ONCE; the slides are
 // (re)built by renderZoomSlides so a photo change can rebuild them without
 // re-binding these listeners. Esc closes, body scroll is locked while open.
+/**
+ * Swap the fullscreen slides up to the FULL-SIZE uploads, on open.
+ *
+ * The shopper opens this to pinch in on the card's small print — the one place
+ * on the site where every pixel is the point, and magnifying the 1200 px rung 4x
+ * would hand her a soft image exactly where the old behaviour was sharp.
+ *
+ * Clearing `srcset` is all it takes: wireThumbs already left the original on
+ * `src` as the ladder's fallback, so dropping the candidate list makes the
+ * browser re-select it. Until it arrives the cached derivative stays on screen,
+ * so the overlay opens instantly and sharpens a moment later rather than opening
+ * blank — and the weight is only ever paid by someone who asked for it.
+ */
+function upgradeZoomToOriginals() {
+  const track = document.getElementById('pdpZoomTrack');
+  if (!track) return;
+  for (const img of track.querySelectorAll('img[srcset]')) {
+    img.srcset = '';
+    img.removeAttribute('sizes');
+  }
+}
+
 function wireZoom() {
   const overlay = document.getElementById('pdpZoom');
   const openBtn = document.getElementById('galleryZoomOpen');
@@ -374,6 +395,8 @@ function wireZoom() {
   let opener = null;
   function open() {
     if (!overlay.hidden) return;
+    // Full resolution is bought HERE, by the tap that asks for it.
+    upgradeZoomToOriginals();
     overlay.hidden = false;
     document.body.style.overflow = 'hidden';
     document.documentElement.style.overflow = 'hidden';

@@ -206,29 +206,52 @@ test.describe('products grid — right-sized photographs', () => {
 });
 
 // The shopper opens the fullscreen zoom to pinch in on the card's small print —
-// the one place on the site where every pixel is the point. Feeding it a 1200 px
-// rung and then magnifying 4x hands her a soft image exactly where the old
-// behaviour was sharp.
-test.describe('fullscreen zoom keeps the full-resolution original', () => {
-  test('the zoom overlay loads the upload itself, with no ladder', async ({ page }) => {
+// the one place on the site where every pixel is the point, so magnifying the
+// 1200 px rung 4x would be soft exactly where the old behaviour was sharp.
+//
+// The trap is paying for that up front. The overlay is BUILT at boot (hidden),
+// so pointing its slides straight at the originals downloads every full-size
+// photo of the deck whether or not anyone ever taps zoom — on an 8-shot deck
+// that is roughly +8 MB, on top of the derivatives the gallery already fetched,
+// which is heavier than before this feature existed. Both halves matter, so both
+// are pinned here: nothing full-size before the tap, full-size after it.
+test.describe('fullscreen zoom — full resolution, but only when asked for', () => {
+  test('opening NOTHING costs nothing: no original is fetched at boot', async ({ page }) => {
     const uploads = [];
     await stubThumbs(page);
     await stubUploads(page, uploads);
     await stubDesignImages(page);
     await page.goto(`/product.html?design=${DESIGN}`);
-
-    const zoomImgs = page.locator('#pdpZoomTrack .pdp-zoom-slide img');
-    await expect(zoomImgs.first()).toHaveAttribute('src', A);
-    // No srcset at all: the ladder's whole purpose is smaller pixels, which is
-    // the opposite of what a zoom needs.
-    expect(await zoomImgs.first().getAttribute('srcset')).toBe(null);
-    await expect.poll(() => uploads).toContain('/content-uploads/00000000000000a1.webp');
-
-    // …while the INLINE gallery on the same page still uses the ladder.
     await expect(page.locator('#galleryTrack .pdp-gallery-slide img').first()).toHaveAttribute(
       'srcset',
       /design-thumb/
     );
+    await page.waitForTimeout(600);
+
+    // The overlay's slides exist and are laid out — they carry the same ladder
+    // (and therefore the same cached URL) as the inline gallery…
+    const zoomImgs = page.locator('#pdpZoomTrack .pdp-zoom-slide img');
+    expect(await zoomImgs.count()).toBeGreaterThan(0);
+    await expect(zoomImgs.first()).toHaveAttribute('srcset', /design-thumb/);
+    // …and not one full-size upload has been requested.
+    expect(uploads).toEqual([]);
+  });
+
+  test('tapping zoom upgrades the slides to the full-size uploads', async ({ page }) => {
+    const uploads = [];
+    await stubThumbs(page);
+    await stubUploads(page, uploads);
+    await stubDesignImages(page);
+    await page.goto(`/product.html?design=${DESIGN}`);
+    await expect(page.getByTestId('gallery-enlarge')).toBeVisible();
+
+    await page.getByTestId('gallery-enlarge').click();
+
+    const zoomImgs = page.locator('#pdpZoomTrack .pdp-zoom-slide img');
+    // Ladder dropped, so the browser re-selects `src` — the original.
+    await expect(zoomImgs.first()).toHaveAttribute('srcset', '');
+    await expect(zoomImgs.first()).toHaveAttribute('src', A);
+    await expect.poll(() => uploads).toContain('/content-uploads/00000000000000a1.webp');
   });
 });
 

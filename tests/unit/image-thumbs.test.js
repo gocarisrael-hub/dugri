@@ -162,22 +162,74 @@ describe('image-thumbs — every failure yields NOTHING, never the original', ()
   // A spawn that never STARTED is about the box, not about this picture — a
   // momentary fork exhaustion on a cold cache used to be memoised per name,
   // which would have put the multi-MB originals back for the life of the
-  // process. It must back off and then heal.
-  it('a failed SPAWN is not held against the picture for good', async () => {
-    const spawnErr = () => {
-      const child = new EventEmitter();
-      setTimeout(() => child.emit('error', new Error('EAGAIN')), 0);
-      return child;
-    };
+  // process.
+  const spawnErr = () => {
+    const child = new EventEmitter();
+    setTimeout(() => child.emit('error', new Error('EAGAIN')), 0);
+    return child;
+  };
+
+  it('a failed SPAWN is never held against the picture', async () => {
     expect(await get(name, { runner: spawnErr })).toBe(null);
-    // Backed off: it does not even try again while the box is struggling.
+    // Not memoised: the very next request for the SAME picture tries again.
     const runs = { n: 0 };
-    expect(await get(name, { runner: fakeSpawn({ runs }) })).toBe(null);
-    expect(runs.n).toBe(0);
-    // …but once the backoff lapses the same picture succeeds — no permanent memo.
-    imageThumbs._resetBackoff();
     expect(await get(name, { runner: fakeSpawn({ runs }) })).toBeTruthy();
     expect(runs.n).toBe(1);
+  });
+
+  // One transient EAGAIN must not take the catalog down. An earlier version
+  // opened a 30s GLOBAL block on the first failure, which turned a rare hiccup
+  // into a site-wide one — strictly worse than the per-image memo it replaced.
+  it('one transient failure does NOT stop the rest of the catalog', async () => {
+    expect(await get(upload(), { runner: spawnErr })).toBe(null);
+    const runs = { n: 0 };
+    expect(await get(upload(), { runner: fakeSpawn({ runs }) })).toBeTruthy();
+    expect(runs.n).toBe(1);
+  });
+
+  // …but a box that genuinely cannot spawn (no python3 at all) should stop being
+  // asked. The circuit opens only after a STREAK, and any success resets it.
+  it('opens a brief circuit only after repeated failures, and heals on success', async () => {
+    for (let i = 0; i < 3; i++) expect(await get(upload(), { runner: spawnErr })).toBe(null);
+    const runs = { n: 0 };
+    expect(await get(upload(), { runner: fakeSpawn({ runs }) })).toBe(null);
+    expect(runs.n).toBe(0); // circuit open — not even attempted
+    imageThumbs._resetBackoff();
+    expect(await get(upload(), { runner: fakeSpawn({ runs }) })).toBeTruthy();
+    expect(runs.n).toBe(1);
+  });
+
+  // A KILLED child is the spawn timeout firing — the box was too loaded to
+  // finish, not a fact about this picture. Memoising it (as a bare non-zero exit
+  // is memoised) would condemn a good photo to its full-size original for good.
+  it('a timeout-killed child is transient, not a verdict on the picture', async () => {
+    const killed = (_bin, argv) => {
+      const child = new EventEmitter();
+      void argv;
+      setTimeout(() => child.emit('close', null, 'SIGTERM'), 0);
+      return child;
+    };
+    expect(await get(name, { runner: killed })).toBe(null);
+    const runs = { n: 0 };
+    expect(await get(name, { runner: fakeSpawn({ runs }) })).toBeTruthy();
+    expect(runs.n).toBe(1);
+  });
+
+  // The cache is on a persistent volume and source names are content hashes, so
+  // a derivative already on disk is served untouched however the encoder later
+  // changes. Without a revision in the filename, fixing the resizer fixed
+  // nothing already generated — and re-uploading the same file produced the same
+  // hash and hit the same entry, so the owner could not clear it either.
+  it('a new encoder revision does not serve the old file', async () => {
+    const first = await get(name, { runner: fakeSpawn({}) });
+    expect(first.file).toContain(`-v${imageThumbs._encoderRev}.thumb`);
+    // The pre-revision filename is a DIFFERENT path, so an old artefact left on
+    // the volume can never be picked up.
+    const legacy = first.file.replace(`-v${imageThumbs._encoderRev}`, '');
+    fs.writeFileSync(legacy, JPEG);
+    const again = await get(name, { runner: fakeSpawn({}) });
+    expect(again.file).toBe(first.file);
+    expect(again.type).toBe('image/webp');
   });
 
   // A cold cache on a busy page is the whole catalog at once (ten cards times

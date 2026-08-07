@@ -82,12 +82,29 @@ function keyOf(name, px) {
   return name + '@' + px;
 }
 
-/** The cached derivative's path for an upload name at a px cap. The cap is in the
- *  name so a changed cap yields a new file instead of a stale one. Extension-less:
- *  the encoder picks WebP or JPEG (Pillow is not guaranteed to have WebP), and the
- *  bytes themselves say which — see typeOf. */
+// BUMP THIS whenever generator/thumb_image.py changes what it writes.
+//
+// The cache lives on a persistent volume and the source names are content
+// hashes, so "same name ⇒ same bytes" is what lets us cache forever — but it
+// also means a derivative already on disk is served untouched no matter what the
+// encoder does afterwards. Without a version in the filename, fixing the
+// resizer fixed nothing that had already been generated: every logo thumbed as a
+// black slab stayed a black slab, and re-uploading the identical file produced
+// the identical hash and hit the identical cache entry, so the owner had no way
+// to clear it from the admin either.
+//
+// rev 2: alpha preserved (was composited onto black) + cap width, not the
+// longest side (portrait rungs were narrower than their srcset descriptor).
+const ENCODER_REV = 2;
+
+/** The cached derivative's path for an upload name at a px cap. The cap AND the
+ *  encoder revision are in the name, so a changed cap or a changed encoder
+ *  yields a new file instead of a stale one. Extension-less: the encoder picks
+ *  WebP or JPEG (Pillow is not guaranteed to have WebP), and the bytes
+ *  themselves say which — see typeOf. */
 function cachePath(name, px) {
-  return path.join(CACHE_DIR, name.replace(/\.[a-z]+$/i, '') + '-' + px + '.thumb');
+  const stem = name.replace(/\.[a-z]+$/i, '');
+  return path.join(CACHE_DIR, `${stem}-${px}-v${ENCODER_REV}.thumb`);
 }
 
 /** The content type of a generated derivative, sniffed from its own bytes (the
@@ -136,11 +153,27 @@ function release() {
 }
 
 // A spawn that never started (no interpreter, or a box out of processes) is not
-// this picture's fault, so it must not be remembered against it. But retrying it
-// per request would hammer a box that is already struggling — so back off
-// globally for a short while and then let it heal by itself.
-const SPAWN_BACKOFF_MS = Math.max(0, Number(process.env.DESIGN_THUMB_BACKOFF_MS) || 30000);
+// this picture's fault, so it must not be remembered against it.
+//
+// Nor should ONE of them stop the site. An earlier version tripped a 30s global
+// block on the first failure, which meant a single transient EAGAIN 404'd the
+// whole catalog for half a minute — trading a rare hiccup for a site-wide one,
+// where the memo it replaced had at least been per-image. So the circuit only
+// opens after several failures IN A ROW (a box that is genuinely unable to
+// spawn, e.g. no python3 at all), and it opens briefly. Any success resets it.
+const SPAWN_BACKOFF_MS = Math.max(0, Number(process.env.DESIGN_THUMB_BACKOFF_MS) || 5000);
+const SPAWN_FAIL_STREAK = Math.max(1, Number(process.env.DESIGN_THUMB_FAIL_STREAK) || 3);
 let backoffUntil = 0;
+let spawnFailStreak = 0;
+
+function notePassedSpawn() {
+  spawnFailStreak = 0;
+  backoffUntil = 0;
+}
+function noteFailedSpawn() {
+  spawnFailStreak += 1;
+  if (spawnFailStreak >= SPAWN_FAIL_STREAK) backoffUntil = Date.now() + SPAWN_BACKOFF_MS;
+}
 
 /** Run the resizer. Resolves `{ ok, spawnFailed }` — never throws. `runner` is
  *  injectable so tests can exercise the failure paths without Python.
@@ -165,7 +198,14 @@ function runResize(src, dest, px, runner) {
     // code = it ran and could not do the job. Both mean "no thumbnail", never
     // "serve the original" — but only the second is about this file.
     child.on('error', () => resolve({ ok: false, spawnFailed: true }));
-    child.on('close', (code) => resolve({ ok: code === 0, spawnFailed: false }));
+    // A `signal` means the child was KILLED, which for us means the spawn
+    // options' timeout fired. That says the box was too loaded to finish in
+    // time, not that this picture cannot be resized — memoising it (as a bare
+    // non-zero exit is memoised) would condemn a perfectly good photo to the
+    // full-size original for the life of the process.
+    child.on('close', (code, signal) =>
+      resolve({ ok: code === 0, spawnFailed: !!signal && code !== 0 })
+    );
   });
 }
 
@@ -213,16 +253,23 @@ function get(name, opts = {}) {
       let res;
       await acquire();
       try {
+        // Re-check AFTER the queue, not only at request time. A cold-cache burst
+        // arrives together, so every job in it passes the entry check before the
+        // first one has run — and the whole burst then sailed past a circuit
+        // that opened halfway through, which is exactly the pile-on the circuit
+        // exists to stop.
+        if (Date.now() < backoffUntil) return null;
         res = await runResize(src, tmp, px, opts.runner);
       } finally {
         release();
       }
       if (res.spawnFailed) {
-        // Environmental, not this picture's fault: back off globally and let a
-        // later request try again, rather than condemning this name for good.
-        backoffUntil = Date.now() + SPAWN_BACKOFF_MS;
+        // Environmental, not this picture's fault: never memoised against the
+        // name. Enough of these in a row and the circuit opens briefly.
+        noteFailedSpawn();
         return null;
       }
+      notePassedSpawn();
       const type = res.ok ? typeOf(tmp) : null;
       if (!type) {
         failed.add(key);
@@ -258,7 +305,9 @@ module.exports = {
   // spawn does not silently mute every test that runs after it.
   _resetBackoff: () => {
     backoffUntil = 0;
+    spawnFailStreak = 0;
   },
+  _encoderRev: ENCODER_REV,
   _cacheDir: CACHE_DIR,
   _script: SCRIPT,
   _inflight: inflight,
