@@ -265,17 +265,57 @@ export function thumbSrc(src, px) {
  * picture) this lets the browser download the ONE rung that matches its screen
  * and pixel density, instead of every device taking the camera original.
  *
- * The descriptors are the px CAP, which is the true width only for a landscape
- * picture — the resizer caps the longest side, so a portrait one is narrower than
- * its rung claims. The error is deliberately in the safe direction: it makes the
- * browser reach for a HIGHER rung than strictly needed, so a portrait photo comes
- * out sharp rather than soft. Every gallery box is landscape or square and uses
- * `object-fit: contain`, so a portrait picture is height-limited there anyway and
- * needs less width than the box, not more.
+ * The descriptors are EXACTLY true: generator/thumb_image.py caps the WIDTH, not
+ * the longest side, so a rung labelled 800w really is 800 px wide whatever the
+ * picture's shape. It used to cap the long edge, which quietly made every
+ * PORTRAIT derivative narrower than its descriptor claimed — the browser thought
+ * it had enough pixels, picked a rung too small, and drew it soft.
  */
 export function thumbSrcset(src) {
   if (!thumbSrc(src)) return null;
   return THUMB_WIDTHS.map((w) => `${thumbSrc(src, w)} ${w}w`).join(', ');
+}
+
+// One document-level guard, installed on first use.
+let ladderGuardInstalled = false;
+
+/**
+ * Recover CAROUSEL CLONES from a failed derivative.
+ *
+ * The looping carousels (the home rail, the fullscreen zoom) duplicate their
+ * slides with cloneNode. That copies ATTRIBUTES — including srcset — but not
+ * event listeners, so a clone carries the ladder with nothing watching it. If a
+ * derivative 404s, the real cards recover via their own listener and the clones
+ * stay broken-image tiles for the life of the page. Since a loop carousel shows
+ * the clones as often as the originals, that is a permanently broken picture.
+ *
+ * `error` does not bubble, but it DOES propagate through the capture phase, so
+ * one listener on the document sees every image failure on the page. It acts
+ * only on elements that are NOT `__thumbWired` — i.e. exactly the clones, whose
+ * own handler did not survive — so a real element is still handled once, by its
+ * own listener, in the order wireThumbs intends.
+ */
+function installLadderGuard() {
+  if (ladderGuardInstalled || typeof document === 'undefined') return;
+  ladderGuardInstalled = true;
+  document.addEventListener(
+    'error',
+    (e) => {
+      const img = e.target;
+      if (!img || img.tagName !== 'IMG' || img.__thumbWired) return;
+      if (img.dataset && img.dataset.thumbLadder === '1' && img.srcset) {
+        img.srcset = '';
+        img.removeAttribute('sizes');
+        return; // retry the original first, exactly as a real element would
+      }
+      // The original failed too. A clone has no closure to fall back through, so
+      // use whichever shipped render the surface stamped onto the element.
+      const fb =
+        (img.dataset && img.dataset.fallback) || img.getAttribute('data-store-default') || '';
+      if (fb && img.getAttribute('src') !== fb) img.src = fb;
+    },
+    true
+  );
 }
 
 /**
@@ -305,8 +345,15 @@ export function wireThumbs(img, src, sizes, onFail) {
   if (set) {
     if (sizes) img.sizes = sizes;
     img.srcset = set;
+    // An ATTRIBUTE, so it survives cloneNode — see installLadderGuard.
+    img.dataset.thumbLadder = '1';
   }
   img.src = src;
+  // A PROPERTY, so it does NOT survive cloneNode. That asymmetry is the whole
+  // trick: it marks the elements whose own error listener is still attached, so
+  // the guard below can tell a real element from a carousel clone.
+  img.__thumbWired = true;
+  installLadderGuard();
   if (!set && !onFail) return;
   const onErr = () => {
     if (img.srcset) {

@@ -113,8 +113,40 @@ function typeOf(file) {
   }
 }
 
-/** Run the resizer. Resolves true only on a clean exit — never throws. `runner`
- *  is injectable so tests can exercise the failure paths without Python. */
+// At most this many resizes at once. A cold cache on a busy page is the whole
+// catalog arriving together — ten cards times three rungs — and spawning that
+// many Pythons at once on a small Railway box is how you hit EAGAIN. Which used
+// to be self-inflicted AND permanent: a failed spawn was memoised per name, so a
+// momentary fork exhaustion would have put the multi-MB originals back for the
+// life of the process. Queueing keeps the fan-out bounded instead.
+const MAX_CONCURRENT = Math.max(1, Number(process.env.DESIGN_THUMB_CONCURRENCY) || 2);
+let active = 0;
+const waiting = [];
+function acquire() {
+  if (active < MAX_CONCURRENT) {
+    active++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => waiting.push(resolve));
+}
+function release() {
+  const next = waiting.shift();
+  if (next) return next(); // hand the slot straight over; `active` unchanged
+  active--;
+}
+
+// A spawn that never started (no interpreter, or a box out of processes) is not
+// this picture's fault, so it must not be remembered against it. But retrying it
+// per request would hammer a box that is already struggling — so back off
+// globally for a short while and then let it heal by itself.
+const SPAWN_BACKOFF_MS = Math.max(0, Number(process.env.DESIGN_THUMB_BACKOFF_MS) || 30000);
+let backoffUntil = 0;
+
+/** Run the resizer. Resolves `{ ok, spawnFailed }` — never throws. `runner` is
+ *  injectable so tests can exercise the failure paths without Python.
+ *
+ *  `spawnFailed` separates "this environment cannot run resizes right now" from
+ *  "this picture cannot be resized": only the latter is a permanent fact. */
 function runResize(src, dest, px, runner) {
   return new Promise((resolve) => {
     let child;
@@ -124,13 +156,16 @@ function runResize(src, dest, px, runner) {
         stdio: 'ignore',
       });
     } catch {
-      return resolve(false);
+      return resolve({ ok: false, spawnFailed: true });
     }
-    if (!child || typeof child.on !== 'function') return resolve(false);
-    // A missing interpreter surfaces as 'error', a crash/timeout as a non-zero
-    // code; both mean "no thumbnail", never "serve the original".
-    child.on('error', () => resolve(false));
-    child.on('close', (code) => resolve(code === 0));
+    if (!child || typeof child.on !== 'function') {
+      return resolve({ ok: false, spawnFailed: true });
+    }
+    // 'error' = never started (missing interpreter, EAGAIN). A non-zero exit
+    // code = it ran and could not do the job. Both mean "no thumbnail", never
+    // "serve the original" — but only the second is about this file.
+    child.on('error', () => resolve({ ok: false, spawnFailed: true }));
+    child.on('close', (code) => resolve({ ok: code === 0, spawnFailed: false }));
   });
 }
 
@@ -156,6 +191,9 @@ function get(name, opts = {}) {
   const hit = typeOf(dest);
   if (hit) return Promise.resolve({ file: dest, type: hit });
   if (failed.has(key)) return Promise.resolve(null);
+  // Still backing off from a failed spawn: answer null (the caller 404s and the
+  // client keeps the original) without adding to the pressure.
+  if (Date.now() < backoffUntil) return Promise.resolve(null);
   if (inflight.has(key)) return inflight.get(key);
 
   const src = path.join(opts.uploadDir || content._uploadDir, n);
@@ -172,8 +210,20 @@ function get(name, opts = {}) {
       // same bytes always land on this same name).
       if (!fs.existsSync(src)) return null;
       fs.mkdirSync(CACHE_DIR, { recursive: true });
-      const ok = await runResize(src, tmp, px, opts.runner);
-      const type = ok ? typeOf(tmp) : null;
+      let res;
+      await acquire();
+      try {
+        res = await runResize(src, tmp, px, opts.runner);
+      } finally {
+        release();
+      }
+      if (res.spawnFailed) {
+        // Environmental, not this picture's fault: back off globally and let a
+        // later request try again, rather than condemning this name for good.
+        backoffUntil = Date.now() + SPAWN_BACKOFF_MS;
+        return null;
+      }
+      const type = res.ok ? typeOf(tmp) : null;
       if (!type) {
         failed.add(key);
         return null;
@@ -204,6 +254,11 @@ function get(name, opts = {}) {
 module.exports = {
   get,
   pxOk,
+  // Test hook: clear the global spawn backoff, so one test exercising a failed
+  // spawn does not silently mute every test that runs after it.
+  _resetBackoff: () => {
+    backoffUntil = 0;
+  },
   _cacheDir: CACHE_DIR,
   _script: SCRIPT,
   _inflight: inflight,

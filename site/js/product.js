@@ -256,7 +256,11 @@ let boardOverrideDropped = false;
 
 // Fill a track with slides. Shared by the inline gallery and the fullscreen zoom
 // overlay (same shots, different presentation). Returns the track (or null).
-function fillTrack(trackId, slideClass, shots) {
+/**
+ * @param {string} sizes  How wide this track paints a picture, for the srcset
+ *   ladder — or '' to opt OUT of the ladder and load the full original.
+ */
+function fillTrack(trackId, slideClass, shots, sizes) {
   const track = document.getElementById(trackId);
   if (!track) return null;
   track.textContent = '';
@@ -301,7 +305,13 @@ function fillTrack(trackId, slideClass, shots) {
       // it to a single rebuild across both tracks.
       onFail = dropBoardSlide;
     }
-    wireThumbs(img, shot.src, '100vw', onFail);
+    // `sizes` empty ⇒ no ladder, load the original (the zoom overlay — see
+    // renderZoomSlides).
+    if (sizes) wireThumbs(img, shot.src, sizes, onFail);
+    else {
+      img.src = shot.src;
+      if (onFail) img.addEventListener('error', onFail, { once: true });
+    }
     slide.appendChild(img);
     track.appendChild(slide);
   }
@@ -309,7 +319,7 @@ function fillTrack(trackId, slideClass, shots) {
 }
 
 function renderGallery(shots) {
-  const track = fillTrack('galleryTrack', 'pdp-gallery-slide', shots);
+  const track = fillTrack('galleryTrack', 'pdp-gallery-slide', shots, '100vw');
   if (!track) return;
   // Slideshow feel WITH dots (like the other site carousels); swipe/keys drive it.
   // No auto-advance so the shopper controls it.
@@ -324,7 +334,14 @@ function renderGallery(shots) {
 }
 
 function renderZoomSlides(shots) {
-  const track = fillTrack('pdpZoomTrack', 'pdp-zoom-slide', shots);
+  // NO ladder here: the FULL original, deliberately.
+  //
+  // This is the fullscreen zoom, and a shopper opens it to pinch in on the
+  // card's small print — the one place on the site where every pixel is the
+  // point. Feeding it the 1200 px rung and then magnifying 4x would hand her a
+  // soft image exactly where the old behaviour was sharp. It is one picture, on
+  // demand, after a deliberate tap, so the weight is bought knowingly.
+  const track = fillTrack('pdpZoomTrack', 'pdp-zoom-slide', shots, '');
   if (!track) return;
   zoomApi = initCarousel(track, {
     mode: 'slideshow',

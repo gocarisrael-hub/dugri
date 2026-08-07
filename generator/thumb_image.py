@@ -9,7 +9,10 @@ derivative those surfaces load instead.
 
 Usage:  thumb_image.py <src> <dest> [maxpx]
 
-Caps the longest side at `maxpx` (default 400) and re-encodes. WebP is the
+Caps the WIDTH at `maxpx` (default 400) and re-encodes — width, because these
+derivatives are advertised through srcset `w` descriptors, which state a width.
+Transparency is preserved (WebP carries alpha; the JPEG fallback flattens onto
+white, never the default black). WebP is the
 preferred output — best size at this scale and universally supported by the
 browsers we serve — but Pillow is not guaranteed to be built with WebP support
 everywhere, so a WebP failure falls back to JPEG rather than failing the whole
@@ -32,6 +35,11 @@ WEBP_Q = 80
 JPEG_Q = 82
 
 
+def has_alpha(im):
+    """Whether this image carries real transparency worth preserving."""
+    return im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info)
+
+
 def build(src, dest, maxpx=DEFAULT_MAXPX):
     im = Image.open(src)
     im.load()
@@ -43,17 +51,37 @@ def build(src, dest, maxpx=DEFAULT_MAXPX):
         im = ImageOps.exif_transpose(im)
     except Exception:
         pass
+    # Cap the WIDTH, not the longest side. These derivatives are advertised to
+    # the browser through srcset `w` descriptors, which state a width — so
+    # capping the long edge made every PORTRAIT picture narrower than its
+    # descriptor claimed, and the browser, believing it had enough pixels,
+    # picked a rung too small and drew it soft. Capping width makes the
+    # descriptor exactly true for every shape.
     w, h = im.size
-    longest = max(w, h)
-    if longest > maxpx:
-        scale = maxpx / longest
-        im = im.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+    if w > maxpx:
+        scale = maxpx / w
+        im = im.resize((maxpx, max(1, round(h * scale))), Image.LANCZOS)
+
+    # Keep transparency. This used to convert("RGB") unconditionally, which
+    # composites alpha onto BLACK — so a logo or cut-out PNG the owner uploaded
+    # turned into a black slab on every storefront surface, with nothing in the
+    # admin able to fix it. WebP carries alpha natively.
+    alpha = has_alpha(im)
     try:
-        im.convert("RGB").save(dest, format="WEBP", quality=WEBP_Q, method=4)
+        im.convert("RGBA" if alpha else "RGB").save(
+            dest, format="WEBP", quality=WEBP_Q, method=4
+        )
         return
     except Exception:
         # Pillow without WebP support (or a WebP encoder hiccup) — JPEG still
         # gives us a small file, and the caller types the result by its bytes.
+        # JPEG cannot carry alpha, so flatten onto WHITE rather than let the
+        # default black show through: the site's surfaces are light.
+        if alpha:
+            rgba = im.convert("RGBA")
+            flat = Image.new("RGB", rgba.size, (255, 255, 255))
+            flat.paste(rgba, mask=rgba.split()[-1])
+            im = flat
         im.convert("RGB").save(dest, format="JPEG", quality=JPEG_Q, optimize=True, progressive=True)
 
 

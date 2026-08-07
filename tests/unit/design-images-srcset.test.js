@@ -139,3 +139,56 @@ describe('wireThumbs — the ladder is only safe because of the fallback', () =>
     expect(el.srcset).toBe(thumbSrcset(UP));
   });
 });
+
+// The looping carousels (the home rail, the fullscreen zoom) duplicate slides
+// with cloneNode, which copies ATTRIBUTES but not listeners. A clone therefore
+// carries the srcset ladder with nothing watching it: when a derivative 404s the
+// real cards recover and the clones stay broken-image tiles — permanently, and
+// visibly, because a loop carousel shows clones as often as originals.
+describe('wireThumbs — carousel clones recover too', () => {
+  function wiredInDom(fallback) {
+    const el = document.createElement('img');
+    if (fallback) el.dataset.fallback = fallback;
+    document.body.appendChild(el);
+    wireThumbs(el, UP, '45vw', () => {});
+    return el;
+  }
+
+  it('a clone drops the ladder and falls back to the original', () => {
+    const el = wiredInDom();
+    const clone = el.cloneNode(true);
+    document.body.appendChild(clone);
+    // The clone carries the ladder…
+    expect(clone.srcset).toBe(thumbSrcset(UP));
+    // …but not the listener that makes it safe.
+    expect(clone.__thumbWired).toBeUndefined();
+
+    clone.dispatchEvent(new Event('error', { bubbles: false }));
+    expect(clone.srcset).toBe('');
+    expect(clone.getAttribute('src')).toBe(UP);
+  });
+
+  it('a clone whose original also fails lands on the shipped render', () => {
+    const el = wiredInDom(SHIPPED);
+    const clone = el.cloneNode(true);
+    document.body.appendChild(clone);
+    clone.dispatchEvent(new Event('error')); // derivative gone
+    clone.dispatchEvent(new Event('error')); // the upload itself is gone
+    expect(clone.getAttribute('src')).toBe(SHIPPED);
+  });
+
+  // The guard must not double-handle a REAL element: it runs in the capture
+  // phase, so acting on one would clear the ladder before the element's own
+  // listener saw it, and the original would never be retried.
+  it('leaves a real (non-clone) element to its own handler', () => {
+    const onFail = vi.fn();
+    const el = document.createElement('img');
+    document.body.appendChild(el);
+    wireThumbs(el, UP, '45vw', onFail);
+    el.dispatchEvent(new Event('error'));
+    // Ladder dropped exactly once, and the surface's fallback NOT yet spent.
+    expect(el.srcset).toBe('');
+    expect(el.getAttribute('src')).toBe(UP);
+    expect(onFail).not.toHaveBeenCalled();
+  });
+});

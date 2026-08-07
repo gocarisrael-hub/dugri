@@ -46,7 +46,7 @@ def photo(path, size=(2400, 1600)):
     return path
 
 
-def test_caps_the_longest_side_and_keeps_the_aspect(tmp_path):
+def test_caps_the_size_and_keeps_the_aspect(tmp_path):
     src = photo(str(tmp_path / "src.png"), (2400, 1600))
     dest = str(tmp_path / "out")
     assert run(src, dest, 400).returncode == 0
@@ -144,6 +144,41 @@ def test_a_bigger_rung_really_is_a_bigger_picture(tmp_path):
         assert run(src, dest, maxpx).returncode == 0
         sizes[maxpx] = os.path.getsize(dest)
     assert sizes[400] < sizes[800] < sizes[1200]
+
+
+def test_a_transparent_png_does_not_turn_black(tmp_path):
+    """The resizer used to convert("RGB") unconditionally, which composites alpha
+    onto BLACK. Any cut-out or logo PNG the owner uploaded became a black slab on
+    every storefront surface, and nothing in the admin could fix it."""
+    src = str(tmp_path / "src.png")
+    im = Image.new("RGBA", (900, 600), (0, 0, 0, 0))  # fully transparent
+    d = ImageDraw.Draw(im)
+    d.ellipse([300, 200, 600, 400], fill=(255, 0, 0, 255))  # one opaque blob
+    im.save(src)
+
+    dest = str(tmp_path / "out")
+    assert run(src, dest, 400).returncode == 0
+    with Image.open(dest) as out:
+        out = out.convert("RGBA")
+        # A corner that was transparent must not have become opaque black.
+        r, g, b, a = out.getpixel((2, 2))
+        assert a == 0 or (r, g, b) != (0, 0, 0), f"corner became {(r, g, b, a)}"
+        # …and the opaque blob still reads red, so nothing was flattened away.
+        assert out.getpixel((out.size[0] // 2, out.size[1] // 2))[0] > 150
+
+
+def test_caps_the_WIDTH_so_srcset_descriptors_are_honest(tmp_path):
+    """These derivatives are advertised through srcset `w` descriptors, which
+    state a WIDTH. Capping the longest side instead made every portrait picture
+    narrower than its descriptor claimed, so the browser — believing it had
+    enough pixels — picked a rung too small and drew it soft."""
+    portrait = photo(str(tmp_path / "p.png"), (2000, 3000))
+    landscape = photo(str(tmp_path / "l.png"), (3000, 2000))
+    for name, src in (("p", portrait), ("l", landscape)):
+        dest = str(tmp_path / f"out{name}")
+        assert run(src, dest, 800).returncode == 0
+        with Image.open(dest) as im:
+            assert im.size[0] == 800, f"{name}: width {im.size[0]} != descriptor 800"
 
 
 def test_even_the_top_rung_is_a_fraction_of_the_camera_original(tmp_path):

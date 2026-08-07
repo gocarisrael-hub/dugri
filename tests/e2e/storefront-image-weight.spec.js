@@ -122,6 +122,42 @@ test.describe('products grid — right-sized photographs', () => {
     expect(await imgs.nth(1).getAttribute('data-src')).toBe(B);
   });
 
+  // The dots and arrows live in a strip BELOW .product-card__media. Hydration
+  // bound to the media alone missed the most deliberate "next picture" gesture
+  // there is: tapping a dot jumped to a slide whose image was never requested.
+  test('tapping a DOT hydrates the slides it jumps to', async ({ page }) => {
+    await stubThumbs(page);
+    await stubUploads(page);
+    await stubDesignImages(page);
+    await page.goto('/products.html');
+    const imgs = card(page).locator('.product-card__slide img');
+    await expect(imgs.first()).toHaveAttribute('srcset', /design-thumb/);
+    expect(await imgs.nth(1).getAttribute('src')).toBe(null);
+
+    await card(page).locator('.product-card__dots button').nth(1).click();
+
+    await expect(imgs.nth(1)).toHaveAttribute('src', B);
+    await expect
+      .poll(() => imgs.nth(1).evaluate((el) => el.complete && el.naturalWidth > 0))
+      .toBe(true);
+  });
+
+  // A src-less <img> with a non-empty alt PAINTS THE ALT TEXT, so every deferred
+  // slide was holding a block of Hebrew ready to flash into view on swipe.
+  test('a deferred slide shows no stray alt text, and regains its alt on hydration', async ({
+    page,
+  }) => {
+    await stubThumbs(page);
+    await stubUploads(page);
+    await stubDesignImages(page);
+    await page.goto('/products.html');
+    const second = card(page).locator('.product-card__slide img').nth(1);
+    await expect(second).toHaveAttribute('alt', '');
+
+    await card(page).locator('.product-card__media').hover();
+    await expect(second).not.toHaveAttribute('alt', '');
+  });
+
   test('touching the card hydrates the rest of its slides, through the ladder', async ({
     page,
   }) => {
@@ -166,6 +202,33 @@ test.describe('products grid — right-sized photographs', () => {
     await expect.poll(() => uploads).toContain('/content-uploads/00000000000000a1.webp');
     // Heavy, but decoded — not a broken tile.
     await expect.poll(() => first.evaluate((el) => el.complete && el.naturalWidth > 0)).toBe(true);
+  });
+});
+
+// The shopper opens the fullscreen zoom to pinch in on the card's small print —
+// the one place on the site where every pixel is the point. Feeding it a 1200 px
+// rung and then magnifying 4x hands her a soft image exactly where the old
+// behaviour was sharp.
+test.describe('fullscreen zoom keeps the full-resolution original', () => {
+  test('the zoom overlay loads the upload itself, with no ladder', async ({ page }) => {
+    const uploads = [];
+    await stubThumbs(page);
+    await stubUploads(page, uploads);
+    await stubDesignImages(page);
+    await page.goto(`/product.html?design=${DESIGN}`);
+
+    const zoomImgs = page.locator('#pdpZoomTrack .pdp-zoom-slide img');
+    await expect(zoomImgs.first()).toHaveAttribute('src', A);
+    // No srcset at all: the ladder's whole purpose is smaller pixels, which is
+    // the opposite of what a zoom needs.
+    expect(await zoomImgs.first().getAttribute('srcset')).toBe(null);
+    await expect.poll(() => uploads).toContain('/content-uploads/00000000000000a1.webp');
+
+    // …while the INLINE gallery on the same page still uses the ladder.
+    await expect(page.locator('#galleryTrack .pdp-gallery-slide img').first()).toHaveAttribute(
+      'srcset',
+      /design-thumb/
+    );
   });
 });
 

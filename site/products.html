@@ -671,10 +671,19 @@
       // That is why a ten-card grid was fetching forty photographs before the
       // shopper had swiped anything. They are held back as data-src and hydrated
       // the moment the shopper touches the card — the only moment they can matter.
-      function hydrateSlides(media) {
-        for (const img of media.querySelectorAll('img[data-src]')) {
+      function hydrateSlides(root) {
+        for (const img of root.querySelectorAll('img[data-src]')) {
           const src = img.dataset.src;
           delete img.dataset.src;
+          // Restore the real alt now. A deferred <img> has no src, and a
+          // src-less image with non-empty alt PAINTS THE ALT TEXT — so every
+          // un-swiped slide was holding a block of Hebrew waiting to flash into
+          // view. The slide's link carries its own aria-label, so nothing is
+          // lost to a screen reader in the meantime.
+          if (img.dataset.alt) {
+            img.alt = img.dataset.alt;
+            delete img.dataset.alt;
+          }
           // EAGER from here on. The shopper is already reaching for this picture,
           // so there is nothing left to defer — and leaving it lazy would stake
           // the slide on the very browser behaviour this works around: if a
@@ -719,7 +728,6 @@
           img.loading = 'lazy';
           img.decoding = 'async';
           img.draggable = false;
-          img.alt = shot.name || dName;
           img.dataset.fallback = shot.fallback || '';
           // The FIRST slide keeps the product-image test hook + the store fallback.
           if (i === 0) {
@@ -730,8 +738,15 @@
           // (hydrateSlides). An <img> with no src still fills its slide — the
           // width/height come from CSS — so the track's layout and the dot count
           // are the same either way.
-          if (i === 0) wireThumbs(img, shot.src, CARD_SIZES, () => onImgError(img));
-          else img.dataset.src = shot.src;
+          if (i === 0) {
+            img.alt = shot.name || dName;
+            wireThumbs(img, shot.src, CARD_SIZES, () => onImgError(img));
+          } else {
+            // alt parked, not set: see hydrateSlides.
+            img.alt = '';
+            img.dataset.alt = shot.name || dName;
+            img.dataset.src = shot.src;
+          }
           slide.appendChild(img);
           track.appendChild(slide);
         });
@@ -764,16 +779,19 @@
         // the pictures change ONLY when the shopper swipes / taps a dot, never on a
         // timer (a store tile quietly cycling on its own is distracting).
         if (shots.length > 1) {
-          // Any sign the shopper is about to see slide 2 — a touch, a hover, the
-          // track scrolling (which is also how the arrows arrive, since they live
-          // outside .product-card__media), or keyboard focus reaching a slide
-          // link. Every one of them fires before the next picture is on screen.
-          const hydrate = () => hydrateSlides(media);
+          // Bound to the whole CARD, not to the picture box. The dots and arrows
+          // sit in a sibling strip BELOW .product-card__media, so listening on
+          // the media alone missed the most deliberate "show me the next picture"
+          // gesture there is: a shopper who taps a dot jumped to a slide whose
+          // image had never been requested, and watched a blank frame load. The
+          // article contains the media AND the controls, so every route to slide
+          // 2 passes through it.
+          const hydrate = () => hydrateSlides(article);
           for (const [target, evt] of [
-            [media, 'pointerenter'],
-            [media, 'pointerdown'],
-            [media, 'touchstart'],
-            [media, 'focusin'],
+            [article, 'pointerenter'],
+            [article, 'pointerdown'],
+            [article, 'touchstart'],
+            [article, 'focusin'],
             [track, 'scroll'],
           ]) {
             target.addEventListener(evt, hydrate, { once: true, passive: true });

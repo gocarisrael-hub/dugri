@@ -65,6 +65,10 @@ function fakeSpawn({ code = 0, out = WEBP, runs } = {}) {
 
 beforeEach(() => {
   upload();
+  // A failed SPAWN backs the module off globally (see the backoff tests below),
+  // so without this the first test that simulates one would mute every test
+  // after it.
+  imageThumbs._resetBackoff();
 });
 afterAll(() => fs.rmSync(tmpRoot, { recursive: true, force: true }));
 
@@ -153,6 +157,49 @@ describe('image-thumbs — every failure yields NOTHING, never the original', ()
     expect(await get(name, { runner: fakeSpawn({ code: 1, out: null, runs }) })).toBe(null);
     expect(await get(name, { runner: fakeSpawn({ code: 0, out: WEBP, runs }) })).toBe(null);
     expect(runs.n).toBe(1);
+  });
+
+  // A spawn that never STARTED is about the box, not about this picture — a
+  // momentary fork exhaustion on a cold cache used to be memoised per name,
+  // which would have put the multi-MB originals back for the life of the
+  // process. It must back off and then heal.
+  it('a failed SPAWN is not held against the picture for good', async () => {
+    const spawnErr = () => {
+      const child = new EventEmitter();
+      setTimeout(() => child.emit('error', new Error('EAGAIN')), 0);
+      return child;
+    };
+    expect(await get(name, { runner: spawnErr })).toBe(null);
+    // Backed off: it does not even try again while the box is struggling.
+    const runs = { n: 0 };
+    expect(await get(name, { runner: fakeSpawn({ runs }) })).toBe(null);
+    expect(runs.n).toBe(0);
+    // …but once the backoff lapses the same picture succeeds — no permanent memo.
+    imageThumbs._resetBackoff();
+    expect(await get(name, { runner: fakeSpawn({ runs }) })).toBeTruthy();
+    expect(runs.n).toBe(1);
+  });
+
+  // A cold cache on a busy page is the whole catalog at once (ten cards times
+  // three rungs). Spawning that many Pythons together on a small box is how you
+  // CAUSE the fork exhaustion above.
+  it('caps how many resizes run at once', async () => {
+    const live = { now: 0, peak: 0 };
+    const slow = (_bin, argv) => {
+      const child = new EventEmitter();
+      live.now++;
+      live.peak = Math.max(live.peak, live.now);
+      setTimeout(() => {
+        fs.writeFileSync(argv[2], WEBP);
+        live.now--;
+        child.emit('close', 0);
+      }, 5);
+      return child;
+    };
+    const names = [upload(), upload(), upload(), upload(), upload(), upload()];
+    await Promise.all(names.map((n) => get(n, { runner: slow })));
+    expect(live.peak).toBeLessThanOrEqual(2);
+    expect(imageThumbs._inflight.size).toBe(0);
   });
 
   it('an upload that does not exist resolves to null without spawning', async () => {
