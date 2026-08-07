@@ -3911,30 +3911,74 @@ function saveGalleryUpload(req, res) {
 
 // Public: the whole gallery-config map. Unauthenticated on purpose — every
 // visitor's grid + product page needs it to render the owner's curated gallery
-// (see site/js/design-images.js). Read-only; res.json copies.
+// (see site/js/design-images.js). Read-only.
+//
+// `srcsets` rides along: for every upload the config references, the ready-made
+// srcset string for its derivative ladder (server/image-thumbs.js). It is built
+// HERE rather than on the client so exactly ONE place decides what `w` descriptor
+// each rung gets — the client only ever copies a string it was handed, and can
+// never assert a width the resizer would not produce (INVARIANT 1). An upload
+// whose dimensions cannot be read is simply absent, and the client keeps a plain
+// `src` rather than an unbacked descriptor.
 app.get('/api/design-images', (req, res) => {
-  res.json({ images: designImages.getAll() });
+  const images = designImages.getAll();
+  const srcsets = {};
+  for (const p of designImages.collectImagePaths(images)) {
+    const name = p.split('/').pop();
+    const set = imageThumbs.srcsetFor(name);
+    if (set) srcsets[name] = set;
+  }
+  res.json({ images, srcsets, rev: imageThumbs.REV });
 });
 
-// Public: a SMALL derivative of one of those gallery uploads (see
-// server/image-thumbs.js). Same picture, ~15 KB instead of 180 KB–1 MB, for the
-// surfaces that show it at thumbnail size — today the wizard's design picker,
-// whose tiles are ~150 px wide and whose page must stay light enough for the
-// Instagram in-app browser.
+// Public: ONE rung of an upload's derivative ladder (see server/image-thumbs.js).
+// The owner's gallery uploads are camera files — up to 4032 px and 3.4 MB — and
+// every surface paints them into a 100–400 CSS px box. This is what those
+// surfaces load instead.
 //
-// 404 is a NORMAL answer here (no Python/Pillow, an undecodable upload): every
-// caller keeps its own fallback to the shipped render, so a missing derivative
-// costs a tile its photo, never the page. It deliberately does NOT fall back to
-// serving the original — that is the multi-MB page this route exists to avoid.
-app.get('/design-thumb/:name', (req, res) => {
+// The REVISION is in the PATH, not just in the on-disk filename. The response is
+// `immutable` for a year, so if the produced bytes ever change (a new encoder,
+// quality, colour handling or geometry rule) while the URL stayed the same, every
+// browser that has visited would keep the old picture until the cache expired.
+// Bumping imageThumbs.REV therefore changes the public URL too, which is a clean
+// cutover, and sweepStale() reclaims the previous generation from the volume.
+//
+// A request carrying a PAST revision is still served (never a broken image on a
+// page whose HTML was cached across a bump) — but with a short max-age, since
+// those bytes are by definition not the current answer for that URL.
+//
+// 404 is a NORMAL answer (no Python/Pillow, an undecodable upload): every caller
+// keeps its own fallback, so a missing derivative costs one picture, never the
+// page. It deliberately does NOT fall back to serving the original — that is the
+// multi-MB page this route exists to avoid.
+app.get('/design-img/:rev/:w/:name', (req, res) => {
+  const current = req.params.rev === imageThumbs.REV;
   imageThumbs
-    .get(req.params.name)
-    .then((thumb) => {
-      if (!thumb) return res.status(404).type('txt').send('Not found');
-      // Content-addressed source + a fixed px cap ⇒ these bytes never change.
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    .get(req.params.name, Number(req.params.w))
+    .then((der) => {
+      if (!der) return res.status(404).type('txt').send('Not found');
+      res.setHeader(
+        'Cache-Control',
+        current ? 'public, max-age=31536000, immutable' : 'public, max-age=300'
+      );
       // Defense in depth, as on /content-uploads: never let a browser sniff a
       // served image into an executable type.
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.type(der.type);
+      res.sendFile(der.file);
+    })
+    .catch(() => res.status(404).type('txt').send('Not found'));
+});
+
+// Public: the wizard design picker's small derivative. Predates the ladder and
+// keeps its own URL because buyer sessions have this path cached; it now serves
+// the 400 rung of the same pipeline.
+app.get('/design-thumb/:name', (req, res) => {
+  imageThumbs
+    .get(req.params.name, 400)
+    .then((thumb) => {
+      if (!thumb) return res.status(404).type('txt').send('Not found');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.type(thumb.type);
       res.sendFile(thumb.file);
@@ -4924,6 +4968,21 @@ app.use((err, _req, res, next) => {
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log(`dugri server listening on ${PORT}`));
+  // Gallery derivatives (server/image-thumbs.js), once at boot:
+  //   • sweepStale() reclaims the PREVIOUS revision's cached files. The revision
+  //     is part of both the filename and the public URL, so bumping it would
+  //     otherwise leave the old generation on the volume forever.
+  //   • warm the source-dimension cache, so the first shopper's /api/design-images
+  //     doesn't pay 74 header reads inline. Deferred + fire-and-forget: it is an
+  //     optimisation, and a failure here must never affect boot.
+  setTimeout(() => {
+    try {
+      imageThumbs.sweepStale();
+      for (const p of designImages.collectImagePaths()) imageThumbs.dims(p.split('/').pop());
+    } catch {
+      /* the cache warms lazily instead */
+    }
+  }, 0).unref();
   // Hourly reminder scan, only when email is configured. unref() so the timer
   // never keeps the process alive on its own, and the scan is fire-and-forget.
   if (notify.isConfigured()) {

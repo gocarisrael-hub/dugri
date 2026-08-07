@@ -72,7 +72,21 @@ test.beforeEach(async ({ page }) => {
 });
 
 /** The rendered slide box + the natural size of the picture inside it. */
+// The gallery's pictures load lazily — a slide scrolled off the side of the
+// carousel has not been fetched (js/lazy-media.js), because `loading="lazy"`
+// only defers vertically and every slide but one is clipped sideways. So to
+// MEASURE a slide's decoded picture we first have to show it, exactly as a
+// shopper would by swiping.
+async function showSlide(page, index) {
+  await page.evaluate((i) => {
+    const track = document.getElementById('galleryTrack');
+    const slide = track.querySelectorAll('.pdp-gallery-slide')[i];
+    if (slide) slide.scrollIntoView({ inline: 'start', block: 'nearest', behavior: 'instant' });
+  }, index);
+}
+
 async function galleryMetrics(page, index = 0) {
+  await showSlide(page, index);
   return page.evaluate((i) => {
     const slide = document.querySelectorAll('.pdp-gallery-slide')[i];
     const img = slide.querySelector('img');
@@ -82,9 +96,15 @@ async function galleryMetrics(page, index = 0) {
       boxH: r.height,
       natW: img.naturalWidth,
       natH: img.naturalHeight,
-      src: img.getAttribute('src'),
+      // The picture this slide points at, whether or not it has been fetched yet.
+      src: img.getAttribute('src') || img.dataset.lazySrc || null,
     };
   }, index);
+}
+
+/** The picture a slide points at, fetched or not. */
+function slideSrc(slide) {
+  return slide.locator('img').evaluate((i) => i.getAttribute('src') || i.dataset.lazySrc || null);
 }
 
 test.describe('product.html — a portrait design shows single cards, not sheets', () => {
@@ -96,14 +116,8 @@ test.describe('product.html — a portrait design shows single cards, not sheets
     // No board and no photo card yet, and this fixture ships no store cover →
     // exactly the two card slides.
     await expect(slides).toHaveCount(2);
-    await expect(slides.nth(0).locator('img')).toHaveAttribute(
-      'src',
-      `${GALLERY}/gallery-front.webp`
-    );
-    await expect(slides.nth(1).locator('img')).toHaveAttribute(
-      'src',
-      `${GALLERY}/gallery-back.webp`
-    );
+    await expect.poll(() => slideSrc(slides.nth(0))).toBe(`${GALLERY}/gallery-front.webp`);
+    await expect.poll(() => slideSrc(slides.nth(1))).toBe(`${GALLERY}/gallery-back.webp`);
 
     // The committed renders must actually decode AND be portrait — if the front
     // render were still the old landscape sheet this flips.
@@ -143,7 +157,12 @@ test.describe('product.html — a portrait design shows single cards, not sheets
     await expect
       .poll(async () => (await galleryMetrics(page)).natW, { timeout: 10_000 })
       .toBeGreaterThan(0);
-    const m = await galleryMetrics(page, 1); // slide 0 is the store cover; 1 is the sheet
+    // Slide 0 is the store cover; 1 is the sheet. Polled, because showing slide 1
+    // is what triggers its lazy fetch — it has to decode before it can be measured.
+    await expect
+      .poll(async () => (await galleryMetrics(page, 1)).natW, { timeout: 10_000 })
+      .toBeGreaterThan(0);
+    const m = await galleryMetrics(page, 1);
     expect(m.boxW / m.boxH).toBeCloseTo(841.92 / 595.5, 1); // the landscape sheet box
     expect(m.natW).toBeGreaterThan(m.natH); // still a landscape sheet render
   });
@@ -178,7 +197,7 @@ test.describe('the photo-card slide', () => {
     const slides = page.locator('#galleryTrack .pdp-gallery-slide:not([data-carousel-clone])');
     await expect(slides).toHaveCount(3);
     const photo = slides.nth(2);
-    await expect(photo.locator('img')).toHaveAttribute('src', PHOTO_OVERRIDE);
+    await expect.poll(() => slideSrc(photo)).toBe(PHOTO_OVERRIDE);
     // Labelled as the photo card, not as a generic extra picture.
     await expect(photo).toHaveAttribute('data-label', /קלף התמונות/);
   });

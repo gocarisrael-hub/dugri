@@ -255,9 +255,58 @@ export function deckPickerSrc(map, design) {
   return first ? thumbSrc(first.src) : null;
 }
 
+// ---- responsive sources -----------------------------------------------------
+//
+// The owner's uploads are camera files (up to 4032 px / 3.4 MB) and every surface
+// paints them into a 100–400 CSS px box. The server derives a WIDTH LADDER for
+// each one (server/image-thumbs.js) and hands over a ready-made `srcset` string
+// per upload in the /api/design-images response.
+//
+// The string is BUILT SERVER-SIDE on purpose. The `w` descriptor has to equal the
+// pixel width the resizer actually produces; computing it here as well would be a
+// second implementation of the geometry rule, and a rule change on one side
+// silently making every portrait narrower than its descriptor is exactly the bug
+// that sank two earlier attempts. So this module never calculates a width — it
+// only ever copies a string the server already committed to.
+//
+// Last-loaded manifest, keyed by upload FILE NAME. Populated by
+// loadDesignImages(); empty until then, and empty forever if the fetch failed —
+// in which case every caller simply keeps a plain `src`, which is correct, just
+// heavier.
+let _srcsets = {};
+
+/** `sizes` values per surface — how wide the picture actually paints. A wrong
+ *  (or absent) `sizes` makes the browser assume 100vw and pick a rung several
+ *  times larger than the box, which would undo most of the saving. */
+export const SIZES = {
+  // Shop grid: 2 columns on a phone, 3 from ~620px, 4 from ~1000px.
+  grid: '(max-width: 619px) 44vw, (max-width: 999px) 30vw, 23vw',
+  // Product detail: one full-width slide inside the page's content column.
+  pdp: '(max-width: 900px) 96vw, 860px',
+  // Home rail card + the product page's related rail — a fixed-ish card width.
+  rail: '(max-width: 619px) 62vw, 300px',
+  // The fullscreen zoom. Deliberately larger than the viewport: this is where the
+  // shopper pinches into the artwork, so it should take the top rung rather than
+  // the fit-to-screen one. Only ever paid for one photo at a time.
+  zoom: '200vw',
+};
+
+/**
+ * The server-published `srcset` for one of our own uploads, or '' when there
+ * isn't one (a non-upload path, a config that never loaded, or an upload whose
+ * dimensions the server could not read). '' means "use the plain src" — never a
+ * guessed descriptor.
+ */
+export function srcsetFor(src) {
+  const p = String(src || '');
+  if (!UPLOAD_PATH_RE.test(p)) return '';
+  return _srcsets[p.split('/').pop()] || '';
+}
+
 /** Fetch the whole gallery-config map { designId: config }. NEVER rejects: a
  *  network error, non-OK status, timeout, or non-JSON body all resolve to {} so
- *  callers keep the shipped renders. */
+ *  callers keep the shipped renders. Also stashes the response's per-upload
+ *  srcset manifest for srcsetFor(). */
 export function loadDesignImages() {
   if (typeof fetch !== 'function') return Promise.resolve({});
   let timer = null;
@@ -273,9 +322,18 @@ export function loadDesignImages() {
   }
   return fetch('/api/design-images', opts)
     .then((r) => (r && r.ok ? r.json() : { images: {} }))
-    .then((data) => (data && data.images && typeof data.images === 'object' ? data.images : {}))
+    .then((data) => {
+      const d = data && typeof data === 'object' ? data : {};
+      _srcsets = d.srcsets && typeof d.srcsets === 'object' ? d.srcsets : {};
+      return d.images && typeof d.images === 'object' ? d.images : {};
+    })
     .catch(() => ({}))
     .finally(() => {
       if (timer) clearTimeout(timer);
     });
+}
+
+/** Test seam: install a srcset manifest without a fetch. */
+export function _setSrcsets(map) {
+  _srcsets = map && typeof map === 'object' ? map : {};
 }

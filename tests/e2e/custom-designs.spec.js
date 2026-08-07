@@ -80,7 +80,11 @@ test.describe('product.html — a custom design has a working detail page', () =
 
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
     await expect
-      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .poll(() =>
+        slides.evaluateAll((els) =>
+          els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || null)
+        )
+      )
       .toEqual([
         '/api/template-image/my-custom/front',
         '/api/template-image/my-custom/back',

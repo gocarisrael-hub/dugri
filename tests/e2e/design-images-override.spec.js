@@ -156,7 +156,11 @@ test.describe('product.html — detail gallery from the curated selection', () =
 
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
     await expect
-      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .poll(() =>
+        slides.evaluateAll((els) =>
+          els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || null)
+        )
+      )
       .toEqual([
         'assets/designs/posttrip/store.webp', // the shop tile's picture, leading here too
         'assets/designs/posttrip/gallery-front.webp',
@@ -181,7 +185,11 @@ test.describe('product.html — detail gallery from the curated selection', () =
 
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
     await expect
-      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .poll(() =>
+        slides.evaluateAll((els) =>
+          els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || null)
+        )
+      )
       .toEqual([
         'assets/designs/posttrip/store.webp', // store cover — shown by default
         'assets/designs/posttrip/gallery-front.webp',
@@ -202,7 +210,11 @@ test.describe('product.html — detail gallery from the curated selection', () =
     await expect(page.getByTestId('pdp-gallery')).toBeVisible();
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
     await expect
-      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .poll(() =>
+        slides.evaluateAll((els) =>
+          els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || null)
+        )
+      )
       .toEqual([
         'assets/designs/posttrip/store.webp',
         'assets/designs/posttrip/gallery-front.webp',
@@ -225,7 +237,11 @@ test.describe('product.html — detail gallery from the curated selection', () =
     // shopper reaches it — which is also the only moment the degrade is visible.
     await slides.last().scrollIntoViewIfNeeded();
     await expect
-      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .poll(() =>
+        slides.evaluateAll((els) =>
+          els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || null)
+        )
+      )
       .toEqual([
         'assets/designs/posttrip/store.webp',
         'assets/designs/posttrip/gallery-front.webp',
@@ -247,7 +263,11 @@ test.describe('product.html — detail gallery from the curated selection', () =
 
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
     await expect
-      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .poll(() =>
+        slides.evaluateAll((els) =>
+          els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || null)
+        )
+      )
       .toEqual([
         'assets/designs/kids/store.webp',
         'assets/designs/kids/gallery-front.webp',
@@ -276,7 +296,11 @@ test.describe('product.html — detail gallery from the curated selection', () =
       .scrollIntoViewIfNeeded()
       .catch(() => {});
     await expect
-      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .poll(() =>
+        slides.evaluateAll((els) =>
+          els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || null)
+        )
+      )
       .toEqual([
         'assets/designs/kids/store.webp',
         'assets/designs/kids/gallery-front.webp',
@@ -332,7 +356,11 @@ test.describe('the shop tile and the product page open on the SAME picture', () 
     await page.goto('/product.html?design=posttrip');
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
     await expect
-      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .poll(() =>
+        slides.evaluateAll((els) =>
+          els.map((i) => i.getAttribute('src') || i.dataset.lazySrc || null)
+        )
+      )
       .toEqual([
         'assets/designs/posttrip/gallery-front.webp',
         'assets/designs/posttrip/gallery-back.webp',

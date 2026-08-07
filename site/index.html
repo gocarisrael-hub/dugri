@@ -1081,7 +1081,8 @@
       import { initCarousel } from './js/carousel.js';
       import { PUBLIC_DESIGNS, syncDesignNames, loadCustomDesigns } from './js/designs.js';
       import { fetchPricing } from './js/pricing.js';
-      import { loadDesignImages, galleryFor } from './js/design-images.js';
+      import { loadDesignImages, galleryFor, srcsetFor, SIZES } from './js/design-images.js';
+      import { defer, watchTrack } from './js/lazy-media.js';
 
       // ---- HERO: full-bleed auto-rotating slideshow ----
       const heroTrack = document.querySelector('.hero-track');
@@ -1140,11 +1141,14 @@
           // template's own picture (it has no store cover). galleryFor with an
           // empty config returns exactly the shipped render.
           const shipped = galleryFor({}, d, 'products')[0];
-          img.src = (shipped && (shipped.fallback || shipped.src)) || '';
-          img.setAttribute('data-store-default', img.src);
+          const shippedSrc = (shipped && (shipped.fallback || shipped.src)) || '';
+          img.setAttribute('data-store-default', shippedSrc);
           img.alt = d.name;
-          img.loading = 'lazy';
-          img.decoding = 'async';
+          // DEFERRED: this is a horizontal rail, and `loading="lazy"` only holds
+          // an image back on VERTICAL distance — so every card off the side of
+          // the screen (and every loop clone of it) was loading at full size on
+          // first paint. lazy-media hydrates a card when it nears the scrollport.
+          defer(img, { src: shippedSrc, sizes: SIZES.rail });
           thumb.appendChild(img);
 
           const name = document.createElement('span');
@@ -1168,11 +1172,18 @@
         // idempotent — handed a track it already owns it returns early, BEFORE the
         // loop that stamps `carousel-card` on each card — so appending into a live
         // track would leave the new cards unstamped beside stale loop clones.
+        let railLazy = null;
         function paintRail() {
           if (productsTrack.__carousel) productsTrack.__carousel.destroy();
+          if (railLazy) railLazy.destroy();
           productsTrack.textContent = '';
           for (const d of railDesigns) productsTrack.appendChild(buildCard(d));
           initCarousel(productsTrack, { mode: 'scroller', loop: true, dots: false });
+          // AFTER initCarousel, so the loop CLONES it injected are in the DOM.
+          // Hydration reads the live DOM on every pass, so a clone is picked up
+          // exactly like an original — cloneNode copies attributes but not
+          // listeners, which is why nothing here is a per-image listener.
+          railLazy = watchTrack(productsTrack);
         }
 
         // An admin rename edits themes.json display_he, which lands long after this
@@ -1208,15 +1219,33 @@
             const cover = galleryFor(railImages, design, 'products')[0];
             const staticDefault = img.getAttribute('data-store-default');
             if (!cover || !cover.src || cover.src === staticDefault) continue;
-            img.addEventListener(
-              'error',
-              () => {
-                if (staticDefault && img.src !== staticDefault) img.src = staticDefault;
-              },
-              { once: true }
-            );
-            img.src = cover.src;
+            // A card still off the side of the rail must stay unloaded, so it is
+            // re-deferred. But a card the shopper is ALREADY LOOKING AT must not
+            // be: defer() removes `src`, which erases the painted picture the
+            // instant this runs and leaves a grey box until the override
+            // downloads. Assigning instead keeps the old picture on screen until
+            // the new one has decoded, so the swap stays invisible.
+            const painted = img.complete && img.naturalWidth > 0;
+            if (painted) {
+              // Same two-stage recovery defer() would have armed: the track's
+              // capture-phase error handler drops the ladder first, then reads
+              // this to reach the shipped render.
+              if (staticDefault && staticDefault !== cover.src) {
+                img.dataset.lazyFallback = staticDefault;
+              }
+              img.sizes = SIZES.rail;
+              img.srcset = srcsetFor(cover.src);
+              img.src = cover.src;
+            } else {
+              defer(img, {
+                src: cover.src,
+                srcset: srcsetFor(cover.src),
+                sizes: SIZES.rail,
+                fallback: staticDefault || '',
+              });
+            }
           }
+          if (railLazy) railLazy.refresh();
         }
 
         // First paint from the bundled catalog — never blocks on the network.

@@ -63,14 +63,44 @@ test.describe('the homepage rail sells what the store sells', () => {
     await stubCustom(page);
     await page.goto('/index.html');
 
-    const card = page.locator('.home-prod-card[data-design-id="my-custom"]').first();
+    // The REAL card, not one of the endless-loop clones: a clone's position is
+    // owned by the loop's recentring, so it is not a thing a test can scroll to.
+    const card = page
+      .locator('.home-prod-card[data-design-id="my-custom"]:not([data-carousel-clone])')
+      .first();
     await expect(card).toBeVisible();
     await expect(card).toHaveAttribute('href', 'product.html?design=my-custom');
     // Its picture is the template's own front (an uploaded template ships no
     // committed store cover), and it actually loads.
     const img = card.locator('img');
-    await expect(img).toHaveAttribute('src', '/api/template-image/my-custom/front');
-    await expect.poll(() => img.evaluate((el) => el.complete && el.naturalWidth > 0)).toBe(true);
+    await expect
+      .poll(() => img.evaluate((el) => el.getAttribute('src') || el.dataset.lazySrc || null))
+      .toBe('/api/template-image/my-custom/front');
+    // The rail loads its pictures lazily (js/lazy-media.js) — a card off the side
+    // of a horizontal rail is not fetched until it is scrolled to, which is the
+    // whole point of the deferral. So drive the rail the way a finger does and
+    // require the picture to actually appear.
+    //
+    // ANY copy of the card counts: this is an endless-loop rail, so the engine
+    // recentres the track onto pixel-identical clones whenever it drifts — which
+    // is also why scrolling to one specific element and expecting it to stay put
+    // does not work here.
+    const anyCopyLoaded = () =>
+      page
+        .locator('.home-prod-card[data-design-id="my-custom"] img')
+        .evaluateAll((els) => els.some((e) => e.complete && e.naturalWidth > 0));
+    await expect
+      .poll(
+        async () => {
+          await page.evaluate(() => {
+            const t = document.getElementById('productsTrack');
+            if (t) t.scrollBy({ left: t.clientWidth, behavior: 'instant' });
+          });
+          return anyCopyLoaded();
+        },
+        { timeout: 15_000 }
+      )
+      .toBe(true);
     // The bundled designs are still there — the rail is additive.
     await expect(
       page.locator('.home-prod-card[data-design-id="bachelorette"]').first()

@@ -8,13 +8,14 @@ import os from 'node:os';
 import fs from 'node:fs';
 import { Buffer } from 'node:buffer';
 
-// server/image-thumbs.js — the SMALL on-demand derivative of a gallery upload.
+// server/image-thumbs.js — the DOWNSCALED DERIVATIVES of a gallery upload.
 //
-// It exists to keep a heavy owner photograph off a thumbnail-sized surface (the
-// wizard's design picker). The contract that matters most is the failure one:
-// when the resize cannot run — no Python, no Pillow, an undecodable upload — it
-// must yield NOTHING, so the caller 404s and the client falls back to the shipped
-// render. Falling back to the original would put the multi-MB page back.
+// It exists to keep camera-resolution owner photographs off surfaces that paint
+// them 163 px wide. The contract that matters most is the failure one: when the
+// resize cannot run — no Python, no Pillow, an undecodable upload — it must yield
+// NOTHING for THAT picture, so the caller 404s and the client falls back.
+// Falling back to the original would put the multi-MB page back; failing globally
+// would take the whole catalog down with one bad file.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -25,12 +26,28 @@ const imageThumbs = require(path.join(__dirname, '..', '..', 'server', 'image-th
 const uploadDir = path.join(tmpRoot, 'uploads');
 fs.mkdirSync(uploadDir, { recursive: true });
 
-// Bytes only need to be TYPEABLE by magic (the module sniffs the derivative's
-// own bytes for its content type) — the resizer itself is stubbed here.
-const PNG = Buffer.concat([
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-  Buffer.alloc(16),
-]);
+/** A PNG whose IHDR really says WxH — the module reads the source's dimensions
+ *  to decide the ladder, so a header of zeroes is not a usable fixture. Only the
+ *  header matters here: the resizer itself is stubbed. */
+function pngOf(w, h) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // truecolour
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(13);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    len,
+    Buffer.from('IHDR'),
+    ihdr,
+    Buffer.alloc(4), // CRC — never checked
+  ]);
+}
+const PNG = pngOf(2400, 1600);
+// Derivative bytes only need to be TYPEABLE by magic (the module sniffs the
+// written file for its content type).
 const WEBP = Buffer.concat([
   Buffer.from('RIFF'),
   Buffer.alloc(4),
@@ -38,6 +55,9 @@ const WEBP = Buffer.concat([
   Buffer.alloc(16),
 ]);
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(16)]);
+
+// The rung every test asks for unless it cares about a specific one.
+const RUNG = 400;
 
 let name = '';
 function upload(bytes = PNG) {
@@ -48,7 +68,7 @@ function upload(bytes = PNG) {
 }
 
 // A stub in the shape of child_process.spawn: writes `out` to the DEST argument
-// (argv is [script, src, dest, maxpx]) and exits with `code`. `runs` counts the
+// (argv is [script, src, dest, width]) and exits with `code`. `runs` counts the
 // spawns, so we can prove the cache and the in-flight de-duplication really do
 // prevent them rather than merely appearing to.
 function fakeSpawn({ code = 0, out = WEBP, runs } = {}) {
@@ -68,7 +88,7 @@ beforeEach(() => {
 });
 afterAll(() => fs.rmSync(tmpRoot, { recursive: true, force: true }));
 
-const get = (n, opts) => imageThumbs.get(n, { uploadDir, ...opts });
+const get = (n, opts, rung = RUNG) => imageThumbs.get(n, rung, { uploadDir, ...opts });
 
 describe('image-thumbs — generating a derivative', () => {
   it('produces a cached file and types it from its own bytes', async () => {
@@ -200,6 +220,112 @@ describe('image-thumbs — every failure yields NOTHING, never the original', ()
       expect(await get(bad, { runner: fakeSpawn({ runs }) })).toBe(null);
     }
     expect(runs.n).toBe(0);
+  });
+});
+
+// INVARIANT 3. An earlier attempt turned the per-image failure memo into a
+// module-global streak that also aborted already-queued jobs, so three unrelated
+// bad uploads 404'd the entire catalog. These tests pin the isolation directly:
+// they prove a healthy picture still resolves WHILE a broken one is failing.
+describe('image-thumbs — a failure is scoped to ONE picture', () => {
+  it('a broken upload does not stop a healthy one, however many fail first', async () => {
+    const broken = [upload(), upload(), upload(), upload(), upload()];
+    for (const b of broken) {
+      expect(await get(b, { runner: fakeSpawn({ code: 1, out: null }) })).toBe(null);
+    }
+    // A different picture, resized by a working resizer, must still come back.
+    const healthy = upload();
+    const ok = await get(healthy, { runner: fakeSpawn({}) });
+    expect(ok, 'a healthy picture was taken down by other pictures failing').toBeTruthy();
+    expect(ok.type).toBe('image/webp');
+  });
+
+  it('failing at one rung does not blacklist the OTHER rungs of the same picture', async () => {
+    const n = upload();
+    // 1600 fails (say, an OOM on the biggest resize)…
+    expect(await get(n, { runner: fakeSpawn({ code: 1, out: null }) }, 1600)).toBe(null);
+    // …but the small rung, which is what the grid actually asks for, still works.
+    expect(await get(n, { runner: fakeSpawn({}) }, 400)).toBeTruthy();
+  });
+
+  it('a child killed by a SIGNAL is recorded, so it cannot re-spawn forever', async () => {
+    // `close` with a null code and a signal is how a timeout kill / OOM arrives.
+    const killed = (runs) => () => {
+      runs.n++;
+      const child = new EventEmitter();
+      setTimeout(() => child.emit('close', null, 'SIGKILL'), 0);
+      return child;
+    };
+    const runs = { n: 0 };
+    const n = upload();
+    expect(await get(n, { runner: killed(runs) })).toBe(null);
+    expect(await get(n, { runner: killed(runs) })).toBe(null);
+    expect(await get(n, { runner: killed(runs) })).toBe(null);
+    // Recorded after the FIRST kill — a pathological image must not keep
+    // spawning Python on every request.
+    expect(runs.n).toBe(1);
+  });
+
+  it('never runs more than MAX_PARALLEL resizes at once, and drops none of them', async () => {
+    // The load valve is a QUEUE, not a breaker: pressure must delay work, never
+    // shed it. Twelve distinct pictures, all of which must come back.
+    let live = 0;
+    let peak = 0;
+    const slow = (_bin, argv) => {
+      live++;
+      peak = Math.max(peak, live);
+      const child = new EventEmitter();
+      setTimeout(() => {
+        fs.writeFileSync(argv[2], WEBP);
+        live--;
+        child.emit('close', 0);
+      }, 5);
+      return child;
+    };
+    const names = Array.from({ length: 12 }, () => upload());
+    const all = await Promise.all(names.map((n) => get(n, { runner: slow })));
+    expect(all.every(Boolean), 'a queued resize was dropped instead of delayed').toBe(true);
+    expect(peak).toBeLessThanOrEqual(2); // DESIGN_THUMB_PARALLEL default
+    expect(imageThumbs._inflight.size).toBe(0);
+  });
+});
+
+describe('image-thumbs — the ladder', () => {
+  it('only serves rungs the module publishes', async () => {
+    const runs = { n: 0 };
+    // 137 is not a rung. Serving arbitrary widths would let any client spawn an
+    // unbounded number of distinct resizes.
+    expect(await get(name, { runner: fakeSpawn({ runs }) }, 137)).toBe(null);
+    expect(runs.n).toBe(0);
+  });
+
+  it('two rungs ABOVE the source width share one file rather than duplicating it', async () => {
+    const small = upload(pngOf(300, 200));
+    const runs = { n: 0 };
+    const a = await get(small, { runner: fakeSpawn({ runs }) }, 800);
+    const b = await get(small, { runner: fakeSpawn({ runs }) }, 1600);
+    expect(a).toBeTruthy();
+    expect(b.file).toBe(a.file); // same effective width (300) ⇒ same cache entry
+    expect(runs.n).toBe(1);
+    expect(a.width).toBe(300);
+  });
+
+  it('asks the resizer for exactly the width it advertises', async () => {
+    const seen = [];
+    const spy = (_bin, argv) => {
+      seen.push(Number(argv[3]));
+      const child = new EventEmitter();
+      setTimeout(() => {
+        fs.writeFileSync(argv[2], WEBP);
+        child.emit('close', 0);
+      }, 0);
+      return child;
+    };
+    const n = upload(pngOf(2400, 1600));
+    const cands = imageThumbs.candidatesForDims({ w: 2400, h: 1600 });
+    for (const c of cands) await get(n, { runner: spy }, c.rung);
+    // The width handed to Python IS the descriptor published for that rung.
+    expect(seen).toEqual(cands.map((c) => c.w));
   });
 });
 
