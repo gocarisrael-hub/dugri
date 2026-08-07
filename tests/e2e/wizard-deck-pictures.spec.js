@@ -328,6 +328,57 @@ test.describe('wizard — a broken picture leaves nothing behind', () => {
   });
 });
 
+// WHAT A SHORT SCREEN DOES TO THE ROW.
+//
+// The row is capped on the steps that must fit without scrolling (4 and 5), and
+// the cap is a fixed pixel budget — so on a short enough phone the budget runs
+// out entirely and the row is dropped there rather than squeezed under the owner's
+// 60px picture floor. That is a deliberate trade and it has two halves, both of
+// which have to hold: the row goes away CLEANLY where it doesn't fit (a half-fitting
+// row is the defect, not the fix), and it is untouched on the step that may scroll.
+//
+// wizard-noscroll.spec.js owns the other side of this — that the FORM works at
+// these sizes. Here the subject is the pictures.
+test.describe('wizard — the deck pictures on a short screen', () => {
+  const SMALL_PHONE = { width: 375, height: 667 }; // iPhone SE / 8.
+
+  test('the name step keeps its full-size pictures however short the phone', async ({ page }) => {
+    await page.setViewportSize(SMALL_PHONE);
+    await stubUploads(page);
+    await stubDeck(page, ALL_THREE);
+    await gotoNameStep(page);
+
+    const row = page.getByTestId('deck-row');
+    await expect(row).toBeVisible();
+    await expect(page.getByTestId('deck-thumb')).toHaveCount(3);
+    // Still one full-width picture per view with its dots — the same carousel a
+    // big phone gets, not a degraded one.
+    await expect(page.locator('#deckDots .carousel-dot')).toHaveCount(3);
+    const trackW = (await page.locator('#deckTrack').boundingBox()).width;
+    const slideW = (await page.locator('#deckTrack .deck-slide').first().boundingBox()).width;
+    expect(Math.abs(slideW - trackW)).toBeLessThan(2);
+  });
+
+  test('on the details step, a row with no room takes NO space rather than a little', async ({
+    page,
+  }) => {
+    await page.setViewportSize(SMALL_PHONE);
+    await stubUploads(page);
+    await stubDeck(page, ALL_THREE);
+    await page.goto(`/options.html?design=${DESIGN}&step=4`);
+    await expect(page.getByTestId('step-4')).toBeVisible();
+
+    // Not "small" — absent. A row that keeps its margin, or its dots, or a sliver
+    // of picture, is precisely how the last fix went wrong: it spent height it had
+    // not budgeted and pushed the phone field under the sticky bar.
+    await expect(page.getByTestId('deck-row')).toBeHidden();
+    expect(await page.getByTestId('deck-row').boundingBox()).toBeNull();
+    expect(
+      await page.evaluate(() => document.getElementById('deckRow').getBoundingClientRect().height)
+    ).toBe(0);
+  });
+});
+
 test.describe('wizard — the fullscreen deck viewer', () => {
   test('a thumb opens the viewer on that picture, and Escape closes it', async ({ page }) => {
     await stubUploads(page);

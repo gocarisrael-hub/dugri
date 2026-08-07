@@ -1012,24 +1012,83 @@
          The row rides `is-collapsed`, so it is on THREE steps, not one: the name
          step (3), the details step with the phone field (4) and the pawn photos
          (5). Full width at 1.414 the picture is 249px tall on a 390×844 phone and
-         the row runs 293px — 181px more than the three 112px squares it replaced.
+         the row runs 293px — far more than the three 112px squares it replaced.
          Step 3 has the owner's licence to scroll and keeps the big picture. Steps
          4 and 5 do not, and there the extra height pushed the phone field 105px
          and the skip control 37px BELOW the sticky bar's top, where a tap lands on
          the bar: the buyer could not finish the order.
-         Hiding the row on those steps was the alternative and it is worse — the
-         pictures are the reassurance that this is really the product, and the
-         steps after the decision are exactly where a buyer looks for it again.
-         112px is the height the squares had before the carousel, so nothing the
-         buyer already had is taken away; it leaves ~30px of slack on the tightest
-         step and stays well clear of the 60px floor the owner set. The box hugs
-         the picture (width from the aspect ratio, centred) instead of stretching a
-         short picture across a wide empty band. */
+         Hiding the row on those steps was the alternative and it is worse where
+         there is room for it — the pictures are the reassurance that this is
+         really the product, and the steps after the decision are exactly where a
+         buyer looks for it again.
+
+         WHAT IS CAPPED IS THE WHOLE ROW, NOT THE PICTURE ALONE. The carousel
+         brought a strip of dots the three squares never had, and it is not free:
+         the shared .carousel-dots pads 14px above and below an 8px dot, so it adds
+         36px, plus its own 8px margin. Capping only the thumb at 112px therefore
+         produced a 156px row — 44px MORE than the squares, not the same — which is
+         how the tight steps stayed broken on any phone shorter than the one they
+         were measured on.
+         So: 88px picture + 4px + a 20px dot strip = 112px of row, and with the
+         row's own 10px margin the footprint is the 122px the three squares
+         occupied. Nothing the buyer already had is taken away, dots included, and
+         88px is well clear of the 60px floor the owner set. The box hugs the
+         picture (width from the aspect ratio, centred) instead of stretching a
+         short picture across a wide empty band.
+
+         SHORT VIEWPORTS GET NO ROW HERE — see the @media below; the budget on the
+         tight steps is a fixed number of pixels, not a proportion, so it runs out.
+         All figures above measured on a 390×844 phone (iPhone 14). */
       .deck-row.is-tight .deck-thumb {
-        height: 112px;
+        height: 88px;
         width: fit-content;
         max-width: 100%;
         margin-inline: auto;
+      }
+      /* The dots are 8px marks in a 36px strip. On a step fighting for every pixel
+         that padding is the cheapest thing in the row to give up, and giving it up
+         costs no tap target: the padding is on the CONTAINER, the dot buttons keep
+         their own size. They are also the ONLY affordance that there is more than
+         one picture here — the slides are flush at 100% width (no peeking edge)
+         and the carousel is built with arrows: false — so they are slimmed, never
+         removed.
+         The padding to slim is the ENGINE'S. #deckDots is only the box handed to
+         initCarousel as dotsInto; the engine builds its own .carousel-dots INSIDE
+         it, so a rule on .deck-dots alone does not replace that 36px, it stacks
+         under it (measured: the strip came out 48px, not 20px). */
+      .deck-row.is-tight .deck-dots {
+        margin-top: 4px;
+      }
+      .deck-row.is-tight .deck-dots .carousel-dots {
+        padding: 6px 0;
+      }
+      /* NO ROOM AT ALL, so no row — measured, not guessed.
+         What the tight steps can spare is a fixed pixel budget: the form, the
+         collapsed summary and the sticky bar are all fixed-height, so every pixel
+         of viewport height below the tallest phone comes straight out of the row.
+         Measured with the row absent, the step-4 phone field clears the bar by
+         198px at 390×844 but by only 21px at 375×667 (iPhone SE) — i.e. the budget
+         is roughly (viewport height − 646px), and step 5 is the roomier of the
+         two. So the 122px footprint above needs a viewport around 790px tall
+         (clearing the bar breaks even near 768, the page stops scrolling near
+         788); below that NOTHING that respects the owner's 60px picture floor
+         fits, and the choice is between a picture and a buyer who can reach the
+         phone field.
+         The buyer wins: reassurance is worth a lot, but not an order that cannot
+         be completed, and the same pictures are still on step 3 at full size on
+         every phone. The gate is 800px, which is both a margin over the measured
+         break and the line between real device classes — iPhone SE 667, Galaxy S8
+         740, iPhone 8 Plus 736 below it; Galaxy S20 800, iPhone 12 mini 812,
+         iPhone 14 844, Pixel 5 851 above. Landscape is shorter than any of them
+         and lands on the hidden side, which is right.
+         (The alternative was to give steps 4 and 5 step 3's licence to scroll.
+         That is the owner's call to make, not this file's — "no hunting, no
+         scrolling" exists because buyers did not find the controls, and the
+         details step is the last one before paying.) */
+      @media (max-height: 799px) {
+        .deck-row.is-tight {
+          display: none;
+        }
       }
 
       /* Fullscreen viewer for those pictures. Deliberately NOT the #zoomOverlay

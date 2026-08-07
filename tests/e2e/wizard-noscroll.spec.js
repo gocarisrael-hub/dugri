@@ -340,6 +340,91 @@ test.describe('the deck pictures never bury a control', () => {
       .toBeLessThanOrEqual(4);
   });
 
+  // A PHONE IS NOT ONE SIZE.
+  //
+  // Everything above runs at 390×844 (iPhone 14) because that is the only phone
+  // playwright.config.js profiles, and that single number is what let the last fix
+  // ship broken: capping the picture at 112px left ~30px of slack THERE, so the
+  // tests went green while the same page on a 375×667 iPhone SE — 177px shorter —
+  // put the phone field 145px below the fold and the sticky bar back on top of the
+  // skip control. The bug the cap was written to fix, still shipping.
+  //
+  // The budget these steps have for the row is a fixed number of PIXELS, not a
+  // proportion: the form, the collapsed summary and the sticky bar are all fixed
+  // height, so every pixel of screen the phone doesn't have comes out of the row.
+  // Measured with no row at all, the step-4 field clears the bar by 198px at
+  // 390×844 and by 21px at 375×667 — the small phone has no room for a picture at
+  // any size the owner would accept, so it gets none and keeps the working form.
+  //
+  // A third playwright project would put every spec in the suite through a third
+  // browser for this; these two viewports are set per-test instead, where the size
+  // is the actual subject.
+  //
+  // The assertions are the buyer's question, not a pixel: can a finger land on the
+  // control, is the control clear of the bar, and did the step stay put.
+  const SMALL_PHONE = { width: 375, height: 667 }; // iPhone SE / 8 — the floor.
+  const SHORTEST_WITH_PICTURES = { width: 375, height: 800 }; // Galaxy S20 class.
+
+  async function assertControlIsUsable(page, selector) {
+    await assertTappable(page, selector);
+    // Tappable at the centre is not the whole promise: the bar must not be over
+    // ANY of it, and the step must not have started scrolling to make room.
+    await expect
+      .poll(async () =>
+        page.evaluate((sel) => {
+          const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
+          return Math.round(document.querySelector(sel).getBoundingClientRect().bottom - bar.top);
+        }, selector)
+      )
+      .toBeLessThanOrEqual(0);
+    await expect
+      .poll(async () =>
+        page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
+      )
+      .toBeLessThanOrEqual(4);
+  }
+
+  test('step 4 on a small phone: the phone field is reachable', async ({ page }) => {
+    await page.setViewportSize(SMALL_PHONE);
+    await withDeckPictures(page);
+    await page.goto('/options.html?design=bachelorette&step=4');
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    // It was 145px below the bar's top here — off the bottom of the screen.
+    await assertControlIsUsable(page, '[data-testid="owner-phone"]');
+  });
+
+  test('step 5 on a small phone: the skip control is reachable', async ({ page }) => {
+    await page.setViewportSize(SMALL_PHONE);
+    await withDeckPictures(page);
+    await page.goto('/options.html?design=bachelorette&step=5');
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
+    // It was 73px below the bar's top, and the hit test came back "the bar".
+    await assertControlIsUsable(page, '[data-testid="pawn-skip"]');
+  });
+
+  // THE BOUNDARY, which is where a height budget actually gets tested. This is the
+  // shortest screen on which the pictures are still shown, so it has the least
+  // slack of any case that renders the row — and the whole row has to fit, dots
+  // included. The previous fix capped the PICTURE at 112px and left the carousel's
+  // 44px dot strip uncounted; at this size that overspend alone puts the field
+  // under the bar and starts the step scrolling.
+  test('the shortest phone that still gets pictures: the whole row fits, dots and all', async ({
+    page,
+  }) => {
+    await page.setViewportSize(SHORTEST_WITH_PICTURES);
+    await withDeckPictures(page);
+    await page.goto('/options.html?design=bachelorette&step=4');
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    // The pictures really are on screen here — otherwise this silently becomes a
+    // test of the empty case and the budget goes unmeasured.
+    await assertRowWorthLookingAt(page);
+    // The dots are part of the row's cost, so prove they are on screen too: a fix
+    // that bought the space back by dropping the only "there is more than one
+    // picture" affordance is not the fix.
+    await expect(page.locator('#deckDots .carousel-dot')).toHaveCount(3);
+    await assertControlIsUsable(page, '[data-testid="owner-phone"]');
+  });
+
   // Step 3 keeps the big picture AND its licence to scroll (owner, 2026-08-06), so
   // here the buyer is expected to scroll — but having scrolled, the control must be
   // clear of the sticky bar and the tap must go through.
@@ -383,6 +468,39 @@ test.describe('the deck pictures never bury a control', () => {
     );
     expect(overBar, 'the sticky bar must not sit on a gender option').toBe(false);
     // … and the tap lands.
+    await page.locator('[data-testid="gender-group"] label').last().click({ timeout: 5000 });
+  });
+
+  // The small phone does NOT lose the pictures — it loses them on the two steps
+  // that cannot hold them. Step 3 may scroll, so it has room at any size and keeps
+  // the full-size picture. Without this, "hide the row whenever the screen is
+  // short" would pass every test above while quietly taking the product photos
+  // away from every SE owner, which is the outcome the owner rejected.
+  test('step 3 on a small phone: full-size pictures, and the control still reachable', async ({
+    page,
+  }) => {
+    await page.setViewportSize(SMALL_PHONE);
+    await withDeckPictures(page);
+    await page.goto('/options.html?design=bachelorette&step=3');
+    await expect(page.getByTestId('step-3')).toBeVisible();
+    // Not merely present: still the big preview, not a token the buyer can't read.
+    await expect(page.getByTestId('deck-row')).toBeVisible();
+    const thumb = await page
+      .getByTestId('deck-thumb')
+      .first()
+      .evaluate((el) => el.getBoundingClientRect().height);
+    expect(thumb, 'a short screen must not shrink the step that may scroll').toBeGreaterThan(150);
+
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
+          const el = document.querySelector('[data-testid="gender-group"]').getBoundingClientRect();
+          return Math.round(el.bottom - bar.top);
+        })
+      )
+      .toBeLessThanOrEqual(0);
     await page.locator('[data-testid="gender-group"] label').last().click({ timeout: 5000 });
   });
 });
