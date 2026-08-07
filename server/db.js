@@ -974,6 +974,39 @@ const db = {
     );
   },
 
+  // Abandon every in-flight pay session on an order: the buyer CLOSED the payment
+  // window, so no charge can still land from it. Without this the session stays
+  // "in flight" for the whole TTL and deadlocks the free/coupon path — the buyer
+  // is told to close a window they have already closed, with no way to clear it
+  // (the bug behind "the pay button does nothing").
+  //
+  // `resolved` here means only "no longer in flight". It does NOT hide the
+  // session from the PeleCard callback: getCollectionByPayToken / sessionByToken
+  // look sessions up by TOKEN regardless of this flag, so a charge that somehow
+  // still completes on an abandoned session is honoured and verified against its
+  // own amount exactly as before. Abandoning costs the buyer nothing; leaving it
+  // in flight locks them out.
+  //
+  // Owner-token gated. Returns the number abandoned, or null when not authorised.
+  abandonPaySessions(id, ownerToken) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return null;
+    if (!c.order || !c.order.pelecard || !Array.isArray(c.order.pelecard.sessions)) return 0;
+    // A PAID order has nothing in flight worth clearing, and rewriting its
+    // sessions would only muddy the payment record.
+    if (c.order.paid) return 0;
+    let n = 0;
+    for (const s of c.order.pelecard.sessions) {
+      if (s && !s.resolved) {
+        s.resolved = true;
+        s.abandoned_at = nowIso();
+        n += 1;
+      }
+    }
+    if (n) saveDb();
+    return n;
+  },
+
   // Find the collection whose order has a pay SESSION with this ParamX token
   // (the AdditionalDetailsParamX PeleCard echoes back). Returns null if none.
   getCollectionByPayToken(token) {

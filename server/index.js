@@ -2841,6 +2841,25 @@ async function runReminderListScan(now = Date.now()) {
   return sent;
 }
 
+// Owner-only: the buyer CLOSED the payment window. Marks every in-flight pay
+// session abandoned so it stops counting as "a payment is open".
+//
+// Without this the checkout deadlocks: pay/init records a real session, the
+// buyer closes the modal (which the server never hears about), and for the next
+// 20 minutes the free/coupon path answers 409 "close the payment window before
+// applying a coupon" — a window that is already closed, with no way to clear it.
+// That is the "pay button does nothing" report.
+//
+// Deliberately forgiving: any outcome that isn't outright forbidden answers 200,
+// because this is a fire-and-forget beacon sent while a modal closes. A buyer
+// must never be blocked by the failure of a cleanup call they cannot see.
+app.post('/api/collections/:id/pay/cancel', (req, res) => {
+  const token = req.body && req.body.owner_token;
+  const n = db.abandonPaySessions(req.params.id, token);
+  if (n === null) return res.status(403).json({ error: 'forbidden' });
+  res.json({ cancelled: n });
+});
+
 // Owner-only: start a PeleCard card payment for this collection's order.
 // Persists/refreshes the order first (same validation as /order), then asks
 // PeleCard for an iframe URL. Returns { url } for the browser to load in an
