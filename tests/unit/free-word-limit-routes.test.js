@@ -107,12 +107,14 @@ async function waitForMails(n, timeout = 1000) {
 }
 
 describe('POST /words enforces the quota', () => {
-  it('adds normally below the quota and reports the quota back', async () => {
+  it('adds normally below the quota, without disclosing the quota', async () => {
     const c = await newCollection();
     const r = await post('/api/collections/' + c.id + '/words', { words: words(3) });
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ added: 3, blocked: 0, count: 3, free_word_limit: 5 });
+    expect(r.body).toMatchObject({ added: 3, blocked: 0, count: 3 });
     expect(r.body.free_limit_locked).toBe(false);
+    // The buyer must not be able to see the cap coming.
+    expect(r.body).not.toHaveProperty('free_word_limit');
   });
 
   it('takes a batch partially, reporting what the quota refused', async () => {
@@ -129,6 +131,8 @@ describe('POST /words enforces the quota', () => {
     const r = await post('/api/collections/' + c.id + '/words', { words: ['עוד'] });
     expect(r.status).toBe(402);
     expect(r.body.error).toBe('free_limit_reached');
+    // Locked, so the number rides along (count already equals it). What matters
+    // is that the PAGE never renders it — see the e2e spec.
     expect(r.body.free_word_limit).toBe(5);
     // Nothing slipped through.
     expect((await get('/api/collections/' + c.id)).body.count).toBe(5);
@@ -141,28 +145,54 @@ describe('POST /words enforces the quota', () => {
     db.markPaid(c.id);
     const r = await post('/api/collections/' + c.id + '/words', { words: ['אחרי', 'תשלום'] });
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ added: 2, blocked: 0, free_word_limit: null });
+    expect(r.body).toMatchObject({ added: 2, blocked: 0, free_limit_locked: false });
   });
 });
 
-describe('GET /api/collections/:id projects the quota', () => {
-  it('carries the limit and the live locked flag', async () => {
+describe('GET /api/collections/:id withholds the limit until the lock', () => {
+  it('sends no quota number while the collection is still open', async () => {
     const c = await newCollection();
-    let v = (await get('/api/collections/' + c.id)).body;
-    expect(v.free_word_limit).toBe(5);
+    const v = (await get('/api/collections/' + c.id)).body;
     expect(v.free_limit_locked).toBe(false);
-    await post('/api/collections/' + c.id + '/words', { words: words(5) });
-    v = (await get('/api/collections/' + c.id)).body;
-    expect(v.free_limit_locked).toBe(true);
+    // The surprise only works if the cap is unknowable in advance — a buyer
+    // reading the Network tab must not find it BEFORE reaching it.
+    expect(v).not.toHaveProperty('free_word_limit');
   });
 
-  it('reports no limit at all once paid', async () => {
+  it('sends it once locked — by then `count` already is the number', async () => {
     const c = await newCollection();
+    await post('/api/collections/' + c.id + '/words', { words: words(5) });
+    const v = (await get('/api/collections/' + c.id)).body;
+    expect(v.free_limit_locked).toBe(true);
+    expect(v.free_word_limit).toBe(5);
+    expect(v.count).toBe(5);
+  });
+
+  it('a partially-blocked add reports what was refused', async () => {
+    // The page needs this to tell the buyer how many of their pasted words did
+    // not make it — without it a 40-word paste silently loses 35.
+    const c = await newCollection();
+    await post('/api/collections/' + c.id + '/words', { words: words(3) });
+    const r = await post('/api/collections/' + c.id + '/words', { words: words(40, 'x') });
+    expect(r.body.blocked).toBe(38);
+    expect(r.body.added).toBe(2);
+  });
+
+  it('releases a collection that was ALREADY locked, once it is paid', async () => {
+    const c = await newCollection();
+    // Fill the quota FIRST so the collection is genuinely locked — asserting
+    // "not locked" on an empty collection would pass even if the paid exemption
+    // were broken, since 0 words never reaches a limit of 5.
+    await post('/api/collections/' + c.id + '/words', { words: words(5) });
+    expect((await get('/api/collections/' + c.id)).body.free_limit_locked).toBe(true);
     db.setOrder(c.id, c.owner_token, { version: 'pdf' });
     db.markPaid(c.id);
     const v = (await get('/api/collections/' + c.id)).body;
-    expect(v.free_word_limit).toBe(null);
     expect(v.free_limit_locked).toBe(false);
+    // And the lock is really gone, not just reported gone.
+    const r = await post('/api/collections/' + c.id + '/words', { words: ['אחרי', 'התשלום'] });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ added: 2, blocked: 0 });
   });
 });
 

@@ -1839,20 +1839,14 @@
         // The group is opened asynchronously after the order, so its link can
         // appear on any later poll — re-check on every render, not just at setup.
         updateWaGroupLink();
+        // Free quota: the buyer is NEVER told the number, or that a quota exists,
+        // until they actually hit it — the lock is meant to land as a surprise, and
+        // a "3 of your 20 free words" countdown would both spoil it and cap how
+        // much they bother to write. So the counter keeps its ordinary
+        // minimum/maximum framing throughout; only `free_limit_locked` (a bare
+        // boolean — the server deliberately does not send the limit) changes the UI.
+        applyFreeLimit(!!state.free_limit_locked);
         const n = state.count;
-        // Free quota (server-projected): a number while this collection is capped,
-        // null once it's paid / exempt / the gate is switched off. While capped the
-        // counter reframes around the quota — promising "412 words" to someone who
-        // can only add 20 of them right now would be a lie.
-        const freeLimit = Number.isInteger(state.free_word_limit) ? state.free_word_limit : null;
-        const freeLocked = !!state.free_limit_locked;
-        applyFreeLimit(freeLimit, freeLocked, n);
-        if (freeLimit !== null) {
-          renderFreeCounter(freeLimit, freeLocked, n);
-          renderWords();
-          renderOwnerState();
-          return;
-        }
         const atMax = n >= MAX_WORDS;
         // Stage 2 kicks in once the 70-word minimum is met: the pill/hint reframe
         // around the max and the bar swaps to one scaled to MAX_WORDS.
@@ -1898,37 +1892,20 @@
           ? 'הגעתם למקסימום — יש לכם משחק מפוצץ!'
           : 'המינימום מאחוריכם — ממשיכים למקסימום (' + MAX_WORDS + ')';
 
+        // Locked: replace the "keep going" hint written above, which would
+        // otherwise sit directly under a disabled input telling them to add more.
+        if (state.free_limit_locked) applyLockedCounterCopy();
+
         renderWords();
         renderOwnerState();
-      }
-
-      // The counter while a FREE QUOTA is in force: one bar scaled to the quota,
-      // and copy that says what the quota actually is. The two-stage
-      // minimum/maximum framing resumes automatically once payment lifts the cap.
-      function renderFreeCounter(limit, locked, n) {
-        const shown = Math.min(n, limit);
-        $('#count').textContent = shown;
-        $('#countMax').textContent = ' / ' + limit + ' מילים חינם';
-        $('#countHint').textContent = locked
-          ? 'ניצלתם את כל ' +
-            limit +
-            ' המילים החינמיות. אחרי התשלום אפשר להמשיך עד ' +
-            MAX_WORDS +
-            '.'
-          : 'עוד ' +
-            (limit - n) +
-            ' מילים בחינם — אחר כך משלימים תשלום וממשיכים עד ' +
-            MAX_WORDS +
-            '.';
-        $('#stage1').classList.remove('hidden');
-        $('#stage2').classList.add('hidden');
-        $('#barFill1').style.width = Math.min(100, (shown / limit) * 100) + '%';
       }
 
       // Engage / release the lock on the add controls. Presentation only — the
       // server refuses over-quota words regardless of what the page shows — but
       // the controls are genuinely disabled so nobody types into a dead box.
-      function applyFreeLimit(limit, locked, n) {
+      // Takes only `locked`: the quota NUMBER never reaches the browser, so there
+      // is nothing here that could leak it before the lock lands.
+      function applyFreeLimit(locked) {
         const card = $('#addCard');
         const veil = $('#lockVeil');
         const payBtn = $('#lockPayBtn');
@@ -1938,14 +1915,24 @@
           el.disabled = locked;
         }
         if (!locked) return;
-        $('#lockChip').textContent = '🔒 ההוספה נעולה · ' + Math.min(n, limit) + '/' + limit;
-        // The owner can act on this (pay); a contributor can't, so they're told
-        // who can — never handed a pay button for someone else's order.
+        // Name the CAUSE. Without this the page reads as broken rather than as a
+        // paywall: the box is dead, and nothing on screen says why or what fixes
+        // it. The owner can act (pay); a contributor can't, so they are told who
+        // can — never handed a pay button for someone else's order.
         $('#lockNote').textContent = isOwner
-          ? 'המילים שאספתם שמורות. התשלום פותח את האיסוף מיד.'
-          : 'הגעתם למכסת המילים החינמית. המילים שאספתם שמורות — ' +
-            'ברגע שהמארגנ/ת תשלים את התשלום אפשר יהיה להמשיך.';
+          ? 'כדי להמשיך להוסיף מילים צריך להשלים את התשלום. כל המילים שאספתם שמורות.'
+          : 'כדי להמשיך להוסיף מילים המארגנ/ת צריכה להשלים את התשלום. כל המילים שנאספו שמורות.';
         payBtn.classList.toggle('hidden', !isOwner);
+      }
+
+      // The counter's ordinary copy urges "another 50 to the minimum" — true, but
+      // actively wrong to say next to a disabled input. While locked the hint says
+      // what is actually happening instead. The pill/bar keep measuring toward the
+      // real product goal (that goal has not changed), and neither names the quota.
+      function applyLockedCounterCopy() {
+        $('#countHint').textContent = isOwner
+          ? 'האיסוף מושהה עד להשלמת התשלום.'
+          : 'האיסוף מושהה עד שהמארגנ/ת תשלים את התשלום.';
       }
 
       function renderWords() {
@@ -2112,13 +2099,14 @@
           const blocked = (res && res.blocked) || 0;
           track('word_added', { method: method || 'single', count: added, skipped, blocked });
           if (blocked) {
-            const limit = res && res.free_word_limit;
-            say(
-              added
-                ? 'נוספו ' + added + ' מילים — והגעתם למכסת החינם'
-                : 'הגעתם למכסת ' + (limit || '') + ' המילים החינמיות'
-            );
-            return true;
+            // NAME THE LOSS. A 40-word paste with room for 5 stores 5 and drops 35;
+            // saying only "we stopped here" while the textarea is cleared destroys
+            // typing the buyer can't get back. Returning false keeps their text on
+            // screen (see the paste handler) so the rest survives the paywall.
+            const lost = blocked === 1 ? 'מילה אחת לא נוספה' : blocked + ' מילים לא נוספו';
+            const landed = added === 1 ? 'נוספה מילה' : 'נוספו ' + added + ' מילים';
+            say((added ? landed + ' · ' : '') + lost + ' — האיסוף מושהה עד להשלמת התשלום');
+            return false;
           }
           if (added >= 1) {
             // Something was added → confirm with a non-blocking toast. If part of
@@ -2163,8 +2151,8 @@
             await refresh();
             openDialog(
               isOwner
-                ? 'הגעתם למכסת המילים החינמית. אחרי התשלום אפשר להמשיך להוסיף.'
-                : 'הגעתם למכסת המילים החינמית. ברגע שהמארגנ/ת תשלים את התשלום אפשר יהיה להמשיך.'
+                ? 'האיסוף מושהה עד להשלמת התשלום. אחרי התשלום ממשיכים להוסיף מילים.'
+                : 'האיסוף מושהה עד שהמארגנ/ת תשלים את התשלום.'
             );
           } else {
             // Network drop, HTTP 500, or the server's 400 (too many words):

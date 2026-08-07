@@ -490,16 +490,21 @@ function publicView(c, { owner = false } = {}) {
     // Whether online card payment is available (PeleCard credentials present).
     // Lets collect.html show the credit-card button only when it will work.
     card_enabled: pelecard.isConfigured(),
-    // Free word quota. `free_word_limit` is null when this collection isn't
-    // subject to it at all (paid, or created before the gate shipped, or the gate
-    // is switched off) — the page then shows its ordinary uncapped counter.
-    // `free_limit_locked` is the live "adding is refused right now" state.
+    // Free word quota. The buyer is meant to discover the cap by REACHING it, so
+    // while the collection is still open the limit is withheld — shipping it here
+    // would put it in devtools' Network tab (and in any scraper) long before the
+    // lock lands, and the page has no use for it before then.
+    //
+    // Once LOCKED it is sent. Not a leak worth guarding: at the lock `count` IS
+    // the limit, so anyone reading the payload already has the number. Omitting it
+    // there buys nothing and costs something real — a tab opened before this
+    // shipped runs the old renderer, which prints `Math.min(count, null)` and
+    // draws the lock as "0/null". The page still never DISPLAYS the number.
     ...(() => {
       const fl = db.freeLimitState(c, words.length);
-      return {
-        free_word_limit: fl.applies ? fl.limit : null,
-        free_limit_locked: fl.locked,
-      };
+      return fl.locked
+        ? { free_limit_locked: true, free_word_limit: fl.limit }
+        : { free_limit_locked: false };
     })(),
     // The buyer's WhatsApp group join link, when a group has been opened for this
     // collection. OWNER-ONLY: anyone holding the public collect link could
@@ -2044,10 +2049,12 @@ app.post('/api/collections/:id/words', (req, res) => {
   // point of the quota is that it can't be walked around.
   const before = db.freeLimit(req.params.id);
   if (before && before.locked) {
+    // Locked, so the limit goes out with it (same reasoning as the public view:
+    // at the lock `count` already IS the limit). The page still never shows it.
     return res.status(402).json({
       error: 'free_limit_reached',
-      free_word_limit: before.limit,
       count: db.countWords(req.params.id),
+      free_word_limit: before.limit,
     });
   }
   const r = db.addWords(req.params.id, words, req.body && req.body.added_by);
@@ -2076,8 +2083,10 @@ app.post('/api/collections/:id/words', (req, res) => {
     too_long: r.tooLong || 0,
     max_word_len: validate.MAX_WORD_LEN,
     count,
-    free_word_limit: after && after.applies ? after.limit : null,
+    // Locked state, plus the limit ONLY once locked (see the public view for why
+    // withholding it past that point buys nothing).
     free_limit_locked: !!(after && after.locked),
+    ...(after && after.locked ? { free_word_limit: after.limit } : {}),
   });
 });
 
