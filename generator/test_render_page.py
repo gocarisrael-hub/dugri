@@ -2909,3 +2909,438 @@ def test_the_runs_of_a_mixed_line_span_the_same_width_as_one_face_would():
                                           single)][2:]
     assert ref_x, "the single-face line should have one word run"
     assert abs(max(xs) - ref_x[0]) < 0.01, (xs, ref_x)
+
+
+# ---- wiring the second face into the renderer ------------------------------
+# The groundwork could resolve a Latin face, split a line by script and measure
+# two fonts as one. None of it was reachable: no surface DECLARED the second
+# family, and the fit still measured one font. Both halves are load-bearing and
+# they fail differently — a missing declaration prints the surface in a system
+# font with nothing to say so, and a fit measured off one face reserves a width
+# the renderer does not paint, which is how a line ends up over the trim.
+
+LATIN = os.path.join(HERE, "word-fonts", "Fredoka-Medium.ttf")
+
+
+def _alt_store(**kw):
+    """``test_build_deck.Store``, with a Latin word face and title face added.
+
+    Returns the context manager; the caller enters it. The face is dropped into
+    the template's own ``fonts/`` dir and named in themes.json, which is exactly
+    what the admin upload screen does.
+    """
+    import shutil
+    import test_build_deck as tb
+
+    class _S(tb.Store):
+        def __enter__(self):
+            tmp = super().__enter__()
+            root = os.environ["DATA_DIR"]
+            fonts = os.path.join(root, "templates", "demo", "fonts")
+            shutil.copy(LATIN, os.path.join(fonts, "Fredoka-Medium.ttf"))
+            p = os.path.join(root, "templates", "themes.json")
+            with open(p, encoding="utf-8") as fh:
+                data = json.load(fh)
+            data["demo"]["word_font_alt"] = "Fredoka-Medium.ttf"
+            data["demo"]["title_font_alt"] = "Fredoka-Medium.ttf"
+            with open(p, "w", encoding="utf-8") as fh:
+                json.dump(data, fh)
+            return tmp
+
+    return _S(**kw)
+
+
+# --- every site that declares the first face declares the second ------------
+
+
+def test_no_alt_face_declares_exactly_the_one_family_it_always_did():
+    import test_build_deck as tb
+    with tb.Store():
+        assert rp.word_faces("demo") == rp.font_face(
+            "HebWord", config.resolve_word_font("demo"))
+        cfg = config.theme("demo")
+        assert rp.title_faces("demo", cfg) == rp.font_face(
+            "TitleFont", config.resolve_title_font("demo"),
+            config.title_font_weight(cfg))
+
+
+def test_an_uploaded_face_is_declared_beside_the_first_one():
+    with _alt_store():
+        assert rp.word_faces("demo").count("@font-face") == 2
+        assert "font-family:'HebWordAlt'" in rp.word_faces("demo")
+        assert rp.title_faces("demo").count("@font-face") == 2
+        assert "font-family:'TitleFontAlt'" in rp.title_faces("demo")
+
+
+def test_every_declaration_site_carries_both_families():
+    """The point of the whole first half, stated over the sites themselves.
+
+    A forgotten site does not fail — Chrome substitutes a system font for a
+    family it cannot find and prints the surface in Helvetica. So each render
+    path is asked for its own stylesheet and both names have to be in it.
+    """
+    import build
+    import deck_html
+    with _alt_store() as tmp:
+        cfg = config.theme("demo")
+        csvp = os.path.join(tmp, "o.csv")
+        import pack
+        pack.pack([f"מילה{i}" for i in range(1, 40)], csvp)
+
+        card = rp.build_single_card_svg("demo", config.card_path("demo", 2),
+                                        ["מסיבה"] * 4, ["שירה"], front_index=2)
+        back = rp.build_single_card_svg("demo", config.card_path("demo", 1),
+                                        [], ["שירה"], kind="back", back_index=1)
+        strip = (rp.GEOMETRIC_TEXT_STYLE + rp.word_faces("demo")
+                 + rp.title_faces("demo", cfg))
+        deck, _vbs = build.deck_document("demo", csvp, ["שירה"])
+        board = deck_html.DeckDocument(100, 100)
+        board.add_style(rp.GEOMETRIC_TEXT_STYLE
+                        + rp.title_faces("demo", cfg, emit=deck_html.font_face))
+
+        for tag, css in (("single card", card), ("card back", back),
+                         ("fronts strip", strip), ("deck", deck.html("0 0 1 1")),
+                         ("board doc", board.html("0 0 1 1"))):
+            assert "font-family:'TitleFontAlt'" in css, tag
+        for tag, css in (("single card", card), ("fronts strip", strip),
+                         ("deck", deck.html("0 0 1 1"))):
+            assert "font-family:'HebWordAlt'" in css, tag
+
+
+def test_the_alt_faces_are_declared_once_for_the_whole_strip():
+    """Not once per card. Eight cards x four base64 faces is the bloat the
+    document-level stylesheet exists to avoid, and it doubles with a second
+    face rather than staying flat."""
+    with _alt_store():
+        cfg = config.theme("demo")
+        style = rp.word_faces("demo") + rp.title_faces("demo", cfg)
+        assert style.count("@font-face") == 4
+        for front in config.fronts(cfg):
+            overlay = rp.card_overlay("demo", config.recipe_or_empty(cfg),
+                                      ["BBQ"] * 4, ["שירה"], front_index=front)
+            assert "@font-face" not in overlay, front
+
+
+def test_a_buyer_word_font_suppresses_the_template_latin_face():
+    """The owner's decision. The picker promises "your whole card in this
+    face"; pairing the face she chose with the template's Latin one is a
+    combination nobody designed and she never saw."""
+    with _alt_store():
+        assert rp.word_font_alt("demo") is not None
+        assert rp.word_font_alt("demo", "Cafe Regular.ttf") is None
+        assert "HebWordAlt" not in rp.word_faces("demo", "Cafe Regular.ttf")
+        # ...and the fit and the render agree about it, not just the stylesheet.
+        card = rp.build_single_card_svg("demo", config.card_path("demo", 2),
+                                        ["BBQ"] * 4, ["שירה"], front_index=2,
+                                        word_font="Cafe Regular.ttf")
+        assert "HebWordAlt" not in card
+
+
+# --- the fit measures through Face ------------------------------------------
+
+
+def test_the_fit_reserves_the_width_the_renderer_paints():
+    """The invariant the whole second half exists for.
+
+    ``_word_layouts`` decides one size for the card from the widths it
+    measures; ``word_lines`` then paints at that size. Measure with one face and
+    paint with two and the two numbers part company — silently, until a line
+    crosses the trim.
+    """
+    face = rp._word_face(CAFE, LATIN)
+    slots = [{"x0": 20, "y0": 40 + i * 40, "x1": 190, "y1": 70 + i * 40,
+              "color": "#000"} for i in range(4)]
+    words = ["40 מתחת ל-BBQ", "BBQ", "מסיבה", "Tel Aviv"]
+    cell = [0, 0, 200, 300]
+    layouts = rp._word_layouts(slots, words, face, face.ref, cell=cell)
+    for i, lay in enumerate(layouts):
+        painted = sum(f.getlength(t) for f, t in face.runs(lay.lines[0]))
+        assert abs(painted - face.length(lay.lines[0])) < 1e-9, words[i]
+        reserved = rp._line_width_at(face, face.ref, i + 1, lay.lines[0])
+        one_face = rp._line_width_at(face.primary, face.ref, i + 1, lay.lines[0])
+        if any(f is face.alt for f, _ in face.runs(lay.lines[0])):
+            assert reserved != one_face, (
+                f"{words[i]} measured the same in one face as in two — the fit "
+                "is not going through Face")
+
+
+def test_a_wider_latin_face_makes_the_card_set_smaller():
+    """The reading has to REACH the size, not merely be taken.
+
+    Fredoka sets "Tel Aviv" wider than Cafe does, so a card carrying it must
+    come out no larger with the Latin face than without it. If the fit still
+    measured the Hebrew face the two would be equal and the printed Latin would
+    overrun the band it was fitted for.
+    """
+    slots = [{"x0": 20, "y0": 40, "x1": 190, "y1": 70, "color": "#000"}]
+    cell = [0, 0, 200, 300]
+    word = ["Tel Aviv Tel Aviv"]
+    one = rp._word_face(CAFE)
+    two = rp._word_face(CAFE, LATIN)
+    assert two.length(word[0]) > one.length(word[0]), "pick a genuinely wider face"
+    a = rp._word_layouts(slots, word, one, one.ref, cell=cell)[0].size
+    b = rp._word_layouts(slots, word, two, two.ref, cell=cell)[0].size
+    assert b < a, (a, b)
+
+
+def test_the_numbered_marker_never_sees_the_second_face():
+    """By design: the digit and its stop are the card's OWN face.
+
+    They are drawn as their own runs in ``HebWord`` and the digit column every
+    word starts after is measured off it, so an uploaded Latin face may not move
+    a number by a hundredth of a unit.
+    """
+    one, two = rp._word_face(CAFE), rp._word_face(CAFE, LATIN)
+    assert rp._marker_advance(rp._primary(two), 4) == rp._marker_advance(one.primary, 4)
+    for num in (1, 2, 3, 4):
+        assert (rp._marker_geometry(rp._primary(two), two.ref, num, 12.0)
+                == rp._marker_geometry(one.primary, one.ref, num, 12.0))
+    # ...and in the markup: the two marker runs stay HebWord on a Latin line.
+    out = rp.word_lines(200, 100, 12, "#000", 3, ["BBQ"], CAFE, alt_font_path=LATIN)
+    assert out.count('font-family="HebWord"') == 2, out
+    assert out.count('font-family="HebWordAlt"') == 1, out
+
+
+def test_the_row_pitch_is_the_worst_of_the_two_faces():
+    """#340's rule is a CONSTANT row pitch down the card. Two faces at one size
+    do not have one ink height, so a pitch read off only the Hebrew one is a
+    pitch the Latin one reaches into."""
+    ref = 200
+    heb = rp._face_lead(rp._word_metrics(CAFE)[0], ref)
+    lat = rp._face_lead(rp._word_metrics(LATIN)[0], ref)
+    both = rp._font_lead(rp._word_face(CAFE, LATIN), ref)
+    assert both == max(heb, lat), (heb, lat, both)
+    # and the one-face answer is untouched
+    assert rp._font_lead(rp._word_face(CAFE), ref) == heb
+
+
+def test_a_two_face_line_reads_its_pitch_column_by_column_not_by_box():
+    """``_min_line_pitch_by_box`` says in its own docstring that it
+    over-reserves; a second face is no reason to fall back to it. The
+    per-column reading is what stopped 36% of a deck being spaced wider than
+    its design spaces itself."""
+    face = rp._word_face(CAFE, LATIN)
+    lines = ["BBQ ליל", "לקחת gg"]
+    by_column = rp._min_line_pitch(face, face.ref, lines, 0.0, align="right",
+                                   rtl=True)
+    by_box = rp._min_line_pitch_by_box(face, face.ref, lines, 0.0)
+    assert by_column < by_box, (by_column, by_box)
+    assert by_column > 0
+
+
+def test_the_skyline_of_a_one_face_line_is_the_raster_it_always_was():
+    """Byte-identity again, at the level the pitch is actually read off."""
+    face = rp._word_face(CAFE)
+    for line in ("מסיבה", "40 מתחת", "1. עפיפון"):
+        assert (rp._line_skyline(face, face.ref, line, True)
+                == rp._ink_skyline(CAFE, face.ref, rp.visual_order(line, True)))
+
+
+def test_a_two_face_skyline_is_each_runs_own_raster_shifted_by_the_pen():
+    """The composition itself, checked against the runs it is composed of.
+
+    A Latin run is set in a face the Hebrew skyline never saw, so its columns
+    have to carry the LATIN face's ink — read off the Hebrew one they would
+    describe a shape nothing prints, and the row below would be spaced for it.
+    """
+    face = rp._word_face(CAFE, LATIN)
+    line = "40 מתחת ל-BBQ"
+    x0, below, above = rp._line_skyline(face, face.ref, line, True)
+    assert any(v is not None for v in below), "a mixed line must report ink"
+
+    # "BBQ" is the LEFTmost run of an RTL line, so it is drawn first and its
+    # profile sits at the line's own origin.
+    lx, l_below, l_above = rp._ink_skyline(LATIN, face.ref, "BBQ")
+    off = int(round(lx)) - x0
+    for i, (b, a) in enumerate(zip(l_below, l_above)):
+        if b is None:
+            continue
+        assert below[off + i] == b and above[off + i] == a, (i, b, below[off + i])
+
+    # ...and it is genuinely the Latin face's shape, not the Hebrew one's.
+    heb = rp._ink_skyline(CAFE, face.ref, "BBQ")
+    assert [v for v in heb[2] if v is not None] != [v for v in l_above if v is not None]
+
+
+# --- the title --------------------------------------------------------------
+
+
+def test_a_title_line_in_two_faces_is_one_text_with_a_tspan():
+    """Unlike a word line. The reason ``word_lines`` hand-places its runs is a
+    stranded neutral "." that bidi reorders away from its digit; a title has no
+    such neutral and sets on a textPath where ``direction="rtl"`` IS honoured
+    (test_title_block_rtl_reorders_digit_in_raster). So Chrome does the
+    ordering and the arch, alignment and three paint layers are untouched."""
+    box = {"x0": 0, "y0": 0, "x1": 400, "y1": 120}
+    mixed = rp.title_block(box, ["PARTY לשירה"], "#000", "#000", CAFE, 0, 0,
+                           False, rtl=True, alt_font_path=LATIN)
+    assert '<tspan font-family="TitleFontAlt">PARTY</tspan>' in mixed, mixed
+    # one <text> per line per paint layer, as before — the tspan adds no element
+    assert mixed.count("<textPath") == mixed.count("</textPath")
+
+
+def test_a_hebrew_only_title_is_untouched_by_an_uploaded_face():
+    box = {"x0": 0, "y0": 0, "x1": 400, "y1": 120}
+    plain = rp.title_block(box, ["רווקות לשירה"], "#000", "#000", CAFE, 0, 0,
+                           False, rtl=True)
+    with_alt = rp.title_block(box, ["רווקות לשירה"], "#000", "#000", CAFE, 0, 0,
+                              False, rtl=True, alt_font_path=LATIN)
+    # The per-block id counter moves with every call; nothing else may.
+    strip = lambda s: re.sub(r"\bt\d+([sm]\d+)\b", r"t\1", s)   # noqa: E731
+    assert strip(plain) == strip(with_alt)
+
+
+def test_a_pinned_title_size_is_dropped_once_the_other_face_is_in_play():
+    """The owner settled this as auto-fit at render time, no second
+    calibration. ``title_style.size`` was measured against the ORIGIN's face and
+    the ORIGIN's own text; a title set in another face is neither, and a pin per
+    (template x face x script) is a number nobody would ever re-measure."""
+    box = {"x0": 0, "y0": 0, "x1": 400, "y1": 120}
+
+    def size_of(svg):
+        return float(re.search(r'font-size="([\d.]+)"', svg).group(1))
+
+    pinned_he = size_of(rp.title_block(box, ["רווקות לשירה"], "#000", "#000",
+                                       CAFE, 0, 0, False, rtl=True,
+                                       fixed_size=9.0, alt_font_path=LATIN))
+    assert abs(pinned_he - 9.0) < 0.01, "a Hebrew title still honours its pin"
+    mixed = size_of(rp.title_block(box, ["PARTY לשירה"], "#000", "#000", CAFE,
+                                   0, 0, False, rtl=True, fixed_size=9.0,
+                                   alt_font_path=LATIN))
+    auto = size_of(rp.title_block(box, ["PARTY לשירה"], "#000", "#000", CAFE,
+                                  0, 0, False, rtl=True, alt_font_path=LATIN))
+    assert abs(mixed - auto) < 0.01, (mixed, auto)
+    assert mixed > 9.0, "the pin was measured for other text in another face"
+
+
+def test_the_pin_survives_when_the_theme_ships_no_second_face():
+    """The branch every template today takes: a pin is still a pin."""
+    box = {"x0": 0, "y0": 0, "x1": 400, "y1": 120}
+    svg = rp.title_block(box, ["PARTY לשירה"], "#000", "#000", CAFE, 0, 0,
+                         False, rtl=True, fixed_size=9.0)
+    assert abs(float(re.search(r'font-size="([\d.]+)"', svg).group(1)) - 9.0) < 0.01
+
+
+# --- the feature, through the real rasterizer -------------------------------
+
+
+def _chrome_ink(svg_text, w, h, scale=2, left_of=None):
+    """The ink bbox + pixel count of an SVG, as Chrome paints it.
+
+    ``left_of`` restricts the reading to the columns strictly left of that user
+    x — how the WORD is looked at without the numbered marker beside it.
+    """
+    import subprocess
+    import tempfile
+    import numpy as np
+    with tempfile.TemporaryDirectory() as d:
+        s, p = os.path.join(d, "a.svg"), os.path.join(d, "a.png")
+        with open(s, "w", encoding="utf-8") as f:
+            f.write(svg_text)
+        subprocess.run([rp.CHROME, "--headless", "--no-sandbox", "--disable-gpu",
+                        rp.CHROME_FONT_WAIT,
+                        f"--force-device-scale-factor={scale}",
+                        f"--screenshot={p}", f"--window-size={w},{h}",
+                        "file://" + s], check=True, capture_output=True,
+                       timeout=int(os.environ.get("DUGRI_CHROME_TIMEOUT_S", "120")))
+        m = np.asarray(Image.open(p).convert("L")).astype(int) < 128
+    if left_of is not None:
+        m = m[:, :int(left_of * scale)]
+    if not m.any():
+        return None
+    cols, rows = np.where(m.any(axis=0))[0], np.where(m.any(axis=1))[0]
+    return (int(cols.min()), int(cols.max()), int(rows.min()), int(rows.max()),
+            int(m.sum()))
+
+
+_PROOF_SIZE, _PROOF_RIGHT = 60.0, 560.0
+
+
+def _proof_doc(style, body):
+    return ('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="200" '
+            f'viewBox="0 0 600 200"><style>{style}</style>'
+            f'<rect width="600" height="200" fill="#fff"/>{body}</svg>')
+
+
+def _word_x():
+    """Where the WORD starts on the proof line — everything left of the marker."""
+    font, ref = rp._word_metrics(CAFE)
+    marker_w = rp._marker_geometry(font, ref, 1, _PROOF_SIZE * rp._MARKER_SCALE)[3]
+    return _PROOF_RIGHT - marker_w - _PROOF_SIZE * rp._WORD_GAP
+
+
+def test_the_latin_run_really_sets_in_the_uploaded_face():
+    """Chrome, not the markup. A family NAMED but never declared does not fail:
+    Chrome substitutes a system font and the card prints in Helvetica with
+    nothing to say so. That is the failure this feature exists to remove, so it
+    is checked against the engine that would commit it.
+
+    Read over the word alone — the marker beside it is the card's own face on
+    every one of these, by design, and would only dilute the comparison.
+    """
+    if not os.path.exists(rp.CHROME):
+        print("  (skipped: no Chrome)")
+        return
+    cut = _word_x()
+
+    # The baseline word_lines puts a single line on: the caller's centre plus
+    # the renderer's one conversion from centres to baselines.
+    base = 100.0 + _PROOF_SIZE * rp._CENTER_DROP
+
+    def control(path):
+        return _proof_doc(
+            rp.font_face("C", path),
+            f'<text x="{cut:.2f}" y="{base:.2f}" font-family="C" '
+            f'font-size="{_PROOF_SIZE}" text-anchor="end">BBQ</text>')
+
+    real = _proof_doc(
+        rp.font_face("HebWord", CAFE) + rp.font_face("HebWordAlt", LATIN),
+        rp.word_lines(_PROOF_RIGHT, 100.0, _PROOF_SIZE, "#000", 1, ["BBQ"],
+                      CAFE, alt_font_path=LATIN))
+    heb = _chrome_ink(control(CAFE), 600, 200, left_of=cut)
+    lat = _chrome_ink(control(LATIN), 600, 200, left_of=cut)
+    got = _chrome_ink(real, 600, 200, left_of=cut)
+    assert heb and lat and got
+    # The two faces have to draw "BBQ" differently enough for this to mean
+    # anything, and they do — in the INK BOX, not the pixel count: Cafe carries
+    # the word from y=51 to 281 of a 200 em where Fredoka runs 56..199, while
+    # the two happen to ink almost the same number of pixels doing it.
+    assert max(abs(heb[i] - lat[i]) for i in range(4)) > 8, (heb, lat)
+    # The word is the UPLOADED face's, glyph for glyph and in its place.
+    for i in range(4):
+        assert abs(got[i] - lat[i]) <= 2, (i, got, lat)
+    assert abs(got[4] - lat[4]) / lat[4] < 0.02, (got[4], lat[4])
+
+
+def test_a_two_face_card_keeps_every_line_inside_the_trim():
+    """The owner's real example, on a real card, measured on pixels.
+
+    The overlay is painted on blank paper so the only ink IS the text, and the
+    bound is the card's own safe area — inside the bleed, where the guillotine
+    cannot reach.
+    """
+    if not os.path.exists(rp.CHROME):
+        print("  (skipped: no Chrome)")
+        return
+    with _alt_store():
+        cfg = config.theme("demo")
+        recipe = config.recipe_or_empty(cfg)
+        cell = recipe["card"]["cell"]
+        w, h = cell[2] - cell[0], cell[3] - cell[1]
+        overlay = rp.card_overlay("demo", recipe,
+                                  ["40 מתחת ל-BBQ", "BBQ", "מסיבה", "Tel Aviv"],
+                                  ["PARTY לשירה"], front_index=2)
+        assert 'font-family="HebWordAlt"' in overlay, "the case must be mixed"
+        style = (rp.word_faces("demo") + rp.title_faces("demo", cfg))
+        doc = ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" '
+               'viewBox="0 0 %g %g"><style>%s</style>'
+               '<rect width="100%%" height="100%%" fill="#fff"/>%s</svg>'
+               % (round(w * 4), round(h * 4), w, h, style, overlay))
+        scale = 4 * 2                      # 4x in the viewport, 2x device
+        ink = _chrome_ink(doc, round(w * 4), round(h * 4))
+        assert ink, "the card must actually print something"
+        x0, x1, y0, y1 = ink[0] / scale, ink[1] / scale, ink[2] / scale, ink[3] / scale
+        safe = rp._CARD_SAFE
+        assert x0 >= safe * w, (x0, safe * w)
+        assert x1 <= w - safe * w, (x1, w - safe * w)
+        assert y0 >= 0 and y1 <= h, (y0, y1, h)

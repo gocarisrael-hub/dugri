@@ -143,13 +143,31 @@ def test_a_failing_strip_degrades_to_one_card_instead_of_killing_the_preview():
 
 def test_the_strip_declares_its_fonts_once_not_once_per_card():
     # Eight cards x two base64 faces was sixteen copies of the same fonts in one
-    # document; the deck assembler already declares them at document level.
+    # document; the deck assembler already declares them at document level. A
+    # template that ships a second word face and a second title face doubles
+    # that, so the count matters and not only the absence: ONE declaration per
+    # family the strip actually uses, in the document's own stylesheet.
     import card_assets
+    import render_page as rp
     cfg = config.theme("grapefruit") if "grapefruit" in config.load_themes() else None
     if cfg is None:
         print("  (skipped: grapefruit not present)")
         return
-    svg = card_assets.read_svg(config.card_path("grapefruit", config.fronts(cfg)[0]))
+    fronts = config.fronts(cfg)
+    svg = card_assets.read_svg(config.card_path("grapefruit", fronts[0]))
     assert "@font-face" not in svg, (
         "a card's artwork must not carry fonts; the strip declares them once"
     )
+    # Nor may an OVERLAY smuggle one in — the strip pastes eight of them into
+    # one document, so a per-card declaration is the same bloat by another route.
+    recipe = config.recipe_or_empty(cfg)
+    for front in fronts:
+        overlay = rp.card_overlay("grapefruit", recipe, ["מסיבה"] * 4, ["שירה"],
+                                  front_index=front, card_svg=svg)
+        assert "@font-face" not in overlay, front
+    # The stylesheet the strip does build: exactly one rule per family, and one
+    # family per face the theme ships (no alt faces today -> two).
+    style = rp.word_faces("grapefruit") + rp.title_faces("grapefruit", cfg)
+    assert style.count("@font-face") == 2, style.count("@font-face")
+    for family in ("HebWord", "TitleFont"):
+        assert style.count(f"font-family:'{family}'") == 1, family

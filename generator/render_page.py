@@ -89,6 +89,51 @@ def font_face(name, path, weight=None):
             f"src:url(data:font/ttf;base64,{b64}) format('truetype');}}")
 
 
+# THE TWO FAMILIES, DECLARED TOGETHER OR NOT AT ALL.
+#
+# ``HebWord``/``TitleFont`` are named in the markup by every render path — the
+# buyer's single-card preview, the owner's fronts strip, the v1 sheet, the deck,
+# the backs and the board — and each of those declared them itself. A second
+# face doubles the number of places a declaration can be forgotten, and a
+# FORGOTTEN one does not fail: Chrome silently substitutes a system font for the
+# family it cannot find, so the surface prints in Helvetica and nothing says so.
+# That is the exact failure this feature exists to remove, so the pairing is
+# made once, here, and every site asks for the pair.
+#
+# ``emit`` is the rule-writer, because the deck assembles its stylesheet through
+# ``deck_html.font_face`` (same output, no import cycle) while everything else
+# uses the one above. Nothing else differs, and nothing else may.
+
+
+def word_faces(theme, word_font=None, emit=None):
+    """``@font-face`` for a card's word face, plus the Latin one if it has one.
+
+    Empty second half whenever the theme ships no alt face (every template
+    today) or the buyer picked her own word font (see ``word_font_alt``), so a
+    surface that has always declared one family goes on declaring exactly one.
+    """
+    emit = emit or font_face
+    css = emit("HebWord", config.resolve_word_font(theme, word_font))
+    alt = word_font_alt(theme, word_font)
+    return css + (emit("HebWordAlt", alt) if alt else "")
+
+
+def title_faces(theme, cfg=None, emit=None):
+    """``@font-face`` for a theme's title face, plus its second one if it has one.
+
+    The title face resolves through ``config.resolve_title_font``, which names
+    the theme and the key when the file is missing — nine call sites used to do
+    a bare ``font_path`` lookup and surface a missing face as an OSError from
+    inside PIL, naming neither.
+    """
+    emit = emit or font_face
+    cfg = cfg or config.theme(theme)
+    css = emit("TitleFont", config.resolve_title_font(theme),
+               config.title_font_weight(cfg))
+    alt = config.resolve_title_font_alt(theme)
+    return css + (emit("TitleFontAlt", alt,
+                       config.title_font_weight(cfg)) if alt else "")
+
 
 # THE MEASURING INSTRUMENT MUST DRAW THE SAME PICTURE EVERYWHERE.
 #
@@ -138,6 +183,16 @@ class Face:
     over a one-element list that could reassociate and move a last digit. That
     is what makes an un-uploaded second font byte-identical rather than merely
     equivalent, and it is asserted in the tests.
+
+    IT ANSWERS THE FONT PROTOCOL, and that is deliberate rather than convenient:
+    ``getlength``/``getbbox``/``getmetrics``/``path`` are exactly what the fit
+    already asks a measuring font, so handing the fitter a Face routes every
+    reading through both faces without a single call site having to remember to.
+    A function that measures therefore CANNOT accidentally reach past the second
+    face — it has no other handle to reach with. The three that must NOT see it
+    (``_marker_geometry``, ``_marker_advance``, ``_glyph_bearings``: the digit is
+    the card's own face by design) are handed ``_primary`` explicitly, which
+    makes the exception visible at the call site instead of implied by absence.
     """
 
     __slots__ = ("primary", "alt", "ref", "rtl")
@@ -152,12 +207,35 @@ class Face:
     def single(self):
         return self.alt is None
 
+    @property
+    def faces(self):
+        """Every font this may set text in — one, or two."""
+        return (self.primary,) if self.alt is None else (self.primary, self.alt)
+
+    @property
+    def path(self):
+        """The primary's file, for the readings that rasterize by path."""
+        return getattr(self.primary, "path", None)
+
+    def getmetrics(self):
+        """The PRIMARY's ascent/descent, which is the frame ``bbox`` reports in.
+
+        Both faces sit on one baseline, so one origin has to be chosen for the
+        two to be comparable at all, and the card's own face is the honest one.
+        """
+        return self.primary.getmetrics()
+
     def runs(self, text):
         """``[(font, substring)]`` in logical order, covering ``text`` exactly."""
         if self.alt is None:
             return [(self.primary, text)]
         return [(self.alt if lat else self.primary, t)
                 for lat, t in script_runs(text, base_rtl=self.rtl)]
+
+    def uses_alt(self, text):
+        """True when any run of ``text`` would be set in the second face."""
+        return (self.alt is not None
+                and any(f is self.alt for f, _ in self.runs(text)))
 
     def length(self, text):
         if self.alt is None:
@@ -170,21 +248,74 @@ class Face:
         Runs advance one after another, so each run's own box is offset by the
         width of everything before it. The vertical extremes are the union: a
         Latin descender under a Hebrew line still has to be cleared.
+
+        MEASURED AGAINST ONE BASELINE. Pillow reports a box relative to the
+        font's own ASCENDER line, and two faces at one size do not share an
+        ascent — Cafe's is 213 of a 200-unit em where Fredoka's is 194, so a
+        naive union of the two boxes reads a 19-unit descender that is not
+        there and reserves row pitch for it. Each run's box is therefore shifted
+        onto the primary's ascender, which is the frame ``getmetrics`` reports
+        and the one every caller subtracts.
         """
         if self.alt is None:
             return self.primary.getbbox(text)
+        asc = self.primary.getmetrics()[0]
         x = 0.0
         x0 = y0 = x1 = y1 = None
         for f, t in self.runs(text):
             b = f.getbbox(t)
             if b is not None:
-                bx0, by0, bx1, by1 = b[0] + x, b[1], b[2] + x, b[3]
+                dy = asc - f.getmetrics()[0]        # onto the primary's baseline
+                bx0, by0, bx1, by1 = b[0] + x, b[1] + dy, b[2] + x, b[3] + dy
                 x0 = bx0 if x0 is None else min(x0, bx0)
                 y0 = by0 if y0 is None else min(y0, by0)
                 x1 = bx1 if x1 is None else max(x1, bx1)
                 y1 = by1 if y1 is None else max(y1, by1)
             x += f.getlength(t)
         return (0, 0, 0, 0) if x0 is None else (x0, y0, x1, y1)
+
+    # The font protocol, so the fitter can hold this where it held a font.
+    getlength = length
+    getbbox = bbox
+
+
+def _primary(font):
+    """The card's OWN face, whatever the fitter was handed.
+
+    The numbered marker is drawn in the card's face and stops there by design
+    (see ``_marker_geometry``): an uploaded Latin face may not move a digit, and
+    the digit column every word on the card starts after is measured off it. So
+    the three marker readings take this rather than the ``Face``, and say so.
+    """
+    return font.primary if isinstance(font, Face) else font
+
+
+@functools.lru_cache(maxsize=8)
+def _word_face(font_path, alt_font_path=None, ref=200):
+    """The measuring instrument for a card's words: one face, or two.
+
+    Cached on the PATHS rather than built per card, because the readings behind
+    it are cached on the font OBJECTS — ``_font_lead`` rasterizes a whole glyph
+    repertoire once per face, and a fresh Face per card would miss that cache on
+    all 104 of them. The primary comes from ``_word_metrics``, so it is the same
+    object the one-face path has always measured with.
+    """
+    primary = _word_metrics(font_path, ref)[0]
+    alt = _word_metrics(alt_font_path, ref)[0] if alt_font_path else None
+    return Face(primary, alt, ref)
+
+
+def word_font_alt(theme, word_font=None):
+    """The theme's LATIN word face for THIS render, or ``None``.
+
+    AN EXPLICIT BUYER OVERRIDE SUPPRESSES IT. The word-font picker promises the
+    buyer "your whole card in this face"; pairing the face she chose with the
+    template's Latin one is a combination nobody designed and she never saw. The
+    rule lives here, in one place, because both the ``@font-face`` block and the
+    fit have to agree about it — a declaration without a fit would set Latin in
+    a face the widths were never measured for.
+    """
+    return None if word_font else config.resolve_word_font_alt(theme)
 
 
 # How many times the metric size a glyph is rendered at when its ink edges are
@@ -352,17 +483,16 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
     exact markup it always did.
     """
     msize = size * _MARKER_SCALE
-    font, ref = _word_metrics(font_path)
-    # The optional Latin face. Absent (every template today) leaves `face` None
-    # and every line below takes the one-face branch, which emits the exact
+    # The optional Latin face. Absent (every template today) leaves `alt_font`
+    # None and every line below takes the one-face branch, which emits the exact
     # markup it always has.
-    alt_font = _measuring_font(alt_font_path, ref) if alt_font_path else None
-    face = Face(font, alt_font, ref) if alt_font is not None else None
+    face = _word_face(font_path, alt_font_path)
+    font, ref, alt_font = face.primary, face.ref, face.alt
     digit, digit_x, dot_x, marker_w = _marker_geometry(font, ref, num, msize,
                                                        advance=marker_advance)
     gap = size * _WORD_GAP
     word_x = x_right - marker_w - gap
-    lead = size * (_lead_for(font, ref, lines) if lead is None else lead)
+    lead = size * (_lead_for(face, ref, lines) if lead is None else lead)
     first = center_y - (len(lines) - 1) * lead / 2 + size * _CENTER_DROP
     # paint-order="stroke" keeps the stroke UNDER the fill, so the glyph grows
     # outward instead of the stroke eating into its own counters.
@@ -380,7 +510,7 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
     ]
     for i, line in enumerate(lines):
         y = first + i * lead
-        runs = face.runs(line) if face is not None else None
+        runs = face.runs(line)
         if not runs or len(runs) == 1 and runs[0][0] is not alt_font:
             # The one-face line, and it must emit the EXACT string it always
             # did — this is the branch every shipped card takes.
@@ -494,9 +624,13 @@ def _line_width_at(font, ref, num, word, advance=None):
     Everything scales linearly with the font size, so a width measured at ``ref``
     converts to any render size S by multiplying by S/ref. ``advance`` must be
     the same fixed digit column the render uses, or the fit and the render
-    disagree about where the word starts."""
-    _, _, _, marker_w = _marker_geometry(font, ref, num, ref * _MARKER_SCALE,
-                                         advance=advance)
+    disagree about where the word starts.
+
+    The MARKER is measured in the card's own face (``_primary``) and the WORD in
+    whatever the caller is setting it in — which is what the renderer does, so
+    the width reserved here is the width painted."""
+    _, _, _, marker_w = _marker_geometry(_primary(font), ref, num,
+                                         ref * _MARKER_SCALE, advance=advance)
     return marker_w + ref * _WORD_GAP + font.getlength(word)
 
 
@@ -604,9 +738,22 @@ _LEAD_REPERTOIRE = ("".join(chr(c) for c in range(0x05D0, 0x05EB))
                     + ".,:;!?()'\"-־׳״")
 
 
-@functools.lru_cache(maxsize=8)
 def _font_lead(font, ref):
-    """The ONE line pitch this face needs, as a multiple of the font size.
+    """The ONE line pitch this card's face — or FACES — needs.
+
+    THE MAXIMUM OVER BOTH. Two faces set at one size do not have one ink height:
+    a Latin face uploaded beside the Hebrew one draws its own ascenders and
+    descenders, and the owner's rule from #340 is that a card's rows sit one
+    constant pitch apart. Measure that pitch off only one of the two and the
+    rule breaks on exactly the cards the second face exists for — the pitch
+    would be the Hebrew face's, and a Latin descender would reach into it.
+    """
+    return max(_face_lead(f, ref) for f in getattr(font, "faces", (font,)))
+
+
+@functools.lru_cache(maxsize=8)
+def _face_lead(font, ref):
+    """The ONE line pitch a single face needs, as a multiple of the font size.
 
     The owner's rule, in her words: "a fixed gap between lines (the minimum gap
     (that obey the rule that no 2 letters touch each other) between the most
@@ -734,7 +881,7 @@ def _card_lead(font, ref, lines, count=None, bold_w=0.0):
         return _font_lead(font, ref)
     marker = _MARKER_GLYPHS if not count else (
         "".join(str(n) for n in range(1, max(int(count), 1) + 1)) + ".")
-    mbox = font.getbbox(marker)
+    mbox = _primary(font).getbbox(marker)      # the digit is the card's own face
     markers = (mbox[3] - mbox[1]) / ref * _MARKER_SCALE + _WRAP_GAP
     if len(texts) < 2:
         return max(markers, _WRAP_GAP)
@@ -1521,7 +1668,8 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     # the fraction of a millimetre this costs is invisible.
     if floor is not None and bold_w:
         floor += uniform * bold_w
-    advance = _marker_advance(font, len(slots)) if declared_band else None
+    # The card's OWN face: the digit column is drawn in it and only in it.
+    advance = _marker_advance(_primary(font), len(slots)) if declared_band else None
     cands = {}
     for wi, slot in enumerate(slots):
         word = words[wi] if wi < len(words) else ""
@@ -1608,6 +1756,44 @@ def _word_sizes(slots, words, font, ref, cell=None, word_size=None):
 @functools.lru_cache(maxsize=8)
 def _title_metrics(font_path, ref=200):
     return _measuring_font(font_path, ref), ref
+
+
+@functools.lru_cache(maxsize=8)
+def _title_face(font_path, alt_font_path=None, ref=200, rtl=False):
+    """The measuring instrument for a title: one face, or two.
+
+    A buyer may type a custom title in any language, so a template drawn with a
+    Hebrew title face can be asked to set an English one (the honoree-NAME script
+    guards do not apply to a custom title). The second face is what that title is
+    set in; ``None`` leaves this the primary font itself.
+    """
+    primary = _title_metrics(font_path, ref)[0]
+    alt = _title_metrics(alt_font_path, ref)[0] if alt_font_path else None
+    return Face(primary, alt, ref, rtl=rtl)
+
+
+def _title_runs(face, line):
+    """One title line's text, in as many faces as it needs.
+
+    ONE ``<text>`` either way, unlike ``word_lines``. The reason the numbered
+    word line has to hand-place its runs is that Chrome ignores
+    ``direction="rtl"`` for run ORDERING there — a stranded neutral "." between a
+    Hebrew word and a digit inside one plain ``<text>``. A title line has no such
+    neutral: it is words and an optional number on a ``textPath``, where the base
+    direction IS honoured (verified in
+    ``test_title_block_rtl_reorders_digit_in_raster``). So the second face is a
+    ``<tspan>`` and Chrome does the ordering, which is also what keeps the arch,
+    the alignment and the three stacked paint layers working unchanged.
+
+    A single-face line returns the bare escaped string it always did.
+    """
+    runs = face.runs(line)
+    if len(runs) == 1 and runs[0][0] is not face.alt:
+        return escape(line)
+    return "".join(
+        f'<tspan font-family="TitleFontAlt">{escape(t)}</tspan>'
+        if f is face.alt else escape(t)
+        for f, t in runs)
 
 
 # Synthetic-bold stroke width as a fraction of the glyph size. Sized to read as
@@ -1836,6 +2022,66 @@ def _ink_skyline(font_path, ref, line):
     return -pad, tuple(below), tuple(above)
 
 
+def _line_advance(f, line, rtl):
+    """A line's total advance, measured the way its skyline was rasterized.
+
+    The single-face reading is of the DRAWN (visual-order) string, exactly as it
+    always was; a two-face line is the sum of its runs' own advances, which is
+    what ``_line_skyline`` walks and what ``word_lines`` places.
+    """
+    if not isinstance(f, Face) or f.single:
+        return f.getlength(visual_order(line, rtl))
+    return sum(font.getlength(t) for font, t in f.runs(line))
+
+
+def _line_skyline(f, ref, line, rtl):
+    """``_ink_skyline`` for a line that may be set in TWO faces.
+
+    Each run carries its own raster — a Latin run's ink is the Latin face's ink,
+    and nothing else can tell you where it reaches — so the runs are rasterized
+    separately, each shifted by the pen advance of the runs painted before it,
+    and the profiles combined column by column with a max. That is the same
+    composition the renderer performs when it places the runs (see
+    ``word_lines``), so the skyline describes the picture that gets printed.
+
+    Deliberately NOT ``_min_line_pitch_by_box`` for the two-face case. That
+    fallback's own docstring says it over-reserves, and over-reserving is the
+    exact failure the per-column reading was introduced to undo (36% of a deck
+    spaced wider than its design spaces itself, #327/#337). A second face is no
+    reason to go back to it.
+
+    ONE FACE returns the single call it always made, on the same cached raster.
+    """
+    runs = f.runs(line) if isinstance(f, Face) else [(f, line)]
+    if len(runs) == 1:
+        return _ink_skyline(runs[0][0].path, ref, visual_order(line, rtl))
+    alt = f.alt
+    # Left to right: the renderer paints the runs in visual order, which for an
+    # RTL line is the logical order reversed.
+    ordered = list(reversed(runs)) if rtl else list(runs)
+    pen, parts = 0.0, []
+    for font, txt in ordered:
+        # A Latin run is emitted with no RTL embedding and sets left to right,
+        # so it is measured as written; a Hebrew run is put into paint order by
+        # hand, because Pillow will not do it (see ``visual_order``).
+        drawn = txt if font is alt else visual_order(txt, rtl)
+        xl, below, above = _ink_skyline(font.path, ref, drawn)
+        parts.append((pen + xl, below, above))
+        pen += font.getlength(txt)
+    lo = min(int(round(x)) for x, _b, _a in parts)
+    hi = max(int(round(x)) + len(b) for x, b, _a in parts)
+    below = [None] * (hi - lo)
+    above = [None] * (hi - lo)
+    for x, b, a in parts:
+        off = int(round(x)) - lo
+        for i, (bv, av) in enumerate(zip(b, a)):
+            if bv is not None:
+                j = off + i
+                below[j] = bv if below[j] is None else max(below[j], bv)
+                above[j] = av if above[j] is None else max(above[j], av)
+    return lo, tuple(below), tuple(above)
+
+
 def _min_line_pitch_by_box(f, ref, lines, pad, clear=_INK_CLEARANCE):
     """The pre-skyline floor: the two lines' bounding BOXES may not overlap.
 
@@ -1911,26 +2157,25 @@ def _min_line_pitch(f, ref, lines, pad, align="center", grow=0.0, rtl=False,
     size) deciding the pitch while the card prints השראה above חתן and its real
     stackings need 1.070. See ``_card_lead``.
     """
-    path = getattr(f, "path", None)
-    if not path:
+    if not getattr(f, "path", None):
         return _min_line_pitch_by_box(f, ref, lines, pad, clear=clear)
     worst = 0.0
     radius = max(0, int(round((grow or 0.0) * ref)))
-    drawn = [visual_order(ln, rtl) for ln in lines]
-    for upper, lower in zip(drawn, drawn[1:]):
-        ux, u_below, _u_above = _ink_skyline(path, ref, upper)
-        lx, _l_below, l_above = _ink_skyline(path, ref, lower)
+    for upper, lower in zip(lines, lines[1:]):
+        ux, u_below, _u_above = _line_skyline(f, ref, upper, rtl)
+        lx, _l_below, l_above = _line_skyline(f, ref, lower, rtl)
         u_below, l_above = _dilate(u_below, radius), _dilate(l_above, radius)
         # Where the pen starts for each line, relative to a shared origin. The
         # renderer anchors a centred line on its ADVANCE (text-anchor="middle"),
         # a right-aligned one on its end, a left-aligned one on its start — so
         # this is the same arithmetic the block itself lays out with.
+        uw, lw = _line_advance(f, upper, rtl), _line_advance(f, lower, rtl)
         if align == "left":
             u_pen, l_pen = 0.0, 0.0
         elif align == "right":
-            u_pen, l_pen = -f.getlength(upper), -f.getlength(lower)
+            u_pen, l_pen = -uw, -lw
         else:
-            u_pen, l_pen = -f.getlength(upper) / 2, -f.getlength(lower) / 2
+            u_pen, l_pen = -uw / 2, -lw / 2
         shift = int(round((u_pen + ux) - (l_pen + lx)))
         for i, below in enumerate(u_below):
             if below is None:
@@ -2056,7 +2301,8 @@ def title_is_rtl(cfg):
 
 def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
                 rtl=False, fixed_size=None, align="center", italic=False,
-                bold=False, bold_w=None, leading=None, one_block=False):
+                bold=False, bold_w=None, leading=None, one_block=False,
+                alt_font_path=None):
     _TITLE_UID[0] += 1
     uid = _TITLE_UID[0]
     """Graffiti-style stacked title: sized so the WIDEST line fills the box
@@ -2087,8 +2333,12 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     lines = [ln for ln in lines if ln and ln.strip()]
     if not lines:
         return ""
-    f, ref = _title_metrics(font_path)
+    face = _title_face(font_path, alt_font_path, rtl=rtl)
+    f, ref = face, face.ref
     ratios = [f.getlength(ln) / ref for ln in lines]      # width per unit size
+    # Does this title actually need the second face? Asked once, because it
+    # decides both how the runs are emitted and whether a PINNED size may stand.
+    mixed = any(face.uses_alt(ln) for ln in lines)
     n = len(lines)
     # --- the LEADING: how far apart the baselines sit -----------------------
     # A same-colour "outline" (monochrome themes) is never painted as a ring, so
@@ -2151,7 +2401,16 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # A theme may pin the title to an EXACT size (the Canva point size, in the
     # recipe's user units) instead of auto-fitting to the box — the box then only
     # positions (centres) the title. Used where auto-fit over/under-shoots.
-    if fixed_size:
+    # A PIN CANNOT SURVIVE A CHANGE OF FACE. ``title_style.size`` is a number
+    # measured against the ORIGIN's face and the ORIGIN's own title text; a title
+    # that resolves any run into the second face is set in neither. The owner
+    # settled this as auto-fit at render time rather than a second calibrated
+    # size per face: a pin per (template x face x script) is a number nobody
+    # would ever re-measure, and the auto-fit already answers the question the
+    # pin was standing in for — how large this text goes in this box. One
+    # condition, and it covers fronts, backs and board because all three reach
+    # here through this same argument.
+    if fixed_size and not mixed:
         # ...but a pinned size is the ORIGIN's size, measured against the
         # ORIGIN's own title text — and the honoree's name is not that text.
         # Pin grapefruit at Canva's 28 and "רווקות לדניאל" fits, while
@@ -2233,7 +2492,7 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
                 f'stroke="{stroke_c}" stroke-width="{swv:.2f}" paint-order="stroke" '
                 f'stroke-linejoin="round" stroke-linecap="round"{italic_attr}{dir_attr}>'
                 f'<textPath href="#{pid}" {path_anchor}>'
-                f'{escape(line)}</textPath></text>')
+                f'{_title_runs(face, line)}</textPath></text>')
 
     for k, line in enumerate(lines):
         by = top + gap * k + size * 0.33
@@ -2316,7 +2575,7 @@ def _nudge_title_box(tbox, cell, offset):
 
 
 def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
-                   fixed_size=None, align=None):
+                   fixed_size=None, align=None, alt_font=None):
     """The stacked-title markup for one card, or "" when there is nothing to draw.
 
     ``tbox_list`` may hold ONE BOX PER TITLE LINE (birthday-girls records two);
@@ -2335,6 +2594,7 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                        ts["outline_w"], ts["arch"], ts["shadow"],
                        rtl=title_is_rtl(cfg),
                        fixed_size=fixed_size if fixed_size is not None else ts.get("size"),
+                       alt_font_path=alt_font,
                        align=align or ts.get("align", "center"),
                        italic=ts.get("italic", False),
                        bold=ts.get("bold", False),
@@ -2343,20 +2603,26 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                        one_block=bool(ts.get("one_block")))
 
 
-def _words_overlay(slots, words, cfg, word_font, cell, room=None):
+def _words_overlay(slots, words, cfg, word_font, cell, room=None,
+                   word_font_alt=None):
     """The four numbered word lines for one card, as SVG markup.
 
     ``room`` is the lowest y a line's ink may reach (see ``room_bottom``) — the
     card's real vertical envelope, which a wrapping card may grow down into.
+
+    ``word_font_alt`` is the template's Latin face, when it ships one. It is
+    threaded through the FIT as well as the render because they have to agree:
+    a width reserved off one face and painted in another is how a line ends up
+    over the trim.
     """
     if not slots:
         return ""
-    wf_metrics, wf_ref = _word_metrics(word_font)
+    face = _word_face(word_font, word_font_alt)
     # card_slots is the owner's own statement of where the words' column sits, so
     # when it is set the slots ARE a text box and a long phrase wraps inside it.
     declared = bool((cfg.get("card_slots") or {}).get("words"))
     bold_w = config.word_bold_w(cfg, _WORD_BOLD_W)
-    layouts = _word_layouts(slots, words, wf_metrics, wf_ref, cell=cell,
+    layouts = _word_layouts(slots, words, face, face.ref, cell=cell,
                             word_size=cfg.get("word_size"), safe=_CARD_SAFE,
                             declared_band=declared, room_bottom=room,
                             bold_w=bold_w)
@@ -2365,7 +2631,7 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None):
     # _word_layouts fitted against, or the render would overflow the band it was
     # measured for.
     x_right = _card_right_edge(slots, cell) if declared else None
-    advance = _marker_advance(wf_metrics, len(slots)) if declared else None
+    advance = _marker_advance(face.primary, len(slots)) if declared else None
     out = []
     for wi, slot in enumerate(slots):
         if layouts[wi] is None:
@@ -2377,7 +2643,8 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None):
         right = x_right if x_right is not None else _line_right_edge(slot["x1"], cell)
         out.append(word_lines(right, center, lay.size, slot["color"],
                               wi + 1, lay.lines, word_font, lead=lay.lead,
-                              marker_advance=advance, bold_w=bold_w))
+                              marker_advance=advance, bold_w=bold_w,
+                              alt_font_path=word_font_alt))
     return "".join(out)
 
 
@@ -2416,16 +2683,20 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
     config.ensure_calibrated(cfg)
     cell = (recipe.get("card") or {}).get("cell") or _recipe_cell(recipe, card_vb)
     word_font_path = config.resolve_word_font(theme, word_font)
-    title_font_path = config.font_path(theme, cfg["title_font"])
+    word_alt_path = word_font_alt(theme, word_font)
+    title_font_path = config.resolve_title_font(theme)
+    title_alt_path = config.resolve_title_font_alt(theme)
     safe_bottom = cell[3] - (cell[3] - cell[1]) * _CARD_SAFE if cell else None
     room = (room_bottom(theme, front_index, card_svg, cell, safe_bottom)
             if card_svg and cell else None)
     return (_title_overlay(config.card_title_boxes(cfg, recipe, front_index, cell),
                            title_lines, cfg, title_font_path, cell,
                            offset=config.front_offset(cfg, front_index),
-                           align=config.front_align(cfg, front_index))
+                           align=config.front_align(cfg, front_index),
+                           alt_font=title_alt_path)
             + _words_overlay(config.card_word_boxes(cfg, recipe, cell), words,
-                             cfg, word_font_path, cell, room=room))
+                             cfg, word_font_path, cell, room=room,
+                             word_font_alt=word_alt_path))
 
 
 def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
@@ -2471,7 +2742,7 @@ def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
         boxes = [{"x0": cell[0] + frac["x0"] * w, "x1": cell[0] + frac["x1"] * w,
                   "y0": cell[1] + frac["y0"] * h, "y1": cell[1] + frac["y1"] * h}]
     ts = cfg["title_style"]
-    title_font = config.font_path(theme, cfg["title_font"])
+    title_font = config.resolve_title_font(theme)
     # The back's own fill/outline when the theme calibrated them (the back art is
     # usually a different colour field from the fronts), else the shared style.
     style = dict(ts)
@@ -2493,7 +2764,8 @@ def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
     # measured against. Falls through to the deck-wide pins when unset.
     return _title_overlay(boxes, title_lines, cfg_back, title_font, cell,
                           fixed_size=((bk or {}).get("size")
-                                      or ts.get("back_size") or ts.get("size")))
+                                      or ts.get("back_size") or ts.get("size")),
+                          alt_font=config.resolve_title_font_alt(theme))
 
 
 def back_draws_title(theme, clean_svg, back_index=None):
@@ -2631,9 +2903,7 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
         # nothing it was not already paying.
         return photo_card_svg(theme, photos, paper=card_paper.front_paper(theme))
     style = ("<style>" + GEOMETRIC_TEXT_STYLE
-             + font_face("HebWord", config.resolve_word_font(theme, word_font))
-             + font_face("TitleFont", config.font_path(theme, cfg["title_font"]),
-                          config.title_font_weight(cfg))
+             + word_faces(theme, word_font) + title_faces(theme, cfg)
              + "</style>")
     if kind == "back":
         # Which back this is decides where its title goes on a paired template.
@@ -2690,11 +2960,11 @@ def render_fronts_strip(theme, fronts, words, title_lines, out_dir,
     # wasteful here: eight cards x two base64 faces is sixteen copies of the same
     # fonts in one document (653KB, where the artwork itself is a fraction of
     # that). The deck assembler already declares them at document level for the
-    # same reason.
+    # same reason. Both families of each pair land in THIS block, not in a card:
+    # a per-card declaration would be eight copies again the moment a template
+    # ships a Latin face.
     style = (GEOMETRIC_TEXT_STYLE
-             + font_face("HebWord", config.resolve_word_font(theme, word_font))
-             + font_face("TitleFont", config.font_path(theme, cfg["title_font"]),
-                           config.title_font_weight(cfg)))
+             + word_faces(theme, word_font) + title_faces(theme, cfg))
     cards = []
     for front in fronts:
         svg = card_assets.read_svg(config.card_path(theme, front))
@@ -2762,14 +3032,18 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
     recipe = config.recipe_or_empty(cfg)
     # word_font optionally overrides the theme's card font (a filename); it
     # resolves against the theme's own fonts/ dir first, then the shared
-    # word-fonts/ pool. No override -> the theme's configured word_font.
+    # word-fonts/ pool. No override -> the theme's configured word_font. The
+    # declaration block is built from the OVERRIDE (a filename), so it is taken
+    # before the name is rebound to the resolved path below.
+    style = ("<style>" + GEOMETRIC_TEXT_STYLE
+             + word_faces(theme, word_font) + title_faces(theme, cfg)
+             + "</style>")
+    word_alt = word_font_alt(theme, word_font)
     word_font = config.resolve_word_font(theme, word_font)
-    title_font = config.font_path(theme, cfg["title_font"])
+    title_font = config.resolve_title_font(theme)
+    title_alt = config.resolve_title_font_alt(theme)
     ts = cfg["title_style"]
     svg = open(clean_svg, encoding="utf-8").read()
-    style = ("<style>" + GEOMETRIC_TEXT_STYLE + font_face("HebWord", word_font)
-             + font_face("TitleFont", title_font,
-                         config.title_font_weight(cfg)) + "</style>")
     overlay = [style]
     for ci, card in enumerate(recipe["cards"]):
         if not card:
@@ -2801,6 +3075,7 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
                                        ts["outline_w"], ts["arch"], ts["shadow"],
                                        rtl=title_is_rtl(cfg),
                                        fixed_size=ts.get("size"),
+                                       alt_font_path=title_alt,
                                        align=config.front_align(cfg, ci + 1),
                                        italic=ts.get("italic", False),
                                        bold=ts.get("bold", False),
@@ -2812,9 +3087,9 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
         # skip the word pass so the sizing below can't crash the whole page.
         if not card["words"]:
             continue
-        wf_metrics, wf_ref = _word_metrics(word_font)
+        face = _word_face(word_font, word_alt)
         bold_w = config.word_bold_w(cfg, _WORD_BOLD_W)
-        layouts = _word_layouts(card["words"], words, wf_metrics, wf_ref,
+        layouts = _word_layouts(card["words"], words, face, face.ref,
                                 cell=card.get("cell"), word_size=cfg.get("word_size"),
                                 bold_w=bold_w)
         for wi, slot in enumerate(card["words"]):
@@ -2825,7 +3100,7 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
             x_right = _line_right_edge(slot["x1"], card.get("cell"))
             overlay.append(word_lines(x_right, center, lay.size, slot["color"],
                                       wi + 1, lay.lines, word_font, lead=lay.lead,
-                                      bold_w=bold_w))
+                                      bold_w=bold_w, alt_font_path=word_alt))
     body = "".join(overlay)
     return svg.replace("</svg>", body + "</svg>")
 

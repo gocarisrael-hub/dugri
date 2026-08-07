@@ -82,16 +82,16 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
     if not bd:  # theme has no personalized board title -> use the clean board as-is
         return render_svg(board_svg, w, h, out_png)
     frac = bd["frac"]
-    title_font = config.font_path(theme, cfg["title_font"])
+    title_font = config.resolve_title_font(theme)
     box = {k: (frac[k] * vb[2] if "x" in k else frac[k] * vb[3]) for k in frac}
     svg = board_svg
     style = ("<style>" + rp.GEOMETRIC_TEXT_STYLE
-             + rp.font_face("TitleFont", title_font,
-                              config.title_font_weight(cfg)) + "</style>")
+             + rp.title_faces(theme, cfg) + "</style>")
     body = style + rp.title_block(box, title_lines, bd["fill"], bd["outline"],
                                   title_font, ts["outline_w"], ts["arch"], ts["shadow"],
                                   rtl=rp.title_is_rtl(cfg),
                                   fixed_size=ts.get("board_size"),
+                                  alt_font_path=config.resolve_title_font_alt(theme),
                                   align=ts.get("align", "center"),
                                   italic=ts.get("italic", False),
                                   bold=ts.get("bold", False),
@@ -110,12 +110,12 @@ def render_backs(theme, backs_clean, title_lines, out_png):
     if not bk:  # theme has no personalized back title -> use the clean backs as-is
         return render_svg(open(backs_clean, encoding="utf-8").read(), w, h, out_png)
     frac = bk["frac"]
-    title_font = config.font_path(theme, cfg["title_font"])
+    title_font = config.resolve_title_font(theme)
+    title_alt = config.resolve_title_font_alt(theme)
     recipe = config.load_recipe(cfg["recipe"])
     svg = open(backs_clean, encoding="utf-8").read()
     body = ["<style>" + rp.GEOMETRIC_TEXT_STYLE
-            + rp.font_face("TitleFont", title_font,
-                             config.title_font_weight(cfg)) + "</style>"]
+            + rp.title_faces(theme, cfg) + "</style>"]
     for card in recipe["cards"]:
         if not card:
             continue
@@ -127,6 +127,7 @@ def render_backs(theme, backs_clean, title_lines, out_png):
                                    title_font, ts["outline_w"], ts["arch"], ts["shadow"],
                                    rtl=rp.title_is_rtl(cfg),
                                    fixed_size=ts.get("back_size") or ts.get("size"),
+                                   alt_font_path=title_alt,
                                    align=ts.get("align", "center"),
                                    italic=ts.get("italic", False),
                                    bold=ts.get("bold", False),
@@ -235,10 +236,9 @@ def build_board_pdf(theme, out_pdf, title_lines, workdir, chasers=False):
         raw = svg_rings.align_ring_discs(raw)
     vb = deck_html.view_box(raw)
     doc = deck_html.DeckDocument(vb[2], vb[3])
-    title_font = config.font_path(theme, cfg["title_font"])
+    title_font = config.resolve_title_font(theme)
     doc.add_style(rp.GEOMETRIC_TEXT_STYLE
-                  + deck_html.font_face("TitleFont", title_font,
-                                        config.title_font_weight(cfg)))
+                  + rp.title_faces(theme, cfg, emit=deck_html.font_face))
     doc.add_design("board", raw)
     bd, ts = cfg.get("board"), cfg["title_style"]
     overlay = ""
@@ -250,6 +250,7 @@ def build_board_pdf(theme, out_pdf, title_lines, workdir, chasers=False):
                                  title_font, ts["outline_w"], ts["arch"], ts["shadow"],
                                  rtl=rp.title_is_rtl(cfg),
                                  fixed_size=ts.get("board_size"),
+                                 alt_font_path=config.resolve_title_font_alt(theme),
                                  align=ts.get("align", "center"),
                                  italic=ts.get("italic", False),
                                  bold=ts.get("bold", False),
@@ -326,12 +327,9 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
                  for i in dict.fromkeys(backs)}
     vb = deck_html.view_box(front_svgs[fronts[0]])
     doc = deck_html.DeckDocument(vb[2], vb[3], press=press_geom)
-    word_font_path = config.resolve_word_font(theme, word_font)
-    title_font_path = config.font_path(theme, cfg["title_font"])
     doc.add_style(rp.GEOMETRIC_TEXT_STYLE
-                  + deck_html.font_face("HebWord", word_font_path)
-                  + deck_html.font_face("TitleFont", title_font_path,
-                                       config.title_font_weight(cfg)))
+                  + rp.word_faces(theme, word_font, emit=deck_html.font_face)
+                  + rp.title_faces(theme, cfg, emit=deck_html.font_face))
     for i, svg in back_svgs.items():
         doc.add_design(f"back{i}", svg)
     for i in fronts:

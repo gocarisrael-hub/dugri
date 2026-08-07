@@ -454,13 +454,18 @@ def test_render_board_chasers_falls_back_when_viewbox_differs():
     captured = {}
     saved = {"theme": config.theme, "ensure": config.ensure_calibrated,
              "td": config.theme_dir, "fp": config.font_path,
-             "tb": rp.title_block, "ff": rp.font_face, "rs": build.render_svg}
+             "rtf": config.resolve_title_font,
+             "rtfa": config.resolve_title_font_alt,
+             "tb": rp.title_block, "tf": rp.title_faces, "rs": build.render_svg}
     try:
         config.theme = lambda name: cfg
         config.ensure_calibrated = lambda c: None
         config.theme_dir = lambda name: tmp
         config.font_path = lambda name, fn: fn
-        rp.font_face = lambda name, path, weight=None: ""
+        # No font I/O: this test is about WHICH board svg is rendered.
+        config.resolve_title_font = lambda name: "Cafe-Regular.ttf"
+        config.resolve_title_font_alt = lambda name: None
+        rp.title_faces = lambda name, c=None, emit=None: ""
         rp.title_block = lambda *a, **k: "<g/>"
         build.render_svg = lambda svg_text, w, h, out: captured.setdefault("svg", svg_text)
 
@@ -482,8 +487,10 @@ def test_render_board_chasers_falls_back_when_viewbox_differs():
         config.ensure_calibrated = saved["ensure"]
         config.theme_dir = saved["td"]
         config.font_path = saved["fp"]
+        config.resolve_title_font = saved["rtf"]
+        config.resolve_title_font_alt = saved["rtfa"]
         rp.title_block = saved["tb"]
-        rp.font_face = saved["ff"]
+        rp.title_faces = saved["tf"]
         build.render_svg = saved["rs"]
 
 
