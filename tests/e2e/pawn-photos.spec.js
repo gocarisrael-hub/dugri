@@ -322,3 +322,48 @@ test.describe('pawn photos: the background cut', () => {
     expect(foreign).toEqual([]);
   });
 });
+
+test.describe('pawn photos: the helper copy', () => {
+  // The step's two lines of helper copy — what the photos become, and that tapping
+  // a photo replaces it — are the whole explanation of a feature the buyer meets
+  // once. They used to render at 13.5px (the shared .wiz-sub, shrunk again by the
+  // phone media queries) and 13px, the smallest text on the screen, and the owner
+  // could not read them on her phone. 16px is the floor; anything that pushes them
+  // back under it — a new .wiz-sub media override, a "tidy up" of this step's
+  // style block — is the regression this pins. The smallest common phone width
+  // (375px) is used because that is where the copy wraps most and the step is
+  // tightest against the fixed Back/Next bar.
+  test('the helper copy is readable on a phone and the step still fits', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await toPawnStep(page);
+    await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
+
+    const copy = { sub: '[data-step="5"] .wiz-sub', hint: '[data-testid="pawn-hint"]' };
+    for (const [what, sel] of Object.entries(copy)) {
+      const { size, lead } = await page.locator(sel).evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { size: parseFloat(cs.fontSize), lead: parseFloat(cs.lineHeight) };
+      });
+      expect(size, `${what} font-size`).toBeGreaterThanOrEqual(16);
+      // Bigger type on its old cramped leading reads no better, so hold the ratio.
+      expect(lead / size, `${what} line-height ratio`).toBeGreaterThanOrEqual(1.4);
+    }
+
+    // Growing the copy must not push the step's last control behind the fixed bar
+    // or make the phone wizard scroll (the rule wizard-noscroll.spec.js enforces).
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
+          const skip = document.querySelector('[data-testid="pawn-skip"]').getBoundingClientRect();
+          return Math.round(skip.bottom - bar.top);
+        })
+      )
+      .toBeLessThanOrEqual(0);
+    await expect
+      .poll(async () =>
+        page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
+      )
+      .toBeLessThanOrEqual(4);
+  });
+});

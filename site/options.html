@@ -3088,9 +3088,29 @@
         <p class="wiz-err" id="pawnErr" data-testid="pawn-err" hidden></p>
         <button class="pawn-skip" type="button" id="pawnSkip" data-testid="pawn-skip">דלגו</button>
         <style>
+          /* The two lines of helper copy on THIS step are the only instructions a
+             buyer gets about what the photos become and how to swap a bad cut —
+             and they were the smallest text on the screen (13.5px sub / 13px hint
+             on a phone, where the shared .wiz-sub shrinks). The owner reads them
+             on a phone and couldn't. Both now clear a 16px floor, with the sub
+             staying a hair larger than the hint the way it always was.
+
+             Scoped to this step rather than raising .wiz-sub globally: every
+             other wizard step is height-budgeted against the fixed Back/Next bar
+             (tests/e2e/wizard-noscroll.spec.js), and this step is the one with
+             slack to spend. The [data-step='5'] prefix also outranks the two
+             media-query .wiz-sub overrides (max-width:600px / max-height:520px)
+             on specificity, so the size holds at every viewport instead of
+             needing a copy inside each query. Sizes are pinned by
+             tests/e2e/pawn-photos.spec.js. */
+          [data-step='5'] .wiz-sub {
+            font-size: 16.5px;
+            line-height: 1.6;
+          }
           .pawn-hint {
             margin: 0 0 10px;
-            font-size: 13px;
+            font-size: 16px;
+            line-height: 1.6;
             color: var(--muted);
             text-align: center;
           }
