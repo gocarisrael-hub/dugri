@@ -108,16 +108,33 @@ def test_the_line_is_where_the_numbers_say_it_is():
 
 
 def test_all_four_entries_share_that_one_line():
-    """Not four traced boxes with four different left edges — one line, and the
-    proof is that the same phrase in all four slots wraps the same way. The
-    traced boxes disagree by up to 45 units on a shipped card; if any of that
-    reached the fit, the four entries would break at different words."""
-    for theme in _themes():
-        slots, cell, layouts = _layout(theme, [_LONG] * 4)
+    """Not four traced boxes with four different left edges — one line.
+
+    On a card with nothing in the way, the proof is that the same phrase in all
+    four slots wraps the SAME way: the traced boxes disagree by up to 45 units on
+    a shipped card, and if any of that reached the fit the four entries would
+    break at different words. Where an ICON stands beside an entry the split may
+    differ — that entry has less room, which is the icon rule doing its job — so
+    the card-wide claim is checked on the designs that have no icons, and the
+    line itself is checked everywhere.
+    """
+    clear = [t for t in _themes()
+             if not rp.card_obstacle_rects(t, *_obstacle_args(t))]
+    assert clear, "some shipped design must be free of icons for this to mean anything"
+    for theme in clear:
+        _slots, _cell, layouts = _layout(theme, [_LONG] * 4)
         assert len({tuple(l.lines) for l in layouts if l}) == 1, (
             f"{theme}: one phrase, four splits — {[l.lines for l in layouts]}")
+    for theme in _themes():
+        slots, cell, _ = _layout(theme)
         # ...and the line never sits right of where the design's own words start.
         assert rp._card_left_edge(slots, cell) <= min(s["x0"] for s in slots) + 1e-9
+
+
+def _obstacle_args(theme):
+    """``(front, artwork, cell)`` for ``card_obstacle_rects`` on a theme's first card."""
+    cell, _slots, idx, svg = _first_card(theme)
+    return idx, svg, cell
 
 
 # --- the rhythm -------------------------------------------------------------
@@ -213,3 +230,76 @@ def test_the_block_stops_at_an_icon_under_the_words():
 if __name__ == "__main__":
     import pytest
     raise SystemExit(pytest.main([__file__]))
+
+
+# --- the three the review caught --------------------------------------------
+
+
+def test_a_wrapped_line_is_measured_where_the_grid_puts_it():
+    """The regression: the icons were read at each entry's CALIBRATED centre and
+    the grid then moved the lines, so a second line could land on artwork the
+    first line had cleared — 49 of them across a sweep of the catalogue. The fit
+    is a fixed point now: place, re-read the icons THERE, place again."""
+    for theme in _themes():
+        cell, slots, idx, svg = _first_card(theme)
+        icons = rp.card_obstacle_rects(theme, idx, svg, cell)
+        if not icons:
+            continue
+        face = rp._word_face(config.resolve_word_font(theme),
+                             rp.word_font_alt(theme))
+        _s, _c, layouts = _layout(theme, [_LONG] * 4)
+        right = rp._card_right_edge(slots, cell)
+        advance = rp._marker_advance(face.primary, len(slots))
+        for wi, lay in enumerate(layouts):
+            if lay is None:
+                continue
+            pitch = lay.lead * lay.size
+            block = (len(lay.lines) - 1) * pitch / 2
+            top = lay.center - block - rp._ink_reach(
+                face, face.ref, lay.lines[0])[0] * lay.size
+            bottom = lay.center + block + rp._ink_reach(
+                face, face.ref, lay.lines[-1])[1] * lay.size
+            width = max(rp._line_width_at(face, face.ref, wi + 1, ln,
+                                          advance=advance)
+                        for ln in lay.lines) * lay.size / face.ref
+            for box in icons:
+                # An icon under the numbered column itself is a calibration
+                # matter and predates the grid (ברוקלין card 1 seats its last row
+                # 1.6 units above one); what this pins is that WRAPPING never
+                # walks a line onto artwork the entry had cleared.
+                if len(lay.lines) == 1:
+                    continue
+                assert not (box[0] < right and box[2] > right - width
+                            and box[1] < bottom and box[3] > top), (
+                    f"{theme} entry {wi + 1}: {lay.lines} lands on {box}")
+
+
+def test_a_short_word_is_never_broken_across_lines():
+    """Her rule has a parenthesis: "(of course not if it's a 1 word word)". A
+    card whose band an icon had crushed answered it with "א-ב-א" on eight decks
+    that have never hyphenated anything."""
+    for theme in _themes():
+        for words in (["אבא", "אמא", "סבתא", "דוד"],
+                      ["אבא", "מסיבת רווקות", "ריקודים", "הופעה של להקה"]):
+            _s, _c, layouts = _layout(theme, words)
+            for lay in layouts:
+                if lay is None:
+                    continue
+                assert not any(rp._BREAK_HYPHEN in ln for ln in lay.lines), (
+                    f"{theme}: {lay.lines}")
+
+
+def test_a_card_with_one_entry_does_not_grow_into_the_title():
+    """A single entry has no neighbour to stop it, so it grew symmetrically about
+    its own centre and reached up into the honoree's name. It happens on any
+    order whose word count leaves one word on the last card."""
+    for theme in _themes():
+        cell, slots, idx, svg = _first_card(theme)
+        face = rp._word_face(config.resolve_word_font(theme),
+                             rp.word_font_alt(theme))
+        _s, _c, layouts = _layout(theme, ["אבא"])
+        lay = next(l for l in layouts if l)
+        top = lay.center - rp._ink_reach(face, face.ref, lay.lines[0])[0] * lay.size
+        assert top >= slots[0]["y0"] - 1, (
+            f"{theme}: one entry reaches {slots[0]['y0'] - top:.1f} above the "
+            f"line the design drew for it")

@@ -3537,10 +3537,15 @@ def test_the_fit_reserves_the_width_the_renderer_paints():
 def test_a_wider_latin_face_makes_the_card_set_smaller():
     """The reading has to REACH the size, not merely be taken.
 
-    Fredoka sets "Tel Aviv" wider than Cafe does, so a card carrying it must
-    come out no larger with the Latin face than without it. If the fit still
-    measured the Hebrew face the two would be equal and the printed Latin would
-    overrun the band it was fitted for.
+    Fredoka sets "Tel Aviv" wider than Cafe does, so a card carrying it has to be
+    fitted against the face it will be PRINTED in. If the fit still measured the
+    Hebrew face, the printed Latin would overrun the band it was fitted for.
+
+    Read as ink against the band rather than as one size against the other: with
+    a text box to wrap inside, the wider face may answer by taking a second line
+    and keeping the type up — which is the owner's own order, wrap first and
+    shrink second — so "the wider face sets smaller" is no longer the shape of
+    the guarantee. Overrunning the band is what must not happen, in either face.
     """
     slots = [{"x0": 20, "y0": 40, "x1": 190, "y1": 70, "color": "#000"}]
     cell = [0, 0, 200, 300]
@@ -3548,9 +3553,12 @@ def test_a_wider_latin_face_makes_the_card_set_smaller():
     one = rp._word_face(CAFE)
     two = rp._word_face(CAFE, LATIN)
     assert two.length(word[0]) > one.length(word[0]), "pick a genuinely wider face"
-    a = rp._word_layouts(slots, word, one, one.ref, cell=cell)[0].size
-    b = rp._word_layouts(slots, word, two, two.ref, cell=cell)[0].size
-    assert b < a, (a, b)
+    band = rp._card_right_edge(slots, cell) - rp._card_left_edge(slots, cell)
+    for face, name in ((one, "one face"), (two, "two faces")):
+        lay = rp._word_layouts(slots, word, face, face.ref, cell=cell)[0]
+        widest = max(rp._line_width_at(face, face.ref, 1, ln) for ln in lay.lines)
+        assert widest * lay.size / face.ref <= band + 1e-6, (
+            f"{name}: the line is set wider than the band it was fitted for")
 
 
 def test_the_numbered_marker_never_sees_the_second_face():

@@ -1903,6 +1903,16 @@ _BREAK_HYPHEN = os.environ.get("DUGRI_BREAK_HYPHEN", "-")
 # whole would cost the card more than 15% of its type.
 _BREAK_BELOW = float(os.environ.get("DUGRI_BREAK_BELOW", "0.85"))
 
+# ...and never a SHORT one, however narrow the room gets. The owner's rule has a
+# parenthesis in it — "take the words that are covering the icon to a new line
+# (of course not if it's a 1 word word), or make the font smaller" — and a card
+# whose band an icon has crushed to 33 units answered it by setting "אבא" as
+# "א-ב-א". Breaking a word is a trade: a hyphen bought against a smaller card.
+# There is nothing to buy on a word this short, so the card sets smaller instead,
+# which is what she asked for. Long words keep the trade (אינטרנציונליזציה at 16
+# characters is why the breaker exists).
+_BREAK_MIN_CHARS = int(os.environ.get("DUGRI_BREAK_MIN_CHARS", "8"))
+
 
 def _fit_chars(font, token, width, hyphen):
     """How many leading characters of ``token`` fit ``width`` with ``hyphen``.
@@ -2005,7 +2015,8 @@ def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
         out[1] = ([word], 0.0, float("inf"))
         return out
     whole_word_best = max(v[2] for v in out.values())
-    if uniform and whole_word_best < uniform * _BREAK_BELOW:
+    if (uniform and whole_word_best < uniform * _BREAK_BELOW
+            and len(word.replace(" ", "")) >= _BREAK_MIN_CHARS):
         for n in range(len(out) + 1, max_lines + 1):
             lines = _hard_split(font, word, n)
             if not lines or len(lines) in out:
@@ -2015,7 +2026,7 @@ def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
 
 
 def _fit_card(cands, centers, uniform, font=None, ref=None,
-              vbounds=None, room=None, count=None, bold_w=0.0):
+              vbounds=None, room=None, count=None, bold_w=0.0, rows=None):
     """Solve ONE font size for the whole card, and each entry's line count.
 
     Every word on a card renders at the SAME size — that is the origin
@@ -2063,6 +2074,12 @@ def _fit_card(cands, centers, uniform, font=None, ref=None,
     the paper that is actually free below the last calibrated line instead of
     squeezing the pitch. Without it (no cell, no artwork to scan) the calibrated
     span stands, which is the conservative answer.
+
+    ``rows`` — each entry's own strip of card — binds the ONE case the grid
+    cannot bind for itself: a card carrying a single entry. Every other card is
+    held by its neighbours and by the room below, but a lone entry has neither,
+    so it grew symmetrically about its own centre until it reached up into the
+    honoree's name. It happens on any order whose last card holds one word.
     """
     live = sorted(cands)
     best = None
@@ -2090,6 +2107,22 @@ def _fit_card(cands, centers, uniform, font=None, ref=None,
         else:
             size = min(size, _grid_cap(live_c, counts, flat, lead, font, ref,
                                        vbounds))
+        if rows and len(live) == 1 and font is not None and ref is not None:
+            # A lone entry sits on its own calibrated centre (there is no span to
+            # anchor to and nothing to be spaced from), so its block grows both
+            # ways from there — and the strip the design drew for it is the only
+            # thing that says how far. The pitch here is the card's own lead: with
+            # one centre ``_grid_pitch`` has no span to divide, so it returns
+            # exactly ``lead * size``.
+            i = live[0]
+            lines = cands[i][counts[i]][0]
+            grow = (counts[i] - 1) * lead / 2
+            up = grow + _ink_reach(font, ref, lines[0])[0]
+            down = grow + _ink_reach(font, ref, lines[-1])[1]
+            for reach, need in ((centers[i] - rows[i][0], up),
+                                (rows[i][1] - centers[i], down)):
+                if need > 0:
+                    size = min(size, max(reach, 0.0) / need)
         key = (size, -sum(combo))
         if best is None or key > best[0]:
             best = (key, size, counts, lead)
@@ -2370,46 +2403,45 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     # their bite. Measured for the whole card first, because whether ANY entry is
     # blocked decides whether THIS CARD may wrap at all (see AND ONLY WHERE THERE
     # IS SOMETHING TO DODGE) and that answer has to be one answer for the card.
-    bands, blocked = {}, False
+    bands = {}
     # The fit meets the icons with their clear air already on them; every
     # assertion, and the contact sheet, meets their true boxes (see CLEAR AIR
     # AROUND AN ICON). Stated in millimetres because that is the unit the
     # complaint is in — a margin you can see on the printed card — and converted
     # once here.
     obstacles = _grown(obstacles, _ICON_CLEAR_MM * _PT_PER_MM)
-    for wi, slot in enumerate(slots):
-        word = words[wi] if wi < len(words) else ""
-        if not word:
-            continue
-        right = _card_right_edge(slots, cell)
-        # ONE left line for the card, whether or not the template states its
-        # column: see ``_card_left_edge``. The trim-safe floor still holds it off
-        # the paper edge on a card with no cell to mirror against.
-        left = _card_left_edge(slots, cell)
-        if floor is not None:
-            left = max(left, floor)
-        if left >= right:                 # degenerate slot: fall back to the floor
-            left = floor if floor is not None else slot["x0"]
-        # The row is shortened first, because an icon it no longer reaches is an
-        # icon this entry no longer has to be narrow for.
-        clipped = _row_clip(obstacles, rows[wi], centers[wi], right,
-                            cell[2] - cell[0] if cell else 0.0)
-        if clipped != rows[wi]:
-            rows[wi] = clipped
-            blocked = True
-        edge = _obstacle_left(obstacles, rows[wi], right)
-        on_icon = edge is not None and edge > left
-        if on_icon:
-            left = edge
-            blocked = True
-        bands[wi] = (word, right, left, on_icon)
-    if not bands:
+    def _bands(rows):
+        """Each live entry's band, with the icons beside it having taken their
+        bite — read against the rows it is handed, which is what makes this
+        answerable again once the grid has moved the lines."""
+        bands = {}
+        for wi, slot in enumerate(slots):
+            word = words[wi] if wi < len(words) else ""
+            if not word:
+                continue
+            right = _card_right_edge(slots, cell)
+            # ONE left line for the card, whether or not the template states
+            # its column: see ``_card_left_edge``. The trim-safe floor still
+            # holds it off the paper edge on a card with no cell to mirror
+            # against.
+            left = _card_left_edge(slots, cell)
+            if floor is not None:
+                left = max(left, floor)
+            if left >= right:             # degenerate slot: fall back to the floor
+                left = floor if floor is not None else slot["x0"]
+            # The row is shortened first, because an icon it no longer reaches is
+            # an icon this entry no longer has to be narrow for.
+            row = _row_clip(obstacles, rows[wi], rows[wi][0] / 2 + rows[wi][1] / 2,
+                            right, cell[2] - cell[0] if cell else 0.0)
+            edge = _obstacle_left(obstacles, row, right)
+            on_icon = edge is not None and edge > left
+            if on_icon:
+                left = edge
+            bands[wi] = (word, right, left, on_icon)
+        return bands
+
+    if not _bands(rows):
         return [None] * len(slots)
-    # The card's column, as the fit settled it: the widest right anchor and the
-    # nearest left bound of any live entry. It is what decides which icons are
-    # UNDER the words rather than merely low on the card.
-    band_right = max(b[1] for b in bands.values())
-    band_left = min(b[2] for b in bands.values())
     # Wrapping needs a text box to wrap INSIDE, and now every card has one: the
     # left line is the mirror of the card's own numbered column
     # (``_card_left_edge``), not a guess at where the origin's short words
@@ -2418,22 +2450,20 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     # The v1 sheet used to answer a phrase too wide for its card by shrinking the
     # whole card onto one line (11.8 on מרקאנה where the same phrase wraps at
     # 21.3 on אואזיס); the type stays up now, and the second line is what pays.
-    wrap = True
-    cands = {wi: _candidates(font, ref, wi + 1, word, right - left,
-                             max_lines=_WRAP_MAX_LINES if wrap else 1,
-                             advance=advance,
-                             uniform=uniform,
-                             ink=on_icon)
-             for wi, (word, right, left, on_icon) in bands.items()}
-    pitches = {i: _slot_pitch(slots, i) for i in cands}
-    live_c = [centers[i] for i in sorted(cands)]
-    # The room below is only usable when it IS below, and only when there are two
-    # calibrated centres to read a spacing from. A bound that lands above the last
-    # line says the scan found something that is not the frame the words sit in,
-    # and the calibrated span is the safer answer.
-    room = None
-    if (vbounds and room_bottom is not None and len(live_c) > 1
-            and max(live_c) > min(live_c) and room_bottom > max(live_c)):
+    def _room(live_c, rows):
+        """The paper the block may grow down into, or None.
+
+        Only usable when it IS below, and only when there are two calibrated
+        centres to read a spacing from. A bound that lands above the last line
+        says the scan found something that is not the frame the words sit in, and
+        the calibrated span is the safer answer.
+        """
+        if not (vbounds and room_bottom is not None and len(live_c) > 1
+                and max(live_c) > min(live_c) and room_bottom > max(live_c)):
+            return None
+        bands = _bands(rows)
+        band_right = max(b[1] for b in bands.values())
+        band_left = min(b[2] for b in bands.values())
         floor_y = min(vbounds[1], room_bottom)
         # ...AND ONLY DOWN TO THE FIRST ICON UNDER THE COLUMN. The frame says how
         # much paper is left at the foot of the card; it does not say what is
@@ -2445,30 +2475,129 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
         for o in obstacles or []:
             if o[1] > max(live_c) and o[0] < band_right and o[2] > band_left:
                 floor_y = min(floor_y, o[1])
-        if floor_y > max(live_c):
-            room = (vbounds[0], floor_y)
-    size, counts, lead = _fit_card(cands, centers, uniform,
-                                   font=font, ref=ref, vbounds=vbounds,
-                                   room=room, count=len(slots), bold_w=bold_w)
-    # Every line on the card-wide grid, each entry handed the centre the grid put
-    # it on and the grid pitch as its lead — so the gap inside a wrapped entry IS
-    # the gap between two entries, and the gap on THIS card is the gap on every
-    # other card of the deck.
-    lines = sum(counts.values())
-    # With a card to measure, the pitch floor is the origin's ENTRY spacing (a
-    # constant per template) and the ceiling is the paper left below the first
-    # line; without one it is the legacy line-span envelope.
-    cap = None
-    if room and lines > 1:
-        last = cands[max(cands)][counts[max(cands)]][0][-1]
-        below = _ink_reach(font, ref, last)[1] * size
-        cap = (room[1] - min(live_c) - below) / (lines - 1)
-    pitch = _grid_pitch(live_c, (len(live_c) - 1) if room else (lines - 1),
-                        lead, size, cap=cap)
-    # Pinned to the first calibrated line, growing downward, whenever the room is
-    # known — the space above belongs to the title. Without a known room the block
-    # stays centred on the calibrated span, exactly as it was placed before.
-    grid_c = _grid_centers(live_c, counts, pitch, anchor_top=bool(room))
+        return (vbounds[0], floor_y) if floor_y > max(live_c) else None
+    # WHERE THE LINES LAND IS WHERE THEY HAVE TO BE MEASURED. The grid moves an
+    # entry off its calibrated centre — that is what it is for — so a row and an
+    # icon bound read at the calibrated centre describe a layout that is not the
+    # one being printed. Solved as a fixed point instead: fit, see where the grid
+    # puts the lines, re-read the rows and the icons THERE, and fit again. Three
+    # passes at most, and the size only ever falls, so it always terminates.
+    #
+    # Every one of the three failures this replaces came from that gap: a second
+    # line landing on an icon the first line had cleared (49 overlaps across the
+    # catalogue), a crushed band chopping "אבא" into "א-ב-א", and a one-entry card
+    # growing up into the honoree's name.
+    def _solve(rows, cap):
+        cands = {wi: _candidates(font, ref, wi + 1, word, right - left,
+                                 max_lines=_WRAP_MAX_LINES,
+                                 advance=advance, uniform=cap, ink=on_icon)
+                 for wi, (word, right, left, on_icon) in _bands(rows).items()}
+        live_c = [centers[i] for i in sorted(cands)]
+        room = _room(live_c, rows)
+        size, counts, lead = _fit_card(cands, centers, cap, font=font, ref=ref,
+                                       vbounds=vbounds, room=room,
+                                       count=len(slots), bold_w=bold_w,
+                                       rows=rows)
+        lines = sum(counts.values())
+        # With a card to measure, the pitch floor is the origin's ENTRY spacing (a
+        # constant per template) and the ceiling is the paper left below the first
+        # line; without one it is the legacy line-span envelope.
+        pcap = None
+        if room and lines > 1:
+            last = cands[max(cands)][counts[max(cands)]][0][-1]
+            below = _ink_reach(font, ref, last)[1] * size
+            pcap = (room[1] - min(live_c) - below) / (lines - 1)
+        pitch = _grid_pitch(live_c, (len(live_c) - 1) if room else (lines - 1),
+                            lead, size, cap=pcap)
+        # Pinned to the first calibrated line, growing downward, whenever the room
+        # is known — the space above belongs to the title. Without a known room
+        # the block stays centred on the calibrated span, as it was placed before.
+        grid_c = _grid_centers(live_c, counts, pitch, anchor_top=bool(room))
+        return cands, size, counts, pitch, grid_c
+
+    def _spans(cands, size, counts, pitch, grid_c):
+        """The strip of card each entry's INK actually occupies once the grid has
+        placed it — top of the first line to the bottom of the last.
+
+        This is what the icons have to be read against. An entry's calibrated row
+        describes where the ORIGIN's single line sat; a wrapped entry on the grid
+        covers a different piece of paper, and an icon it now reaches is an icon
+        the first pass could not have seen. Every overlap in the sweep — a second
+        line landing on artwork the first line had cleared — is that difference.
+        """
+        out = dict(rows)
+        for wi, centre in grid_c.items():
+            block = (counts[wi] - 1) * pitch / 2
+            lines = cands[wi][counts[wi]][0]
+            out[wi] = (centre - block - _ink_reach(font, ref, lines[0])[0] * size,
+                       centre + block + _ink_reach(font, ref, lines[-1])[1] * size)
+        return out
+
+    # THE CEILING OF THE CARD. The block is pinned to the first calibrated line
+    # and grows DOWN, so the only way it reaches the honoree's name is by setting
+    # bigger than the strip that first line owns — which is what a card carrying
+    # ONE entry did, growing symmetrically about its own centre with no neighbour
+    # to stop it. One scalar, checked against the strip the design gave that line,
+    # and it cannot fight the downward growth the room is there to allow.
+    def _spans(cands, size, counts, pitch, grid_c):
+        """The strip of card each entry's INK actually occupies once the grid has
+        placed it — top of the first line to the bottom of the last.
+
+        This is what the icons have to be read against. An entry's calibrated row
+        describes where the ORIGIN's single line sat; a wrapped entry on the grid
+        covers a different piece of paper, and an icon it now reaches is an icon
+        the first pass could not have seen. Every overlap in the sweep — a second
+        line landing on artwork the first line had cleared — is that difference.
+        """
+        out = dict(rows)
+        for wi, centre in grid_c.items():
+            block = (counts[wi] - 1) * pitch / 2
+            lines = cands[wi][counts[wi]][0]
+            out[wi] = (centre - block - _ink_reach(font, ref, lines[0])[0] * size,
+                       centre + block + _ink_reach(font, ref, lines[-1])[1] * size)
+        return out
+
+    # THE CEILING OF THE CARD. The block is pinned to the first calibrated line
+    # and grows DOWN, so the only way it reaches the honoree's name is by setting
+    # bigger than the strip that first line owns — which is what a card carrying
+    # ONE entry did, growing symmetrically about its own centre with no neighbour
+    # to stop it. One scalar, checked against the strip the design gave that line,
+    # and it cannot fight the downward growth the room is there to allow.
+    def _seated(cands, size, counts, pitch, grid_c):
+        """``(centres, overrun)`` — the block moved DOWN off the title, and what
+        it could not move.
+
+        A card carrying one entry has no neighbour to stop it growing, so it grew
+        symmetrically about its own centre and reached up into the honoree's name
+        — on any order whose last card holds a single word. The answer is to seat
+        it, not to shrink it: the paper it wants is underneath, which is where
+        every other card's block grows. Only what will not fit even after the
+        block has slid down is paid for in type size.
+        """
+        first, last = min(grid_c), max(grid_c)
+        up = ((counts[first] - 1) * pitch / 2
+              + _ink_reach(font, ref, cands[first][counts[first]][0][0])[0] * size)
+        down = ((counts[last] - 1) * pitch / 2
+                + _ink_reach(font, ref, cands[last][counts[last]][0][-1])[1] * size)
+        sticks_up = rows[first][0] - (grid_c[first] - up)
+        if sticks_up <= 0:
+            return grid_c, 1.0
+        floor_y = rows[last][1]
+        free = floor_y - (grid_c[last] + down)
+        shift = min(sticks_up, max(free, 0.0))
+        seated = {wi: c + shift for wi, c in grid_c.items()}
+        left_over = sticks_up - shift
+        reach = grid_c[first] - rows[first][0] + shift
+        return seated, ((up / reach) if left_over > 0 and reach > 0 else 1.0)
+
+    out, spans = None, None
+    for _pass in range(3):
+        out = _solve(spans or rows, uniform)
+        moved = _spans(*out)
+        if moved == (spans or rows):
+            break
+        spans = moved
+    cands, size, counts, pitch, grid_c = out
     return [None if wi not in cands
             else Layout(size, cands[wi][counts[wi]][0],
                         pitch / size if size else 0.0, grid_c[wi])
