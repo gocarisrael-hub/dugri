@@ -161,6 +161,27 @@ describe('image-thumbs — every failure yields NOTHING, never the original', ()
     expect(runs.n).toBe(0);
   });
 
+  // The in-flight map must be EMPTY once a request settles, on every path. The
+  // missing-source path is the one that finishes without ever awaiting, and it
+  // used to leave its resolved promise behind — a leak any client could drive by
+  // asking for well-formed names that aren't there.
+  it('leaves nothing behind in the in-flight map, however a request ends', async () => {
+    await get('0123456789abcdef.png', { runner: fakeSpawn({}) });
+    await get(name, { runner: fakeSpawn({}) });
+    await get(upload(), { runner: fakeSpawn({ code: 1, out: null }) });
+    await Promise.all([get(upload(), { runner: fakeSpawn({}) }), get(name, {})]);
+    expect(imageThumbs._inflight.size).toBe(0);
+  });
+
+  // …and a missing source is NOT blacklisted: uploads are content-addressed, so
+  // the same bytes always land on the same name and it can legitimately appear.
+  it('a missing source is retried once the file exists', async () => {
+    const later = Math.random().toString(16).slice(2).padEnd(16, '0').slice(0, 16) + '.png';
+    expect(await get(later, { runner: fakeSpawn({}) })).toBe(null);
+    fs.writeFileSync(path.join(uploadDir, later), PNG);
+    expect(await get(later, { runner: fakeSpawn({}) })).toBeTruthy();
+  });
+
   // The name reaches this module straight off a URL, so it is validated to
   // EXACTLY the shape content.saveImageBytes produces — no traversal, no
   // arbitrary read, no spawn.

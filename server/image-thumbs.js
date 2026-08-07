@@ -124,10 +124,18 @@ function get(name, opts = {}) {
   if (inflight.has(n)) return inflight.get(n);
 
   const src = path.join(opts.uploadDir || content._uploadDir, n);
-  const job = (async () => {
-    if (!fs.existsSync(src)) return null;
+  // Deferred to a microtask so `inflight.set` below has ALWAYS run before the
+  // body's `finally` clears it. A path that finishes without ever awaiting (a
+  // source that isn't there) would otherwise delete nothing and then be recorded
+  // — leaving a resolved promise in the map for good. That is a memory leak any
+  // client could drive by requesting well-formed names that don't exist.
+  const job = Promise.resolve().then(async () => {
     const tmp = `${dest}.${process.pid}.tmp`;
     try {
+      // No `failed` entry for a missing source: unlike a broken resizer this can
+      // legitimately become true later (uploads are content-addressed, so the
+      // same bytes always land on this same name).
+      if (!fs.existsSync(src)) return null;
       fs.mkdirSync(CACHE_DIR, { recursive: true });
       const ok = await runResize(src, tmp, opts.runner);
       const type = ok ? typeOf(tmp) : null;
@@ -148,7 +156,7 @@ function get(name, opts = {}) {
       }
       inflight.delete(n);
     }
-  })();
+  });
   inflight.set(n, job);
   return job;
 }
@@ -158,4 +166,11 @@ function get(name, opts = {}) {
 // re-upload of the same bytes re-uses it. Keeping it out of the reclaim paths
 // keeps those (shared by three stores) untouched.
 
-module.exports = { get, _cacheDir: CACHE_DIR, _script: SCRIPT, MAXPX, NAME_RE };
+module.exports = {
+  get,
+  _cacheDir: CACHE_DIR,
+  _script: SCRIPT,
+  _inflight: inflight,
+  MAXPX,
+  NAME_RE,
+};
