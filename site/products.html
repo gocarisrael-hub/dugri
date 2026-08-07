@@ -209,21 +209,27 @@
           font-size: 17px;
         }
       }
+      /* minmax(0, 1fr), never a bare 1fr: a bare `1fr` floors each column at its
+         content's MIN-CONTENT width, so one long design name or an unbreakable
+         price row quietly widened its own column and left the grid visibly
+         lopsided — neighbouring tiles at different widths, and the narrower
+         card's dots wrapping onto a second line. minmax(0, …) removes the floor
+         and the columns are genuinely equal. */
       .store-grid {
         display: grid;
         /* 2 columns on mobile; 3 on tablet; 4 on wide desktop. */
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 30px 20px;
       }
       @media (min-width: 600px) {
         .store-grid {
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 36px 28px;
         }
       }
       @media (min-width: 960px) {
         .store-grid {
-          grid-template-columns: repeat(4, 1fr);
+          grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 44px 32px;
         }
       }
@@ -237,6 +243,18 @@
          --card-aspect is set once on the GRID (see gridAspect below) so every tile
          keeps the SAME shape: the landscape default while the catalog is all legacy
          A4 sheets, square once any design ships portrait single cards. */
+      /* NO background panel behind the picture.
+         The tile painted --surface, a shade off the page, so wherever a picture
+         did not fill its tile that shade showed as a pale band down each side
+         with a hard edge against the photo — about 11 px per side, on every card.
+         The owner's photos come in TWO shapes (5:4 camera shots and 1.41 A4
+         sheets), so one tile shape can never fit both and some letterboxing is
+         unavoidable. The tile shape is deliberately kept uniform across the
+         catalog (see gridAspect) so captions stay level across a row; what goes
+         away is the visible PANEL, leaving the spare space reading as plain page.
+         Cropping to fill was the other option and is worse: these are photographs
+         OF THE PRODUCT, and shaving 12% off a board to square up a grid loses the
+         thing the shopper came to look at. */
       .product-card__media {
         position: relative;
         display: block;
@@ -244,7 +262,6 @@
         aspect-ratio: var(--card-aspect, 841.92 / 595.5);
         border-radius: var(--radius);
         overflow: hidden;
-        background: var(--surface);
         transition: transform 0.2s ease;
       }
       .product-card:hover .product-card__media {
