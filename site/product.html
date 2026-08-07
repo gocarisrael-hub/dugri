@@ -217,13 +217,26 @@
       }
 
       /* ---- 1. PHOTO GALLERY ---- */
+      /* THE PALE BAND THE OWNER REPORTED LIVES HERE.
+         This box and its slides both painted --section (#f4efe6, warm sand) while
+         the page behind is --bg (#ffffff). object-fit:contain never fills a frame
+         whose shape differs from the photo's, so that sand showed as a coloured
+         panel beside every picture with a hard edge against it: measured at 390px
+         the letterbox sampled 244,239,230 against a 255,255,255 page. Which edge
+         depends on the upload — down the sides of a 5:4 photo in this 1.41 frame
+         (~19px each), above and below the 3:2 shots the catalog ships today
+         (~7px each). Either way it was OUR colour, not the photo's.
+         `transparent` (not a colour of our own) so the spare space is by
+         construction whatever the page is, which is exactly what the pixel test in
+         tests/e2e/picture-letterbox.spec.js asserts. The hairline border and the
+         shadow stay: the frame is deliberate, the coloured fill was not. */
       .pdp-gallery {
         position: relative;
         border-radius: var(--radius);
         overflow: hidden;
         border: 1px solid var(--line);
         box-shadow: var(--shadow-md);
-        background: var(--section);
+        background: transparent;
       }
       /* One full-width photo per view; swipe/drag advances (shared carousel,
          slideshow mode, autoplay off). gap:0 so slides sit edge-to-edge. */
@@ -236,10 +249,13 @@
          design's are single 0.72 cards and get a square box. The default here is
          the landscape sheet, so a page that never resolves a design looks exactly
          as it always has. */
+      /* Transparent too, and not merely for tidiness: the slide sits ON TOP of the
+         gallery box, so clearing only the box would leave the slide's own sand
+         still painting the band. Both, or neither. */
       .pdp-gallery-slide {
         width: 100%;
         aspect-ratio: var(--gallery-aspect, 841.92 / 595.5);
-        background: var(--section);
+        background: transparent;
       }
       /* contain (not cover) so the whole product photo shows, never cropped. */
       .pdp-gallery-slide img {
@@ -680,12 +696,15 @@
         border-color: var(--sage);
         box-shadow: var(--shadow-md);
       }
+      /* Same sand band as .pdp-gallery above, on the same page, a few hundred
+         pixels lower: a fixed 1.41 frame + object-fit:contain + a --section fill.
+         Cleared for the same reason and covered by the same pixel test. */
       .pdp-rel-thumb {
         aspect-ratio: 841.92 / 595.5;
         width: 100%;
         border-radius: var(--radius);
         overflow: hidden;
-        background: var(--section);
+        background: transparent;
       }
       .pdp-rel-thumb img {
         width: 100%;
