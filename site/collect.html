@@ -2993,11 +2993,37 @@
         const cardBtn = $('#cardPayBtn');
         const modal = $('#payModal');
         const frame = $('#payFrame');
+        // Tell the server the payment window is gone, so its session stops
+        // counting as "in flight". Fire-and-forget: the buyer's checkout must
+        // never depend on this cleanup call succeeding.
+        function releasePaySession() {
+          try {
+            fetch('/api/collections/' + id + '/pay/cancel', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ owner_token: ownerToken }),
+              // Survives the request outliving the page (backgrounded tab, or the
+              // buyer navigating away the moment they close the modal).
+              keepalive: true,
+            }).catch(() => {});
+          } catch (e) {
+            /* offline / blocked — the session TTL is the backstop */
+          }
+        }
         function closeModal() {
+          const wasOpen = !modal.classList.contains('hidden');
           modal.classList.add('hidden');
           frame.src = 'about:blank';
+          // Only when a payment window was actually open — a paid-path close
+          // (postMessage success) resolves its own session via the callback.
+          if (wasOpen && !isPaid()) releasePaySession();
         }
         $('#payModalClose').onclick = closeModal;
+        // Closing the TAB with the modal open is the same thing as closing the
+        // modal: no charge can land from a window that no longer exists.
+        window.addEventListener('pagehide', () => {
+          if (!modal.classList.contains('hidden') && !isPaid()) releasePaySession();
+        });
         // Backdrop-click + Escape close, shared with the message dialog.
         wireModalDismiss(modal, closeModal);
 
@@ -3039,6 +3065,37 @@
             /* private mode — the ?back= below still carries the way back */
           }
           location.href = 'pay-success.html?back=' + encodeURIComponent(back);
+        }
+
+        // Shown under the 409 "there is an open payment" error: one button that
+        // releases the stale session and retries. The buyer is the authority on
+        // whether their own payment window is still open — asking them is safer
+        // than auto-clearing a session a real charge could still land on.
+        function showStaleSessionEscape() {
+          if (document.getElementById('staleSessionBtn')) return;
+          const btn = document.createElement('button');
+          btn.id = 'staleSessionBtn';
+          btn.type = 'button';
+          btn.className = 'ghost';
+          btn.style.marginTop = '8px';
+          btn.setAttribute('data-testid', 'stale-session-btn');
+          btn.textContent = 'סגרתי את חלון התשלום — המשיכו';
+          btn.onclick = async () => {
+            btn.disabled = true;
+            try {
+              await api('/pay/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ owner_token: ownerToken }),
+              });
+            } catch (e) {
+              /* the retry below reports anything still wrong */
+            }
+            btn.remove();
+            payErr.style.display = 'none';
+            cardBtn.click();
+          };
+          payErr.insertAdjacentElement('afterend', btn);
         }
 
         cardBtn.addEventListener('click', async () => {
@@ -3113,6 +3170,11 @@
               payErr.textContent = /[֐-׿]/.test(err.message)
                 ? err.message
                 : 'כבר בוצע תשלום עבור הזמנה זו';
+              // A stale in-flight session (the buyer closed the window on another
+              // device, or the tab died before the cleanup beacon left) used to be
+              // a 20-minute dead end. Offer the way out instead of just naming the
+              // problem: release the session, then retry the payment once.
+              if (/[֐-׿]/.test(err.message)) showStaleSessionEscape();
             } else if (err.status === 429) {
               payErr.textContent = 'יותר מדי ניסיונות, נסו עוד רגע';
             } else {
