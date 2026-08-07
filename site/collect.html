@@ -1892,6 +1892,10 @@
           ? 'הגעתם למקסימום — יש לכם משחק מפוצץ!'
           : 'המינימום מאחוריכם — ממשיכים למקסימום (' + MAX_WORDS + ')';
 
+        // Locked: replace the "keep going" hint written above, which would
+        // otherwise sit directly under a disabled input telling them to add more.
+        if (state.free_limit_locked) applyLockedCounterCopy();
+
         renderWords();
         renderOwnerState();
       }
@@ -1911,12 +1915,24 @@
           el.disabled = locked;
         }
         if (!locked) return;
-        // The owner can act on this (pay); a contributor can't, so they're told
-        // who can — never handed a pay button for someone else's order.
+        // Name the CAUSE. Without this the page reads as broken rather than as a
+        // paywall: the box is dead, and nothing on screen says why or what fixes
+        // it. The owner can act (pay); a contributor can't, so they are told who
+        // can — never handed a pay button for someone else's order.
         $('#lockNote').textContent = isOwner
-          ? 'המילים שאספתם שמורות. התשלום פותח את האיסוף מיד וממשיכים בלי הגבלה.'
-          : 'המילים שאספתם שמורות — ברגע שהמארגנ/ת תשלים את התשלום אפשר יהיה להמשיך.';
+          ? 'כדי להמשיך להוסיף מילים צריך להשלים את התשלום. כל המילים שאספתם שמורות.'
+          : 'כדי להמשיך להוסיף מילים המארגנ/ת צריכה להשלים את התשלום. כל המילים שנאספו שמורות.';
         payBtn.classList.toggle('hidden', !isOwner);
+      }
+
+      // The counter's ordinary copy urges "another 50 to the minimum" — true, but
+      // actively wrong to say next to a disabled input. While locked the hint says
+      // what is actually happening instead. The pill/bar keep measuring toward the
+      // real product goal (that goal has not changed), and neither names the quota.
+      function applyLockedCounterCopy() {
+        $('#countHint').textContent = isOwner
+          ? 'האיסוף מושהה עד להשלמת התשלום.'
+          : 'האיסוף מושהה עד שהמארגנ/ת תשלים את התשלום.';
       }
 
       function renderWords() {
@@ -2083,10 +2099,14 @@
           const blocked = (res && res.blocked) || 0;
           track('word_added', { method: method || 'single', count: added, skipped, blocked });
           if (blocked) {
-            // Say what landed, never how many slots there were — the quota number
-            // stays unspoken even at the moment it bites.
-            say(added ? 'נוספו ' + added + ' מילים — וכאן עוצרים לרגע' : 'כאן עוצרים לרגע');
-            return true;
+            // NAME THE LOSS. A 40-word paste with room for 5 stores 5 and drops 35;
+            // saying only "we stopped here" while the textarea is cleared destroys
+            // typing the buyer can't get back. Returning false keeps their text on
+            // screen (see the paste handler) so the rest survives the paywall.
+            const lost = blocked === 1 ? 'מילה אחת לא נוספה' : blocked + ' מילים לא נוספו';
+            const landed = added === 1 ? 'נוספה מילה' : 'נוספו ' + added + ' מילים';
+            say((added ? landed + ' · ' : '') + lost + ' — האיסוף מושהה עד להשלמת התשלום');
+            return false;
           }
           if (added >= 1) {
             // Something was added → confirm with a non-blocking toast. If part of
@@ -2131,8 +2151,8 @@
             await refresh();
             openDialog(
               isOwner
-                ? 'האיסוף נעצר כאן. אחרי התשלום אפשר להמשיך להוסיף מילים בלי הגבלה.'
-                : 'האיסוף נעצר כאן. ברגע שהמארגנ/ת תשלים את התשלום אפשר יהיה להמשיך.'
+                ? 'האיסוף מושהה עד להשלמת התשלום. אחרי התשלום ממשיכים להוסיף מילים.'
+                : 'האיסוף מושהה עד שהמארגנ/ת תשלים את התשלום.'
             );
           } else {
             // Network drop, HTTP 500, or the server's 400 (too many words):
