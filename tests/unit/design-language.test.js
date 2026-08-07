@@ -100,7 +100,10 @@ describe('custom designs carry their own metadata', () => {
   it('a BUILT-IN design object resolves through the maps exactly as its id does', () => {
     expect(languageForDesign({ id: 'bachelorette' })).toBe(languageForDesign('bachelorette'));
     expect(extraFieldsForDesign({ id: 'marriage' })).toEqual(extraFieldsForDesign('marriage'));
-    // couple designs really do need the two names — guards the object path
-    expect(extraFieldsForDesign({ id: 'marriage' }).length).toBeGreaterThan(0);
+    // Guard the object path with a design that really does need a field —
+    // 'marriage' no longer does (סנטוריני became a one-person deck), so asserting
+    // on it would have quietly stopped testing anything.
+    expect(extraFieldsForDesign({ id: 'japanese' })).toEqual(extraFieldsForDesign('japanese'));
+    expect(extraFieldsForDesign({ id: 'japanese' }).length).toBeGreaterThan(0);
   });
 });
