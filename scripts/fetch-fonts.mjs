@@ -26,7 +26,7 @@ const CSS_OUT = path.join(OUT_DIR, 'fonts.css');
 // union of every weight any page requests (300..900); Assistant is the body face.
 // The rest are page-local decorative faces (options wizard, timer).
 const FAMILIES = [
-  'Assistant:wght@200;400;500;600',
+  'Assistant:wght@200;400;500;600;700',
   'Heebo:wght@300;400;500;600;700;800;900',
   'Fredoka:wght@400;500',
   'Gveret+Levin',
