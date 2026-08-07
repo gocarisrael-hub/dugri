@@ -228,14 +228,14 @@ class Face:
     makes the exception visible at the call site instead of implied by absence.
     """
 
-    __slots__ = ("primary", "alt", "ref", "rtl", "by_coverage")
+    __slots__ = ("primary", "alt", "ref", "rtl", "by_language")
 
-    def __init__(self, primary, alt=None, ref=200, rtl=True, by_coverage=False):
+    def __init__(self, primary, alt=None, ref=200, rtl=True, by_language=False):
         self.primary = primary
         self.alt = alt
         self.ref = ref
         self.rtl = rtl
-        self.by_coverage = by_coverage
+        self.by_language = by_language
 
     @property
     def single(self):
@@ -270,23 +270,31 @@ class Face:
           uploaded face wins for Latin outright, not "when the Hebrew face
           cannot cope": she chose it, so a Latin run takes it whether or not the
           primary could have drawn it.
-        * **titles** (``by_coverage``) — the pair is "the face this design is
-          drawn in" plus "a face for a title in the other language", and which
-          of those is Latin depends on the design. מרקאנה's title face is League
-          Spartan, a LATIN face, with a Hebrew second face beside it. Sending
-          every Latin run to the second face there put an English title in the
-          Hebrew font — the primary's own script, handed away.
+        * **titles** (``by_language``) — the pair is "the face this design is
+          drawn in" plus "a face for a title in the OTHER language", and which of
+          those is Latin depends on the design. מרקאנה's title face is League
+          Spartan and פריז's is MrDafoe — both LATIN, each with a HEBREW second
+          face beside it. Sending every Latin run to the second face there put an
+          English title in the Hebrew font: the primary's own script, handed away.
 
-        So a title asks the honest question instead: send a run to the second
-        face only when the primary cannot draw it. That is exactly the owner's
-        "if the title flips language then change to the extra font".
+        The owner's rule, in her words: "if the title is in english in the
+        original then if i want a hebrew title for this template you always use
+        the second font if exist... even if the first font can write in english".
+        So it is the template's LANGUAGE that decides, not glyph coverage — a
+        second face she uploaded is a choice, exactly as it is for words, and it
+        is used whenever the title leaves the design's own language.
         """
         if self.alt is None:
             return [(self.primary, text)]
         out = []
         for lat, t in script_runs(text, base_rtl=self.rtl):
-            if self.by_coverage:
-                f = self.alt if _font_gaps(self.primary, t) else self.primary
+            if self.by_language:
+                # The design's OWN script stays in the design's own face; the
+                # other language goes to the second face. ``rtl`` is
+                # ``title_is_rtl(cfg)``, i.e. the template's ``language``, so a
+                # Latin run on a Hebrew design and a Hebrew run on a Latin
+                # design both take the alt — which is the same test either way.
+                f = self.alt if lat == self.rtl else self.primary
             else:
                 f = self.alt if lat else self.primary
             out.append((f, t))
@@ -2584,7 +2592,7 @@ def _title_face(font_path, alt_font_path=None, ref=200, rtl=False):
     """
     primary = _title_metrics(font_path, ref)[0]
     alt = _title_metrics(alt_font_path, ref)[0] if alt_font_path else None
-    return Face(primary, alt, ref, rtl=rtl, by_coverage=True)
+    return Face(primary, alt, ref, rtl=rtl, by_language=True)
 
 
 def _title_runs(face, line):

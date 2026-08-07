@@ -3633,18 +3633,13 @@ def test_a_title_line_in_two_faces_is_one_text_with_a_tspan():
     (test_title_block_rtl_reorders_digit_in_raster). So Chrome does the
     ordering and the arch, alignment and three paint layers are untouched."""
     box = {"x0": 0, "y0": 0, "x1": 400, "y1": 120}
-    # MrDafoe (primary) has no Hebrew; Cafe (second face) sets both. The title
-    # pair is chosen by COVERAGE — the second face carries what the first cannot
-    # draw — so here it is the HEBREW run that moves, and the primary keeps the
-    # script it can actually set. (A pool font as primary would split nothing:
-    # every one of them covers both scripts.)
-    mixed = rp.title_block(box, ["PARTY לשירה"], "#000", "#000", LATIN_ONLY,
-                           0, 0, False, rtl=True, alt_font_path=CAFE)
-    # The space between the two scripts is a neutral and joins the Hebrew run
-    # (it sits between runs that disagree, so it takes the base direction), so
-    # the tspan carries " לשירה" — match the letters, not the exact whitespace.
-    assert re.search(r'<tspan font-family="TitleFontAlt">\s*לשירה</tspan>', mixed), mixed
-    assert '>PARTY</tspan>' not in mixed, mixed
+    # A HEBREW design (rtl=True) with a Latin second face: the Latin run takes
+    # the second face because it is the OTHER language, not because Cafe cannot
+    # set it — Cafe covers Latin perfectly well. The owner's rule is that a face
+    # she uploaded for a language IS used for that language.
+    mixed = rp.title_block(box, ["PARTY לשירה"], "#000", "#000", CAFE, 0, 0,
+                           False, rtl=True, alt_font_path=LATIN)
+    assert '<tspan font-family="TitleFontAlt">PARTY</tspan>' in mixed, mixed
     # one <text> per line per paint layer, as before — the tspan adds no element
     assert mixed.count("<textPath") == mixed.count("</textPath")
 
