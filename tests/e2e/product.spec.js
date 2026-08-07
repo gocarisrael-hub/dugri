@@ -103,9 +103,10 @@ test.describe('product detail page', () => {
     expect(srcs.length).toBeGreaterThan(0);
     for (const src of srcs) {
       // Must not point at the tiny picker thumbs (thumb-front/back/board.webp),
-      // which upscale blurry full-width. Expect the hi-res gallery renders.
+      // which upscale blurry full-width. Expect the hi-res renders: the store
+      // cover (the leading slide, same as the shop tile) and the gallery-*.webp.
       expect(src).not.toMatch(/thumb-(front|back|board)\.webp$/);
-      expect(src).toMatch(/gallery-(front|back|board)\.webp$/);
+      expect(src).toMatch(/(store|gallery-(front|back|board))\.webp$/);
     }
   });
 
@@ -439,7 +440,7 @@ test.describe('per-product photo carousel + editable content', () => {
     const srcs = await page
       .locator('#galleryTrack .pdp-gallery-slide img')
       .evaluateAll((els) => els.map((i) => i.getAttribute('src') || ''));
-    for (const src of srcs) expect(src).toMatch(/gallery-(front|back|board)\.webp$/);
+    for (const src of srcs) expect(src).toMatch(/(store|gallery-(front|back|board))\.webp$/);
   });
 
   // Item 5 fix (dedupe): product.js reuses the editor's single /api/content fetch
@@ -465,7 +466,7 @@ test.describe('per-product photo carousel + editable content', () => {
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
     await expect(slides.first()).toBeVisible();
     const srcs = await slides.evaluateAll((els) => els.map((i) => i.getAttribute('src') || ''));
-    for (const src of srcs) expect(src).toMatch(/gallery-(front|back|board)\.webp$/);
+    for (const src of srcs) expect(src).toMatch(/(store|gallery-(front|back|board))\.webp$/);
   });
 
   // Item 5: the per-design ABOUT text is injected by product.js AFTER the editor's
@@ -739,7 +740,7 @@ test.describe('per-product photo carousel + editable content', () => {
     await expect(async () => {
       const srcs = await slides.evaluateAll((els) => els.map((i) => i.getAttribute('src') || ''));
       expect(srcs.length).toBeGreaterThan(0);
-      for (const src of srcs) expect(src).toMatch(/gallery-(front|back|board)\.webp$/);
+      for (const src of srcs) expect(src).toMatch(/(store|gallery-(front|back|board))\.webp$/);
     }).toPass();
   });
 

@@ -15,7 +15,7 @@ const keys = (items) => items.map((i) => i.key);
 const srcs = (items) => items.map((i) => i.src);
 
 describe('galleryFor — resolved per-surface gallery', () => {
-  it('with no config, the grid shows store + card renders; the detail page omits the store cover', () => {
+  it('with no config, BOTH surfaces show the same pictures in the same order', () => {
     const products = galleryFor({}, BOARDED, 'products');
     expect(keys(products)).toEqual(['store', 'front', 'back', 'board']);
     expect(srcs(products)).toEqual([
@@ -28,17 +28,34 @@ describe('galleryFor — resolved per-surface gallery', () => {
     expect(products.every((i) => i.fallback === baseSrc('posttrip', i.key) && i.name === '')).toBe(
       true
     );
-    // The product-detail surface leads with the card renders (no store cover by default).
-    expect(keys(galleryFor({}, BOARDED, 'product'))).toEqual(['front', 'back', 'board']);
+    // The detail page used to DROP the store cover by default, so it opened on the
+    // owner's SECOND picture while the shop tile led with her first. One
+    // arrangement, both surfaces.
+    expect(keys(galleryFor({}, BOARDED, 'product'))).toEqual(['store', 'front', 'back', 'board']);
   });
 
-  it('the owner can opt the store cover INTO the product page', () => {
+  // THE REGRESSION. The shop tile and the product page must open on the SAME
+  // picture — the first one the owner arranged — for any design she has not
+  // hand-configured. The old store-cover-hidden-on-product default broke exactly
+  // this: /products showed store.webp, clicking it opened the gallery on the card
+  // front (her picture #2).
+  it('the first picture is the same on the shop tile and the product page', () => {
+    for (const map of [{}, { posttrip: { order: ['photo', 'store', 'front', 'back', 'board'] } }]) {
+      const first = (surface) => galleryFor(map, BOARDED, surface)[0];
+      expect(first('product').key).toBe(first('products').key);
+      expect(first('product').src).toBe(first('products').src);
+    }
+  });
+
+  it('an explicit onProduct:true is still honoured (legacy stored opt-in)', () => {
+    // Configs written before the default flipped carry store.onProduct === true.
+    // It now agrees with the default, so it must be a no-op, not a re-hide.
     const map = { posttrip: { base: { store: { onProduct: true } } } };
     expect(keys(galleryFor(map, BOARDED, 'product'))).toEqual(['store', 'front', 'back', 'board']);
   });
 
   it('omits the board slot for a boardless design (no override)', () => {
-    expect(keys(galleryFor({}, BOARDLESS, 'product'))).toEqual(['front', 'back']);
+    expect(keys(galleryFor({}, BOARDLESS, 'product'))).toEqual(['store', 'front', 'back']);
     expect(keys(galleryFor({}, BOARDLESS, 'products'))).toEqual(['store', 'front', 'back']);
   });
 
@@ -160,10 +177,15 @@ describe('galleryFor — resolved per-surface gallery', () => {
 
   it('hiding a picture on ONE surface leaves the other surface untouched', () => {
     // The two flags are independent — removing the store cover from the shop grid
-    // must not also strip the card renders from the detail page.
+    // must not also strip it from the detail page.
     const storeOff = { posttrip: { base: { store: { onProducts: false } } } };
     expect(keys(galleryFor(storeOff, BOARDED, 'products'))).toEqual(['front', 'back', 'board']);
-    expect(keys(galleryFor(storeOff, BOARDED, 'product'))).toEqual(['front', 'back', 'board']);
+    expect(keys(galleryFor(storeOff, BOARDED, 'product'))).toEqual([
+      'store',
+      'front',
+      'back',
+      'board',
+    ]);
   });
 });
 
@@ -187,7 +209,7 @@ describe('galleryFor — the photo-card slot', () => {
       'photo',
       'board',
     ]);
-    expect(keys(galleryFor({}, PORTRAIT, 'product'))).toEqual(['front', 'back', 'photo']);
+    expect(keys(galleryFor({}, PORTRAIT, 'product'))).toEqual(['store', 'front', 'back', 'photo']);
     expect(galleryFor({}, PORTRAIT, 'product').find((i) => i.key === 'photo')).toMatchObject({
       src: baseSrc('grapefruit', 'photo'),
       fallback: baseSrc('grapefruit', 'photo'),
@@ -213,7 +235,7 @@ describe('galleryFor — the photo-card slot', () => {
 
   it('honours the owner hiding it per surface', () => {
     const map = { grapefruit: { base: { photo: { onProduct: false } } } };
-    expect(keys(galleryFor(map, PORTRAIT, 'product'))).toEqual(['front', 'back']);
+    expect(keys(galleryFor(map, PORTRAIT, 'product'))).toEqual(['store', 'front', 'back']);
     expect(keys(galleryFor(map, PORTRAIT, 'products'))).toContain('photo');
   });
 });
@@ -275,8 +297,14 @@ describe('galleryFor — a CUSTOM design (uploaded template)', () => {
     expect(keys(items)).toEqual(['store', 'front', 'back', 'board', 'p1']);
     // No shipped store render behind it → droppable rather than a 404 slide.
     expect(items[0]).toMatchObject({ src: P1, fallback: '', droppable: true });
-    // The store cover still stays off the detail page by default.
-    expect(keys(galleryFor(map, TPL, 'product'))).toEqual(['front', 'back', 'board', 'p1']);
+    // An uploaded template's store cover leads BOTH surfaces, same as a built-in's.
+    expect(keys(galleryFor(map, TPL, 'product'))).toEqual([
+      'store',
+      'front',
+      'back',
+      'board',
+      'p1',
+    ]);
   });
 
   it('honours per-surface hiding and the owner order', () => {

@@ -102,12 +102,21 @@ function validImg(p) {
   return typeof p === 'string' && UPLOAD_PATH_RE.test(p);
 }
 
-// Default per-surface visibility of a BASE slot when the owner set no explicit
-// flag. Everything shows EXCEPT the store cover on the product-detail page (that
-// gallery leads with the card renders, not the shop cover). MUST match the same
-// rule in server/design-images.js (baseDefault).
-function baseDefault(slot, flag) {
-  return !(slot === 'store' && flag === 'onProduct');
+/** Whether a BASE slot is visible on this surface. Every base picture shows on
+ *  BOTH surfaces unless the owner explicitly hid it (a stored `false`) — so the
+ *  ONE arrangement she makes in the gallery editor is the one both surfaces
+ *  render, first picture included.
+ *
+ *  This used to carry an exception: the store cover was hidden on the product
+ *  page by default ("that gallery leads with the card renders"). It silently
+ *  dropped picture #1 on every design she hadn't hand-ticked, so the shop tile
+ *  showed one picture and clicking it opened the product page on the NEXT one.
+ *  Ordering and per-surface visibility are hers to set now, so a slot-specific
+ *  default can only surprise. MUST match the same rule in server/design-images.js
+ *  and the gallery editor's checkboxes (site/admin-images.html baseFlag).
+ */
+function baseVisible(cfg, flag) {
+  return !(cfg && cfg[flag] === false);
 }
 
 /**
@@ -149,9 +158,8 @@ export function galleryFor(map, design, surface) {
   for (const key of order) {
     if (availSet.has(key)) {
       const bc = baseCfg[key] || {};
-      // Explicit owner flag wins; otherwise the slot's per-surface default decides.
-      const visible = typeof bc[flag] === 'boolean' ? bc[flag] : baseDefault(key, flag);
-      if (!visible) continue;
+      // Visible unless the owner explicitly hid this picture on this surface.
+      if (!baseVisible(bc, flag)) continue;
       // A shipped slot falls back to its shipped render on a broken override; a
       // slot with NO shipped render (an override-only board or photo card) has no
       // fallback — it's DROPPABLE, so a broken upload removes the slide, not 404s.

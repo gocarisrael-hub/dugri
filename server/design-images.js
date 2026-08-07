@@ -92,14 +92,15 @@ function boolOr(v, dflt) {
   return typeof v === 'boolean' ? v : dflt;
 }
 
-// Default per-surface visibility of a BASE slot when the owner has set no explicit
-// flag. Everything shows by default EXCEPT the store cover on the product-detail
-// page (that page's gallery leads with the card renders, not the shop cover). The
-// CLIENT reader (site/js/design-images.js) applies the SAME rule — keep them in
-// sync. The store keeps only DEVIATIONS from this default, so it stays lean.
-function baseDefault(slot, flag) {
-  return !(slot === 'store' && flag === 'onProduct');
-}
+// Per-surface visibility of a BASE slot: every base picture shows on BOTH
+// surfaces unless the owner explicitly HID it, so the only thing worth storing is
+// a `false` (the store stays lean and a hide stays reversible).
+//
+// There used to be one slot-specific exception — the store cover defaulted to
+// HIDDEN on the product page — which silently dropped picture #1 there on every
+// design the owner hadn't hand-ticked. The CLIENT reader
+// (site/js/design-images.js baseVisible) and the gallery editor's checkboxes
+// (site/admin-images.html baseFlag) apply the SAME rule — keep the three in sync.
 
 let _store = load();
 function load() {
@@ -134,10 +135,9 @@ function normalizeDesign(g) {
       const cfg = {};
       const img = pathOk(s.img);
       if (img) cfg.img = img;
-      // Keep a flag only when it deviates from the slot's default (lean store).
+      // Keep a flag only when it HIDES the picture (lean store — see above).
       for (const flag of ['onProducts', 'onProduct']) {
-        if (typeof s[flag] === 'boolean' && s[flag] !== baseDefault(slot, flag))
-          cfg[flag] = s[flag];
+        if (s[flag] === false) cfg[flag] = false;
       }
       if (Object.keys(cfg).length) base[slot] = cfg;
     }
@@ -266,8 +266,8 @@ function resetBaseImg(id, slot) {
 }
 
 // Set a base slot's per-surface visibility. `flags` may carry onProducts and/or
-// onProduct; a value of true (the default) is stored as the ABSENCE of a
-// deviation, so only real hides persist.
+// onProduct; true (the default for every slot on every surface) is stored as the
+// ABSENCE of a flag, so only real hides persist.
 function setBaseFlags(id, slot, flags) {
   const d = designOk(id);
   const s = slotOk(slot);
@@ -277,9 +277,9 @@ function setBaseFlags(id, slot, flags) {
   const cfg = base[s] || (base[s] = {});
   for (const f of ['onProducts', 'onProduct']) {
     if (f in flags) {
-      // Store only a DEVIATION from the slot default; a value equal to the default
-      // is the absence of a deviation (keeps the store lean + reversible).
-      if (!!flags[f] !== baseDefault(s, f)) cfg[f] = !!flags[f];
+      // Store only a HIDE; "visible" is the default, so it is the ABSENCE of a
+      // flag (keeps the store lean + the hide reversible).
+      if (!flags[f]) cfg[f] = false;
       else delete cfg[f];
     }
   }

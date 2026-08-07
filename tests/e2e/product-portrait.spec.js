@@ -42,6 +42,15 @@ const PORTRAIT_DESIGN = {
   products: {},
 };
 
+// The gallery leads with a design's STORE COVER on both surfaces. Every design the
+// shop actually sells ships one (site/assets/designs/<id>/store.webp), but this
+// fixture design is deliberately NOT a product yet and only has its two card
+// renders committed — so its store slide would 404. Hide that one slot for it, and
+// the slides these tests measure are the portrait card renders they are about.
+const NO_STORE_COVER = {
+  [PORTRAIT_ID]: { base: { store: { onProducts: false, onProduct: false } } },
+};
+
 /** Serve the real catalog plus the portrait design. */
 function withPortraitDesign(page) {
   const catalog = { ...GENERATED, [PORTRAIT_ID]: PORTRAIT_DESIGN };
@@ -57,13 +66,15 @@ function withPortraitDesign(page) {
 // counts, and a real gallery config would perturb the slide list. Neutralise both.
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/custom-designs', (route) => route.fulfill({ json: { designs: [] } }));
-  await page.route('**/api/design-images*', (route) => route.fulfill({ json: { images: {} } }));
+  await page.route('**/api/design-images*', (route) =>
+    route.fulfill({ json: { images: NO_STORE_COVER } })
+  );
 });
 
 /** The rendered slide box + the natural size of the picture inside it. */
-async function galleryMetrics(page) {
-  return page.evaluate(() => {
-    const slide = document.querySelector('.pdp-gallery-slide');
+async function galleryMetrics(page, index = 0) {
+  return page.evaluate((i) => {
+    const slide = document.querySelectorAll('.pdp-gallery-slide')[i];
     const img = slide.querySelector('img');
     const r = slide.getBoundingClientRect();
     return {
@@ -73,7 +84,7 @@ async function galleryMetrics(page) {
       natH: img.naturalHeight,
       src: img.getAttribute('src'),
     };
-  });
+  }, index);
 }
 
 test.describe('product.html — a portrait design shows single cards, not sheets', () => {
@@ -82,8 +93,8 @@ test.describe('product.html — a portrait design shows single cards, not sheets
     await page.goto(`/product.html?design=${PORTRAIT_ID}`);
 
     const slides = page.locator('#galleryTrack .pdp-gallery-slide:not([data-carousel-clone])');
-    // No board and no photo card yet → exactly the two card slides (the store cover
-    // is hidden on the detail page by default).
+    // No board and no photo card yet, and this fixture ships no store cover →
+    // exactly the two card slides.
     await expect(slides).toHaveCount(2);
     await expect(slides.nth(0).locator('img')).toHaveAttribute(
       'src',
@@ -127,12 +138,12 @@ test.describe('product.html — a portrait design shows single cards, not sheets
     // they do on main.
     await page.goto('/product.html?design=birthday');
     const slides = page.locator('#galleryTrack .pdp-gallery-slide:not([data-carousel-clone])');
-    await expect(slides).toHaveCount(3); // front + back + board
+    await expect(slides).toHaveCount(4); // store + front + back + board
 
     await expect
       .poll(async () => (await galleryMetrics(page)).natW, { timeout: 10_000 })
       .toBeGreaterThan(0);
-    const m = await galleryMetrics(page);
+    const m = await galleryMetrics(page, 1); // slide 0 is the store cover; 1 is the sheet
     expect(m.boxW / m.boxH).toBeCloseTo(841.92 / 595.5, 1); // the landscape sheet box
     expect(m.natW).toBeGreaterThan(m.natH); // still a landscape sheet render
   });
@@ -150,7 +161,16 @@ test.describe('the photo-card slide', () => {
     await page.unroute('**/api/design-images*');
     await page.route('**/api/design-images*', (route) =>
       route.fulfill({
-        json: { images: { [PORTRAIT_ID]: { base: { photo: { img: PHOTO_OVERRIDE } } } } },
+        json: {
+          images: {
+            [PORTRAIT_ID]: {
+              base: {
+                ...NO_STORE_COVER[PORTRAIT_ID].base,
+                photo: { img: PHOTO_OVERRIDE },
+              },
+            },
+          },
+        },
       })
     );
 

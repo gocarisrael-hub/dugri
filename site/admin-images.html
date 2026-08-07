@@ -445,14 +445,13 @@
       function shipsBase(d, slot) {
         return !!(d && d.slots && d.slots[slot]);
       }
-      // Default per-surface visibility of a base slot (store hidden on the product
-      // page by default; everything else shown). Matches the server + reader rule.
-      function baseDefault(slot, flag) {
-        return !(slot === 'store' && flag === 'onProduct');
-      }
+      // Per-surface visibility of a base slot: shown on BOTH surfaces unless it was
+      // explicitly hidden (a stored `false`). Matches the server + reader rule — no
+      // slot is special, so what this page shows first is what the shop tile and the
+      // product page open on.
       function baseFlag(g, slot, flag) {
         const c = g.base && g.base[slot];
-        return c && typeof c[flag] === 'boolean' ? c[flag] : baseDefault(slot, flag);
+        return !(c && c[flag] === false);
       }
       function defaultSrc(d, slot) {
         return (d && d.slots && d.slots[slot]) || '';
