@@ -198,6 +198,115 @@ def test_cmyk_flatten_removes_rgb_fonts_and_transparency(tmp_path):
     assert b"/Type /Font" not in data
 
 
+def test_press_pdf_runs_ghostscript_in_the_default_mode(tmp_path, monkeypatch):
+    """Nothing about the default changed: cmyk_flatten still runs, with the ICC."""
+    calls = []
+    monkeypatch.setattr(press, "cmyk_flatten",
+                        lambda src, out, **kw: (calls.append((src, out, kw)),
+                                                open(out, "wb").write(b"%PDF-"))[0])
+    monkeypatch.setattr(press, "set_boxes",
+                        lambda p, g, **kw: calls.append(("boxes", kw)) or p)
+    src = tmp_path / "in.pdf"
+    src.write_bytes(b"%PDF-")
+    press.press_pdf(str(src), str(tmp_path / "out.pdf"),
+                    press.PressGeometry(ART_W, ART_H), icc="/some/profile.icc")
+    assert calls[0][2]["icc"] == "/some/profile.icc"
+    assert calls[1] == ("boxes", {"icc": "/some/profile.icc",
+                                  "mode": press.MODE_CMYK})
+
+
+# --- 4. pass-through: the colour pass switched off ---------------------------
+# The owner's switch (settings press.cmyk_pass). The shop separates the colour
+# itself, so the two minutes of Ghostscript buy nothing; the geometry is a
+# different question and is NOT part of what was dropped.
+
+def test_passthrough_never_shells_out_to_ghostscript(tmp_path, monkeypatch):
+    """The whole point of the mode. Any Ghostscript here and the speedup is gone."""
+    def boom(*a, **k):                       # pragma: no cover - must not run
+        raise AssertionError("pass-through must not run Ghostscript")
+
+    monkeypatch.setattr(press, "cmyk_flatten", boom)
+    monkeypatch.setattr(press.subprocess, "run", boom)
+    boxed = []
+    monkeypatch.setattr(press, "set_boxes",
+                        lambda p, g, **kw: boxed.append(kw) or p)
+    src = tmp_path / "in.pdf"
+    src.write_bytes(b"%PDF-1.4 rgb deck")
+    out = tmp_path / "out.pdf"
+    press.press_pdf(str(src), str(out), press.PressGeometry(ART_W, ART_H),
+                    icc="/some/profile.icc", cmyk=False)
+    assert out.read_bytes() == b"%PDF-1.4 rgb deck", "the rendered deck, untouched"
+    # The ICC is dropped at this level, not merely unused: an OutputIntent names
+    # the condition a file was SEPARATED against, and nothing separated this one.
+    assert boxed == [{"mode": press.MODE_PASSTHROUGH}]
+
+
+def test_passthrough_leaves_the_output_alone_when_it_fails(tmp_path, monkeypatch):
+    """src and out are the SAME file in a real build (build.py press_pdf(out, out)).
+
+    An in-place edit that died halfway would destroy the only rendered copy, so
+    the work is staged and moved — in this mode as in the other.
+    """
+    monkeypatch.setattr(press, "set_boxes",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("nope")))
+    deck = tmp_path / "deck.pdf"
+    deck.write_bytes(b"%PDF-1.4 the whole rendered deck")
+    with pytest.raises(RuntimeError):
+        press.press_pdf(str(deck), str(deck), press.PressGeometry(ART_W, ART_H),
+                        cmyk=False)
+    assert deck.read_bytes() == b"%PDF-1.4 the whole rendered deck"
+
+
+@pytest.mark.skipif(not HAS_PIKEPDF, reason="pikepdf not installed")
+def test_passthrough_writes_the_boxes_but_declares_no_cmyk(tmp_path):
+    """The geometry is kept; the colour claim is not made.
+
+    press.py:177 is the reason: without a TrimBox nothing in the file says where
+    the card ends. A CMYK OutputIntent on an unconverted file, by contrast, would
+    be the file's own metadata lying to the one reader that believes it.
+    """
+    import pikepdf
+    src = tmp_path / "deck.pdf"
+    pdf = pikepdf.Pdf.new()
+    for _ in range(3):
+        pdf.add_blank_page(page_size=(265.92, 354.0))
+    pdf.save(src)
+    out = tmp_path / "press.pdf"
+    press.press_pdf(str(src), str(out), press.PressGeometry(ART_W, ART_H),
+                    icc=str(tmp_path / "unused.icc"), cmyk=False)
+    with pikepdf.open(out) as got:
+        assert len(got.pages) == 3, "every page survives"
+        for page in got.pages:
+            trim = [float(v) for v in page.obj["/TrimBox"]]
+            assert round(_mm(trim[2] - trim[0]), 2) == 74.0
+            assert "/BleedBox" in page.obj
+        assert "/OutputIntents" not in got.Root
+        assert str(got.docinfo[press.MODE_KEY]) == press.MODE_PASSTHROUGH
+
+
+@pytest.mark.skipif(not HAS_PIKEPDF, reason="pikepdf not installed")
+def test_the_two_modes_stamp_different_document_info(tmp_path):
+    """A press file has to stay identifiable long after the build that made it.
+
+    The owner will have both kinds in one orders folder and they look identical
+    in any viewer — the same failure mode as the RGB intermediate the release
+    gate exists to catch.
+    """
+    import pikepdf
+    src = tmp_path / "in.pdf"
+    pdf = pikepdf.Pdf.new()
+    pdf.add_blank_page(page_size=(265.92, 354.0))
+    pdf.save(src)
+    icc = tmp_path / "fake.icc"
+    icc.write_bytes(b"\0" * 512)
+    press.set_boxes(str(src), press.PressGeometry(ART_W, ART_H), icc=str(icc),
+                    mode=press.MODE_CMYK)
+    with pikepdf.open(src) as got:
+        assert str(got.docinfo[press.MODE_KEY]) == press.MODE_CMYK
+        assert "/OutputIntents" in got.Root
+    assert press.MODE_CMYK != press.MODE_PASSTHROUGH
+
+
 def test_gs_failure_is_fatal_rather_than_silently_wrong(tmp_path, monkeypatch):
     """The trap this guards: Ghostscript 10 sandboxes file reads, and a BLOCKED
     ICC read does not abort the job — it falls back to a built-in profile and

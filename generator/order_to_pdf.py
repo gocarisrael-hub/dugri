@@ -29,7 +29,7 @@ from topup import topup
 def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                  word_font=None, workdir=None, progress=False, chasers=False,
                  custom_title=None, photos=None, press_icc=None,
-                 press_bleed=None, gender=None):
+                 press_bleed=None, press_cmyk=True, gender=None):
     """Render an order and return ``(out_pdf, page_count, board_pdf)``.
 
     ``board_pdf`` is the separate board file a v2 (single-card) template
@@ -49,6 +49,12 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
     photos        absolute paths to the customer's pawn photos for the final
                   photo card (v2 only); fewer than four are topped up from the
                   theme's generic Dugri fallback set
+    press_cmyk    False builds the press copy WITHOUT the Ghostscript pass: no
+                  CMYK conversion, no flattening, no outlining, and no
+                  OutputIntent (nothing separated it, so nothing may claim to
+                  have). The bleed, crop marks and TrimBox are still written —
+                  that is where to cut, and it is not what was dropped. Turns a
+                  press run on by itself, so no unused ICC path is required
     gender        the honoree's gender ('male' / 'female' / None), which resolves
                   the title's {feminine|masculine} markers — Hebrew is gendered,
                   so "{NAME} {בת|בן} {AGE}" prints בת for a girl and בן for a
@@ -96,7 +102,8 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                 extra_fields=extra_fields or {}, word_font=word_font,
                 workdir=os.path.join(workdir, "build"), progress=progress,
                 chasers=chasers, custom_title=custom_title, photos=photos,
-                press_icc=press_icc, press_bleed=press_bleed, gender=gender,
+                press_icc=press_icc, press_bleed=press_bleed,
+                press_cmyk=press_cmyk, gender=gender,
             )
 
         fronts = config.clean_path(theme_key, "fronts")
@@ -149,10 +156,21 @@ def main():
     ap.add_argument("--field", action="append", default=[], metavar="KEY=VALUE")
     ap.add_argument("--chasers", action="store_true",
                     help="use the theme's chasers board variant when available")
-    ap.add_argument("--press", metavar="ICC", default=None,
-                    help="build the PRINT SHOP copy instead: CMYK against this "
-                         "ICC profile, transparency flattened, text outlined, "
-                         "and the sheet grown to carry bleed + crop marks")
+    # The two press modes. Mutually exclusive because they are alternatives, not
+    # a switch and its option — and because "--press <icc> --press-passthrough"
+    # would read as "separate against this profile, but don't", which has no
+    # honest meaning.
+    press_mode = ap.add_mutually_exclusive_group()
+    press_mode.add_argument("--press", metavar="ICC", default=None,
+                            help="build the PRINT SHOP copy instead: CMYK against this "
+                                 "ICC profile, transparency flattened, text outlined, "
+                                 "and the sheet grown to carry bleed + crop marks")
+    press_mode.add_argument("--press-passthrough", action="store_true",
+                            help="build the PRINT SHOP copy WITHOUT the colour pass: "
+                                 "the sheet still grows to carry bleed + crop marks and "
+                                 "still gets its TrimBox, but the deck is handed over in "
+                                 "Chrome's RGB for the shop to separate itself. No "
+                                 "Ghostscript, so seconds instead of minutes")
     ap.add_argument("--bleed", type=float, default=None, metavar="MM",
                     help="bleed depth in mm for --press (default: the agreed 3)")
     ap.add_argument("--title", default=None,
@@ -170,7 +188,8 @@ def main():
         args.theme, args.name, _parse_fields(args.field), personal,
         out_pdf=args.out_pdf, word_font=args.word_font, progress=True,
         chasers=args.chasers, custom_title=args.title, photos=args.photo,
-        press_icc=args.press, press_bleed=args.bleed, gender=args.gender,
+        press_icc=args.press, press_bleed=args.bleed,
+        press_cmyk=not args.press_passthrough, gender=args.gender,
     )
     print(f"\nwrote {pdf} ({pages} pages)")
     # Printed on its own line so the server can pick the board artifact out of
