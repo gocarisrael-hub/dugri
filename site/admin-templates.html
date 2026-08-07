@@ -659,6 +659,32 @@
       .asset input[type='file'] {
         display: none;
       }
+      /* A font row is wider than an SVG one — it carries the file's name and
+         which scripts it can draw — so let it take the full row rather than be
+         truncated into a column. */
+      .asset[data-kind='font'] {
+        grid-column: 1 / -1;
+      }
+      .asset .asset-remove {
+        order: 2;
+        font-size: 11px;
+        color: #8a5a52;
+        white-space: nowrap;
+      }
+      /* What the template's fonts CANNOT draw. Advisory — never part of the
+         complete/incomplete verdict — so it reads as a caution, not a failure. */
+      .tpl-font-notes {
+        list-style: none;
+        margin: 10px 0 0;
+        padding: 8px 10px;
+        background: #fdf6e3;
+        border: 1px solid #ecdcae;
+        border-radius: 8px;
+        font-size: 12.5px;
+        color: #6b551d;
+        display: grid;
+        gap: 4px;
+      }
       .tpl-msg {
         margin-top: 10px;
         font-size: 12.5px;
@@ -949,6 +975,25 @@
                 name="word_font"
                 accept=".ttf,.otf"
                 required
+            /></label>
+          </div>
+          <!-- The two OPTIONAL second faces. NOT `required`: a template that
+               ships neither renders exactly as it does today, and every template
+               shipped so far has neither. They can also be uploaded later from
+               the template's own checklist below, so nothing here is a
+               now-or-never choice. -->
+          <div class="row">
+            <label
+              >פונט למילים באנגלית (רשות) — כל מילה באנגלית תודפס בו<input
+                type="file"
+                name="word_font_alt"
+                accept=".ttf,.otf"
+            /></label>
+            <label
+              >פונט כותרת שני (רשות) — לכותרת בשפה שהפונט הראשי לא יודע לצייר<input
+                type="file"
+                name="title_font_alt"
+                accept=".ttf,.otf"
             /></label>
           </div>
         </fieldset>
@@ -1827,6 +1872,68 @@
       // flagged here is exactly what would silently vanish from the card.
       const TITLE_PLACEHOLDER_RE = /\{[^{}]*\}/g;
 
+      // A brace group containing a `|` is NOT a placeholder — it is a GENDER
+      // MARKER, "{m:בן|f:בת}", which carries its own two forms, names no field
+      // and needs nothing added to extra_fields.
+      //
+      // MIRRORS server/templates.js (`GENDER_MARKER_ANY_RE`,
+      // `GENDER_FORM_LABEL_RE`, `badGenderMarker`). The server learned about
+      // markers and this screen did not, so pasting the marker into a title was
+      // reported here as a missing field called "m:בן|f:בת" — a warning that was
+      // false, and whose "הקלף יודפס בלעדיו" asserted an outcome nobody had
+      // checked (the card prints it; it is the SAVE the server refuses, and it
+      // does not refuse this). Keep the two in step: a rule only one side knows
+      // makes the screen and the save disagree, in whichever direction.
+      const GENDER_MARKER_ANY_RE = /\{[^{}]*\|[^{}]*\}/g;
+      const GENDER_FORM_LABEL_RE = /^\s*(m|male|f|female)\s*:/i;
+      const GENDER_LABEL_OF = { m: 'male', male: 'male', f: 'female', female: 'female' };
+      const GENDER_MARKER_SHAPE = '{m:בן|f:בת}';
+      function withoutGenderMarkers(line) {
+        return String(line == null ? '' : line).replace(GENDER_MARKER_ANY_RE, '');
+      }
+      // A marker the renderer could not honour as written, in the owner's terms.
+      // Stripping markers before the placeholder scan must not also swallow a
+      // MALFORMED one: an unlabelled "{בן|בת}" is refused by the server on
+      // purpose — with a free-form order the position cannot also say which word
+      // is masculine — so saying nothing here would leave her staring at a 400.
+      function genderMarkerProblem(line) {
+        for (const m of String(line).match(GENDER_MARKER_ANY_RE) || []) {
+          const parts = m.slice(1, -1).split('|');
+          if (parts.length !== 2) {
+            return (
+              'הסימון ' +
+              m +
+              ' מכיל ' +
+              parts.length +
+              ' צורות — צריך בדיוק שתיים, זכר ונקבה: ' +
+              GENDER_MARKER_SHAPE
+            );
+          }
+          const labels = parts.map((p) => {
+            const hit = GENDER_FORM_LABEL_RE.exec(p);
+            return hit ? GENDER_LABEL_OF[hit[1].toLowerCase()] : null;
+          });
+          if (labels.some((l) => !l)) {
+            return (
+              'הסימון ' +
+              m +
+              ' לא מציין איזו צורה היא זכר ואיזו נקבה — סמנו ' +
+              GENDER_MARKER_SHAPE +
+              ' (m זכר, f נקבה). הצורה שנכתבת ראשונה היא זו שתודפס בהזמנה בלי מגדר רשום.'
+            );
+          }
+          if (labels[0] === labels[1]) {
+            return (
+              'הסימון ' +
+              m +
+              ' מסמן את שתי הצורות באותו מגדר — אחת זכר ואחת נקבה: ' +
+              GENDER_MARKER_SHAPE
+            );
+          }
+        }
+        return null;
+      }
+
       // The placeholders a template may use: {NAME} always, plus whatever the
       // wizard collects for it. Read LIVE off the extra_fields input beside it, so
       // typing AGE there immediately makes {AGE} legal in the title below.
@@ -1856,7 +1963,13 @@
         const out = [];
         const used = [];
         for (const line of lines) {
-          for (const m of line.match(TITLE_PLACEHOLDER_RE) || []) {
+          // Markers out FIRST — they are brace groups too, and reading one as a
+          // placeholder is what produced the false "the template does not
+          // collect m:בן|f:בת" warning. A malformed one is reported as a MARKER
+          // problem instead of being swallowed with the valid ones.
+          const bad = genderMarkerProblem(line);
+          if (bad) out.push({ blocking: true, text: bad });
+          for (const m of withoutGenderMarkers(line).match(TITLE_PLACEHOLDER_RE) || []) {
             const tok = m.slice(1, -1).trim();
             if (!used.includes(tok)) used.push(tok);
           }
@@ -1865,12 +1978,15 @@
           if (!allowed.includes(tok)) {
             out.push({
               blocking: true,
+              // Says what is CHECKED — the server refuses this save — instead of
+              // predicting what the card would print, which this screen never
+              // measured.
               text:
                 'הכותרת משתמשת ב-{' +
                 tok +
                 '} אבל התבנית לא אוספת את השדה הזה — הוסיפו ' +
                 tok +
-                ' ל-extra_fields, או תקנו את המשתנה. הקלף יודפס בלעדיו.',
+                ' ל-extra_fields, או תקנו את המשתנה. השמירה תידחה עד שזה יתוקן.',
             });
           }
         }
@@ -2226,7 +2342,22 @@
             mark.textContent = a.present ? '✓' : '✗';
             const lbl = document.createElement('span');
             lbl.className = 'lbl';
-            lbl.textContent = a.label + (a.optional && !a.present ? ' (רשות · חסר)' : '');
+            // A font row says WHICH file is on it and which scripts that file can
+            // actually draw. With four font roles, two of them optional second
+            // faces, a bare ✓ no longer tells the owner what the template prints
+            // with — and the whole point of the second faces is a face that
+            // cannot draw the script it is being asked for.
+            let extra = a.optional && !a.present ? ' (רשות · לא הועלה)' : '';
+            if (a.kind === 'font' && a.present && a.fontName) {
+              extra += ' · ' + a.fontName;
+              if (a.scripts) {
+                const can = [a.scripts.hebrew ? 'עברית' : null, a.scripts.latin ? 'אנגלית' : null]
+                  .filter(Boolean)
+                  .join(' + ');
+                extra += ' · ' + (can ? 'יודע ' + can : 'לא יודע לא עברית ולא אנגלית');
+              }
+            }
+            lbl.textContent = a.label + extra;
             const repl = document.createElement('label');
             repl.className = 'repl';
             repl.textContent = a.present ? 'החלף' : 'העלה';
@@ -2236,6 +2367,16 @@
             input.accept = REPL_ACCEPT[a.kind] || '';
             repl.append(input);
             li.append(mark, lbl, repl);
+            // Undo for an optional font — the wrong Latin face, or the right one
+            // on the wrong template. There is no removing a REQUIRED asset (the
+            // server refuses), so the button appears only where removal is real.
+            if (a.kind === 'font' && a.optional && a.present) {
+              const rm = document.createElement('button');
+              rm.type = 'button';
+              rm.className = 'link-btn asset-remove';
+              rm.textContent = 'הסר';
+              li.append(rm);
+            }
             // A thumbnail of the actual file, so nine near-identical rows can be
             // told apart by LOOKING rather than by trusting the numbering. Only
             // for SVG roles that are present — a font has nothing to show, and a
@@ -2270,6 +2411,22 @@
             assets.append(li);
           }
           card.append(assets);
+
+          // Script gaps read out of the fonts themselves: "this title font cannot
+          // draw Hebrew, so a Hebrew name will not print". This is the מרקאנה
+          // failure — League Spartan has no Hebrew glyphs and the back title
+          // simply did not appear — made visible before an order runs into it.
+          // Advisory: nothing here blocks a save or marks a template incomplete.
+          if ((t.fontNotes || []).length) {
+            const notes = document.createElement('ul');
+            notes.className = 'tpl-font-notes';
+            for (const n of t.fontNotes) {
+              const li = document.createElement('li');
+              li.textContent = n.text;
+              notes.append(li);
+            }
+            card.append(notes);
+          }
 
           const msg = document.createElement('div');
           msg.className = 'tpl-msg';
@@ -2864,6 +3021,51 @@
         const data = await res.json().catch(() => ({}));
         return { res, data };
       }
+
+      // Remove an optional font. Confirmed first — it deletes the file — and the
+      // reply says whether the file itself went, because a font SHARED with
+      // another role is intentionally left on disk with only the field cleared.
+      listEl.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.asset-remove');
+        if (!btn) return;
+        const card = btn.closest('.tpl-card');
+        const li = btn.closest('.asset');
+        const role = li.dataset.role;
+        if (!window.confirm('להסיר את הפונט הזה מהתבנית? הקלפים יחזרו להידפס בלעדיו.')) return;
+        try {
+          const res = await fetch(
+            '/api/admin/templates/' +
+              encodeURIComponent(card.dataset.key) +
+              '/assets/' +
+              encodeURIComponent(role) +
+              '?key=' +
+              encodeURIComponent(key),
+            { method: 'DELETE' }
+          );
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            tplMsg(card, 'err', 'שגיאה: ' + (data.error || res.status));
+            return;
+          }
+          await loadTemplates();
+          // The reload REPLACES this card, so the confirmation has to land on
+          // the one that survives — setting it on the old node throws it away.
+          const fresh = [...listEl.querySelectorAll('.tpl-card')].find(
+            (c) => c.dataset.key === card.dataset.key
+          );
+          tplMsg(
+            fresh || card,
+            'ok',
+            'הפונט הוסר: ' +
+              role +
+              (data.removed && !data.fileDeleted
+                ? ' (הקובץ נשאר בתיקייה — תפקיד אחר בתבנית עדיין משתמש בו)'
+                : '')
+          );
+        } catch (err) {
+          tplMsg(card, 'err', 'שגיאת רשת: ' + err);
+        }
+      });
 
       // Asset replace: a file chosen on any per-asset input uploads in place.
       listEl.addEventListener('change', async (e) => {

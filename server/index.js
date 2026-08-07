@@ -3079,6 +3079,30 @@ app.post(
   }
 );
 
+// Admin: REMOVE an optional asset — today the two second fonts, and only those.
+// The undo for a font uploaded to the wrong role or the wrong template, which
+// until now could only be repaired by hand-editing themes.json on the volume.
+// templates.clearAsset refuses every other role, so this cannot strip a template
+// of a font it needs to render.
+app.delete('/api/admin/templates/:key/assets/:role', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let result;
+  try {
+    result = templates.clearAsset({
+      root: TEMPLATE_ROOT,
+      key: req.params.key,
+      role: req.params.role,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (result.error) {
+    const { httpStatus, error, ...rest } = result;
+    return res.status(httpStatus || 400).json({ error, ...rest });
+  }
+  res.json({ ok: true, ...result });
+});
+
 // --- Seed word pools ("wordlists") — admin CRUD --------------------------
 // The pools generator/topup.py fills a short deck from. Until now they were
 // files in the repo only a developer could change; these routes put them behind
