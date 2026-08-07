@@ -4487,10 +4487,10 @@
           const designNeedsExtras = extraFieldsForDesign(d).length > 0;
           extraFieldsSkipNote.hidden = !(hasCustomTitle() && designNeedsExtras);
         }
-        // Couple mode: swap the single-name ask for the two partner
-        // names. Hide the lone name box + gender picker and retitle the step so the
-        // two NAME fields ARE the ask — no redundant "name, then two names". A custom
-        // title reverts this to the single-name ask (coupleMode() is then false).
+        // Couple mode: swap the single-name ask for the two partner names. Hide the
+        // lone name box + gender picker and retitle the step so the two NAME fields
+        // ARE the ask — no redundant "name, then two names". A custom title reverts
+        // this to the single-name ask (coupleMode() is then false).
         const couple = coupleMode();
         nameInput.hidden = couple;
         // Gender is a property of the EVENT type, not the title: a couple has no
@@ -4509,8 +4509,8 @@
       }
       // Numeric extra fields (AGE / YEARS) must be a digits-only integer within the
       // input's own min/max; name extra fields (NAME1 / NAME2, on a couple deck) must
-      // be a single name in the design's language. Empty
-      // is always invalid — every shown extra field is required.
+      // be a single name in the design's language. Empty is always invalid — every
+      // shown extra field is required.
       const NUMERIC_EXTRA_FIELDS = new Set(['AGE', 'YEARS']);
       function isValidExtraField(key, input) {
         if (!input) return false;

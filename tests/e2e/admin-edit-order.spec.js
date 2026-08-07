@@ -36,19 +36,21 @@ test('edits the honoree name, theme and the theme extra fields', async ({ page, 
 
   const newName = uniq('אחרי');
   await page.fill('#e-name', newName);
-  // Picking the anniversary theme reveals ITS required extra fields.
-  await page.selectOption('#e-theme', 'anniversary');
-  await expect(page.locator('#e-extra input[data-ek="YEARS"]')).toBeVisible();
-  await page.fill('#e-extra input[data-ek="YEARS"]', '6');
-  await page.fill('#e-extra input[data-ek="NAME1"]', 'דנה');
-  await page.fill('#e-extra input[data-ek="NAME2"]', 'אופיר');
+  // Picking a theme reveals ITS required extra fields — read LIVE off the
+  // template config, so this follows whatever the owner has that theme
+  // collecting. (This used to pick 'anniversary' for its YEARS + two partner
+  // names; the owner has since made that deck a one-person deck that collects
+  // nothing, so it no longer demonstrates the behaviour. The three-field row
+  // RENDERING is still covered in admin.spec.js, which seeds the values straight
+  // onto an order and so does not depend on any theme's current config.)
+  await page.selectOption('#e-theme', 'japanese');
+  await expect(page.locator('#e-extra input[data-ek="AGE"]')).toBeVisible();
+  await page.fill('#e-extra input[data-ek="AGE"]', '40');
   await page.click('#e-save');
 
   await expect(page.locator('#edit')).toBeHidden();
   const row = rowFor(page, newName);
-  await expect(row).toContainText('שנות נישואין: 6');
-  await expect(row).toContainText('שם 1: דנה');
-  await expect(row).toContainText('שם 2: אופיר');
+  await expect(row).toContainText('גיל: 40');
 });
 
 test('switches pickup to delivery and stores the shipping address', async ({ page, request }) => {

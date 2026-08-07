@@ -65,6 +65,7 @@ Settings, content editor, WhatsApp/Whapi, emails/reminders, and the test/CI harn
 - `site/js/editor.js`, `server/settings.js`, the test/CI harness — D owns; others request changes.
 - `site/js/configurator.js` — A primary, used by C via collect; coordinate.
 - `generator/themes.json` is the source of truth but mirrored in `site/js/designs.js` (B) and `server/validate.js` (C) — changing a theme's fields/visibility must be synced across all three (drift hazard; a future cleanup collapses it).
+  - Partly collapsed for `extra_fields` / `language` / `name_form`: `GET /api/design-names` now serves them LIVE (merged with the owner's admin overrides) and `syncDesignNames` stamps them onto the catalog objects, which every design resolver prefers. `THEME_EXTRA_FIELDS` / `LANGUAGE_BY_THEME` in `designs.js` are now the first-paint fallback only — still keep them in step, but an admin edit no longer needs a deploy to reach the wizard. `server/validate.js` already reads themes.json live.
 - Renaming/removing an exported symbol (e.g. in `design-images.js`/`designs.js`) → grep EVERY consumer and update it; a missing named import is a hard ES-module error that kills a whole page (this once broke the home page: #167→#169).
 
 ## Workflow (every agent)
