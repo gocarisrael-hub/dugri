@@ -168,6 +168,38 @@ def _word_metrics(font_path, ref=200):
     return _measuring_font(font_path, ref), ref
 
 
+def _font_gaps(font, text):
+    """Characters of ``text`` this OPEN face cannot draw, as a set.
+
+    The same reading ``title_font_gaps`` takes off a path — "a non-space
+    character with no ink of its own" — but against a font object the caller
+    already holds, because ``Face.runs`` asks this per run on every card of an
+    order and reopening the file each time would be absurd.
+
+    Cached on ``(id(font), text)``: a Face's fonts are themselves memoised, so
+    the identity is stable for the life of the process, and the answer for a
+    given string cannot change while the file behind it does not.
+    """
+    key = (id(font), text)
+    hit = _FONT_GAPS.get(key)
+    if hit is None:
+        gaps = set()
+        for ch in set(text):
+            if ch.isspace():
+                continue
+            try:
+                box = font.getbbox(ch)
+            except (OSError, ValueError):
+                continue
+            if box[3] - box[1] <= 0:
+                gaps.add(ch)
+        hit = _FONT_GAPS[key] = gaps
+    return hit
+
+
+_FONT_GAPS = {}
+
+
 class Face:
     """One or two fonts, measured as if they were one.
 
@@ -196,13 +228,14 @@ class Face:
     makes the exception visible at the call site instead of implied by absence.
     """
 
-    __slots__ = ("primary", "alt", "ref", "rtl")
+    __slots__ = ("primary", "alt", "ref", "rtl", "by_coverage")
 
-    def __init__(self, primary, alt=None, ref=200, rtl=True):
+    def __init__(self, primary, alt=None, ref=200, rtl=True, by_coverage=False):
         self.primary = primary
         self.alt = alt
         self.ref = ref
         self.rtl = rtl
+        self.by_coverage = by_coverage
 
     @property
     def single(self):
@@ -227,11 +260,37 @@ class Face:
         return self.primary.getmetrics()
 
     def runs(self, text):
-        """``[(font, substring)]`` in logical order, covering ``text`` exactly."""
+        """``[(font, substring)]`` in logical order, covering ``text`` exactly.
+
+        WHICH face a run goes to depends on what the pair is FOR, and the two
+        uses are not symmetrical:
+
+        * **words** (``by_script``) — every template ships a Hebrew word face and
+          the owner uploads a Latin one beside it. Her instruction is that the
+          uploaded face wins for Latin outright, not "when the Hebrew face
+          cannot cope": she chose it, so a Latin run takes it whether or not the
+          primary could have drawn it.
+        * **titles** (``by_coverage``) — the pair is "the face this design is
+          drawn in" plus "a face for a title in the other language", and which
+          of those is Latin depends on the design. מרקאנה's title face is League
+          Spartan, a LATIN face, with a Hebrew second face beside it. Sending
+          every Latin run to the second face there put an English title in the
+          Hebrew font — the primary's own script, handed away.
+
+        So a title asks the honest question instead: send a run to the second
+        face only when the primary cannot draw it. That is exactly the owner's
+        "if the title flips language then change to the extra font".
+        """
         if self.alt is None:
             return [(self.primary, text)]
-        return [(self.alt if lat else self.primary, t)
-                for lat, t in script_runs(text, base_rtl=self.rtl)]
+        out = []
+        for lat, t in script_runs(text, base_rtl=self.rtl):
+            if self.by_coverage:
+                f = self.alt if _font_gaps(self.primary, t) else self.primary
+            else:
+                f = self.alt if lat else self.primary
+            out.append((f, t))
+        return out
 
     def uses_alt(self, text):
         """True when any run of ``text`` would be set in the second face."""
@@ -2525,7 +2584,7 @@ def _title_face(font_path, alt_font_path=None, ref=200, rtl=False):
     """
     primary = _title_metrics(font_path, ref)[0]
     alt = _title_metrics(alt_font_path, ref)[0] if alt_font_path else None
-    return Face(primary, alt, ref, rtl=rtl)
+    return Face(primary, alt, ref, rtl=rtl, by_coverage=True)
 
 
 def _title_runs(face, line):

@@ -3373,6 +3373,14 @@ def test_the_runs_of_a_mixed_line_span_the_same_width_as_one_face_would():
 # the renderer does not paint, which is how a line ends up over the trim.
 
 LATIN = os.path.join(HERE, "word-fonts", "Fredoka-Medium.ttf")
+# A face that genuinely CANNOT set Hebrew, for the two-face title tests. The
+# title pair is chosen by COVERAGE — the second face carries what the first
+# cannot draw — so a primary that covers both scripts (every pool font does)
+# never splits a line, and a test using one would pass or fail for the wrong
+# reason. MrDafoe is the real case: it is פריז's title face and has no Hebrew
+# at all, which is why the owner uploaded a second one beside it.
+LATIN_ONLY = os.path.join(HERE, "..", "resources", "canva", "templates",
+                          "bachelorette", "fonts", "MrDafoe-Regular.ttf")
 
 
 def _alt_store(**kw):
@@ -3625,9 +3633,18 @@ def test_a_title_line_in_two_faces_is_one_text_with_a_tspan():
     (test_title_block_rtl_reorders_digit_in_raster). So Chrome does the
     ordering and the arch, alignment and three paint layers are untouched."""
     box = {"x0": 0, "y0": 0, "x1": 400, "y1": 120}
-    mixed = rp.title_block(box, ["PARTY לשירה"], "#000", "#000", CAFE, 0, 0,
-                           False, rtl=True, alt_font_path=LATIN)
-    assert '<tspan font-family="TitleFontAlt">PARTY</tspan>' in mixed, mixed
+    # MrDafoe (primary) has no Hebrew; Cafe (second face) sets both. The title
+    # pair is chosen by COVERAGE — the second face carries what the first cannot
+    # draw — so here it is the HEBREW run that moves, and the primary keeps the
+    # script it can actually set. (A pool font as primary would split nothing:
+    # every one of them covers both scripts.)
+    mixed = rp.title_block(box, ["PARTY לשירה"], "#000", "#000", LATIN_ONLY,
+                           0, 0, False, rtl=True, alt_font_path=CAFE)
+    # The space between the two scripts is a neutral and joins the Hebrew run
+    # (it sits between runs that disagree, so it takes the base direction), so
+    # the tspan carries " לשירה" — match the letters, not the exact whitespace.
+    assert re.search(r'<tspan font-family="TitleFontAlt">\s*לשירה</tspan>', mixed), mixed
+    assert '>PARTY</tspan>' not in mixed, mixed
     # one <text> per line per paint layer, as before — the tspan adds no element
     assert mixed.count("<textPath") == mixed.count("</textPath")
 
@@ -3653,15 +3670,20 @@ def test_a_pinned_title_size_is_dropped_once_the_other_face_is_in_play():
     def size_of(svg):
         return float(re.search(r'font-size="([\d.]+)"', svg).group(1))
 
+    # A title the primary sets by itself keeps its pin — the pin was measured
+    # against that face and that face is what draws it.
     pinned_he = size_of(rp.title_block(box, ["רווקות לשירה"], "#000", "#000",
                                        CAFE, 0, 0, False, rtl=True,
                                        fixed_size=9.0, alt_font_path=LATIN))
     assert abs(pinned_he - 9.0) < 0.01, "a Hebrew title still honours its pin"
-    mixed = size_of(rp.title_block(box, ["PARTY לשירה"], "#000", "#000", CAFE,
-                                   0, 0, False, rtl=True, fixed_size=9.0,
-                                   alt_font_path=LATIN))
-    auto = size_of(rp.title_block(box, ["PARTY לשירה"], "#000", "#000", CAFE,
-                                  0, 0, False, rtl=True, alt_font_path=LATIN))
+    # MrDafoe as primary genuinely CANNOT set the Hebrew, so the second face is
+    # in play and the pin no longer describes what is drawn.
+    mixed = size_of(rp.title_block(box, ["PARTY לשירה"], "#000", "#000",
+                                   LATIN_ONLY, 0, 0, False, rtl=True,
+                                   fixed_size=9.0, alt_font_path=CAFE))
+    auto = size_of(rp.title_block(box, ["PARTY לשירה"], "#000", "#000",
+                                  LATIN_ONLY, 0, 0, False, rtl=True,
+                                  alt_font_path=CAFE))
     assert abs(mixed - auto) < 0.01, (mixed, auto)
     assert mixed > 9.0, "the pin was measured for other text in another face"
 
