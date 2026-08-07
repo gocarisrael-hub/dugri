@@ -3460,7 +3460,7 @@
       import { track } from './js/analytics.js';
       import { initCarousel } from './js/carousel.js';
       import { initPinchZoom } from './js/pinch-zoom.js';
-      import { loadDesignImages, deckFor } from './js/design-images.js';
+      import { loadDesignImages, deckFor, deckPickerSrc } from './js/design-images.js';
       import { fetchPricing } from './js/pricing.js';
       import {
         CARD_CELL,
@@ -3860,6 +3860,24 @@
         .querySelectorAll('.tab')
         .forEach((b) => b.addEventListener('click', () => selectTab(b.dataset.tab)));
 
+      /* ---- the owner's gallery config, fetched ONCE for the whole page -------
+         Two surfaces read it: the design picker's tiles (right below) and the
+         deck row under the collapsed summary on the name step. It used to be
+         fetched by the deck row alone; hoisted here so the picker can share the
+         one request. Declared ABOVE the picker because addDesignTile reads
+         `deckImages` synchronously.
+
+         Fail-soft exactly as before: loadDesignImages never rejects and is
+         timeout-bounded, so a slow or dead endpoint leaves `deckImages` at {} —
+         no deck row, and every tile on its shipped thumbnail. */
+      let deckImages = {};
+      let deckImagesReady = false;
+      const deckImagesPromise = loadDesignImages().then((map) => {
+        deckImages = map || {};
+        deckImagesReady = true;
+        return deckImages;
+      });
+
       /* ---- build design thumbnails ---- */
       const designList = document.getElementById('designList');
       // Buttons keyed by design id so an unlock (access code) can reveal a
@@ -3879,28 +3897,78 @@
         if (!d.public) btn.hidden = true;
         designButtons.set(d.id, btn);
         designList.appendChild(btn);
-        // Lightweight RASTER thumbnail (built at build time, ~5KB webp) — NOT the
-        // multi-MB full-page SVG. Inlining seven full-page SVGs (~15MB, seven huge
-        // DOMs) white-screens the Instagram in-app browser (our main audience). The
-        // tile shows the design's default look; the live colour slider only drives
-        // the main preview.
-        const thumb = btn.querySelector('.thumb');
-        if (d.thumb) {
-          const img = document.createElement('img');
-          img.src = d.thumb;
-          img.alt = d.name;
-          img.loading = 'lazy';
-          img.decoding = 'async';
-          img.addEventListener('error', () => {
-            thumb.textContent = d.name;
-          });
-          thumb.appendChild(img);
-        } else {
-          thumb.textContent = d.name;
-        }
+        paintDesignThumb(btn, d);
         btn.addEventListener('click', () => selectDesign(i));
       }
+
+      // Paint ONE tile's picture, and repaint it in place when a better answer
+      // arrives. Whatever we show, it stays a small RASTER — never the multi-MB
+      // full-page SVG. Inlining seven of those (~15MB, seven huge DOMs)
+      // white-screens the Instagram in-app browser (our main audience). The tile
+      // shows the design's default look; the live colour slider only drives the
+      // main preview.
+      //
+      // Order of preference:
+      //   1. the owner's own DECK PHOTO — the first picture she uploaded under
+      //      "תמונות החפיסה" (normally the eight cards) — requested through
+      //      /design-thumb/, which serves a ~15 KB downscaled derivative instead
+      //      of her 180 KB–1 MB original. She photographs the real product; that
+      //      beats a render of it.
+      //   2. `d.thumb`, the shipped build-time thumbnail — what every tile showed
+      //      before, and still what most show.
+      //   3. the design's name as text.
+      //
+      // TIMING. The deck answer rides /api/design-images, so before it lands we
+      // only know the fallback. For a BUILT-IN design that fallback is a 5–10 KB
+      // raster: paint it at once and swap in place if a deck photo turns up — the
+      // swap wastes 5 KB and the tile is never empty. For a CUSTOM template the
+      // fallback is the template's own FULL-PAGE SVG (up to 3 MB on the current
+      // catalog), so firing it before we know whether a deck photo replaces it
+      // would download megabytes we may never show. That one waits for the map.
+      function paintDesignThumb(btn, d) {
+        const thumb = btn.querySelector('.thumb');
+        if (!thumb) return;
+        const known = deckImagesReady || !d.custom;
+        const src = deckPickerSrc(deckImages, d) || (known ? d.thumb || '' : '');
+        const current = thumb.querySelector('img');
+        // Same picture as last time → leave the DOM (and the loaded image) alone.
+        if (current && current.getAttribute('src') === src) return;
+        if (!src) {
+          if (known) thumb.textContent = d.name;
+          return;
+        }
+        const img = document.createElement('img');
+        img.alt = d.name;
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        // One step down the chain per failure. The derivative is generated on
+        // demand and CAN legitimately fail (no Python/Pillow on the box, an
+        // undecodable upload) — that must cost the tile its photo, not its
+        // picture: it drops back to the shipped thumb, and only then to text.
+        img.addEventListener('error', () => {
+          if (d.thumb && img.getAttribute('src') !== d.thumb) {
+            img.setAttribute('src', d.thumb);
+            return;
+          }
+          thumb.textContent = d.name;
+        });
+        thumb.replaceChildren(img);
+        img.setAttribute('src', src);
+      }
+
+      // Repaint every tile once the gallery map lands. Cheap and idempotent:
+      // paintDesignThumb returns early when a tile's picture is unchanged, which
+      // is every tile for a design with no deck photo.
+      function repaintDesignThumbs() {
+        designButtons.forEach((btn, id) => {
+          const d = DESIGNS.find((x) => x.id === id);
+          if (d) paintDesignThumb(btn, d);
+        });
+      }
       BUILTIN_DESIGNS.forEach(addDesignTile);
+      // Uploaded templates appended after this repaint themselves (addDesignTile
+      // runs with the map already in hand), so ONE hook covers every tile.
+      deckImagesPromise.then(repaintDesignThumbs);
 
       // Append the uploaded templates the owner put on sale as soon as they arrive.
       // Appending (never inserting) keeps every bundled design at the index it has
@@ -5472,7 +5540,8 @@
         deckBacks: 'שמונת הגבים',
         deckBoard: 'לוח המשחק',
       };
-      let deckImages = {};
+      // `deckImages` is declared up with the design picker, which reads the same
+      // map — see "the owner's gallery config, fetched ONCE for the whole page".
       let deckShots = [];
       let deckViewApi = null;
       let deckViewPinch = null;
@@ -5584,8 +5653,7 @@
           if (e.target.closest('img, button')) return;
           closeDeckView();
         });
-        loadDesignImages().then((map) => {
-          deckImages = map || {};
+        deckImagesPromise.then(() => {
           paintDeckRow(previewCard.classList.contains('is-collapsed'));
         });
       }

@@ -225,6 +225,36 @@ export function deckFor(map, design) {
   return out;
 }
 
+/**
+ * The SMALL-derivative URL for one of our own uploads, or null when the path
+ * isn't one (see server/image-thumbs.js + GET /design-thumb/<name>).
+ *
+ * The gallery uploads are full-size photographs (180 KB–1 MB each) because the
+ * product page shows them big. A surface that shows one at THUMBNAIL size asks
+ * for it through here instead and gets ~15 KB. Validated on the way through, so
+ * this can never turn a garbage config value into a request for an off-origin URL.
+ */
+export function thumbSrc(src) {
+  const p = String(src || '');
+  return UPLOAD_PATH_RE.test(p) ? p.replace('/content-uploads/', '/design-thumb/') : null;
+}
+
+/**
+ * The picture for a design's PICKER TILE — the first of the owner's deck
+ * pictures ("תמונות החפיסה": normally the eight fronts, else the eight backs,
+ * else the board), downscaled.
+ *
+ * Null when she has uploaded none for this design, which is the majority case
+ * and means "use the shipped build-time thumb". Deliberately the FIRST deck
+ * picture rather than specifically `deckFronts`: the owner's uploads are the
+ * order she chose, and a design photographed board-first should show its board
+ * rather than nothing.
+ */
+export function deckPickerSrc(map, design) {
+  const first = deckFor(map, design)[0];
+  return first ? thumbSrc(first.src) : null;
+}
+
 /** Fetch the whole gallery-config map { designId: config }. NEVER rejects: a
  *  network error, non-OK status, timeout, or non-JSON body all resolve to {} so
  *  callers keep the shipped renders. */
