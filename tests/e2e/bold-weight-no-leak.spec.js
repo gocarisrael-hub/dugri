@@ -10,77 +10,70 @@ import { boldTextWidths, probeWidth, settle } from './font-metrics.js';
 // The trap this file exists to close: the obvious way to make that paragraph
 // bold is to add an Assistant 700 @font-face to fonts.css. It works, and it is a
 // site-wide restyle. All 14 pages load that one stylesheet, and Assistant's
-// heaviest declared face was 600, so every `font-weight: 700 / 800 / bold`
-// already written across the site was rendering at 600. Publishing a 700 face
-// un-caps all of them at once — prices, buttons, footer links, labels — while
-// every `font-weight` assertion in the suite stays green, because the DECLARED
-// weights never changed. That is precisely how it shipped once before.
+// heaviest declared face is 600, so every `font-weight: 700 / 800 / bold`
+// already written across the site renders at 600. Publishing a 700 face un-caps
+// all of them at once — prices, buttons, footer links, labels — while every
+// `font-weight` assertion in the suite stays green, because the DECLARED weights
+// never changed. That is precisely how it shipped once before.
 //
-// So this spec asserts pixels, not declarations: the rendered advance width of
-// every bold-computing element on the four heaviest pages must still equal the
-// width recorded from origin/main. Regenerate the baseline deliberately with
-// E2E_UPDATE_BOLD_BASELINE=1 (see the comment at the bottom).
+// So this spec asserts pixels, not declarations. It does NOT store absolute
+// widths: text rasterises to different numbers on macOS and on the Linux CI
+// runner, so a recorded pixel value is a machine fingerprint, not a fact about
+// the site. What it stores instead is origin/main's @font-face TABLE — the thing
+// that actually decides which instance a weight resolves to — and then, in the
+// browser, re-derives the instance origin/main would have given each bold
+// element and asserts the page still renders exactly that width. Both numbers
+// are measured in the same browser in the same run, so the comparison holds on
+// any machine.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const BASELINE_FILE = path.join(__dirname, 'bold-weight-baseline.json');
+const BASELINE = JSON.parse(
+  fs.readFileSync(path.join(__dirname, 'bold-weight-baseline.json'), 'utf8')
+);
 
 // The pages the reviewer counted the most newly-heavier declarations on
 // (options 27, collect 27, how 23) plus the storefront, which is all prices.
 const PAGES = ['/options.html', '/collect.html', '/how.html', '/products.html'];
 
-// A floor on how much of the baseline must still be recognisable. Copy edits on
-// these pages legitimately change text and therefore keys, and this spec must
-// not red other people's PRs for that — so it compares the INTERSECTION and
-// insists the intersection stays substantial. A weight regression moves every
-// intersecting width at once, so the floor never hides one.
-const MIN_MATCHED = 6;
-
 const ONLY = 'Desktop Chrome';
-const UPDATING = process.env.E2E_UPDATE_BOLD_BASELINE === '1';
-
-const readBaseline = () =>
-  fs.existsSync(BASELINE_FILE) ? JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8')) : {};
 
 test.describe('bold stays capped at 600 everywhere except the one approved paragraph', () => {
   test.beforeEach(({}, testInfo) => {
     // One measurement pass is enough: these are font-instance facts, not
-    // responsive layout, and the phone profile would need its own baseline.
+    // responsive layout, and the phone profile would measure the same thing.
     test.skip(testInfo.project.name !== ONLY, 'rendered-width measurement runs once');
   });
 
   for (const url of PAGES) {
-    test(`${url} renders every bold element exactly as origin/main does`, async ({ page }) => {
+    test(`${url} renders every bold element as origin/main's faces resolve it`, async ({
+      page,
+    }) => {
       await settle(page, url);
-      const actual = await boldTextWidths(page);
+      const found = await boldTextWidths(page, BASELINE.faces);
 
-      if (UPDATING) {
-        const all = readBaseline();
-        all[url] = actual;
-        fs.writeFileSync(BASELINE_FILE, JSON.stringify(all, null, 2) + '\n');
-        test.info().annotations.push({
-          type: 'baseline',
-          description: `${url}: recorded ${Object.keys(actual).length} bold elements`,
-        });
-        return;
-      }
-
-      const expected = readBaseline()[url];
-      expect(expected, `no baseline recorded for ${url}`).toBeTruthy();
-
-      const shared = Object.keys(expected).filter((k) => k in actual);
+      // Guard against the test quietly measuring nothing (a page that failed to
+      // render would otherwise "pass" with an empty sweep).
       expect(
-        shared.length,
-        `only ${shared.length} of ${Object.keys(expected).length} baseline entries for ${url} ` +
-          `were still found — the page changed enough that the baseline needs regenerating`
-      ).toBeGreaterThanOrEqual(MIN_MATCHED);
+        found.measured,
+        `only ${found.measured} bold elements found on ${url}; expected at least ` +
+          `${BASELINE.minBoldElements[url]} — did the page render?`
+      ).toBeGreaterThanOrEqual(BASELINE.minBoldElements[url]);
 
-      const drifted = shared
-        .filter((k) => actual[k] !== expected[k])
-        .map((k) => `${k} → ${expected[k]}px became ${actual[k]}px`);
+      // No element on these pages may carry a wght axis override. The one
+      // element on the whole site that does is the homepage about paragraph;
+      // anything else here would be a second, unreviewed exception.
       expect(
-        drifted,
-        `${drifted.length} of ${shared.length} bold elements on ${url} render at a different ` +
-          `width than on origin/main. Something changed which font instance they resolve to — ` +
-          `almost certainly a new @font-face weight in fonts.css.`
+        found.axisOverrides,
+        `elements on ${url} set font-variation-settings: ${found.axisOverrides.join(', ')}`
+      ).toEqual([]);
+
+      // The assertion that matters: each bold element renders at the width of
+      // the face origin/main would have matched it to. If a heavier face gets
+      // declared, the element resolves to a new instance and this diverges.
+      expect(
+        found.drifted,
+        `${found.drifted.length} of ${found.measured} bold elements on ${url} no longer render ` +
+          `as the face origin/main matched them to. Something changed which font instance they ` +
+          `resolve to — almost certainly a new @font-face weight in fonts.css.`
       ).toEqual([]);
     });
   }
@@ -88,11 +81,10 @@ test.describe('bold stays capped at 600 everywhere except the one approved parag
   test('Assistant still has no face heavier than 600, so site-wide bold still clamps', async ({
     page,
   }) => {
-    // The baseline comparison above is thorough but page-shaped. This is the
-    // same fact stated directly and without a stored file: with no 700/800 face
-    // declared, `font-weight: 700` MUST rasterise the 600 master. If a future
-    // change publishes a heavier Assistant face, this fails immediately and says
-    // why, on every page at once.
+    // The same fact stated directly, with no table lookup at all: with no
+    // 700/800 face declared, `font-weight: 700` MUST rasterise the 600 master.
+    // If a future change publishes a heavier Assistant face, this fails
+    // immediately and says why, covering every page at once.
     await settle(page, '/options.html');
 
     const w400 = await probeWidth(page, 'font-weight:400');
@@ -120,11 +112,30 @@ test.describe('bold stays capped at 600 everywhere except the one approved parag
       ).toBe(w600);
     }
   });
+
+  test("the stored face table still matches origin/main's fonts.css", async ({ page }) => {
+    // The table above is the yardstick for every page test, so it has to keep
+    // describing the stylesheet the site actually ships. If a face is added or
+    // removed, this is the one place to look.
+    const css = await (await page.request.get('/assets/fonts/fonts.css')).text();
+    const live = {};
+    for (const block of css.split('@font-face').slice(1)) {
+      const family = (block.match(/font-family:\s*'([^']+)'/) || [])[1];
+      const weight = (block.match(/font-weight:\s*(\d+)/) || [])[1];
+      if (!family || !weight) continue;
+      (live[family] = live[family] || new Set()).add(Number(weight));
+    }
+    const normalised = Object.fromEntries(
+      Object.keys(live)
+        .sort()
+        .map((f) => [f, [...live[f]].sort((a, b) => a - b)])
+    );
+    expect(normalised).toEqual(BASELINE.faces);
+  });
 });
 
-// Regenerating the baseline:
-//   git checkout origin/main -- site/
-//   E2E_UPDATE_BOLD_BASELINE=1 npx playwright test bold-weight-no-leak --project="Desktop Chrome"
-//   git checkout HEAD -- site/
-// It must be captured from origin/main — the point of the file is to say what
-// the site looked like before the change under review.
+// Regenerating the face table in bold-weight-baseline.json:
+//   git show origin/main:site/assets/fonts/fonts.css
+// …and list, per font-family, every distinct font-weight it declares. It must
+// come from origin/main — the point of the file is to say what the site
+// resolved to before the change under review.

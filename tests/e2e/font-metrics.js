@@ -68,24 +68,53 @@ export async function loadFaces(page, families = ['Assistant', 'Heebo']) {
 }
 
 /**
- * Rendered-width fingerprint of every element on the page that computes to a
- * bold weight (>= 700) and owns visible text.
+ * Check every element on the page that computes to a bold weight (>= 700) and
+ * owns visible text, and confirm it still renders as the @font-face table in
+ * `faces` — captured from origin/main — would have resolved it.
  *
- * For each one it re-renders that element's OWN text in that element's OWN font
- * settings inside an offscreen nowrap probe, so the number is the text's advance
- * width — independent of the element's box, the viewport and the surrounding
- * layout. Two trees that resolve the same font instances produce byte-identical
- * numbers here; a tree that newly resolves 700 to a heavier master does not.
+ * For each element it renders that element's OWN text twice in an offscreen
+ * nowrap probe:
+ *   a) exactly as the page has it, and
+ *   b) at the heaviest weight origin/main declares a face for at or below the
+ *      element's weight, with no axis override.
+ * Under origin/main's stylesheet those are the SAME font instance by definition,
+ * so the two widths are equal. Declare a heavier face and (a) jumps to the new
+ * instance while (b) stays put.
  *
- * Returns { key: width }, keyed by tag + font + size + weight + text so the
- * entries survive unrelated DOM reordering.
+ * Both numbers come from the same browser in the same run, so this holds
+ * identically on macOS and on the Linux CI runner — unlike a recorded pixel
+ * width, which is a property of the machine that recorded it.
+ *
+ * Returns { measured, drifted, axisOverrides }.
  */
-export async function boldTextWidths(page) {
-  return page.evaluate(() => {
-    const out = {};
+export async function boldTextWidths(page, faces) {
+  return page.evaluate((faces) => {
+    const measured = [];
+    const drifted = [];
+    const axisOverrides = [];
+
+    const measure = (cs, text, weight, axis) => {
+      const probe = document.createElement('span');
+      probe.textContent = text;
+      probe.style.cssText =
+        'position:absolute;visibility:hidden;white-space:nowrap;font-synthesis:none;';
+      probe.style.fontFamily = cs.fontFamily;
+      probe.style.fontSize = cs.fontSize;
+      probe.style.fontWeight = weight;
+      probe.style.fontStyle = cs.fontStyle;
+      probe.style.fontStretch = cs.fontStretch;
+      probe.style.letterSpacing = cs.letterSpacing;
+      probe.style.fontVariationSettings = axis;
+      document.body.appendChild(probe);
+      const width = probe.getBoundingClientRect().width;
+      probe.remove();
+      return width;
+    };
+
     for (const el of document.querySelectorAll('body *')) {
       const cs = getComputedStyle(el);
-      if (!(parseInt(cs.fontWeight, 10) >= 700)) continue;
+      const weight = parseInt(cs.fontWeight, 10);
+      if (!(weight >= 700)) continue;
 
       // Only the element's own text nodes — otherwise a bold wrapper would
       // re-measure all of its children's copy as one blob.
@@ -97,27 +126,36 @@ export async function boldTextWidths(page) {
         .trim();
       if (!text) continue;
 
-      const probe = document.createElement('span');
-      probe.textContent = text;
-      probe.style.cssText =
-        'position:absolute;visibility:hidden;white-space:nowrap;font-synthesis:none;';
-      probe.style.fontFamily = cs.fontFamily;
-      probe.style.fontSize = cs.fontSize;
-      probe.style.fontWeight = cs.fontWeight;
-      probe.style.fontStyle = cs.fontStyle;
-      probe.style.fontStretch = cs.fontStretch;
-      probe.style.letterSpacing = cs.letterSpacing;
-      probe.style.fontVariationSettings = cs.fontVariationSettings;
-      document.body.appendChild(probe);
-      const width = probe.getBoundingClientRect().width;
-      probe.remove();
-
+      // Only self-hosted families are ours to reason about; a system fallback
+      // has no @font-face table to compare against.
       const family = cs.fontFamily.split(',')[0].replace(/['"]/g, '').trim();
-      out[`${el.tagName}|${family}|${cs.fontSize}|${cs.fontWeight}|${text}`] =
-        Math.round(width * 1000) / 1000;
+      const declared = faces[family];
+      if (!declared) continue;
+
+      const label = `${el.tagName}|${family}|${cs.fontSize}|${weight}|${text}`;
+      measured.push(label);
+
+      if (cs.fontVariationSettings !== 'normal') {
+        axisOverrides.push(`${label} → ${cs.fontVariationSettings}`);
+        continue;
+      }
+
+      // The face origin/main would have matched: the heaviest declared weight
+      // at or below this one (CSS falls back downward for weights >= 400).
+      const below = declared.filter((w) => w <= weight);
+      const target = below.length ? Math.max(...below) : Math.min(...declared);
+
+      const asRendered = measure(cs, text, String(weight), 'normal');
+      const asMainResolved = measure(cs, text, String(target), 'normal');
+      if (asRendered !== asMainResolved) {
+        drifted.push(
+          `${label} → renders ${asRendered}px but the ${target} face origin/main matched ` +
+            `renders ${asMainResolved}px`
+        );
+      }
     }
-    return out;
-  });
+    return { measured: measured.length, drifted, axisOverrides };
+  }, faces);
 }
 
 /** Settle a page so the fingerprint is reproducible run to run. */
