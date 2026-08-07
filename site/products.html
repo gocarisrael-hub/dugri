@@ -209,21 +209,32 @@
           font-size: 17px;
         }
       }
+      /* minmax(0, 1fr), never a bare 1fr: a bare `1fr` floors every column at its
+         content's MIN-CONTENT width, so one long design name widened its own
+         column and starved its neighbour — measured at 390px with a 24-character
+         name, two tiles in the same row came out 249px and 77px.
+         minmax(0, …) removes that floor, but ONLY together with the
+         `overflow-wrap` on .product-name below: take the floor away and leave the
+         name unbreakable and it simply overflows its column instead — printing
+         over the neighbouring caption, and past 40 characters widening the whole
+         document (scrollWidth 437 against a 390 viewport, i.e. the store scrolls
+         sideways on a phone). The two rules are one fix; don't ship either alone.
+         Covered by tests/e2e/picture-letterbox.spec.js. */
       .store-grid {
         display: grid;
         /* 2 columns on mobile; 3 on tablet; 4 on wide desktop. */
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 30px 20px;
       }
       @media (min-width: 600px) {
         .store-grid {
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 36px 28px;
         }
       }
       @media (min-width: 960px) {
         .store-grid {
-          grid-template-columns: repeat(4, 1fr);
+          grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 44px 32px;
         }
       }
@@ -232,11 +243,22 @@
       .product-card {
         display: block;
       }
-      /* the picture box. object-fit:contain shows the WHOLE picture, never cropped;
-         any letterbox falls back to the tile's --surface background.
+      /* the picture box. object-fit:contain shows the WHOLE picture, never cropped.
          --card-aspect is set once on the GRID (see gridAspect below) so every tile
          keeps the SAME shape: the landscape default while the catalog is all legacy
-         A4 sheets, square once any design ships portrait single cards. */
+         A4 sheets, square once any design ships portrait single cards.
+
+         No `background` here, so the letterbox beside a picture is literally the
+         page showing through. Be clear about what that did and did not do: the
+         rule this replaced was `background: var(--surface)`, and --surface and --bg
+         are BOTH #ffffff, so removing it moved ZERO pixels — the letterbox already
+         sampled 255,255,255. It is kept out because a hardcoded card tone is a
+         second source of truth that silently diverges from the page the moment
+         anything tints the store, and "the gap IS the page" is the invariant the
+         pixel test asserts. It is NOT a fix for the pale bands the owner reported
+         on this grid; see the PR for why nothing in CSS can be.
+         (The real, coloured band was on the PDP — see .pdp-gallery in
+         product.html — where the letterbox was #f4efe6 sand against a white page.) */
       .product-card__media {
         position: relative;
         display: block;
@@ -244,7 +266,6 @@
         aspect-ratio: var(--card-aspect, 841.92 / 595.5);
         border-radius: var(--radius);
         overflow: hidden;
-        background: var(--surface);
         transition: transform 0.2s ease;
       }
       .product-card:hover .product-card__media {
@@ -314,8 +335,15 @@
         outline-offset: 4px;
         border-radius: var(--radius);
       }
+      /* A design name is buyer-supplied text (owner-editable, /api/design-names)
+         and Hebrew rarely offers a break opportunity, so a long one arrives as a
+         single unbreakable token. `anywhere` — not `break-word` — because only
+         `anywhere` also shrinks the element's MIN-CONTENT width, which is what
+         keeps the name inside its minmax(0, 1fr) column instead of overflowing it
+         onto the neighbouring caption. See the .store-grid comment above. */
       .product-name {
         display: block;
+        overflow-wrap: anywhere;
         text-align: center;
         font-family: var(--display);
         font-weight: 500;
