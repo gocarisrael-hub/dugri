@@ -3797,3 +3797,67 @@ def test_a_two_face_card_keeps_every_line_inside_the_trim():
         assert x0 >= safe * w, (x0, safe * w)
         assert x1 <= w - safe * w, (x1, w - safe * w)
         assert y0 >= 0 and y1 <= h, (y0, y1, h)
+
+
+# ---- the title guard and the second title face -----------------------------
+# The guard (#366) predates the optional second title font (#372) and checked
+# the primary face alone. That refused an order the deck sets perfectly well:
+# פריז's title face is MrDafoe, a Latin script with no Hebrew, and the owner
+# uploaded GveretLevin beside it precisely so a Hebrew name could be set. She
+# got "no glyphs for 'הוילקרשת'" and no PDF.
+
+
+def _latin_only_and_dual():
+    import glob
+    from PIL import ImageFont
+    dual = None
+    for p in sorted(glob.glob(os.path.join(HERE, "word-fonts", "*.ttf"))):
+        f = ImageFont.truetype(p, 200)
+        hb, lb = f.getbbox("ש"), f.getbbox("S")
+        if hb and hb[3] - hb[1] > 0 and lb and lb[3] - lb[1] > 0:
+            dual = p
+            break
+    latin = os.path.join(HERE, "..", "resources", "canva", "templates",
+                         "bachelorette", "fonts", "MrDafoe-Regular.ttf")
+    return (latin if os.path.exists(latin) else None), dual
+
+
+def test_a_title_the_second_face_can_draw_is_not_refused():
+    import pytest
+    latin, dual = _latin_only_and_dual()
+    if not latin or not dual:
+        pytest.skip("needs a Latin-only and a dual-script face")
+    lines = ["רווקות לשירה"]
+    with pytest.raises(RuntimeError):
+        rp.assert_title_drawable(latin, lines, theme="bachelorette")
+    # ...and with the face she uploaded for exactly this, it goes through.
+    rp.assert_title_drawable(latin, lines, theme="bachelorette",
+                             alt_font_path=dual)
+
+
+def test_a_title_NEITHER_face_can_draw_is_still_refused():
+    """The guard must not be weakened into a no-op by the alt argument.
+
+    Its whole reason for existing stands: Chrome substitutes a system face per
+    glyph, the size was fitted to a different one, and letters that overrun the
+    path are dropped in silence — so the card looks right and reads wrong.
+    """
+    import pytest
+    latin, _ = _latin_only_and_dual()
+    if not latin:
+        pytest.skip("needs a Latin-only face")
+    with pytest.raises(RuntimeError) as e:
+        rp.assert_title_drawable(latin, ["רווקות לשירה"], theme="bachelorette",
+                                 alt_font_path=latin)
+    assert "neither title font" in str(e.value)
+
+
+def test_the_refusal_names_both_faces_so_she_knows_which_to_replace():
+    import pytest
+    latin, _ = _latin_only_and_dual()
+    if not latin:
+        pytest.skip("needs a Latin-only face")
+    with pytest.raises(RuntimeError) as e:
+        rp.assert_title_drawable(latin, ["רווקות לשירה"], theme="bachelorette",
+                                 alt_font_path=latin)
+    assert os.path.basename(latin) in str(e.value)
