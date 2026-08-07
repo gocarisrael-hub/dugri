@@ -223,12 +223,23 @@
           • It is scoped to THIS paragraph by its content key. `.sec-title p` is
             shared by every section subtitle on the page, so the bold must not be
             added there or it leaks to products / reviews / FAQ.
-          • 700 is a REAL weight: Assistant ships as a variable face (wght 200–800)
-            and fonts.css now declares it at 700, so the browser instantiates the
-            bold master instead of synthesising a smeared faux bold — which is
-            especially ugly on Hebrew. */
+          • `font-variation-settings` — not `font-weight` alone — is what makes it
+            genuinely bold, and it is the ONLY safe way to do it. Assistant is one
+            variable woff2 (wght 200–800) that fonts.css exposes as discrete
+            @font-face rules capped at 600, so every `font-weight: 700/800/bold`
+            on the whole site quietly renders at 600. Declaring a global 700 face
+            to serve this one paragraph would un-cap all of them at once and
+            re-bold prices, buttons and footer links across 14 pages — a site-wide
+            restyle, and the owner's brand direction says thin. Setting the wght
+            axis on THIS element instantiates the real 700 master here (measurably
+            wider than 600, no faux-bold smear) and is unreachable by any other
+            element, because nothing is matched into it by `font-weight`.
+            `font-weight: 700` stays alongside it for semantics and as the
+            graceful fallback (600) if variations are unavailable.
+            Proof + the site-wide clamp guard live in tests/e2e/about-bold.spec.js. */
       #about .sec-title p[data-edit='index-about-body'] {
         font-weight: 700;
+        font-variation-settings: 'wght' 700;
       }
       @media (min-width: 720px) {
         .sec-title h2 {
