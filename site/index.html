@@ -1075,7 +1075,7 @@
       import { initCarousel } from './js/carousel.js';
       import { PUBLIC_DESIGNS, syncDesignNames, loadCustomDesigns } from './js/designs.js';
       import { fetchPricing } from './js/pricing.js';
-      import { loadDesignImages, galleryFor } from './js/design-images.js';
+      import { loadDesignImages, galleryFor, wireThumbs } from './js/design-images.js';
 
       // ---- HERO: full-bleed auto-rotating slideshow ----
       const heroTrack = document.querySelector('.hero-track');
@@ -1202,14 +1202,15 @@
             const cover = galleryFor(railImages, design, 'products')[0];
             const staticDefault = img.getAttribute('data-store-default');
             if (!cover || !cover.src || cover.src === staticDefault) continue;
-            img.addEventListener(
-              'error',
-              () => {
-                if (staticDefault && img.src !== staticDefault) img.src = staticDefault;
-              },
-              { once: true }
-            );
-            img.src = cover.src;
+            // Through the downscale ladder: a rail card is at most 260 CSS px
+            // wide (.home-prod-card max-width), so the browser takes the 400 or
+            // 800 rung instead of the owner's ~1 MB camera original — which is
+            // what put ten megabytes of photographs on the home page.
+            wireThumbs(img, cover.src, '260px', () => {
+              if (staticDefault && img.getAttribute('src') !== staticDefault) {
+                img.src = staticDefault;
+              }
+            });
           }
         }
 

@@ -605,7 +605,7 @@
         loadCustomDesigns,
       } from './js/designs.js';
       import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
-      import { loadDesignImages, galleryFor } from './js/design-images.js';
+      import { loadDesignImages, galleryFor, wireThumbs } from './js/design-images.js';
       // Reuse the detail page's override helpers so the grid and PDP can never
       // diverge on how a saved (possibly blank) name override is resolved. product.js
       // only auto-boots when a #galleryTrack exists (PDP only), so importing it here
@@ -650,10 +650,33 @@
       // A broken override degrades to its shipped fallback (once); a picture with no
       // shipped fallback (droppable) is left as-is on the grid (rare — a missing
       // upload) rather than desyncing the fixed dot count.
-      function onImgError(e) {
-        const img = e.currentTarget;
+      //
+      // Reached only AFTER the downscale ladder has already been dropped and the
+      // full original has also failed (js/design-images.js wireThumbs) — so this
+      // still means what it always meant: the upload itself is unusable.
+      function onImgError(img) {
         const fb = img.dataset.fallback;
         if (fb && img.getAttribute('src') !== fb) img.src = fb;
+      }
+
+      // How wide a tile's picture is actually painted, mirroring .store-grid's
+      // column counts below. Without this the browser assumes the full viewport
+      // and takes a rung two sizes too big for a 163 px tile.
+      const CARD_SIZES = '(min-width: 960px) 260px, (min-width: 600px) 30vw, 45vw';
+
+      // Give a card's off-screen slides their pictures. Slides 2..n sit beside
+      // slide 1 inside an overflow:hidden track, and native lazy loading does NOT
+      // defer them: the browser only measures VERTICAL distance from the viewport,
+      // so a slide clipped horizontally counts as on-screen and loads immediately.
+      // That is why a ten-card grid was fetching forty photographs before the
+      // shopper had swiped anything. They are held back as data-src and hydrated
+      // the moment the shopper touches the card — the only moment they can matter.
+      function hydrateSlides(media) {
+        for (const img of media.querySelectorAll('img[data-src]')) {
+          const src = img.dataset.src;
+          delete img.dataset.src;
+          wireThumbs(img, src, CARD_SIZES, () => onImgError(img));
+        }
       }
 
       // ---- one product card ---------------------------------------------------
@@ -690,7 +713,6 @@
           img.loading = 'lazy';
           img.decoding = 'async';
           img.draggable = false;
-          img.src = shot.src;
           img.alt = shot.name || dName;
           img.dataset.fallback = shot.fallback || '';
           // The FIRST slide keeps the product-image test hook + the store fallback.
@@ -698,7 +720,12 @@
             img.setAttribute('data-testid', 'product-image');
             img.setAttribute('data-store-default', shot.fallback || shot.src);
           }
-          img.addEventListener('error', onImgError);
+          // Only the visible slide loads now; the rest wait for a swipe
+          // (hydrateSlides). An <img> with no src still fills its slide — the
+          // width/height come from CSS — so the track's layout and the dot count
+          // are the same either way.
+          if (i === 0) wireThumbs(img, shot.src, CARD_SIZES, () => onImgError(img));
+          else img.dataset.src = shot.src;
           slide.appendChild(img);
           track.appendChild(slide);
         });
@@ -731,6 +758,20 @@
         // the pictures change ONLY when the shopper swipes / taps a dot, never on a
         // timer (a store tile quietly cycling on its own is distracting).
         if (shots.length > 1) {
+          // Any sign the shopper is about to see slide 2 — a touch, a hover, the
+          // track scrolling (which is also how the arrows arrive, since they live
+          // outside .product-card__media), or keyboard focus reaching a slide
+          // link. Every one of them fires before the next picture is on screen.
+          const hydrate = () => hydrateSlides(media);
+          for (const [target, evt] of [
+            [media, 'pointerenter'],
+            [media, 'pointerdown'],
+            [media, 'touchstart'],
+            [media, 'focusin'],
+            [track, 'scroll'],
+          ]) {
+            target.addEventListener(evt, hydrate, { once: true, passive: true });
+          }
           initCarousel(track, {
             mode: 'slideshow',
             autoplay: false,

@@ -34,7 +34,7 @@ import {
 import { initCarousel } from './carousel.js';
 import { initPinchZoom } from './pinch-zoom.js';
 import { fetchPricing } from './pricing.js';
-import { loadDesignImages, galleryFor } from './design-images.js';
+import { loadDesignImages, galleryFor, wireThumbs } from './design-images.js';
 
 // Owner-editable store price. Seeded with the launch defaults so first paint is
 // correct even before /api/pricing answers (boot re-stamps these once the
@@ -262,33 +262,46 @@ function fillTrack(trackId, slideClass, shots) {
   track.textContent = '';
   for (const shot of shots) {
     const slide = el('div', slideClass, { 'data-label': shot.label });
-    const img = el('img', null, {
-      src: shot.src,
-      alt: shot.label,
-      loading: 'lazy',
-      decoding: 'async',
-    });
+    // EAGER on purpose. These images used to carry loading="lazy", but only
+    // ever nominally: `el` set `src` BEFORE the lazy attribute, so the fetch had
+    // already started and nothing was ever deferred. Restoring the attribute to
+    // working order would BREAK the zoom overlay — it renders into a `hidden`
+    // (display:none) subtree, where a lazy image never intersects the viewport
+    // and so never loads at all, leaving the shopper a blank fullscreen photo.
+    // The overlay also shows the very same URLs as the inline gallery, so it
+    // costs nothing to let both load: the second track is served from cache.
+    // The weight saving on this page comes from the ladder below, not from
+    // deferral.
+    const img = el('img', null, { alt: shot.label, decoding: 'async' });
+    // Through the downscale ladder (js/design-images.js). This gallery is the one
+    // surface that shows a picture near full-bleed, so `sizes` is the viewport
+    // width and the browser reaches for the top rung on a dense phone — 1200 px,
+    // the most any phone screen can resolve, rather than the 3000 px original.
+    //
+    // The second argument to wireThumbs' onFail is what used to be an `error`
+    // listener here, and it still runs for exactly the same reason: the ORIGINAL
+    // upload is unusable. It now runs only after the ladder has been dropped and
+    // the original retried, so a box without Pillow degrades to a heavy gallery
+    // instead of falling all the way back to the shipped render.
+    let onFail = null;
     // A shot sourced from an owner OVERRIDE carries the shipped static render as
     // `fallback`. If the override file is missing/broken, swap to the static asset
-    // once (so a broken upload never shows a broken slide). Guarded by `once` so a
-    // failing fallback can't loop.
+    // (so a broken upload never shows a broken slide). wireThumbs unhooks itself
+    // before calling this, so a failing fallback can't loop.
     if (shot.fallback && shot.fallback !== shot.src) {
-      img.addEventListener(
-        'error',
-        () => {
-          img.src = shot.fallback;
-        },
-        { once: true }
-      );
+      onFail = () => {
+        img.src = shot.fallback;
+      };
     } else if (shot.droppable) {
       // A `droppable` shot is a boardless design's override-only board slide: there
       // is NO shipped render to fall back to. If the uploaded file is missing/broken
       // (e.g. the entry exists in design-images.json but the upload isn't present on
       // this instance), DROP the whole slide + its dot rather than show a broken
-      // image — removing it is the only non-404 degradation. `once` + the module
-      // guard keep it to a single rebuild across both tracks.
-      img.addEventListener('error', dropBoardSlide, { once: true });
+      // image — removing it is the only non-404 degradation. The module guard keeps
+      // it to a single rebuild across both tracks.
+      onFail = dropBoardSlide;
     }
+    wireThumbs(img, shot.src, '100vw', onFail);
     slide.appendChild(img);
     track.appendChild(slide);
   }

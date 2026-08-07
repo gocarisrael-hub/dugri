@@ -226,17 +226,98 @@ export function deckFor(map, design) {
 }
 
 /**
- * The SMALL-derivative URL for one of our own uploads, or null when the path
- * isn't one (see server/image-thumbs.js + GET /design-thumb/<name>).
+ * The rungs of the downscale ladder, in px of LONGEST side. MUST match WIDTHS in
+ * server/image-thumbs.js — a value this list carries and the server refuses would
+ * be a broken srcset candidate.
  *
- * The gallery uploads are full-size photographs (180 KB–1 MB each) because the
- * product page shows them big. A surface that shows one at THUMBNAIL size asks
- * for it through here instead and gets ~15 KB. Validated on the way through, so
- * this can never turn a garbage config value into a request for an off-origin URL.
+ * 1200 is the top on purpose: a 390 px phone at DPR 3 resolves 1170 device px, so
+ * a wider rung is pixels no phone screen can display. 400 is the bottom because
+ * the products grid renders a picture into ~163 CSS px.
  */
-export function thumbSrc(src) {
+export const THUMB_WIDTHS = [400, 800, 1200];
+
+/**
+ * The SMALL-derivative URL for one of our own uploads, or null when the path
+ * isn't one (see server/image-thumbs.js + GET /design-thumb/...).
+ *
+ * The gallery uploads are what the owner's camera produced — 3000 px wide, ~1 MB
+ * — because the product page shows them big. A surface that shows one smaller
+ * asks for it through here instead. `px` picks a rung of THUMB_WIDTHS; omitted
+ * gives the server's default (the wizard picker's ~150 px tile). Validated on the
+ * way through, so this can never turn a garbage config value into a request for
+ * an off-origin URL.
+ */
+export function thumbSrc(src, px) {
   const p = String(src || '');
-  return UPLOAD_PATH_RE.test(p) ? p.replace('/content-uploads/', '/design-thumb/') : null;
+  if (!UPLOAD_PATH_RE.test(p)) return null;
+  const base = p.replace('/content-uploads/', '/design-thumb/');
+  if (px == null) return base;
+  // An unknown rung would 404 forever; refusing here keeps a caller's typo from
+  // silently costing every shopper the picture.
+  return THUMB_WIDTHS.includes(px) ? base.replace('/design-thumb/', `/design-thumb/${px}/`) : null;
+}
+
+/**
+ * A `srcset` for one of our own uploads — every rung of the ladder with its `w`
+ * descriptor — or null when the path isn't one of ours.
+ *
+ * Paired with `sizes` (each surface declares how wide it actually paints the
+ * picture) this lets the browser download the ONE rung that matches its screen
+ * and pixel density, instead of every device taking the camera original.
+ *
+ * The descriptors are the px CAP, which is the true width only for a landscape
+ * picture — the resizer caps the longest side, so a portrait one is narrower than
+ * its rung claims. The error is deliberately in the safe direction: it makes the
+ * browser reach for a HIGHER rung than strictly needed, so a portrait photo comes
+ * out sharp rather than soft. Every gallery box is landscape or square and uses
+ * `object-fit: contain`, so a portrait picture is height-limited there anyway and
+ * needs less width than the box, not more.
+ */
+export function thumbSrcset(src) {
+  if (!thumbSrc(src)) return null;
+  return THUMB_WIDTHS.map((w) => `${thumbSrc(src, w)} ${w}w`).join(', ');
+}
+
+/**
+ * Point an <img> at a gallery picture through the downscale ladder, with the
+ * two-stage fallback that makes it SAFE to do so.
+ *
+ * `src` is the full-size upload (or any shipped render — one that isn't one of
+ * our uploads simply gets no ladder and behaves exactly as before). `sizes` is
+ * how wide this surface actually paints the picture, which is what lets the
+ * browser pick a rung instead of guessing the full viewport.
+ *
+ * THE FALLBACK IS THE POINT. A srcset candidate that 404s does NOT make the
+ * browser try `src` on its own — it just fails, and the shopper gets a broken
+ * tile. Derivatives legitimately 404 (a box without Pillow, an undecodable
+ * upload), so that is a real path, not a theoretical one. Hence:
+ *   stage 1 — a derivative failed → drop the ladder; the browser re-selects and
+ *             lands on `src`, the full original. Heavy, but the shopper sees the
+ *             owner's actual photo. Degrading to slow beats degrading to broken.
+ *   stage 2 — the original failed too (a missing upload) → hand back to the
+ *             surface's own `onFail`, which knows whether to swap in the shipped
+ *             render or drop the slide entirely.
+ * Neither stage can loop: the ladder is dropped before stage 2 can be reached,
+ * and the listener removes itself on the way into `onFail`.
+ */
+export function wireThumbs(img, src, sizes, onFail) {
+  const set = thumbSrcset(src);
+  if (set) {
+    if (sizes) img.sizes = sizes;
+    img.srcset = set;
+  }
+  img.src = src;
+  if (!set && !onFail) return;
+  const onErr = () => {
+    if (img.srcset) {
+      img.srcset = '';
+      img.removeAttribute('sizes');
+      return;
+    }
+    img.removeEventListener('error', onErr);
+    if (onFail) onFail();
+  };
+  img.addEventListener('error', onErr);
 }
 
 /**

@@ -208,3 +208,73 @@ describe('image-thumbs — the real resizer', () => {
     expect(fs.existsSync(imageThumbs._script)).toBe(true);
   });
 });
+
+// One size cannot serve both a 163 px grid tile and a full-bleed product photo,
+// so the module resizes to a LADDER of widths and the storefront picks a rung via
+// srcset. The rungs must be genuinely independent — a shared cache file or a
+// shared in-flight entry would hand a surface the wrong size, which is the exact
+// blurriness the ladder exists to avoid.
+describe('image-thumbs — the width ladder', () => {
+  it('serves the rungs the storefront asks for, and none it does not', () => {
+    expect(imageThumbs.WIDTHS).toEqual([400, 800, 1200]);
+    for (const w of imageThumbs.WIDTHS) expect(imageThumbs.pxOk(w)).toBe(w);
+    // No width named ⇒ the picker default.
+    expect(imageThumbs.pxOk(undefined)).toBe(imageThumbs.MAXPX);
+    // An OPEN size parameter would be a spawn-and-disk-fill lever for any client.
+    for (const bad of [401, 1201, 0, -1, 1600, 4000, 'big', '400px', 12.5, NaN, {}]) {
+      expect(imageThumbs.pxOk(bad)).toBe(null);
+    }
+  });
+
+  it('a size it does not serve yields nothing, and never spawns', async () => {
+    const runs = { n: 0 };
+    expect(await get(name, { px: 1600, runner: fakeSpawn({ runs }) })).toBe(null);
+    expect(await get(name, { px: 'big', runner: fakeSpawn({ runs }) })).toBe(null);
+    expect(runs.n).toBe(0);
+  });
+
+  it('passes the requested cap through to the resizer', async () => {
+    const seen = [];
+    const runner = (bin, argv) => {
+      seen.push(argv[3]);
+      return fakeSpawn({})(bin, argv);
+    };
+    await get(name, { px: 800, runner });
+    expect(seen).toEqual(['800']);
+  });
+
+  it('each rung is its OWN cached file, so one size never serves another', async () => {
+    const runs = { n: 0 };
+    const runner = fakeSpawn({ runs });
+    const small = await get(name, { px: 400, runner });
+    const big = await get(name, { px: 1200, runner });
+    expect(small.file).not.toBe(big.file);
+    expect(runs.n).toBe(2);
+    // …and each is independently cached: neither re-spawns.
+    await get(name, { px: 400, runner });
+    await get(name, { px: 1200, runner });
+    expect(runs.n).toBe(2);
+  });
+
+  // Keyed by name ALONE, two concurrent requests for different rungs would share
+  // one promise and the second caller would be handed the first one's file.
+  it('concurrent requests for DIFFERENT rungs do not share a run', async () => {
+    const runs = { n: 0 };
+    const runner = fakeSpawn({ runs });
+    const [a, b] = await Promise.all([
+      get(name, { px: 400, runner }),
+      get(name, { px: 800, runner }),
+    ]);
+    expect(a.file).not.toBe(b.file);
+    expect(runs.n).toBe(2);
+    expect(imageThumbs._inflight.size).toBe(0);
+  });
+
+  // A resizer that cannot produce one size can still produce another (and vice
+  // versa); remembering the failure against the name alone would blacklist rungs
+  // that were never tried.
+  it('a failure at one rung does not blacklist the others', async () => {
+    expect(await get(name, { px: 400, runner: fakeSpawn({ code: 1, out: null }) })).toBe(null);
+    expect(await get(name, { px: 800, runner: fakeSpawn({}) })).toBeTruthy();
+  });
+});

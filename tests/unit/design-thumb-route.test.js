@@ -98,4 +98,43 @@ describe('GET /design-thumb/:name', () => {
       expect(r.status).toBe(404);
     }
   });
+
+  // The storefront asks for a specific rung of the ladder via srcset, so the
+  // width-bearing form has to answer for real — a 404 here would make every
+  // candidate fail and (thanks to the client's fallback) quietly put the full
+  // originals back on the page.
+  describe('/design-thumb/<width>/<name>', () => {
+    it('serves each rung the client advertises, immutably', async () => {
+      for (const w of [400, 800, 1200]) {
+        const r = await fetch(`${base}/design-thumb/${w}/${name}`);
+        if (r.status === 404) return; // no Python/Pillow here — the supported case
+        expect(r.status).toBe(200);
+        expect(r.headers.get('content-type')).toMatch(/^image\/(webp|jpeg|png)/);
+        expect(r.headers.get('cache-control')).toContain('immutable');
+        expect(r.headers.get('x-content-type-options')).toBe('nosniff');
+        expect(Buffer.from(await r.arrayBuffer()).length).toBeGreaterThan(0);
+      }
+    });
+
+    // Refused rather than silently served at the default size: a silent
+    // substitution would make srcset's `w` descriptors lie about the bytes, and
+    // the browser would keep picking the wrong candidate.
+    it('refuses any width outside the closed set', async () => {
+      for (const bad of ['401', '1201', '0', '-400', '1600', '4000', 'big', '400px', '0400']) {
+        const r = await fetch(`${base}/design-thumb/${bad}/${name}`);
+        expect(r.status).toBe(404);
+        expect(await r.text()).toBe('Not found');
+      }
+    });
+
+    it('validates the name at a width too, and never 500s', async () => {
+      for (const bad of ['nope.png', 'aaaaaaaaaaaaaaaa.svg', 'AAAAAAAAAAAAAAAA.png']) {
+        const r = await fetch(`${base}/design-thumb/800/${bad}`);
+        expect(r.status).toBe(404);
+      }
+      const missing = await fetch(base + '/design-thumb/800/0123456789abcdef.png');
+      expect(missing.status).toBe(404);
+      expect(await missing.text()).toBe('Not found');
+    });
+  });
 });

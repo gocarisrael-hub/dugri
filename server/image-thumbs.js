@@ -33,10 +33,31 @@ const CACHE_DIR = path.join(DATA_DIR, 'content-thumbs');
 const REPO_ROOT = path.resolve(__dirname, '..');
 const SCRIPT = path.join(REPO_ROOT, 'generator', 'thumb_image.py');
 const PYTHON_BIN = process.env.PYTHON_BIN || 'python3';
-// Longest side, in px. ~2× the widest surface that uses these (a ~150 px picker
-// tile) so it stays sharp on a retina phone, and small enough to land in tens of
-// KB. Part of the cache filename, so changing it invalidates cleanly.
+// Longest side, in px, for a request that names no width — the wizard's design
+// picker, whose tiles are ~150 px wide. Part of the cache filename, so changing
+// it invalidates cleanly.
 const MAXPX = Math.max(1, Number(process.env.DESIGN_THUMB_MAXPX) || 400);
+// The LADDER the storefront picks from via srcset. One size can't serve both a
+// 163 px grid tile and a full-width product photo: the tile only ever needs 400
+// (163 CSS px × DPR 3 ≈ 490, and `object-fit: contain` in a landscape box makes
+// the real need smaller still), while the detail page wants the top rung. 1200
+// is the ceiling on purpose — a 390 px phone at DPR 3 resolves 1170 device px,
+// so anything beyond it is pixels no phone screen can display.
+//
+// A CLOSED set, not an arbitrary ?w=: every distinct value is a Python spawn and
+// a cached file on the volume, so an open parameter would let any client fill
+// the disk and pin the CPU.
+const WIDTHS = [400, 800, 1200];
+// MAXPX is included so an env override still resolves (it is the no-width default).
+const ALLOWED_PX = new Set([...WIDTHS, MAXPX]);
+
+/** The px cap for a requested width: the number itself when it is one we serve,
+ *  MAXPX when none was asked for, else null (refused — see WIDTHS). */
+function pxOk(px) {
+  if (px == null || px === '') return MAXPX;
+  const n = Number(px);
+  return Number.isInteger(n) && ALLOWED_PX.has(n) ? n : null;
+}
 // A resize is a fraction of a second; anything near this is a broken environment.
 const TIMEOUT_MS = Math.max(1000, Number(process.env.DESIGN_THUMB_TIMEOUT_MS) || 20000);
 // EXACTLY the shape content.saveImageBytes produces (16-hex content hash + an
@@ -44,22 +65,29 @@ const TIMEOUT_MS = Math.max(1000, Number(process.env.DESIGN_THUMB_TIMEOUT_MS) ||
 const NAME_RE = /^[a-f0-9]{16}\.(webp|jpe?g|png)$/;
 const MIME = { '.webp': 'image/webp', '.jpg': 'image/jpeg', '.png': 'image/png' };
 
-// One generation per name at a time: a picker paints a dozen tiles at once and
-// two shoppers can arrive together, so without this the same picture would spawn
-// a Python process per request.
+// One generation per name+size at a time: a grid paints ten cards at once and two
+// shoppers can arrive together, so without this the same picture would spawn a
+// Python process per request. Keyed by SIZE too — 400 and 800 are different
+// files, and sharing one entry would hand a caller the wrong one.
 const inflight = new Map();
-// Names whose generation FAILED. Without Pillow every request would otherwise pay
-// a process spawn to fail again; the client has already fallen back by then, so
-// remembering the failure costs nothing and protects the box. Process-lifetime
-// only — a deploy (or a restart) retries.
+// name+size pairs whose generation FAILED. Without Pillow every request would
+// otherwise pay a process spawn to fail again; the client has already fallen back
+// by then, so remembering the failure costs nothing and protects the box.
+// Process-lifetime only — a deploy (or a restart) retries.
 const failed = new Set();
 
-/** The cached derivative's path for an upload name. The px cap is in the name so
- *  a changed cap yields a new file instead of a stale one. Extension-less: the
- *  encoder picks WebP or JPEG (Pillow is not guaranteed to have WebP), and the
+/** The cache key for one derivative: the source name AND the px cap, since the
+ *  same picture legitimately has one file per rung of the ladder. */
+function keyOf(name, px) {
+  return name + '@' + px;
+}
+
+/** The cached derivative's path for an upload name at a px cap. The cap is in the
+ *  name so a changed cap yields a new file instead of a stale one. Extension-less:
+ *  the encoder picks WebP or JPEG (Pillow is not guaranteed to have WebP), and the
  *  bytes themselves say which — see typeOf. */
-function cachePath(name) {
-  return path.join(CACHE_DIR, name.replace(/\.[a-z]+$/i, '') + '-' + MAXPX + '.thumb');
+function cachePath(name, px) {
+  return path.join(CACHE_DIR, name.replace(/\.[a-z]+$/i, '') + '-' + px + '.thumb');
 }
 
 /** The content type of a generated derivative, sniffed from its own bytes (the
@@ -87,11 +115,11 @@ function typeOf(file) {
 
 /** Run the resizer. Resolves true only on a clean exit — never throws. `runner`
  *  is injectable so tests can exercise the failure paths without Python. */
-function runResize(src, dest, runner) {
+function runResize(src, dest, px, runner) {
   return new Promise((resolve) => {
     let child;
     try {
-      child = (runner || spawn)(PYTHON_BIN, [SCRIPT, src, dest, String(MAXPX)], {
+      child = (runner || spawn)(PYTHON_BIN, [SCRIPT, src, dest, String(px)], {
         timeout: TIMEOUT_MS,
         stdio: 'ignore',
       });
@@ -110,6 +138,10 @@ function runResize(src, dest, runner) {
  * The small derivative for an upload `name` — `{ file, type }` (an absolute path
  * + its content type) or null when one cannot be produced.
  *
+ * `opts.px` picks the rung of the ladder (see WIDTHS); omitted means MAXPX, the
+ * picker default. A px we do not serve yields null rather than a fresh cache
+ * entry, so the set of files on the volume stays bounded by the catalog.
+ *
  * Cache hit → returned immediately. Miss → generated once (concurrent callers
  * share the one run) into a temp file and renamed into place, so a killed process
  * can never leave a truncated file to be served forever.
@@ -117,11 +149,14 @@ function runResize(src, dest, runner) {
 function get(name, opts = {}) {
   const n = String(name || '');
   if (!NAME_RE.test(n)) return Promise.resolve(null);
-  const dest = cachePath(n);
+  const px = pxOk(opts.px);
+  if (px == null) return Promise.resolve(null);
+  const key = keyOf(n, px);
+  const dest = cachePath(n, px);
   const hit = typeOf(dest);
   if (hit) return Promise.resolve({ file: dest, type: hit });
-  if (failed.has(n)) return Promise.resolve(null);
-  if (inflight.has(n)) return inflight.get(n);
+  if (failed.has(key)) return Promise.resolve(null);
+  if (inflight.has(key)) return inflight.get(key);
 
   const src = path.join(opts.uploadDir || content._uploadDir, n);
   // Deferred to a microtask so `inflight.set` below has ALWAYS run before the
@@ -137,16 +172,16 @@ function get(name, opts = {}) {
       // same bytes always land on this same name).
       if (!fs.existsSync(src)) return null;
       fs.mkdirSync(CACHE_DIR, { recursive: true });
-      const ok = await runResize(src, tmp, opts.runner);
+      const ok = await runResize(src, tmp, px, opts.runner);
       const type = ok ? typeOf(tmp) : null;
       if (!type) {
-        failed.add(n);
+        failed.add(key);
         return null;
       }
       fs.renameSync(tmp, dest);
       return { file: dest, type };
     } catch {
-      failed.add(n);
+      failed.add(key);
       return null;
     } finally {
       try {
@@ -154,10 +189,10 @@ function get(name, opts = {}) {
       } catch {
         /* already renamed away, or never written */
       }
-      inflight.delete(n);
+      inflight.delete(key);
     }
   });
-  inflight.set(n, job);
+  inflight.set(key, job);
   return job;
 }
 
@@ -168,9 +203,11 @@ function get(name, opts = {}) {
 
 module.exports = {
   get,
+  pxOk,
   _cacheDir: CACHE_DIR,
   _script: SCRIPT,
   _inflight: inflight,
   MAXPX,
+  WIDTHS,
   NAME_RE,
 };

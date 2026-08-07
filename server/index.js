@@ -3875,18 +3875,27 @@ app.get('/api/design-images', (req, res) => {
 });
 
 // Public: a SMALL derivative of one of those gallery uploads (see
-// server/image-thumbs.js). Same picture, ~15 KB instead of 180 KB–1 MB, for the
-// surfaces that show it at thumbnail size — today the wizard's design picker,
-// whose tiles are ~150 px wide and whose page must stay light enough for the
-// Instagram in-app browser.
+// server/image-thumbs.js). The owner uploads what her camera produced — 3000 px
+// wide, ~1 MB — and every storefront surface was serving that original: the
+// products grid renders it into a 163 px tile, so it shipped roughly a hundred
+// times the pixels the screen can show (33 MB across that one page).
+//
+// TWO shapes, because the surfaces differ by an order of magnitude in size:
+//   /design-thumb/<name>        → the default cap (the wizard picker, ~150 px)
+//   /design-thumb/<width>/<name> → one rung of the srcset ladder (400/800/1200)
+// The width is a PATH segment rather than a query so every rung is a distinct,
+// independently immutable URL, and it is validated against a closed set — an
+// open ?w= would let any client spawn Python and fill the volume at will.
 //
 // 404 is a NORMAL answer here (no Python/Pillow, an undecodable upload): every
-// caller keeps its own fallback to the shipped render, so a missing derivative
-// costs a tile its photo, never the page. It deliberately does NOT fall back to
-// serving the original — that is the multi-MB page this route exists to avoid.
-app.get('/design-thumb/:name', (req, res) => {
+// caller keeps its own fallback, so a missing derivative costs a picture its
+// downscale, never the page. It deliberately does NOT fall back to serving the
+// original here — the CLIENT owns that decision (site/js/design-images.js keeps
+// the original on `src` under the srcset), which keeps this route's promise
+// simple: what it serves is always small.
+function sendDesignThumb(req, res, px) {
   imageThumbs
-    .get(req.params.name)
+    .get(req.params.name, { px })
     .then((thumb) => {
       if (!thumb) return res.status(404).type('txt').send('Not found');
       // Content-addressed source + a fixed px cap ⇒ these bytes never change.
@@ -3898,6 +3907,19 @@ app.get('/design-thumb/:name', (req, res) => {
       res.sendFile(thumb.file);
     })
     .catch(() => res.status(404).type('txt').send('Not found'));
+}
+
+app.get('/design-thumb/:name', (req, res) => sendDesignThumb(req, res, undefined));
+
+app.get('/design-thumb/:width/:name', (req, res) => {
+  // Refuse an unknown rung outright rather than quietly serving the default —
+  // a silent substitution would make srcset's `w` descriptors lie about the
+  // bytes, and the browser would pick the wrong candidate forever after.
+  const px = imageThumbs.pxOk(req.params.width);
+  if (px == null || String(px) !== String(req.params.width)) {
+    return res.status(404).type('txt').send('Not found');
+  }
+  sendDesignThumb(req, res, px);
 });
 
 // Admin: REPLACE a base render (store|front|back|photo|board) with an uploaded picture.

@@ -118,3 +118,40 @@ def test_a_missing_source_fails(tmp_path):
 
 def test_bad_usage_fails(tmp_path):
     assert subprocess.run([sys.executable, SCRIPT], capture_output=True).returncode != 0
+
+
+# The storefront serves a LADDER of widths through srcset (400/800/1200), so the
+# same script has to produce every rung — a 163px grid tile and a full-bleed
+# product photo cannot share one size without one of them being wrong.
+@pytest.mark.parametrize("maxpx", [400, 800, 1200])
+def test_produces_every_rung_of_the_storefront_ladder(tmp_path, maxpx):
+    src = photo(str(tmp_path / "src.png"), (3000, 2400))
+    dest = str(tmp_path / f"out{maxpx}")
+    assert run(src, dest, maxpx).returncode == 0
+    with Image.open(dest) as im:
+        assert max(im.size) == maxpx
+        assert abs(im.size[0] / im.size[1] - 3000 / 2400) < 0.02
+
+
+def test_a_bigger_rung_really_is_a_bigger_picture(tmp_path):
+    """srcset picks a rung by its `w` descriptor and trusts it to carry more
+    detail. If the cap were ignored every rung would weigh the same and the
+    browser's choice would be meaningless."""
+    src = photo(str(tmp_path / "src.png"), (3000, 2400))
+    sizes = {}
+    for maxpx in (400, 800, 1200):
+        dest = str(tmp_path / f"out{maxpx}")
+        assert run(src, dest, maxpx).returncode == 0
+        sizes[maxpx] = os.path.getsize(dest)
+    assert sizes[400] < sizes[800] < sizes[1200]
+
+
+def test_even_the_top_rung_is_a_fraction_of_the_camera_original(tmp_path):
+    """1200px is the ceiling because a 390px phone at DPR 3 resolves 1170 device
+    px. The owner's uploads are ~3000px/~1MB; the point of the top rung is that
+    it is still far smaller than what her camera produced, at no visible cost."""
+    src = str(tmp_path / "src.png")
+    photo(src, (3780, 3024))
+    dest = str(tmp_path / "out")
+    assert run(src, dest, 1200).returncode == 0
+    assert os.path.getsize(dest) < os.path.getsize(src) / 4
