@@ -163,7 +163,8 @@ def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
     # reason build_deck checks its board artwork up front: a failed order costs
     # a re-upload, a plausible-looking one with the wrong name costs the print.
     rp.assert_title_drawable(config.font_path(theme, cfg["title_font"]),
-                             title_lines, theme=theme)
+                             title_lines, theme=theme,
+                             alt_font_path=config.resolve_title_font_alt(theme))
     os.makedirs(workdir, exist_ok=True)
     import csv as csvmod
     data = list(csvmod.DictReader(open(csvp, encoding="utf-8-sig")))
@@ -414,7 +415,8 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
     # and never hand over an order whose cards carry a name the buyer did not
     # ask for (render_page.assert_title_drawable).
     rp.assert_title_drawable(config.font_path(theme, cfg["title_font"]),
-                             title_lines, theme=theme)
+                             title_lines, theme=theme,
+                             alt_font_path=config.resolve_title_font_alt(theme))
     os.makedirs(workdir, exist_ok=True)
     # Check the board artwork BEFORE rendering the deck. An order owes the
     # customer BOTH artifacts, so a missing board is a failed order, not a deck

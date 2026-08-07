@@ -3185,8 +3185,16 @@ def title_font_gaps(font_path, lines):
     return out
 
 
-def assert_title_drawable(font_path, lines, theme=None):
-    """Refuse a title whose own face cannot draw it.
+def assert_title_drawable(font_path, lines, theme=None, alt_font_path=None):
+    """Refuse a title NEITHER of its faces can draw.
+
+    ``alt_font_path`` is the optional second title face the owner uploads for
+    exactly this case — a design whose primary face is a Latin display script
+    being given a Hebrew name, or the reverse. A character the primary cannot
+    draw is not a fault when the alt draws it: that IS the feature, and the
+    renderer already splits the title across both faces. Checking the primary
+    alone refused an order the deck could set perfectly well — פריז with
+    MrDafoe (no Hebrew) beside GveretLevin (Hebrew and Latin).
 
     ``calibrate`` already refuses to MEASURE against such a face ("a fit against
     such a sample measures the wrong typeface entirely and must be refused").
@@ -3203,7 +3211,23 @@ def assert_title_drawable(font_path, lines, theme=None):
     gaps = title_font_gaps(font_path, lines)
     if not gaps:
         return
+    if alt_font_path:
+        # Only what NEITHER face can draw is a real gap. Order matters for the
+        # message, not the verdict: the owner is told which characters are
+        # unset, whichever face was supposed to carry them.
+        gaps = [c for c in gaps if c in set(title_font_gaps(alt_font_path, lines))]
+        if not gaps:
+            return
     where = f"theme {theme!r}: " if theme else ""
+    if alt_font_path:
+        raise RuntimeError(
+            f"{where}neither title font can draw {''.join(gaps)!r}, which the "
+            f"title {' / '.join(lines)!r} is made of — not "
+            f"{os.path.basename(font_path)!r} and not "
+            f"{os.path.basename(alt_font_path)!r}. Chrome would substitute a "
+            f"system face for those letters and the title would print in a "
+            f"typeface nobody chose. Upload a title font that covers this "
+            f"design's language, or change the title text.")
     raise RuntimeError(
         f"{where}the title font {os.path.basename(font_path)!r} has no glyphs "
         f"for {''.join(gaps)!r}, which the title {' / '.join(lines)!r} is made "
