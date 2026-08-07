@@ -166,19 +166,22 @@ describe('design-images gallery store', () => {
     expect(s.resetBaseImg('posttrip', 'board')).toEqual({ ok: false, prev: null });
   });
 
-  it('setBaseFlags stores only DEVIATIONS from the slot default', async () => {
+  it('setBaseFlags stores only HIDES — visible is the default on both surfaces', async () => {
     const s = await store();
     s.setBaseFlags('japanese', 'store', { onProducts: false });
     expect(s.getForDesign('japanese')).toEqual({ base: { store: { onProducts: false } } });
     // Re-enabling clears the deviation and prunes the bag.
     s.setBaseFlags('japanese', 'store', { onProducts: true });
     expect(s.getAll()).toEqual({});
-    // store is hidden on the product page BY DEFAULT: onProduct:false stores nothing,
-    // while opting it IN (onProduct:true) is the deviation that persists.
+    // NO slot is special any more. The store cover used to default to HIDDEN on the
+    // product page — so onProduct:false stored nothing and only an explicit opt-IN
+    // persisted, which is why the detail gallery opened on the second picture for
+    // every design the owner had not hand-ticked. Now the HIDE is what persists…
     s.setBaseFlags('japanese', 'store', { onProduct: false });
-    expect(s.getAll()).toEqual({});
+    expect(s.getForDesign('japanese')).toEqual({ base: { store: { onProduct: false } } });
+    // …and showing it again is the absence of a flag.
     s.setBaseFlags('japanese', 'store', { onProduct: true });
-    expect(s.getForDesign('japanese')).toEqual({ base: { store: { onProduct: true } } });
+    expect(s.getAll()).toEqual({});
     // A hide + an override img coexist on the same slot (front hidden on product page).
     s.setBaseImg('japanese', 'front', P1);
     s.setBaseFlags('japanese', 'front', { onProduct: false });
@@ -298,5 +301,27 @@ describe('design-images gallery store', () => {
         order: ['front', 'p1'],
       },
     });
+  });
+
+  // The owner had to hand-tick "show on the product page" for the store cover on
+  // every design, one by one, because it used to default to hidden there — that is
+  // what made a product page open on her SECOND picture everywhere she hadn't.
+  // Those opt-ins are still on disk; they now agree with the default, so they
+  // normalize away, and a real HIDE she set survives untouched.
+  it('folds a legacy store.onProduct:true opt-in away, keeps a real hide', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'design-images.json'),
+      JSON.stringify({
+        posttrip: { base: { store: { img: P1, onProduct: true } } },
+        japanese: { base: { store: { onProduct: false } } },
+      }),
+      'utf8'
+    );
+    const s = await loadStore(dir);
+    expect(s.getForDesign('posttrip')).toEqual({ base: { store: { img: P1 } } });
+    expect(s.getForDesign('japanese')).toEqual({ base: { store: { onProduct: false } } });
   });
 });

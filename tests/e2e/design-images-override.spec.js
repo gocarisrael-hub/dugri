@@ -143,7 +143,7 @@ test.describe('products.html — store-tile override in the card carousel', () =
 });
 
 test.describe('product.html — detail gallery from the curated selection', () => {
-  test('uses the overridden board render, ships the other slots (store not led)', async ({
+  test('uses the overridden board render, ships the other slots (store leads)', async ({
     page,
   }) => {
     await stubUploads(page);
@@ -158,19 +158,17 @@ test.describe('product.html — detail gallery from the curated selection', () =
     await expect
       .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
       .toEqual([
+        'assets/designs/posttrip/store.webp', // the shop tile's picture, leading here too
         'assets/designs/posttrip/gallery-front.webp',
         'assets/designs/posttrip/gallery-back.webp',
         BOARD_OVERRIDE, // owner's uploaded board render wins for its slot
       ]);
   });
 
-  test('the owner can add the store cover + a named extra to the detail gallery', async ({
-    page,
-  }) => {
+  test('the owner can add a named extra photo to the detail gallery', async ({ page }) => {
     await stubUploads(page);
     await stubConfig(page, {
       posttrip: {
-        base: { store: { onProduct: true } },
         photos: [
           { id: 'p1', img: STORE_OVERRIDE, name: 'סטודיו', onProducts: false, onProduct: true },
         ],
@@ -185,7 +183,7 @@ test.describe('product.html — detail gallery from the curated selection', () =
     await expect
       .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
       .toEqual([
-        'assets/designs/posttrip/store.webp', // store cover, opted into the product page
+        'assets/designs/posttrip/store.webp', // store cover — shown by default
         'assets/designs/posttrip/gallery-front.webp',
         'assets/designs/posttrip/gallery-back.webp',
         'assets/designs/posttrip/gallery-board.webp',
@@ -206,6 +204,7 @@ test.describe('product.html — detail gallery from the curated selection', () =
     await expect
       .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
       .toEqual([
+        'assets/designs/posttrip/store.webp',
         'assets/designs/posttrip/gallery-front.webp',
         'assets/designs/posttrip/gallery-back.webp',
         'assets/designs/posttrip/gallery-board.webp',
@@ -222,9 +221,13 @@ test.describe('product.html — detail gallery from the curated selection', () =
     await page.goto('/product.html?design=posttrip');
 
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
+    // The slides are loading="lazy", so the broken board only tries to load once the
+    // shopper reaches it — which is also the only moment the degrade is visible.
+    await slides.last().scrollIntoViewIfNeeded();
     await expect
       .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
       .toEqual([
+        'assets/designs/posttrip/store.webp',
         'assets/designs/posttrip/gallery-front.webp',
         'assets/designs/posttrip/gallery-back.webp',
         'assets/designs/posttrip/gallery-board.webp', // onerror fell back to static
@@ -246,6 +249,7 @@ test.describe('product.html — detail gallery from the curated selection', () =
     await expect
       .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
       .toEqual([
+        'assets/designs/kids/store.webp',
         'assets/designs/kids/gallery-front.webp',
         'assets/designs/kids/gallery-back.webp',
         BOARD_OVERRIDE, // owner's uploaded board — no shipped kids board exists
@@ -263,12 +267,76 @@ test.describe('product.html — detail gallery from the curated selection', () =
     await page.goto('/product.html?design=kids');
 
     const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
+    // loading="lazy" — on a wide viewport the broken slide only tries to load once
+    // it is reached, so nudge it into view. On a narrow one it is already close
+    // enough to have loaded, failed and taken its slide with it, and the nudge finds
+    // nothing to scroll to — which is the outcome this test wants either way.
+    await slides
+      .last()
+      .scrollIntoViewIfNeeded()
+      .catch(() => {});
     await expect
       .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
       .toEqual([
+        'assets/designs/kids/store.webp',
         'assets/designs/kids/gallery-front.webp',
         'assets/designs/kids/gallery-back.webp',
         // the broken override-only board slide dropped itself — no 404 image remains
+      ]);
+  });
+});
+
+// THE REGRESSION the owner reported: "clicking a product and moving to the product
+// page shows the SECOND picture instead of the FIRST".
+//
+// The shop tile and the detail gallery read ONE arrangement, but the detail page
+// used to apply a slot-specific default on top of it — the store cover was hidden
+// there unless the owner had ticked "בעמוד המוצר" by hand. So for every design she
+// had not hand-ticked, /products led with the cover and clicking it opened the
+// gallery one picture further along. Reproduced live on production for kids and
+// football-boys before this fix.
+//
+// This walks the real journey (grid → detail) rather than asserting a slide list,
+// because the bug was precisely the DISAGREEMENT between the two surfaces: either
+// one alone looked correct.
+test.describe('the shop tile and the product page open on the SAME picture', () => {
+  for (const id of ['posttrip', 'kids']) {
+    test(`the ${id} tile and its product page show the same first picture`, async ({ page }) => {
+      // No stored config at all — the untouched design is exactly the case that broke.
+      await stubConfig(page, {});
+      await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+
+      await page.goto('/products.html');
+      const tile = page.locator(`.product-card[data-design-id="${id}"]`);
+      const tileImg = tile.locator('[data-testid="product-image"]').first();
+      await expect(tileImg).toBeVisible();
+      const shown = await tileImg.getAttribute('src');
+      expect(shown).toMatch(/store\.webp$/); // the grid leads with the cover
+
+      await page.goto(`/product.html?design=${id}`);
+      const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
+      await expect(slides.first()).toBeVisible();
+      // Settled state (the config resolves after first paint and rebuilds the track).
+      await expect.poll(() => slides.first().getAttribute('src')).toBe(shown);
+      // …and the carousel really is resting on it, not merely holding it at index 0.
+      await expect(page.locator('#galleryDots .carousel-dot').first()).toHaveClass(/is-active/);
+    });
+  }
+
+  test('a picture the owner hid on the product page is still skipped there', async ({ page }) => {
+    // The default flipped, the CONTROL did not: an explicit hide must still win, or
+    // fixing the report would have taken her per-surface choice away.
+    await stubConfig(page, { posttrip: { base: { store: { onProduct: false } } } });
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+
+    await page.goto('/product.html?design=posttrip');
+    const slides = page.locator('#galleryTrack .pdp-gallery-slide img');
+    await expect
+      .poll(() => slides.evaluateAll((els) => els.map((i) => i.getAttribute('src'))))
+      .toEqual([
+        'assets/designs/posttrip/gallery-front.webp',
+        'assets/designs/posttrip/gallery-back.webp',
+        'assets/designs/posttrip/gallery-board.webp',
       ]);
   });
 });

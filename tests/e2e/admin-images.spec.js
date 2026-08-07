@@ -81,11 +81,12 @@ test.describe('admin gallery page', () => {
     await expect(photo.locator('.preview-empty')).toBeVisible();
     await expect(photo.locator('button[data-act="reset"]')).toBeDisabled();
 
-    // Default flags: the store cover shows on the grid but NOT the product page;
-    // the card front shows on both.
+    // Default flags: EVERY picture shows on both surfaces, store cover included.
+    // It used to start unticked for the product page, which quietly made the detail
+    // gallery open on the owner's second picture.
     const store = page.locator('.item[data-design="posttrip"][data-key="store"]');
     await expect(store.locator('input[data-flag="onProducts"]')).toBeChecked();
-    await expect(store.locator('input[data-flag="onProduct"]')).not.toBeChecked();
+    await expect(store.locator('input[data-flag="onProduct"]')).toBeChecked();
     const front = page.locator('.item[data-design="posttrip"][data-key="front"]');
     await expect(front.locator('input[data-flag="onProduct"]')).toBeChecked();
 
@@ -239,16 +240,17 @@ test.describe('admin gallery page', () => {
     let flagBody = null;
     await page.route('**/api/admin/design-images/base/flags*', (route) => {
       flagBody = JSON.parse(route.request().postData() || '{}');
-      route.fulfill({ json: { ok: true, gallery: { base: { store: { onProduct: true } } } } });
+      route.fulfill({ json: { ok: true, gallery: { base: { store: { onProduct: false } } } } });
     });
 
     await page.goto(`/admin-images.html?key=${KEY}`);
-    // Opt the store cover INTO the product page.
+    // Every box starts ticked, so the toggle to exercise is a HIDE: take the store
+    // cover off the product page.
     await page
       .locator('.item[data-design="posttrip"][data-key="store"] input[data-flag="onProduct"]')
-      .check();
+      .uncheck();
     await expect.poll(() => flagBody).not.toBeNull();
-    expect(flagBody).toMatchObject({ designId: 'posttrip', slot: 'store', onProduct: true });
+    expect(flagBody).toMatchObject({ designId: 'posttrip', slot: 'store', onProduct: false });
   });
 
   // The owner asked for tiles that are pictures, not a labelled form: no slot name

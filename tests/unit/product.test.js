@@ -20,6 +20,10 @@ import {
   PORTRAIT_ASPECT,
 } from '../../site/js/product.js';
 import { designShipsBoard, DESIGNS } from '../../site/js/designs.js';
+// The shop tile reads the SAME resolver on the 'products' surface — the two are
+// compared directly below, so the "same first picture" guarantee is checked
+// against the real grid rule rather than a hardcoded copy of it.
+import { galleryFor } from '../../site/js/design-images.js';
 
 const P1 = '/content-uploads/aaaaaaaaaaaaaaaa.png';
 const P2 = '/content-uploads/bbbbbbbbbbbbbbbb.webp';
@@ -140,8 +144,11 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
 
   it('falls back to the design’s default hi-res renders when there are no custom photos', () => {
     const shots = galleryShots(design, {});
-    // front/back/board hi-res renders (never the tiny thumb-*.webp)
+    // The store cover LEADS, exactly as it does on the shop tile — the gallery used
+    // to drop it here, so the page opened on the owner's second picture. Then the
+    // front/back/board hi-res renders (never the tiny thumb-*.webp).
     expect(shots.map((s) => s.src)).toEqual([
+      'assets/designs/japanese/store.webp',
       'assets/designs/japanese/gallery-front.webp',
       'assets/designs/japanese/gallery-back.webp',
       'assets/designs/japanese/gallery-board.webp',
@@ -153,6 +160,7 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     const kids = { id: 'kids', name: 'ילדים', thumbs: { front: 'f', back: 'b' } };
     const shots = galleryShots(kids, {});
     expect(shots.map((s) => s.src)).toEqual([
+      'assets/designs/kids/store.webp',
       'assets/designs/kids/gallery-front.webp',
       'assets/designs/kids/gallery-back.webp',
     ]);
@@ -164,13 +172,14 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     const map = { kids: { base: { board: { img: P1 } } } };
     const shots = galleryShots(kids, {}, map);
     expect(shots.map((s) => s.src)).toEqual([
+      'assets/designs/kids/store.webp',
       'assets/designs/kids/gallery-front.webp',
       'assets/designs/kids/gallery-back.webp',
       P1, // owner's uploaded board picture — appears from the override alone
     ]);
     // No shipped gallery-board.webp exists, so the board slide carries NO fallback
-    // (a fallback would 404). front/back keep their static renders / no fallback.
-    expect(shots[2].fallback).toBeUndefined();
+    // (a fallback would 404). store/front/back keep their static renders / no fallback.
+    expect(shots[3].fallback).toBeUndefined();
   });
 
   it('tags a boardless design’s override-only board slide `droppable` (no 404 fallback)', () => {
@@ -180,8 +189,8 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     // its dot on a load error rather than showing a broken image.
     const kids = { id: 'kids', name: 'ילדים', thumbs: { front: 'f', back: 'b' } };
     const shots = galleryShots(kids, {}, { kids: { base: { board: { img: P1 } } } });
-    expect(shots[2]).toMatchObject({ src: P1, droppable: true });
-    expect(shots[2].fallback).toBeUndefined();
+    expect(shots[3]).toMatchObject({ src: P1, droppable: true });
+    expect(shots[3].fallback).toBeUndefined();
     // A design that SHIPS a board keeps its static fallback and is NOT droppable
     // (it degrades to the shipped render, never dropped).
     const japanese = {
@@ -190,11 +199,11 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
       thumbs: { front: 'f', back: 'b', board: 'brd' },
     };
     const shipShots = galleryShots(japanese, {}, { japanese: { base: { board: { img: P1 } } } });
-    expect(shipShots[2]).toMatchObject({
+    expect(shipShots[3]).toMatchObject({
       src: P1,
       fallback: 'assets/designs/japanese/gallery-board.webp',
     });
-    expect(shipShots[2].droppable).toBeUndefined();
+    expect(shipShots[3].droppable).toBeUndefined();
   });
 
   it('prefers a per-design SLOT override over the static render, else falls back per-slot', () => {
@@ -202,6 +211,7 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     const map = { japanese: { base: { board: { img: P1 } } } };
     const shots = galleryShots(design, {}, map);
     expect(shots.map((s) => s.src)).toEqual([
+      'assets/designs/japanese/store.webp',
       'assets/designs/japanese/gallery-front.webp',
       'assets/designs/japanese/gallery-back.webp',
       P1, // owner's uploaded board picture
@@ -212,13 +222,14 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     const map = { japanese: { base: { board: { img: P1 } } } };
     const shots = galleryShots(design, {}, map);
     // The override slide points its onerror at the shipped static asset…
-    expect(shots[2]).toMatchObject({
+    expect(shots[3]).toMatchObject({
       src: P1,
       fallback: 'assets/designs/japanese/gallery-board.webp',
     });
     // …while a non-overridden slide has no fallback (it IS the static asset).
     expect(shots[0].fallback).toBeUndefined();
     expect(shots[1].fallback).toBeUndefined();
+    expect(shots[2].fallback).toBeUndefined();
   });
 
   it('ignores a malformed/off-origin override path and keeps the static asset', () => {
@@ -232,10 +243,24 @@ describe('galleryShots — custom photos replace the defaults, else fall back', 
     };
     const shots = galleryShots(design, {}, map);
     expect(shots.map((s) => s.src)).toEqual([
+      'assets/designs/japanese/store.webp',
       'assets/designs/japanese/gallery-front.webp',
       'assets/designs/japanese/gallery-back.webp',
       'assets/designs/japanese/gallery-board.webp',
     ]);
+  });
+
+  // THE REGRESSION (owner report): "clicking a product opens on the SECOND
+  // picture". The detail gallery used to drop the store cover by default, so a
+  // design the owner had not hand-ticked opened one picture further along than
+  // the tile she had just clicked. Both surfaces read the same arrangement now.
+  it('opens on the SAME first picture the shop tile shows', () => {
+    for (const map of [{}, { japanese: { base: { front: { img: P1 } } } }]) {
+      const tile = galleryFor(map, design, 'products')[0];
+      const shots = galleryShots(design, {}, map);
+      expect(shots[0].src).toBe(tile.src);
+      expect(shots[0].src).toBe('assets/designs/japanese/store.webp');
+    }
   });
 
   it('curated custom photos still win over per-slot overrides', () => {
