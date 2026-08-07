@@ -16,6 +16,7 @@ const playbook = require('./playbook');
 const content = require('./content');
 const contentImport = require('./content-import');
 const designImages = require('./design-images');
+const imageThumbs = require('./image-thumbs');
 const designCatalog = require('./design-catalog');
 const photoFallback = require('./photo-fallback');
 const settings = require('./settings');
@@ -3871,6 +3872,32 @@ function saveGalleryUpload(req, res) {
 // (see site/js/design-images.js). Read-only; res.json copies.
 app.get('/api/design-images', (req, res) => {
   res.json({ images: designImages.getAll() });
+});
+
+// Public: a SMALL derivative of one of those gallery uploads (see
+// server/image-thumbs.js). Same picture, ~15 KB instead of 180 KB–1 MB, for the
+// surfaces that show it at thumbnail size — today the wizard's design picker,
+// whose tiles are ~150 px wide and whose page must stay light enough for the
+// Instagram in-app browser.
+//
+// 404 is a NORMAL answer here (no Python/Pillow, an undecodable upload): every
+// caller keeps its own fallback to the shipped render, so a missing derivative
+// costs a tile its photo, never the page. It deliberately does NOT fall back to
+// serving the original — that is the multi-MB page this route exists to avoid.
+app.get('/design-thumb/:name', (req, res) => {
+  imageThumbs
+    .get(req.params.name)
+    .then((thumb) => {
+      if (!thumb) return res.status(404).type('txt').send('Not found');
+      // Content-addressed source + a fixed px cap ⇒ these bytes never change.
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      // Defense in depth, as on /content-uploads: never let a browser sniff a
+      // served image into an executable type.
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.type(thumb.type);
+      res.sendFile(thumb.file);
+    })
+    .catch(() => res.status(404).type('txt').send('Not found'));
 });
 
 // Admin: REPLACE a base render (store|front|back|photo|board) with an uploaded picture.
