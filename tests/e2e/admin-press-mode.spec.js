@@ -80,8 +80,28 @@ test('a refused save snaps the switch back to what the server holds', async ({ p
   // A switch showing a state the server does not have is worse than one that
   // refuses: the owner would believe the next press build is CMYK when it is
   // not, and the file would go to the shop under that belief.
+  //
+  // THE REFUSAL IS HELD OPEN by `release` rather than answered straight away,
+  // and that is what makes this test say anything. Both of the obvious ways to
+  // write it are worthless:
+  //
+  //   .check()   asserts the box ends up CHECKED — the exact opposite of the
+  //              behaviour under test. It only ever passed by winning a race
+  //              against the revert, and on CI it lost that race.
+  //   .click() followed by expect(not.toBeChecked())  passes VACUOUSLY: the box
+  //              starts unchecked, so a click that never landed — or an app that
+  //              never tried to save at all — satisfies it just as well.
+  //
+  // Holding the response lets the intermediate state be asserted for real: the
+  // box goes checked, the POST is in flight, and only then does the refusal
+  // arrive and have to undo it.
+  let release;
+  const refused = new Promise((r) => (release = r));
+  const posted = [];
   await page.route('**/api/admin/settings*', async (route) => {
     if (route.request().method() === 'POST') {
+      posted.push(route.request().postDataJSON());
+      await refused;
       return route.fulfill({ status: 500, json: { error: 'nope' } });
     }
     return route.fulfill({
@@ -93,13 +113,28 @@ test('a refused save snaps the switch back to what the server holds', async ({ p
       },
     });
   });
-  page.on('dialog', (d) => d.dismiss());
+  const dialogs = [];
+  page.on('dialog', (d) => {
+    dialogs.push(d.message());
+    d.dismiss();
+  });
   await page.goto(`/admin.html?key=${KEY}`);
   await expect(switchBox(page)).toBeVisible();
+  await expect(switchBox(page)).not.toBeChecked();
 
-  await switchBox(page).check();
+  // 1. the click really lands, and the switch really shows the new state...
+  await switchBox(page).click();
+  await expect(switchBox(page)).toBeChecked();
+  // 2. ...and the page really tried to persist it, with the right payload.
+  await expect.poll(() => posted).toEqual([{ section: 'press', key: 'cmyk_pass', value: true }]);
+
+  // 3. now the save is refused, and the switch has to hand the state back.
+  release();
   await expect(switchBox(page)).not.toBeChecked();
   await expect(note(page)).toContainText('RGB');
+  await expect(note(page)).not.toContainText('CMYK');
+  // 4. and the owner is told, rather than left watching a switch undo itself.
+  await expect.poll(() => dialogs.length).toBe(1);
 });
 
 test('a settings outage hides the switch but never the orders table', async ({ page }) => {
