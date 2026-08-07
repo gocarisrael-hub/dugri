@@ -80,10 +80,18 @@ generator never branches on which template it loaded.
    cheap and this is the degraded path, not the normal one.
 
    The disc fills **0.90** of the square (`PHOTO_DISC_FILL`), not all of it. That margin is
-   load-bearing: the halo dilates ~2.4 units outward, and a disc filling the whole square would
-   put the white ring exactly on the dashed cut-line at r = 33 — hiding the line you are meant to
-   cut, and putting the ring outside the cut so it is trimmed off the finished pawn. At 0.90 the
-   ring lands just inside the dashes.
+   load-bearing: the white ring is dilated OUT of the disc, so whatever the disc reaches the ring
+   reaches more, and a disc filling the whole square would put the ring well outside the dashed
+   cut-line at r = 33 — hiding the line you are meant to cut, and putting the ring outside the cut
+   so it is trimmed off the finished pawn.
+
+   **How far the ring actually reaches is a property of the FILTER, not of this constant**, and
+   the two have to be read together — see "the sticker" below for the arithmetic and the measured
+   numbers. An earlier version of this paragraph did the sum with the dilation counted once and
+   concluded that 0.90 left the ring "just inside the dashes"; it did not. `feMorphology` dilates
+   with a square kernel, a disc therefore grows by `radius × √2` in every direction, and the ring
+   was landing at **33.38** — outside the line. Changing `PHOTO_DISC_FILL` without re-checking the
+   filter, or the filter without re-checking this, breaks a printed card.
 
    Where the subject does not reach the disc's edge the halo still follows its silhouette, so a
    card is a mix of full discs and silhouettes. That is correct, not a defect: the clip is a
@@ -100,7 +108,8 @@ generator never branches on which template it loaded.
 | --------------------- | --------------------------------------------------------- |
 | slot box              | 66 × 66 units (18.57 × 18.57 mm)                          |
 | cut-line              | dashed circle, r = 33 units, centred in the slot box      |
-| white halo            | ≈ 2.4 units (0.68 mm), follows the image's alpha          |
+| white halo            | ≈ 1.5 units (0.42 mm), follows the image's alpha          |
+| halo reach            | ≤ 32 units — 1 unit (0.28 mm) of paper inside the cut     |
 | cutout format         | **transparent RGBA PNG** — required, alpha must be intact |
 | cutout size           | 512 × 512 px target (min 220 = 300 DPI, max 768)          |
 | payload cap           | < 1,000,000 base64 chars (`deck_html.BG_MIN_CHARS`)       |
@@ -276,26 +285,74 @@ in paint order:
   through the filter pipeline and stays full resolution in the printed PDF. Verified at 600 dpi
   off a `--print-to-pdf` render.
 - **`#sticker-halo`** dilates `SourceAlpha`, blurs it and pushes it back through a steep alpha
-  ramp — the blur-and-threshold step rounds off `feMorphology`'s square structuring element,
-  which on its own leaves visibly boxy corners — then floods it white and drops a soft shadow:
+  ramp — the blur-and-threshold step rounds off the sharp corners `feMorphology`'s square
+  structuring element leaves on a silhouette — then floods it white and drops a soft shadow:
 
   ```xml
   <filter id="sticker-halo" x="-25%" y="-25%" width="150%" height="150%"
           color-interpolation-filters="sRGB">
-    <feMorphology in="SourceAlpha" operator="dilate" radius="2.4" result="spread"/>
-    <feGaussianBlur in="spread" stdDeviation="0.6" result="soft"/>
+    <feMorphology in="SourceAlpha" operator="dilate" radius="1.5" result="spread"/>
+    <feGaussianBlur in="spread" stdDeviation="1.2" result="soft"/>
     <feComponentTransfer in="soft" result="mask">
-      <feFuncA type="linear" slope="14" intercept="-3.5"/>
+      <feFuncA type="linear" slope="14" intercept="-6.5"/>
     </feComponentTransfer>
     <feFlood flood-color="#ffffff" result="white"/>
     <feComposite in="white" in2="mask" operator="in" result="halo"/>
-    <feDropShadow in="halo" dx="0" dy="0.7" stdDeviation="0.9"
+    <feDropShadow in="halo" dx="0" dy="0.4" stdDeviation="0.5"
                   flood-color="#111111" flood-opacity="0.30"/>
   </filter>
   ```
 
 A theme may re-tint the cut-line and the shadow (grapefruit uses its maroon), but the **halo
 stays `#ffffff`** — that is what makes the sticker read on a patterned card.
+
+### How far the ring reaches, and why those four numbers
+
+The owner, on a printed sheet: _"i think the pawns dont overflow but the white borderline around
+them does, and it also not good."_ Both halves were true, and the ink had been checked while the
+ring had not.
+
+**The arithmetic.** `feMorphology` dilates with a **square** structuring element, so a shape grows
+by `radius` along the axes and by `radius × √2` at any convex corner — and a disc, which is nothing
+but corners, grows by `radius × √2` in every direction. The blur is then thresholded at
+`a = (0.5 − intercept) / slope`; at exactly **0.5** the edge stays where the dilation left it,
+below 0.5 it creeps a further `σ × probit(1 − a)` outward. So:
+
+    ring reach  =  ink reach  +  radius × √2  +  creep
+
+The old filter got both extra terms wrong in the same direction — it counted the dilation once and
+thresholded at 0.286, which added another 0.34. Measured off a render at 10 px per card unit,
+against the cut-line at r = 33:
+
+| what                    | ink   | white ring | ring + shadow |
+| ----------------------- | ----- | ---------- | ------------- |
+| fallback pawn — before  | 29.33 | 32.84      | 34.11         |
+| fallback pawn — now     | 29.33 | **31.06**  | 31.84         |
+| customer photo — before | 29.70 | **33.38**  | 34.66         |
+| customer photo — now    | 29.70 | **31.75**  | 32.49         |
+
+The photo's ring was **outside** the line it is meant to sit inside, which is why the dashes
+disappeared under a white band instead of showing through it, and why a half-filled card read as
+two different products. Identical on all eight templates — the sticker geometry is shared, only the
+paper and the frame are per deck.
+
+**Why the filter and not the drawings.** She suggested making the pawns smaller. That fixes the
+default pawns and leaves the customer photos exactly where they were — and a sheet where the two
+kinds of pawn have different margins is the same unevenness in a new place. The ring is what
+overflows, so the ring is what moved: `radius` 2.4 → 1.5 (a 0.42 mm outline instead of 0.68 mm),
+the threshold to 0.5 so the blur no longer pushes the edge outward, `σ` up to 1.2 so the kernel's
+sharp corners are smoothed off, and the shadow tightened to `dy` 0.4 / `σ` 0.5 so the whole sticker
+— ring and shadow — is inside the cut. **Nothing about the pawn artwork or `PHOTO_DISC_FILL`
+changed**: the pawns and the photos print at the size they always did.
+
+One thing the blur cannot fix, so do not spend σ on it: a disc dilated by a square is a Minkowski
+sum whose "corners" are arcs of the original disc, i.e. broad and low-curvature. That bulge —
+0.70 units now, 1.10 before — survives any σ, and the only lever on it is the dilation radius.
+
+**Pinned in two places.** `tests/unit/photo-card.test.js` re-does the arithmetic above from the
+filter's own attributes and from `PHOTO_DISC_FILL` read out of `generator/build.py`, so CI catches
+a regression without a browser; `generator/test_photo_card_halo.py` renders the card and measures
+the pixels, on every shipped template, so the arithmetic cannot quietly become fiction again.
 
 The cards carry **no font dependency**: every piece of static copy is already baked to vector
 paths. Rendering one needs no `@font-face` injection, unlike `clean/fronts.svg`.
@@ -418,14 +475,20 @@ never outside it and never on it**, which is the owner's rule and this contract'
 
 They used to be blown up 1.2×, on the theory that a pawn should fill the cut-line and spill a
 little past it the way a cropped portrait does. It does not read that way on paper: a customer's
-photo is clipped to 0.90 of the slot (`PHOTO_DISC_FILL`) with its halo landing just inside the
-dashes, so a fallback crossing them made a half-filled card look like two different products, and
-the owner rejected it on a real render. **Do not restore the blow-up.** The drawings were always
-sized to fit — at 1× the furthest ink reaches r ≈ 89.7 of the 100-unit cut-line against the disc's
-90 — so the fix was to delete the `scale(1.2)` and keep only the re-centring `translate(0 -1.6)`;
-the halo then spreads to ≈ 97, still inside the dashes. `tests/unit/photo-card.test.js` bounds each
-pawn's reach with a convex hull over its path's control points, which over-estimates and so can
-only ever be too strict — the safe direction for a "must not cross" rule.
+photo is clipped to 0.90 of the slot (`PHOTO_DISC_FILL`), so a fallback crossing the dashes made a
+half-filled card look like two different products, and the owner rejected it on a real render.
+**Do not restore the blow-up.** The drawings were always sized to fit — at 1× the furthest ink
+reaches r ≈ 89.7 of the 100-unit cut-line against the disc's 90 — so the fix was to delete the
+`scale(1.2)` and keep only the re-centring `translate(0 -1.6)`.
+`tests/unit/photo-card.test.js` bounds each pawn's reach with a convex hull over its path's control
+points, which over-estimates and so can only ever be too strict — the safe direction for a "must
+not cross" rule.
+
+That fixed the INK, and the same note then claimed "the halo spreads to ≈ 97, still inside the
+dashes". It does not: measured, the ring reached 32.84 of 33 on a pawn and 33.38 on a photo. See
+"how far the ring reaches" under **the sticker** — the ring is now 31.06 / 31.75, and the
+correction was made in the filter so that the pawns and the customer photos moved together rather
+than shrinking the pawns and leaving the photos where they were.
 
 The fallbacks are artwork and pass through `square_photo()` untouched, so this is the only place
 the rule can be enforced for them. Chrome (the generator's rasteriser)
