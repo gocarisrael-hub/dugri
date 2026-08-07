@@ -1239,6 +1239,51 @@ test('owner share panel: WhatsApp button is the primary action, placed before th
   expect(waBeforeCopy).toBe(true);
 });
 
+test('owner share card: ONE link only, it is the PUBLIC one, and it sits between the words and the help card', async ({
+  page,
+}) => {
+  await createCollection(page, 'Shira');
+  const ownerToken = new URL(page.url()).searchParams.get('k');
+
+  const panel = page.locator('#sharePanel');
+  await expect(panel).toBeVisible();
+
+  // Exactly ONE link box in the share card. Two links (public + management) is
+  // what confused buyers, so the second box is gone for good.
+  await expect(panel.locator('input')).toHaveCount(1);
+  await expect(page.locator('#ownerLink')).toHaveCount(0);
+
+  // And the one that survived is the PUBLIC link — no owner token. Sharing the
+  // token would let any recipient delete words, close the collection and open
+  // the owner's checkout.
+  const link = await page.locator('#friendsLink').inputValue();
+  expect(link).toContain('/collect.html?c=');
+  expect(link).not.toContain('k=');
+  expect(link).not.toContain(ownerToken);
+
+  // WhatsApp shares that same public link, token-free.
+  const href = await page.getByTestId('share-whatsapp').getAttribute('href');
+  expect(href).toContain(encodeURIComponent(link));
+  const inviteText = new URL(href).searchParams.get('text');
+  expect(inviteText).not.toContain('k=');
+  expect(inviteText).not.toContain(ownerToken);
+
+  // Placement: collected words → share → "stuck? answer a few questions".
+  const order = await page.evaluate(() =>
+    [...document.querySelectorAll('#wordsCard, #sharePanel, #helpCard')].map((el) => el.id)
+  );
+  expect(order).toEqual(['wordsCard', 'sharePanel', 'helpCard']);
+
+  // The owner's private link is not lost — it is reachable, collapsed by
+  // default, and labelled as private rather than offered as a second share link.
+  const priv = page.getByTestId('owner-private-link');
+  await expect(priv).toBeVisible();
+  await expect(priv).not.toHaveAttribute('open', '');
+  await expect(page.locator('#copyOwner')).toBeHidden();
+  await priv.locator('summary').click();
+  await expect(page.locator('#copyOwner')).toBeVisible();
+});
+
 test('owner WhatsApp invite: a two-name couple honoree carries both names (URL-encoded) in the text', async ({
   page,
 }) => {
@@ -1410,6 +1455,7 @@ test('newly-tagged collect copy + the logo image become editable in owner edit m
     'collect-cat-people-title',
     'collect-cat-people-eg',
     'collect-share-wa-label',
+    'collect-owner-link-summary',
     'collect-owner-link-hint',
     'collect-coupon-label',
     'collect-card-pay-btn',
