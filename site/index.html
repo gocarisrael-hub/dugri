@@ -210,6 +210,26 @@
         font-size: 17px;
         font-weight: var(--sub-weight);
       }
+      /* The "מה זה דוגרי?" explainer is the ONE paragraph the owner asked to be
+         bold, explicitly overriding the thin-weight brand rule. Three things this
+         rule is deliberately doing:
+          • It sits on the ELEMENT, not on the words. The inline content editor
+            rewrites this node with textContent (editor.js applyOverrides /
+            bindTextNode → plaintext-only contenteditable), so a <strong>/<b>
+            wrapper in the markup would be wiped the first time she edits the
+            paragraph — and would not apply at all to the stored override that
+            already replaces the shipped copy. A CSS weight on the <p> survives
+            every text rewrite.
+          • It is scoped to THIS paragraph by its content key. `.sec-title p` is
+            shared by every section subtitle on the page, so the bold must not be
+            added there or it leaks to products / reviews / FAQ.
+          • 700 is a REAL weight: Assistant ships as a variable face (wght 200–800)
+            and fonts.css now declares it at 700, so the browser instantiates the
+            bold master instead of synthesising a smeared faux bold — which is
+            especially ugly on Hebrew. */
+      #about .sec-title p[data-edit='index-about-body'] {
+        font-weight: 700;
+      }
       @media (min-width: 720px) {
         .sec-title h2 {
           font-size: 44px;
