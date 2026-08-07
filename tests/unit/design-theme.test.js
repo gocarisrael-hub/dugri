@@ -54,7 +54,12 @@ describe('design -> theme resolution', () => {
     expect(themeForDesign('kids')).toBe('birthday-boys-basketball');
     expect(extraFieldsForDesign('kids')).toEqual(['AGE']);
     expect(themeForDesign('marriage')).toBe('anniversary');
-    expect(extraFieldsForDesign('marriage')).toEqual(['YEARS', 'NAME1', 'NAME2']);
+    // סנטוריני (marriage -> anniversary) WAS a couple deck asking YEARS + two
+    // partner names. The owner changed it to a ONE-PERSON deck, so the shipped
+    // default collects nothing beyond the honoree name. The live set is
+    // owner-editable and arrives over /api/design-names (see
+    // applyThemeFields); this pins the BUNDLED fallback only.
+    expect(extraFieldsForDesign('marriage')).toEqual([]);
     expect(themeForDesign('posttrip')).toBe('trip comeback');
     expect(extraFieldsForDesign('bachelorette')).toEqual([]);
   });

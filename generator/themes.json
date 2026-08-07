@@ -188,18 +188,14 @@
   "dir": "resources/canva/templates/anniversary",
   "recipe": "anniversary",
   "visibility": "public",
-  "title_text": "{YEARS} שנה נישואין\n{NAME1} ו{NAME2}",
+  "title_text": "החגיגה של\n{NAME}",
   "title_lines": [
-   "{YEARS} שנה נישואין",
-   "{NAME1} ו{NAME2}"
+   "החגיגה של",
+   "{NAME}"
   ],
   "language": "hebrew",
   "name_form": "hebrew",
-  "extra_fields": [
-   "YEARS",
-   "NAME1",
-   "NAME2"
-  ],
+  "extra_fields": [],
   "title_font": "Dana Yad AlefAlefAlef Normal.ttf",
   "word_font": "Dana Yad AlefAlefAlef Normal.ttf",
   "title_style": {

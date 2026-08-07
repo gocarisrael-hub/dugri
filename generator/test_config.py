@@ -20,12 +20,43 @@ def test_japanese_english_caps_with_age():
     assert config.title_lines(cfg, "tomer", {"AGE": "30"}) == ["TOMER'S", "30S"]
 
 
-def test_anniversary_hebrew_years_and_two_names():
+def test_anniversary_is_a_one_person_deck_with_a_clean_title():
+    # סנטוריני (theme "anniversary") USED to be a couple deck: it collected
+    # YEARS + NAME1 + NAME2 and its title read "{YEARS} שנה נישואין" /
+    # "{NAME1} ו{NAME2}". The owner turned it into a deck about ONE person, so
+    # those fields are gone — and title_lines SILENTLY blanks any placeholder it
+    # cannot fill (see test_title_lines_blanks_unfilled_placeholders). A title
+    # left written for a couple therefore raises nothing: it prints orphaned
+    # punctuation and stray words onto a paid customer's cards.
+    #
+    # So the shipped title must reference ONLY {NAME}, and must render clean.
     cfg = config.theme("anniversary")
-    lines = config.title_lines(
-        cfg, "", {"YEARS": "30", "NAME1": "מיכל", "NAME2": "זאבי"}
-    )
-    assert lines == ["30 שנה נישואין", "מיכל וזאבי"]
+    assert cfg["extra_fields"] == []
+    lines = config.title_lines(cfg, "מיכל", {})
+    assert lines == ["החגיגה של", "מיכל"]
+    joined = "\n".join(lines)
+    # every line says something — no blank line, no leading/trailing orphan left
+    # behind by a stripped placeholder, no raw braces
+    assert all(ln.strip() for ln in lines)
+    assert lines == [ln.strip() for ln in lines]
+    assert "{" not in joined and "}" not in joined
+    # ...and nothing in it depends on a field the wizard no longer collects, so
+    # passing the old couple fields changes nothing.
+    assert config.title_lines(
+        cfg, "מיכל", {"YEARS": "30", "NAME1": "דנה", "NAME2": "רון"}
+    ) == lines
+
+
+def test_couple_title_without_couple_fields_prints_orphans():
+    # The failure mode above, pinned as its own fact so nobody restores a
+    # couple-shaped title on a theme that collects nothing. This is EXACTLY what
+    # would have been printed and shipped: no exception, no warning, just
+    # " שנה נישואין" over " ו".
+    old = {
+        "name_form": "hebrew",
+        "title_lines": ["{YEARS} שנה נישואין", "{NAME1} ו{NAME2}"],
+    }
+    assert config.title_lines(old, "מיכל", {}) == [" שנה נישואין", " ו"]
 
 
 def test_anniversary_title_uses_standard_script_font():
@@ -572,7 +603,7 @@ def test_no_custom_title_leaves_title_lines_byte_identical():
     for cfg, name, extra in [
         (config.theme("trip comeback"), "oz", {}),
         (config.theme("japanese"), "tomer", {"AGE": "30"}),
-        (config.theme("anniversary"), "", {"YEARS": "30", "NAME1": "מיכל", "NAME2": "זאבי"}),
+        (config.theme("anniversary"), "מיכל", {}),
     ]:
         base = config.title_lines(cfg, name, extra)
         assert config.title_lines(cfg, name, extra, custom_title=None) == base

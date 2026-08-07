@@ -3452,28 +3452,42 @@ app.get('/api/content', (req, res) => {
   res.json({ overrides: content.getPage(req.query.page) });
 });
 
-// Public: the current display name per orderable design id, so an admin "rename
-// template" (which edits generator/themes.json display_he) reaches products.html
-// and the product page WITHOUT a rebuild. Each design carries its generator theme
-// (site/js/designs.js), so themes.json.display_he maps straight onto the design id
-// — no separate slug↔id table. Unauthenticated on purpose (every visitor needs the
-// current names) and exposes ONLY the { id: name } map, never any other theme
-// field. themes.json is read ONCE per request; any error (missing/corrupt config,
-// catalog import failure) resolves to {} so the pages fall back to their built-in
-// names and never break. The buyer-facing fetchers add their own timeout.
+// Public: the LIVE, owner-editable per-design metadata the storefront and the
+// buyer wizard must not bake into their bundle —
+//   `names`  { <designId>: displayName }   an admin "rename template"
+//   `fields` { <designId>: { extra_fields, language, name_form } }
+//
+// Both exist for the same reason: they are edited in the ADMIN, which writes the
+// owner themes.json on the volume (DATA_DIR), while site/js/designs.js holds only
+// build-time DEFAULTS. `fields` was added after סנטוריני was changed from a couple
+// deck to a one-person deck in the admin and the wizard went on asking the buyer
+// for two partner names + years-married — nothing the owner could do reached it,
+// because the client mirror is compiled into the browser bundle.
+//
+// Each design carries its generator theme (site/js/designs.js), so a themes.json
+// entry maps straight onto the design id — no separate slug↔id table.
+// Unauthenticated on purpose (every visitor needs the current values) and exposes
+// ONLY these whitelisted keys, never any other theme field. themes.json is read
+// ONCE per request; any error (missing/corrupt config, catalog import failure)
+// resolves to {} / {} so the pages fall back to their built-in defaults and never
+// break. The buyer-facing fetchers add their own timeout.
 app.get('/api/design-names', async (req, res) => {
   let names = {};
+  let fields = {};
   try {
     const mod = await import(pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js')));
     // PUBLIC subset only — a private/access-gated design's name must never leak to
     // anonymous visitors. themes.json is read through an mtime cache so this hot
     // endpoint doesn't hit disk on every products.html / product.html load.
+    const publicDesigns = mod.PUBLIC_DESIGNS || [];
     const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT));
-    names = templates.designDisplayNames(themes, mod.PUBLIC_DESIGNS || []);
+    names = templates.designDisplayNames(themes, publicDesigns);
+    fields = templates.designThemeFields(themes, publicDesigns);
   } catch {
     names = {};
+    fields = {};
   }
-  res.json({ names });
+  res.json({ names, fields });
 });
 
 // --- Custom designs: uploaded templates that become storefront products -------

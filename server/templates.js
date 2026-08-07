@@ -3406,6 +3406,11 @@ function revertTemplate({ root, key }) {
 // Both are pure (no fs/network), expose ONLY names — never any other theme field
 // — and route their theme lookup through `ownTheme`, which rejects
 // prototype-pollution keys.
+//
+// designThemeFields() below answers the SAME class of question for the ORDER
+// WIZARD's inputs (which extra fields does this design collect, in which
+// language) and follows exactly the same rules — pure, own-property lookup, and
+// a deliberately narrow whitelist of fields.
 
 // The owner-set label of a generator theme, trimmed; '' when `themes` is missing,
 // the key is unknown, or the entry carries no usable `display_he`. '' means "the
@@ -3437,6 +3442,51 @@ function designDisplayNames(themes, designs) {
     if (!d || typeof d.id !== 'string') continue;
     const name = themeDisplayName(themes, d.theme);
     if (name) out[d.id] = name;
+  }
+  return out;
+}
+
+// The wizard-input metadata a theme dictates, whitelisted to the three fields the
+// buyer wizard actually branches on. `null` when the key names no known theme.
+function themeWizardFields(themes, theme) {
+  if (!themes || typeof themes !== 'object') return null;
+  const entry = ownTheme(themes, theme);
+  if (!entry || typeof entry !== 'object') return null;
+  return {
+    // The extra inputs the name step collects ([] = a plain one-person deck).
+    // Non-string junk is dropped rather than handed to the wizard as a field.
+    extra_fields: Array.isArray(entry.extra_fields)
+      ? entry.extra_fields.filter((k) => typeof k === 'string' && k)
+      : [],
+    // The script the honoree name must be written in.
+    language: typeof entry.language === 'string' && entry.language ? entry.language : 'hebrew',
+    name_form: typeof entry.name_form === 'string' && entry.name_form ? entry.name_form : null,
+  };
+}
+
+// Build the PUBLIC { <designId>: { extra_fields, language, name_form } } map the
+// BUYER WIZARD uses to decide which inputs the name step asks for.
+//
+// This is the fields counterpart of designDisplayNames, and it exists for the
+// same reason. site/js/designs.js carries a HARDCODED mirror of every theme's
+// extra_fields, baked into the browser bundle at build time — so when the owner
+// changed סנטוריני from a couple deck to a one-person deck IN THE ADMIN (which
+// writes DATA_DIR/templates/themes.json), the storefront kept asking the buyer
+// for two partner names and years-married, and there was no admin action that
+// could ever fix it. Serving the live merged view here makes an admin field edit
+// reach the wizard with no rebuild, exactly like a rename already does.
+//
+// Same contract as designDisplayNames: pure, own-property theme lookup, and only
+// the whitelisted keys above ever leave the server. A design whose theme is
+// unmapped or missing from themes.json is OMITTED, and the buyer-side fetcher
+// relies on that omission to keep its built-in fallback for it.
+function designThemeFields(themes, designs) {
+  const out = {};
+  const list = Array.isArray(designs) ? designs : [];
+  for (const d of list) {
+    if (!d || typeof d.id !== 'string') continue;
+    const fields = themeWizardFields(themes, d.theme);
+    if (fields) out[d.id] = fields;
   }
   return out;
 }
@@ -3894,6 +3944,7 @@ module.exports = {
   fontScriptCoverage,
   REMOVABLE_ROLES,
   designDisplayNames,
+  designThemeFields,
   displayNameForDesign,
   themeDisplayName,
   LANGUAGES,

@@ -32,6 +32,23 @@ const previewBody = JSON.stringify({
   word_font_options: [],
 });
 
+// Declare a design's extra fields the way the OWNER does — through the live
+// GET /api/design-names feed the admin drives. `marriage` (סנטוריני) ships as a
+// ONE-PERSON deck now, so a couple deck has to be asked for; the wizard decides
+// couple mode from these FIELDS, never from the theme's name.
+const COUPLE_FIELDS = {
+  marriage: { extra_fields: ['YEARS', 'NAME1', 'NAME2'], language: 'hebrew' },
+};
+async function stubCoupleDesign(page) {
+  await page.route('**/api/design-names', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ names: {}, fields: COUPLE_FIELDS }),
+    })
+  );
+}
+
 test.describe('create-button preview gate (step 3)', () => {
   test('the gate opens when the exact server render lands, not while it is pending', async ({
     page,
@@ -216,8 +233,9 @@ test.describe('name language + single-word rules block Next', () => {
     await expect(err).toBeHidden();
     await expect(next).toBeEnabled();
 
-    // On a couple (anniversary) design the single-name error stays hidden (the two
-    // partner fields are the ask). The partner ERROR spans are NOT tagged editable.
+    // On a COUPLE design the single-name error stays hidden (the two partner
+    // fields are the ask). The partner ERROR spans are NOT tagged editable.
+    await stubCoupleDesign(page);
     await page.goto('/options.html?design=marriage&step=3');
     await expect(page.getByTestId('step-3')).toBeVisible();
     await expect(page.getByTestId('name-err')).toBeHidden();
@@ -229,14 +247,13 @@ test.describe('name language + single-word rules block Next', () => {
     await expect(page.getByTestId('next-btn')).toBeDisabled();
   });
 
-  test('a couple (anniversary) design shows an inline error for an invalid partner name', async ({
-    page,
-  }) => {
+  test('a couple design shows an inline error for an invalid partner name', async ({ page }) => {
     await page.route('**/api/preview', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: previewBody })
     );
-    // marriage = anniversary (hebrew, couple): the two partner-name fields replace
-    // the single honoree box and must each be a single Hebrew word.
+    // A hebrew COUPLE design: the two partner-name fields replace the single
+    // honoree box and must each be a single Hebrew word.
+    await stubCoupleDesign(page);
     await page.goto('/options.html?design=marriage&step=3');
     await expect(page.getByTestId('step-3')).toBeVisible();
     const next = page.getByTestId('next-btn');

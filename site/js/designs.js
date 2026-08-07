@@ -57,16 +57,30 @@ export const THEME_BY_DESIGN = {
 
 /**
  * Extra fields each generator theme requires, mirroring the `extra_fields` arrays
- * in `generator/themes.json`. Inlined here (rather than fetched) so the order
- * wizard can decide which extra inputs to collect without a round-trip. Keep in
- * sync with themes.json if a theme's extra_fields change.
+ * in `generator/themes.json`.
+ *
+ * FIRST-PAINT FALLBACK ONLY — not the source of truth. The owner edits a
+ * template's extra_fields in the ADMIN, which stores them on the volume
+ * (DATA_DIR/templates/themes.json) and merges them over the shipped file; this
+ * table is baked into the browser bundle at build time and therefore can never
+ * see that edit. It once was the source of truth, and the cost was exactly the
+ * bug you would expect: סנטוריני was changed in the admin from a couple deck to a
+ * one-person deck, and the wizard kept demanding two partner names and
+ * years-married, with no admin action able to fix it.
+ *
+ * The LIVE values come from GET /api/design-names (`fields`) and are written onto
+ * the catalog objects by syncDesignNames → applyThemeFields, which every design
+ * resolver already prefers over this map. So this is what the wizard uses for the
+ * few hundred ms before that fetch resolves, and what it keeps if the fetch fails
+ * — which is why it must stay in step with themes.json rather than be deleted.
  */
 export const THEME_EXTRA_FIELDS = {
   'trip comeback': [],
   bachelorette: [],
   'birthday-girls': [],
   'birthday-boys-basketball': ['AGE'],
-  anniversary: ['YEARS', 'NAME1', 'NAME2'],
+  // A ONE-PERSON deck (the owner changed it from a couple/anniversary deck).
+  anniversary: [],
   japanese: ['AGE'],
   'football-boys': [],
   grapefruit: [],
@@ -97,10 +111,12 @@ export const VISIBILITY_BY_THEME = {
 
 /**
  * Required name language per generator theme, mirroring each theme's `language`
- * field in `generator/themes.json` ("english" | "hebrew"). Inlined here (rather
- * than fetched) so the order wizard can enforce the honoree-name script for the
- * chosen design without a round-trip. Keep in sync with themes.json if a theme's
- * language changes; any theme absent here falls back via languageForDesign().
+ * field in `generator/themes.json` ("english" | "hebrew"). Like
+ * THEME_EXTRA_FIELDS above this is the FIRST-PAINT FALLBACK, not the truth: the
+ * live value is owner-editable in the admin and arrives via
+ * syncDesignNames → applyThemeFields. Keep in sync with themes.json anyway so the
+ * pre-fetch (and fetch-failed) state is never a lie; any theme absent here falls
+ * back via languageForDesign().
  */
 export const LANGUAGE_BY_THEME = {
   'trip comeback': 'english',
@@ -160,11 +176,16 @@ export function languageForDesign(design, languageByTheme = LANGUAGE_BY_THEME) {
 /**
  * The extra fields a design requires ({AGE}, {YEARS}, {NAME1}+{NAME2}); [] if none.
  *
- * A CUSTOM design (an owner-uploaded template) is not in THEME_BY_DESIGN, so the
- * static map resolves it to [] — the wizard would never ask for the fields, the
- * order would be created anyway, and the title would render with UNFILLED
- * PLACEHOLDERS on a paying customer's deck. So a design that carries its own
- * metadata is believed over the map.
+ * A design that carries its OWN `extra_fields` is believed over the static map,
+ * and that is the load-bearing rule here, for two reasons:
+ *  - a CUSTOM design (an owner-uploaded template) is not in THEME_BY_DESIGN, so
+ *    the map resolves it to [] — the wizard would never ask for the fields, the
+ *    order would be created anyway, and the title would render with UNFILLED
+ *    PLACEHOLDERS on a paying customer's deck. Its own values come from
+ *    /api/custom-designs;
+ *  - a BUILT-IN design's fields are owner-editable in the admin, and the map is
+ *    frozen at build time. applyThemeFields stamps the live values onto the
+ *    catalog objects so they win here too.
  */
 export function extraFieldsForDesign(design) {
   const own = ownMeta(design);
@@ -246,17 +267,6 @@ export const DESIGNS = Object.entries(GENERATED).map(([id, g]) => ({
 export const PUBLIC_DESIGNS = DESIGNS.filter((d) => d.public);
 
 /**
- * Fetch the owner-editable display names (GET /api/design-names) — an admin
- * "rename template" edits themes.json display_he, which this endpoint maps onto
- * design ids. Returns a plain `{ <id>: name }` object of non-empty string names.
- *
- * BUYER-FACING, so it MUST never block or break a page: an AbortController caps
- * the request at `timeoutMs` (~2.5s) and EVERY failure path — no fetch, network
- * error, timeout/abort, non-OK status, or malformed/`{}` JSON — resolves to `{}`,
- * letting the caller keep the built-in catalog names. Never rejects. `fetchImpl`
- * is injectable for tests.
- */
-/**
  * Write the admin's current display names onto the catalog objects themselves.
  *
  * `name` is baked into DESIGNS from the built-in META table at module load, and
@@ -290,9 +300,75 @@ export function applyDesignNames(names, list = DESIGNS) {
   return changed;
 }
 
-export async function fetchDesignNames({ fetchImpl, timeoutMs = 2500 } = {}) {
+/**
+ * Write the theme's LIVE wizard fields onto the catalog objects themselves.
+ *
+ * THEME_EXTRA_FIELDS / LANGUAGE_BY_THEME are build-time mirrors of themes.json,
+ * so an owner who changes a template's extra_fields in the admin can never reach
+ * them — that is how סנטוריני came to keep asking for two partner names and
+ * years-married after it became a one-person deck. The resolvers
+ * (extraFieldsForDesign / languageForDesign) already believe a design object's
+ * OWN values over those maps — that is how a custom design carries its fields —
+ * so stamping the live values here makes the same mechanism serve the built-ins.
+ *
+ * Defensive on every axis, because the wizard's inputs hang off the result: only
+ * a per-design object is read, `extra_fields` only when it is an array (its
+ * non-string members dropped), `language` / `name_form` only as non-empty
+ * strings. Anything malformed leaves that design exactly as it was, i.e. on its
+ * built-in defaults — a garbage response can never empty the wizard.
+ *
+ * @param {Record<string,{extra_fields?:string[],language?:string,name_form?:string}>} fields
+ *        as returned by fetchDesignMeta().fields
+ * @param {Array<object>} [list]  catalog to update (defaults to all designs)
+ * @returns {string[]} the ids whose fields actually changed
+ */
+export function applyThemeFields(fields, list = DESIGNS) {
+  const map = fields && typeof fields === 'object' ? fields : {};
+  const changed = [];
+  for (const d of Array.isArray(list) ? list : []) {
+    if (!d || typeof d.id !== 'string') continue;
+    const next = map[d.id];
+    if (!next || typeof next !== 'object') continue;
+    let touched = false;
+    if (Array.isArray(next.extra_fields)) {
+      const keys = next.extra_fields.filter((k) => typeof k === 'string' && k);
+      const before = Array.isArray(d.extra_fields) ? d.extra_fields : null;
+      if (!before || before.length !== keys.length || before.some((k, i) => k !== keys[i])) {
+        touched = true;
+      }
+      d.extra_fields = keys;
+    }
+    if (typeof next.language === 'string' && next.language) {
+      if (d.language !== next.language) touched = true;
+      d.language = next.language;
+    }
+    if (typeof next.name_form === 'string' && next.name_form) {
+      if (d.name_form !== next.name_form) touched = true;
+      d.name_form = next.name_form;
+    }
+    if (touched) changed.push(d.id);
+  }
+  return changed;
+}
+
+/**
+ * Fetch the owner-editable per-design metadata (GET /api/design-names):
+ *   `names`  — an admin "rename template" (themes.json display_he)
+ *   `fields` — the theme's live `extra_fields` / `language` / `name_form`, i.e.
+ *              which inputs the order wizard must ask for
+ * Returns `{ names, fields }`; names is `{ <id>: name }` of non-empty strings,
+ * fields is `{ <id>: {...} }` of plain objects (both `{}` when absent).
+ *
+ * BUYER-FACING, so it MUST never block or break a page: an AbortController caps
+ * the request at `timeoutMs` (~2.5s) and EVERY failure path — no fetch, network
+ * error, timeout/abort, non-OK status, or malformed JSON — resolves to empty
+ * maps, letting the caller keep the built-in catalog defaults. Never rejects.
+ * `fetchImpl` is injectable for tests.
+ */
+export async function fetchDesignMeta({ fetchImpl, timeoutMs = 2500 } = {}) {
+  const empty = { names: {}, fields: {} };
   const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-  if (!f) return {};
+  if (!f) return empty;
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
@@ -300,20 +376,36 @@ export async function fetchDesignNames({ fetchImpl, timeoutMs = 2500 } = {}) {
       '/api/design-names',
       controller ? { signal: controller.signal } : undefined
     );
-    if (!res || !res.ok) return {};
+    if (!res || !res.ok) return empty;
     const data = await res.json();
-    const names = data && data.names;
-    if (!names || typeof names !== 'object') return {};
-    const out = {};
-    for (const [id, name] of Object.entries(names)) {
-      if (typeof id === 'string' && typeof name === 'string' && name.trim()) out[id] = name;
+    const names = {};
+    const rawNames = data && data.names;
+    if (rawNames && typeof rawNames === 'object') {
+      for (const [id, name] of Object.entries(rawNames)) {
+        if (typeof id === 'string' && typeof name === 'string' && name.trim()) names[id] = name;
+      }
     }
-    return out;
+    const fields = {};
+    const rawFields = data && data.fields;
+    if (rawFields && typeof rawFields === 'object') {
+      for (const [id, meta] of Object.entries(rawFields)) {
+        if (typeof id === 'string' && meta && typeof meta === 'object') fields[id] = meta;
+      }
+    }
+    return { names, fields };
   } catch {
-    return {};
+    return empty;
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/**
+ * The names half of fetchDesignMeta, kept as its own export because that is the
+ * shape every existing name-only caller expects. `{}` on any failure.
+ */
+export async function fetchDesignNames(opts) {
+  return (await fetchDesignMeta(opts)).names;
 }
 
 /**
@@ -329,27 +421,39 @@ export async function fetchDesignNames({ fetchImpl, timeoutMs = 2500 } = {}) {
  * Order matters and is enforced here: the catalog is updated FIRST, so everything
  * read from it afterwards (analytics labels, the `designName` stored on an order,
  * a list or carousel built later) carries the new name; the `restamp` callback
- * then fixes the nodes already on screen. Fail-soft end to end — fetchDesignNames
- * resolves to `{}` on timeout/error, applyDesignNames then changes nothing, and
- * the built-in names stand.
+ * then fixes the nodes already on screen. Fail-soft end to end — fetchDesignMeta
+ * resolves to empty maps on timeout/error, applyDesignNames then changes nothing,
+ * and the built-in names stand.
  *
- * @param {(names: Record<string,string>, changed: string[]) => void} [restamp]
+ * It also carries the theme's live WIZARD FIELDS (applyThemeFields), for the same
+ * reason and by the same route: extra_fields / language are owner-editable in the
+ * admin, and the client's copy of them is baked into the bundle. Riding on this
+ * one existing fetch means no page pays an extra round trip, and every page that
+ * already syncs names gets a catalog whose fields are current too — the order
+ * wizard reads its inputs straight off those objects.
+ *
+ * @param {(names: Record<string,string>, changed: string[], fields: object) => void} [restamp]
  *        re-stamp already-painted nodes; called even when nothing changed, so a
  *        page can also apply a name map it holds for late-arriving custom designs
+ *        — and so a page can re-render anything derived from `fields`
  * @param {{lists?: Array<Array<object>>, fetchImpl?: Function, timeoutMs?: number}} [opts]
  *        `lists` are the catalogs to write onto (default: the built-in DESIGNS)
- * @returns {Promise<Record<string,string>>} the fetched map (`{}` on any failure)
+ * @returns {Promise<Record<string,string>>} the fetched name map (`{}` on any failure)
  */
 export async function syncDesignNames(restamp, { lists, fetchImpl, timeoutMs } = {}) {
-  const names = await fetchDesignNames({ fetchImpl, timeoutMs });
+  const { names, fields } = await fetchDesignMeta({ fetchImpl, timeoutMs });
   const targets = Array.isArray(lists) && lists.length ? lists : [DESIGNS];
   const changed = [];
   for (const list of targets) {
     for (const id of applyDesignNames(names, list)) {
       if (!changed.includes(id)) changed.push(id);
     }
+    // Not folded into `changed`: that list is the NAME-changed ids the existing
+    // re-stamp callbacks iterate to repaint labels, and a fields-only change must
+    // not make them relabel tiles.
+    applyThemeFields(fields, list);
   }
-  if (typeof restamp === 'function') restamp(names, changed);
+  if (typeof restamp === 'function') restamp(names, changed, fields);
   return names;
 }
 

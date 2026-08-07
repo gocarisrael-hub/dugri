@@ -1282,7 +1282,7 @@
       /* the box + its per-field labels carry a display: rule (flex/block) that
          would otherwise beat the UA [hidden] { display: none }; re-assert it so
          a hidden extra field/box actually stays hidden. Same for the single-name
-         box + gender picker, which couple mode (anniversary) hides. */
+         box + gender picker, which couple mode hides. */
       .wiz-extra[hidden],
       .wiz-extra .wiz-field[hidden],
       .wiz-input[hidden],
@@ -2200,8 +2200,11 @@
         </div>
 
         <!-- theme-specific extra fields: shown only when the chosen design's
-             generator theme needs them (AGE for japanese/kids, YEARS + two names
-             for anniversary). Each field is toggled by renderExtraFields(). -->
+             generator theme needs them (AGE for japanese/kids; YEARS + two names
+             on a couple deck). Which ones a theme needs is OWNER-EDITABLE in the
+             admin, so the set is resolved live (see renderExtraFields) rather than
+             from the bundled mirror; every field a theme can ask for has its markup
+             here and is toggled by renderExtraFields(). -->
         <div class="wiz-extra" id="extraFields" data-testid="extra-fields" hidden>
           <label class="wiz-field" data-extra-field="AGE" hidden>
             <span class="wiz-lbl">גיל</span>
@@ -4000,8 +4003,17 @@
       // label and the `designName` stored on the order. Tiles are re-stamped in the
       // callback because they were already painted. Fail-soft: {} on timeout/error
       // leaves every built-in name exactly as it is.
+      //
+      // The same fetch also carries each theme's LIVE extra_fields/language onto
+      // the catalog (syncDesignNames → applyThemeFields), which is the ONLY way an
+      // admin field edit can reach a wizard whose mirror of themes.json is compiled
+      // into the bundle. The name step may already be built from the built-in
+      // defaults by the time it lands, so re-render it unconditionally — that call
+      // is idempotent, and skipping it is what would leave the buyer looking at
+      // inputs the owner removed (or missing ones she added).
       syncDesignNames(
         (names, changed) => {
+          renderExtraFields();
           if (!changed.length) return;
           for (const d of DESIGNS) {
             const btn = designButtons.get(d.id);
@@ -4402,12 +4414,26 @@
         return languageForDesign(d);
       }
 
-      // Anniversary is a COUPLE event: instead of a single honoree name + gender we
-      // ask the two partners' names once (the NAME1/NAME2 extra fields). The single
-      // name box and the gender picker are hidden, and the honoree name sent with
-      // the order is synthesized from the two names ("דנה ויוסי").
+      // A COUPLE deck asks for the two partners' names once (the NAME1/NAME2 extra
+      // fields) instead of a single honoree name + gender: the lone name box and the
+      // gender picker are hidden, and the honoree name sent with the order is
+      // synthesized from the two names ("דנה ויוסי").
+      //
+      // Decided by the FIELDS the design actually collects, never by the theme's
+      // NAME. This used to read `currentTheme() === 'anniversary'`, and that is a
+      // trap with a live fuse: the owner changed סנטוריני (theme `anniversary`) in
+      // the admin from a couple deck to a ONE-PERSON deck, so its NAME1/NAME2 are
+      // gone — but a name-based check would still hide the single name box and go
+      // on composing the honoree name out of two inputs that are no longer shown.
+      // The composed name is then always empty and NOBODY can complete an order for
+      // that design. Reading the fields means couple mode switches itself off the
+      // moment the two name fields do, and no theme is ever special-cased again.
+      //
+      // Deliberately NOT currentExtraFields(): that one returns [] under a custom
+      // title, which is what coupleMode() layers on top.
       function isCoupleTheme() {
-        return currentTheme() === 'anniversary';
+        const fields = extraFieldsForDesign(DESIGNS[designIndex] || {});
+        return fields.includes('NAME1') && fields.includes('NAME2');
       }
       // A non-empty free-form custom title (F7) makes the theme's extra fields
       // (AGE / YEARS / NAME1 / NAME2) irrelevant — they only ever fed the DEFAULT
@@ -4416,9 +4442,9 @@
       function hasCustomTitle() {
         return customTitle.trim() !== '';
       }
-      // EFFECTIVE couple mode: the anniversary theme drives the two-partner name
-      // step ONLY while the default title is in use. A custom title reverts it to
-      // the single-name ask (one order identity is still captured for emails/admin).
+      // EFFECTIVE couple mode: a couple deck drives the two-partner name step ONLY
+      // while the default title is in use. A custom title reverts it to the
+      // single-name ask (one order identity is still captured for emails/admin).
       function coupleMode() {
         return isCoupleTheme() && !hasCustomTitle();
       }
@@ -4461,15 +4487,15 @@
           const designNeedsExtras = extraFieldsForDesign(d).length > 0;
           extraFieldsSkipNote.hidden = !(hasCustomTitle() && designNeedsExtras);
         }
-        // Couple mode (anniversary): swap the single-name ask for the two partner
-        // names. Hide the lone name box + gender picker and retitle the step so the
-        // two NAME fields ARE the ask — no redundant "name, then two names". A custom
-        // title reverts this to the single-name ask (coupleMode() is then false).
+        // Couple mode: swap the single-name ask for the two partner names. Hide the
+        // lone name box + gender picker and retitle the step so the two NAME fields
+        // ARE the ask — no redundant "name, then two names". A custom title reverts
+        // this to the single-name ask (coupleMode() is then false).
         const couple = coupleMode();
         nameInput.hidden = couple;
-        // Gender is a property of the EVENT type, not the title: an anniversary is a
-        // couple with no single gender whether or not a custom title is used, so the
-        // gender picker hides for ANY anniversary (theme check, not coupleMode()).
+        // Gender is a property of the EVENT type, not the title: a couple has no
+        // single gender whether or not a custom title is used, so the gender picker
+        // hides for any couple DECK (isCoupleTheme, not coupleMode()).
         if (genderGroup) genderGroup.hidden = isCoupleTheme();
         if (nameStepTitle) {
           nameStepTitle.textContent = couple ? 'שמות בני הזוג' : 'שם בעל/ת השמחה';
@@ -4482,9 +4508,9 @@
         refreshControls();
       }
       // Numeric extra fields (AGE / YEARS) must be a digits-only integer within the
-      // input's own min/max; name extra fields (NAME1 / NAME2, anniversary) must be
-      // a single name in the design's language (Hebrew for the couple theme). Empty
-      // is always invalid — every shown extra field is required.
+      // input's own min/max; name extra fields (NAME1 / NAME2, on a couple deck) must
+      // be a single name in the design's language. Empty is always invalid — every
+      // shown extra field is required.
       const NUMERIC_EXTRA_FIELDS = new Set(['AGE', 'YEARS']);
       function isValidExtraField(key, input) {
         if (!input) return false;
@@ -5766,9 +5792,9 @@
 
       function next() {
         if (!validateStep(currentStep)) return;
-        // name step: block advancing until a gender is actively chosen. An
-        // anniversary is a couple with no single gender (title or not), so gender is
-        // never asked for it — theme check, not coupleMode().
+        // name step: block advancing until a gender is actively chosen. A couple
+        // deck has no single gender (custom title or not), so gender is never asked
+        // for it — isCoupleTheme(), not coupleMode().
         if (currentStep === 3 && !isCoupleTheme() && !selectedGender()) {
           openGenderModal();
           return;
