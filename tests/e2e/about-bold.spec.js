@@ -49,7 +49,7 @@ async function trueAxisWidth(page, wght) {
   expect(src, 'no Assistant hebrew woff2 in fonts.css').toBeTruthy();
   return page.evaluate(
     async ({ src, wght, text }) => {
-      const face = new FontFace('DugriAxisReference', `url(${src}) format('woff2')`, {
+      const face = new window.FontFace('DugriAxisReference', `url(${src}) format('woff2')`, {
         weight: '200 800',
       });
       await face.load();

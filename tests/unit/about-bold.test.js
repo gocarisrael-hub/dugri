@@ -129,7 +129,11 @@ describe('the bold does not leak past that one paragraph', () => {
   });
 
   it('no other selector in the page sets a wght axis override', () => {
-    const axisRules = INDEX_HTML.match(/[^{}]+\{[^}]*font-variation-settings[^}]*\}/g) || [];
+    // Split on the block boundaries rather than matching selector+body with a
+    // greedy character class — same answer, without scanning the whole document
+    // from every offset.
+    const blocks = INDEX_HTML.split('}');
+    const axisRules = blocks.filter((b) => b.includes('font-variation-settings'));
     expect(axisRules).toHaveLength(1);
     expect(axisRules[0]).toContain(`data-edit='${ABOUT_KEY}'`);
   });

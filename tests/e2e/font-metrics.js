@@ -90,7 +90,7 @@ export async function boldTextWidths(page) {
       // Only the element's own text nodes — otherwise a bold wrapper would
       // re-measure all of its children's copy as one blob.
       const text = Array.from(el.childNodes)
-        .filter((n) => n.nodeType === Node.TEXT_NODE)
+        .filter((n) => n.nodeType === window.Node.TEXT_NODE)
         .map((n) => n.textContent)
         .join('')
         .replace(/\s+/g, ' ')
