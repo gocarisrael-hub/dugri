@@ -46,8 +46,8 @@ function collection(order, extra = {}) {
   };
 }
 
-describe('buyer confirmation — product description + fulfilment + photo', () => {
-  it('a DELIVERY order shows the description, the approx delivery time and the address', () => {
+describe('buyer confirmation — fulfilment + photo', () => {
+  it('a DELIVERY order shows the approx delivery time and the address, but no spec list', () => {
     const c = collection({
       version: 'delivery',
       total: 199,
@@ -57,15 +57,18 @@ describe('buyer confirmation — product description + fulfilment + photo', () =
       amountCharged: 199,
       productImageUrl: BASE + '/assets/designs/bachelorette/store.webp',
     });
-    // product description (product_info.delivery)
-    expect(msg.text).toContain('חפיסת קלפים');
     // delivery approx time (delivery_info.eta)
     expect(msg.text).toContain('ימי עסקים');
-    // the shipping address, formatted from the order
+    // the shipping address, formatted from the order — the buyer still needs to
+    // see where their game is going.
     expect(msg.text).toContain('הרצל 5');
     expect(msg.text).toContain('תל אביב');
     expect(msg.text).toContain('דירה 4');
     expect(msg.text).toContain('קומה 2');
+    // But the itemised order block is gone: no product description line, no
+    // price. What they bought is the photo, which the HTML case below asserts.
+    expect(msg.text).not.toContain('חפיסת קלפים');
+    expect(msg.text).not.toContain('199 ₪');
   });
 
   it('a PICKUP order says we email when ready + prep time + the print-house address', () => {

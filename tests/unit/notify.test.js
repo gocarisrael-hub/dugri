@@ -200,7 +200,7 @@ describe('buildPaidMessage', () => {
 });
 
 describe('buildBuyerConfirmation', () => {
-  it('has a subject and a Hebrew body with the price, order details and collect link', () => {
+  it('has a subject, a Hebrew thank-you and the pay link', () => {
     const { subject, text } = loadFresh().buildBuyerConfirmation(
       collection,
       'https://dugri.example'
@@ -208,15 +208,25 @@ describe('buildBuyerConfirmation', () => {
     expect(subject).toBe('דוגרי · ההזמנה שלכם התקבלה — שירה');
     expect(text).toContain('תודה');
     expect(text).toContain('שירה');
-    // Order details: package label + price + chosen design/colour.
-    expect(text).toContain('משלוח עד הבית');
-    expect(text).toContain('199 ₪');
-    expect(text).toContain('קלאסי');
-    expect(text).toContain('ורוד');
     // The order is unpaid at this point, so the closing line and the link are
     // about PAYING — and the link carries pay=1 so the checkout opens on arrival.
     expect(text).toContain('להשלים את התשלום');
     expect(text).toContain('https://dugri.example/collect.html?c=col-1&k=tok-abc&pay=1');
+  });
+
+  it('does NOT itemise the order — the buyer sees the template photo instead', () => {
+    // What they bought is SHOWN (a hero photo in the HTML), not listed as order
+    // id / package / price / design / colour. The owner's own copy keeps the full
+    // breakdown, so this is a presentation change, not a loss of information.
+    const { text, html } = loadFresh().buildBuyerConfirmation(collection, 'https://dugri.example', {
+      productImageUrl: 'https://dugri.example/img/classic.webp',
+    });
+    expect(text).not.toContain('199 ₪');
+    expect(text).not.toContain('משלוח עד הבית');
+    expect(text).not.toContain('קלאסי');
+    expect(text).not.toContain('ורוד');
+    expect(text).not.toContain('מספר הזמנה');
+    expect(html).toContain('https://dugri.example/img/classic.webp');
   });
 
   it('falls back to a placeholder name and omits the link without a baseUrl', () => {
@@ -224,18 +234,19 @@ describe('buildBuyerConfirmation', () => {
       order: { version: 'pdf', total: 79 },
     });
     expect(subject).toBe('דוגרי · ההזמנה שלכם התקבלה — ללא שם');
-    expect(text).toContain('79 ₪');
     expect(text).not.toContain('collect.html');
   });
 
-  it('reads clearly as free (0 ₪, קופון 100%) for a fully-free order, not the package price', () => {
+  it('quotes no amount at all — free order or not', () => {
+    // Pricing moved to the owner's copy entirely, so neither the package price
+    // nor the discounted charge appears in the buyer's confirmation.
     const { text } = loadFresh().buildBuyerConfirmation(
       { order: { version: 'pdf', total: 79 } },
       undefined,
       { amountCharged: 0 }
     );
-    expect(text).toContain('0 ₪');
-    expect(text).toContain('קופון 100%');
+    expect(text).not.toContain('0 ₪');
+    expect(text).not.toContain('קופון 100%');
     expect(text).not.toContain('79 ₪');
   });
 });

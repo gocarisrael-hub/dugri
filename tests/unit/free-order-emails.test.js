@@ -160,15 +160,18 @@ describe('order-created emails (100%-coupon order)', () => {
     expect(createdBuyer.to).toBe('buyer@example.com');
     expect(paidBuyer.to).toBe('buyer@example.com');
 
-    // The CREATED pair shows the PACKAGE price — the coupon is a payment concern.
-    for (const m of [createdOwner, createdBuyer]) {
-      expect(m.text).toContain('79 ₪');
-      expect(m.text).not.toContain('קופון 100%');
-    }
-    // The PAYMENT pair shows what was actually charged: nothing, via the coupon.
-    for (const m of [paidOwner, paidBuyer]) {
-      expect(m.text).toContain('קופון 100%');
+    // Amounts are an OWNER concern now — the buyer's two emails dropped the
+    // itemised block and show the chosen template as a photo instead.
+    // The CREATED owner mail shows the PACKAGE price — the coupon is a payment concern.
+    expect(createdOwner.text).toContain('79 ₪');
+    expect(createdOwner.text).not.toContain('קופון 100%');
+    // The PAYMENT owner mail shows what was actually charged: nothing, via the coupon.
+    expect(paidOwner.text).toContain('קופון 100%');
+    expect(paidOwner.text).not.toContain('79 ₪');
+    // Neither buyer mail quotes money at all.
+    for (const m of [createdBuyer, paidBuyer]) {
       expect(m.text).not.toContain('79 ₪');
+      expect(m.text).not.toContain('קופון 100%');
     }
   });
 });
@@ -195,14 +198,19 @@ describe('paid (PeleCard) order emails — no regression', () => {
     expect(cb.status).toBe(200);
     expect(db.getCollection(c.id).order.paid).toBe(true);
 
-    // Created pair (package price) + payment pair (charged) — both show 79 here.
+    // Created + payment OWNER mails both show 79 here; the buyer's pair quotes no
+    // money at all (their emails show the template photo, not an itemised order).
     const mails = await waitForMails(4);
     expect(mails.length).toBe(4);
     const { createdOwner, createdBuyer, paidOwner, paidBuyer } = split(mails);
-    for (const m of [createdOwner, createdBuyer, paidOwner, paidBuyer]) {
+    for (const m of [createdOwner, paidOwner]) {
       expect(m).toBeTruthy();
       expect(m.text).toContain('79 ₪');
       expect(m.text).not.toContain('קופון 100%');
+    }
+    for (const m of [createdBuyer, paidBuyer]) {
+      expect(m).toBeTruthy();
+      expect(m.text).not.toContain('79 ₪');
     }
   });
 
@@ -232,17 +240,19 @@ describe('paid (PeleCard) order emails — no regression', () => {
     const mails = await waitForMails(4);
     expect(mails.length).toBe(4);
     const { createdOwner, createdBuyer, paidOwner, paidBuyer } = split(mails);
-    // The order-received emails fired at creation with the package price (79),
-    // not the discounted charge — the discount applies at payment.
-    for (const m of [createdOwner, createdBuyer]) {
+    // The owner's order-received email fired at creation with the package price
+    // (79), not the discounted charge — the discount applies at payment.
+    expect(createdOwner).toBeTruthy();
+    expect(createdOwner.text).toContain('79 ₪');
+    // The owner's receipt shows what the card was actually debited: 40, never 79.
+    expect(paidOwner).toBeTruthy();
+    expect(paidOwner.text).toContain('40 ₪');
+    expect(paidOwner.text).not.toContain('79 ₪');
+    // Both buyer mails are money-free — they show the template, not the invoice.
+    for (const m of [createdBuyer, paidBuyer]) {
       expect(m).toBeTruthy();
-      expect(m.text).toContain('79 ₪');
-    }
-    // The receipts show what the card was actually debited: 40, never 79.
-    for (const m of [paidOwner, paidBuyer]) {
-      expect(m).toBeTruthy();
-      expect(m.text).toContain('40 ₪');
       expect(m.text).not.toContain('79 ₪');
+      expect(m.text).not.toContain('40 ₪');
     }
   });
 });

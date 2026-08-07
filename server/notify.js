@@ -277,9 +277,6 @@ function ctaLabels() {
 function footer() {
   return _store.get('email', 'footer');
 }
-function productInfo() {
-  return _store.get('email', 'product_info');
-}
 function deliveryInfo() {
   return _store.get('email', 'delivery_info');
 }
@@ -288,15 +285,6 @@ function pickupInfo() {
 }
 function nextStep() {
   return _store.get('email', 'next_step');
-}
-
-// One-line description of the product for a version, or '' when none is set.
-function productLine(version) {
-  const map = productInfo();
-  if (version && Object.prototype.hasOwnProperty.call(map, version) && map[version]) {
-    return map[version];
-  }
-  return '';
 }
 
 // Format a stored delivery address object ({ street, city, postal, apartment,
@@ -333,6 +321,14 @@ function fulfilmentLines(order) {
     if (p.address) lines.push((p.address_label ? p.address_label + ': ' : '') + p.address);
   }
   return lines;
+}
+
+// The fulfilment block as it appears in a BUYER email: the lines above, preceded
+// by a blank separator, or [] when there is nothing to say. Kept as its own
+// helper so the confirmation and the receipt can never format it differently.
+function fulfilmentBlock(collection) {
+  const fulfil = fulfilmentLines((collection && collection.order) || null);
+  return fulfil.length ? ['', ...fulfil] : [];
 }
 
 // Hebrew display name for one order version — the mapped label, else the raw
@@ -492,53 +488,20 @@ function buildCustomOrderAlert(collection, baseUrl, options) {
 }
 
 // Pure builder: the BUYER's confirmation email — sent to the customer (not the
-// owner) when their order is paid. Warm, on-brand, RTL-friendly. Includes a
-// thank-you, the order details (package + price, and design/colour when set) and
-// the collect link so they can keep adding their words. `baseUrl` is the
-// normalized public origin (optional; the link is omitted without it).
-// Returns {subject, text} — same shape as the other builders. `options` may
-// carry `amountCharged` — the amount actually paid (0 for a free 100%-coupon
-// order, the discounted amount for a partial coupon).
-// Shared BUYER-facing order-detail block: package + what-they-bought line +
-// amount + design/colour, then the delivery/self-pickup block. Used by BOTH buyer
-// emails — the confirmation at order creation and the receipt at payment — so the
-// two can never drift apart. `priceLabel` is the field label for the amount line,
-// letting the receipt say "שולם" where the confirmation says "מחיר". `options`
-// may carry `amountCharged` (see amountLines).
-function buyerDetailLines(collection, options, priceLabel) {
-  const lines = [];
-  const f = fieldLabels();
-  const order = (collection && collection.order) || null;
-  // Lead with the reference the buyer quotes back at us. It sits in the SHARED
-  // block so the confirmation and the receipt can never disagree about it — and
-  // so the confirmation, which used to carry no reference at all, has one from
-  // the very first email.
-  const ref = orderRef(collection);
-  if (ref) lines.push(f.orderId + ': ' + ref);
-  if (order) {
-    const label = versionLabelFor(order.version);
-    lines.push(f.buyerPackage + ': ' + label);
-    // What they bought — a one-line description of the version (owner-editable).
-    const desc = productLine(order.version);
-    if (desc) lines.push(desc);
-    lines.push(...amountLines(order, options, priceLabel));
-  }
-  if (collection && collection.design) lines.push(f.buyerDesign + ': ' + collection.design);
-  if (collection && collection.color) lines.push(f.buyerColor + ': ' + collection.color);
-  // Delivery / self-pickup block: approx time + address (delivery) or the
-  // "we'll email when ready" + prep time + pickup address (pickup).
-  const fulfil = fulfilmentLines(order);
-  if (fulfil.length) {
-    lines.push('');
-    lines.push(...fulfil);
-  }
-  return lines;
-}
-
+// owner) when their order is created. Warm, on-brand, RTL-friendly: a thank-you,
+// a PHOTO of the template they chose, how they will receive it, and the CTA.
+//
+// It deliberately carries NO itemised order details (order id, package, price,
+// design, colour). What they bought is SHOWN rather than listed — the picture is
+// the point, and a price/spec table under it reads like an invoice, not a
+// confirmation. The owner's own copy (buildPaidMessage -> orderLines) still has
+// the full breakdown including the shipping address, so nothing operational is
+// lost. `baseUrl` is the normalized public origin (optional; the link is omitted
+// without it). `options.productImageUrl` is the template photo, resolved by the
+// caller. Returns {subject, text, html}.
 function buildBuyerConfirmation(collection, baseUrl, options) {
   const name = honoreeName(collection);
   const tpl = emailTpl('buyer_confirmation');
-  const f = fieldLabels();
   const cta = ctaLabels();
   const ft = footer();
   const step = nextStep();
@@ -556,7 +519,10 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
   const values = { honoree: name, link: link || '' };
   const subject = interpolate(tpl.subject, values);
   const lines = interpolate(tpl.body, values).split('\n');
-  lines.push(...buyerDetailLines(collection, options, f.buyerPrice));
+  // The ONLY block kept from the old order-details section: how they receive the
+  // game. That is not an order detail but the buyer's instructions — it is the
+  // only place they are told where and when to collect it.
+  lines.push(...fulfilmentBlock(collection));
   // Branded HTML mirrors the plain-text body but drops the raw URL line — the
   // link becomes the CTA button. Everything above the link is reused as-is.
   const htmlLines = lines.slice();
@@ -605,14 +571,13 @@ function buildPaymentReceipt(collection, baseUrl, options) {
 
 // Pure builder: the BUYER's payment receipt — sent to the customer at the real
 // unpaid->paid transition. Same branded shell as the order confirmation (logo,
-// hero product photo, add-words CTA button) so the two read as one series, but it
-// confirms the PAYMENT: the amount actually charged, the order id, and the
-// order's details. `options` may carry `amountCharged` and `productImageUrl`
+// hero product photo, add-words CTA button) so the two read as one series, and
+// like the confirmation it shows the template rather than itemising the order
+// (see buildBuyerConfirmation for why). `options` may carry `productImageUrl`
 // (resolved by the caller). Returns {subject, text, html}.
 function buildBuyerReceipt(collection, baseUrl, options) {
   const name = honoreeName(collection);
   const tpl = emailTpl('buyer_payment_received');
-  const f = fieldLabels();
   const cta = ctaLabels();
   const ft = footer();
   const link = ownerLink(collection, baseUrl);
@@ -621,8 +586,7 @@ function buildBuyerReceipt(collection, baseUrl, options) {
   const values = { honoree: name, link: link || '' };
   const subject = interpolate(tpl.subject, values);
   const lines = interpolate(tpl.body, values).split('\n');
-  // The order reference leads the shared detail block (see buyerDetailLines).
-  lines.push(...buyerDetailLines(collection, options, f.buyerPaid));
+  lines.push(...fulfilmentBlock(collection));
   // Branded HTML mirrors the plain-text body but drops the raw URL line — the
   // link becomes the CTA button. Everything above the link is reused as-is.
   const htmlLines = lines.slice();
@@ -1120,37 +1084,48 @@ async function sendProductionError(collection, baseUrl, problems) {
 // collect link as a proper CTA button instead — so the email reads cleanly rather
 // than showing a raw URL mid-sentence. Sent to the buyer (owner_email). Fail-soft:
 // returns false (never throws) when email is off / no recipient / send fails.
+// Pure builder: ONE reminder from the owner-managed reminder list
+// (settings reminders.list, scheduled by server/reminders.js). Unlike the other
+// templates the text is not a registry key — it is whatever the owner typed on
+// that reminder — so `rawText` is passed in. {honoree} is interpolated; a {link}
+// token is STRIPPED rather than substituted, because the link is rendered as the
+// CTA button / a trailing line, and leaving it inline would print the URL twice.
+// Extracted from the sender so the admin preview can render this message through
+// exactly the same code the send path uses. Returns {subject, text, html}.
+function buildReminderEmail(collection, rawText, baseUrl) {
+  const name = honoreeName(collection);
+  const link = ownerLink(collection, baseUrl);
+  let body = interpolate(String(rawText || ''), { honoree: name });
+  body = body
+    .replace(/\{link\}/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const bodyLines = body ? body.split('\n') : [];
+  const ft = footer();
+  const lines = bodyLines.slice();
+  if (link) {
+    lines.push('');
+    lines.push('להוספת המילים:');
+    lines.push(link);
+  }
+  lines.push('');
+  lines.push(ft.line1);
+  lines.push(ft.line2);
+  const html = renderEmailHtml({
+    title: 'תזכורת · ' + name,
+    bodyLines,
+    cta: link ? { label: ctaLabels().addWords, url: link } : null,
+    baseUrl,
+  });
+  return { subject: 'דוגרי · תזכורת על ' + name, text: lines.join('\n'), html };
+}
+
 async function sendReminderEmail(collection, rawText, baseUrl) {
   try {
     const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
     if (!to) return false;
-    const name = honoreeName(collection);
-    const link = ownerLink(collection, baseUrl);
-    let body = interpolate(String(rawText || ''), { honoree: name });
-    body = body
-      .replace(/\{link\}/g, '')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-    const bodyLines = body ? body.split('\n') : [];
-    const ft = footer();
-    const lines = bodyLines.slice();
-    if (link) {
-      lines.push('');
-      lines.push('להוספת המילים:');
-      lines.push(link);
-    }
-    lines.push('');
-    lines.push(ft.line1);
-    lines.push(ft.line2);
-    const html = renderEmailHtml({
-      title: 'תזכורת · ' + name,
-      bodyLines,
-      cta: link ? { label: ctaLabels().addWords, url: link } : null,
-      baseUrl,
-    });
-    const subject = 'דוגרי · תזכורת על ' + name;
-    return await send({ subject, text: lines.join('\n'), html, to });
+    return await send({ ...buildReminderEmail(collection, rawText, baseUrl), to });
   } catch (e) {
     console.warn('[notify] sendReminderEmail failed:', e && e.message ? e.message : e);
     return false;
@@ -1172,6 +1147,7 @@ module.exports = {
   buildWordsReminder,
   buildPaymentReminder,
   buildFreeLimitReached,
+  buildReminderEmail,
   buildSystemAlert,
   sendSystemAlert,
   sendOrderPaid,

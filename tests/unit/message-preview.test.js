@@ -120,6 +120,27 @@ describe('settings key mapping', () => {
       ).toBe(true);
     }
   });
+
+  // The guard for the bug that prompted this: a message was added (the free-word
+  // quota mail) and shipped to real customers while the preview page never listed
+  // it, so the owner had no way to see it. Every registry entry of kind 'email' IS
+  // a customer- or owner-facing message, so every one of them must be previewable.
+  // If this fails, add the message to EMAIL_KINDS — do not weaken the assertion.
+  it('EVERY email template in the registry is previewable', () => {
+    const previewable = new Set(
+      preview
+        .listKinds({ settings })
+        .filter((k) => k.channel === 'email' && k.settings)
+        .map((k) => k.settings.key)
+    );
+    const templates = Object.keys(settings.REGISTRY.email).filter(
+      (key) => settings.REGISTRY.email[key].kind === 'email'
+    );
+    expect(templates.length).toBeGreaterThan(0);
+    for (const key of templates) {
+      expect(previewable.has(key), 'email.' + key + ' has no entry in EMAIL_KINDS').toBe(true);
+    }
+  });
 });
 
 describe('render', () => {
@@ -130,6 +151,64 @@ describe('render', () => {
       expect(out.channel).toBe(k.channel);
       // Something must be renderable, or the preview shows a blank panel.
       expect(Boolean(out.text || out.html), 'empty preview for ' + k.id).toBe(true);
+    }
+  });
+
+  it('renders the free-word-quota mail with the LIVE limit, not a hardcoded one', () => {
+    settings.set('pricing', 'free_word_limit', 35);
+    try {
+      const out = preview.render('email', 'free_limit_reached', {
+        settings,
+        baseUrl: 'https://x.example',
+      });
+      expect(out.audience).toBe('buyer');
+      expect(out.text).toContain('35');
+      expect(out.html).toContain('35');
+    } finally {
+      settings.reset('pricing', 'free_word_limit');
+    }
+  });
+
+  it("renders a reminder from the owner's reminder list, using the first enabled one", () => {
+    settings.set('reminders', 'list', [
+      {
+        id: 'off-one',
+        enabled: false,
+        text: 'תזכורת כבויה על {honoree}',
+        channels: { email: true, whatsapp: false },
+        every_days: 1,
+        weekdays: null,
+        only_if_idle_hours: null,
+        window: [8, 21],
+        max_total: 3,
+      },
+      {
+        id: 'live-one',
+        enabled: true,
+        text: 'עוד לא מאוחר להוסיף מילים על {honoree}!',
+        channels: { email: true, whatsapp: false },
+        every_days: 1,
+        weekdays: null,
+        only_if_idle_hours: null,
+        window: [8, 21],
+        max_total: 3,
+      },
+    ]);
+    try {
+      const out = preview.render('email', 'reminder_list', {
+        settings,
+        baseUrl: 'https://x.example',
+      });
+      // The ENABLED reminder is what a real send would use, so it is what the
+      // owner must be shown — and {honoree} is interpolated, not left literal.
+      expect(out.text).toContain('עוד לא מאוחר להוסיף מילים על שירה');
+      expect(out.text).not.toContain('תזכורת כבויה');
+      expect(out.text).not.toContain('{honoree}');
+      // Its text is per-reminder, not a registry template, so there is no key to
+      // edit from the preview — the list is edited on the texts page.
+      expect(out.settings).toBeNull();
+    } finally {
+      settings.reset('reminders', 'list');
     }
   });
 

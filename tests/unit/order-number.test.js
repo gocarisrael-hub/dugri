@@ -130,18 +130,21 @@ describe('emails quote the order number, not the UUID', () => {
     expect(msg.text).not.toContain('מספר הזמנה: 8f3c1a2e');
   });
 
-  it("the buyer's payment receipt prints the short number", () => {
+  // The BUYER's two emails no longer print a reference: they dropped the whole
+  // itemised block in favour of showing the chosen template as a photo. The
+  // reference lives on the owner's copy (above) and on the buyer's own order
+  // page, which every one of their emails links to. Asserted so that if the
+  // itemised block ever comes back it comes back deliberately.
+  it("the buyer's payment receipt carries no order reference", () => {
     const msg = notify.buildBuyerReceipt(collection(), 'https://dugri.test', {
       amountCharged: 199,
     });
-    expect(msg.text).toContain('מספר הזמנה: DG-1042');
+    expect(msg.text).not.toContain('מספר הזמנה');
   });
 
-  it('the buyer order confirmation now carries a reference too', () => {
-    // It used to go out with no order reference at all, so a customer replying
-    // to it had nothing to quote.
+  it('the buyer order confirmation carries no order reference', () => {
     const msg = notify.buildBuyerConfirmation(collection(), 'https://dugri.test', {});
-    expect(msg.text).toContain('מספר הזמנה: DG-1042');
+    expect(msg.text).not.toContain('מספר הזמנה');
   });
 
   it('the {orderId} template token resolves to the short number', () => {
