@@ -88,8 +88,11 @@ const SVG_ROLES = ['fronts', 'backs', 'board'];
 // and orders with chasers on fall back to the normal board.
 const CHASERS_BOARD_FIELD = 'clean_board_chasers';
 const CHASERS_BOARD_FILE = 'board-chasers.svg';
-// The two font roles the onboarding form uploads.
-const FONT_ROLES = ['title', 'word'];
+// The font roles the onboarding form uploads. The two `_alt` ones are OPTIONAL
+// second faces (a Latin face for English words, a second title face for a title
+// in the other language); a template that ships neither is byte-for-byte what
+// onboarding has always produced.
+const FONT_ROLES = ['title', 'word', 'title_alt', 'word_alt'];
 
 // ---- Card structure: the two per-template asset layouts ---------------------
 // 'sheet' (LEGACY) — clean|filled/{fronts,backs,board}.svg: landscape A4 sheets
@@ -314,6 +317,8 @@ function buildThemeEntry({
   titleText,
   titleFont,
   wordFont,
+  titleFontAlt,
+  wordFontAlt,
   language,
   nameForm,
   extraFields,
@@ -359,6 +364,12 @@ function buildThemeEntry({
     extra_fields: Array.isArray(extraFields) ? extraFields : [],
     title_font: titleFont,
     word_font: wordFont,
+    // The optional second faces are written ONLY when one was actually uploaded:
+    // an entry carrying `title_font_alt: ""` reads as "there is a second face"
+    // to every consumer that does a truthiness check, and an absent key is what
+    // the generator's resolvers expect to see for "this template has none".
+    ...(titleFontAlt ? { title_font_alt: titleFontAlt } : {}),
+    ...(wordFontAlt ? { word_font_alt: wordFontAlt } : {}),
     ...structure,
     // Left for the calibration pass — the template is not renderable until these
     // are hand-tuned and `calibrated` is set true.
@@ -1100,6 +1111,22 @@ function normalizeOnboarding({ root, fields, files, fileLists }) {
     return { error: 'missing word font file' };
   }
 
+  // The two OPTIONAL second faces. Absent is the ordinary case and must stay
+  // silent; present is content-validated, because a junk file recorded here
+  // would be read by the generator on every later order.
+  const altFonts = {};
+  for (const [field, role] of [
+    ['title_font_alt', 'title_alt'],
+    ['word_font_alt', 'word_alt'],
+  ]) {
+    const f = files && files[field];
+    if (!f || !f.data || !f.data.length) continue;
+    if (!looksLikeFont(f.data)) {
+      return { error: field + ' does not look like a font (.ttf/.otf)' };
+    }
+    altFonts[role] = { name: f.filename, data: f.data };
+  }
+
   return {
     slug,
     displayHe,
@@ -1116,6 +1143,7 @@ function normalizeOnboarding({ root, fields, files, fileLists }) {
     fonts: {
       title: { name: titleFontFile.filename, data: titleFontFile.data },
       word: { name: wordFontFile.filename, data: wordFontFile.data },
+      ...altFonts,
     },
   };
 }
@@ -1166,6 +1194,8 @@ function onboardTemplate(opts) {
     titleText: norm.titleText,
     titleFont: written.fonts.title,
     wordFont: written.fonts.word,
+    titleFontAlt: written.fonts.title_alt,
+    wordFontAlt: written.fonts.word_alt,
     language: norm.language,
     nameForm: norm.nameForm,
     extraFields: norm.extraFields,
@@ -1416,10 +1446,36 @@ const CARD_SVG_ASSET_ROLES = cardSvgAssetRoles(CARD_FRONT_NUMBERS);
 
 // Font roles resolve their path from the theme entry (the filename the generator
 // reads out of themes.json), so their `rel` is computed per-entry, not fixed.
+//
+// The two ALT roles are OPTIONAL, and that flag is load-bearing: a REQUIRED role
+// with nothing on record would make computeTemplateStatus report every template
+// shipped to date as broken. Uploading nothing must leave a template exactly as
+// it renders today — the generator's resolvers (config.resolve_title_font_alt /
+// resolve_word_font_alt) return None when the field is absent, and the one-face
+// path runs unchanged.
 const FONT_ASSET_ROLES = [
   { role: 'title-font', field: 'title_font', kind: 'font', optional: false, label: 'פונט כותרת' },
+  {
+    role: 'title-font-alt',
+    field: 'title_font_alt',
+    kind: 'font',
+    optional: true,
+    label: 'פונט כותרת שני — לכותרת בשפה שהפונט הראשי לא יודע לצייר (רשות)',
+  },
   { role: 'word-font', field: 'word_font', kind: 'font', optional: false, label: 'פונט מילים' },
+  {
+    role: 'word-font-alt',
+    field: 'word_font_alt',
+    kind: 'font',
+    optional: true,
+    label: 'פונט למילים באנגלית — כל מילה באנגלית תודפס בו (רשות)',
+  },
 ];
+// The alt roles are the ONLY ones an owner may remove. They are additive, and a
+// font uploaded to the wrong template (which has happened) has to be undoable
+// without support. Removing a REQUIRED font would leave a template that cannot
+// render at all, so that stays impossible.
+const REMOVABLE_ROLES = new Set(FONT_ASSET_ROLES.filter((a) => a.optional).map((a) => a.role));
 // Whitelist of replaceable role ids — the ONLY roles the replace API accepts.
 // Covers BOTH layouts' ids; whether a given role belongs to the template being
 // edited is a separate, per-entry check in replaceAsset (a numbered role posted
@@ -1687,6 +1743,189 @@ function looksLikeFont(buf) {
   return buf[0] === 0x00 && buf[1] === 0x01 && buf[2] === 0x00 && buf[3] === 0x00;
 }
 
+// ---- Which scripts a font can actually draw ---------------------------------
+// The whole reason the second faces exist: מרקאנה's title font is League Spartan,
+// which has NO Hebrew glyphs, and its title is "{NAME}'s B-day". A Hebrew honoree
+// name has nowhere to go, so the back title does not print at all — and nothing
+// in the admin screen said so. Reading the font's own character map turns that
+// into something the owner can SEE before she sells the design.
+//
+// Reads the sfnt `cmap` table directly (formats 4/12/6/0 — every one a real .ttf
+// /.otf uses) and asks whether a small sample of Hebrew and Latin letters is
+// mapped to a glyph. Deliberately a COVERAGE question, not a rendering one:
+// generator/calibrate.py `_covers()` answers the same question by drawing the
+// text with Pillow and looking for ink, which is stricter but needs Python and
+// the font loaded. Two readings of one fact — if a sibling change surfaces
+// `_covers` over an API, collapse this into it rather than keeping both.
+//
+// Returns { hebrew, latin } or null when the file cannot be parsed. Null means
+// "unknown" everywhere downstream; it must never read as "broken".
+const HEBREW_SAMPLE = [0x05d0, 0x05de, 0x05ea]; // א מ ת
+const LATIN_SAMPLE = [0x41, 0x61, 0x7a]; // A a z
+
+// The sfnt table directory: tag -> { offset, length }. Handles a TrueType
+// COLLECTION ('ttcf') by reading the first font in it.
+function sfntTables(buf) {
+  let base = 0;
+  if (buf.slice(0, 4).toString('latin1') === 'ttcf') base = buf.readUInt32BE(12);
+  const numTables = buf.readUInt16BE(base + 4);
+  const out = new Map();
+  for (let i = 0; i < numTables; i++) {
+    const rec = base + 12 + i * 16;
+    out.set(buf.slice(rec, rec + 4).toString('latin1'), {
+      offset: buf.readUInt32BE(rec + 8),
+      length: buf.readUInt32BE(rec + 12),
+    });
+  }
+  return out;
+}
+
+// The best UNICODE cmap subtable's absolute offset, or null. Preference order is
+// the usual one: (3,10) full-repertoire, (3,1) BMP, (0,*) Unicode, (3,0) symbol.
+function pickCmapSubtable(buf, cmapOff) {
+  const n = buf.readUInt16BE(cmapOff + 2);
+  const ranked = [];
+  for (let i = 0; i < n; i++) {
+    const rec = cmapOff + 4 + i * 8;
+    const platform = buf.readUInt16BE(rec);
+    const encoding = buf.readUInt16BE(rec + 2);
+    const off = cmapOff + buf.readUInt32BE(rec + 4);
+    let rank = null;
+    if (platform === 3 && encoding === 10) rank = 0;
+    else if (platform === 3 && encoding === 1) rank = 1;
+    else if (platform === 0) rank = 2;
+    else if (platform === 3 && encoding === 0) rank = 3;
+    if (rank !== null) ranked.push([rank, off]);
+  }
+  if (!ranked.length) return null;
+  ranked.sort((a, b) => a[0] - b[0]);
+  return ranked[0][1];
+}
+
+// Does this cmap subtable map `cp` to a real glyph (id != 0)?
+function cmapHasGlyph(buf, sub, cp) {
+  const format = buf.readUInt16BE(sub);
+  if (format === 4) {
+    if (cp > 0xffff) return false;
+    const segX2 = buf.readUInt16BE(sub + 6);
+    const ends = sub + 14;
+    const starts = ends + segX2 + 2;
+    const deltas = starts + segX2;
+    const ranges = deltas + segX2;
+    for (let s = 0; s < segX2; s += 2) {
+      if (buf.readUInt16BE(ends + s) < cp) continue;
+      if (buf.readUInt16BE(starts + s) > cp) return false;
+      const delta = buf.readInt16BE(deltas + s);
+      const ro = buf.readUInt16BE(ranges + s);
+      if (ro === 0) return ((cp + delta) & 0xffff) !== 0;
+      const gidAt = ranges + s + ro + (cp - buf.readUInt16BE(starts + s)) * 2;
+      const gid = buf.readUInt16BE(gidAt);
+      return gid !== 0 && ((gid + delta) & 0xffff) !== 0;
+    }
+    return false;
+  }
+  if (format === 12) {
+    const groups = buf.readUInt32BE(sub + 12);
+    for (let i = 0; i < groups; i++) {
+      const g = sub + 16 + i * 12;
+      const start = buf.readUInt32BE(g);
+      if (start > cp) return false;
+      if (buf.readUInt32BE(g + 4) >= cp) return buf.readUInt32BE(g + 8) + (cp - start) !== 0;
+    }
+    return false;
+  }
+  if (format === 6) {
+    const first = buf.readUInt16BE(sub + 6);
+    const count = buf.readUInt16BE(sub + 8);
+    if (cp < first || cp >= first + count) return false;
+    return buf.readUInt16BE(sub + 10 + (cp - first) * 2) !== 0;
+  }
+  if (format === 0) {
+    if (cp > 0xff) return false;
+    return buf[sub + 6 + cp] !== 0;
+  }
+  return false;
+}
+
+function fontScriptCoverage(buf) {
+  try {
+    if (!looksLikeFont(buf)) return null;
+    const cmap = sfntTables(buf).get('cmap');
+    if (!cmap) return null;
+    const sub = pickCmapSubtable(buf, cmap.offset);
+    if (sub === null) return null;
+    const has = (cp) => cmapHasGlyph(buf, sub, cp);
+    return { hebrew: HEBREW_SAMPLE.every(has), latin: LATIN_SAMPLE.every(has) };
+  } catch {
+    // A truncated/exotic font is UNKNOWN, never "missing Hebrew" — a wrong
+    // warning on the screen she uses to decide what to fix is worse than none.
+    return null;
+  }
+}
+
+// Coverage for a font on disk, cached on (size, mtime) so listing every template
+// does not re-read a dozen multi-megabyte files on each admin page load.
+const FONT_COVERAGE_CACHE = new Map();
+function fontCoverageAt(abs) {
+  try {
+    const st = fs.statSync(abs);
+    const sig = st.size + ':' + st.mtimeMs;
+    const hit = FONT_COVERAGE_CACHE.get(abs);
+    if (hit && hit.sig === sig) return hit.cov;
+    const cov = fontScriptCoverage(fs.readFileSync(abs));
+    FONT_COVERAGE_CACHE.set(abs, { sig, cov });
+    return cov;
+  } catch {
+    return null;
+  }
+}
+
+// The font gaps worth telling the owner about, as ready-to-show Hebrew lines.
+// Each is a script this template CANNOT draw on a surface, with the upload that
+// fixes it named. Only reports what was actually measured: a font whose coverage
+// could not be read produces no note at all.
+//
+// `assets` is the computed asset list (each font role carrying `scripts`).
+function fontNotesFrom(assets) {
+  const byRole = Object.fromEntries(assets.map((a) => [a.role, a]));
+  const cov = (role) => {
+    const a = byRole[role];
+    return a && a.present ? a.scripts : null;
+  };
+  const title = cov('title-font');
+  const titleAlt = cov('title-font-alt');
+  const word = cov('word-font');
+  const wordAlt = cov('word-font-alt');
+  const notes = [];
+  // The מרקאנה case: a Latin display title face on a design sold to Hebrew
+  // buyers. The name has nowhere to go and the title does not print.
+  if (title && !title.hebrew && !(titleAlt && titleAlt.hebrew)) {
+    notes.push({
+      role: 'title-font-alt',
+      text: 'פונט הכותרת של התבנית לא יודע לצייר עברית — כותרת עם שם בעברית לא תודפס. העלו פונט כותרת שני שיודע עברית.',
+    });
+  }
+  if (title && !title.latin && !(titleAlt && titleAlt.latin)) {
+    notes.push({
+      role: 'title-font-alt',
+      text: 'פונט הכותרת לא יודע לצייר אנגלית — כותרת באנגלית לא תודפס. העלו פונט כותרת שני שיודע אנגלית.',
+    });
+  }
+  if (word && !word.latin && !(wordAlt && wordAlt.latin)) {
+    notes.push({
+      role: 'word-font-alt',
+      text: 'פונט המילים לא יודע לצייר אותיות באנגלית — מילה באנגלית בחפיסה לא תודפס. העלו פונט למילים באנגלית.',
+    });
+  }
+  if (word && !word.hebrew && !(wordAlt && wordAlt.hebrew)) {
+    notes.push({
+      role: 'word-font',
+      text: 'פונט המילים לא יודע לצייר עברית — בדקו שזה באמת הפונט הנכון לתבנית הזאת.',
+    });
+  }
+  return notes;
+}
+
 // Own-property theme lookup that is SAFE against prototype pollution. A raw
 // `themes[key]` guard treats keys like `__proto__` / `constructor` as truthy
 // (they resolve up the prototype chain), which would let a later `themes[key].x =`
@@ -1718,14 +1957,29 @@ function countCardAssets(dir) {
 function computeTemplateStatus(root, key, entry) {
   const dir = resolveTemplateDir(root, entry, key);
   const roles = assetRolesFor(entry);
-  const assets = roles.map((a) => ({
-    role: a.role,
-    label: a.label,
-    rel: a.rel,
-    kind: a.kind,
-    optional: !!a.optional,
-    present: !!(dir && a.rel && fs.existsSync(path.join(dir, a.rel))),
-  }));
+  const assets = roles.map((a) => {
+    const present = !!(dir && a.rel && fs.existsSync(path.join(dir, a.rel)));
+    return {
+      role: a.role,
+      label: a.label,
+      rel: a.rel,
+      kind: a.kind,
+      optional: !!a.optional,
+      present,
+      // The recorded filename, so the screen can show WHICH face is on a role
+      // rather than only that something is. With four font roles — two of them
+      // optional second faces — "there is a font here" stopped being enough to
+      // tell what the template will print with.
+      ...(a.kind === 'font' ? { fontName: a.fontName || null } : {}),
+      // Which scripts the file can draw (null = could not be read). This is what
+      // makes "this title font has no Hebrew" visible before an order is placed.
+      ...(a.kind === 'font' && present
+        ? { scripts: fontCoverageAt(path.join(dir, a.rel)) }
+        : a.kind === 'font'
+          ? { scripts: null }
+          : {}),
+    };
+  });
   const missingRequired = assets.filter((a) => !a.optional && !a.present).map((a) => a.role);
   const chasers = assets.find((a) => a.role === 'clean-board-chasers');
   return {
@@ -1787,6 +2041,11 @@ function computeTemplateStatus(root, key, entry) {
       entry && entry.confidence && typeof entry.confidence === 'object' ? entry.confidence : null,
     notes: Array.isArray(entry && entry.notes) ? entry.notes : null,
     assets,
+    // Script gaps in this template's fonts, already phrased for the owner. Never
+    // part of `complete`/`missingRequired`: a template whose title font has no
+    // Hebrew is not MISSING a file, it is a design decision that may or may not
+    // matter for what it is sold for. Reported, not enforced.
+    fontNotes: fontNotesFrom(assets),
     chasersBoard: !!(chasers && chasers.present),
     complete: missingRequired.length === 0,
     missingRequired,
@@ -3319,6 +3578,76 @@ function replaceAsset({
   return { key, role, path: displayPath(root, abs), redetect };
 }
 
+// Remove an OPTIONAL font from a template — the undo for a font uploaded to the
+// wrong role or the wrong template.
+//
+// There was no way to un-upload anything before this, which was tolerable while
+// every asset was required (re-upload the right file and the wrong one is gone).
+// An optional second face is different: once recorded it is used on every later
+// order, and the only way to stop that was to hand-edit themes.json on the
+// volume. So removal is a first-class operation — but a NARROW one: only the
+// roles in REMOVABLE_ROLES (the two alt fonts). Clearing a required font would
+// leave a template that cannot render.
+//
+// Deliberately NOT done by widening updateTemplateSettings to accept font
+// filenames. Filenames come from what was actually uploaded; a patch that could
+// write one could name a file that is not there and break every render for the
+// template. Clearing to "nothing" is the only font-field write that cannot lie.
+//
+// The FILE is deleted only when nothing else in the entry points at it. A theme
+// may legitimately record one file under two roles (anniversary/סנטוריני ships
+// title_font and word_font as the same file), so unlinking blindly would delete
+// the font another role is still rendering with. When in doubt the field is
+// cleared and the file left on disk — an unreferenced font is inert.
+function clearAsset({ root, key, role }) {
+  const themesPath = themesPathFor(root);
+  const themes = loadThemes(themesPath);
+  const entry = ownTheme(themes, key);
+  if (!entry) return { error: 'template not found', httpStatus: 404 };
+  if (!REMOVABLE_ROLES.has(role)) {
+    return {
+      error:
+        'asset role "' +
+        role +
+        '" cannot be removed — only the optional second fonts can. Replace it by uploading a new file.',
+      httpStatus: 400,
+    };
+  }
+  const spec = FONT_ASSET_ROLES.find((a) => a.role === role);
+  const field = spec.field;
+  const recorded = entry[field] ? safeFontRel(entry[field]) : null;
+  if (!recorded) return { key, role, field, removed: false, fileDeleted: false };
+
+  // Is any OTHER font field pointing at the same file?
+  const sharedWith = FONT_ASSET_ROLES.filter((a) => a.field !== field)
+    .map((a) => (entry[a.field] ? safeFontRel(entry[a.field]) : null))
+    .filter((rel) => rel && rel === recorded);
+
+  delete entry[field];
+  persistThemeEntry(themesPath, key, entry);
+
+  let fileDeleted = false;
+  if (!sharedWith.length) {
+    // Delete only from the dir this template's writes land in — never from the
+    // shipped image dir when the owner store is shadowing it, where an unlink
+    // would remove a file the entry no longer names but the shipped entry might.
+    const writeDir = templateWriteDir(root, entry, key);
+    const abs = writeDir ? path.resolve(writeDir, 'fonts/' + recorded) : null;
+    if (abs && (abs === writeDir || abs.startsWith(writeDir + path.sep))) {
+      try {
+        if (fs.existsSync(abs)) {
+          fs.unlinkSync(abs);
+          fileDeleted = true;
+        }
+      } catch {
+        // Best effort: the field is already cleared, so the font is out of the
+        // render either way. A file left behind is inert, not a failure.
+      }
+    }
+  }
+  return { key, role, field, removed: true, fileDeleted, file: recorded };
+}
+
 // -- Minimal multipart/form-data parser (no external dependency) --------------
 // Splits a raw body Buffer on the boundary and returns { fields, files,
 // fileLists }, where fields[name] = string, files[name] = { filename, data } (the
@@ -3449,6 +3778,9 @@ module.exports = {
   titlePlaceholders,
   titleLinesFrom,
   replaceAsset,
+  clearAsset,
+  fontScriptCoverage,
+  REMOVABLE_ROLES,
   designDisplayNames,
   displayNameForDesign,
   themeDisplayName,

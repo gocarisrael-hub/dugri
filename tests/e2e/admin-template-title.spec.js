@@ -142,6 +142,57 @@ test.describe('admin templates — the title editor', () => {
     await expect(ed.locator('.title-warn')).toContainText('extra_fields');
   });
 
+  test('a gender marker is NOT read as a missing field', async ({ page }) => {
+    // The reported harm: she pasted {m:בן|f:בת} into a title and the screen told
+    // her the template does not collect a field called "m:בן|f:בת" and that "the
+    // card will print without it". Both false — the server strips markers before
+    // placeholder validation (it accepts this save), and the card prints the
+    // word. The screen simply never learned about markers.
+    // A SAVED title carrying the marker must not be badged as broken on the card
+    // head either — that badge is what "this template is broken" looks like at a
+    // glance, and it was lighting up on a perfectly good title.
+    await mockList(page, { title_lines: ['{NAME} {m:בן|f:בת}'], title_text: '{NAME} {m:בן|f:בת}' });
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    await expect(page.locator('.tpl-card[data-key="nameless"]')).toBeVisible();
+    await expect(page.locator('.tpl-card[data-key="nameless"] .tpl-badge.notitle')).toHaveCount(0);
+    await openSettings(page);
+    const ed = page.locator('.tpl-card[data-key="nameless"] .tpl-title-ed');
+    await expect(ed.locator('.title-warn')).toHaveText('');
+    // ...and typing one into the editor raises no warning as she types.
+    await ed.locator('.title-line-input').nth(0).fill('{NAME} {f:בת|m:בן}');
+    await expect(ed.locator('.title-warn')).toHaveText('');
+  });
+
+  test('an UNLABELLED gender marker is still called out, as a marker problem', async ({ page }) => {
+    // Stripping markers before the placeholder scan must not swallow a broken
+    // one: the server refuses "{בן|בת}" on purpose (with a free-form order,
+    // position cannot also say which word is masculine), so saying nothing here
+    // would leave her staring at a 400 she was given no warning about.
+    await mockList(page);
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    await openSettings(page);
+    const ed = page.locator('.tpl-card[data-key="nameless"] .tpl-title-ed');
+    await ed.locator('.title-line-input').nth(0).fill('{NAME} {בן|בת}');
+    await expect(ed.locator('.title-warn')).toContainText('{m:בן|f:בת}');
+    // Both forms labelled the same is refused too.
+    await ed.locator('.title-line-input').nth(0).fill('{NAME} {m:בן|m:בת}');
+    await expect(ed.locator('.title-warn')).toContainText('מגדר');
+  });
+
+  test('a warning about an uncollected field says what is CHECKED, not what will print', async ({
+    page,
+  }) => {
+    // The old text ended "הקלף יודפס בלעדיו" — an outcome this screen never
+    // measured, and the wrong one: the SAVE is what the server refuses.
+    await mockList(page);
+    await page.goto(`/admin-templates.html?key=${KEY}`);
+    await openSettings(page);
+    const ed = page.locator('.tpl-card[data-key="nameless"] .tpl-title-ed');
+    await ed.locator('.title-line-input').nth(0).fill('{NAME} בן {AGE}');
+    await expect(ed.locator('.title-warn')).toContainText('השמירה תידחה');
+    await expect(ed.locator('.title-warn')).not.toContainText('יודפס בלעדיו');
+  });
+
   test('lines can be added and removed, and the last one is never deleted away', async ({
     page,
   }) => {
