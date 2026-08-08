@@ -3580,6 +3580,51 @@ def assert_title_drawable(font_path, lines, theme=None, alt_font_path=None):
         f"font that covers this design's language, or change the title text.")
 
 
+def title_script(lines):
+    """The ONE language a title reads in: ``"hebrew"`` or ``"english"``.
+
+    Taken from the title as a whole, not per line and not per run — a title is
+    one thing set in one face. Digits, spaces and punctuation are neutral and
+    decide nothing; the first strong character that appears anywhere in the
+    title is the answer, so "{NAME} 40S" reads by {NAME}.
+    """
+    for ln in lines:
+        if _line_is_rtl(ln):
+            return "hebrew"
+        if _line_is_latin(ln):
+            return "english"
+    return None
+
+
+def title_font_for(theme, lines, cfg=None):
+    """The ONE font a title is set in.
+
+    THE RULE, in the owner's words: "title is always the first font, unless the
+    language changed and then the font also changes."
+
+    So the second title font is reached in exactly one case — the title is in
+    the other language from the design — and it then sets the WHOLE title.
+
+    It is never reached run by run. That is the WORD rule: ``Face.runs`` splits
+    by script so English words take the design's Latin word face, which is right
+    for words and wrong for a title. Titles shared that Face, so an ordinary
+    English title on a design that happened to have a second title font had its
+    Latin runs silently swapped into a face nobody chose — the owner's report was
+    "titles in english change font with no reason to the second font".
+
+    Returns a path; the caller measures and paints with that one file.
+    """
+    cfg = cfg if cfg is not None else config.theme(theme)
+    primary = config.resolve_title_font(theme)
+    alt = config.resolve_title_font_alt(theme)
+    if not alt:
+        return primary
+    script = title_script(lines)
+    if script is None:
+        return primary
+    return alt if script != (cfg.get("language") or "hebrew") else primary
+
+
 def title_is_rtl(cfg):
     # A title is right-to-left when the theme's language is Hebrew. RTL matters
     # for any title that mixes digits with Hebrew (e.g. anniversary "30 שנה
@@ -3895,7 +3940,7 @@ def _nudge_title_box(tbox, cell, offset):
 
 
 def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
-                   fixed_size=None, align=None, alt_font=None):
+                   fixed_size=None, align=None):
     """The stacked-title markup for one card, or "" when there is nothing to draw.
 
     ``tbox_list`` may hold ONE BOX PER TITLE LINE (birthday-girls records two);
@@ -3914,7 +3959,6 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                        ts["outline_w"], ts["arch"], ts["shadow"],
                        rtl=title_is_rtl(cfg),
                        fixed_size=fixed_size if fixed_size is not None else ts.get("size"),
-                       alt_font_path=alt_font,
                        align=align or ts.get("align", "center"),
                        italic=ts.get("italic", False),
                        bold=ts.get("bold", False),
@@ -4004,8 +4048,7 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
     cell = (recipe.get("card") or {}).get("cell") or _recipe_cell(recipe, card_vb)
     word_font_path = config.resolve_word_font(theme, word_font)
     word_alt_path = word_font_alt(theme, word_font)
-    title_font_path = config.resolve_title_font(theme)
-    title_alt_path = config.resolve_title_font_alt(theme)
+    title_font_path = title_font_for(theme, title_lines, cfg)
     safe_bottom = cell[3] - (cell[3] - cell[1]) * _CARD_SAFE if cell else None
     room = (room_bottom(theme, front_index, card_svg, cell, safe_bottom)
             if card_svg and cell else None)
@@ -4024,8 +4067,7 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
     return (_title_overlay(tboxes,
                            title_lines, cfg, title_font_path, cell,
                            offset=config.front_offset(cfg, front_index),
-                           align=config.front_align(cfg, front_index),
-                           alt_font=title_alt_path)
+                           align=config.front_align(cfg, front_index))
             + _words_overlay(word_boxes, words,
                              cfg, word_font_path, cell, room=room,
                              obstacles=icons,
@@ -4076,7 +4118,7 @@ def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
         boxes = [{"x0": cell[0] + frac["x0"] * w, "x1": cell[0] + frac["x1"] * w,
                   "y0": cell[1] + frac["y0"] * h, "y1": cell[1] + frac["y1"] * h}]
     ts = cfg["title_style"]
-    title_font = config.resolve_title_font(theme)
+    title_font = title_font_for(theme, title_lines, cfg)
     # The back's own fill/outline when the theme calibrated them (the back art is
     # usually a different colour field from the fronts), else the shared style.
     style = dict(ts)
@@ -4098,8 +4140,7 @@ def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
     # measured against. Falls through to the deck-wide pins when unset.
     return _title_overlay(boxes, title_lines, cfg_back, title_font, cell,
                           fixed_size=((bk or {}).get("size")
-                                      or ts.get("back_size") or ts.get("size")),
-                          alt_font=config.resolve_title_font_alt(theme))
+                                      or ts.get("back_size") or ts.get("size")))
 
 
 def back_draws_title(theme, clean_svg, back_index=None):
@@ -4390,8 +4431,7 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
              + "</style>")
     word_alt = word_font_alt(theme, word_font)
     word_font = config.resolve_word_font(theme, word_font)
-    title_font = config.resolve_title_font(theme)
-    title_alt = config.resolve_title_font_alt(theme)
+    title_font = title_font_for(theme, title_lines, cfg)
     ts = cfg["title_style"]
     svg = open(clean_svg, encoding="utf-8").read()
     overlay = [style]
@@ -4425,7 +4465,6 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
                                        ts["outline_w"], ts["arch"], ts["shadow"],
                                        rtl=title_is_rtl(cfg),
                                        fixed_size=ts.get("size"),
-                                       alt_font_path=title_alt,
                                        align=config.front_align(cfg, ci + 1),
                                        italic=ts.get("italic", False),
                                        bold=ts.get("bold", False),
