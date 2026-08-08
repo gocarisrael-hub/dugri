@@ -3516,6 +3516,12 @@ def test_the_fit_reserves_the_width_the_renderer_paints():
     measures; ``word_lines`` then paints at that size. Measure with one face and
     paint with two and the two numbers part company — silently, until a line
     crosses the trim.
+
+    A run's painted width is its advance AT THE SIZE IT IS SET, and the English
+    runs are set a fraction smaller than the card (see ``Face.scale``), so the
+    sum below asks the Face for that fraction rather than assuming parity. That
+    is the whole point of hanging the fraction on the Face: there is one number,
+    and both sides of this equality read it.
     """
     face = rp._word_face(CAFE, LATIN)
     slots = [{"x0": 20, "y0": 40 + i * 40, "x1": 190, "y1": 70 + i * 40,
@@ -3524,11 +3530,12 @@ def test_the_fit_reserves_the_width_the_renderer_paints():
     cell = [0, 0, 200, 300]
     layouts = rp._word_layouts(slots, words, face, face.ref, cell=cell)
     for i, lay in enumerate(layouts):
-        painted = sum(f.getlength(t) for f, t in face.runs(lay.lines[0]))
+        painted = sum(f.getlength(t) * face.scale(lat)
+                      for f, t, lat in face.runs_by_script(lay.lines[0]))
         assert abs(painted - face.length(lay.lines[0])) < 1e-9, words[i]
         reserved = rp._line_width_at(face, face.ref, i + 1, lay.lines[0])
         one_face = rp._line_width_at(face.primary, face.ref, i + 1, lay.lines[0])
-        if any(f is face.alt for f, _ in face.runs(lay.lines[0])):
+        if face.uses_alt(lay.lines[0]):
             assert reserved != one_face, (
                 f"{words[i]} measured the same in one face as in two — the fit "
                 "is not going through Face")
@@ -3546,15 +3553,23 @@ def test_a_wider_latin_face_makes_the_card_set_smaller():
     and keeping the type up — which is the owner's own order, wrap first and
     shrink second — so "the wider face sets smaller" is no longer the shape of
     the guarantee. Overrunning the band is what must not happen, in either face.
+
+    The "genuinely wider" guard is read AT PARITY. Fredoka sets this phrase 5%
+    wider than Cafe, and the card now sets its English at nine tenths (see
+    ``_WORD_ALT_SCALE``), which is enough to turn that 5% into a 5% narrower —
+    a fact about the scale, not about the faces. The guard is here to stop the
+    test being run on two faces that measure the same; it asks the faces.
     """
     slots = [{"x0": 20, "y0": 40, "x1": 190, "y1": 70, "color": "#000"}]
     cell = [0, 0, 200, 300]
     word = ["Tel Aviv Tel Aviv"]
     one = rp._word_face(CAFE)
     two = rp._word_face(CAFE, LATIN)
-    assert two.length(word[0]) > one.length(word[0]), "pick a genuinely wider face"
+    parity = rp._word_face(CAFE, LATIN, alt_scale=1.0)
+    assert parity.length(word[0]) > one.length(word[0]), "pick a genuinely wider face"
     band = rp._card_right_edge(slots, cell) - rp._card_left_edge(slots, cell)
-    for face, name in ((one, "one face"), (two, "two faces")):
+    for face, name in ((one, "one face"), (two, "two faces"),
+                       (parity, "two faces at parity")):
         lay = rp._word_layouts(slots, word, face, face.ref, cell=cell)[0]
         widest = max(rp._line_width_at(face, face.ref, 1, ln) for ln in lay.lines)
         assert widest * lay.size / face.ref <= band + 1e-6, (
@@ -3759,6 +3774,11 @@ def test_the_latin_run_really_sets_in_the_uploaded_face():
 
     Read over the word alone — the marker beside it is the card's own face on
     every one of these, by design, and would only dilute the comparison.
+
+    The Latin control is set at the SCALED size, because that is the size the
+    card sets its English at now (see ``_WORD_ALT_SCALE``) — the claim being
+    proved here is which FACE Chrome reached for, and it would be worth nothing
+    if a control drawn at some other size were allowed to stand in for it.
     """
     if not os.path.exists(rp.CHROME):
         print("  (skipped: no Chrome)")
@@ -3769,18 +3789,19 @@ def test_the_latin_run_really_sets_in_the_uploaded_face():
     # the renderer's one conversion from centres to baselines.
     base = 100.0 + _PROOF_SIZE * rp._CENTER_DROP
 
-    def control(path):
+    def control(path, size=_PROOF_SIZE):
         return _proof_doc(
             rp.font_face("C", path),
             f'<text x="{cut:.2f}" y="{base:.2f}" font-family="C" '
-            f'font-size="{_PROOF_SIZE}" text-anchor="end">BBQ</text>')
+            f'font-size="{size}" text-anchor="end">BBQ</text>')
 
     real = _proof_doc(
         rp.font_face("HebWord", CAFE) + rp.font_face("HebWordAlt", LATIN),
         rp.word_lines(_PROOF_RIGHT, 100.0, _PROOF_SIZE, "#000", 1, ["BBQ"],
                       CAFE, alt_font_path=LATIN))
     heb = _chrome_ink(control(CAFE), 600, 200, left_of=cut)
-    lat = _chrome_ink(control(LATIN), 600, 200, left_of=cut)
+    lat = _chrome_ink(control(LATIN, _PROOF_SIZE * rp._WORD_ALT_SCALE),
+                      600, 200, left_of=cut)
     got = _chrome_ink(real, 600, 200, left_of=cut)
     assert heb and lat and got
     # The two faces have to draw "BBQ" differently enough for this to mean

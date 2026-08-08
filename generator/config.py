@@ -855,6 +855,37 @@ def word_bold_w(cfg, default):
         return default
 
 
+def word_alt_scale(cfg, default):
+    """How big this theme sets its ENGLISH card words, as a size fraction.
+
+    The owner, having read a mixed Hebrew/English deck on nine of the ten
+    designs — "in סיישל, פריז, קליפורניה, ברוקלין, סנטוריני, טוקיו, מרקאנה,
+    אואזיס, טריפה the size of the font of the words only the words in english
+    needs to be little bit smaller". English is set in the SECOND word face, and
+    a Latin face and a Hebrew one at one point size do not read as one size: the
+    Latin x-height is the taller, so the English beside the Hebrew prints heavier
+    than the design intends.
+
+    Unlike ``word_bold``, the house fraction is the DEFAULT rather than opt-in,
+    because that is what she asked for on nine designs out of ten.
+    ``word_alt_scale`` in themes.json overrides it for one design — דני is the
+    one she did NOT list, so it pins itself back to ``1.0`` there, in config
+    rather than in code.
+
+    A missing, unparseable or non-positive value takes the house default rather
+    than raising: a mistyped knob must not stop a paid order rendering, and a
+    zero would set the English as nothing at all.
+    """
+    raw = cfg.get("word_alt_scale")
+    if raw is None:
+        return default
+    try:
+        scale = float(raw)
+    except (TypeError, ValueError):
+        return default
+    return scale if scale > 0 else default
+
+
 def _default_ink(cfg):
     """Fallback ink colour when no detected recipe supplies one.
 

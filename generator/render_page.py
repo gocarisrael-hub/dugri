@@ -194,15 +194,23 @@ class Face:
     (``_marker_geometry``, ``_marker_advance``, ``_glyph_bearings``: the digit is
     the card's own face by design) are handed ``_primary`` explicitly, which
     makes the exception visible at the call site instead of implied by absence.
+
+    ``alt_scale`` is how big the SECOND face sets, as a fraction of the card's
+    word size, and it lives here for the same reason every other reading does:
+    the number the fit reserves has to be the number the renderer paints. It
+    applies to the alt face's OWN runs and to nothing else — the primary is never
+    scaled, so the promise above survives it (with no alt face there is no run to
+    scale and ``length`` is still the one call).
     """
 
-    __slots__ = ("primary", "alt", "ref", "rtl")
+    __slots__ = ("primary", "alt", "ref", "rtl", "alt_scale")
 
-    def __init__(self, primary, alt=None, ref=200, rtl=True):
+    def __init__(self, primary, alt=None, ref=200, rtl=True, alt_scale=1.0):
         self.primary = primary
         self.alt = alt
         self.ref = ref
         self.rtl = rtl
+        self.alt_scale = alt_scale
 
     @property
     def single(self):
@@ -210,8 +218,30 @@ class Face:
 
     @property
     def faces(self):
-        """Every font this may set text in — one, or two."""
+        """Every font this may set text in — one, or two.
+
+        UNSCALED, deliberately: the one caller is ``_font_lead``, which reads the
+        deck's row pitch as the worst case over both faces. A pitch is a floor —
+        reserving it off the Latin face's full-size ink can only leave a hair
+        more air between rows, never less — and the nine shipped designs were
+        calibrated against that floor. Scaling it here would re-space every one
+        of them as a side effect of making their English a little smaller, which
+        is not what the owner asked for.
+        """
         return (self.primary,) if self.alt is None else (self.primary, self.alt)
+
+    def scale(self, is_latin):
+        """The fraction of the card's word size a run is set at.
+
+        ``1.0`` for a run in the card's own script, ``alt_scale`` for a Latin
+        one. Every width, box and emitted ``font-size`` asks this rather than
+        deciding for itself, so the fit and the render cannot answer differently.
+
+        It takes the SCRIPT flag ``runs_by_script`` hands out and not a font,
+        deliberately — see that method for the six designs where the two faces
+        are one object and a font could not have told them apart.
+        """
+        return self.alt_scale if is_latin and self.alt is not None else 1.0
 
     @property
     def path(self):
@@ -235,25 +265,40 @@ class Face:
         right-to-left run and was placed at the LEFT of the English word it
         belongs to. The line knows which way it reads; ask it.
         """
+        return [(f, t) for f, t, _lat in self.runs_by_script(text)]
+
+    def runs_by_script(self, text):
+        """``runs``, each with the flag that says WHICH FACE'S RULE it follows.
+
+        ASK THE SCRIPT, NEVER THE FONT OBJECT. Six of the ten shipped designs
+        name the SAME file in both word slots — their Hebrew face draws Latin
+        perfectly well, and the owner filled the second slot anyway — so on those
+        cards ``font is self.alt`` is true of every run, Hebrew included. Anything
+        that keyed off identity therefore treated a Hebrew word as English: it
+        would have shrunk their Hebrew along with their English, which is the
+        opposite of what the owner asked for on six of the nine designs she
+        named. The split already knows which run is which; carry the answer.
+        """
         if self.alt is None:
-            return [(self.primary, text)]
+            return [(self.primary, text, False)]
         base = self.rtl
         if _line_is_latin(text):
             base = False
         elif _line_is_rtl(text):
             base = True
-        return [(self.alt if lat else self.primary, t)
+        return [(self.alt if lat else self.primary, t, lat)
                 for lat, t in script_runs(text, base_rtl=base)]
 
     def uses_alt(self, text):
         """True when any run of ``text`` would be set in the second face."""
-        return (self.alt is not None
-                and any(f is self.alt for f, _ in self.runs(text)))
+        return self.alt is not None and any(lat for _f, _t, lat
+                                            in self.runs_by_script(text))
 
     def length(self, text):
         if self.alt is None:
             return self.primary.getlength(text)
-        return sum(f.getlength(t) for f, t in self.runs(text))
+        return sum(f.getlength(t) * (self.alt_scale if lat else 1.0)
+                   for f, t, lat in self.runs_by_script(text))
 
     def bbox(self, text):
         """The union box, expressed against a pen starting at x=0.
@@ -269,22 +314,32 @@ class Face:
         there and reserves row pitch for it. Each run's box is therefore shifted
         onto the primary's ascender, which is the frame ``getmetrics`` reports
         and the one every caller subtracts.
+
+        A SCALED RUN SHRINKS ABOUT ITS BASELINE, not about the ascender line it
+        is reported against — the renderer sets it at a smaller ``font-size`` on
+        the SAME baseline. So each run's box is taken to the baseline first
+        (``b - ascent``), scaled there, and only then lifted onto the primary's
+        ascender. At ``scale == 1.0`` that is the same arithmetic as before,
+        exactly: ``(b - f_asc) * 1.0 + asc`` is ``b + (asc - f_asc)``.
         """
         if self.alt is None:
             return self.primary.getbbox(text)
         asc = self.primary.getmetrics()[0]
         x = 0.0
         x0 = y0 = x1 = y1 = None
-        for f, t in self.runs(text):
+        for f, t, lat in self.runs_by_script(text):
+            s = self.scale(lat)
             b = f.getbbox(t)
             if b is not None:
-                dy = asc - f.getmetrics()[0]        # onto the primary's baseline
-                bx0, by0, bx1, by1 = b[0] + x, b[1] + dy, b[2] + x, b[3] + dy
+                f_asc = f.getmetrics()[0]          # this run's own ascender line
+                bx0, bx1 = b[0] * s + x, b[2] * s + x
+                by0 = (b[1] - f_asc) * s + asc     # onto the primary's baseline
+                by1 = (b[3] - f_asc) * s + asc
                 x0 = bx0 if x0 is None else min(x0, bx0)
                 y0 = by0 if y0 is None else min(y0, by0)
                 x1 = bx1 if x1 is None else max(x1, bx1)
                 y1 = by1 if y1 is None else max(y1, by1)
-            x += f.getlength(t)
+            x += f.getlength(t) * s
         return (0, 0, 0, 0) if x0 is None else (x0, y0, x1, y1)
 
     # The font protocol, so the fitter can hold this where it held a font.
@@ -303,8 +358,21 @@ def _primary(font):
     return font.primary if isinstance(font, Face) else font
 
 
+# How big a card's ENGLISH words are set, as a fraction of the card's word size.
+# The owner, over nine of the ten designs (every one except דני): "the size of
+# the font of the words only the words in english needs to be little bit
+# smaller". A Latin face and a Hebrew one at one point size do not read as one
+# size — the Latin x-height is the taller — so English sitting beside Hebrew on
+# the same line prints heavier than the design ever intended. Nine tenths brings
+# the two back to the same visual weight. Per design via ``word_alt_scale`` in
+# themes.json (see ``config.word_alt_scale``): דני is the design she did NOT
+# list, so it pins itself back to 1.0 there rather than in code.
+_WORD_ALT_SCALE = float(os.environ.get("DUGRI_WORD_ALT_SCALE", "0.9"))
+
+
 @functools.lru_cache(maxsize=8)
-def _word_face(font_path, alt_font_path=None, ref=200):
+def _word_face(font_path, alt_font_path=None, ref=200,
+               alt_scale=_WORD_ALT_SCALE):
     """The measuring instrument for a card's words: one face, or two.
 
     Cached on the PATHS rather than built per card, because the readings behind
@@ -312,10 +380,15 @@ def _word_face(font_path, alt_font_path=None, ref=200):
     repertoire once per face, and a fresh Face per card would miss that cache on
     all 104 of them. The primary comes from ``_word_metrics``, so it is the same
     object the one-face path has always measured with.
+
+    ``alt_scale`` rides on the Face rather than on the call sites, so the fit and
+    the render read one number (see ``Face.scale``). It is part of the cache key
+    because two designs may set their English at two sizes off the same pair of
+    files.
     """
     primary = _word_metrics(font_path, ref)[0]
     alt = _word_metrics(alt_font_path, ref)[0] if alt_font_path else None
-    return Face(primary, alt, ref)
+    return Face(primary, alt, ref, alt_scale=alt_scale)
 
 
 def word_font_alt(theme, word_font=None):
@@ -501,7 +574,8 @@ def _embed(text):
 
 
 def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
-               marker_advance=None, bold_w=0.0, alt_font_path=None):
+               marker_advance=None, bold_w=0.0, alt_font_path=None,
+               alt_scale=_WORD_ALT_SCALE):
     """One numbered entry, wrapped over ``lines``, as SVG markup.
 
     RTL numbered line: the marker must sit on the RIGHT (the Hebrew reading
@@ -535,13 +609,21 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
     ``_WORD_BOLD_W``). The marker is fattened with the word so a bold card does
     not read as bold words beside thin numbers. Zero (the default) emits the
     exact markup it always did.
+
+    ``alt_scale`` sets the LATIN runs a fraction smaller (see ``_WORD_ALT_SCALE``)
+    and MUST be the number the fit measured with — it is handed to the Face, and
+    the same Face hands back the widths the pen walks, so the two cannot part.
+    The marker keeps the card's own size whatever this is: the digit is the
+    card's own face by design.
     """
     msize = size * _MARKER_SCALE
-    # The optional Latin face. Absent (every template today) leaves `alt_font`
-    # None and every line below takes the one-face branch, which emits the exact
-    # markup it always has.
-    face = _word_face(font_path, alt_font_path)
-    font, ref, alt_font = face.primary, face.ref, face.alt
+    # The optional Latin face. Absent, every line below takes the one-face
+    # branch, which emits the exact markup it always has — and so does a HEBREW
+    # line on a design that fills both slots with the same file, because the
+    # branch is chosen by the line's SCRIPT and not by which object the split
+    # handed back (see ``Face.runs_by_script``).
+    face = _word_face(font_path, alt_font_path, alt_scale=alt_scale)
+    font, ref = face.primary, face.ref
     digit, digit_x, dot_x, marker_w = _marker_geometry(font, ref, num, msize,
                                                        advance=marker_advance)
     gap = size * _WORD_GAP
@@ -549,11 +631,15 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
     lead = size * (_lead_for(face, ref, lines) if lead is None else lead)
     first = center_y - (len(lines) - 1) * lead / 2 + size * _CENTER_DROP
     # paint-order="stroke" keeps the stroke UNDER the fill, so the glyph grows
-    # outward instead of the stroke eating into its own counters.
-    fat = (f'stroke="{color}" stroke-width="{size * bold_w:.2f}" '
-           'paint-order="stroke" stroke-linejoin="round" ') if bold_w else ""
-    m_fat = (f'stroke="{color}" stroke-width="{msize * bold_w:.2f}" '
-             'paint-order="stroke" stroke-linejoin="round" ') if bold_w else ""
+    # outward instead of the stroke eating into its own counters. The stroke is
+    # a fraction of the size the run is SET at, so a Latin run set smaller is
+    # fattened proportionally rather than being stroked as if it were full size —
+    # which would undo the very weight-matching this scaling exists to do.
+    def _fat(sz):
+        return (f'stroke="{color}" stroke-width="{sz * bold_w:.2f}" '
+                'paint-order="stroke" stroke-linejoin="round" ') if bold_w else ""
+
+    fat, m_fat = _fat(size), _fat(msize)
     out = [
         f'<text x="{x_right + digit_x:.2f}" y="{first:.2f}" font-family="HebWord" '
         f'font-size="{msize:.2f}" fill="{color}" {m_fat}text-anchor="end" '
@@ -564,8 +650,8 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
     ]
     for i, line in enumerate(lines):
         y = first + i * lead
-        runs = face.runs(line)
-        if not runs or len(runs) == 1 and runs[0][0] is not alt_font:
+        runs = face.runs_by_script(line)
+        if not runs or len(runs) == 1 and not runs[0][2]:
             # The one-face line, and it must emit the EXACT string it always
             # did — this is the branch every shipped card takes.
             out.append(
@@ -585,17 +671,25 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
         #     x_end(j) = word_x - W + sum(w_i for i <= j)
         #
         # One run collapses that to word_x exactly, by algebra.
-        widths = [f.getlength(t) / ref * size for f, t in runs]
+        #
+        # The width of a run is its advance AT THE SIZE IT IS PAINTED, which for
+        # a Latin run is ``alt_scale`` of the card's. Asked of the Face rather
+        # than assumed here, because ``_line_width_at`` reserves off the very
+        # same reading: measure a run full size and paint it nine tenths and the
+        # line prints inside a width nobody uses; the other way round it crosses
+        # the trim.
+        widths = [f.getlength(t) * face.scale(lat) / ref * size
+                  for f, t, lat in runs]
         total = sum(widths)
         pen = word_x - total
-        for (f, txt), w in reversed(list(zip(runs, widths))):
+        for (f, txt, latin), w in reversed(list(zip(runs, widths))):
             pen += w
-            latin = f is alt_font
             body = escape(txt) if latin else _embed(txt)
             fam = "HebWordAlt" if latin else "HebWord"
+            rsize = size * face.scale(latin)
             out.append(
                 f'<text x="{pen:.2f}" y="{y:.2f}" font-family="{fam}" '
-                f'font-size="{size:.2f}" fill="{color}" {fat}'
+                f'font-size="{rsize:.2f}" fill="{color}" {_fat(rsize)}'
                 f'text-anchor="end" xml:space="preserve">{body}</text>'
             )
     return "".join(out)
@@ -3842,7 +3936,9 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
     """
     if not slots:
         return ""
-    face = _word_face(word_font, word_font_alt)
+    # ONE scale for the fit and the render — read once, handed to both.
+    alt_scale = config.word_alt_scale(cfg, _WORD_ALT_SCALE)
+    face = _word_face(word_font, word_font_alt, alt_scale=alt_scale)
     bold_w = config.word_bold_w(cfg, _WORD_BOLD_W)
     layouts = _word_layouts(slots, words, face, face.ref, cell=cell,
                             word_size=cfg.get("word_size"), safe=_CARD_SAFE,
@@ -3864,7 +3960,8 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
         out.append(word_lines(x_right, center, lay.size, slot["color"],
                               wi + 1, lay.lines, word_font, lead=lay.lead,
                               marker_advance=advance, bold_w=bold_w,
-                              alt_font_path=word_font_alt))
+                              alt_font_path=word_font_alt,
+                              alt_scale=alt_scale))
     return "".join(out)
 
 
@@ -4337,7 +4434,9 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
         # skip the word pass so the sizing below can't crash the whole page.
         if not card["words"]:
             continue
-        face = _word_face(word_font, word_alt)
+        # ONE scale for the fit and the render — read once, handed to both.
+        alt_scale = config.word_alt_scale(cfg, _WORD_ALT_SCALE)
+        face = _word_face(word_font, word_alt, alt_scale=alt_scale)
         bold_w = config.word_bold_w(cfg, _WORD_BOLD_W)
         # The icons are on the CLEAN plate and only there (see THE ICONS), and
         # this is the plate. The frame's clear air comes with them: a card allowed
@@ -4375,6 +4474,7 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
             overlay.append(word_lines(x_right, center, lay.size, slot["color"],
                                       wi + 1, lay.lines, word_font, lead=lay.lead,
                                       bold_w=bold_w, alt_font_path=word_alt,
+                                      alt_scale=alt_scale,
                                       marker_advance=advance))
     body = "".join(overlay)
     return svg.replace("</svg>", body + "</svg>")

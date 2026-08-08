@@ -383,3 +383,307 @@ def test_a_broken_english_word_keeps_its_hyphen_on_the_right():
     face = rp._word_face(CAFE, os.path.join(HERE, "word-fonts", "Fredoka-Medium.ttf"))
     runs = face.runs(latin)
     assert [t for _f, t in runs] == [latin], runs
+
+
+# --- the English words, a little smaller ------------------------------------
+# The owner, reading a deck whose word list mixes the two languages: "in סיישל,
+# פריז, קליפורניה, ברוקלין, סנטוריני, טוקיו, מרקאנה, אואזיס, טריפה the size of
+# the font of the words only the words in english needs to be little bit
+# smaller". Nine designs of the ten — every one except דני.
+#
+# English is set in the SECOND word face, and a Latin face and a Hebrew one at
+# one point size do not read as one size: the Latin x-height is the taller. So
+# the fix is not a font change, it is a scale on the alt face's own runs — and
+# the trap is that a card is MEASURED before it is PAINTED. Reserve the width of
+# a full-size English word and print it at nine tenths and the line sits inside
+# room nobody uses; reserve nine tenths and print full size and it crosses the
+# trim. Both sides read one number, and these tests are what says so.
+
+LATIN = os.path.join(HERE, "word-fonts", "Fredoka-Medium.ttf")
+# One entry with both languages on one line — the shape the complaint is about.
+_MIXED = "40 מתחת ל-BBQ"
+
+
+def _runs_of(svg):
+    """``[(family, size, text, x)]`` for every ``<text>`` the renderer emitted.
+
+    Read back off the MARKUP rather than off the layout objects, because the
+    markup is what Chrome is handed and therefore what actually prints. The bidi
+    controls ``_embed`` wraps a run in are stripped: they order glyphs, they do
+    not advance the pen.
+    """
+    import re
+    out = []
+    for m in re.finditer(r'<text x="([-\d.]+)"[^>]*?font-family="(HebWord|HebWordAlt)"'
+                         r' font-size="([\d.]+)"[^>]*>(.*?)</text>', svg):
+        x, fam, size, body = m.group(1), m.group(2), m.group(3), m.group(4)
+        for ctrl in (rp._RTL_EMBED, rp._LTR_EMBED, rp._RTL_POP):
+            body = body.replace(ctrl, "")
+        body = (body.replace("&lt;", "<").replace("&gt;", ">")
+                    .replace("&amp;", "&"))
+        out.append((fam, float(size), body, float(x)))
+    return out
+
+
+def test_only_the_english_words_are_set_a_little_smaller():
+    """The complaint itself, on one line that carries both languages.
+
+    "only the words in english" is the whole of it: the Hebrew half of the very
+    same entry keeps the size the design was calibrated at, so nothing about a
+    Hebrew-only deck moves. If the scale were applied to the line rather than to
+    the alt face's runs, this is the assertion that would catch it.
+    """
+    size = 12.0
+    runs = _runs_of(rp.word_lines(200, 100, size, "#000", 1, [_MIXED], CAFE,
+                                  alt_font_path=LATIN))
+    word_runs = runs[2:]                      # the first two are digit and stop
+    latin = [r for r in word_runs if r[0] == "HebWordAlt"]
+    hebrew = [r for r in word_runs if r[0] == "HebWord"]
+    assert latin and hebrew, ("this line must carry both languages to mean "
+                              f"anything: {word_runs}")
+    assert all("BBQ" in r[2] for r in latin), latin
+    for r in latin:
+        assert abs(r[1] - size * rp._WORD_ALT_SCALE) < 0.005, (
+            f"the English was set at {r[1]}, not at "
+            f"{size * rp._WORD_ALT_SCALE} — the owner asked for it a little "
+            "smaller, and this is the run she was looking at")
+    for r in hebrew:
+        assert abs(r[1] - size) < 0.005, (
+            f"the Hebrew beside it moved to {r[1]}; she asked for the English "
+            "only, and the design's own size is the Hebrew's")
+
+
+def test_the_fit_reserves_exactly_the_width_the_english_is_printed_at():
+    """The invariant that costs paper or costs the card when it slips.
+
+    The fit reserves ``_line_width_at`` — marker, gap, word — and the renderer
+    then walks a pen through the runs. Here the two are compared THROUGH THE
+    MARKUP: every emitted run is re-measured in the family and at the font-size
+    it was actually emitted with, and the left edge that produces has to be the
+    left edge the fit paid for. Nothing in this reads the renderer's own width
+    list, so a scale applied on one side and forgotten on the other shows up as
+    a real gap in user units rather than as a passing tautology.
+    """
+    size, x_right, num = 14.0, 200.0, 3
+    face = rp._word_face(CAFE, LATIN)
+    fonts = {"HebWord": face.primary, "HebWordAlt": face.alt}
+    for line in (_MIXED, "BBQ", "Tel Aviv", "מסיבת רווקות"):
+        svg = rp.word_lines(x_right, 100, size, "#000", num, [line], CAFE,
+                            alt_font_path=LATIN)
+        word_runs = _runs_of(svg)[2:]
+        assert word_runs, line
+        # Each run is anchored by its END, so its own advance — measured at the
+        # size it was emitted at — puts its start.
+        starts = [x - fonts[fam].getlength(txt) / face.ref * rsize
+                  for fam, rsize, txt, x in word_runs]
+        painted = x_right - min(starts)
+        reserved = rp._line_width_at(face, face.ref, num, line) * size / face.ref
+        # A hundredth of a user unit is the MARKUP's own resolution — every
+        # coordinate and every font-size is emitted at two decimals — so the two
+        # readings can never agree closer than that. On a 63 mm card a hundredth
+        # of a unit is about four thousandths of a millimetre; the drift this
+        # test exists to catch is a whole English word's worth of it.
+        assert abs(painted - reserved) < 0.02, (
+            f"{line!r}: the fit reserved {reserved:.4f} and the renderer "
+            f"painted {painted:.4f} — a line measured wider than it prints "
+            "wastes the card, and one measured narrower crosses the trim")
+
+
+def test_with_no_second_face_the_measure_is_still_the_font_itself():
+    """``Face``'s standing promise, re-asserted beside the scale that could have
+    broken it: with no alt face uploaded there is nothing to scale, and
+    ``length`` must be the primary's own call and the primary's own float — not
+    a sum over a one-element list that could reassociate and move a last digit.
+
+    Every shipped design but the two-face ones takes this branch, so it is the
+    branch that must not move by a hundredth of a unit.
+    """
+    face = rp._word_face(CAFE)
+    primary = rp._word_metrics(CAFE)[0]
+    for text in ("מסיבה", _MIXED, "BBQ", "Tel Aviv", ""):
+        assert face.length(text) == primary.getlength(text), text
+        assert face.getbbox(text) == primary.getbbox(text), text
+    assert face.scale(False) == 1.0 and face.scale(True) == 1.0
+    # ...and the markup of a one-face line is byte for byte what it always was.
+    assert (rp.word_lines(200, 100, 12, "#000", 1, [_MIXED], CAFE)
+            == rp.word_lines(200, 100, 12, "#000", 1, [_MIXED], CAFE,
+                             alt_font_path=None, alt_scale=0.5))
+
+
+def test_a_design_can_pin_its_english_back_to_the_hebrew_size():
+    """דני is the one design the owner did NOT list.
+
+    So the house fraction has to be a default and not a law: a design pins
+    itself back to parity with ``word_alt_scale: 1.0`` in themes.json, which is
+    config the owner already edits, not a code change and not a deploy.
+    """
+    import json as _json
+    import shutil
+
+    import test_build_deck as tb
+
+    def _store(scale):
+        class _S(tb.Store):
+            def __enter__(self):
+                tmp = super().__enter__()
+                root = os.environ["DATA_DIR"]
+                shutil.copy(LATIN, os.path.join(root, "templates", "demo",
+                                                "fonts", "Fredoka-Medium.ttf"))
+                p = os.path.join(root, "templates", "themes.json")
+                with open(p, encoding="utf-8") as fh:
+                    data = _json.load(fh)
+                data["demo"]["word_font_alt"] = "Fredoka-Medium.ttf"
+                if scale is not None:
+                    data["demo"]["word_alt_scale"] = scale
+                with open(p, "w", encoding="utf-8") as fh:
+                    _json.dump(data, fh)
+                return tmp
+
+        return _S()
+
+    def _english_sizes(scale):
+        with _store(scale):
+            cfg = config.theme("demo")
+            recipe = config.recipe_or_empty(cfg)
+            overlay = rp.card_overlay("demo", recipe,
+                                      [_MIXED, "BBQ", "מסיבה", "Tel Aviv"],
+                                      ["PARTY לשירה"], front_index=2)
+            runs = _runs_of(overlay)
+            eng = [(r[1], r[2]) for r in runs if r[0] == "HebWordAlt"]
+            heb = [r[1] for r in runs if r[0] == "HebWord"]
+            assert eng, "this card must set some English to mean anything"
+            return eng, heb
+
+    # 1. the design that says nothing gets the house fraction...
+    eng, heb = _english_sizes(None)
+    card = max(heb)                        # the card's own word size
+    for got, txt in eng:
+        assert abs(got - card * rp._WORD_ALT_SCALE) < 0.01, (txt, got, card)
+    # 2. ...and the design that pins itself back gets its English at the card's
+    #    own size, exactly as it printed before any of this.
+    eng, heb = _english_sizes(1.0)
+    card = max(heb)
+    for got, txt in eng:
+        assert abs(got - card) < 0.01, (
+            f"{txt!r} set at {got} on a design that asked for parity with the "
+            f"card's {card}")
+
+
+def test_the_theme_knob_falls_back_rather_than_failing_an_order():
+    """A knob the owner mistypes must not be the reason a paid order does not
+    render. Nor may a zero get through and set the English as nothing at all."""
+    assert config.word_alt_scale({}, 0.9) == 0.9
+    assert config.word_alt_scale({"word_alt_scale": 1.0}, 0.9) == 1.0
+    assert config.word_alt_scale({"word_alt_scale": "0.85"}, 0.9) == 0.85
+    for bad in ("", "a bit smaller", None, 0, -1, [0.8]):
+        assert config.word_alt_scale({"word_alt_scale": bad}, 0.9) == 0.9, bad
+
+
+def test_the_numbered_marker_is_not_touched_by_the_english_scale():
+    """The digit is the card's OWN face and its own size, by design.
+
+    ``_MARKER_SCALE`` happens to be 0.9 as well, so the proof is driven at a
+    scale that is deliberately NOT the house one — otherwise the two numbers
+    would agree by coincidence and the test would pass while reading the wrong
+    one.
+    """
+    size = 20.0
+    svg = rp.word_lines(200, 100, size, "#000", 4, ["BBQ"], CAFE,
+                        alt_font_path=LATIN, alt_scale=0.5)
+    runs = _runs_of(svg)
+    digit, stop = runs[0], runs[1]
+    assert (digit[2], stop[2]) == ("4", "."), runs
+    for r in (digit, stop):
+        assert r[0] == "HebWord", r
+        assert abs(r[1] - size * rp._MARKER_SCALE) < 0.005, (
+            f"the marker was set at {r[1]}, not at {size * rp._MARKER_SCALE}")
+    assert abs(runs[2][1] - size * 0.5) < 0.005, runs[2]
+    # ...and the digit COLUMN, which every word on the card starts after, is the
+    # card's face too: the scale may not move it by a hundredth of a unit.
+    one, scaled = rp._word_face(CAFE), rp._word_face(CAFE, LATIN, alt_scale=0.5)
+    assert (rp._marker_advance(rp._primary(scaled), 4)
+            == rp._marker_advance(one.primary, 4))
+
+
+def test_the_house_fraction_can_be_overridden_from_the_environment():
+    """The renders the owner is shown are made with the knob turned, so it has to
+    be turnable without an edit: ``DUGRI_WORD_ALT_SCALE``, in the style of every
+    other constant in this module.
+
+    Checked in a fresh interpreter rather than by reloading the module here — a
+    reload would hand the rest of the suite a second ``render_page`` with cold
+    caches and a different ``Face`` class."""
+    import subprocess
+    import sys
+    env = dict(os.environ, DUGRI_WORD_ALT_SCALE="0.75")
+    out = subprocess.run(
+        [sys.executable, "-c",
+         "import render_page as rp; print(rp._WORD_ALT_SCALE); "
+         "print(rp._word_face('word-fonts/Cafe Regular.ttf',"
+         " 'word-fonts/Fredoka-Medium.ttf').alt_scale)"],
+        cwd=HERE, env=env, capture_output=True, text=True, check=True)
+    assert out.stdout.split() == ["0.75", "0.75"], out.stdout
+
+
+def test_a_design_that_names_one_file_in_both_slots_keeps_its_hebrew_size():
+    """Six of the ten designs fill BOTH word slots with the same file.
+
+    אואזיס, פריז, טוקיו, מרקאנה, ברוקלין and טריפה each set their words in one
+    face that draws Hebrew and Latin alike, and the owner filled the second slot
+    with it anyway. So on those cards the two faces are literally one object, and
+    anything that asked "is this run's font the alt one?" answered YES for every
+    run — Hebrew included. Six of the nine designs she asked for smaller English
+    would have had their Hebrew shrunk with it.
+
+    The split knows which run is which; ``Face.runs_by_script`` carries the answer,
+    and this is what says so.
+    """
+    size = 12.0
+    face = rp._word_face(CAFE, CAFE)
+    assert face.alt is face.primary, "this test only means anything if they are"
+    runs = _runs_of(rp.word_lines(200, 100, size, "#000", 1, [_MIXED], CAFE,
+                                  alt_font_path=CAFE))[2:]
+    heb = [r for r in runs if "מתחת" in r[2]]
+    eng = [r for r in runs if "BBQ" in r[2]]
+    assert heb and eng, runs
+    assert all(abs(r[1] - size) < 0.005 for r in heb), heb
+    assert all(abs(r[1] - size * rp._WORD_ALT_SCALE) < 0.005 for r in eng), eng
+    # ...and a Hebrew-only entry on such a design is the ordinary one-face line
+    # again: the card's own family, and the RTL embedding every other design's
+    # Hebrew is wrapped in. Without it a line that opens with digits is laid out
+    # left-to-right first, which is a real card printing "40 מסיבת" backwards.
+    heb_only = rp.word_lines(200, 100, size, "#000", 1, ["40 מסיבת רווקות"],
+                             CAFE, alt_font_path=CAFE)
+    assert heb_only == rp.word_lines(200, 100, size, "#000", 1,
+                                     ["40 מסיבת רווקות"], CAFE)
+    assert "HebWordAlt" not in heb_only
+    assert rp._RTL_EMBED in heb_only
+
+
+def test_no_design_scales_a_hebrew_run_however_its_two_slots_are_filled():
+    """The guarantee swept over the catalogue rather than over one pair of files.
+
+    "only the words in english": a Hebrew entry has to measure the same width on
+    every design whether or not that design fills its second word slot — the
+    same claim as "its width does not move when the alt face is taken away", and
+    exact, not close, because it is the same font doing the same reading.
+
+    Driven over BOTH wirings the real store uses, because the shipped copies of
+    these designs in this checkout carry no second face at all: a design whose
+    two slots hold DIFFERENT files (סיישל, קליפורניה, סנטוריני, דני) and one
+    whose two slots hold the SAME file (the other six). The second is the one
+    that broke: with one object in both slots there is no font to tell the runs
+    apart, and every Hebrew word on those cards was about to be shrunk.
+    """
+    words = ("מסיבה", "אבא", "הופעה של להקת הבלוז", "40 מתחת")
+    for theme in _themes():
+        primary = config.resolve_word_font(theme)
+        one = rp._word_face(primary)
+        for alt, how in ((primary, "the same file in both slots"),
+                         (LATIN, "a separate Latin face")):
+            two = rp._word_face(primary, alt)
+            for word in words:
+                assert two.length(word) == one.length(word), (
+                    f"{theme} with {how}: {word!r} measures {two.length(word)} "
+                    f"with a second face and {one.length(word)} without it — "
+                    "the scale reached a Hebrew run")
