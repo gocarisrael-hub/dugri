@@ -531,7 +531,7 @@
          Deliberately NOT a .pdp-sec card: it is a note about the product, not a
          section of it, so it reads as an aside — sand wash, a single accent edge on
          the leading side, no shadow. Quieter than the content cards below it while
-         still impossible to scroll past on the way to the buy button. */
+         still sharing the first screen with the price and the buy button. */
       .pdp-title-note {
         margin-top: 18px;
         display: flex;
@@ -623,19 +623,31 @@
         line-height: 1.4;
       }
 
-      /* buy section */
-      .pdp-buy-sec {
-        text-align: center;
-        background: linear-gradient(160deg, var(--surface), var(--sage-tint));
+      /* buy block — now part of the head, straight under the price.
+         No card/gradient any more: it is not a section of the page, it is the
+         continuation of the price line, so it stays on the page ground. */
+      .pdp-buy {
+        margin-top: 18px;
       }
-      .pdp-buy-sec .note {
-        margin-top: 12px;
+      .pdp-buy-note {
+        margin-top: 10px;
         color: var(--muted);
         font-size: 14.5px;
       }
       #pdpBuy {
         font-size: 19px;
         padding: 17px 40px;
+        /* Full-width on a phone (thumb-sized target, this audience is mobile),
+           natural width once there is room beside it. */
+        display: flex;
+        width: 100%;
+      }
+      @media (min-width: 640px) {
+        #pdpBuy {
+          display: inline-flex;
+          width: auto;
+          min-width: 320px;
+        }
       }
 
       /* ---- 4. RELATED RAIL ---- */
@@ -935,23 +947,56 @@
           </button>
         </section>
 
-        <!-- 2. TITLE + PRICE -->
+        <!-- 2. TITLE + PRICE + BUY -->
         <div class="pdp-head">
           <h1 id="pdpTitle">המשחק המותאם אישית</h1>
           <div class="pdp-price">
             <span class="now" id="pdpPriceNow">מ-79 ₪</span>
             <span class="was" id="pdpPriceWas">129 ₪</span>
           </div>
+
+          <!-- BUY — directly under the price, the moment the shopper knows what it
+               costs. It used to live in its own card far down the page, after the
+               "what's inside" list; a shopper who was already sold had to scroll
+               past three sections to act.
+               The launch/delivery note travels WITH the button: it is buy-supporting
+               microcopy (offer, 24h delivery, no word cap), it answers the objections
+               raised by the price it now sits under, and it reads as an orphan
+               anywhere the CTA is not. Its data-edit-pd key is unchanged, so every
+               saved per-design override still applies (applyPerDesignFields in
+               js/product.js matches on the attribute, not on position).
+               Opens the 4-step explainer (js/start-explainer.js) instead of jumping
+               straight into the wizard. The explainer's continue button carries THIS
+               anchor's live href forward — product.js rewrites it to
+               options.html?design=<id>&step=2 — so design preselection survives. -->
+          <div class="pdp-buy" data-testid="pdp-buy-block">
+            <a
+              class="btn"
+              id="pdpBuy"
+              href="options.html"
+              data-testid="pdp-buy"
+              data-start-explainer
+              data-ga="order_started"
+              data-ga-cta="pdp"
+              data-edit-pd="buy-cta"
+              >מתחילים לבנות את המשחק ›</a
+            >
+            <p class="pdp-buy-note" data-edit-pd="buy-note">
+              מבצע השקה · אספקה תוך 24 שעות · ללא הגבלת מילים
+            </p>
+          </div>
         </div>
 
         <!-- 2b. THE TITLE IS THE BUYER'S -->
-        <!-- Sits between the price and the first content section, so it cannot be
-             scrolled past on the way to the buy button. This is the last screen
-             before "קנו עכשיו" where a shopper writes the design off as belonging
-             to somebody else's kind of party — the free-title field is real, but it
-             only appears in the wizard, several steps after this decision. NOT
-             per-design (no data-edit-pd): the promise is identical on every design,
-             so one page-level pair of keys keeps it consistent everywhere. -->
+        <!-- Sits directly under the buy block and above the first content section,
+             so it is still on the first screen: a shopper deciding whether this
+             design belongs to somebody else's kind of party reads it right beside
+             the CTA. (It used to sit ABOVE the CTA, back when the CTA was far down
+             the page; now the CTA is under the price, so this note follows it.) The
+             free-title field is real, but it only appears in the wizard, several
+             steps after this decision. NOT per-design (no data-edit-pd): the promise
+             is identical on every design, so one page-level pair of keys keeps it
+             consistent everywhere. -->
         <section class="pdp-title-note" data-testid="pdp-title-note">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
             <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3z" />
@@ -1012,27 +1057,11 @@
           </ul>
         </section>
 
-        <!-- 3c. BUY NOW -->
-        <section class="pdp-sec pdp-buy-sec">
-          <!-- Opens the 4-step explainer (js/start-explainer.js) instead of jumping
-               straight into the wizard. The explainer's continue button carries THIS
-               anchor's live href forward — product.js rewrites it to
-               options.html?design=<id>&step=2 — so design preselection survives. -->
-          <a
-            class="btn"
-            id="pdpBuy"
-            href="options.html"
-            data-testid="pdp-buy"
-            data-start-explainer
-            data-ga="order_started"
-            data-ga-cta="pdp"
-            data-edit-pd="buy-cta"
-            >מתחילים לבנות את המשחק ›</a
-          >
-          <p class="note" data-edit-pd="buy-note">
-            מבצע השקה · אספקה תוך 24 שעות · ללא הגבלת מילים
-          </p>
-        </section>
+        <!--
+          3c. There is no BUY section here any more. The CTA + its note moved up
+          under the price (see "2. TITLE + PRICE + BUY" above); leaving an empty
+          .pdp-sec behind would render as a stray bordered card.
+        -->
       </div>
 
       <!-- 4. RELATED PRODUCTS RAIL -->

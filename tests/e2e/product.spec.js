@@ -218,9 +218,11 @@ test.describe('product detail page', () => {
 
   // The buyer can title the deck anything, but that field only appears deep in the
   // wizard — long after this page is where she decides a "רווקות" design is not for
-  // her birthday. The note has to sit between the price and the first section, so
-  // it cannot be scrolled past on the way to the buy button.
-  test('the title note sits between the price and the first section, on every design', async ({
+  // her birthday. The note has to stay on the first screen, between the buy block
+  // and the first content section. (It used to sit ABOVE the CTA; the CTA has since
+  // moved up under the price, so the note now follows it — still beside it, still
+  // impossible to miss.)
+  test('the title note sits between the buy block and the first section, on every design', async ({
     page,
   }) => {
     for (const id of ['bachelorette', 'birthday', 'kids']) {
@@ -236,8 +238,60 @@ test.describe('product detail page', () => {
       const buyBox = await page.getByTestId('pdp-buy').boundingBox();
 
       expect(noteBox.y, `${id}: note below the price`).toBeGreaterThan(priceBox.y);
+      expect(noteBox.y, `${id}: note below the buy button`).toBeGreaterThan(buyBox.y);
       expect(noteBox.y, `${id}: note above the first section`).toBeLessThan(firstSecBox.y);
-      expect(noteBox.y, `${id}: note above the buy button`).toBeLessThan(buyBox.y);
+    }
+  });
+
+  // The owner moved the CTA up: price → button, not price → three sections → button.
+  // Pinned in DOM order AND geometry so a refactor cannot quietly send it back down.
+  test('the buy button sits directly under the price, above every content section', async ({
+    page,
+  }) => {
+    for (const id of ['bachelorette', 'japanese']) {
+      await page.goto(`/product.html?design=${id}`);
+
+      // DOM: the buy block is inside the head, right after the price.
+      const dom = await page.evaluate(() => {
+        const head = document.querySelector('.pdp-head');
+        const buy = document.querySelector('[data-testid="pdp-buy-block"]');
+        const price = document.querySelector('.pdp-price');
+        return {
+          insideHead: !!(head && buy && head.contains(buy)),
+          afterPrice: !!(price && buy && price.compareDocumentPosition(buy) & 4),
+          // The old standalone buy card must be gone, not left behind empty.
+          strayBuySection: document.querySelectorAll('.pdp-buy-sec').length,
+          // …and no content section is left empty by the move.
+          emptySections: [...document.querySelectorAll('.pdp-sec')].filter(
+            (s) => !s.textContent.trim()
+          ).length,
+        };
+      });
+      expect(dom.insideHead, `${id}: buy block inside .pdp-head`).toBe(true);
+      expect(dom.afterPrice, `${id}: buy block after the price`).toBe(true);
+      expect(dom.strayBuySection, `${id}: leftover .pdp-buy-sec`).toBe(0);
+      expect(dom.emptySections, `${id}: empty .pdp-sec left behind`).toBe(0);
+
+      // Geometry: below the price, above the first content section.
+      const priceBox = await page.locator('#pdpPriceNow').boundingBox();
+      const buyBox = await page.getByTestId('pdp-buy').boundingBox();
+      const firstSecBox = await page.locator('.pdp-sec').first().boundingBox();
+      expect(buyBox.y, `${id}: button below the price`).toBeGreaterThan(priceBox.y);
+      expect(buyBox.y, `${id}: button above the first section`).toBeLessThan(firstSecBox.y);
+
+      // The launch/delivery note travelled with the button and still carries its
+      // per-design override key.
+      const noteEl = page.locator('[data-edit-pd="buy-note"]');
+      await expect(noteEl).toHaveCount(1);
+      await expect(noteEl).toContainText('אספקה תוך 24 שעות');
+      const noteBox = await noteEl.boundingBox();
+      expect(noteBox.y, `${id}: note directly under the button`).toBeGreaterThan(buyBox.y);
+      expect(noteBox.y, `${id}: note above the first section`).toBeLessThan(firstSecBox.y);
+
+      // The href rewrite still finds #pdpBuy after the move.
+      await expect
+        .poll(() => page.getByTestId('pdp-buy').getAttribute('href'))
+        .toBe(`options.html?design=${id}&step=2`);
     }
   });
 

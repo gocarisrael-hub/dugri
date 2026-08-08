@@ -10,6 +10,11 @@
    IT NEVER BLOCKS THE PURCHASE. It intercepts the click, shows the explainer, and
    the continue button carries the trigger's OWN href forward — including
    product.js's `options.html?design=<id>&step=2`, so design preselection survives.
+   The continue button appears TWICE — above the four steps (title → sub → CTA →
+   steps) so a buyer who is already sold can act without reading the briefing, and
+   again after step 4 so a reader who scrolled the whole thing is not left with
+   nothing to press. They are one button shown twice: same shared handler, same live
+   href, same data-edit key (see buildCta).
    Escape / the X / an overlay-backdrop click all close it and hand focus back to
    the trigger, and a modified click (⌘/ctrl/shift/middle) is left alone so
    "open in new tab" still works.
@@ -137,6 +142,38 @@
     return node;
   }
 
+  // One continue CTA. The sheet renders TWO of these — 'top' (above the steps) and
+  // 'bottom' (after step 4) — because the briefing is taller than a phone and a
+  // reader who scrolls it all would otherwise end with no button in view.
+  //
+  // They are the SAME button shown twice, and everything downstream treats them that
+  // way: both carry `data-sx-continue`, which is what the runtime binds and what
+  // open() stamps the live href onto, so there is exactly one handler and they can
+  // never drift apart. `data-sx-place` is the only thing that differs, and it rides
+  // along on the analytics event so we learn which one gets used without emitting
+  // two event names.
+  //
+  // They deliberately SHARE one data-edit key. That is the editor's supported
+  // pattern for duplicated content, not a conflict: applyOverrides writes to every
+  // [data-edit=key] match on load and syncSameKey mirrors a live edit onto all of
+  // them (see js/editor.js) — the homepage marquee already ships eight nodes on one
+  // key. So the owner retitles the button once and both update, which is what "one
+  // button shown twice" should do. Distinct keys would be the change to make only if
+  // she ever wants the bottom one worded differently.
+  function buildCta(place) {
+    var wrap = el('div', 'sx-cta sx-cta--' + place);
+    var go = el('a', 'sx-go', {
+      href: 'options.html',
+      'data-edit': 'start-explainer-continue',
+      'data-sx-continue': '',
+      'data-sx-place': place,
+      'data-testid': 'start-explainer-continue' + (place === 'top' ? '' : '-bottom'),
+    });
+    go.textContent = CONTINUE;
+    wrap.appendChild(go);
+    return wrap;
+  }
+
   // Build the overlay DOM (hidden). Exported for unit tests; the runtime builds it
   // once, lazily, on the first open and then reuses it.
   function buildOverlay(doc) {
@@ -167,6 +204,14 @@
     head.appendChild(h2);
     head.appendChild(sub);
     inner.appendChild(head);
+
+    // TOP continue CTA — above the four steps so a buyer who is already sold can act
+    // the instant the sheet opens, without scrolling past the explanation.
+    // Placement note — it is a full-width block BELOW the title/sub, NOT beside the
+    // X. The X keeps its own absolute top corner and the head separates the two, so
+    // on a 390px phone they are far apart, unmistakably different targets, and
+    // neither overlaps the title.
+    inner.appendChild(buildCta('top'));
 
     var list = el('ol', 'sx-steps');
     STEPS.forEach(function (step, i) {
@@ -206,15 +251,11 @@
     });
     inner.appendChild(list);
 
-    var foot = el('div', 'sx-foot');
-    var go = el('a', 'sx-go', {
-      href: 'options.html',
-      'data-edit': 'start-explainer-continue',
-      'data-testid': 'start-explainer-continue',
-    });
-    go.textContent = CONTINUE;
-    foot.appendChild(go);
-    inner.appendChild(foot);
+    // BOTTOM continue CTA — the same button again, after step 4. Without it a phone
+    // reader who scrolls the whole briefing ends on the last step with nothing to
+    // act on and has to scroll back up. On a short/desktop sheet margin-top:auto
+    // parks it at the foot rather than leaving it floating mid-page.
+    inner.appendChild(buildCta('bottom'));
 
     overlay.appendChild(inner);
     return overlay;
@@ -260,16 +301,22 @@
       '.sx-note{margin-top:9px;font-size:13.5px;line-height:1.6;color:var(--muted,#6b6b6b);}',
       '.sx-wa{display:inline-block;margin-top:9px;font-size:14.5px;color:var(--ink,#141414);',
       'border-bottom:1px solid var(--accent,#b7a389);text-decoration:none;padding-bottom:2px;}',
-      /* Footer sticks to the bottom of the sheet; the CTA is always reachable
-         because the sheet itself scrolls. */
-      '.sx-foot{margin-top:auto;padding-top:8px;}',
+      /* Two copies of the same CTA. The TOP one sits between the head and the steps,
+         so it is on screen the moment the sheet opens — no scrolling past the
+         explanation to reach it. The BOTTOM one catches the reader who scrolled the
+         whole briefing; margin-top:auto parks it at the foot of the sheet when the
+         content is shorter than the viewport instead of leaving it floating. */
+      '.sx-cta{padding-bottom:4px;}',
+      '.sx-cta--bottom{margin-top:auto;padding-top:6px;padding-bottom:0;}',
       '.sx-go{display:block;width:100%;box-sizing:border-box;text-align:center;',
       'background:var(--sage,#141414);color:#fff;text-decoration:none;padding:17px 26px;',
       'border-radius:var(--radius,0);font-size:18px;letter-spacing:0.03em;}',
       '.sx-go:hover{background:var(--sage-deep,#000);}',
+      /* Desktop: the CTA shrinks to its own width and aligns with the text it now
+         follows (start edge — right in RTL), rather than being centred like the
+         footer button it used to be. */
       '@media (min-width:700px){.sx-inner{padding-top:78px;gap:30px;}',
-      '.sx-head h2{font-size:31px;}.sx-go{width:auto;display:inline-block;min-width:290px;}',
-      '.sx-foot{text-align:center;}}',
+      '.sx-head h2{font-size:31px;}.sx-go{width:auto;display:inline-block;min-width:290px;}}',
       /* Motion is opt-in. The slide-up runs on .sx-inner, never on the fixed
          .sx-overlay: an animated transform on the overlay would move the sheet's own
          box for the first ~200ms (and make it a containing block for its
@@ -294,14 +341,29 @@
     injectStyles(document);
 
     var overlay = null;
-    var goBtn = null;
+    var goBtns = []; // every [data-sx-continue] — the top and bottom copies
     var lastTrigger = null;
+
+    // ONE continue handler, shared by both buttons, so their behaviour cannot drift.
+    // Fires the event exactly once per continue (only the clicked button runs this),
+    // tagged with which copy was used — one event name, one extra field, rather than
+    // two events to reconcile later.
+    function onContinue(e) {
+      var place = (e.currentTarget && e.currentTarget.getAttribute('data-sx-place')) || 'unknown';
+      track(EV_CONTINUE, {
+        cta: (lastTrigger && lastTrigger.dataset.gaCta) || 'unknown',
+        place: place,
+      });
+      // Let the anchor navigate normally; no preventDefault. The overlay is torn
+      // down first so a bfcache back-navigation doesn't restore it wide open.
+      close({ keepFocus: true });
+    }
 
     function ensureOverlay() {
       if (overlay) return overlay;
       overlay = buildOverlay(document);
       document.body.appendChild(overlay);
-      goBtn = overlay.querySelector('[data-testid="start-explainer-continue"]');
+      goBtns = Array.prototype.slice.call(overlay.querySelectorAll('[data-sx-continue]'));
 
       overlay.querySelector('.sx-x').addEventListener('click', function () {
         close();
@@ -310,11 +372,8 @@
       overlay.addEventListener('mousedown', function (e) {
         if (e.target === overlay) close();
       });
-      goBtn.addEventListener('click', function () {
-        track(EV_CONTINUE, { cta: (lastTrigger && lastTrigger.dataset.gaCta) || 'unknown' });
-        // Let the anchor navigate normally; no preventDefault. The overlay is torn
-        // down first so a bfcache back-navigation doesn't restore it wide open.
-        close({ keepFocus: true });
+      goBtns.forEach(function (btn) {
+        btn.addEventListener('click', onContinue);
       });
       // Keyboard handling sits on the DOCUMENT, not the overlay: after a backdrop
       // click focus can land on <body>, and a listener bound to the overlay would
@@ -352,7 +411,11 @@
       ensureOverlay();
       lastTrigger = trigger;
       // Live read: product.js may have rewritten the trigger's href (design + step).
-      goBtn.setAttribute('href', resolveContinueHref(trigger));
+      // Stamped on EVERY copy, so top and bottom always go to the same place.
+      var href = resolveContinueHref(trigger);
+      goBtns.forEach(function (btn) {
+        btn.setAttribute('href', href);
+      });
       overlay.classList.add('is-open');
       document.documentElement.classList.add('sx-locked');
       document.body.classList.add('sx-locked');
