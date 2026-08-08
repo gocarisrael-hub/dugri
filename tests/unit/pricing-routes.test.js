@@ -131,8 +131,11 @@ describe('GET /api/pricing (public)', () => {
 
   it('exposes ONLY the pricing projection — no other settings section leaks', async () => {
     const { body } = await get('/api/pricing');
-    // Exactly the two whitelisted top-level keys.
-    expect(Object.keys(body).sort()).toEqual(['store', 'versions']);
+    // Exactly the whitelisted top-level keys. `delivery_fee` is pricing the
+    // checkout must know (shipping is charged once per order, not per copy, so
+    // the page cannot derive it) — the point of this assertion is that NOTHING
+    // ELSE from settings rides along, so it stays an exact list.
+    expect(Object.keys(body).sort()).toEqual(['delivery_fee', 'store', 'versions']);
     // Exactly the four known versions, each just { enabled, price }.
     expect(Object.keys(body.versions).sort()).toEqual(['custom', 'delivery', 'pdf', 'pickup']);
     for (const v of Object.values(body.versions)) {
@@ -211,7 +214,15 @@ describe('charge path reads settings (db.setOrder + /order route)', () => {
       version: 'pdf',
     });
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ version: 'pdf', total: 79 });
+    // The response now also carries the arithmetic behind the total (copies,
+    // per-copy price, one-time shipping) so the checkout can show its sum.
+    expect(r.body).toEqual({
+      version: 'pdf',
+      total: 79,
+      quantity: 1,
+      unit_price: 79,
+      delivery_fee: 0,
+    });
   });
 
   it('still requires a delivery address when delivery is enabled', async () => {

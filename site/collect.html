@@ -951,14 +951,83 @@
       }
       .pay-total {
         /* Flex row (RTL): label, then current price, then the struck full price
-           to the LEFT of the current price. */
+           to the LEFT of the current price. Wraps so the arithmetic line below
+           (.pay-math) gets its own row on a narrow phone. */
         display: flex;
         justify-content: center;
         align-items: baseline;
+        flex-wrap: wrap;
         gap: 6px;
         font-weight: 900;
         font-size: 19px;
         margin: 14px 0;
+      }
+      /* The multi-copy arithmetic, on its own full-width row under the total. */
+      .pay-math {
+        flex-basis: 100%;
+        text-align: center;
+        font-weight: 400;
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+      .pay-math.hidden {
+        display: none;
+      }
+      /* ===== COPIES STEPPER ===== */
+      .qty-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border: 1px solid var(--accent);
+        background: var(--accent-tint);
+        padding: 11px 12px;
+        margin-top: 12px;
+      }
+      .qty-row.hidden {
+        display: none;
+      }
+      .qty-label {
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .qty-sub {
+        display: block;
+        font-size: 11px;
+        font-weight: 400;
+        color: var(--muted);
+      }
+      .stepper {
+        display: inline-flex;
+        align-items: stretch;
+        border: 1px solid var(--ink);
+        background: var(--surface);
+        flex: none;
+      }
+      .stepper button {
+        width: 38px;
+        min-height: 38px; /* a real tap target on a phone */
+        border: 0;
+        background: transparent;
+        font-family: var(--display);
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--ink);
+        line-height: 1;
+        cursor: pointer;
+      }
+      .stepper button:disabled {
+        color: var(--line);
+        cursor: not-allowed;
+      }
+      .qty-val {
+        min-width: 44px;
+        display: grid;
+        place-items: center;
+        font-weight: 900;
+        font-size: 15px;
+        border-inline: 1px solid var(--line);
+        font-variant-numeric: tabular-nums;
       }
       /* coupon code field (owner) — sits just above the total. Kept compact and
          low-key: it's a secondary, occasional-use field, so it shouldn't compete
@@ -1595,9 +1664,37 @@
           </button>
         </div>
 
+        <!-- Copies of the same deck. One control for the whole order — the words
+             are identical, only the number of printed decks changes. -->
+        <div class="qty-row" id="qtyRow">
+          <span class="qty-label" data-edit="collect-qty-label"
+            >כמה עותקים?<span class="qty-sub" data-edit="collect-qty-sub"
+              >אותן מילים, כמה חפיסות</span
+            ></span
+          >
+          <span class="stepper">
+            <button
+              type="button"
+              id="qtyMinus"
+              aria-label="עותק אחד פחות"
+              data-testid="qty-minus"
+              disabled
+            >
+              −
+            </button>
+            <span class="qty-val" id="qtyVal" aria-live="polite" data-testid="qty-val">1</span>
+            <button type="button" id="qtyPlus" aria-label="עותק אחד יותר" data-testid="qty-plus">
+              +
+            </button>
+          </span>
+        </div>
+
         <div class="pay-total">
           לתשלום: <span class="pay-now">₪<span id="payTotal">79</span></span
           ><span class="was hidden" id="payWas"></span>
+          <!-- The arithmetic behind the total ("₪199 × 5 + ₪39 משלוח"), so a
+               multi-copy sum is never a number the buyer has to take on trust. -->
+          <span class="pay-math hidden" id="payMath" data-testid="pay-math"></span>
         </div>
         <div class="pay-err" id="payErr"></div>
 
@@ -2580,6 +2677,9 @@
       let pricing = {
         store: { ...PRICING_FALLBACK.store },
         versions: JSON.parse(JSON.stringify(PRICING_FALLBACK.versions)),
+        // One-time shipping fee; 0 until the real pricing resolves, so the
+        // checkout never shows a shipping charge the server didn't send.
+        delivery_fee: PRICING_FALLBACK.delivery_fee,
       };
       let pricingOk = true;
       // False until the FIRST /api/pricing fetch resolves. Until then the seeded
@@ -2686,6 +2786,8 @@
         });
         // ...and so does arriving with ?pay=1 (the order email's pay button).
         openPayPanelRef = () => openPayPanel('start');
+        $('#qtyMinus').addEventListener('click', () => setCopies(copies - 1));
+        $('#qtyPlus').addEventListener('click', () => setCopies(copies + 1));
         const opts = Array.from(document.querySelectorAll('.pay-opt'));
         const optsBox = $('#payOpts');
         const addressForm = $('#addressForm');
@@ -2728,6 +2830,20 @@
         // state so the discounted price is re-derived when the version changes and
         // so `coupon` is included when the card button POSTs pay/init.
         let appliedCoupon = null; // { code, discount_pct }
+        // Copies of the same deck. No business cap (the owner asked for none); the
+        // 999 ceiling is input validation, so a slipped keypress can't become a
+        // five-figure charge. The server sanitises independently — this is UI.
+        const MAX_COPIES = 999;
+        let copies = 1;
+        // Shipping is charged ONCE per order, not per copy: every deck goes in the
+        // same parcel to the same address. 0 for pickup, and 0 whenever pricing
+        // failed to load (never invent a charge).
+        function deliveryFee() {
+          return Number.isInteger(pricing.delivery_fee) ? pricing.delivery_fee : 0;
+        }
+        function feeFor(v) {
+          return v === 'delivery' ? deliveryFee() : 0;
+        }
 
         // Render the total for the selected version, applying the coupon discount
         // when one is active: the full price shows struck-through (₪ on both) next
@@ -2745,7 +2861,13 @@
             $('#payTotal').textContent = '—';
             return;
           }
-          const base = priceFor(v);
+          // The SAME arithmetic the server performs in db.orderTotal: per-copy
+          // price x copies, plus one shipping fee for the whole order. If these two
+          // ever disagree the buyer is shown one number and charged another, so
+          // any change here belongs in both places.
+          const unit = priceFor(v);
+          const fee = feeFor(v);
+          const base = unit * copies + fee;
           if (appliedCoupon) {
             const discounted = Math.round(base * (1 - appliedCoupon.discount_pct / 100));
             was.textContent = '₪' + base;
@@ -2756,10 +2878,42 @@
             was.classList.add('hidden');
             $('#payTotal').textContent = base;
           }
+          renderPayMath(unit, fee);
+        }
+
+        // Spell out a total that isn't self-evident. A single copy with no shipping
+        // needs no explanation; anything else does, because the buyer can otherwise
+        // only verify our sum by trusting it.
+        function renderPayMath(unit, fee) {
+          const el = $('#payMath');
+          if (copies <= 1 && !fee) {
+            el.textContent = '';
+            el.classList.add('hidden');
+            return;
+          }
+          const parts = ['₪' + unit];
+          if (copies > 1) parts.push(' × ' + copies + ' עותקים');
+          if (fee) parts.push(' + ₪' + fee + ' משלוח (פעם אחת)');
+          el.textContent = parts.join('');
+          el.classList.remove('hidden');
+        }
+
+        // The stepper. `−` stops at 1; there is no upper stop the buyer can feel,
+        // only the typo guard at MAX_COPIES.
+        function setCopies(n) {
+          const next = Math.min(MAX_COPIES, Math.max(1, Math.floor(Number(n) || 1)));
+          copies = next;
+          $('#qtyVal').textContent = String(next);
+          $('#qtyMinus').disabled = next <= 1;
+          $('#qtyPlus').disabled = next >= MAX_COPIES;
+          renderTotal();
         }
 
         function refreshPay() {
           const v = selectedVersion();
+          // A LOCKED order (admin-created, or already paid) is bought exactly as it
+          // was placed — its copy count included — so the stepper is not offered.
+          $('#qtyRow').classList.toggle('hidden', !!lockVersion);
           opts.forEach((o) => o.classList.toggle('active', o.querySelector('input').value === v));
           addressForm.classList.toggle('hidden', v !== 'delivery');
           // When the delivery form is showing and the server returned a stored
@@ -2799,6 +2953,13 @@
             state && state.order && state.order.locked && !state.order.paid ? state.order : null;
           lockVersion = lockedOrder ? lockedOrder.version : null;
           lockTotal = lockedOrder ? lockedOrder.total : null;
+          // Restore the copy count from the placed order, so a reload (or the 5s
+          // background poll) can't quietly reset a 5-copy order back to 1 under the
+          // buyer. Server value only, and never after payment.
+          if (state && state.order && !state.order.paid && Number.isInteger(state.order.quantity)) {
+            const stored = Math.max(1, state.order.quantity);
+            if (stored !== copies) setCopies(stored);
+          }
 
           // 1. LOCKED — show only the order's version at its stored total.
           if (lockedOrder) {
@@ -2894,12 +3055,18 @@
         }
         // Expose applyPricing so render() re-runs it once the collection (and its
         // order) has loaded, engaging the LOCKED state for a persisted order.
+        // Render the stepper from state once setup is complete: the floor's
+        // disabled state must be right on arrival, not only after the buyer
+        // touches the control. It runs HERE, at the end, because renderTotal reads
+        // `payable` and `appliedCoupon` — calling it earlier hits their temporal
+        // dead zone and takes the whole pay panel down with it.
+        setCopies(copies);
         applyPricingRef = applyPricing;
 
         // (Re)load pricing from the shared endpoint helper and re-render.
         function loadPricing() {
           return fetchPricing().then((p) => {
-            pricing = { store: p.store, versions: p.versions };
+            pricing = { store: p.store, versions: p.versions, delivery_fee: p.delivery_fee };
             pricingOk = p.ok;
             // The first fetch has now resolved — the price shown is the confirmed
             // (or, on failure, no) price, so pay may leave the held-disabled state.
@@ -3152,7 +3319,10 @@
           // Record the start for BOTH paths (iframe + free coupon) so the
           // analytics funnel pairs started→done correctly.
           track('card_pay_started', { version });
-          const payload = { owner_token: ownerToken, version, address };
+          // `quantity` is a REQUEST, not a price: the server recomputes the total
+          // from its own per-copy price, so a tampered count still cannot buy five
+          // decks for the price of one.
+          const payload = { owner_token: ownerToken, version, address, quantity: copies };
           if (appliedCoupon) payload.coupon = appliedCoupon.code;
           try {
             const res = await api('/pay/init', {

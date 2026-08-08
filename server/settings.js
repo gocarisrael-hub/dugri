@@ -250,6 +250,10 @@ const REGISTRY = {
         buyerPaid: '· שולם', // buyer payment receipt: "· שולם: <n> ₪"
         buyerDesign: '· עיצוב', // buyer confirmation: "· עיצוב: <design>"
         buyerColor: '· צבע', // buyer confirmation: "· צבע: <color>"
+        copies: 'מספר עותקים', // order-detail: "מספר עותקים: <n>" (omitted when 1)
+        unitPrice: 'מחיר לעותק', // order-detail: "מחיר לעותק: <n> ₪" (multi-copy only)
+        shipping: 'דמי משלוח', // order-detail: charged once per order, not per copy
+        buyerCopies: '· מספר עותקים', // buyer confirmation/receipt line
         orderId: 'מספר הזמנה', // owner order-detail: "מספר הזמנה: <id>"
         adminOrder: 'ניהול ההזמנה', // owner order-detail: link to the admin orders panel
       },
@@ -468,6 +472,17 @@ const REGISTRY = {
     delivery_price: { kind: 'price', min: 1, tokens: [], default: 199 },
     custom_enabled: { kind: 'flag', tokens: [], default: false },
     custom_price: { kind: 'price', min: 1, tokens: [], default: 599 },
+    // Shipping, charged ONCE per order however many copies it contains — they all
+    // travel together to one address. Every `<v>_price` above is a PER-COPY price;
+    // an order's total is `<v>_price × copies (+ this, for delivery)`.
+    //
+    // Defaults to 0 ON PURPOSE, and that is load-bearing. Production currently
+    // stores delivery_price as a manual override of 239 — a single all-in price
+    // from before copies existed. A non-zero default here would silently make a
+    // one-copy delivery 239 + fee the moment this deploys, overcharging real
+    // buyers. At 0 nothing moves; the owner then sets delivery_price to the
+    // per-copy figure FIRST and this second (see the admin card's hint).
+    delivery_fee: { kind: 'price', min: 0, tokens: [], default: 0 },
     // Free word quota: how many words a collection may gather before payment is
     // required, and whether hitting it actually BLOCKS further adds. `min: 1` — a
     // 0 quota would lock every collection at its very first word, before the
