@@ -76,10 +76,11 @@ test('stat bar + filter tabs narrow the rows', async ({ page, request }) => {
 
   await page.goto(`/admin.html?key=${KEY}`);
 
-  // Stat bar: five tiles, one of them revenue.
-  await expect(page.locator('#stats .stat')).toHaveCount(5);
+  // Stat bar: six tiles — לידים, הזמנות, שולמו, הודפסו, הכנסות, ממתינות לתשלום.
+  await expect(page.locator('#stats .stat')).toHaveCount(6);
   await expect(page.locator('#stats')).toContainText('הכנסות');
   await expect(page.locator('#stats')).toContainText('לידים');
+  await expect(page.locator('#stats')).toContainText('הודפסו');
 
   // "הכל" shows both rows.
   const paidRow = page.locator('tbody tr').filter({ hasText: paidName });
