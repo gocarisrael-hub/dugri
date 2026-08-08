@@ -560,6 +560,10 @@ app.post('/api/collections', (req, res) => {
     // Optional free-form custom title (F7); db sanitizes/caps and treats
     // empty/whitespace as absent (the theme's own title is used).
     custom_title: b.custom_title,
+    // Anything she wants to tell us about this order — a date, a surprise to keep,
+    // a delivery note. Stored as typed (sanitized) and shown in admin; never
+    // printed on the cards.
+    comment: b.comment,
     gender: b.gender,
   });
   // A new lead just STARTED — fire the owner + buyer emails and open the WhatsApp

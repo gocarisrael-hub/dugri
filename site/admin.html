@@ -587,6 +587,13 @@
               ><span>כותרת מותאמת (ריק = ברירת המחדל של התבנית)</span
               ><textarea id="e-title" rows="2" maxlength="120"></textarea>
             </label>
+            <!-- The buyer's own note, typed with the order. Never printed on
+                 anything — it is a message to us — and editable here so a note
+                 taken by phone can be written down in the same place. -->
+            <label class="fld"
+              ><span>הערה של הלקוח/ה (לא מודפסת)</span
+              ><textarea id="e-comment" rows="3" maxlength="500"></textarea>
+            </label>
             <label class="fld check"
               ><input type="checkbox" id="e-chasers" /><span>צ׳ייסרים</span></label
             >
@@ -1087,6 +1094,7 @@
         el('e-email').value = c.owner_email || '';
         el('e-phone').value = c.owner_phone || '';
         el('e-title').value = c.custom_title || '';
+        el('e-comment').value = c.comment || '';
         el('e-chasers').checked = !!c.chasers;
 
         await loadThemeList();
@@ -1393,6 +1401,7 @@
           theme: el('e-theme').value,
           extra_fields: readExtraInputs(),
           custom_title: el('e-title').value,
+          comment: el('e-comment').value,
           chasers: el('e-chasers').checked,
           // '' clears the override back to the theme's own pool. The server
           // refuses a name that doesn't match a real pool.

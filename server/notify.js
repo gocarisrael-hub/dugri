@@ -471,6 +471,11 @@ function orderLines(collection, baseUrl, options) {
   }
   const wc = wordCount(collection);
   if (wc != null) lines.push(f.wordCount + ': ' + wc);
+  // Her own note, when she left one. It goes near the bottom on purpose: it is
+  // the one line here she WROTE rather than chose, so it reads last and reads
+  // whole — the newlines are kept, because a note is often a short list.
+  const note = collection && collection.comment ? String(collection.comment).trim() : '';
+  if (note) lines.push(f.comment + ': ' + note);
   const link = ownerLink(collection, baseUrl);
   if (link) lines.push(f.ownerLink + ': ' + link);
   // One-click link to the admin orders panel (built by the caller with the admin

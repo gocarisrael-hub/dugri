@@ -356,6 +356,10 @@ function sanitizeExtraFields(input) {
 // unchanged. Newlines are preserved as deliberate line breaks (the generator
 // splits on them); the cap guards against an unbounded stored string.
 const CUSTOM_TITLE_MAX = 120;
+// A note the buyer types with her order — "אל תשלחו לפני יום שלישי", "זה לאבא
+// שלי, אל תספרו". Long enough to say something real and short enough to read at
+// a glance in the admin table.
+const COMMENT_MAX = 500;
 function sanitizeCustomTitle(input) {
   if (input == null) return null;
   const lines = String(input)
@@ -367,6 +371,25 @@ function sanitizeCustomTitle(input) {
   // Cap by code point (Array.from splits on astral chars) so the 120 boundary
   // never bisects an emoji/surrogate pair and emits a lone surrogate.
   return Array.from(lines.join('\n')).slice(0, CUSTOM_TITLE_MAX).join('');
+}
+
+// The buyer's own note on the order. Unlike the custom title this is never
+// printed on anything — it is a message to the owner — so the only shaping it
+// needs is trimming, a cap, and empty-means-absent. Line breaks are KEPT (a note
+// is often a short list); runs of blank lines are collapsed so a stray paste
+// cannot push the rest of an admin row off the screen.
+function sanitizeComment(input) {
+  if (input == null) return null;
+  const text = String(input)
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((ln) => ln.trim().replace(/[^\S\n]+/g, ' '))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (!text) return null;
+  // Capped by code point so the boundary can never bisect an emoji.
+  return Array.from(text).slice(0, COMMENT_MAX).join('');
 }
 
 // A delivery shipping address. street + city + postal are REQUIRED (a parcel
@@ -466,6 +489,9 @@ const db = {
       // on the cards + board. Sanitized/capped; null when empty so the theme
       // default is used. The generator receives this via its --title CLI arg.
       custom_title: sanitizeCustomTitle(contact.custom_title),
+      // The buyer's own note to the owner, typed with the order. Never printed —
+      // see sanitizeComment. null when she wrote nothing.
+      comment: sanitizeComment(contact.comment),
       status: 'open',
       created_at: nowIso(),
       expires_at: new Date(Date.now() + YEAR_MS).toISOString(),
@@ -825,6 +851,7 @@ const db = {
     // store only shapes and caps it, exactly like the other free-text fields.
     if (has('wordlist')) c.wordlist = text(p.wordlist, 120);
     if (has('custom_title')) c.custom_title = sanitizeCustomTitle(p.custom_title);
+    if (has('comment')) c.comment = sanitizeComment(p.comment);
     // Lift (or re-apply) the free word quota for THIS collection only. Admin has
     // deliberately no "mark as paid" — an order becomes paid only through a real
     // payment — so this is the narrow, money-free way to let a particular
