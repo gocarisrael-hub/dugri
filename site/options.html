@@ -933,11 +933,29 @@
          opens the fullscreen viewer. Only rendered for a design whose owner
          uploaded them, so this whole row is absent on most designs and the step
          looks exactly as it did before. */
+      /* ONE picture per view, swiped — the same slideshow the store tiles and the
+         product gallery use, rather than the three postage stamps this used to
+         be. Three squares side by side on a phone gave each picture about a third
+         of the width, which is not enough to see a deck of cards in; the owner
+         asked for the carousel the rest of the site already uses. */
       .deck-row {
         margin-top: 10px;
-        display: grid;
-        grid-template-columns: repeat(var(--deck-n, 3), 1fr);
-        gap: 8px;
+        display: block;
+      }
+      .deck-track {
+        /* Slides sit flush so each snaps cleanly full-frame (as .product-card__track). */
+        --carousel-gap: 0;
+      }
+      .deck-dots {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 8px;
+      }
+      /* A single picture gets no dots; an empty strip must not hold space. */
+      .deck-dots:empty {
+        display: none;
       }
       /* `display: grid` beats the `hidden` attribute's default `display: none`, so
          without this the row kept its margin on every step and every design that
@@ -949,19 +967,34 @@
       .deck-row[hidden] {
         display: none;
       }
+      /* The SLIDE is a plain wrapper, and the button lives inside it. The carousel
+         engine stamps its own "slide N of M" aria-label onto whatever element is
+         the slide — which, when the button WAS the slide, overwrote the picture's
+         real accessible name ("שמונת הקלפים — הגדלה") and left it announced only
+         as a position. Splitting them lets the engine label the position and the
+         button keep its meaning. */
+      .deck-slide {
+        flex: 0 0 100%;
+        display: block;
+      }
       .deck-thumb {
         appearance: none;
         -webkit-appearance: none;
-        border: 1px solid var(--line);
-        background: var(--surface);
+        width: 100%;
+        /* NO border and NO background panel. Both used to show as a framed box
+           around a picture that never filled it — the same pale banding the owner
+           had removed from the store tiles, and it would have come straight back
+           here at full width. The picture is still contained, never cropped, so
+           the spare space simply reads as page. */
+        border: 0;
+        background: none;
         padding: 0;
         cursor: zoom-in;
         overflow: hidden;
-        /* Square, so three sit in a row on a phone without dictating the shape of
-           the owner's photo — the picture is contained, never cropped. */
-        aspect-ratio: 1 / 1;
+        /* The shape matches the store tile so the deck reads as the same kind of
+           object across the site. */
+        aspect-ratio: 841.92 / 595.5;
         display: block;
-        transition: border-color 0.15s;
       }
       .deck-thumb img {
         width: 100%;
@@ -969,9 +1002,105 @@
         object-fit: contain;
         display: block;
       }
-      .deck-thumb:hover,
+      /* With the border gone, focus needs its own ring — the slide is still a
+         button and must stay visibly reachable by keyboard. */
       .deck-thumb:focus-visible {
-        border-color: var(--sage);
+        outline: 2px solid var(--ink, #111);
+        outline-offset: -2px;
+      }
+      /* CAPPED on a step that has to fit the phone.
+         The row rides `is-collapsed`, so it is on THREE steps, not one: the name
+         step (3), the details step with the phone field (4) and the pawn photos
+         (5). Full width at 1.414 the picture is 249px tall on a 390×844 phone and
+         the row runs 293px — far more than the three 112px squares it replaced.
+         Step 3 has the owner's licence to scroll and keeps the big picture. Steps
+         4 and 5 do not, and there the extra height pushed the phone field 105px
+         and the skip control 37px BELOW the sticky bar's top, where a tap lands on
+         the bar: the buyer could not finish the order.
+         Hiding the row on those steps was the alternative and it is worse where
+         there is room for it — the pictures are the reassurance that this is
+         really the product, and the steps after the decision are exactly where a
+         buyer looks for it again.
+
+         WHAT IS CAPPED IS THE WHOLE ROW, NOT THE PICTURE ALONE. The carousel
+         brought a strip of dots the three squares never had, and it is not free:
+         the shared .carousel-dots pads 14px above and below an 8px dot, so it adds
+         36px, plus its own 8px margin. Capping only the thumb at 112px therefore
+         produced a 156px row — 44px MORE than the squares, not the same — which is
+         how the tight steps stayed broken on any phone shorter than the one they
+         were measured on.
+         So: 88px picture + 4px + a 20px dot strip = 112px of row, and with the
+         row's own 10px margin the footprint is the 122px the three squares
+         occupied. Nothing the buyer already had is taken away, dots included, and
+         88px is well clear of the 60px floor the owner set. The box hugs the
+         picture (width from the aspect ratio, centred) instead of stretching a
+         short picture across a wide empty band.
+
+         SHORT VIEWPORTS KEEP THE ROW AND SCROLL INSTEAD — see the @media below.
+         The budget on these steps is a fixed number of pixels, not a proportion,
+         so below ~790px of screen it runs out and something has to give; the
+         owner chose the picture over the no-scroll rule.
+         All figures above measured on a 390×844 phone (iPhone 14). */
+      .deck-row.is-tight .deck-thumb {
+        height: 88px;
+        width: fit-content;
+        max-width: 100%;
+        margin-inline: auto;
+      }
+      /* The dots are 8px marks in a 36px strip. On a step fighting for every pixel
+         that padding is the cheapest thing in the row to give up, and giving it up
+         costs no tap target: the padding is on the CONTAINER, the dot buttons keep
+         their own size. They are also the ONLY affordance that there is more than
+         one picture here — the slides are flush at 100% width (no peeking edge)
+         and the carousel is built with arrows: false — so they are slimmed, never
+         removed.
+         The padding to slim is the ENGINE'S. #deckDots is only the box handed to
+         initCarousel as dotsInto; the engine builds its own .carousel-dots INSIDE
+         it, so a rule on .deck-dots alone does not replace that 36px, it stacks
+         under it (measured: the strip came out 48px, not 20px). */
+      .deck-row.is-tight .deck-dots {
+        margin-top: 4px;
+      }
+      .deck-row.is-tight .deck-dots .carousel-dots {
+        padding: 6px 0;
+      }
+      /* NO ROOM WITHOUT SCROLLING — SO THESE STEPS SCROLL. OWNER'S DECISION.
+         What the tight steps can spare is a fixed pixel budget: the form, the
+         collapsed summary and the sticky bar are all fixed-height, so every pixel
+         of viewport height below the tallest phone comes straight out of the row.
+         Measured with the row absent, the step-4 phone field clears the bar by
+         198px at 390×844 but by only 21px at 375×667 (iPhone SE) — i.e. the budget
+         is roughly (viewport height − 646px). So the 122px footprint above needs a
+         viewport around 790px tall; below that the row and a step that fits on one
+         screen cannot both be had.
+         This code briefly resolved that by hiding the row under 800px. The owner
+         overruled it (2026-08-08): "let the form scroll there so the picture
+         stays". Steps 4 and 5 therefore join step 3 in being allowed to scroll on
+         a short screen, and the pictures are on every phone. The scrolling here is
+         a deliberate choice, not an oversight — do not "fix" it by hiding the row
+         again, and do not shrink the picture below the owner's 60px floor to buy
+         the no-scroll rule back.
+         The gate is 800px, the line between real device classes: iPhone SE 667,
+         Galaxy S8 740, iPhone 8 Plus 736 below it; Galaxy S20 800, iPhone 12 mini
+         812, iPhone 14 844, Pixel 5 851 above. Above it nothing changes — the row
+         fits and these steps still do not scroll.
+
+         WHAT SCROLLING DOES NOT FIX BY ITSELF: the sticky bar is FIXED over the
+         bottom 82px of the viewport, so a page that can only scroll to a position
+         where the last control still sits under the bar is just as blocked, only
+         less visibly. The document therefore needs a tail below its last control
+         taller than the bar. `body` already pads --wizbar-h (90px) — 8px of margin
+         over the bar, which is too thin to be safe when the bar's own height moves
+         with its font. This adds 28px on top, so the last control ends up well
+         clear at the END of the scroll (measured 375×667: the step-4 phone field
+         48px clear, the step-5 skip control 36px, both hit-testing as themselves).
+         Scoped with :has() to a step that is ACTUALLY showing the tight row: a
+         design with no uploaded pictures renders no row, and must not be given a
+         scroll tail — that would start it scrolling for nothing. */
+      @media (max-height: 799px) {
+        main.wrap:has(.deck-row.is-tight:not([hidden])) .wiz-step.is-active {
+          padding-bottom: 28px;
+        }
       }
 
       /* Fullscreen viewer for those pictures. Deliberately NOT the #zoomOverlay
@@ -2069,7 +2198,10 @@
           role="group"
           aria-label="תמונות החפיסה"
           hidden
-        ></div>
+        >
+          <div class="deck-track" id="deckTrack"></div>
+          <div class="deck-dots" id="deckDots"></div>
+        </div>
       </section>
 
       <!-- STEP 1 — design -->
@@ -5576,6 +5708,9 @@
          button with an accessible name, so the row is operable by keyboard and
          announced by a screen reader. */
       const deckRow = document.getElementById('deckRow');
+      const deckTrack = document.getElementById('deckTrack');
+      const deckDots = document.getElementById('deckDots');
+      let deckRowApi = null;
       const deckView = document.getElementById('deckView');
       const deckViewTrack = document.getElementById('deckViewTrack');
       const deckViewDots = document.getElementById('deckViewDots');
@@ -5588,54 +5723,140 @@
       };
       // `deckImages` is declared up with the design picker, which reads the same
       // map — see "the owner's gallery config, fetched ONCE for the whole page".
-      let deckShots = [];
       let deckViewApi = null;
       let deckViewPinch = null;
       let deckViewOpener = null;
+      // The steps that may scroll, and so may show the picture at full size. Only
+      // the name step has that licence (owner, 2026-08-06 — see wizard-noscroll);
+      // on every other step the row appears on, the controls have to stay above the
+      // sticky bar, so the picture is capped (.deck-row.is-tight).
+      const DECK_ROOMY_STEPS = new Set([3]);
+
+      /** THE ONE LIST OF PICTURES: the slides currently in the track.
+       *  There is deliberately no parallel array. A picture whose upload 404s
+       *  removes its slide, and that single removal IS the whole prune — the dots,
+       *  "next" and the fullscreen viewer all read this, so they cannot disagree
+       *  with what is on screen. Every index is derived from position HERE, at the
+       *  moment it is needed; nothing stores an index, because a stored index goes
+       *  stale the instant an earlier slide leaves. */
+      function deckSlides() {
+        return deckTrack ? Array.from(deckTrack.querySelectorAll('.deck-slide')) : [];
+      }
 
       function paintDeckRow(collapsed) {
-        if (!deckRow) return;
+        if (!deckRow || !deckTrack) return;
         const d = DESIGNS[designIndex];
-        deckShots = collapsed ? deckFor(deckImages, d) : [];
-        deckRow.replaceChildren();
-        if (!deckShots.length) {
+        const shots = collapsed ? deckFor(deckImages, d) : [];
+        // Tear the old instance down BEFORE re-filling. initCarousel is idempotent
+        // and would hand back the dead one for a track it has already claimed,
+        // returning before it stamps `carousel-slide` onto the new slides — which
+        // is what once flattened the product gallery into a strip (#345).
+        if (deckRowApi && deckRowApi.destroy) deckRowApi.destroy();
+        deckRowApi = null;
+        deckTrack.replaceChildren();
+        deckDots.replaceChildren();
+        deckRow.classList.toggle('is-tight', !DECK_ROOMY_STEPS.has(currentStep));
+        if (!shots.length) {
           deckRow.hidden = true;
           return;
         }
-        // Track the real count: two uploaded pictures must sit as two, not two
-        // thirds of a row with a hole where the third would be.
-        deckRow.style.setProperty('--deck-n', String(deckShots.length));
-        deckShots.forEach((shot, i) => {
+        for (const shot of shots) {
+          const slide = document.createElement('div');
+          slide.className = 'deck-slide';
+          // The slide carries WHICH picture it is, so the viewer can be rebuilt
+          // from the surviving slides alone. This is the record; the array that
+          // produced it is a local and does not outlive this function.
+          slide.dataset.deckKey = shot.key;
+          slide.dataset.deckSrc = shot.src;
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'deck-thumb';
           btn.dataset.testid = 'deck-thumb';
-          btn.dataset.deckIndex = String(i);
           btn.setAttribute('aria-label', `${DECK_A11Y[shot.key] || 'תמונה'} — הגדלה`);
           const img = document.createElement('img');
           img.src = shot.src;
           img.alt = '';
           img.loading = 'lazy';
           img.decoding = 'async';
-          // An upload that 404s drops its own thumb rather than showing a broken
-          // picture — the row is a promise about the product, so a gap beats a
-          // torn image. The others stay.
-          img.addEventListener('error', () => btn.remove(), { once: true });
+          // An upload that 404s drops its own slide rather than showing a broken
+          // picture — the row is a promise about the product, so one picture fewer
+          // beats a torn one. Removing the slide removes the picture from the ONLY
+          // list there is, so the dots, "next" and the viewer all follow.
+          img.addEventListener(
+            'error',
+            () => {
+              const gone = deckSlides().indexOf(slide);
+              const looking = deckRowApi && deckRowApi.current ? deckRowApi.current() : 0;
+              slide.remove();
+              // Keep the buyer on the picture they were looking at: everything
+              // after the removed slide has shifted one place towards the start.
+              syncDeckCarousel(looking > gone ? looking - 1 : looking);
+            },
+            { once: true }
+          );
           btn.appendChild(img);
-          deckRow.appendChild(btn);
-        });
+          slide.appendChild(btn);
+          deckTrack.appendChild(slide);
+        }
+        // Unhidden BEFORE the carousel is built: a track measured while its
+        // container is display:none reads every slide as zero-wide and cannot
+        // place them (the same rule openDeckView already follows).
         deckRow.hidden = false;
+        syncDeckCarousel(0);
       }
 
-      function openDeckView(index) {
-        if (!deckShots.length || !deckView) return;
+      /** (Re)wire the deck carousel to whatever slides are currently in the track.
+       *  Below two pictures there is nothing to swipe between, so no carousel and
+       *  no dots are wired at all — one picture must not sit under a single dot
+       *  pretending there is more to see.
+       *
+       *  `at` is the slide that must end up on screen. Passing it is not optional
+       *  polish: a fresh instance starts at index 0 while the TRACK keeps whatever
+       *  it was scrolled to, so after a slide dropped out mid-swipe the first dot
+       *  lit under a different picture and "next" did nothing (it thought it was
+       *  already there). goTo() sets both, so they cannot drift apart. */
+      function syncDeckCarousel(at = 0) {
+        if (!deckTrack) return;
+        if (deckRowApi && deckRowApi.destroy) deckRowApi.destroy();
+        deckRowApi = null;
+        deckDots.replaceChildren();
+        const count = deckSlides().length;
+        if (count < 2) {
+          // No carousel to hold the position, so put the lone picture on screen.
+          deckTrack.scrollLeft = 0;
+          return;
+        }
+        deckRowApi = initCarousel(deckTrack, {
+          // Matches the store tiles and the product gallery: one picture per view,
+          // swipe or dots only — never a timer, which on a wizard step would pull
+          // the eye away from the form.
+          mode: 'slideshow',
+          autoplay: false,
+          loop: false,
+          dots: true,
+          dotsInto: deckDots,
+          // Same call the product card makes: on a phone the gesture IS the swipe,
+          // and arrows here would crowd a step that already carries the form.
+          arrows: false,
+        });
+        // Not smooth: this is a correction, not a move the buyer asked for.
+        if (deckRowApi.goTo) deckRowApi.goTo(Math.max(0, Math.min(count - 1, at)), false);
+      }
+
+      /** Open the fullscreen viewer on `fromSlide`. Both the list and the position
+       *  come from the live slides, so a picture that dropped out of the row cannot
+       *  reappear here, and every survivor's position is its position NOW. */
+      function openDeckView(fromSlide) {
+        const slides = deckSlides();
+        if (!slides.length || !deckView) return;
+        const index = Math.max(0, slides.indexOf(fromSlide));
         deckViewOpener = document.activeElement;
         deckViewTrack.replaceChildren();
-        for (const shot of deckShots) {
+        for (const rowSlide of slides) {
           const slide = document.createElement('div');
           const img = document.createElement('img');
-          img.src = shot.src;
-          img.alt = DECK_A11Y[shot.key] || '';
+          img.src = rowSlide.dataset.deckSrc;
+          img.alt = DECK_A11Y[rowSlide.dataset.deckKey] || '';
           slide.appendChild(img);
           deckViewTrack.appendChild(slide);
         }
@@ -5686,7 +5907,11 @@
       if (deckRow) {
         deckRow.addEventListener('click', (e) => {
           const btn = e.target.closest('.deck-thumb');
-          if (btn) openDeckView(Number(btn.dataset.deckIndex) || 0);
+          // The SLIDE is handed over, not a number: openDeckView works out where it
+          // sits among the slides that are there now. A position read from the
+          // button (as this used to do) is a snapshot of an older row, and after any
+          // earlier picture dropped out it pointed at the wrong photograph.
+          if (btn) openDeckView(btn.closest('.deck-slide'));
         });
         deckViewClose.addEventListener('click', closeDeckView);
         // Anywhere but the picture closes. Testing `e.target === deckView` (the
