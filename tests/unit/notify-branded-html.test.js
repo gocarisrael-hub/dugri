@@ -87,15 +87,15 @@ describe('buildBuyerConfirmation — branded html', () => {
   });
 });
 
-describe('buildPdfReadyMessage — branded html', () => {
-  it('returns html with the download CTA link, the name and the logo', () => {
-    const link = `${BASE}/api/admin/collections/col-1/pdf?key=SECRET`;
-    const { text, html } = loadFresh().buildPdfReadyMessage(collection, link, BASE);
-    expect(html).toContain(link);
+describe('buildProductionStarted — branded html', () => {
+  it('returns html with the name and the logo, and no button at all', () => {
+    const { text, html } = loadFresh().buildProductionStarted({ ...collection, count: 84 }, BASE);
     expect(html).toContain('שירה');
     expect(html).toContain(`${BASE}/assets/${LOGO}`);
-    // Plain-text fallback still carries the raw link.
-    expect(text).toContain(link);
+    // The mail this one replaced (pdf_ready) existed to carry a download link.
+    // This one has nothing to click: the list is closed and the next move is ours.
+    expect(html).not.toContain('/pdf?');
+    expect(text).not.toContain('http');
   });
 });
 

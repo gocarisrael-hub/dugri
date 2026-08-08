@@ -77,7 +77,7 @@ const GATED = [
   ['words_reminder', (n) => n.sendWordsReminder(collection, null)],
   ['payment_reminder', (n) => n.sendPaymentReminder(collection, null)],
   ['order_finished', (n) => n.sendOrderFinished(collection, null)],
-  ['pdf_ready', (n) => n.sendPdfReady(collection, null, 'https://x/y.pdf')],
+  ['buyer_production_started', (n) => n.sendProductionStarted(collection, null)],
   ['production_error', (n) => n.sendProductionError(collection, null, ['bad'])],
 ];
 
@@ -144,15 +144,15 @@ describe('backward compatibility with overrides saved before the switch existed'
 
   it('deep-merges a switch-only override, keeping the owner’s text', () => {
     const { settings } = loadFresh();
-    settings.set('email', 'pdf_ready', {
+    settings.set('email', 'buyer_production_started', {
       subject: 'הנוסח שלי',
       body: 'הגוף שלי',
     });
-    settings.set('email', 'pdf_ready', {
-      ...settings.get('email', 'pdf_ready'),
+    settings.set('email', 'buyer_production_started', {
+      ...settings.get('email', 'buyer_production_started'),
       enabled: false,
     });
-    expect(settings.get('email', 'pdf_ready')).toEqual({
+    expect(settings.get('email', 'buyer_production_started')).toEqual({
       enabled: false,
       subject: 'הנוסח שלי',
       body: 'הגוף שלי',
@@ -184,9 +184,12 @@ describe('validation and failure posture', () => {
     // A wrong-typed override can't strip the switch: get() falls back to the
     // complete default, and the gate answers "on" either way. A silently swallowed
     // receipt is worse than a message the owner can switch off again.
-    fs.writeFileSync(settings._file, JSON.stringify({ email: { pdf_ready: 'not-an-object' } }));
+    fs.writeFileSync(
+      settings._file,
+      JSON.stringify({ email: { buyer_production_started: 'not-an-object' } })
+    );
     const fresh = loadFresh();
-    expect(fresh.settings.emailEnabled('pdf_ready')).toBe(true);
-    expect(await fresh.notify.sendPdfReady(collection, null, 'https://x/y.pdf')).toBe(true);
+    expect(fresh.settings.emailEnabled('buyer_production_started')).toBe(true);
+    expect(await fresh.notify.sendProductionStarted(collection, null)).toBe(true);
   });
 });

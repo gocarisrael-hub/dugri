@@ -846,10 +846,10 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
     });
     const base = paymentBaseUrl();
     // Two links, and they are NOT interchangeable:
-    //  - adminLink carries the master ADMIN_KEY and is for Dugri's own inbox only.
+    //  - adminLink carries the master ADMIN_KEY and is for Dugri's own use only.
     //  - customerLink carries this collection's per-order pdf_token capability
     //    (set by db.setProduction) so the CUSTOMER can download WITHOUT ever
-    //    seeing the admin secret. The customer email must use customerLink.
+    //    seeing the admin secret. Anything handed to a customer must be this one.
     // Each has a board twin on the same footing — the SAME capability token
     // covers both artifacts of one order, so no second secret is minted.
     const adminLink = base
@@ -867,18 +867,25 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       base && boardFile && production && production.pdf_token
         ? base + '/api/collections/' + c.id + '/board?t=' + encodeURIComponent(production.pdf_token)
         : null;
-    if (notify.isConfigured() && (adminLink || customerLink)) {
-      notify
-        .sendPdfReady({ ...c, count: words.length }, base, {
-          admin: adminLink,
-          customer: customerLink,
-          adminBoard: adminBoardLink,
-          customerBoard: customerBoardLink,
-        })
-        .catch(() => {});
-    }
-    // The admin UI is already authenticated, so the response keeps the admin links.
-    res.json({ ok: true, production, link: adminLink, boardLink: adminBoardLink });
+    // NO email fires here any more. The old "your file is ready — download it"
+    // mail (pdf_ready) was written for the digital-only phase; the product now
+    // ships as a printed game, so there is nothing for the customer to download,
+    // and the customer-facing mail moved to the moment they CLOSE the word list
+    // (notify.sendProductionStarted, from the two close paths).
+    //
+    // Both link PAIRS still come back here, to an already-authenticated admin UI:
+    // the admin pair for Dugri's own download, and the CUSTOMER (capability) pair
+    // so the owner can hand a customer their file by hand when one does need it —
+    // over WhatsApp, say. Dropping the customer pair would have stranded the
+    // capability route with no way to reach it.
+    res.json({
+      ok: true,
+      production,
+      link: adminLink,
+      boardLink: adminBoardLink,
+      customerLink,
+      customerBoardLink,
+    });
   } catch (e) {
     const detail = String((e && e.message) || e);
     // A clear, actionable status for the common "theme not calibrated" case,
@@ -2095,16 +2102,19 @@ app.post('/api/collections/:id/close', (req, res) => {
   const token = req.body && req.body.owner_token;
   const result = db.closeCollection(req.params.id, token);
   if (!result) return res.status(403).json({ error: 'forbidden' });
-  // Notify the owner the list is finished and ready to produce — but ONLY on the
-  // real open->closed transition (a repeated close must not re-send) and only
-  // when email is configured (skip the word-count work entirely otherwise).
+  // Closing is the handover: the buyer is done, we start producing. BOTH sides
+  // are told, from the same transition — the owner that a list is ready to
+  // produce, and the BUYER that we have their words and have started. Only on
+  // the real open->closed transition (a repeated close must not re-send) and
+  // only when email is configured (skip the word-count work entirely otherwise).
   // Fire-and-forget: a failed email must never affect the response.
   if (result.changed && notify.isConfigured()) {
     const c = db.getCollection(req.params.id);
     if (c) {
-      notify
-        .sendOrderFinished({ ...c, count: db.countWords(c.id) }, paymentBaseUrl())
-        .catch(() => {});
+      const enriched = { ...c, count: db.countWords(c.id) };
+      const base = paymentBaseUrl();
+      notify.sendOrderFinished(enriched, base).catch(() => {});
+      notify.sendProductionStarted(enriched, base).catch(() => {});
     }
   }
   res.json({ status: 'closed' });
@@ -2704,14 +2714,17 @@ async function handleWaEvent(ev, base) {
           wordCount: db.countWords(cid),
         });
         // This IS the primary completion path: the list is done and ready to
-        // produce. Fire the owner "ready to produce" email exactly like the web
-        // /close route — otherwise no PDF is ever made and the customer waits
-        // forever. Only on the real open->closed transition, gated on email being
-        // configured, fire-and-forget so a send failure never escapes the webhook.
+        // produce. Fire the SAME pair the web /close route does — the owner's
+        // "ready to produce" (otherwise no PDF is ever made and the customer waits
+        // forever) and the buyer's "we've got your words, we've started". Only on
+        // the real open->closed transition, gated on email being configured,
+        // fire-and-forget so a send failure never escapes the webhook.
         if (notify.isConfigured()) {
           const fresh = db.getCollection(cid);
           if (fresh) {
-            notify.sendOrderFinished({ ...fresh, count: db.countWords(cid) }, base).catch(() => {});
+            const enriched = { ...fresh, count: db.countWords(cid) };
+            notify.sendOrderFinished(enriched, base).catch(() => {});
+            notify.sendProductionStarted(enriched, base).catch(() => {});
           }
         }
       }

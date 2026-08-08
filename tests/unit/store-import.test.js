@@ -193,7 +193,10 @@ describe('importFromStaging — the mirror', () => {
 
   it('a settings key absent from staging reverts to its DEFAULT, not the old override', async () => {
     const fetchImpl = stubFetch({
-      stores: { ...NON_EMPTY, settings: { email: { pdf_ready: { subject: 's', body: 'b' } } } },
+      stores: {
+        ...NON_EMPTY,
+        settings: { email: { buyer_production_started: { subject: 's', body: 'b' } } },
+      },
     });
     const r = await storeImport.importFromStaging({ stagingUrl: SOURCE, deps, fetchImpl });
     expect(r.ok).toBe(true);

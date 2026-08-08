@@ -111,19 +111,15 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
     );
   });
 
-  it('buildPdfReadyMessage', () => {
+  it('buildProductionStarted', () => {
     const { notify } = loadFresh();
-    const pdfLink = `${BASE}/api/admin/collections/col-1/pdf?key=SECRET`;
-    const { subject, text } = notify.buildPdfReadyMessage(collection, pdfLink, BASE);
-    expect(subject).toBe('דוגרי · הקובץ שלכם מוכן — שירה');
+    const { subject, text } = notify.buildProductionStarted({ ...collection, count: 84 }, BASE);
+    expect(subject).toBe('דוגרי · קיבלנו את המילים — מתחילים להכין את המשחק של שירה');
     expect(text).toBe(
       [
-        'הקובץ המוכן להדפסה של המשחק עבור שירה מוכן!',
+        'תודה! קיבלנו 84 מילים על שירה וסגרנו את האיסוף.',
         '',
-        // Deliberately no longer "להורדת ה-PDF": the order ships two files and
-        // the board is a PDF too, so this line names the artifact it links to.
-        'להורדת חפיסת הקלפים:',
-        pdfLink,
+        'מכאן זה עלינו — אנחנו מתחילים להכין את המשחק, ונעדכן אתכם ברגע שהוא מוכן.',
         '',
         'נתראה על הלוח,',
         'צוות דוגרי',
