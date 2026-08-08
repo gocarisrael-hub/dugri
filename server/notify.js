@@ -351,17 +351,21 @@ function orderRef(collection) {
 }
 
 // The order-reference stamp for a BUYER email: a blank separator and one
-// "מספר הזמנה: DG-1042" line, or [] when there is no reference at all.
+// "מספר הזמנה: DG-1042" line, or [] when there is nothing to stamp.
 //
-// It is on every buyer mail EXCEPT the two earliest ones — the order
-// confirmation and the free-quota notice. Those two arrive before the customer
-// has any reason to quote a number back at us, and a reference under a
-// thank-you reads like an invoice; from the payment receipt onward it is the
-// thing they need when they write to ask about their order.
+// GATED ON PAYMENT, and that gate is the whole point. Every collection is
+// stamped with an order number the moment it is created — including one from
+// somebody who only ever started a free word list and never ordered anything.
+// Quoting a number at that person is worse than saying nothing: it tells them
+// they have an order they do not have. So the payment receipt is the FIRST mail
+// that carries a reference, and everything before it (the confirmation, the
+// free-quota notice, the words and payment reminders) carries none.
 //
-// Returned as body lines (not appended to the plain text) so the number appears
-// in the branded HTML too, not only in the fallback.
+// After payment it is exactly what a customer quotes when they write in, so it
+// rides on every later mail. Returned as body lines rather than appended to the
+// plain text, so the number appears in the branded HTML too.
 function orderRefLine(collection) {
+  if (!orderPaid(collection)) return [];
   const ref = orderRef(collection);
   if (!ref) return [];
   return ['', fieldLabels().orderId + ': ' + ref];

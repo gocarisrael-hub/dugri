@@ -121,9 +121,6 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
         '',
         'מכאן זה עלינו — אנחנו מתחילים להכין את המשחק, ונעדכן אתכם ברגע שהוא מוכן.',
         '',
-        // The order reference: on every buyer mail from the payment receipt on.
-        'מספר הזמנה: col-1',
-        '',
         'נתראה על הלוח,',
         'צוות דוגרי',
       ].join('\n')
@@ -152,8 +149,6 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
         '· חסרות מילים',
         '· שם חסר',
         '',
-        'מספר הזמנה: col-1',
-        '',
         'לעדכון ההזמנה:',
         link,
         '',
@@ -171,8 +166,6 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
         'עוד לא קיבלנו את רשימת המילים עבור המשחק של שירה.',
         '',
         'ברגע שתוסיפו את המילים נתחיל להכין את הקובץ — זה לוקח כמה דקות בלבד.',
-        '',
-        'מספר הזמנה: col-1',
         '',
         'להוספת המילים:',
         link,

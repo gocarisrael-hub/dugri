@@ -154,6 +154,53 @@ describe('emails quote the order number, not the UUID', () => {
     expect(msg.text).not.toContain('מספר הזמנה');
   });
 
+  // Every collection is stamped with an order number the moment it is created,
+  // long before anyone orders anything. So the reference is gated on PAYMENT,
+  // not on the number existing: somebody who only started a free word list must
+  // never be told they have an order DG-1043 that they do not have.
+  describe('nothing quotes a number before the order is paid', () => {
+    const unpaid = () => collection({ order: { version: 'pickup', total: 199, paid: false } });
+    const noOrder = () => collection({ order: null });
+
+    it('the words reminder is silent about it — this is the one that leaked', () => {
+      for (const c of [unpaid(), noOrder()]) {
+        expect(notify.buildWordsReminder(c, 'https://dugri.test').text).not.toContain('מספר הזמנה');
+      }
+    });
+
+    it('so is the payment reminder — it is chasing a payment that has not happened', () => {
+      expect(notify.buildPaymentReminder(unpaid(), 'https://dugri.test').text).not.toContain(
+        'מספר הזמנה'
+      );
+    });
+
+    it('so is a reminder from the owner-managed list', () => {
+      const msg = notify.buildReminderEmail(
+        unpaid(),
+        'עוד מילים על {honoree}',
+        'https://dugri.test'
+      );
+      expect(msg.text).not.toContain('מספר הזמנה');
+    });
+
+    it('and the payment receipt is the FIRST mail that carries it', () => {
+      const before = notify.buildBuyerReceipt(unpaid(), 'https://dugri.test', {});
+      const after = notify.buildBuyerReceipt(collection(), 'https://dugri.test', {});
+      expect(before.text).not.toContain('מספר הזמנה');
+      expect(after.text).toContain('מספר הזמנה: DG-1042');
+    });
+
+    it('and every later mail keeps it once paid', () => {
+      const paid = collection();
+      expect(notify.buildProductionStarted(paid, 'https://dugri.test').text).toContain(
+        'מספר הזמנה: DG-1042'
+      );
+      expect(notify.buildOrderReady(paid, 'https://dugri.test').text).toContain(
+        'מספר הזמנה: DG-1042'
+      );
+    });
+  });
+
   it('the {orderId} template token resolves to the short number', () => {
     const settings = require(path.join(serverDir, 'settings.js'));
     settings.set('email', 'order_paid', { subject: 'הזמנה {orderId}', body: '{orderId}' });
