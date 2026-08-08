@@ -545,7 +545,15 @@ const db = {
   // freeLimitState): a 50-word paste onto a collection with 5 slots left stores
   // those 5 and reports the rest as `blocked` — partial acceptance beats
   // rejecting the whole list and losing the buyer's typing. Returns
-  // {added, skipped, blocked, tooLong} or {closed:true} if not open.
+  // {added, skipped, blocked, tooLong, emoji} or {closed:true} if not open.
+  //
+  // Entries containing an EMOJI are refused outright (counted in `emoji`). The
+  // card fonts have no emoji glyphs, so a 🎉 reaches the printed deck as a blank
+  // box — see validate.hasEmoji. It REFUSES rather than strips, deliberately:
+  // the contributor typed it on purpose, and a word that quietly loses its emoji
+  // is a word nobody knows was changed. Enforcing it in the STORE (not only in
+  // the HTTP route) is what covers the WhatsApp webhook, which funnels straight
+  // through here — and WhatsApp is where emoji actually come from.
   //
   // Entries over validate.MAX_WORD_LEN are REFUSED (counted in `tooLong`), not
   // truncated. This used to .slice(0, 80) them, which silently changed the
@@ -569,9 +577,16 @@ const db = {
     let skipped = 0;
     let blocked = 0;
     let tooLong = 0;
+    let emoji = 0;
     for (const raw of Array.isArray(words) ? words : []) {
       const text = validate.normalizeWordText(raw);
       if (!text) continue;
+      // Carries an emoji: refused, never stripped. Counted on its own so the
+      // caller can say exactly why it didn't land.
+      if (validate.hasEmoji(text)) {
+        emoji += 1;
+        continue;
+      }
       // Over the entry cap: refused outright, never truncated into a different
       // word. Counted separately from `skipped` (duplicates) and `blocked`
       // (quota) so the caller can say WHY it didn't land.
@@ -603,7 +618,7 @@ const db = {
       added += 1;
     }
     if (added) saveDb();
-    return { added, skipped, blocked, tooLong };
+    return { added, skipped, blocked, tooLong, emoji };
   },
 
   // The free-quota state for a collection, from its live word count. Exposed so
@@ -644,10 +659,12 @@ const db = {
   //   'not_found'  no such word in this collection
   //   'empty'      the new text normalizes away to nothing
   //   'too_long'   the new text is over validate.MAX_WORD_LEN (carries `len`)
+  //   'emoji'      the new text contains an emoji (carries `found`, the emoji
+  //                themselves, so the route can name them in the refusal)
   //   'duplicate'  another word in the collection already has this normalized text
-  // NOTE this gates the NEW text only. A grandfathered over-length word that was
-  // stored before the cap existed is left alone until someone edits it — reading
-  // or regenerating it never trips this.
+  // NOTE this gates the NEW text only. A grandfathered over-length word — or one
+  // carrying an emoji, stored before that rule existed — is left alone until
+  // someone edits it; reading or regenerating it never trips this.
   // Returns null when the collection itself doesn't exist (so the route can 404).
   // Like deleteWord it does NOT gate on open/closed status — the owner can fix a
   // typo at any time. Idempotent: re-saving the same text is a no-op that still
@@ -660,6 +677,7 @@ const db = {
     if (!w) return { error: 'not_found' };
     const clean = validate.normalizeWordText(text);
     if (!clean) return { error: 'empty' };
+    if (validate.hasEmoji(clean)) return { error: 'emoji', found: validate.findEmoji(clean) };
     if (validate.isWordTooLong(clean)) return { error: 'too_long', len: clean.length };
     const n = norm(clean);
     // Reject a collision with a DIFFERENT word that shares the normalized form.

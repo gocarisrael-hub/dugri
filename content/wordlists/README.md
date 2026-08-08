@@ -46,13 +46,17 @@ names, numbers, or slang.
 | File                   | Audience                                         | Count |
 | ---------------------- | ------------------------------------------------ | ----- |
 | `friends-25-final.txt` | Group of friends, ~25 y/o (Hadar's picks + more) | 239   |
-| `combined-416.txt`     | CSV deck words + random friends words, shuffled  | 416   |
+| `combined-416.txt`     | CSV deck words + random friends words, shuffled  | 415   |
 | `hadar list.txt`       | Hadar's hand-picked seed                         | 112   |
 | `friends-25.txt`       | Original draft                                   | 300   |
 
 ## Format
 
 - One word or short phrase **per line**, UTF-8. Keep each entry **≤ 3 words**.
+- **No emoji.** These words are printed on cards, and the card fonts have no
+  emoji glyphs — a 🎉 in a pool comes out as a blank box on a deck, as filler the
+  buyer never even typed. `combined-416.txt` carried a stray `🅿️` until it was
+  removed (hence 415); `server/wordlists.js` now refuses new ones on save.
 - Keep words **easy and guessable** — funny/relatable beats clever/obscure.
 - **Blank lines are allowed** and ignored — used here to separate themes.
 - **No comment lines** (the CSV builder treats every non-empty line as a word),

@@ -2444,6 +2444,15 @@
             data-testid="custom-title-warn"
             hidden
           ></span>
+          <!-- The emoji REFUSAL. Deliberately a .wiz-err and not the amber
+               .custom-title-warn beside it: the warning above is advisory ("this
+               will print small"), this one BLOCKS "הבא". The card fonts have no
+               emoji glyphs, so an emoji here is a blank box on 104 printed cards
+               — and stripping it silently would be worse than refusing, because
+               she typed it on purpose and would never be told it had gone. Text
+               is filled in by refreshCustomTitleEmoji() so it can name the exact
+               character to remove. -->
+          <span class="wiz-err" id="customTitleErr" data-testid="custom-title-err" hidden></span>
         </label>
 
         <!-- PREVIEW TEASER: sits exactly where the live preview will appear, so
@@ -3615,6 +3624,11 @@
         normalizeIlPhone,
         previewViewList,
       } from './js/configurator.js';
+      // Emoji are REFUSED in the custom title, not stripped: the card fonts have
+      // no emoji glyphs, so a 🎉 would be printed as a blank box on all 104 cards
+      // and the buyer would only find out when the parcel opened. See
+      // site/js/emoji.js; server/validate.js is the authority behind it.
+      import { hasEmoji, titleEmojiMessage } from './js/emoji.js';
       import { track } from './js/analytics.js';
       import { initCarousel } from './js/carousel.js';
       import { initPinchZoom } from './js/pinch-zoom.js';
@@ -4912,10 +4926,33 @@
             'כותרת ארוכה - היא תודפס קטן יותר. כדאי לבדוק בתצוגה שהיא נראית טוב.';
         }
       }
+      /* The emoji REFUSAL on the title — the rule the owner asked for: "refuse
+         for emojis in title and words". Unlike refreshCustomTitleWarn above this
+         is not advisory. The card fonts are Hebrew and Latin display faces with
+         no emoji glyphs, so a 🎉 does not print as a 🎉; it prints as a blank box,
+         on every one of the 104 cards, discovered by the customer. Quietly
+         removing it would be worse than refusing — she typed it deliberately and
+         nothing would ever tell her it was gone. So: refuse here, while the
+         title is still in front of her, name the character, and hold "הבא" until
+         it's out. The server refuses the same string (POST /api/collections and
+         POST /api/preview) — this is the courtesy, that is the authority. */
+      const customTitleErr = document.getElementById('customTitleErr');
+      function refreshCustomTitleEmoji() {
+        if (!customTitleErr) return;
+        const msg = titleEmojiMessage(customTitle);
+        customTitleErr.hidden = !msg;
+        if (msg) customTitleErr.textContent = msg;
+      }
+      // True when the title is clean enough to move on. Empty is fine (the design
+      // keeps its own title); only an emoji blocks.
+      function customTitleOk() {
+        return !hasEmoji(customTitle);
+      }
       if (customTitleInput) {
         customTitleInput.addEventListener('input', () => {
           customTitle = customTitleInput.value;
           refreshCustomTitleWarn();
+          refreshCustomTitleEmoji();
           // A custom title relaxes the theme's extra fields + reverts couple mode to
           // the single-name ask, so re-render the extra-fields area (and the skip
           // note) and refresh Next live as the buyer types or clears the title.
@@ -5104,7 +5141,12 @@
           currentStep === 3 &&
           !!currentTheme() &&
           (coupleMode() || isValidHonoreeName(honoreeNameValue(), currentLanguage())) &&
-          extraFieldsValid()
+          extraFieldsValid() &&
+          // A title with an emoji is not previewable: the server refuses it (it
+          // would render a blank box and call the result WYSIWYG), so asking is
+          // a guaranteed 400 and a preview area that spins for no stated reason.
+          // The inline refusal under the field is what explains it instead.
+          customTitleOk()
         );
       }
 
@@ -5647,10 +5689,16 @@
         // fields the theme needs. Couple mode has no single-name box — the two
         // NAME extra fields (validated in extraFieldsValid) cover it. A custom
         // title reverts couple to the single-name ask, so require the name then.
+        // The custom title is optional, but an emoji in it is a hard block: it
+        // would be printed as a blank box on every card, so there is no version
+        // of "continue anyway" that ends well. (The name box needs no equivalent
+        // — isValidHonoreeName already allows letters, hyphen and apostrophe
+        // only, so an emoji can never satisfy it.)
         if (n === 3)
           return (
             (coupleMode() || isValidHonoreeName(nameInput.value, currentLanguage())) &&
-            extraFieldsValid()
+            extraFieldsValid() &&
+            customTitleOk()
           );
         // pawn photos are OPTIONAL and free — the step is always skippable.
         if (n === 5) return true;
@@ -5726,6 +5774,10 @@
         if (currentStep === 3) {
           refreshNameError();
           refreshExtraErrors();
+          // Keep the emoji refusal visible whenever the step is: it is the only
+          // thing that can disable "הבא" without the name or the extras being at
+          // fault, so a silent Next would be unexplainable.
+          refreshCustomTitleEmoji();
         }
         if (currentStep === 4) refreshStep5Errors();
       }
@@ -6488,6 +6540,18 @@
             }),
           });
           const data = await r.json();
+          // The server refused an emoji in the title or the name. She should
+          // never get here — step 3 holds "הבא" for exactly this — but a stale
+          // tab or a restored selection can still reach the route, and a generic
+          // "something went wrong" would leave her retrying forever without ever
+          // learning which character the server objected to. Say the real reason.
+          if (r.status === 400 && data && data.error === 'emoji') {
+            createErr.textContent = data.message;
+            createErr.hidden = false;
+            nextBtn.disabled = false;
+            nextBtn.textContent = prevLabel;
+            return;
+          }
           if (!r.ok) throw new Error(data.error || 'failed');
           track('collection_created', { has_email: !!email, has_phone: !!phone });
           // Upload any optional pawn photos now that we have {id, owner_token}.
@@ -6924,6 +6988,10 @@
         if (customTitleInput) {
           customTitleInput.value = customTitle;
           refreshCustomTitleWarn();
+          // A title restored from localStorage gets the same refusal a typed one
+          // does — it was saved before the rule shipped, or typed in another tab,
+          // and it is on its way to the same printed card either way.
+          refreshCustomTitleEmoji();
         }
         // a fixed-colour design ignores any restored colour choice.
         if (isFixedDesign()) colorIndex = -1;

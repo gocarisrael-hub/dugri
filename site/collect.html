@@ -1828,6 +1828,11 @@
         splitByLength,
         batchLengthMessage,
       } from './js/collect.js';
+      // Emoji are REFUSED in a word, not stripped: every word here is printed on
+      // a card, and the card fonts have no emoji glyphs — a 🍕 comes out as a
+      // blank box. Refusing tells the contributor; stripping would change her
+      // word and never say so. server/validate.js enforces the same rule.
+      import { hasEmoji, wordEmojiMessage, splitByEmoji, batchEmojiMessage } from './js/emoji.js';
       import { track } from './js/analytics.js';
       import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
 
@@ -2214,19 +2219,31 @@
         // (a client check is only a suggestion), but catching it now is the whole
         // point: otherwise a too-long word surfaces hours later as a broken PDF
         // and someone has to go back and ask the customer to rewrite it.
-        const { ok: clean, tooLong } = splitByLength(parsed);
+        const { ok: byLength, tooLong } = splitByLength(parsed);
+        // And hold every entry to the EMOJI refusal, for the same reason and in
+        // the same place. A word carrying an emoji is refused outright, never
+        // stripped: the contributor put the 🍕 there on purpose, and a deck that
+        // came back with it silently removed would be a change nobody was told
+        // about. Emoji are separated from the over-length ones so each group can
+        // be named with its own reason — "too long" and "has an emoji" call for
+        // two different fixes.
+        const { ok: clean, withEmoji } = splitByEmoji(byLength);
         if (!clean.length) {
           // Nothing left to submit — report and return false so the caller KEEPS
           // the text, which is exactly what the customer needs in order to shorten
-          // it rather than retype it.
-          toast(batchLengthMessage(tooLong));
+          // it (or drop the emoji) rather than retype the lot.
+          toast(
+            [batchLengthMessage(tooLong), batchEmojiMessage(withEmoji)].filter(Boolean).join(' · ')
+          );
           return false;
         }
         // A PARTIAL batch (some entries fit, some didn't) still submits the good
-        // words — losing them because a neighbour was too long would be worse.
-        // Every outcome toast below carries the note about what was left behind,
-        // so a partial add never looks like a clean success.
-        const lenNote = batchLengthMessage(tooLong);
+        // words — losing them because a neighbour was too long, or had an emoji,
+        // would be worse. Every outcome toast below carries the note about what
+        // was left behind, so a partial add never looks like a clean success.
+        const lenNote =
+          [batchLengthMessage(tooLong), batchEmojiMessage(withEmoji)].filter(Boolean).join(' · ') ||
+          null;
         const say = (msg) => toast(lenNote ? msg + ' · ' + lenNote : msg);
         const added_by = $('#byName').value.trim() || null;
         try {
@@ -2339,10 +2356,11 @@
           // case refresh() below restores the old text, so nothing is lost.
           if (e.status === 409) {
             toast('כבר יש מילה כזאת ברשימה');
-          } else if (e.body && e.body.error === 'too_long') {
-            // Pre-checked on commit, so this is the backstop (a stale tab, or the
-            // cap having moved) — still show the server's reason, never a generic
-            // failure.
+          } else if (e.body && (e.body.error === 'too_long' || e.body.error === 'emoji')) {
+            // Pre-checked on commit, so this is the backstop (a stale tab, or a
+            // rule having moved) — still show the server's reason, never a
+            // generic failure. Both entry rules land here with a message that
+            // names the offending length or the offending emoji.
             toast(e.body.message);
           } else if (e.status !== 400) {
             toast('עריכת המילה נכשלה, נסו שוב');
@@ -2392,6 +2410,15 @@
             render();
             return;
           }
+          // An edit that ADDS an emoji is refused: the owner is fixing a typo,
+          // not choosing what gets printed as a blank box. Grandfathering is by
+          // "unchanged" above — a stored word that already carries an emoji can
+          // be opened and closed untouched; only a NEW value is checked.
+          if (hasEmoji(val)) {
+            toast(wordEmojiMessage(val));
+            render();
+            return;
+          }
           // A NEW value is held to the cap, even when the word being edited was
           // already over it: this is an entry, and entries are capped. Revert +
           // explain, matching how a duplicate edit is handled.
@@ -2427,19 +2454,31 @@
       function syncWordLen() {
         const input = $('#wordInput');
         const hint = $('#wordLenHint');
-        const over = isWordTooLong(input.value);
-        input.classList.toggle('too-long', over);
-        hint.classList.toggle('hidden', !over);
-        hint.textContent = over ? wordLengthMessage(input.value) : '';
-        // Block the add outright rather than letting it fail on submit — but only
-        // for length; an empty box keeps its existing (silent) no-op behaviour.
-        // The free-quota lock (applyFreeLimit) also disables this button, and it
-        // wins: the word that TIPS the quota over runs refresh() → applyFreeLimit
-        // and then returns here, so ignoring the lock would quietly re-enable
-        // adding on a collection that just locked.
+        // The two entry rules share one hint line and one disabled state, because
+        // to the person typing they are the same event: "this word can't be
+        // added, and here is why". The emoji refusal is checked FIRST — a word
+        // that is both too long AND has an emoji is going to be rewritten around
+        // the emoji anyway, so leading with the length would send her to fix the
+        // wrong thing.
+        const emoji = hasEmoji(input.value);
+        const over = !emoji && isWordTooLong(input.value);
+        const bad = emoji || over;
+        input.classList.toggle('too-long', bad);
+        hint.classList.toggle('hidden', !bad);
+        hint.textContent = emoji
+          ? wordEmojiMessage(input.value)
+          : over
+            ? wordLengthMessage(input.value)
+            : '';
+        // Block the add outright rather than letting it fail on submit — for
+        // length OR an emoji; an empty box keeps its existing (silent) no-op
+        // behaviour. The free-quota lock (applyFreeLimit) also disables this
+        // button, and it wins: the word that TIPS the quota over runs refresh()
+        // → applyFreeLimit and then returns here, so ignoring the lock would
+        // quietly re-enable adding on a collection that just locked.
         const locked = $('#addCard').classList.contains('locked');
-        $('#addBtn').disabled = over || locked;
-        return over;
+        $('#addBtn').disabled = bad || locked;
+        return bad;
       }
       $('#wordInput').addEventListener('input', syncWordLen);
       $('#addBtn').onclick = async () => {

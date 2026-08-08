@@ -539,11 +539,37 @@ function publicView(c, { owner = false } = {}) {
   };
 }
 
+// The emoji refusal for the two free-text fields that become the PRINTED title:
+// the buyer's optional custom title, and the honoree name the default title is
+// built from. The wizard checks both in the field (site/js/emoji.js) — this is
+// the authority behind it, because a client-side check is only a courtesy and a
+// re-post would otherwise put a blank box on 104 paid cards. Returns true when
+// it has already sent the 400, so callers read `if (refuseEmojiTitle(…)) return;`.
+//
+// It is NOT a font-coverage check — that is render_page.assert_title_drawable's
+// job and it asks a different question. This one only ever objects to emoji, so
+// a name with a geresh, a niqqud mark or an en dash sails through.
+function refuseEmojiTitle(res, { title, name } = {}) {
+  const t = title == null ? '' : String(title);
+  const n = name == null ? '' : String(name);
+  const problem = validate.titleEmojiMessage(t) || validate.nameEmojiMessage(n);
+  if (!problem) return false;
+  res.status(400).json({
+    error: 'emoji',
+    field: validate.hasEmoji(t) ? 'custom_title' : 'honoree_name',
+    message: problem,
+  });
+  return true;
+}
+
 // Create a collection -> returns the secret owner_token (only time it's sent).
 app.post('/api/collections', (req, res) => {
   const b = req.body || {};
   const name = (b.honoree_name || '').trim();
   if (!name) return res.status(400).json({ error: 'honoree_name required' });
+  // Refuse an emoji BEFORE the collection exists. Once it is stored the buyer has
+  // moved on to paying, and the next person to look at the title is the printer.
+  if (refuseEmojiTitle(res, { title: b.custom_title, name })) return;
   const c = db.createCollection(name, {
     email: b.email,
     phone: b.phone,
@@ -680,6 +706,18 @@ app.patch('/api/admin/collections/:id', (req, res) => {
     if (wanted && !wordlists.list().some((w) => w.name === wanted)) {
       return res.status(400).json({ error: 'unknown wordlist' });
     }
+  }
+  // Same emoji rule as the public create route. The admin edit screen is a
+  // second door onto the same printed title, and a rule enforced on one door and
+  // not the other is not a rule. PATCH semantics: only the keys actually PRESENT
+  // are checked, so an edit that never mentions the title can't be refused for it.
+  if (
+    refuseEmojiTitle(res, {
+      title: Object.prototype.hasOwnProperty.call(b, 'custom_title') ? b.custom_title : '',
+      name: Object.prototype.hasOwnProperty.call(b, 'honoree_name') ? b.honoree_name : '',
+    })
+  ) {
+    return;
   }
   if (b.order && typeof b.order === 'object') {
     const r = db.adminUpdateOrder(req.params.id, b.order);
@@ -1905,6 +1943,13 @@ app.post('/api/preview', async (req, res) => {
   const themeConfig = validate.getTheme(theme);
   if (!themeConfig) return res.status(400).json({ error: 'unknown theme' });
   if (!name) return res.status(400).json({ error: 'name required' });
+  // No emoji in what we are about to draw. The preview is sold to the buyer as
+  // WYSIWYG, so rendering a 🎉 as the blank box the font actually produces would
+  // technically be honest and completely useless — she would see a broken card
+  // and not know why. Refusing here says why, and it also saves a Chrome page
+  // render on an order that could never be produced. Same rule, same words as
+  // the create route, so the message never changes between the two.
+  if (refuseEmojiTitle(res, { title: b.title, name })) return;
 
   // Cheap, in-memory parsing of the remaining render inputs (no fs, no spawn).
   const rawWordFont = b.word_font ? String(b.word_font).trim() : '';
@@ -2156,6 +2201,12 @@ app.post('/api/collections/:id/words', (req, res) => {
     // was refused and why.
     too_long: r.tooLong || 0,
     max_word_len: validate.MAX_WORD_LEN,
+    // How many entries were refused for carrying an emoji. Like `too_long` this
+    // is normally 0 — collect.html filters them out before submitting, so the
+    // customer is told while the word is still in front of her — but a paste
+    // from a stale tab, or any non-browser caller, still lands here and gets a
+    // number it can explain instead of a word that silently never appeared.
+    emoji: r.emoji || 0,
     count,
     // Locked state, plus the limit ONLY once locked (see the public view for why
     // withholding it past that point buys nothing).
@@ -2219,9 +2270,10 @@ app.delete('/api/collections/:id/words/:wordId', (req, res) => {
   res.json({ ok: true });
 });
 
-// Owner-only: edit a word's text (fix a typo). Same normalization + entry-length
-// cap as the add path (never trust the client); rejects an empty result, an
-// over-length result and a collision with another existing word. token in the
+// Owner-only: edit a word's text (fix a typo). Same normalization, entry-length
+// cap and emoji refusal as the add path (never trust the client); rejects an
+// empty result, an over-length result, an emoji and a collision with another
+// existing word. token in the
 // body (not the URL) so it isn't logged, mirroring the delete route.
 app.patch('/api/collections/:id/words/:wordId', (req, res) => {
   const b = req.body || {};
@@ -2236,6 +2288,16 @@ app.patch('/api/collections/:id/words/:wordId', (req, res) => {
       message: validate.wordLengthMessageForLen(r.len),
       len: r.len,
       max_word_len: validate.MAX_WORD_LEN,
+    });
+  }
+  // An edit that ADDS an emoji is refused and the stored word is left alone. The
+  // message names the emoji, because "invalid input" would leave the owner
+  // hunting for which character in her own typing the server objected to.
+  if (r.error === 'emoji') {
+    return res.status(400).json({
+      error: 'emoji',
+      message: validate.wordEmojiMessage(b.text),
+      found: r.found || [],
     });
   }
   if (r.error === 'duplicate') return res.status(409).json({ error: 'duplicate' });
