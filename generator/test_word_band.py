@@ -22,6 +22,8 @@ Run: python3 -m pytest generator/test_word_band.py
 import json
 import os
 
+import pytest
+
 import card_assets
 import config
 import render_page as rp
@@ -303,3 +305,60 @@ def test_a_card_with_one_entry_does_not_grow_into_the_title():
         assert top >= slots[0]["y0"] - 1, (
             f"{theme}: one entry reaches {slots[0]['y0'] - top:.1f} above the "
             f"line the design drew for it")
+
+
+def test_every_card_of_a_deck_starts_its_words_at_the_same_height():
+    """The owner, looking at a deck laid out side by side: "should be the same in
+    all the cards in template". The rows were detected card by card off eight
+    different origin words, so קליפורניה's first row sat anywhere from 84.5 to
+    107.8 units below the card's top — 8 mm of drift across one deck."""
+    for theme in _themes():
+        cell, slots, _idx, _svg = _first_card(theme)
+        offsets, _colour = rp._deck_rows(theme)
+        if not offsets:
+            continue
+        seated = rp.deck_slots(theme, slots, cell)
+        for i, slot in enumerate(seated):
+            centre = (slot["y0"] + slot["y1"]) / 2 - cell[1]
+            assert abs(centre - offsets[i]) < 1e-6, (theme, i)
+
+
+def test_every_row_of_a_deck_prints_in_one_colour():
+    """ברוקלין's four rows carried SIX different values, one of them (#4f2d6c) a
+    purple in a design whose words are blue — detector noise, printed."""
+    for theme in _themes():
+        cell, slots, _idx, _svg = _first_card(theme)
+        seated = rp.deck_slots(theme, slots, cell)
+        colours = {s.get("color") for s in seated if s.get("color")}
+        assert len(colours) <= 1, f"{theme}: {colours}"
+
+
+def test_the_title_is_a_keep_out_for_the_words():
+    """The owner's words: "the title is also red area". מרקאנה's ninth front
+    carries its title at the FOOT, and a block growing down into the free paper
+    printed the last entry straight across the honoree's name.
+
+    Driven on a synthetic card so it runs wherever the suite does — the shipped
+    copy of that deck is a v1 sheet in this checkout, and the card the complaint
+    is about lives in the owner's own store."""
+    font, ref = rp._word_metrics(CAFE)
+    cell = [0, 0, 224.0, 312.0]
+    slots = [{"x0": 60, "y0": y0, "x1": 170, "y1": y1, "color": "#000"}
+             for y0, y1 in ((100, 118), (140, 158), (180, 198), (220, 238))]
+    title = (250.0, 300.0)                       # the name, printed at the foot
+    words = ["בית קפה", "דודה", "נסיעה לאילת", "שמש"]
+    layouts = rp._word_layouts(slots, words, font, ref, cell=cell,
+                               safe=rp._CARD_SAFE, room_bottom=296.0,
+                               title_box=title)
+    last = [l for l in layouts if l][-1]
+    pitch = last.lead * last.size
+    bottom = (last.center + (len(last.lines) - 1) * pitch / 2
+              + rp._ink_reach(font, ref, last.lines[-1])[1] * last.size)
+    assert bottom <= title[0] + 1e-6, (
+        f"the words reach {bottom:.1f}, into a title that starts at {title[0]}")
+    # ...and without the title in play the same card is free to use that paper,
+    # so the bound is the TITLE and not some other cap.
+    free = rp._word_layouts(slots, words, font, ref, cell=cell,
+                            safe=rp._CARD_SAFE, room_bottom=296.0)
+    free_last = [l for l in free if l][-1]
+    assert free_last.center > last.center - 1e-6

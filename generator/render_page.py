@@ -621,6 +621,85 @@ def _card_right_edge(slots, cell):
 _MIN_BAND = float(os.environ.get("DUGRI_MIN_BAND", "0.40"))
 
 
+# ONE ROW GRID AND ONE INK COLOUR FOR THE WHOLE TEMPLATE.
+#
+# The recipe's rows and colours were read off each card's own artwork, one card
+# at a time, and each card's origin had different words in it — so eight cards
+# that the design draws identically came back disagreeing. On קליפורניה the first
+# row sits anywhere from 84.5 to 107.8 units below the card's top (8 mm of drift
+# across the deck); on ברוקלין the four rows carry SIX different colours, one of
+# them (#4f2d6c) a purple in a design whose words are blue.
+#
+# The owner's rule, and it is obviously right: "should be the same in all the
+# cards in template". So the deck's own measurements are pooled — the MEDIAN row
+# offset and the MOST COMMON colour — and every card is set from those. Nothing
+# is invented: both values come from the detector's own readings, with the noise
+# voted out instead of printed.
+def _median(values):
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if not ordered:
+        return 0.0
+    return (ordered[mid] if len(ordered) % 2
+            else (ordered[mid - 1] + ordered[mid]) / 2)
+
+
+@functools.lru_cache(maxsize=32)
+def _deck_rows(theme):
+    """``(offsets, colour)`` for a template: where its rows sit under the card's
+    top edge, and the one colour its words are set in. ``(None, None)`` when the
+    recipe says nothing this can be pooled from."""
+    recipe = config.recipe_or_empty(config.theme(theme))
+    if not recipe:
+        return None, None
+    cards = []
+    if config.is_single_card_recipe(recipe):
+        card = recipe.get("card") or {}
+        if card.get("words") and card.get("cell"):
+            cards.append((card["cell"], card["words"]))
+    else:
+        for card in recipe.get("cards") or []:
+            if card and card.get("words") and card.get("cell"):
+                cards.append((card["cell"], card["words"]))
+    if not cards:
+        return None, None
+    per_row = {}
+    colours = {}
+    for cell, slots in cards:
+        for i, slot in enumerate(slots):
+            centre = (slot["y0"] + slot["y1"]) / 2 - cell[1]
+            per_row.setdefault(i, []).append(centre)
+            col = slot.get("color")
+            if col:
+                colours[col] = colours.get(col, 0) + 1
+    offsets = [_median(per_row[i]) for i in sorted(per_row)]
+    colour = max(colours, key=colours.get) if colours else None
+    return offsets, colour
+
+
+def deck_slots(theme, slots, cell):
+    """``slots`` re-seated on the deck's own row grid, in its own ink colour.
+
+    Each slot keeps its own HEIGHT (that is what the size fit reads) and its own
+    x span; only where it sits and what colour it prints move, and both move to
+    the value the deck as a whole measured.
+    """
+    offsets, colour = _deck_rows(theme)
+    if not offsets or not cell:
+        return slots
+    out = []
+    for i, slot in enumerate(slots):
+        box = dict(slot)
+        if i < len(offsets):
+            half = (slot["y1"] - slot["y0"]) / 2
+            centre = cell[1] + offsets[i]
+            box["y0"], box["y1"] = centre - half, centre + half
+        if colour:
+            box["color"] = colour
+        out.append(box)
+    return out
+
+
 def _card_left_edge(slots, cell):
     """ONE left line for every entry on a card — the mirror of its right anchor.
 
@@ -2331,7 +2410,7 @@ def unclearable_icons(obstacles, band, center, right, width):
 
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
                   safe=_CELL_SAFE, room_bottom=None, bold_w=0.0,
-                  obstacles=None):
+                  obstacles=None, title_box=None):
     """Per-slot ``(size, [lines])`` for a card's words, or None for an empty slot.
 
     One UNIFORM font size is the target for every word (matching the origin's
@@ -2475,6 +2554,14 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
         for o in obstacles or []:
             if o[1] > max(live_c) and o[0] < band_right and o[2] > band_left:
                 floor_y = min(floor_y, o[1])
+        # THE TITLE IS A KEEP-OUT TOO, and on one shipped card it is the only one
+        # that matters: מרקאנה's ninth front carries its title at the FOOT, and a
+        # block growing down into the free paper printed the last entry straight
+        # across the honoree's name. The owner's words — "the title is also red
+        # area". Only when it sits BELOW the words, since a title above them is
+        # the space this block never grows into anyway.
+        if title_box and title_box[1] > max(live_c):
+            floor_y = min(floor_y, title_box[0])
         return (vbounds[0], floor_y) if floor_y > max(live_c) else None
     # WHERE THE LINES LAND IS WHERE THEY HAVE TO BE MEASURED. The grid moves an
     # entry off its calibrated centre — that is what it is for — so a row and an
@@ -3687,7 +3774,7 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
 
 
 def _words_overlay(slots, words, cfg, word_font, cell, room=None,
-                   obstacles=None, word_font_alt=None):
+                   obstacles=None, word_font_alt=None, title_box=None):
     """The four numbered word lines for one card, as SVG markup.
 
     ``room`` is the lowest y a line's ink may reach (see ``room_bottom``) — the
@@ -3707,7 +3794,7 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
     layouts = _word_layouts(slots, words, face, face.ref, cell=cell,
                             word_size=cfg.get("word_size"), safe=_CARD_SAFE,
                             room_bottom=room, bold_w=bold_w,
-                            obstacles=obstacles)
+                            obstacles=obstacles, title_box=title_box)
     # One anchor and one digit column for the whole card, so the four numbers sit
     # in a column and the four words start at the same x. Both must match what
     # _word_layouts fitted against, or the render would overflow the band it was
@@ -3771,15 +3858,26 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
             if card_svg and cell else None)
     icons = (card_obstacle_rects(theme, front_index, card_svg, cell)
              if card_svg and cell else None)
-    return (_title_overlay(config.card_title_boxes(cfg, recipe, front_index, cell),
+    word_boxes = deck_slots(theme, config.card_word_boxes(cfg, recipe, cell), cell)
+    tboxes = config.card_title_boxes(cfg, recipe, front_index, cell)
+    # The title's own strip of card, nudged exactly as the title itself will be,
+    # so the words are held off the place the name actually prints.
+    title_span = None
+    if tboxes and title_lines:
+        union = {"x0": min(b["x0"] for b in tboxes), "y0": min(b["y0"] for b in tboxes),
+                 "x1": max(b["x1"] for b in tboxes), "y1": max(b["y1"] for b in tboxes)}
+        union = _nudge_title_box(union, cell, config.front_offset(cfg, front_index))
+        title_span = (union["y0"], union["y1"])
+    return (_title_overlay(tboxes,
                            title_lines, cfg, title_font_path, cell,
                            offset=config.front_offset(cfg, front_index),
                            align=config.front_align(cfg, front_index),
                            alt_font=title_alt_path)
-            + _words_overlay(config.card_word_boxes(cfg, recipe, cell), words,
+            + _words_overlay(word_boxes, words,
                              cfg, word_font_path, cell, room=room,
                              obstacles=icons,
-                             word_font_alt=word_alt_path))
+                             word_font_alt=word_alt_path,
+                             title_box=title_span))
 
 
 def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
@@ -4192,6 +4290,9 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
         # this is the plate. The frame's clear air comes with them: a card allowed
         # a second line needs a floor, and the v1 sheet has never had one.
         cell = card.get("cell")
+        # One row grid and one ink colour for the whole deck (see _deck_rows), so
+        # eight cards the design draws identically print identically.
+        card_words = deck_slots(theme, card["words"], cell)
         icons = (card_obstacle_rects(theme, ci + 1, svg, cell) if cell else None)
         room = None
         if cell:
@@ -4204,15 +4305,15 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
             # grow it into the same paper as every other card.
             safe_bottom = cell[3] - (cell[3] - cell[1]) * _CARD_SAFE
             room = room_bottom(theme, ci + 1, svg, cell, safe_bottom)
-        layouts = _word_layouts(card["words"], words, face, face.ref,
+        layouts = _word_layouts(card_words, words, face, face.ref,
                                 cell=cell, word_size=cfg.get("word_size"),
                                 bold_w=bold_w, obstacles=icons,
                                 room_bottom=room)
         # The sheet card sets on the same grid as every other card: one right
         # anchor, one digit column, and the centres the grid put the lines on.
-        x_right = _card_right_edge(card["words"], cell)
-        advance = _marker_advance(face.primary, len(card["words"]))
-        for wi, slot in enumerate(card["words"]):
+        x_right = _card_right_edge(card_words, cell)
+        advance = _marker_advance(face.primary, len(card_words))
+        for wi, slot in enumerate(card_words):
             if layouts[wi] is None:
                 continue
             lay = layouts[wi]
