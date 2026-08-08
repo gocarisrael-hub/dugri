@@ -156,14 +156,41 @@ describe('buildOverlay — the briefing markup', () => {
       expect(keys).toContain(`start-explainer-${step}-title`);
       expect(keys).toContain(`start-explainer-${step}-text`);
     }
-    // Every key is unique — a duplicate would make two nodes edit as one.
-    expect(new Set(keys).size).toBe(keys.length);
+    // Keys are unique EXCEPT the continue label, which is deliberately shared by the
+    // top and bottom copies of the same button: applyOverrides writes to every
+    // [data-edit=key] node and syncSameKey mirrors a live edit across them (see
+    // js/editor.js — the homepage marquee already ships eight nodes on one key), so
+    // the owner retitles the button once and both update. Any OTHER duplicate is a
+    // bug, which is why this asserts the exact duplicate set, not just a count.
+    const dupes = keys.filter((k, i) => keys.indexOf(k) !== i);
+    expect(dupes).toEqual(['start-explainer-continue']);
   });
 
-  it('ships a continue CTA that defaults to the wizard', () => {
-    const go = overlay.querySelector('[data-testid="start-explainer-continue"]');
-    expect(go.getAttribute('href')).toBe('options.html');
-    expect(go.textContent.length).toBeGreaterThan(0);
+  it('ships TWO continue CTAs — above the steps and after them — both to the wizard', () => {
+    const gos = [...overlay.querySelectorAll('[data-sx-continue]')];
+    expect(gos).toHaveLength(2);
+    for (const go of gos) {
+      expect(go.getAttribute('href')).toBe('options.html');
+      expect(go.textContent.length).toBeGreaterThan(0);
+    }
+    // Same label and same editable key — one button shown twice, bound by the one
+    // [data-sx-continue] hook so a single handler serves both.
+    expect(gos[0].textContent).toBe(gos[1].textContent);
+    expect(gos[0].getAttribute('data-edit')).toBe(gos[1].getAttribute('data-edit'));
+    // Only the placement tag differs; it is what the analytics event reports.
+    expect(gos.map((g) => g.getAttribute('data-sx-place'))).toEqual(['top', 'bottom']);
+    expect(gos.map((g) => g.getAttribute('data-testid'))).toEqual([
+      'start-explainer-continue',
+      'start-explainer-continue-bottom',
+    ]);
+  });
+
+  it('puts one continue before the first step and the other after the last', () => {
+    const nodes = [...overlay.querySelectorAll('*')];
+    const steps = [...overlay.querySelectorAll('[data-testid="start-explainer-step"]')];
+    const at = (sel) => nodes.indexOf(overlay.querySelector(sel));
+    expect(at('[data-sx-place="top"]')).toBeLessThan(nodes.indexOf(steps[0]));
+    expect(at('[data-sx-place="bottom"]')).toBeGreaterThan(nodes.indexOf(steps[steps.length - 1]));
   });
 
   it('never uses the trademarked word', () => {

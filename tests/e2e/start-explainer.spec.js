@@ -8,19 +8,27 @@ import { test, expect } from '@playwright/test';
 //   - close by X / Escape / backdrop and hand focus back to the trigger,
 //   - trap focus and lock background scroll while open,
 //   - and fit a phone, where the continue CTA must stay reachable.
+//
+// The continue CTA is rendered TWICE — above the steps and after them. Both are the
+// same button: same handler, same live href. Every "does continue work" assertion
+// below runs against BOTH so they can never drift apart.
 
 const OVERLAY = 'start-explainer';
 const CLOSE = 'start-explainer-close';
-const CONTINUE = 'start-explainer-continue';
+const CONTINUE = 'start-explainer-continue'; // the top copy
+const CONTINUE_BOTTOM = 'start-explainer-continue-bottom';
+const BOTH_CONTINUE = [CONTINUE, CONTINUE_BOTTOM];
 
 // Assert the exact URL the explainer HANDS OFF to, captured from the navigation
 // request itself. Asserting page.url() afterwards would race the wizard, which
 // normalises its own query on arrival (…&step=2 becomes …&step=3&plan=…&color=… as
 // soon as it restores state) — the handoff is what this feature owns.
-async function continueTo(page, expectedSearch) {
+async function continueTo(page, expectedSearch, testid = CONTINUE) {
+  const target = page.getByTestId(testid);
+  await target.scrollIntoViewIfNeeded();
   const [req] = await Promise.all([
     page.waitForRequest((r) => r.isNavigationRequest() && r.url().includes('options.html')),
-    page.getByTestId(CONTINUE).click(),
+    target.click(),
   ]);
   expect(new URL(req.url()).search).toBe(expectedSearch);
 }
@@ -88,47 +96,87 @@ test.describe('the 4-step explainer on the product page', () => {
     await expect(page.getByTestId(OVERLAY)).not.toContainText('אליאס');
   });
 
-  test('continue enters the wizard with the design preselection intact', async ({ page }) => {
+  // Each copy is tested on its own: both must carry the live href and both must hand
+  // the SAME query off to the wizard. A regression that wires only one would pass a
+  // single-button test.
+  for (const which of BOTH_CONTINUE) {
+    test(`continue (${which}) enters the wizard with the design preselection intact`, async ({
+      page,
+    }) => {
+      await page.getByTestId('pdp-buy').click();
+      const go = page.getByTestId(which);
+      // The trigger's LIVE href (design + step) is what the button carries.
+      await expect(go).toHaveAttribute('href', 'options.html?design=bachelorette&step=2');
+      await continueTo(page, '?design=bachelorette&step=2', which);
+    });
+  }
+
+  test('there are exactly two continue buttons and they are identical in job', async ({ page }) => {
     await page.getByTestId('pdp-buy').click();
-    const go = page.getByTestId(CONTINUE);
-    // The trigger's LIVE href (design + step) is what the button carries.
-    await expect(go).toHaveAttribute('href', 'options.html?design=bachelorette&step=2');
-    await continueTo(page, '?design=bachelorette&step=2');
+    const both = page.locator('[data-sx-continue]');
+    await expect(both).toHaveCount(2);
+
+    // Same destination, same label, same editable key — one button shown twice.
+    const shape = await both.evaluateAll((els) =>
+      els.map((e) => ({
+        href: e.getAttribute('href'),
+        text: e.textContent.trim(),
+        key: e.getAttribute('data-edit'),
+        place: e.getAttribute('data-sx-place'),
+      }))
+    );
+    expect(shape[0].href).toBe(shape[1].href);
+    expect(shape[0].text).toBe(shape[1].text);
+    expect(shape[0].key).toBe(shape[1].key);
+    // …and only their placement tag differs, which is what analytics reports.
+    expect(shape.map((s) => s.place)).toEqual(['top', 'bottom']);
   });
 
-  // The owner asked for the CTA at the TOP: a buyer who is already sold must be able
-  // to act the moment the sheet opens. Pinned in DOM order AND in geometry so a later
-  // refactor cannot quietly push it back under the steps.
-  test('the continue CTA comes BEFORE the four steps, in the DOM and on screen', async ({
+  // The owner asked for a CTA at the TOP (act without reading) AND one at the bottom
+  // (act after reading). Pinned in DOM order AND geometry so a later refactor cannot
+  // quietly drop or move either.
+  test('one continue comes BEFORE the four steps and one AFTER, in the DOM and on screen', async ({
     page,
   }) => {
     await page.getByTestId('pdp-buy').click();
     const overlay = page.getByTestId(OVERLAY);
     await expect(overlay).toBeVisible();
 
-    // DOM order: title → CTA → first step.
+    // DOM order: title → top CTA → steps → bottom CTA.
     const order = await page.evaluate(() => {
       const root = document.querySelector('[data-testid="start-explainer"]');
       const nodes = [...root.querySelectorAll('*')];
+      const steps = [...root.querySelectorAll('[data-testid="start-explainer-step"]')];
       return {
         title: nodes.indexOf(root.querySelector('#sxTitle')),
-        cta: nodes.indexOf(root.querySelector('[data-testid="start-explainer-continue"]')),
-        firstStep: nodes.indexOf(root.querySelector('[data-testid="start-explainer-step"]')),
+        top: nodes.indexOf(root.querySelector('[data-testid="start-explainer-continue"]')),
+        bottom: nodes.indexOf(
+          root.querySelector('[data-testid="start-explainer-continue-bottom"]')
+        ),
+        firstStep: nodes.indexOf(steps[0]),
+        lastStep: nodes.indexOf(steps[steps.length - 1]),
       };
     });
     expect(order.title).toBeGreaterThan(-1);
-    expect(order.cta).toBeGreaterThan(order.title);
-    expect(order.cta).toBeLessThan(order.firstStep);
+    expect(order.top).toBeGreaterThan(order.title);
+    expect(order.top).toBeLessThan(order.firstStep);
+    expect(order.bottom).toBeGreaterThan(order.lastStep);
 
-    // Geometry: it sits above every step and below the title, and is on the first
-    // screen without any scrolling.
-    const ctaBox = await page.getByTestId(CONTINUE).boundingBox();
+    // Geometry: top CTA between the title and the first step, on the first screen
+    // with no scrolling; bottom CTA below the last step.
+    const topBox = await page.getByTestId(CONTINUE).boundingBox();
+    const bottomBox = await page.getByTestId(CONTINUE_BOTTOM).boundingBox();
     const titleBox = await page.locator('#sxTitle').boundingBox();
-    const stepBox = await page.getByTestId('start-explainer-step').first().boundingBox();
-    expect(ctaBox.y).toBeGreaterThan(titleBox.y);
-    expect(ctaBox.y).toBeLessThan(stepBox.y);
-    expect(ctaBox.y + ctaBox.height).toBeLessThanOrEqual(page.viewportSize().height);
+    const steps = page.getByTestId('start-explainer-step');
+    const firstStepBox = await steps.first().boundingBox();
+    const lastStepBox = await steps.last().boundingBox();
+
+    expect(topBox.y).toBeGreaterThan(titleBox.y);
+    expect(topBox.y).toBeLessThan(firstStepBox.y);
+    expect(topBox.y + topBox.height).toBeLessThanOrEqual(page.viewportSize().height);
     expect(await page.evaluate(() => document.getElementById('startExplainer').scrollTop)).toBe(0);
+
+    expect(bottomBox.y).toBeGreaterThan(lastStepBox.y);
   });
 
   test('the CTA and the X are separate, non-overlapping targets', async ({ page }) => {
@@ -178,24 +226,38 @@ test.describe('the 4-step explainer on the product page', () => {
     expect(await locked()).toBe(false);
   });
 
-  test('focus is trapped inside the overlay', async ({ page }) => {
+  test('focus is trapped inside the overlay and cycles through BOTH continue buttons', async ({
+    page,
+  }) => {
     await page.getByTestId('pdp-buy').click();
+    // Focus still lands on the X on open — the sheet announces itself before the
+    // reader is handed the primary action.
     await expect(page.getByTestId(CLOSE)).toBeFocused();
 
-    // Tab through every focusable in the sheet and wrap back to the X — focus never
-    // escapes to the page behind.
-    const inside = async () =>
+    const where = () =>
       page.evaluate(() => {
         const overlay = document.querySelector('[data-testid="start-explainer"]');
-        return !!(overlay && document.activeElement && overlay.contains(document.activeElement));
+        const el = document.activeElement;
+        return {
+          inside: !!(overlay && el && overlay.contains(el)),
+          testid: el ? el.getAttribute('data-testid') : null,
+        };
       });
-    for (let i = 0; i < 6; i++) {
+
+    // Tab all the way round. Focus never escapes, and one full cycle visits the X
+    // and both continue buttons.
+    const seen = new Set();
+    for (let i = 0; i < 10; i++) {
       await page.keyboard.press('Tab');
-      expect(await inside(), `focus escaped after ${i + 1} tab(s)`).toBe(true);
+      const w = await where();
+      expect(w.inside, `focus escaped after ${i + 1} tab(s)`).toBe(true);
+      if (w.testid) seen.add(w.testid);
     }
+    expect([...seen]).toEqual(expect.arrayContaining([CLOSE, CONTINUE, CONTINUE_BOTTOM]));
+
     // Shift+Tab stays inside too.
     await page.keyboard.press('Shift+Tab');
-    expect(await inside()).toBe(true);
+    expect((await where()).inside).toBe(true);
   });
 
   test('a modified click is left to the browser (open in a new tab still works)', async ({
@@ -226,7 +288,10 @@ test.describe('the explainer guards the other wizard entrances', () => {
 
     await expect(page.getByTestId(OVERLAY)).toBeVisible();
     await expect(page).toHaveURL(/index\.html/);
-    await expect(page.getByTestId(CONTINUE)).toHaveAttribute('href', 'options.html');
+    // Both copies carry the bare wizard link here (no design to preselect).
+    for (const which of BOTH_CONTINUE) {
+      await expect(page.getByTestId(which)).toHaveAttribute('href', 'options.html');
+    }
     await continueTo(page, '');
   });
 
@@ -289,6 +354,15 @@ test.describe('the explainer on a phone', () => {
     });
     expect(scrollable, 'the sheet should scroll internally on a phone').toBe(true);
 
-    await continueTo(page, '?design=bachelorette&step=2');
+    // The whole reason for the second copy: a phone reader who scrolls the briefing
+    // to the end must still have a button in view, not have to scroll back up.
+    await page.getByTestId(CONTINUE_BOTTOM).scrollIntoViewIfNeeded();
+    const endBox = await page.getByTestId(CONTINUE_BOTTOM).boundingBox();
+    expect(endBox.y).toBeGreaterThanOrEqual(0);
+    expect(endBox.y + endBox.height).toBeLessThanOrEqual(vp.height + 1);
+    const lastStepBox = await page.getByTestId('start-explainer-step').last().boundingBox();
+    expect(endBox.y, 'the bottom CTA sits after the last step').toBeGreaterThan(lastStepBox.y);
+
+    await continueTo(page, '?design=bachelorette&step=2', CONTINUE_BOTTOM);
   });
 });
