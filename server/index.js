@@ -23,6 +23,7 @@ const settings = require('./settings');
 const whatsapp = require('./whatsapp');
 const waState = require('./wa-state');
 const reminders = require('./reminders');
+const faq = require('./faq');
 const wordlists = require('./wordlists');
 const messagePreview = require('./message-preview');
 const storeImport = require('./store-import');
@@ -4792,6 +4793,18 @@ app.get('/api/pricing', (req, res) => {
   // corrupt override falls back to the same built-in default the charge uses (not
   // a misleading 0). Only the whitelisted { store, versions } is exposed here.
   res.json(db.effectivePricing());
+});
+
+// Public, UNAUTHENTICATED: the home-page FAQ the owner edits in admin-faq.html.
+// A WHITELISTED projection of only the `faq` settings section — the ENABLED
+// questions, in order, reduced to { id, q, a, link_text, link_url }. A disabled
+// question is the owner hiding it from visitors, so it must not travel here even
+// though the admin page still shows it. faq.publicFaq falls back to the shipped
+// defaults if the stored value is somehow malformed, so this endpoint answers
+// with real content or nothing surprising — never a 500 the home page has to
+// handle. Writes stay behind the admin key via /api/admin/settings.
+app.get('/api/faq', (req, res) => {
+  res.json({ items: faq.publicFaq(settings.get('faq', 'list')) });
 });
 
 // Unknown API routes -> JSON 404 (must come before static/catch-all).

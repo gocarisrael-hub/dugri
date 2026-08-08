@@ -1112,6 +1112,7 @@
       import { initCarousel } from './js/carousel.js';
       import { PUBLIC_DESIGNS, syncDesignNames, loadCustomDesigns } from './js/designs.js';
       import { fetchPricing } from './js/pricing.js';
+      import { initFaq } from './js/faq.js';
       import { loadDesignImages, galleryFor, srcsetFor, SIZES } from './js/design-images.js';
       import { defer, watchTrack } from './js/lazy-media.js';
 
@@ -1390,6 +1391,13 @@
           arrowsInto: reviewsControls,
         });
       }
+
+      // ---- FAQ: the owner's live question list, edited in admin-faq.html ----
+      // Fire-and-forget: initFaq swaps the shipped questions (below in this file)
+      // for the owner's list, and on a slow/failed/malformed /api/faq it leaves
+      // them exactly where they are. It never throws, so nothing after it in this
+      // module can be taken down by a FAQ fetch.
+      initFaq(document.getElementById('faqList'));
     </script>
 
     <!--
@@ -1515,36 +1523,43 @@
         <div class="sec-title">
           <h2 data-edit="index-faq-heading">שאלות נפוצות</h2>
         </div>
-        <div class="faq">
+        <!--
+          The four questions below are the SHIPPED DEFAULTS. The owner's live list
+          is fetched from /api/faq (she edits it in admin-faq.html) and swapped in
+          by js/faq.js once it arrives — a slow or failing API, or no JS at all,
+          leaves exactly this markup in place, so the section is never empty. They
+          are also the seed of DEFAULT_FAQ in server/faq.js; keep the two in step
+          when editing here. The section HEADING above stays owner-editable
+          through the inline content editor (index-faq-heading).
+        -->
+        <div class="faq" id="faqList">
           <details>
-            <summary data-edit="index-faq-q1">מה זה בעצם המשחק?</summary>
-            <p data-edit="index-faq-a1">
-              משחק מסיבה אישי בסגנון ניחוש מילים בקבוצות: אתם שולחים לנו 70+ מילים וביטויים על בעל
-              או בעלת השמחה - בדיחות פנימיות, הרגלים, אנשים ומקומות - ואנחנו הופכים אותם לחפיסת
-              קלפים מעוצבת ולוח משחק מוכנים להדפסה. מתחלקים לקבוצות, מתחרים מי יגרום לחברים לנחש מהר
-              יותר, וכל החדר צוחק על האדם שחוגגים - כי כל מילה היא רק עליו.
+            <summary>מה זה בעצם המשחק?</summary>
+            <p>
+              משחק ניחוש מילים שמבוסס כולו עליכם. שולפים קלף ומתארים את המילה בלי להגיד אותה, הקבוצה
+              שלכם צריכה לנחש כמה שיותר מילים עד שהטיימר מצלצל. הקאץ׳ הוא שכל המילים עליכם! הכי
+              מצחיק, אישי ומרגש!
             </p>
           </details>
           <details>
-            <summary data-edit="index-faq-q2">כמה מילים צריך לשלוח?</summary>
-            <p data-edit="index-faq-a2">
-              מינימום 70, ואין הגבלה עליונה. אנחנו שולחים דף עזר עם קטגוריות ודוגמאות שמקל מאוד
-              להיזכר - אנשים, מקומות, בדיחות פנימיות, ביטויים שהוא תמיד אומר.
+            <summary>כמה מילים צריך לשלוח?</summary>
+            <p>
+              מינימום 100, ועד 400. אנחנו שולחים דף עזר עם קטגוריות ודוגמאות שמקל מאוד להיזכר -
+              אנשים, מקומות, בדיחות פנימיות, ביטויים ואקסים!
             </p>
           </details>
           <details>
-            <summary data-edit="index-faq-q3">מתי בדיוק מקבלים?</summary>
-            <p data-edit="index-faq-a3">
-              הספירה מתחילה מרגע שאתם שולחים את רשימת המילים - לא מרגע התשלום. תוך 24 שעות מאותו רגע
-              הקובץ אצלכם במייל ובוואטסאפ. יש לכם תאריך אירוע קרוב? יש גם אקספרס בעדיפות שמקצר את זה
-              לכמה שעות.
+            <summary>מתי בדיוק מקבלים?</summary>
+            <p>
+              הספירה מתחילה מרגע שאתם שולחים את רשימת המילים - לא מרגע התשלום. איסוף עצמי אפשרי תוך
+              2 ימי עסקים. יש לכם תאריך אירוע קרוב? דברו איתנו בוואטסאפ.
             </p>
           </details>
           <details>
-            <summary data-edit="index-faq-q4">איך מזמינים ומשלמים?</summary>
-            <p data-edit="index-faq-a4">
-              בוחרים חבילה ומשלמים באתר בתשלום מאובטח. מיד אחרי התשלום מקבלים הודעה בוואטסאפ ובמייל
-              לשליחת המילים, ומשם אנחנו מתחילים.
+            <summary>איך מזמינים ומשלמים?</summary>
+            <p>
+              בוחרים חבילה ומשלמים באתר בתשלום מאובטח. מיד אחרי התשלום מקבלים הודעה במייל לאיסוף
+              המילים, ומשם אנחנו מתחילים.
             </p>
           </details>
         </div>
