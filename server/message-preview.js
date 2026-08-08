@@ -136,6 +136,30 @@ const EMAIL_KINDS = [
     settingsKey: 'buyer_production_started',
     build: (n, c, base) => n.buildProductionStarted({ ...c, count: 84 }, base),
   },
+  // "Your game is ready" — previewed TWICE, because its whole point is that it
+  // makes a different promise per fulfilment and the owner needs to read both.
+  // Both entries edit the same template (email.order_ready); what differs is the
+  // sample order they render against. The multi-copy line rides on the pickup
+  // sample, where it matters most — someone collecting a box of five.
+  {
+    id: 'order_ready_pickup',
+    label: 'המשחק מוכן — איסוף עצמי',
+    audience: 'buyer',
+    settingsKey: 'order_ready',
+    build: (n, c, base) =>
+      n.buildOrderReady(
+        { ...c, order: { ...(c.order || {}), version: 'pickup', quantity: 5 } },
+        base
+      ),
+  },
+  {
+    id: 'order_ready_delivery',
+    label: 'המשחק מוכן — משלוח',
+    audience: 'buyer',
+    settingsKey: 'order_ready',
+    build: (n, c, base) =>
+      n.buildOrderReady({ ...c, order: { ...(c.order || {}), version: 'delivery' } }, base),
+  },
   {
     id: 'owner_order_created',
     label: 'הזמנה חדשה (לבעלת העסק)',

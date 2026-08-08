@@ -90,12 +90,14 @@ describe('payment receipt builders', () => {
     expect(msg.subject).toBe('דוגרי · התשלום התקבל — שירה');
     expect(msg.text).toContain('התשלום התקבל — תודה רבה!');
     // The itemised block is gone: the buyer is shown the template photo (asserted
-    // in the HTML case below) rather than read a paid/design/colour/order-id list.
-    // The OWNER's receipt still carries all of it — see the owner cases above.
+    // in the HTML case below) rather than read a paid/design/colour list. The
+    // OWNER's receipt still carries all of it — see the owner cases above.
     expect(msg.text).not.toContain('· שולם: 149 ₪');
     expect(msg.text).not.toContain('· עיצוב: קלאסי');
     expect(msg.text).not.toContain('· צבע: ורוד');
-    expect(msg.text).not.toContain('מספר הזמנה: col-1');
+    // The order REFERENCE is the one detail that stayed: it is what the customer
+    // quotes back at us when they write about this order.
+    expect(msg.text).toContain('מספר הזמנה: col-1');
     // The words link is in the plain-text body...
     expect(msg.text).toContain(link);
     // ...and the admin key never is (the buyer's copy gets no admin link).

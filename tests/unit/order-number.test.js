@@ -130,20 +130,27 @@ describe('emails quote the order number, not the UUID', () => {
     expect(msg.text).not.toContain('מספר הזמנה: 8f3c1a2e');
   });
 
-  // The BUYER's two emails no longer print a reference: they dropped the whole
-  // itemised block in favour of showing the chosen template as a photo. The
-  // reference lives on the owner's copy (above) and on the buyer's own order
-  // page, which every one of their emails links to. Asserted so that if the
-  // itemised block ever comes back it comes back deliberately.
-  it("the buyer's payment receipt carries no order reference", () => {
+  // Buyer emails carry the reference from the payment receipt ONWARD — it is
+  // what a customer quotes when they write to ask about their order. It is the
+  // short number, never the UUID, exactly as on the owner's copy.
+  it("the buyer's payment receipt prints the short number", () => {
     const msg = notify.buildBuyerReceipt(collection(), 'https://dugri.test', {
       amountCharged: 199,
     });
+    expect(msg.text).toContain('מספר הזמנה: DG-1042');
+    expect(msg.text).not.toContain('מספר הזמנה: 8f3c1a2e');
+  });
+
+  // ...but NOT on the two earliest ones. They arrive before the customer has any
+  // reason to quote a number back at us, and a reference line under a thank-you
+  // reads like an invoice. Asserted so the exclusion stays deliberate.
+  it('the buyer order confirmation carries no order reference', () => {
+    const msg = notify.buildBuyerConfirmation(collection(), 'https://dugri.test', {});
     expect(msg.text).not.toContain('מספר הזמנה');
   });
 
-  it('the buyer order confirmation carries no order reference', () => {
-    const msg = notify.buildBuyerConfirmation(collection(), 'https://dugri.test', {});
+  it('the free-quota notice carries no order reference either', () => {
+    const msg = notify.buildFreeLimitReached(collection(), 'https://dugri.test', 20);
     expect(msg.text).not.toContain('מספר הזמנה');
   });
 

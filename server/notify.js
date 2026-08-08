@@ -350,6 +350,23 @@ function orderRef(collection) {
   return String(collection.order_no || collection.id || '');
 }
 
+// The order-reference stamp for a BUYER email: a blank separator and one
+// "מספר הזמנה: DG-1042" line, or [] when there is no reference at all.
+//
+// It is on every buyer mail EXCEPT the two earliest ones — the order
+// confirmation and the free-quota notice. Those two arrive before the customer
+// has any reason to quote a number back at us, and a reference under a
+// thank-you reads like an invoice; from the payment receipt onward it is the
+// thing they need when they write to ask about their order.
+//
+// Returned as body lines (not appended to the plain text) so the number appears
+// in the branded HTML too, not only in the fallback.
+function orderRefLine(collection) {
+  const ref = orderRef(collection);
+  if (!ref) return [];
+  return ['', fieldLabels().orderId + ': ' + ref];
+}
+
 function honoreeName(collection) {
   const n = collection && collection.honoree_name ? String(collection.honoree_name).trim() : '';
   return n || 'ללא שם';
@@ -609,6 +626,7 @@ function buildBuyerReceipt(collection, baseUrl, options) {
   const subject = interpolate(tpl.subject, values);
   const lines = interpolate(tpl.body, values).split('\n');
   lines.push(...fulfilmentBlock(collection));
+  lines.push(...orderRefLine(collection));
   // Branded HTML mirrors the plain-text body but drops the raw URL line — the
   // link becomes the CTA button. Everything above the link is reused as-is.
   const htmlLines = lines.slice();
@@ -657,6 +675,8 @@ function buildProductionStarted(collection, baseUrl) {
   const values = { honoree: name, wordCount: count == null ? '' : count };
   const subject = interpolate(tpl.subject, values);
   const bodyLines = interpolate(tpl.body, values).split('\n');
+  // The order reference, on every buyer mail from the payment receipt onward.
+  bodyLines.push(...orderRefLine(collection));
   const lines = [...bodyLines, '', ft.line1, ft.line2];
   const html = renderEmailHtml({
     title: 'מתחילים להכין את המשחק — ' + name,
@@ -681,6 +701,90 @@ function buildFinishedMessage(collection, baseUrl) {
   return { subject, text };
 }
 
+// The fulfilment half of the "your order is ready" mail: what happens NOW, which
+// is a genuinely different promise per version rather than a wording tweak —
+// self-pickup is "come and get it", delivery is "it's on its way". Both wordings
+// are owner-editable (settings email.order_ready_info); only the plumbing is
+// here. Returns [] for a version with no promise to make (pdf/custom), so the
+// mail is still sendable for them, just without a fulfilment paragraph.
+//
+// The pickup ADDRESS is read from pickup_info, which already holds it and is
+// already editable — the ready mail must never carry a second copy that can
+// drift out of step with the one on the confirmation.
+function orderReadyFulfilment(order) {
+  const info = _store.get('email', 'order_ready_info') || {};
+  const version = order && order.version;
+  if (version === 'pickup') {
+    const p = pickupInfo();
+    const out = info.pickup ? [info.pickup] : [];
+    if (p.address) out.push((p.address_label ? p.address_label + ': ' : '') + p.address);
+    return out;
+  }
+  if (version === 'delivery') {
+    const out = info.delivery ? [info.delivery] : [];
+    const addr = formatAddress(order.address);
+    const d = deliveryInfo();
+    if (addr) out.push((d.address_label ? d.address_label + ': ' : '') + addr);
+    return out;
+  }
+  return [];
+}
+
+// How many copies are ready, when that is worth saying. Omitted entirely for an
+// ordinary single-copy order (and for orders placed before copies existed) —
+// "1 עותקים מוכנים" would be noise; "5 עותקים מוכנים" matters a lot to someone
+// about to carry a box home. Owner-editable, interpolated with {count}.
+function orderReadyCopies(order) {
+  const qty = order && Number.isInteger(order.quantity) ? order.quantity : 1;
+  if (qty <= 1) return [];
+  const info = _store.get('email', 'order_ready_info') || {};
+  const text = interpolate(info.copies || '', { count: qty });
+  return text ? [text] : [];
+}
+
+// Pure builder: the BUYER's "your game is ready" email — fired by the owner
+// marking the order ready on the admin orders page. The last mail in the flow:
+// buyer_production_started said "we've started", this one says "it's done, here
+// is how you get it".
+//
+// Shape: the owner-editable greeting, then the per-version fulfilment promise
+// (+ address), then the copies line when there is more than one, then the order
+// reference, then an ordinary CTA to their collection page. `baseUrl` is the
+// normalized public origin. Returns {subject, text, html}.
+function buildOrderReady(collection, baseUrl) {
+  const name = honoreeName(collection);
+  const tpl = emailTpl('order_ready');
+  const cta = ctaLabels();
+  const ft = footer();
+  const order = (collection && collection.order) || null;
+  const link = ownerLink(collection, baseUrl);
+  const values = { honoree: name, link: link || '' };
+  const subject = interpolate(tpl.subject, values);
+  const bodyLines = interpolate(tpl.body, values).split('\n');
+  const fulfil = orderReadyFulfilment(order);
+  if (fulfil.length) bodyLines.push('', ...fulfil);
+  const copies = orderReadyCopies(order);
+  if (copies.length) bodyLines.push('', ...copies);
+  bodyLines.push(...orderRefLine(collection));
+  // Branded HTML mirrors the body but drops the raw URL line — the link becomes
+  // the CTA button, exactly as in the other buyer mails.
+  const lines = bodyLines.slice();
+  if (link) {
+    lines.push('');
+    lines.push(link);
+  }
+  lines.push('');
+  lines.push(ft.line1);
+  lines.push(ft.line2);
+  const html = renderEmailHtml({
+    title: 'המשחק מוכן — ' + name,
+    bodyLines,
+    cta: link ? { label: cta.viewOrder, url: link } : null,
+    baseUrl,
+  });
+  return { subject, text: lines.join('\n'), html };
+}
+
 // Pure builder: the "production blocked — needs fixing" email. `problems` is the
 // list of Hebrew problem strings from validateOrderForProduction; the body lists
 // each one so the client (and Dugri) know exactly what to correct before we can
@@ -695,10 +799,11 @@ function buildProductionError(collection, baseUrl, problems) {
   const subject = interpolate(tpl.subject, values);
   const bodyLines = interpolate(tpl.body, values).split('\n');
   const items = (Array.isArray(problems) ? problems : []).map((p) => '· ' + p);
-  const lines = [...bodyLines, '', ...items];
+  const ref = orderRefLine(collection);
+  const lines = [...bodyLines, '', ...items, ...ref];
   const link = ownerLink(collection, baseUrl);
   // HTML mirrors the same intro + problem list; the owner link becomes the CTA.
-  const htmlLines = [...bodyLines, '', ...items];
+  const htmlLines = [...bodyLines, '', ...items, ...ref];
   if (link) {
     lines.push('');
     lines.push('לעדכון ההזמנה:');
@@ -728,6 +833,8 @@ function buildWordsReminder(collection, baseUrl) {
   const values = { honoree: name };
   const subject = interpolate(tpl.subject, values);
   const bodyLines = interpolate(tpl.body, values).split('\n');
+  // The order reference, on every buyer mail from the payment receipt onward.
+  bodyLines.push(...orderRefLine(collection));
   const lines = bodyLines.slice();
   const link = ownerLink(collection, baseUrl);
   if (link) {
@@ -760,6 +867,8 @@ function buildPaymentReminder(collection, baseUrl) {
   const values = { honoree: name };
   const subject = interpolate(tpl.subject, values);
   const bodyLines = interpolate(tpl.body, values).split('\n');
+  // The order reference, on every buyer mail from the payment receipt onward.
+  bodyLines.push(...orderRefLine(collection));
   const lines = bodyLines.slice();
   const link = ownerLink(collection, baseUrl);
   if (link) {
@@ -1047,6 +1156,30 @@ async function sendProductionStarted(collection, baseUrl) {
   }
 }
 
+// Fire the BUYER's "your order is ready" mail. Called by the admin orders page
+// when the owner marks an order ready; this module owns the message, not the
+// trigger. Goes to the buyer's own address only. Returns false — never throws —
+// when there is no buyer address, the template is switched off, or Resend is
+// unconfigured, matching every other sender here.
+//
+// DELIBERATELY NOT IDEMPOTENT. The owner can un-mark an order and mark it ready
+// again, and that DOES re-send: the second press is a real signal (a re-print, a
+// corrected pickup date, a customer who says they never got it), and a silent
+// no-op would leave the owner pressing a button that does nothing with no way to
+// tell. Anything that should fire only once has to be guarded at the call site,
+// not here.
+async function sendOrderReady(collection, baseUrl) {
+  try {
+    if (!settings.emailEnabled('order_ready')) return false;
+    const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
+    if (!to) return false;
+    return await send({ ...buildOrderReady(collection, baseUrl), to });
+  } catch (e) {
+    console.warn('[notify] sendOrderReady failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
 // Fire the "production blocked — needs fixing" notification. Sends the same
 // message to Dugri (NOTIFY_TO) AND, when present, the client (owner_email),
 // de-duped so one address never gets it twice. Fully wrapped — never throws.
@@ -1092,6 +1225,8 @@ function buildReminderEmail(collection, rawText, baseUrl) {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   const bodyLines = body ? body.split('\n') : [];
+  // The order reference, on every buyer mail from the payment receipt onward.
+  bodyLines.push(...orderRefLine(collection));
   const ft = footer();
   const lines = bodyLines.slice();
   if (link) {
@@ -1133,6 +1268,7 @@ module.exports = {
   buildBuyerReceipt,
   buildFinishedMessage,
   buildProductionStarted,
+  buildOrderReady,
   buildProductionError,
   buildWordsReminder,
   buildPaymentReminder,
@@ -1147,6 +1283,7 @@ module.exports = {
   sendBuyerReceipt,
   sendOrderFinished,
   sendProductionStarted,
+  sendOrderReady,
   sendProductionError,
   sendWordsReminder,
   sendPaymentReminder,
