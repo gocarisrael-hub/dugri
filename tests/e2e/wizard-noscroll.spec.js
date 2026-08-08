@@ -359,15 +359,10 @@ test.describe('the deck pictures never bury a control', () => {
     await page.goto('/options.html?design=bachelorette&step=4');
     await expect(page.getByTestId('step-4')).toBeVisible();
     await assertRowWorthLookingAt(page);
-    // The outcome first: with no scrolling at all, can the buyer put a finger on
-    // the field? (It was 105px under the sticky bar.)
-    await assertTappable(page, '[data-testid="owner-phone"]');
-    // And this step has no licence to scroll in the first place.
-    await expect
-      .poll(async () =>
-        page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
-      )
-      .toBeLessThanOrEqual(4);
+    // The outcome, which is the half of the rule the owner kept: can the buyer
+    // GET to the field and tap it there? (It was 105px under the sticky bar, and
+    // no amount of scrolling helped, because the page could not scroll.)
+    await assertControlReachableByScrolling(page, '[data-testid="owner-phone"]');
   });
 
   // Step 5 now carries BOTH tall things: the deck pictures and a photo grid whose
@@ -446,24 +441,20 @@ test.describe('the deck pictures never bury a control', () => {
   const SMALL_PHONE = { width: 375, height: 667 }; // iPhone SE / 8 — the floor.
   const SHORTEST_WITHOUT_SCROLLING = { width: 375, height: 800 }; // Galaxy S20 class.
 
-  // TALL SCREENS ONLY. The control must be usable with no scrolling at all: fully
-  // clear of the bar, tappable, and the step must not have started scrolling.
-  async function assertControlIsUsable(page, selector) {
-    await assertTappable(page, selector);
-    await expect
-      .poll(async () =>
-        page.evaluate((sel) => {
-          const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
-          return Math.round(document.querySelector(sel).getBoundingClientRect().bottom - bar.top);
-        }, selector)
-      )
-      .toBeLessThanOrEqual(0);
-    await expect
-      .poll(async () =>
-        page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
-      )
-      .toBeLessThanOrEqual(4);
-  }
+  // "FITS A PHONE WITH NO SCROLLING" IS GONE, and it went the way the step-3
+  // exemption went: the owner traded it. Asked whether the optional note should
+  // keep being contorted to fit a step with 2px of slack — moved, then folded
+  // behind a button — she answered: "fits a phone with no scrolling - forget
+  // about this."
+  //
+  // So there is no longer a helper that asserts a step did not scroll, and this
+  // is where the one that did used to be. What survives is the half she kept and
+  // the half that was ever load-bearing: EVERY CONTROL REACHABLE. A control the
+  // buyer cannot get to is a blocked funnel; a control she reaches by scrolling
+  // is a phone.
+  //
+  // The strict rule still holds on the steps that never carried a text box —
+  // assertStepFits, above, is untouched, and steps 1, 2 and 3 still answer to it.
 
   // SHORT SCREENS. Scrolling is allowed, so the question is no longer "did the
   // step stay put" but "can the buyer GET to the control and tap it there".
@@ -592,7 +583,7 @@ test.describe('the deck pictures never bury a control', () => {
     // that bought the space back by dropping the only "there is more than one
     // picture" affordance is not the fix.
     await expect(page.locator('#deckDots .carousel-dot')).toHaveCount(3);
-    await assertControlIsUsable(page, '[data-testid="owner-phone"]');
+    await assertControlReachableByScrolling(page, '[data-testid="owner-phone"]');
   });
 
   // Step 3 keeps the big picture AND its licence to scroll (owner, 2026-08-06), so

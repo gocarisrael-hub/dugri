@@ -1439,31 +1439,6 @@
         display: none;
       }
       /* Static, always-visible guidance under the name field (owner-editable). */
-      /* The closed state of the optional note: one line, and it must READ as a
-         control rather than as a caption — a buyer who cannot see a box has to
-         know there is one behind this. */
-      .wiz-note-toggle {
-        display: block;
-        width: 100%;
-        margin: 0;
-        padding: 4px 0;
-        background: none;
-        border: 0;
-        font: inherit;
-        font-size: 14px;
-        color: var(--muted);
-        text-align: center;
-        text-decoration: underline;
-        text-underline-offset: 3px;
-        cursor: pointer;
-      }
-      .wiz-note-toggle[hidden] {
-        display: none;
-      }
-      .wiz-note-toggle:hover,
-      .wiz-note-toggle:focus-visible {
-        color: var(--ink, inherit);
-      }
       .wiz-hint {
         display: block;
         color: var(--muted);
@@ -2470,46 +2445,6 @@
             hidden
           ></span>
         </label>
-
-        <!-- OPTIONAL NOTE TO US. Everything else the wizard collects ends up
-             printed on something; this does not. It is where a buyer says the
-             thing that has no field of its own — "זו הפתעה, אל תתקשרו אליה",
-             "צריך עד יום חמישי".
-             CLOSED UNTIL SHE ASKS FOR IT, and that is not a style choice. Every
-             step of this wizard is held to "fits a phone with NO scrolling"
-             (wizard-noscroll/assertStepFits), and measured on an iPhone 14 the
-             details step has 2px of slack against a 141px text box — there is no
-             step with room for one. A button costs a line, and it only costs
-             that to the buyers who want it: opening it is the moment she has
-             decided to type, and this step is the one the owner already traded
-             to scrolling (#363), so it can grow then. -->
-        <div class="wiz-field" id="orderCommentField" data-testid="order-comment-field">
-          <button
-            type="button"
-            class="wiz-note-toggle"
-            id="orderCommentToggle"
-            data-testid="order-comment-toggle"
-            aria-expanded="false"
-            aria-controls="orderCommentBody"
-            data-edit="options-comment-open"
-          >
-            + רוצים להוסיף לנו הערה? (רשות)
-          </button>
-          <label id="orderCommentBody" data-testid="order-comment-body" hidden>
-            <textarea
-              class="wiz-input"
-              id="orderCommentInput"
-              data-testid="order-comment-input"
-              rows="2"
-              maxlength="500"
-              placeholder="למשל: זו הפתעה - אל תתקשרו אליה"
-              aria-label="הערה להזמנה (רשות)"
-            ></textarea>
-            <span class="wiz-hint" data-edit="options-comment-hint"
-              >ההערה מגיעה אלינו בלבד ולא מודפסת על הקלפים.</span
-            >
-          </label>
-        </div>
 
         <!-- PREVIEW TEASER: sits exactly where the live preview will appear, so
              the empty space below the fields explains itself instead of reading
@@ -3573,6 +3508,35 @@
           />
           <span class="wiz-err" id="phoneErr" data-testid="phone-err" hidden
             >נא להזין מספר נייד תקין (לדוגמה 0521234567).</span
+          >
+        </label>
+        <!-- OPTIONAL NOTE TO US. Everything else the wizard collects ends up
+             printed on something; this does not. It is where a buyer says the
+             thing that has no field of its own — "זו הפתעה, אל תתקשרו אליה",
+             "צריך עד יום חמישי" — and it sits beside the other things she is
+             telling us about herself rather than about the game.
+             IT IS A PLAIN, OPEN BOX, and getting here took two wrong turns. This
+             step was held to "fits a phone with no scrolling", so the box was
+             moved, then folded behind a button to cost one line. Put to the
+             owner, she answered: "fits a phone with no scrolling - forget about
+             this." So the box is a box, and the step scrolls. What the step still
+             owes her is in wizard-noscroll: every control REACHABLE, which is the
+             half of that rule she kept. -->
+        <label class="wiz-field" id="orderCommentField" data-testid="order-comment-field">
+          <span class="wiz-lbl" data-edit="options-comment-label"
+            >רוצים להוסיף לנו הערה? (רשות)</span
+          >
+          <textarea
+            class="wiz-input"
+            id="orderCommentInput"
+            data-testid="order-comment-input"
+            rows="2"
+            maxlength="500"
+            placeholder="למשל: זו הפתעה - אל תתקשרו אליה"
+            aria-label="הערה להזמנה (רשות)"
+          ></textarea>
+          <span class="wiz-hint" data-edit="options-comment-hint"
+            >ההערה מגיעה אלינו בלבד ולא מודפסת על הקלפים.</span
           >
         </label>
         <p class="wiz-err" id="createErr" data-testid="create-err" hidden></p>
@@ -5048,25 +5012,6 @@
          in admin beside it. Persisted with the rest of the selection so a
          refresh mid-wizard does not lose what she typed. */
       const orderCommentInput = document.getElementById('orderCommentInput');
-      const orderCommentToggle = document.getElementById('orderCommentToggle');
-      const orderCommentBody = document.getElementById('orderCommentBody');
-      // Opening it is one-way and unlabelled as such: there is no "close", because
-      // closing on a buyer who has typed would either lose her note or hide it,
-      // and neither is a thing a form should do to her.
-      function openOrderComment() {
-        if (!orderCommentBody || !orderCommentBody.hidden) return;
-        orderCommentBody.hidden = false;
-        if (orderCommentToggle) {
-          orderCommentToggle.setAttribute('aria-expanded', 'true');
-          orderCommentToggle.hidden = true;
-        }
-      }
-      if (orderCommentToggle) {
-        orderCommentToggle.addEventListener('click', () => {
-          openOrderComment();
-          if (orderCommentInput) orderCommentInput.focus();
-        });
-      }
       if (orderCommentInput) {
         orderCommentInput.addEventListener('input', () => {
           orderComment = orderCommentInput.value;
@@ -7131,9 +7076,6 @@
           refreshCustomTitleWarn();
         }
         if (orderCommentInput) orderCommentInput.value = orderComment;
-        // A restored note must be VISIBLE, or a refresh mid-wizard reads as
-        // having thrown away what she wrote.
-        if (orderComment) openOrderComment();
         // a fixed-colour design ignores any restored colour choice.
         if (isFixedDesign()) colorIndex = -1;
         document

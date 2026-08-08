@@ -5,11 +5,11 @@ import { ALL_ON, stubFeatures } from './feature-flags.js';
 // somewhere to say it, what she types survives a refresh, and it travels with
 // the order rather than being quietly dropped.
 //
-// It lives CLOSED on the name step, behind one line she taps to open. That is
-// forced rather than chosen: every step of this wizard is held to "fits a phone
-// with no scrolling" (wizard-noscroll), and on an iPhone 14 the roomiest step has
-// 2px of slack against a 141px text box. A button costs a line, and only the
-// buyers who want the box pay for the box.
+// It is a plain, open box on the details step, beside the email and the phone.
+// It was moved once and folded behind a button once, both times to satisfy "fits
+// a phone with no scrolling"; the owner then dropped that rule ("forget about
+// this"). What the step still owes her — that she can reach every control — is
+// asserted in wizard-noscroll.
 //
 // The server side (sanitizing, admin, the owner's email) is covered in
 // tests/unit/order-comment.test.js; this is the part only a browser can answer.
@@ -47,13 +47,7 @@ async function toNameStep(page) {
   await expect(page.getByTestId('step-3')).toBeVisible();
 }
 
-// Open the note, the way a buyer does.
-async function openNote(page) {
-  await page.getByTestId('order-comment-toggle').click();
-  await expect(page.getByTestId('order-comment-input')).toBeVisible();
-}
-
-// On from the name step, for the tests that need to reach the order itself.
+// On from the name step to the DETAILS step, where the note lives.
 async function toDetailsStep(page) {
   await page.getByTestId('honoree-input').fill('Shira'); // this design asks for a Latin name
   await page.getByTestId('gender-female').check();
@@ -68,25 +62,19 @@ async function toDetailsStep(page) {
 test.describe('the note a buyer leaves with her order', () => {
   test('there is somewhere to say it, and it says it is not printed', async ({ page }) => {
     await toNameStep(page);
-    // Closed, it is one line — and it has to read as a way IN, not as a caption,
-    // because a buyer who cannot see a box has no other clue there is one.
-    const toggle = page.getByTestId('order-comment-toggle');
-    await expect(toggle).toBeVisible();
-    await expect(page.getByTestId('order-comment-input')).toBeHidden();
-    await openNote(page);
+    await toDetailsStep(page);
+    await expect(page.getByTestId('order-comment-input')).toBeVisible();
     // The one thing she must be able to trust about this box: what she writes
     // here does NOT end up on the cards.
     await expect(page.getByTestId('order-comment-field')).toContainText('לא מודפסת');
   });
 
-  test('what she typed survives a refresh of the step — and comes back OPEN', async ({ page }) => {
+  test('what she typed survives a refresh of the step', async ({ page }) => {
     await toNameStep(page);
-    await openNote(page);
+    await toDetailsStep(page);
     const note = 'זו הפתעה - אל תתקשרו אליה';
     await page.getByTestId('order-comment-input').fill(note);
     await page.reload();
-    // Restored shut, it would read as having thrown her note away.
-    await expect(page.getByTestId('order-comment-input')).toBeVisible();
     await expect(page.getByTestId('order-comment-input')).toHaveValue(note);
   });
 
@@ -101,26 +89,33 @@ test.describe('the note a buyer leaves with her order', () => {
         body: JSON.stringify({ id: 'c-test', owner_token: 't-test' }),
       });
     });
-    await openNote(page);
-    await page.getByTestId('order-comment-input').fill('צריך עד יום חמישי');
     await toDetailsStep(page);
+    await page.getByTestId('order-comment-input').fill('צריך עד יום חמישי');
     await page.getByTestId('next-btn').click(); // create
     await expect.poll(() => posted && posted.comment).toBe('צריך עד יום חמישי');
   });
 
-  test('closed, it costs the step no scrolling', async ({ page }) => {
-    // The reason it is a button at all. If someone later reopens this as a plain
-    // text box, wizard-noscroll fails — but it fails over there, describing a
-    // gender control, and nothing points back here. This says it in the place
-    // that explains it.
+  test('a buyer on a phone can reach it, and the step scrolls to let her', async ({ page }) => {
+    // What replaced "the step must not scroll": the box is 141px on a step that
+    // had 2px to spare, so the step scrolls now — and scrolling has to actually
+    // deliver her to it, clear of the sticky bar rather than under it.
     await page.setViewportSize({ width: 390, height: 844 });
     await toNameStep(page);
-    await expect(page.getByTestId('order-comment-toggle')).toBeVisible();
+    await toDetailsStep(page);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
     await expect
       .poll(async () =>
-        page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
+        page.evaluate(() => {
+          const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
+          const el = document
+            .querySelector('[data-testid="order-comment-input"]')
+            .getBoundingClientRect();
+          return Math.round(el.bottom - bar.top);
+        })
       )
-      .toBeLessThanOrEqual(4);
+      .toBeLessThanOrEqual(0);
+    await page.getByTestId('order-comment-input').fill('נא לארוז כמתנה');
+    await expect(page.getByTestId('order-comment-input')).toHaveValue('נא לארוז כמתנה');
   });
 
   test('an order with nothing to say still goes through', async ({ page }) => {
