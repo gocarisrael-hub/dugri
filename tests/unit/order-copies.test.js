@@ -277,3 +277,110 @@ describe('the receipt emails name the copies', () => {
     expect(msg.text).not.toContain('מספר עותקים');
   });
 });
+
+// ---------------------------------------------------------------------------
+// WHAT THE CARD IS CHARGED MUST EQUAL WHAT THE CHECKOUT DISPLAYED.
+//
+// These reproduce the review's three money findings. The page's renderTotal is
+// mirrored here as `displayed()` — the same arithmetic, so a divergence between
+// the two implementations shows up as a failure rather than as a buyer being
+// charged more than they agreed to.
+// ---------------------------------------------------------------------------
+function displayed({ version, copies, locked, lockedTotal, unitFromPricing, fee }) {
+  // A locked order shows its stored total as-is; anything else is
+  // per-copy x copies + one shipping fee.
+  if (locked) return lockedTotal;
+  return unitFromPricing * copies + (version === 'delivery' ? fee : 0);
+}
+
+describe('charged === displayed', () => {
+  it('one copy, pickup', () => {
+    const c = db.createCollection('שירה');
+    const o = db.setOrder(c.id, c.owner_token, { version: 'pickup', quantity: 1 });
+    expect(o.total).toBe(
+      displayed({ version: 'pickup', copies: 1, unitFromPricing: 199, fee: 39 })
+    );
+  });
+
+  it('N copies, delivery', () => {
+    const c = db.createCollection('שירה');
+    const o = db.setOrder(c.id, c.owner_token, {
+      version: 'delivery',
+      address: ADDRESS,
+      quantity: 5,
+    });
+    expect(o.total).toBe(
+      displayed({ version: 'delivery', copies: 5, unitFromPricing: 199, fee: 39 })
+    );
+  });
+
+  it('a PRE-FEATURE order (no unit_price) is not billed shipping twice', () => {
+    // The exact review case: an order stored at the old ALL-IN 239, re-submitted
+    // after the fee exists. Charging 239 + 39 while the page shows 238 is the bug.
+    const c = db.createCollection('שירה');
+    db.setOrder(c.id, c.owner_token, { version: 'delivery', address: ADDRESS });
+    const stored = db.getCollection(c.id).order;
+    stored.total = 239;
+    delete stored.unit_price;
+    delete stored.delivery_fee;
+    delete stored.quantity;
+
+    const again = db.setOrder(c.id, c.owner_token, { version: 'delivery', address: ADDRESS });
+    // Byte-identical to before the feature: the shipping inside 239 is not
+    // charged a second time.
+    expect(again.total).toBe(239);
+    expect(again.delivery_fee).toBe(0);
+    expect(again.quantity).toBe(1);
+  });
+
+  it('a PRE-FEATURE order that grows re-prices cleanly, with ONE shipping fee', () => {
+    const c = db.createCollection('שירה');
+    db.setOrder(c.id, c.owner_token, { version: 'delivery', address: ADDRESS });
+    const stored = db.getCollection(c.id).order;
+    stored.total = 239;
+    delete stored.unit_price;
+    delete stored.delivery_fee;
+    delete stored.quantity;
+
+    const grown = db.setOrder(c.id, c.owner_token, {
+      version: 'delivery',
+      address: ADDRESS,
+      quantity: 3,
+    });
+    // The all-in 239 can't be decomposed, so the order re-prices from settings:
+    // 199 x 3 + 39 — shipping once, never three times.
+    expect(grown.total).toBe(199 * 3 + 39);
+    expect(grown.delivery_fee).toBe(39);
+  });
+
+  it('an existing single-copy order is untouched by this feature', () => {
+    const c = db.createCollection('שירה');
+    db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    const stored = db.getCollection(c.id).order;
+    stored.total = 149; // an older price
+    delete stored.unit_price;
+    delete stored.delivery_fee;
+    delete stored.quantity;
+    const again = db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    expect(again.total).toBe(149);
+  });
+});
+
+describe('a coupon discounts the ORDER once, not each copy', () => {
+  it('takes the percentage off the multiplied total', () => {
+    // The charge path is `Math.round(order.total * (1 - pct/100))` — applied to the
+    // whole order. Pinned here because nothing covered coupon x copies.
+    const c = db.createCollection('שירה');
+    const o = db.setOrder(c.id, c.owner_token, {
+      version: 'delivery',
+      address: ADDRESS,
+      quantity: 3,
+    });
+    expect(o.total).toBe(636);
+    const charged = Math.round(o.total * (1 - 10 / 100));
+    expect(charged).toBe(572);
+    // NOT the discount applied per copy and then multiplied (199*0.9*3 + 39 = 576),
+    // and not the fee discounted away separately.
+    expect(charged).not.toBe(576);
+  });
+});

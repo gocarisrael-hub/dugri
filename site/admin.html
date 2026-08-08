@@ -570,6 +570,10 @@
               ><span>גרסה</span
               ><select id="e-version"></select
             ></label>
+            <label class="fld"
+              ><span>מספר עותקים</span
+              ><input type="number" id="e-copies" min="1" step="1" inputmode="numeric"
+            /></label>
           </div>
           <div class="fgrid" id="e-address" style="margin-top: 10px">
             <label class="fld"><span>רחוב ומספר</span><input type="text" id="e-street" /></label>
@@ -1034,8 +1038,19 @@
 
         const order = c.order || null;
         el('e-order-none').hidden = !!order;
-        for (const id of ['e-version', 'e-street', 'e-city', 'e-postal', 'e-apartment', 'e-floor'])
+        for (const id of [
+          'e-version',
+          'e-copies',
+          'e-street',
+          'e-city',
+          'e-postal',
+          'e-apartment',
+          'e-floor',
+        ])
           el(id).disabled = !order;
+        // Orders placed before copies existed carry no quantity; they are all
+        // single-copy, so show 1 rather than an empty box.
+        el('e-copies').value = order ? order.quantity || 1 : '';
         fillSelect(
           el('e-version'),
           Object.keys(versionLabel).map((v) => ({ value: v, label: versionLabel[v] })),
@@ -1167,6 +1182,13 @@
         };
         if (editing.order) {
           patch.order = { version: el('e-version').value };
+          // Copies. Only sent when it is a usable number — an empty or nonsense
+          // box must leave the stored count alone, not reset the order to 1.
+          const copiesRaw = el('e-copies').value.trim();
+          const copiesNum = Number(copiesRaw);
+          if (copiesRaw !== '' && Number.isInteger(copiesNum) && copiesNum >= 1) {
+            patch.order.quantity = copiesNum;
+          }
           if (patch.order.version === 'delivery') {
             patch.order.address = {
               street: el('e-street').value.trim(),
@@ -1378,7 +1400,17 @@
           }
 
           const tdVersion = document.createElement('td');
-          tdVersion.textContent = order ? versionLabel[order.version] || order.version : '—';
+          if (order) {
+            const label = versionLabel[order.version] || order.version;
+            const qty = order.quantity || 1;
+            // The copy count rides with the version, and ONLY when it is more than
+            // one: "×1" on every row would be noise, but a five-copy order that
+            // looks identical to a one-copy order gets fulfilled as one deck.
+            tdVersion.textContent = qty > 1 ? label + ' · ' + qty + ' עותקים' : label;
+            if (qty > 1) tdVersion.style.fontWeight = '700';
+          } else {
+            tdVersion.textContent = '—';
+          }
 
           const tdTotal = document.createElement('td');
           tdTotal.textContent = order ? order.total + ' ₪' : '—';

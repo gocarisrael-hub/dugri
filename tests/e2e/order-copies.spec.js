@@ -133,3 +133,46 @@ test('copies: the server prices the order, not the browser', async ({ page }) =>
   });
   expect((await res.json()).total).toBe(UNIT * 5);
 });
+
+test('copies: the 5s poll must not overwrite a count the buyer is choosing', async ({ page }) => {
+  await createCollection(page, 'Poll');
+  // Place a 1-copy order so the server has a stored quantity to sync FROM.
+  const id = new URL(page.url()).searchParams.get('c');
+  const k = new URL(page.url()).searchParams.get('k');
+  await page.request.post(`/api/collections/${id}/order`, {
+    data: { owner_token: k, version: 'pickup', quantity: 1 },
+  });
+
+  await page.getByTestId('qty-plus').click();
+  await page.getByTestId('qty-plus').click();
+  await expect(page.getByTestId('qty-val')).toHaveText('3');
+
+  // The background poll runs every 5s and re-applies pricing from the server,
+  // where the order still says 1. The buyer's unsent choice must survive it —
+  // otherwise she watches 3 turn back into 1, and pays for one deck.
+  await page.waitForTimeout(6500);
+  await expect(page.getByTestId('qty-val')).toHaveText('3');
+  await expect(page.locator('#payTotal')).toHaveText(String(UNIT * 3));
+});
+
+test('copies: a locked order shows its stored total, never total × copies', async ({ page }) => {
+  await createCollection(page, 'Locked');
+  const id = new URL(page.url()).searchParams.get('c');
+  const k = new URL(page.url()).searchParams.get('k');
+  // An admin-created order locks checkout to its own stored total.
+  const made = await page.request.post(`/api/admin/collections/${id}/custom?key=dugri-admin`, {
+    data: {},
+  });
+  expect(made.ok()).toBeTruthy();
+
+  await page.goto(`/collect.html?c=${id}&k=${k}`);
+  await page.locator('#payPanel summary').click();
+
+  // Whatever the locked total is, the page must show exactly it — not a figure
+  // re-derived from the copy count, and not with shipping added on top.
+  const stored = (await (await page.request.get(`/api/collections/${id}`)).json()).order.total;
+  await expect(page.locator('#payTotal')).toHaveText(String(stored));
+  // The stepper isn't offered on a locked order, so no arithmetic line either.
+  await expect(page.locator('#qtyRow')).toBeHidden();
+  await expect(page.getByTestId('pay-math')).toBeHidden();
+});

@@ -959,16 +959,33 @@ const db = {
     const copies = sanitizeQuantity(
       quantity == null ? (sameAsExisting && existing.quantity) || 1 : quantity
     );
-    // The PER-COPY price. Re-submitting the SAME version keeps the price the order
-    // was created at — an admin custom quote must stay at its quoted figure even
-    // if settings move. Orders placed before copies existed carry no unit_price,
-    // so their stored `total` IS the unit price (they are all single-copy).
-    const unitPrice = sameAsExisting
-      ? Number.isInteger(existing.unit_price)
-        ? existing.unit_price
-        : existing.total
-      : versionPrice(version);
-    const fee = version === 'delivery' ? deliveryFee() : 0;
+    // The PER-COPY price, and whether shipping is added on top.
+    //
+    // An order placed BEFORE copies existed stores one ALL-IN total: for delivery
+    // that figure already contains shipping, because there was no separate fee
+    // then. Reusing it as a per-copy price and adding today's fee bills shipping
+    // TWICE — the checkout shows 238 and the card is charged 278. So a legacy
+    // record is handled explicitly rather than squeezed into the new shape:
+    //   • still ONE copy   -> keep its stored total exactly; the shipping it
+    //     carries is already inside that number. Byte-identical to before.
+    //   • now MORE than one -> the all-in figure cannot be decomposed (nothing
+    //     records which part was shipping), so re-price the whole order from
+    //     settings, where per-copy and shipping are separate and knowable.
+    const legacy = sameAsExisting && !Number.isInteger(existing.unit_price);
+    let unitPrice;
+    let fee;
+    if (legacy && copies === 1) {
+      unitPrice = existing.total;
+      fee = 0;
+    } else {
+      // A quoted per-copy price (an admin custom quote) survives a re-submit; a
+      // fresh order — or a legacy one that just grew — is priced from settings.
+      unitPrice =
+        sameAsExisting && Number.isInteger(existing.unit_price)
+          ? existing.unit_price
+          : versionPrice(version);
+      fee = version === 'delivery' ? deliveryFee() : 0;
+    }
     c.order = {
       version,
       // Copies of the same game, and the per-copy price behind the total. Kept as
@@ -980,7 +997,10 @@ const db = {
       delivery_fee: fee,
       // The authoritative charge. Always recomputed here — never accepted from a
       // client — so a tampered payload cannot buy five decks at the price of one.
-      total: orderTotal(version, copies, unitPrice),
+      // Summed from the SAME unit/fee stored above rather than via orderTotal(),
+      // which would re-derive the fee from settings and re-add shipping to a
+      // legacy all-in total.
+      total: unitPrice * copies + fee,
       address: addr,
       ordered_at: nowIso(),
       paid: false,

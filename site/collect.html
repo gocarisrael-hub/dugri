@@ -2786,8 +2786,8 @@
         });
         // ...and so does arriving with ?pay=1 (the order email's pay button).
         openPayPanelRef = () => openPayPanel('start');
-        $('#qtyMinus').addEventListener('click', () => setCopies(copies - 1));
-        $('#qtyPlus').addEventListener('click', () => setCopies(copies + 1));
+        $('#qtyMinus').addEventListener('click', () => setCopies(copies - 1, true));
+        $('#qtyPlus').addEventListener('click', () => setCopies(copies + 1, true));
         const opts = Array.from(document.querySelectorAll('.pay-opt'));
         const optsBox = $('#payOpts');
         const addressForm = $('#addressForm');
@@ -2835,6 +2835,13 @@
         // five-figure charge. The server sanitises independently — this is UI.
         const MAX_COPIES = 999;
         let copies = 1;
+        // True once the BUYER has touched the stepper. The 5s background poll
+        // re-runs applyPricing, which adopts the server's stored count — without
+        // this flag it snaps a buyer who just pressed + back to the stored value
+        // within five seconds, and if she pays in that window she is charged for
+        // the old count. Same idea as `wordEditOpen` guarding the word editor: a
+        // local edit wins until it has been sent.
+        let copiesTouched = false;
         // Shipping is charged ONCE per order, not per copy: every deck goes in the
         // same parcel to the same address. 0 for pickup, and 0 whenever pricing
         // failed to load (never invent a charge).
@@ -2861,13 +2868,18 @@
             $('#payTotal').textContent = '—';
             return;
           }
-          // The SAME arithmetic the server performs in db.orderTotal: per-copy
-          // price x copies, plus one shipping fee for the whole order. If these two
-          // ever disagree the buyer is shown one number and charged another, so
-          // any change here belongs in both places.
+          // A LOCKED order (admin-created / already placed) carries a FINAL stored
+          // total: priceFor returns that whole figure, so multiplying it by copies
+          // and adding shipping would show a number the server will never charge —
+          // a 3-copy order stored at 1797 rendering as 5391. Display it as-is.
+          // Otherwise: the SAME arithmetic the server performs — per-copy price x
+          // copies, plus ONE shipping fee for the order. If these two ever disagree
+          // the buyer is shown one number and charged another, so a change to
+          // either belongs in both.
+          const locked = !!lockVersion;
           const unit = priceFor(v);
-          const fee = feeFor(v);
-          const base = unit * copies + fee;
+          const fee = locked ? 0 : feeFor(v);
+          const base = locked ? unit : unit * copies + fee;
           if (appliedCoupon) {
             const discounted = Math.round(base * (1 - appliedCoupon.discount_pct / 100));
             was.textContent = '₪' + base;
@@ -2878,7 +2890,7 @@
             was.classList.add('hidden');
             $('#payTotal').textContent = base;
           }
-          renderPayMath(unit, fee);
+          renderPayMath(locked ? 0 : unit, fee);
         }
 
         // Spell out a total that isn't self-evident. A single copy with no shipping
@@ -2886,7 +2898,8 @@
         // only verify our sum by trusting it.
         function renderPayMath(unit, fee) {
           const el = $('#payMath');
-          if (copies <= 1 && !fee) {
+          // unit 0 => a locked order, whose total is final and needs no breakdown.
+          if (!unit || (copies <= 1 && !fee)) {
             el.textContent = '';
             el.classList.add('hidden');
             return;
@@ -2900,7 +2913,8 @@
 
         // The stepper. `−` stops at 1; there is no upper stop the buyer can feel,
         // only the typo guard at MAX_COPIES.
-        function setCopies(n) {
+        function setCopies(n, fromBuyer) {
+          if (fromBuyer) copiesTouched = true;
           const next = Math.min(MAX_COPIES, Math.max(1, Math.floor(Number(n) || 1)));
           copies = next;
           $('#qtyVal').textContent = String(next);
@@ -2953,10 +2967,18 @@
             state && state.order && state.order.locked && !state.order.paid ? state.order : null;
           lockVersion = lockedOrder ? lockedOrder.version : null;
           lockTotal = lockedOrder ? lockedOrder.total : null;
-          // Restore the copy count from the placed order, so a reload (or the 5s
-          // background poll) can't quietly reset a 5-copy order back to 1 under the
-          // buyer. Server value only, and never after payment.
-          if (state && state.order && !state.order.paid && Number.isInteger(state.order.quantity)) {
+          // Adopt the placed order's copy count — but ONLY while the buyer has not
+          // touched the stepper on this page load. applyPricing runs on the 5s poll,
+          // so syncing unconditionally would overwrite a count she is in the middle
+          // of choosing (and could charge her for the old one). Her unsent choice
+          // wins; a reload starts fresh and picks the stored value back up.
+          if (
+            !copiesTouched &&
+            state &&
+            state.order &&
+            !state.order.paid &&
+            Number.isInteger(state.order.quantity)
+          ) {
             const stored = Math.max(1, state.order.quantity);
             if (stored !== copies) setCopies(stored);
           }
