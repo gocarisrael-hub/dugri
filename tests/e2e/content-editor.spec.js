@@ -222,15 +222,18 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
   }) => {
     await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
     await page.route('**/api/admin/content*', (route) => route.fulfill({ json: { ok: true } }));
-    await page.goto('/index.html?edit=1&key=dugri-admin');
+    await page.goto('/collect.html?edit=1&key=dugri-admin');
     await expect(page.getByText('מצב עריכה')).toBeVisible();
 
-    // FAQ answers live inside a normally-CLOSED <details>. In edit mode every
-    // <details> is FORCED OPEN so its editable answer is reachable, and it must
-    // stay open — clicking the <summary> to edit the question must neither collapse
-    // the panel (native toggle) nor swallow spaces (native Space = activate).
-    const summary = page.locator('[data-edit="index-faq-q1"]');
-    const answer = page.locator('[data-edit="index-faq-a1"]');
+    // The word-collection help panel lives inside a normally-CLOSED <details>. In
+    // edit mode every <details> is FORCED OPEN so its editable body is reachable,
+    // and it must stay open — clicking the <summary> to edit the label must neither
+    // collapse the panel (native toggle) nor swallow spaces (native Space =
+    // activate). This used to exercise the home-page FAQ; those answers are now
+    // owned by admin-faq.html and are no longer content-editor nodes, so the same
+    // behaviour is pinned on another editable summary+body pair.
+    const summary = page.locator('[data-edit="collect-howto-summary"]');
+    const answer = page.locator('[data-edit="collect-howto-body"]');
     const details = page.locator('details', { has: summary });
 
     expect(await details.evaluate((d) => d.open)).toBe(true); // forced open
@@ -270,7 +273,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     // Overrides are single-run plain text; a newline would save but collapse to a
     // space on reload, silently dropping the break. Enter must COMMIT (blur→save),
     // and the saved text must carry no '\n'.
-    const ans = page.locator('[data-edit="index-faq-a1"]');
+    const ans = page.locator('[data-edit="index-final-sub"]');
     await ans.click();
     await ans.evaluate((n) => {
       const r = document.createRange();
@@ -284,7 +287,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
 
     await expect.poll(() => posts.length).toBeGreaterThan(0);
     const saved = posts[posts.length - 1];
-    expect(saved.key).toBe('index-faq-a1');
+    expect(saved.key).toBe('index-final-sub');
     expect(saved.text).toBe('תשובה חדשה'); // exactly, no trailing newline
     expect(saved.text).not.toContain('\n');
     await expect(ans).not.toBeFocused(); // Enter blurred → committed
@@ -322,7 +325,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await page.goto('/index.html?edit=1&key=dugri-admin');
     await expect(page.getByText('מצב עריכה')).toBeVisible();
 
-    const ans = page.locator('[data-edit="index-faq-a1"]');
+    const ans = page.locator('[data-edit="index-final-sub"]');
     await ans.click();
     await ans.evaluate((n) => {
       n.textContent = 'תוכן ערוך';
@@ -414,7 +417,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
 
     // Editing → save → 403. The stale key must be CLEARED so the owner isn't locked
     // into a broken edit mode (the next ?edit=1 re-prompts instead of reusing it).
-    const ans = page.locator('[data-edit="index-faq-a1"]');
+    const ans = page.locator('[data-edit="index-final-sub"]');
     await ans.click();
     await ans.evaluate((n) => {
       n.textContent = 'שינוי';
@@ -533,7 +536,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
 
     // Type into a field WITHOUT blurring it, then hit Save. Clicking Save shifts
     // focus off the field → its blur→save fires; Save waits and confirms נשמר.
-    const ans = page.locator('[data-edit="index-faq-a1"]');
+    const ans = page.locator('[data-edit="index-final-sub"]');
     await ans.click();
     await ans.evaluate((n) => {
       n.textContent = 'תשובה שמורה';
@@ -558,7 +561,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await page.goto('/index.html?edit=1&key=dugri-admin');
     await expect(page.getByText('מצב עריכה')).toBeVisible();
 
-    const ans = page.locator('[data-edit="index-faq-a1"]');
+    const ans = page.locator('[data-edit="index-final-sub"]');
     await ans.click();
     await ans.evaluate((n) => {
       n.textContent = 'נשמר לפני יציאה';
@@ -630,7 +633,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
 
     // Type an edit, then pick another page: the save FAILS, so the picker offers a
     // discard-and-switch confirm. DECLINING keeps us here (edit not dropped).
-    const ans = page.locator('[data-edit="index-faq-a1"]');
+    const ans = page.locator('[data-edit="index-final-sub"]');
     await ans.click();
     await ans.evaluate((n) => {
       n.textContent = 'עריכה שלא נשמרה';
@@ -656,7 +659,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await page.goto('/index.html?edit=1&key=dugri-admin');
     await expect(page.getByText('מצב עריכה')).toBeVisible();
 
-    const ans = page.locator('[data-edit="index-faq-a1"]');
+    const ans = page.locator('[data-edit="index-final-sub"]');
     await ans.click();
     await ans.evaluate((n) => {
       n.textContent = 'עריכה שלא נשמרה';
@@ -679,7 +682,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await page.goto('/index.html?edit=1&key=dugri-admin');
     await expect(page.getByText('מצב עריכה')).toBeVisible();
 
-    const ans = page.locator('[data-edit="index-faq-a1"]');
+    const ans = page.locator('[data-edit="index-final-sub"]');
     await ans.click();
     await ans.evaluate((n) => {
       n.textContent = 'עריכה שנכשלה';
@@ -710,7 +713,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await page.goto('/index.html?edit=1&key=dugri-admin');
     await expect(page.getByText('מצב עריכה')).toBeVisible();
 
-    const ans = page.locator('[data-edit="index-faq-a1"]');
+    const ans = page.locator('[data-edit="index-final-sub"]');
     await ans.click();
     await ans.evaluate((n) => {
       n.textContent = 'עריכה שנכשלה';
@@ -744,7 +747,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await page.goto('/index.html?edit=1&key=OLDKEY');
     await expect(page.locator('.dugri-editbar')).toBeVisible();
 
-    const ans = page.locator('[data-edit="index-faq-a1"]');
+    const ans = page.locator('[data-edit="index-final-sub"]');
     await ans.click();
     await ans.evaluate((n) => {
       n.textContent = 'שינוי';

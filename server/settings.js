@@ -26,6 +26,9 @@ const path = require('path');
 // module (server/reminders.js). reminders.js has NO deps, so requiring it here
 // creates no cycle (settings -> reminders only).
 const { DEFAULT_REMINDERS, validateReminders } = require('./reminders');
+// Same arrangement for the home-page FAQ list: server/faq.js is pure and
+// dependency-free, so settings -> faq adds no cycle.
+const { DEFAULT_FAQ, validateFaq } = require('./faq');
 const { backupFile } = require('./store-backup');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
@@ -82,6 +85,7 @@ function interpolate(template, values, opts) {
 //   'price'  — a non-negative integer NIS amount (store price / per-version price).
 //   'count'  — a non-negative integer quantity (the free word quota).
 //   'flag'   — a boolean on/off switch (a checkout version's enabled state).
+//   'faq'    — the owner-managed home-page question ARRAY (server/faq.js).
 const REGISTRY = {
   email: {
     // The owner's "a new order started" alert. Despite the legacy key name this
@@ -508,6 +512,16 @@ const REGISTRY = {
   reminders: {
     list: { kind: 'reminders', tokens: ['honoree', 'link'], default: DEFAULT_REMINDERS },
   },
+  // --- The home-page FAQ ----------------------------------------------------
+  // Same array-in-one-key shape as `reminders` above: { id, enabled, q, a,
+  // link_text, link_url } per question, edited from site/admin-faq.html and read
+  // by the public GET /api/faq. The shape + safety rules (notably the link_url
+  // allowlist that keeps a javascript: URL out of the store) live in
+  // server/faq.validateFaq, wired into validateValue below via kind:'faq'. No
+  // tokens — a FAQ answer is static site copy, not a per-order message.
+  faq: {
+    list: { kind: 'faq', tokens: [], default: DEFAULT_FAQ },
+  },
 };
 
 // --- small object helpers -----------------------------------------------------
@@ -755,6 +769,12 @@ function validateValue(section, key, value) {
     // pure engine (single source of truth), so a bad list can never be stored and
     // reach the scheduler.
     return validateReminders(value);
+  }
+  if (kind === 'faq') {
+    // The owner-managed FAQ ARRAY. Full shape validation — including the
+    // link_url allowlist — lives in the pure module, so a `javascript:` href or
+    // an over-long answer can never be stored and served to every visitor.
+    return validateFaq(value);
   }
   // Generic fallback: an object default requires an object override.
   if (isPlainObject(defaultFor(section, key)) && !isPlainObject(value)) {
