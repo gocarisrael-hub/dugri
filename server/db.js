@@ -961,31 +961,28 @@ const db = {
     );
     // The PER-COPY price, and whether shipping is added on top.
     //
-    // An order placed BEFORE copies existed stores one ALL-IN total: for delivery
-    // that figure already contains shipping, because there was no separate fee
-    // then. Reusing it as a per-copy price and adding today's fee bills shipping
-    // TWICE — the checkout shows 238 and the card is charged 278. So a legacy
-    // record is handled explicitly rather than squeezed into the new shape:
-    //   • still ONE copy   -> keep its stored total exactly; the shipping it
-    //     carries is already inside that number. Byte-identical to before.
-    //   • now MORE than one -> the all-in figure cannot be decomposed (nothing
-    //     records which part was shipping), so re-price the whole order from
-    //     settings, where per-copy and shipping are separate and knowable.
-    const legacy = sameAsExisting && !Number.isInteger(existing.unit_price);
-    let unitPrice;
-    let fee;
-    if (legacy && copies === 1) {
-      unitPrice = existing.total;
-      fee = 0;
-    } else {
-      // A quoted per-copy price (an admin custom quote) survives a re-submit; a
-      // fresh order — or a legacy one that just grew — is priced from settings.
-      unitPrice =
-        sameAsExisting && Number.isInteger(existing.unit_price)
-          ? existing.unit_price
-          : versionPrice(version);
-      fee = version === 'delivery' ? deliveryFee() : 0;
-    }
+    // An UNPAID order always prices from current settings — including one placed
+    // before copies existed, which stored a single all-in total with no separate
+    // fee. That is the owner's rule (an unpaid order is re-priced at today's
+    // prices, the same rule adminUpdateOrder follows), and it is also what makes
+    // the arithmetic safe: collect.html's renderTotal prices from settings too,
+    // so the number on the screen and the number charged agree BY CONSTRUCTION
+    // rather than by coincidence.
+    //
+    // The previous attempt special-cased a legacy record by reusing its stored
+    // all-in total as the per-copy price. That was one-shot: it then PERSISTED
+    // that figure as unit_price, so the next /pay/init no longer recognised the
+    // record as legacy and added shipping on top of a number that already
+    // contained it — checkout showed 239 and the card was charged 278 on the
+    // second press. Pricing every unpaid order the same way removes the case
+    // rather than patching it.
+    //
+    // A quoted per-copy price (an admin custom quote) still survives a re-submit.
+    const unitPrice =
+      sameAsExisting && Number.isInteger(existing.unit_price)
+        ? existing.unit_price
+        : versionPrice(version);
+    const fee = version === 'delivery' ? deliveryFee() : 0;
     c.order = {
       version,
       // Copies of the same game, and the per-copy price behind the total. Kept as

@@ -314,9 +314,12 @@ describe('charged === displayed', () => {
     );
   });
 
-  it('a PRE-FEATURE order (no unit_price) is not billed shipping twice', () => {
+  it('a PRE-FEATURE order (no unit_price) is charged what the page shows', () => {
     // The exact review case: an order stored at the old ALL-IN 239, re-submitted
-    // after the fee exists. Charging 239 + 39 while the page shows 238 is the bug.
+    // after the fee exists. Keeping the stored 239 was itself a mismatch — the
+    // checkout renders per-copy + shipping from settings, i.e. 238 — so the old
+    // rule differed from the page by a shekel on the FIRST press and by 39 on
+    // the second. Pricing from settings makes both agree.
     const c = db.createCollection('שירה');
     db.setOrder(c.id, c.owner_token, { version: 'delivery', address: ADDRESS });
     const stored = db.getCollection(c.id).order;
@@ -326,10 +329,8 @@ describe('charged === displayed', () => {
     delete stored.quantity;
 
     const again = db.setOrder(c.id, c.owner_token, { version: 'delivery', address: ADDRESS });
-    // Byte-identical to before the feature: the shipping inside 239 is not
-    // charged a second time.
-    expect(again.total).toBe(239);
-    expect(again.delivery_fee).toBe(0);
+    expect(again.total).toBe(199 + 39);
+    expect(again.delivery_fee).toBe(39);
     expect(again.quantity).toBe(1);
   });
 
@@ -347,13 +348,13 @@ describe('charged === displayed', () => {
       address: ADDRESS,
       quantity: 3,
     });
-    // The all-in 239 can't be decomposed, so the order re-prices from settings:
-    // 199 x 3 + 39 — shipping once, never three times.
+    // An unpaid order prices from settings: 199 x 3 + 39 — shipping once for the
+    // parcel, never three times.
     expect(grown.total).toBe(199 * 3 + 39);
     expect(grown.delivery_fee).toBe(39);
   });
 
-  it('an existing single-copy order is untouched by this feature', () => {
+  it('an UNPAID order placed at an older price re-prices from settings', () => {
     const c = db.createCollection('שירה');
     db.setOrder(c.id, c.owner_token, { version: 'pickup' });
     const stored = db.getCollection(c.id).order;
@@ -361,8 +362,33 @@ describe('charged === displayed', () => {
     delete stored.unit_price;
     delete stored.delivery_fee;
     delete stored.quantity;
+    // The owner's rule: an unpaid order is priced at TODAY's prices — the same
+    // rule adminUpdateOrder follows. It is also what keeps the screen and the
+    // charge in agreement, because collect.html prices from settings too.
     const again = db.setOrder(c.id, c.owner_token, { version: 'pickup' });
-    expect(again.total).toBe(149);
+    expect(again.total).toBe(199);
+  });
+
+  // The previous attempt kept a legacy record's all-in total as its per-copy
+  // price and then PERSISTED it, so the second /pay/init no longer recognised
+  // the record and added shipping on top of a figure that already contained it:
+  // 239 displayed, 278 charged. A buyer reaches this by opening the payment
+  // window, closing it and pressing pay again.
+  it('charges the same on a second pay/init, after the delivery fee is split out', () => {
+    const c = db.createCollection('שירה');
+    db.setOrder(c.id, c.owner_token, { version: 'delivery', address: ADDRESS });
+    const stored = db.getCollection(c.id).order;
+    stored.total = 239; // the old ALL-IN delivery price
+    delete stored.unit_price;
+    delete stored.delivery_fee;
+    delete stored.quantity;
+
+    const first = db.setOrder(c.id, c.owner_token, { version: 'delivery', address: ADDRESS });
+    const second = db.setOrder(c.id, c.owner_token, { version: 'delivery', address: ADDRESS });
+    expect(second.total).toBe(first.total);
+    // And it is the figure the checkout renders: per-copy price + one shipping.
+    expect(second.total).toBe(199 + 39);
+    expect(second.delivery_fee).toBe(39);
   });
 });
 

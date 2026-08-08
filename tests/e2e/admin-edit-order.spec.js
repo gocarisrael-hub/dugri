@@ -108,3 +108,44 @@ test('removes a pawn photo the customer sent by mistake', async ({ page, request
   await expect(page.locator('#edit')).toBeHidden();
   await expect(rowFor(page, name).locator('img')).toHaveCount(1);
 });
+
+// The copy count is settled at payment: adminUpdateOrder only applies quantity to
+// an UNPAID order. Before this guard the box stayed editable on a paid order, so
+// the owner could type a new count, be told "נשמר", and find nothing had changed.
+test('the copy count is not editable once the order is paid', async ({ page }) => {
+  const unpaid = uniq('copies-unpaid');
+  const paid = uniq('copies-paid');
+  const row = (name, order) => ({
+    id: 'id-' + name,
+    honoree_name: name,
+    created_at: new Date().toISOString(),
+    words: [],
+    order,
+  });
+  // Stub the list so both states exist side by side: the same dialog, one order
+  // paid and one not, is exactly what the guard distinguishes.
+  await page.route('**/api/admin/collections?key=*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        collections: [
+          row(unpaid, { version: 'pickup', quantity: 2, total: 398, paid: false }),
+          row(paid, { version: 'pickup', quantity: 3, total: 597, paid: true }),
+        ],
+      }),
+    })
+  );
+
+  await page.goto(`/admin.html?key=${KEY}`);
+
+  await openEditor(page, unpaid);
+  await expect(page.locator('#e-copies')).toBeEnabled();
+  await expect(page.locator('#e-copies')).toHaveValue('2');
+  await page.click('#edit-x');
+  await expect(page.locator('#edit')).toBeHidden();
+
+  await openEditor(page, paid);
+  await expect(page.locator('#e-copies')).toBeDisabled();
+  await expect(page.locator('#e-copies')).toHaveValue('3');
+});

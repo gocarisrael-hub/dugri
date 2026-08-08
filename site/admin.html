@@ -1048,6 +1048,12 @@
           'e-floor',
         ])
           el(id).disabled = !order;
+        // The copy count is settled at payment: adminUpdateOrder only applies it
+        // to an UNPAID order, because a paid order's total is what was actually
+        // charged and is never rewritten. Leaving the box editable on a paid
+        // order let the owner type a new count, see "נשמר", and get no change —
+        // so it is disabled here, and the rule is visible instead of silent.
+        el('e-copies').disabled = !order || !!order.paid;
         // Orders placed before copies existed carry no quantity; they are all
         // single-copy, so show 1 rather than an empty box.
         el('e-copies').value = order ? order.quantity || 1 : '';
