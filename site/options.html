@@ -1036,8 +1036,10 @@
          picture (width from the aspect ratio, centred) instead of stretching a
          short picture across a wide empty band.
 
-         SHORT VIEWPORTS GET NO ROW HERE — see the @media below; the budget on the
-         tight steps is a fixed number of pixels, not a proportion, so it runs out.
+         SHORT VIEWPORTS KEEP THE ROW AND SCROLL INSTEAD — see the @media below.
+         The budget on these steps is a fixed number of pixels, not a proportion,
+         so below ~790px of screen it runs out and something has to give; the
+         owner chose the picture over the no-scroll rule.
          All figures above measured on a 390×844 phone (iPhone 14). */
       .deck-row.is-tight .deck-thumb {
         height: 88px;
@@ -1062,32 +1064,42 @@
       .deck-row.is-tight .deck-dots .carousel-dots {
         padding: 6px 0;
       }
-      /* NO ROOM AT ALL, so no row — measured, not guessed.
+      /* NO ROOM WITHOUT SCROLLING — SO THESE STEPS SCROLL. OWNER'S DECISION.
          What the tight steps can spare is a fixed pixel budget: the form, the
          collapsed summary and the sticky bar are all fixed-height, so every pixel
          of viewport height below the tallest phone comes straight out of the row.
          Measured with the row absent, the step-4 phone field clears the bar by
          198px at 390×844 but by only 21px at 375×667 (iPhone SE) — i.e. the budget
-         is roughly (viewport height − 646px), and step 5 is the roomier of the
-         two. So the 122px footprint above needs a viewport around 790px tall
-         (clearing the bar breaks even near 768, the page stops scrolling near
-         788); below that NOTHING that respects the owner's 60px picture floor
-         fits, and the choice is between a picture and a buyer who can reach the
-         phone field.
-         The buyer wins: reassurance is worth a lot, but not an order that cannot
-         be completed, and the same pictures are still on step 3 at full size on
-         every phone. The gate is 800px, which is both a margin over the measured
-         break and the line between real device classes — iPhone SE 667, Galaxy S8
-         740, iPhone 8 Plus 736 below it; Galaxy S20 800, iPhone 12 mini 812,
-         iPhone 14 844, Pixel 5 851 above. Landscape is shorter than any of them
-         and lands on the hidden side, which is right.
-         (The alternative was to give steps 4 and 5 step 3's licence to scroll.
-         That is the owner's call to make, not this file's — "no hunting, no
-         scrolling" exists because buyers did not find the controls, and the
-         details step is the last one before paying.) */
+         is roughly (viewport height − 646px). So the 122px footprint above needs a
+         viewport around 790px tall; below that the row and a step that fits on one
+         screen cannot both be had.
+         This code briefly resolved that by hiding the row under 800px. The owner
+         overruled it (2026-08-08): "let the form scroll there so the picture
+         stays". Steps 4 and 5 therefore join step 3 in being allowed to scroll on
+         a short screen, and the pictures are on every phone. The scrolling here is
+         a deliberate choice, not an oversight — do not "fix" it by hiding the row
+         again, and do not shrink the picture below the owner's 60px floor to buy
+         the no-scroll rule back.
+         The gate is 800px, the line between real device classes: iPhone SE 667,
+         Galaxy S8 740, iPhone 8 Plus 736 below it; Galaxy S20 800, iPhone 12 mini
+         812, iPhone 14 844, Pixel 5 851 above. Above it nothing changes — the row
+         fits and these steps still do not scroll.
+
+         WHAT SCROLLING DOES NOT FIX BY ITSELF: the sticky bar is FIXED over the
+         bottom 82px of the viewport, so a page that can only scroll to a position
+         where the last control still sits under the bar is just as blocked, only
+         less visibly. The document therefore needs a tail below its last control
+         taller than the bar. `body` already pads --wizbar-h (90px) — 8px of margin
+         over the bar, which is too thin to be safe when the bar's own height moves
+         with its font. This adds 28px on top, so the last control ends up ~36px
+         clear at full scroll (measured 375×667: phone field 36px clear, skip 36px
+         clear, both hit-testing as themselves).
+         Scoped with :has() to a step that is ACTUALLY showing the tight row: a
+         design with no uploaded pictures renders no row, and must not be given a
+         scroll tail — that would start it scrolling for nothing. */
       @media (max-height: 799px) {
-        .deck-row.is-tight {
-          display: none;
+        main.wrap:has(.deck-row.is-tight:not([hidden])) .wiz-step.is-active {
+          padding-bottom: 28px;
         }
       }
 

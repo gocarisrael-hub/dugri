@@ -359,24 +359,44 @@ test.describe('wizard — the deck pictures on a short screen', () => {
     expect(Math.abs(slideW - trackW)).toBeLessThan(2);
   });
 
-  test('on the details step, a row with no room takes NO space rather than a little', async ({
-    page,
-  }) => {
-    await page.setViewportSize(SMALL_PHONE);
-    await stubUploads(page);
-    await stubDeck(page, ALL_THREE);
-    await page.goto(`/options.html?design=${DESIGN}&step=4`);
-    await expect(page.getByTestId('step-4')).toBeVisible();
+  // THE OWNER'S CALL, 2026-08-08: "let the form scroll there so the picture stays".
+  // This code briefly hid the row on the tight steps below 800px tall, because the
+  // row and a step that fits one screen cannot both be had on an SE. The owner
+  // chose the picture and accepted the scroll, so the row is here on every phone —
+  // capped, but present and above her 60px floor.
+  // wizard-noscroll.spec.js owns the other half: that the form is still reachable
+  // once the step scrolls. Here the subject is that the pictures survive at all.
+  for (const step of [4, 5]) {
+    test(`step ${step} on a small phone keeps the pictures rather than dropping them`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(SMALL_PHONE);
+      await stubUploads(page);
+      await stubDeck(page, ALL_THREE);
+      await page.goto(`/options.html?design=${DESIGN}&step=${step}`);
+      await expect(page.getByTestId(step === 4 ? 'step-4' : 'step-pawns')).toBeVisible();
 
-    // Not "small" — absent. A row that keeps its margin, or its dots, or a sliver
-    // of picture, is precisely how the last fix went wrong: it spent height it had
-    // not budgeted and pushed the phone field under the sticky bar.
-    await expect(page.getByTestId('deck-row')).toBeHidden();
-    expect(await page.getByTestId('deck-row').boundingBox()).toBeNull();
-    expect(
-      await page.evaluate(() => document.getElementById('deckRow').getBoundingClientRect().height)
-    ).toBe(0);
-  });
+      // Present, not merely in the DOM: a hidden row reports a zero box, which is
+      // exactly what this used to do here.
+      const row = page.getByTestId('deck-row');
+      await expect(row).toBeVisible();
+      await expect(page.getByTestId('deck-thumb')).toHaveCount(3);
+      expect((await row.boundingBox()).height).toBeGreaterThan(0);
+
+      // …and big enough to be a preview. The owner's floor, not a recorded pixel:
+      // a row squeezed under 60px is the outcome she rejected just as much as a
+      // row that isn't there.
+      const thumbH = await page
+        .getByTestId('deck-thumb')
+        .first()
+        .evaluate((el) => el.getBoundingClientRect().height);
+      expect(thumbH, 'the picture must stay at or above the 60px floor').toBeGreaterThanOrEqual(60);
+
+      // The dots come too — they are the only sign there is more than one picture,
+      // and buying space back by dropping them is not the trade that was made.
+      await expect(page.locator('#deckDots .carousel-dot')).toHaveCount(3);
+    });
+  }
 });
 
 test.describe('wizard — the fullscreen deck viewer', () => {

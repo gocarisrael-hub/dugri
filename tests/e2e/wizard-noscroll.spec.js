@@ -241,11 +241,15 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
 // is empty, so they run with NO row and pass however tall the row would be.
 //
 // Once the row became a full-width carousel it roughly doubled in height (a 112px
-// square became a 249px 1.414 slide). Steps 4 and 5 do NOT have step 3's licence to
-// scroll, and the extra height pushed the phone field 105px and the skip control
-// 37px BELOW the sticky bar's top — under the bar, where a tap lands on the bar.
-// That is the funnel blocked, so these tests check the only thing that matters: the
-// buyer can put a finger on the control.
+// square became a 249px 1.414 slide), and the extra height pushed the phone field
+// 105px and the skip control 37px BELOW the sticky bar's top — under the bar, where
+// a tap lands on the bar. That is the funnel blocked, so these tests check the only
+// thing that matters: the buyer can put a finger on the control.
+//
+// On a screen with room (800px tall and up) steps 4 and 5 hold the row AND stay
+// put. Below that they are allowed to scroll to keep the pictures (owner,
+// 2026-08-08) — see "A PHONE IS NOT ONE SIZE" further down — and the promise
+// narrows to reachability, never to less than that.
 test.describe('the deck pictures never bury a control', () => {
   const PNG = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAeklEQVR4nO3PUQkAIBTAwBfbJGYyliH8OITBAtzmrP11wwUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWPHYB2OhhtC3NOZwAAAAASUVORK5CYII=',
@@ -343,32 +347,42 @@ test.describe('the deck pictures never bury a control', () => {
   // A PHONE IS NOT ONE SIZE.
   //
   // Everything above runs at 390×844 (iPhone 14) because that is the only phone
-  // playwright.config.js profiles, and that single number is what let the last fix
-  // ship broken: capping the picture at 112px left ~30px of slack THERE, so the
-  // tests went green while the same page on a 375×667 iPhone SE — 177px shorter —
-  // put the phone field 145px below the fold and the sticky bar back on top of the
-  // skip control. The bug the cap was written to fix, still shipping.
+  // playwright.config.js profiles, and that single number is what let an earlier
+  // fix ship broken: capping the picture at 112px left ~30px of slack THERE, so
+  // the tests went green while the same page on a 375×667 iPhone SE — 177px
+  // shorter — put the phone field 145px below the fold and the sticky bar back on
+  // top of the skip control.
   //
   // The budget these steps have for the row is a fixed number of PIXELS, not a
   // proportion: the form, the collapsed summary and the sticky bar are all fixed
   // height, so every pixel of screen the phone doesn't have comes out of the row.
   // Measured with no row at all, the step-4 field clears the bar by 198px at
-  // 390×844 and by 21px at 375×667 — the small phone has no room for a picture at
-  // any size the owner would accept, so it gets none and keeps the working form.
+  // 390×844 and by 21px at 375×667 — so on the small phone the row and a step that
+  // fits one screen cannot both be had.
+  //
+  // THE OWNER PICKED THE PICTURE (2026-08-08): "let the form scroll there so the
+  // picture stays". The previous answer here — hide the row on the tight steps
+  // below 800px — is superseded, and these tests were rewritten to the new intent,
+  // which is the STRONGER promise: the pictures are on every phone AND every
+  // control, including the last one, can be brought fully clear of the sticky bar
+  // and tapped there.
+  //
+  // That second half is not free just because the page scrolls. The bar is FIXED
+  // over the bottom 82px of the viewport, so if the document can only scroll to a
+  // position where the last control still sits under the bar, the funnel is
+  // blocked exactly as before, only less visibly. The worst case is therefore
+  // scroll-to-the-very-end, and that is where these tests measure.
   //
   // A third playwright project would put every spec in the suite through a third
   // browser for this; these two viewports are set per-test instead, where the size
   // is the actual subject.
-  //
-  // The assertions are the buyer's question, not a pixel: can a finger land on the
-  // control, is the control clear of the bar, and did the step stay put.
   const SMALL_PHONE = { width: 375, height: 667 }; // iPhone SE / 8 — the floor.
-  const SHORTEST_WITH_PICTURES = { width: 375, height: 800 }; // Galaxy S20 class.
+  const SHORTEST_WITHOUT_SCROLLING = { width: 375, height: 800 }; // Galaxy S20 class.
 
+  // TALL SCREENS ONLY. The control must be usable with no scrolling at all: fully
+  // clear of the bar, tappable, and the step must not have started scrolling.
   async function assertControlIsUsable(page, selector) {
     await assertTappable(page, selector);
-    // Tappable at the centre is not the whole promise: the bar must not be over
-    // ANY of it, and the step must not have started scrolling to make room.
     await expect
       .poll(async () =>
         page.evaluate((sel) => {
@@ -384,34 +398,123 @@ test.describe('the deck pictures never bury a control', () => {
       .toBeLessThanOrEqual(4);
   }
 
-  test('step 4 on a small phone: the phone field is reachable', async ({ page }) => {
+  // SHORT SCREENS. Scrolling is allowed, so the question is no longer "did the
+  // step stay put" but "can the buyer GET to the control and tap it there".
+  //
+  // Scrolls to the very END of the document rather than using scrollIntoView,
+  // because for the LAST control those are the same position and the end is the
+  // honest worst case: it is where a flick lands, and it is the only place that
+  // proves the document carries a tail taller than the fixed bar. A page with too
+  // little bottom padding still scrolls — it simply cannot scroll far enough, and
+  // scrollIntoView would quietly report success at the same blocked position.
+  async function assertControlReachableByScrolling(page, selector) {
+    await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+
+    // Nothing of the bar over any part of it, at the end of the scroll.
+    await expect
+      .poll(async () =>
+        page.evaluate((sel) => {
+          const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
+          return Math.round(document.querySelector(sel).getBoundingClientRect().bottom - bar.top);
+        }, selector)
+      )
+      .toBeLessThanOrEqual(0);
+    // …and a finger put on its middle lands on the control, not the bar.
+    await assertTappable(page, selector);
+  }
+
+  test('step 4 on a small phone: the pictures stay, and the phone field can be scrolled to', async ({
+    page,
+  }) => {
     await page.setViewportSize(SMALL_PHONE);
     await withDeckPictures(page);
     await page.goto('/options.html?design=bachelorette&step=4');
     await expect(page.getByTestId('step-4')).toBeVisible();
-    // It was 145px below the bar's top here — off the bottom of the screen.
-    await assertControlIsUsable(page, '[data-testid="owner-phone"]');
+    // The pictures are the point of the trade — without them this test would pass
+    // on the hidden row it replaced.
+    await assertRowWorthLookingAt(page);
+    // The step really does scroll here; that is the deliberate half of the trade.
+    expect(
+      await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
+    ).toBeGreaterThan(0);
+    // The other half, which is not optional: the last control comes fully clear.
+    await assertControlReachableByScrolling(page, '[data-testid="owner-phone"]');
   });
 
-  test('step 5 on a small phone: the skip control is reachable', async ({ page }) => {
+  test('step 5 on a small phone: the pictures stay, and the skip control can be scrolled to', async ({
+    page,
+  }) => {
     await page.setViewportSize(SMALL_PHONE);
     await withDeckPictures(page);
     await page.goto('/options.html?design=bachelorette&step=5');
     await expect(page.getByTestId('step-pawns')).toBeVisible();
-    // It was 73px below the bar's top, and the hit test came back "the bar".
-    await assertControlIsUsable(page, '[data-testid="pawn-skip"]');
+    await assertRowWorthLookingAt(page);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
+    ).toBeGreaterThan(0);
+    await assertControlReachableByScrolling(page, '[data-testid="pawn-skip"]');
   });
 
+  // A SCROLLING STEP MUST NOT LOOK FINISHED AT SCROLL 0.
+  //
+  // If the picture filled the first screen and the whole form sat below the fold, a
+  // buyer would have no reason to think there was anything more and would stop at
+  // the pictures. So part of the form has to be showing before anything is
+  // scrolled — a field or its label, above the sticky bar's top, at the position
+  // the page opens at. (Measured 375×667 with the capped row: on step 4 the email
+  // label and its input are both on screen; on step 5 the photo slots and the hint
+  // are. If the row ever grows enough to swallow them, shrink the row — the floor
+  // is the owner's 60px picture, not this test.)
+  for (const step of [
+    { n: 4, id: 'step-4', controls: '.wiz-field' },
+    { n: 5, id: 'step-pawns', controls: '.pawn-slot, .pawn-hint' },
+  ]) {
+    test(`step ${step.n} on a small phone shows part of the form at first paint`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(SMALL_PHONE);
+      await withDeckPictures(page);
+      await page.goto(`/options.html?design=bachelorette&step=${step.n}`);
+      await expect(page.getByTestId(step.id)).toBeVisible();
+      await assertRowWorthLookingAt(page);
+      await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
+
+      // Nothing has been scrolled — this is what the buyer opens on.
+      expect(await page.evaluate(() => window.scrollY)).toBe(0);
+      const showing = await page.evaluate(
+        ({ id, controls }) => {
+          const barTop = document.querySelector('.wiz-bar').getBoundingClientRect().top;
+          return Array.from(document.querySelectorAll(`[data-testid="${id}"] ${controls}`))
+            .filter((el) => {
+              const r = el.getBoundingClientRect();
+              // Some part of it is in the strip the buyer can actually see: below
+              // the top of the page and above the sticky bar that covers the
+              // bottom of the viewport.
+              return r.height > 0 && r.top < barTop && r.bottom > 0;
+            })
+            .map((el) => el.className);
+        },
+        { id: step.id, controls: step.controls }
+      );
+      expect(
+        showing.length,
+        'the form must not be entirely below the fold — there would be no cue to scroll'
+      ).toBeGreaterThan(0);
+    });
+  }
+
   // THE BOUNDARY, which is where a height budget actually gets tested. This is the
-  // shortest screen on which the pictures are still shown, so it has the least
-  // slack of any case that renders the row — and the whole row has to fit, dots
-  // included. The previous fix capped the PICTURE at 112px and left the carousel's
-  // 44px dot strip uncounted; at this size that overspend alone puts the field
-  // under the bar and starts the step scrolling.
-  test('the shortest phone that still gets pictures: the whole row fits, dots and all', async ({
+  // shortest screen on which these steps still fit without scrolling, so it has
+  // the least slack of any case that has to hold the whole row — dots included.
+  // An earlier fix capped the PICTURE at 112px and left the carousel's 44px dot
+  // strip uncounted; at this size that overspend alone puts the field under the
+  // bar. Below this height the step is allowed to scroll instead (owner) — above
+  // it, nothing may move.
+  test('the shortest phone that still fits without scrolling: the whole row fits, dots and all', async ({
     page,
   }) => {
-    await page.setViewportSize(SHORTEST_WITH_PICTURES);
+    await page.setViewportSize(SHORTEST_WITHOUT_SCROLLING);
     await withDeckPictures(page);
     await page.goto('/options.html?design=bachelorette&step=4');
     await expect(page.getByTestId('step-4')).toBeVisible();
@@ -471,11 +574,11 @@ test.describe('the deck pictures never bury a control', () => {
     await page.locator('[data-testid="gender-group"] label').last().click({ timeout: 5000 });
   });
 
-  // The small phone does NOT lose the pictures — it loses them on the two steps
-  // that cannot hold them. Step 3 may scroll, so it has room at any size and keeps
-  // the full-size picture. Without this, "hide the row whenever the screen is
-  // short" would pass every test above while quietly taking the product photos
-  // away from every SE owner, which is the outcome the owner rejected.
+  // The small phone loses the pictures on NO step. Step 3 may scroll and keeps the
+  // full-size picture at any screen height; steps 4 and 5 now scroll too and keep
+  // the capped one. Without this, "hide the row whenever the screen is short" would
+  // pass every test above while quietly taking the product photos away from every
+  // SE owner, which is the outcome the owner rejected.
   test('step 3 on a small phone: full-size pictures, and the control still reachable', async ({
     page,
   }) => {
