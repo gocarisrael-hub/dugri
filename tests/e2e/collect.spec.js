@@ -1900,3 +1900,46 @@ test('shipping is a tick on the printed game, and it is what the server is told'
   await expect(page.locator('#addressForm')).toBeHidden();
   await expect(page.locator('#payTotal')).toHaveText('199');
 });
+
+// The tick shipped looking like a run-on paragraph: its price ran straight into
+// its label ("שלחו לי עד הבית39₪") and both notes flowed inline, because the
+// title/price/note rules were scoped to .pay-opt and the tick is a .pay-addon.
+// Measured, not asserted against CSS text — the point is what the buyer sees.
+test('the shipping tick lays out like an option: price on its own end, notes below', async ({
+  page,
+}) => {
+  await stubPricing(page, {
+    store: { now: 199, was: 239 },
+    delivery_fee: 39,
+    versions: {
+      pdf: { enabled: false, price: 79 },
+      pickup: { enabled: true, price: 199 },
+      delivery: { enabled: true, price: 199 },
+      custom: { enabled: false, price: 599 },
+    },
+  });
+  await createCollection(page, 'Shira');
+  await page.locator('#payPanel summary').click();
+
+  // Wait for pricing to RESOLVE before measuring: until it does, applyPricing
+  // hides the whole option list, so the tick is legitimately not there yet.
+  await expect(page.locator('#payTotal')).toHaveText('199');
+  const tick = page.getByTestId('ship-toggle');
+  await expect(tick).toBeVisible();
+  const label = tick.locator('[data-edit="collect-ship-title"]');
+  const price = page.locator('#shipPrice');
+  const note = tick.locator('[data-edit="collect-ship-note"]');
+
+  const [lb, pb, nb] = await Promise.all([
+    label.boundingBox(),
+    price.boundingBox(),
+    note.boundingBox(),
+  ]);
+
+  // Price and label share a row, at opposite ends — not butted together.
+  expect(Math.abs(lb.y - pb.y)).toBeLessThan(6);
+  expect(Math.abs(lb.x - (pb.x + pb.width))).toBeGreaterThan(20);
+
+  // The note is on its OWN line, below them both.
+  expect(nb.y).toBeGreaterThan(lb.y + lb.height - 2);
+});

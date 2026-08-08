@@ -884,22 +884,31 @@
       .pay-opt .opt-body {
         flex: 1;
       }
-      .pay-opt .opt-title {
+      /* The shipping tick carries the same title/price/note structure as an
+         option, so it takes the same rules. Scoping these to .pay-opt alone left
+         the tick's price running straight into its label and its notes flowing
+         inline — one unreadable paragraph where the option above it laid out
+         cleanly. */
+      .pay-opt .opt-title,
+      .pay-addon .opt-title {
         font-weight: 800;
         display: flex;
         justify-content: space-between;
         gap: 8px;
         flex-wrap: wrap;
       }
-      .pay-opt .opt-price {
+      .pay-opt .opt-price,
+      .pay-addon .opt-price {
         color: var(--sage-deep);
         font-weight: 900;
         white-space: nowrap;
       }
-      .pay-opt .opt-note {
+      .pay-opt .opt-note,
+      .pay-addon .opt-note {
         color: var(--muted);
         font-size: 13px;
         margin-top: 4px;
+        display: block;
       }
       .was {
         text-decoration: line-through;
