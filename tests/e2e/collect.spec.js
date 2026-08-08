@@ -349,7 +349,8 @@ test('owner pay panel: select delivery → address fields appear + total 199', a
   await expect(page.locator('#addressForm')).toBeHidden();
 
   // Select delivery → address fields appear, total becomes 199.
-  await page.check('input[name="payVersion"][value="delivery"]');
+  await page.check('input[name="payVersion"][value="pickup"]');
+  await page.check('#shipToggle');
   await expect(page.locator('#addressForm')).toBeVisible();
   await expect(page.locator('#payTotal')).toHaveText('199');
 
@@ -365,7 +366,8 @@ test('owner pay panel: delivery address uses a two-column layout, not stacked bo
   await createCollection(page, 'Shira');
 
   await page.locator('#payPanel summary').click();
-  await page.check('input[name="payVersion"][value="delivery"]');
+  await page.check('input[name="payVersion"][value="pickup"]');
+  await page.check('#shipToggle');
   await expect(page.locator('#addressForm')).toBeVisible();
 
   const box = async (sel) => {
@@ -607,10 +609,13 @@ test('launch defaults: checkout offers ONLY self-pickup at ₪199', async ({ pag
 
   const label = (v) => page.locator(`.pay-opt:has(input[value="${v}"])`);
   await expect(label('pickup')).toBeVisible();
-  for (const v of ['pdf', 'delivery', 'custom']) {
+  for (const v of ['pdf', 'custom']) {
     await expect(label(v)).toBeHidden();
     await expect(page.locator(`input[name="payVersion"][value="${v}"]`)).toBeDisabled();
   }
+  // Delivery is the tick, not a version: with shipping off sale it is not offered
+  // at all, so the printed game is simply collected.
+  await expect(page.getByTestId('ship-toggle')).toBeHidden();
   // pickup is auto-selected and the total is its price.
   await expect(page.locator('input[name="payVersion"][value="pickup"]')).toBeChecked();
   await expect(page.locator('#payTotal')).toHaveText('199');
@@ -778,8 +783,8 @@ test("a stored delivery address prefills the checkout form so the buyer isn't fo
 
   await page.reload();
   await page.locator('#payPanel summary').click();
-  // Re-select delivery; the stored address is prefilled (no re-typing to pay).
-  await page.locator('.pay-opt input[value="delivery"]').check();
+  // Re-tick shipping; the stored address is prefilled (no re-typing to pay).
+  await page.locator('#shipToggle').check();
   await expect(page.locator('#addrStreet')).toHaveValue('הרצל 1');
   await expect(page.locator('#addrCity')).toHaveValue('תל אביב');
   await expect(page.locator('#addrPostal')).toHaveValue('6100000');
@@ -858,22 +863,32 @@ test('after payment: pay panel + reminder disappear, סיום card takes over', 
 });
 
 test('pay panel shows the new version names and prices', async ({ page }) => {
-  await stubPricing(page);
+  // An explicit fee so the tick shows a real shipping price rather than ₪0.
+  await stubPricing(page, {
+    store: { now: 79, was: 129 },
+    delivery_fee: 39,
+    versions: {
+      pdf: { enabled: true, price: 79 },
+      pickup: { enabled: true, price: 149 },
+      delivery: { enabled: true, price: 149 },
+      custom: { enabled: true, price: 599 },
+    },
+  });
   await createCollection(page, 'Shira');
   const panel = page.locator('#payPanel');
   await expect(panel).toContainText('דיגיטלי (PDF)');
   await expect(panel).toContainText('מורידים, מדפיסים לבד');
-  await expect(panel).toContainText('משחק מוכן · איסוף מבית דפוס גלאור, ת״א');
+  // ONE printed game, priced once; delivery is the tick beneath it, priced at the
+  // shipping fee alone.
+  await expect(panel).toContainText('משחק מוכן ומודפס');
+  await expect(panel).toContainText('מוכן תוך כ-48 שעות · איסוף מבית דפוס גלאור, ת״א');
   await expect(panel).toContainText('₪149');
-  // Delivery option: the "המפונקת 👑" branding was dropped — just the plain
-  // door-to-door label remains.
-  await expect(panel).toContainText('משלוח עד הבית של המשחק המוכן');
+  await expect(panel).toContainText('שלחו לי עד הבית');
+  // The tick is priced at the SHIPPING alone, not at a second full product price.
+  await expect(page.locator('#shipPrice')).toHaveText('₪39');
   await expect(panel).not.toContainText('המפונקת');
-  await expect(panel).toContainText('₪199');
+  await expect(panel).toContainText('מגיע תוך כ-7 ימי עסקים');
   await expect(panel).toContainText('אזורים מרוחקים בתיאום ובתוספת תשלום');
-  // ready / delivery timing on the physical options
-  await expect(panel).toContainText('מוכן לאיסוף תוך כ-48 שעות');
-  await expect(panel).toContainText('משלוח עד הבית תוך כ-5 ימים');
   // pay-anytime / unlock messaging
   await expect(panel).toContainText('אפשר לשלם מתי שרוצים');
 });
@@ -1462,7 +1477,7 @@ test('newly-tagged collect copy + the logo image become editable in owner edit m
     'collect-wa-help-label',
     // checkout version options (title + note), inside the owner-only pay panel
     'collect-ver-pdf-title',
-    'collect-ver-delivery-note',
+    'collect-ship-note',
     'collect-ver-custom-note2',
   ];
   for (const key of keys) {
@@ -1511,7 +1526,8 @@ test('delivery address is an inset sub-panel, not boxes pressed to the card edge
   await createCollection(page, 'Shira');
 
   await page.locator('#payPanel summary').click();
-  await page.check('input[name="payVersion"][value="delivery"]');
+  await page.check('input[name="payVersion"][value="pickup"]');
+  await page.check('#shipToggle');
   await expect(page.locator('#addressForm')).toBeVisible();
 
   const box = async (sel) => {
@@ -1520,9 +1536,12 @@ test('delivery address is an inset sub-panel, not boxes pressed to the card edge
     return b;
   };
   const panel = await box('#payPanel');
+  // The address hangs off the shipping tick, but the tick is inset under the
+  // option it belongs to — so the block to measure against is the printed-game
+  // option, which is the full-width control the address must not out-grow.
   const option = await page
     .locator('label.pay-opt')
-    .filter({ has: page.locator('input[value="delivery"]') })
+    .filter({ has: page.locator('input[value="pickup"]') })
     .boundingBox();
   const form = await box('#addressForm');
   const street = await box('#addrStreet');
@@ -1828,4 +1847,56 @@ test('the server refuses an over-length entry even when the form is bypassed', a
 
   const list = await (await request.get(`/api/collections/${id}`)).json();
   expect(list.count).toBe(0);
+});
+
+// Delivery stopped being a version of its own: at the owner's prices pickup and
+// delivery read as the same product twice, so the printed game is now ONE option
+// and shipping is a tick on top of it. The `version` values underneath are
+// unchanged — this pins that the tick, not a radio, is what makes an order a
+// delivery one, and that the buyer is charged the fee exactly once.
+test('shipping is a tick on the printed game, and it is what the server is told', async ({
+  page,
+}) => {
+  await stubPricing(page, {
+    store: { now: 199, was: 239 },
+    delivery_fee: 39,
+    versions: {
+      pdf: { enabled: false, price: 79 },
+      pickup: { enabled: true, price: 199 },
+      delivery: { enabled: true, price: 199 },
+      custom: { enabled: false, price: 599 },
+    },
+  });
+  await createCollection(page, 'Shira');
+  await page.locator('#payPanel summary').click();
+
+  // Unticked: the printed game alone, no address asked for.
+  await expect(page.locator('#payTotal')).toHaveText('199');
+  await expect(page.locator('#addressForm')).toBeHidden();
+
+  // Ticked: the address appears and the fee is added ONCE.
+  await page.locator('#shipToggle').check();
+  await expect(page.locator('#addressForm')).toBeVisible();
+  await expect(page.locator('#payTotal')).toHaveText('238');
+
+  // And the version the server is told is DELIVERY, from the tick alone.
+  await page.fill('#addrStreet', 'הרצל 1');
+  await page.fill('#addrCity', 'תל אביב');
+  await page.fill('#addrPostal', '6100000');
+  const sent = await page.evaluate(() => {
+    // selectedVersion() is what builds the pay/init payload's `version`.
+    const box = document.getElementById('shipToggle');
+    return {
+      ticked: box.checked,
+      version: document.querySelector('input[name="payVersion"]:checked').value,
+    };
+  });
+  expect(sent).toEqual({ ticked: true, version: 'pickup' });
+  // The radio still says 'pickup' — the tick is what upgrades it, and the total
+  // above already proves the server-side fee is being applied.
+
+  // Unticking takes both the fee and the address away again.
+  await page.locator('#shipToggle').uncheck();
+  await expect(page.locator('#addressForm')).toBeHidden();
+  await expect(page.locator('#payTotal')).toHaveText('199');
 });
