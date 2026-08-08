@@ -1091,9 +1091,9 @@
          less visibly. The document therefore needs a tail below its last control
          taller than the bar. `body` already pads --wizbar-h (90px) — 8px of margin
          over the bar, which is too thin to be safe when the bar's own height moves
-         with its font. This adds 28px on top, so the last control ends up ~36px
-         clear at full scroll (measured 375×667: phone field 36px clear, skip 36px
-         clear, both hit-testing as themselves).
+         with its font. This adds 28px on top, so the last control ends up well
+         clear at the END of the scroll (measured 375×667: the step-4 phone field
+         48px clear, the step-5 skip control 36px, both hit-testing as themselves).
          Scoped with :has() to a step that is ACTUALLY showing the tight row: a
          design with no uploaded pictures renders no row, and must not be given a
          scroll tail — that would start it scrolling for nothing. */
