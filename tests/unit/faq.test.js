@@ -6,6 +6,7 @@
 // be storable — a javascript: link, an unbounded answer, a list with no end.
 import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -40,6 +41,42 @@ describe('DEFAULT_FAQ — the shipped seed', () => {
       'when-delivered',
       'how-to-order',
     ]);
+  });
+});
+
+describe('DEFAULT_FAQ matches the fallback shipped in index.html', () => {
+  // index.html ships the questions as real markup so a failed /api/faq leaves a
+  // COMPLETE FAQ on the page — which is only true while that markup says the same
+  // thing the defaults do. The two are edited in different files, so nothing but
+  // this test stops them drifting and quietly turning the fail-soft path into a
+  // "show the visitor last year's copy" path.
+  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'site', 'index.html'), 'utf8');
+
+  // The shipped block: <div class="faq" id="faqList"> … </div>. It contains only
+  // <details> elements (no nested div), so the first closing tag ends it.
+  const start = html.indexOf('<div class="faq" id="faqList">');
+  const block = html.slice(start, html.indexOf('</div>', start));
+
+  // Prettier re-wraps these paragraphs to the page width, so compare on collapsed
+  // whitespace — the wrapping is formatting, the words are the contract.
+  const flat = (s) => s.replace(/\s+/g, ' ').trim();
+  const shipped = [...block.matchAll(/<summary>(.*?)<\/summary>\s*<p>(.*?)<\/p>/gs)].map(
+    ([, q, a]) => ({ q: flat(q), a: flat(a) })
+  );
+
+  it('ships exactly as many questions as the defaults carry', () => {
+    expect(shipped).toHaveLength(DEFAULT_FAQ.length);
+  });
+
+  it('every shipped question and answer is character-identical to its default', () => {
+    expect(shipped).toEqual(DEFAULT_FAQ.map(({ q, a }) => ({ q, a: flat(a) })));
+  });
+
+  it('no default answer relies on a blank-line paragraph break the fallback cannot show', () => {
+    // A shipped <p> is ONE paragraph. If a default ever grows a blank line, the
+    // fallback would render it as a single run while the live page renders two —
+    // so split it into separate <p> elements in index.html at the same time.
+    for (const r of DEFAULT_FAQ) expect(r.a).not.toMatch(/\n\s*\n/);
   });
 });
 
