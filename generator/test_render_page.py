@@ -3555,8 +3555,8 @@ def test_a_wider_latin_face_makes_the_card_set_smaller():
     the guarantee. Overrunning the band is what must not happen, in either face.
 
     The "genuinely wider" guard is read AT PARITY. Fredoka sets this phrase 5%
-    wider than Cafe, and the card now sets its English at nine tenths (see
-    ``_WORD_ALT_SCALE``), which is enough to turn that 5% into a 5% narrower —
+    wider than Cafe, and the card sets its English smaller than its Hebrew (see
+    ``_WORD_ALT_SCALE``), which is enough to turn that 5% wider into narrower —
     a fact about the scale, not about the faces. The guard is here to stop the
     test being run on two faces that measure the same; it asks the faces.
     """

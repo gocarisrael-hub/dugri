@@ -359,15 +359,18 @@ def _primary(font):
 
 
 # How big a card's ENGLISH words are set, as a fraction of the card's word size.
-# The owner, over nine of the ten designs (every one except דני): "the size of
-# the font of the words only the words in english needs to be little bit
-# smaller". A Latin face and a Hebrew one at one point size do not read as one
-# size — the Latin x-height is the taller — so English sitting beside Hebrew on
-# the same line prints heavier than the design ever intended. Nine tenths brings
-# the two back to the same visual weight. Per design via ``word_alt_scale`` in
-# themes.json (see ``config.word_alt_scale``): דני is the design she did NOT
-# list, so it pins itself back to 1.0 there rather than in code.
-_WORD_ALT_SCALE = float(os.environ.get("DUGRI_WORD_ALT_SCALE", "0.9"))
+# The owner: "the size of the font of the words only the words in english needs
+# to be little bit smaller". A Latin face and a Hebrew one at one point size do
+# not read as one size — the Latin x-height is the taller — so English sitting
+# beside Hebrew on the same line prints heavier than the design ever intended.
+#
+# FOUR FIFTHS, and that number is hers rather than a measurement. Nine tenths was
+# the first attempt; shown 100 / 85 / 80 / 75 per design on a card carrying both
+# languages, she answered "english size - all 80%" — every design, the same
+# number, including the one she had left out of her original list. So it is the
+# house number and not ten copies of one. A design may still differ, via
+# ``word_alt_scale`` in themes.json (see ``config.word_alt_scale``); none does.
+_WORD_ALT_SCALE = float(os.environ.get("DUGRI_WORD_ALT_SCALE", "0.8"))
 
 
 @functools.lru_cache(maxsize=8)

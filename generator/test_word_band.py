@@ -582,10 +582,10 @@ def test_the_theme_knob_falls_back_rather_than_failing_an_order():
 def test_the_numbered_marker_is_not_touched_by_the_english_scale():
     """The digit is the card's OWN face and its own size, by design.
 
-    ``_MARKER_SCALE`` happens to be 0.9 as well, so the proof is driven at a
-    scale that is deliberately NOT the house one — otherwise the two numbers
-    would agree by coincidence and the test would pass while reading the wrong
-    one.
+    Driven at a scale that is deliberately NOT the house one, and not
+    ``_MARKER_SCALE`` either — either coincidence would let this pass while
+    reading the wrong number. (The two DID coincide while the house scale was
+    0.9, which is exactly the trap.)
     """
     size = 20.0
     svg = rp.word_lines(200, 100, size, "#000", 4, ["BBQ"], CAFE,
@@ -687,3 +687,19 @@ def test_no_design_scales_a_hebrew_run_however_its_two_slots_are_filled():
                     f"{theme} with {how}: {word!r} measures {two.length(word)} "
                     f"with a second face and {one.length(word)} without it — "
                     "the scale reached a Hebrew run")
+
+
+def test_the_house_english_size_is_the_one_the_owner_picked():
+    """Four fifths, and it is a decision rather than a measurement.
+
+    She was shown 100 / 85 / 80 / 75 per design, on a card carrying Hebrew and
+    English together, and answered "english size - all 80%": every design, one
+    number, including the one she had left out of the list that started this.
+    Pinned here because nothing else in the code would notice it drifting — a
+    wrong fraction still renders, still fits, still passes every other test in
+    this file, and only looks wrong on paper.
+    """
+    assert rp._WORD_ALT_SCALE == 0.8
+    # ...and no design overrides it, which is what "all" meant.
+    for key, cfg in config.load_themes().items():
+        assert config.word_alt_scale(cfg, rp._WORD_ALT_SCALE) == 0.8, key
