@@ -1432,6 +1432,11 @@
           field('גודל כותרת', num('ts.size', ts.size, 0.1, 'auto')),
           field('גודל בלוח', num('ts.board_size', ts.board_size, 0.1, 'auto')),
           field('גודל בגב', num('ts.back_size', ts.back_size, 0.1, 'auto')),
+          // How much larger than THIS design's own title a title the buyer wrote
+          // may print. Hers is longer, so it is fitted into the free paper around
+          // the calibrated box — and left alone it fills all of it. Taste, per
+          // design: 1.3 unless this design says otherwise.
+          field('כותרת של הלקוח/ה — פי כמה', num('ts.growth', ts.growth, 0.05, '1.3')),
           field('ריווח שורות', num('ts.leading', ts.leading, 0.01, 'ברירת מחדל')),
           field('ריווח בלוח', num('ts.board_leading', ts.board_leading, 0.01, 'כמו בקלף')),
           field('ריווח בגב', num('ts.back_leading', ts.back_leading, 0.01, 'כמו בקלף')),
@@ -1792,6 +1797,11 @@
         if (bsz != null) title_style.board_size = bsz;
         const bksz = calNum(card, 'ts.back_size');
         if (bksz != null) title_style.back_size = bksz;
+        // Blank = this design has never been tuned, and takes the renderer's
+        // default third. Same omit-when-blank rule as the sizes: posting 0 would
+        // read as "a buyer's title may not print at all".
+        const grw = calNum(card, 'ts.growth');
+        if (grw != null) title_style.growth = grw;
         // The measured line spacing, one per surface like the sizes above.
         // Blank = fall through (the board and back fall to the card's, the card
         // to the renderer's own fixed step), so clearing a field is a real

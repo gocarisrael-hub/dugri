@@ -71,7 +71,7 @@ def _note(notes, surface, code, detail):
     notes.append({"surface": surface, "code": code, "detail": detail})
 
 
-def _font_gap_note(cfg, theme, title_lines):
+def _font_gap_note(cfg, theme, title_lines, word_font=None):
     """The one note a preview must never omit, or None.
 
     An order REFUSES a title its own face cannot draw (build.build_deck ->
@@ -86,11 +86,20 @@ def _font_gap_note(cfg, theme, title_lines):
     Reported here rather than per-surface because it is a property of the theme
     and its title, not of any one render: every surface that carries the title
     is wrong in the same way.
+
+    Asked of the ONE face this render will use (``rp.title_face``) — the
+    design's own, or its second title font when the buyer wrote in the other
+    language. A title set in a face that draws it prints as the preview shows it,
+    and there is nothing here to say.
     """
     font = config.font_path(theme, cfg.get("title_font") or "")
     if not cfg.get("title_font") or not os.path.exists(font):
         return None                     # a missing font is _assets' complaint
     gaps = rp.title_font_gaps(font, title_lines)
+    if not gaps:
+        return None
+    face = rp.title_face(theme, title_lines, cfg).path
+    gaps = rp.title_font_gaps(face, rp.settable_lines(face, title_lines))
     if not gaps:
         return None
     return {"surface": "title", "code": NOTE_FONT_GAPS,
@@ -214,7 +223,7 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
     if with_board and os.path.exists(board_clean):
         board_png = buildmod.render_board(
             theme, board_clean, title_lines, os.path.join(workdir, "board.png"),
-            chasers=chasers)
+            chasers=chasers, word_font=word_font)
         _downscale(board_png, BOARD_MAX_W)
         out["board"] = board_png
         # Same test build.render_board itself makes ("if not bd": no board slot
@@ -306,7 +315,7 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
     config.ensure_calibrated(cfg)
     title_lines = config.title_lines(cfg, name, extra_fields or {}, custom_title=custom_title,
                                      gender=gender)
-    gap_note = _font_gap_note(cfg, theme, title_lines)
+    gap_note = _font_gap_note(cfg, theme, title_lines, word_font=word_font)
 
     own_workdir = workdir is None
     if own_workdir:
@@ -369,7 +378,7 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
         if with_board and os.path.exists(board_clean):
             board_png = buildmod.render_board(
                 theme, board_clean, title_lines, os.path.join(workdir, "board.png"),
-                chasers=chasers,
+                chasers=chasers, word_font=word_font,
             )
             _downscale(board_png, BOARD_MAX_W)
             out["board"] = board_png
@@ -389,7 +398,8 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
         if os.path.exists(backs_clean):
             try:
                 back_full = os.path.join(workdir, "back_full.png")
-                buildmod.render_backs(theme, backs_clean, title_lines, back_full)
+                buildmod.render_backs(theme, backs_clean, title_lines, back_full,
+                                      word_font=word_font)
                 back_png = _crop_card(
                     back_full, recipe["cards"][idx]["cell"], recipe["viewBox"],
                     os.path.join(workdir, "back.png"),

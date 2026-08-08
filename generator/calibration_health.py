@@ -172,7 +172,7 @@ def sample_titles(cfg, names=None):
     return out
 
 
-def _title_font_coverage(font_path, font_name, samples):
+def _title_font_coverage(font_path, font_name, samples, theme=None):
     """Whether the title font can draw this design's own title. -> problems.
 
     The one font problem that is not a question of FIT. Every other check here
@@ -190,6 +190,11 @@ def _title_font_coverage(font_path, font_name, samples):
     "ווקות לט". Nothing else here could have caught it, which is why this is
     asked separately and graded a problem rather than a warning.
     """
+    # Asked of the design's OWN face, because that is the one its own title is
+    # set in: the second title font is for a title the BUYER writes in the other
+    # language (``render_page.title_face``), and it is no answer to a template
+    # whose own font cannot draw its own words. טוקיו's Quick has no apostrophe
+    # and its title is "{NAME}'S {AGE}S" — that is a real report, not noise.
     gaps = sorted({ch for lines, _name in samples
                    for ch in rp.title_font_gaps(font_path, lines)})
     if not gaps:
@@ -919,7 +924,8 @@ def check(theme_key, name=None):
                                                      "lines": named[0]}
         font_name = os.path.basename(paths["title_font"])
         report["problems"] += _title_font_coverage(paths["title_font"],
-                                                   font_name, samples)
+                                                   font_name, samples,
+                                                   theme=theme_key)
         if not _metrics(paths["title_font"]):
             report["unknown"]["title_font"] = (
                 f"לא ניתן לקרוא את קובץ פונט הכותרת ({font_name}) — הגדלים "

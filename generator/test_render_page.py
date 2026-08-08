@@ -3082,7 +3082,15 @@ def test_a_title_face_without_the_titles_letters_is_named_exactly():
     # A SPACE is not a gap. It has no ink in any face on earth, so reading ink
     # alone would condemn every title with two words in it — which is most of
     # them, and would have made this guard refuse the whole catalog.
-    assert " " in "רווקות לטל" and rp.title_font_gaps(hebrew, ["a b", "  "]) == []
+    assert " " in "רווקות לטל" and rp.title_font_gaps(hebrew, ["רן טל", "  "]) == []
+    # ...and an inked .notdef is still a gap. Cafe draws no emoji, but its
+    # .notdef is a hollow rectangle 167 units tall, so reading INK alone called
+    # "🎉" covered — and a title of "מזל טוב 🎉" cleared the guard and printed a
+    # hollow box on all 104 cards. The face's own .notdef is photographed and
+    # recognised now (``_glyph_missing``).
+    cafe = config.resolve_word_font("bachelorette")
+    assert rp.title_font_gaps(cafe, ["מזל טוב 🎉"]) == ["🎉"]
+    assert rp.title_font_gaps(cafe, ["מזל טוב"]) == []
     # ...and the lines are read TOGETHER, so a gap on the second line counts.
     assert rp.title_font_gaps(latin, ["Dana's", "רווקות"]) == list("וקרת")
     # An unopenable file is not this check's complaint to make — a missing or
@@ -3101,15 +3109,37 @@ def test_every_shipped_theme_can_draw_its_own_title_at_any_name():
                          _LONG_NAMES["english"]],
              "english-caps": ["DAN", "O'BRIEN", "JEAN-LUC",
                               _LONG_NAMES["english-caps"]]}
+    faults = {}
     for key, entry in sorted(shipped.items()):
         fp = config.font_path(key, entry["title_font"])
         for name in names[entry.get("name_form", "english")]:
-            gaps = rp.title_font_gaps(fp, _fill(entry, name))
-            assert not gaps, (
-                f"{key}: the title font {entry['title_font']} cannot draw "
-                f"{''.join(gaps)!r} of the title for {name!r} — orders for this "
-                "design would be refused")
+            lines = _fill(entry, name)
+            # The DESIGN'S OWN title, in the design's OWN face — the second title
+            # font is for a title the buyer writes in the other language (rule
+            # 5), and it is no answer to a template whose own font cannot draw
+            # its own words. Read after the marks a face cannot draw have been
+            # swapped for the plain ones it can (``settable_lines``: an en dash
+            # for a hyphen, a maqaf for a hyphen).
+            gaps = rp.title_font_gaps(fp, rp.settable_lines(fp, lines))
+            if gaps:
+                faults.setdefault(key, set()).update(gaps)
+    assert {k: "".join(sorted(v)) for k, v in faults.items()} == _KNOWN_FAULTS, (
+        f"the catalogue's template faults changed: {faults}")
 
+
+# Templates whose OWN title their OWN face cannot draw. Every order on one of
+# these is refused (``assert_title_drawable``), which is the rule: a template set
+# in the wrong font is fixed once by its owner rather than printed a hundred
+# times in a face nobody chose.
+#
+# טוקיו's title is "{NAME}'S {AGE}S" and Quick carries neither an apostrophe nor
+# a hyphen — verified against Chrome itself, which paints those characters from a
+# fallback face byte-identical to a nonexistent family's while the letters beside
+# them are the real font. So its own title is unsettable, and so is any name with
+# a hyphen in it ("Jean-Luc"). It needs a title font carrying the punctuation its
+# own title is written with. Until then the design cannot take orders, and this
+# states it out loud rather than letting it pass as healthy.
+_KNOWN_FAULTS = {"japanese": "'-"}
 
 def test_an_order_refuses_a_title_its_own_font_cannot_draw():
     """The refusal itself, and that it names what is wrong well enough to act
@@ -3256,7 +3286,8 @@ def test_splitting_a_line_into_runs_does_not_change_its_width():
 def test_a_mixed_line_really_is_measured_in_two_pieces():
     """Guards the test above from passing because nothing was ever split."""
     f, ref = _faces()
-    assert len(rp.Face(f, f, ref).runs("40 מתחת ל-BBQ")) == 2
+    assert len(rp.Face(f, ImageFont.truetype(LATIN, ref), ref)
+               .runs("40 מתחת ל-BBQ")) == 2
     assert len(rp.Face(f, f, ref).runs("מסיבה 40")) == 1
 
 
@@ -3390,6 +3421,9 @@ def test_the_runs_of_a_mixed_line_span_the_same_width_as_one_face_would():
 # the renderer does not paint, which is how a line ends up over the trim.
 
 LATIN = os.path.join(HERE, "word-fonts", "Fredoka-Medium.ttf")
+# A title face with no Hebrew at all — the case a second title face exists
+# for, as opposed to a face that simply has a Latin one beside it.
+MRDAFOE = os.path.join(HERE, "MrDafoe-Regular.ttf")
 
 
 def _alt_store(**kw):
@@ -3438,8 +3472,10 @@ def test_an_uploaded_face_is_declared_beside_the_first_one():
     with _alt_store():
         assert rp.word_faces("demo").count("@font-face") == 2
         assert "font-family:'HebWordAlt'" in rp.word_faces("demo")
-        assert rp.title_faces("demo").count("@font-face") == 2
-        assert "font-family:'TitleFontAlt'" in rp.title_faces("demo")
+        # A TITLE declares ONE family: which face it is set in is one decision
+        # about the whole title (rule 5, ``title_face``), so there is no second
+        # family for the markup to name.
+        assert rp.title_faces("demo").count("@font-face") == 1
 
 
 def test_every_declaration_site_carries_both_families():
@@ -3468,10 +3504,16 @@ def test_every_declaration_site_carries_both_families():
         board.add_style(rp.GEOMETRIC_TEXT_STYLE
                         + rp.title_faces("demo", cfg, emit=deck_html.font_face))
 
+        # The TITLE family, on every surface that carries a title. One family:
+        # a title is set in one face (rule 5), and which one is decided per
+        # title rather than declared as a pair.
         for tag, css in (("single card", card), ("card back", back),
                          ("fronts strip", strip), ("deck", deck.html("0 0 1 1")),
                          ("board doc", board.html("0 0 1 1"))):
-            assert "font-family:'TitleFontAlt'" in css, tag
+            assert "font-family:'TitleFont'" in css, tag
+            assert "font-family:'TitleFontAlt'" not in css, tag
+        # ...and the WORD pair, on every surface that carries words, because the
+        # owner's rule there IS a pair: every English word in the second face.
         for tag, css in (("single card", card), ("fronts strip", strip),
                          ("deck", deck.html("0 0 1 1"))):
             assert "font-family:'HebWordAlt'" in css, tag
@@ -3484,7 +3526,9 @@ def test_the_alt_faces_are_declared_once_for_the_whole_strip():
     with _alt_store():
         cfg = config.theme("demo")
         style = rp.word_faces("demo") + rp.title_faces("demo", cfg)
-        assert style.count("@font-face") == 4
+        # two WORD faces (rule 2: every English word in the second) and ONE
+        # title face (rule 5: a title is set in one face, whole).
+        assert style.count("@font-face") == 3
         for front in config.fronts(cfg):
             overlay = rp.card_overlay("demo", config.recipe_or_empty(cfg),
                                       ["BBQ"] * 4, ["שירה"], front_index=front)
@@ -3658,56 +3702,17 @@ def test_a_two_face_skyline_is_each_runs_own_raster_shifted_by_the_pen():
 # --- the title --------------------------------------------------------------
 
 
-def test_a_title_line_in_two_faces_is_one_text_with_a_tspan():
-    """Unlike a word line. The reason ``word_lines`` hand-places its runs is a
-    stranded neutral "." that bidi reorders away from its digit; a title has no
-    such neutral and sets on a textPath where ``direction="rtl"`` IS honoured
-    (test_title_block_rtl_reorders_digit_in_raster). So Chrome does the
-    ordering and the arch, alignment and three paint layers are untouched."""
+def test_a_title_is_never_split_across_two_faces():
+    """The owner's rule: a title is set in ONE face, whole — every letter, digit,
+    space and mark. Which face is decided once, off the title's own language
+    (``title_face``), so the markup has nothing to switch mid-line and the
+    per-character routing that used to live here is gone."""
     box = {"x0": 0, "y0": 0, "x1": 400, "y1": 120}
-    mixed = rp.title_block(box, ["PARTY לשירה"], "#000", "#000", CAFE, 0, 0,
-                           False, rtl=True, alt_font_path=LATIN)
-    # The space travels with the run whose side of the line it sits on: this line
-    # READS left to right (it opens with Latin), so its edge neutrals resolve to
-    # that base — the same rule that stopped a break hyphen jumping to the wrong
-    # end of an English word (see _line_is_latin).
-    assert '<tspan font-family="TitleFontAlt">PARTY </tspan>' in mixed, mixed
-    # one <text> per line per paint layer, as before — the tspan adds no element
-    assert mixed.count("<textPath") == mixed.count("</textPath")
-
-
-def test_a_hebrew_only_title_is_untouched_by_an_uploaded_face():
-    box = {"x0": 0, "y0": 0, "x1": 400, "y1": 120}
-    plain = rp.title_block(box, ["רווקות לשירה"], "#000", "#000", CAFE, 0, 0,
-                           False, rtl=True)
-    with_alt = rp.title_block(box, ["רווקות לשירה"], "#000", "#000", CAFE, 0, 0,
-                              False, rtl=True, alt_font_path=LATIN)
-    # The per-block id counter moves with every call; nothing else may.
-    strip = lambda s: re.sub(r"\bt\d+([sm]\d+)\b", r"t\1", s)   # noqa: E731
-    assert strip(plain) == strip(with_alt)
-
-
-def test_a_pinned_title_size_is_dropped_once_the_other_face_is_in_play():
-    """The owner settled this as auto-fit at render time, no second
-    calibration. ``title_style.size`` was measured against the ORIGIN's face and
-    the ORIGIN's own text; a title set in another face is neither, and a pin per
-    (template x face x script) is a number nobody would ever re-measure."""
-    box = {"x0": 0, "y0": 0, "x1": 400, "y1": 120}
-
-    def size_of(svg):
-        return float(re.search(r'font-size="([\d.]+)"', svg).group(1))
-
-    pinned_he = size_of(rp.title_block(box, ["רווקות לשירה"], "#000", "#000",
-                                       CAFE, 0, 0, False, rtl=True,
-                                       fixed_size=9.0, alt_font_path=LATIN))
-    assert abs(pinned_he - 9.0) < 0.01, "a Hebrew title still honours its pin"
-    mixed = size_of(rp.title_block(box, ["PARTY לשירה"], "#000", "#000", CAFE,
-                                   0, 0, False, rtl=True, fixed_size=9.0,
-                                   alt_font_path=LATIN))
-    auto = size_of(rp.title_block(box, ["PARTY לשירה"], "#000", "#000", CAFE,
-                                  0, 0, False, rtl=True, alt_font_path=LATIN))
-    assert abs(mixed - auto) < 0.01, (mixed, auto)
-    assert mixed > 9.0, "the pin was measured for other text in another face"
+    svg = rp.title_block(box, ["מזל טוב 40"], "#000", "#000", CAFE, 0, 0,
+                         False, rtl=True)
+    assert "tspan" not in svg, svg
+    # one <text> per line per paint layer, as before
+    assert svg.count("<textPath") == svg.count("</textPath")
 
 
 def test_the_pin_survives_when_the_theme_ships_no_second_face():
@@ -3872,21 +3877,8 @@ def _latin_only_and_dual():
     return (latin if os.path.exists(latin) else None), dual
 
 
-def test_a_title_the_second_face_can_draw_is_not_refused():
-    import pytest
-    latin, dual = _latin_only_and_dual()
-    if not latin or not dual:
-        pytest.skip("needs a Latin-only and a dual-script face")
-    lines = ["רווקות לשירה"]
-    with pytest.raises(RuntimeError):
-        rp.assert_title_drawable(latin, lines, theme="bachelorette")
-    # ...and with the face she uploaded for exactly this, it goes through.
-    rp.assert_title_drawable(latin, lines, theme="bachelorette",
-                             alt_font_path=dual)
-
-
-def test_a_title_NEITHER_face_can_draw_is_still_refused():
-    """The guard must not be weakened into a no-op by the alt argument.
+def test_a_title_the_chosen_face_cannot_draw_is_still_refused():
+    """The guard must not be weakened into a no-op.
 
     Its whole reason for existing stands: Chrome substitutes a system face per
     glyph, the size was fitted to a different one, and letters that overrun the
@@ -3897,17 +3889,15 @@ def test_a_title_NEITHER_face_can_draw_is_still_refused():
     if not latin:
         pytest.skip("needs a Latin-only face")
     with pytest.raises(RuntimeError) as e:
-        rp.assert_title_drawable(latin, ["רווקות לשירה"], theme="bachelorette",
-                                 alt_font_path=latin)
-    assert "neither title font" in str(e.value)
+        rp.assert_title_drawable(latin, ["רווקות לשירה"], theme="bachelorette")
+    assert "no glyphs" in str(e.value)
 
 
-def test_the_refusal_names_both_faces_so_she_knows_which_to_replace():
+def test_the_refusal_names_the_face_so_she_knows_which_to_replace():
     import pytest
     latin, _ = _latin_only_and_dual()
     if not latin:
         pytest.skip("needs a Latin-only face")
     with pytest.raises(RuntimeError) as e:
-        rp.assert_title_drawable(latin, ["רווקות לשירה"], theme="bachelorette",
-                                 alt_font_path=latin)
+        rp.assert_title_drawable(latin, ["רווקות לשירה"], theme="bachelorette")
     assert os.path.basename(latin) in str(e.value)

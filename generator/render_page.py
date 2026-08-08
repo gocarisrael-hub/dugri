@@ -11,6 +11,8 @@ import itertools
 import math
 import os
 import re
+import shutil
+import struct
 import sys
 import csv as csvmod
 
@@ -119,21 +121,99 @@ def word_faces(theme, word_font=None, emit=None):
     return css + (emit("HebWordAlt", alt) if alt else "")
 
 
-def title_faces(theme, cfg=None, emit=None):
+TitleFace = collections.namedtuple("TitleFace", "path swapped")
+
+
+def title_script(lines):
+    """``"hebrew"``, ``"latin"``, or None when the lines say neither.
+
+    ONE LANGUAGE PER TITLE is the owner's rule, and the wizard is where it is
+    enforced — a title mixing scripts is refused where the buyer types it. So
+    this reads the strong letters and answers what the title IS; a title of
+    digits, spaces and punctuation alone answers None, and so does the mixed
+    title the wizard should never have accepted, which leaves both of them with
+    the design's own face and the design's own direction.
+    """
+    import unicodedata
+
+    kinds = set()
+    for line in lines or []:
+        for ch in line:
+            klass = unicodedata.bidirectional(ch)
+            if klass in ("R", "AL"):
+                kinds.add("hebrew")
+            elif klass == "L":
+                kinds.add("latin")
+    return kinds.pop() if len(kinds) == 1 else None
+
+
+def design_script(cfg):
+    """The language the design's own title is written in."""
+    return "hebrew" if (cfg or {}).get("language") == "hebrew" else "latin"
+
+
+def title_face(theme, lines=None, cfg=None):
+    """The ONE face this title is set in: ``(path, swapped)``.
+
+    THE OWNER'S RULE, and it is a decision about the TITLE, not about each
+    character in it:
+
+        a design has one title font, and may have a SECOND one. The second is
+        used when THE TITLE'S LANGUAGE IS NOT THE DESIGN'S — a Hebrew title on a
+        Latin-faced design, or the reverse — and when it applies it sets THE
+        WHOLE TITLE: every letter, digit, space and mark. A title is never split
+        across two typefaces.
+
+    So there is no routing to do and no per-character question to get wrong. Two
+    of the three things that made this hard were consequences of asking that
+    question anyway: `מזל טוב 40` printed its words in one face and its "40" in
+    another, and `מזל טוב – לשירה` (an en dash, which a phone substitutes for a
+    hyphen without being asked) was refused because the second face lacked that
+    one mark — with a message naming the whole Hebrew alphabet.
+
+    ONLY A TITLE THE BUYER TYPED. A design whose OWN title its own face cannot
+    draw is a broken template, and it is still refused so the owner fixes it once
+    instead of printing it a hundred times (#366, the אואזיס/League Spartan
+    case). ``config.CustomTitle`` is how that difference reaches this far.
+
+    ``swapped`` travels with the path because a pinned ``title_style.size`` was
+    measured against the design's OWN face; in the second one it cannot be the
+    answer, though it is still the largest this design ever wanted its title, so
+    it stands as a ceiling (see ``title_block``).
+    """
+    cfg = cfg or config.theme(theme)
+    primary = config.resolve_title_font(theme)
+    if not lines or not config.is_custom_title(lines):
+        return TitleFace(primary, False)
+    script = title_script(lines)
+    if script is None or script == design_script(cfg):
+        return TitleFace(primary, False)
+    alt = config.resolve_title_font_alt(theme)
+    # No second face uploaded: there is nothing this design can set her title in,
+    # and saying so is the honest answer. ``assert_title_drawable`` names the
+    # font and the letters, the preview says the same thing on the screen she
+    # approves from, and the fix is one upload on the template screen.
+    return TitleFace(alt or primary, bool(alt))
+
+
+def title_faces(theme, cfg=None, emit=None, lines=None):
     """``@font-face`` for a theme's title face, plus its second one if it has one.
 
     The title face resolves through ``config.resolve_title_font``, which names
     the theme and the key when the file is missing — nine call sites used to do
     a bare ``font_path`` lookup and surface a missing face as an OSError from
     inside PIL, naming neither.
+
+    ``lines`` is the title about to be drawn, and it is passed for the same
+    reason ``title_face`` takes it: which face a title is set in is a property of
+    the TITLE, not of the template, so the declaration and the fit must be asked
+    the same question. A caller that declares without the text declares the
+    design's own face.
     """
     emit = emit or font_face
     cfg = cfg or config.theme(theme)
-    css = emit("TitleFont", config.resolve_title_font(theme),
-               config.title_font_weight(cfg))
-    alt = config.resolve_title_font_alt(theme)
-    return css + (emit("TitleFontAlt", alt,
-                       config.title_font_weight(cfg)) if alt else "")
+    return emit("TitleFont", title_face(theme, lines, cfg).path,
+                config.title_font_weight(cfg))
 
 
 # THE MEASURING INSTRUMENT MUST DRAW THE SAME PICTURE EVERYWHERE.
@@ -166,6 +246,183 @@ def _measuring_font(font_path, size):
 @functools.lru_cache(maxsize=8)
 def _word_metrics(font_path, ref=200):
     return _measuring_font(font_path, ref), ref
+
+
+# WHAT THE FONT ITSELF SAYS IT HAS.
+#
+# Every earlier reading here was an inference, and each was wrong somewhere:
+# measuring INK called an inked ``.notdef`` a glyph (Cafe's hollow box passed
+# "🎉" through the order guard); photographing the ``.notdef`` was better but
+# still a guess about a raster; and asking Chrome was worse than either, because
+# a DECLARED face falls back to a different system font than an undeclared one,
+# so the control render never matched.
+#
+# A font carries the answer in its ``cmap`` table. Reading it is thirty lines and
+# no rendering at all, and it is exact: טוקיו's uploaded Quick.ttf maps 26 Latin
+# letters and 10 digits and NOTHING else — no Hebrew, no apostrophe — while the
+# Quick in Canva's own picker draws Hebrew perfectly. Two different files under
+# one name, which no amount of rasterizing could have told us apart.
+#
+# Formats 4 (BMP) and 12 (full Unicode) are read; a font offering neither falls
+# back to the raster reading below, which is what every font shipped here used
+# until now.
+def _cmap_tables(data):
+    tag = data[:4]
+    off = struct.unpack(">I", data[12:16])[0] if tag == b"ttcf" else 0
+    num = struct.unpack(">H", data[off + 4:off + 6])[0]
+    out = {}
+    for i in range(num):
+        p = off + 12 + 16 * i
+        name, _sum, o, ln = struct.unpack(">4sIII", data[p:p + 16])
+        out[name] = (o, ln)
+    return out
+
+
+def _cmap_lookup(data, off, cp):
+    """The glyph id ``cp`` maps to in ONE cmap subtable, or 0 for none."""
+    fmt = struct.unpack(">H", data[off:off + 2])[0]
+    if fmt == 4:
+        if cp > 0xFFFF:
+            return 0
+        segx2 = struct.unpack(">H", data[off + 6:off + 8])[0]
+        seg = segx2 // 2
+        ends = struct.unpack(">%dH" % seg, data[off + 14:off + 14 + segx2])
+        sp = off + 16 + segx2
+        starts = struct.unpack(">%dH" % seg, data[sp:sp + segx2])
+        dp = sp + segx2
+        deltas = struct.unpack(">%dh" % seg, data[dp:dp + segx2])
+        rp = dp + segx2
+        ranges = struct.unpack(">%dH" % seg, data[rp:rp + segx2])
+        for i in range(seg):
+            if starts[i] <= cp <= ends[i]:
+                if ranges[i] == 0:
+                    return (cp + deltas[i]) & 0xFFFF
+                gp = rp + 2 * i + ranges[i] + 2 * (cp - starts[i])
+                gid = struct.unpack(">H", data[gp:gp + 2])[0]
+                return (gid + deltas[i]) & 0xFFFF if gid else 0
+        return 0
+    if fmt == 12:
+        groups = struct.unpack(">I", data[off + 12:off + 16])[0]
+        for g in range(groups):
+            first, last, gid = struct.unpack(
+                ">III", data[off + 16 + 12 * g:off + 28 + 12 * g])
+            if first <= cp <= last:
+                return gid + (cp - first)
+        return 0
+    return 0
+
+
+@functools.lru_cache(maxsize=16)
+def _font_charmap(path, stamp):
+    """Every codepoint this file maps, or None when it carries no cmap we read.
+
+    ``stamp`` is the file's size and mtime, so a re-uploaded face under the same
+    name is read again rather than served from the cache — the owner fixes a font
+    fault by replacing the file, very often with the same name.
+    """
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+        tables = _cmap_tables(data)
+    except (OSError, ValueError, struct.error, KeyError):
+        return None
+    if b"cmap" not in tables:
+        return None
+    base = tables[b"cmap"][0]
+    try:
+        count = struct.unpack(">H", data[base + 2:base + 4])[0]
+        offsets = [base + struct.unpack(">HHI", data[base + 4 + 8 * i:base + 12 + 8 * i])[2]
+                   for i in range(count)]
+    except struct.error:
+        return None
+    return (data, tuple(offsets))
+
+
+def _font_maps(path, ch):
+    """Whether ``path``'s own character map claims ``ch``, or None if unreadable."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    got = _font_charmap(path, (st.st_size, st.st_mtime_ns))
+    if got is None:
+        return None
+    data, offsets = got
+    for off in offsets:
+        try:
+            if _cmap_lookup(data, off, ord(ch)):
+                return True
+        except (struct.error, IndexError):
+            continue
+    return False
+
+
+# A character no font has a glyph for, used to photograph this face's ``.notdef``
+# so any OTHER character drawn the same way can be recognised. Plane 14 variation
+# selectors are the safest choice there is: they are formatting characters, no
+# text face carries one, and the three we tried (this, U+10FFFE and U+FFFD) came
+# back byte-identical on every shipped font — which is what a shared .notdef
+# looks like.
+_NOTDEF_PROBE = "\U000E0100"
+
+
+def _glyph_mask(font, ch):
+    """``(size, bytes)`` of ``ch`` rasterized in ``font``, or None if unreadable."""
+    try:
+        mask = font.getmask(ch, mode="L")
+    except (OSError, ValueError):
+        return None
+    return (mask.size, bytes(mask))
+
+
+@functools.lru_cache(maxsize=16)
+def _notdef_mask(font):
+    return _glyph_mask(font, _NOTDEF_PROBE)
+
+
+@functools.lru_cache(maxsize=4096)
+def _glyph_missing(font, ch):
+    """Whether ``font`` would print ``ch`` as something other than ``ch``.
+
+    TWO WAYS A CHARACTER GOES MISSING, and reading only one of them disarmed the
+    order guard. A face without the glyph draws its ``.notdef``, and what that
+    LOOKS like is the face's own business: MrDafoe's is blank, so a Hebrew letter
+    in it reports a zero-height box and the old ink reading caught it. Cafe's is a
+    hollow rectangle 167 units tall, so "🎉" reported a perfectly healthy box and
+    read as covered — and a title of "מזל טוב 🎉" passed a guard whose whole job is
+    to refuse a title that prints something nobody typed.
+
+    So the face's ``.notdef`` is photographed once (``_NOTDEF_PROBE``) and any
+    character rasterizing to the same bitmap is missing, however much ink it has;
+    a character with NO ink at all is missing too, which is the old reading kept
+    for the blank-notdef faces. Whitespace is not a character with a glyph to
+    miss.
+
+    Cached on the font OBJECT rather than the path, so a re-uploaded face is
+    picked up exactly where ``_title_metrics``/``_word_metrics`` pick it up, and
+    an owner fixing a template is never served a stale answer.
+    """
+    if ch.isspace():
+        return False
+    mask = _glyph_mask(font, ch)
+    if mask is None:
+        # UNREADABLE IS NOT COVERAGE. The two old readings disagreed about this —
+        # ``title_font_gaps`` walked past the exception as if the character were
+        # drawable, ``_face_covers`` read it as a gap — and a rescue face the
+        # guard had accepted could then be refused by the fitter. One answer, and
+        # it is the safe one: a character this face cannot even be MEASURED for is
+        # a character we cannot promise it will print, so it is missing. (A font
+        # file that will not open at all is a different thing and stays
+        # ``_assets``' complaint — see ``title_font_gaps``.)
+        return True
+    if mask == _notdef_mask(font):
+        return True
+    return not any(mask[1])
+
+
+def _face_covers(font, text):
+    """Whether ``font`` draws every character of ``text`` as itself."""
+    return not any(_glyph_missing(font, ch) for ch in set(text))
 
 
 class Face:
@@ -211,6 +468,12 @@ class Face:
         self.ref = ref
         self.rtl = rtl
         self.alt_scale = alt_scale
+        # THE SECOND FACE IS THE CARD'S ENGLISH WORD FACE, and the owner's rule
+        # for it is unconditional: "כל מילה באנגלית תודפס בו" — every English word
+        # is set in it, not "when the Hebrew face cannot cope". A TITLE never gets
+        # here at all: which face a title is set in is one decision about the
+        # whole title (``title_face``), so a title has exactly one face and
+        # nothing to route.
 
     @property
     def single(self):
@@ -2857,17 +3120,15 @@ def _title_metrics(font_path, ref=200):
 
 
 @functools.lru_cache(maxsize=8)
-def _title_face(font_path, alt_font_path=None, ref=200, rtl=False):
-    """The measuring instrument for a title: one face, or two.
+def _title_metrics_face(font_path, ref=200):
+    """A title's measuring instrument: ONE font, because a title is set in one.
 
-    A buyer may type a custom title in any language, so a template drawn with a
-    Hebrew title face can be asked to set an English one (the honoree-NAME script
-    guards do not apply to a custom title). The second face is what that title is
-    set in; ``None`` leaves this the primary font itself.
+    ``Face`` is the two-font instrument a card's WORDS need (rule 2: every
+    English word in the second word face). A title has no such split — see
+    ``title_face`` — so this is the font itself, and every reading the fitter
+    takes is the reading it always was.
     """
-    primary = _title_metrics(font_path, ref)[0]
-    alt = _title_metrics(alt_font_path, ref)[0] if alt_font_path else None
-    return Face(primary, alt, ref, rtl=rtl)
+    return _title_metrics(font_path, ref)[0]
 
 
 def _title_runs(face, line):
@@ -2883,15 +3144,11 @@ def _title_runs(face, line):
     ``<tspan>`` and Chrome does the ordering, which is also what keeps the arch,
     the alignment and the three stacked paint layers working unchanged.
 
-    A single-face line returns the bare escaped string it always did.
+    A title is set in ONE face (see ``title_face``), so this is the escaped line
+    itself — kept as the single place the markup for a title's text is made, so a
+    later change has one door to come through.
     """
-    runs = face.runs(line)
-    if len(runs) == 1 and runs[0][0] is not face.alt:
-        return escape(line)
-    return "".join(
-        f'<tspan font-family="TitleFontAlt">{escape(t)}</tspan>'
-        if f is face.alt else escape(t)
-        for f, t in runs)
+    return escape(line)
 
 
 # Synthetic-bold stroke width as a fraction of the glyph size. Sized to read as
@@ -3132,6 +3389,19 @@ def _line_advance(f, line, rtl):
     return sum(font.getlength(t) for font, t in f.runs(line))
 
 
+def _run_is_latin(text, rtl):
+    """Whether ``text`` sets left to right, by its own first strong character."""
+    import unicodedata
+
+    for ch in text:
+        klass = unicodedata.bidirectional(ch)
+        if klass == "L":
+            return True
+        if klass in ("R", "AL"):
+            return False
+    return not rtl
+
+
 def _line_skyline(f, ref, line, rtl):
     """``_ink_skyline`` for a line that may be set in TWO faces.
 
@@ -3153,7 +3423,6 @@ def _line_skyline(f, ref, line, rtl):
     runs = f.runs(line) if isinstance(f, Face) else [(f, line)]
     if len(runs) == 1:
         return _ink_skyline(runs[0][0].path, ref, visual_order(line, rtl))
-    alt = f.alt
     # Left to right: the renderer paints the runs in visual order, which for an
     # RTL line is the logical order reversed.
     ordered = list(reversed(runs)) if rtl else list(runs)
@@ -3162,7 +3431,13 @@ def _line_skyline(f, ref, line, rtl):
         # A Latin run is emitted with no RTL embedding and sets left to right,
         # so it is measured as written; a Hebrew run is put into paint order by
         # hand, because Pillow will not do it (see ``visual_order``).
-        drawn = txt if font is alt else visual_order(txt, rtl)
+        #
+        # Asked of the RUN, not of the face drawing it. "the alt face is the
+        # Latin one" stopped being true the day a Hebrew run could be rescued
+        # into it, and reading it that way measured the Hebrew unreversed — an
+        # ink profile of the mirror image of what prints, driving the leading and
+        # the collision clearance.
+        drawn = txt if _run_is_latin(txt, rtl) else visual_order(txt, rtl)
         xl, below, above = _ink_skyline(font.path, ref, drawn)
         parts.append((pen + xl, below, above))
         pen += font.getlength(txt)
@@ -3490,19 +3765,55 @@ def _quad_length(p0, p1, p2, steps=64):
     return total
 
 
+# WHAT A PHONE TYPES WHEN SHE TYPES A HYPHEN. iOS and Android replace a typed
+# hyphen with an en dash, a typed apostrophe with a curly one, three dots with an
+# ellipsis — without being asked and without showing her. The Hebrew faces this
+# shop is set in carry the plain forms and not the typographic ones: Cafe has
+# "-", "\'" and '"', and none of "–", "—", "’", "“", "…". So a buyer who typed
+# "מזל טוב - לשירה" had her order refused over a character she never chose.
+#
+# The Hebrew MAQAF is here for the same reason from the other side: it is
+# Hebrew's own hyphen, "בת־אל" is a real name, and אואזיס's Comix has no glyph for
+# it — so the name printed a hollow box in the middle of itself. A hyphen is what
+# that mark IS; drawing it is not a substitution anyone can see.
+#
+# Replaced rather than refused, and only where the face cannot draw the original
+# and CAN draw the plain form. A character she meant — an emoji, a letter in a
+# third script — is untouched and still refuses the order.
+_SUBSTITUTED = {"–": "-", "—": "-", "‒": "-", "―": "-", "־": "-",
+                "’": "'", "‘": "'", "‚": ",", "“": '"', "”": '"',
+                "…": "...", "\u00a0": " "}
+
+
+def settable_lines(font_path, lines):
+    """``lines`` with the marks this face cannot draw swapped for the ones it can."""
+    try:
+        font = _title_metrics(font_path)[0]
+    except (OSError, ValueError):
+        return list(lines)
+    out = []
+    for line in lines:
+        out.append("".join(
+            _SUBSTITUTED[ch]
+            if (ch in _SUBSTITUTED and _glyph_missing(font, ch)
+                and not any(_glyph_missing(font, r) for r in _SUBSTITUTED[ch]))
+            else ch
+            for ch in line))
+    return out
+
+
 def title_font_gaps(font_path, lines):
     """The characters of ``lines`` this title face cannot draw, sorted.
 
     Empty means the face can set the whole title itself, which is the only case
     in which anything measured off that face describes what Chrome will draw.
 
-    A character with no glyph is read as "a non-space character with no ink of
-    its own" — the same reading ``calibrate._covers`` takes, and for the same
-    reason: a font without the glyph draws ``.notdef``, which reports a
-    zero-height box. Pillow is the only font library the production image
-    carries (no fontTools — see requirements-dev.txt), so the cmap cannot be
-    consulted directly. It is the right reading anyway: a mapped-but-blank glyph
-    prints blank whatever the cmap claims.
+    A character with no glyph is one the face draws as its ``.notdef`` — or draws
+    with no ink at all — see ``_glyph_missing``, which is the ONE reading the
+    guard, the preview note and the fitter all take. Pillow is the only font
+    library the production image carries (no fontTools — see
+    requirements-dev.txt), so the cmap cannot be consulted directly; the glyph
+    that gets PRINTED is the right thing to read anyway, whatever the cmap claims.
 
     NOT cached. Every other font reading in this module is memoised by PATH, and
     that is exactly wrong here: the owner fixes this fault by re-uploading a font
@@ -3518,25 +3829,26 @@ def title_font_gaps(font_path, lines):
     for ch in sorted(set("".join(lines))):
         if ch.isspace():
             continue
-        try:
-            box = font.getbbox(ch)
-        except (OSError, ValueError):
-            continue
-        if box[3] - box[1] <= 0:
+        claimed = _font_maps(font_path, ch)
+        if claimed is None:                 # no readable cmap: the old reading
+            if _glyph_missing(font, ch):
+                out.append(ch)
+        elif not claimed:
+            out.append(ch)
+        elif _glyph_missing(font, ch):
+            # Mapped AND blank: a cmap entry pointing at an empty glyph prints
+            # nothing, whatever the table claims.
             out.append(ch)
     return out
 
 
-def assert_title_drawable(font_path, lines, theme=None, alt_font_path=None):
+def assert_title_drawable(font_path, lines, theme=None):
     """Refuse a title NEITHER of its faces can draw.
 
-    ``alt_font_path`` is the optional second title face the owner uploads for
-    exactly this case — a design whose primary face is a Latin display script
-    being given a Hebrew name, or the reverse. A character the primary cannot
-    draw is not a fault when the alt draws it: that IS the feature, and the
-    renderer already splits the title across both faces. Checking the primary
-    alone refused an order the deck could set perfectly well — פריז with
-    MrDafoe (no Hebrew) beside GveretLevin (Hebrew and Latin).
+    Asked of the ONE face the title is set in (``title_face`` picks it: the
+    design's own, or its second title font when the buyer wrote in the other
+    language). There is no second face to fall back to per character, because a
+    title is never split across two typefaces.
 
     ``calibrate`` already refuses to MEASURE against such a face ("a fit against
     such a sample measures the wrong typeface entirely and must be refused").
@@ -3550,26 +3862,10 @@ def assert_title_drawable(font_path, lines, theme=None, alt_font_path=None):
     the owner can SEE is wrong costs one re-upload; a title that merely looks
     plausible costs a printed order and the customer's name on it.
     """
-    gaps = title_font_gaps(font_path, lines)
+    gaps = title_font_gaps(font_path, settable_lines(font_path, lines))
     if not gaps:
         return
-    if alt_font_path:
-        # Only what NEITHER face can draw is a real gap. Order matters for the
-        # message, not the verdict: the owner is told which characters are
-        # unset, whichever face was supposed to carry them.
-        gaps = [c for c in gaps if c in set(title_font_gaps(alt_font_path, lines))]
-        if not gaps:
-            return
     where = f"theme {theme!r}: " if theme else ""
-    if alt_font_path:
-        raise RuntimeError(
-            f"{where}neither title font can draw {''.join(gaps)!r}, which the "
-            f"title {' / '.join(lines)!r} is made of — not "
-            f"{os.path.basename(font_path)!r} and not "
-            f"{os.path.basename(alt_font_path)!r}. Chrome would substitute a "
-            f"system face for those letters and the title would print in a "
-            f"typeface nobody chose. Upload a title font that covers this "
-            f"design's language, or change the title text.")
     raise RuntimeError(
         f"{where}the title font {os.path.basename(font_path)!r} has no glyphs "
         f"for {''.join(gaps)!r}, which the title {' / '.join(lines)!r} is made "
@@ -3580,19 +3876,59 @@ def assert_title_drawable(font_path, lines, theme=None, alt_font_path=None):
         f"font that covers this design's language, or change the title text.")
 
 
-def title_is_rtl(cfg):
-    # A title is right-to-left when the theme's language is Hebrew. RTL matters
-    # for any title that mixes digits with Hebrew (e.g. anniversary "30 שנה
-    # נישואין" or "{NAME} בן {AGE}"): with the default LTR base direction the
-    # leading/embedded digit run lays out on the wrong side. English themes stay
-    # LTR and are untouched.
-    return cfg.get("language") == "hebrew"
+def title_is_rtl(cfg, lines=None):
+    """Whether this title lays out right to left.
+
+    THE TITLE'S SCRIPT DECIDES, which is the same thing that decides its face
+    (``title_face``) — one language per title, so there is one answer for the
+    whole of it. Direction matters for any title that carries digits ("30 שנה
+    נישואין", "מזל טוב 40"): under an LTR base the digit run lands on the wrong
+    side of the Hebrew.
+
+    Not the theme's ``language`` flag, which is a statement about the DESIGN: the
+    five designs a buyer's Hebrew title lands on (פריז, סיישל, קליפורניה, טוקיו,
+    מרקאנה) are every one of them ``"language": "english"``, and her "מזל טוב 40"
+    set with the 40 on the wrong side on a card whose FACE had already been chosen
+    off the same text.
+
+    Not the first strong character either: a Hebrew title opening with an English
+    word would read as left-to-right on the strength of one letter. The flag is
+    the answer only when the title says nothing — no text to ask, or a title of
+    digits and punctuation alone.
+    """
+    return {"hebrew": True, "latin": False}.get(
+        title_script(lines), cfg.get("language") == "hebrew")
+
+
+# How many lines a buyer's title may be rearranged onto. Three is the words'
+# own limit (``_WRAP_MAX_LINES``) and a title box is shallower than a card, so
+# nothing here wants more.
+_TITLE_WRAP_MAX = int(os.environ.get("DUGRI_TITLE_WRAP_MAX", "3"))
+
+
+def _title_size(f, ref, lines, bw, bh, outline_w, arch, shadow, leading, align,
+                bold, bold_w, rtl, one_block, visible):
+    """``(size, pitch)`` this arrangement of ``lines`` sets at in a ``bw`` x ``bh``
+    box — the same solve ``title_block`` performs, asked of a candidate."""
+    paint_pad = title_paint_pad(outline_w, arch, shadow, bold, bold_w,
+                                ring_visible=visible)
+    paint_grow = title_paint_grow(outline_w, bold, bold_w, ring_visible=visible)
+    pitch = title_pitch(f, ref, lines, leading, paint_pad, align=align,
+                        grow=paint_grow, rtl=rtl, one_block=one_block)
+    stack = _title_ink_stack(f, ref, lines, pitch)
+    pad = 2 * outline_w + (0.06 if shadow else 0.0)
+    denom_h = stack + pad * ref
+    ink_fit = bh * ref / denom_h if denom_h > 0 else bh
+    old_cap = bh / (max(0.80, pitch) * len(lines)) * 1.02
+    size_h = old_cap if old_cap <= ink_fit * (1 + _TITLE_OVERFLOW_TOL) else ink_fit
+    denom_w = max(f.getlength(ln) / ref for ln in lines)
+    return (min(bw * 0.89 / denom_w, size_h) if denom_w > 0 else size_h), pitch
 
 
 def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
                 rtl=False, fixed_size=None, align="center", italic=False,
                 bold=False, bold_w=None, leading=None, one_block=False,
-                alt_font_path=None):
+                swapped=False, wrap=False, max_size=None):
     _TITLE_UID[0] += 1
     uid = _TITLE_UID[0]
     """Graffiti-style stacked title: sized so the WIDEST line fills the box
@@ -3623,12 +3959,48 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     lines = [ln for ln in lines if ln and ln.strip()]
     if not lines:
         return ""
-    face = _title_face(font_path, alt_font_path, rtl=rtl)
-    f, ref = face, face.ref
+    # ...and set in the marks this face actually has: a phone substitutes an en
+    # dash for the hyphen she typed, and the Hebrew faces carry the plain one.
+    lines = settable_lines(font_path, lines)
+    f, ref = _title_metrics(font_path)
+    face = f
+    # --- WRAP FIRST, SHRINK SECOND, for the title too ------------------------
+    #
+    # The owner's rule for the words, applied where she asked for it next: "title
+    # is too too small". A buyer's own title is longer than the one the design
+    # was drawn with — "HAPPY BIRTHDAY SHIRA" against "שירה בן 40" — and squeezing
+    # it onto ONE line inside the same box is what made it small: ברוקלין fell
+    # from 24.2 to 8.6, אואזיס from 27.9 to 10.9. A second line costs height the
+    # box already has and buys back most of the size.
+    #
+    # Only a title the BUYER wrote is rearranged. A design's own title carries the
+    # line breaks its artwork was calibrated with, and those are not ours to
+    # rewrite.
+    if wrap and len(lines) == 1:
+        best = None
+        for count in range(1, _TITLE_WRAP_MAX + 1):
+            cand = _balanced_split(f, lines[0], count)
+            if cand is None:
+                break
+            got = _title_size(f, ref, cand, bw, bh, outline_w, arch, shadow,
+                              leading, align, bold, bold_w, rtl, one_block,
+                              visible=outline != fill)
+            # Ties go to FEWER lines: a second line is a cost paid for size, not
+            # a goal — the same order the words settle in.
+            #
+            # THE CEILING IS NOT CONSULTED HERE, and that is the point. The split
+            # is chosen by the paper — which arrangement of this text the card can
+            # carry largest — and only then is the size brought down to what the
+            # design allows. Capping the candidates first inverts it: every split
+            # ties at the ceiling, fewest lines wins, and the title unwraps into
+            # ONE line as wide as the card. Measured on טריפה, whose artwork is a
+            # tiger reaching into the top right corner: two lines at 41.0 cleared
+            # it, one line at 33.1 ran straight under it.
+            if best is None or got[0] > best[0] * 1.02:
+                best = (got[0], cand)
+        if best:
+            lines = best[1]
     ratios = [f.getlength(ln) / ref for ln in lines]      # width per unit size
-    # Does this title actually need the second face? Asked once, because it
-    # decides both how the runs are emitted and whether a PINNED size may stand.
-    mixed = any(face.uses_alt(ln) for ln in lines)
     n = len(lines)
     # --- the LEADING: how far apart the baselines sit -----------------------
     # A same-colour "outline" (monochrome themes) is never painted as a ring, so
@@ -3700,7 +4072,16 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # pin was standing in for — how large this text goes in this box. One
     # condition, and it covers fronts, backs and board because all three reach
     # here through this same argument.
-    if fixed_size and not mixed:
+    if fixed_size and swapped:
+        # A title in the design's SECOND face is still this design's title, in
+        # this design's box. Dropping the pin outright let the auto-fit fill a box
+        # that is an approximate region rather than a clip: מרקאנה's back went from
+        # its calibrated 29.84 to 68.87 — twice the size the design was drawn at,
+        # on every back of the deck. The pin was measured against the other face,
+        # so it cannot be the ANSWER; it is the largest this design ever wanted
+        # its title, so it stands as the ceiling and the auto-fit works under it.
+        size = min(size, fixed_size)
+    elif fixed_size:
         # ...but a pinned size is the ORIGIN's size, measured against the
         # ORIGIN's own title text — and the honoree's name is not that text.
         # Pin grapefruit at Canva's 28 and "רווקות לדניאל" fits, while
@@ -3715,6 +4096,10 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
         size = fixed_size
         if denom_w > 0:
             size = min(size, bw * 0.89 / denom_w * (1 + _TITLE_OVERFLOW_TOL))
+    # ...and however much free paper a buyer's title was given, there is a size
+    # past which it stops looking like this design's title. See ``_TITLE_GROWTH``.
+    if max_size:
+        size = min(size, max_size)
     gap = size * pitch
     total = gap * (n - 1)
     top = (y0 + y1) / 2 - total / 2
@@ -3767,10 +4152,26 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # share a left edge instead of centering each line independently (japanese).
     left_align = align == "left"
     right_align = align == "right"
+    # ALIGNMENT IS VISUAL; ``text-anchor`` IS NOT.
+    #
+    # "left" and "right" name edges of the card — the owner picks them looking at
+    # the artwork. SVG's ``text-anchor`` names edges of the READING, and under
+    # ``direction="rtl"`` those are swapped: "start" is the RIGHT edge of a Hebrew
+    # run and "end" is its left. So a right-aligned Hebrew title emitted as
+    # ``startOffset="100%" text-anchor="end"`` pinned the run's LEFT edge to the
+    # path's RIGHT end — laying the whole title off the far end of the path, where
+    # every glyph is DROPPED in silence (see THE FAILURE above; a textPath does not
+    # clip, it discards). טוקיו is the one design with a right-aligned title, and
+    # its title did not print at all: "טוקיו is without title again."
+    #
+    # Nothing about the font: the same card drew nothing with the word face
+    # substituted in, and drew fine the moment the anchor was corrected.
+    left_anchor = "end" if rtl else "start"
+    right_anchor = "start" if rtl else "end"
     if left_align:
-        path_anchor = 'startOffset="0" text-anchor="start"'
+        path_anchor = f'startOffset="0" text-anchor="{left_anchor}"'
     elif right_align:
-        path_anchor = 'startOffset="100%" text-anchor="end"'
+        path_anchor = f'startOffset="100%" text-anchor="{right_anchor}"'
     else:
         path_anchor = 'startOffset="50%" text-anchor="middle"'
     # Synthetic italic: Chrome obliques the upright font when the theme's real
@@ -3894,8 +4295,100 @@ def _nudge_title_box(tbox, cell, offset):
     return {"x0": x0, "x1": x1, "y0": y0, "y1": y1}
 
 
+# CLEAR AIR A BUYER'S TITLE MAY GROW INTO, in millimetres of printed card. The
+# title must not arrive at the words, or at an icon, with nothing between them.
+_TITLE_CLEAR_MM = float(os.environ.get("DUGRI_TITLE_CLEAR_MM", "3"))
+
+# HOW MUCH LARGER THAN THE DESIGN'S OWN TITLE A BUYER'S MAY PRINT.
+#
+# Free paper is not the same question as good proportion. Given the room above,
+# the fit takes all of it — סיישל reached 48.2 where the design's own title is
+# calibrated at 22.4, and the owner's read was immediate: "the titles are too big
+# need to be a bit small but bigger than the first, something in the middle."
+#
+# The design's own calibrated size is the reference, because it is the one size
+# anybody actually chose: it is the title that was drawn, on this card, at this
+# weight, and it looks right there. A buyer's title is longer, so holding it to
+# exactly that size would be its own kind of wrong — it wraps rather than shrinks
+# now, and a wrapped title carries more ink than the one line the design was
+# drawn with. So it may run a THIRD larger and no further.
+#
+# The ceiling is only ever a ceiling: a title that the paper cannot fit stays at
+# whatever does fit, and a design whose own title is already generous (ברוקלין at
+# 32.4, אואזיס at 27.9) never reaches it.
+#
+# PER DESIGN, because this is taste and taste does not generalise. Shown all ten
+# at one third, the owner sent four of them back down — "קליפורניה still little
+# bit smaller, ברוקלין smaller, אואזיס smaller, טריפה smaller" — while keeping
+# פריז at 27.8 and סיישל at 29.1, which sit either side of the 27.6 she wanted
+# smaller on קליפורניה. No number separates those, so no rule does: each design
+# carries its own, as ``title_style.growth``, and the third is only the default
+# for a design that has never been tuned.
+_TITLE_GROWTH = float(os.environ.get("DUGRI_TITLE_GROWTH", "1.3"))
+
+
+def title_growth(cfg):
+    """How much larger than its OWN title a design lets a buyer's title print."""
+    ts = (cfg or {}).get("title_style") or {}
+    try:
+        g = float(ts.get("growth"))
+    except (TypeError, ValueError):
+        return _TITLE_GROWTH
+    return g if g > 0 else _TITLE_GROWTH
+
+
+def title_room(box, cell, words=None, obstacles=None):
+    """``box`` grown into the paper around it, for a title the BUYER wrote.
+
+    A calibrated title box is traced around the title the DESIGN ships, and those
+    are short: ברוקלין's is 101.6 x 25.5 on a 224 x 312 card, with 102 units of
+    empty paper above its word rows. Her own title is longer — "HAPPY BIRTHDAY
+    SHIRA" — so inside that strip it can only shrink, which is what she saw: "this
+    needs to be bigger the title font".
+
+    So the strip is opened up to the paper that is actually free: as wide as the
+    card's own safe width, and as tall as the gap between the top of the card and
+    the first word row, less clear air. It stays CENTRED on the calibrated box,
+    because that is where the design puts its title — this changes how much room
+    the title has, never where it sits.
+
+    An icon that overlaps the grown box takes its space back (the same rule the
+    words follow): the box is pulled in horizontally to the side of the icon the
+    title has more room on, so a title never grows onto artwork.
+    """
+    if not cell:
+        return box
+    clear = _TITLE_CLEAR_MM * _PT_PER_MM
+    cx = (box["x0"] + box["x1"]) / 2
+    cy = (box["y0"] + box["y1"]) / 2
+    left = cell[0] + (cell[2] - cell[0]) * _CARD_SAFE
+    right = cell[2] - (cell[2] - cell[0]) * _CARD_SAFE
+    top = cell[1] + (cell[3] - cell[1]) * _CARD_SAFE
+    floor = min([s["y0"] for s in words or []] or [cell[3]]) - clear
+    grown = {"x0": min(box["x0"], left), "x1": max(box["x1"], right),
+             "y0": min(box["y0"], top), "y1": max(box["y1"], min(floor, cell[3]))}
+    for o in _grown(obstacles or [], clear):
+        if o[3] <= grown["y0"] or o[1] >= grown["y1"]:
+            continue                      # not beside the title at all
+        if o[2] <= cx:                    # icon on the left: start right of it
+            grown["x0"] = max(grown["x0"], o[2])
+        elif o[0] >= cx:                  # icon on the right: stop left of it
+            grown["x1"] = min(grown["x1"], o[0])
+        else:                             # icon across the middle: keep the strip
+            grown["y0"], grown["y1"] = box["y0"], box["y1"]
+            grown["x0"], grown["x1"] = box["x0"], box["x1"]
+            break
+    # Never SMALLER than the box the design calibrated, and still centred on it.
+    grown["x0"] = min(grown["x0"], box["x0"])
+    grown["x1"] = max(grown["x1"], box["x1"])
+    half_w = min(cx - grown["x0"], grown["x1"] - cx)
+    half_h = min(cy - grown["y0"], grown["y1"] - cy)
+    return {"x0": cx - half_w, "x1": cx + half_w,
+            "y0": min(cy - half_h, box["y0"]), "y1": max(cy + half_h, box["y1"])}
+
+
 def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
-                   fixed_size=None, align=None, alt_font=None):
+                   fixed_size=None, align=None, swapped=False, room=None):
     """The stacked-title markup for one card, or "" when there is nothing to draw.
 
     ``tbox_list`` may hold ONE BOX PER TITLE LINE (birthday-girls records two);
@@ -3910,11 +4403,28 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
     tbox = {"x0": min(b["x0"] for b in tbox_list), "y0": min(b["y0"] for b in tbox_list),
             "x1": max(b["x1"] for b in tbox_list), "y1": max(b["y1"] for b in tbox_list)}
     tbox = _nudge_title_box(tbox, cell, offset)
+    # A title the buyer wrote may use the paper the design left empty around its
+    # own, shorter title — and a pinned size is about that shorter title, so it
+    # goes with it. See ``title_room``.
+    ceiling = None
+    if room is not None and config.is_custom_title(title_lines):
+        tbox = room
+        # The pin goes, but not the proportion it stood for: the design's own
+        # size becomes the ceiling the free fit works under (``_TITLE_GROWTH``).
+        ceiling = (float(ts["size"]) * title_growth(cfg)
+                   if ts.get("size") else None)
+        fixed_size = 0
     return title_block(tbox, title_lines, ts["fill"], ts["outline"], title_font,
                        ts["outline_w"], ts["arch"], ts["shadow"],
-                       rtl=title_is_rtl(cfg),
-                       fixed_size=fixed_size if fixed_size is not None else ts.get("size"),
-                       alt_font_path=alt_font,
+                       rtl=title_is_rtl(cfg, title_lines),
+                       fixed_size=(None if fixed_size == 0 else
+                                   fixed_size if fixed_size is not None
+                                   else ts.get("size")),
+                       swapped=swapped,
+                       # A buyer's own title may be rearranged to fill the box; a
+                       # design's own carries the breaks it was calibrated with.
+                       wrap=config.is_custom_title(title_lines),
+                       max_size=ceiling,
                        align=align or ts.get("align", "center"),
                        italic=ts.get("italic", False),
                        bold=ts.get("bold", False),
@@ -4004,8 +4514,7 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
     cell = (recipe.get("card") or {}).get("cell") or _recipe_cell(recipe, card_vb)
     word_font_path = config.resolve_word_font(theme, word_font)
     word_alt_path = word_font_alt(theme, word_font)
-    title_font_path = config.resolve_title_font(theme)
-    title_alt_path = config.resolve_title_font_alt(theme)
+    title = title_face(theme, title_lines, cfg)
     safe_bottom = cell[3] - (cell[3] - cell[1]) * _CARD_SAFE if cell else None
     room = (room_bottom(theme, front_index, card_svg, cell, safe_bottom)
             if card_svg and cell else None)
@@ -4014,18 +4523,22 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
     word_boxes = deck_slots(theme, config.card_word_boxes(cfg, recipe, cell), cell)
     tboxes = config.card_title_boxes(cfg, recipe, front_index, cell)
     # The title's own strip of card, nudged exactly as the title itself will be,
-    # so the words are held off the place the name actually prints.
+    # so the words are held off the place the name actually prints — and, for a
+    # title the BUYER wrote, the free paper it may grow into (``title_room``).
     title_span = None
-    if tboxes and title_lines:
+    title_space = None
+    if tboxes and cell:
         union = {"x0": min(b["x0"] for b in tboxes), "y0": min(b["y0"] for b in tboxes),
                  "x1": max(b["x1"] for b in tboxes), "y1": max(b["y1"] for b in tboxes)}
         union = _nudge_title_box(union, cell, config.front_offset(cfg, front_index))
-        title_span = (union["y0"], union["y1"])
+        if title_lines:
+            title_span = (union["y0"], union["y1"])
+        title_space = title_room(union, cell, words=word_boxes, obstacles=icons)
     return (_title_overlay(tboxes,
-                           title_lines, cfg, title_font_path, cell,
+                           title_lines, cfg, title.path, cell,
                            offset=config.front_offset(cfg, front_index),
                            align=config.front_align(cfg, front_index),
-                           alt_font=title_alt_path)
+                           swapped=title.swapped, room=title_space)
             + _words_overlay(word_boxes, words,
                              cfg, word_font_path, cell, room=room,
                              obstacles=icons,
@@ -4033,7 +4546,8 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
                              title_box=title_span))
 
 
-def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
+def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None,
+                 word_font=None):
     """Title markup for ONE card back.
 
     Three distinct cases, and conflating the last two would misprint a card:
@@ -4076,7 +4590,7 @@ def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
         boxes = [{"x0": cell[0] + frac["x0"] * w, "x1": cell[0] + frac["x1"] * w,
                   "y0": cell[1] + frac["y0"] * h, "y1": cell[1] + frac["y1"] * h}]
     ts = cfg["title_style"]
-    title_font = config.resolve_title_font(theme)
+    title = title_face(theme, title_lines, cfg)
     # The back's own fill/outline when the theme calibrated them (the back art is
     # usually a different colour field from the fronts), else the shared style.
     style = dict(ts)
@@ -4096,10 +4610,10 @@ def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
     # A paired back may need its own size: eight separately drawn backs give the
     # title eight differently sized rooms, and one pin fits only the box it was
     # measured against. Falls through to the deck-wide pins when unset.
-    return _title_overlay(boxes, title_lines, cfg_back, title_font, cell,
+    return _title_overlay(boxes, title_lines, cfg_back, title.path, cell,
                           fixed_size=((bk or {}).get("size")
                                       or ts.get("back_size") or ts.get("size")),
-                          alt_font=config.resolve_title_font_alt(theme))
+                          swapped=title.swapped)
 
 
 def back_draws_title(theme, clean_svg, back_index=None):
@@ -4253,7 +4767,8 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
         # nothing it was not already paying.
         return photo_card_svg(theme, photos, paper=card_paper.front_paper(theme))
     style = ("<style>" + GEOMETRIC_TEXT_STYLE
-             + word_faces(theme, word_font) + title_faces(theme, cfg)
+             + word_faces(theme, word_font)
+             + title_faces(theme, cfg, lines=title_lines)
              + "</style>")
     if kind == "back":
         # Which back this is decides where its title goes on a paired template.
@@ -4262,7 +4777,7 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
         if back_index is None:
             back_index = _index_from_card_path(clean_svg)
         overlay = back_overlay(theme, recipe, title_lines, card_vb=card_vb,
-                               back_index=back_index)
+                               back_index=back_index, word_font=word_font)
     else:
         overlay = card_overlay(theme, recipe, words, title_lines,
                                front_index=front_index, word_font=word_font,
@@ -4314,7 +4829,8 @@ def render_fronts_strip(theme, fronts, words, title_lines, out_dir,
     # a per-card declaration would be eight copies again the moment a template
     # ships a Latin face.
     style = (GEOMETRIC_TEXT_STYLE
-             + word_faces(theme, word_font) + title_faces(theme, cfg))
+             + word_faces(theme, word_font)
+             + title_faces(theme, cfg, lines=title_lines))
     cards = []
     for front in fronts:
         svg = card_assets.read_svg(config.card_path(theme, front))
@@ -4386,12 +4902,12 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
     # declaration block is built from the OVERRIDE (a filename), so it is taken
     # before the name is rebound to the resolved path below.
     style = ("<style>" + GEOMETRIC_TEXT_STYLE
-             + word_faces(theme, word_font) + title_faces(theme, cfg)
+             + word_faces(theme, word_font)
+             + title_faces(theme, cfg, lines=title_lines)
              + "</style>")
     word_alt = word_font_alt(theme, word_font)
     word_font = config.resolve_word_font(theme, word_font)
-    title_font = config.resolve_title_font(theme)
-    title_alt = config.resolve_title_font_alt(theme)
+    title = title_face(theme, title_lines, cfg)
     ts = cfg["title_style"]
     svg = open(clean_svg, encoding="utf-8").read()
     overlay = [style]
@@ -4421,11 +4937,11 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
             cell = card.get("cell")
             tbox = _nudge_title_box(tbox, cell, off)
             overlay.append(title_block(tbox, title_lines,
-                                       ts["fill"], ts["outline"], title_font,
+                                       ts["fill"], ts["outline"], title.path,
                                        ts["outline_w"], ts["arch"], ts["shadow"],
-                                       rtl=title_is_rtl(cfg),
+                                       rtl=title_is_rtl(cfg, title_lines),
                                        fixed_size=ts.get("size"),
-                                       alt_font_path=title_alt,
+                                       swapped=title.swapped,
                                        align=config.front_align(cfg, ci + 1),
                                        italic=ts.get("italic", False),
                                        bold=ts.get("bold", False),

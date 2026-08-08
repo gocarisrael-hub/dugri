@@ -2530,6 +2530,21 @@ function validateTitleStyle(input) {
     }
     out[k] = input[k];
   }
+  // growth: how much larger than the design's OWN title a title the BUYER wrote
+  // may print, as a multiple of `size`. A buyer's title is longer than the one a
+  // design was drawn with, so it is fitted into the free paper around the
+  // calibrated box (render_page.title_room) — and left alone it takes all of
+  // that, which reads as too big. This is the ceiling on it, and it is taste
+  // rather than measurement: shown all ten designs at the 1.3 default the owner
+  // asked four of them down while keeping two that sit either side of the very
+  // size she rejected on a third. So it belongs to the design, like its align
+  // and its offset, and is simply absent on one nobody has tuned.
+  if (input.growth != null) {
+    if (!isFiniteNum(input.growth) || input.growth <= 0 || input.growth > 4) {
+      return { error: 'title_style.growth must be a multiple of the title size, 0..4' };
+    }
+    out.growth = input.growth;
+  }
   // leading / back_leading / board_leading: the baseline step between a title's
   // lines, as a fraction of the type size, measured off the design's own
   // artwork. One per SURFACE, exactly like the sizes above — a design's front,

@@ -174,7 +174,22 @@ def test_every_shipped_theme_reports_healthy():
                 f"{key} is uncalibrated but PUBLIC — customers would be offered "
                 "a theme that cannot render")
             continue
+        if key in _KNOWN_FAULTS:
+            # ...and the checker must SAY SO for one that is not healthy. טוקיו's
+            # Quick carries no punctuation at all — no apostrophe, no hyphen —
+            # while its own title is "{NAME}'S {AGE}S", so every order on it is
+            # refused until its font or its title text changes. A report that
+            # called that healthy would be the checker failing at its one job.
+            assert not report["ok"], f"{key} is a known fault and must be reported"
+            assert any(_KNOWN_FAULTS[key] in t for t in _texts(report)), _texts(report)
+            continue
         assert report["ok"], f"{key} must be healthy, got: {_texts(report)}"
+
+
+# The one shipped template whose own face cannot draw its own title, and the
+# characters it is missing. Kept here rather than skipped silently: when the font
+# is replaced this test fails and the entry comes out.
+_KNOWN_FAULTS = {"japanese": "'"}
 
 
 def test_the_check_never_writes_themes_json():

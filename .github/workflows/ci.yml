@@ -71,9 +71,17 @@ jobs:
   python:
     name: Generator tests (pytest)
     runs-on: ubuntu-latest
-    # Bound worst-case cost the same way the Node job does. The suite runs in
-    # about a minute; anything near this cap means something is hung.
-    timeout-minutes: 10
+    # Bound worst-case cost the same way the Node job does. The comment here used
+    # to say "about a minute", and that stopped being true some time ago: this
+    # suite renders through real headless Chrome, and every guard added since —
+    # glyphs falling off a textPath, icon keep-outs, the word band, a title's ink
+    # on a right-aligned card — is another browser run. Measured on CI: 5m44 on
+    # one open branch and 9m48 on another, twelve seconds under the old cap. A job
+    # that trips a timeout is CANCELLED, which reads as a red check with no
+    # failure in it, and the next thing anybody does is re-run it and lose the
+    # ten minutes again. Twenty still bounds a genuine hang; it just stops
+    # bounding the ordinary case.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

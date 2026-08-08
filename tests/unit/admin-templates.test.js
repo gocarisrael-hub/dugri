@@ -739,6 +739,59 @@ describe('templates.js full editing (status / rename / replace)', () => {
     expect(after.dir).toBe(before.dir);
   });
 
+  it("updateTemplateSettings keeps a per-design ceiling for a buyer's own title", () => {
+    // A title the buyer wrote is fitted into the free paper around the design's
+    // own title box, and left alone it takes all of it. `growth` is the ceiling
+    // on that, as a multiple of the design's own title size, and it is TASTE:
+    // shown all ten designs at the 1.3 default the owner asked four of them down
+    // while keeping two that sit either side of the size she rejected on a third.
+    // So it rides with the design, like its align and its offset.
+    const root = makeScaffold();
+    onboard(root, 'cal-growth');
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'cal-growth',
+      patch: { ...CAL, title_style: { ...CAL.title_style, growth: 0.78 }, calibrated: true },
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.settings.title_style.growth).toBe(0.78);
+    expect(
+      templates.loadThemes(templates.themesPathFor(root))['cal-growth'].title_style.growth
+    ).toBe(0.78);
+  });
+
+  it('updateTemplateSettings omits the ceiling entirely when it is not set', () => {
+    // Absent means "nobody has tuned this design", which the renderer answers
+    // with its own default. A 0 written in its place would read as "a buyer's
+    // title may not print at all", so it must not be stored for a blank field.
+    const root = makeScaffold();
+    onboard(root, 'cal-nogrowth');
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'cal-nogrowth',
+      patch: { ...CAL, calibrated: true },
+    });
+    expect(r.error).toBeUndefined();
+    expect('growth' in r.settings.title_style).toBe(false);
+  });
+
+  it('updateTemplateSettings refuses a ceiling that would erase or balloon a title', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-growth-bad');
+    for (const bad of [0, -1, 9, 'big']) {
+      const r = templates.updateTemplateSettings({
+        root,
+        key: 'cal-growth-bad',
+        patch: { title_style: { ...CAL.title_style, growth: bad } },
+      });
+      expect(r.error, String(bad)).toMatch(/growth must be a multiple/);
+    }
+    // ...and nothing was written on the way past.
+    expect(templates.loadThemes(templates.themesPathFor(root))['cal-growth-bad'].title_style).toBe(
+      null
+    );
+  });
+
   it('updateTemplateSettings REFUSES calibrated:true without a title_style (guards the renderer)', () => {
     const root = makeScaffold();
     onboard(root, 'cal-guard');

@@ -1230,6 +1230,37 @@ def resolve_gender_markers(text, gender):
     return _GENDER_MARKER_OPEN_RE.sub(pick, _GENDER_MARKER_RE.sub(pick, str(text)))
 
 
+class CustomTitle(list):
+    """Title lines the BUYER wrote, as opposed to the ones the design ships.
+
+    A list, so every one of the dozen functions that carries a title from an
+    order down to ``render_page.title_block`` goes on carrying it unchanged and
+    unaware. What they carry is the one fact none of them can recover on their
+    own: the SAME Hebrew line means different things depending on where it came
+    from. Written by the buyer into a Latin-faced design it is the product
+    working as sold ("כל עיצוב מתאים לכל חגיגה — את הכותרת אתם כותבים") and it is
+    set in the design's second title font (``render_page.title_face``); arriving as
+    the design's OWN title it is a template whose font is wrong, and the order is
+    refused so the owner fixes it once instead of printing it a hundred times.
+
+    Provenance is carried BY the text because a boolean beside it would have to
+    be threaded through render_single_card, render_fronts_strip, build_page,
+    card_overlay, back_overlay, render_board, render_backs, deck_document,
+    build_board_pdf and their tests — ten signatures gaining an argument that
+    only two of them read, and any one of them forgetting to pass it on fails
+    the same silent way. Losing the type (someone rebuilding the list) fails the
+    SAFE way: the title is treated as the design's own, which refuses an order
+    rather than printing one.
+    """
+
+    __slots__ = ()
+
+
+def is_custom_title(lines):
+    """Whether ``lines`` came from the buyer rather than from the design."""
+    return isinstance(lines, CustomTitle)
+
+
 def title_lines(cfg, name, extra_fields_dict=None, custom_title=None, gender=None):
     """Substitute the theme's title_lines template.
 
@@ -1257,7 +1288,7 @@ def title_lines(cfg, name, extra_fields_dict=None, custom_title=None, gender=Non
         # NOTHING ELSE about a custom title changes — it stays literal, so
         # {NAME}/{AGE} are still not substituted there and its other braces are
         # left exactly as typed.
-        return [resolve_gender_markers(ln, gender) for ln in custom]
+        return CustomTitle(resolve_gender_markers(ln, gender) for ln in custom)
     extra = dict(extra_fields_dict or {})
     name_form = cfg.get("name_form")
     values = {"NAME": _form_name(name, name_form) if name is not None else ""}
