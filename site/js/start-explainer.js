@@ -10,6 +10,9 @@
    IT NEVER BLOCKS THE PURCHASE. It intercepts the click, shows the explainer, and
    the continue button carries the trigger's OWN href forward — including
    product.js's `options.html?design=<id>&step=2`, so design preselection survives.
+   The continue button sits ABOVE the four steps (title → sub → CTA → steps) so a
+   buyer who is already sold can act without scrolling through the briefing; reading
+   it is optional, which is the whole point of not blocking the purchase.
    Escape / the X / an overlay-backdrop click all close it and hand focus back to
    the trigger, and a modified click (⌘/ctrl/shift/middle) is left alone so
    "open in new tab" still works.
@@ -168,6 +171,22 @@
     head.appendChild(sub);
     inner.appendChild(head);
 
+    // The continue CTA sits ABOVE the four steps, not after them: the buyer can act
+    // the instant the sheet opens, without scrolling past the explanation.
+    // Placement note — it is a full-width block BELOW the title/sub, NOT beside the
+    // X. The X keeps its own absolute top corner and the head separates the two, so
+    // on a 390px phone they are far apart, unmistakably different targets, and
+    // neither overlaps the title.
+    var cta = el('div', 'sx-cta');
+    var go = el('a', 'sx-go', {
+      href: 'options.html',
+      'data-edit': 'start-explainer-continue',
+      'data-testid': 'start-explainer-continue',
+    });
+    go.textContent = CONTINUE;
+    cta.appendChild(go);
+    inner.appendChild(cta);
+
     var list = el('ol', 'sx-steps');
     STEPS.forEach(function (step, i) {
       var li = el('li', 'sx-step', { 'data-testid': 'start-explainer-step' });
@@ -205,16 +224,6 @@
       list.appendChild(li);
     });
     inner.appendChild(list);
-
-    var foot = el('div', 'sx-foot');
-    var go = el('a', 'sx-go', {
-      href: 'options.html',
-      'data-edit': 'start-explainer-continue',
-      'data-testid': 'start-explainer-continue',
-    });
-    go.textContent = CONTINUE;
-    foot.appendChild(go);
-    inner.appendChild(foot);
 
     overlay.appendChild(inner);
     return overlay;
@@ -260,16 +269,20 @@
       '.sx-note{margin-top:9px;font-size:13.5px;line-height:1.6;color:var(--muted,#6b6b6b);}',
       '.sx-wa{display:inline-block;margin-top:9px;font-size:14.5px;color:var(--ink,#141414);',
       'border-bottom:1px solid var(--accent,#b7a389);text-decoration:none;padding-bottom:2px;}',
-      /* Footer sticks to the bottom of the sheet; the CTA is always reachable
-         because the sheet itself scrolls. */
-      '.sx-foot{margin-top:auto;padding-top:8px;}',
+      /* The CTA sits between the head and the steps, so it is on screen the moment
+         the sheet opens — no scrolling past the explanation to reach it. It is NOT
+         pinned to the bottom any more (no margin-top:auto), and the steps below it
+         simply scroll inside the sheet. */
+      '.sx-cta{padding-bottom:4px;}',
       '.sx-go{display:block;width:100%;box-sizing:border-box;text-align:center;',
       'background:var(--sage,#141414);color:#fff;text-decoration:none;padding:17px 26px;',
       'border-radius:var(--radius,0);font-size:18px;letter-spacing:0.03em;}',
       '.sx-go:hover{background:var(--sage-deep,#000);}',
+      /* Desktop: the CTA shrinks to its own width and aligns with the text it now
+         follows (start edge — right in RTL), rather than being centred like the
+         footer button it used to be. */
       '@media (min-width:700px){.sx-inner{padding-top:78px;gap:30px;}',
-      '.sx-head h2{font-size:31px;}.sx-go{width:auto;display:inline-block;min-width:290px;}',
-      '.sx-foot{text-align:center;}}',
+      '.sx-head h2{font-size:31px;}.sx-go{width:auto;display:inline-block;min-width:290px;}}',
       /* Motion is opt-in. The slide-up runs on .sx-inner, never on the fixed
          .sx-overlay: an animated transform on the overlay would move the sheet's own
          box for the first ~200ms (and make it a containing block for its

@@ -96,6 +96,57 @@ test.describe('the 4-step explainer on the product page', () => {
     await continueTo(page, '?design=bachelorette&step=2');
   });
 
+  // The owner asked for the CTA at the TOP: a buyer who is already sold must be able
+  // to act the moment the sheet opens. Pinned in DOM order AND in geometry so a later
+  // refactor cannot quietly push it back under the steps.
+  test('the continue CTA comes BEFORE the four steps, in the DOM and on screen', async ({
+    page,
+  }) => {
+    await page.getByTestId('pdp-buy').click();
+    const overlay = page.getByTestId(OVERLAY);
+    await expect(overlay).toBeVisible();
+
+    // DOM order: title → CTA → first step.
+    const order = await page.evaluate(() => {
+      const root = document.querySelector('[data-testid="start-explainer"]');
+      const nodes = [...root.querySelectorAll('*')];
+      return {
+        title: nodes.indexOf(root.querySelector('#sxTitle')),
+        cta: nodes.indexOf(root.querySelector('[data-testid="start-explainer-continue"]')),
+        firstStep: nodes.indexOf(root.querySelector('[data-testid="start-explainer-step"]')),
+      };
+    });
+    expect(order.title).toBeGreaterThan(-1);
+    expect(order.cta).toBeGreaterThan(order.title);
+    expect(order.cta).toBeLessThan(order.firstStep);
+
+    // Geometry: it sits above every step and below the title, and is on the first
+    // screen without any scrolling.
+    const ctaBox = await page.getByTestId(CONTINUE).boundingBox();
+    const titleBox = await page.locator('#sxTitle').boundingBox();
+    const stepBox = await page.getByTestId('start-explainer-step').first().boundingBox();
+    expect(ctaBox.y).toBeGreaterThan(titleBox.y);
+    expect(ctaBox.y).toBeLessThan(stepBox.y);
+    expect(ctaBox.y + ctaBox.height).toBeLessThanOrEqual(page.viewportSize().height);
+    expect(await page.evaluate(() => document.getElementById('startExplainer').scrollTop)).toBe(0);
+  });
+
+  test('the CTA and the X are separate, non-overlapping targets', async ({ page }) => {
+    await page.getByTestId('pdp-buy').click();
+    const x = await page.getByTestId(CLOSE).boundingBox();
+    const cta = await page.getByTestId(CONTINUE).boundingBox();
+    const title = await page.locator('#sxTitle').boundingBox();
+
+    const overlaps = (a, b) =>
+      a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    expect(overlaps(x, cta), 'the X overlaps the continue CTA').toBe(false);
+    expect(overlaps(x, title), 'the X overlaps the title').toBe(false);
+    expect(overlaps(cta, title), 'the CTA overlaps the title').toBe(false);
+    // The X is up in its own corner, well clear of the CTA (the whole head sits
+    // between them) — not a crowded two-button row on a phone.
+    expect(cta.y).toBeGreaterThan(x.y + x.height);
+  });
+
   test('the X closes it and returns focus to the trigger', async ({ page }) => {
     await page.getByTestId('pdp-buy').click();
     await expect(page.getByTestId(OVERLAY)).toBeVisible();
@@ -214,13 +265,30 @@ test.describe('the explainer on a phone', () => {
     );
     expect(overflowsX).toBe(false);
 
-    // The CTA is reachable: scrolling the sheet brings it fully into view and it
-    // is the element that actually receives the tap.
+    // The CTA is on the first screen with NO scrolling at all — that is the point
+    // of moving it above the steps. Assert it before touching the scroll position.
     const go = page.getByTestId(CONTINUE);
-    await go.scrollIntoViewIfNeeded();
     const goBox = await go.boundingBox();
     expect(goBox.y).toBeGreaterThanOrEqual(0);
     expect(goBox.y + goBox.height).toBeLessThanOrEqual(vp.height + 1);
+    // It is also the element that actually receives the tap at that point (nothing
+    // is layered over it) …
+    const hit = await page.evaluate(
+      ([x, y]) => {
+        const el = document.elementFromPoint(x, y);
+        return !!(el && el.closest('[data-testid="start-explainer-continue"]'));
+      },
+      [goBox.x + goBox.width / 2, goBox.y + goBox.height / 2]
+    );
+    expect(hit, 'something is layered over the continue CTA').toBe(true);
+
+    // …and the sheet still scrolls internally for the steps below it.
+    const scrollable = await page.evaluate(() => {
+      const o = document.getElementById('startExplainer');
+      return o.scrollHeight > o.clientHeight;
+    });
+    expect(scrollable, 'the sheet should scroll internally on a phone').toBe(true);
+
     await continueTo(page, '?design=bachelorette&step=2');
   });
 });
