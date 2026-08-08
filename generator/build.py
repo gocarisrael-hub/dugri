@@ -82,7 +82,7 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
     if not bd:  # theme has no personalized board title -> use the clean board as-is
         return render_svg(board_svg, w, h, out_png)
     frac = bd["frac"]
-    title_font = config.resolve_title_font(theme)
+    title_font = rp.title_font_for(theme, title_lines, cfg)
     box = {k: (frac[k] * vb[2] if "x" in k else frac[k] * vb[3]) for k in frac}
     svg = board_svg
     style = ("<style>" + rp.GEOMETRIC_TEXT_STYLE
@@ -91,7 +91,6 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
                                   title_font, ts["outline_w"], ts["arch"], ts["shadow"],
                                   rtl=rp.title_is_rtl(cfg),
                                   fixed_size=ts.get("board_size"),
-                                  alt_font_path=config.resolve_title_font_alt(theme),
                                   align=ts.get("align", "center"),
                                   italic=ts.get("italic", False),
                                   bold=ts.get("bold", False),
@@ -110,8 +109,7 @@ def render_backs(theme, backs_clean, title_lines, out_png):
     if not bk:  # theme has no personalized back title -> use the clean backs as-is
         return render_svg(open(backs_clean, encoding="utf-8").read(), w, h, out_png)
     frac = bk["frac"]
-    title_font = config.resolve_title_font(theme)
-    title_alt = config.resolve_title_font_alt(theme)
+    title_font = rp.title_font_for(theme, title_lines, cfg)
     recipe = config.load_recipe(cfg["recipe"])
     svg = open(backs_clean, encoding="utf-8").read()
     body = ["<style>" + rp.GEOMETRIC_TEXT_STYLE
@@ -127,7 +125,6 @@ def render_backs(theme, backs_clean, title_lines, out_png):
                                    title_font, ts["outline_w"], ts["arch"], ts["shadow"],
                                    rtl=rp.title_is_rtl(cfg),
                                    fixed_size=ts.get("back_size") or ts.get("size"),
-                                   alt_font_path=title_alt,
                                    align=ts.get("align", "center"),
                                    italic=ts.get("italic", False),
                                    bold=ts.get("bold", False),
@@ -162,9 +159,8 @@ def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
     # an order must never ship, so it is checked here, up front, for the same
     # reason build_deck checks its board artwork up front: a failed order costs
     # a re-upload, a plausible-looking one with the wrong name costs the print.
-    rp.assert_title_drawable(config.font_path(theme, cfg["title_font"]),
-                             title_lines, theme=theme,
-                             alt_font_path=config.resolve_title_font_alt(theme))
+    rp.assert_title_drawable(rp.title_font_for(theme, title_lines, cfg),
+                             title_lines, theme=theme)
     os.makedirs(workdir, exist_ok=True)
     import csv as csvmod
     data = list(csvmod.DictReader(open(csvp, encoding="utf-8-sig")))
@@ -249,7 +245,7 @@ def build_board_pdf(theme, out_pdf, title_lines, workdir, chasers=False):
         raw = svg_rings.align_ring_discs(raw)
     vb = deck_html.view_box(raw)
     doc = deck_html.DeckDocument(vb[2], vb[3])
-    title_font = config.resolve_title_font(theme)
+    title_font = rp.title_font_for(theme, title_lines, cfg)
     doc.add_style(rp.GEOMETRIC_TEXT_STYLE
                   + rp.title_faces(theme, cfg, emit=deck_html.font_face))
     doc.add_design("board", raw)
@@ -263,7 +259,6 @@ def build_board_pdf(theme, out_pdf, title_lines, workdir, chasers=False):
                                  title_font, ts["outline_w"], ts["arch"], ts["shadow"],
                                  rtl=rp.title_is_rtl(cfg),
                                  fixed_size=ts.get("board_size"),
-                                 alt_font_path=config.resolve_title_font_alt(theme),
                                  align=ts.get("align", "center"),
                                  italic=ts.get("italic", False),
                                  bold=ts.get("bold", False),
@@ -414,9 +409,8 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
     # rendered. Same reasoning as the board check just below: find out up front,
     # and never hand over an order whose cards carry a name the buyer did not
     # ask for (render_page.assert_title_drawable).
-    rp.assert_title_drawable(config.font_path(theme, cfg["title_font"]),
-                             title_lines, theme=theme,
-                             alt_font_path=config.resolve_title_font_alt(theme))
+    rp.assert_title_drawable(rp.title_font_for(theme, title_lines, cfg),
+                             title_lines, theme=theme)
     os.makedirs(workdir, exist_ok=True)
     # Check the board artwork BEFORE rendering the deck. An order owes the
     # customer BOTH artifacts, so a missing board is a failed order, not a deck
