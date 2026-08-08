@@ -65,17 +65,35 @@ try {
 // empty and setOrder fails closed (rejects every version) rather than mischarge.
 // pdf = digital PDF; pickup = printed + pickup at גלאור; delivery = door-to-door;
 // custom = a "hand-designed just for you" bespoke game we design by hand.
+// Every orderable version, and WHICH settings key carries its per-copy price.
+//
+// pickup and delivery deliberately share `pickup_price`: they are the same
+// printed deck, and delivery is that deck PLUS shipping (delivery_fee, added once
+// per order) — not a second product. Giving delivery its own price key let the
+// two drift apart, and made "the delivery price" ambiguous about whether it
+// already contained postage. One product price, one shipping price, and the
+// delivered price is their sum.
+const VERSION_PRICE_KEY = {
+  pdf: 'pdf_price',
+  pickup: 'pickup_price',
+  delivery: 'pickup_price',
+  custom: 'custom_price',
+};
+
 function pricingDefaults() {
   const reg = (settings && settings.REGISTRY && settings.REGISTRY.pricing) || {};
   const prices = {};
   const enabled = {};
   const store = {};
+  // The canonical version list comes from VERSION_PRICE_KEY, not from scanning
+  // for `*_price` keys — delivery no longer has one of its own.
+  for (const [version, key] of Object.entries(VERSION_PRICE_KEY)) {
+    if (reg[key]) prices[version] = reg[key].default;
+  }
   for (const key of Object.keys(reg)) {
-    const d = reg[key].default;
-    let m;
-    if ((m = /^(.+)_price$/.exec(key))) prices[m[1]] = d;
-    else if ((m = /^(.+)_enabled$/.exec(key))) enabled[m[1]] = d === true;
-    else if (key === 'store_now' || key === 'store_was') store[key] = d;
+    const m = /^(.+)_enabled$/.exec(key);
+    if (m) enabled[m[1]] = reg[key].default === true;
+    else if (key === 'store_now' || key === 'store_was') store[key] = reg[key].default;
   }
   return { prices, enabled, store };
 }
@@ -97,8 +115,10 @@ function versionEnabled(version) {
 // the built-in default (which is itself >= 1). This guarantees a base version
 // total is never 0/negative even if a corrupt override slipped past validation.
 function versionPrice(version) {
+  const key = VERSION_PRICE_KEY[version];
+  if (!key) return undefined;
   try {
-    const p = settings.get('pricing', version + '_price');
+    const p = settings.get('pricing', key);
     if (Number.isInteger(p) && p >= 1) return p;
   } catch {
     /* settings unavailable — use the built-in default below */

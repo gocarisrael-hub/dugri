@@ -35,8 +35,8 @@ beforeAll(async () => {
   settings = require(path.join(serverDir, 'settings.js'));
   for (const v of ['pdf', 'pickup', 'delivery', 'custom'])
     settings.set('pricing', v + '_enabled', true);
+  // ONE product price; delivery adds the shipping fee on top.
   settings.set('pricing', 'pickup_price', 199);
-  settings.set('pricing', 'delivery_price', 199);
   db = require(path.join(serverDir, 'db.js'));
   app = require(path.join(serverDir, 'index.js'));
   await new Promise((resolve) => {
@@ -75,11 +75,9 @@ describe('the shipping fee defaults to 0 — deploying must change no price', ()
   it('is 0 out of the registry, so an existing delivery price stands alone', () => {
     settings.reset('pricing', 'delivery_fee');
     expect(settings.get('pricing', 'delivery_fee')).toBe(0);
-    // Production stores delivery_price as an all-in 239 from before copies
-    // existed. With a 0 fee that order is unchanged the moment this ships.
-    settings.set('pricing', 'delivery_price', 239);
-    expect(db.orderTotal('delivery', 1)).toBe(239);
-    settings.set('pricing', 'delivery_price', 199);
+    // With a 0 fee, a delivered order costs exactly the product price — enabling
+    // the feature charges nobody anything until a fee is set.
+    expect(db.orderTotal('delivery', 1)).toBe(db.orderTotal('pickup', 1));
     settings.set('pricing', 'delivery_fee', 39);
   });
 });
@@ -408,5 +406,45 @@ describe('a coupon discounts the ORDER once, not each copy', () => {
     // NOT the discount applied per copy and then multiplied (199*0.9*3 + 39 = 576),
     // and not the fee discounted away separately.
     expect(charged).not.toBe(576);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ONE product price. Delivery is that product plus shipping — never a second,
+// independently-typed price that could disagree with the deck it delivers.
+// ---------------------------------------------------------------------------
+describe('pickup and delivery are the same deck', () => {
+  it('share one product price, so raising it moves both', () => {
+    settings.set('pricing', 'pickup_price', 250);
+    try {
+      expect(db.orderTotal('pickup', 1)).toBe(250);
+      expect(db.orderTotal('delivery', 1)).toBe(250 + 39);
+    } finally {
+      settings.set('pricing', 'pickup_price', 199);
+    }
+  });
+
+  it('delivery = product + shipping, exactly', () => {
+    const product = db.orderTotal('pickup', 1);
+    const fee = settings.get('pricing', 'delivery_fee');
+    expect(db.orderTotal('delivery', 1)).toBe(product + fee);
+  });
+
+  it('the shipping fee is added once however many copies', () => {
+    const fee = settings.get('pricing', 'delivery_fee');
+    for (const n of [1, 2, 7]) {
+      expect(db.orderTotal('delivery', n)).toBe(db.orderTotal('pickup', n) + fee);
+    }
+  });
+
+  it('there is no separate delivery price to get wrong', () => {
+    expect(settings.hasKey('pricing', 'delivery_price')).toBe(false);
+    expect(() => settings.set('pricing', 'delivery_price', 999)).toThrow();
+  });
+
+  it('/api/pricing publishes the product price for delivery + the fee beside it', async () => {
+    const p = (await get('/api/pricing')).body;
+    expect(p.versions.delivery.price).toBe(p.versions.pickup.price);
+    expect(p.delivery_fee).toBe(39);
   });
 });

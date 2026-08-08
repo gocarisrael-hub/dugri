@@ -54,12 +54,22 @@ test.describe('admin pricing editor', () => {
     await expect(store.locator('[data-price="store_now"]')).toBeVisible();
     await expect(store.locator('[data-price="store_was"]')).toBeVisible();
 
-    // Each version card: an enable checkbox + a price input.
+    // Each version card has an enable checkbox...
     for (const v of ['pdf', 'pickup', 'delivery', 'custom']) {
       const card = page.locator(`[data-card="${v}"]`);
       await expect(card.locator(`[data-flag="${v}_enabled"]`)).toBeVisible();
-      await expect(card.locator(`[data-price="${v}_price"]`)).toBeVisible();
     }
+    // ...and a price input only where the version IS its own product. Delivery is
+    // the pickup deck plus shipping, so it has nothing to type: a second product
+    // price could drift from the deck it delivers. Its card explains the sum, and
+    // the fee lives on its own card.
+    for (const v of ['pdf', 'pickup', 'custom']) {
+      await expect(page.locator(`[data-card="${v}"] [data-price="${v}_price"]`)).toBeVisible();
+    }
+    await expect(page.locator('[data-card="delivery"] [data-price="delivery_price"]')).toHaveCount(
+      0
+    );
+    await expect(page.locator('[data-card="shipping"] [data-price="delivery_fee"]')).toBeVisible();
 
     // Launch defaults reflected: store 199/239; only pickup checked.
     await expect(store.locator('[data-price="store_now"]')).toHaveValue('199');

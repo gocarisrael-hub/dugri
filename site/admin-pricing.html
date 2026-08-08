@@ -324,10 +324,13 @@
       }
 
       // The four checkout versions, in display order, with their Hebrew labels.
+      // `priced: false` marks a version with NO price of its own. Delivery is the
+      // pickup deck plus shipping, so it has an on/off switch and nothing to type —
+      // its price is computed, and shown read-only so the owner can see the sum.
       const VERSIONS = [
         { id: 'pdf', label: 'דיגיטלי (PDF)' },
-        { id: 'pickup', label: 'איסוף עצמי (מחיר לעותק)' },
-        { id: 'delivery', label: 'משלוח עד הבית (מחיר לעותק)' },
+        { id: 'pickup', label: 'המשחק — מחיר לעותק' },
+        { id: 'delivery', label: 'משלוח עד הבית', priced: false },
         { id: 'custom', label: 'עיצוב אישי בהתאמה מלאה' },
       ];
 
@@ -383,8 +386,7 @@
           esc(v.id) +
           '" data-keys="' +
           esc(enabledKey) +
-          ',' +
-          esc(priceKey) +
+          (v.priced === false ? '' : ',' + esc(priceKey)) +
           '">' +
           '<div class="card-head"><h3 class="card-title">' +
           esc(v.label) +
@@ -396,7 +398,16 @@
           '"' +
           (enabled ? ' checked' : '') +
           ' /> מוצג בקופה</label>' +
-          priceFieldHtml(priceKey, 'מחיר', eff[priceKey]) +
+          (v.priced === false
+            ? '<p class="hint">אין כאן מחיר לקבוע: משלוח הוא <b>אותו משחק</b> של האיסוף, ' +
+              'בתוספת דמי משלוח. המחיר מחושב — ' +
+              esc(eff.pickup_price) +
+              ' ₪ לעותק + ' +
+              esc(eff.delivery_fee) +
+              ' ₪ משלוח = <b>' +
+              esc(eff.pickup_price + eff.delivery_fee) +
+              ' ₪</b> לעותק אחד. לשינוי: “המשחק — מחיר לעותק” או “דמי משלוח”.</p>'
+            : priceFieldHtml(priceKey, 'מחיר', eff[priceKey])) +
           '<div class="actions">' +
           '<button class="primary" data-save type="button">שמירה</button>' +
           '<button class="danger" data-reset type="button">אפס לברירת מחדל</button>' +
@@ -442,9 +453,8 @@
           '<div class="card-head"><h3 class="card-title">דמי משלוח</h3>' +
           '<span class="card-id">pricing.delivery_fee</span></div>' +
           priceFieldHtml('delivery_fee', 'דמי משלוח (חד-פעמי)', eff.delivery_fee) +
-          '<p class="hint">נגבה <b>פעם אחת</b> לכל הזמנה, לא לכל עותק — כל העותקים נשלחים יחד. ' +
-          'שימו לב לסדר: קודם משנים את “משלוח עד הבית” למחיר <b>לעותק אחד</b>, ורק אז קובעים כאן ' +
-          'את דמי המשלוח. בסדר ההפוך משלוח של עותק אחד יקפוץ למחיר המלא + דמי המשלוח.</p>' +
+          '<p class="hint">נגבה <b>פעם אחת</b> לכל הזמנה, לא לכל עותק — כל העותקים נשלחים יחד ' +
+          'לאותה כתובת. מתווסף למחיר המשחק: הזמנה במשלוח עולה “מחיר לעותק × עותקים + דמי משלוח”.</p>' +
           '<div class="actions">' +
           '<button class="primary" data-save type="button">שמירה</button>' +
           '<button class="danger" data-reset type="button">אפס לברירת מחדל</button>' +
