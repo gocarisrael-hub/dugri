@@ -307,6 +307,8 @@ const REGISTRY = {
         buyerCopies: '· מספר עותקים', // buyer confirmation/receipt line
         orderId: 'מספר הזמנה', // owner order-detail: "מספר הזמנה: <id>"
         adminOrder: 'ניהול ההזמנה', // owner order-detail: link to the admin orders panel
+        buyerName: 'שם המזמין/ה', // owner order-detail: WHO ordered — never the honoree's name
+        eventType: 'סוג האירוע', // owner order-detail: the event in the buyer's own words
         comment: 'הערה מהלקוח/ה', // owner order-detail: the buyer's own note, when she left one
       },
     },

@@ -22,6 +22,12 @@ test.beforeEach(async ({ page }) => {
 // on a phone every step's controls must sit fully ABOVE the fixed Back/Next
 // bar (never hidden behind it) and the page must not overflow the viewport.
 //
+// That is still the rule on the steps that can keep it — 1, 2, 3 and 5. Steps 3
+// (with the deck pictures) and 4 have been released to scrolling by the owner,
+// twice, in the same words: keep the pictures, keep the note, "fits a phone with
+// no scrolling - forget about this". Everywhere the strict rule was traded away,
+// what replaces it is reachability — never nothing.
+//
 // This is a pure layout check at one phone size, so it runs ONCE (on a single
 // project) rather than across all three desktop+mobile profiles.
 
@@ -60,6 +66,57 @@ async function assertStepFits(page, lastControlSelector) {
       page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
     )
     .toBeLessThanOrEqual(4);
+}
+
+// `toBeVisible()` passes on a control the sticky bar sits on top of, and a
+// scrollHeight check says nothing about whether a finger lands. Ask the page the
+// question the buyer asks: at the middle of this control, what would I hit?
+//
+// Module scope rather than inside a describe: it is the floor under BOTH halves
+// of this file now — the strict steps use assertStepFits, and every step the
+// owner has released to scrolling (3, and now 4) is held to reachability alone.
+async function assertTappable(page, selector) {
+  const hit = await page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return 'missing';
+    const r = el.getBoundingClientRect();
+    if (r.bottom > window.innerHeight || r.top < 0) return 'outside the viewport';
+    const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!at) return 'nothing (off-screen)';
+    if (el.contains(at) || at === el) return 'ok';
+    const bar = at.closest('.wiz-bar');
+    return bar ? 'the sticky bar' : `${at.tagName.toLowerCase()}.${at.className}`;
+  }, selector);
+  expect(hit, `tapping ${selector} must land on it`).toBe('ok');
+  // …and the tap itself must go through, with no scrolling to rescue it.
+  await page.locator(selector).first().click({ timeout: 5000 });
+}
+
+// SHORT SCREENS / SCROLLING STEPS. Scrolling is allowed, so the question is no
+// longer "did the step stay put" but "can the buyer GET to the control and tap it
+// there".
+//
+// Scrolls to the very END of the document rather than using scrollIntoView,
+// because for the LAST control those are the same position and the end is the
+// honest worst case: it is where a flick lands, and it is the only place that
+// proves the document carries a tail taller than the fixed bar. A page with too
+// little bottom padding still scrolls — it simply cannot scroll far enough, and
+// scrollIntoView would quietly report success at the same blocked position.
+async function assertControlReachableByScrolling(page, selector) {
+  await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+
+  // Nothing of the bar over any part of it, at the end of the scroll.
+  await expect
+    .poll(async () =>
+      page.evaluate((sel) => {
+        const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
+        return Math.round(document.querySelector(sel).getBoundingClientRect().bottom - bar.top);
+      }, selector)
+    )
+    .toBeLessThanOrEqual(0);
+  // …and a finger put on its middle lands on the control, not the bar.
+  await assertTappable(page, selector);
 }
 
 test.describe('order wizard fits a phone screen without scrolling', () => {
@@ -216,11 +273,38 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
     await gender.locator('button, label').first().click({ timeout: 5000 });
   });
 
-  test('step 4 (email + phone): the phone field clears the sticky bar', async ({ page }) => {
+  // STEP 4 IS A SCROLLING STEP — and this is not a new trade, it is the one the
+  // owner already made.
+  //
+  // Asked whether the optional note should keep being contorted to fit a step
+  // with 2px of slack, she answered: "fits a phone with no scrolling - forget
+  // about this." Three of this step's four assertions were rewritten to
+  // reachability there and then; this one was left on assertStepFits only because
+  // it happened to still pass — with no deck pictures the note fitted the 38px
+  // that were left. It stops passing the moment the step carries anything else,
+  // which it now does: she asked for her own name and the event type beside the
+  // email and the phone ("add for the mail+phone stage also"), and two more
+  // fields — even paired onto ONE row, which is why they are paired — cost 102px
+  // on a 390x844 phone against those 38.
+  //
+  // So the last strict assertion on this step follows the other three, and what
+  // it demands instead is the half of the rule that was ever load-bearing and the
+  // half she kept: EVERY CONTROL REACHABLE. It is measured on the LAST control
+  // (the note box) rather than the phone field, which stopped being last two
+  // fields ago — the phone is checked too, because it is what this test has
+  // always been named for and it must not slide out of the viewport as the step
+  // grows. Steps 1, 2, 3 and 5 keep assertStepFits untouched.
+  test('step 4 (details): the step scrolls, and every control can be reached', async ({ page }) => {
     await page.goto('/options.html?step=4');
     await expect(page.getByTestId('step-4')).toBeVisible();
-    // The phone field is the last input; it must not sit behind the create bar.
-    await assertStepFits(page, '[data-testid="owner-phone"]');
+    // The last control first: if the tail of the document is too short to bring
+    // it clear of the fixed bar, the funnel is blocked and nothing else matters.
+    await assertControlReachableByScrolling(page, '[data-testid="order-comment-input"]');
+    // …and the fields above it are still on screen at that same scroll position,
+    // not pushed off the top by everything that came after them.
+    await assertControlReachableByScrolling(page, '[data-testid="owner-phone"]');
+    await assertControlReachableByScrolling(page, '[data-testid="buyer-name-input"]');
+    await assertControlReachableByScrolling(page, '[data-testid="event-type-input"]');
   });
 
   // STEP 5 IS THE SECOND STEP THAT MAY SCROLL, for the same reason as step 3 with
@@ -319,26 +403,6 @@ test.describe('the deck pictures never bury a control', () => {
     );
   }
 
-  // `toBeVisible()` passes on a control the sticky bar sits on top of, and a
-  // scrollHeight check says nothing about whether a finger lands. Ask the page the
-  // question the buyer asks: at the middle of this control, what would I hit?
-  async function assertTappable(page, selector) {
-    const hit = await page.evaluate((sel) => {
-      const el = document.querySelector(sel);
-      if (!el) return 'missing';
-      const r = el.getBoundingClientRect();
-      if (r.bottom > window.innerHeight || r.top < 0) return 'outside the viewport';
-      const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      if (!at) return 'nothing (off-screen)';
-      if (el.contains(at) || at === el) return 'ok';
-      const bar = at.closest('.wiz-bar');
-      return bar ? 'the sticky bar' : `${at.tagName.toLowerCase()}.${at.className}`;
-    }, selector);
-    expect(hit, `tapping ${selector} must land on it`).toBe('ok');
-    // …and the tap itself must go through, with no scrolling to rescue it.
-    await page.locator(selector).first().click({ timeout: 5000 });
-  }
-
   // Guard against the row quietly not rendering, which would make every assertion
   // below vacuous — and against "fixing" the overflow by shrinking the pictures to
   // nothing, the outcome the owner already rejected.
@@ -363,6 +427,11 @@ test.describe('the deck pictures never bury a control', () => {
     // GET to the field and tap it there? (It was 105px under the sticky bar, and
     // no amount of scrolling helped, because the page could not scroll.)
     await assertControlReachableByScrolling(page, '[data-testid="owner-phone"]');
+    // The pictures push from ABOVE and the form grows from below, so the control
+    // most at risk is whichever is LAST — today the note box, under the buyer's
+    // name and the event type. Check it by position, not by which field happened
+    // to be last when this test was written.
+    await assertControlReachableByScrolling(page, '[data-testid="order-comment-input"]');
   });
 
   // Step 5 now carries BOTH tall things: the deck pictures and a photo grid whose
@@ -456,31 +525,10 @@ test.describe('the deck pictures never bury a control', () => {
   // The strict rule still holds on the steps that never carried a text box —
   // assertStepFits, above, is untouched, and steps 1, 2 and 3 still answer to it.
 
-  // SHORT SCREENS. Scrolling is allowed, so the question is no longer "did the
-  // step stay put" but "can the buyer GET to the control and tap it there".
-  //
-  // Scrolls to the very END of the document rather than using scrollIntoView,
-  // because for the LAST control those are the same position and the end is the
-  // honest worst case: it is where a flick lands, and it is the only place that
-  // proves the document carries a tail taller than the fixed bar. A page with too
-  // little bottom padding still scrolls — it simply cannot scroll far enough, and
-  // scrollIntoView would quietly report success at the same blocked position.
-  async function assertControlReachableByScrolling(page, selector) {
-    await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
-    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-
-    // Nothing of the bar over any part of it, at the end of the scroll.
-    await expect
-      .poll(async () =>
-        page.evaluate((sel) => {
-          const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
-          return Math.round(document.querySelector(sel).getBoundingClientRect().bottom - bar.top);
-        }, selector)
-      )
-      .toBeLessThanOrEqual(0);
-    // …and a finger put on its middle lands on the control, not the bar.
-    await assertTappable(page, selector);
-  }
+  // (assertControlReachableByScrolling and assertTappable now live at module
+  // scope, at the top of this file: the details step scrolls on EVERY phone since
+  // it gained the buyer's name + event type, so the plain no-pictures test above
+  // needs them too.)
 
   test('step 4 on a small phone: the pictures stay, and the phone field can be scrolled to', async ({
     page,
@@ -497,6 +545,10 @@ test.describe('the deck pictures never bury a control', () => {
       await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
     ).toBeGreaterThan(0);
     // The other half, which is not optional: the last control comes fully clear.
+    // "Last" is the note box now — the buyer's name and the event type sit
+    // between it and the phone field — so check the real end of the form, and the
+    // phone field too, since it is what this test is named for.
+    await assertControlReachableByScrolling(page, '[data-testid="order-comment-input"]');
     await assertControlReachableByScrolling(page, '[data-testid="owner-phone"]');
   });
 
@@ -562,14 +614,15 @@ test.describe('the deck pictures never bury a control', () => {
     });
   }
 
-  // THE BOUNDARY, which is where a height budget actually gets tested. This is the
-  // shortest screen on which these steps still fit without scrolling, so it has
-  // the least slack of any case that has to hold the whole row — dots included.
+  // THE BOUNDARY, which is where a height budget actually gets tested. 800px used
+  // to be the shortest screen on which this step fitted with no scrolling at all;
+  // the note box and then the buyer's name + event type have since spent that
+  // slack, and the owner spent the rule along with it. What the height still buys
+  // is the least SCROLL of any case that has to hold the whole row — so this is
+  // still where an overspend shows up first, and the row must fit with its dots.
   // An earlier fix capped the PICTURE at 112px and left the carousel's 44px dot
-  // strip uncounted; at this size that overspend alone puts the field under the
-  // bar. Below this height the step is allowed to scroll instead (owner) — above
-  // it, nothing may move.
-  test('the shortest phone that still fits without scrolling: the whole row fits, dots and all', async ({
+  // strip uncounted; at this size that overspend alone put the field under the bar.
+  test('the shortest phone that used to need no scrolling: the whole row fits, dots and all', async ({
     page,
   }) => {
     await page.setViewportSize(SHORTEST_WITHOUT_SCROLLING);
@@ -584,6 +637,7 @@ test.describe('the deck pictures never bury a control', () => {
     // picture" affordance is not the fix.
     await expect(page.locator('#deckDots .carousel-dot')).toHaveCount(3);
     await assertControlReachableByScrolling(page, '[data-testid="owner-phone"]');
+    await assertControlReachableByScrolling(page, '[data-testid="order-comment-input"]');
   });
 
   // Step 3 keeps the big picture AND its licence to scroll (owner, 2026-08-06), so

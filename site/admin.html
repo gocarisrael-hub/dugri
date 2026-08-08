@@ -552,6 +552,21 @@
             <label class="fld"
               ><span>טלפון</span><input type="tel" id="e-phone" maxlength="40"
             /></label>
+            <!-- WHO ORDERED, and WHAT the party is — both typed by the buyer on
+                 the wizard's details step, both optional there. The name is the
+                 buyer's own and is NOT the honoree name at the top of this
+                 dialog: she is buying the game for somebody else, so the label
+                 spells it out rather than trusting whoever reads it next. Both
+                 are editable because most orders finish on WhatsApp, and an
+                 answer given there should land in the same box as one typed. -->
+            <label class="fld"
+              ><span>שם המזמין/ה (לא בעל/ת השמחה)</span
+              ><input type="text" id="e-buyer-name" maxlength="80"
+            /></label>
+            <label class="fld"
+              ><span>סוג האירוע (לפי הלקוח/ה)</span
+              ><input type="text" id="e-event-type" maxlength="80"
+            /></label>
           </div>
         </fieldset>
 
@@ -1093,6 +1108,8 @@
         el('e-gender').value = c.gender || '';
         el('e-email').value = c.owner_email || '';
         el('e-phone').value = c.owner_phone || '';
+        el('e-buyer-name').value = c.buyer_name || '';
+        el('e-event-type').value = c.event_type || '';
         el('e-title').value = c.custom_title || '';
         el('e-comment').value = c.comment || '';
         el('e-chasers').checked = !!c.chasers;
@@ -1396,6 +1413,8 @@
           gender: el('e-gender').value || null,
           email: el('e-email').value.trim(),
           phone: el('e-phone').value.trim(),
+          buyer_name: el('e-buyer-name').value,
+          event_type: el('e-event-type').value,
           design: el('e-design').value,
           color: el('e-color').value,
           theme: el('e-theme').value,

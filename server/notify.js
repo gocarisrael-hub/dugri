@@ -454,6 +454,16 @@ function orderLines(collection, baseUrl, options) {
   const order = (collection && collection.order) || null;
   const ref = orderRef(collection);
   if (ref) lines.push(f.orderId + ': ' + ref);
+  // WHO ordered and WHAT the party is, in her own words. High up, right under the
+  // order number, because they are what the owner needs before she does anything
+  // else with this mail: the name to greet on WhatsApp (the honoree is a different
+  // person — she is buying this FOR someone) and the occasion, which decides the
+  // tone of everything that follows. Both are optional, so each line appears only
+  // when she filled it in; an empty label would be worse than a missing one.
+  const buyer = collection && collection.buyer_name ? String(collection.buyer_name).trim() : '';
+  if (buyer) lines.push(f.buyerName + ': ' + buyer);
+  const event = collection && collection.event_type ? String(collection.event_type).trim() : '';
+  if (event) lines.push(f.eventType + ': ' + event);
   if (order) {
     const label = versionLabelFor(order.version);
     lines.push(f.version + ': ' + label);

@@ -560,6 +560,12 @@ app.post('/api/collections', (req, res) => {
     // Optional free-form custom title (F7); db sanitizes/caps and treats
     // empty/whitespace as absent (the theme's own title is used).
     custom_title: b.custom_title,
+    // Who is ORDERING (not the honoree above — she is buying this for somebody
+    // else) and what the event actually is, both in her own words. Optional short
+    // free text; db.createCollection flattens each to one line, caps and treats
+    // empty/whitespace as absent.
+    buyer_name: b.buyer_name,
+    event_type: b.event_type,
     // Anything she wants to tell us about this order — a date, a surprise to keep,
     // a delivery note. Stored as typed (sanitized) and shown in admin; never
     // printed on the cards.
@@ -664,7 +670,8 @@ app.post('/api/admin/collections/:id/custom', (req, res) => {
 // here rather than asking the customer to re-run the wizard.
 //
 // Body: any subset of the collection fields (honoree_name, email, phone, design,
-// color, theme, extra_fields, word_font, gender, chasers, custom_title) plus an
+// color, theme, extra_fields, word_font, gender, chasers, custom_title,
+// buyer_name, event_type, comment) plus an
 // optional `order: { version, address }` for the fulfilment choice. Absent keys
 // are left untouched.
 //

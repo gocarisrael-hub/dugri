@@ -373,6 +373,22 @@ function sanitizeCustomTitle(input) {
   return Array.from(lines.join('\n')).slice(0, CUSTOM_TITLE_MAX).join('');
 }
 
+// The two SHORT free-text answers the buyer gives beside her email and phone:
+// who she is ("דנה כהן") and what she is throwing ("בת מצווה של אחותי"). Like
+// the note they are never printed on anything, so they need no fitting — but
+// unlike the note they are single-line answers, so every newline collapses to a
+// space: a paste out of a WhatsApp message must land in the admin table as one
+// readable line, not as a block that pushes the row apart.
+const SHORT_TEXT_MAX = 80;
+function sanitizeShortText(input) {
+  if (input == null) return null;
+  const text = String(input).replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  // Capped by code point (Array.from splits on astral chars) so the boundary can
+  // never bisect an emoji and leave a lone surrogate in the store.
+  return Array.from(text).slice(0, SHORT_TEXT_MAX).join('');
+}
+
 // The buyer's own note on the order. Unlike the custom title this is never
 // printed on anything — it is a message to the owner — so the only shaping it
 // needs is trimming, a cap, and empty-means-absent. Line breaks are KEPT (a note
@@ -489,6 +505,17 @@ const db = {
       // on the cards + board. Sanitized/capped; null when empty so the theme
       // default is used. The generator receives this via its --title CLI arg.
       custom_title: sanitizeCustomTitle(contact.custom_title),
+      // THE BUYER'S OWN NAME — the person ordering and paying, which is NOT the
+      // honoree_name above. She is buying this FOR somebody, so those two are
+      // different people in almost every order, and the owner opening a WhatsApp
+      // needs to know which one she is greeting. Optional (see the wizard): the
+      // order can be fulfilled without it, so it never blocks a checkout.
+      buyer_name: sanitizeShortText(contact.buyer_name),
+      // What the party actually is, in her words — "בת מצווה של אחותי", "פרישה",
+      // "יום נישואין 25". The chosen DESIGN hints at an occasion, but a design is
+      // a picture she liked and this is the event, and the two disagree often
+      // enough that the owner asked to be told rather than to infer.
+      event_type: sanitizeShortText(contact.event_type),
       // The buyer's own note to the owner, typed with the order. Never printed —
       // see sanitizeComment. null when she wrote nothing.
       comment: sanitizeComment(contact.comment),
@@ -851,6 +878,12 @@ const db = {
     // store only shapes and caps it, exactly like the other free-text fields.
     if (has('wordlist')) c.wordlist = text(p.wordlist, 120);
     if (has('custom_title')) c.custom_title = sanitizeCustomTitle(p.custom_title);
+    // The two short answers from the details step. Sanitized through the SAME
+    // function the wizard's own submission goes through rather than the generic
+    // `text()` above, so a value corrected here (typically after a phone call) is
+    // shaped exactly like one she typed herself — one line, same cap.
+    if (has('buyer_name')) c.buyer_name = sanitizeShortText(p.buyer_name);
+    if (has('event_type')) c.event_type = sanitizeShortText(p.event_type);
     if (has('comment')) c.comment = sanitizeComment(p.comment);
     // Lift (or re-apply) the free word quota for THIS collection only. Admin has
     // deliberately no "mark as paid" — an order becomes paid only through a real
