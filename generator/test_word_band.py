@@ -362,3 +362,24 @@ def test_the_title_is_a_keep_out_for_the_words():
                             safe=rp._CARD_SAFE, room_bottom=296.0)
     free_last = [l for l in free if l][-1]
     assert free_last.center > last.center - 1e-6
+
+
+def test_a_broken_english_word_keeps_its_hyphen_on_the_right():
+    """The owner, on an English deck: "the hyphen should be on the right".
+
+    A card's lines are set in a right-to-left base, and a hyphen is a NEUTRAL —
+    so at the end of "TELEV-" it took the line's base direction and jumped to the
+    left edge, printing "-TELEV" above "ISION". The base a line is set in is the
+    line's own now, and so is the way its runs are split.
+    """
+    latin, heb = "TELEV" + rp._BREAK_HYPHEN, "מסיבה"
+    assert rp._line_is_latin(latin) and not rp._line_is_latin(heb)
+    # 1. the markup states the LINE's own base, not the card's.
+    svg = rp.word_lines(200, 100, 12, "#000", 4, [latin], CAFE)
+    assert rp._LTR_EMBED in svg and rp._RTL_EMBED not in svg, svg
+    assert rp._RTL_EMBED in rp.word_lines(200, 100, 12, "#000", 4, [heb], CAFE)
+    # 2. ...and a two-face card splits the same way: the hyphen belongs to the
+    #    English word beside it, not to a right-to-left run of its own.
+    face = rp._word_face(CAFE, os.path.join(HERE, "word-fonts", "Fredoka-Medium.ttf"))
+    runs = face.runs(latin)
+    assert [t for _f, t in runs] == [latin], runs

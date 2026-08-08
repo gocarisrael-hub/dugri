@@ -3652,7 +3652,11 @@ def test_a_title_line_in_two_faces_is_one_text_with_a_tspan():
     box = {"x0": 0, "y0": 0, "x1": 400, "y1": 120}
     mixed = rp.title_block(box, ["PARTY לשירה"], "#000", "#000", CAFE, 0, 0,
                            False, rtl=True, alt_font_path=LATIN)
-    assert '<tspan font-family="TitleFontAlt">PARTY</tspan>' in mixed, mixed
+    # The space travels with the run whose side of the line it sits on: this line
+    # READS left to right (it opens with Latin), so its edge neutrals resolve to
+    # that base — the same rule that stopped a break hyphen jumping to the wrong
+    # end of an English word (see _line_is_latin).
+    assert '<tspan font-family="TitleFontAlt">PARTY </tspan>' in mixed, mixed
     # one <text> per line per paint layer, as before — the tspan adds no element
     assert mixed.count("<textPath") == mixed.count("</textPath")
 

@@ -227,11 +227,23 @@ class Face:
         return self.primary.getmetrics()
 
     def runs(self, text):
-        """``[(font, substring)]`` in logical order, covering ``text`` exactly."""
+        """``[(font, substring)]`` in logical order, covering ``text`` exactly.
+
+        Split against the LINE's own base direction, not the card's. A neutral at
+        the edge of a line takes the base direction (Unicode N1/N2), so under the
+        card's Hebrew base the break hyphen at the end of "TELEV-" became its own
+        right-to-left run and was placed at the LEFT of the English word it
+        belongs to. The line knows which way it reads; ask it.
+        """
         if self.alt is None:
             return [(self.primary, text)]
+        base = self.rtl
+        if _line_is_latin(text):
+            base = False
+        elif _line_is_rtl(text):
+            base = True
         return [(self.alt if lat else self.primary, t)
-                for lat, t in script_runs(text, base_rtl=self.rtl)]
+                for lat, t in script_runs(text, base_rtl=base)]
 
     def uses_alt(self, text):
         """True when any run of ``text`` would be set in the second face."""
@@ -445,6 +457,47 @@ def _marker_advance(font, count):
 # direction="ltr" and the period is a separate run precisely so bidi cannot
 # reorder them (see word_lines).
 _RTL_EMBED, _RTL_POP = "‫", "‬"
+# ...and its mirror, for a line that is LATIN. The embedding above states the
+# base direction of the characters, and stating RTL over an English line puts its
+# NEUTRALS on the wrong side: "TELEVISION" broken across two lines rendered as
+# "-TELEV" — the break hyphen, a neutral at the end of a Latin run, taking the
+# line's RTL base and jumping to the left edge. The owner: "in the english words
+# the hyphen should be on the right".
+#
+# Chosen per LINE rather than per card, because one card can hold both: a Hebrew
+# entry and an English one, each wanting its own base.
+_LTR_EMBED = "‪"
+
+
+def _line_is_rtl(text):
+    """Whether this line reads right to left, by its first strong character."""
+    import unicodedata
+
+    for ch in text:
+        if unicodedata.bidirectional(ch) in ("R", "AL"):
+            return True
+        if unicodedata.bidirectional(ch) == "L":
+            return False
+    return False
+
+
+def _line_is_latin(text):
+    """Whether this line reads left to right, by its first strong character."""
+    import unicodedata
+
+    for ch in text:
+        klass = unicodedata.bidirectional(ch)
+        if klass == "L":
+            return True
+        if klass in ("R", "AL"):
+            return False
+    return False
+
+
+def _embed(text):
+    """``text`` wrapped in the base direction its own letters call for."""
+    opener = _LTR_EMBED if _line_is_latin(text) else _RTL_EMBED
+    return f"{opener}{escape(text)}{_RTL_POP}"
 
 
 def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
@@ -519,7 +572,7 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
                 f'<text x="{word_x:.2f}" y="{y:.2f}" '
                 f'font-family="HebWord" font-size="{size:.2f}" fill="{color}" '
                 f'{fat}text-anchor="end" xml:space="preserve">'
-                f'{_RTL_EMBED}{escape(line)}{_RTL_POP}</text>'
+                f'{_embed(line)}</text>'
             )
             continue
         # A line in two faces cannot be one <text>: Chrome ignores
@@ -538,7 +591,7 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
         for (f, txt), w in reversed(list(zip(runs, widths))):
             pen += w
             latin = f is alt_font
-            body = escape(txt) if latin else f"{_RTL_EMBED}{escape(txt)}{_RTL_POP}"
+            body = escape(txt) if latin else _embed(txt)
             fam = "HebWordAlt" if latin else "HebWord"
             out.append(
                 f'<text x="{pen:.2f}" y="{y:.2f}" font-family="{fam}" '
