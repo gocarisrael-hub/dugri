@@ -516,12 +516,16 @@
         max-height: min(56vh, 460px);
         aspect-ratio: var(--page-ratio);
       }
-      /* Raster products (e.g. a rendered card/board image) must keep their TRUE
-         aspect ratio — never squished into the landscape page box. Size them by
-         their intrinsic ratio (auto/auto, capped by the same viewport share) and
-         add object-fit: contain so, even if a cap clamps them, the art letterboxes
-         inside the frame rather than stretching. The <img> default is object-fit:
-         fill, which is what squished portrait art into the 1.414 landscape box. */
+      /* The design's PICTURE — what the front/back tabs actually show now (see
+         previewPicture in js/design-images.js). It must keep its TRUE aspect ratio,
+         never be squished into the landscape page box: size it by its intrinsic
+         ratio (auto/auto, capped by the same viewport share as the svg above) so
+         the rendered box IS the art, and add object-fit: contain so that even where
+         a cap clamps it the art letterboxes inside the frame rather than
+         stretching. The <img> default is object-fit: fill, which is what squished
+         portrait art (an uploaded template is a single PORTRAIT card) into the
+         1.414 landscape box. A built-in design's sheet is a 2200px landscape
+         raster, so max-width:100% still makes it fill the panel edge to edge. */
       .preview-panel[data-panel='front'] img,
       .preview-panel[data-panel='back'] img {
         width: auto;
@@ -530,13 +534,12 @@
         max-height: min(56vh, 460px);
         object-fit: contain;
       }
-      /* The BOARD is ALWAYS a full-page LANDSCAPE artboard (like the SVG cards),
-         not portrait card art — so a raster board must FILL the panel width exactly
-         as the SVG does, instead of rendering at its small intrinsic size (which is
-         what the auto/auto rule above would do, leaving the board a tiny sliver next
-         to the width-filling SVG cards). Width-driven with the same viewport cap, but
-         NO forced aspect-ratio: a raster <img> already carries its own ratio, so
-         width:100%/height:auto fills the panel at the board's TRUE proportions —
+      /* The BOARD is ALWAYS a full-page LANDSCAPE artboard, not portrait card art —
+         so it must FILL the panel width, instead of rendering at its small intrinsic
+         size (which is what the auto/auto rule above would do, leaving the board a
+         tiny sliver next to the width-filling cards). Width-driven with the same
+         viewport cap, but NO forced aspect-ratio: the <img> already carries its own,
+         so width:100%/height:auto fills the panel at the board's TRUE proportions —
          forcing --page-ratio here would letterbox any board whose ratio differs. */
       .preview-panel[data-panel='board'] img {
         width: 100%;
@@ -547,8 +550,8 @@
       .preview-panel svg,
       .preview-panel img {
         display: block;
-      }
-      .preview-panel svg {
+        /* the same lift the inlined sheet had, so the picture that replaced it sits
+           on the stage exactly as the sheet did */
         filter: drop-shadow(0 14px 30px rgba(35, 32, 28, 0.16));
       }
       .preview-empty {
@@ -3615,7 +3618,12 @@
       import { track } from './js/analytics.js';
       import { initCarousel } from './js/carousel.js';
       import { initPinchZoom } from './js/pinch-zoom.js';
-      import { loadDesignImages, deckFor, deckPickerSrc } from './js/design-images.js';
+      import {
+        loadDesignImages,
+        deckFor,
+        previewPicture,
+        previewPictures,
+      } from './js/design-images.js';
       import { fetchPricing } from './js/pricing.js';
       import {
         CARD_CELL,
@@ -3798,71 +3806,159 @@
         back: document.querySelector('[data-panel="back"]'),
         board: document.querySelector('[data-panel="board"]'),
       };
-      const boardTab = document.querySelector('.tab[data-tab="board"]');
+      const tabButtons = Array.from(document.querySelectorAll('.tab[data-tab]'));
+      const TAB_LABELS = { front: 'קלף', back: 'גב', board: 'לוח' };
 
-      // Which panels have had their (heavy) full-page SVG inlined for the current
-      // design. We inline a panel LAZILY — only when its tab is first shown — so we
-      // never parse all three multi-MB DOMs up front.
-      let rendered = new Set();
-      // Bumped on every design switch. A panel's SVG fetch is async and can be
-      // multi-MB; if the user switches design mid-fetch, the stale resolve must be
-      // DISCARDED (otherwise design A's late artwork lands in the panel while B is
-      // selected, in B's colours, and `rendered` would wrongly mark it done).
+      /* ---- the big preview: the picked design's own picture, enlarged --------
+         THE RULE (owner, absolute): pressing a design in the picker shows THAT
+         design's picture, larger, and nothing else. The big preview is the small
+         picture the buyer just tapped, shown big — there is no second source of
+         artwork.
+
+         It used to inline a static `assets/designs/<id>/front.svg` committed in
+         the repo. Those files were frozen at the time they were committed and
+         were never refreshed when a template was replaced, so the preview and the
+         tile beside it drifted: `kids` / ברוקלין previewed a blue-green birthday
+         deck long after its live template had become a basketball one. Both
+         surfaces now resolve through the SAME previewPicture() (js/design-images),
+         so they cannot disagree — see the note there.
+
+         The static SVGs are NOT dead: they remain the source the shipped rasters
+         are rendered from, the colour-step carousel's recolourable artwork, and
+         the instant name preview's card. Only the panel inlining is gone. */
+
+      // Bumped on every design switch. A picture can take a while to arrive, and a
+      // late one must never land on top of a DIFFERENT design (the hazard the SVG
+      // fetch had, unchanged by the move to <img>). Clearing the panels detaches
+      // the old <img> so its late decode paints nothing; the epoch captured by each
+      // element's handlers is the explicit belt to those braces.
       let renderEpoch = 0;
+      // Views whose picture failed to load for the CURRENT design. A 404 costs the
+      // buyer that tab rather than showing a torn image, mirroring how paintDeckRow
+      // drops a deck thumb that errors. Reset on every design switch.
+      let droppedViews = new Set();
 
-      // Inline one product SVG into its panel on demand. The palette (--cN) is
-      // already set on the panel element by recolor(), so the inlined svg inherits
-      // the current colours immediately.
-      async function ensurePanel(kind) {
+      /** The current design's picture for one view, or null when it has none. */
+      function pictureFor(view) {
+        return previewPicture(deckImages, DESIGNS[designIndex], view);
+      }
+
+      /** Is the preview shrunk to the reminder strip (steps 3+)? See paintPanel. */
+      function previewCollapsed() {
+        const card = document.getElementById('previewCard');
+        return !!card && card.classList.contains('is-collapsed');
+      }
+
+      /** Follow the preview between its full-size and collapsed states: paint the
+       *  picture when it is full size, clear it when it shrinks. Called on every
+       *  step change, so a deep link straight to a collapsed step (?step=5) cannot
+       *  leave a picture behind in the strip. */
+      function syncPanelToCollapse() {
+        if (previewCollapsed()) Object.values(panels).forEach((el) => el.replaceChildren());
+        else paintPanel(activeTab);
+      }
+
+      /** The views this design can actually show, in tab order. */
+      function availableViews() {
+        return previewPictures(deckImages, DESIGNS[designIndex])
+          .map((p) => p.view)
+          .filter((v) => !droppedViews.has(v));
+      }
+
+      // Show one view's picture in its panel. Idempotent: a panel already showing
+      // that exact picture is left alone (and keeps its decoded image), which is
+      // what makes it safe to re-run when the gallery config lands late.
+      //
+      // Nothing is painted while the preview is COLLAPSED (the reminder strip on
+      // the name/photos/details steps). That strip has never actually shown
+      // artwork: an inlined <svg> with no width/height attributes laid out at 0x0
+      // inside it. A picture DOES fill it — and the ~84px its CSS then takes is
+      // 84px those steps have not got, because they are held to fitting a 375x667
+      // phone above the fixed Back/Next bar (pawn-photos.spec, wizard-noscroll.spec)
+      // and stop fitting with it. Giving the reminder real estate is a layout
+      // decision for the owner, not a side effect of putting the step-1 preview on
+      // the design's picture — so the strip stays as it is today.
+      // syncPanelToCollapse() keeps the two states honest.
+      function paintPanel(view) {
+        const el = panels[view];
+        if (!el || previewCollapsed()) return;
         const d = DESIGNS[designIndex];
-        if (!d) return;
-        const el = panels[kind];
-        if (!el || rendered.has(kind)) return;
-        const path = d.products && d.products[kind];
-        if (!path) {
-          el.innerHTML = '';
+        const pic = droppedViews.has(view) ? null : pictureFor(view);
+        if (!pic) {
+          el.replaceChildren();
           return;
         }
-        rendered.add(kind);
-        const epoch = renderEpoch; // capture: the design in effect for THIS fetch
-        try {
-          const svg = paintSvg(await loadSvg(path), d.anchors);
-          // A newer design switch happened while we were fetching → a different
-          // design now owns this panel (and the shared `rendered` set). Discard
-          // this stale result silently; don't touch the panel or the new set.
-          if (epoch !== renderEpoch) return;
-          el.innerHTML = svg;
-        } catch (e) {
-          if (epoch !== renderEpoch) return; // stale failure — panel isn't ours now
-          rendered.delete(kind); // let the current design retry this tab later
-          el.innerHTML = '<div class="preview-empty">אין תצוגה</div>';
+        const current = el.querySelector('img');
+        if (current && current.getAttribute('src') === pic.src) return;
+        const epoch = renderEpoch;
+        const img = document.createElement('img');
+        img.alt = [(d && d.name) || '', TAB_LABELS[view] || ''].filter(Boolean).join(' — ');
+        img.decoding = 'async';
+        img.addEventListener('error', () => {
+          // A newer design owns this panel now — this failure isn't ours.
+          if (epoch !== renderEpoch || !img.isConnected) return;
+          if (pic.fallback && img.getAttribute('src') !== pic.fallback) {
+            img.setAttribute('src', pic.fallback); // deck photo gone → shipped render
+            return;
+          }
+          dropView(view);
+        });
+        el.replaceChildren(img);
+        img.setAttribute('src', pic.src);
+      }
+
+      // A view whose picture cannot be shown leaves the wizard entirely: its tab is
+      // hidden and the buyer is moved to one that has a picture. Never a
+      // placeholder — a tab that promises a face we can't show is worse than no tab.
+      function dropView(view) {
+        if (droppedViews.has(view)) return;
+        droppedViews.add(view);
+        if (panels[view]) panels[view].replaceChildren();
+        updateTabs();
+      }
+
+      // Show a tab only for a view this design has a picture for (kids ships no
+      // board, so it has no לוח tab); if the active tab just lost its picture, move
+      // to one that has one. With nothing left the stage says so rather than
+      // sitting empty.
+      function updateTabs() {
+        const avail = availableViews();
+        tabButtons.forEach((b) => {
+          b.hidden = !avail.includes(b.dataset.tab);
+        });
+        if (avail.length && !avail.includes(activeTab)) {
+          selectTab(avail[0]);
+          return;
+        }
+        if (!avail.length && panels[activeTab] && !panels[activeTab].firstChild) {
+          panels[activeTab].innerHTML = '<div class="preview-empty">אין תצוגה</div>';
         }
       }
 
-      // A design without a board product (e.g. kids) hides the board tab entirely;
-      // if that tab was active, fall back to the front so a real panel stays shown.
-      function updateBoardTab() {
-        const d = DESIGNS[designIndex] || {};
-        const hasBoard = !!(d.products && d.products.board);
-        if (boardTab) boardTab.hidden = !hasBoard;
-        if (!hasBoard && activeTab === 'board') selectTab('front');
+      // Re-resolve every painted panel. Called when /api/design-images lands after
+      // first paint: a design the owner has photographed swaps its shipped render
+      // for her photo in place, exactly as the picker tiles do (repaintDesignThumbs).
+      function repaintPanels() {
+        droppedViews = new Set();
+        updateTabs();
+        paintPanel(activeTab);
       }
 
-      // Switch designs: reset the lazy cache, clear panels, fix up the board tab,
-      // apply the palette (to every panel element), then inline just the active tab.
-      async function renderDesign() {
+      // Switch designs: invalidate anything in flight, clear the panels, fix up the
+      // tabs, apply the palette (to every panel element), then paint the active tab.
+      function renderDesign() {
         const d = DESIGNS[designIndex];
         if (!d) return;
-        renderEpoch++; // new design switch — invalidate any in-flight panel fetch
-        rendered = new Set();
-        Object.values(panels).forEach((el) => (el.innerHTML = ''));
-        updateBoardTab();
+        renderEpoch++; // new design switch — a late picture for the old one is dead
+        droppedViews = new Set();
+        Object.values(panels).forEach((el) => el.replaceChildren());
+        updateTabs();
         recolor();
         // invalidate the colour-step carousel for the OLD design; rebuild it now
         // if the shopper is already on the colour step, else lazily on entry.
         ccDesign = -1;
         if (currentStep === 2) ensureColorCarousel();
-        await ensurePanel(activeTab);
+        paintPanel(activeTab);
       }
 
       // brand fallback tint (near-black ink, matching the B&W chrome) so the page
@@ -3870,7 +3966,20 @@
       // shipped without an accent and without anchors.
       const DEFAULT_TINT = '#141414';
 
-      // apply current color palette to every preview panel + page accent
+      // Apply the current colour palette to the page accent and to every preview
+      // panel's --cN custom properties.
+      //
+      // ⚠ THE TABBED PREVIEW NO LONGER RECOLOURS. Only an inlined SVG can have its
+      // var(--cN) tokens repainted, and those panels now hold the design's PICTURE
+      // (see paintPanel) — a raster cannot be recoloured. The --cN vars are still
+      // set on the panel elements: they are harmless there (applyPalette /
+      // applyOriginal only call setProperty, so nothing throws against an <img>),
+      // they still reach the fullscreen overlay, which copies the panel's inline
+      // style, and they are what the colour-step CAROUSEL below — which does still
+      // inline SVG — needs the machinery for. This is acceptable ONLY because the
+      // owner has `color_picking` OFF, so no buyer can pick a colour today. TURNING
+      // IT BACK ON MEANS REVISITING THIS: the swatches would recolour the carousel
+      // on step 2 while the step-1 preview stayed at the design's own colours.
       function recolor() {
         const d = DESIGNS[designIndex];
         if (!d) return;
@@ -3910,18 +4019,23 @@
       /* ---- colour-step preview carousel (front / back / board) ----------
          A swipeable slideshow of the current design's views in the current
          colour, on the SHARED carousel engine (initCarousel) — same feel as
-         the rest of the site (a slideshow with dots). It REUSES the exact
-         preview-render helpers (loadSvg + paintSvg + applyOriginal/applyPalette)
-         so it always mirrors the tabbed preview above and never re-implements
-         SVG paint. Built lazily the first time the colour step is shown for a
-         design, and torn down + rebuilt on a design switch. */
+         the rest of the site (a slideshow with dots). It inlines the tokenized
+         SVGs (loadSvg + paintSvg + applyOriginal/applyPalette) because showing the
+         LIVE RECOLOUR is its whole purpose and a raster cannot be recoloured —
+         which is why it, unlike the tabbed preview above, is not on the design's
+         picture. It is shown only when `color_picking` is on (owner: OFF today).
+         Built lazily the first time the colour step is shown for a design, and
+         torn down + rebuilt on a design switch. */
       const ccTrack = document.getElementById('colorCarouselTrack');
       const ccDots = document.getElementById('colorCarouselDots');
-      const CC_LABELS = { front: 'קלף', back: 'גב', board: 'לוח' };
+      const CC_LABELS = TAB_LABELS;
 
       // The views this design actually ships, in card→back→board order. front is
       // always present; back/board only when the design has them, so the carousel
-      // never lands on an empty/broken slide (mirrors updateBoardTab's guard).
+      // never lands on an empty/broken slide (mirrors updateTabs' guard). Keyed off
+      // `products` — the tokenized SVGs — because unlike the tabbed preview above
+      // this carousel exists to show the LIVE RECOLOUR, which only an inlined SVG
+      // can do.
       function ccViews() {
         const p = (DESIGNS[designIndex] || {}).products || {};
         return ['front', 'back', 'board'].filter((k) => p[k]);
@@ -4008,8 +4122,9 @@
         Object.entries(panels).forEach(([k, el]) =>
           el.setAttribute('data-active', k === tab ? 'true' : 'false')
         );
-        // inline this tab's SVG the first time it's shown (lazy per-tab).
-        ensurePanel(tab);
+        // paint this tab's picture the first time it's shown (lazy per-tab — the
+        // other faces are never requested until the buyer asks for them).
+        paintPanel(tab);
       }
       document
         .querySelectorAll('.tab')
@@ -4057,34 +4172,39 @@
       }
 
       // Paint ONE tile's picture, and repaint it in place when a better answer
-      // arrives. Whatever we show, it stays a small RASTER — never the multi-MB
-      // full-page SVG. Inlining seven of those (~15MB, seven huge DOMs)
-      // white-screens the Instagram in-app browser (our main audience). The tile
-      // shows the design's default look; the live colour slider only drives the
-      // main preview.
+      // arrives. The tile shows the design's FRONT — the same picture, from the
+      // same previewPicture() lookup, that the big preview beside it enlarges. The
+      // tile carries that picture's full-size URL in `data-picture` so the identity
+      // is visible (and testable) rather than merely intended: the two surfaces are
+      // the same picture at two sizes, not two pictures that ought to match.
       //
-      // Order of preference:
-      //   1. the owner's own DECK PHOTO — the first picture she uploaded under
-      //      "תמונות החפיסה" (normally the eight cards) — requested through
-      //      /design-thumb/, which serves a ~15 KB downscaled derivative instead
-      //      of her 180 KB–1 MB original. She photographs the real product; that
-      //      beats a render of it.
-      //   2. `d.thumb`, the shipped build-time thumbnail — what every tile showed
-      //      before, and still what most show.
-      //   3. the design's name as text.
+      // Whatever we show, it stays SMALL — never the multi-MB full-page artwork.
+      // Seven of those (~15MB) white-screen the Instagram in-app browser (our main
+      // audience), which is why `small` exists at all:
+      //   • an owner DECK PHOTO is requested through /design-thumb/, a ~15 KB
+      //     downscaled derivative of her 180 KB–1 MB original;
+      //   • a shipped render is requested as its 480px `thumb-<view>.webp` sibling,
+      //     rendered from the same source as the big `gallery-<view>.webp`.
+      // A design with no picture at all falls back to its name in text.
       //
       // TIMING. The deck answer rides /api/design-images, so before it lands we
-      // only know the fallback. For a BUILT-IN design that fallback is a 5–10 KB
-      // raster: paint it at once and swap in place if a deck photo turns up — the
-      // swap wastes 5 KB and the tile is never empty. For a CUSTOM template the
-      // fallback is the template's own FULL-PAGE SVG (up to 3 MB on the current
-      // catalog), so firing it before we know whether a deck photo replaces it
-      // would download megabytes we may never show. That one waits for the map.
+      // only know the shipped render. For a BUILT-IN design that is a small raster:
+      // paint it at once and swap in place if a deck photo turns up — the swap
+      // wastes a few KB and the tile is never empty. For a CUSTOM template the
+      // shipped render is the template's own FULL-PAGE SVG (up to 3 MB on the
+      // current catalog), so firing it before we know whether a deck photo replaces
+      // it would download megabytes we may never show. That one waits for the map.
       function paintDesignThumb(btn, d) {
         const thumb = btn.querySelector('.thumb');
         if (!thumb) return;
         const known = deckImagesReady || !d.custom;
-        const src = deckPickerSrc(deckImages, d) || (known ? d.thumb || '' : '');
+        // The FIRST view this design has a picture for — front for every design
+        // that ships one, which is all of them bar an uploaded template with no
+        // front slot. That is also the view the preview opens on (updateTabs), so
+        // tile and preview show the same face without either one saying so.
+        const pic = known ? previewPictures(deckImages, d)[0] || null : null;
+        const src = (pic && pic.small) || '';
+        btn.dataset.picture = (pic && pic.src) || '';
         const current = thumb.querySelector('img');
         // Same picture as last time → leave the DOM (and the loaded image) alone.
         if (current && current.getAttribute('src') === src) return;
@@ -4099,10 +4219,11 @@
         // One step down the chain per failure. The derivative is generated on
         // demand and CAN legitimately fail (no Python/Pillow on the box, an
         // undecodable upload) — that must cost the tile its photo, not its
-        // picture: it drops back to the shipped thumb, and only then to text.
+        // picture: it drops back to the shipped render, and only then to text.
         img.addEventListener('error', () => {
-          if (d.thumb && img.getAttribute('src') !== d.thumb) {
-            img.setAttribute('src', d.thumb);
+          const next = pic.smallFallback;
+          if (next && img.getAttribute('src') !== next) {
+            img.setAttribute('src', next);
             return;
           }
           thumb.textContent = d.name;
@@ -4122,8 +4243,14 @@
       }
       BUILTIN_DESIGNS.forEach(addDesignTile);
       // Uploaded templates appended after this repaint themselves (addDesignTile
-      // runs with the map already in hand), so ONE hook covers every tile.
-      deckImagesPromise.then(repaintDesignThumbs);
+      // runs with the map already in hand), so ONE hook covers every tile. The big
+      // preview rides the same hook, for the same reason and off the same map: a
+      // design the owner has photographed swaps its shipped render for her photo in
+      // place, on BOTH surfaces at once.
+      deckImagesPromise.then(() => {
+        repaintDesignThumbs();
+        repaintPanels();
+      });
 
       // Append the uploaded templates the owner put on sale as soon as they arrive.
       // Appending (never inserting) keeps every bundled design at the index it has
@@ -4321,7 +4448,8 @@
         revealSelectedTile();
         const d = DESIGNS[i] || {};
         track('select_design', { design: d.name || d.id || i });
-        renderDesign().then(persist);
+        renderDesign();
+        persist();
       }
 
       /* ---- build color swatches (original first, then main colors) ---- */
@@ -5941,6 +6069,8 @@
         );
         const collapsed = currentStep >= 3; // name/contact steps shrink the preview
         previewCard.classList.toggle('is-collapsed', collapsed);
+        // The picture follows that: painted at full size, cleared in the strip.
+        syncPanelToCollapse();
         previewChip.hidden = !collapsed;
         // The deck pictures ride the same collapse: they belong to the steps where
         // the live preview has shrunk to a reminder and the shopper is deciding
@@ -6410,14 +6540,17 @@
         zoomViewport.style.touchAction = zoomScale > ZOOM_MIN ? 'pan-x pan-y' : 'pan-y';
       }
 
-      // Clone the active panel's live SVG (carrying its current palette) in.
+      // Clone the active panel's artwork in — today the design's picture, so the
+      // enlarged view is the very same image the panel is showing (already
+      // decoded, so it appears instantly and costs no second request).
       function fillZoom() {
         const panel = panels[activeTab];
         if (!panel) return;
         // carry the live --cN palette vars (set inline on the panel by recolor)…
         zoomContent.setAttribute('style', panel.getAttribute('style') || '');
-        // …then clone the artwork, renaming the scoped-style id so the id (and
-        // its `#id [fill]` rules) stay unique while both copies are in the DOM.
+        // …then clone the artwork, renaming any scoped-style id so the id (and its
+        // `#id [fill]` rules) stay unique while both copies are in the DOM. Only an
+        // inlined SVG carries one; an <img> clones as-is.
         zoomContent.innerHTML = (panel.innerHTML || '').replace(/cfg-svg-(\d+)/g, 'zoom-svg-$1');
         setZoom(1);
       }
@@ -6432,15 +6565,10 @@
       let zoomViews = []; // [{ id, label }]
       let zoomIndex = 0;
 
+      // The SAME view list the tabs are built from, so the overlay can never offer
+      // a face the preview behind it doesn't have (or drop one it does).
       function designZoomViews() {
-        const d = DESIGNS[designIndex] || {};
-        const hasBoard = !!(d.products && d.products.board);
-        const v = [
-          { id: 'front', label: 'קלף' },
-          { id: 'back', label: 'גב' },
-        ];
-        if (hasBoard) v.push({ id: 'board', label: 'לוח' });
-        return v;
+        return availableViews().map((v) => ({ id: v, label: TAB_LABELS[v] }));
       }
 
       // (Re)build the bottom tab bar from the current view list, marking activeId.
@@ -6520,18 +6648,19 @@
         zoomGoTo(zoomViews[i].id);
       }
 
-      // In-overlay design view switch: sync the main tabs + active panel, ensure
-      // that panel's SVG is inlined, then clone it into the zoom.
+      // In-overlay design view switch: sync the main tabs + active panel, wait for
+      // that panel to hold artwork, then clone it into the zoom.
       async function zoomShowTab(tab) {
         if (tab === activeTab && zoomContent.querySelector('svg, img')) {
           markZoomTab(tab);
           return;
         }
-        selectTab(tab); // sync main tabs + active panel (kicks lazy inline)
+        selectTab(tab); // sync main tabs + active panel (paints its picture)
         const panel = panels[tab];
-        // selectTab's ensurePanel is async and its lazy-cache flag flips
-        // synchronously, so a second ensurePanel would resolve before the SVG
-        // actually lands. Poll the panel until its artwork is inlined instead.
+        // The panel's <img> is attached synchronously, so this normally exits on
+        // the first pass. The loop stays because a view whose picture 404s drops
+        // out (see dropView) and its panel is emptied — polling rather than
+        // assuming lets that case fall through to a no-op instead of cloning junk.
         for (let i = 0; i < 80 && zoomOpen; i++) {
           if (panel && panel.querySelector('svg, img')) break;
           await new Promise((r) => setTimeout(r, 50));
@@ -6831,7 +6960,8 @@
       applyFeatureFlags();
 
       selectTab('front');
-      renderDesign().then(() => goStep(initialStep, { fromPop: true }));
+      renderDesign();
+      goStep(initialStep, { fromPop: true });
     </script>
 
     <!-- Floating WhatsApp help button: contact the owner for help at any step.

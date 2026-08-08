@@ -96,29 +96,29 @@ test.describe('every product tab is a readable landscape page', () => {
     );
   });
 
-  // measure the active panel's svg against its stage.
+  // measure the active panel's picture against its stage.
   async function measureActive(page, panel) {
     return page.evaluate((p) => {
       const stage = document.querySelector('.preview-stage').getBoundingClientRect();
-      const svg = document.querySelector(`[data-panel="${p}"] svg`).getBoundingClientRect();
+      const art = document.querySelector(`[data-panel="${p}"] img`).getBoundingClientRect();
       return {
-        ratio: svg.width / svg.height,
-        widthFraction: svg.width / stage.width,
-        heightFits: svg.height <= stage.height + 2,
+        ratio: art.width / art.height,
+        widthFraction: art.width / stage.width,
+        heightFits: art.height <= stage.height + 2,
       };
     }, panel);
   }
 
   for (const tab of ['front', 'back', 'board']) {
-    test(`the ${tab} tab shows a landscape svg filling most of the stage`, async ({ page }) => {
+    test(`the ${tab} tab shows a landscape picture filling most of the stage`, async ({ page }) => {
       await page.setViewportSize(LAPTOP);
       await page.goto('/options.html?step=1');
-      await expect(page.getByTestId('preview-front').locator('svg')).toBeVisible();
+      await expect(page.getByTestId('preview-front').locator('img')).toBeVisible();
 
       await page.getByTestId('tab-' + tab).click();
       const p = page.getByTestId('preview-' + tab);
       await expect(p).toHaveAttribute('data-active', 'true');
-      await expect(p.locator('svg')).toBeVisible();
+      await expect(p.locator('img')).toBeVisible();
 
       const m = await measureActive(page, tab);
       // landscape (clearly wider than tall) — a crushed/portrait page would be < 1.
@@ -141,10 +141,10 @@ test.describe('every product tab is a readable landscape page', () => {
     await expect(page.getByTestId('tab-front')).toBeVisible();
     await expect(page.getByTestId('tab-back')).toBeVisible();
 
-    await expect(page.getByTestId('preview-front').locator('svg')).toBeVisible();
+    await expect(page.getByTestId('preview-front').locator('img')).toBeVisible();
     await page.getByTestId('tab-back').click();
     await expect(page.getByTestId('preview-back')).toHaveAttribute('data-active', 'true');
-    await expect(page.getByTestId('preview-back').locator('svg')).toBeVisible();
+    await expect(page.getByTestId('preview-back').locator('img')).toBeVisible();
   });
 });
 
@@ -155,14 +155,14 @@ test.describe('the live sheet fills the card width on a phone', () => {
   });
 
   async function sheetMetrics(page) {
-    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await expect(page.locator('.preview-panel[data-active="true"] img')).toBeVisible();
     await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
     return page.evaluate(() => {
-      const svg = document.querySelector('.preview-panel[data-active="true"] svg');
+      const art = document.querySelector('.preview-panel[data-active="true"] img');
       const card = document.getElementById('previewCard');
       const cs = getComputedStyle(card);
       const inner = card.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-      const w = svg.getBoundingClientRect().width;
+      const w = art.getBoundingClientRect().width;
       return { w, inner, ratio: +(w / inner).toFixed(3), vw: window.innerWidth };
     });
   }
@@ -172,8 +172,15 @@ test.describe('the live sheet fills the card width on a phone', () => {
     const m = await sheetMetrics(page);
     // fills nearly the whole card (edge-to-edge), not a height-shrunk sliver
     expect(m.ratio).toBeGreaterThanOrEqual(0.9);
-    // and is the dominant focal element: ~0.85+ of the phone's width
-    expect(m.w / m.vw).toBeGreaterThanOrEqual(0.85);
+    // …and is the dominant focal element: ~0.83+ of the phone's width.
+    //
+    // This measures the ARTWORK. It used to measure the inlined <svg>, whose box
+    // was width:100% of the panel (352px on a 390px phone) while the phone's
+    // `max-height: min(45vh, 232px)` cap meant the sheet inside it only ever
+    // painted ~328px wide — the last 24px were the element letterboxing its own
+    // content. The picture that replaced it is sized by its own ratio, so its box
+    // IS the sheet: same pixels on screen, an honest number to assert on.
+    expect(m.w / m.vw).toBeGreaterThanOrEqual(0.83);
   });
 
   test('kids has no board tab, and its preview still fills the width', async ({ page }) => {
@@ -184,12 +191,12 @@ test.describe('the live sheet fills the card width on a phone', () => {
   });
 
   // Regression: the preview must RESERVE its box up-front so it doesn't reflow the
-  // heading/tiles below when the (lazy, multi-MB) SVG lands. We block the SVG so
-  // the panel stays empty, read its reserved height, then compare it to the final
+  // heading/tiles below when the (lazy) picture lands. We block the picture so the
+  // panel stays empty, read its reserved height, then compare it to the final
   // rendered height — they must match (no jump).
-  test('the preview reserves its box (no reflow when the SVG loads)', async ({ page }) => {
+  test('the preview reserves its box (no reflow when the picture loads)', async ({ page }) => {
     await page.goto('/options.html');
-    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await expect(page.locator('.preview-panel[data-active="true"] img')).toBeVisible();
     await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
     const loaded = await page.evaluate(() =>
       Math.round(
@@ -197,10 +204,19 @@ test.describe('the live sheet fills the card width on a phone', () => {
       )
     );
 
-    // now block the deck SVGs so the active panel stays empty on a fresh load…
-    await page.route('**/designs/**/*.svg', (r) => r.abort());
-    await page.goto('/options.html');
+    // …now HANG the preview picture (a handler that never settles) so the active
+    // panel is stuck mid-load on a fresh visit — the exact state the reservation
+    // exists for. Aborting instead would race straight past it into the failure
+    // path, which is a different thing and is covered elsewhere.
+    //
+    // The navigation therefore waits on `domcontentloaded`, not `load`: with a
+    // subresource deliberately never answering, `load` never fires and the default
+    // goto would sit there until the test timed out.
+    await page.route('**/assets/designs/**/gallery-*.webp', () => {});
+    await page.goto('/options.html', { waitUntil: 'domcontentloaded' });
     await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
+    // The panel is painted by the module's own init, which runs after DCL.
+    await expect(page.locator('.preview-panel[data-active="true"] img')).toHaveCount(1);
     const reserved = await page.evaluate(() =>
       Math.round(
         document.querySelector('.preview-panel[data-active="true"]').getBoundingClientRect().height

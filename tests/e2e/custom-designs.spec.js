@@ -206,13 +206,14 @@ test.describe('options.html — the wizard opens the design the shopper actually
     await stubCustom(page, [HEB_CUSTOM]);
     await page.goto('/options.html?design=my-custom&step=1');
 
-    // The wizard inlines previews from `products` — a custom design's template
-    // pictures are mirrored there, so it renders through the same path as a
-    // built-in one instead of showing an empty stage. The stub SVG's viewBox is
-    // what pins this to the TEMPLATE's artwork rather than any built-in design's.
-    const front = page.locator('[data-panel="front"] svg');
+    // The preview shows the design's own picture, resolved exactly as a built-in
+    // one's is (previewPicture, js/design-images.js). An uploaded template ships no
+    // committed rasters, so its picture IS its template image — and pinning the src
+    // to /api/template-image/my-custom is what proves the stage is showing THIS
+    // template's artwork rather than some built-in design's.
+    const front = page.locator('[data-panel="front"] img');
     await expect(front).toHaveCount(1);
-    await expect(front).toHaveAttribute('viewBox', '0 0 100 100');
+    await expect(front).toHaveAttribute('src', '/api/template-image/my-custom/front');
     // This template ships a board, so the board tab is offered.
     await expect(page.locator('.tab[data-tab="board"]')).toBeVisible();
   });

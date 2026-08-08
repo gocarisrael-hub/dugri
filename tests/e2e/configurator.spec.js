@@ -104,17 +104,17 @@ test.describe('order wizard', () => {
     const designs = page.getByTestId('design-list').locator('.design');
     await expect(designs.nth(1)).toBeVisible();
     const frontPanel = page.getByTestId('preview-front');
-    await expect(frontPanel.locator('svg')).toBeVisible();
+    // The tabbed preview shows the design's PICTURE, not an inlined SVG (see
+    // previewPicture in js/design-images.js). The palette is still applied to the
+    // panel ELEMENT — that is what the fullscreen overlay clones and what the
+    // colour-step carousel's artwork inherits — so the --cN plumbing is read off
+    // the panel here, and the artwork recolour itself is asserted on the carousel
+    // that still inlines SVG (below).
+    await expect(frontPanel.locator('img')).toBeVisible();
 
-    // Helper: read --c0 of the front preview's svg (or its computed fill).
+    // Helper: read --c0 of the front preview panel.
     const readC0 = async () =>
-      frontPanel
-        .locator('svg')
-        .first()
-        .evaluate((svg) => {
-          const v = getComputedStyle(svg).getPropertyValue('--c0').trim();
-          return v || getComputedStyle(svg).fill;
-        });
+      frontPanel.evaluate((el) => getComputedStyle(el).getPropertyValue('--c0').trim());
     const before = await readC0();
 
     // Pick the second design on step 1.
@@ -125,10 +125,7 @@ test.describe('order wizard', () => {
     // here) so the recolor check below can prove it CHANGED after the swatch pick.
     const boardPanel = page.getByTestId('preview-board');
     const readBoardC0 = async () =>
-      boardPanel
-        .locator('svg')
-        .first()
-        .evaluate((svg) => getComputedStyle(svg).getPropertyValue('--c0').trim());
+      boardPanel.evaluate((el) => getComputedStyle(el).getPropertyValue('--c0').trim());
     await page.getByTestId('tab-board').click();
     await expect(boardPanel).toHaveAttribute('data-active', 'true');
     const boardBefore = await readBoardC0();
@@ -141,6 +138,17 @@ test.describe('order wizard', () => {
     await expect(page.getByTestId('step-2')).toBeVisible();
     await expect(page.getByTestId('back-btn')).not.toHaveClass(/is-hidden/);
 
+    // The colour step's carousel inlines the tokenized SVG precisely so the picked
+    // colour can be SEEN — reading a panel custom property alone would only prove
+    // the plumbing, not that anything on screen changed colour. Snapshot the live
+    // artwork's --c0 before the pick.
+    const ccArt = page.locator('.cc-slide svg').first();
+    await expect(ccArt).toBeVisible();
+    const readCcC0 = () =>
+      ccArt.evaluate((el) => getComputedStyle(el).getPropertyValue('--c0').trim());
+    const ccBefore = await readCcC0();
+    expect(ccBefore).toMatch(/^#[0-9a-f]{6}$/i);
+
     const colors = page.getByTestId('color-list').locator('.swatch');
     await expect(colors.first()).toBeVisible();
     const swatchCount = await colors.count();
@@ -148,8 +156,10 @@ test.describe('order wizard', () => {
     await page.getByTestId('color-' + colorIdx).click();
     await expect(page.getByTestId('color-' + colorIdx)).toHaveAttribute('aria-pressed', 'true');
 
-    // The front preview's --c0 (or fill) changed from its initial value.
+    // The front preview's --c0 changed from its initial value.
     await expect.poll(async () => readC0()).not.toBe(before);
+    // …and so did the artwork the shopper is actually looking at.
+    await expect.poll(readCcC0).not.toBe(ccBefore);
 
     // Selection + step are persisted to the URL (asserted on the colour step).
     expect(page.url()).toContain('plan=base');
@@ -168,19 +178,33 @@ test.describe('order wizard', () => {
     await expect.poll(async () => readBoardC0()).not.toBe(boardBefore);
   });
 
-  test('front and back previews paint their original background (never transparent/black)', async ({
+  // The inlined artwork paints its designed background through
+  // fill="var(--cN)" presentation attributes, which some engines (older iOS
+  // Safari, the Instagram in-app browser) refuse to substitute — so paintSvg()
+  // re-drives the fill via a CSS rule carrying the ORIGINAL anchor as the var()
+  // fallback. That mechanism now lives ONLY on the colour step's carousel: the
+  // tabbed preview above it shows the design's picture (a raster carries its own
+  // background and cannot lose it this way). So this covers the carousel, which
+  // is where an inlined SVG is still on screen and still recolourable.
+  test('the inlined artwork paints its original background (never transparent/black)', async ({
     page,
   }) => {
-    await page.goto('/options.html');
+    await page.goto('/options.html?step=2');
 
-    // Computed fill of the largest painted element in a panel's SVG — the card's
-    // designed background. (Elements inside <defs>/<clipPath> are not rendered.)
-    const bgFill = async (panel) =>
+    // Computed fill of the largest painted element in the slide's SVG — the
+    // card's designed background. (Elements inside <defs>/<clipPath> are not
+    // rendered.) `strip` first removes the live --cN palette from every ancestor,
+    // which is how the var()-fallback guard below is exercised.
+    const bgFill = async (nth, strip = false) =>
       page
-        .getByTestId('preview-' + panel)
-        .locator('svg')
-        .first()
-        .evaluate((svg) => {
+        .locator('.cc-slide svg')
+        .nth(nth)
+        .evaluate((svg, doStrip) => {
+          if (doStrip) {
+            for (let n = svg; n; n = n.parentElement) {
+              if (n.style) for (let i = 0; i < 8; i++) n.style.removeProperty('--c' + i);
+            }
+          }
           let best = null;
           let bestArea = -1;
           for (const el of svg.querySelectorAll('path,rect,circle,polygon')) {
@@ -200,7 +224,7 @@ test.describe('order wizard', () => {
             }
           }
           return best;
-        });
+        }, strip);
 
     // A real, visible paint: not missing, not fully transparent, and not the
     // black/unpainted state you get when a var() background fails to resolve.
@@ -212,49 +236,19 @@ test.describe('order wizard', () => {
       fill !== 'rgb(0, 0, 0)' &&
       fill !== 'transparent';
 
-    await expect(page.getByTestId('preview-front').locator('svg')).toBeVisible();
-    const frontOrig = await bgFill('front');
+    // The carousel inlines every view eagerly, so slide 0 is the card and slide 1
+    // its back — both on screen without a swipe.
+    await expect(page.locator('.cc-slide svg').first()).toBeVisible();
+    const frontOrig = await bgFill(0);
     expect(isPainted(frontOrig), `front original background fill: ${frontOrig}`).toBe(true);
-
-    await page.getByTestId('tab-back').click();
-    await expect(page.getByTestId('preview-back')).toHaveAttribute('data-active', 'true');
-    const backOrig = await bgFill('back');
+    const backOrig = await bgFill(1);
     expect(isPainted(backOrig), `back original background fill: ${backOrig}`).toBe(true);
 
     // Regression guard for the fix: the background is driven via a CSS `fill`
     // rule whose var() carries the design's ORIGINAL anchor as a fallback, so
     // even if the live --cN palette is missing (e.g. an engine that can't resolve
     // var() in SVG presentation attributes) the original background still paints.
-    await page.getByTestId('tab-front').click();
-    const frontFallback = await page
-      .getByTestId('preview-front')
-      .locator('svg')
-      .first()
-      .evaluate((svg) => {
-        // Strip the live palette vars from every ancestor -> var(--cN) is unset.
-        for (let n = svg; n; n = n.parentElement) {
-          if (n.style) for (let i = 0; i < 8; i++) n.style.removeProperty('--c' + i);
-        }
-        let best = null;
-        let bestArea = -1;
-        for (const el of svg.querySelectorAll('path,rect,circle,polygon')) {
-          if (el.closest('defs') || el.closest('clipPath') || el.closest('mask')) continue;
-          const cs = getComputedStyle(el);
-          if (cs.fill === 'none') continue;
-          let area = 0;
-          try {
-            const b = el.getBBox();
-            area = b.width * b.height;
-          } catch {
-            /* not measurable */
-          }
-          if (area > bestArea) {
-            bestArea = area;
-            best = cs.fill;
-          }
-        }
-        return best;
-      });
+    const frontFallback = await bgFill(0, true);
     expect(isPainted(frontFallback), `front fallback background fill: ${frontFallback}`).toBe(true);
   });
 
@@ -569,7 +563,7 @@ test.describe('order wizard', () => {
     await expect(fixedTile).toBeVisible();
     await fixedTile.click();
 
-    await expect(page.getByTestId('preview-front').locator('svg').first()).toBeVisible();
+    await expect(page.getByTestId('preview-front').locator('img').first()).toBeVisible();
 
     // On the colour step the swatch picker is hidden and a fixed-colour note shows.
     await page.getByTestId('next-btn').click();
@@ -640,38 +634,35 @@ test.describe('order wizard', () => {
     // every tile is a small raster thumbnail; none inline a heavy full-page SVG.
     expect(c.imgs).toBe(c.tiles);
     expect(c.svgs).toBe(0);
-    await expect(page.locator('.design .thumb img').first()).toHaveAttribute('src', /thumb\.webp$/);
+    await expect(page.locator('.design .thumb img').first()).toHaveAttribute(
+      'src',
+      /thumb-front\.webp$/
+    );
   });
 
   test('a fast design A→B switch never lets A stale-write into the shared preview', async ({
     page,
   }) => {
-    // Serve sentinel front SVGs so we can tell designs apart, and DELAY design A
-    // (marriage) so its multi-MB-style fetch resolves AFTER we've switched to B.
-    await page.route('**/assets/designs/*/front.svg', async (route) => {
-      const id = route
-        .request()
-        .url()
-        .match(/designs\/([^/]+)\/front/)[1];
-      if (id === 'marriage') await new Promise((r) => setTimeout(r, 700));
-      await route.fulfill({
-        contentType: 'image/svg+xml',
-        body: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 841.92 595.5" data-design="${id}"><rect width="100%" height="100%" fill="#eee"/></svg>`,
-      });
+    // DELAY design A (marriage) so its picture arrives only AFTER we have switched
+    // to B. A slow picture landing on the wrong design is exactly the hazard
+    // renderEpoch exists for.
+    await page.route('**/assets/designs/marriage/gallery-front.webp', async (route) => {
+      await new Promise((r) => setTimeout(r, 700));
+      await route.fallback();
     });
     await page.goto('/options.html?step=1');
-    await expect(page.getByTestId('preview-front').locator('svg')).toBeVisible();
+    await expect(page.getByTestId('preview-front').locator('img')).toBeVisible();
 
     // Click A (marriage, slow) then immediately B (birthday, fast).
     await page.locator('.design[data-design-id="marriage"]').click();
     await page.locator('.design[data-design-id="birthday"]').click();
 
-    // Wait well past A's delay so its late resolve has fired.
+    // Wait well past A's delay so its late load has fired.
     await page.waitForTimeout(1100);
 
     // The panel must show B (birthday), NOT A's late artwork.
-    const shown = await page.locator('[data-panel="front"] svg').getAttribute('data-design');
-    expect(shown).toBe('birthday');
+    const shown = await page.locator('[data-panel="front"] img').getAttribute('src');
+    expect(shown).toBe('assets/designs/birthday/gallery-front.webp');
     await expect(page.locator('.design[data-design-id="birthday"]')).toHaveAttribute(
       'aria-pressed',
       'true'

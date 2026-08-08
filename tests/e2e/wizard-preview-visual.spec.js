@@ -155,11 +155,13 @@ test.describe('Bug 1 — name-preview images are not distorted', () => {
   });
 
   test('the top live-preview panel contains raster art without stretching it', async ({ page }) => {
-    // Guards the reported root cause directly: a raster <img> dropped into a
-    // preview panel must keep its true ratio (contain), never be filled into the
-    // fixed landscape box. We inject a portrait image and read its computed style.
+    // Guards the reported root cause directly: an <img> in a preview panel must
+    // keep its true ratio (contain), never be filled into the fixed landscape box.
+    // That matters more than ever now the panel ALWAYS holds a picture — and an
+    // uploaded template's picture is a single PORTRAIT card. We inject a portrait
+    // image and read its computed style.
     await page.goto('/options.html?step=1');
-    await expect(page.getByTestId('preview-front').locator('svg')).toBeVisible();
+    await expect(page.getByTestId('preview-front').locator('img')).toBeVisible();
 
     const res = await page.evaluate((src) => {
       return new Promise((resolve) => {

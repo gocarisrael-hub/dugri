@@ -239,20 +239,83 @@ export function thumbSrc(src) {
   return UPLOAD_PATH_RE.test(p) ? p.replace('/content-uploads/', '/design-thumb/') : null;
 }
 
+// ---- the wizard's preview pictures -----------------------------------------
+//
+// ONE resolver behind BOTH surfaces on the order wizard's design step: the small
+// picture on a picker TILE, and the big picture in the PREVIEW area beside it.
+//
+// They used to be resolved separately — the tile from the owner's gallery, the
+// big preview by inlining a static `assets/designs/<id>/front.svg` committed in
+// the repo — and they drifted: `kids` / ברוקלין kept previewing artwork from a
+// template that had been replaced, so the buyer was shown a product we no longer
+// make while the tile beside it showed the real one. Pressing a design must show
+// THAT design's own picture, enlarged, and nothing else, so both surfaces now
+// come out of this one function and cannot disagree.
+//
+// Each picture comes back in two sizes because the two surfaces genuinely need
+// different bytes — `small` for a ~100px tile, `src` for the enlarged view — but
+// they are two renditions of ONE picture, resolved together, never two lookups.
+
+/** The three preview views, in tab order (קלף / גב / לוח), with the owner deck
+ *  slot each one is photographed into. */
+const PREVIEW_VIEWS = [
+  { view: 'front', deck: 'deckFronts' },
+  { view: 'back', deck: 'deckBacks' },
+  { view: 'board', deck: 'deckBoard' },
+];
+
+/** Thumbnail-size rendition of a design's SHIPPED render for a view.
+ *  `thumbs.<view>` is the 480px sibling of `gallery-<view>.webp`, rendered from
+ *  the same committed source by the same toolchain (scripts/product-thumbs.mjs
+ *  and scripts/render-design-assets.mjs), so the small and big renditions are of
+ *  the same artwork by construction. Falls back to the full render when a design
+ *  has no small one (a custom template, whose picture IS its SVG). */
+function shippedSmall(design, view) {
+  const t = design && design.thumbs && design.thumbs[view];
+  if (typeof t === 'string' && t) return t;
+  return shippedSrc(design, view);
+}
+
 /**
- * The picture for a design's PICKER TILE — the first of the owner's deck
- * pictures ("תמונות החפיסה": normally the eight fronts, else the eight backs,
- * else the board), downscaled.
+ * THE picture for one preview view of a design, or null when the design has
+ * none (which is how the wizard knows to hide that tab — e.g. `kids` ships no
+ * board, so it has no board picture and no לוח tab).
  *
- * Null when she has uploaded none for this design, which is the majority case
- * and means "use the shipped build-time thumb". Deliberately the FIRST deck
- * picture rather than specifically `deckFronts`: the owner's uploads are the
- * order she chose, and a design photographed board-first should show its board
- * rather than nothing.
+ * Resolution, per view, is the same one the storefront gallery uses: the owner's
+ * own DECK PHOTOGRAPH of that face when she uploaded one, else the design's
+ * shipped render (a committed raster for a built-in design; the template's own
+ * SVG for an uploaded one — `shippedSrc` knows both layouts).
+ *
+ * @returns {{view,src,small,fallback,smallFallback}|null}
+ *   `src` / `small` are the big and thumbnail renditions to render;
+ *   `fallback` / `smallFallback` are what an `onerror` should step down to (the
+ *   shipped render behind a deck photo), '' when there is nothing behind it.
  */
-export function deckPickerSrc(map, design) {
-  const first = deckFor(map, design)[0];
-  return first ? thumbSrc(first.src) : null;
+export function previewPicture(map, design, view) {
+  const spec = PREVIEW_VIEWS.find((v) => v.view === view);
+  if (!spec || !design || typeof design.id !== 'string' || !design.id) return null;
+  const cfg = (map && typeof map === 'object' && map[design.id]) || {};
+  const baseCfg = cfg.base && typeof cfg.base === 'object' ? cfg.base : {};
+  const c = baseCfg[spec.deck];
+  const photo = c && typeof c === 'object' && validImg(c.img) ? c.img : '';
+  const shipped = shippedSrc(design, view) || '';
+  const src = photo || shipped;
+  if (!src) return null;
+  const small = photo ? thumbSrc(photo) || photo : shippedSmall(design, view) || src;
+  return {
+    view,
+    src,
+    small,
+    // A deck photo sits ON TOP of the shipped render, so a broken upload steps
+    // back down to it. A shipped render has nothing behind it.
+    fallback: photo ? shipped : '',
+    smallFallback: photo ? shippedSmall(design, view) || '' : '',
+  };
+}
+
+/** Every view this design has a picture for, in tab order. 0..3 long. */
+export function previewPictures(map, design) {
+  return PREVIEW_VIEWS.map((v) => previewPicture(map, design, v.view)).filter(Boolean);
 }
 
 // ---- responsive sources -----------------------------------------------------
