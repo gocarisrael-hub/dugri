@@ -135,7 +135,57 @@ function effectivePricing() {
   for (const v of Object.keys(ORDER_PRICES)) {
     versions[v] = { enabled: versionEnabled(v), price: versionPrice(v) };
   }
-  return { store: { now: storeValue('store_now'), was: storeValue('store_was') }, versions };
+  return {
+    store: { now: storeValue('store_now'), was: storeValue('store_was') },
+    versions,
+    // Charged once per order, not per copy (see deliveryFee). The checkout needs
+    // it to show the same arithmetic the server is about to perform.
+    delivery_fee: deliveryFee(),
+  };
+}
+
+// --- copies -------------------------------------------------------------------
+// An order may contain several copies of the SAME game: identical decks printed
+// from one word list. Each copy is charged the full per-version price; shipping
+// is charged ONCE, because every copy travels in the same parcel.
+//
+// There is deliberately NO business cap on copies (the owner asked for none).
+// This bound is input validation, not policy: it stops a slipped keypress — 555
+// where 5 was meant — from becoming a five-figure charge attempt.
+const MAX_COPIES = Number(process.env.MAX_COPIES || 999);
+
+// The one-time shipping fee. Only a NON-NEGATIVE integer is honoured; anything
+// else falls back to 0, so a corrupt override can never inflate a charge.
+function deliveryFee() {
+  try {
+    const v = settings.get('pricing', 'delivery_fee');
+    if (Number.isInteger(v) && v >= 0) return v;
+  } catch {
+    /* settings unavailable — no fee rather than a guessed one */
+  }
+  return 0;
+}
+
+// Coerce anything a client might send into a usable copy count. Absent/garbage
+// means 1 — never 0 (a 0-copy order would charge only shipping) and never a
+// float (0.5 copies would undercharge).
+function sanitizeQuantity(q) {
+  const n = Number(q);
+  if (!Number.isFinite(n)) return 1;
+  const i = Math.floor(n);
+  if (i < 1) return 1;
+  return Math.min(i, MAX_COPIES);
+}
+
+// THE authoritative charge for an order. The browser never sends a total — it
+// sends at most a version and a copy count, and this recomputes from settings.
+// `unitPrice` overrides the settings price for an order that carries its own
+// quoted per-copy price (an admin custom quote must keep the price it was quoted
+// at, even if settings move afterwards).
+function orderTotal(version, quantity, unitPrice) {
+  const unit = Number.isInteger(unitPrice) && unitPrice >= 1 ? unitPrice : versionPrice(version);
+  const fee = version === 'delivery' ? deliveryFee() : 0;
+  return unit * sanitizeQuantity(quantity) + fee;
 }
 
 // --- free word quota ---------------------------------------------------------
@@ -814,7 +864,7 @@ const db = {
   // a non-delivery order.
   // Returns the updated order, or {error} — 'not found' (no collection), 'no
   // order' (nothing ordered yet), 'bad version', 'address required'.
-  adminUpdateOrder(id, { version, address } = {}) {
+  adminUpdateOrder(id, { version, address, quantity } = {}) {
     const c = this.getCollection(id);
     if (!c) return { error: 'not found' };
     if (!c.order) return { error: 'no order' };
@@ -827,7 +877,22 @@ const db = {
       addr = address == null ? addr : sanitizeAddress(address);
       if (!addr) return { error: 'address required' };
     }
-    if (!c.order.paid && next !== c.order.version) c.order.total = versionPrice(next);
+    const nextQty = sanitizeQuantity(quantity == null ? c.order.quantity || 1 : quantity);
+    // An UNPAID order re-prices on any change to what is being bought — version,
+    // copy count, or (for delivery) whether the one-time shipping fee applies. A
+    // PAID order's total is history: it is what the card was actually charged, and
+    // rewriting it would make the receipt lie. Money owed either way is settled
+    // off-system, exactly as with a version change.
+    if (!c.order.paid) {
+      const unit =
+        next === c.order.version && Number.isInteger(c.order.unit_price)
+          ? c.order.unit_price
+          : versionPrice(next);
+      c.order.quantity = nextQty;
+      c.order.unit_price = unit;
+      c.order.delivery_fee = next === 'delivery' ? deliveryFee() : 0;
+      c.order.total = orderTotal(next, nextQty, unit);
+    }
     c.order.version = next;
     c.order.address = addr;
     saveDb();
@@ -841,7 +906,7 @@ const db = {
   //   BYPASSES the public version-enable gate + the version-lock, so the owner can
   //   hand-create a custom (599₪) order even while `custom` is hidden from public
   //   buyers. Public routes (/order, /pay/init) never pass it.
-  setOrder(id, ownerToken, { version, address } = {}, opts = {}) {
+  setOrder(id, ownerToken, { version, address, quantity } = {}, opts = {}) {
     const admin = !!(opts && opts.admin);
     const c = this.getCollection(id);
     if (!c || c.owner_token !== ownerToken) return { error: 'forbidden' };
@@ -888,12 +953,51 @@ const db = {
     // UNPAID order is re-set — an in-flight pay session must still be matchable
     // even if the owner tweaks the version/address before completing payment.
     const prevPelecard = c.order && !c.order.paid ? c.order.pelecard || null : null;
+    // How many copies of the same deck. Absent means "don't change it" on a
+    // re-submit (an address edit must not silently reset the count to 1) and 1 on
+    // a fresh order.
+    const copies = sanitizeQuantity(
+      quantity == null ? (sameAsExisting && existing.quantity) || 1 : quantity
+    );
+    // The PER-COPY price, and whether shipping is added on top.
+    //
+    // An UNPAID order always prices from current settings — including one placed
+    // before copies existed, which stored a single all-in total with no separate
+    // fee. That is the owner's rule (an unpaid order is re-priced at today's
+    // prices, the same rule adminUpdateOrder follows), and it is also what makes
+    // the arithmetic safe: collect.html's renderTotal prices from settings too,
+    // so the number on the screen and the number charged agree BY CONSTRUCTION
+    // rather than by coincidence.
+    //
+    // The previous attempt special-cased a legacy record by reusing its stored
+    // all-in total as the per-copy price. That was one-shot: it then PERSISTED
+    // that figure as unit_price, so the next /pay/init no longer recognised the
+    // record as legacy and added shipping on top of a number that already
+    // contained it — checkout showed 239 and the card was charged 278 on the
+    // second press. Pricing every unpaid order the same way removes the case
+    // rather than patching it.
+    //
+    // A quoted per-copy price (an admin custom quote) still survives a re-submit.
+    const unitPrice =
+      sameAsExisting && Number.isInteger(existing.unit_price)
+        ? existing.unit_price
+        : versionPrice(version);
+    const fee = version === 'delivery' ? deliveryFee() : 0;
     c.order = {
       version,
-      // Re-submitting the SAME version keeps the order's stored total (honours the
-      // price it was created at — e.g. an admin custom quote — even if settings
-      // later changed); a brand-new order is priced from settings now.
-      total: sameAsExisting ? existing.total : versionPrice(version),
+      // Copies of the same game, and the per-copy price behind the total. Kept as
+      // their own fields so a receipt can show the arithmetic rather than a bare
+      // sum the buyer has to take on trust.
+      quantity: copies,
+      unit_price: unitPrice,
+      // Shipping, charged ONCE for the whole order (0 for pickup).
+      delivery_fee: fee,
+      // The authoritative charge. Always recomputed here — never accepted from a
+      // client — so a tampered payload cannot buy five decks at the price of one.
+      // Summed from the SAME unit/fee stored above rather than via orderTotal(),
+      // which would re-derive the fee from settings and re-add shipping to a
+      // legacy all-in total.
+      total: unitPrice * copies + fee,
       address: addr,
       ordered_at: nowIso(),
       paid: false,
@@ -1399,6 +1503,13 @@ module.exports.ORDER_PRICES = ORDER_PRICES;
 module.exports.effectivePricing = effectivePricing;
 // The short order number to print for a collection (falls back to its id).
 module.exports.orderRef = orderRef;
+// The one-time shipping fee + the copy-count sanitiser + the authoritative
+// total, exposed for the routes (which must never trust a client's number) and
+// for unit tests.
+module.exports.deliveryFee = deliveryFee;
+module.exports.sanitizeQuantity = sanitizeQuantity;
+module.exports.orderTotal = orderTotal;
+module.exports.MAX_COPIES = MAX_COPIES;
 // Pure free-quota projection (collection + word count -> {limit, applies, paid,
 // remaining, locked}), exposed for the API's public view and for unit tests.
 module.exports.freeLimitState = freeLimitState;

@@ -23,6 +23,10 @@ export const PRICING_FALLBACK = {
     delivery: { enabled: false, price: 199 },
     custom: { enabled: false, price: 599 },
   },
+  // Shipping, charged ONCE per order however many copies it holds. 0 in the
+  // fallback: a guessed fee would be a guessed CHARGE, and the checkout must
+  // never show a number the server did not send.
+  delivery_fee: 0,
 };
 
 // A well-formed pricing payload: store.now/was are integers AND every known
@@ -47,12 +51,21 @@ export async function fetchPricing(timeoutMs = 2500) {
     const r = await fetch('/api/pricing', { signal: ctrl.signal });
     if (!r.ok) throw new Error('http ' + r.status);
     const j = await r.json();
-    if (isValidPricing(j)) return { store: j.store, versions: j.versions, ok: true };
+    if (isValidPricing(j)) {
+      return {
+        store: j.store,
+        versions: j.versions,
+        // Optional: an older server (or one whose settings read failed) omits it.
+        delivery_fee: Number.isInteger(j.delivery_fee) ? j.delivery_fee : 0,
+        ok: true,
+      };
+    }
     throw new Error('bad shape');
   } catch {
     return {
       store: { ...PRICING_FALLBACK.store },
       versions: JSON.parse(JSON.stringify(PRICING_FALLBACK.versions)),
+      delivery_fee: PRICING_FALLBACK.delivery_fee,
       ok: false,
     };
   } finally {

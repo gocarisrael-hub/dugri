@@ -272,6 +272,10 @@
           <div id="versionCards"></div>
         </div>
         <div class="section-group">
+          <p class="section-title">משלוח</p>
+          <div id="shippingCards"></div>
+        </div>
+        <div class="section-group">
           <p class="section-title">מכסת מילים חינם</p>
           <div id="quotaCards"></div>
         </div>
@@ -322,8 +326,8 @@
       // The four checkout versions, in display order, with their Hebrew labels.
       const VERSIONS = [
         { id: 'pdf', label: 'דיגיטלי (PDF)' },
-        { id: 'pickup', label: 'איסוף עצמי' },
-        { id: 'delivery', label: 'משלוח עד הבית' },
+        { id: 'pickup', label: 'איסוף עצמי (מחיר לעותק)' },
+        { id: 'delivery', label: 'משלוח עד הבית (מחיר לעותק)' },
         { id: 'custom', label: 'עיצוב אישי בהתאמה מלאה' },
       ];
 
@@ -427,10 +431,33 @@
         );
       }
 
+      // --- shipping card (one-time delivery fee) ---------------------------------
+      // Charged ONCE per order however many copies it holds — every copy ships
+      // together. The hint spells out the ORDER the two delivery numbers must be
+      // changed in: the per-copy price first, this second. Backwards, a one-copy
+      // delivery jumps to price + fee and real buyers are overcharged.
+      function shippingCardHtml(eff) {
+        return (
+          '<div class="card" data-card="shipping" data-keys="delivery_fee">' +
+          '<div class="card-head"><h3 class="card-title">דמי משלוח</h3>' +
+          '<span class="card-id">pricing.delivery_fee</span></div>' +
+          priceFieldHtml('delivery_fee', 'דמי משלוח (חד-פעמי)', eff.delivery_fee) +
+          '<p class="hint">נגבה <b>פעם אחת</b> לכל הזמנה, לא לכל עותק — כל העותקים נשלחים יחד. ' +
+          'שימו לב לסדר: קודם משנים את “משלוח עד הבית” למחיר <b>לעותק אחד</b>, ורק אז קובעים כאן ' +
+          'את דמי המשלוח. בסדר ההפוך משלוח של עותק אחד יקפוץ למחיר המלא + דמי המשלוח.</p>' +
+          '<div class="actions">' +
+          '<button class="primary" data-save type="button">שמירה</button>' +
+          '<button class="danger" data-reset type="button">אפס לברירת מחדל</button>' +
+          '<span class="meta status" role="status" aria-live="polite"></span>' +
+          '</div></div>'
+        );
+      }
+
       function render() {
         const eff = state.effective.pricing;
         qs('storeCards').innerHTML = storeCardHtml(eff);
         qs('versionCards').innerHTML = VERSIONS.map((v) => versionCardHtml(v, eff)).join('');
+        qs('shippingCards').innerHTML = shippingCardHtml(eff);
         qs('quotaCards').innerHTML = quotaCardHtml(eff);
       }
 
@@ -450,7 +477,9 @@
             ? storeCardHtml(eff)
             : id === 'quota'
               ? quotaCardHtml(eff)
-              : versionCardHtml(byId(id), eff);
+              : id === 'shipping'
+                ? shippingCardHtml(eff)
+                : versionCardHtml(byId(id), eff);
         card.outerHTML = html;
       }
       function byId(id) {

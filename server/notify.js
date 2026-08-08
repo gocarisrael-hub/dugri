@@ -407,6 +407,24 @@ function amountLines(order, options, label) {
   return [label + ': ' + amount + ' ' + f.currency];
 }
 
+// The copies breakdown for an order-detail block: how many decks, the per-copy
+// price, and the one-time shipping fee. Returns [] for an ordinary single-copy
+// order (and for orders placed before copies existed, which carry no quantity) so
+// nothing changes on the receipts that dominate.
+function copyLines(order) {
+  const qty = order && Number.isInteger(order.quantity) ? order.quantity : 1;
+  if (qty <= 1) return [];
+  const f = fieldLabels();
+  const out = [f.copies + ': ' + qty];
+  if (Number.isInteger(order.unit_price)) {
+    out.push(f.unitPrice + ': ' + order.unit_price + ' ' + f.currency);
+  }
+  if (Number.isInteger(order.delivery_fee) && order.delivery_fee > 0) {
+    out.push(f.shipping + ': ' + order.delivery_fee + ' ' + f.currency);
+  }
+  return out;
+}
+
 // Shared body lines (order details) used by both messages. `options` may carry
 // `amountCharged` (the real charged amount) — see amountLines.
 function orderLines(collection, baseUrl, options) {
@@ -418,6 +436,10 @@ function orderLines(collection, baseUrl, options) {
   if (order) {
     const label = versionLabelFor(order.version);
     lines.push(f.version + ': ' + label);
+    // Copies + the arithmetic behind the total. Shown ONLY for a multi-copy order:
+    // "מספר עותקים: 1" on every single-deck receipt would be noise. The print
+    // instruction depends on this line, so it must never be silently dropped.
+    lines.push(...copyLines(order));
     lines.push(...amountLines(order, options, f.amount));
     // A delivery order carries a shipping address — surface it so the owner can
     // fulfil without opening the panel.

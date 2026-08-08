@@ -481,6 +481,12 @@ function publicView(c, { owner = false } = {}) {
       ? {
           version: order.version,
           total: order.total,
+          // Copies + the arithmetic behind the total. Orders placed before copies
+          // existed carry no `quantity`; they are all single-copy, so default to 1
+          // rather than handing the checkout an undefined to render.
+          quantity: order.quantity || 1,
+          unit_price: Number.isInteger(order.unit_price) ? order.unit_price : order.total,
+          delivery_fee: order.delivery_fee || 0,
           paid: !!order.paid,
           locked,
           ...(owner && order.version === 'delivery' && order.address
@@ -2012,6 +2018,11 @@ app.get('/api/collections/:id/summary', async (req, res) => {
           // charged after any coupon. `charged` is null for an unpaid order and
           // 0 for a fully-free 100%-coupon one, so the page can tell them apart.
           total: order.total != null ? order.total : null,
+          // The breakdown behind the total, so the confirmation page can show
+          // "199 × 5 + 39 שילוח" rather than a bare 1034 the buyer must trust.
+          quantity: order.quantity || 1,
+          unit_price: Number.isInteger(order.unit_price) ? order.unit_price : order.total,
+          delivery_fee: order.delivery_fee || 0,
           charged: order.paid && order.charged_total != null ? order.charged_total : null,
           coupon: order.paid ? order.coupon || null : null,
           paid: !!order.paid,
@@ -2117,12 +2128,21 @@ app.post('/api/collections/:id/order', (req, res) => {
   const r = db.setOrder(req.params.id, b.owner_token, {
     version: b.version,
     address: b.address,
+    // Copies of the same deck. setOrder sanitises it and recomputes the total —
+    // the client's number never reaches the charge unmultiplied by our own price.
+    quantity: b.quantity,
   });
   if (r && r.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
   if (r && r.error) return res.status(400).json({ error: r.error });
   // Order created -> fire the one-time owner/buyer emails + WhatsApp group.
   onOrderCreated(req.params.id, paymentBaseUrl());
-  res.json({ version: r.version, total: r.total });
+  res.json({
+    version: r.version,
+    total: r.total,
+    quantity: r.quantity,
+    unit_price: r.unit_price,
+    delivery_fee: r.delivery_fee,
+  });
 });
 
 // Owner-only: delete a word (moderation).
@@ -2894,6 +2914,7 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   const order = db.setOrder(req.params.id, b.owner_token, {
     version: b.version,
     address: b.address,
+    quantity: b.quantity,
   });
   if (order && order.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
   if (order && order.error) return res.status(400).json({ error: order.error });
