@@ -86,7 +86,9 @@ test('copies: the total multiplies, and one copy shows no arithmetic to explain'
 
 test('copies: delivery charges shipping once, however many copies', async ({ page }) => {
   await createCollection(page, 'Shipping');
-  await page.locator('input[name="payVersion"][value="delivery"]').check();
+  // Delivery is a tick on the printed game, not a version of its own.
+  await page.locator('input[name="payVersion"][value="pickup"]').check();
+  await page.locator('#shipToggle').check();
   // One copy: price + one shipping.
   await expect(page.locator('#payTotal')).toHaveText(String(UNIT + FEE));
 
@@ -98,6 +100,7 @@ test('copies: delivery charges shipping once, however many copies', async ({ pag
 
   // Switching to pickup drops the fee entirely, keeping the count.
   await page.locator('input[name="payVersion"][value="pickup"]').check();
+  await page.locator('#shipToggle').uncheck();
   await expect(page.getByTestId('qty-val')).toHaveText('5');
   await expect(page.locator('#payTotal')).toHaveText(String(UNIT * 5));
 });

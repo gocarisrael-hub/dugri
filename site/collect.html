@@ -852,6 +852,35 @@
         border-color: var(--sage);
         background: var(--sage-tint);
       }
+      /* The delivery add-on. Deliberately NOT a .pay-opt: it is a yes/no on top of
+         the chosen game, not a fourth thing to choose between, and looking like a
+         sibling of the options is what made pickup and delivery read as the same
+         product twice. Indented and hairline-bordered so it reads as attached to
+         the option above it. */
+      .pay-addon {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin-inline-start: 18px;
+        cursor: pointer;
+        transition:
+          border-color 0.15s ease,
+          background 0.15s ease;
+      }
+      .pay-addon:hover {
+        border-color: var(--sage);
+      }
+      .pay-addon input {
+        margin-top: 3px;
+        accent-color: var(--sage);
+      }
+      .pay-addon.active {
+        border-color: var(--sage);
+        background: var(--sage-tint);
+      }
       .pay-opt .opt-body {
         flex: 1;
       }
@@ -1540,31 +1569,22 @@
               >
             </span>
           </label>
+          <!-- ONE printed game, and delivery as a tick beneath it. Pickup and
+               delivery used to be two radio options; at the owner's prices they
+               read as the same product twice, and the shopper had to compare two
+               lines to work out that the only difference was how it reaches her.
+               The `version` values underneath are UNCHANGED — ticked sends
+               'delivery', unticked 'pickup' — so orders, emails and the admin need
+               no migration. See selectedVersion()/baseVersionOf(). -->
           <label class="pay-opt">
             <input type="radio" name="payVersion" value="pickup" />
             <span class="opt-body">
               <span class="opt-title"
-                ><span data-edit="collect-ver-pickup-title"
-                  >משחק מוכן · איסוף מבית דפוס גלאור, ת״א</span
-                ><span class="opt-price">₪149</span></span
-              >
-              <span class="opt-note" data-edit="collect-ver-pickup-note"
-                >מוכן לאיסוף תוך כ-48 שעות</span
-              >
-            </span>
-          </label>
-          <label class="pay-opt">
-            <input type="radio" name="payVersion" value="delivery" />
-            <span class="opt-body">
-              <span class="opt-title"
-                ><span data-edit="collect-ver-delivery-title">משלוח עד הבית של המשחק המוכן</span
+                ><span data-edit="collect-ver-pickup-title">משחק מוכן ומודפס</span
                 ><span class="opt-price">₪199</span></span
               >
-              <span class="opt-note" data-edit="collect-ver-delivery-note"
-                >משלוח עד הבית תוך כ-5 ימים</span
-              >
-              <span class="opt-note" data-edit="collect-ver-delivery-note2"
-                >אזורים מרוחקים בתיאום ובתוספת תשלום</span
+              <span class="opt-note" data-edit="collect-ver-pickup-note"
+                >מוכן תוך כ-48 שעות · איסוף מבית דפוס גלאור, ת״א</span
               >
             </span>
           </label>
@@ -1581,6 +1601,24 @@
               >
               <span class="opt-note" data-edit="collect-ver-custom-note2"
                 >ניצור קשר לאחר התשלום לתיאום העיצוב</span
+              >
+            </span>
+          </label>
+          <!-- The delivery add-on. Sits OUTSIDE the radiogroup (it is not a version
+               choice, it is a yes/no on top of the printed game) and is shown only
+               while the printed game is the selection — a PDF has nothing to
+               ship. Its price is the shipping fee alone, charged ONCE per order
+               however many copies travel in the parcel. -->
+          <label class="pay-addon hidden" id="shipOpt" data-testid="ship-toggle">
+            <input type="checkbox" id="shipToggle" />
+            <span class="opt-body">
+              <span class="opt-title"
+                ><span data-edit="collect-ship-title">שלחו לי עד הבית</span
+                ><span class="opt-price" id="shipPrice">₪40</span></span
+              >
+              <span class="opt-note" data-edit="collect-ship-note">מגיע תוך כ-7 ימי עסקים</span>
+              <span class="opt-note" data-edit="collect-ship-note2"
+                >אזורים מרוחקים בתיאום ובתוספת תשלום</span
               >
             </span>
           </label>
@@ -2737,14 +2775,31 @@
       function firstEnabledVersion() {
         return VERSION_ORDER.find((v) => isEnabled(v)) || null;
       }
+      // 'delivery' is the printed game WITH shipping, so it shares the 'pickup'
+      // radio — the difference is the tick, not a different option. Every place
+      // that maps a version back onto a control goes through here.
+      function baseVersionOf(v) {
+        return v === 'delivery' ? 'pickup' : v;
+      }
+      // Whether the buyer asked for it to be shipped. Only meaningful while the
+      // printed game is selected and delivery is on sale.
+      function shipOn() {
+        const box = document.getElementById('shipToggle');
+        return !!(box && box.checked && isEnabled('delivery'));
+      }
       // The version to charge: a locked (already-placed) order's version wins; else
-      // the checked radio when still enabled; else the first enabled one (which may
-      // be null → nothing is payable).
+      // the checked radio when still enabled — upgraded to 'delivery' when the
+      // shipping tick is on; else the first enabled one (which may be null →
+      // nothing is payable).
       function selectedVersion() {
         if (lockVersion) return lockVersion;
         const checked = document.querySelector('input[name="payVersion"]:checked');
         const v = checked && checked.value;
+        if (v === 'pickup' && shipOn()) return 'delivery';
         if (v && isEnabled(v)) return v;
+        // Delivery-only pricing: pickup is off but shipping is on sale, so the
+        // printed game is still buyable — always shipped.
+        if (v === 'pickup' && isEnabled('delivery')) return 'delivery';
         return firstEnabledVersion();
       }
       // Sales are "paused" when every checkout option is off. Toggling this class
@@ -2852,6 +2907,39 @@
           return v === 'delivery' ? deliveryFee() : 0;
         }
 
+        // Show, price and (where the choice isn't the buyer's) fix the shipping
+        // tick. Called from BOTH applyPricing branches so the two can never leave
+        // it in disagreeing states.
+        //
+        //   • locked order   — visible only for a delivery order, ticked, frozen.
+        //   • pickup + ship  — the ordinary case: offered, the buyer decides.
+        //   • ship only      — pickup is off, so the game can only be shipped:
+        //                      ticked and frozen, because there is nothing to
+        //                      choose and an untickable box would be a dead end.
+        //   • pickup only    — nothing to ship; hidden.
+        function syncShipOption({ locked }) {
+          const opt = document.getElementById('shipOpt');
+          const box = document.getElementById('shipToggle');
+          const price = document.getElementById('shipPrice');
+          if (!opt || !box) return;
+          if (locked) {
+            const isDelivery = lockVersion === 'delivery';
+            opt.classList.toggle('hidden', !isDelivery);
+            box.checked = isDelivery;
+            box.disabled = true;
+            return;
+          }
+          const canShip = isEnabled('delivery');
+          const canCollect = isEnabled('pickup');
+          const printedPicked =
+            (document.querySelector('input[name="payVersion"]:checked') || {}).value === 'pickup';
+          opt.classList.toggle('hidden', !(canShip && printedPicked));
+          box.disabled = !canCollect;
+          if (!canCollect && canShip) box.checked = true;
+          if (!canShip) box.checked = false;
+          if (price) price.textContent = '₪' + deliveryFee();
+        }
+
         // Render the total for the selected version, applying the coupon discount
         // when one is active: the full price shows struck-through (₪ on both) next
         // to the discounted price, matching the site's existing struck-price style.
@@ -2928,7 +3016,14 @@
           // A LOCKED order (admin-created, or already paid) is bought exactly as it
           // was placed — its copy count included — so the stepper is not offered.
           $('#qtyRow').classList.toggle('hidden', !!lockVersion);
-          opts.forEach((o) => o.classList.toggle('active', o.querySelector('input').value === v));
+          // Compare against the BASE version: 'delivery' is bought through the
+          // pickup radio plus the tick, so the printed-game option stays active.
+          const base = baseVersionOf(v);
+          opts.forEach((o) =>
+            o.classList.toggle('active', o.querySelector('input').value === base)
+          );
+          const shipOpt = document.getElementById('shipOpt');
+          if (shipOpt) shipOpt.classList.toggle('active', v === 'delivery');
           addressForm.classList.toggle('hidden', v !== 'delivery');
           // When the delivery form is showing and the server returned a stored
           // address (owner-only, e.g. a locked delivery order or one the buyer
@@ -2987,16 +3082,21 @@
           if (lockedOrder) {
             hidePriceErr();
             if (optsBox) optsBox.style.display = '';
+            const lockBase = baseVersionOf(lockVersion);
             for (const label of opts) {
               const radio = label.querySelector('input[name="payVersion"]');
               if (!radio) continue;
-              const isLock = radio.value === lockVersion;
+              const isLock = radio.value === lockBase;
               label.style.display = isLock ? '' : 'none';
               radio.disabled = !isLock;
               radio.checked = isLock;
               const priceEl = label.querySelector('.opt-price');
               if (priceEl && isLock) priceEl.textContent = '₪' + lockTotal;
             }
+            // A locked DELIVERY order shows the tick, on and frozen: the order was
+            // placed with shipping and cannot be changed into a pickup here. A
+            // locked order of any other version has nothing to ship.
+            syncShipOption({ locked: true });
             setPayable(true);
             refreshPay();
             return;
@@ -3043,7 +3143,11 @@
             const radio = label.querySelector('input[name="payVersion"]');
             if (!radio) continue;
             const v = radio.value;
-            const enabled = isEnabled(v);
+            // The printed game is on sale if EITHER way of getting it is: pickup,
+            // shipping, or both. Otherwise a shop that only ships would show no
+            // printed game at all.
+            const enabled =
+              v === 'pickup' ? isEnabled('pickup') || isEnabled('delivery') : isEnabled(v);
             // Inline display (not the `hidden` attr) — `.pay-opt { display: … }`
             // would otherwise override the UA [hidden] rule and keep it visible.
             label.style.display = enabled ? '' : 'none';
@@ -3060,16 +3164,25 @@
               const was = priceEl.querySelector('.was');
               priceEl.textContent = '';
               if (was) priceEl.appendChild(was);
-              priceEl.appendChild(document.createTextNode('₪' + priceFor(v)));
+              // The printed game's price follows the tick: unticked it is the
+              // pickup price, ticked it is the delivery per-copy price (the
+              // shipping itself is priced on the tick, not here). Both are what
+              // renderTotal will sum, so the option and the total never disagree.
+              const shown = v === 'pickup' ? (shipOn() ? 'delivery' : 'pickup') : v;
+              priceEl.appendChild(document.createTextNode('₪' + priceFor(shown)));
             }
           }
+          syncShipOption({ locked: false });
           // Keep a valid (enabled) radio selected — but only if something is on
           // sale. When every option is off, firstEnabledVersion() is null; leave
           // no disabled option checked so pay is never attempted at a dead price.
+          // Map through the BASE version: 'delivery' has no radio of its own.
           const first = firstEnabledVersion();
           const cur = document.querySelector('input[name="payVersion"]:checked');
           if (first && (!cur || cur.disabled || !userPicked)) {
-            const el = document.querySelector('input[name="payVersion"][value="' + first + '"]');
+            const el = document.querySelector(
+              'input[name="payVersion"][value="' + baseVersionOf(first) + '"]'
+            );
             if (el) el.checked = true;
           }
           syncSalesPaused();
@@ -3102,9 +3215,25 @@
         document.querySelectorAll('input[name="payVersion"]').forEach((r) =>
           r.addEventListener('change', () => {
             userPicked = true;
+            // Switching to a version with nothing to ship (a PDF) must take the
+            // tick away with it, or a hidden checkbox would keep charging for
+            // shipping. syncShipOption owns that decision.
+            syncShipOption({ locked: false });
             refreshPay();
           })
         );
+        {
+          const shipBox = document.getElementById('shipToggle');
+          if (shipBox) {
+            shipBox.addEventListener('change', () => {
+              userPicked = true;
+              // The option's own price follows the tick (pickup price vs delivery
+              // per-copy price), so re-stamp the list before re-totalling.
+              applyPricing();
+              refreshPay();
+            });
+          }
+        }
         // Render immediately with the launch defaults (never blank), then refine
         // once the endpoint answers (which also flips to the no-pay state on a
         // failed fetch).
