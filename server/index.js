@@ -1401,8 +1401,48 @@ app.get('/api/collections/:id/board', (req, res) => {
   sendBoardFile(res, c.id);
 });
 
+// Admin: mark an order SENT TO THE PRINT SHOP. A toggle: body {undo:true} takes
+// it back. The first of the two hand-pressed production steps, and the gate the
+// second one sits behind.
+//
+// It notifies NOBODY — not the print shop, not the customer. The owner mails
+// Galor the file the way she always has; this records that she did, so the list
+// can show what is out at the printer and so /ready has something to check.
+//
+// Un-sending is refused while the order is marked ready for the customer (409):
+// "ready" means "back from print", so pulling the print stamp out from under it
+// would leave a state the pipeline cannot reach. Un-mark ready first.
+app.post('/api/admin/collections/:id/to-print', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const sent = !(req.body && req.body.undo);
+  const r = db.setOrderSentToPrint(req.params.id, sent);
+  if (!r) return res.status(404).json({ error: 'not found' });
+  if (r.error === 'ready') {
+    return res.status(409).json({
+      error: 'ready',
+      message: 'ההזמנה כבר סומנה כמוכנה ללקוח/ה — יש לבטל את הסימון "מוכן" קודם.',
+    });
+  }
+  res.json({
+    ok: true,
+    sent_to_print: !!r.order.sent_to_print_at,
+    sent_to_print_at: r.order.sent_to_print_at || null,
+    // Both tallies, recomputed from the orders: marking one order sent moves it
+    // out of "waiting" and into "at Galor", so the dashboard has to repaint both
+    // numbers off the same read or they can disagree for a beat.
+    sent_to_print_count: db.countSentToPrintOrders(),
+    ready_count: db.countReadyOrders(),
+  });
+});
+
 // Admin: mark an order READY — printed, and either waiting to be collected or
 // about to go out. A toggle: body {ready:false} takes it back.
+//
+// GATED ON /to-print above: an order can only be ready once it has been sent to
+// the print shop, because "ready" means "back from Galor". Refused with 409
+// otherwise. The store enforces it (db.setOrderReady) rather than the admin page
+// alone, so a stale tab cannot email a customer about a game that never went to
+// print.
 //
 // Flipping INTO ready emails the customer. The owner asked for that mail to be
 // re-sent if she undoes and presses again (she would only do that after fixing
@@ -1419,6 +1459,12 @@ app.post('/api/admin/collections/:id/ready', (req, res) => {
   const ready = !(req.body && req.body.undo);
   const r = db.setOrderReady(req.params.id, ready);
   if (!r) return res.status(404).json({ error: 'not found' });
+  if (r.error === 'not_sent_to_print') {
+    return res.status(409).json({
+      error: 'not_sent_to_print',
+      message: 'צריך קודם לסמן שההזמנה נשלחה לדפוס.',
+    });
+  }
   if (ready && r.changed && typeof notify.sendOrderReady === 'function') {
     notify.sendOrderReady(db.getCollection(req.params.id), paymentBaseUrl()).catch(() => {});
   }
@@ -1426,8 +1472,10 @@ app.post('/api/admin/collections/:id/ready', (req, res) => {
     ok: true,
     ready: !!r.order.ready_at,
     ready_at: r.order.ready_at || null,
-    // The dashboard tally, recomputed from the orders so the button and the
-    // number can never drift apart.
+    // Both tallies, recomputed from the orders so the buttons and the numbers
+    // can never drift apart — this flip moves the order out of "at Galor" as
+    // well as into "printed".
+    sent_to_print_count: db.countSentToPrintOrders(),
     ready_count: db.countReadyOrders(),
   });
 });

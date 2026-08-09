@@ -858,6 +858,35 @@
         }
       }
 
+      // Same call, but handing back what the server SAID as well as whether it
+      // worked. A separate function on purpose: adminAction's callers all test
+      // its result for truthiness, and an object is always truthy — widening the
+      // old return value would silently turn every failure into a success.
+      //
+      // For routes that refuse a press with a reason the owner needs to read
+      // (the production toggles: "send it to the printer first").
+      async function adminActionResult(method, pathFor, body) {
+        try {
+          const r = await fetch(
+            pathFor + (pathFor.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key),
+            {
+              method,
+              headers: body ? { 'Content-Type': 'application/json' } : undefined,
+              body: body ? JSON.stringify(body) : undefined,
+            }
+          );
+          let data = null;
+          try {
+            data = await r.json();
+          } catch {
+            data = null;
+          }
+          return { ok: r.ok, data };
+        } catch {
+          return { ok: false, data: null };
+        }
+      }
+
       /* ======================================================================
          EDIT AN ORDER'S CHOICES
          The customer settles details with the owner on WhatsApp after checkout
@@ -1220,6 +1249,63 @@
       // — and says plainly that the customer has already been emailed, because that
       // part cannot be taken back and a confirmation that implies otherwise would
       // be a lie at exactly the wrong moment.
+      // "נשלח לדפוס" — the owner presses this when she has mailed the file to
+      // Galor. It is a MARKER and nothing else: it notifies nobody, and it is
+      // the step "מוכן" beside it is gated on, so the two columns read left to
+      // right as the order's real journey (produced → at the printer → back and
+      // ready for the customer).
+      //
+      // Un-sending is refused by the server while the order is marked ready, so
+      // the button says so rather than firing a request that will 409.
+      function toPrintCell(c) {
+        const td = document.createElement('td');
+        const order = c.order || null;
+        if (!order) {
+          td.className = 'muted';
+          td.textContent = '—';
+          return td;
+        }
+        const isSent = !!order.sent_to_print_at;
+        const isReady = !!order.ready_at;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'act' + (isSent ? ' ready-on' : '');
+        btn.dataset.testid = 'to-print-toggle';
+        btn.dataset.collection = c.id;
+        btn.textContent = isSent ? 'בדפוס ✅' : 'נשלח לגלאור';
+        if (isSent) btn.title = 'סומן כנשלח לדפוס ב-' + fmtDate(order.sent_to_print_at);
+        // Back from print already — the stamp is now history, not a toggle. It
+        // is disabled rather than hidden so the row still says the order went.
+        if (isSent && isReady) {
+          btn.disabled = true;
+          btn.title = 'ההזמנה כבר סומנה כמוכנה — לביטול, בטלו קודם את "מוכן"';
+        }
+        btn.onclick = async () => {
+          if (isSent) {
+            const ok = confirm(
+              'לבטל את הסימון "נשלח לדפוס" עבור ' + (c.honoree_name || 'ההזמנה') + '?'
+            );
+            if (!ok) return;
+          }
+          btn.disabled = true;
+          const r = await adminActionResult(
+            'POST',
+            '/api/admin/collections/' + c.id + '/to-print',
+            { undo: isSent }
+          );
+          // load() repaints the row AND both tallies from the server, so the
+          // numbers always reflect stored state rather than a local increment
+          // that could drift if the write failed.
+          if (r.ok) load();
+          else {
+            if (r.data && r.data.message) alert(r.data.message);
+            btn.disabled = false;
+          }
+        };
+        td.appendChild(btn);
+        return td;
+      }
+
       function readyCell(c) {
         const td = document.createElement('td');
         const order = c.order || null;
@@ -1229,6 +1315,7 @@
           return td;
         }
         const isReady = !!order.ready_at;
+        const isSent = !!order.sent_to_print_at;
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'act' + (isReady ? ' ready-on' : '');
@@ -1242,6 +1329,15 @@
             ? 'מוכן — יוצא למשלוח'
             : 'מוכן לאיסוף';
         if (isReady) btn.title = 'סומן כמוכן ב-' + fmtDate(order.ready_at);
+        // GATED ON THE PRINT SHOP: an order is "ready" once it is BACK from
+        // Galor, so it cannot be marked ready before it ever went. Disabled
+        // rather than hidden — a missing button reads as "not applicable", and
+        // the owner needs to see the step she still owes. The server enforces
+        // the same rule (409), so a stale tab cannot get past this either.
+        if (!isReady && !isSent) {
+          btn.disabled = true;
+          btn.title = 'קודם צריך לסמן שההזמנה נשלחה לדפוס';
+        }
         btn.onclick = async () => {
           if (isReady) {
             const ok = confirm(
@@ -1254,14 +1350,17 @@
             if (!ok) return;
           }
           btn.disabled = true;
-          const ok = await adminAction('POST', '/api/admin/collections/' + c.id + '/ready', {
+          const r = await adminActionResult('POST', '/api/admin/collections/' + c.id + '/ready', {
             undo: isReady,
           });
-          // load() repaints the row AND the הודפסו tally from the server, so the
-          // number always reflects stored state rather than a local increment
+          // load() repaints the row AND the tallies from the server, so the
+          // numbers always reflect stored state rather than a local increment
           // that could drift if the write failed.
-          if (ok) load();
-          else btn.disabled = false;
+          if (r.ok) load();
+          else {
+            if (r.data && r.data.message) alert(r.data.message);
+            btn.disabled = false;
+          }
         };
         td.appendChild(btn);
         return td;
@@ -1375,6 +1474,13 @@
           ['לידים', leads],
           ['הזמנות', orders],
           ['שולמו', paid],
+          // Out at Galor and not yet back — the two stamps read together, so an
+          // order that has returned drops out of this number instead of sitting in
+          // both at once.
+          [
+            'בדפוס',
+            cols.filter((c) => c.order && c.order.sent_to_print_at && !c.order.ready_at).length,
+          ],
           ['הודפסו', cols.filter((c) => c.order && c.order.ready_at).length],
           ['הכנסות', revenue + ' ₪'],
           ['ממתינות לתשלום', pending],
@@ -1418,7 +1524,7 @@
         }
         const table = document.createElement('table');
         table.innerHTML =
-          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>פיונים</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>הפקה</th><th>מוכן</th><th>נוצר</th><th>מעקב</th><th>וואטסאפ</th><th>ניהול</th></tr></thead>';
+          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>פיונים</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>הפקה</th><th>לדפוס</th><th>מוכן</th><th>נוצר</th><th>מעקב</th><th>וואטסאפ</th><th>ניהול</th></tr></thead>';
         const tb = document.createElement('tbody');
         for (const c of cols) {
           const tr = document.createElement('tr');
@@ -1624,6 +1730,7 @@
           tr.appendChild(tdAddress);
           tr.appendChild(tdPaid);
           tr.appendChild(tdProduction);
+          tr.appendChild(toPrintCell(c));
           tr.appendChild(readyCell(c));
           tr.appendChild(tdDate);
 

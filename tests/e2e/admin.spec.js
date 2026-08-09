@@ -76,10 +76,13 @@ test('stat bar + filter tabs narrow the rows', async ({ page, request }) => {
 
   await page.goto(`/admin.html?key=${KEY}`);
 
-  // Stat bar: six tiles — לידים, הזמנות, שולמו, הודפסו, הכנסות, ממתינות לתשלום.
-  await expect(page.locator('#stats .stat')).toHaveCount(6);
+  // Stat bar: seven tiles — לידים, הזמנות, שולמו, בדפוס, הודפסו, הכנסות,
+  // ממתינות לתשלום. בדפוס and הודפסו are the two production steps, in the order
+  // an order passes through them.
+  await expect(page.locator('#stats .stat')).toHaveCount(7);
   await expect(page.locator('#stats')).toContainText('הכנסות');
   await expect(page.locator('#stats')).toContainText('לידים');
+  await expect(page.locator('#stats')).toContainText('בדפוס');
   await expect(page.locator('#stats')).toContainText('הודפסו');
 
   // "הכל" shows both rows.
