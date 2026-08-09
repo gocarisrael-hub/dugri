@@ -7,14 +7,34 @@
    stages are, what we need from them at each one, and one button that continues
    into exactly the wizard URL the trigger already pointed at.
 
+   IT IS ONE PAGE, AND THE BUTTON IS AT THE FOOT OF IT (owner's call). Two separate
+   promises, and only one of them is absolute:
+
+     • THE BUTTON IS ALWAYS ON SCREEN. `.sx-cta` is `position:sticky;bottom:0`, so
+       when the briefing does fit it simply sits at the foot, and when it does not it
+       pins to the bottom edge instead of dropping below the fold. This is what makes
+       a single bottom CTA safe; without it, a landscape phone or a 200%-text reader
+       opens the sheet with no visible way forward — which is exactly why a second
+       copy used to sit above the steps.
+     • ONE PAGE, on the screens it can be. The type scales with `dvh` so the whole
+       briefing lands inside a single viewport on a modern phone held upright
+       (390x844 and taller) and on any desktop. It does NOT fit a 320x568 phone, a
+       landscape phone, or a short window: this much Hebrew copy cannot be set at a
+       readable size in 400px of height, so those readers get a short scroll with the
+       button still pinned. Shortening the step copy is what would buy the last few
+       screens — every string is owner-editable, and the type grows back on its own.
+
+   The scale has a counter-intuitive trap worth knowing before touching it: because
+   the text column stays ~350px wide on a phone, a larger face re-wraps every
+   paragraph, so content height grows FASTER than the viewport it is fitting into.
+   Turning the dvh multipliers up therefore breaks the TALL phones first, not the
+   short ones (measured: ~87px of sheet per 1px of body size at 390px wide, against
+   ~58px of screen per 100px of viewport). tests/e2e/start-explainer.spec.js sweeps
+   real device viewports for this; do not tune it against one screen size.
+
    IT NEVER BLOCKS THE PURCHASE. It intercepts the click, shows the explainer, and
    the continue button carries the trigger's OWN href forward — including
    product.js's `options.html?design=<id>&step=2`, so design preselection survives.
-   The continue button appears TWICE — above the four steps (title → sub → CTA →
-   steps) so a buyer who is already sold can act without reading the briefing, and
-   again after step 4 so a reader who scrolled the whole thing is not left with
-   nothing to press. They are one button shown twice: same shared handler, same live
-   href, same data-edit key (see buildCta).
    Escape / the X / an overlay-backdrop click all close it and hand focus back to
    the trigger, and a modified click (⌘/ctrl/shift/middle) is left alone so
    "open in new tab" still works.
@@ -142,32 +162,20 @@
     return node;
   }
 
-  // One continue CTA. The sheet renders TWO of these — 'top' (above the steps) and
-  // 'bottom' (after step 4) — because the briefing is taller than a phone and a
-  // reader who scrolls it all would otherwise end with no button in view.
+  // THE continue CTA — one button, once, at the foot of the sheet. It used to be
+  // rendered twice (above the steps and after them) because the briefing scrolled and
+  // a reader who reached the end had nothing in view; now the briefing fits one
+  // screen, so a second copy would just be the same button twice on one page.
   //
-  // They are the SAME button shown twice, and everything downstream treats them that
-  // way: both carry `data-sx-continue`, which is what the runtime binds and what
-  // open() stamps the live href onto, so there is exactly one handler and they can
-  // never drift apart. `data-sx-place` is the only thing that differs, and it rides
-  // along on the analytics event so we learn which one gets used without emitting
-  // two event names.
-  //
-  // They deliberately SHARE one data-edit key. That is the editor's supported
-  // pattern for duplicated content, not a conflict: applyOverrides writes to every
-  // [data-edit=key] match on load and syncSameKey mirrors a live edit onto all of
-  // them (see js/editor.js) — the homepage marquee already ships eight nodes on one
-  // key. So the owner retitles the button once and both update, which is what "one
-  // button shown twice" should do. Distinct keys would be the change to make only if
-  // she ever wants the bottom one worded differently.
-  function buildCta(place) {
-    var wrap = el('div', 'sx-cta sx-cta--' + place);
+  // `data-sx-continue` stays the hook the runtime binds and open() stamps the live
+  // href onto, so the button's wiring is unchanged and independent of where it sits.
+  function buildCta() {
+    var wrap = el('div', 'sx-cta');
     var go = el('a', 'sx-go', {
       href: 'options.html',
       'data-edit': 'start-explainer-continue',
       'data-sx-continue': '',
-      'data-sx-place': place,
-      'data-testid': 'start-explainer-continue' + (place === 'top' ? '' : '-bottom'),
+      'data-testid': 'start-explainer-continue',
     });
     go.textContent = CONTINUE;
     wrap.appendChild(go);
@@ -204,14 +212,6 @@
     head.appendChild(h2);
     head.appendChild(sub);
     inner.appendChild(head);
-
-    // TOP continue CTA — above the four steps so a buyer who is already sold can act
-    // the instant the sheet opens, without scrolling past the explanation.
-    // Placement note — it is a full-width block BELOW the title/sub, NOT beside the
-    // X. The X keeps its own absolute top corner and the head separates the two, so
-    // on a 390px phone they are far apart, unmistakably different targets, and
-    // neither overlaps the title.
-    inner.appendChild(buildCta('top'));
 
     var list = el('ol', 'sx-steps');
     STEPS.forEach(function (step, i) {
@@ -251,11 +251,11 @@
     });
     inner.appendChild(list);
 
-    // BOTTOM continue CTA — the same button again, after step 4. Without it a phone
-    // reader who scrolls the whole briefing ends on the last step with nothing to
-    // act on and has to scroll back up. On a short/desktop sheet margin-top:auto
-    // parks it at the foot rather than leaving it floating mid-page.
-    inner.appendChild(buildCta('bottom'));
+    // The continue CTA, after step 4 — the last thing on the page, which is where the
+    // reader's eye already is once the briefing is read. `margin-top:auto` parks it
+    // against the foot of the sheet when the steps come up short of the viewport,
+    // rather than leaving it floating under the last step.
+    inner.appendChild(buildCta());
 
     overlay.appendChild(inner);
     return overlay;
@@ -269,54 +269,112 @@
     doc = doc || document;
     if (doc.getElementById(STYLE_ID)) return;
     var css = [
-      /* Full VIEWPORT sheet, not a small centered modal. 100dvh keeps the continue
-         CTA reachable on mobile where the URL bar eats 100vh. */
+      /* Full VIEWPORT sheet, not a small centered modal, and ONE PAGE of it: the
+         briefing is sized to land inside a single screen so nothing has to scroll to
+         reach the button. 100dvh (not 100vh) is what makes that true on mobile, where
+         the URL bar eats the difference. overflow-y:auto stays as a safety valve for
+         the cases the scale cannot absorb — enlarged text, a landscape phone — so the
+         CTA is never unreachable even when the one-page fit gives out. */
       '.sx-overlay{position:fixed;inset:0;z-index:9000;display:none;',
       'background:var(--bg,#fff);overflow-y:auto;-webkit-overflow-scrolling:touch;',
       'padding:0;}',
       '.sx-overlay.is-open{display:block;}',
+      /* EVERY clamp() below is preceded by the plain fixed value it replaces. A
+         browser without `dvh` (iOS <15.4, Chrome <108, older Android WebViews) drops
+         the whole declaration as invalid at parse time, and without the pair in front
+         of it this sheet would render with NO padding at all — Hebrew flush to both
+         edges, the title under the close button. Same belt-and-braces the
+         `min-height:100vh;min-height:100dvh` pair on the next line already uses. */
       '.sx-inner{position:relative;box-sizing:border-box;min-height:100vh;min-height:100dvh;',
-      'max-width:640px;margin:0 auto;padding:64px 22px calc(34px + env(safe-area-inset-bottom,0px));',
-      'display:flex;flex-direction:column;gap:26px;text-align:right;}',
+      'max-width:640px;margin:0 auto;',
+      /* The top padding is the X's keep-out: it must always exceed the X's own
+         top + height, or the title rides up underneath it. The X caps at 14+42=56,
+         so 58px is the floor here and in the desktop override below — the number is
+         a CONSEQUENCE of the X's box, not a taste, so the two move together. */
+      'padding:58px 22px calc(34px + env(safe-area-inset-bottom,0px));',
+      'padding:clamp(58px,7dvh,64px) 22px calc(clamp(14px,2.6dvh,34px) + env(safe-area-inset-bottom,0px));',
+      'display:flex;flex-direction:column;gap:18px;gap:clamp(9px,2dvh,26px);text-align:right;}',
       /* X — top-LEFT in RTL (the far corner from the text). */
-      '.sx-x{position:absolute;top:14px;left:14px;width:42px;height:42px;line-height:1;',
-      'font-size:27px;background:transparent;border:1px solid var(--line,#e6e6e6);',
+      '.sx-x{position:absolute;top:14px;left:14px;width:42px;height:42px;font-size:27px;',
+      'top:clamp(8px,1.4dvh,14px);left:clamp(8px,1.4dvh,14px);',
+      'width:clamp(34px,5dvh,42px);height:clamp(34px,5dvh,42px);line-height:1;',
+      'font-size:clamp(22px,3.4dvh,27px);background:transparent;border:1px solid var(--line,#e6e6e6);',
       'border-radius:var(--radius,0);color:var(--ink,#141414);cursor:pointer;padding:0;}',
       '.sx-x:hover{background:var(--sage-tint,#f0f0f0);}',
       '.sx-head h2{font-family:var(--display,sans-serif);font-weight:var(--h-weight,300);',
-      'letter-spacing:var(--h-spacing,0.1em);font-size:25px;line-height:1.35;color:var(--ink,#141414);}',
-      '.sx-sub{margin-top:9px;color:var(--muted,#6b6b6b);font-size:15.5px;line-height:1.6;',
+      'letter-spacing:var(--h-spacing,0.1em);font-size:25px;font-size:clamp(18px,3.1dvh,25px);',
+      'line-height:1.28;color:var(--ink,#141414);}',
+      '.sx-sub{margin-top:9px;margin-top:clamp(3px,0.9dvh,9px);color:var(--muted,#6b6b6b);',
+      'font-size:15.5px;font-size:clamp(12.5px,1.9dvh,15.5px);line-height:1.5;',
       'font-weight:var(--sub-weight,200);}',
-      '.sx-steps{list-style:none;display:grid;gap:22px;margin:0;padding:0;}',
-      '.sx-step{display:flex;align-items:flex-start;gap:15px;',
-      'border-top:1px solid var(--line,#e6e6e6);padding-top:20px;}',
+      '.sx-steps{list-style:none;display:grid;gap:16px;gap:clamp(9px,1.75dvh,22px);margin:0;padding:0;}',
+      '.sx-step{display:flex;align-items:flex-start;gap:15px;gap:clamp(11px,1.6dvh,15px);',
+      'border-top:1px solid var(--line,#e6e6e6);padding-top:16px;',
+      'padding-top:clamp(8px,1.55dvh,20px);}',
       '.sx-step:first-child{border-top:0;padding-top:0;}',
       /* The numeral is the one splash of warm sand. */
-      '.sx-num{flex:0 0 auto;font-family:var(--display,sans-serif);font-size:31px;line-height:1;',
-      'font-weight:300;color:var(--accent,#b7a389);min-width:31px;}',
+      '.sx-num{flex:0 0 auto;font-family:var(--display,sans-serif);',
+      'font-size:31px;min-width:31px;font-size:clamp(20px,3.6dvh,31px);',
+      'min-width:clamp(20px,3.6dvh,31px);line-height:1;',
+      'font-weight:300;color:var(--accent,#b7a389);}',
       '.sx-body{flex:1 1 auto;min-width:0;}',
-      '.sx-body h3{font-family:var(--display,sans-serif);font-weight:400;font-size:18.5px;',
-      'letter-spacing:0.02em;color:var(--ink,#141414);margin-bottom:6px;}',
-      '.sx-body p{font-size:15.5px;line-height:1.65;color:var(--ink,#141414);}',
-      '.sx-note{margin-top:9px;font-size:13.5px;line-height:1.6;color:var(--muted,#6b6b6b);}',
-      '.sx-wa{display:inline-block;margin-top:9px;font-size:14.5px;color:var(--ink,#141414);',
+      '.sx-body h3{font-family:var(--display,sans-serif);font-weight:400;',
+      'font-size:18.5px;font-size:clamp(14.5px,2.2dvh,18.5px);',
+      'letter-spacing:0.02em;color:var(--ink,#141414);',
+      'margin-bottom:5px;margin-bottom:clamp(2px,0.6dvh,6px);}',
+      /* The body scale is what decides whether the briefing is one page, and it is
+         NOT free to grow with the screen: the column stays ~350px wide on a phone, so
+         a bigger face re-wraps every paragraph and the content grows FASTER than the
+         viewport it is trying to fit into. Measured at 390px wide, each extra 1px of
+         body size costs ~87px of sheet height while the screen only gains ~58px per
+         100px of height. Hence the modest 15.5px ceiling and the 1.55dvh slope —
+         above that the sheet outgrew exactly the tall phones it was meant to fit. */
+      '.sx-body p{font-size:15.5px;font-size:clamp(13px,1.55dvh,15.5px);',
+      'line-height:1.5;color:var(--ink,#141414);}',
+      /* `.sx-body p.sx-note`, not `.sx-note`: the note IS one of those paragraphs, so
+         the plain class (0,1,0) loses to `.sx-body p` (0,1,1) no matter what order
+         they are written in — which is why the aside had been rendering at full body
+         size in full ink, never small and muted the way it reads here. */
+      '.sx-body p.sx-note{margin-top:9px;margin-top:clamp(3px,0.9dvh,9px);',
+      'font-size:13.5px;font-size:clamp(11px,1.35dvh,13.5px);',
+      'line-height:1.45;color:var(--muted,#6b6b6b);}',
+      '.sx-wa{display:inline-block;margin-top:9px;margin-top:clamp(4px,0.9dvh,9px);',
+      'font-size:14.5px;font-size:clamp(12px,1.7dvh,14.5px);color:var(--ink,#141414);',
       'border-bottom:1px solid var(--accent,#b7a389);text-decoration:none;padding-bottom:2px;}',
-      /* Two copies of the same CTA. The TOP one sits between the head and the steps,
-         so it is on screen the moment the sheet opens — no scrolling past the
-         explanation to reach it. The BOTTOM one catches the reader who scrolled the
-         whole briefing; margin-top:auto parks it at the foot of the sheet when the
-         content is shorter than the viewport instead of leaving it floating. */
-      '.sx-cta{padding-bottom:4px;}',
-      '.sx-cta--bottom{margin-top:auto;padding-top:6px;padding-bottom:0;}',
+      /* ONE CTA, at the foot, and ALWAYS on screen. Two rules do that job:
+         `margin-top:auto` parks it against the bottom padding when the briefing comes
+         up short of the viewport, and `position:sticky;bottom:0` keeps it pinned to
+         the bottom edge when it does NOT — a landscape phone, a short window, a
+         reader at 200% text. Without the sticky, the single bottom button is simply
+         below the fold on those screens and the sheet opens with no visible way
+         forward, which is the whole reason a second copy used to sit above the steps.
+         The background is opaque because the steps scroll underneath it. */
+      '.sx-cta{margin-top:auto;position:sticky;bottom:0;background:var(--bg,#fff);',
+      'padding-top:8px;padding-top:clamp(6px,1dvh,10px);}',
       '.sx-go{display:block;width:100%;box-sizing:border-box;text-align:center;',
-      'background:var(--sage,#141414);color:#fff;text-decoration:none;padding:17px 26px;',
-      'border-radius:var(--radius,0);font-size:18px;letter-spacing:0.03em;}',
+      'background:var(--sage,#141414);color:#fff;text-decoration:none;',
+      'padding:17px 26px;padding:clamp(12px,2dvh,17px) 26px;',
+      'border-radius:var(--radius,0);font-size:18px;font-size:clamp(15px,2.2dvh,18px);',
+      'letter-spacing:0.03em;}',
       '.sx-go:hover{background:var(--sage-deep,#000);}',
-      /* Desktop: the CTA shrinks to its own width and aligns with the text it now
-         follows (start edge — right in RTL), rather than being centred like the
-         footer button it used to be. */
-      '@media (min-width:700px){.sx-inner{padding-top:78px;gap:30px;}',
-      '.sx-head h2{font-size:31px;}.sx-go{width:auto;display:inline-block;min-width:290px;}}',
+      /* Desktop: the sheet has room, so the CTA shrinks to its own width and aligns
+         with the start edge (right in RTL) instead of spanning the column. The
+         padding-top floor stays 58px for the same X keep-out reason as above — it was
+         40px, which is BELOW the close button's 42px bottom edge, so a short desktop
+         window put the title underneath the X. */
+      '@media (min-width:700px){.sx-inner{padding-top:78px;',
+      'padding-top:clamp(58px,8dvh,78px);}',
+      '.sx-go{width:auto;display:inline-block;min-width:290px;}',
+      /* The column is 640px wide here, not ~350: the same paragraph takes barely half
+         the lines, so the size that makes a phone overflow is comfortable on a laptop.
+         The body scale is raised back toward its original 15.5px accordingly — the
+         narrow-screen ceiling exists for the narrow screen, not for this one. */
+      '.sx-body p{font-size:15.5px;font-size:clamp(14px,1.9dvh,15.5px);}',
+      '.sx-body p.sx-note{font-size:13.5px;font-size:clamp(12px,1.6dvh,13.5px);}}',
+      /* The full 31px title needs a screen with the height to carry it; below that it
+         stays on the fluid scale rather than crowding the steps. */
+      '@media (min-width:700px) and (min-height:760px){.sx-head h2{font-size:31px;}',
+      '.sx-inner{gap:30px;gap:clamp(20px,2.6dvh,30px);}}',
       /* Motion is opt-in. The slide-up runs on .sx-inner, never on the fixed
          .sx-overlay: an animated transform on the overlay would move the sheet's own
          box for the first ~200ms (and make it a containing block for its
@@ -341,18 +399,18 @@
     injectStyles(document);
 
     var overlay = null;
-    var goBtns = []; // every [data-sx-continue] — the top and bottom copies
+    var goBtn = null; // the one [data-sx-continue]
     var lastTrigger = null;
 
-    // ONE continue handler, shared by both buttons, so their behaviour cannot drift.
-    // Fires the event exactly once per continue (only the clicked button runs this),
-    // tagged with which copy was used — one event name, one extra field, rather than
-    // two events to reconcile later.
-    function onContinue(e) {
-      var place = (e.currentTarget && e.currentTarget.getAttribute('data-sx-place')) || 'unknown';
+    function onContinue() {
+      // `place` is kept, pinned to 'bottom'. The sheet has one CTA now, so the field
+      // no longer distinguishes anything — but order_explainer_continue has been
+      // reporting it since the two-copy version, and dropping a dimension mid-stream
+      // silently splits the existing GA4 funnel report in two. It stays until the
+      // owner retires the breakdown on her side.
       track(EV_CONTINUE, {
         cta: (lastTrigger && lastTrigger.dataset.gaCta) || 'unknown',
-        place: place,
+        place: 'bottom',
       });
       // Let the anchor navigate normally; no preventDefault. The overlay is torn
       // down first so a bfcache back-navigation doesn't restore it wide open.
@@ -363,7 +421,7 @@
       if (overlay) return overlay;
       overlay = buildOverlay(document);
       document.body.appendChild(overlay);
-      goBtns = Array.prototype.slice.call(overlay.querySelectorAll('[data-sx-continue]'));
+      goBtn = overlay.querySelector('[data-sx-continue]');
 
       overlay.querySelector('.sx-x').addEventListener('click', function () {
         close();
@@ -372,9 +430,7 @@
       overlay.addEventListener('mousedown', function (e) {
         if (e.target === overlay) close();
       });
-      goBtns.forEach(function (btn) {
-        btn.addEventListener('click', onContinue);
-      });
+      goBtn.addEventListener('click', onContinue);
       // Keyboard handling sits on the DOCUMENT, not the overlay: after a backdrop
       // click focus can land on <body>, and a listener bound to the overlay would
       // never see the Escape. Guarded by is-open so it is inert when closed.
@@ -410,12 +466,9 @@
     function open(trigger) {
       ensureOverlay();
       lastTrigger = trigger;
-      // Live read: product.js may have rewritten the trigger's href (design + step).
-      // Stamped on EVERY copy, so top and bottom always go to the same place.
-      var href = resolveContinueHref(trigger);
-      goBtns.forEach(function (btn) {
-        btn.setAttribute('href', href);
-      });
+      // Live read: product.js may have rewritten the trigger's href (design + step),
+      // so the button is re-stamped on every open with the URL THIS trigger asks for.
+      goBtn.setAttribute('href', resolveContinueHref(trigger));
       overlay.classList.add('is-open');
       document.documentElement.classList.add('sx-locked');
       document.body.classList.add('sx-locked');

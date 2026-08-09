@@ -156,41 +156,34 @@ describe('buildOverlay — the briefing markup', () => {
       expect(keys).toContain(`start-explainer-${step}-title`);
       expect(keys).toContain(`start-explainer-${step}-text`);
     }
-    // Keys are unique EXCEPT the continue label, which is deliberately shared by the
-    // top and bottom copies of the same button: applyOverrides writes to every
-    // [data-edit=key] node and syncSameKey mirrors a live edit across them (see
-    // js/editor.js — the homepage marquee already ships eight nodes on one key), so
-    // the owner retitles the button once and both update. Any OTHER duplicate is a
-    // bug, which is why this asserts the exact duplicate set, not just a count.
+    // Every key is now unique. The continue label used to be the one deliberate
+    // duplicate, because the button was rendered twice; the sheet is one page with
+    // one button, so a duplicate key here would mean a stray second copy came back.
     const dupes = keys.filter((k, i) => keys.indexOf(k) !== i);
-    expect(dupes).toEqual(['start-explainer-continue']);
+    expect(dupes).toEqual([]);
   });
 
-  it('ships TWO continue CTAs — above the steps and after them — both to the wizard', () => {
+  it('ships exactly ONE continue CTA, pointing at the wizard', () => {
     const gos = [...overlay.querySelectorAll('[data-sx-continue]')];
-    expect(gos).toHaveLength(2);
-    for (const go of gos) {
-      expect(go.getAttribute('href')).toBe('options.html');
-      expect(go.textContent.length).toBeGreaterThan(0);
-    }
-    // Same label and same editable key — one button shown twice, bound by the one
-    // [data-sx-continue] hook so a single handler serves both.
-    expect(gos[0].textContent).toBe(gos[1].textContent);
-    expect(gos[0].getAttribute('data-edit')).toBe(gos[1].getAttribute('data-edit'));
-    // Only the placement tag differs; it is what the analytics event reports.
-    expect(gos.map((g) => g.getAttribute('data-sx-place'))).toEqual(['top', 'bottom']);
-    expect(gos.map((g) => g.getAttribute('data-testid'))).toEqual([
-      'start-explainer-continue',
-      'start-explainer-continue-bottom',
-    ]);
+    expect(gos).toHaveLength(1);
+    expect(gos[0].getAttribute('href')).toBe('options.html');
+    expect(gos[0].textContent.length).toBeGreaterThan(0);
+    expect(gos[0].getAttribute('data-testid')).toBe('start-explainer-continue');
+    expect(gos[0].getAttribute('data-edit')).toBe('start-explainer-continue');
+    // The placement tag existed only to tell the two copies apart in analytics.
+    expect(gos[0].hasAttribute('data-sx-place')).toBe(false);
+    expect(overlay.querySelector('[data-testid="start-explainer-continue-bottom"]')).toBeNull();
   });
 
-  it('puts one continue before the first step and the other after the last', () => {
+  it('puts the continue AFTER the last step — nothing follows it', () => {
     const nodes = [...overlay.querySelectorAll('*')];
     const steps = [...overlay.querySelectorAll('[data-testid="start-explainer-step"]')];
-    const at = (sel) => nodes.indexOf(overlay.querySelector(sel));
-    expect(at('[data-sx-place="top"]')).toBeLessThan(nodes.indexOf(steps[0]));
-    expect(at('[data-sx-place="bottom"]')).toBeGreaterThan(nodes.indexOf(steps[steps.length - 1]));
+    const cta = overlay.querySelector('[data-sx-continue]');
+    expect(nodes.indexOf(cta)).toBeGreaterThan(nodes.indexOf(steps[steps.length - 1]));
+    // …and it is the last child of the sheet, so "at the bottom" cannot be satisfied
+    // by a CTA that merely trails step 4 with more content beneath it.
+    const inner = overlay.querySelector('.sx-inner');
+    expect(inner.lastElementChild.contains(cta)).toBe(true);
   });
 
   it('never uses the trademarked word', () => {
