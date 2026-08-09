@@ -471,21 +471,19 @@ const REGISTRY = {
     pdf_enabled: { kind: 'flag', tokens: [], default: false },
     pdf_price: { kind: 'price', min: 1, tokens: [], default: 79 },
     pickup_enabled: { kind: 'flag', tokens: [], default: true },
+    // THE product price, per copy. Pickup and delivery are the SAME printed deck,
+    // so they share this one number — delivery is not a second product, it is this
+    // product plus shipping. There is deliberately no `delivery_price`: two
+    // independent product prices could drift apart, and the "delivery" figure
+    // would then silently disagree with the deck it delivers.
     pickup_price: { kind: 'price', min: 1, tokens: [], default: 199 },
     delivery_enabled: { kind: 'flag', tokens: [], default: false },
-    delivery_price: { kind: 'price', min: 1, tokens: [], default: 199 },
     custom_enabled: { kind: 'flag', tokens: [], default: false },
     custom_price: { kind: 'price', min: 1, tokens: [], default: 599 },
-    // Shipping, charged ONCE per order however many copies it contains — they all
-    // travel together to one address. Every `<v>_price` above is a PER-COPY price;
-    // an order's total is `<v>_price × copies (+ this, for delivery)`.
-    //
-    // Defaults to 0 ON PURPOSE, and that is load-bearing. Production currently
-    // stores delivery_price as a manual override of 239 — a single all-in price
-    // from before copies existed. A non-zero default here would silently make a
-    // one-copy delivery 239 + fee the moment this deploys, overcharging real
-    // buyers. At 0 nothing moves; the owner then sets delivery_price to the
-    // per-copy figure FIRST and this second (see the admin card's hint).
+    // Shipping. Added ONCE per order — every copy travels in the same parcel — on
+    // top of the product price above, so a delivered order costs
+    // `pickup_price x copies + delivery_fee`. Defaults to 0 so enabling this
+    // feature charges nobody anything until the owner sets a real figure.
     delivery_fee: { kind: 'price', min: 0, tokens: [], default: 0 },
     // Free word quota: how many words a collection may gather before payment is
     // required, and whether hitting it actually BLOCKS further adds. `min: 1` — a

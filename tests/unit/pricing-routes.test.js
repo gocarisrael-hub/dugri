@@ -41,9 +41,10 @@ const PRICING_KEYS = [
   'pickup_enabled',
   'pickup_price',
   'delivery_enabled',
-  'delivery_price',
   'custom_enabled',
   'custom_price',
+  // Delivery has no price of its own — it is the pickup deck plus this fee.
+  'delivery_fee',
 ];
 
 beforeAll(async () => {

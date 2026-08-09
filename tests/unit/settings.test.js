@@ -197,7 +197,10 @@ describe('pricing section (price + flag kinds)', () => {
     expect(s.get('pricing', 'pickup_enabled')).toBe(true);
     expect(s.get('pricing', 'pickup_price')).toBe(199);
     expect(s.get('pricing', 'delivery_enabled')).toBe(false);
-    expect(s.get('pricing', 'delivery_price')).toBe(199);
+    // Delivery carries no product price of its own: it is the pickup deck plus a
+    // one-time shipping fee, which ships at 0 until the owner sets one.
+    expect(s.get('pricing', 'delivery_fee')).toBe(0);
+    expect(s.hasKey('pricing', 'delivery_price')).toBe(false);
     expect(s.get('pricing', 'custom_enabled')).toBe(false);
     expect(s.get('pricing', 'custom_price')).toBe(599);
   });
@@ -223,7 +226,7 @@ describe('pricing section (price + flag kinds)', () => {
     const s = loadFresh();
     // A charged version price can never be 0 (a 0 total would be treated as a
     // free/paid order downstream) — min is 1.
-    for (const key of ['pdf_price', 'pickup_price', 'delivery_price', 'custom_price']) {
+    for (const key of ['pdf_price', 'pickup_price', 'custom_price']) {
       expect(s.validateValue('pricing', key, 0)).toBe('value must be a positive integer');
       expect(s.validateValue('pricing', key, -1)).toBe('value must be a positive integer');
       expect(() => s.set('pricing', key, 0)).toThrow();
@@ -269,11 +272,18 @@ describe('pricing section (price + flag kinds)', () => {
     expect(reg.store_was).toEqual({ tokens: [], kind: 'price' });
     expect(reg.pdf_enabled).toEqual({ tokens: [], kind: 'flag' });
     expect(reg.pickup_price).toEqual({ tokens: [], kind: 'price' });
-    // Every version has both an _enabled flag and a _price.
+    // Every version has an _enabled flag...
     for (const v of ['pdf', 'pickup', 'delivery', 'custom']) {
       expect(reg[v + '_enabled'].kind).toBe('flag');
+    }
+    // ...but only versions that ARE their own product carry a price. Delivery is
+    // the pickup deck plus shipping, so it has no price key of its own — that is
+    // what stops the two ever disagreeing about what the deck costs.
+    for (const v of ['pdf', 'pickup', 'custom']) {
       expect(reg[v + '_price'].kind).toBe('price');
     }
+    expect(reg.delivery_price).toBeUndefined();
+    expect(reg.delivery_fee).toEqual({ tokens: [], kind: 'price' });
   });
 });
 
