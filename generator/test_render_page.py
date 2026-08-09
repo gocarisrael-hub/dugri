@@ -3435,11 +3435,19 @@ def test_no_alt_face_declares_exactly_the_one_family_it_always_did():
 
 
 def test_an_uploaded_face_is_declared_beside_the_first_one():
+    """WORDS get two families; a TITLE gets one.
+
+    A card's words are split by script — English takes the Latin face — so both
+    have to be declared. A title is not: `title_font_for` picks ONE face for the
+    whole title, so declaring a second family would only invite the per-run
+    split back, and a title measured in one face and painted in another is the
+    bug this repo keeps re-learning.
+    """
     with _alt_store():
         assert rp.word_faces("demo").count("@font-face") == 2
         assert "font-family:'HebWordAlt'" in rp.word_faces("demo")
-        assert rp.title_faces("demo").count("@font-face") == 2
-        assert "font-family:'TitleFontAlt'" in rp.title_faces("demo")
+        assert rp.title_faces("demo").count("@font-face") == 1
+        assert "font-family:'TitleFontAlt'" not in rp.title_faces("demo")
 
 
 def test_every_declaration_site_carries_both_families():
@@ -3468,10 +3476,13 @@ def test_every_declaration_site_carries_both_families():
         board.add_style(rp.GEOMETRIC_TEXT_STYLE
                         + rp.title_faces("demo", cfg, emit=deck_html.font_face))
 
+        # The TITLE family is declared once per surface and names the ONE face
+        # the fit measured; no second title family exists to fall back to.
         for tag, css in (("single card", card), ("card back", back),
                          ("fronts strip", strip), ("deck", deck.html("0 0 1 1")),
                          ("board doc", board.html("0 0 1 1"))):
-            assert "font-family:'TitleFontAlt'" in css, tag
+            assert "font-family:'TitleFont'" in css, tag
+            assert "font-family:'TitleFontAlt'" not in css, tag
         for tag, css in (("single card", card), ("fronts strip", strip),
                          ("deck", deck.html("0 0 1 1"))):
             assert "font-family:'HebWordAlt'" in css, tag
@@ -3484,7 +3495,8 @@ def test_the_alt_faces_are_declared_once_for_the_whole_strip():
     with _alt_store():
         cfg = config.theme("demo")
         style = rp.word_faces("demo") + rp.title_faces("demo", cfg)
-        assert style.count("@font-face") == 4
+        # Two word faces (Hebrew + Latin) and ONE title face.
+        assert style.count("@font-face") == 3
         for front in config.fronts(cfg):
             overlay = rp.card_overlay("demo", config.recipe_or_empty(cfg),
                                       ["BBQ"] * 4, ["שירה"], front_index=front)

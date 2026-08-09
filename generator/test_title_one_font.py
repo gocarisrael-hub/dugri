@@ -9,6 +9,7 @@ the card's WORDS, and that split routes every Latin run to the second face by
 script. Correct for words — English words take the design's Latin face — and
 wrong for a title, which is one thing set in one face.
 """
+import base64
 import json
 import os
 import shutil
@@ -82,3 +83,26 @@ def test_a_design_with_no_second_font_is_unchanged():
 ])
 def test_title_script_reads_the_title_as_a_whole(lines, expected):
     assert rp.title_script(lines) == expected
+
+
+def test_the_declared_face_is_the_measured_face(deck_with_two_title_fonts):
+    """THE INVARIANT: the file `TitleFont` names IS the file the fit measured.
+
+    #408 moved the CHOICE to title_font_for but left title_faces emitting the
+    design's own file, so a buyer's Hebrew title on an English design was
+    measured in the second face and painted as TitleFont — the Latin face, which
+    has no Hebrew. Chrome substituted a system font and the owner's card came
+    back in a typeface nobody chose. Measuring one face and painting another is
+    the failure this repo keeps re-learning; pin it here.
+    """
+    theme = deck_with_two_title_fonts
+    cfg = config.theme(theme)
+    for lines in ([HEB], ENG):
+        chosen = rp.title_font_for(theme, lines, cfg)
+        css = rp.title_faces(theme, cfg, lines=lines)
+        # The face is embedded, so compare the BYTES rather than a name.
+        with open(chosen, "rb") as fh:
+            head = base64.b64encode(fh.read(600)).decode()[:80]
+        assert head in css, f"TitleFont does not carry {os.path.basename(chosen)}"
+        # And there is no second family left for anything to fall back to.
+        assert "TitleFontAlt" not in css

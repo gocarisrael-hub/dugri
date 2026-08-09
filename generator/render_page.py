@@ -119,21 +119,30 @@ def word_faces(theme, word_font=None, emit=None):
     return css + (emit("HebWordAlt", alt) if alt else "")
 
 
-def title_faces(theme, cfg=None, emit=None):
-    """``@font-face`` for a theme's title face, plus its second one if it has one.
+def title_faces(theme, cfg=None, emit=None, lines=None):
+    """``@font-face`` for the ONE face this title is set in.
 
-    The title face resolves through ``config.resolve_title_font``, which names
-    the theme and the key when the file is missing — nine call sites used to do
-    a bare ``font_path`` lookup and surface a missing face as an OSError from
-    inside PIL, naming neither.
+    ``TitleFont`` must name the SAME FILE the fit measured, or the title is
+    measured in one typeface and painted in another. That is not hypothetical:
+    when the choice moved to ``title_font_for`` but this kept emitting the
+    design's own file, a buyer's Hebrew title on an English design was measured
+    in the second face and painted as ``TitleFont`` — the design's Latin face,
+    which has no Hebrew — so Chrome substituted a system font. The owner's card
+    came back in a typeface nobody had chosen. Pass ``lines`` and the two agree
+    by construction.
+
+    ``lines`` is optional only for callers with no title to set (a preview of
+    the plate alone); without it this falls back to the design's own face, which
+    is what a titleless render would have used anyway.
+
+    No second family is declared. A title is one face — ``title_font_for`` has
+    already picked it — so there is nothing for a ``TitleFontAlt`` to be.
     """
     emit = emit or font_face
     cfg = cfg or config.theme(theme)
-    css = emit("TitleFont", config.resolve_title_font(theme),
-               config.title_font_weight(cfg))
-    alt = config.resolve_title_font_alt(theme)
-    return css + (emit("TitleFontAlt", alt,
-                       config.title_font_weight(cfg)) if alt else "")
+    path = (title_font_for(theme, lines, cfg) if lines
+            else config.resolve_title_font(theme))
+    return emit("TitleFont", path, config.title_font_weight(cfg))
 
 
 # THE MEASURING INSTRUMENT MUST DRAW THE SAME PICTURE EVERYWHERE.
@@ -4294,7 +4303,7 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
         # nothing it was not already paying.
         return photo_card_svg(theme, photos, paper=card_paper.front_paper(theme))
     style = ("<style>" + GEOMETRIC_TEXT_STYLE
-             + word_faces(theme, word_font) + title_faces(theme, cfg)
+             + word_faces(theme, word_font) + title_faces(theme, cfg, lines=title_lines)
              + "</style>")
     if kind == "back":
         # Which back this is decides where its title goes on a paired template.
@@ -4355,7 +4364,7 @@ def render_fronts_strip(theme, fronts, words, title_lines, out_dir,
     # a per-card declaration would be eight copies again the moment a template
     # ships a Latin face.
     style = (GEOMETRIC_TEXT_STYLE
-             + word_faces(theme, word_font) + title_faces(theme, cfg))
+             + word_faces(theme, word_font) + title_faces(theme, cfg, lines=title_lines))
     cards = []
     for front in fronts:
         svg = card_assets.read_svg(config.card_path(theme, front))
@@ -4427,7 +4436,7 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
     # declaration block is built from the OVERRIDE (a filename), so it is taken
     # before the name is rebound to the resolved path below.
     style = ("<style>" + GEOMETRIC_TEXT_STYLE
-             + word_faces(theme, word_font) + title_faces(theme, cfg)
+             + word_faces(theme, word_font) + title_faces(theme, cfg, lines=title_lines)
              + "</style>")
     word_alt = word_font_alt(theme, word_font)
     word_font = config.resolve_word_font(theme, word_font)
