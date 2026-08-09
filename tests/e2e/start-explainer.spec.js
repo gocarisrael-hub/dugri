@@ -7,17 +7,29 @@ import { test, expect } from '@playwright/test';
 //     params (?design=…&step=2) included,
 //   - close by X / Escape / backdrop and hand focus back to the trigger,
 //   - trap focus and lock background scroll while open,
-//   - and fit a phone, where the continue CTA must stay reachable.
+//   - and fit a phone in ONE PAGE, with the continue CTA at the foot of it.
 //
-// The continue CTA is rendered TWICE — above the steps and after them. Both are the
-// same button: same handler, same live href. Every "does continue work" assertion
-// below runs against BOTH so they can never drift apart.
+// One page, one button (owner's call). The briefing used to scroll and carried a
+// second copy of the CTA above the steps; both the copy and the scroll are gone, and
+// the tests below pin that — a returning top CTA, or a sheet that needs scrolling to
+// reach the button, is a regression.
 
 const OVERLAY = 'start-explainer';
 const CLOSE = 'start-explainer-close';
-const CONTINUE = 'start-explainer-continue'; // the top copy
-const CONTINUE_BOTTOM = 'start-explainer-continue-bottom';
-const BOTH_CONTINUE = [CONTINUE, CONTINUE_BOTTOM];
+const CONTINUE = 'start-explainer-continue';
+
+// The sheet enters with a 9px translateY (keyframes sx-rise). A transform on the
+// scroll container's child counts toward its SCROLLABLE OVERFLOW, so measuring
+// height mid-animation reports up to 9px that no reader ever sees — which reads
+// exactly like a briefing that doesn't fit. Every height assertion waits this out
+// first. Nothing else needs it: positions settle to the same place either way.
+async function animationsSettled(page) {
+  await page.waitForFunction(() => {
+    const inner = document.querySelector('.sx-inner');
+    if (!inner || !inner.getAnimations) return true;
+    return inner.getAnimations().every((a) => a.playState !== 'running');
+  });
+}
 
 // Assert the exact URL the explainer HANDS OFF to, captured from the navigation
 // request itself. Asserting page.url() afterwards would race the wizard, which
@@ -96,91 +108,76 @@ test.describe('the 4-step explainer on the product page', () => {
     await expect(page.getByTestId(OVERLAY)).not.toContainText('אליאס');
   });
 
-  // Each copy is tested on its own: both must carry the live href and both must hand
-  // the SAME query off to the wizard. A regression that wires only one would pass a
-  // single-button test.
-  for (const which of BOTH_CONTINUE) {
-    test(`continue (${which}) enters the wizard with the design preselection intact`, async ({
-      page,
-    }) => {
-      await page.getByTestId('pdp-buy').click();
-      const go = page.getByTestId(which);
-      // The trigger's LIVE href (design + step) is what the button carries.
-      await expect(go).toHaveAttribute('href', 'options.html?design=bachelorette&step=2');
-      await continueTo(page, '?design=bachelorette&step=2', which);
-    });
-  }
-
-  test('there are exactly two continue buttons and they are identical in job', async ({ page }) => {
+  test('continue enters the wizard with the design preselection intact', async ({ page }) => {
     await page.getByTestId('pdp-buy').click();
-    const both = page.locator('[data-sx-continue]');
-    await expect(both).toHaveCount(2);
-
-    // Same destination, same label, same editable key — one button shown twice.
-    const shape = await both.evaluateAll((els) =>
-      els.map((e) => ({
-        href: e.getAttribute('href'),
-        text: e.textContent.trim(),
-        key: e.getAttribute('data-edit'),
-        place: e.getAttribute('data-sx-place'),
-      }))
-    );
-    expect(shape[0].href).toBe(shape[1].href);
-    expect(shape[0].text).toBe(shape[1].text);
-    expect(shape[0].key).toBe(shape[1].key);
-    // …and only their placement tag differs, which is what analytics reports.
-    expect(shape.map((s) => s.place)).toEqual(['top', 'bottom']);
+    const go = page.getByTestId(CONTINUE);
+    // The trigger's LIVE href (design + step) is what the button carries.
+    await expect(go).toHaveAttribute('href', 'options.html?design=bachelorette&step=2');
+    await continueTo(page, '?design=bachelorette&step=2');
   });
 
-  // The owner asked for a CTA at the TOP (act without reading) AND one at the bottom
-  // (act after reading). Pinned in DOM order AND geometry so a later refactor cannot
-  // quietly drop or move either.
-  test('one continue comes BEFORE the four steps and one AFTER, in the DOM and on screen', async ({
-    page,
-  }) => {
+  test('there is exactly ONE continue button, and no top copy', async ({ page }) => {
+    await page.getByTestId('pdp-buy').click();
+    await expect(page.locator('[data-sx-continue]')).toHaveCount(1);
+    // The old top copy and the placement tag that told the two apart are both gone.
+    await expect(page.getByTestId('start-explainer-continue-bottom')).toHaveCount(0);
+    await expect(page.locator('[data-sx-place]')).toHaveCount(0);
+  });
+
+  // "One pager, button only at the bottom" (owner's call). Pinned in DOM order AND in
+  // geometry: the CTA is the last block on the sheet, it is on the FIRST screen with
+  // no scrolling, and nothing is hidden below the fold.
+  test('the whole briefing is one page, with the CTA last and in view', async ({ page }) => {
     await page.getByTestId('pdp-buy').click();
     const overlay = page.getByTestId(OVERLAY);
     await expect(overlay).toBeVisible();
+    await animationsSettled(page);
 
-    // DOM order: title → top CTA → steps → bottom CTA.
+    // DOM order: title → steps → CTA, with nothing after it.
     const order = await page.evaluate(() => {
       const root = document.querySelector('[data-testid="start-explainer"]');
       const nodes = [...root.querySelectorAll('*')];
       const steps = [...root.querySelectorAll('[data-testid="start-explainer-step"]')];
+      const cta = root.querySelector('[data-sx-continue]');
       return {
         title: nodes.indexOf(root.querySelector('#sxTitle')),
-        top: nodes.indexOf(root.querySelector('[data-testid="start-explainer-continue"]')),
-        bottom: nodes.indexOf(
-          root.querySelector('[data-testid="start-explainer-continue-bottom"]')
-        ),
+        cta: nodes.indexOf(cta),
         firstStep: nodes.indexOf(steps[0]),
         lastStep: nodes.indexOf(steps[steps.length - 1]),
+        ctaIsLastBlock: root.querySelector('.sx-inner').lastElementChild.contains(cta),
       };
     });
     expect(order.title).toBeGreaterThan(-1);
-    expect(order.top).toBeGreaterThan(order.title);
-    expect(order.top).toBeLessThan(order.firstStep);
-    expect(order.bottom).toBeGreaterThan(order.lastStep);
+    expect(order.firstStep).toBeGreaterThan(order.title);
+    expect(order.cta).toBeGreaterThan(order.lastStep);
+    expect(order.ctaIsLastBlock).toBe(true);
 
-    // Geometry: top CTA between the title and the first step, on the first screen
-    // with no scrolling; bottom CTA below the last step.
-    const topBox = await page.getByTestId(CONTINUE).boundingBox();
-    const bottomBox = await page.getByTestId(CONTINUE_BOTTOM).boundingBox();
-    const titleBox = await page.locator('#sxTitle').boundingBox();
-    const steps = page.getByTestId('start-explainer-step');
-    const firstStepBox = await steps.first().boundingBox();
-    const lastStepBox = await steps.last().boundingBox();
-
-    expect(topBox.y).toBeGreaterThan(titleBox.y);
-    expect(topBox.y).toBeLessThan(firstStepBox.y);
-    expect(topBox.y + topBox.height).toBeLessThanOrEqual(page.viewportSize().height);
+    // Geometry: the button is on screen the moment the sheet opens, with nobody
+    // scrolling — that is what "one pager" means here.
+    const ctaBox = await page.getByTestId(CONTINUE).boundingBox();
+    const lastStepBox = await page.getByTestId('start-explainer-step').last().boundingBox();
+    expect(ctaBox.y).toBeGreaterThan(lastStepBox.y);
+    expect(ctaBox.y + ctaBox.height).toBeLessThanOrEqual(page.viewportSize().height);
     expect(await page.evaluate(() => document.getElementById('startExplainer').scrollTop)).toBe(0);
 
-    expect(bottomBox.y).toBeGreaterThan(lastStepBox.y);
+    // …and there is nothing below the fold to scroll TO. 2px of slack absorbs
+    // sub-pixel rounding on the step borders.
+    const fit = await page.evaluate(() => {
+      const o = document.getElementById('startExplainer');
+      return { scrollHeight: o.scrollHeight, clientHeight: o.clientHeight };
+    });
+    expect(
+      fit.scrollHeight,
+      `the briefing must fit one screen (needs ${fit.scrollHeight}px, has ${fit.clientHeight}px)`
+    ).toBeLessThanOrEqual(fit.clientHeight + 2);
   });
 
   test('the CTA and the X are separate, non-overlapping targets', async ({ page }) => {
     await page.getByTestId('pdp-buy').click();
+    // Each boundingBox() below is its own round-trip, so mid-animation the first box
+    // is read 9px lower than the last — which fabricates an overlap that never
+    // renders. Settle first, then measure them all against the same frame.
+    await animationsSettled(page);
     const x = await page.getByTestId(CLOSE).boundingBox();
     const cta = await page.getByTestId(CONTINUE).boundingBox();
     const title = await page.locator('#sxTitle').boundingBox();
@@ -226,9 +223,7 @@ test.describe('the 4-step explainer on the product page', () => {
     expect(await locked()).toBe(false);
   });
 
-  test('focus is trapped inside the overlay and cycles through BOTH continue buttons', async ({
-    page,
-  }) => {
+  test('focus is trapped inside the overlay and cycles through its controls', async ({ page }) => {
     await page.getByTestId('pdp-buy').click();
     // Focus still lands on the X on open — the sheet announces itself before the
     // reader is handed the primary action.
@@ -245,7 +240,7 @@ test.describe('the 4-step explainer on the product page', () => {
       });
 
     // Tab all the way round. Focus never escapes, and one full cycle visits the X
-    // and both continue buttons.
+    // and the continue button.
     const seen = new Set();
     for (let i = 0; i < 10; i++) {
       await page.keyboard.press('Tab');
@@ -253,7 +248,7 @@ test.describe('the 4-step explainer on the product page', () => {
       expect(w.inside, `focus escaped after ${i + 1} tab(s)`).toBe(true);
       if (w.testid) seen.add(w.testid);
     }
-    expect([...seen]).toEqual(expect.arrayContaining([CLOSE, CONTINUE, CONTINUE_BOTTOM]));
+    expect([...seen]).toEqual(expect.arrayContaining([CLOSE, CONTINUE]));
 
     // Shift+Tab stays inside too.
     await page.keyboard.press('Shift+Tab');
@@ -288,10 +283,8 @@ test.describe('the explainer guards the other wizard entrances', () => {
 
     await expect(page.getByTestId(OVERLAY)).toBeVisible();
     await expect(page).toHaveURL(/index\.html/);
-    // Both copies carry the bare wizard link here (no design to preselect).
-    for (const which of BOTH_CONTINUE) {
-      await expect(page.getByTestId(which)).toHaveAttribute('href', 'options.html');
-    }
+    // The bare wizard link here — there is no design to preselect.
+    await expect(page.getByTestId(CONTINUE)).toHaveAttribute('href', 'options.html');
     await continueTo(page, '');
   });
 
@@ -309,7 +302,7 @@ test.describe('the explainer on a phone', () => {
     test.skip(testInfo.project.name !== 'iPhone 14', 'phone-only layout check runs once');
   });
 
-  test('the sheet scrolls internally and the continue CTA is reachable', async ({ page }) => {
+  test('the whole briefing fits one phone screen, CTA included', async ({ page }) => {
     await page.goto('/product.html?design=bachelorette');
     // Wait for product.js to stamp the design onto the CTA before opening — the
     // explainer reads the trigger's href at open time, so clicking earlier would
@@ -320,6 +313,7 @@ test.describe('the explainer on a phone', () => {
     await page.getByTestId('pdp-buy').click();
     const overlay = page.getByTestId(OVERLAY);
     await expect(overlay).toBeVisible();
+    await animationsSettled(page);
 
     const vp = page.viewportSize();
     const box = await overlay.boundingBox();
@@ -330,8 +324,8 @@ test.describe('the explainer on a phone', () => {
     );
     expect(overflowsX).toBe(false);
 
-    // The CTA is on the first screen with NO scrolling at all — that is the point
-    // of moving it above the steps. Assert it before touching the scroll position.
+    // The CTA is on the first screen with NO scrolling at all — on a phone, which is
+    // the screen the one-page fit has to survive. Assert it before touching scroll.
     const go = page.getByTestId(CONTINUE);
     const goBox = await go.boundingBox();
     expect(goBox.y).toBeGreaterThanOrEqual(0);
@@ -347,22 +341,24 @@ test.describe('the explainer on a phone', () => {
     );
     expect(hit, 'something is layered over the continue CTA').toBe(true);
 
-    // …and the sheet still scrolls internally for the steps below it.
-    const scrollable = await page.evaluate(() => {
+    // …and there is nothing to scroll TO: the whole briefing FITS the phone. This is
+    // the assertion the dvh type scale exists for — if the four steps ever outgrow
+    // the screen again it fails here, not on the owner's phone.
+    const fit = await page.evaluate(() => {
       const o = document.getElementById('startExplainer');
-      return o.scrollHeight > o.clientHeight;
+      return { scrollHeight: o.scrollHeight, clientHeight: o.clientHeight };
     });
-    expect(scrollable, 'the sheet should scroll internally on a phone').toBe(true);
+    expect(
+      fit.scrollHeight,
+      `the briefing must fit one phone screen (needs ${fit.scrollHeight}px, has ${fit.clientHeight}px)`
+    ).toBeLessThanOrEqual(fit.clientHeight + 2);
 
-    // The whole reason for the second copy: a phone reader who scrolls the briefing
-    // to the end must still have a button in view, not have to scroll back up.
-    await page.getByTestId(CONTINUE_BOTTOM).scrollIntoViewIfNeeded();
-    const endBox = await page.getByTestId(CONTINUE_BOTTOM).boundingBox();
-    expect(endBox.y).toBeGreaterThanOrEqual(0);
-    expect(endBox.y + endBox.height).toBeLessThanOrEqual(vp.height + 1);
+    // All four steps are on that one screen too — fitting by pushing step 4 under the
+    // fold would satisfy the height check without satisfying the ask.
     const lastStepBox = await page.getByTestId('start-explainer-step').last().boundingBox();
-    expect(endBox.y, 'the bottom CTA sits after the last step').toBeGreaterThan(lastStepBox.y);
+    expect(lastStepBox.y + lastStepBox.height).toBeLessThanOrEqual(vp.height + 1);
+    expect(goBox.y, 'the CTA sits after the last step').toBeGreaterThan(lastStepBox.y);
 
-    await continueTo(page, '?design=bachelorette&step=2', CONTINUE_BOTTOM);
+    await continueTo(page, '?design=bachelorette&step=2');
   });
 });
