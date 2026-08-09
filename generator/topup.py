@@ -140,10 +140,16 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 3:
-        sys.exit("usage: topup.py <personal_words.txt> <theme_key> [out.txt]")
+        sys.exit("usage: topup.py <personal_words.txt> <theme_key> [out.txt] [pool]")
     src, theme_key = sys.argv[1], sys.argv[2]
+    # The optional 4th argument is the order's own seed pool (#410) — the same
+    # override order_to_pdf takes as --wordlist. The server passes it when it
+    # FREEZES a collection's word bank (server/word-bank.js); a freeze that
+    # ignored it would store a bank the print does not reproduce, which is the
+    # one thing freezing exists to prevent.
+    pool = sys.argv[4] if len(sys.argv) > 4 else None
     personal = open(src, encoding="utf-8-sig").read().splitlines()
-    result = topup(personal, theme_key)
+    result = topup(personal, theme_key, wordlist=pool)
     if len(sys.argv) > 3:
         with open(sys.argv[3], "w", encoding="utf-8") as f:
             f.write("\n".join(result) + "\n")

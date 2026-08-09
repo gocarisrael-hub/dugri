@@ -204,3 +204,46 @@ def test_override_cannot_escape_the_wordlist_directories():
                       wordlist="../../../etc/passwd")
     assert len(out) >= 20
     assert all("root:" not in w for w in out)
+
+
+def test_cli_takes_the_orders_own_seed_pool(tmp_path):
+    """The 4th CLI argument is the per-order pool override (#410).
+
+    server/word-bank.js freezes a collection's word bank by running this CLI. If
+    the CLI ignored the override, a frozen bank would be filled from the THEME's
+    pool while the print used the ORDER's — the freeze would store a deck the
+    printer does not reproduce, which is the one thing freezing exists to stop.
+
+    Asserted by difference rather than by counting: the same personal words run
+    with and without the override must not produce the same deck, and the words
+    the override contributed must come from the pool it named. (Counting is the
+    wrong instrument here — naming the generic backstop AS the override leaves
+    the deck legitimately short of TARGET, since there is no third pool behind
+    it.)
+    """
+    import subprocess
+    import sys
+
+    src = tmp_path / "personal.txt"
+    src.write_text("מסיבה\nחברים\n", encoding="utf-8")
+    here = os.path.dirname(os.path.abspath(__file__))
+
+    def run(*extra):
+        out = tmp_path / ("out" + str(len(extra)) + ".txt")
+        r = subprocess.run(
+            [sys.executable, os.path.join(here, "topup.py"), str(src),
+             "bachelorette", str(out), *extra],
+            capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return [w for w in out.read_text(encoding="utf-8").splitlines() if w.strip()]
+
+    default = run()
+    overridden = run("generic-350.txt")
+
+    # Both keep her own words, in her order, at the front.
+    assert default[:2] == ["מסיבה", "חברים"]
+    assert overridden[:2] == ["מסיבה", "חברים"]
+    # …and the override actually changed which pool completed the deck.
+    assert default != overridden
+    generic = set(topup._read_wordlist("generic-350.txt"))
+    assert set(overridden[2:]) <= generic
