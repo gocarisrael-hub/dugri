@@ -35,8 +35,8 @@ async function animationsSettled(page) {
 // request itself. Asserting page.url() afterwards would race the wizard, which
 // normalises its own query on arrival (…&step=2 becomes …&step=3&plan=…&color=… as
 // soon as it restores state) — the handoff is what this feature owns.
-async function continueTo(page, expectedSearch, testid = CONTINUE) {
-  const target = page.getByTestId(testid);
+async function continueTo(page, expectedSearch) {
+  const target = page.getByTestId(CONTINUE);
   await target.scrollIntoViewIfNeeded();
   const [req] = await Promise.all([
     page.waitForRequest((r) => r.isNavigationRequest() && r.url().includes('options.html')),
@@ -159,17 +159,104 @@ test.describe('the 4-step explainer on the product page', () => {
     expect(ctaBox.y).toBeGreaterThan(lastStepBox.y);
     expect(ctaBox.y + ctaBox.height).toBeLessThanOrEqual(page.viewportSize().height);
     expect(await page.evaluate(() => document.getElementById('startExplainer').scrollTop)).toBe(0);
+  });
 
-    // …and there is nothing below the fold to scroll TO. 2px of slack absorbs
-    // sub-pixel rounding on the step borders.
-    const fit = await page.evaluate(() => {
+  // Read the sheet's fit + the CTA's position at an arbitrary viewport. Playwright's
+  // device presets only carry the URL-BAR-VISIBLE height (iPhone 14 is 390x664 even
+  // though the screen is 390x844), so pinning the layout to the project viewport
+  // alone tests one narrow band and misses the phone as it is actually held.
+  async function measureAt(page, width, height) {
+    await page.setViewportSize({ width, height });
+    await page.getByTestId('pdp-buy').click();
+    await expect(page.getByTestId(OVERLAY)).toBeVisible();
+    await animationsSettled(page);
+    return page.evaluate(() => {
       const o = document.getElementById('startExplainer');
-      return { scrollHeight: o.scrollHeight, clientHeight: o.clientHeight };
+      const cta = o.querySelector('.sx-go').getBoundingClientRect();
+      return {
+        need: o.scrollHeight,
+        have: o.clientHeight,
+        ctaTop: Math.round(cta.top),
+        ctaBottom: Math.round(cta.bottom),
+        vh: window.innerHeight,
+        scrollTop: o.scrollTop,
+      };
     });
-    expect(
-      fit.scrollHeight,
-      `the briefing must fit one screen (needs ${fit.scrollHeight}px, has ${fit.clientHeight}px)`
-    ).toBeLessThanOrEqual(fit.clientHeight + 2);
+  }
+
+  // THE hard guarantee. One CTA at the foot is only safe if it is never below the
+  // fold, so this sweeps the shapes that used to break it — a phone at its real
+  // full height, a small legacy phone, landscape, and a short desktop window — and
+  // demands the button be fully visible on open at every one. `position:sticky`
+  // on .sx-cta is what holds this up where the briefing itself cannot fit.
+  const VIEWPORTS = [
+    [390, 844, 'iPhone 14, URL bar collapsed'],
+    [393, 852, 'iPhone 15'],
+    [412, 915, 'Pixel 7'],
+    [360, 780, 'Galaxy'],
+    [320, 568, 'iPhone SE (1st gen)'],
+    [375, 667, 'iPhone SE (2nd gen)'],
+    [844, 390, 'phone in landscape'],
+    [1280, 400, 'short desktop window'],
+    [1280, 720, 'laptop'],
+  ];
+  for (const [w, h, label] of VIEWPORTS) {
+    test(`the continue button is fully on screen at ${w}x${h} (${label})`, async ({ page }) => {
+      const m = await measureAt(page, w, h);
+      expect(m.scrollTop, 'the sheet opens at the top').toBe(0);
+      expect(m.ctaTop, `CTA top is above the viewport at ${w}x${h}`).toBeGreaterThanOrEqual(-1);
+      expect(
+        m.ctaBottom,
+        `CTA bottom is ${m.ctaBottom - m.vh}px below the fold at ${w}x${h}`
+      ).toBeLessThanOrEqual(m.vh + 1);
+    });
+  }
+
+  // …and the one-page promise itself, on the screens it is made for: a modern phone
+  // held upright, and any desktop. The short/legacy/landscape sizes above are
+  // deliberately absent — this much Hebrew cannot be set readably in 400px of
+  // height, and the sticky CTA is what covers them instead.
+  const ONE_PAGE = [
+    [390, 844, 'iPhone 14, URL bar collapsed'],
+    [393, 852, 'iPhone 15'],
+    [412, 915, 'Pixel 7'],
+    [1280, 720, 'laptop'],
+    [1440, 900, 'desktop'],
+  ];
+  for (const [w, h, label] of ONE_PAGE) {
+    test(`the whole briefing fits one screen at ${w}x${h} (${label})`, async ({ page }) => {
+      const m = await measureAt(page, w, h);
+      // 2px of slack absorbs sub-pixel rounding on the step borders.
+      expect(
+        m.need,
+        `the briefing needs ${m.need}px but the screen has ${m.have}px at ${w}x${h}`
+      ).toBeLessThanOrEqual(m.have + 2);
+    });
+  }
+
+  // The safety valve, asserted rather than assumed: where the briefing genuinely
+  // cannot fit, the overlay DOES scroll (overflow-y:auto is doing its job) and the
+  // pinned CTA rides above that scroll instead of scrolling away with the steps.
+  test('where it cannot fit, the sheet scrolls and the CTA stays pinned', async ({ page }) => {
+    const m = await measureAt(page, 844, 390);
+    expect(m.need, 'landscape should overflow — this test is pointless if it fits').toBeGreaterThan(
+      m.have
+    );
+    expect(m.ctaBottom).toBeLessThanOrEqual(m.vh + 1);
+
+    // Scroll to the very end: the button is still there, not left behind at the foot
+    // of a long sheet.
+    await page.evaluate(() => {
+      const o = document.getElementById('startExplainer');
+      o.scrollTop = o.scrollHeight;
+    });
+    const after = await page.evaluate(() => {
+      const o = document.getElementById('startExplainer');
+      const cta = o.querySelector('.sx-go').getBoundingClientRect();
+      return { top: Math.round(cta.top), bottom: Math.round(cta.bottom), vh: window.innerHeight };
+    });
+    expect(after.top).toBeGreaterThanOrEqual(-1);
+    expect(after.bottom).toBeLessThanOrEqual(after.vh + 1);
   });
 
   test('the CTA and the X are separate, non-overlapping targets', async ({ page }) => {
