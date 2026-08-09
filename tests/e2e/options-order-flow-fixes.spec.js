@@ -10,9 +10,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 // Cover for two order-flow fixes on options.html:
-//   B4 — a RASTER board preview must fill the panel width like the SVG cards
+//   B4 — the board preview must fill the panel width like the front/back cards
 //        (the old width:auto rule shrank a raster board to its tiny intrinsic
-//        size, a sliver next to the width-filling SVG front/back cards).
+//        size, a sliver next to the width-filling cards).
 //   B8 — the example-value placeholders ("למשל: שירה", "name@example.com", …)
 //        were removed from the order inputs (visible labels convey each field).
 
@@ -21,11 +21,11 @@ test.beforeEach(async ({ page }) => {
 const PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
 
-// Tall viewport so neither the SVG card nor the raster board is height-capped —
-// both size purely by width, making the fill comparison clean and deterministic.
+// Tall viewport so neither the card nor the board is height-capped — both size
+// purely by width, making the fill comparison clean and deterministic.
 const TALL = { width: 700, height: 1300 };
 
-test.describe('B4: a raster board preview fills the panel like the SVG cards', () => {
+test.describe('B4: the board preview fills the panel like the cards', () => {
   test.beforeEach(({}, testInfo) => {
     test.skip(testInfo.project.name !== 'Desktop Chrome', 'layout measurement runs once');
   });
@@ -35,24 +35,24 @@ test.describe('B4: a raster board preview fills the panel like the SVG cards', (
   }) => {
     await page.setViewportSize(TALL);
     await page.goto('/options.html?step=1');
-    await expect(page.getByTestId('preview-front').locator('svg')).toBeVisible();
+    await expect(page.getByTestId('preview-front').locator('img')).toBeVisible();
 
-    // baseline: the front card SVG fills (nearly) its whole panel width
+    // baseline: the front card picture fills (nearly) its whole panel width
     const front = await page.evaluate(() => {
       const panel = document.querySelector('[data-panel="front"]');
-      const svg = panel.querySelector('svg');
+      const art = panel.querySelector('img');
       return {
-        svgW: svg.getBoundingClientRect().width,
+        artW: art.getBoundingClientRect().width,
         panelW: panel.getBoundingClientRect().width,
       };
     });
-    expect(front.svgW / front.panelW).toBeGreaterThan(0.95);
+    expect(front.artW / front.panelW).toBeGreaterThan(0.95);
 
-    // switch to the board tab, let its SVG resolve, then swap in a RASTER image —
-    // the case the old width:auto rule shrank to a tiny intrinsic sliver.
+    // switch to the board tab, let its picture resolve, then swap in a raster of a
+    // TINY intrinsic size — the case the old width:auto rule shrank to a sliver.
     await page.getByTestId('tab-board').click();
     await expect(page.getByTestId('preview-board')).toHaveAttribute('data-active', 'true');
-    await expect(page.getByTestId('preview-board').locator('svg')).toBeVisible();
+    await expect(page.getByTestId('preview-board').locator('img')).toBeVisible();
     await page.evaluate((png) => {
       document.querySelector('[data-panel="board"]').innerHTML =
         '<img alt="board" src="' + png + '" />';
@@ -69,10 +69,10 @@ test.describe('B4: a raster board preview fills the panel like the SVG cards', (
 
     // the raster board FILLS its panel width (the fix), not a small intrinsic sliver
     expect(board.imgW / board.panelW).toBeGreaterThan(0.95);
-    // and is a comparable, generous size to the SVG card panel (within tolerance)
+    // and is a comparable, generous size to the card panel (within tolerance)
     expect(board.panelW).toBeGreaterThan(front.panelW * 0.9);
-    expect(board.imgW).toBeGreaterThan(front.svgW * 0.85);
-    expect(board.imgW).toBeLessThan(front.svgW * 1.15);
+    expect(board.imgW).toBeGreaterThan(front.artW * 0.85);
+    expect(board.imgW).toBeLessThan(front.artW * 1.15);
   });
 });
 

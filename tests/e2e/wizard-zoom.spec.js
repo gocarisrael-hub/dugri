@@ -27,7 +27,7 @@ test.describe('fullscreen zoom overlay', () => {
 
     await page.getByTestId('zoom-open').click();
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
-    await expect(page.locator('#zoomContent svg')).toBeVisible();
+    await expect(page.locator('#zoomContent img')).toBeVisible();
 
     // the overlay carries the SAME live --c0 as the preview it was cloned from
     const zoomC0 = await page
@@ -38,14 +38,14 @@ test.describe('fullscreen zoom overlay', () => {
 
   test('tapping the sheet opens it; ＋ enlarges the rendered sheet', async ({ page }) => {
     await page.goto('/options.html');
-    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await expect(page.locator('.preview-panel[data-active="true"] img')).toBeVisible();
 
     // tap the live sheet itself (top-start corner, clear of the ⤢ button)
     await page.getByTestId('preview-stage').click({ position: { x: 12, y: 12 } });
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
 
     const widthOf = () =>
-      page.locator('#zoomContent svg').evaluate((el) => el.getBoundingClientRect().width);
+      page.locator('#zoomContent img').evaluate((el) => el.getBoundingClientRect().width);
     const before = await widthOf();
     await page.getByTestId('zoom-in').click();
     await page.waitForTimeout(250); // width transition
@@ -55,7 +55,7 @@ test.describe('fullscreen zoom overlay', () => {
 
   test('double-tap toggles the zoom scale', async ({ page }) => {
     await page.goto('/options.html');
-    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await expect(page.locator('.preview-panel[data-active="true"] img')).toBeVisible();
     await page.getByTestId('zoom-open').click();
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
 
@@ -75,7 +75,7 @@ test.describe('fullscreen zoom overlay', () => {
 
   test('× closes it, restoring body scroll and focus', async ({ page }) => {
     await page.goto('/options.html');
-    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await expect(page.locator('.preview-panel[data-active="true"] img')).toBeVisible();
 
     await page.getByTestId('zoom-open').click();
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
@@ -92,7 +92,7 @@ test.describe('fullscreen zoom overlay', () => {
 
   test('ESC closes it and restores body scroll', async ({ page }) => {
     await page.goto('/options.html');
-    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await expect(page.locator('.preview-panel[data-active="true"] img')).toBeVisible();
     await page.getByTestId('zoom-open').click();
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
 
@@ -105,12 +105,12 @@ test.describe('fullscreen zoom overlay', () => {
     await page.goto('/options.html');
     await page.getByTestId('tab-board').click();
     await expect(page.getByTestId('preview-board')).toHaveAttribute('data-active', 'true');
-    await expect(page.getByTestId('preview-board').locator('svg')).toBeVisible();
+    await expect(page.getByTestId('preview-board').locator('img')).toBeVisible();
 
     await page.getByTestId('zoom-open').click();
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
     // the cloned artwork is present (from the board panel, the active tab)
-    await expect(page.locator('#zoomContent svg')).toBeVisible();
+    await expect(page.locator('#zoomContent img')).toBeVisible();
   });
 
   test('tapping the COLLAPSED mini-preview (details step) does NOT open the overlay', async ({
@@ -128,7 +128,7 @@ test.describe('fullscreen zoom overlay', () => {
 
   test('a drag/pan is not misread as a double-tap', async ({ page }) => {
     await page.goto('/options.html');
-    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await expect(page.locator('.preview-panel[data-active="true"] img')).toBeVisible();
     await page.getByTestId('zoom-open').click();
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
 
@@ -152,7 +152,7 @@ test.describe('fullscreen zoom overlay', () => {
 
   test('a horizontal swipe moves between views (front → back)', async ({ page }) => {
     await page.goto('/options.html');
-    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await expect(page.locator('.preview-panel[data-active="true"] img')).toBeVisible();
     await page.getByTestId('zoom-open').click();
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
     // opens on the front view
@@ -166,7 +166,7 @@ test.describe('fullscreen zoom overlay', () => {
     await expect(page.getByTestId('zoom-tab-back')).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByTestId('zoom-tab-front')).toHaveAttribute('aria-selected', 'false');
     // the artwork for the new view is present
-    await expect(page.locator('#zoomContent svg, #zoomContent img')).toBeVisible();
+    await expect(page.locator('#zoomContent img')).toBeVisible();
   });
 
   test('the viewport reserves horizontal for the swipe until zoomed in', async ({ page }) => {
@@ -177,7 +177,7 @@ test.describe('fullscreen zoom overlay', () => {
     // at rest the viewport must reserve horizontal (pan-y only), and only hand it
     // back to native panning once zoomed in.
     await page.goto('/options.html');
-    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await expect(page.locator('.preview-panel[data-active="true"] img')).toBeVisible();
     await page.getByTestId('zoom-open').click();
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
 
@@ -226,7 +226,7 @@ test.describe('enlarge icon (top-left, icon-only)', () => {
 test.describe('enlarged view carousel dots', () => {
   test('dots reflect the views and stay in sync with taps + swipe', async ({ page }) => {
     await page.goto('/options.html');
-    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await expect(page.locator('.preview-panel[data-active="true"] img')).toBeVisible();
     await page.getByTestId('zoom-open').click();
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
 
@@ -258,7 +258,7 @@ test.describe('zoom rotate hint', () => {
   test('is not shown on desktop', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'Desktop Chrome', 'desktop-only check');
     await page.goto('/options.html');
-    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await expect(page.locator('.preview-panel[data-active="true"] img')).toBeVisible();
     await page.getByTestId('zoom-open').click();
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
     // fine-pointer / landscape desktop → no nonsense "rotate your device" hint
@@ -274,11 +274,11 @@ test.describe('zoom rotate hint', () => {
 test.describe('OPTION C — the enlarged board view fills the overlay width', () => {
   async function openZoom(page) {
     await page.goto('/options.html');
-    await expect(page.locator('.preview-panel[data-active="true"] svg')).toBeVisible();
+    await expect(page.locator('.preview-panel[data-active="true"] img')).toBeVisible();
     await page.getByTestId('zoom-open').click();
     await expect(page.getByTestId('zoom-overlay')).toBeVisible();
   }
-  const zoomArt = (page) => page.locator('#zoomContent svg, #zoomContent img').first();
+  const zoomArt = (page) => page.locator('#zoomContent img').first();
 
   test('the board view fills the zoom width and never overflows the viewport', async ({ page }) => {
     await openZoom(page);

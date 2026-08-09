@@ -4,15 +4,22 @@ import { test, expect } from '@playwright/test';
 //
 // The tiles used to show only the shipped build-time thumbnail — a render of the
 // design. The owner photographs her real printed decks and uploads those in the
-// admin gallery ("תמונות החפיסה"), and asked the tile to lead with the first of
-// them: a photo of the actual product beats a render of it.
+// admin gallery ("תמונות החפיסה"), and asked the tile to lead with hers: a photo
+// of the actual product beats a render of it.
 //
-// The constraint the whole feature turns on is WEIGHT. Those uploads are
-// 180KB–1MB each and the shipped thumbnails are 5–10KB on purpose, because a
-// heavy first screen white-screens the Instagram in-app browser (our main
-// audience). So the tile never requests the upload — it requests
-// /design-thumb/<name>, a downscaled derivative. These tests assert that
-// distinction directly: the picker must never fetch /content-uploads.
+// The tile shows the design's FRONT, and that is the same picture the big preview
+// beside it enlarges — one lookup (previewPicture, js/design-images.js) feeds
+// both, so they cannot drift apart. The tile carries the full-size URL of what it
+// is showing in `data-picture`, which is how wizard-preview-picture.spec.js pins
+// the identity; here we cover the tile's own resolution and fallbacks.
+//
+// The constraint the whole feature turns on is WEIGHT. The uploads are 180KB–1MB
+// each and the shipped renders are megapixel rasters, because a heavy first screen
+// white-screens the Instagram in-app browser (our main audience). So no TILE ever
+// requests one at full size: an upload comes through /design-thumb/<name> and a
+// shipped render through its small `thumb-<view>.webp` sibling. These tests assert
+// that distinction directly — a tile's src is never a /content-uploads path, and
+// the only original on the wire is the ONE the big preview is showing.
 
 // A REAL, decodable PNG (64×64). A 1×1 would "load" but tell us nothing, and an
 // undecodable body fires `error` — which is a path under test here, so it must
@@ -54,7 +61,7 @@ async function gotoPicker(page) {
 }
 
 test.describe('wizard step 1 — the design tile shows the deck photo', () => {
-  test('the tile uses the FIRST deck picture, through the small-derivative URL', async ({
+  test('the tile uses the FRONT deck picture, through the small-derivative URL', async ({
     page,
   }) => {
     const seen = [];
@@ -71,17 +78,38 @@ test.describe('wizard step 1 — the design tile shows the deck photo', () => {
     // Polled, not read once: setting the attribute and the browser actually
     // issuing the request are two different moments.
     await expect.poll(() => seen).toContain('/design-thumb/00000000000000a1.webp');
-    // THE POINT OF THE FEATURE: the heavy original is never requested by the
-    // picker. Asking for it here would be a ~20× page-weight regression on
-    // exactly the screen the shipped 5KB thumbnails exist to protect.
-    expect(uploads).toEqual([]);
+    // THE POINT OF THE FEATURE: no TILE ever pulls a heavy original. Doing that
+    // per tile would be a ~20x page-weight regression on exactly the screen the
+    // small derivatives exist to protect.
+    const tileSrcs = await page
+      .locator('.design .thumb img')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('src')));
+    expect(tileSrcs.filter((s) => s && s.startsWith('/content-uploads/'))).toEqual([]);
+    // The one original on the wire belongs to the big PREVIEW, which shows the
+    // selected design's picture full size — one picture, not one per tile.
+    await expect.poll(() => uploads).toEqual([FRONTS]);
   });
 
-  test('a design photographed board-first shows its board', async ({ page }) => {
+  // The tile used to show whichever deck picture came FIRST, so a design the owner
+  // had photographed board-first showed its board here. It cannot any more: the
+  // tile and the big preview are one picture now, and the preview opens on the
+  // CARD — a board under a tile the buyer taps to see קלף is exactly the mismatch
+  // this work exists to remove. Her board photograph is not lost: it is what the
+  // לוח tab shows, and the deck row on the name step still walks all of them.
+  test('a design photographed board-first keeps its board on the BOARD tab, not the tile', async ({
+    page,
+  }) => {
     await stubThumbs(page);
+    // The board tab shows the ORIGINAL, so it has to be served here — otherwise
+    // it 404s and the fallback (correctly) puts the shipped render back.
+    await page.route('**/content-uploads/*', (route) =>
+      route.fulfill({ contentType: 'image/png', body: PNG })
+    );
     await stubDesignImages(page, { [DESIGN]: { base: { deckBoard: { img: BOARD } } } });
     await gotoPicker(page);
-    await expect(tileImg(page)).toHaveAttribute('src', '/design-thumb/00000000000000a3.webp');
+    await expect(tileImg(page)).toHaveAttribute('src', /assets\/designs\/.*thumb-front\.webp$/);
+    await page.getByTestId('tab-board').click();
+    await expect(page.getByTestId('preview-board').locator('img')).toHaveAttribute('src', BOARD);
   });
 
   test('the deck picture actually renders — it is not a broken img', async ({ page }) => {
@@ -102,7 +130,7 @@ test.describe('wizard step 1 — the tile falls back, always', () => {
     await stubThumbs(page, { seen });
     await stubDesignImages(page, {});
     await gotoPicker(page);
-    await expect(tileImg(page)).toHaveAttribute('src', /assets\/designs\/.*thumb\.webp$/);
+    await expect(tileImg(page)).toHaveAttribute('src', /assets\/designs\/.*thumb-front\.webp$/);
     // Nothing was even asked of the derivative endpoint.
     expect(seen).toEqual([]);
   });
@@ -122,11 +150,18 @@ test.describe('wizard step 1 — the tile falls back, always', () => {
     await stubDesignImages(page, { [DESIGN]: { base: { deckFronts: { img: FRONTS } } } });
     await gotoPicker(page);
 
-    await expect(tileImg(page)).toHaveAttribute('src', /assets\/designs\/.*thumb\.webp$/);
+    await expect(tileImg(page)).toHaveAttribute('src', /assets\/designs\/.*thumb-front\.webp$/);
     await expect
       .poll(() => tileImg(page).evaluate((i) => i.complete && i.naturalWidth > 0))
       .toBe(true);
-    expect(uploads).toEqual([]);
+    // The TILE stepped down to the shipped render, never to the heavy original.
+    const tileSrcs = await page
+      .locator('.design .thumb img')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('src')));
+    expect(tileSrcs.filter((s) => s && s.startsWith('/content-uploads/'))).toEqual([]);
+    // Exactly ONE original is on the wire — the big preview's, which shows the
+    // selected design's picture full size and is unaffected by a failed derivative.
+    await expect.poll(() => uploads.length).toBe(1);
     // …and the page still works: the picker is operable and the wizard advances.
     await tile(page).click();
     await expect(tile(page)).toHaveAttribute('aria-pressed', 'true');
@@ -136,7 +171,7 @@ test.describe('wizard step 1 — the tile falls back, always', () => {
     await stubThumbs(page);
     await stubDesignImages(page, {});
     // Strip the shipped thumbs so every tile has nothing left to show.
-    await page.route('**/assets/designs/**/thumb.webp', (route) =>
+    await page.route('**/assets/designs/**/thumb-front.webp', (route) =>
       route.fulfill({ status: 404, body: '' })
     );
     await gotoPicker(page);
@@ -149,7 +184,7 @@ test.describe('wizard step 1 — the tile falls back, always', () => {
     await stubThumbs(page, { seen });
     await page.route('**/api/design-images*', (route) => route.abort());
     await gotoPicker(page);
-    await expect(tileImg(page)).toHaveAttribute('src', /assets\/designs\/.*thumb\.webp$/);
+    await expect(tileImg(page)).toHaveAttribute('src', /assets\/designs\/.*thumb-front\.webp$/);
     expect(seen).toEqual([]);
     // …and the picker still works.
     await tile(page).click();

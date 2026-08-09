@@ -175,7 +175,7 @@ test.describe('full-page preview has no fake bleed frame', () => {
   test('the active preview renders edge-to-edge (no inset bleed padding)', async ({ page }) => {
     await page.goto('/options.html?plan=base');
     const front = page.getByTestId('preview-front');
-    await expect(front.locator('svg')).toBeVisible();
+    await expect(front.locator('img')).toBeVisible();
     const pad = await front.evaluate((el) => {
       const cs = getComputedStyle(el);
       return {
