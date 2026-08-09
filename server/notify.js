@@ -637,46 +637,31 @@ function buildBuyerReceipt(collection, baseUrl, options) {
   return { subject, text: lines.join('\n'), html };
 }
 
-// Pure builder: the "your game PDF is ready" email. An order now ships TWO
-// artifacts, so this email carries up to two download URLs:
-//   `link`               the card-deck PDF (back+front per card)
-//   `options.boardLink`  the game board, generated as a SEPARATE file
-// Both are the same kind of link — either the admin-gated route (for Dugri) or
-// the per-order capability route (for the customer) — and a caller must never
-// mix the two in one message, or the customer's copy would leak the admin key.
-// The board link is omitted when the generator produced no board file (older
-// orders), leaving the message exactly as it was before. `baseUrl` (the
-// normalized public origin, optional) is used only to host the branded logo.
-// Returns {subject, text, html}. The same body is sent to the client and to Dugri.
-function buildPdfReadyMessage(collection, link, baseUrl, options) {
+// Pure builder: the BUYER's "we've got your list, production has started" email —
+// fired the moment they close word collection with "סיום — התחילו להפיק".
+//
+// It carries NO link and no CTA on purpose: the collection is closed, there is
+// nothing left for them to do, and the next thing they need is us telling them
+// the game is ready. This is the mail that replaced pdf_ready ("download your
+// file"), which stopped making sense once the product shipped as a printed game
+// rather than a PDF.
+//
+// `wordCount` comes off the collection (the close routes stamp it), and is worth
+// echoing back: it is the one number that tells them their whole list arrived.
+// `baseUrl` is used only to host the branded logo. Returns {subject, text, html}.
+function buildProductionStarted(collection, baseUrl) {
   const name = honoreeName(collection);
-  const boardLink = (options && options.boardLink) || null;
-  const tpl = emailTpl('pdf_ready');
-  const cta = ctaLabels();
+  const tpl = emailTpl('buyer_production_started');
   const ft = footer();
-  const values = { honoree: name, downloadLink: link || '', boardLink: boardLink || '' };
+  const count = wordCount(collection);
+  const values = { honoree: name, wordCount: count == null ? '' : count };
   const subject = interpolate(tpl.subject, values);
   const bodyLines = interpolate(tpl.body, values).split('\n');
-  const lines = [...bodyLines, ''];
-  if (link) {
-    lines.push('להורדת חפיסת הקלפים:');
-    lines.push(link);
-    lines.push('');
-  }
-  if (boardLink) {
-    lines.push('להורדת לוח המשחק:');
-    lines.push(boardLink);
-    lines.push('');
-  }
-  lines.push(ft.line1);
-  lines.push(ft.line2);
+  const lines = [...bodyLines, '', ft.line1, ft.line2];
   const html = renderEmailHtml({
-    title: 'הקובץ שלכם מוכן — ' + name,
+    title: 'מתחילים להכין את המשחק — ' + name,
     bodyLines,
-    cta: [
-      link ? { label: cta.downloadFile, url: link } : null,
-      boardLink ? { label: cta.downloadBoard, url: boardLink } : null,
-    ].filter(Boolean),
+    cta: null,
     baseUrl,
   });
   return { subject, text: lines.join('\n'), html };
@@ -1046,42 +1031,25 @@ async function sendOrderFinished(collection, baseUrl) {
   }
 }
 
-// Fire the "PDF ready" notification. `links` is either a single string (legacy:
-// the same link to everyone) or a { admin, customer, adminBoard, customerBoard }
-// set. Dugri (NOTIFY_TO) gets the admin links; the CUSTOMER (owner_email) gets
-// the customer links — which carry a capability token, NEVER the admin key. Each
-// recipient gets a message built with only their OWN pair (deck + board), so the
-// admin secret can't leak in the customer email. The *Board links are optional:
-// without them the message is the single-artifact email it has always been.
-// Fully wrapped — never throws. Returns true when at least one send succeeded.
-async function sendPdfReady(collection, baseUrl, links) {
+// Fire the BUYER's "production has started" mail — the customer-facing half of
+// closing a collection (the owner's half is sendOrderFinished, above; both fire
+// from the same close transition). Goes to the buyer's own address only, and is a
+// no-op when they gave none. Fully wrapped — never throws.
+async function sendProductionStarted(collection, baseUrl) {
   try {
-    if (!settings.emailEnabled('pdf_ready')) return false;
-    const set = links && typeof links === 'object' ? links : null;
-    const adminLink = typeof links === 'string' ? links : (set && set.admin) || null;
-    const customerLink = typeof links === 'string' ? links : (set && set.customer) || null;
-    const ownerMsg = buildPdfReadyMessage(collection, adminLink, baseUrl, {
-      boardLink: (set && set.adminBoard) || null,
-    });
-    const owner = await send(ownerMsg); // -> NOTIFY_TO (Dugri)
-    let client = false;
+    if (!settings.emailEnabled('buyer_production_started')) return false;
     const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
-    if (to && to.toLowerCase() !== String(NOTIFY_TO).toLowerCase()) {
-      const clientMsg = buildPdfReadyMessage(collection, customerLink, baseUrl, {
-        boardLink: (set && set.customerBoard) || null,
-      });
-      client = await send({ ...clientMsg, to });
-    }
-    return owner || client;
+    if (!to) return false;
+    return await send({ ...buildProductionStarted(collection, baseUrl), to });
   } catch (e) {
-    console.warn('[notify] sendPdfReady failed:', e && e.message ? e.message : e);
+    console.warn('[notify] sendProductionStarted failed:', e && e.message ? e.message : e);
     return false;
   }
 }
 
 // Fire the "production blocked — needs fixing" notification. Sends the same
-// message to Dugri (NOTIFY_TO) AND, when present, the client (owner_email) —
-// same fan-out and de-dupe as sendPdfReady. Fully wrapped — never throws.
+// message to Dugri (NOTIFY_TO) AND, when present, the client (owner_email),
+// de-duped so one address never gets it twice. Fully wrapped — never throws.
 // Returns true when at least one send succeeded.
 async function sendProductionError(collection, baseUrl, problems) {
   try {
@@ -1164,7 +1132,7 @@ module.exports = {
   buildPaymentReceipt,
   buildBuyerReceipt,
   buildFinishedMessage,
-  buildPdfReadyMessage,
+  buildProductionStarted,
   buildProductionError,
   buildWordsReminder,
   buildPaymentReminder,
@@ -1178,7 +1146,7 @@ module.exports = {
   sendPaymentReceipt,
   sendBuyerReceipt,
   sendOrderFinished,
-  sendPdfReady,
+  sendProductionStarted,
   sendProductionError,
   sendWordsReminder,
   sendPaymentReminder,

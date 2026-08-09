@@ -155,13 +155,22 @@ const REGISTRY = {
           'זה המשחק שבחרת:',
       },
     },
-    pdf_ready: {
+    // The BUYER's "we've got your list, we're making it" mail — fired the moment
+    // they close word collection with "סיום — התחילו להפיק". It replaces the old
+    // pdf_ready ("your file is ready, download it") mail: the product ships as a
+    // printed game they collect or receive, so there is nothing for them to
+    // download, and the meaningful last word to them is that production started.
+    // Its owner-facing twin at the same moment is order_finished, below.
+    buyer_production_started: {
       kind: 'email',
-      tokens: ['honoree'],
+      tokens: ['honoree', 'wordCount'],
       default: {
         enabled: true,
-        subject: 'דוגרי · הקובץ שלכם מוכן — {honoree}',
-        body: 'הקובץ המוכן להדפסה של המשחק עבור {honoree} מוכן!',
+        subject: 'דוגרי · קיבלנו את המילים — מתחילים להכין את המשחק של {honoree}',
+        body:
+          'תודה! קיבלנו {wordCount} מילים על {honoree} וסגרנו את האיסוף.\n' +
+          '\n' +
+          'מכאן זה עלינו — אנחנו מתחילים להכין את המשחק, ונעדכן אתכם ברגע שהוא מוכן.',
       },
     },
     order_finished: {
@@ -306,8 +315,6 @@ const REGISTRY = {
       tokens: [],
       default: {
         addWords: 'להוספת המילים', // buyer payment receipt + words reminder
-        downloadFile: 'להורדת הקובץ', // PDF ready — the card deck
-        downloadBoard: 'להורדת לוח המשחק', // PDF ready — the separate board file
         updateOrder: 'לעדכון ההזמנה', // production error
         pay: 'להשלמת התשלום', // buyer confirmation + payment reminder
       },

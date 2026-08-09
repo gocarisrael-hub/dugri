@@ -200,6 +200,7 @@ describe('POST /api/whatsapp/webhook — messages', () => {
     // produce" email exactly like the web /close route (only when email is on).
     const cfgSpy = vi.spyOn(notify, 'isConfigured').mockReturnValue(true);
     const finSpy = vi.spyOn(notify, 'sendOrderFinished').mockResolvedValue(true);
+    const startSpy = vi.spyOn(notify, 'sendProductionStarted').mockResolvedValue(true);
     // The buyer's id arrives as a JID; the message-path buyer check normalizes it.
     const r = await webhook({
       messages: [msgEvent('gC@g.us', 'סיום', { from: BUYER_WA + '@s.whatsapp.net' })],
@@ -209,11 +210,18 @@ describe('POST /api/whatsapp/webhook — messages', () => {
     expect(sendCalls).toHaveLength(1);
     expect(sendCalls[0].to).toBe('gC@g.us');
     expect(sendCalls[0].text).toContain('רון'); // list_closed interpolates {honoree}
-    // Owner "list ready to produce" email fired for THIS collection.
+    // Owner "list ready to produce" email fired for THIS collection...
     expect(finSpy).toHaveBeenCalledTimes(1);
     expect(finSpy.mock.calls[0][0].id).toBe(c.id);
+    // ...and so did the BUYER's "we've got your words, we've started" mail.
+    // Closing over WhatsApp has to notify both sides exactly like the web close
+    // button, or a buyer who finishes in the group never hears back.
+    expect(startSpy).toHaveBeenCalledTimes(1);
+    expect(startSpy.mock.calls[0][0].id).toBe(c.id);
+    expect(startSpy.mock.calls[0][0].count).toBe(3);
     cfgSpy.mockRestore();
     finSpy.mockRestore();
+    startSpy.mockRestore();
   });
 
   it('a non-buyer typing the close command does NOT close (words are collected)', async () => {

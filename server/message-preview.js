@@ -126,16 +126,15 @@ const EMAIL_KINDS = [
     build: (n, c, base, opts) => n.buildReminderEmail(c, opts.reminderText, base),
   },
   {
-    id: 'pdf_ready',
-    label: 'הקובץ מוכן',
+    // Fired when the buyer closes word collection ("סיום — התחילו להפיק").
+    // Replaced the old pdf_ready ("your file is ready") mail — see the registry
+    // entry for why. The sample collection carries a word count, so {wordCount}
+    // renders a real number here.
+    id: 'buyer_production_started',
+    label: 'סגרנו את האיסוף — מתחילים להפיק',
     audience: 'buyer',
-    settingsKey: 'pdf_ready',
-    // An order ships two artifacts, so the preview shows both CTAs: the card
-    // deck and the separate board file.
-    build: (n, c, base) =>
-      n.buildPdfReadyMessage(c, base + '/download/sample.pdf', base, {
-        boardLink: base + '/download/sample-board.pdf',
-      }),
+    settingsKey: 'buyer_production_started',
+    build: (n, c, base) => n.buildProductionStarted({ ...c, count: 84 }, base),
   },
   {
     id: 'owner_order_created',
