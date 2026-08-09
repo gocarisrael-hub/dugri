@@ -86,7 +86,7 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
     box = {k: (frac[k] * vb[2] if "x" in k else frac[k] * vb[3]) for k in frac}
     svg = board_svg
     style = ("<style>" + rp.GEOMETRIC_TEXT_STYLE
-             + rp.title_faces(theme, cfg) + "</style>")
+             + rp.title_faces(theme, cfg, lines=title_lines) + "</style>")
     body = style + rp.title_block(box, title_lines, bd["fill"], bd["outline"],
                                   title_font, ts["outline_w"], ts["arch"], ts["shadow"],
                                   rtl=rp.title_is_rtl(cfg),
@@ -113,7 +113,7 @@ def render_backs(theme, backs_clean, title_lines, out_png):
     recipe = config.load_recipe(cfg["recipe"])
     svg = open(backs_clean, encoding="utf-8").read()
     body = ["<style>" + rp.GEOMETRIC_TEXT_STYLE
-            + rp.title_faces(theme, cfg) + "</style>"]
+            + rp.title_faces(theme, cfg, lines=title_lines) + "</style>"]
     for card in recipe["cards"]:
         if not card:
             continue
@@ -247,7 +247,7 @@ def build_board_pdf(theme, out_pdf, title_lines, workdir, chasers=False):
     doc = deck_html.DeckDocument(vb[2], vb[3])
     title_font = rp.title_font_for(theme, title_lines, cfg)
     doc.add_style(rp.GEOMETRIC_TEXT_STYLE
-                  + rp.title_faces(theme, cfg, emit=deck_html.font_face))
+                  + rp.title_faces(theme, cfg, emit=deck_html.font_face, lines=title_lines))
     doc.add_design("board", raw)
     bd, ts = cfg.get("board"), cfg["title_style"]
     overlay = ""
@@ -337,7 +337,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
     doc = deck_html.DeckDocument(vb[2], vb[3], press=press_geom)
     doc.add_style(rp.GEOMETRIC_TEXT_STYLE
                   + rp.word_faces(theme, word_font, emit=deck_html.font_face)
-                  + rp.title_faces(theme, cfg, emit=deck_html.font_face))
+                  + rp.title_faces(theme, cfg, emit=deck_html.font_face, lines=title_lines))
     for i, svg in back_svgs.items():
         doc.add_design(f"back{i}", svg)
     for i in fronts:
