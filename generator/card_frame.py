@@ -38,6 +38,19 @@ cannot match them all**, which is why this is applied at COMPOSITION time, per
 deck, instead of being drawn into the file. The artwork only has to mark which
 element is its frame (``class="card-frame"``); the geometry is the deck's.
 
+Where the frame SITS, as well as what shape it is
+-------------------------------------------------
+The same reading answers a second question, for every card and not just the pawn
+one: is the frame in the MIDDLE of the page? Grapefruit's back card draws its
+frame 1.94 units wider than its own fronts and hangs the surplus off the right,
+which puts the printed border 0.33mm nearer one edge than the other — visible on
+a cut card as a border thicker on one side, and the reason ``deck_document``
+centres every design it registers (``centring_shift``, ``centred``). Like the
+pawn card's frame this is applied at COMPOSITION time and never written into the
+artwork: the SVGs are Canva exports that the owner re-exports and re-uploads, so
+a fix edited into the file lasts until the next upload, and a fix in the deck
+lasts.
+
 Read off the VECTOR, not a render
 ---------------------------------
 Unlike the paper colour, this needs no browser. A frame is a STROKED outline
@@ -92,6 +105,20 @@ FRAME_MAX_OVERHANG = 0.02
 # (0.05 units is 0.014 mm — a hundredth of a printer dot). Below it, rewriting
 # the artwork would churn the file to redraw a line in the same place.
 FRAME_TOL = 0.05
+
+# How far off centre a frame may be and still be CORRECTED rather than kept.
+# Centring slides the whole card, which bares a strip of the shift's own width
+# at the opposite edge (``centred``), and that strip has to land well inside the
+# ~7 units (2.5mm) of bleed the card page carries — 1.5 units is a fifth of it.
+# It is also the line between the two kinds of off-centre: a card out by a
+# fraction of a unit was drawn wrong, a card out by millimetres was drawn that
+# way, and only the first is ours to fix.
+CENTRE_MAX = 1.5
+
+# How much bare page a shift may leave when the card paints no flat background
+# to fill it with. 0.15 units is 0.05mm — thinner than a 600dpi printer dot, so
+# there is nothing there to print white even if the cut lands on it.
+BARE_MAX = 0.15
 
 # How far the sticker halo spreads past a slot: feMorphology dilates 2.4 and the
 # drop shadow blurs a little past that (docs/photo-card.md, "The sticker").
@@ -278,6 +305,131 @@ def frame(svg_text, cell):
         if best is None or box[3] < best["y"] + best["h"]:
             best = found
     return best
+
+
+def centring_shift(svg_text, cell, what=None):
+    """How far the card's frame is off the middle of the page: ``(dx, dy)``.
+
+    The frame is what a buyer reads as "the card" (module docstring), so it is
+    the frame — not the artwork's bounding box, and not the canvas — that has to
+    sit in the middle: the printed border is the only edge anyone can see is
+    thicker on one side than the other. ``(0.0, 0.0)`` when the card draws no
+    measurable frame, or is already centred, or is off by more than
+    ``CENTRE_MAX``.
+    """
+    box = frame(svg_text, cell)
+    if not box or not cell:
+        return 0.0, 0.0
+    x0, y0, x1, y1 = cell
+    dx = (x0 + x1) / 2 - (box["x"] + box["w"] / 2)
+    dy = (y0 + y1) / 2 - (box["y"] + box["h"] / 2)
+    if max(abs(dx), abs(dy)) > CENTRE_MAX:
+        # A card this far off is off ON PURPOSE — an asymmetric design, or a
+        # frame this reader has mistaken for one — and sliding it would be a
+        # redesign, not a correction. Say so and leave it exactly as drawn.
+        _warn("%s is %.2f, %.2f off centre — past %.2f units, that is a design "
+              "decision and not a drafting slip, so the card is left as drawn"
+              % (what or "a card", dx, dy, CENTRE_MAX))
+        return 0.0, 0.0
+    return (0.0 if abs(dx) <= FRAME_TOL else dx,
+            0.0 if abs(dy) <= FRAME_TOL else dy)
+
+
+def page_fill(svg_text, cell):
+    """The flat colour the card's own background paints the page, or None.
+
+    The LAST element that covers the whole page with a solid fill — last because
+    a Canva export lays white down first and the design's colour over it, and it
+    is the top one that anyone sees. ``url(#...)`` fills are refused on purpose:
+    a gradient or a pattern is not a colour, and the point of this is to be able
+    to repeat the background exactly.
+    """
+    import render_page as rp
+
+    if not svg_text or not cell:
+        return None
+    x0c, y0c, x1c, y1c = cell
+    # Generous on purpose: Canva writes its page-sized paths inset by a few
+    # hundredths of a unit (grapefruit's background runs 0.0547 to 311.945 on a
+    # 312 page), and an element that misses the corner by less than a unit is
+    # still the background. Nothing is lost by being sure — the colour is
+    # painted UNDER the artwork, where only the bared strip can show it.
+    tol = 1.0
+    body = rp._DEFS_BLOCK.sub("", svg_text)
+    stack = [rp._IDENTITY]
+    found = None
+    for m in rp._GEOM_TAG.finditer(body):
+        close, name, attrs, selfclose = m.groups()
+        if name == "g":
+            if close:
+                if len(stack) > 1:
+                    stack.pop()
+            elif not selfclose:
+                stack.append(rp._mat_mul(stack[-1], rp._parse_transform(attrs)))
+            continue
+        if close:
+            continue
+        a = dict(rp._ATTR.findall(attrs))
+        fill = (a.get("fill") or "").strip()
+        if not fill or fill == "none" or fill.startswith("url("):
+            continue
+        if name == "rect":
+            try:
+                rx, ry = float(a.get("x", 0)), float(a.get("y", 0))
+                rw, rh = float(a["width"]), float(a["height"])
+            except (KeyError, ValueError):
+                continue
+            pts = [(rx, ry), (rx + rw, ry + rh)]
+        else:
+            pts = _on_curve(a.get("d"))
+            if not pts:
+                continue
+        t = rp._mat_mul(stack[-1], rp._parse_transform(attrs))
+        xs = [t[0] * x + t[2] * y + t[4] for x, y in pts]
+        ys = [t[1] * x + t[3] * y + t[5] for x, y in pts]
+        if (min(xs) <= x0c + tol and min(ys) <= y0c + tol
+                and max(xs) >= x1c - tol and max(ys) >= y1c - tol):
+            found = fill
+    return found
+
+
+def centred(svg_text, cell, what=None):
+    """``svg_text`` with its artwork translated so its frame is centred on it.
+
+    The WHOLE artwork moves, background included, because the card is one
+    drawing: sliding the frame alone would only move the error to the artwork
+    drawn around it. That BARES a strip of the shift's own width at the opposite
+    edge, and the strip is not academic — a customer's deck is one card per page
+    with no bleed to spare, so 0.34mm of white lands on the cut. So the card's
+    own background colour is painted under the whole page first, which fills the
+    strip with the colour that was there before.
+
+    A card whose background is a pattern or a photo has no colour to repeat, and
+    then the shift may only be a hair — smaller than a printer dot at 600dpi.
+    Anything bigger is refused, and the card prints exactly as drawn: a card
+    slightly off centre is a much smaller fault than a white line down its edge.
+    """
+    dx, dy = centring_shift(svg_text, cell, what=what)
+    if not dx and not dy:
+        return svg_text
+    root = re.search(r"<svg\b[^>]*>", svg_text)
+    end = svg_text.rfind("</svg>")
+    if not root or end < root.end():
+        return svg_text
+    fill = page_fill(svg_text, cell)
+    if fill is None and max(abs(dx), abs(dy)) > BARE_MAX:
+        _warn("%s is %.2f, %.2f off centre but paints no flat background, so "
+              "centring it would bare a strip nothing can fill — the card is "
+              "left as drawn" % (what or "a card", dx, dy))
+        return svg_text
+    under = ""
+    if fill is not None:
+        under = ('<rect x="%s" y="%s" width="%s" height="%s" fill="%s"/>'
+                 % (_num(cell[0]), _num(cell[1]), _num(cell[2] - cell[0]),
+                    _num(cell[3] - cell[1]), fill))
+    return (svg_text[:root.end()] + under
+            + '<g transform="translate(%s,%s)">' % (_num(dx), _num(dy))
+            + svg_text[root.end():end] + "</g>" + svg_text[end:])
 
 
 def front_frame(theme_name):

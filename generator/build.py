@@ -17,6 +17,7 @@ import re
 from PIL import Image
 
 import card_assets
+import card_frame
 import card_paper
 import chrome
 import config
@@ -334,6 +335,28 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
     back_svgs = {i: card_assets.read_svg(config.card_path(theme, i))
                  for i in dict.fromkeys(backs)}
     vb = deck_html.view_box(front_svgs[fronts[0]])
+    # Every design this deck registers is CENTRED on the page before anything is
+    # laid on top of it. The frame is what a buyer reads as the card, and a frame
+    # off the middle prints a border thicker on one side than the other — which
+    # grapefruit's back card does, drawing its frame 1.94 units wider than its own
+    # fronts and hanging the surplus off the right (card_frame, "Where the frame
+    # SITS"). A card already centred, or off by more than a drafting slip, comes
+    # back untouched, so this costs the other templates nothing.
+    #
+    # The FRONTS are centred before the overlays are built from them, not after:
+    # rp.card_overlay reads the front's own frame to lay the words inside it, so
+    # correcting the artwork first is what keeps the words with their card
+    # instead of leaving them behind by the width of the correction.
+    cell = [vb[0], vb[1], vb[0] + vb[2], vb[1] + vb[3]]
+
+    def centred(svg, index):
+        out = card_frame.centred(svg, cell, what=f"{theme} card {index}")
+        if out is not svg:
+            log(f"centred card {index}")
+        return out
+
+    front_svgs = {i: centred(s, i) for i, s in front_svgs.items()}
+    back_svgs = {i: centred(s, i) for i, s in back_svgs.items()}
     doc = deck_html.DeckDocument(vb[2], vb[3], press=press_geom)
     doc.add_style(rp.GEOMETRIC_TEXT_STYLE
                   + rp.word_faces(theme, word_font, emit=deck_html.font_face)
@@ -372,8 +395,8 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
             # The photo card's slots live in the artwork and are filled in place
             # (docs/photo-card.md), so the FILLED card is the design — there is
             # no text overlay to lay on top of it, and it needs no font.
-            doc.add_design("photo", rp.photo_card_svg(theme, photo_paths,
-                                                      paper=paper))
+            doc.add_design("photo", centred(rp.photo_card_svg(
+                theme, photo_paths, paper=paper), "photo"))
             doc.add_page("photo")
         else:
             doc.add_page(f"front{front}",
