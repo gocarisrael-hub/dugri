@@ -3118,7 +3118,7 @@
       <section class="wiz-step" data-step="5" data-testid="step-pawns">
         <h2 class="wiz-title" data-edit="options-photos-title">העלו עד 4 תמונות (רשות)</h2>
         <p class="wiz-sub" data-edit="options-photos-sub">
-          התמונות יהפכו לחיילים (פיונים) במשחק. תמונות פנים עובדות הכי טוב.
+          ככה החיילים (הפיונים) ייראו במשחק. תמונות פנים עובדות הכי טוב.
         </p>
         <div class="pawn-grid" id="pawnGrid" data-testid="pawn-grid">
           <!-- 4 fixed slots; each wraps a hidden file input + a small preview. -->
@@ -3221,7 +3221,8 @@
              re-opens its file picker (the input covers the whole slot), which is
              the per-slot re-upload — this line says so out loud. -->
         <p class="pawn-hint" data-testid="pawn-hint" data-edit="options-photos-hint">
-          נסיר את הרקע אוטומטית על המכשיר שלכם. לא אהבתם את התוצאה? לחצו על התמונה כדי להחליף אותה.
+          נסיר את הרקע אוטומטית על המכשיר שלכם. התצוגה בעיגול משוערת. לא אהבתם את התוצאה? לחצו על
+          התמונה כדי להחליף אותה.
         </p>
         <p class="wiz-err" id="pawnErr" data-testid="pawn-err" hidden></p>
         <button class="pawn-skip" type="button" id="pawnSkip" data-testid="pawn-skip">דלגו</button>
@@ -3252,10 +3253,17 @@
             color: var(--muted);
             text-align: center;
           }
+          /* TWO per row, not four. The slot stopped being a file-picker thumbnail
+             and became a preview of the printed pawn, and at four across (96px on
+             a 430px phone) a face inside a circle inside that is unreadable —
+             which is the one thing this step exists to let the buyer check. Two
+             across doubles it to 200px, 4.3x the area. The cost is that the grid
+             no longer fits above the fold on a phone; the filled rows are what
+             the buyer came to look at, so they are what gets the room. */
           .pawn-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 10px;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 14px;
             margin: 6px 0 12px;
           }
           .pawn-slot {
@@ -3310,10 +3318,50 @@
           .pawn-slot.is-filled .pawn-plus {
             display: none;
           }
+          /* THE PAWN PREVIEW. Once the cutout is framed (pawn-frame.js measured
+             its subject), the slot stops being a thumbnail and becomes the pawn:
+             the card's paper, the dashed cut-line the buyer scissors along, and
+             the photo scaled so the WHOLE subject sits inside that circle — the
+             same rule generator/build.py prints by.
+
+             The white ring is stacked drop-shadows standing in for the card's
+             feMorphology dilation. It is an approximation and the copy under the
+             grid says so; what IS exact is the framing, since both sides measure
+             the same alpha with the same arithmetic.
+
+             The slot clips to its SQUARE, not to the circle the card cuts to. That
+             is deliberate and it costs nothing: the framing puts the whole subject
+             inside the circle by construction, so there is no ink between the two
+             shapes to clip — and this treatment is only applied to a cutout whose
+             subject was actually measured (`is-pawn` needs a frame). Clipping to
+             the circle would mean a wrapper element around the image, for a case
+             the rule above cannot produce. */
+          .pawn-slot.is-pawn {
+            border: none;
+            background: var(--pawn-card, #f2cbd6);
+          }
+          .pawn-slot.is-pawn .pawn-cut-line {
+            position: absolute;
+            inset: 6%;
+            border: 1.5px dashed rgba(20, 20, 20, 0.32);
+            border-radius: 50%;
+            pointer-events: none;
+          }
+          /* The framed image is positioned per photo, in percentages of the slot
+             (see pawn-frame.js) — inset/width come from the inline style. */
+          .pawn-slot.is-pawn .pawn-thumb {
+            inset: auto;
+            object-fit: contain;
+            background: none;
+            filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff) drop-shadow(0 0 1.5px #fff);
+          }
           /* A cutout is mostly transparent, so `cover` would blow the subject up
              and crop it — show it CONTAINED over a light checkerboard, which is
-             what makes "the background is gone" legible at thumbnail size. */
-          .pawn-slot.is-cut .pawn-thumb {
+             what makes "the background is gone" legible at thumbnail size. This
+             is the fallback for a cut we could not MEASURE (no subject, or a
+             browser that would not give us pixels): the slot keeps the old
+             treatment rather than guessing at a frame. */
+          .pawn-slot.is-cut:not(.is-pawn) .pawn-thumb {
             object-fit: contain;
             background-color: #fff;
             background-image:
@@ -6247,6 +6295,10 @@
       // Monotonic per slot: a fast re-pick must not have the OLD cutout land on
       // top of the new photo, so a result is only applied when it is still current.
       const pawnCutSeq = new Array(PAWN_MAX).fill(0);
+      // Where each cutout's subject sits inside the pawn's circle — the answer
+      // from pawn-frame.js, or null when it could not be measured, in which case
+      // the slot keeps the old contained-on-checkerboard look.
+      const pawnFrames = new Array(PAWN_MAX).fill(null);
       const PAWN_CUT_LABEL = {
         working: 'מסירים רקע…',
         done: 'הרקע הוסר',
@@ -6285,8 +6337,39 @@
           slot.classList.remove('is-filled');
         }
         slot.classList.toggle('is-cut', Boolean(file && pawnCutouts[idx]));
+        // The pawn treatment needs BOTH a cutout and a measurement of it: the
+        // circle is only honest when the photo inside it is placed the way the
+        // printer will place it, so an unmeasured cut stays a thumbnail.
+        const frame = file && pawnCutouts[idx] ? pawnFrames[idx] : null;
+        slot.classList.toggle('is-pawn', Boolean(frame));
+        let cutLine = slot.querySelector('.pawn-cut-line');
+        if (frame) {
+          if (!cutLine) {
+            cutLine = document.createElement('span');
+            cutLine.className = 'pawn-cut-line';
+            cutLine.setAttribute('aria-hidden', 'true');
+            slot.appendChild(cutLine);
+          }
+          img.style.width = frame.widthPct.toFixed(2) + '%';
+          img.style.height = frame.heightPct.toFixed(2) + '%';
+          img.style.insetInlineStart = '';
+          img.style.left = frame.leftPct.toFixed(2) + '%';
+          img.style.top = frame.topPct.toFixed(2) + '%';
+        } else {
+          if (cutLine) cutLine.remove();
+          img.style.width = '';
+          img.style.height = '';
+          img.style.left = '';
+          img.style.top = '';
+        }
         if (status) {
-          const label = file ? PAWN_CUT_LABEL[pawnCutState[idx]] || '' : '';
+          let label = file ? PAWN_CUT_LABEL[pawnCutState[idx]] || '' : '';
+          // "הרקע הוסר" existed to tell the buyer what the checkerboard meant. On a
+          // pawn slot the sticker says it better than the sentence does, and the
+          // label's band would sit across the bottom of the circle it is describing.
+          // The other two states still say something the picture cannot ('working'
+          // is a wait, 'failed' is a promise to fix it by hand), so they stay.
+          if (frame && pawnCutState[idx] === 'done') label = '';
           status.textContent = label;
           status.hidden = !label;
         }
@@ -6301,6 +6384,7 @@
       async function cutPawnSlot(idx, file) {
         const seq = ++pawnCutSeq[idx];
         pawnCutouts[idx] = null;
+        pawnFrames[idx] = null;
         pawnCutState[idx] = 'working';
         renderPawnSlot(idx);
         let blob = null;
@@ -6313,6 +6397,21 @@
         if (seq !== pawnCutSeq[idx] || pawnFiles[idx] !== file) return; // superseded
         pawnCutouts[idx] = blob;
         pawnCutState[idx] = blob ? 'done' : 'failed';
+        renderPawnSlot(idx);
+        // Measure where the subject sits, then paint again. Deliberately AFTER
+        // the render above rather than awaited before it: the cut is the slow
+        // part and the buyer should see their sticker the moment it exists,
+        // rather than waiting on a measurement that only moves it.
+        if (!blob) return;
+        let frame = null;
+        try {
+          const fmod = await import('./js/pawn-frame.js');
+          frame = await fmod.frameFromBlob(blob);
+        } catch {
+          frame = null;
+        }
+        if (seq !== pawnCutSeq[idx] || pawnFiles[idx] !== file) return; // superseded
+        pawnFrames[idx] = frame;
         renderPawnSlot(idx);
       }
 
@@ -6358,6 +6457,7 @@
           e.stopPropagation();
           pawnFiles[idx] = null;
           pawnCutouts[idx] = null;
+          pawnFrames[idx] = null;
           pawnCutState[idx] = '';
           pawnCutSeq[idx]++; // abandon an in-flight cut for the photo just dropped
           input.value = '';

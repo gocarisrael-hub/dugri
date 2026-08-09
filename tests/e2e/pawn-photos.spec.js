@@ -57,17 +57,18 @@ const CUT_PNG =
 // depends on what the segmenter sees in the photo — neither belongs in a test of
 // the WIRING. The real runtime is exercised by the "loads the real segmenter"
 // test below and by tests/unit/pawn-cutout.test.js.
-// `succeeds` is how many of the FIRST calls return null before the stub starts
+// `png` is the base64 cutout the stub hands back (default CUT_PNG, which has no
+// measurable subject); `succeeds` is how many of the FIRST calls return null before the stub starts
 // producing a cutout: false = never cuts, true = always cuts, 'after-1' = the
 // first photo misses and the retry succeeds. The module is imported once and
 // cached by the browser, so a re-pick has to be driven from inside the stub
 // rather than by re-routing.
-async function stubCutter(page, { succeeds }) {
+async function stubCutter(page, { succeeds, png }) {
   const misses = succeeds === true ? 0 : succeeds === 'after-1' ? 1 : Infinity;
   const body = `let n = 0;
      export async function cutPawnPhoto() {
        if (n++ < ${misses === Infinity ? 'Infinity' : misses}) return null;
-       const bin = atob(${JSON.stringify(CUT_PNG)});
+       const bin = atob(${JSON.stringify(png || CUT_PNG)});
        const a = new Uint8Array(bin.length);
        for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
        return new Blob([a], { type: 'image/png' });
@@ -237,6 +238,62 @@ test.describe('pawn photos: the background cut', () => {
     expect(pawns.body).not.toContain('name="cutfail"');
   });
 
+  // A 4x4 cutout with a 2x2 opaque centre: small enough that the framing maths
+  // can be checked exactly, shaped enough to have a subject at all (the 2x2
+  // CUT_PNG above is all corner and nothing else, so there is nothing to frame).
+  const FRAMEABLE_PNG =
+    'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAGElEQVR4nGNgwAbuTJv2H4RBbCasKpABAAGBBhFm0xs/AAAAAElFTkSuQmCC';
+
+  test('a cut sticker is shown as the PAWN — in the circle, framed like the print', async ({
+    page,
+  }) => {
+    await stubCutter(page, { succeeds: true, png: FRAMEABLE_PNG });
+    await toPawnStep(page);
+    const slot0 = page.locator('.pawn-slot[data-idx="0"]');
+    await page
+      .getByTestId('pawn-input-0')
+      .setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: PNG_BYTES });
+
+    // The slot stops being a thumbnail: the card's paper, the dashed cut-line
+    // the buyer scissors along, and the photo placed inside it.
+    await expect(slot0).toHaveClass(/is-pawn/);
+    await expect(slot0.locator('.pawn-cut-line')).toHaveCount(1);
+    // …and the "background removed" band is gone: the sticker says it, and the
+    // band would sit across the bottom of the circle it is describing.
+    await expect(page.getByTestId('pawn-status-0')).toBeHidden();
+
+    // The FRAMING is the promise this preview makes, so it is asserted as a
+    // number rather than as "something was set". For a 4x4 image whose subject
+    // is the middle 2x2, the subject's reach is sqrt(0.5) px, the disc radius is
+    // 45% of the slot, so the image is drawn at 4 * 45/sqrt(0.5) = 254.56% with
+    // its top-left at 50 - 2 * 45/sqrt(0.5) = -77.28%. Those are the same
+    // numbers generator/build.py arrives at for the same alpha.
+    const style = await slot0.locator('.pawn-thumb').evaluate((el) => ({
+      width: parseFloat(el.style.width),
+      left: parseFloat(el.style.left),
+      top: parseFloat(el.style.top),
+    }));
+    expect(style.width).toBeCloseTo(254.56, 1);
+    expect(style.left).toBeCloseTo(-77.28, 1);
+    expect(style.top).toBeCloseTo(-77.28, 1);
+  });
+
+  test('a cut with nothing measurable in it stays a plain thumbnail', async ({ page }) => {
+    // The transparent 2x2: a cutout exists, but there is no subject to frame. The
+    // slot must NOT dress up as a pawn — a circle whose contents were placed by
+    // guesswork is a promise we cannot keep.
+    await stubCutter(page, { succeeds: true });
+    await toPawnStep(page);
+    const slot0 = page.locator('.pawn-slot[data-idx="0"]');
+    await page
+      .getByTestId('pawn-input-0')
+      .setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: PNG_BYTES });
+
+    await expect(slot0).toHaveClass(/is-cut/);
+    await expect(slot0).not.toHaveClass(/is-pawn/);
+    await expect(slot0.locator('.pawn-cut-line')).toHaveCount(0);
+  });
+
   test('a cut we cannot make keeps the ORIGINAL and records the miss', async ({ page }) => {
     const pawns = capturePawns(page);
     await stubCreate(page);
@@ -349,8 +406,14 @@ test.describe('pawn photos: the helper copy', () => {
       expect(lead / size, `${what} line-height ratio`).toBeGreaterThanOrEqual(1.4);
     }
 
-    // Growing the copy must not push the step's last control behind the fixed bar
-    // or make the phone wizard scroll (the rule wizard-noscroll.spec.js enforces).
+    // Growing the copy must not push the step's last control behind the fixed bar.
+    //
+    // The page IS allowed to scroll here now — the slots became previews of the
+    // printed pawn and the owner chose the size over the one-screen rule; see the
+    // step-5 tests in wizard-noscroll.spec.js for that decision. What must not
+    // change is that the buyer can still reach the control, so scroll the way she
+    // would and then hold the same bar assertion.
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
     await expect
       .poll(async () =>
         page.evaluate(() => {
@@ -360,10 +423,5 @@ test.describe('pawn photos: the helper copy', () => {
         })
       )
       .toBeLessThanOrEqual(0);
-    await expect
-      .poll(async () =>
-        page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
-      )
-      .toBeLessThanOrEqual(4);
   });
 });
