@@ -36,7 +36,10 @@
         padding: 22px 16px 60px;
       }
       .wrap {
-        max-width: 1100px;
+        /* Wider than the storefront pages on purpose: this is a twenty-column
+           operations table, and every 100px here is 100px the table does not
+           have to scroll. */
+        max-width: 1440px;
         margin: 0 auto;
       }
       .nav {
@@ -76,19 +79,24 @@
         padding: 20px;
         text-align: center;
       }
-      /* Safety net: if the table ever can't shrink far enough, scroll inside
-         this box rather than widening the page (which would push the
-         controls/tabs off a narrow mobile viewport). With the fixed layout +
-         wrapping below the table already fits, so this rarely engages. */
+      /* The table scrolls INSIDE this box rather than widening the page (which
+         would push the controls/tabs off a narrow viewport). It really does
+         engage now: twenty columns cannot honestly fit a laptop, and the
+         alternative — squeezing them all in — is what shredded every button
+         into one letter per line. */
       #content {
         max-width: 100%;
         overflow-x: auto;
       }
       table {
         width: 100%;
-        max-width: 100%;
-        /* Fixed layout: columns share the width evenly and never grow past the
-           container, so long values wrap instead of forcing a side-scroll. */
+        /* Every column gets a declared width (see the <colgroup> the renderer
+           emits) and the renderer sets --table-min to their sum: the floor below
+           which the table scrolls inside #content instead of shrinking. Without
+           the floor, `table-layout: fixed` divides the viewport by twenty and
+           hands each column ~60px — too narrow for a word, let alone a button.
+           The fallback is the old behaviour, for a table rendered without it. */
+        min-width: var(--table-min, 100%);
         table-layout: fixed;
         border-collapse: collapse;
         background: #fff;
@@ -152,9 +160,33 @@
         border-radius: 9px;
         padding: 6px 10px;
         margin: 2px 0;
+        /* A button's label is not prose: it must never break mid-word, and it
+           must never shrink below its own text. The cells inherit
+           `overflow-wrap: anywhere` (right for a long email, wrong here), which
+           made a flexed button's minimum width ONE CHARACTER — that is how
+           "פתח קבוצה בבוט" ended up printed vertically, a letter per line. */
+        white-space: nowrap;
+        word-break: normal;
+        overflow-wrap: normal;
+        flex: 0 0 auto;
+      }
+      /* Every cell that holds more than one action lays them out here: a
+         wrapping row, so the actions stack onto a second line instead of
+         squeezing each other thin. */
+      .acts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
       }
       .muted {
         color: #6b645b;
+        font-size: 12.5px;
+      }
+      /* Past the 24-hour promise and still not ready. */
+      .late {
+        color: #a4443a;
+        font-weight: 700;
         font-size: 12.5px;
       }
       .contact {
@@ -204,6 +236,25 @@
         flex-wrap: wrap;
         gap: 6px;
       }
+      .filters {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .frow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .flab {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #6b645b;
+        /* Both labels reserve the same width so the two chip rows line up under
+           each other instead of starting at two different offsets. */
+        min-width: 42px;
+      }
       .tab {
         font: inherit;
         font-size: 13px;
@@ -239,8 +290,9 @@
       }
       .followup {
         display: inline-flex;
-        gap: 4px;
+        gap: 6px;
         flex-wrap: wrap;
+        align-items: center;
       }
       a.act {
         display: inline-block;
@@ -416,8 +468,8 @@
           grid-template-columns: 1fr;
         }
       }
-      /* Narrow phones: 15 columns can't fit as a grid, so stack each row into a
-         label:value card. The label comes from each cell's data-label (set in
+      /* Narrow phones: twenty columns can't fit as a grid, so stack each row into
+         a label:value card. The label comes from each cell's data-label (set in
          JS). This keeps every value on-screen with zero horizontal scroll. */
       @media (max-width: 600px) {
         #content {
@@ -426,6 +478,9 @@
         table {
           border: none;
           background: transparent;
+          /* The desktop floor would make the stacked cards 1880px wide — i.e. a
+             page that scrolls sideways forever. Cards size to the phone. */
+          min-width: 0;
         }
         thead {
           /* Off-screen but accessible; the per-cell labels replace it visually. */
@@ -455,8 +510,13 @@
         }
         td {
           display: flex;
+          /* Wrapping matters as much as the flexing: an action cell holds up to
+             six buttons, and on one un-wrappable line they can only shrink into
+             slivers. With wrap they drop to the next line at full size. */
+          flex-wrap: wrap;
           justify-content: space-between;
-          gap: 12px;
+          align-items: center;
+          gap: 6px 12px;
           padding: 8px 0;
         }
         td:last-child {
@@ -468,6 +528,13 @@
           color: #5c7357;
           font-size: 12.5px;
           flex: 0 0 auto;
+        }
+        /* The value side of a label:value line: it may wrap internally, but it
+           never shrinks below the widest action inside it. */
+        td > .acts,
+        td > .followup {
+          flex: 1 1 auto;
+          justify-content: flex-start;
         }
         /* Cells with no label (e.g. empty ones) shouldn't reserve label space. */
         td:not([data-label])::before {
@@ -498,12 +565,27 @@
       <h1>ניהול הזמנות · דוגרי</h1>
       <div class="sub" id="sub">טוען…</div>
       <div class="stats" id="stats"></div>
+      <!-- Two INDEPENDENT filter rows that combine: payment on one, where the
+           order stands on the other. One row of every combination would be a
+           dozen chips ("שולמו + נסגרו", "שולמו + בדפוס", …); two rows that AND
+           together give the same answers, plus the ones nobody thought to ask
+           for, out of nine chips. -->
       <div class="controls" id="controls" hidden>
-        <div class="tabs" id="tabs"></div>
+        <div class="filters">
+          <div class="frow">
+            <span class="flab">תשלום</span>
+            <div class="tabs" id="tabs"></div>
+          </div>
+          <div class="frow">
+            <span class="flab">שלב</span>
+            <div class="tabs" id="tabs-stage"></div>
+          </div>
+        </div>
         <label class="sortwrap"
           >מיון:
           <select id="sort">
             <option value="created">נוצר</option>
+            <option value="closed">נסגר (הוותיקה קודם)</option>
             <option value="words">מס׳ מילים</option>
             <option value="total">סכום</option>
           </select>
@@ -670,6 +752,7 @@
       const statsEl = document.getElementById('stats');
       const controlsEl = document.getElementById('controls');
       const tabsEl = document.getElementById('tabs');
+      const stageTabsEl = document.getElementById('tabs-stage');
       const sortSelect = document.getElementById('sort');
 
       // A download link for an order's BOARD — the second artifact, produced as
@@ -772,6 +855,8 @@
       // collection id -> { groupId, closed }, refreshed with the collections.
       let waGroups = {};
       let activeFilter = 'all';
+      // The second filter axis: where the order stands (see STAGES).
+      let activeStage = 'all';
       let sortBy = 'created';
 
       function fmtDate(iso) {
@@ -793,6 +878,39 @@
         cancelled: 'מבוטלת',
       };
 
+      // When the buyer closed her word list — the moment the 24-hour clock starts,
+      // because the file is promised within a day OF THE WORDS, not of the
+      // payment. A collection that ran out its deadline never got an explicit
+      // close, so it falls back to the expiry: the words stopped coming then.
+      function closedAt(c) {
+        if (!c) return null;
+        if (c.closed_at) return c.closed_at;
+        return c.status === 'expired' ? c.expires_at || null : null;
+      }
+
+      // "לפני 3 שעות" — how long an order has been waiting to be produced. Coarse
+      // on purpose: the owner needs "still fine" vs "today" vs "late", not minutes.
+      function sinceLabel(iso) {
+        const ms = Date.now() - Date.parse(iso);
+        if (!Number.isFinite(ms)) return '';
+        if (ms < 0) return '';
+        const hours = Math.floor(ms / 3600000);
+        if (hours < 1) return 'לפני פחות משעה';
+        if (hours === 1) return 'לפני שעה';
+        if (hours < 24) return 'לפני ' + hours + ' שעות';
+        const days = Math.floor(hours / 24);
+        return days === 1 ? 'לפני יום' : 'לפני ' + days + ' ימים';
+      }
+      const DAY_MS = 24 * 3600 * 1000;
+      // Past the promise and still not marked ready — the row the owner has to
+      // deal with first. Cancelled orders are nobody's deadline.
+      function isLate(c) {
+        const at = closedAt(c);
+        if (!at || c.cancelled) return false;
+        if (c.order && c.order.ready_at) return false;
+        return Date.now() - Date.parse(at) > DAY_MS;
+      }
+
       // Israeli phone -> international digits for wa.me: strip non-digits, and a
       // leading 0 (local trunk prefix) becomes the 972 country code.
       function intlPhone(phone) {
@@ -803,15 +921,66 @@
 
       const isPaid = (c) => !!(c.order && c.order.paid);
 
-      // Filter tabs: id, Hebrew label, and the predicate over a collection.
+      // PAYMENT filter: id, Hebrew label, and the predicate over a collection.
+      // Kept as FILTERS (and on #tabs) because it is the row that was always
+      // here; the stage row below is the new axis it combines with.
       const FILTERS = [
         { id: 'all', label: 'הכל', match: () => true },
         { id: 'leads', label: 'לידים', match: (c) => !c.cancelled && !isPaid(c) },
         { id: 'paid', label: 'שולמו', match: (c) => isPaid(c) },
+      ];
+
+      // The last production result for an order — the same lookup the "הפקה"
+      // column makes, since where an order stands is exactly what that shows.
+      const production = (c) => (c.order && c.order.production) || c.production || null;
+      const isGenerated = (c) => {
+        const p = production(c);
+        return !!(p && p.state === 'generated');
+      };
+
+      // WHERE THE ORDER STANDS: one step per thing the owner still owes it, in
+      // pipeline order. The steps are mutually exclusive — an order that went to
+      // the printer is no longer "waiting to be produced" — so the counts add up
+      // and a chip means "these are the ones to work on", not "these have ever
+      // been". Each of them ANDs with the payment row above, which is how
+      // "שולמו + נסגרו" or "שולמו + הופקו" get asked.
+      // Nothing has been stamped on this order yet — it has not gone to the
+      // printer and is not back from it. The two later steps are checked FIRST
+      // by every earlier one, which is what keeps the steps exclusive.
+      const unstamped = (c) => !(c.order && (c.order.sent_to_print_at || c.order.ready_at));
+      const STAGES = [
+        { id: 'all', label: 'הכל', match: () => true },
         {
-          id: 'closed',
-          label: 'סגורות',
-          match: (c) => c.status === 'closed' || c.status === 'expired',
+          id: 'collecting',
+          label: 'באיסוף מילים',
+          match: (c) => !c.cancelled && c.status === 'open' && !isGenerated(c) && unstamped(c),
+        },
+        {
+          // Words are in and nothing has been built yet — the production queue.
+          id: 'to-produce',
+          label: 'נסגרו — להפקה',
+          match: (c) =>
+            !c.cancelled &&
+            (c.status === 'closed' || c.status === 'expired') &&
+            !isGenerated(c) &&
+            unstamped(c),
+        },
+        {
+          // Built, and still sitting here: the list of what to send to Galor.
+          id: 'to-print',
+          label: 'הופקו — לשליחה לדפוס',
+          match: (c) => !c.cancelled && isGenerated(c) && unstamped(c),
+        },
+        {
+          id: 'printing',
+          label: 'בדפוס',
+          match: (c) =>
+            !c.cancelled && !!c.order && !!c.order.sent_to_print_at && !c.order.ready_at,
+        },
+        {
+          id: 'ready',
+          label: 'מוכנות',
+          match: (c) => !c.cancelled && !!c.order && !!c.order.ready_at,
         },
         { id: 'cancelled', label: 'מבוטלות', match: (c) => !!c.cancelled },
       ];
@@ -821,7 +990,21 @@
         if (sortBy === 'words') arr.sort((a, b) => (b.word_count || 0) - (a.word_count || 0));
         else if (sortBy === 'total')
           arr.sort((a, b) => ((b.order && b.order.total) || 0) - ((a.order && a.order.total) || 0));
-        else arr.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+        // The production queue: closed lists first, OLDEST close at the top —
+        // the one that has been waiting longest is the one to produce next. This
+        // is the only sort that runs ascending, and deliberately so; a
+        // newest-first production list would work the queue backwards. Lists
+        // still open have no close time and sit below, newest first as usual.
+        else if (sortBy === 'closed') {
+          arr.sort((a, b) => {
+            const ca = closedAt(a);
+            const cb = closedAt(b);
+            if (ca && cb) return String(ca).localeCompare(String(cb));
+            if (ca) return -1;
+            if (cb) return 1;
+            return String(b.created_at).localeCompare(String(a.created_at));
+          });
+        } else arr.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
         return arr;
       }
       const versionLabel = {
@@ -1529,21 +1712,64 @@
         }
       }
 
-      function renderTabs(cols) {
-        tabsEl.textContent = '';
-        for (const f of FILTERS) {
-          const count = cols.filter(f.match).length;
+      // One row of chips. The count on each chip is what THAT chip would show
+      // given the other row's current pick — "שולמו" alongside "בדפוס (2)" means
+      // two paid orders are at the printer, not two orders in the world. A count
+      // measured against everything would promise rows the click can't deliver.
+      function renderTabRow(el, defs, activeId, otherMatch, onPick) {
+        el.textContent = '';
+        for (const f of defs) {
+          const count = allCols.filter((c) => otherMatch(c) && f.match(c)).length;
           const btn = document.createElement('button');
-          btn.className = 'tab' + (activeFilter === f.id ? ' active' : '');
+          btn.className = 'tab' + (activeId === f.id ? ' active' : '');
           btn.textContent = f.label + ' (' + count + ')';
           btn.dataset.filter = f.id;
-          btn.onclick = () => {
-            activeFilter = f.id;
-            renderAll();
-          };
-          tabsEl.appendChild(btn);
+          btn.onclick = () => onPick(f.id);
+          el.appendChild(btn);
         }
       }
+
+      const matcherFor = (defs, id) => (defs.find((x) => x.id === id) || defs[0]).match;
+
+      function renderTabs() {
+        renderTabRow(tabsEl, FILTERS, activeFilter, matcherFor(STAGES, activeStage), (id) => {
+          activeFilter = id;
+          renderAll();
+        });
+        renderTabRow(stageTabsEl, STAGES, activeStage, matcherFor(FILTERS, activeFilter), (id) => {
+          activeStage = id;
+          renderAll();
+        });
+      }
+
+      // The columns, in order: the header text and the width the column gets on a
+      // wide screen. ONE list — the <thead>, the <colgroup> and the per-cell
+      // labels the phone layout prints all come from it, so a column added to the
+      // row can no longer drift out of step with its own heading. (It had:
+      // "לדפוס" and "מוכן" were inserted mid-row while the label list stayed at
+      // seventeen entries, so every phone card mislabelled its last five values.)
+      const COLUMNS = [
+        ['בעל/ת השמחה', 130],
+        ['לקוח', 140],
+        ['מילים', 60],
+        ['סטטוס', 80],
+        ['עיצוב', 90],
+        ['צבע', 70],
+        ['פיונים', 80],
+        ['צ׳ייסרים', 70],
+        ['גרסה', 110],
+        ['סכום', 70],
+        ['כתובת', 120],
+        ['תשלום', 80],
+        ['הפקה', 130],
+        ['לדפוס', 110],
+        ['מוכן', 120],
+        ['נוצר', 90],
+        ['נסגר', 120],
+        ['מעקב', 110],
+        ['וואטסאפ', 120],
+        ['ניהול', 240],
+      ];
 
       function render(cols) {
         if (!cols.length) {
@@ -1551,8 +1777,25 @@
           return;
         }
         const table = document.createElement('table');
-        table.innerHTML =
-          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>פיונים</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>הפקה</th><th>לדפוס</th><th>מוכן</th><th>נוצר</th><th>מעקב</th><th>וואטסאפ</th><th>ניהול</th></tr></thead>';
+        const colgroup = document.createElement('colgroup');
+        for (const [, w] of COLUMNS) {
+          const col = document.createElement('col');
+          col.style.width = w + 'px';
+          colgroup.appendChild(col);
+        }
+        // Keep the scroll floor honest about the widths above: the two must agree,
+        // or `table-layout: fixed` starts squeezing columns again.
+        table.style.setProperty('--table-min', COLUMNS.reduce((s, [, w]) => s + w, 0) + 'px');
+        table.appendChild(colgroup);
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        for (const [label] of COLUMNS) {
+          const th = document.createElement('th');
+          th.textContent = label;
+          headRow.appendChild(th);
+        }
+        thead.appendChild(headRow);
+        table.appendChild(thead);
         const tb = document.createElement('tbody');
         for (const c of cols) {
           const tr = document.createElement('tr');
@@ -1597,6 +1840,32 @@
           const tdDate = document.createElement('td');
           tdDate.className = 'muted';
           tdDate.textContent = fmtDate(c.created_at);
+
+          // "נסגר" — when the buyer finished her word list and handed the order
+          // over for production. This is the date the promise runs from, so it
+          // carries how long ago it was, and says so in red once a day has passed
+          // with the order still not marked ready.
+          const tdClosed = document.createElement('td');
+          const closedIso = closedAt(c);
+          if (closedIso) {
+            // Both lines in ONE box: on a phone the cell itself is a flex row
+            // (label | value), so two loose divs would sit side by side instead
+            // of stacking under the label.
+            const box = document.createElement('div');
+            const when = document.createElement('div');
+            when.textContent = fmtDate(closedIso);
+            box.appendChild(when);
+            const ago = document.createElement('div');
+            const late = isLate(c);
+            ago.className = late ? 'late' : 'muted';
+            ago.textContent = sinceLabel(closedIso) + (late ? ' · באיחור' : '');
+            if (late) ago.title = 'עברו יותר מ‑24 שעות מסגירת רשימת המילים וההזמנה עוד לא מוכנה';
+            box.appendChild(ago);
+            tdClosed.appendChild(box);
+          } else {
+            tdClosed.className = 'muted';
+            tdClosed.textContent = '—';
+          }
 
           const order = c.order || null;
 
@@ -1761,6 +2030,7 @@
           tr.appendChild(toPrintCell(c));
           tr.appendChild(readyCell(c));
           tr.appendChild(tdDate);
+          tr.appendChild(tdClosed);
 
           // Follow-up: WhatsApp / Call / Email. Each link is shown only when the
           // underlying contact field exists.
@@ -1807,6 +2077,7 @@
           const wa = waGroups[c.id];
           if (wa && wa.groupId) {
             const openBtn = document.createElement('button');
+            openBtn.className = 'act';
             openBtn.textContent = wa.closed ? 'פתח קבוצה (סגורה)' : 'פתח קבוצה';
             openBtn.title = 'פותח את הקבוצה בוואטסאפ דרך קישור הזמנה';
             openBtn.onclick = async () => {
@@ -1829,6 +2100,7 @@
             tdWa.appendChild(openBtn);
           } else {
             const makeBtn = document.createElement('button');
+            makeBtn.className = 'act';
             makeBtn.textContent = 'פתח קבוצה בבוט';
             makeBtn.onclick = async () => {
               if (!confirm('לפתוח קבוצת וואטסאפ ללקוח/ה של ' + (c.honoree_name || '') + '?'))
@@ -1871,11 +2143,13 @@
           // Edit the customer's choices (names, extra fields, design/theme,
           // pickup vs delivery + address, photos) after a WhatsApp conversation.
           const editBtn = document.createElement('button');
+          editBtn.className = 'act';
           editBtn.textContent = 'ערוך';
           editBtn.onclick = () => openEdit(c);
           td.appendChild(editBtn);
           td.appendChild(document.createTextNode(' '));
           const copyBtn = document.createElement('button');
+          copyBtn.className = 'act';
           copyBtn.textContent = 'העתק קישור ניהול';
           copyBtn.onclick = () =>
             navigator.clipboard.writeText(ownerUrl(c)).then(() => {
@@ -1883,6 +2157,7 @@
               setTimeout(() => (copyBtn.textContent = 'העתק קישור ניהול'), 1500);
             });
           const csvBtn = document.createElement('button');
+          csvBtn.className = 'act';
           csvBtn.textContent = 'CSV';
           csvBtn.onclick = () => downloadCsv(c);
           td.appendChild(copyBtn);
@@ -1894,6 +2169,7 @@
           // later workstream. On success shows a download link + production state.
           // `prod` (the last production result) was computed above for the הפקה column.
           const genBtn = document.createElement('button');
+          genBtn.className = 'act';
           genBtn.textContent = 'צור PDF';
           const pdfWrap = document.createElement('span');
           // `hasBoard` adds the second artifact's download beside the deck's.
@@ -1989,6 +2265,7 @@
             badge.className = 'pill cancelled';
             badge.textContent = 'מבוטלת';
             const restoreBtn = document.createElement('button');
+            restoreBtn.className = 'act';
             restoreBtn.textContent = 'שחזר';
             restoreBtn.onclick = async () => {
               restoreBtn.disabled = true;
@@ -2008,6 +2285,7 @@
             // more. Reopen flips status back to open and extends the expiry.
             if (c.status === 'closed' || c.status === 'expired') {
               const reopenBtn = document.createElement('button');
+              reopenBtn.className = 'act';
               reopenBtn.textContent = 'פתח מחדש';
               reopenBtn.onclick = async () => {
                 if (!confirm('לפתוח מחדש את איסוף המילים של ' + (c.honoree_name || '') + '?'))
@@ -2026,6 +2304,7 @@
             }
 
             const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'act';
             cancelBtn.textContent = 'בטל';
             cancelBtn.onclick = async () => {
               if (!confirm('לבטל את ההזמנה של ' + (c.honoree_name || '') + '?')) return;
@@ -2043,7 +2322,7 @@
           }
 
           const delBtn = document.createElement('button');
-          delBtn.className = 'danger';
+          delBtn.className = 'act danger';
           delBtn.textContent = 'מחק';
           delBtn.onclick = async () => {
             if (
@@ -2061,29 +2340,27 @@
 
           tr.appendChild(td);
 
+          // Any cell holding several actions loose (הפקה, וואטסאפ, ניהול) gets
+          // them boxed into one wrapping row. Left as bare children they are
+          // flex items of the cell itself on a phone, where each one shrinks to
+          // fit rather than moving to the next line — the state the owner saw as
+          // buttons printed one letter per line. Done here, once, instead of at
+          // every append site: cells built loose stay easy to build.
+          for (const cell of tr.querySelectorAll('td')) {
+            const loose = [...cell.children].filter((n) => n.matches('button, a.act'));
+            if (loose.length < 2) continue;
+            const box = document.createElement('div');
+            box.className = 'acts';
+            while (cell.firstChild) box.appendChild(cell.firstChild);
+            cell.appendChild(box);
+          }
+
           // Label each cell so the narrow-screen stacked-card layout (CSS
-          // td::before) shows "label: value". Order matches the <thead> above.
-          const cellLabels = [
-            'בעל/ת השמחה',
-            'לקוח',
-            'מילים',
-            'סטטוס',
-            'עיצוב',
-            'צבע',
-            'פיונים',
-            'צ׳ייסרים',
-            'גרסה',
-            'סכום',
-            'כתובת',
-            'תשלום',
-            'הפקה',
-            'נוצר',
-            'מעקב',
-            'וואטסאפ',
-            'ניהול',
-          ];
+          // td::before) shows "label: value" — straight from the column list, so
+          // the label a phone prints is by construction the heading a desktop
+          // shows above the same value.
           tr.querySelectorAll('td').forEach((cell, i) => {
-            if (cellLabels[i]) cell.dataset.label = cellLabels[i];
+            if (COLUMNS[i]) cell.dataset.label = COLUMNS[i][0];
           });
 
           tb.appendChild(tr);
@@ -2093,12 +2370,21 @@
         content.appendChild(table);
       }
 
-      // Re-render stats, tabs and the filtered+sorted table from allCols.
+      // Re-render stats, tabs and the filtered+sorted table from allCols. The two
+      // filter rows AND together: payment, then where the order stands.
       function renderAll() {
         renderStats(allCols);
-        renderTabs(allCols);
-        const f = FILTERS.find((x) => x.id === activeFilter) || FILTERS[0];
-        render(sortCols(allCols.filter(f.match)));
+        renderTabs();
+        const payMatch = matcherFor(FILTERS, activeFilter);
+        const stageMatch = matcherFor(STAGES, activeStage);
+        const rows = allCols.filter((c) => payMatch(c) && stageMatch(c));
+        // What the pair actually narrowed to. Without it a combination with no
+        // rows reads as "the orders are gone" rather than "none are at this step".
+        sub.textContent =
+          rows.length === allCols.length
+            ? allCols.length + ' הזמנות'
+            : 'מציג ' + rows.length + ' מתוך ' + allCols.length + ' הזמנות';
+        render(sortCols(rows));
       }
 
       function hideControls() {
@@ -2197,7 +2483,6 @@
           } catch {
             waGroups = {};
           }
-          sub.textContent = allCols.length + ' הזמנות';
           controlsEl.hidden = false;
           renderAll();
           // Best-effort and AFTER the table: the switch is useful context, not a
