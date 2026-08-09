@@ -25,6 +25,7 @@ const waState = require('./wa-state');
 const reminders = require('./reminders');
 const faq = require('./faq');
 const wordlists = require('./wordlists');
+const wordBank = require('./word-bank');
 const messagePreview = require('./message-preview');
 const storeImport = require('./store-import');
 const templateImport = require('./template-import');
@@ -796,7 +797,14 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
   // runs on the resolved key exactly as before.
   const theme = String(b.theme || c.theme || '').trim();
   if (!theme) return res.status(400).json({ error: 'theme required' });
-  const words = db.listWords(c.id).map((w) => w.text);
+  // The APPROVED BANK when this order has one, the buyer's own words otherwise.
+  // A frozen bank is already a full deck, and topup keeps every word it is given
+  // and only fills a shortfall — so handing it over prints the approved list
+  // exactly, with no change to the generator at all. (server/word-bank.js)
+  const words = wordBank.wordsForProduction(
+    c,
+    db.listWords(c.id).map((w) => w.text)
+  );
   if (!words.length) return res.status(400).json({ error: 'no words to generate' });
 
   // Reject an unknown theme up front. An unknown key makes getTheme() null, which
@@ -1227,7 +1235,14 @@ app.post('/api/admin/collections/:id/press', (req, res) => {
         '. יש לחכות שתסתיים ואז לבקש את העיצוב השני.',
     });
   }
-  const words = db.listWords(c.id).map((w) => w.text);
+  // The APPROVED BANK when this order has one, the buyer's own words otherwise.
+  // A frozen bank is already a full deck, and topup keeps every word it is given
+  // and only fills a shortfall — so handing it over prints the approved list
+  // exactly, with no change to the generator at all. (server/word-bank.js)
+  const words = wordBank.wordsForProduction(
+    c,
+    db.listWords(c.id).map((w) => w.text)
+  );
   if (!words.length) return res.status(400).json({ error: 'no words to generate' });
   // Read the switch ONCE, here, and carry that value through the spawn, the
   // marker and the verification. Re-reading it later would let a flip mid-build
@@ -1505,6 +1520,10 @@ app.post('/api/admin/collections/:id/reopen', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const status = db.reopenCollection(req.params.id);
   if (!status) return res.status(404).json({ error: 'not found' });
+  // Reopening means the word list can move again, so the bank frozen at the last
+  // close no longer describes this order. The owner's rule: "discarded and
+  // re-frozen on the next close" — which then stores version + 1.
+  db.clearWordBank(req.params.id);
   res.json({ ok: true, status });
 });
 
@@ -2228,6 +2247,27 @@ app.post('/api/collections/:id/close', (req, res) => {
   const token = req.body && req.body.owner_token;
   const result = db.closeCollection(req.params.id, token);
   if (!result) return res.status(403).json({ error: 'forbidden' });
+  // FREEZE THE WORD BANK. Closing IS the approval — the point past which the
+  // buyer's list stops moving and production begins — so it is where the 412
+  // that will be printed stops being recomputed on demand and becomes a stored
+  // production input. See server/word-bank.js for the whole argument.
+  //
+  // Best effort, deliberately: the close has already succeeded and the buyer is
+  // about to be told her order is in production. An order that could not be
+  // frozen prints exactly the way every order printed before this existed.
+  if (result.changed) {
+    const c = db.getCollection(req.params.id);
+    const theme = c && String(c.theme || '').trim();
+    if (c && theme) {
+      const bank = wordBank.freeze({
+        personalWords: db.listWords(c.id).map((w) => w.text),
+        theme,
+        pool: c.wordlist || null,
+        python: PYTHON_BIN,
+      });
+      if (bank) db.setWordBank(c.id, bank);
+    }
+  }
   // Closing is the handover: the buyer is done, we start producing. BOTH sides
   // are told, from the same transition — the owner that a list is ready to
   // produce, and the BUYER that we have their words and have started. Only on

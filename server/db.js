@@ -742,6 +742,41 @@ const db = {
     return { changed: !alreadyClosed };
   },
 
+  // THE APPROVED WORD BANK — the 412 words this order gets printed from, frozen
+  // at close. server/word-bank.js explains why it is frozen at all; this is only
+  // the store side.
+  //
+  // Written AFTER the close itself has succeeded, so a freeze that cannot run
+  // (no Python on the box, an unreadable pool) leaves the order closed and
+  // simply un-frozen — which is the behaviour every order had before this
+  // existed, not a broken one.
+  setWordBank(id, bank) {
+    const c = this.getCollection(id);
+    if (!c || !bank || !Array.isArray(bank.words) || !bank.words.length) return null;
+    // The version comes from a counter kept on the COLLECTION, not from the
+    // previous bank — clearWordBank deletes the bank but never the counter, so a
+    // reopened-and-reclosed order freezes as v2 rather than resetting to v1 and
+    // losing the one thing the number carries: that this order was approved
+    // before, and what is on the cards now is not what was approved then.
+    c.word_bank_seq = (Number(c.word_bank_seq) > 0 ? Number(c.word_bank_seq) : 0) + 1;
+    c.word_bank = { version: c.word_bank_seq, ...bank };
+    saveDb();
+    return c.word_bank;
+  },
+
+  // Throw the bank away. The owner's rule for a reopened collection: "discarded
+  // and re-frozen on the next close" — so this runs on reopen, and on any edit
+  // that changes a production input the bank was frozen from (today: the seed
+  // pool). A bank that no longer matches its inputs is worse than no bank at
+  // all, because it still looks authoritative.
+  clearWordBank(id) {
+    const c = this.getCollection(id);
+    if (!c || !c.word_bank) return false;
+    delete c.word_bank;
+    saveDb();
+    return true;
+  },
+
   // Append up to N pawn images (customer pieces) to a collection, owner-token gated.
   // Caps the stored array at 4 total, and DE-DUPES incoming paths both against what's
   // already stored and within the batch — the paths are content-addressed, so the
@@ -876,7 +911,16 @@ const db = {
     // Stored as a bare filename; '' clears it back to the theme default. The
     // CALLER validates the name against the pools that actually exist — this
     // store only shapes and caps it, exactly like the other free-text fields.
-    if (has('wordlist')) c.wordlist = text(p.wordlist, 120);
+    if (has('wordlist')) {
+      const next = text(p.wordlist, 120);
+      // The seed pool is a PRODUCTION INPUT of the frozen word bank: change it
+      // and the stored 412 is no longer what this order's inputs produce. Drop
+      // the bank rather than print a list that silently disagrees with the pool
+      // the order now names; the next close freezes a fresh one. Only on a real
+      // change, so re-saving the dialog untouched cannot cost an order its bank.
+      if (c.word_bank && (c.wordlist || '') !== (next || '')) delete c.word_bank;
+      c.wordlist = next;
+    }
     if (has('custom_title')) c.custom_title = sanitizeCustomTitle(p.custom_title);
     // The two short answers from the details step. Sanitized through the SAME
     // function the wizard's own submission goes through rather than the generic
