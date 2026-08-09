@@ -236,6 +236,25 @@
         flex-wrap: wrap;
         gap: 6px;
       }
+      .filters {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .frow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .flab {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #6b645b;
+        /* Both labels reserve the same width so the two chip rows line up under
+           each other instead of starting at two different offsets. */
+        min-width: 42px;
+      }
       .tab {
         font: inherit;
         font-size: 13px;
@@ -546,8 +565,22 @@
       <h1>ניהול הזמנות · דוגרי</h1>
       <div class="sub" id="sub">טוען…</div>
       <div class="stats" id="stats"></div>
+      <!-- Two INDEPENDENT filter rows that combine: payment on one, where the
+           order stands on the other. One row of every combination would be a
+           dozen chips ("שולמו + נסגרו", "שולמו + בדפוס", …); two rows that AND
+           together give the same answers, plus the ones nobody thought to ask
+           for, out of nine chips. -->
       <div class="controls" id="controls" hidden>
-        <div class="tabs" id="tabs"></div>
+        <div class="filters">
+          <div class="frow">
+            <span class="flab">תשלום</span>
+            <div class="tabs" id="tabs"></div>
+          </div>
+          <div class="frow">
+            <span class="flab">שלב</span>
+            <div class="tabs" id="tabs-stage"></div>
+          </div>
+        </div>
         <label class="sortwrap"
           >מיון:
           <select id="sort">
@@ -719,6 +752,7 @@
       const statsEl = document.getElementById('stats');
       const controlsEl = document.getElementById('controls');
       const tabsEl = document.getElementById('tabs');
+      const stageTabsEl = document.getElementById('tabs-stage');
       const sortSelect = document.getElementById('sort');
 
       // A download link for an order's BOARD — the second artifact, produced as
@@ -821,6 +855,8 @@
       // collection id -> { groupId, closed }, refreshed with the collections.
       let waGroups = {};
       let activeFilter = 'all';
+      // The second filter axis: where the order stands (see STAGES).
+      let activeStage = 'all';
       let sortBy = 'created';
 
       function fmtDate(iso) {
@@ -885,15 +921,66 @@
 
       const isPaid = (c) => !!(c.order && c.order.paid);
 
-      // Filter tabs: id, Hebrew label, and the predicate over a collection.
+      // PAYMENT filter: id, Hebrew label, and the predicate over a collection.
+      // Kept as FILTERS (and on #tabs) because it is the row that was always
+      // here; the stage row below is the new axis it combines with.
       const FILTERS = [
         { id: 'all', label: 'הכל', match: () => true },
         { id: 'leads', label: 'לידים', match: (c) => !c.cancelled && !isPaid(c) },
         { id: 'paid', label: 'שולמו', match: (c) => isPaid(c) },
+      ];
+
+      // The last production result for an order — the same lookup the "הפקה"
+      // column makes, since where an order stands is exactly what that shows.
+      const production = (c) => (c.order && c.order.production) || c.production || null;
+      const isGenerated = (c) => {
+        const p = production(c);
+        return !!(p && p.state === 'generated');
+      };
+
+      // WHERE THE ORDER STANDS: one step per thing the owner still owes it, in
+      // pipeline order. The steps are mutually exclusive — an order that went to
+      // the printer is no longer "waiting to be produced" — so the counts add up
+      // and a chip means "these are the ones to work on", not "these have ever
+      // been". Each of them ANDs with the payment row above, which is how
+      // "שולמו + נסגרו" or "שולמו + הופקו" get asked.
+      // Nothing has been stamped on this order yet — it has not gone to the
+      // printer and is not back from it. The two later steps are checked FIRST
+      // by every earlier one, which is what keeps the steps exclusive.
+      const unstamped = (c) => !(c.order && (c.order.sent_to_print_at || c.order.ready_at));
+      const STAGES = [
+        { id: 'all', label: 'הכל', match: () => true },
         {
-          id: 'closed',
-          label: 'סגורות',
-          match: (c) => c.status === 'closed' || c.status === 'expired',
+          id: 'collecting',
+          label: 'באיסוף מילים',
+          match: (c) => !c.cancelled && c.status === 'open' && !isGenerated(c) && unstamped(c),
+        },
+        {
+          // Words are in and nothing has been built yet — the production queue.
+          id: 'to-produce',
+          label: 'נסגרו — להפקה',
+          match: (c) =>
+            !c.cancelled &&
+            (c.status === 'closed' || c.status === 'expired') &&
+            !isGenerated(c) &&
+            unstamped(c),
+        },
+        {
+          // Built, and still sitting here: the list of what to send to Galor.
+          id: 'to-print',
+          label: 'הופקו — לשליחה לדפוס',
+          match: (c) => !c.cancelled && isGenerated(c) && unstamped(c),
+        },
+        {
+          id: 'printing',
+          label: 'בדפוס',
+          match: (c) =>
+            !c.cancelled && !!c.order && !!c.order.sent_to_print_at && !c.order.ready_at,
+        },
+        {
+          id: 'ready',
+          label: 'מוכנות',
+          match: (c) => !c.cancelled && !!c.order && !!c.order.ready_at,
         },
         { id: 'cancelled', label: 'מבוטלות', match: (c) => !!c.cancelled },
       ];
@@ -1625,20 +1712,34 @@
         }
       }
 
-      function renderTabs(cols) {
-        tabsEl.textContent = '';
-        for (const f of FILTERS) {
-          const count = cols.filter(f.match).length;
+      // One row of chips. The count on each chip is what THAT chip would show
+      // given the other row's current pick — "שולמו" alongside "בדפוס (2)" means
+      // two paid orders are at the printer, not two orders in the world. A count
+      // measured against everything would promise rows the click can't deliver.
+      function renderTabRow(el, defs, activeId, otherMatch, onPick) {
+        el.textContent = '';
+        for (const f of defs) {
+          const count = allCols.filter((c) => otherMatch(c) && f.match(c)).length;
           const btn = document.createElement('button');
-          btn.className = 'tab' + (activeFilter === f.id ? ' active' : '');
+          btn.className = 'tab' + (activeId === f.id ? ' active' : '');
           btn.textContent = f.label + ' (' + count + ')';
           btn.dataset.filter = f.id;
-          btn.onclick = () => {
-            activeFilter = f.id;
-            renderAll();
-          };
-          tabsEl.appendChild(btn);
+          btn.onclick = () => onPick(f.id);
+          el.appendChild(btn);
         }
+      }
+
+      const matcherFor = (defs, id) => (defs.find((x) => x.id === id) || defs[0]).match;
+
+      function renderTabs() {
+        renderTabRow(tabsEl, FILTERS, activeFilter, matcherFor(STAGES, activeStage), (id) => {
+          activeFilter = id;
+          renderAll();
+        });
+        renderTabRow(stageTabsEl, STAGES, activeStage, matcherFor(FILTERS, activeFilter), (id) => {
+          activeStage = id;
+          renderAll();
+        });
       }
 
       // The columns, in order: the header text and the width the column gets on a
@@ -2269,12 +2370,21 @@
         content.appendChild(table);
       }
 
-      // Re-render stats, tabs and the filtered+sorted table from allCols.
+      // Re-render stats, tabs and the filtered+sorted table from allCols. The two
+      // filter rows AND together: payment, then where the order stands.
       function renderAll() {
         renderStats(allCols);
-        renderTabs(allCols);
-        const f = FILTERS.find((x) => x.id === activeFilter) || FILTERS[0];
-        render(sortCols(allCols.filter(f.match)));
+        renderTabs();
+        const payMatch = matcherFor(FILTERS, activeFilter);
+        const stageMatch = matcherFor(STAGES, activeStage);
+        const rows = allCols.filter((c) => payMatch(c) && stageMatch(c));
+        // What the pair actually narrowed to. Without it a combination with no
+        // rows reads as "the orders are gone" rather than "none are at this step".
+        sub.textContent =
+          rows.length === allCols.length
+            ? allCols.length + ' הזמנות'
+            : 'מציג ' + rows.length + ' מתוך ' + allCols.length + ' הזמנות';
+        render(sortCols(rows));
       }
 
       function hideControls() {
@@ -2373,7 +2483,6 @@
           } catch {
             waGroups = {};
           }
-          sub.textContent = allCols.length + ' הזמנות';
           controlsEl.hidden = false;
           renderAll();
           // Best-effort and AFTER the table: the switch is useful context, not a
