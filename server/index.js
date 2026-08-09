@@ -195,6 +195,7 @@ function runGenerator({
   customTitle,
   photos,
   gender,
+  wordlist,
 }) {
   return new Promise((resolve, reject) => {
     let wordsFile;
@@ -223,6 +224,15 @@ function runGenerator({
     // --title=<value> (single token) so a title that starts with '-' (e.g. "-40",
     // "-רווקות") is never parsed by argparse as an option and crash the generator.
     if (customTitle) args.push('--title=' + customTitle);
+    // Seed-pool override for THIS order: which pool tops the deck up, replacing
+    // the theme's own. `=`-joined for the same reason as --title (a name could
+    // begin with '-'). The name is validated against the real pools before it is
+    // stored, and the generator's own path guard bounds it to the two wordlist
+    // directories, so this can never reach an arbitrary file.
+    //
+    // Production only. The wizard PREVIEW deliberately does not take one: it runs
+    // before any order exists, so there is no per-order choice to honour.
+    if (wordlist) args.push('--wordlist=' + wordlist);
     // Honoree gender: resolves the title's {feminine|masculine} markers, so a
     // Hebrew birthday title prints בת for a girl and בן for a boy from one
     // template. Only ever the two validated values (the collection stores
@@ -661,6 +671,16 @@ app.patch('/api/admin/collections/:id', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const b = req.body || {};
   if (!db.getCollection(req.params.id)) return res.status(404).json({ error: 'not found' });
+  // A seed-pool override must name a pool that REALLY EXISTS. Rejected here
+  // rather than at generate time: a typo that only surfaces when the owner
+  // presses "produce" — silently falling back to generic filler — is a deck of
+  // the wrong words she has no reason to look for. '' clears the override.
+  if (Object.prototype.hasOwnProperty.call(b, 'wordlist')) {
+    const wanted = String(b.wordlist == null ? '' : b.wordlist).trim();
+    if (wanted && !wordlists.list().some((w) => w.name === wanted)) {
+      return res.status(400).json({ error: 'unknown wordlist' });
+    }
+  }
   if (b.order && typeof b.order === 'object') {
     const r = db.adminUpdateOrder(req.params.id, b.order);
     if (r && r.error) {
@@ -834,6 +854,10 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       // itself is the only place that knows it — an admin clicking "produce"
       // posts an empty body and must still get בת on a girl's cards.
       gender: c.gender || null,
+      // The owner's per-order seed pool, chosen in the order edit dialog. Null
+      // means "use the theme's own", which is what every order did before this
+      // existed. Read from the STORED collection, like everything else here.
+      wordlist: c.wordlist || null,
     });
     // The board is a second, separate artifact — recorded on production so the
     // admin UI knows whether to offer it, and left null for a generator run that

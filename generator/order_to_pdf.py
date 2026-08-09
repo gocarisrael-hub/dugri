@@ -29,7 +29,7 @@ from topup import topup
 def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                  word_font=None, workdir=None, progress=False, chasers=False,
                  custom_title=None, photos=None, press_icc=None,
-                 press_bleed=None, press_cmyk=True, gender=None):
+                 press_bleed=None, press_cmyk=True, gender=None, wordlist=None):
     """Render an order and return ``(out_pdf, page_count, board_pdf)``.
 
     ``board_pdf`` is the separate board file a v2 (single-card) template
@@ -55,6 +55,11 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                   have). The bleed, crop marks and TrimBox are still written —
                   that is where to cut, and it is not what was dropped. Turns a
                   press run on by itself, so no unused ICC path is required
+    wordlist      optional seed-pool override for THIS order: the filler pool
+                  used to top the deck up, replacing the theme's own. The
+                  buyer's personal words still come first and generic-350 is
+                  still the backstop, so an override can neither drop a word nor
+                  leave the deck short
     gender        the honoree's gender ('male' / 'female' / None), which resolves
                   the title's {feminine|masculine} markers — Hebrew is gendered,
                   so "{NAME} {בת|בן} {AGE}" prints בת for a girl and בן for a
@@ -77,7 +82,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
 
     try:
         # 1) Top up the personal words to a full deck.
-        words = topup(personal_words, theme_key)
+        words = topup(personal_words, theme_key, wordlist=wordlist)
 
         # 2) Write the words to a temp file, then pack into the deck CSV (one row
         #    per card in v2, one row per 8-up sheet in v1). The front cycling is
@@ -175,6 +180,10 @@ def main():
                     help="bleed depth in mm for --press (default: the agreed 3)")
     ap.add_argument("--title", default=None,
                     help="optional custom title overriding the theme-derived title")
+    ap.add_argument("--wordlist", default=None, metavar="NAME",
+                    help="seed pool that tops this deck up, replacing the "
+                         "theme's own (personal words and generic-350 are "
+                         "unaffected)")
     ap.add_argument("--gender", default=None, choices=["male", "female"],
                     help="the honoree's gender, resolving the title's "
                          "{feminine|masculine} markers (e.g. {בת|בן}). Omitted "
@@ -190,6 +199,7 @@ def main():
         chasers=args.chasers, custom_title=args.title, photos=args.photo,
         press_icc=args.press, press_bleed=args.bleed,
         press_cmyk=not args.press_passthrough, gender=args.gender,
+        wordlist=args.wordlist,
     )
     print(f"\nwrote {pdf} ({pages} pages)")
     # Printed on its own line so the server can pick the board artifact out of

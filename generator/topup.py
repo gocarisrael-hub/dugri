@@ -79,17 +79,26 @@ def _read_wordlist(filename):
         return [ln for ln in f.read().splitlines()]
 
 
-def topup(personal_words, theme_key, target=TARGET):
+def topup(personal_words, theme_key, target=TARGET, wordlist=None):
     """Return a deduped word list: all personal words + seed fillers to >= target.
 
     - Every unique personal word is always present, first.
     - If the (deduped) personal words already reach `target`, they are returned
       as-is with no filler.
-    - Otherwise fill from the theme's `wordlist` pool, then generic-350, until
-      the list has at least `target` words (or the pools run dry).
+    - Otherwise fill from `wordlist` if one is given, else the theme's own
+      `wordlist` pool, then generic-350, until the list has at least `target`
+      words (or the pools run dry).
+
+    ``wordlist`` is a PER-ORDER override, set by the owner on the order itself:
+    a 40th birthday run off a kids template wants the grown-up pool, and the
+    theme cannot know that. It only replaces the THEME's pool — personal words
+    still come first and generic-350 is still the backstop, so an override can
+    never drop a buyer's own word or leave a deck short. An unreadable or
+    unknown name simply yields no words and falls through to generic, which is
+    the same outcome as a theme naming a pool that isn't there.
     """
     cfg = config.theme(theme_key)
-    theme_file = cfg.get("wordlist") or GENERIC
+    theme_file = (wordlist or "").strip() or cfg.get("wordlist") or GENERIC
 
     seen = set()
     out = []

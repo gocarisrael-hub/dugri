@@ -549,7 +549,15 @@
               ><span>תבנית הפקה (theme)</span
               ><select id="e-theme"></select
             ></label>
+            <label class="fld"
+              ><span>מאגר מילים להשלמה</span
+              ><select id="e-wordlist" data-testid="e-wordlist"></select
+            ></label>
           </div>
+          <p class="hint" style="margin: 6px 0 0">
+            המאגר שממנו משלימים את החפיסה כשאין מספיק מילים אישיות. ברירת המחדל היא המאגר של התבנית.
+            המילים של הלקוח/ה תמיד נשמרות ומופיעות ראשונות.
+          </p>
           <!-- Theme-required extra fields (AGE, or YEARS + NAME1 + NAME2). Rebuilt
                whenever the theme changes; values carry over by key. -->
           <div class="fgrid" id="e-extra" style="margin-top: 10px"></div>
@@ -879,6 +887,25 @@
         return designList;
       }
 
+      let wordlistList = null;
+      // The seed pools the owner can pick from, loaded once per page. Failing
+      // soft matters here: without it the select offers only "the theme's own",
+      // which is exactly the behaviour every order had before this existed.
+      async function loadWordlists() {
+        if (wordlistList) return wordlistList;
+        try {
+          const r = await fetch('/api/admin/wordlists?key=' + encodeURIComponent(key));
+          const d = r.ok ? await r.json() : {};
+          wordlistList = (d.wordlists || []).map((w) => ({
+            value: w.name,
+            label: w.name + ' · ' + w.count + ' מילים',
+          }));
+        } catch {
+          wordlistList = [];
+        }
+        return wordlistList;
+      }
+
       async function loadThemeList() {
         if (themeList) return themeList;
         try {
@@ -1035,6 +1062,12 @@
           (themeList || []).map((t) => ({ value: t.key, label: t.label + ' · ' + t.key }))
         );
         fillSelect(el('e-theme'), themeItems, c.theme || '');
+        // "" is a real choice, not a blank: it means "use the theme's own pool".
+        fillSelect(
+          el('e-wordlist'),
+          [{ value: '', label: '— המאגר של התבנית —' }].concat(await loadWordlists()),
+          c.wordlist || ''
+        );
         renderExtraInputs(el('e-theme').value, c.extra_fields || {});
 
         const order = c.order || null;
@@ -1186,6 +1219,9 @@
           extra_fields: readExtraInputs(),
           custom_title: el('e-title').value,
           chasers: el('e-chasers').checked,
+          // '' clears the override back to the theme's own pool. The server
+          // refuses a name that doesn't match a real pool.
+          wordlist: el('e-wordlist').value,
         };
         if (editing.order) {
           patch.order = { version: el('e-version').value };
