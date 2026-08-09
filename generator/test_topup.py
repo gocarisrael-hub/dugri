@@ -145,3 +145,62 @@ if __name__ == "__main__":
         fn()
         print("ok", fn.__name__)
     print(f"\nall {len(fns)} tests passed")
+
+
+# --- per-order seed-pool override -------------------------------------------
+# The owner picks, on the order itself, which pool tops this deck up. It replaces
+# the THEME's pool only: personal words still come first and generic-350 is still
+# the backstop, so an override can neither drop a buyer's word nor leave a deck
+# short of a full print run.
+
+def test_override_replaces_the_theme_pool():
+    with _store({"owner-pool.txt": ["אלפא", "ביתא", "גמא", "דלתא"]}):
+        themed = topup.topup(["אישית"], "bachelorette", target=5)
+        overridden = topup.topup(
+            ["אישית"], "bachelorette", target=5, wordlist="owner-pool.txt")
+    assert themed[0] == "אישית" and overridden[0] == "אישית"
+    # The filler came from the owner's pool, not the theme's.
+    assert "אלפא" in overridden
+    assert "אלפא" not in themed
+
+
+def test_override_never_drops_a_personal_word():
+    with _store({"tiny.txt": ["מילה"]}):
+        out = topup.topup(["אבא", "אמא", "סבתא"], "bachelorette",
+                          target=4, wordlist="tiny.txt")
+    for w in ("אבא", "אמא", "סבתא"):
+        assert w in out
+    assert out[:3] == ["אבא", "אמא", "סבתא"]
+
+
+def test_override_still_reaches_target_via_generic_when_the_pool_is_small():
+    # A pool of two cannot fill a deck; generic-350 remains the backstop, so the
+    # deck is never short just because the owner chose a small pool.
+    with _store({"two.txt": ["אחת", "שתיים"]}):
+        out = topup.topup(["אישית"], "bachelorette", target=40,
+                          wordlist="two.txt")
+    assert len(out) >= 40
+    assert "אחת" in out and "שתיים" in out
+
+
+def test_unknown_override_falls_back_rather_than_failing():
+    # The server validates the name, but a pool deleted between choosing and
+    # producing must still yield a full deck rather than an exception.
+    out = topup.topup(["אישית"], "bachelorette", target=30,
+                      wordlist="does-not-exist.txt")
+    assert len(out) >= 30
+    assert out[0] == "אישית"
+
+
+def test_blank_override_means_the_theme_pool():
+    for blank in (None, "", "   "):
+        assert topup.topup(["אישית"], "bachelorette", target=6, wordlist=blank) \
+            == topup.topup(["אישית"], "bachelorette", target=6)
+
+
+def test_override_cannot_escape_the_wordlist_directories():
+    # topup._wordlist_path is the guard; an override is just a filename to it.
+    out = topup.topup(["אישית"], "bachelorette", target=20,
+                      wordlist="../../../etc/passwd")
+    assert len(out) >= 20
+    assert all("root:" not in w for w in out)

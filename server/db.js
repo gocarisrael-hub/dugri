@@ -819,6 +819,11 @@ const db = {
       c.gender = p.gender === 'male' || p.gender === 'female' ? p.gender : null;
     }
     if (has('chasers')) c.chasers = !!p.chasers;
+    // Which seed pool tops this order's deck up, overriding the theme's own.
+    // Stored as a bare filename; '' clears it back to the theme default. The
+    // CALLER validates the name against the pools that actually exist — this
+    // store only shapes and caps it, exactly like the other free-text fields.
+    if (has('wordlist')) c.wordlist = text(p.wordlist, 120);
     if (has('custom_title')) c.custom_title = sanitizeCustomTitle(p.custom_title);
     // Lift (or re-apply) the free word quota for THIS collection only. Admin has
     // deliberately no "mark as paid" — an order becomes paid only through a real
