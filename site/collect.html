@@ -47,7 +47,9 @@
         background: var(--bg);
         color: var(--ink);
         line-height: 1.55;
-        padding: 0 0 60px;
+        /* The 60px tail is the page's own breathing room; the bar's measured
+           height is added on top so the last card is never stuck behind it. */
+        padding: 0 0 calc(60px + var(--pay-bar-h, 0px));
       }
       .wrap {
         max-width: 680px;
@@ -711,51 +713,53 @@
       .lock-cta.hidden {
         display: none;
       }
-      /* Top pay reminder (owner, unpaid only) — nudges toward the pay panel.
-         A flat sand card read as just another section and got skipped, so the
-         mark and the copy are split: a solid ink block carries the "!" while
-         the sentence stays on the familiar sand. The block pulses to the brand
-         accent every few seconds — movement is what earns the glance; the site
-         is monochrome, so the pulse never introduces a new colour. */
-      .pay-reminder {
-        display: grid;
-        grid-template-columns: 46px 1fr;
-        align-items: stretch;
-        background: var(--section);
-        border: 1px solid var(--line);
-        color: var(--ink);
-        text-align: start;
-        margin: 12px 0;
-        cursor: pointer;
-      }
-      .pay-reminder-bang {
+      /* THE PAY BAR (owner, unpaid, card enabled). Replaces the top reminder
+         strip, which said "the payment is waiting below ⬇" — a signpost that
+         scrolled off the moment the buyer started typing, on the one page she
+         stays on for a long time. The bar says the amount and does the thing,
+         and it is still there on word four hundred.
+
+         It carries the total, so the number the buyer decides on is the number
+         the panel would show her — see refreshPay, which writes both. */
+      .pay-bar {
+        position: fixed;
+        inset-inline: 0;
+        bottom: 0;
+        z-index: 55;
+        display: flex;
+        align-items: center;
+        gap: 12px;
         background: var(--ink);
         color: #fff;
-        display: grid;
-        place-items: center;
-        font-size: 22px;
+        padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+        box-shadow: 0 -6px 22px rgba(0, 0, 0, 0.18);
+      }
+      .pay-bar-amt {
+        display: block;
         font-weight: 900;
-        line-height: 1;
-        animation: payBangTick 3.2s ease-in-out infinite;
+        font-size: 19px;
+        line-height: 1.1;
       }
-      .pay-reminder-txt {
-        padding: 12px 14px;
-        font-weight: 800;
+      .pay-bar-lbl {
+        display: block;
+        font-size: 13px;
+        opacity: 0.75;
       }
-      @keyframes payBangTick {
-        0%,
-        80%,
-        100% {
-          background: var(--ink);
-        }
-        40% {
-          background: var(--accent);
-        }
+      .pay-bar-go {
+        margin-inline-start: auto;
+        background: #fff;
+        color: var(--ink);
+        border: 0;
+        border-radius: var(--radius, 0);
+        font: inherit;
+        font-weight: 900;
+        font-size: 15px;
+        padding: 12px 22px;
+        cursor: pointer;
       }
-      @media (prefers-reduced-motion: reduce) {
-        .pay-reminder-bang {
-          animation: none;
-        }
+      .pay-bar-go:focus-visible {
+        outline: 3px solid #fff;
+        outline-offset: 2px;
       }
       /* paid state — replaces the pay panel with a "keep adding, then סיום" card */
       .paid-card {
@@ -1287,13 +1291,12 @@
         <div class="sub" id="subtitle">כל מילה, ביטוי, בדיחה פנימית או זיכרון נחשב</div>
       </header>
 
-      <!-- OWNER, unpaid only: reminder pointing to the pay panel below -->
-      <div class="pay-reminder owner-only hidden" id="payReminder">
-        <span class="pay-reminder-bang" aria-hidden="true">!</span>
-        <span class="pay-reminder-txt" data-edit="collect-pay-reminder"
-          >עדיין לא שילמתם — התשלום ממתין למטה ⬇</span
-        >
-      </div>
+      <!-- The unpaid owner's prompt to pay is the STICKY BAR at the foot of this
+           file (#payBar), not a strip here. What used to sit in this slot said
+           "you haven't paid — the payment is waiting below ⬇": a signpost, at the
+           top of a page whose whole job is a long list of words, so it was off
+           screen for most of the session and pointed at something rather than
+           being it. -->
 
       <div class="banner" id="banner"></div>
 
@@ -2143,19 +2146,45 @@
         }
       }
 
+      // How much room the pay bar is taking, published as --pay-bar-h so the page
+      // tail and the WhatsApp button can both stand clear of it.
+      //
+      // MEASURED, not declared. The bar's two strings are owner-editable, so a
+      // longer label wraps it taller; a constant here would put the help button
+      // under the bar the first time she edits the copy — and "the whatsapp
+      // button need to be available always" is the rule this whole bar was
+      // accepted under. 0 when the bar is hidden, which is contributors, paid
+      // orders and every card-disabled deployment.
+      function syncPayBarHeight() {
+        const bar = document.getElementById('payBar');
+        const h = bar && !bar.classList.contains('hidden') ? bar.offsetHeight : 0;
+        document.documentElement.style.setProperty('--pay-bar-h', h + 'px');
+      }
+      // Re-measure when the bar itself changes size — a copy edit, a font swap
+      // landing late, or the phone rotating. Cheap: one element, and only while
+      // the bar exists.
+      if (typeof ResizeObserver === 'function') {
+        const barEl = document.getElementById('payBar');
+        if (barEl) new ResizeObserver(syncPayBarHeight).observe(barEl);
+      }
+      window.addEventListener('resize', syncPayBarHeight);
+
       function renderOwnerState() {
         const open = state.status === 'open';
         setOpenState(open);
         if (isOwner) {
           const paid = isPaid();
           const cardEnabled = !!state.card_enabled;
-          // Paid: drop the pay panel + top reminder, and put a prominent
+          // Paid: drop the pay panel + the pay bar, and put a prominent
           // "keep adding, then סיום" card in their place. סיום = closeCollection,
           // which is what actually starts production.
           $('#payPanel').classList.toggle('hidden', paid);
-          // Only nag them to pay when there's actually a working pay button
-          // (card configured). Otherwise the reminder would point at a dead panel.
-          $('#payReminder').classList.toggle('hidden', !(open && !paid && cardEnabled));
+          // Only prompt them to pay when there's actually a working pay button
+          // (card configured). Otherwise the bar would advertise a dead panel.
+          $('#payBar').classList.toggle('hidden', !(open && !paid && cardEnabled));
+          // …and the moment its visibility changes, so does how much room the
+          // page and the WhatsApp button have to leave for it.
+          syncPayBarHeight();
           $('#paidCard').classList.toggle('hidden', !(open && paid));
           // The generic close card only shows before payment (paidCard carries
           // the close CTA afterwards) — never two close buttons at once.
@@ -2879,8 +2908,14 @@
           payPanel.open = true;
           payPanel.scrollIntoView({ behavior: 'smooth', block });
         };
-        // Top reminder opens the pay panel and scrolls to it.
-        $('#payReminder').addEventListener('click', () => openPayPanel('center'));
+        // The pay bar opens the panel with its TOP aligned, not centred: the bar
+        // can be tapped from anywhere in the page, including the very bottom,
+        // and centring a panel taller than the phone screen would drop the
+        // buyer into its middle with the version options scrolled off above her.
+        $('#payBarBtn').addEventListener('click', () => {
+          track('pay_bar_click', {});
+          openPayPanel('start');
+        });
         // ...and so does the free-quota lock's own CTA (owner only — a
         // contributor's veil carries no button, so this never fires for them).
         $('#lockPayBtn').addEventListener('click', () => {
@@ -3027,6 +3062,21 @@
             $('#payTotal').textContent = base;
           }
           renderPayMath(locked ? 0 : unit, fee);
+          syncPayBarAmount();
+        }
+
+        // The bar shows the SAME number the panel does, by reading the one the
+        // panel just wrote. Recomputing it here would be a second implementation
+        // of the pricing arithmetic — and the failure that invites is the bar
+        // saying one price and the checkout charging another, which is exactly
+        // the mistake the comment above refreshPay's own maths warns about.
+        // "—" (no payable price yet) carries through unchanged: better a dash on
+        // the bar than a guess.
+        function syncPayBarAmount() {
+          const amt = document.getElementById('payBarAmt');
+          const total = document.getElementById('payTotal');
+          if (!amt || !total) return;
+          amt.textContent = '₪' + total.textContent;
         }
 
         // Spell out a total that isn't self-evident. A single copy with no shipping
@@ -3622,7 +3672,13 @@
     <style>
       .wa-help {
         position: fixed;
-        bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+        /* Lifted clear of the pay bar whenever the bar is up. --pay-bar-h is the
+           bar's MEASURED height (syncPayBarHeight), not a guess: the bar's copy
+           is owner-editable and a longer label wraps it taller, at which point a
+           hard-coded offset would put the help button under it. 0 when there is
+           no bar, which is every contributor and every paid order. The owner's
+           rule: the WhatsApp button is available always. */
+        bottom: calc(20px + env(safe-area-inset-bottom, 0px) + var(--pay-bar-h, 0px));
         left: 16px;
         z-index: 60;
         display: inline-flex;
@@ -3680,5 +3736,30 @@
       </svg>
       <span class="wa-help-label" data-edit="collect-wa-help-label">עזרה</span>
     </a>
+
+    <!-- OWNER, unpaid only: the pay bar. Sticky at the foot of the page rather
+         than a strip at the top, because this page is a long list of words and
+         the buyer is in it for a while — the prompt has to be where she is, not
+         where she landed. Shown on exactly the condition the old top strip used
+         (open && !paid && card_enabled), so a dead panel is never advertised.
+
+         It sits at z-index 55, UNDER the WhatsApp help at 60, and the help is
+         lifted clear of it by --pay-bar-h (see .wa-help). The owner's rule:
+         "the whatsapp button need to be available always". -->
+    <div class="pay-bar owner-only hidden" id="payBar" data-testid="pay-bar">
+      <div class="pay-bar-sum">
+        <span class="pay-bar-amt" id="payBarAmt" data-testid="pay-bar-amount">₪—</span>
+        <span class="pay-bar-lbl" data-edit="collect-pay-bar-label">המשחק שלכם מוכן</span>
+      </div>
+      <button
+        class="pay-bar-go"
+        type="button"
+        id="payBarBtn"
+        data-testid="pay-bar-btn"
+        data-edit="collect-pay-bar-cta"
+      >
+        שלמו עכשיו
+      </button>
+    </div>
   </body>
 </html>

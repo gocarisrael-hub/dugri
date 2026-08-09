@@ -51,6 +51,26 @@ async function createCollection(page, name) {
 // per-version assertions meaningful. Call BEFORE createCollection so the route is
 // registered before collect.html fetches it. (Only affects browser fetches;
 // page.request.* calls bypass page.route and hit the real server.)
+// The e2e server runs without PELECARD_* credentials, so the API reports
+// `card_enabled: false` and every pay affordance is correctly hidden. The pay-bar
+// tests are about what the OWNER sees when card payment IS configured, so flip
+// that one field on the state response and leave the rest of the server's answer
+// alone. (The card-disabled behaviour keeps its own test, unstubbed.)
+async function withCardEnabled(page) {
+  await page.route(/\/api\/collections\/[^/?]+(\?|$)/, async (route) => {
+    const res = await route.fetch();
+    let body = await res.text();
+    try {
+      const j = JSON.parse(body);
+      j.card_enabled = true;
+      body = JSON.stringify(j);
+    } catch {
+      /* not json — hand it back untouched */
+    }
+    return route.fulfill({ response: res, body });
+  });
+}
+
 async function stubPricing(page, pricing) {
   const body = pricing || {
     store: { now: 79, was: 129 },
@@ -491,12 +511,112 @@ test('owner pay panel is collapsed by default and opens on the summary button', 
   await expect(page.locator('#payOpts')).toBeHidden();
 });
 
+// THE PAY BAR. It replaced a strip at the top of the page that said "the
+// payment is waiting below ⬇" — a signpost, on the one page the buyer stays on
+// for a long time, so it scrolled away the moment she started typing. The bar
+// is sticky, carries the amount, and opens the checkout.
+//
+// It is shown on the same condition the strip was (open && !paid && card
+// enabled), which the two tests above and below this one still pin from the
+// other side: no bar on a card-disabled deployment, no bar once paid.
+test('the pay bar carries the price, sticks to the screen and opens the checkout', async ({
+  page,
+}) => {
+  await stubPricing(page, {
+    store: { now: 199, was: 239 },
+    versions: {
+      pdf: { enabled: false, price: 79 },
+      pickup: { enabled: true, price: 199 },
+      delivery: { enabled: false, price: 199 },
+      custom: { enabled: false, price: 599 },
+    },
+  });
+  await withCardEnabled(page);
+  await createCollection(page, 'Shira');
+
+  const bar = page.getByTestId('pay-bar');
+  await expect(bar).toBeVisible();
+  // The amount is the panel's own number, not a second computation of it.
+  await expect(page.getByTestId('pay-bar-amount')).toHaveText('₪199');
+  await expect(page.locator('#payTotal')).toHaveText('199');
+
+  // STICKY: still on screen at the foot of a long page, which is the whole point.
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(bar).toBeInViewport();
+
+  // …and it opens the checkout rather than pointing at it.
+  await expect(page.locator('#payPanel')).not.toHaveAttribute('open', '');
+  await page.getByTestId('pay-bar-btn').click();
+  await expect(page.locator('#payPanel')).toHaveAttribute('open', '');
+});
+
+// THE OWNER'S CONDITION for accepting the bar, in her words: "the whatsapp
+// button need to be available always". A fixed bar at the foot of the page is
+// exactly the thing that buries a fixed button at the foot of the page, so this
+// asks the question a thumb asks — at the middle of the help button, what would
+// I actually hit?
+test('the pay bar never buries the WhatsApp help button', async ({ page }) => {
+  await withCardEnabled(page);
+  await createCollection(page, 'Shira');
+  await expect(page.getByTestId('pay-bar')).toBeVisible();
+
+  const hit = await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="wa-help"]');
+    const r = el.getBoundingClientRect();
+    if (r.bottom > window.innerHeight || r.top < 0) return 'outside the viewport';
+    const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (el.contains(at) || at === el) return 'ok';
+    return at && at.closest('[data-testid="pay-bar"]') ? 'the pay bar' : 'something else';
+  });
+  expect(hit, 'tapping the WhatsApp button must land on it').toBe('ok');
+  // And the tap goes through (target=_blank, so just assert it does not throw).
+  await page.getByTestId('wa-help').click({ trial: true, timeout: 5000 });
+});
+
+// A taller bar must push the help button further up, not slide under it. The
+// copy is owner-editable, so this is a real state, not a hypothetical: the
+// offset is the bar's MEASURED height for exactly this reason.
+test('a wrapped pay-bar label lifts the WhatsApp button with it', async ({ page }) => {
+  // A phone: the width where a longer label actually wraps and makes the bar
+  // taller. On a desktop viewport the same string fits on one line and this
+  // would pass without testing anything.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await withCardEnabled(page);
+  await createCollection(page, 'Shira');
+  const bar = page.getByTestId('pay-bar');
+  await expect(bar).toBeVisible();
+
+  const before = await bar.evaluate((el) => el.getBoundingClientRect().height);
+  await page.locator('[data-edit="collect-pay-bar-label"]').evaluate((el) => {
+    el.textContent = 'המשחק שלכם מוכן ומחכה לתשלום — אפשר להמשיך להוסיף מילים גם אחרי שמשלמים';
+  });
+  await expect
+    .poll(async () => bar.evaluate((el) => el.getBoundingClientRect().height))
+    .toBeGreaterThan(before);
+
+  // Polled, not read once: the lift travels label -> ResizeObserver ->
+  // --pay-bar-h -> layout, so a single read can land a frame early and see the
+  // button still at the old height's offset. What must be true is that it ENDS
+  // UP clear, which is what a buyer's thumb meets.
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const wa = document.querySelector('[data-testid="wa-help"]').getBoundingClientRect();
+          const b = document.querySelector('[data-testid="pay-bar"]').getBoundingClientRect();
+          return Math.round(b.top - wa.bottom);
+        }),
+      { message: 'the help button must sit above the taller bar' }
+    )
+    .toBeGreaterThanOrEqual(0);
+});
+
 test('card disabled: no dead pay CTA, neutral note instead, and no top nag', async ({ page }) => {
   // The E2E server runs without PELECARD_* credentials, so card_enabled is
   // false. There must be NO clickable pay button, a neutral "coming soon" note
   // in the panel instead, and the top reminder must NOT nag toward a dead panel.
   await createCollection(page, 'Shira');
-  await expect(page.locator('#payReminder')).toBeHidden();
+  await expect(page.getByTestId('pay-bar')).toBeHidden();
   await page.locator('#payPanel summary').click();
   await expect(page.locator('#cardPayBtn')).toBeHidden();
   await expect(page.locator('#bitPayLink')).toHaveCount(0);
@@ -850,7 +970,7 @@ test('after payment: pay panel + reminder disappear, סיום card takes over', 
   await page.reload();
   // Pay panel + top reminder gone; the "keep adding, then סיום" card is shown.
   await expect(page.locator('#payPanel')).toBeHidden();
-  await expect(page.locator('#payReminder')).toBeHidden();
+  await expect(page.getByTestId('pay-bar')).toBeHidden();
   await expect(page.locator('#paidCard')).toBeVisible();
   await expect(page.locator('#paidCard')).toContainText('התשלום התקבל');
   await expect(page.locator('#paidCloseBtn')).toBeVisible();
