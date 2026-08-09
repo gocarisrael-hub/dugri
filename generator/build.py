@@ -11,6 +11,7 @@ colours, title lines and the board/back title slots all come from that config.
 NAME is the honoree; the title is built from the theme's title_lines template
 (e.g. trip comeback: OZ -> "OZ'S / WELCOME / PARTY").
 """
+import math
 import os
 import sys
 import re
@@ -490,12 +491,23 @@ PHOTO_SUBJECT_Y = float(os.environ.get("DUGRI_PHOTO_SUBJECT_Y", "0.30"))
 #
 #   1. the bounding box of the non-transparent pixels — of the blob nearest the
 #      centre of the frame, if the cut left more than one;
-#   2. scaled so the subject spans the slot's visible disc and centred on it;
+#   2. scaled so the WHOLE subject fits inside the slot's visible disc, centred
+#      on it;
 #   3. clipped to that disc, so everything outside is cut away.
 #
-# Step 3 is why this exists. The old fixed square sliced straight through arms
-# and legs, and the sticker halo is dilated from the image's OWN alpha, so it
-# traced that ruler-straight cut instead of the subject.
+# THE OWNER'S RULE, in her words: "fit the whole photo in the circle". Step 2
+# used to size the window on the subject's WIDTH, which framed the face at a
+# consistent size but let a taller-than-wide cutout — which is most head-and-
+# shoulders photos — run out of the bottom of the circle, where step 3 cut it.
+# She has seen that printed on two pawns and does not want it: a subject that
+# does not fit is made smaller, never trimmed.
+#
+# What that costs, stated out loud because it undoes half of an earlier fix: a
+# cutout whose alpha ends in a ruler-straight line (the photo's own bottom edge,
+# which is where the person ran out of frame) now shows that edge INSIDE the
+# disc, and the sticker halo — dilated from the image's own alpha — traces it.
+# Pushing that edge outside the circle is exactly what the old width-framing did,
+# and it can only be done by cutting the subject. The two cannot both be had.
 
 # An alpha at or above this counts as subject. Deliberately low: the soft edge of
 # a hair matte runs from 0 to 255 over a few pixels and belongs to the subject.
@@ -526,18 +538,12 @@ PHOTO_BLOB_MASK_PX = 200
 # outside it, which is also the right order for a real die-cut sticker.
 PHOTO_DISC_FILL = float(os.environ.get("DUGRI_PHOTO_DISC_FILL", "0.90"))
 
-# Clear space above the subject's own top edge, as a share of the disc. The disc
-# narrows sharply towards its top, so a head pushed flush to it comes out with a
-# flat crown. Only used when the subject is taller than the disc; a subject that
-# fits is simply centred. This is not the old head guess — the alpha tells us
-# where the top of the person IS, this only says how much air to leave above it.
-PHOTO_SUBJECT_HEADROOM = 0.11
-
-# Widest subject we will show whole, as a multiple of its own height. Framing on
-# the subject's WIDTH means a wide subject is never cropped left or right — but
-# a 5:1 sliver would shrink to nothing inside the disc, so past this the sides
-# are allowed to go.
-PHOTO_SUBJECT_MAX_ASPECT = 2.0
+# How far the REACH measurement may miss by, as a share of the coarse mask's own
+# pixel. The reach is read off a downscaled mask (PHOTO_BLOB_MASK_PX), so a
+# silhouette's outermost pixel can fall between samples; padding the answer by
+# one mask pixel keeps the real edge inside the disc rather than a fraction of a
+# source pixel outside it. Cheap insurance: one mask pixel is ~0.5% of the disc.
+PHOTO_REACH_SLACK = 1.0
 
 # The square we hand the slot, per docs/photo-card.md: 512 target, 220 floor
 # (300 DPI over the slot's 18.57 mm), 1024 ceiling — every pixel above that is
@@ -717,34 +723,79 @@ def _disc_mask(size):
     return big.resize((size, size), Image.LANCZOS)
 
 
-def subject_window(box, disc_fill=None):
+def subject_reach(box, alpha=None):
+    """How far the subject reaches from ``box``'s centre, in source pixels.
+
+    The radius of the smallest circle centred there that holds the whole subject
+    — which is what the disc has to be able to cover for nothing to be cut off.
+
+    Measured off the SILHOUETTE when the alpha is available, not off the bounding
+    box, because the two differ by a lot on exactly the shape this card is full
+    of: a head's box has empty corners, so its corner radius over-states the
+    reach by up to 40% and would shrink the face for room nobody occupies. With
+    no alpha to read there is no silhouette either, so the box's own corner is
+    the honest answer.
+
+    The centre is the box's, not the centre of mass: a circle around the box
+    centre is the one the window is built on, and re-centring to shave a few
+    pixels off the radius would slide the person off the middle of the disc.
+    """
+    cx = (box[0] + box[2]) / 2.0
+    cy = (box[1] + box[3]) / 2.0
+    corner = math.hypot(box[2] - box[0], box[3] - box[1]) / 2.0
+    if alpha is None:
+        return corner
+    from PIL import Image
+    w, h = alpha.size
+    scale = min(1.0, PHOTO_BLOB_MASK_PX / float(max(w, h) or 1))
+    if scale < 1:
+        small = alpha.resize((max(1, int(w * scale)), max(1, int(h * scale))),
+                             Image.BILINEAR)
+    else:
+        small, scale = alpha, 1.0
+    sw, sh = small.size
+    px = small.load()
+    best = 0.0
+    for y in range(sh):
+        # Only a row's OUTERMOST subject pixels can be its farthest from the
+        # centre — distance grows with |x - cx| — so two scans per row answer it
+        # without measuring the interior.
+        first = last = None
+        for x in range(sw):
+            if px[x, y] >= PHOTO_ALPHA_MIN:
+                if first is None:
+                    first = x
+                last = x
+        if first is None:
+            continue
+        sy = (y + 0.5) / scale
+        for x in (first, last):
+            best = max(best, math.hypot((x + 0.5) / scale - cx, sy - cy))
+    if best <= 0:
+        return corner
+    # The mask is coarse; keep the real edge inside. Never past the box corner,
+    # which already contains every pixel by construction.
+    return min(best + PHOTO_REACH_SLACK / scale, corner)
+
+
+def subject_window(box, disc_fill=None, alpha=None):
     """The square region of the SOURCE that maps onto the output square.
 
     ``box`` is the subject's bounding rectangle; the returned window is in the
     same coordinates and may fall outside the photo — cropping past the edge
     pads with transparency, which is exactly what a sticker wants.
 
-    The window is sized on the subject's **width**, so a wide subject is never
-    cropped left or right (we know where the top of a person is; we have no such
-    handle on which side of them matters). Vertically: a subject shorter than the
-    disc is centred, a taller one is pinned near the top with
-    ``PHOTO_SUBJECT_HEADROOM`` of air above it and the rest allowed to run out of
-    the bottom of the circle — which is usually the photo's own edge, i.e. the
-    ruler-straight cut this whole change exists to get rid of.
+    Sized so the WHOLE subject lands inside the visible disc and centred on it:
+    the disc is set to the subject's own reach (:func:`subject_reach`), so the
+    outermost pixel of the silhouette touches the circle and nothing crosses it.
+    A subject too big for the disc is therefore made smaller, never trimmed —
+    the owner's rule, and the reason this no longer frames on width alone.
     """
     fill = PHOTO_DISC_FILL if disc_fill is None else disc_fill
-    bw = max(1, box[2] - box[0])
-    bh = max(1, box[3] - box[1])
-    disc = min(bw, PHOTO_SUBJECT_MAX_ASPECT * bh)
+    disc = 2.0 * subject_reach(box, alpha)
     side = disc / fill
-    margin = (side - disc) / 2.0
-    slack = disc - bh
-    if slack >= 2 * PHOTO_SUBJECT_HEADROOM * disc:
-        above = slack / 2.0
-    else:
-        above = PHOTO_SUBJECT_HEADROOM * disc
-    left = (box[0] + box[2]) / 2.0 - disc / 2.0 - margin
-    top = box[1] - above - margin
+    left = (box[0] + box[2]) / 2.0 - side / 2.0
+    top = (box[1] + box[3]) / 2.0 - side / 2.0
     return (int(round(left)), int(round(top)),
             int(round(left + side)), int(round(top + side)))
 
@@ -792,7 +843,7 @@ def square_photo(path, workdir, index=0):
             if found:
                 box, alpha = found
                 im.putalpha(alpha)
-                crop = subject_window(box)
+                crop = subject_window(box, alpha=alpha)
             else:
                 # No alpha to measure, so the square is a guess. The disc clip
                 # below still runs — an opaque photo has no silhouette, so that
