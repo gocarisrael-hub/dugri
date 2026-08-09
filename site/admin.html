@@ -552,6 +552,21 @@
             <label class="fld"
               ><span>טלפון</span><input type="tel" id="e-phone" maxlength="40"
             /></label>
+            <!-- WHO ORDERED, and WHAT the party is — both typed by the buyer on
+                 the wizard's details step, both optional there. The name is the
+                 buyer's own and is NOT the honoree name at the top of this
+                 dialog: she is buying the game for somebody else, so the label
+                 spells it out rather than trusting whoever reads it next. Both
+                 are editable because most orders finish on WhatsApp, and an
+                 answer given there should land in the same box as one typed. -->
+            <label class="fld"
+              ><span>שם המזמין/ה (לא בעל/ת השמחה)</span
+              ><input type="text" id="e-buyer-name" maxlength="80"
+            /></label>
+            <label class="fld"
+              ><span>סוג האירוע (לפי הלקוח/ה)</span
+              ><input type="text" id="e-event-type" maxlength="80"
+            /></label>
           </div>
         </fieldset>
 
@@ -586,6 +601,13 @@
             <label class="fld"
               ><span>כותרת מותאמת (ריק = ברירת המחדל של התבנית)</span
               ><textarea id="e-title" rows="2" maxlength="120"></textarea>
+            </label>
+            <!-- The buyer's own note, typed with the order. Never printed on
+                 anything — it is a message to us — and editable here so a note
+                 taken by phone can be written down in the same place. -->
+            <label class="fld"
+              ><span>הערה של הלקוח/ה (לא מודפסת)</span
+              ><textarea id="e-comment" rows="3" maxlength="500"></textarea>
             </label>
             <label class="fld check"
               ><input type="checkbox" id="e-chasers" /><span>צ׳ייסרים</span></label
@@ -1086,7 +1108,10 @@
         el('e-gender').value = c.gender || '';
         el('e-email').value = c.owner_email || '';
         el('e-phone').value = c.owner_phone || '';
+        el('e-buyer-name').value = c.buyer_name || '';
+        el('e-event-type').value = c.event_type || '';
         el('e-title').value = c.custom_title || '';
+        el('e-comment').value = c.comment || '';
         el('e-chasers').checked = !!c.chasers;
 
         await loadThemeList();
@@ -1388,11 +1413,14 @@
           gender: el('e-gender').value || null,
           email: el('e-email').value.trim(),
           phone: el('e-phone').value.trim(),
+          buyer_name: el('e-buyer-name').value,
+          event_type: el('e-event-type').value,
           design: el('e-design').value,
           color: el('e-color').value,
           theme: el('e-theme').value,
           extra_fields: readExtraInputs(),
           custom_title: el('e-title').value,
+          comment: el('e-comment').value,
           chasers: el('e-chasers').checked,
           // '' clears the override back to the theme's own pool. The server
           // refuses a name that doesn't match a real pool.

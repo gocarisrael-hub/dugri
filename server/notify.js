@@ -454,6 +454,16 @@ function orderLines(collection, baseUrl, options) {
   const order = (collection && collection.order) || null;
   const ref = orderRef(collection);
   if (ref) lines.push(f.orderId + ': ' + ref);
+  // WHO ordered and WHAT the party is, in her own words. High up, right under the
+  // order number, because they are what the owner needs before she does anything
+  // else with this mail: the name to greet on WhatsApp (the honoree is a different
+  // person — she is buying this FOR someone) and the occasion, which decides the
+  // tone of everything that follows. Both are optional, so each line appears only
+  // when she filled it in; an empty label would be worse than a missing one.
+  const buyer = collection && collection.buyer_name ? String(collection.buyer_name).trim() : '';
+  if (buyer) lines.push(f.buyerName + ': ' + buyer);
+  const event = collection && collection.event_type ? String(collection.event_type).trim() : '';
+  if (event) lines.push(f.eventType + ': ' + event);
   if (order) {
     const label = versionLabelFor(order.version);
     lines.push(f.version + ': ' + label);
@@ -471,6 +481,11 @@ function orderLines(collection, baseUrl, options) {
   }
   const wc = wordCount(collection);
   if (wc != null) lines.push(f.wordCount + ': ' + wc);
+  // Her own note, when she left one. It goes near the bottom on purpose: it is
+  // the one line here she WROTE rather than chose, so it reads last and reads
+  // whole — the newlines are kept, because a note is often a short list.
+  const note = collection && collection.comment ? String(collection.comment).trim() : '';
+  if (note) lines.push(f.comment + ': ' + note);
   const link = ownerLink(collection, baseUrl);
   if (link) lines.push(f.ownerLink + ': ' + link);
   // One-click link to the admin orders panel (built by the caller with the admin
