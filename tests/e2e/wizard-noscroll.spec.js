@@ -223,13 +223,55 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
     await assertStepFits(page, '[data-testid="owner-phone"]');
   });
 
-  test('step 5 (optional pawn photos): the skip control clears the sticky bar', async ({
+  // STEP 5 IS THE SECOND STEP THAT MAY SCROLL, for the same reason as step 3 with
+  // the deck pictures above, and by the same decision.
+  //
+  // The photo slot stopped being a file-picker thumbnail and became a preview of
+  // the printed pawn — the photo inside the dashed cut-line, framed the way the
+  // deck frames it. At four across it is 96px on a 430px phone, and a face inside
+  // a circle inside 96px is exactly the thing the buyer cannot judge. Two across
+  // is 200px and four slots then take two rows, which is ~318px more than one row
+  // of four and does not fit above the fixed bar on a 390x844 phone.
+  //
+  // Shown both, the owner picked the size: "i want it to be bigger in the
+  // website". So this step keeps the half of the promise that matters — every
+  // control is reachable — and drops the half she traded away, exactly as the
+  // deck-pictures step does. assertStepFits itself is untouched and every other
+  // step still holds the strict rule.
+  test('step 5 (optional pawn photos): may scroll, but the skip control stays reachable', async ({
     page,
   }) => {
     await page.goto('/options.html?step=5');
     await expect(page.getByTestId('step-pawns')).toBeVisible();
-    // The skip link is the last control below the 4 photo slots.
-    await assertStepFits(page, '[data-testid="pawn-skip"]');
+
+    // The previews must stay worth looking at. If a future change "fixes" the
+    // overflow by shrinking them back, that is the outcome the owner rejected.
+    const slot = await page
+      .locator('.pawn-slot')
+      .first()
+      .evaluate((el) => el.getBoundingClientRect().width);
+    expect(slot).toBeGreaterThan(150);
+
+    // Scrolling is permitted here, so reach the control the way a buyer does…
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const skip = page.getByTestId('pawn-skip');
+    await expect(skip).toBeVisible();
+
+    // …and it must genuinely clear the fixed bar once scrolled, not merely exist.
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
+          return Math.round(
+            document.querySelector('[data-testid="pawn-skip"]').getBoundingClientRect().bottom -
+              bar.top
+          );
+        })
+      )
+      .toBeLessThanOrEqual(0);
+
+    // toBeVisible() would pass on a control the bar covers, so prove the tap lands.
+    await skip.click({ timeout: 5000 });
   });
 });
 
@@ -328,6 +370,11 @@ test.describe('the deck pictures never bury a control', () => {
       .toBeLessThanOrEqual(4);
   });
 
+  // Step 5 now carries BOTH tall things: the deck pictures and a photo grid whose
+  // slots are previews of the printed pawn rather than thumbnails (see the step-5
+  // test in the first block for why the owner chose the size). So it loses the
+  // no-scroll half of the rule here too — but the reachability half is exactly
+  // what this block exists to guard, and it still holds after scrolling.
   test('step 5 (pawn photos): the skip control is reachable with the pictures on screen', async ({
     page,
   }) => {
@@ -335,13 +382,33 @@ test.describe('the deck pictures never bury a control', () => {
     await page.goto('/options.html?design=bachelorette&step=5');
     await expect(page.getByTestId('step-pawns')).toBeVisible();
     await assertRowWorthLookingAt(page);
-    // It was 37px under the sticky bar, so the tap landed on the bar's button.
-    await assertTappable(page, '[data-testid="pawn-skip"]');
+    // …and the pawn previews stay big enough to BE previews, or the fix that
+    // shrinks them back would pass here unnoticed.
+    const slot = await page
+      .locator('.pawn-slot')
+      .first()
+      .evaluate((el) => el.getBoundingClientRect().width);
+    expect(slot, 'the pawn previews must stay big enough to judge a face').toBeGreaterThan(150);
+
+    // assertTappable is deliberately NOT used here: it forbids scrolling ("no
+    // scrolling to rescue it"), which is the half of the rule this step traded
+    // away. The half that remains is asserted the long way instead — scroll like a
+    // buyer, then prove the control clears the bar and the tap lands on it.
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const skip = page.getByTestId('pawn-skip');
+    await expect(skip).toBeVisible();
     await expect
       .poll(async () =>
-        page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
+        page.evaluate(() => {
+          const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
+          return Math.round(
+            document.querySelector('[data-testid="pawn-skip"]').getBoundingClientRect().bottom -
+              bar.top
+          );
+        })
       )
-      .toBeLessThanOrEqual(4);
+      .toBeLessThanOrEqual(0);
+    await skip.click({ timeout: 5000 });
   });
 
   // A PHONE IS NOT ONE SIZE.
