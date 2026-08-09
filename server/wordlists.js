@@ -186,6 +186,61 @@ function tooLongWarning(tooLong) {
   );
 }
 
+// The same split for EMOJI. Pool words are printed on cards exactly like a
+// buyer's own words (topup.py draws filler from here), and the card fonts have
+// no emoji glyphs — so an emoji in a pool is a blank box on somebody's deck,
+// arriving as filler she never even typed. That makes this the least visible way
+// an emoji can reach a printed card, and the reason the rule cannot stop at the
+// buyer-facing routes.
+//
+// Grandfathered by identity, exactly like the length cap and for the same
+// reason: the admin editor round-trips the whole list on every save, so a filter
+// with no memory would silently delete existing entries the moment the owner
+// fixed an unrelated typo. Only words NEW to this pool are refused. (The shipped
+// combined-416.txt really did carry one — 🅿️ — printed as filler on every deck
+// that pool fed; it is deleted at source in the same change that adds this.)
+function splitByEmoji(list, existing) {
+  const known = new Set((Array.isArray(existing) ? existing : []).map(normKey));
+  const kept = [];
+  const withEmoji = [];
+  for (const w of Array.isArray(list) ? list : []) {
+    if (validate.hasEmoji(w) && !known.has(normKey(w))) withEmoji.push(w);
+    else kept.push(w);
+  }
+  return { kept, withEmoji };
+}
+
+// The Hebrew warning for words a save refused for carrying an emoji. Names them,
+// so the owner can find the character rather than diff two 400-line lists.
+function emojiWarning(withEmoji) {
+  if (!withEmoji || !withEmoji.length) return null;
+  const shown = withEmoji.slice(0, 5).map((w) => '"' + w + '"');
+  return (
+    withEmoji.length +
+    ' מילים לא נשמרו כי הן מכילות אימוג׳י (אי אפשר להדפיס אותו על הקלפים): ' +
+    shown.join(', ') +
+    (withEmoji.length > shown.length ? ' ועוד' : '')
+  );
+}
+
+// BOTH refusals a save can produce, applied in one pass so a caller cannot
+// remember one and forget the other. Returns the words to write, each refused
+// group on its own, and one combined Hebrew warning (null when nothing was
+// refused) — which is what the admin screen shows.
+function splitRefused(list, existing) {
+  const byLen = splitByLength(list, existing);
+  const byEmoji = splitByEmoji(byLen.kept, existing);
+  const warning = [tooLongWarning(byLen.tooLong), emojiWarning(byEmoji.withEmoji)]
+    .filter(Boolean)
+    .join(' · ');
+  return {
+    kept: byEmoji.kept,
+    tooLong: byLen.tooLong,
+    withEmoji: byEmoji.withEmoji,
+    warning: warning || null,
+  };
+}
+
 // ---- disk helpers ----------------------------------------------------------
 
 function readFileWords(abs) {
@@ -342,10 +397,14 @@ function create({ name, words, text } = {}) {
       httpStatus: 409,
     };
   }
-  // A brand-new pool has nothing to grandfather, so every word is held to the cap.
-  const { kept, tooLong } = splitByLength(parseWords(words != null ? words : text), []);
+  // A brand-new pool has nothing to grandfather, so every word is held to BOTH
+  // rules — the length cap and the emoji refusal.
+  const { kept, tooLong, withEmoji, warning } = splitRefused(
+    parseWords(words != null ? words : text),
+    []
+  );
   writeStore(n, kept);
-  return { ...read(n), too_long: tooLong, warning: tooLongWarning(tooLong) };
+  return { ...read(n), too_long: tooLong, with_emoji: withEmoji, warning };
 }
 
 // REPLACE a pool's contents (the "paste a whole list" save), or APPEND when
@@ -360,18 +419,19 @@ function update(name, { words, text, append } = {}) {
   if (!hit) return { error: 'הרשימה ' + n + ' לא נמצאה.', httpStatus: 404 };
 
   // The pool as it stands. Its words are the grandfather set: already-stored
-  // over-length entries survive a re-save, new ones are refused (splitByLength).
+  // over-length entries (and any that already carry an emoji) survive a re-save,
+  // new ones are refused — see splitRefused.
   const current = read(n);
   const currentWords = current ? current.words : [];
   const parsed = parseWords(append != null ? append : words != null ? words : text);
-  const { kept: incoming, tooLong } = splitByLength(parsed, currentWords);
+  const { kept: incoming, tooLong, withEmoji, warning } = splitRefused(parsed, currentWords);
   let next;
   if (append != null) {
     // Append: keep the existing order, add only genuinely new words. An append of
-    // nothing BUT over-length words is a hard error — there is no "added" outcome
-    // to report and the owner must see why.
-    if (!incoming.length && tooLong.length) {
-      return { error: tooLongWarning(tooLong), httpStatus: 400 };
+    // nothing BUT refused words (over-length, or carrying an emoji) is a hard
+    // error — there is no "added" outcome to report and the owner must see why.
+    if (!incoming.length && (tooLong.length || withEmoji.length)) {
+      return { error: warning, httpStatus: 400 };
     }
     next = parseWords(currentWords.concat(incoming));
     if (next.length === currentWords.length) {
@@ -384,7 +444,7 @@ function update(name, { words, text, append } = {}) {
     }
   }
   writeStore(n, next);
-  return { ...read(n), too_long: tooLong, warning: tooLongWarning(tooLong) };
+  return { ...read(n), too_long: tooLong, with_emoji: withEmoji, warning };
 }
 
 // DELETE a pool. Two hard guards, both with an explanation the owner can act on:
@@ -529,6 +589,9 @@ module.exports = {
   parseWords,
   splitByLength,
   tooLongWarning,
+  splitByEmoji,
+  emojiWarning,
+  splitRefused,
   normKey,
   safeName,
   themesUsing,

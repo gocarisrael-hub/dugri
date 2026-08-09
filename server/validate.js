@@ -91,6 +91,178 @@ function wordLengthMessage(s) {
   return t.length > MAX_WORD_LEN ? wordLengthMessageForLen(t.length) : null;
 }
 
+// ---------------------------------------------------------------------------
+// Emoji: REFUSED, never stripped.  ("refuse for emojis in title and words")
+// ---------------------------------------------------------------------------
+// Everything a buyer types into the title or the word list is PRINTED. The card
+// faces are Hebrew and Latin display fonts with no emoji glyphs at all, so a 🎉
+// does not arrive on the card as a 🎉 — it arrives as a blank box, or as
+// whatever the renderer happens to substitute, on all 104 cards of an order the
+// customer already paid for, and she finds out when the parcel opens.
+//
+// So the rule is a REFUSAL, at the moment she types it, not a clean-up. Silently
+// stripping the emoji would be worse than refusing: she put it there on purpose,
+// the deck would come back without it, and nothing would ever have told her.
+// Refusing costs one correction; stripping costs the order's goodwill.
+//
+// This is a companion to — NOT a replacement for — the font-coverage guard
+// (render_page.assert_title_drawable). That one asks "can THIS font draw this
+// character"; this one asks "is this character an emoji", which is a question no
+// font can answer for us and which we want answered in the browser, before the
+// order exists.
+//
+// WHAT COUNTS. There is no `regex` module on the Python side and no Unicode
+// property escape (`\p{Extended_Pictographic}`) anywhere in this repo — the
+// site's ES modules are served to phones untranspiled, and an unsupported escape
+// is a PARSE error, which takes the whole wizard down rather than degrading. So
+// the ranges are hand-rolled, and here is exactly what is in them and why:
+//
+//   U+FE0F                 VS16, the "render the previous character as an emoji"
+//                          selector. Refused on its own — it is the difference
+//                          between the printable © and the unprintable ©️.
+//   U+20E3                 the combining keycap, which only ever builds 1️⃣–9️⃣.
+//   U+2600–U+27BF          Miscellaneous Symbols (☀ ☎ ★ ⚡ ❗) + Dingbats
+//                          (✂ ✈ ✉ ✅ ❤ ➕). Whole blocks: every member is a
+//                          pictograph, and no card font draws any of them.
+//   U+2B00–U+2BFF          Misc Symbols and Arrows — ⭐ ⭕ ⬛ ⬅.
+//   U+231A U+231B U+23CF,  the handful of emoji stranded inside Miscellaneous
+//   U+23E9–U+23F3,         Technical (⌚ ⌛ ⏏ ⏩ ⏰ ⏳ ⏸ ⏺). Picked out one by one
+//   U+23F8–U+23FA          rather than taking the block, which is full of
+//                          ordinary technical marks.
+//   U+3030 U+303D          〰 〽 ㊗ ㊙ — the four CJK characters with emoji
+//   U+3297 U+3299          presentation.
+//   U+1F000–U+1FAFF        the pictographic planes: mahjong/domino/cards,
+//                          enclosed supplements, Misc Symbols & Pictographs,
+//                          Emoticons, Transport & Map, Supplemental Symbols,
+//                          Chess, Extended-A. Taken whole because the range
+//                          contains no text at all — nothing in it is a letter,
+//                          a digit or a mark of punctuation in any script.
+//                          Skin-tone modifiers (U+1F3FB–U+1F3FF) and the
+//                          regional-indicator letters that build flag pairs
+//                          (U+1F1E6–U+1F1FF) live inside it.
+//   U+E0000–U+E007F        the tag characters that spell out subdivision flags
+//                          (🏴󠁧󠁢󠁳󠁣󠁴󠁿). Invisible on their own, so they must be named.
+//
+// WHAT IS DELIBERATELY *NOT* IN THEM. Over-refusing loses orders, and a buyer
+// turned away for typing her own name is the expensive failure here. So the line
+// is drawn at emoji-BY-DEFAULT: a character that a plain text font renders as
+// ordinary type is accepted, even when Unicode also lists it as an emoji.
+// Accepted, with tests to keep them accepted: © ® ™ (Latin-1 / letterlike, and
+// the owner said © stays), ‼ ⁉ ℹ (punctuation and letterlike), → ↔ ↩ and the
+// rest of U+2190–U+21FF (typographic arrows), – — the en/em dashes a phone
+// substitutes for a hyphen, the Hebrew geresh ׳ and gershayim ״, apostrophes,
+// niqqud and te'amim (U+0591–U+05C7), digits, and every ordinary Latin mark.
+// Any of those the moment it is followed by U+FE0F is refused — at that point it
+// is not the typographic character any more, it is the emoji.
+//
+// U+200D (ZWJ) is NOT in the class on purpose: an emoji ZWJ sequence always
+// contains at least one pictograph, so 👩‍👩‍👧 is already caught by its members. ZWJ
+// only appears below as the JOIN in findEmoji, so that the family is reported as
+// ONE thing the way a person sees it, not as three.
+const EMOJI_CHARS =
+  '\\uFE0F' + // emoji presentation selector
+  '\\u20E3' + // combining enclosing keycap
+  '\\u2600-\\u27BF' + // Miscellaneous Symbols + Dingbats
+  '\\u2B00-\\u2BFF' + // Miscellaneous Symbols and Arrows
+  '\\u231A\\u231B\\u23CF' + // ⌚ ⌛ ⏏
+  '\\u23E9-\\u23F3\\u23F8-\\u23FA' + // ⏩…⏳, ⏸ ⏹ ⏺
+  '\\u3030\\u303D\\u3297\\u3299' + // 〰 〽 ㊗ ㊙
+  '\\u{1F000}-\\u{1FAFF}' + // the pictographic planes (incl. skin tones + flags)
+  '\\u{E0000}-\\u{E007F}'; // flag tag characters
+
+// One emoji "atom": a pictograph plus the pieces that attach to it — an optional
+// VS16, an optional skin tone, and any trailing flag tags.
+const EMOJI_ATOM = '[' + EMOJI_CHARS + ']\\uFE0F?[\\u{1F3FB}-\\u{1F3FF}]?[\\u{E0020}-\\u{E007F}]*';
+
+// One emoji as a PERSON counts it. Keycaps and flag pairs first (both are built
+// from several codepoints and would otherwise split), then an atom with any
+// number of ZWJ-joined atoms after it — which is what makes 👩‍👩‍👧 report as one
+// emoji rather than three.
+// The last alternative is what makes the ©️ case readable: © is an ACCEPTED
+// character, so it is not in EMOJI_CHARS and the atom cannot reach it — without
+// this the refusal for "©️" would name a lone, invisible U+FE0F and read as
+// "remove: ". It matches only when the character carrying the selector is itself
+// accepted, so it can never steal a codepoint from a real emoji sequence.
+const EMOJI_UNIT =
+  '[0-9#*]\\uFE0F?\\u20E3' + // 1️⃣  #️⃣
+  '|[\\u{1F1E6}-\\u{1F1FF}]{2}' + // 🇮🇱
+  '|' +
+  EMOJI_ATOM +
+  '(?:\\u200D' +
+  EMOJI_ATOM +
+  ')*' + // 👩‍👩‍👧  🏳️‍🌈
+  '|[^' +
+  EMOJI_CHARS +
+  '\\u200D]\\uFE0F'; // ©️  ‼️  →️
+
+// True when the string contains ANY emoji character. Cheap — this is the check
+// that runs on every keystroke and on every word of an inbound list.
+function hasEmoji(s) {
+  return new RegExp('[' + EMOJI_CHARS + ']', 'u').test(String(s == null ? '' : s));
+}
+
+// The emoji in a string, in the order they appear, de-duplicated, each one a
+// whole user-perceived emoji. Used to NAME them in the refusal — "remove 🎉" is
+// actionable, "invalid input" is not.
+function findEmoji(s) {
+  const found = String(s == null ? '' : s).match(new RegExp(EMOJI_UNIT, 'gu')) || [];
+  const seen = new Set();
+  const out = [];
+  for (const e of found) {
+    if (seen.has(e)) continue;
+    seen.add(e);
+    out.push(e);
+  }
+  return out;
+}
+
+// The offending emoji, listed for a message: at most 5, so a paste made entirely
+// of emoji doesn't produce a wall of text.
+function emojiList(found) {
+  return found.slice(0, 5).join(' ') + (found.length > 5 ? ' ועוד' : '');
+}
+
+// The Hebrew refusal for a custom title. It says WHAT is wrong (an emoji), WHY
+// (it cannot be printed) and WHICH character to remove. Null when the title is
+// clean.
+function titleEmojiMessage(s) {
+  const found = findEmoji(s);
+  if (!found.length) return null;
+  return 'אי אפשר להדפיס אימוג׳י על הקלפים - הסירו אותו מהכותרת: ' + emojiList(found);
+}
+
+// The same refusal for the honoree's name, which is what the DEFAULT title is
+// built from — so an emoji there lands on exactly the same printed line.
+function nameEmojiMessage(s) {
+  const found = findEmoji(s);
+  if (!found.length) return null;
+  return 'אי אפשר להדפיס אימוג׳י על הקלפים - הסירו אותו מהשם: ' + emojiList(found);
+}
+
+// The same refusal for one word entry.
+function wordEmojiMessage(s) {
+  const found = findEmoji(s);
+  if (!found.length) return null;
+  return 'אי אפשר להדפיס אימוג׳י על הקלפים - הסירו אותו מהמילה: ' + emojiList(found);
+}
+
+// The Hebrew refusal for a BATCH of entries that carried emoji — a paste, a
+// file, an inbound WhatsApp message. Names the words themselves (up to 3) so
+// they can be found and fixed, rather than only counting them. Null when the
+// batch was clean.
+function batchEmojiMessage(list) {
+  const bad = Array.isArray(list) ? list : [];
+  if (!bad.length) return null;
+  if (bad.length === 1) return wordEmojiMessage(bad[0]);
+  const shown = bad.slice(0, 3).map((w) => '"' + w + '"');
+  return (
+    bad.length +
+    ' מילים לא נוספו כי הן מכילות אימוג׳י (אי אפשר להדפיס אותו על הקלפים): ' +
+    shown.join(', ') +
+    (bad.length > shown.length ? ' ועוד' : '')
+  );
+}
+
 // Hebrew block U+0590–U+05FF; Latin ASCII letters. A name is validated against
 // the theme's expected script: it must contain the expected script and none of
 // the other.
@@ -228,4 +400,16 @@ module.exports = {
   isWordTooLong,
   wordLengthMessage,
   wordLengthMessageForLen,
+  // Emoji refusal. EMOJI_CHARS / EMOJI_UNIT are exported so the browser copy
+  // (site/js/emoji.js) can be pinned character-for-character against them in
+  // tests/unit/emoji.test.js — a drift between the two would mean the field and
+  // the API disagree about what is acceptable.
+  EMOJI_CHARS,
+  EMOJI_UNIT,
+  hasEmoji,
+  findEmoji,
+  titleEmojiMessage,
+  nameEmojiMessage,
+  wordEmojiMessage,
+  batchEmojiMessage,
 };
