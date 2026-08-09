@@ -12,7 +12,9 @@ import { ALL_ON, stubFeatures } from './feature-flags.js';
 const FIXED_ID = 'japanese';
 const FIXED_ACCENT = '#d42a2a';
 async function stubFixedDesign(page) {
-  await page.route('**/js/designs.generated.js', async (route) => {
+  // The module may be served under a content-hashed name (/js/designs.generated.<hash>.js
+  // via the import map — server/asset-hashing.js), so match both the logical and hashed url.
+  await page.route(/\/js\/designs\.generated(?:\.[0-9a-f]{8})?\.js(?:\?.*)?$/, async (route) => {
     const res = await route.fetch();
     const body = await res.text();
     const patched = body.replace(
