@@ -5060,6 +5060,66 @@ app.get('/api/faq', (req, res) => {
 // Unknown API routes -> JSON 404 (must come before static/catch-all).
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
 
+// Content-hashed ES modules (server/asset-hashing.js): a new build yields NEW
+// module urls, so a CDN edge can never pair a stale script with fresh HTML — the
+// 9 Aug store outage, where a day-old design-images.js (no `SIZES` export) met an
+// index.html that imported it and the whole page module died on its import line.
+// Built once, at boot, from site/js.
+const assetHashing = require('./asset-hashing');
+const moduleAssets = assetHashing.build(SITE_DIR);
+
+// The hash IS the version, so a hashed url is immutable for a year. These never
+// exist on disk under the hashed name — the request is mapped back to the real
+// file. An unknown hash falls through (a stale HTML would 404 here, but HTML is
+// no-cache and carries a current import map, so the browser only ever asks for
+// hashes this build actually minted).
+app.get(/^\/js\/.+\.[0-9a-f]{8}\.m?js$/, (req, res, next) => {
+  const file = moduleAssets.resolveHashed(req.path);
+  if (!file) return next();
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.type('js');
+  res.sendFile(file);
+});
+
+// Serve HTML ourselves (before express.static) so the import map can be injected
+// into every page. resolveHtmlFile returns the file for "/", "*.html" and an
+// extension-less route that maps to a page (the same set express.static's
+// extensions:['html'] resolved), and null for anything with a real asset
+// extension — those fall through to the hashed route / static below.
+function resolveHtmlFile(urlPath) {
+  let p = decodeURIComponent(urlPath.split('?')[0]);
+  if (p === '/') p = '/index.html';
+  else if (p.endsWith('/')) p += 'index.html';
+  const ext = path.extname(p);
+  let candidate;
+  if (ext === '.html') candidate = path.join(SITE_DIR, p);
+  else if (!ext) candidate = path.join(SITE_DIR, p + '.html');
+  else return null;
+  const resolved = path.resolve(candidate);
+  if (
+    resolved !== path.resolve(SITE_DIR) &&
+    !resolved.startsWith(path.resolve(SITE_DIR) + path.sep)
+  )
+    return null;
+  return fs.existsSync(resolved) ? resolved : null;
+}
+
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const file = resolveHtmlFile(req.path);
+  if (!file) return next();
+  let html;
+  try {
+    html = fs.readFileSync(file, 'utf8');
+  } catch {
+    return next();
+  }
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('html');
+  res.send(moduleAssets.inject(html));
+});
+
 // Static site (so /collect resolves to collect.html, etc.). HTML is served
 // with no-cache so visitors always get the latest page (and the iPhone/Instagram
 // browsers stop showing a stale copy); other assets keep their default validators.
@@ -5068,6 +5128,11 @@ app.use(
     extensions: ['html'],
     setHeaders(res, filePath) {
       if (filePath.endsWith('.html')) return res.setHeader('Cache-Control', 'no-cache');
+      // A bare module url (no hash in its own name) must always revalidate, so an
+      // edge can never pin yesterday's script against today's HTML — the 9 Aug
+      // outage. The hashed copies are served immutable by the route above; this
+      // catches any direct hit on an unhashed /js/*.js.
+      if (/\.m?js$/.test(filePath)) return res.setHeader('Cache-Control', 'no-cache');
       // Self-hosted fonts: woff2 filenames are content-hashed (see
       // scripts/fetch-fonts.mjs), so a regen with changed bytes yields a NEW url
       // — the immutable 1-year cache is safe and self-busting. fonts.css keeps a
@@ -5086,7 +5151,11 @@ app.use(
 app.get('*', (req, res) => {
   if (path.extname(req.path)) return res.status(404).type('txt').send('Not found');
   res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(path.join(SITE_DIR, 'index.html'));
+  // Inject the import map here too, so the SPA fallback carries hashed module urls
+  // just like a directly-served page.
+  const html = fs.readFileSync(path.join(SITE_DIR, 'index.html'), 'utf8');
+  res.type('html');
+  res.send(moduleAssets.inject(html));
 });
 
 // --- Words-reminder scheduler ---------------------------------------------

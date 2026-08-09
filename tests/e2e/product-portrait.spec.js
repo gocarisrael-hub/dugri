@@ -54,7 +54,9 @@ const NO_STORE_COVER = {
 /** Serve the real catalog plus the portrait design. */
 function withPortraitDesign(page) {
   const catalog = { ...GENERATED, [PORTRAIT_ID]: PORTRAIT_DESIGN };
-  return page.route('**/js/designs.generated.js', (route) =>
+  // The module may be served under a content-hashed name (/js/designs.generated.<hash>.js
+  // via the import map — server/asset-hashing.js), so match both the logical and hashed url.
+  return page.route(/\/js\/designs\.generated(?:\.[0-9a-f]{8})?\.js(?:\?.*)?$/, (route) =>
     route.fulfill({
       contentType: 'application/javascript',
       body: `export const GENERATED = ${JSON.stringify(catalog)};\n`,

@@ -73,7 +73,9 @@ async function stubCutter(page, { succeeds, png }) {
        for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
        return new Blob([a], { type: 'image/png' });
      }`;
-  await page.route('**/js/pawn-cutout.js', (route) =>
+  // pawn-cutout.js is dynamically imported and may be served content-hashed
+  // (/js/pawn-cutout.<hash>.js via the import map — server/asset-hashing.js).
+  await page.route(/\/js\/pawn-cutout(?:\.[0-9a-f]{8})?\.js(?:\?.*)?$/, (route) =>
     route.fulfill({ status: 200, contentType: 'text/javascript', body })
   );
 }
