@@ -253,6 +253,27 @@
         padding: 4px 8px;
         white-space: nowrap;
       }
+      button.act {
+        display: inline-block;
+        font-size: 12.5px;
+        font-weight: 700;
+        background: #fff;
+        border: 1px solid #e4ddd0;
+        color: #4b463d;
+        border-radius: 8px;
+        padding: 4px 8px;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      button.act.ready-on {
+        border-color: #2f9e6b;
+        color: #1c6b48;
+        background: #eaf6f0;
+      }
+      button.act:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
       a.act.wa {
         border-color: #25d366;
         color: #128c3e;
@@ -1158,6 +1179,61 @@
         el('e-photo-file').value = '';
       };
 
+      // "מוכן" — the owner presses this when the deck is printed. It emails the
+      // customer (pickup and delivery say different things) and counts toward the
+      // הודפסו tally on the dashboard.
+      //
+      // A toggle, because she will press the wrong row eventually. Undo asks first
+      // — and says plainly that the customer has already been emailed, because that
+      // part cannot be taken back and a confirmation that implies otherwise would
+      // be a lie at exactly the wrong moment.
+      function readyCell(c) {
+        const td = document.createElement('td');
+        const order = c.order || null;
+        if (!order) {
+          td.className = 'muted';
+          td.textContent = '—';
+          return td;
+        }
+        const isReady = !!order.ready_at;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'act' + (isReady ? ' ready-on' : '');
+        btn.dataset.testid = 'ready-toggle';
+        btn.dataset.collection = c.id;
+        // The label names the NEXT thing that happens to this particular order,
+        // not a generic state: what "ready" means differs by how it ships.
+        btn.textContent = isReady
+          ? 'מוכן ✅'
+          : order.version === 'delivery'
+            ? 'מוכן — יוצא למשלוח'
+            : 'מוכן לאיסוף';
+        if (isReady) btn.title = 'סומן כמוכן ב-' + fmtDate(order.ready_at);
+        btn.onclick = async () => {
+          if (isReady) {
+            const ok = confirm(
+              'לבטל את הסימון "מוכן" עבור ' +
+                (c.honoree_name || 'ההזמנה') +
+                '?\n\n' +
+                'שימו לב: המייל ללקוח/ה כבר נשלח ואי אפשר לבטל אותו. ' +
+                'אם תסמנו שוב — יישלח מייל נוסף.'
+            );
+            if (!ok) return;
+          }
+          btn.disabled = true;
+          const ok = await adminAction('POST', '/api/admin/collections/' + c.id + '/ready', {
+            undo: isReady,
+          });
+          // load() repaints the row AND the הודפסו tally from the server, so the
+          // number always reflects stored state rather than a local increment
+          // that could drift if the write failed.
+          if (ok) load();
+          else btn.disabled = false;
+        };
+        td.appendChild(btn);
+        return td;
+      }
+
       function closeEdit() {
         editing = null;
         dlg.close();
@@ -1263,6 +1339,7 @@
           ['לידים', leads],
           ['הזמנות', orders],
           ['שולמו', paid],
+          ['הודפסו', cols.filter((c) => c.order && c.order.ready_at).length],
           ['הכנסות', revenue + ' ₪'],
           ['ממתינות לתשלום', pending],
         ];
@@ -1305,7 +1382,7 @@
         }
         const table = document.createElement('table');
         table.innerHTML =
-          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>פיונים</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>הפקה</th><th>נוצר</th><th>מעקב</th><th>וואטסאפ</th><th>ניהול</th></tr></thead>';
+          '<thead><tr><th>בעל/ת השמחה</th><th>לקוח</th><th>מילים</th><th>סטטוס</th><th>עיצוב</th><th>צבע</th><th>פיונים</th><th>צ׳ייסרים</th><th>גרסה</th><th>סכום</th><th>כתובת</th><th>תשלום</th><th>הפקה</th><th>מוכן</th><th>נוצר</th><th>מעקב</th><th>וואטסאפ</th><th>ניהול</th></tr></thead>';
         const tb = document.createElement('tbody');
         for (const c of cols) {
           const tr = document.createElement('tr');
@@ -1511,6 +1588,7 @@
           tr.appendChild(tdAddress);
           tr.appendChild(tdPaid);
           tr.appendChild(tdProduction);
+          tr.appendChild(readyCell(c));
           tr.appendChild(tdDate);
 
           // Follow-up: WhatsApp / Call / Email. Each link is shown only when the

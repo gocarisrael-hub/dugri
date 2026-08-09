@@ -1155,6 +1155,36 @@ const db = {
     return session ? { collection: c, session } : null;
   },
 
+  // Admin: flip an order between "being made" and READY — printed, and either
+  // waiting to be collected or about to go out. A toggle, not a one-way latch:
+  // the owner presses it by hand and must be able to take it back when she
+  // presses the wrong row.
+  //
+  // `ready_at` is both the flag and the record of WHEN, which is what makes the
+  // "how many printed" tally on the dashboard countable rather than a separate
+  // number that could drift out of step with the orders themselves.
+  //
+  // Returns { order, changed } — `changed` false when it was already in the
+  // requested state, so the caller can avoid re-sending the customer's email on a
+  // double-tap. Null when there is no such collection or no order on it.
+  setOrderReady(id, ready) {
+    const c = this.getCollection(id);
+    if (!c || !c.order) return null;
+    const want = !!ready;
+    const had = !!c.order.ready_at;
+    if (want === had) return { order: c.order, changed: false };
+    c.order.ready_at = want ? nowIso() : null;
+    saveDb();
+    return { order: c.order, changed: true };
+  },
+
+  // How many orders have been marked ready (i.e. printed). Counted from the
+  // orders themselves rather than kept as a running total, so it can never
+  // disagree with what the list shows — an undo lowers it by construction.
+  countReadyOrders() {
+    return _db.collections.filter((c) => c.order && c.order.ready_at).length;
+  },
+
   // Mark an existing order as paid. Used by the PeleCard callback and the
   // free-coupon path — the only two real money events. Nothing marks an order
   // paid by hand (there is no admin mark-paid route). meta carries the method +

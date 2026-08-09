@@ -1377,6 +1377,37 @@ app.get('/api/collections/:id/board', (req, res) => {
   sendBoardFile(res, c.id);
 });
 
+// Admin: mark an order READY — printed, and either waiting to be collected or
+// about to go out. A toggle: body {ready:false} takes it back.
+//
+// Flipping INTO ready emails the customer. The owner asked for that mail to be
+// re-sent if she undoes and presses again (she would only do that after fixing
+// something, and the customer should hear the corrected version), so there is
+// deliberately NO once-only guard here — `changed` only suppresses a double-tap
+// that didn't actually change anything.
+//
+// The email itself is a separate concern (notify.sendOrderReady + its
+// owner-editable template). It is called defensively so this route works, and the
+// tally stays correct, whether or not that template has shipped yet — a missing
+// mail must never cost the owner the ability to mark an order done.
+app.post('/api/admin/collections/:id/ready', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const ready = !(req.body && req.body.undo);
+  const r = db.setOrderReady(req.params.id, ready);
+  if (!r) return res.status(404).json({ error: 'not found' });
+  if (ready && r.changed && typeof notify.sendOrderReady === 'function') {
+    notify.sendOrderReady(db.getCollection(req.params.id), paymentBaseUrl()).catch(() => {});
+  }
+  res.json({
+    ok: true,
+    ready: !!r.order.ready_at,
+    ready_at: r.order.ready_at || null,
+    // The dashboard tally, recomputed from the orders so the button and the
+    // number can never drift apart.
+    ready_count: db.countReadyOrders(),
+  });
+});
+
 // Admin: soft-cancel a collection (body {undo:true} to restore).
 app.post('/api/admin/collections/:id/cancel', (req, res) => {
   if (!requireAdmin(req, res)) return;
