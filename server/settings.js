@@ -173,6 +173,44 @@ const REGISTRY = {
           'מכאן זה עלינו — אנחנו מתחילים להכין את המשחק, ונעדכן אתכם ברגע שהוא מוכן.',
       },
     },
+    // The BUYER's "your game is ready" mail. Fired by the owner pressing the
+    // ready button on the admin orders page (that button and its route belong to
+    // the orders/commerce side; this module owns only the message). It is the
+    // last word in the flow: buyer_production_started said "we've started", this
+    // one says "it's done".
+    //
+    // The body here is the SHARED half — greeting and closing. What differs
+    // between self-pickup and delivery is a genuinely different promise ("come
+    // and get it" vs "it's on its way"), so those two wordings live in their own
+    // owner-editable map below rather than being branched in code.
+    order_ready: {
+      kind: 'email',
+      tokens: ['honoree'],
+      default: {
+        enabled: true,
+        subject: 'דוגרי · המשחק של {honoree} מוכן',
+        body: 'המשחק של {honoree} מוכן!',
+      },
+    },
+    // The per-fulfilment half of order_ready, one entry per order version, plus
+    // the multi-copy line. Same shape as product_info / delivery_info: a map the
+    // owner edits, so BOTH promises are editable without a deploy.
+    //
+    // The pickup ADDRESS deliberately does not live here — it is read from
+    // pickup_info.address, which already holds it and is already editable. Two
+    // copies of an address drift the moment one is updated and the other isn't.
+    // `copies` is interpolated with {count} and is only ever rendered when the
+    // order is for more than one copy.
+    order_ready_info: {
+      kind: 'map',
+      tokens: ['count'],
+      default: {
+        pickup:
+          'המשחק מודפס ומחכה לכם. לפני שאתם מגיעים לאסוף — תאמו אתנו, כדי שנוודא שהכול מוכן ושיש מי שיקבל אתכם.',
+        delivery: 'המשחק מודפס ויוצא אליכם בימים הקרובים, לכתובת שהשארתם בהזמנה.',
+        copies: '{count} עותקים מוכנים.',
+      },
+    },
     order_finished: {
       kind: 'email',
       tokens: ['honoree'],
@@ -317,6 +355,7 @@ const REGISTRY = {
         addWords: 'להוספת המילים', // buyer payment receipt + words reminder
         updateOrder: 'לעדכון ההזמנה', // production error
         pay: 'להשלמת התשלום', // buyer confirmation + payment reminder
+        viewOrder: 'לצפייה בהזמנה', // order ready — the list is closed, nothing to add
       },
     },
     // The one-line "what happens next" that closes a buyer email, sitting just

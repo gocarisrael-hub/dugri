@@ -130,21 +130,75 @@ describe('emails quote the order number, not the UUID', () => {
     expect(msg.text).not.toContain('מספר הזמנה: 8f3c1a2e');
   });
 
-  // The BUYER's two emails no longer print a reference: they dropped the whole
-  // itemised block in favour of showing the chosen template as a photo. The
-  // reference lives on the owner's copy (above) and on the buyer's own order
-  // page, which every one of their emails links to. Asserted so that if the
-  // itemised block ever comes back it comes back deliberately.
-  it("the buyer's payment receipt carries no order reference", () => {
+  // Buyer emails carry the reference from the payment receipt ONWARD — it is
+  // what a customer quotes when they write to ask about their order. It is the
+  // short number, never the UUID, exactly as on the owner's copy.
+  it("the buyer's payment receipt prints the short number", () => {
     const msg = notify.buildBuyerReceipt(collection(), 'https://dugri.test', {
       amountCharged: 199,
     });
-    expect(msg.text).not.toContain('מספר הזמנה');
+    expect(msg.text).toContain('מספר הזמנה: DG-1042');
+    expect(msg.text).not.toContain('מספר הזמנה: 8f3c1a2e');
   });
 
+  // ...but NOT on the two earliest ones. They arrive before the customer has any
+  // reason to quote a number back at us, and a reference line under a thank-you
+  // reads like an invoice. Asserted so the exclusion stays deliberate.
   it('the buyer order confirmation carries no order reference', () => {
     const msg = notify.buildBuyerConfirmation(collection(), 'https://dugri.test', {});
     expect(msg.text).not.toContain('מספר הזמנה');
+  });
+
+  it('the free-quota notice carries no order reference either', () => {
+    const msg = notify.buildFreeLimitReached(collection(), 'https://dugri.test', 20);
+    expect(msg.text).not.toContain('מספר הזמנה');
+  });
+
+  // Every collection is stamped with an order number the moment it is created,
+  // long before anyone orders anything. So the reference is gated on PAYMENT,
+  // not on the number existing: somebody who only started a free word list must
+  // never be told they have an order DG-1043 that they do not have.
+  describe('nothing quotes a number before the order is paid', () => {
+    const unpaid = () => collection({ order: { version: 'pickup', total: 199, paid: false } });
+    const noOrder = () => collection({ order: null });
+
+    it('the words reminder is silent about it — this is the one that leaked', () => {
+      for (const c of [unpaid(), noOrder()]) {
+        expect(notify.buildWordsReminder(c, 'https://dugri.test').text).not.toContain('מספר הזמנה');
+      }
+    });
+
+    it('so is the payment reminder — it is chasing a payment that has not happened', () => {
+      expect(notify.buildPaymentReminder(unpaid(), 'https://dugri.test').text).not.toContain(
+        'מספר הזמנה'
+      );
+    });
+
+    it('so is a reminder from the owner-managed list', () => {
+      const msg = notify.buildReminderEmail(
+        unpaid(),
+        'עוד מילים על {honoree}',
+        'https://dugri.test'
+      );
+      expect(msg.text).not.toContain('מספר הזמנה');
+    });
+
+    it('and the payment receipt is the FIRST mail that carries it', () => {
+      const before = notify.buildBuyerReceipt(unpaid(), 'https://dugri.test', {});
+      const after = notify.buildBuyerReceipt(collection(), 'https://dugri.test', {});
+      expect(before.text).not.toContain('מספר הזמנה');
+      expect(after.text).toContain('מספר הזמנה: DG-1042');
+    });
+
+    it('and every later mail keeps it once paid', () => {
+      const paid = collection();
+      expect(notify.buildProductionStarted(paid, 'https://dugri.test').text).toContain(
+        'מספר הזמנה: DG-1042'
+      );
+      expect(notify.buildOrderReady(paid, 'https://dugri.test').text).toContain(
+        'מספר הזמנה: DG-1042'
+      );
+    });
   });
 
   it('the {orderId} template token resolves to the short number', () => {
