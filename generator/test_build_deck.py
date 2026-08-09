@@ -807,25 +807,43 @@ def test_the_disc_stops_short_of_the_dashed_cut_line():
     assert build.PHOTO_DISC_FILL >= 0.85, build.PHOTO_DISC_FILL
 
 
-def test_the_photo_s_own_edge_no_longer_cuts_the_sticker_in_a_straight_line():
-    # THE BUG. Real photos run the person off the bottom of the frame, so the
-    # cutout's alpha ends in a ruler-straight line — and the halo traced it. The
-    # subject is now scaled and placed so that edge falls OUTSIDE the disc, which
-    # leaves the bottom of the sticker as a short circular chord instead of a
-    # full-width straight run.
+def _subject_bbox(img, thresh=24):
+    """Bounding box of the visible subject in an output square."""
+    return img.getchannel("A").point(lambda v: 255 if v >= thresh else 0).getbbox()
+
+
+def test_a_subject_that_runs_off_the_photo_is_shrunk_not_cut():
+    # THE OWNER'S RULE: "fit the whole photo in the circle". A subject running
+    # off the bottom of its own frame used to be sized on its WIDTH and pinned
+    # near the top, so its lower half fell outside the disc and the clip cut it —
+    # the two pawns she sent, both sliced flat across the chin. It is now made
+    # small enough to fit whole.
+    #
+    # This REPLACES test_the_photo_s_own_edge_no_longer_cuts_the_sticker_in_a_
+    # straight_line, which asserted the OPPOSITE: that the photo's own straight
+    # edge gets pushed outside the disc, leaving a short chord at the bottom.
+    # That can only be done by cropping the subject, so the two rules are
+    # mutually exclusive; this is the one the owner asked for. The straight edge
+    # now sits inside the circle and the halo traces it — accepted, and written
+    # down in docs/photo-card.md step 2.
     from PIL import Image
     with Store() as tmp:
         src = _cutout(os.path.join(tmp, "c.png"), run_off_bottom=True)
+        with Image.open(src) as im:
+            box = build.subject_box(im.convert("RGBA"))[0]
+        want = (box[3] - box[1]) / float(box[2] - box[0])   # source subject aspect
         out = build.square_photo(src, os.path.join(tmp, "sq"), 0)
         with Image.open(out) as sq:
-            side = sq.size[0]
-            runs = _alpha_runs(sq)
-        opaque_rows = [y for y, r in enumerate(runs) if r > 0]
-        assert opaque_rows, "nothing opaque at all"
-        last = opaque_rows[-1]
-        assert runs[last] < side * 0.35, (
-            f"the bottom row of the sticker is {runs[last]}px of {side} wide — "
-            "that is the photo's own straight edge, not a circular chord")
+            stray = _opaque_outside_disc(sq)
+            seen = _subject_bbox(sq)
+    assert stray == 0, f"{stray} opaque pixels outside the clip disc"
+    assert seen, "nothing opaque at all"
+    got = (seen[3] - seen[1]) / float(seen[2] - seen[0])
+    # A subject cut off at the bottom comes back SHORTER than it went in, which
+    # shows up as a squashed aspect ratio however it was scaled.
+    assert got > want * 0.93, (
+        f"the subject came back {got:.2f} tall per unit wide against {want:.2f} "
+        "in the source — its bottom was cut off rather than scaled to fit")
 
 
 def test_the_blob_nearest_the_centre_wins_and_the_others_are_erased():
@@ -929,6 +947,51 @@ def test_subject_window_may_run_off_the_photo():
     win = build.subject_window((0, 0, 100, 400))
     assert win[0] < 0 and win[1] < 0, win
     assert win[2] - win[0] == win[3] - win[1], win
+
+
+def test_the_window_holds_the_whole_subject_inside_the_disc():
+    # The arithmetic of the rule, without a render: whatever the subject's shape,
+    # its farthest corner from the centre must fall inside the disc the clip will
+    # apply — otherwise the clip takes a bite out of the person.
+    import math
+    for box in ((0, 0, 100, 400), (0, 0, 400, 100), (10, 10, 110, 110),
+                (0, 0, 60, 1000), (0, 0, 1000, 60)):
+        win = build.subject_window(box)
+        side = win[2] - win[0]
+        r_disc = side * build.PHOTO_DISC_FILL / 2.0
+        cx, cy = (win[0] + win[2]) / 2.0, (win[1] + win[3]) / 2.0
+        far = max(math.hypot(x - cx, y - cy)
+                  for x in (box[0], box[2]) for y in (box[1], box[3]))
+        assert far <= r_disc + 1, (box, far, r_disc)
+
+
+def test_the_silhouette_not_the_bounding_box_decides_the_size():
+    # A head fills its box's middle and leaves the corners empty, so sizing on
+    # the box CORNER would shrink the face for room nobody occupies. The reach is
+    # read off the alpha, so a round subject gets a bigger face than its box
+    # would allow — while still fitting whole.
+    from PIL import Image
+    side = 400
+    alpha = Image.new("L", (side, side), 0)
+    from PIL import ImageDraw
+    ImageDraw.Draw(alpha).ellipse([0, 0, side - 1, side - 1], fill=255)
+    box = (0, 0, side, side)
+    corner = build.subject_reach(box)                       # no alpha -> the box
+    silhouette = build.subject_reach(box, alpha)            # the real shape
+    assert silhouette < corner * 0.80, (silhouette, corner)
+    # ...and it still contains the circle it measured (radius side/2).
+    assert silhouette >= side / 2.0, (silhouette, side / 2.0)
+
+
+def test_a_tall_subject_is_scaled_down_rather_than_pinned_to_the_top():
+    # The old rule pinned a too-tall subject near the top of the disc and let the
+    # bottom run out of it. Now the window grows instead, so the subject is
+    # centred and the whole of it is inside.
+    tall = build.subject_window((0, 0, 100, 400))
+    side = tall[2] - tall[0]
+    cy = (tall[1] + tall[3]) / 2.0
+    assert abs(cy - 200) < 1, f"subject not vertically centred in the window: {cy}"
+    assert side > 400, f"the window is no bigger than the subject is tall: {side}"
 
 
 # --- no usable alpha: the head-anchored square, clipped to the disc anyway ---

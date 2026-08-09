@@ -129,14 +129,24 @@ guess about where the head is anywhere in it: with a cutout, the alpha says wher
    `PHOTO_BLOB_MIN_SHARE` (8%) of the biggest are dropped as specks before that choice, so a
    20-pixel scrap at dead centre cannot beat a person. The blob walk runs on a 200 px mask —
    numpy is test-only here, the production image ships `py3-pillow` and nothing else.
-2. **Frame it** — `subject_window()`. A square window sized on the subject's **width**, so a wide
-   subject is never cropped left or right; we know where the top of a person is, we have no such
-   handle on which side of them matters. Vertically, a subject shorter than the disc is centred
-   and a taller one is pinned near the top with `PHOTO_SUBJECT_HEADROOM` (11%) of air above it,
-   the rest running out of the bottom of the circle — which is usually the photo's own edge, i.e.
-   exactly the straight cut we are getting rid of. Past `PHOTO_SUBJECT_MAX_ASPECT` (2:1 wide) the
-   sides are allowed to go rather than shrink the subject to a sliver. The window may fall outside
-   the photo; cropping past the edge pads with transparency, which is what a sticker wants.
+2. **Frame it** — `subject_window()`. A square window sized so the **whole subject fits inside the
+   disc**, centred on it. The size comes from `subject_reach()`: the radius of the smallest circle
+   around the subject's box centre that holds every subject pixel, measured off the **silhouette**
+   (the 200 px mask again) rather than off the bounding box, because a head's box has empty corners
+   and its corner radius over-states the reach by up to 40% — that would shrink the face to leave
+   room nobody occupies. With no alpha to read, the box's own corner radius is the honest answer.
+   Nothing is ever cropped to fit: a subject too big for the disc is made smaller. The window may
+   fall outside the photo; cropping past the edge pads with transparency, which is what a sticker
+   wants.
+
+   **This deliberately gave up something.** It used to size on the subject's _width_, which framed
+   every face at the same size but let a taller-than-wide cutout — most head-and-shoulders photos —
+   run out of the bottom of the circle, where step 3 cut it. The owner has seen that on two printed
+   pawns: _"fit the whole photo in the circle"_. The cost is that a cutout whose alpha ends in a
+   ruler-straight line (the photo's own bottom edge) now shows that edge inside the disc, and the
+   halo traces it. Pushing that edge out of the circle can only be done by cutting the subject, so
+   the two cannot both be had; whole-subject wins.
+
 3. **Clip it** — a disc of `PHOTO_DISC_FILL` × the square, anti-aliased, multiplied into the
    alpha. **Unconditional**: steps 1 and 2 can fail, step 3 never runs a different way.
 
