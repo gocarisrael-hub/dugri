@@ -513,7 +513,7 @@ def test_render_board_chasers_falls_back_when_viewbox_differs():
         # No font I/O: this test is about WHICH board svg is rendered.
         config.resolve_title_font = lambda name: "Cafe-Regular.ttf"
         config.resolve_title_font_alt = lambda name: None
-        rp.title_faces = lambda name, c=None, emit=None: ""
+        rp.title_faces = lambda name, c=None, emit=None, lines=None: ""
         rp.title_block = lambda *a, **k: "<g/>"
         build.render_svg = lambda svg_text, w, h, out: captured.setdefault("svg", svg_text)
 
