@@ -1160,27 +1160,79 @@ const db = {
     return session ? { collection: c, session } : null;
   },
 
+  // Admin: flip an order between "still here" and SENT TO THE PRINT SHOP. The
+  // first of the two hand-pressed production steps: the PDF is generated (that
+  // is `order.production`, which the generator sets by itself), the owner mails
+  // it to the print shop, and she presses this to say she has.
+  //
+  // A status marker and nothing more — it sends no mail to anybody. The print
+  // shop hears from the owner the way it always has; this only records that it
+  // happened, so the orders list can answer "what is out at the printer" and so
+  // `setOrderReady` has something to gate on.
+  //
+  // `sent_to_print_at` is both the flag and the record of WHEN, for the same
+  // reason `ready_at` is: a countable date can never drift out of step with the
+  // orders the way a separate running total could.
+  //
+  // Returns { order, changed, error } — `error` is set instead of unsetting the
+  // flag when the order is already marked ready for the customer, because
+  // "ready" is defined as "back from print" and taking the print stamp out from
+  // under it would leave a state the pipeline cannot produce. The owner un-marks
+  // ready first. Null when there is no such collection or no order on it.
+  setOrderSentToPrint(id, sent) {
+    const c = this.getCollection(id);
+    if (!c || !c.order) return null;
+    const want = !!sent;
+    const had = !!c.order.sent_to_print_at;
+    if (want === had) return { order: c.order, changed: false };
+    if (!want && c.order.ready_at) return { order: c.order, changed: false, error: 'ready' };
+    c.order.sent_to_print_at = want ? nowIso() : null;
+    saveDb();
+    return { order: c.order, changed: true };
+  },
+
   // Admin: flip an order between "being made" and READY — printed, and either
   // waiting to be collected or about to go out. A toggle, not a one-way latch:
   // the owner presses it by hand and must be able to take it back when she
   // presses the wrong row.
   //
+  // GATED ON THE PRINT SHOP. An order is only "ready" once it is back from
+  // Galor, so it cannot be marked ready before it was ever sent — and pressing
+  // this is what emails the customer, which is the one step in the pipeline that
+  // cannot be taken back. The gate lives HERE rather than only in the admin page
+  // because that is what makes it true of the data: a stale tab, a replayed
+  // request or a future caller all meet the same rule.
+  //
   // `ready_at` is both the flag and the record of WHEN, which is what makes the
   // "how many printed" tally on the dashboard countable rather than a separate
   // number that could drift out of step with the orders themselves.
   //
-  // Returns { order, changed } — `changed` false when it was already in the
-  // requested state, so the caller can avoid re-sending the customer's email on a
-  // double-tap. Null when there is no such collection or no order on it.
+  // Returns { order, changed, error } — `changed` false when it was already in
+  // the requested state, so the caller can avoid re-sending the customer's email
+  // on a double-tap; `error: 'not_sent_to_print'` when the gate refused it. Null
+  // when there is no such collection or no order on it.
   setOrderReady(id, ready) {
     const c = this.getCollection(id);
     if (!c || !c.order) return null;
     const want = !!ready;
     const had = !!c.order.ready_at;
     if (want === had) return { order: c.order, changed: false };
+    // Undo is never gated: taking a wrong press back must always be possible,
+    // and it only ever moves the order backwards through the pipeline.
+    if (want && !c.order.sent_to_print_at) {
+      return { order: c.order, changed: false, error: 'not_sent_to_print' };
+    }
     c.order.ready_at = want ? nowIso() : null;
     saveDb();
     return { order: c.order, changed: true };
+  },
+
+  // How many orders are out at the print shop and not yet back — the two stamps
+  // read together, because an order that has come back is no longer "at Galor"
+  // even though its sent stamp stays on it as the record that it went.
+  countSentToPrintOrders() {
+    return _db.collections.filter((c) => c.order && c.order.sent_to_print_at && !c.order.ready_at)
+      .length;
   },
 
   // How many orders have been marked ready (i.e. printed). Counted from the
