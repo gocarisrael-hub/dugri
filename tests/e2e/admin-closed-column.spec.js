@@ -18,8 +18,10 @@ async function seed(request, { name, words = ['א', 'ב'], close = false }) {
 }
 
 // The honoree name of every row, top to bottom — the table's current order.
+// The honoree is the SECOND cell: ניהול leads the row, so the buttons are
+// reachable without scrolling the table sideways.
 const rowNames = (page) =>
-  page.$$eval('tbody tr td:first-child', (tds) => tds.map((td) => td.textContent || ''));
+  page.$$eval('tbody tr td:nth-child(2)', (tds) => tds.map((td) => td.textContent || ''));
 
 test('נסגר shows when the buyer closed her list, and a dash while it is open', async ({
   page,
@@ -98,6 +100,43 @@ test('every phone-card label is the heading of its own column', async ({ page, r
     ),
   }));
   expect(labels).toEqual(heads);
+});
+
+// The owner's layout for this table: the buttons lead, the honoree and the title
+// she typed are read side by side, and four columns she never used are gone. The
+// four are worth pinning by NAME — "הפקה" in particular carried the PDF/board/
+// press controls, and those had to survive its removal (they live in ניהול).
+test('the row leads with ניהול, pairs השמחה with כותרת, and drops the four unused columns', async ({
+  page,
+  request,
+}) => {
+  const name = uniq('סדר');
+  const title = uniq('הכותרת-שלי');
+  await seed(request, { name, close: true });
+  await request.post(`/api/collections`, { data: { honoree_name: name, custom_title: title } });
+
+  await page.goto(`/admin.html?key=${KEY}`);
+  await expect(page.locator('tbody tr').first()).toBeVisible();
+
+  const heads = await page.$$eval('thead th', (ths) => ths.map((th) => th.textContent.trim()));
+  expect(heads[0]).toBe('ניהול');
+  expect(heads[1]).toBe('בעל/ת השמחה');
+  // Adjacent, in that order — the point of the pairing.
+  expect(heads[2]).toBe('כותרת');
+  for (const gone of ['צ׳ייסרים', 'הפקה', 'צבע', 'סכום']) {
+    expect(heads, `${gone} should be gone`).not.toContain(gone);
+  }
+  // Every row still carries exactly one cell per heading.
+  const widths = await page.$$eval('tbody tr', (trs) => trs.map((tr) => tr.children.length));
+  for (const w of widths) expect(w).toBe(heads.length);
+
+  // The production controls did NOT go with "הפקה" — they were always in ניהול,
+  // which is now the first cell.
+  await expect(page.locator('tbody tr td:first-child').first()).toContainText('צור PDF');
+
+  // The buyer's title is shown, in its own cell beside the honoree.
+  const titled = page.locator('tbody tr', { hasText: title }).first();
+  await expect(titled.locator('td:nth-child(3)')).toHaveText(title);
 });
 
 // The buttons the owner reported: squeezed into slivers, one letter per line.

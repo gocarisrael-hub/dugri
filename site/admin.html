@@ -1863,19 +1863,22 @@
       // "לדפוס" and "מוכן" were inserted mid-row while the label list stayed at
       // seventeen entries, so every phone card mislabelled its last five values.)
       const COLUMNS = [
+        // ניהול leads the row: the buttons are what the owner comes to this table
+        // to press, and at the far end they sat behind a horizontal scroll on every
+        // screen narrower than the full column set.
+        ['ניהול', 240],
         ['בעל/ת השמחה', 130],
+        // The buyer's own title, beside the honoree it belongs to — the two are read
+        // together (whose game, and what it says on the card).
+        ['כותרת', 140],
         ['לקוח', 140],
         ['מילים', 60],
         ['סטטוס', 80],
         ['עיצוב', 90],
-        ['צבע', 70],
         ['פיונים', 80],
-        ['צ׳ייסרים', 70],
         ['גרסה', 110],
-        ['סכום', 70],
         ['כתובת', 120],
         ['תשלום', 80],
-        ['הפקה', 130],
         ['לדפוס', 110],
         ['מוכן', 120],
         ['נוצר', 90],
@@ -1883,7 +1886,6 @@
         ['הערה שלי', 200],
         ['מעקב', 110],
         ['וואטסאפ', 120],
-        ['ניהול', 240],
       ];
 
       function render(cols) {
@@ -1939,6 +1941,14 @@
             }
           }
 
+          // The buyer's own title, as it is printed on the cards. Stored user input,
+          // so textContent — never innerHTML — for the same stored-XSS reason as the
+          // honoree name above. A '-' when she left the theme's own title alone,
+          // matching how every other empty cell in this table reads.
+          const tdTitle = document.createElement('td');
+          tdTitle.textContent = c.custom_title || '-';
+          if (!c.custom_title) tdTitle.className = 'muted';
+
           const tdContact = document.createElement('td');
           tdContact.className = 'contact';
           tdContact.textContent = contact;
@@ -1987,9 +1997,6 @@
           const tdDesign = document.createElement('td');
           tdDesign.textContent = c.design || '—';
 
-          const tdColor = document.createElement('td');
-          tdColor.textContent = c.color || '—';
-
           // Optional customer photos ("פיונים"): thumbnails linking to the full
           // image. These are our own /content-uploads/ paths, so they're safe.
           // The thumbnail shows the background-removed CUTOUT when there is one —
@@ -2025,18 +2032,6 @@
             tdPawns.textContent = '—';
           }
 
-          // Optional drinking-game add-on: show a small badge when chosen.
-          const tdChasers = document.createElement('td');
-          if (c.chasers) {
-            const badge = document.createElement('span');
-            badge.className = 'pill closed';
-            badge.textContent = '✓';
-            tdChasers.appendChild(badge);
-          } else {
-            tdChasers.className = 'muted';
-            tdChasers.textContent = '—';
-          }
-
           const tdVersion = document.createElement('td');
           if (order) {
             const label = versionLabel[order.version] || order.version;
@@ -2049,9 +2044,6 @@
           } else {
             tdVersion.textContent = '—';
           }
-
-          const tdTotal = document.createElement('td');
-          tdTotal.textContent = order ? order.total + ' ₪' : '—';
 
           const tdAddress = document.createElement('td');
           tdAddress.textContent =
@@ -2074,74 +2066,25 @@
             tdPaid.textContent = 'לא שולם';
           }
 
-          // Production state ("הפקה"): the outcome of the last generate attempt.
-          // error -> red pill, the problems as tooltip + a one-line summary;
-          // generated -> a keyed download link; pending/none -> a muted dash.
           const prod = (c.order && c.order.production) || c.production || null;
-          const tdProduction = document.createElement('td');
-          if (prod && prod.state === 'error') {
-            const errs = Array.isArray(prod.errors)
-              ? prod.errors
-              : prod.errors
-                ? [prod.errors]
-                : [];
-            const badge = document.createElement('span');
-            badge.className = 'pill prod-error';
-            badge.textContent = 'שגיאה';
-            if (errs.length) badge.title = errs.join('\n');
-            tdProduction.appendChild(badge);
-            if (errs.length) {
-              const small = document.createElement('div');
-              small.className = 'muted';
-              small.textContent = errs[0];
-              tdProduction.appendChild(small);
-            }
-          } else if (prod && prod.state === 'generated') {
-            const a = document.createElement('a');
-            a.className = 'act';
-            a.textContent = 'מוכן ✓';
-            a.href =
-              location.origin +
-              '/api/admin/collections/' +
-              c.id +
-              '/pdf?key=' +
-              encodeURIComponent(key);
-            a.target = '_blank';
-            a.rel = 'noopener';
-            tdProduction.appendChild(a);
-            // The board ships as its OWN file — offer it only when this order
-            // actually produced one (pre-split orders have no board_file).
-            if (prod.board_file) {
-              tdProduction.appendChild(document.createTextNode(' '));
-              tdProduction.appendChild(boardLink(c.id));
-            }
-            tdProduction.appendChild(document.createTextNode(' '));
-            tdProduction.appendChild(pressButton(c.id));
-          } else if (prod && prod.state === 'needs_design') {
-            // Bespoke custom order: paid, awaiting hand-design (no template).
-            const badge = document.createElement('span');
-            badge.className = 'pill prod-error';
-            badge.textContent = 'עיצוב אישי — לעצב';
-            badge.title = 'הזמנה בהתאמה אישית — דורשת עיצוב ידני';
-            tdProduction.appendChild(badge);
-          } else {
-            tdProduction.className = 'muted';
-            tdProduction.textContent = prod && prod.state === 'pending' ? 'ממתין' : '—';
-          }
 
+          // The actions cell is appended LAST (it is built further down, after the
+          // data cells) but must READ first, so the row is opened with a placeholder
+          // and the finished cell is put in its place. Column order here is the
+          // contract with COLUMNS above — the <thead>, the <colgroup> and the phone
+          // layout's per-cell labels all index the same list.
+          const tdActionsSlot = document.createElement('td');
+          tr.appendChild(tdActionsSlot);
           tr.appendChild(tdName);
+          tr.appendChild(tdTitle);
           tr.appendChild(tdContact);
           tr.appendChild(tdCount);
           tr.appendChild(tdStatus);
           tr.appendChild(tdDesign);
-          tr.appendChild(tdColor);
           tr.appendChild(tdPawns);
-          tr.appendChild(tdChasers);
           tr.appendChild(tdVersion);
-          tr.appendChild(tdTotal);
           tr.appendChild(tdAddress);
           tr.appendChild(tdPaid);
-          tr.appendChild(tdProduction);
           tr.appendChild(toPrintCell(c));
           tr.appendChild(readyCell(c));
           tr.appendChild(tdDate);
@@ -2336,26 +2279,6 @@
                 genBtn.disabled = false;
                 const madeBoard = !!(data.production && data.production.board_file);
                 showPdf(madeBoard);
-                // Refresh the "הפקה" cell to its generated state — it was built on
-                // page load and would otherwise stay stale (— / שגיאה) until reload.
-                tdProduction.textContent = '';
-                tdProduction.className = '';
-                const doneLink = document.createElement('a');
-                doneLink.className = 'act';
-                doneLink.textContent = 'מוכן ✓';
-                doneLink.href =
-                  location.origin +
-                  '/api/admin/collections/' +
-                  c.id +
-                  '/pdf?key=' +
-                  encodeURIComponent(key);
-                doneLink.target = '_blank';
-                doneLink.rel = 'noopener';
-                tdProduction.appendChild(doneLink);
-                if (madeBoard) {
-                  tdProduction.appendChild(document.createTextNode(' '));
-                  tdProduction.appendChild(boardLink(c.id));
-                }
               } else {
                 genBtn.textContent = orig;
                 genBtn.disabled = false;
@@ -2454,7 +2377,7 @@
           td.appendChild(document.createTextNode(' '));
           td.appendChild(delBtn);
 
-          tr.appendChild(td);
+          tr.replaceChild(td, tdActionsSlot);
 
           // Any cell holding several actions loose (הפקה, וואטסאפ, ניהול) gets
           // them boxed into one wrapping row. Left as bare children they are
