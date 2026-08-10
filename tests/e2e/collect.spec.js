@@ -802,7 +802,7 @@ test('pricing fetch failure disables pay and offers a refresh (never a guessed p
   await expect(page.locator('#cardPayBtn')).toBeDisabled();
   // Fix #2: the total line must NOT show the PRICING_FALLBACK ₪199 beside the
   // "couldn't load prices" message — no guessed number at all.
-  await expect(page.locator('#payTotal')).toHaveText('—');
+  await expect(page.locator('#payTotal')).toHaveText('-');
   await expect(page.locator('.pay-total')).not.toContainText('199');
 });
 
@@ -839,7 +839,7 @@ test('pay stays disabled (no guessed total) until pricing RESOLVES, then enables
 
   // Before pricing resolves: pay disabled, a "loading prices" note, no number.
   await expect(page.locator('#cardPayBtn')).toBeDisabled();
-  await expect(page.locator('#payTotal')).toHaveText('—');
+  await expect(page.locator('#payTotal')).toHaveText('-');
   await expect(page.locator('#priceLoadErr')).toContainText('טוענים');
 
   // Let pricing resolve — now pay enables at the confirmed live price (249).
