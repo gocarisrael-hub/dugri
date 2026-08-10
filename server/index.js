@@ -144,6 +144,73 @@ function sendBoardFile(res, id) {
   res.sendFile(file);
 }
 
+// THE GENERATOR'S ARGV FOR ONE ORDER, BUILT IN ONE PLACE.
+//
+// Two files come out of this pipeline and a customer can end up holding either:
+// the deck she downloads, and the press sheet the print shop actually prints. They
+// are the same deck, so they have to be ASKED for the same way — and they were
+// not. The press route passed the theme, the name, the words and the title, and
+// nothing else, so the file that got PRINTED silently differed from the file the
+// customer approved by six things at once:
+//
+//   * --photo   — the buyer's own pawn photos never reached the printed card, so
+//                 the press sheet carried four generic pawns instead of her people;
+//   * --field   — {AGE}/{YEARS} unsubstituted in the title;
+//   * --gender  — {m:…|f:…} unresolved, so a girl's deck could print בן;
+//   * --chasers — the drinking-game board she paid for, missing;
+//   * --wordlist— a different seed pool, so DIFFERENT FILLER WORDS on the cards;
+//   * --word-font — the face she picked, ignored.
+//
+// Adding six pushes to the press route would fix today and guarantee the next
+// divergence, because nothing would stop the two lists drifting again. So the
+// argv is built here, once, and each caller appends only what is genuinely its
+// own — the output path it writes to, and (for the press run) the press flags.
+function orderArgs({
+  theme,
+  name,
+  wordsFile,
+  outPath,
+  wordFont,
+  extraFields,
+  chasers,
+  customTitle,
+  wordlist,
+  gender,
+  photos,
+}) {
+  const args = [
+    path.join(REPO_ROOT, 'generator', 'order_to_pdf.py'),
+    theme,
+    name || '',
+    wordsFile,
+    outPath,
+  ];
+  if (wordFont) args.push('--word-font', wordFont);
+  for (const [k, v] of Object.entries(extraFields || {})) {
+    args.push('--field', `${k}=${v}`);
+  }
+  // Chasers add-on: the generator swaps in the theme's chasers board variant
+  // when it ships one (else falls back to the normal board — additive).
+  if (chasers) args.push('--chasers');
+  // Custom title (F7): override the theme-derived title on the cards + board.
+  // --title=<value> (single token) so a title that starts with '-' (e.g. "-40",
+  // "-רווקות") is never parsed by argparse as an option and crash the generator.
+  if (customTitle) args.push('--title=' + customTitle);
+  // Seed-pool override for THIS order: which pool tops the deck up, replacing the
+  // theme's own. `=`-joined for the same reason as --title. The name is validated
+  // against the real pools before it is stored, and the generator's own path
+  // guard bounds it to the two wordlist directories.
+  if (wordlist) args.push('--wordlist=' + wordlist);
+  // Honoree gender: resolves the title's {feminine|masculine} markers, so a
+  // Hebrew birthday title prints בת for a girl and בן for a boy from one
+  // template. Only ever the two validated values.
+  if (gender === 'male' || gender === 'female') args.push('--gender', gender);
+  // The customer's pawn photos for the deck's photo card (v2 templates). A v1
+  // theme ignores them, so passing them is always safe.
+  for (const photo of photos || []) args.push('--photo', photo);
+  return args;
+}
+
 // Spawn the Python generator for one order and resolve { pages } on success.
 // Writes the words to a temp file (cleaned up after), streams the theme +
 // honoree + optional word-font/extra-fields as CLI args, captures stderr for a
@@ -207,42 +274,19 @@ function runGenerator({
     } catch (e) {
       return reject(e);
     }
-    const args = [
-      path.join(REPO_ROOT, 'generator', 'order_to_pdf.py'),
+    const args = orderArgs({
       theme,
       name,
       wordsFile,
-      outPdf,
-    ];
-    if (wordFont) args.push('--word-font', wordFont);
-    for (const [k, v] of Object.entries(extraFields || {})) {
-      args.push('--field', `${k}=${v}`);
-    }
-    // Chasers add-on: the generator swaps in the theme's chasers board variant
-    // when it ships one (else falls back to the normal board — additive).
-    if (chasers) args.push('--chasers');
-    // Custom title (F7): override the theme-derived title on the cards + board.
-    // --title=<value> (single token) so a title that starts with '-' (e.g. "-40",
-    // "-רווקות") is never parsed by argparse as an option and crash the generator.
-    if (customTitle) args.push('--title=' + customTitle);
-    // Seed-pool override for THIS order: which pool tops the deck up, replacing
-    // the theme's own. `=`-joined for the same reason as --title (a name could
-    // begin with '-'). The name is validated against the real pools before it is
-    // stored, and the generator's own path guard bounds it to the two wordlist
-    // directories, so this can never reach an arbitrary file.
-    //
-    // Production only. The wizard PREVIEW deliberately does not take one: it runs
-    // before any order exists, so there is no per-order choice to honour.
-    if (wordlist) args.push('--wordlist=' + wordlist);
-    // Honoree gender: resolves the title's {feminine|masculine} markers, so a
-    // Hebrew birthday title prints בת for a girl and בן for a boy from one
-    // template. Only ever the two validated values (the collection stores
-    // 'male'/'female'/null) — argparse `choices` would kill the run on anything
-    // else, and a title with no marker is unaffected either way.
-    if (gender === 'male' || gender === 'female') args.push('--gender', gender);
-    // The customer's pawn photos for the deck's photo card (v2 templates). A v1
-    // theme ignores them, so passing them is always safe.
-    for (const photo of photos || []) args.push('--photo', photo);
+      outPath: outPdf,
+      wordFont,
+      extraFields,
+      chasers,
+      customTitle,
+      wordlist,
+      gender,
+      photos,
+    });
     const child = spawnGenerator(args);
     let stdout = '';
     let stderr = '';
@@ -1317,20 +1361,29 @@ app.post('/api/admin/collections/:id/press', (req, res) => {
   } catch (e) {
     return res.status(500).json({ error: 'could not start', detail: String(e.message || e) });
   }
-  const args = [
-    path.join(REPO_ROOT, 'generator', 'order_to_pdf.py'),
+  // EXACTLY the argv the customer's own PDF is built from — same helper, same
+  // order, same values, all read from the STORED collection. The press sheet is
+  // the file that gets printed; anything it is not told is a difference between
+  // what she approved and what arrives in the box.
+  const args = orderArgs({
     theme,
-    c.honoree_name || '',
+    name: c.honoree_name || '',
     wordsFile,
     // NOT paths.pdf: the child writes to the partial path, and the server
     // renames it into place only once it verifies (see pressPublish).
-    paths.partial,
-    // The two press modes are separate flags rather than a flag plus an option,
-    // so neither argv can say something untrue: pass-through never names a
-    // profile it will not open (order_to_pdf.py --press / --press-passthrough).
-    ...(cmyk ? ['--press', PRESS_ICC] : ['--press-passthrough']),
-  ];
-  if (c.custom_title) args.push('--title=' + c.custom_title);
+    outPath: paths.partial,
+    wordFont: c.word_font || null,
+    extraFields: validate.effectiveExtraFields(c),
+    chasers: !!c.chasers,
+    customTitle: c.custom_title || null,
+    wordlist: c.wordlist || null,
+    gender: c.gender || null,
+    photos: pawnPhotoFiles(c),
+  });
+  // The two press modes are separate flags rather than a flag plus an option, so
+  // neither argv can say something untrue: pass-through never names a profile it
+  // will not open (order_to_pdf.py --press / --press-passthrough).
+  args.push(...(cmyk ? ['--press', PRESS_ICC] : ['--press-passthrough']));
   const child = spawnGenerator(args, { stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = '';
   child.stderr.on('data', (d) => (stderr += d));
@@ -5366,3 +5419,4 @@ module.exports.buyerLandedInGroup = buyerLandedInGroup;
 // have one, the original otherwise) — exposed so the choice can be asserted
 // directly instead of through a full generation run.
 module.exports.pawnPhotoFiles = pawnPhotoFiles;
+module.exports.orderArgs = orderArgs;
