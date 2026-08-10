@@ -519,6 +519,11 @@ const db = {
       // The buyer's own note to the owner, typed with the order. Never printed —
       // see sanitizeComment. null when she wrote nothing.
       comment: sanitizeComment(contact.comment),
+      // The owner's own note about this order, written in admin. Never set at
+      // creation — nobody has anything to say about an order that is one second
+      // old — but declared here so every collection has the field and no reader
+      // has to guess whether `undefined` means "no note" or "old record".
+      owner_note: null,
       status: 'open',
       created_at: nowIso(),
       expires_at: new Date(Date.now() + YEAR_MS).toISOString(),
@@ -947,6 +952,13 @@ const db = {
     if (has('buyer_name')) c.buyer_name = sanitizeShortText(p.buyer_name);
     if (has('event_type')) c.event_type = sanitizeShortText(p.event_type);
     if (has('comment')) c.comment = sanitizeComment(p.comment);
+    // The OWNER's own note — hers, not the buyer's, and kept in a separate field
+    // for exactly that reason: `comment` is what the customer told us, this is
+    // what we wrote down about her ("waiting on her photo", "reprinted, second
+    // one free"). Merged into one box they become unattributable the first time
+    // anyone reads the order back. Shaped by the same sanitizer, because it is
+    // the same kind of thing — a short free-text note nobody prints.
+    if (has('owner_note')) c.owner_note = sanitizeComment(p.owner_note);
     // Lift (or re-apply) the free word quota for THIS collection only. Admin has
     // deliberately no "mark as paid" — an order becomes paid only through a real
     // payment — so this is the narrow, money-free way to let a particular

@@ -179,6 +179,39 @@
         gap: 6px;
         align-items: center;
       }
+      /* The owner's note, edited in place on the row. Deliberately looks like a
+         field rather than a cell: it invites typing, which a bare bit of text
+         does not, and this only gets used if writing in it is obvious. */
+      .note-box {
+        width: 100%;
+        min-height: 42px;
+        font: inherit;
+        font-size: 12.5px;
+        line-height: 1.35;
+        color: #4b463d;
+        background: #fdfcfa;
+        border: 1px solid #e4ddd0;
+        border-radius: 8px;
+        padding: 5px 7px;
+        resize: vertical;
+      }
+      .note-box:focus {
+        outline: none;
+        border-color: #b9ad97;
+        background: #fff;
+      }
+      .note-box.saving {
+        opacity: 0.6;
+      }
+      /* A green settle on success and a red edge on failure — the only feedback
+         a save-on-blur box can give, since there is no button to change. */
+      .note-box.saved {
+        border-color: #2f9e6b;
+      }
+      .note-box.failed {
+        border-color: #a4443a;
+        background: #fdf5f4;
+      }
       .muted {
         color: #6b645b;
         font-size: 12.5px;
@@ -535,6 +568,13 @@
         td > .followup {
           flex: 1 1 auto;
           justify-content: flex-start;
+        }
+        /* The note is a writing surface, not a value: on a phone card it takes
+           the whole width under its label rather than sharing the line, because
+           a two-line note squeezed into half a card is not writable. */
+        td > .note-box {
+          flex: 1 0 100%;
+          margin-top: 4px;
         }
         /* Cells with no label (e.g. empty ones) shouldn't reserve label space. */
         td:not([data-label])::before {
@@ -1514,6 +1554,80 @@
         return td;
       }
 
+      /* ---- the owner's own note, written on the row ------------------------
+         Hers, not the buyer's. `comment` is what the CUSTOMER told us at
+         checkout and is edited in the עריכת הזמנה dialog beside the rest of her
+         answers; this is what WE wrote down about the order — "waiting on her
+         photo", "reprinted, second one free". Two fields on purpose: merged into
+         one box, nobody reading the order back can tell which of them said it.
+
+         It is written IN THE ROW rather than behind the dialog because the
+         moment a note gets written is a phone call, and a note that costs two
+         clicks and a dialog does not get written at all. Saved on blur — no
+         save button to forget — and only when the text actually changed, so
+         tabbing through the table writes nothing. */
+
+      // Rows with a note box currently focused or holding unsaved text. The
+      // 15-second auto-refresh checks this and skips rather than rebuilding the
+      // table under a half-typed note.
+      const notesInFlight = new Set();
+      function noteBusy() {
+        return notesInFlight.size > 0;
+      }
+
+      function noteCell(c) {
+        const td = document.createElement('td');
+        const box = document.createElement('textarea');
+        box.className = 'note-box';
+        box.rows = 2;
+        box.maxLength = 500;
+        box.placeholder = 'הערה שלי…';
+        box.dataset.testid = 'owner-note';
+        box.dataset.collection = c.id;
+        box.value = c.owner_note || '';
+        // What the server last confirmed. Compared against on blur so an
+        // unchanged note is never written, and so a failed save can put the
+        // box back to the truth rather than leaving a lie on screen.
+        let saved = box.value;
+
+        box.addEventListener('focus', () => notesInFlight.add(c.id));
+        box.addEventListener('blur', async () => {
+          const next = box.value;
+          if (next === saved) {
+            notesInFlight.delete(c.id);
+            return;
+          }
+          box.classList.add('saving');
+          const r = await adminActionResult('PATCH', '/api/admin/collections/' + c.id, {
+            owner_note: next,
+          });
+          box.classList.remove('saving');
+          if (r.ok) {
+            saved = next;
+            // Keep the in-memory row in step, so the next repaint (which reads
+            // allCols, not the DOM) does not put the old note back.
+            c.owner_note = next || null;
+            const row = (allCols || []).find((x) => x.id === c.id);
+            if (row) row.owner_note = next || null;
+            box.classList.add('saved');
+            setTimeout(() => box.classList.remove('saved'), 1200);
+            notesInFlight.delete(c.id);
+          } else {
+            // Keep the row "busy" so the refresh cannot wipe the unsaved text,
+            // and say plainly that it did not save — silently dropping a note
+            // the owner believes she wrote is the worst outcome here.
+            box.classList.add('failed');
+            alert('ההערה לא נשמרה. בדקו את החיבור ונסו שוב — הטקסט עדיין כאן.');
+          }
+        });
+        box.addEventListener('input', () => {
+          notesInFlight.add(c.id);
+          box.classList.remove('failed');
+        });
+        td.appendChild(box);
+        return td;
+      }
+
       function readyCell(c) {
         const td = document.createElement('td');
         const order = c.order || null;
@@ -1766,6 +1880,7 @@
         ['מוכן', 120],
         ['נוצר', 90],
         ['נסגר', 120],
+        ['הערה שלי', 200],
         ['מעקב', 110],
         ['וואטסאפ', 120],
         ['ניהול', 240],
@@ -2031,6 +2146,7 @@
           tr.appendChild(readyCell(c));
           tr.appendChild(tdDate);
           tr.appendChild(tdClosed);
+          tr.appendChild(noteCell(c));
 
           // Follow-up: WhatsApp / Call / Email. Each link is shown only when the
           // underlying contact field exists.
@@ -2494,7 +2610,15 @@
         }
       }
       load();
-      setInterval(load, 15000);
+      // The table repaints itself every 15 seconds, which would tear the note box
+      // out from under whoever is typing in it (and lose the words). A note being
+      // written is the one thing on this page that cannot be rebuilt from the
+      // server, so it wins: the refresh is SKIPPED, not queued, and the next tick
+      // fifteen seconds later picks everything up.
+      setInterval(() => {
+        if (noteBusy()) return;
+        load();
+      }, 15000);
     </script>
   </body>
 </html>
