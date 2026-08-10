@@ -25,6 +25,7 @@ const waState = require('./wa-state');
 const reminders = require('./reminders');
 const faq = require('./faq');
 const wordlists = require('./wordlists');
+const pdfName = require('./pdf-name');
 const wordBank = require('./word-bank');
 const messagePreview = require('./message-preview');
 const storeImport = require('./store-import');
@@ -138,9 +139,12 @@ function sendBoardFile(res, id) {
   const ext = path.extname(file);
   res.setHeader('Content-Type', BOARD_TYPES[ext] || 'application/octet-stream');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  // The name the CUSTOMER sees is ours to choose and reads better hyphenated —
-  // it is not the generator's on-disk name (<id>.board.pdf).
-  res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + id + '-board' + ext + '"');
+  // The name the CUSTOMER sees is ours to choose — it is not the generator's
+  // on-disk name (<id>.board.pdf). It carries the order's TITLE (server/pdf-name.js).
+  res.setHeader(
+    'Content-Disposition',
+    pdfName.contentDisposition(db.getCollection(id), '-board', ext)
+  );
   res.sendFile(file);
 }
 
@@ -1000,7 +1004,7 @@ app.get('/api/admin/collections/:id/pdf', (req, res) => {
   const file = path.join(GENERATED_DIR, c.id + '.pdf');
   if (!fs.existsSync(file)) return res.status(404).json({ error: 'no pdf' });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + c.id + '.pdf"');
+  res.setHeader('Content-Disposition', pdfName.contentDisposition(c));
   res.sendFile(file);
 });
 
@@ -1402,7 +1406,7 @@ app.get('/api/admin/collections/:id/press', (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (mode) res.setHeader('X-Dugri-Press-Mode', mode);
-    res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + c.id + suffix + '"');
+    res.setHeader('Content-Disposition', pdfName.contentDisposition(c, suffix, ''));
     return res.sendFile(paths.pdf);
   }
   if (fs.existsSync(paths.err)) {
@@ -1453,7 +1457,7 @@ app.get('/api/collections/:id/pdf', (req, res) => {
   const file = path.join(GENERATED_DIR, c.id + '.pdf');
   if (!fs.existsSync(file)) return res.status(404).json({ error: 'no pdf' });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', 'attachment; filename="dugri-' + c.id + '.pdf"');
+  res.setHeader('Content-Disposition', pdfName.contentDisposition(c));
   res.sendFile(file);
 });
 

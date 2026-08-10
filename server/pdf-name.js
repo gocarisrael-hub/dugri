@@ -1,0 +1,110 @@
+// pdf-name.js — what an order's downloaded file is called.
+//
+// Every PDF download used to be named after the collection's UUID:
+//
+//     dugri-03a87356-22af-45c7-871c-0ac3c58f1648.pdf
+//
+// which makes a Downloads folder a pile of identical-looking files and, worse,
+// makes the file the owner forwards to the print shop say nothing about whose
+// game is inside it. The owner's rule: name it after the TITLE the customer gave
+// ("i want the pdf name to be the title the clients give"), and fall back to the
+// honoree's name when there is no title.
+//
+// WHY THE ID STAYS ON THE END. Titles are not unique — "Happy birthday" is the
+// obvious one, and two of them download as `…birthday.pdf` and
+// `…birthday (1).pdf`, which the browser numbers in arrival order and the owner
+// cannot tell apart. The failure that invites is sending the print shop the
+// wrong deck, so eight characters of the id ride along. They are the tail, not
+// the name: the title still reads first.
+//
+// HEBREW IS THE WHOLE REASON THIS IS A MODULE. `Content-Disposition:
+// attachment; filename="שירה.pdf"` is not portable — the header is Latin-1 by
+// spec and browsers disagree about what to do with bytes outside it (drop the
+// name, mangle it, or guess an encoding). RFC 5987 solves it with a PAIR: an
+// ASCII fallback in `filename=` for anything old, and the real name percent-
+// encoded in `filename*=UTF-8''…`. Every current browser prefers the second.
+// Almost every title on this store is Hebrew, so the pair is the normal path
+// here, not the exotic one.
+
+// Characters a filesystem or a browser will refuse, plus the ones that end a
+// header value early. Control characters go too — a newline in a header is a
+// response-splitting bug, and a custom title legitimately contains newlines
+// (it is stored as one string with \n between its printed lines).
+const UNSAFE = /[\x00-\x1f\x7f/\\:*?"<>|]/g;
+
+// How much of the title to keep. Long enough to stay recognisable, short enough
+// that the whole filename clears the ~255-byte limit even in UTF-8, where a
+// Hebrew character costs two bytes and percent-encoding costs six per character.
+const MAX_LABEL = 40;
+
+/**
+ * The human part of the filename: the customer's title, else the honoree's name.
+ *
+ * Returns '' when the order has neither, which is a real state — an admin-created
+ * order can carry only an id — and the caller then names the file by id alone,
+ * exactly as every download was named before this existed.
+ */
+function label(collection) {
+  const c = collection || {};
+  // A custom title is stored with '\n' between its printed lines; a filename is
+  // one line, so they are joined with a space rather than dropped.
+  const raw = String(c.custom_title || c.honoree_name || '')
+    .replace(/[\n\r]+/g, ' ')
+    .replace(UNSAFE, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Cap by code point, not by UTF-16 unit: slicing mid surrogate pair emits a
+  // lone surrogate, which percent-encodes into a name the browser rejects.
+  return Array.from(raw).slice(0, MAX_LABEL).join('').trim();
+}
+
+/**
+ * The filename for one order's download.
+ *
+ * `suffix` distinguishes the deck's siblings ('-press', '-board', …) and is
+ * deliberately kept: the press file's suffix is the one thing a filename here
+ * already said on purpose.
+ */
+function fileName(collection, suffix = '', ext = '.pdf') {
+  const c = collection || {};
+  const id = String(c.id || '').slice(0, 8);
+  const name = label(c);
+  const parts = ['dugri', name, id].filter(Boolean);
+  return parts.join('-') + suffix + ext;
+}
+
+// The ASCII fallback, built from an ASCII-ONLY label rather than by mangling the
+// finished name — mangling leaves the punctuation behind ("dugri- - -id.pdf"),
+// which reads as damage rather than as a name. A title with no Latin letters in
+// it therefore degrades to `dugri-<id>.pdf`: the id is what still identifies the
+// file when the name itself could not survive the encoding.
+//
+// Only the oldest readers ever see this. Everything current takes `filename*`.
+function asciiFallback(collection, suffix = '', ext = '.pdf') {
+  const id = String((collection || {}).id || '').slice(0, 8);
+  const ascii = label(collection)
+    .replace(/[^\x20-\x7e]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const usable = /[A-Za-z0-9]/.test(ascii) ? ascii : '';
+  return ['dugri', usable, id].filter(Boolean).join('-') + suffix + ext;
+}
+
+/**
+ * The whole Content-Disposition value, RFC 5987 pair included.
+ *
+ * The ASCII fallback is quoted for the old readers; the real name rides in
+ * `filename*`, percent-encoded, which is what every current browser uses.
+ */
+function contentDisposition(collection, suffix = '', ext = '.pdf') {
+  const utf8 = fileName(collection, suffix, ext);
+  const ascii = asciiFallback(collection, suffix, ext);
+  return (
+    'attachment; filename="' +
+    ascii.replace(/"/g, '') +
+    "\"; filename*=UTF-8''" +
+    encodeURIComponent(utf8)
+  );
+}
+
+module.exports = { label, fileName, asciiFallback, contentDisposition, MAX_LABEL };
