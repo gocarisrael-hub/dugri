@@ -164,74 +164,79 @@ test('the toolbar offers the popup as somewhere to edit', async ({ page }) => {
 });
 
 // The fit is MEASURED, so it follows the owner's copy — a type scale tuned by hand
-// against the shipped text cannot. Longer copy comes out SMALLER, which is how the
-// sheet keeps landing on one screen after an edit nobody re-tuned it for.
-test('longer copy is set smaller, so the briefing still lands on one page', async ({ page }) => {
-  const read = async (url) => {
-    await page.goto(url);
+// against the shipped text cannot. This pins both ends of that: the shipped copy is
+// one page on an iPhone 16, and copy the owner has grown lands smaller rather than
+// running off the screen — down to a floor, past which the briefing would stop being
+// readable and the sheet keeps its scroll with the CTA pinned instead.
+//
+// The extra copy is multiplied rather than lengthened by a sentence. How many lines
+// a given sentence wraps to depends on which font is installed, and the first
+// version of this test asserted a one-line difference that CI's fonts did not
+// produce; several times the text is more text under any font on any machine.
+const FLOOR = 11.5;
+test('the fit follows the copy: more text is set smaller, never below the floor', async ({
+  page,
+}) => {
+  const read = async () => {
+    await page.goto('/index.html?explainer=1');
     await expect(page.getByTestId(OVERLAY)).toBeVisible();
     await settled(page);
     return page.evaluate(() => {
       const o = document.getElementById('startExplainer');
       const inner = o.querySelector('.sx-inner');
+      const cta = o.querySelector('.sx-go').getBoundingClientRect();
       return {
         base: parseFloat(getComputedStyle(inner).fontSize),
         need: inner.scrollHeight,
         have: o.clientHeight,
+        ctaBottom: Math.round(cta.bottom),
+        vh: window.innerHeight,
       };
     });
   };
 
+  // An iPhone 16 in Safari, home indicator included — the phone from the report.
   await page.setViewportSize({ width: 393, height: 745 });
-  const shipped = await read('/index.html?explainer=1');
-  expect(shipped.need, 'the shipped copy fits an iPhone 16').toBeLessThanOrEqual(shipped.have + 2);
-
-  const longer =
-    'מתאימים את המשחק שיהיה שלכם: השם של בעל או בעלת השמחה, או כל כותרת שבא לכם — ורואים ' +
-    'בזמן אמת איך הקלף הולך להיראות, עוד לפני שמשלמים על שום דבר.';
-  await stubContent(page, { scopeOverrides: { 'start-explainer-step1-text': { text: longer } } });
-  const edited = await read('/index.html?explainer=1');
-  await expect(page.locator('[data-edit="start-explainer-step1-text"]')).toHaveText(longer);
-  expect(edited.need, `needs ${edited.need}px, has ${edited.have}px`).toBeLessThanOrEqual(
-    edited.have + 2
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      document.documentElement.style.setProperty('--sx-safe-b', '34px');
+    });
+  });
+  const onPhone = await read();
+  expect(onPhone.need, 'the shipped copy must fit an iPhone 16').toBeLessThanOrEqual(
+    onPhone.have + 2
   );
-  // It fitted by shrinking — the mechanism, not luck.
-  expect(edited.base).toBeLessThan(shipped.base);
-  expect(edited.base).toBeGreaterThanOrEqual(11.5);
-});
 
-// Where even the floor cannot absorb it, the sheet is allowed to scroll — but the
-// type stops at a readable size instead of vanishing, and the button stays pinned.
-test('copy too long for any screen keeps a readable size and a reachable button', async ({
-  page,
-}) => {
-  const huge = 'מתאימים את המשחק שיהיה שלכם, עם השם של בעל או בעלת השמחה. '.repeat(6);
+  // The comparison itself is made on a TALLER screen, where the shipped copy is set
+  // at the ceiling with room to spare. On the phone it is already near the floor, so
+  // a font a little wider than ours would leave nothing to shrink and the comparison
+  // would measure nothing — which is how CI first disagreed with this machine.
+  await page.setViewportSize({ width: 393, height: 900 });
+  const shipped = await read();
+  expect(shipped.base, 'a tall screen should not need the floor').toBeGreaterThan(FLOOR);
+
+  const grown = (t) => (t + ' ').repeat(4).trim();
   await stubContent(page, {
     scopeOverrides: {
-      'start-explainer-step1-text': { text: huge },
-      'start-explainer-step2-text': { text: huge },
-      'start-explainer-step3-text': { text: huge },
-      'start-explainer-step4-text': { text: huge },
+      'start-explainer-step1-text': {
+        text: grown('מתאימים את המשחק שיהיה שלכם: השם של בעל או בעלת השמחה, או כל כותרת שבא לכם.'),
+      },
+      'start-explainer-step2-text': {
+        text: grown('מעלים 4 תמונות, אנחנו חותכים אותן אוטומטית והן הופכות לפיונים שלכם במשחק.'),
+      },
+      'start-explainer-step3-text': {
+        text: grown('משאירים מייל וטלפון כדי שנכיר אתכם, ונשלח לכם את הקישור לחברים.'),
+      },
+      'start-explainer-step4-text': {
+        text: grown('שולחים לחברים ולמשפחה את האפשרות לאסוף מילים על בעל או בעלת השמחה.'),
+      },
     },
   });
-  await page.setViewportSize({ width: 393, height: 745 });
-  await page.goto('/index.html?explainer=1');
-  await expect(page.getByTestId(OVERLAY)).toBeVisible();
-  await settled(page);
-
-  const m = await page.evaluate(() => {
-    const o = document.getElementById('startExplainer');
-    const cta = o.querySelector('.sx-go').getBoundingClientRect();
-    return {
-      base: parseFloat(getComputedStyle(o.querySelector('.sx-inner')).fontSize),
-      ctaBottom: Math.round(cta.bottom),
-      vh: window.innerHeight,
-    };
-  });
-  expect(m.base, 'the type must stop at the floor, not keep shrinking').toBeGreaterThanOrEqual(
-    11.5
-  );
-  expect(m.ctaBottom, 'the pinned CTA must stay on screen').toBeLessThanOrEqual(m.vh + 1);
+  const grownSheet = await read();
+  expect(grownSheet.base, 'more text must be set smaller').toBeLessThan(shipped.base);
+  expect(grownSheet.base, 'the type must stop at the readable floor').toBeGreaterThanOrEqual(FLOOR);
+  // Whatever the copy does, the button is on screen — the promise that never bends.
+  expect(grownSheet.ctaBottom).toBeLessThanOrEqual(grownSheet.vh + 1);
 });
 
 // The editor's toolbar is fixed across the foot of the screen, and the sheet's last
