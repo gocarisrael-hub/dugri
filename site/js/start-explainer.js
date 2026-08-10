@@ -61,7 +61,6 @@
 
   var OVERLAY_ID = 'startExplainer';
   var STYLE_ID = 'dugri-start-explainer-styles';
-  var WA_HREF = 'https://wa.me/972546577715';
   // The content bucket every string in this sheet is stored under, on every page it
   // opens from. A ".html" name because that is what the content store accepts as a
   // key; no such page is ever served.
@@ -113,8 +112,7 @@
     {
       key: 'step4',
       title: 'אוספים מילים',
-      text: 'עכשיו תורכם: שולחים לחברים ולמשפחה את האפשרות לאסוף מילים על בעל או בעלת השמחה. אפשר לפתוח קבוצת וואטסאפ ולהוסיף אותנו - ואנחנו נכניס את המילים לאתר אוטומטית. ואפשר כמובן גם להוסיף אותן ידנית.',
-      wa: 'להוספה לקבוצה: 054-657-7715',
+      text: 'עכשיו תורכם: שולחים לחברים ולמשפחה את הקישור לאיסוף מילים על בעל או בעלת השמחה. כל אחד מוסיף את המילים שלו, ואפשר להוסיף גם בעצמכם בכל רגע.',
     },
   ];
 
@@ -244,20 +242,6 @@
       var p = el('p', null, { 'data-edit': 'start-explainer-' + step.key + '-text' });
       p.textContent = step.text;
       body.appendChild(p);
-      if (step.wa) {
-        // The number lives in its OWN anchor rather than inside the paragraph: the
-        // content editor overwrites textContent, which would swallow a nested link.
-        // This way the owner can reword the label and the href survives.
-        var wa = el('a', 'sx-wa', {
-          href: WA_HREF,
-          target: '_blank',
-          rel: 'noopener',
-          'data-edit': 'start-explainer-' + step.key + '-wa',
-          'data-testid': 'start-explainer-wa',
-        });
-        wa.textContent = step.wa;
-        body.appendChild(wa);
-      }
       if (step.note) {
         var note = el('p', 'sx-note', { 'data-edit': 'start-explainer-' + step.key + '-note' });
         note.textContent = step.note;
@@ -353,8 +337,6 @@
          size in full ink, never small and muted the way it reads here. */
       '.sx-body p.sx-note{margin-top:0.5em;font-size:0.85em;line-height:1.45;',
       'color:var(--muted,#6b6b6b);}',
-      '.sx-wa{display:inline-block;margin-top:0.5em;font-size:0.95em;color:var(--ink,#141414);',
-      'border-bottom:1px solid var(--accent,#b7a389);text-decoration:none;padding-bottom:2px;}',
       /* ONE CTA, at the foot, and ALWAYS on screen. Two rules do that job:
          `margin-top:auto` parks it against the bottom padding when the briefing comes
          up short of the viewport, and `position:sticky;bottom:0` keeps it pinned to

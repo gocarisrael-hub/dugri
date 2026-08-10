@@ -100,9 +100,11 @@ test.describe('the 4-step explainer on the product page', () => {
     await expect(steps.nth(2)).toContainText('להתחיל את המסיבה לפני שהיא התחילה');
     await expect(steps.nth(3)).toContainText('אוספים מילים');
 
-    // Step 4's WhatsApp link is the site's one number.
-    const wa = page.getByTestId('start-explainer-wa');
-    await expect(wa).toHaveAttribute('href', 'https://wa.me/972546577715');
+    // Step 4 no longer asks anyone to add our number to their group — that offer
+    // is what got the business number banned, so neither it nor the number is on
+    // the briefing any more.
+    await expect(page.getByTestId('start-explainer-wa')).toHaveCount(0);
+    await expect(page.getByTestId(OVERLAY)).not.toContainText('054-657-7715');
 
     // Brand rule: never the trademarked word.
     await expect(page.getByTestId(OVERLAY)).not.toContainText('אליאס');
