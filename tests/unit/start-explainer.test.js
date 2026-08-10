@@ -136,13 +136,19 @@ describe('buildOverlay — the briefing markup', () => {
     ]);
   });
 
-  it("keeps the WhatsApp number in its OWN anchor so the editor can't eat the href", () => {
-    const wa = overlay.querySelector('[data-testid="start-explainer-wa"]');
-    expect(wa.getAttribute('href')).toBe('https://wa.me/972546577715');
-    expect(wa.getAttribute('rel')).toBe('noopener');
-    // The step's body copy is a sibling, not the link's parent — so overwriting
-    // either one's textContent leaves the other intact.
-    expect(wa.querySelector('p')).toBeNull();
+  it('does NOT invite anyone to add our number to their group', () => {
+    // The briefing used to end with "open a WhatsApp group and add us — we will
+    // put the words in automatically", above the number. Auto-joining strangers'
+    // groups is what got the business number banned (2026-07-27), so the offer is
+    // gone and so is the number line that carried it.
+    //
+    // This asserts the ABSENCE deliberately: the copy is owner-editable and the
+    // renderer no longer has a place to put a number, so re-adding the offer
+    // means re-adding code, which is the point.
+    expect(overlay.querySelector('[data-testid="start-explainer-wa"]')).toBeNull();
+    const text = overlay.textContent;
+    expect(text).not.toContain('054-657-7715');
+    expect(text).not.toContain('להוסיף אותנו');
   });
 
   it('tags every text node with an owner-editable key', () => {

@@ -113,7 +113,8 @@ test('every string in the sheet is editable, and each has its own key', async ({
   await expect(overlay).toBeVisible();
 
   // Each visible run of text carries a data-edit key: title, subtitle, the four
-  // step titles + texts, the soft-launch note, the WhatsApp line, the button.
+  // step titles + texts, the soft-launch note, the button. There is no longer a
+  // WhatsApp line — step 4 stopped asking buyers to add our number to a group.
   const { keys, untagged } = await overlay.evaluate((root) => {
     const keys = [...root.querySelectorAll('[data-edit]')].map((el) =>
       el.getAttribute('data-edit')
@@ -137,7 +138,8 @@ test('every string in the sheet is editable, and each has its own key', async ({
       'start-explainer-step1-title',
       'start-explainer-step1-text',
       'start-explainer-step1-note',
-      'start-explainer-step4-wa',
+      'start-explainer-step4-title',
+      'start-explainer-step4-text',
     ])
   );
 
