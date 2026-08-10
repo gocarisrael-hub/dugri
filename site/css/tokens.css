@@ -59,6 +59,63 @@
   --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.1), 0 6px 14px rgba(0, 0, 0, 0.05);
 }
 
+/* ============================================================
+   SALE MODE — one owner switch, every surface.
+
+   js/pricing.js applySale() stamps data-sale="on"/"off" on <html> once
+   /api/pricing resolves; these three states decide what every page paints. The
+   rules live HERE, in the one stylesheet every storefront page already links, so
+   a page gets the whole behaviour by calling applySale() — no per-page copy of
+   the hiding logic to keep in sync (collect/options/how carry their own .was
+   styling and still follow the switch).
+
+   The pre-resolve state uses `visibility`, not `display`: the struck price
+   occupies its space from first paint, so turning the sale on doesn't shove the
+   price row sideways. Off uses `display:none` so the row genuinely closes up.
+   ============================================================ */
+html:not([data-sale]) .was {
+  visibility: hidden;
+}
+html[data-sale='off'] .was {
+  display: none;
+}
+/* Flags and the strip are ADDITIONS — absent until the sale is confirmed on. */
+html:not([data-sale='on']) .sale-flag,
+html:not([data-sale='on']) .sale-banner {
+  display: none;
+}
+
+/* The corner flag over a product picture. Its container needs position:relative
+   (each page sets that on its own media box). Ink-filled rather than sand: it
+   sits on photography, where a tint would disappear into a light picture. */
+.sale-flag {
+  position: absolute;
+  top: 0;
+  inset-inline-start: 0;
+  z-index: 2;
+  background: var(--ink);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 6px 11px;
+  pointer-events: none;
+  max-width: 70%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The home-page announcement strip, directly under the fixed header. */
+.sale-banner {
+  background: var(--ink);
+  color: #fff;
+  text-align: center;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  padding: 9px 16px;
+}
+
 /* Scroll-reveal utility: sections fade/rise in as they enter the viewport.
    A tiny observer sets [data-reveal] -> .is-in; motion-safe only. */
 @media (prefers-reduced-motion: no-preference) {

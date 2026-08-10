@@ -146,6 +146,45 @@ function storeValue(key) {
   return Number.isInteger(d) ? d : BAKED_STORE[key];
 }
 
+// --- sale mode ----------------------------------------------------------------
+// The owner's one switch for the whole offer, resolved into what the storefront
+// needs: { on, label, banner }. Two independent conditions must BOTH hold for
+// `on` to be true:
+//
+//   1. the owner turned `sale_on` on, and
+//   2. the struck price is genuinely higher than the price shown (was > now).
+//
+// (2) is not a nicety. `store_was` is display-only and freely editable, so a
+// typo — or a `store_now` raised above a stale `store_was` — would leave the site
+// striking through a price NOBODY is being saved from, i.e. advertising a
+// discount that does not exist. Failing closed here means every surface goes
+// quiet at once, because they all read this one flag.
+//
+// The banner text interpolates {now}/{was}/{saving} from the live prices so it
+// stays true across a price change with no re-edit; an unreadable settings store
+// falls back to the registry defaults, and an empty banner simply means "no
+// strip" (a legal owner choice, not an error).
+function saleInfo() {
+  const now = storeValue('store_now');
+  const was = storeValue('store_was');
+  let on = false;
+  let label = 'מחיר השקה';
+  let banner = '';
+  try {
+    on = settings.get('pricing', 'sale_on') === true;
+    const l = settings.get('pricing', 'sale_label');
+    if (typeof l === 'string') label = l;
+    const b = settings.get('pricing', 'sale_banner');
+    if (typeof b === 'string') {
+      banner = settings.interpolate(b, { now, was, saving: was - now });
+    }
+  } catch {
+    /* settings unavailable — no sale (never claim a discount we can't verify) */
+    return { on: false, label, banner: '' };
+  }
+  return { on: on && was > now, label, banner };
+}
+
 // The single source for the PUBLIC /api/pricing projection AND the charge path:
 // both read these same functions, so what the buyer is SHOWN can never disagree
 // with what the server CHARGES. Shape: { store:{now,was}, versions:{<v>:{enabled,
@@ -157,6 +196,10 @@ function effectivePricing() {
   }
   return {
     store: { now: storeValue('store_now'), was: storeValue('store_was') },
+    // Whether the struck price / picture flags / home strip are shown at all.
+    // `store.was` still travels when the sale is off: the number is display data,
+    // and the client decides what to paint from `sale.on` alone.
+    sale: saleInfo(),
     versions,
     // Charged once per order, not per copy (see deliveryFee). The checkout needs
     // it to show the same arithmetic the server is about to perform.

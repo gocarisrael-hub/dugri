@@ -74,6 +74,9 @@ async function withCardEnabled(page) {
 async function stubPricing(page, pricing) {
   const body = pricing || {
     store: { now: 79, was: 129 },
+    // Sale mode ON: these specs assert the struck was-price, which
+    // css/tokens.css hides unless /api/pricing reports a live sale.
+    sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
     versions: {
       pdf: { enabled: true, price: 79 },
       pickup: { enabled: true, price: 149 },
@@ -427,6 +430,9 @@ test('owner pay panel: all options disabled → paused notice, not a dead-end bu
 }) => {
   await stubPricing(page, {
     store: { now: 199, was: 239 },
+    // Sale mode ON: these specs assert the struck was-price, which
+    // css/tokens.css hides unless /api/pricing reports a live sale.
+    sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
     versions: {
       pdf: { enabled: false, price: 79 },
       pickup: { enabled: false, price: 199 },
@@ -464,6 +470,9 @@ test('owner pay panel: applyPricing preserves an option\'s struck "was" anchor w
       contentType: 'application/json',
       body: JSON.stringify({
         store: { now: 199, was: 239 },
+        // Sale mode ON: these specs assert the struck was-price, which
+        // css/tokens.css hides unless /api/pricing reports a live sale.
+        sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
         versions: {
           pdf: { enabled: true, price: 79 },
           pickup: { enabled: true, price: 149 },
@@ -524,6 +533,9 @@ test('the pay bar carries the price, sticks to the screen and opens the checkout
 }) => {
   await stubPricing(page, {
     store: { now: 199, was: 239 },
+    // Sale mode ON: these specs assert the struck was-price, which
+    // css/tokens.css hides unless /api/pricing reports a live sale.
+    sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
     versions: {
       pdf: { enabled: false, price: 79 },
       pickup: { enabled: true, price: 199 },
@@ -717,6 +729,9 @@ test('launch defaults: checkout offers ONLY self-pickup at ₪199', async ({ pag
   // and not selectable, and the total is the pickup price.
   await stubPricing(page, {
     store: { now: 199, was: 239 },
+    // Sale mode ON: these specs assert the struck was-price, which
+    // css/tokens.css hides unless /api/pricing reports a live sale.
+    sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
     versions: {
       pdf: { enabled: false, price: 79 },
       pickup: { enabled: true, price: 199 },
@@ -807,6 +822,9 @@ test('pay stays disabled (no guessed total) until pricing RESOLVES, then enables
       contentType: 'application/json',
       body: JSON.stringify({
         store: { now: 249, was: 299 },
+        // Sale mode ON: these specs assert the struck was-price, which
+        // css/tokens.css hides unless /api/pricing reports a live sale.
+        sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
         versions: {
           pdf: { enabled: false, price: 79 },
           pickup: { enabled: true, price: 249 },
@@ -837,6 +855,9 @@ test('no version enabled → checkout shows "orders closed", no pay button, no t
   await enableCardButton(page);
   await stubPricing(page, {
     store: { now: 199, was: 239 },
+    // Sale mode ON: these specs assert the struck was-price, which
+    // css/tokens.css hides unless /api/pricing reports a live sale.
+    sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
     versions: {
       pdf: { enabled: false, price: 79 },
       pickup: { enabled: false, price: 199 },
@@ -876,6 +897,9 @@ test("a stored delivery address prefills the checkout form so the buyer isn't fo
   await enableCardButton(page);
   await stubPricing(page, {
     store: { now: 199, was: 239 },
+    // Sale mode ON: these specs assert the struck was-price, which
+    // css/tokens.css hides unless /api/pricing reports a live sale.
+    sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
     versions: {
       pdf: { enabled: false, price: 79 },
       pickup: { enabled: true, price: 199 },
@@ -986,6 +1010,9 @@ test('pay panel shows the new version names and prices', async ({ page }) => {
   // An explicit fee so the tick shows a real shipping price rather than ₪0.
   await stubPricing(page, {
     store: { now: 79, was: 129 },
+    // Sale mode ON: these specs assert the struck was-price, which
+    // css/tokens.css hides unless /api/pricing reports a live sale.
+    sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
     delivery_fee: 39,
     versions: {
       pdf: { enabled: true, price: 79 },
@@ -1979,6 +2006,9 @@ test('shipping is a tick on the printed game, and it is what the server is told'
 }) => {
   await stubPricing(page, {
     store: { now: 199, was: 239 },
+    // Sale mode ON: these specs assert the struck was-price, which
+    // css/tokens.css hides unless /api/pricing reports a live sale.
+    sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
     delivery_fee: 39,
     versions: {
       pdf: { enabled: false, price: 79 },
@@ -2030,6 +2060,9 @@ test('the shipping tick lays out like an option: price on its own end, notes bel
 }) => {
   await stubPricing(page, {
     store: { now: 199, was: 239 },
+    // Sale mode ON: these specs assert the struck was-price, which
+    // css/tokens.css hides unless /api/pricing reports a live sale.
+    sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
     delivery_fee: 39,
     versions: {
       pdf: { enabled: false, price: 79 },
@@ -2043,6 +2076,13 @@ test('the shipping tick lays out like an option: price on its own end, notes bel
 
   // Wait for pricing to RESOLVE before measuring: until it does, applyPricing
   // hides the whole option list, so the tick is legitimately not there yet.
+  //
+  // `#payTotal` alone is NOT that signal: 199 is also the seeded fallback, so a
+  // stub that lost the race reads identical here — and its fallback has delivery
+  // DISABLED, which hides the very tick this test measures. data-sale is
+  // unambiguous: only a resolved payload carrying the stub's live sale sets
+  // "on" (the fallback sets "off"), so this pins the stub, not the seed.
+  await expect(page.locator('html')).toHaveAttribute('data-sale', 'on');
   await expect(page.locator('#payTotal')).toHaveText('199');
   const tick = page.getByTestId('ship-toggle');
   await expect(tick).toBeVisible();

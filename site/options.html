@@ -3798,7 +3798,7 @@
         previewPicture,
         previewPictures,
       } from './js/design-images.js';
-      import { fetchPricing } from './js/pricing.js';
+      import { fetchPricing, applySale } from './js/pricing.js';
       import {
         CARD_CELL,
         cropSvgToCell,
@@ -3925,6 +3925,10 @@
           if (Number.isInteger(p.store.was)) PLANS.base.was = p.store.was;
           paintPlan();
         }
+        // Sale mode governs the wizard's struck price too (css/tokens.css keys
+        // off <html data-sale>): without this call the plan's WAS would stay in
+        // its pre-resolve hidden state and never appear.
+        applySale(p && p.sale);
       });
 
       /* ---- state ---- */

@@ -15,6 +15,9 @@ test.beforeEach(async ({ page }) => {
       contentType: 'application/json',
       body: JSON.stringify({
         store: { now: 199, was: 239 },
+        // Sale mode ON: these specs assert the struck was-price, which
+        // css/tokens.css hides unless /api/pricing reports a live sale.
+        sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
         versions: {
           pdf: { enabled: false, price: 79 },
           pickup: { enabled: true, price: UNIT },

@@ -159,6 +159,51 @@ test.describe('admin pricing editor', () => {
     await resetKey(request, 'store_was');
   });
 
+  // --- sale mode: the owner's one switch for the whole offer -------------------
+  test('the sale card carries the switch and both texts', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== ONLY, 'reads shared pricing state — one project only');
+    await page.goto(`/admin-pricing.html?key=${KEY}`);
+    const card = page.locator('[data-card="sale"]');
+    await expect(card).toBeVisible();
+    await expect(card.locator('[data-flag="sale_on"]')).toBeVisible();
+    await expect(card.locator('[data-text="sale_label"]')).toBeVisible();
+    await expect(card.locator('[data-text="sale_banner"]')).toBeVisible();
+  });
+
+  test('editing the label + turning the sale off persists, and the storefront follows', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== ONLY, 'writes shared pricing state — one project only');
+    await page.goto(`/admin-pricing.html?key=${KEY}`);
+    const card = page.locator('[data-card="sale"]');
+    await expect(card).toBeVisible();
+
+    await card.locator('[data-text="sale_label"]').fill('מבצע קיץ');
+    await card.locator('[data-flag="sale_on"]').uncheck();
+    await card.locator('button[data-save]').click();
+    await expect(page.locator('[data-card="sale"] .status')).toHaveText(/נשמר/);
+    await expect(page.locator('[data-card="sale"] [data-text="sale_label"]')).toHaveValue(
+      'מבצע קיץ'
+    );
+
+    // The switch is what the STOREFRONT reads — assert the public projection, not
+    // just the form: this is the whole point of the feature.
+    const off = await (await request.get('/api/pricing')).json();
+    expect(off.sale.on).toBe(false);
+    expect(off.sale.label).toBe('מבצע קיץ');
+
+    // Back on, and the storefront advertises again.
+    await page.locator('[data-card="sale"] [data-flag="sale_on"]').check();
+    await page.locator('[data-card="sale"] button[data-save]').click();
+    await expect(page.locator('[data-card="sale"] .status')).toHaveText(/נשמר/);
+    const on = await (await request.get('/api/pricing')).json();
+    expect(on.sale.on).toBe(true);
+
+    await resetKey(request, 'sale_on');
+    await resetKey(request, 'sale_label');
+  });
+
   test('opens from the orders-management page nav, carrying the key', async ({ page }) => {
     await page.goto(`/admin.html?key=${KEY}`);
     const link = page.locator('#nav a[data-page="admin-pricing.html"]');

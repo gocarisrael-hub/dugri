@@ -633,7 +633,7 @@
         syncDesignNames,
         loadCustomDesigns,
       } from './js/designs.js';
-      import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
+      import { fetchPricing, applySale, restampSale, PRICING_FALLBACK } from './js/pricing.js';
       import { loadDesignImages, galleryFor, srcsetFor, SIZES } from './js/design-images.js';
       import { defer, watchTrack } from './js/lazy-media.js';
       // Reuse the detail page's override helpers so the grid and PDP can never
@@ -673,6 +673,9 @@
         now.textContent = `מ-${PRICE} ₪`;
         el.appendChild(now);
         const was = document.createElement('s');
+        // .was is what css/tokens.css keys sale mode off — without the class this
+        // struck price would keep showing after the owner ends the sale.
+        was.className = 'was';
         was.textContent = `${WAS} ₪`;
         el.appendChild(was);
       }
@@ -738,6 +741,13 @@
           slide.appendChild(img);
           track.appendChild(slide);
         });
+        // Sale flag over the picture — hidden by tokens.css until applySale
+        // confirms a live sale, so it can never outlive the offer.
+        const flag = document.createElement('span');
+        flag.className = 'sale-flag';
+        flag.setAttribute('data-sale-label', '');
+        flag.textContent = 'מחיר השקה';
+        media.appendChild(flag);
         media.appendChild(track);
         article.appendChild(media);
         lazyTracks.push(watchTrack(track));
@@ -798,6 +808,8 @@
           grid.style.setProperty('--card-aspect', '1 / 1');
       }
 
+      // Every grid repaint builds NEW cards, each with a default-text flag — so
+      // the sale has to be re-stamped onto them (no-op until it resolves).
       function renderGrid(map) {
         try {
           if (!Array.isArray(allDesigns) || !allDesigns.length) throw new Error('empty catalog');
@@ -816,6 +828,7 @@
           if (!frag.childNodes.length) throw new Error('no cards rendered');
           gridAspect();
           grid.replaceChildren(frag);
+          restampSale();
         } catch (err) {
           // Graceful degradation: never leave a blank page — offer the wizard.
           grid.innerHTML =
@@ -919,6 +932,7 @@
         PRICE = p.store.now;
         WAS = p.store.was;
         for (const el of document.querySelectorAll('.product-price')) stampPrice(el);
+        applySale(p.sale);
       });
     </script>
   </body>

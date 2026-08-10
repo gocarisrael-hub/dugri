@@ -33,7 +33,7 @@ import {
 } from './designs.js';
 import { initCarousel } from './carousel.js';
 import { initPinchZoom } from './pinch-zoom.js';
-import { fetchPricing } from './pricing.js';
+import { fetchPricing, applySale } from './pricing.js';
 import { loadDesignImages, galleryFor, srcsetFor, SIZES } from './design-images.js';
 import { defer, watchTrack } from './lazy-media.js';
 
@@ -795,6 +795,9 @@ function boot() {
     PRICE = p.store.now;
     WAS = p.store.was;
     restampPrices();
+    // Sale mode rides on the SAME fetch: it decides whether the struck WAS this
+    // just stamped is shown at all, and paints the flag over the gallery.
+    applySale(p.sale);
   });
 
   // Overlay the owner-editable design names (independent, fail-soft) — see the
