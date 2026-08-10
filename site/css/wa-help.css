@@ -1,0 +1,105 @@
+/* The floating "talk to us on WhatsApp" button.
+ *
+ * Shared by the two buyer pages that carry it — the order wizard (options.html)
+ * and the word-collection page (collect.html) — because it used to be two copies
+ * of the same block, and the copies had already drifted apart (one sat on the
+ * left, one on the right).
+ *
+ * Two rules keep it out of the buyer's way:
+ *
+ * 1. PHYSICAL RIGHT, not the inline start. In this RTL layout the inline start
+ *    is the right, but several controls (the chasers toggle, the consent
+ *    banner's close ×) live at the physical LEFT — the left corner is taken.
+ * 2. Above whatever the page already fixes to the bottom. Each page sets
+ *    --wa-help-bottom to its own clearance: the wizard's Back/Next bar, or just
+ *    a margin on a page with no bar.
+ *
+ * The page is responsible for one more thing the CSS here cannot know: enough
+ * bottom padding under its content that the LAST control can be scrolled clear
+ * of this button.
+ */
+.wa-help {
+  position: fixed;
+  bottom: calc(var(--wa-help-bottom, 20px) + env(safe-area-inset-bottom, 0px));
+  /* Physical right in both directions — this is a corner, not a text flow. */
+  right: 12px;
+  left: auto;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #25d366;
+  color: #fff;
+  border-radius: 0;
+  text-decoration: none;
+  font-family: inherit;
+  font-weight: 800;
+  font-size: 13.5px;
+  line-height: 1;
+  /* A white ring under the shadow. The word-collection page has its own big
+     green "share on WhatsApp" button, and where the two meet, an unringed
+     floating button reads as a piece of it rather than as a separate thing. */
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.92),
+    0 6px 20px rgba(0, 0, 0, 0.28);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.wa-help:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.92),
+    0 10px 26px rgba(0, 0, 0, 0.32);
+}
+/* DOCKED — the wizard's variant. A page with a bar already fixed to the bottom
+ * doesn't need a second floating thing above it: the help rides IN the bar, at
+ * the end away from "הבא". Nothing can be covered, at any step and any scroll
+ * position, because the bar is opaque and the page already reserves its height.
+ * That is worth more than the corner: the wizard is where the buyer taps, and a
+ * floating button there was landing on the design-code box, on the chasers card
+ * and (as tests/e2e/wizard-noscroll.spec.js had already written down) on half of
+ * the first gender option.
+ */
+.wa-help--docked {
+  position: static;
+  inset: auto;
+  flex: 0 0 auto;
+  padding: 14px;
+  box-shadow: none;
+}
+.wa-help--docked:hover {
+  /* No lift inside a row of buttons — only this one would move. */
+  transform: none;
+  box-shadow: none;
+  filter: brightness(0.94);
+}
+.wa-help:focus-visible {
+  outline: 3px solid #141414;
+  outline-offset: 2px;
+}
+.wa-help-ico {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+.wa-help-label {
+  white-space: nowrap;
+}
+/* Phones: the icon alone, in a square the size of a tap target. The content
+   column runs the full width here, so every pixel the button spends on a label
+   is a pixel of somebody's control it can end up sitting on. The link keeps its
+   aria-label, so what it is stays announced. */
+@media (max-width: 700px) {
+  .wa-help {
+    padding: 10px;
+  }
+  .wa-help--docked {
+    padding: 14px;
+  }
+  .wa-help-label {
+    display: none;
+  }
+}
