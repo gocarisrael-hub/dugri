@@ -34,6 +34,7 @@
     />
     <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
     <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/wa-help.css" />
     <style>
       :root {
       }
@@ -3668,56 +3669,18 @@
       }
     </script>
 
-    <!-- Floating WhatsApp help button: contact the owner for help at any step. -->
+    <!-- Floating WhatsApp help button: contact the owner for help at any step.
+         Styling is shared with options.html (/css/wa-help.css); the only thing
+         this page decides is how high off the floor it sits. -->
     <style>
-      .wa-help {
-        position: fixed;
+      :root {
         /* Lifted clear of the pay bar whenever the bar is up. --pay-bar-h is the
            bar's MEASURED height (syncPayBarHeight), not a guess: the bar's copy
            is owner-editable and a longer label wraps it taller, at which point a
            hard-coded offset would put the help button under it. 0 when there is
            no bar, which is every contributor and every paid order. The owner's
            rule: the WhatsApp button is available always. */
-        bottom: calc(20px + env(safe-area-inset-bottom, 0px) + var(--pay-bar-h, 0px));
-        left: 16px;
-        z-index: 60;
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 16px 10px 12px;
-        background: #25d366;
-        color: #fff;
-        border-radius: 0;
-        text-decoration: none;
-        font-family: inherit;
-        font-weight: 800;
-        font-size: 15px;
-        line-height: 1;
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
-        transition:
-          transform 0.15s ease,
-          box-shadow 0.15s ease;
-      }
-      .wa-help:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
-      }
-      .wa-help:focus-visible {
-        outline: 3px solid #141414;
-        outline-offset: 2px;
-      }
-      .wa-help-ico {
-        width: 24px;
-        height: 24px;
-        flex: 0 0 auto;
-      }
-      .wa-help-label {
-        white-space: nowrap;
-      }
-      @media (max-width: 600px) {
-        .wa-help {
-          font-size: 14px;
-        }
+        --wa-help-bottom: calc(16px + var(--pay-bar-h, 0px));
       }
     </style>
     <a
