@@ -1761,8 +1761,11 @@
       // a valid store (the seeded launch defaults on a slow/failed fetch), so the
       // CTA prices never blank.
       import('./js/pricing.js')
-        .then(({ fetchPricing }) => fetchPricing())
-        .then((p) => {
+        .then(({ fetchPricing, applySale }) => fetchPricing().then((p) => ({ p, applySale })))
+        .then(({ p, applySale }) => {
+          // Same one switch as every other surface — the struck CTA prices below
+          // stay hidden until this says the sale is live.
+          applySale(p.sale);
           if (Number.isInteger(p.store.now)) {
             CONFIG.plans.base.sum = p.store.now;
             document

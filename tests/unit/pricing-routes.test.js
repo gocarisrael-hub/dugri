@@ -136,7 +136,10 @@ describe('GET /api/pricing (public)', () => {
     // checkout must know (shipping is charged once per order, not per copy, so
     // the page cannot derive it) — the point of this assertion is that NOTHING
     // ELSE from settings rides along, so it stays an exact list.
-    expect(Object.keys(body).sort()).toEqual(['delivery_fee', 'store', 'versions']);
+    // `sale` is the storefront's display state (on/off + the owner's two
+    // strings), NOT a settings dump — the raw sale_* keys stay server-side.
+    expect(Object.keys(body).sort()).toEqual(['delivery_fee', 'sale', 'store', 'versions']);
+    expect(Object.keys(body.sale).sort()).toEqual(['banner', 'label', 'on']);
     // Exactly the four known versions, each just { enabled, price }.
     expect(Object.keys(body.versions).sort()).toEqual(['custom', 'delivery', 'pdf', 'pickup']);
     for (const v of Object.values(body.versions)) {

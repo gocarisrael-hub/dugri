@@ -27,6 +27,12 @@ export const PRICING_FALLBACK = {
   // fallback: a guessed fee would be a guessed CHARGE, and the checkout must
   // never show a number the server did not send.
   delivery_fee: 0,
+  // Sale mode OFF in the fallback, on purpose. Every other fallback number is a
+  // price we are willing to SHOW; a sale is a CLAIM ("this used to cost more"),
+  // and a claim we could not read from the server is one we must not make. The
+  // cost of being wrong here is asymmetric: hiding a real sale for a moment is a
+  // missed nudge, showing a sale that ended is a false discount.
+  sale: { on: false, label: 'מחיר השקה', banner: '' },
 };
 
 // A well-formed pricing payload: store.now/was are integers AND every known
@@ -44,6 +50,21 @@ function isValidPricing(j) {
   return true;
 }
 
+// Normalise the payload's optional `sale` block. It is optional so an OLDER
+// server (deployed before sale mode) still answers a payload this client accepts
+// — it simply reports no sale. A malformed block is treated the same way: `on`
+// must be a real boolean, and the strings must be strings, or we fall back to
+// "no sale" rather than painting `undefined` into a label.
+function saleOf(j) {
+  const s = j && j.sale;
+  if (!s || s.on !== true) return { ...PRICING_FALLBACK.sale };
+  return {
+    on: true,
+    label: typeof s.label === 'string' && s.label ? s.label : PRICING_FALLBACK.sale.label,
+    banner: typeof s.banner === 'string' ? s.banner : '',
+  };
+}
+
 export async function fetchPricing(timeoutMs = 2500) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -57,6 +78,7 @@ export async function fetchPricing(timeoutMs = 2500) {
         versions: j.versions,
         // Optional: an older server (or one whose settings read failed) omits it.
         delivery_fee: Number.isInteger(j.delivery_fee) ? j.delivery_fee : 0,
+        sale: saleOf(j),
         ok: true,
       };
     }
@@ -66,9 +88,60 @@ export async function fetchPricing(timeoutMs = 2500) {
       store: { ...PRICING_FALLBACK.store },
       versions: JSON.parse(JSON.stringify(PRICING_FALLBACK.versions)),
       delivery_fee: PRICING_FALLBACK.delivery_fee,
+      sale: { ...PRICING_FALLBACK.sale },
       ok: false,
     };
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// The last resolved sale, kept so a page that REPAINTS its cards after the fetch
+// can re-stamp the new nodes. The store grid rebuilds when custom designs land
+// and when the image map resolves; the home rail rebuilds and clones cards for
+// its endless loop. Those fresh flags carry the markup's default text, so
+// without a re-stamp the owner's own label silently reverts on repaint.
+let resolved = null;
+
+// Paint the resolved sale state onto the page. ONE call per page, right where
+// the prices are stamped, and every sale-dependent element follows — because the
+// switch travels as an ATTRIBUTE on <html> and css/tokens.css does the hiding:
+//
+//   no [data-sale] yet  — the struck price is INVISIBLE (space reserved), flags
+//                         and the strip are absent. This is the pre-fetch state
+//                         every page ships in, so a shopper never sees a
+//                         struck-through price flash up and then be taken away
+//                         (or worse, one that the server says has ended).
+//   [data-sale="on"]    — struck price, picture flags and the strip all show.
+//   [data-sale="off"]   — the struck price is REMOVED from the layout entirely,
+//                         so the row closes up around the single live price.
+//
+// Text goes in via textContent, never innerHTML: these strings are owner input
+// travelling through a public endpoint, and a label is not a place for markup.
+export function applySale(sale, doc = document) {
+  resolved = sale && sale.on ? sale : null;
+  paintSale(sale, doc);
+}
+
+// Re-stamp AFTER a repaint. Deliberately a no-op until a sale has resolved: it
+// must never be able to stamp data-sale early and expose the pre-resolve state
+// as a decision.
+export function restampSale(doc = document) {
+  if (resolved) paintSale(resolved, doc);
+}
+
+function paintSale(sale, doc) {
+  const on = !!(sale && sale.on);
+  doc.documentElement.setAttribute('data-sale', on ? 'on' : 'off');
+  if (!on) return;
+  for (const el of doc.querySelectorAll('[data-sale-label]')) {
+    el.textContent = sale.label || PRICING_FALLBACK.sale.label;
+  }
+  // An empty banner is the owner keeping the sale but dropping the strip, so the
+  // element stays hidden rather than rendering an empty bar.
+  for (const el of doc.querySelectorAll('[data-sale-banner]')) {
+    const text = sale.banner || '';
+    el.textContent = text;
+    el.hidden = !text;
   }
 }

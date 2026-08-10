@@ -923,6 +923,9 @@
              assets/products/<id>/1.jpg, 2.jpg, 3.jpg… (update galleryPhotos()
              in js/product.js to point at them). -->
         <section class="pdp-gallery" data-testid="pdp-gallery" aria-label="גלריית תמונות המוצר">
+          <!-- Sale flag over the picture. Hidden by css/tokens.css until
+               js/pricing.js applySale() confirms a live sale. -->
+          <span class="sale-flag" data-sale-label data-testid="sale-flag">מחיר השקה</span>
           <div id="galleryTrack">
             <!-- gallery slides injected by js/product.js -->
           </div>

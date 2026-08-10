@@ -85,6 +85,8 @@ function interpolate(template, values, opts) {
 //   'price'  — a non-negative integer NIS amount (store price / per-version price).
 //   'count'  — a non-negative integer quantity (the free word quota).
 //   'flag'   — a boolean on/off switch (a checkout version's enabled state).
+//   'text'   — a short SINGLE-LINE string (a storefront label / announcement),
+//              bounded by the key's `max` (default 120 chars).
 //   'faq'    — the owner-managed home-page question ARRAY (server/faq.js).
 const REGISTRY = {
   email: {
@@ -517,6 +519,34 @@ const REGISTRY = {
   pricing: {
     store_now: { kind: 'price', tokens: [], default: 199 },
     store_was: { kind: 'price', tokens: [], default: 239 },
+    // --- sale mode: ONE switch for the whole offer ------------------------------
+    // Flipped on, every storefront surface shows the same offer at once: the
+    // struck `store_was` price wherever a price is printed, a "מחיר השקה" flag on
+    // each product picture, and the announcement strip on the home page. Flipped
+    // off, all three disappear together and only `store_now` is shown — so ending
+    // a sale is one click, not a hunt through six pages for the piece each one
+    // carries.
+    //
+    // The switch alone does NOT make a sale: db.saleInfo() also requires
+    // store_was > store_now. A struck price that isn't actually higher than what
+    // we charge advertises a discount that does not exist, and no admin switch
+    // should be able to put that in front of a buyer.
+    //
+    // Default true — it is the state the storefront already ships in (199 struck 239),
+    // so this key appearing changes nothing until the owner turns it off.
+    sale_on: { kind: 'flag', tokens: [], default: true },
+    // The flag text on the product pictures. Short by design: it renders in a
+    // corner tab over the photo, and anything longer covers the product.
+    sale_label: { kind: 'text', max: 40, tokens: [], default: 'מחיר השקה' },
+    // The home-page strip. {now}/{was}/{saving} are filled from the live store
+    // prices, so the strip stays true after a price change with no re-edit. An
+    // EMPTY value is meaningful: it drops the strip while leaving the sale on.
+    sale_banner: {
+      kind: 'text',
+      max: 120,
+      tokens: ['now', 'was', 'saving'],
+      default: 'מחיר השקה · {now} ₪ במקום {was} ₪',
+    },
     pdf_enabled: { kind: 'flag', tokens: [], default: false },
     pdf_price: { kind: 'price', min: 1, tokens: [], default: 79 },
     pickup_enabled: { kind: 'flag', tokens: [], default: true },
@@ -813,6 +843,19 @@ function validateValue(section, key, value) {
     // 1/0, null, {}, []) so the wizard's gate condition is never truthy-by-
     // accident from a mis-typed override.
     if (typeof value !== 'boolean') return 'value must be a boolean';
+    return null;
+  }
+  if (kind === 'text') {
+    // A short single-line storefront string (sale label / announcement strip).
+    // Newlines are rejected because these render in one-line slots — a pasted
+    // paragraph would blow the strip's height apart — and the length is bounded
+    // so a paste can't push an essay across the top of the home page. An EMPTY
+    // string is DELIBERATELY legal: it is how the owner drops the banner without
+    // turning the whole sale off.
+    if (typeof value !== 'string') return 'value must be a string';
+    if (/[\r\n]/.test(value)) return 'value must be a single line';
+    const max = Number.isInteger(spec.max) ? spec.max : 120;
+    if (value.length > max) return 'value must be at most ' + max + ' characters';
     return null;
   }
   if (kind === 'choice') {

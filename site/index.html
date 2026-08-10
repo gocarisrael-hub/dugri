@@ -524,6 +524,8 @@
         transform: translateY(-4px);
       }
       .home-prod-thumb {
+        /* relative: the sale flag pins to this box's leading top corner */
+        position: relative;
         aspect-ratio: 841.92 / 595.5;
         width: 100%;
         border-radius: 14px;
@@ -932,6 +934,20 @@
       </nav>
     </header>
 
+    <!-- SALE STRIP. Ships hidden and empty: js/pricing.js applySale() fills the
+         owner's text and reveals it only when /api/pricing reports a live sale,
+         so a page loaded after the sale ended never flashes the offer. It is the
+         first in-flow element (body clears the fixed header), so it reads before
+         the hero without covering it. -->
+    <div
+      class="sale-banner"
+      id="saleBanner"
+      data-sale-banner
+      data-testid="sale-banner"
+      role="status"
+      hidden
+    ></div>
+
     <!--
       HERO: full-bleed, swipeable, auto-rotating slideshow (js/carousel.js).
       Backgrounds are real customer/product photos (assets/hero-1.jpg /
@@ -1111,7 +1127,7 @@
     <script type="module">
       import { initCarousel } from './js/carousel.js';
       import { PUBLIC_DESIGNS, syncDesignNames, loadCustomDesigns } from './js/designs.js';
-      import { fetchPricing } from './js/pricing.js';
+      import { fetchPricing, applySale, restampSale, PRICING_FALLBACK } from './js/pricing.js';
       import { initFaq } from './js/faq.js';
       import { loadDesignImages, galleryFor, srcsetFor, SIZES } from './js/design-images.js';
       import { defer, watchTrack } from './js/lazy-media.js';
@@ -1135,7 +1151,22 @@
       // Owner-editable store price. Seeded with the launch default so the rail is
       // never blank; re-stamped once /api/pricing resolves (timeout-bounded,
       // fail-safe — a slow/failed fetch keeps the default).
-      let PRICE = 199;
+      // Seeded from the shared client fallback (pricing.js owns the launch
+      // defaults — no page re-declares them).
+      let PRICE = PRICING_FALLBACK.store.now;
+      let WAS = PRICING_FALLBACK.store.was;
+      // Stamp one rail card's price: the live price, then the struck was-price as
+      // its CHILD. ONE definition, used by the first paint and by the re-stamp
+      // after /api/pricing resolves — two copies drifted apart the moment the
+      // struck price was added (the re-stamp's textContent assignment wiped it).
+      function stampRailPrice(el) {
+        el.textContent = `${PRICE} ₪`;
+        const was = document.createElement('s');
+        was.className = 'was';
+        was.textContent = `${WAS} ₪`;
+        el.appendChild(was);
+      }
+
       // Short label: the design name trimmed to ≤3 words.
       const shortLabel = (name) =>
         String(name || '')
@@ -1188,7 +1219,15 @@
           name.textContent = shortLabel(d.name);
           const price = document.createElement('span');
           price.className = 'home-prod-price';
-          price.textContent = `${PRICE} ₪`;
+          stampRailPrice(price);
+          // The corner flag is the other half of the rail's sale mode. Both it and
+          // the struck price are inert until applySale says the sale is live
+          // (css/tokens.css) — nothing here decides that.
+          const flag = document.createElement('span');
+          flag.className = 'sale-flag';
+          flag.setAttribute('data-sale-label', '');
+          flag.textContent = 'מחיר השקה';
+          thumb.appendChild(flag);
 
           card.append(thumb, name, price);
           return card;
@@ -1216,6 +1255,9 @@
           // exactly like an original — cloneNode copies attributes but not
           // listeners, which is why nothing here is a per-image listener.
           railLazy = watchTrack(productsTrack);
+          // After the clones exist too: every card here is freshly built with a
+          // default-text flag, so a resolved sale has to be re-stamped onto them.
+          restampSale();
         }
 
         // An admin rename edits themes.json display_he, which lands long after this
@@ -1340,9 +1382,9 @@
       // sum used by the classic CONFIG script below, via the window hook it exposes.
       fetchPricing().then((p) => {
         PRICE = p.store.now;
-        for (const el of document.querySelectorAll('.home-prod-price')) {
-          el.textContent = `${PRICE} ₪`;
-        }
+        WAS = p.store.was;
+        for (const el of document.querySelectorAll('.home-prod-price')) stampRailPrice(el);
+        applySale(p.sale);
         if (typeof window.dugriSetPlanSum === 'function') window.dugriSetPlanSum(p.store.now);
       });
 

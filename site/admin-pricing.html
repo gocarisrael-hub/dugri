@@ -357,6 +357,72 @@
         );
       }
 
+      // --- a single short-text field ---------------------------------------------
+      // For the sale label / banner. `hint` is the small note under the input (the
+      // banner's {tokens}); maxlength mirrors the server bound so the owner is
+      // stopped at the keyboard rather than by a failed save.
+      function textFieldHtml(k, label, value, max, hint) {
+        return (
+          '<label class="fld">' +
+          esc(label) +
+          '</label>' +
+          '<input type="text" maxlength="' +
+          esc(max) +
+          '" data-text="' +
+          esc(k) +
+          '" value="' +
+          esc(value) +
+          '" />' +
+          (hint ? '<p class="hint">' + hint + '</p>' : '')
+        );
+      }
+
+      // --- sale card (sale_on + sale_label + sale_banner) -------------------------
+      // ONE switch for the whole offer. The hint spells out what the switch moves,
+      // because the pieces live on pages the owner isn't looking at while flipping
+      // it — and spells out the condition the server enforces on top of it: with
+      // "מחיר לפני" not higher than "מחיר מוצג", nothing shows however the switch
+      // is set (we don't strike through a price nobody is saved from).
+      function saleCardHtml(eff) {
+        const on = !!eff.sale_on;
+        const real = eff.store_was > eff.store_now;
+        return (
+          '<div class="card' +
+          (on ? '' : ' off') +
+          '" data-card="sale" data-keys="sale_on,sale_label,sale_banner">' +
+          '<div class="card-head"><h3 class="card-title">מבצע / מחיר השקה</h3>' +
+          '<span class="card-id">pricing.sale</span></div>' +
+          '<label class="toggle"><input type="checkbox" data-flag="sale_on"' +
+          (on ? ' checked' : '') +
+          ' /> המבצע פעיל</label>' +
+          textFieldHtml('sale_label', 'תווית על התמונות', eff.sale_label, 40) +
+          textFieldHtml(
+            'sale_banner',
+            'רצועת הודעה בדף הבית',
+            eff.sale_banner,
+            120,
+            'אפשר להשתמש ב-<code>{now}</code> (מחיר מוצג), <code>{was}</code> (מחיר לפני) ' +
+              'ו-<code>{saving}</code> (ההפרש) — הם מתעדכנים לבד כשמשנים מחיר. ' +
+              'שדה ריק = בלי רצועה, והמבצע נשאר פעיל.'
+          ) +
+          '<p class="hint">כשהמבצע פעיל מופיעים <b>יחד</b>: המחיר המחוק בכל העמודים, ' +
+          'התווית על תמונות המוצר, והרצועה בדף הבית. כיבוי המתג מוריד את שלושתם בבת אחת.' +
+          (real
+            ? ''
+            : ' <b>שימו לב:</b> “מחיר לפני” (' +
+              esc(eff.store_was) +
+              ' ₪) אינו גבוה מ“מחיר מוצג” (' +
+              esc(eff.store_now) +
+              ' ₪), ולכן שום דבר לא יוצג גם כשהמתג דלוק.') +
+          '</p>' +
+          '<div class="actions">' +
+          '<button class="primary" data-save type="button">שמירה</button>' +
+          '<button class="danger" data-reset type="button">אפס לברירת מחדל</button>' +
+          '<span class="meta status" role="status" aria-live="polite"></span>' +
+          '</div></div>'
+        );
+      }
+
       // --- store price card (store_now + store_was) ------------------------------
       function storeCardHtml(eff) {
         return (
@@ -465,7 +531,7 @@
 
       function render() {
         const eff = state.effective.pricing;
-        qs('storeCards').innerHTML = storeCardHtml(eff);
+        qs('storeCards').innerHTML = storeCardHtml(eff) + saleCardHtml(eff);
         qs('versionCards').innerHTML = VERSIONS.map((v) => versionCardHtml(v, eff)).join('');
         qs('shippingCards').innerHTML = shippingCardHtml(eff);
         qs('quotaCards').innerHTML = quotaCardHtml(eff);
@@ -485,11 +551,13 @@
         const html =
           id === 'store'
             ? storeCardHtml(eff)
-            : id === 'quota'
-              ? quotaCardHtml(eff)
-              : id === 'shipping'
-                ? shippingCardHtml(eff)
-                : versionCardHtml(byId(id), eff);
+            : id === 'sale'
+              ? saleCardHtml(eff)
+              : id === 'quota'
+                ? quotaCardHtml(eff)
+                : id === 'shipping'
+                  ? shippingCardHtml(eff)
+                  : versionCardHtml(byId(id), eff);
         card.outerHTML = html;
       }
       function byId(id) {
@@ -512,6 +580,11 @@
         }
         for (const inp of card.querySelectorAll('[data-flag]')) {
           values[inp.dataset.flag] = inp.checked;
+        }
+        // Short text (sale label / banner). Trimmed, and NOT rejected when empty —
+        // an empty banner is how the owner drops the strip while keeping the sale.
+        for (const inp of card.querySelectorAll('[data-text]')) {
+          values[inp.dataset.text] = inp.value.trim();
         }
         return { values };
       }

@@ -1837,7 +1837,7 @@
       // word and never say so. server/validate.js enforces the same rule.
       import { hasEmoji, wordEmojiMessage, splitByEmoji, batchEmojiMessage } from './js/emoji.js';
       import { track } from './js/analytics.js';
-      import { fetchPricing, PRICING_FALLBACK } from './js/pricing.js';
+      import { fetchPricing, applySale, PRICING_FALLBACK } from './js/pricing.js';
 
       const params = new URLSearchParams(location.search);
       const id = params.get('c');
@@ -3305,6 +3305,10 @@
             // (or, on failure, no) price, so pay may leave the held-disabled state.
             pricingResolved = true;
             applyPricing();
+            // The struck full price on each pay option follows the owner's sale
+            // switch like every other surface (css/tokens.css). Called on every
+            // (re)load so a retry after a failed fetch paints the right state.
+            applySale(p.sale);
           });
         }
         const retryBtn = priceErr && priceErr.querySelector('[data-role="retry"]');
