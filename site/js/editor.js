@@ -54,6 +54,12 @@
   // The site's editable pages, in toolbar order. The page picker lets the owner
   // jump between them WITHOUT leaving edit mode. Each `page` is the html filename
   // the server serves (matches <meta name="dugri:page">); `label` is the RTL name.
+  // An entry may also carry `open`: a query flag the target page reads to put a
+  // POPUP on screen. The 4-step order explainer is a full-page sheet that only
+  // exists once a shopper clicks a wizard CTA — and in edit mode that click is
+  // swallowed (the CTA is itself editable text, so clicking it places a caret),
+  // which left the whole briefing unreachable and therefore uneditable. Listing it
+  // here is what gives the owner a door into it.
   var EDITABLE_PAGES = [
     { page: 'index.html', label: 'בית' },
     { page: 'options.html', label: 'הזמנה' },
@@ -62,16 +68,35 @@
     { page: 'products.html', label: 'מוצרים' },
     { page: 'product.html', label: 'מוצר' },
     { page: 'timer.html', label: 'טיימר' },
+    { page: 'index.html', label: 'חלון ההסבר', open: 'explainer' },
   ];
 
   // Build the URL that lands the owner on `page` STILL in edit mode: keep ?edit=1
   // and carry the key forward (?key=) so the picker preserves the owner session.
   // encodeURIComponent keeps a stray char from breaking the query or an [attr]
-  // when the value is embedded in the toolbar's option markup.
-  function pageEditUrl(page, key) {
+  // when the value is embedded in the toolbar's option markup. `open` is the
+  // optional popup flag described above (…&explainer=1).
+  function pageEditUrl(page, key, open) {
     var url = page + '?edit=1';
     if (key) url += '&key=' + encodeURIComponent(key);
+    if (open) url += '&' + encodeURIComponent(open) + '=1';
     return url;
+  }
+
+  // Which popup flag (if any) the CURRENT url is carrying, so the picker can show
+  // the explainer entry as selected while the owner is in it — two entries share
+  // index.html, and without this the plain "בית" one would always look current.
+  function openFlag(searchStr, pages) {
+    var params = new URLSearchParams(searchStr || '');
+    var flags = (pages || EDITABLE_PAGES)
+      .map(function (p) {
+        return p.open;
+      })
+      .filter(Boolean);
+    for (var i = 0; i < flags.length; i += 1) {
+      if (params.get(flags[i]) === '1') return flags[i];
+    }
+    return '';
   }
 
   // The URL to leave edit mode: drop ?edit (reload as a normal visitor) but keep
@@ -220,6 +245,77 @@
     });
   }
 
+  // ---- shared content scopes -------------------------------------------------
+  // Overrides are stored per page, which is right for a page's own copy and wrong
+  // for content that APPEARS on several pages: the order explainer is one popup
+  // opened from index, products and product, so per-page storage meant editing the
+  // same sentence three times and an edit on one page never reaching the other two.
+  //
+  // A container marks its subtree with data-edit-scope="<bucket>.html"; everything
+  // inside it reads that bucket and, in edit mode, writes to it. Buckets are
+  // ordinary content pages as far as the server is concerned (no such page is ever
+  // served), so nothing new had to be taught to the store.
+  //
+  // The PAGE's own overrides are still applied first. That is the migration path:
+  // copy the owner edited before this existed keeps showing from wherever she
+  // edited it, and the first edit made now writes to the shared bucket, which wins
+  // from then on — everywhere.
+  var _scopes = {}; // bucket -> overrides ({} once fetched, absent while unknown)
+
+  function scopeBuckets(root) {
+    var out = [];
+    if (!root || !root.querySelectorAll) return out;
+    root.querySelectorAll('[data-edit-scope]').forEach(function (el) {
+      var b = el.getAttribute('data-edit-scope');
+      if (b && out.indexOf(b) < 0) out.push(b);
+    });
+    return out;
+  }
+
+  // Overlay a fetched bucket onto every subtree that declares it.
+  function applyScope(root, bucket) {
+    var ov = _scopes[bucket];
+    if (!ov || !root || !root.querySelectorAll) return;
+    root.querySelectorAll(attrSel('data-edit-scope', bucket)).forEach(function (holder) {
+      applyOverrides(holder, ov);
+    });
+  }
+
+  // Fetch (once per bucket) and apply every scope present under `root`. Fails soft,
+  // exactly like the page fetch: a bucket that cannot be read leaves the shipped
+  // defaults on screen.
+  function loadScopes(root, onApplied) {
+    scopeBuckets(root).forEach(function (bucket) {
+      if (Object.prototype.hasOwnProperty.call(_scopes, bucket)) {
+        applyScope(root, bucket);
+        if (onApplied) onApplied(bucket);
+        return;
+      }
+      _scopes[bucket] = null; // in flight — don't fetch it twice
+      fetch('/api/content?page=' + encodeURIComponent(bucket))
+        .then(function (r) {
+          return r.ok ? r.json() : { overrides: {} };
+        })
+        .then(function (d) {
+          _scopes[bucket] = (d && d.overrides) || {};
+        })
+        .catch(function () {
+          _scopes[bucket] = {};
+        })
+        .then(function () {
+          applyScope(document, bucket);
+          if (onApplied) onApplied(bucket);
+        });
+    });
+  }
+
+  // Where a node's edits belong: the nearest scope above it, else the page itself.
+  function scopeOf(el, fallback) {
+    var holder = el && el.closest && el.closest('[data-edit-scope]');
+    var bucket = holder && holder.getAttribute('data-edit-scope');
+    return bucket || fallback;
+  }
+
   // Resolve whether edit mode should be active, WITHOUT any side effect (no
   // prompt). active requires ?edit=1 AND a key from ?key= or storage. Bootstrap
   // layers the one-time prompt on top of this.
@@ -251,6 +347,8 @@
       .then(function (data) {
         _overrides = (data && data.overrides) || {};
         applyOverrides(document, _overrides);
+        // Shared buckets AFTER the page's own, so scoped copy wins where both exist.
+        loadScopes(document);
       })
       .catch(function () {
         /* fail soft — shipped defaults stay */
@@ -289,7 +387,7 @@
 
   function enableEditMode(page, key) {
     injectStyles();
-    var toolbar = buildToolbar(page, key);
+    var toolbar = buildToolbar(page, key, openFlag(location.search));
     var status = toolbar.querySelector('[data-role="status"]');
     var saveBtn = toolbar.querySelector('[data-role="save"]');
     var exitBtn = toolbar.querySelector('[data-role="exit"]');
@@ -319,7 +417,9 @@
     function saveTextField(fieldKey, value) {
       syncSameKey(document, fieldKey, value);
       setStatus('שומר…');
-      var p = postText(page, key, fieldKey, value).then(
+      // Content inside a [data-edit-scope] subtree (the order explainer) is saved to
+      // that shared bucket, so one edit reaches every page the popup opens from.
+      var p = postText(scopeOf(textNodeByKey[fieldKey], page), key, fieldKey, value).then(
         function () {
           state.markTextSaved(fieldKey, value);
           setStatus('נשמר');
@@ -1109,7 +1209,7 @@
 
   // ---- toolbar + styles ------------------------------------------------------
 
-  function buildToolbar(page, key) {
+  function buildToolbar(page, key, open) {
     var bar = document.createElement('div');
     bar.className = 'dugri-editbar';
     bar.setAttribute('dir', 'rtl');
@@ -1119,9 +1219,15 @@
     // URL (?edit=1&key=…) so selecting one navigates there without leaving edit
     // mode. The current page starts selected.
     var options = EDITABLE_PAGES.map(function (p) {
-      var selected = p.page === page ? ' selected' : '';
+      var selected = p.page === page && (p.open || '') === (open || '') ? ' selected' : '';
       return (
-        '<option value="' + pageEditUrl(p.page, key) + '"' + selected + '>' + p.label + '</option>'
+        '<option value="' +
+        pageEditUrl(p.page, key, p.open) +
+        '"' +
+        selected +
+        '>' +
+        p.label +
+        '</option>'
       );
     }).join('');
     bar.innerHTML =
@@ -1196,6 +1302,7 @@
     LS_KEY: LS_KEY,
     EDITABLE_PAGES: EDITABLE_PAGES,
     pageEditUrl: pageEditUrl,
+    openFlag: openFlag,
     exitHref: exitHref,
     createContentState: createContentState,
     attemptCommit: attemptCommit,
@@ -1216,6 +1323,11 @@
     if (_rebind)
       _rebind(document); // rebindEditable overlays AND binds
     else if (_overrides) applyOverrides(document, _overrides); // public: overlay only
+    // Injected markup is where scoped content actually lives: the order explainer's
+    // sheet is built on the first open, long after the bootstrap scan. Fetch (once)
+    // and overlay its bucket now — and AFTER the page pass above, so the shared copy
+    // is what stays on screen.
+    loadScopes(document);
   }
   if (typeof window !== 'undefined') {
     window.dugriEditor = {

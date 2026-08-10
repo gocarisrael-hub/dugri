@@ -165,8 +165,19 @@ test.describe('the 4-step explainer on the product page', () => {
   // device presets only carry the URL-BAR-VISIBLE height (iPhone 14 is 390x664 even
   // though the screen is 390x844), so pinning the layout to the project viewport
   // alone tests one narrow band and misses the phone as it is actually held.
-  async function measureAt(page, width, height) {
+  async function measureAt(page, width, height, safe) {
     await page.setViewportSize({ width, height });
+    // SAFE AREAS. env(safe-area-inset-*) is 0 in every headless browser, so a real
+    // iPhone's home indicator (~34px) and, in the installed app, its notch are
+    // height no test here could see — which is exactly how this sheet passed as
+    // "one page" while it scrolled on the owner's iPhone 16. The sheet reads them
+    // through --sx-safe-b/--sx-safe-t so a test can put them back.
+    if (safe) {
+      await page.addStyleTag({
+        content:
+          ':root{--sx-safe-b:' + (safe.bottom || 0) + 'px;--sx-safe-t:' + (safe.top || 0) + 'px}',
+      });
+    }
     await page.getByTestId('pdp-buy').click();
     await expect(page.getByTestId(OVERLAY)).toBeVisible();
     await animationsSettled(page);
@@ -174,7 +185,9 @@ test.describe('the 4-step explainer on the product page', () => {
       const o = document.getElementById('startExplainer');
       const cta = o.querySelector('.sx-go').getBoundingClientRect();
       return {
-        need: o.scrollHeight,
+        // The SHEET's own content height. Read off the overlay it would also count
+        // the entry animation's 9px translateY as overflow (see animationsSettled).
+        need: o.querySelector('.sx-inner').scrollHeight,
         have: o.clientHeight,
         ctaTop: Math.round(cta.top),
         ctaBottom: Math.round(cta.bottom),
@@ -216,16 +229,26 @@ test.describe('the 4-step explainer on the product page', () => {
   // held upright, and any desktop. The short/legacy/landscape sizes above are
   // deliberately absent — this much Hebrew cannot be set readably in 400px of
   // height, and the sticky CTA is what covers them instead.
+  //
+  // The `safe` column is the point of this sweep now: the sizes with an inset are
+  // the phone AS HELD — an iPhone 16 in Safari shows 393x745 of page with 34px of
+  // home indicator under it, and the same phone installed to the home screen also
+  // carries the notch. Those are the shapes the owner reported scrolling.
   const ONE_PAGE = [
-    [390, 844, 'iPhone 14, URL bar collapsed'],
-    [393, 852, 'iPhone 15'],
-    [412, 915, 'Pixel 7'],
-    [1280, 720, 'laptop'],
-    [1440, 900, 'desktop'],
+    [390, 844, 'iPhone 14, URL bar collapsed', { bottom: 34 }],
+    [393, 852, 'iPhone 15', { bottom: 34 }],
+    [393, 745, 'iPhone 16 in Safari', { bottom: 34 }],
+    [393, 700, 'iPhone 16, Safari with both bars', { bottom: 34 }],
+    [393, 852, 'iPhone 16 installed to the home screen', { bottom: 34, top: 59 }],
+    [440, 800, 'iPhone 16 Pro Max in Safari', { bottom: 34 }],
+    [412, 915, 'Pixel 7', { bottom: 24 }],
+    [375, 667, 'iPhone SE (2nd gen)', null],
+    [1280, 720, 'laptop', null],
+    [1440, 900, 'desktop', null],
   ];
-  for (const [w, h, label] of ONE_PAGE) {
+  for (const [w, h, label, safe] of ONE_PAGE) {
     test(`the whole briefing fits one screen at ${w}x${h} (${label})`, async ({ page }) => {
-      const m = await measureAt(page, w, h);
+      const m = await measureAt(page, w, h, safe);
       // 2px of slack absorbs sub-pixel rounding on the step borders.
       expect(
         m.need,
