@@ -153,6 +153,75 @@ test.describe('product detail page', () => {
     );
   });
 
+  // The rail used to hardcode each design's front CARD RENDER (thumb-front.webp),
+  // so a design the shop advertises with a photograph was advertised down here by
+  // artwork that appears nowhere on products.html. Both surfaces read the same
+  // resolver now, so the rail card and the shop tile lead with the SAME picture.
+  test('a rail card shows the same first picture as that design’s shop tile', async ({ page }) => {
+    // Hermetic: pin BOTH surfaces to the uncurated gallery, so this compares the
+    // two code paths and not whatever the shared server's admin specs left behind.
+    await page.route('**/api/design-images', (route) =>
+      route.fulfill({ json: { images: {}, srcsets: {} } })
+    );
+    const firstSrcs = (sel) =>
+      page.locator(sel).evaluateAll((els) =>
+        els.map((el) => {
+          const img = el.querySelector('img');
+          return [
+            el.getAttribute('data-design-id'),
+            (img && (img.getAttribute('src') || img.dataset.lazySrc)) || '',
+          ];
+        })
+      );
+
+    await page.goto('/products.html');
+    await expect(page.getByTestId('store-grid')).toBeVisible();
+    const tiles = Object.fromEntries(await firstSrcs('.product-card'));
+
+    await page.goto('/product.html?design=bachelorette');
+    await expect(page.getByTestId('pdp-related')).toBeVisible();
+    const cards = await firstSrcs('a.pdp-rel-card:not([data-carousel-clone])');
+    expect(cards.length).toBe(DESIGN_IDS.length);
+
+    for (const [id, src] of cards) {
+      expect(tiles[id], `no shop tile for ${id}`).toBeTruthy();
+      expect(src, `rail card ${id}`).toBe(tiles[id]);
+      // …which is the store cover, never the old front card render.
+      expect(src).not.toMatch(/thumb-(front|back|board)\.webp$/);
+    }
+  });
+
+  // …and when the owner HAS curated the shop tile, the rail follows her there too
+  // — the whole point of reading her arrangement instead of the shipped artwork.
+  test('the rail follows the owner’s curated shop picture', async ({ page }) => {
+    const PHOTO = '/content-uploads/0123456789abcdef.png';
+    // A real 1×1 PNG, so the picture LOADS and the lazy error handler never has a
+    // reason to swap the shipped fallback back in.
+    await page.route(`**${PHOTO}`, (route) =>
+      route.fulfill({
+        contentType: 'image/png',
+        body: Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+          'base64'
+        ),
+      })
+    );
+    await page.route('**/api/design-images', (route) =>
+      route.fulfill({
+        json: { images: { japanese: { base: { store: { img: PHOTO } } } }, srcsets: {} },
+      })
+    );
+
+    await page.goto('/product.html?design=bachelorette');
+    const card = page.locator(
+      'a.pdp-rel-card[data-design-id="japanese"]:not([data-carousel-clone]) img'
+    );
+    await card.scrollIntoViewIfNeeded();
+    await expect
+      .poll(() => card.evaluate((i) => i.getAttribute('src') || i.dataset.lazySrc || ''))
+      .toBe(PHOTO);
+  });
+
   test('an unknown ?design falls back to the first design (no broken page)', async ({ page }) => {
     await page.goto('/product.html?design=does-not-exist');
     await expect(page.getByTestId('pdp-gallery')).toBeVisible();

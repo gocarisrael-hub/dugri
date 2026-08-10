@@ -14,6 +14,7 @@ import {
   overrideText,
   photosFromOverride,
   galleryShots,
+  railShot,
   shouldShowBoard,
   galleryAspect,
   LANDSCAPE_ASPECT,
@@ -418,6 +419,92 @@ describe('galleryAspect — picture-box shape per card era', () => {
     // (scripts/render-design-assets.mjs) before updating it.
     expect(DESIGNS.filter((d) => d.portrait).map((d) => d.id)).toEqual([]);
     expect(DESIGNS.every((d) => galleryAspect(d) === LANDSCAPE_ASPECT)).toBe(true);
+  });
+});
+
+// The "עוד עיצובים" rail at the foot of a product page. It used to hardcode each
+// design's front CARD RENDER, so a design the owner had photographed for the shop
+// was advertised down here by artwork that appears nowhere on products.html. The
+// rail now shows the SAME first picture the shop tile leads with.
+describe('railShot — the related rail shows the shop tile’s first picture', () => {
+  const design = DESIGNS.find((d) => d.id === 'japanese');
+
+  it('matches galleryFor(...,"products")[0] — the real grid rule, not a copy of it', () => {
+    for (const map of [
+      {},
+      { japanese: { base: { front: { img: P1 } } } },
+      { japanese: { base: { store: { img: P1 } } } },
+      { japanese: { order: ['back', 'store', 'front'] } },
+      { japanese: { photos: [{ id: 'p1', img: P2 }], order: ['p1', 'store'] } },
+    ]) {
+      expect(railShot(design, map).src).toBe(galleryFor(map, design, 'products')[0].src);
+    }
+  });
+
+  it('leads with the store cover — NOT the front card render — when nothing is curated', () => {
+    expect(railShot(design, {}).src).toBe('assets/designs/japanese/store.webp');
+    expect(railShot(design, {}).src).not.toBe(design.thumbs.front);
+  });
+
+  it('takes the owner’s replaced picture and her hidden-slot / order choices', () => {
+    expect(railShot(design, { japanese: { base: { store: { img: P1 } } } }).src).toBe(P1);
+    // Store cover hidden on the shop → the rail follows to the next visible one.
+    expect(railShot(design, { japanese: { base: { store: { onProducts: false } } } }).src).toBe(
+      'assets/designs/japanese/gallery-front.webp'
+    );
+    // An extra photo she moved to the front of the shop tile leads here too.
+    expect(
+      railShot(design, {
+        japanese: { photos: [{ id: 'p1', img: P2 }], order: ['p1'] },
+      }).src
+    ).toBe(P2);
+  });
+
+  it('keeps a shipped render as the error fallback, so a card is never blank', () => {
+    // A broken per-slot upload degrades to that slot's shipped render...
+    expect(railShot(design, { japanese: { base: { store: { img: P1 } } } }).fallback).toBe(
+      'assets/designs/japanese/store.webp'
+    );
+    // ...and an extra photo, which has NO shipped render of its own, degrades to
+    // the design's front thumb rather than dropping the card's picture entirely.
+    expect(
+      railShot(design, { japanese: { photos: [{ id: 'p1', img: P2 }], order: ['p1'] } }).fallback
+    ).toBe(design.thumbs.front);
+  });
+
+  it('falls back to the picker thumb when the design has no picture at all', () => {
+    // Everything hidden on the shop surface (her explicit choice) → galleryFor is
+    // empty. The shop tile renders no picture; the rail card still needs one.
+    const hidden = {
+      japanese: {
+        base: {
+          store: { onProducts: false },
+          front: { onProducts: false },
+          back: { onProducts: false },
+          board: { onProducts: false },
+        },
+      },
+    };
+    expect(galleryFor(hidden, design, 'products')).toEqual([]);
+    expect(railShot(design, hidden)).toEqual({ src: design.thumbs.front, fallback: '' });
+  });
+
+  it('an UPLOADED TEMPLATE gets the same treatment as a built-in design', () => {
+    const tpl = {
+      id: 'grapefruit',
+      name: 'אשכוליות',
+      custom: true,
+      img: { front: '/api/template-image/grapefruit/front' },
+    };
+    expect(railShot(tpl, {}).src).toBe(tpl.img.front);
+    const curated = { grapefruit: { base: { front: { img: P1 } } } };
+    expect(railShot(tpl, curated)).toEqual({ src: P1, fallback: tpl.img.front });
+  });
+
+  it('never throws on a garbage map (fail-soft, like every other resolver here)', () => {
+    for (const map of [null, undefined, 'nope', 42, { japanese: 'nope' }]) {
+      expect(railShot(design, map).src).toBe('assets/designs/japanese/store.webp');
+    }
   });
 });
 
