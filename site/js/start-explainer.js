@@ -62,6 +62,16 @@
   var OVERLAY_ID = 'startExplainer';
   var STYLE_ID = 'dugri-start-explainer-styles';
   var WA_HREF = 'https://wa.me/972546577715';
+  // The content bucket every string in this sheet is stored under, on every page it
+  // opens from. A ".html" name because that is what the content store accepts as a
+  // key; no such page is ever served.
+  var CONTENT_SCOPE = 'start-explainer.html';
+  // ?explainer=1 opens the sheet on load. It exists for EDIT MODE: the buttons that
+  // open this popup are themselves editable text, and edit mode swallows a click on
+  // an editable link (it places a caret instead of navigating) — so without this
+  // there is no way for the owner to get the sheet on screen to edit what is inside
+  // it. The editor's page picker links here (see EDITABLE_PAGES in js/editor.js).
+  var OPEN_PARAM = 'explainer';
 
   // GA4 events. The trigger keeps its own data-ga="order_started" — analytics.js's
   // delegated listener still sees the click (we preventDefault, never
@@ -193,6 +203,13 @@
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-labelledby', 'sxTitle');
     overlay.setAttribute('data-testid', 'start-explainer');
+    // ONE COPY OF THIS TEXT FOR THE WHOLE SITE. Content overrides are stored per
+    // page, and this popup opens from index, products and product — so the owner
+    // used to have to make the same edit three times, and an edit made on one page
+    // silently did not reach the other two. `data-edit-scope` sends everything
+    // inside the sheet to its own shared bucket instead (see js/editor.js), so it
+    // is written once and read everywhere it appears.
+    overlay.setAttribute('data-edit-scope', CONTENT_SCOPE);
 
     var inner = el('div', 'sx-inner');
 
@@ -273,73 +290,70 @@
          briefing is sized to land inside a single screen so nothing has to scroll to
          reach the button. 100dvh (not 100vh) is what makes that true on mobile, where
          the URL bar eats the difference. overflow-y:auto stays as a safety valve for
-         the cases the scale cannot absorb — enlarged text, a landscape phone — so the
-         CTA is never unreachable even when the one-page fit gives out. */
+         the cases the scale cannot absorb — a landscape phone, 200% text, or copy the
+         owner has made much longer — so the CTA is never unreachable. */
       '.sx-overlay{position:fixed;inset:0;z-index:9000;display:none;',
       'background:var(--bg,#fff);overflow-y:auto;-webkit-overflow-scrolling:touch;',
       'padding:0;}',
       '.sx-overlay.is-open{display:block;}',
-      /* EVERY clamp() below is preceded by the plain fixed value it replaces. A
-         browser without `dvh` (iOS <15.4, Chrome <108, older Android WebViews) drops
-         the whole declaration as invalid at parse time, and without the pair in front
-         of it this sheet would render with NO padding at all — Hebrew flush to both
-         edges, the title under the close button. Same belt-and-braces the
-         `min-height:100vh;min-height:100dvh` pair on the next line already uses. */
+      /* ONE NUMBER SETS THE WHOLE SHEET. Every size below is in `em` off this
+         font-size, so the briefing scales as a single object: fitSheet() (see the
+         runtime) shrinks this one value until the content stops overflowing, which is
+         how the one-page promise survives a phone we never measured and copy the
+         owner has rewritten. It also means only this line needs the no-`dvh` fallback
+         pair that every clamp used to carry — a browser without dvh gets 14px and a
+         sheet that is merely un-fitted, not un-padded.
+         SAFE AREAS: the home indicator (~34px) and, in the installed app, the notch
+         are REAL height that env() reports as 0 in every headless browser — which is
+         exactly why this sheet measured as "one page" in tests and scrolled on the
+         owner's iPhone. They are read through a variable so a test can simulate a
+         phone by setting --sx-safe-b / --sx-safe-t. */
       '.sx-inner{position:relative;box-sizing:border-box;min-height:100vh;min-height:100dvh;',
-      'max-width:640px;margin:0 auto;',
-      /* The top padding is the X's keep-out: it must always exceed the X's own
-         top + height, or the title rides up underneath it. The X caps at 14+42=56,
-         so 58px is the floor here and in the desktop override below — the number is
-         a CONSEQUENCE of the X's box, not a taste, so the two move together. */
-      'padding:58px 22px calc(34px + env(safe-area-inset-bottom,0px));',
-      'padding:clamp(58px,7dvh,64px) 22px calc(clamp(14px,2.6dvh,34px) + env(safe-area-inset-bottom,0px));',
-      'display:flex;flex-direction:column;gap:18px;gap:clamp(9px,2dvh,26px);text-align:right;}',
-      /* X — top-LEFT in RTL (the far corner from the text). */
-      '.sx-x{position:absolute;top:14px;left:14px;width:42px;height:42px;font-size:27px;',
-      'top:clamp(8px,1.4dvh,14px);left:clamp(8px,1.4dvh,14px);',
-      'width:clamp(34px,5dvh,42px);height:clamp(34px,5dvh,42px);line-height:1;',
-      'font-size:clamp(22px,3.4dvh,27px);background:transparent;border:1px solid var(--line,#e6e6e6);',
+      'max-width:640px;margin:0 auto;font-size:14px;font-size:clamp(11px,1.75dvh,15.5px);',
+      'padding:3.9em 22px 1.2em;',
+      'padding:calc(var(--sx-safe-t,env(safe-area-inset-top,0px)) + 3.9em) 22px',
+      ' calc(var(--sx-safe-b,env(safe-area-inset-bottom,0px)) + 1.2em);',
+      'display:flex;flex-direction:column;gap:1.1em;text-align:right;}',
+      /* X — top-LEFT in RTL (the far corner from the text), below any notch.
+         MIND THE UNIT: top/left/width/height on this element resolve `em` against
+         its OWN font-size (2.05em), not the sheet's. In sheet-em the box is
+         0.34x2.05 = 0.7 from the top and 1.5x2.05 = 3.08 tall, i.e. 3.78 — which is
+         what the sheet's 3.9em top padding has to clear, or the title rides up
+         underneath it. Written with 0.7em here it was 4.5, and it did. */
+      '.sx-x{position:absolute;top:0.34em;left:0.34em;',
+      'top:calc(var(--sx-safe-t,env(safe-area-inset-top,0px)) + 0.34em);',
+      'font-size:2.05em;width:1.5em;height:1.5em;line-height:1;',
+      'background:transparent;border:1px solid var(--line,#e6e6e6);',
       'border-radius:var(--radius,0);color:var(--ink,#141414);cursor:pointer;padding:0;}',
       '.sx-x:hover{background:var(--sage-tint,#f0f0f0);}',
       '.sx-head h2{font-family:var(--display,sans-serif);font-weight:var(--h-weight,300);',
-      'letter-spacing:var(--h-spacing,0.1em);font-size:25px;font-size:clamp(18px,3.1dvh,25px);',
+      'letter-spacing:var(--h-spacing,0.1em);font-size:1.7em;',
       'line-height:1.28;color:var(--ink,#141414);}',
-      '.sx-sub{margin-top:9px;margin-top:clamp(3px,0.9dvh,9px);color:var(--muted,#6b6b6b);',
-      'font-size:15.5px;font-size:clamp(12.5px,1.9dvh,15.5px);line-height:1.5;',
-      'font-weight:var(--sub-weight,200);}',
-      '.sx-steps{list-style:none;display:grid;gap:16px;gap:clamp(9px,1.75dvh,22px);margin:0;padding:0;}',
-      '.sx-step{display:flex;align-items:flex-start;gap:15px;gap:clamp(11px,1.6dvh,15px);',
-      'border-top:1px solid var(--line,#e6e6e6);padding-top:16px;',
-      'padding-top:clamp(8px,1.55dvh,20px);}',
+      '.sx-sub{margin-top:0.45em;color:var(--muted,#6b6b6b);',
+      'font-size:1em;line-height:1.5;font-weight:var(--sub-weight,200);}',
+      '.sx-steps{list-style:none;display:grid;gap:0.95em;margin:0;padding:0;}',
+      /* A BLOCK step with a FLOATED numeral, not a flex row. As a flex row the
+         numeral held a ~40px gutter down the whole step, and on a 393px phone that is
+         12% of the column taken from every single line of the paragraph beside it —
+         several extra wrapped lines per step, which is height the sheet does not
+         have. Floated, the numeral costs the width of its own line only, and the text
+         reclaims the full column underneath it. */
+      '.sx-step{display:block;border-top:1px solid var(--line,#e6e6e6);padding-top:0.85em;}',
       '.sx-step:first-child{border-top:0;padding-top:0;}',
-      /* The numeral is the one splash of warm sand. */
-      '.sx-num{flex:0 0 auto;font-family:var(--display,sans-serif);',
-      'font-size:31px;min-width:31px;font-size:clamp(20px,3.6dvh,31px);',
-      'min-width:clamp(20px,3.6dvh,31px);line-height:1;',
-      'font-weight:300;color:var(--accent,#b7a389);}',
-      '.sx-body{flex:1 1 auto;min-width:0;}',
-      '.sx-body h3{font-family:var(--display,sans-serif);font-weight:400;',
-      'font-size:18.5px;font-size:clamp(14.5px,2.2dvh,18.5px);',
-      'letter-spacing:0.02em;color:var(--ink,#141414);',
-      'margin-bottom:5px;margin-bottom:clamp(2px,0.6dvh,6px);}',
-      /* The body scale is what decides whether the briefing is one page, and it is
-         NOT free to grow with the screen: the column stays ~350px wide on a phone, so
-         a bigger face re-wraps every paragraph and the content grows FASTER than the
-         viewport it is trying to fit into. Measured at 390px wide, each extra 1px of
-         body size costs ~87px of sheet height while the screen only gains ~58px per
-         100px of height. Hence the modest 15.5px ceiling and the 1.55dvh slope —
-         above that the sheet outgrew exactly the tall phones it was meant to fit. */
-      '.sx-body p{font-size:15.5px;font-size:clamp(13px,1.55dvh,15.5px);',
-      'line-height:1.5;color:var(--ink,#141414);}',
+      /* The numeral is the one splash of warm sand. float:right = the inline start in
+         this RTL sheet. */
+      '.sx-num{float:right;margin-inline-start:0.5em;font-family:var(--display,sans-serif);',
+      'font-size:2em;line-height:1;font-weight:300;color:var(--accent,#b7a389);}',
+      '.sx-body h3{font-family:var(--display,sans-serif);font-weight:400;font-size:1.3em;',
+      'letter-spacing:0.02em;color:var(--ink,#141414);margin-bottom:0.3em;line-height:1.3;}',
+      '.sx-body p{font-size:1em;line-height:1.5;color:var(--ink,#141414);}',
       /* `.sx-body p.sx-note`, not `.sx-note`: the note IS one of those paragraphs, so
          the plain class (0,1,0) loses to `.sx-body p` (0,1,1) no matter what order
          they are written in — which is why the aside had been rendering at full body
          size in full ink, never small and muted the way it reads here. */
-      '.sx-body p.sx-note{margin-top:9px;margin-top:clamp(3px,0.9dvh,9px);',
-      'font-size:13.5px;font-size:clamp(11px,1.35dvh,13.5px);',
-      'line-height:1.45;color:var(--muted,#6b6b6b);}',
-      '.sx-wa{display:inline-block;margin-top:9px;margin-top:clamp(4px,0.9dvh,9px);',
-      'font-size:14.5px;font-size:clamp(12px,1.7dvh,14.5px);color:var(--ink,#141414);',
+      '.sx-body p.sx-note{margin-top:0.5em;font-size:0.85em;line-height:1.45;',
+      'color:var(--muted,#6b6b6b);}',
+      '.sx-wa{display:inline-block;margin-top:0.5em;font-size:0.95em;color:var(--ink,#141414);',
       'border-bottom:1px solid var(--accent,#b7a389);text-decoration:none;padding-bottom:2px;}',
       /* ONE CTA, at the foot, and ALWAYS on screen. Two rules do that job:
          `margin-top:auto` parks it against the bottom padding when the briefing comes
@@ -350,31 +364,20 @@
          forward, which is the whole reason a second copy used to sit above the steps.
          The background is opaque because the steps scroll underneath it. */
       '.sx-cta{margin-top:auto;position:sticky;bottom:0;background:var(--bg,#fff);',
-      'padding-top:8px;padding-top:clamp(6px,1dvh,10px);}',
+      'padding-top:0.6em;}',
       '.sx-go{display:block;width:100%;box-sizing:border-box;text-align:center;',
       'background:var(--sage,#141414);color:#fff;text-decoration:none;',
-      'padding:17px 26px;padding:clamp(12px,2dvh,17px) 26px;',
-      'border-radius:var(--radius,0);font-size:18px;font-size:clamp(15px,2.2dvh,18px);',
+      'padding:0.95em 26px;border-radius:var(--radius,0);font-size:1.15em;',
       'letter-spacing:0.03em;}',
       '.sx-go:hover{background:var(--sage-deep,#000);}',
-      /* Desktop: the sheet has room, so the CTA shrinks to its own width and aligns
-         with the start edge (right in RTL) instead of spanning the column. The
-         padding-top floor stays 58px for the same X keep-out reason as above — it was
-         40px, which is BELOW the close button's 42px bottom edge, so a short desktop
-         window put the title underneath the X. */
-      '@media (min-width:700px){.sx-inner{padding-top:78px;',
-      'padding-top:clamp(58px,8dvh,78px);}',
-      '.sx-go{width:auto;display:inline-block;min-width:290px;}',
-      /* The column is 640px wide here, not ~350: the same paragraph takes barely half
-         the lines, so the size that makes a phone overflow is comfortable on a laptop.
-         The body scale is raised back toward its original 15.5px accordingly — the
-         narrow-screen ceiling exists for the narrow screen, not for this one. */
-      '.sx-body p{font-size:15.5px;font-size:clamp(14px,1.9dvh,15.5px);}',
-      '.sx-body p.sx-note{font-size:13.5px;font-size:clamp(12px,1.6dvh,13.5px);}}',
-      /* The full 31px title needs a screen with the height to carry it; below that it
-         stays on the fluid scale rather than crowding the steps. */
-      '@media (min-width:700px) and (min-height:760px){.sx-head h2{font-size:31px;}',
-      '.sx-inner{gap:30px;gap:clamp(20px,2.6dvh,30px);}}',
+      /* Desktop: the column is 640px wide, not ~350, so the same paragraph takes
+         barely half the lines and the base size goes back up. The CTA shrinks to its
+         own width and aligns with the start edge (right in RTL). */
+      '@media (min-width:700px){.sx-inner{font-size:15px;font-size:clamp(13px,1.9dvh,16px);',
+      'padding-top:4.6em;',
+      'padding-top:calc(var(--sx-safe-t,env(safe-area-inset-top,0px)) + 4.6em);gap:1.5em;}',
+      '.sx-head h2{font-size:2em;}',
+      '.sx-go{width:auto;display:inline-block;min-width:290px;}}',
       /* Motion is opt-in. The slide-up runs on .sx-inner, never on the fixed
          .sx-overlay: an animated transform on the overlay would move the sheet's own
          box for the first ~200ms (and make it a containing block for its
@@ -386,6 +389,12 @@
       '@keyframes sx-rise{from{transform:translateY(9px);}to{transform:none;}}}',
       /* Background scroll lock while the sheet is open. */
       'html.sx-locked,body.sx-locked{overflow:hidden;}',
+      /* EDIT MODE: the editor's own toolbar is fixed across the foot of the screen,
+         and the sheet's last editable string — the continue button's label — sits
+         exactly there. Reserve the toolbar's height so the owner can reach the one
+         piece of copy she would otherwise have to edit from underneath it. The class
+         is set by js/editor.js and exists only while she is editing. */
+      'html.dugri-editing .sx-inner{padding-bottom:96px;}',
     ].join('');
     var style = doc.createElement('style');
     style.id = STYLE_ID;
@@ -440,6 +449,14 @@
       // owner's saved copy is overlaid for every visitor and bound in edit mode.
       if (window.dugriEditor && typeof window.dugriEditor.notifyInjected === 'function') {
         window.dugriEditor.notifyInjected();
+        // The owner's copy can be longer than the shipped default, so the sheet is
+        // re-fitted once it has landed. onReady fires immediately when the overrides
+        // are already in hand, and later when the sheet was opened mid-fetch.
+        if (typeof window.dugriEditor.onReady === 'function') {
+          window.dugriEditor.onReady(function () {
+            fitSheet();
+          });
+        }
       }
       return overlay;
     }
@@ -463,6 +480,73 @@
       items[next].focus();
     }
 
+    // ONE PAGE, MEASURED — not predicted. Every size in the sheet is an `em` off
+    // .sx-inner's font-size, so shrinking that one value shrinks the whole briefing
+    // proportionally. This walks it down until the content stops overflowing.
+    //
+    // It exists because a CSS-only scale cannot see what the sheet is actually being
+    // asked to fit into. Two things it misses, both of which put the owner's iPhone
+    // into a scroll while every headless measurement said "one page":
+    //   • the home indicator (~34px) and, in the installed app, the notch — real
+    //     height that env() reports as 0 in every test browser;
+    //   • the copy, which is owner-editable: one longer sentence and a tuned-by-hand
+    //     scale is out of date.
+    // Measuring covers both, and anything else we never thought of.
+    //
+    // The floor is the point below which the briefing is no longer worth reading; a
+    // sheet that cannot fit above it keeps its scroll, with the CTA still pinned by
+    // position:sticky. Steps of 0.25px, so the result is the largest size that fits
+    // rather than a jump past it.
+    // The size range the briefing may be set at. The fit starts at the CEILING and
+    // walks down to the largest size that fits, so a tall phone gets the big
+    // comfortable type and a short one gets exactly as much as it can carry — rather
+    // than whatever a viewport-height formula guessed in advance. Below the floor the
+    // briefing is not worth reading, so the sheet keeps its scroll instead (the CTA
+    // stays reachable: position:sticky pins it).
+    var FIT_FLOOR_PX = 11.5;
+    var FIT_CEIL_PX = 15.5;
+    var FIT_CEIL_WIDE_PX = 16;
+    var fitTimer = null;
+    // How much taller than the screen the briefing currently is.
+    //
+    // Measured as the SHEET's own content height against the overlay's box, never as
+    // the overlay's scrollHeight: the sheet enters with a 9px translateY (keyframes
+    // sx-rise), and a transform on the scroll container's child counts toward that
+    // container's scrollable overflow. Reading it there reports 9px of overflow that
+    // no reader ever sees — and a fitting loop believes it, shrinking the whole
+    // briefing to the floor on a desktop with room to spare. An element's own
+    // scrollHeight is unaffected by its own transform.
+    function sheetOverflow(inner) {
+      return inner.scrollHeight - overlay.clientHeight;
+    }
+    function fitSheet() {
+      if (!overlay || !overlay.classList.contains('is-open')) return;
+      var inner = overlay.querySelector('.sx-inner');
+      if (!inner) return;
+      // From the top every time: the sheet may be re-fitting because the phone
+      // rotated INTO more room, and it must be free to grow back.
+      var size = window.innerWidth >= 700 ? FIT_CEIL_WIDE_PX : FIT_CEIL_PX;
+      inner.style.fontSize = size + 'px';
+      var guard = 0;
+      // 2px of slack: dvh and the overlay's box can disagree by a pixel while a
+      // mobile URL bar is mid-collapse, and chasing that would shrink the type for
+      // no one's benefit.
+      while (sheetOverflow(inner) > 2 && size > FIT_FLOOR_PX && guard < 40) {
+        size = Math.max(FIT_FLOOR_PX, size - 0.25);
+        inner.style.fontSize = size + 'px';
+        guard += 1;
+      }
+    }
+
+    // Re-fit when the room changes (rotation, a desktop window drag, the mobile URL
+    // bar collapsing) and when a late web font finally lands with different metrics.
+    // Both are cheap and both are no-ops while the sheet is closed.
+    window.addEventListener('resize', fitSheet);
+    window.addEventListener('orientationchange', fitSheet);
+    if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === 'function') {
+      document.fonts.ready.then(fitSheet);
+    }
+
     function open(trigger) {
       ensureOverlay();
       lastTrigger = trigger;
@@ -473,6 +557,8 @@
       document.documentElement.classList.add('sx-locked');
       document.body.classList.add('sx-locked');
       overlay.scrollTop = 0;
+      // After is-open: the sheet has no layout to measure while it is display:none.
+      fitSheet();
       // Focus the X: it is first in the tab order and announces the dialog without
       // reading the whole sheet before the user asks for it.
       var x = overlay.querySelector('.sx-x');
@@ -491,6 +577,25 @@
         lastTrigger.focus();
       }
     }
+
+    // ?explainer=1 — open on load, without a click. The trigger it "came from" is
+    // whichever wizard CTA this page has, so continue still carries that page's own
+    // href; a page with no trigger falls back to the bare wizard.
+    function autoOpen() {
+      var params = new URLSearchParams(location.search || '');
+      if (params.get(OPEN_PARAM) !== '1') return;
+      open(document.querySelector('a[data-start-explainer]'));
+    }
+    autoOpen();
+
+    // While the owner is retyping the copy in edit mode, keep the sheet fitted to
+    // the screen as she types — the one-page promise is about HER text, and the
+    // most useful moment to show whether it still holds is while she is writing it.
+    document.addEventListener('input', function (e) {
+      if (!overlay || !overlay.contains(e.target)) return;
+      clearTimeout(fitTimer);
+      fitTimer = setTimeout(fitSheet, 180);
+    });
 
     // One delegated listener covers triggers that exist now AND ones injected later
     // (products.html renders its fallback CTA from JS).

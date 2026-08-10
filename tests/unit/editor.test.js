@@ -186,9 +186,26 @@ describe('the page picker lists every editable page', () => {
       'products.html',
       'product.html',
       'timer.html',
+      // The order explainer: a POPUP, not a page of its own. It rides on index.html
+      // with a flag that opens it, because in edit mode the CTA that would open it
+      // is editable text and swallows the click — so this entry is the only door in.
+      'index.html',
     ]);
     // every entry has a non-empty Hebrew label
     editor.EDITABLE_PAGES.forEach((p) => expect(p.label.trim().length).toBeGreaterThan(0));
+    const popup = editor.EDITABLE_PAGES.find((p) => p.open);
+    expect(popup).toMatchObject({ page: 'index.html', open: 'explainer' });
+  });
+});
+
+describe('openFlag — which popup the current URL is editing', () => {
+  it('reads the flag an EDITABLE_PAGES entry declares, and nothing else', () => {
+    expect(editor.openFlag('?edit=1&explainer=1')).toBe('explainer');
+    expect(editor.openFlag('?edit=1')).toBe('');
+    // A flag no entry declares is not a popup we know how to open.
+    expect(editor.openFlag('?edit=1&somethingelse=1')).toBe('');
+    // Only "=1" counts, so a stray ?explainer=0 does not select the popup entry.
+    expect(editor.openFlag('?explainer=0')).toBe('');
   });
 });
 
@@ -216,11 +233,26 @@ describe('buildToolbar — Save/Save&Exit buttons + page picker', () => {
     const opts = Array.from(select.options);
     // one option per editable page, each value keeps edit mode + key
     expect(opts.map((o) => o.value)).toEqual(
-      editor.EDITABLE_PAGES.map((p) => p.page + '?edit=1&key=secret')
+      editor.EDITABLE_PAGES.map(
+        (p) => p.page + '?edit=1&key=secret' + (p.open ? '&' + p.open + '=1' : '')
+      )
     );
     // the CURRENT page starts selected
     expect(select.value).toBe('how.html?edit=1&key=secret');
     expect(opts.find((o) => o.selected).value).toBe('how.html?edit=1&key=secret');
+  });
+
+  // Two entries share index.html — the page and the popup that opens on it. Which
+  // one reads as current is decided by the flag in the URL, not by the filename.
+  it('selects the popup entry when the URL carries its flag, and the page when it does not', () => {
+    const onPopup = editor.buildToolbar('index.html', 'secret', 'explainer');
+    expect(onPopup.querySelector('[data-role="pageselect"]').value).toBe(
+      'index.html?edit=1&key=secret&explainer=1'
+    );
+    const onPage = editor.buildToolbar('index.html', 'secret', '');
+    expect(onPage.querySelector('[data-role="pageselect"]').value).toBe(
+      'index.html?edit=1&key=secret'
+    );
   });
 });
 
