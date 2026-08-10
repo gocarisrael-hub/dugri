@@ -507,6 +507,32 @@ function renderInfo(d, overrides) {
 // (resolveDesign, the name overlay) treat as the bundled manifest.
 const relatedCatalog = PUBLIC_DESIGNS.slice();
 
+/**
+ * The picture ONE rail card shows: the SAME first picture the shop grid leads
+ * with for that design — `galleryFor(map, d, 'products')[0]`, i.e. the owner's
+ * curated products-surface gallery (per-slot overrides, extra photos, her order,
+ * her per-surface visibility). The rail used to hardcode the design's front card
+ * render, so a design the owner had photographed for the shop was advertised here
+ * by artwork nobody sees on products.html — two different faces for one product.
+ *
+ * With no config resolved yet (first paint, or a failed /api/design-images)
+ * galleryFor still returns the SHIPPED renders in the shop's default order, whose
+ * first item is the store cover — which is what products.html paints for an
+ * uncurated design. So the rail matches the shop on first paint too, and the
+ * owner's own photo swaps in when the map lands (applyDesignImagesToPage
+ * re-renders the rail).
+ *
+ * The shipped thumb stays as the error fallback, including for a droppable extra
+ * photo: a rail card is a navigation target, so a broken upload must degrade to
+ * the artwork rather than leave an empty box.
+ */
+export function railShot(d, designImages = currentDesignImages) {
+  const shipped = (d.thumbs && d.thumbs.front) || d.thumb || '';
+  const first = galleryFor(designImages, d, 'products')[0];
+  if (!first) return { src: shipped, fallback: '' };
+  return { src: first.src, fallback: first.fallback || shipped };
+}
+
 function renderRelated(current) {
   const track = document.getElementById('relatedTrack');
   if (!track) return;
@@ -531,7 +557,15 @@ function renderRelated(current) {
     // uploaded template's front render is its raw SVG — 2.2 MB on the measured
     // page, the single heaviest request on the whole PDP — for a card the shopper
     // may never scroll to.
-    defer(img, { src: (d.thumbs && d.thumbs.front) || d.thumb || '' });
+    const shot = railShot(d);
+    defer(img, {
+      src: shot.src,
+      // The owner's uploads are camera files; a rail card paints ~300 px wide, so
+      // take the rung that fits instead of the original (SIZES.rail).
+      srcset: srcsetFor(shot.src),
+      sizes: SIZES.rail,
+      fallback: shot.fallback,
+    });
     thumb.appendChild(img);
 
     const name = el('span', 'pdp-rel-name');
@@ -678,6 +712,10 @@ function applyDesignImagesToPage(imagesMap) {
   currentDesignImages = imagesMap || {};
   const d = currentDesign;
   if (!d) return;
+  // The rail advertises EVERY design, so it re-renders off the whole map — not
+  // just this design's entry — and BEFORE the curated-photos early return below,
+  // which is about this page's own gallery and says nothing about the rail.
+  renderRelated(d);
   if (photosFromOverride(currentOverrides, d.id).length) return; // curated photos win
   // Any curated config for this design (base overrides, hidden slots, extra photos,
   // or a custom order) can change the resolved gallery → rebuild from it.

@@ -241,10 +241,42 @@ test.describe('the product page', () => {
     await page.waitForTimeout(1500);
 
     const atRest = tally.bytes;
+    const seen = tally.urls.join('\n');
     expect(tally.originals, `fetched originals: ${tally.urls.join(', ')}`).toBe(0);
-    // The inline gallery and the (hidden) zoom overlay render the SAME four
-    // pictures. Loading both tracks eagerly is what an earlier attempt did.
-    expect(tally.derivatives, 'more than the on-screen picture was fetched').toBeLessThanOrEqual(2);
+
+    // Attribute every request to the surface that made it. The fixture gives each
+    // design its own four uploads, so the file name says which design a picture
+    // belongs to — and the rail shows a design's FIRST picture only.
+    const file = (u) => (u.match(/\/(\d{16})\.jpg$/) || [])[1] || '';
+    const designOf = (u) => IDS[Math.floor((Number(file(u)) - 1) / 4)] || '';
+    const isFirstPhoto = (u) => (Number(file(u)) - 1) % 4 === 0;
+    const pictures = (urls) => new Set(urls.map(file));
+
+    // 1. THE GALLERY. The inline gallery and the (hidden) zoom overlay render the
+    // SAME four pictures; loading both tracks eagerly is what an earlier attempt
+    // did. Only the ONE slide on screen may be fetched.
+    const gallery = tally.urls.filter((u) => designOf(u) === 'bachelorette');
+    expect(pictures(gallery).size, `more than the on-screen picture was fetched:\n${seen}`).toBe(1);
+
+    // 2. THE RELATED RAIL, at the foot of the page. It advertises each design with
+    // the same first picture its shop tile leads with (js/product.js railShot), so
+    // it takes the same ladder — a card costs ~2 KB, not a camera original. It is
+    // a horizontal scroller like the grid's tiles, so only the cards ON SCREEN may
+    // load: one picture each, and not the whole catalog.
+    const rail = tally.urls.filter((u) => designOf(u) !== 'bachelorette');
+    expect(rail.every(isFirstPhoto), `the rail fetched a non-leading picture:\n${seen}`).toBe(true);
+    const railCards = await page.locator('a.pdp-rel-card:not([data-carousel-clone])').count();
+    expect(railCards).toBeGreaterThanOrEqual(6);
+    expect(
+      pictures(rail).size,
+      `the rail fetched every card, not just the ones on screen:\n${seen}`
+    ).toBeLessThan(railCards - 1);
+
+    // 3. …and the whole at-rest page still fits the same budget the shop grid has.
+    expect(
+      atRest,
+      `the product page weighed ${Math.round(atRest / 1024)} KB:\n${seen}`
+    ).toBeLessThan(60 * 1024);
 
     // Opening the zoom must fetch the ONE photo being looked at — not the gallery.
     await page.getByTestId('gallery-enlarge').click();
