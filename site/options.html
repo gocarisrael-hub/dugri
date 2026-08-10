@@ -4073,7 +4073,7 @@
         if (current && current.getAttribute('src') === pic.src) return;
         const epoch = renderEpoch;
         const img = document.createElement('img');
-        img.alt = [(d && d.name) || '', TAB_LABELS[view] || ''].filter(Boolean).join(' — ');
+        img.alt = [(d && d.name) || '', TAB_LABELS[view] || ''].filter(Boolean).join(' - ');
         img.decoding = 'async';
         img.addEventListener('error', () => {
           // A newer design owns this panel now — this failure isn't ours.
@@ -4698,7 +4698,7 @@
         if (colorList) colorList.hidden = fixed || !FEATURES.color_picking;
         if (!rasterNote) return;
         if (fixed) {
-          rasterNote.textContent = 'בעיצוב הזה הצבעים קבועים — הוא מגיע במראה המקורי';
+          rasterNote.textContent = 'בעיצוב הזה הצבעים קבועים - הוא מגיע במראה המקורי';
           rasterNote.hidden = false;
         } else {
           rasterNote.hidden = true;
@@ -6157,7 +6157,7 @@
           btn.type = 'button';
           btn.className = 'deck-thumb';
           btn.dataset.testid = 'deck-thumb';
-          btn.setAttribute('aria-label', `${DECK_A11Y[shot.key] || 'תמונה'} — הגדלה`);
+          btn.setAttribute('aria-label', `${DECK_A11Y[shot.key] || 'תמונה'} - הגדלה`);
           const img = document.createElement('img');
           img.src = shot.src;
           img.alt = '';

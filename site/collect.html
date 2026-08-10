@@ -1371,7 +1371,7 @@
           <span class="lock-chip" id="lockChip">🔒 ההוספה נעולה</span>
           <small id="lockNote"></small>
           <button class="lock-cta hidden" id="lockPayBtn" type="button" data-testid="lock-pay-btn">
-            לתשלום — ופותחים את האיסוף
+            לתשלום - ופותחים את האיסוף
           </button>
         </div>
       </div>
@@ -1436,7 +1436,7 @@
              in. See server/wa-guard.js for why it has to work this way. -->
         <div id="waGroupPanel" class="hidden" style="margin-top: 16px">
           <p class="muted" data-edit="collect-wa-group-hint">
-            💬 פתחנו לכם קבוצת וואטסאפ לאיסוף המילים. הצטרפו אליה וצרפו את כל מי שמכיר/ה — אפשר
+            💬 פתחנו לכם קבוצת וואטסאפ לאיסוף המילים. הצטרפו אליה וצרפו את כל מי שמכיר/ה - אפשר
             לכתוב מילים ישירות בקבוצה:
           </p>
           <a
@@ -1482,7 +1482,7 @@
           תקועים? ענו על כמה שאלות ונמלא לכם מילים 👇
         </div>
         <p class="muted" style="margin: -2px 0 4px" data-edit="collect-help-intro">
-          בחרו קטגוריה, כתבו תשובה ולחצו “הוסף” — כל תשובה נכנסת ישר לרשימה. אפשר כמה תשובות לכל
+          בחרו קטגוריה, כתבו תשובה ולחצו “הוסף” - כל תשובה נכנסת ישר לרשימה. אפשר כמה תשובות לכל
           שאלה.
         </p>
         <div class="chips" id="catChips"></div>
@@ -1535,11 +1535,11 @@
       <div class="card paid-card owner-only hidden" id="paidCard">
         <div class="paid-title" data-edit="collect-paid-title">התשלום התקבל ✓</div>
         <p class="paid-body" data-edit="collect-paid-body">
-          עכשיו הכי חשוב: הוסיפו כמה שיותר מילים. כשתסיימו — לחצו על ‘סיום’, וזהו: אנחנו מתחילים
+          עכשיו הכי חשוב: הוסיפו כמה שיותר מילים. כשתסיימו - לחצו על ‘סיום’, וזהו: אנחנו מתחילים
           להפיק את המשחק 💜
         </p>
         <button class="paid-cta" id="paidCloseBtn" type="button" data-edit="collect-paid-cta">
-          סיום — התחילו להפיק ✅
+          סיום - התחילו להפיק ✅
         </button>
       </div>
 
@@ -1610,7 +1610,7 @@
                 ><span class="opt-price">₪599</span></span
               >
               <span class="opt-note" data-edit="collect-ver-custom-note"
-                >בלי תבנית מוכנה — עיצוב ייחודי שנבנה מאפס סביב הסיפור שלכם</span
+                >בלי תבנית מוכנה - עיצוב ייחודי שנבנה מאפס סביב הסיפור שלכם</span
               >
               <span class="opt-note" data-edit="collect-ver-custom-note2"
                 >ניצור קשר לאחר התשלום לתיאום העיצוב</span
@@ -1768,7 +1768,7 @@
         <!-- Shown (via #payPanel.sales-paused) when the owner has switched off
              every checkout option, in place of the whole actionable pay area. -->
         <p class="pay-soon-note" id="paySoldOutNote" data-edit="collect-pay-paused">
-          המכירות סגורות כרגע — נחזור בקרוב 🙌
+          המכירות סגורות כרגע - נחזור בקרוב 🙌
         </p>
       </details>
 
@@ -2014,13 +2014,13 @@
         $('#countHint').textContent = atMax
           ? 'הגעתם למקסימום של ' +
             MAX_WORDS +
-            ' מילים — יש לכם משחק מפוצץ! אפשר לסגור ולהתחיל להפיק.'
+            ' מילים - יש לכם משחק מפוצץ! אפשר לסגור ולהתחיל להפיק.'
           : stage2
             ? 'יש כבר ' +
               n +
-              ' מילים — מעולה! מכאן מתחיל הכיף האמיתי: ככל שיש יותר מילים, המשחק יותר מצחיק ומפתיע. אפשר עד ' +
+              ' מילים - מעולה! מכאן מתחיל הכיף האמיתי: ככל שיש יותר מילים, המשחק יותר מצחיק ומפתיע. אפשר עד ' +
               MAX_WORDS +
-              ', ומה שלא תשלימו — נשלים לכם לפי סוג האירוע.'
+              ', ומה שלא תשלימו - נשלים לכם לפי סוג האירוע.'
             : n >= 50
               ? 'חצי דרך! עוד ' + (WORD_GOAL - n) + ' עד המינימום (אפשר עד ' + MAX_WORDS + ')'
               : 'עוד ' +
@@ -2042,8 +2042,8 @@
         // 400 words), and flips to a max-reached framing at/over the cap so it
         // doesn't contradict the "reached maximum" hint.
         $('#stage2Label').textContent = atMax
-          ? 'הגעתם למקסימום — יש לכם משחק מפוצץ!'
-          : 'המינימום מאחוריכם — ממשיכים למקסימום (' + MAX_WORDS + ')';
+          ? 'הגעתם למקסימום - יש לכם משחק מפוצץ!'
+          : 'המינימום מאחוריכם - ממשיכים למקסימום (' + MAX_WORDS + ')';
 
         // Locked: replace the "keep going" hint written above, which would
         // otherwise sit directly under a disabled input telling them to add more.
@@ -2296,7 +2296,7 @@
             // screen (see the paste handler) so the rest survives the paywall.
             const lost = blocked === 1 ? 'מילה אחת לא נוספה' : blocked + ' מילים לא נוספו';
             const landed = added === 1 ? 'נוספה מילה' : 'נוספו ' + added + ' מילים';
-            say((added ? landed + ' · ' : '') + lost + ' — האיסוף מושהה עד להשלמת התשלום');
+            say((added ? landed + ' · ' : '') + lost + ' - האיסוף מושהה עד להשלמת התשלום');
             return false;
           }
           if (added >= 1) {
@@ -3037,7 +3037,7 @@
           if (!payable || !v) {
             was.textContent = '';
             was.classList.add('hidden');
-            $('#payTotal').textContent = '—';
+            $('#payTotal').textContent = '-';
             return;
           }
           // A LOCKED order (admin-created / already placed) carries a FINAL stored
@@ -3523,7 +3523,7 @@
           btn.className = 'ghost';
           btn.style.marginTop = '8px';
           btn.setAttribute('data-testid', 'stale-session-btn');
-          btn.textContent = 'סגרתי את חלון התשלום — המשיכו';
+          btn.textContent = 'סגרתי את חלון התשלום - המשיכו';
           btn.onclick = async () => {
             btn.disabled = true;
             try {
@@ -3715,7 +3715,7 @@
          "the whatsapp button need to be available always". -->
     <div class="pay-bar owner-only hidden" id="payBar" data-testid="pay-bar">
       <div class="pay-bar-sum">
-        <span class="pay-bar-amt" id="payBarAmt" data-testid="pay-bar-amount">₪—</span>
+        <span class="pay-bar-amt" id="payBarAmt" data-testid="pay-bar-amount">₪-</span>
         <span class="pay-bar-lbl" data-edit="collect-pay-bar-label">המשחק שלכם מוכן</span>
       </div>
       <button
