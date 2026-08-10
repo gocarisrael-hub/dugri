@@ -239,7 +239,11 @@ describe('press routes: the happy path', () => {
     expect(done.status).toBe(200);
     expect(done.headers.get('content-type')).toContain('application/pdf');
     // the download name is the print shop's, not the on-disk one
-    expect(done.headers.get('content-disposition')).toContain('dugri-' + c.id + '-press.pdf');
+    // The download carries the order's TITLE now (server/pdf-name.js), so the whole
+    // uuid is no longer in the name. What this test is about is the SUFFIX — which
+    // artifact, which colour mode — plus enough id to tell two same-titled orders apart.
+    expect(done.headers.get('content-disposition')).toContain('-press.pdf');
+    expect(done.headers.get('content-disposition')).toContain(c.id.slice(0, 8));
     const got = Buffer.from(await done.arrayBuffer());
     expect(got.equals(pressPdf())).toBe(true);
     expect(fs.existsSync(pressFile(c.id))).toBe(true);
@@ -423,7 +427,8 @@ describe('press routes: the colour pass switched off', () => {
     expect(got.equals(passthroughPdf())).toBe(true);
     // Both kinds land in the same orders folder and look identical in a viewer,
     // so the difference is recorded where it is still free: in the name.
-    expect(done.headers.get('content-disposition')).toContain('dugri-' + c.id + '-press-rgb.pdf');
+    expect(done.headers.get('content-disposition')).toContain('-press-rgb.pdf');
+    expect(done.headers.get('content-disposition')).toContain(c.id.slice(0, 8));
     expect(done.headers.get('x-dugri-press-mode')).toBe('passthrough');
 
     // The child was asked for pass-through, and NOT handed an ICC path it would
@@ -531,7 +536,8 @@ describe('press routes: the colour pass switched off', () => {
       const done = await settle(c.id);
       expect(done.status).toBe(200);
       expect(Buffer.from(await done.arrayBuffer()).equals(pressPdf())).toBe(true);
-      expect(done.headers.get('content-disposition')).toContain('dugri-' + c.id + '-press.pdf');
+      expect(done.headers.get('content-disposition')).toContain('-press.pdf');
+      expect(done.headers.get('content-disposition')).toContain(c.id.slice(0, 8));
       expect(done.headers.get('x-dugri-press-mode')).toBe('cmyk');
       expect(JSON.parse(fs.readFileSync(modeFile(c.id), 'utf8')).cmyk).toBe(true);
     } finally {
@@ -548,7 +554,8 @@ describe('press routes: the colour pass switched off', () => {
     fs.unlinkSync(modeFile(c.id));
     const again = await fetch(base + key(pressPath(c.id)));
     expect(again.status).toBe(200);
-    expect(again.headers.get('content-disposition')).toContain('dugri-' + c.id + '-press.pdf');
+    expect(again.headers.get('content-disposition')).toContain('-press.pdf');
+    expect(again.headers.get('content-disposition')).toContain(c.id.slice(0, 8));
     expect(again.headers.get('x-dugri-press-mode')).toBe(null);
   }, 20000);
 });

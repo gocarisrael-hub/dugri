@@ -297,7 +297,9 @@ describe('the board artifact', () => {
     expect(dl.status).toBe(200);
     expect(dl.headers.get('content-type')).toContain('application/pdf');
     // the download name is the customer-facing one, not the on-disk one
-    expect(dl.headers.get('content-disposition')).toContain('dugri-' + c.id + '-board.pdf');
+    // Named after the order's title now; the point here is that it is the BOARD.
+    expect(dl.headers.get('content-disposition')).toContain('-board.pdf');
+    expect(dl.headers.get('content-disposition')).toContain(c.id.slice(0, 8));
     expect((await fetch(base + '/api/admin/collections/' + c.id + '/board')).status).toBe(403);
   });
 
