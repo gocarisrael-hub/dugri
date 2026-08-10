@@ -203,9 +203,6 @@ function renderEmailHtml({ title, bodyLines, cta, baseUrl, image, imageAlt } = {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(title || 'דוגרי')}</title>
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&display=swap');
-    </style>
   </head>
   <body style="margin:0;padding:0;background:#f4f4f7;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f7;padding:24px 0;">

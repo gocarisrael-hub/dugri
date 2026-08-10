@@ -71,6 +71,19 @@ describe('renderEmailHtml helper', () => {
     expect(html).not.toContain('<img');
     expect(html).toContain('דוגרי');
   });
+
+  it('embeds no off-domain resources — no external font/CSS references', () => {
+    const html = loadFresh().renderEmailHtml({
+      title: 'שלום',
+      bodyLines: ['שורה'],
+      baseUrl: BASE,
+    });
+    // Off-domain font/CSS links trip Resend's "resources match sending domain"
+    // check and are stripped by email clients anyway; the font-family stack
+    // falls back to Arial/Helvetica. Assert none leak into the body.
+    expect(html).not.toContain('fonts.googleapis.com');
+    expect(html).not.toContain('@import');
+  });
 });
 
 describe('buildBuyerConfirmation — branded html', () => {
