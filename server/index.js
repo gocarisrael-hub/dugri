@@ -698,9 +698,14 @@ app.post('/api/admin/collections/:id/custom', (req, res) => {
 //
 // Body: any subset of the collection fields (honoree_name, email, phone, design,
 // color, theme, extra_fields, word_font, gender, chasers, custom_title,
-// buyer_name, event_type, comment) plus an
+// buyer_name, event_type, comment, owner_note) plus an
 // optional `order: { version, address }` for the fulfilment choice. Absent keys
 // are left untouched.
+//
+// `owner_note` is the OWNER's own note, and the orders table PATCHes it on its
+// own from an inline box on the row. That works because absent keys really are
+// untouched: a body of {owner_note} edits the note and nothing else, so jotting
+// a line mid-phone-call can never disturb a field the owner did not open.
 //
 // The ORDER edit is applied FIRST and its failure aborts the whole request, so a
 // rejected fulfilment change (bad version / missing delivery address) can never
