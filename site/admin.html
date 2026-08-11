@@ -122,6 +122,142 @@
         color: #5c7357;
         font-size: 12.5px;
       }
+      /* A heading that can be filtered carries its control INSIDE the heading —
+         that is where the owner asked for it, and it is the only place the meaning
+         of the control is unambiguous ("filter this column", not "filter").
+         The flex row goes on a WRAPPER, never on the <th>: `display: flex` on a
+         table cell stops it being a table cell, the browser wraps the row in
+         anonymous cells, and the whole heading row slides out of line with the
+         columns underneath it. */
+      .th-in {
+        display: flex;
+        align-items: flex-start;
+        /* Beside the label, not at the far edge of the cell: pushed to the end it
+           sits against the NEXT column's heading and reads as belonging to it. */
+        justify-content: flex-start;
+        gap: 5px;
+      }
+      .th-f {
+        font: inherit;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1;
+        cursor: pointer;
+        border: 1px solid #d9cfc0;
+        background: #fff;
+        color: #5c7357;
+        border-radius: 0;
+        padding: 3px 5px;
+        margin: 0;
+        flex: 0 0 auto;
+        white-space: nowrap;
+      }
+      .th-f:hover {
+        background: #fff8f2;
+      }
+      /* A column that is actively filtering says so in the heading and carries how
+         many values it is keeping — a quiet caret would let a filtered table read as
+         an empty one. */
+      .th-f.on {
+        background: #8ca287;
+        border-color: #8ca287;
+        color: #fff;
+      }
+      /* The value picker. Fixed, and appended to the body rather than to the cell:
+         the table sets `overflow: hidden` for its rounded corner and #content scrolls
+         sideways, so a menu positioned inside a heading would be clipped by both. */
+      .colmenu {
+        position: fixed;
+        z-index: 200;
+        background: #fff;
+        border: 1px solid #e4ddd0;
+        box-shadow: 0 10px 30px rgba(35, 32, 28, 0.18);
+        border-radius: 0;
+        padding: 8px;
+        min-width: 190px;
+        max-width: min(320px, 92vw);
+        max-height: min(60vh, 420px);
+        overflow-y: auto;
+        font-size: 13px;
+      }
+      .colmenu h4 {
+        font-size: 12.5px;
+        color: #6b645b;
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+      .colmenu label {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 5px 4px;
+        cursor: pointer;
+        border-radius: 0;
+      }
+      .colmenu label:hover {
+        background: #f7f4ef;
+      }
+      .colmenu label span.n {
+        margin-inline-start: auto;
+        color: #6b645b;
+        font-size: 12px;
+      }
+      .colmenu .none {
+        color: #6b645b;
+        padding: 4px;
+      }
+      .colmenu .foot {
+        display: flex;
+        gap: 6px;
+        border-top: 1px solid #efe9df;
+        margin-top: 6px;
+        padding-top: 6px;
+      }
+      /* The strip under the tabs: the active filters in words, plus (on a phone,
+         where the headings are off screen) a way to open each column's picker. */
+      .colfilters {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 12px;
+      }
+      .colfilters[hidden] {
+        display: none;
+      }
+      .colfilters .lab {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #6b645b;
+      }
+      .chip {
+        font: inherit;
+        font-size: 12.5px;
+        font-weight: 700;
+        cursor: pointer;
+        border: 1px solid #8ca287;
+        background: #eef3ec;
+        color: #4c6247;
+        border-radius: 99px;
+        padding: 4px 10px;
+        margin: 0;
+      }
+      .chip.clear-all {
+        border-color: #e4ddd0;
+        background: #fff;
+        color: #6b645b;
+      }
+      /* The phone-only openers. On a wide screen the headings carry them. */
+      .colfilters .mobile-only {
+        display: none;
+      }
+      @media (max-width: 600px) {
+        .colfilters .mobile-only {
+          display: inline-flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+      }
       tr:last-child td {
         border-bottom: none;
       }
@@ -631,6 +767,12 @@
           </select>
         </label>
       </div>
+      <!-- Per-column filters live in the column headings (see COLUMNS), which the
+           phone layout hides — it stacks each row into a labelled card and takes the
+           <thead> off screen. This strip is where those same filters are reachable
+           there, and it is also where an active filter is stated in words on every
+           screen, so a narrowed table can never look like a table that lost rows. -->
+      <div class="colfilters" id="colfilters" hidden></div>
       <!-- The press build's colour pass, on/off. It lives on THIS page rather
            than in a settings screen because this is where the press button is:
            the switch that decides what that button produces has to be readable
@@ -1856,12 +1998,20 @@
         });
       }
 
-      // The columns, in order: the header text and the width the column gets on a
-      // wide screen. ONE list — the <thead>, the <colgroup> and the per-cell
-      // labels the phone layout prints all come from it, so a column added to the
-      // row can no longer drift out of step with its own heading. (It had:
-      // "לדפוס" and "מוכן" were inserted mid-row while the label list stayed at
+      // The columns, in order: the header text, the width the column gets on a wide
+      // screen, and — where the column holds a value worth narrowing by — how to
+      // filter it. ONE list: the <thead>, the <colgroup>, the per-cell labels the
+      // phone layout prints and the column filters all come from it, so a column
+      // added to the row can no longer drift out of step with its own heading. (It
+      // had: "לדפוס" and "מוכן" were inserted mid-row while the label list stayed at
       // seventeen entries, so every phone card mislabelled its last five values.)
+      //
+      // A filter is { id, value, label }: `value` puts a row in exactly one bucket
+      // (the same rule the cell itself renders by, so the menu can never offer a
+      // value the column does not show), and `label` is how that bucket is written
+      // in the menu. Columns of free text — the honoree, the buyer, an address, a
+      // note — deliberately have none: a list of every distinct name is not a filter,
+      // it is the table again.
       const COLUMNS = [
         // ניהול leads the row: the buttons are what the owner comes to this table
         // to press, and at the far end they sat behind a horizontal scroll on every
@@ -1873,14 +2023,58 @@
         ['כותרת', 140],
         ['לקוח', 140],
         ['מילים', 60],
-        ['סטטוס', 80],
-        ['עיצוב', 90],
+        [
+          'סטטוס',
+          80,
+          {
+            id: 'status',
+            value: (c) => c.status || '',
+            label: (v) => statusLabel[v] || v || '—',
+          },
+        ],
+        [
+          'עיצוב',
+          90,
+          { id: 'design', value: (c) => c.design || '', label: (v) => v || 'ללא עיצוב' },
+        ],
         ['פיונים', 80],
-        ['גרסה', 110],
+        [
+          'גרסה',
+          110,
+          {
+            id: 'version',
+            value: (c) => (c.order && c.order.version) || '',
+            label: (v) => versionLabel[v] || v || 'טרם הוזמן',
+          },
+        ],
         ['כתובת', 120],
-        ['תשלום', 80],
-        ['לדפוס', 110],
-        ['מוכן', 120],
+        [
+          'תשלום',
+          80,
+          {
+            id: 'paid',
+            value: (c) => (!c.order ? 'none' : c.order.paid ? 'yes' : 'no'),
+            label: (v) => ({ none: 'טרם הוזמן', yes: 'שולם', no: 'לא שולם' })[v] || v,
+          },
+        ],
+        [
+          'לדפוס',
+          110,
+          {
+            id: 'to_print',
+            value: (c) => (c.order && c.order.sent_to_print_at ? 'yes' : 'no'),
+            label: (v) => (v === 'yes' ? 'נשלח לדפוס' : 'טרם נשלח'),
+          },
+        ],
+        [
+          'מוכן',
+          120,
+          {
+            id: 'ready',
+            value: (c) => (c.order && c.order.ready_at ? 'yes' : 'no'),
+            label: (v) => (v === 'yes' ? 'מוכן' : 'לא מוכן'),
+          },
+        ],
         ['נוצר', 90],
         ['נסגר', 120],
         ['הערה שלי', 200],
@@ -1888,9 +2082,273 @@
         ['וואטסאפ', 120],
       ];
 
+      /* ======================================================================
+         COLUMN FILTERS
+         Pick values straight in the column: "only delivery", "only this design".
+         Multi-select, because the useful questions are plural ("delivery OR
+         pickup, but not the digital one"), and ANDed across columns and with the
+         payment/stage rows above the table.
+         ====================================================================== */
+      // id -> Set of kept values. An id that is absent, or holds an empty set, is
+      // not filtering — the two are the same thing, so clearing is just a delete.
+      const colFilters = new Map();
+      // Each filter carries its column's heading as `title`: the menu, the chip and
+      // the phone opener all name the column, and the heading is already that name.
+      const COL_FILTERS = COLUMNS.filter(([, , f]) => f).map(([title, , f]) => ({ ...f, title }));
+
+      const colFilterOn = (f) => {
+        const set = colFilters.get(f.id);
+        return !!(set && set.size);
+      };
+      // Does a row pass the column filters — optionally ignoring one of them? The
+      // exception is what makes the counts in a menu useful: a column is counted
+      // against everything EXCEPT itself, so the numbers say what each value WOULD
+      // give rather than what it gives on top of the choice already made in it.
+      function matchesColumns(c, exceptId) {
+        for (const f of COL_FILTERS) {
+          if (f.id === exceptId) continue;
+          const set = colFilters.get(f.id);
+          if (set && set.size && !set.has(String(f.value(c)))) return false;
+        }
+        return true;
+      }
+
+      // Rows that survive everything except one named column filter.
+      function rowsFor(exceptId) {
+        const payMatch = matcherFor(FILTERS, activeFilter);
+        const stageMatch = matcherFor(STAGES, activeStage);
+        return allCols.filter((c) => payMatch(c) && stageMatch(c) && matchesColumns(c, exceptId));
+      }
+
+      // The distinct values a column currently offers, with how many rows each one
+      // would show. Sorted by count, then by label, so the busy values are on top and
+      // the order is stable between repaints.
+      function facetsFor(f) {
+        const counts = new Map();
+        for (const c of rowsFor(f.id)) {
+          const v = String(f.value(c));
+          counts.set(v, (counts.get(v) || 0) + 1);
+        }
+        return [...counts.entries()]
+          .map(([value, n]) => ({ value, n, label: f.label(value) }))
+          .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label, 'he'));
+      }
+
+      // The open picker, if any. Tracked so the 15-second refresh can hold off
+      // rather than yanking the menu out from under the owner mid-choice.
+      let openMenu = null;
+      const menuBusy = () => !!openMenu;
+
+      function closeMenu() {
+        if (!openMenu) return;
+        openMenu.el.remove();
+        if (openMenu.anchor && openMenu.anchor.isConnected) {
+          openMenu.anchor.setAttribute('aria-expanded', 'false');
+        }
+        openMenu = null;
+        document.removeEventListener('mousedown', onDocDown, true);
+        document.removeEventListener('keydown', onMenuKey, true);
+        window.removeEventListener('scroll', closeMenu, true);
+      }
+      function onDocDown(e) {
+        if (!openMenu) return;
+        if (openMenu.el.contains(e.target) || e.target === openMenu.anchor) return;
+        closeMenu();
+      }
+      function onMenuKey(e) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          closeMenu();
+        }
+      }
+
+      function toggleMenu(f, anchor) {
+        // A second click on the same heading closes it, which is what a caret that
+        // opened it should do.
+        if (openMenu && openMenu.id === f.id) {
+          closeMenu();
+          return;
+        }
+        closeMenu();
+        const el = document.createElement('div');
+        el.className = 'colmenu';
+        el.dataset.filter = f.id;
+        el.setAttribute('role', 'dialog');
+        const h = document.createElement('h4');
+        h.textContent = 'סינון: ' + f.title;
+        el.appendChild(h);
+
+        const set = colFilters.get(f.id) || new Set();
+        const facets = facetsFor(f);
+        if (!facets.length) {
+          const none = document.createElement('div');
+          none.className = 'none';
+          none.textContent = 'אין ערכים לסינון כאן.';
+          el.appendChild(none);
+        }
+        for (const facet of facets) {
+          const lab = document.createElement('label');
+          const box = document.createElement('input');
+          box.type = 'checkbox';
+          box.checked = set.has(facet.value);
+          box.dataset.value = facet.value;
+          box.onchange = () => {
+            const next = new Set(colFilters.get(f.id) || []);
+            if (box.checked) next.add(facet.value);
+            else next.delete(facet.value);
+            if (next.size) colFilters.set(f.id, next);
+            else colFilters.delete(f.id);
+            // Repaint the table under the open menu. The menu itself is left
+            // standing (and its counts left alone) so a second and third value can
+            // be ticked without it moving or renumbering under the pointer.
+            renderAll({ keepMenu: true });
+          };
+          const text = document.createElement('span');
+          text.textContent = facet.label;
+          const n = document.createElement('span');
+          n.className = 'n';
+          n.textContent = facet.n;
+          lab.appendChild(box);
+          lab.appendChild(text);
+          lab.appendChild(n);
+          el.appendChild(lab);
+        }
+
+        const foot = document.createElement('div');
+        foot.className = 'foot';
+        const clear = document.createElement('button');
+        clear.className = 'act';
+        clear.type = 'button';
+        clear.textContent = 'נקה';
+        clear.onclick = () => {
+          colFilters.delete(f.id);
+          closeMenu();
+          renderAll();
+        };
+        const done = document.createElement('button');
+        done.className = 'act';
+        done.type = 'button';
+        done.textContent = 'סגור';
+        done.onclick = () => closeMenu();
+        foot.appendChild(clear);
+        foot.appendChild(done);
+        el.appendChild(foot);
+
+        document.body.appendChild(el);
+        // Position under the control, aligned to its start edge, and pulled back
+        // inside the viewport when the column sits near an edge.
+        const r = anchor.getBoundingClientRect();
+        const w = el.offsetWidth;
+        let left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
+        let top = r.bottom + 6;
+        if (top + el.offsetHeight > window.innerHeight - 8) {
+          top = Math.max(8, window.innerHeight - el.offsetHeight - 8);
+        }
+        el.style.left = left + 'px';
+        el.style.top = top + 'px';
+        openMenu = { id: f.id, el, anchor };
+        anchor.setAttribute('aria-expanded', 'true');
+        document.addEventListener('mousedown', onDocDown, true);
+        document.addEventListener('keydown', onMenuKey, true);
+        // The menu is fixed to the viewport while its heading scrolls with the table
+        // — vertically with the page, sideways inside #content. Rather than chase it,
+        // close: a picker that has drifted off its own column is worse than one that
+        // asks to be reopened. Capture phase, so the scroll of any container counts.
+        window.addEventListener('scroll', closeMenu, true);
+        const first = el.querySelector('input,button');
+        if (first) first.focus();
+      }
+
+      // The control itself, used twice: inside the column heading on a wide screen,
+      // and in the strip above the table on a phone, where the headings are hidden.
+      // `label` names the column when the button stands on its own (the phone
+      // strip); in a heading the column is already named beside it. The two
+      // placements get distinct testids because on each screen one of them is the
+      // hidden one, and a test that grabbed "the first" would grab the wrong one.
+      function filterButton(f, label) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'th-f' + (colFilterOn(f) ? ' on' : '');
+        b.dataset.testid = (label ? 'colfilter-bar-' : 'colfilter-') + f.id;
+        b.setAttribute('aria-haspopup', 'dialog');
+        const set = colFilters.get(f.id);
+        b.textContent = label ? label + ' ▾' : colFilterOn(f) ? set.size + ' ▾' : '▾';
+        b.title = 'סינון לפי ' + f.title;
+        b.onclick = (e) => {
+          e.stopPropagation();
+          toggleMenu(f, b);
+        };
+        return b;
+      }
+
+      // The strip: what is being filtered right now, in words, and on a phone the
+      // openers too. Rebuilt with the table.
+      function renderColFilterBar() {
+        const bar = document.getElementById('colfilters');
+        bar.textContent = '';
+        const active = COL_FILTERS.filter(colFilterOn);
+
+        const openers = document.createElement('div');
+        openers.className = 'mobile-only';
+        const lab = document.createElement('span');
+        lab.className = 'lab';
+        lab.textContent = 'סינון עמודה:';
+        openers.appendChild(lab);
+        for (const f of COL_FILTERS) openers.appendChild(filterButton(f, f.title));
+        bar.appendChild(openers);
+
+        for (const f of active) {
+          const set = colFilters.get(f.id);
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'chip';
+          chip.dataset.testid = 'colfilter-chip-' + f.id;
+          chip.textContent =
+            f.title +
+            ': ' +
+            [...set]
+              .map((v) => f.label(v))
+              .slice(0, 2)
+              .join(', ') +
+            (set.size > 2 ? ' +' + (set.size - 2) : '') +
+            ' ✕';
+          chip.title = 'ביטול הסינון על ' + f.title;
+          chip.onclick = () => {
+            colFilters.delete(f.id);
+            renderAll();
+          };
+          bar.appendChild(chip);
+        }
+        if (active.length > 1) {
+          const all = document.createElement('button');
+          all.type = 'button';
+          all.className = 'chip clear-all';
+          all.dataset.testid = 'colfilter-clear-all';
+          all.textContent = 'נקה הכל';
+          all.onclick = () => {
+            colFilters.clear();
+            renderAll();
+          };
+          bar.appendChild(all);
+        }
+        // Hidden entirely on a wide screen when nothing is filtered: the headings
+        // already carry the controls, so an empty strip would be furniture.
+        bar.hidden = false;
+      }
+
       function render(cols) {
         if (!cols.length) {
-          content.innerHTML = '<div class="msg">אין רשומות להצגה.</div>';
+          // Name the filters when there are any: an empty table under a filter is a
+          // narrowing, and reading it as "the orders are gone" is the wrong panic.
+          // The strip above still carries the chips that clear them.
+          const on = COL_FILTERS.filter(colFilterOn).map((f) => f.title);
+          content.textContent = '';
+          const box = document.createElement('div');
+          box.className = 'msg';
+          box.textContent = on.length
+            ? 'אין רשומות שמתאימות לסינון (' + on.join(', ') + ').'
+            : 'אין רשומות להצגה.';
+          content.appendChild(box);
           return;
         }
         const table = document.createElement('table');
@@ -1906,9 +2364,17 @@
         table.appendChild(colgroup);
         const thead = document.createElement('thead');
         const headRow = document.createElement('tr');
-        for (const [label] of COLUMNS) {
+        for (const [label, , f] of COLUMNS) {
           const th = document.createElement('th');
-          th.textContent = label;
+          const inner = document.createElement('div');
+          inner.className = 'th-in';
+          const text = document.createElement('span');
+          text.textContent = label;
+          inner.appendChild(text);
+          // The filter sits in the heading of the column it filters — no separate
+          // filter bar to map back onto the table by name.
+          if (f) inner.appendChild(filterButton(COL_FILTERS.find((x) => x.id === f.id)));
+          th.appendChild(inner);
           headRow.appendChild(th);
         }
         thead.appendChild(headRow);
@@ -2411,12 +2877,11 @@
 
       // Re-render stats, tabs and the filtered+sorted table from allCols. The two
       // filter rows AND together: payment, then where the order stands.
-      function renderAll() {
+      function renderAll(opts) {
         renderStats(allCols);
         renderTabs();
-        const payMatch = matcherFor(FILTERS, activeFilter);
-        const stageMatch = matcherFor(STAGES, activeStage);
-        const rows = allCols.filter((c) => payMatch(c) && stageMatch(c));
+        renderColFilterBar();
+        const rows = rowsFor(null);
         // What the pair actually narrowed to. Without it a combination with no
         // rows reads as "the orders are gone" rather than "none are at this step".
         sub.textContent =
@@ -2424,11 +2889,28 @@
             ? allCols.length + ' הזמנות'
             : 'מציג ' + rows.length + ' מתוך ' + allCols.length + ' הזמנות';
         render(sortCols(rows));
+        // The heading buttons were just rebuilt, so an open menu's anchor is a
+        // detached node — re-point it at the fresh one, or the next click outside
+        // would not recognise the control it came from.
+        if (openMenu && opts && opts.keepMenu) {
+          const fresh = document.querySelector(
+            '[data-testid="colfilter-' +
+              openMenu.id +
+              '"],[data-testid="colfilter-bar-' +
+              openMenu.id +
+              '"]'
+          );
+          if (fresh) openMenu.anchor = fresh;
+        } else {
+          closeMenu();
+        }
       }
 
       function hideControls() {
         statsEl.textContent = '';
         controlsEl.hidden = true;
+        closeMenu();
+        document.getElementById('colfilters').hidden = true;
         pressModeEl.hidden = true;
         pressModeLoaded = false;
       }
@@ -2539,7 +3021,9 @@
       // server, so it wins: the refresh is SKIPPED, not queued, and the next tick
       // fifteen seconds later picks everything up.
       setInterval(() => {
-        if (noteBusy()) return;
+        // …and the same for an open column-filter menu: repainting the table under
+        // it would close it mid-choice, which is the same lost work in miniature.
+        if (noteBusy() || menuBusy()) return;
         load();
       }, 15000);
     </script>

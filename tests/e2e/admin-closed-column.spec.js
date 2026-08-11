@@ -94,7 +94,11 @@ test('every phone-card label is the heading of its own column', async ({ page, r
   await expect(page.locator('tbody tr').first()).toBeVisible();
 
   const { heads, labels } = await page.evaluate(() => ({
-    heads: [...document.querySelectorAll('thead th')].map((th) => th.textContent),
+    // The heading's NAME, not its whole content: a filterable heading also holds
+    // the column's filter control (see admin-column-filters.spec.js).
+    heads: [...document.querySelectorAll('thead th')].map(
+      (th) => th.querySelector('.th-in span')?.textContent ?? th.textContent
+    ),
     labels: [...document.querySelectorAll('tbody tr:first-child td')].map(
       (td) => td.dataset.label || null
     ),
