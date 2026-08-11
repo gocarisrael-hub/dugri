@@ -562,6 +562,62 @@ test('the pay bar carries the price, sticks to the screen and opens the checkout
   await expect(page.locator('#payPanel')).toHaveAttribute('open', '');
 });
 
+// THE TOP PAY CARD. The same CTA as the bar, at the head of the page, so a
+// buyer who lands on her collection is never left asking where the payment is.
+// What must hold: it is THERE without scrolling, it quotes the SAME amount the
+// checkout will charge, and it opens the checkout rather than pointing at it.
+test('the top pay card states the price on arrival and opens the checkout', async ({ page }) => {
+  await stubPricing(page, {
+    store: { now: 199, was: 239 },
+    sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
+    versions: {
+      pdf: { enabled: false, price: 79 },
+      pickup: { enabled: true, price: 199 },
+      delivery: { enabled: false, price: 199 },
+      custom: { enabled: false, price: 599 },
+    },
+  });
+  await withCardEnabled(page);
+  // A phone, unscrolled: the state a buyer actually arrives in.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await createCollection(page, 'Shira');
+
+  const top = page.getByTestId('pay-top');
+  await expect(top).toBeVisible();
+  // Visible on arrival WITHOUT scrolling — that is the whole point of the copy.
+  await expect(top).toBeInViewport();
+  // One price, three places: the panel's total, the bar, and this card.
+  await expect(page.getByTestId('pay-top-amount')).toHaveText('₪199');
+  await expect(page.getByTestId('pay-bar-amount')).toHaveText('₪199');
+  await expect(page.locator('#payTotal')).toHaveText('199');
+
+  // It IS the checkout, not a signpost to it.
+  await expect(page.locator('#payPanel')).not.toHaveAttribute('open', '');
+  await page.getByTestId('pay-top-btn').click();
+  await expect(page.locator('#payPanel')).toHaveAttribute('open', '');
+});
+
+// A coupon changes the price the checkout will charge. The top card must move
+// with it — a stale headline number at the top of the page is the one failure
+// that makes stating the price up there worse than not stating it.
+test('the top pay card follows a coupon discount', async ({ page }) => {
+  await stubPricing(page);
+  await seedCoupon(page, 'TEST25', 25);
+  await withCardEnabled(page);
+  await createCollection(page, 'Shira');
+
+  // A pdf order starts at ₪79 — quoted at the top before anything is opened.
+  await expect(page.getByTestId('pay-top-amount')).toHaveText('₪79');
+
+  await page.locator('#payPanel summary').click();
+  await page.fill('#couponInput', 'TEST25');
+  await page.click('#couponApplyBtn');
+
+  // 79 → 59 in the checkout, and the headline number at the top moves with it.
+  await expect(page.locator('#payTotal')).toHaveText('59');
+  await expect(page.getByTestId('pay-top-amount')).toHaveText('₪59');
+});
+
 // THE OWNER'S CONDITION for accepting the bar, in her words: "the whatsapp
 // button need to be available always". A fixed bar at the foot of the page is
 // exactly the thing that buries a fixed button at the foot of the page, so this
@@ -629,6 +685,7 @@ test('card disabled: no dead pay CTA, neutral note instead, and no top nag', asy
   // in the panel instead, and the top reminder must NOT nag toward a dead panel.
   await createCollection(page, 'Shira');
   await expect(page.getByTestId('pay-bar')).toBeHidden();
+  await expect(page.getByTestId('pay-top')).toBeHidden();
   await page.locator('#payPanel summary').click();
   await expect(page.locator('#cardPayBtn')).toBeHidden();
   await expect(page.locator('#bitPayLink')).toHaveCount(0);
@@ -992,9 +1049,10 @@ test('after payment: pay panel + reminder disappear, סיום card takes over', 
   ctl.paid = true;
 
   await page.reload();
-  // Pay panel + top reminder gone; the "keep adding, then סיום" card is shown.
+  // Pay panel + both pay CTAs gone; the "keep adding, then סיום" card is shown.
   await expect(page.locator('#payPanel')).toBeHidden();
   await expect(page.getByTestId('pay-bar')).toBeHidden();
+  await expect(page.getByTestId('pay-top')).toBeHidden();
   await expect(page.locator('#paidCard')).toBeVisible();
   await expect(page.locator('#paidCard')).toContainText('התשלום התקבל');
   await expect(page.locator('#paidCloseBtn')).toBeVisible();

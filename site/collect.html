@@ -762,6 +762,52 @@
         outline: 3px solid #fff;
         outline-offset: 2px;
       }
+      /* THE TOP PAY CARD — the SAME call to action as the sticky bar, at the
+         head of the page. The bar follows the buyer down a long list; this one
+         answers "where do I pay?" the moment she lands, before she has scrolled
+         at all, and it says the amount out loud instead of pointing downward.
+         Shown on exactly the bar's condition (open && !paid && card_enabled)
+         and carrying the bar's amount, so the two can never disagree. */
+      .pay-top {
+        display: grid;
+        justify-items: center;
+        gap: 10px;
+        background: var(--ink);
+        color: #fff;
+        padding: 20px 18px;
+        margin-bottom: 14px;
+        text-align: center;
+      }
+      .pay-top-head {
+        font-weight: 900;
+        font-size: 20px;
+      }
+      .pay-top-amt {
+        font-weight: 900;
+        font-size: 32px;
+        line-height: 1;
+      }
+      .pay-top-lbl {
+        font-size: 13px;
+        opacity: 0.78;
+        max-width: 34ch;
+        line-height: 1.5;
+      }
+      .pay-top-go {
+        width: 100%;
+        background: #fff;
+        color: var(--ink);
+        border-radius: var(--radius, 0);
+        font: inherit;
+        font-weight: 900;
+        font-size: 17px;
+        padding: 14px 22px;
+        cursor: pointer;
+      }
+      .pay-top-go:focus-visible {
+        outline: 3px solid #fff;
+        outline-offset: 2px;
+      }
       /* paid state — replaces the pay panel with a "keep adding, then סיום" card */
       .paid-card {
         background: linear-gradient(135deg, var(--section), var(--surface));
@@ -1292,12 +1338,29 @@
         <div class="sub" id="subtitle">כל מילה, ביטוי, בדיחה פנימית או זיכרון נחשב</div>
       </header>
 
-      <!-- The unpaid owner's prompt to pay is the STICKY BAR at the foot of this
-           file (#payBar), not a strip here. What used to sit in this slot said
-           "you haven't paid — the payment is waiting below ⬇": a signpost, at the
-           top of a page whose whole job is a long list of words, so it was off
-           screen for most of the session and pointed at something rather than
-           being it. -->
+      <!-- OWNER, unpaid: the pay CTA, at the TOP as well as in the sticky bar at
+           the foot of this file (#payBar). Two placements of ONE action, not two
+           actions: the bar follows the buyer down a long list of words, this one
+           meets her where she lands. What used to sit in this slot was a strip
+           that said "the payment is waiting below ⬇" — it pointed at the
+           checkout instead of being it, and that is the mistake this replaces:
+           the amount is stated here and the button opens the checkout itself. -->
+      <div class="pay-top owner-only hidden" id="payTop" data-testid="pay-top">
+        <div class="pay-top-head" data-edit="collect-pay-top-head">כאן משלמים 👇</div>
+        <span class="pay-top-amt" id="payTopAmt" data-testid="pay-top-amount">₪-</span>
+        <span class="pay-top-lbl" data-edit="collect-pay-top-label"
+          >תשלום מאובטח בכרטיס אשראי · אפשר להמשיך להוסיף מילים גם אחרי התשלום</span
+        >
+        <button
+          class="pay-top-go"
+          type="button"
+          id="payTopBtn"
+          data-testid="pay-top-btn"
+          data-edit="collect-pay-top-cta"
+        >
+          💳 לתשלום
+        </button>
+      </div>
 
       <div class="banner" id="banner"></div>
 
@@ -2183,6 +2246,10 @@
           // Only prompt them to pay when there's actually a working pay button
           // (card configured). Otherwise the bar would advertise a dead panel.
           $('#payBar').classList.toggle('hidden', !(open && !paid && cardEnabled));
+          // The top card is the same CTA on the same condition — never one
+          // without the other, or the page would offer to take a payment in one
+          // place while the other says the checkout is dead.
+          $('#payTop').classList.toggle('hidden', !(open && !paid && cardEnabled));
           // …and the moment its visibility changes, so does how much room the
           // page and the WhatsApp button have to leave for it.
           syncPayBarHeight();
@@ -2917,6 +2984,13 @@
           track('pay_bar_click', {});
           openPayPanel('start');
         });
+        // The top card opens the same checkout the same way. Tracked under its
+        // own name so the two placements can be told apart in the analytics —
+        // which one buyers actually use is the reason to keep or drop either.
+        $('#payTopBtn').addEventListener('click', () => {
+          track('pay_top_click', {});
+          openPayPanel('start');
+        });
         // ...and so does the free-quota lock's own CTA (owner only — a
         // contributor's veil carries no button, so this never fires for them).
         $('#lockPayBtn').addEventListener('click', () => {
@@ -3073,11 +3147,17 @@
         // the mistake the comment above refreshPay's own maths warns about.
         // "—" (no payable price yet) carries through unchanged: better a dash on
         // the bar than a guess.
+        // Both placements are written from the same source for the same reason:
+        // a top card quoting one price while the bar (or the panel) charges
+        // another is worse than no price at the top at all.
         function syncPayBarAmount() {
-          const amt = document.getElementById('payBarAmt');
           const total = document.getElementById('payTotal');
-          if (!amt || !total) return;
-          amt.textContent = '₪' + total.textContent;
+          if (!total) return;
+          const text = '₪' + total.textContent;
+          ['payBarAmt', 'payTopAmt'].forEach((id) => {
+            const amt = document.getElementById(id);
+            if (amt) amt.textContent = text;
+          });
         }
 
         // Spell out a total that isn't self-evident. A single copy with no shipping
