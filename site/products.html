@@ -670,7 +670,13 @@
         el.textContent = '';
         const now = document.createElement('span');
         now.className = 'now';
-        now.textContent = `מ-${PRICE} ₪`;
+        // "מ-" stays OUTSIDE the isolated amount — a Hebrew prefix inside it
+        // flips with the run (see .amt in css/tokens.css).
+        now.textContent = 'מ-';
+        const amt = document.createElement('span');
+        amt.className = 'amt';
+        amt.textContent = `${PRICE} ₪`;
+        now.appendChild(amt);
         el.appendChild(now);
         const was = document.createElement('s');
         // .was is what css/tokens.css keys sale mode off — without the class this

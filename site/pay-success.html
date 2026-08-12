@@ -404,13 +404,16 @@
           el.classList.add('shown');
         }
 
-        function row(key, value, description) {
+        // `isAmount` marks a value that is a PRICE: it gets the .amt run so the ₪
+        // sits welded to its digits at the reading end, the same as every price on
+        // the storefront and in the checkout (see css/tokens.css).
+        function row(key, value, description, isAmount) {
           var p = document.createElement('p');
           var k = document.createElement('span');
           k.className = 'k';
           k.textContent = key;
           var v = document.createElement('span');
-          v.className = 'v';
+          v.className = isAmount ? 'v amt' : 'v';
           v.textContent = value;
           if (description) {
             var d = document.createElement('span');
@@ -471,7 +474,12 @@
             if (s.order) {
               rows.appendChild(row('חבילה', s.order.version_label, s.order.description));
               var amount = amountText(s.order);
-              if (amount) rows.appendChild(row(s.order.paid ? 'שולם' : 'מחיר', amount));
+              // A price gets the .amt treatment; "חינם (קופון 100%)" is a sentence,
+              // not an amount, and must not be run LTR — hence the digit test.
+              if (amount)
+                rows.appendChild(
+                  row(s.order.paid ? 'שולם' : 'מחיר', amount, null, /^\d/.test(amount))
+                );
             }
             if (s.honoree_name) rows.appendChild(row('לכבוד', s.honoree_name));
             if (s.design) rows.appendChild(row('עיצוב', s.design));

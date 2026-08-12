@@ -501,7 +501,7 @@ test('owner pay panel: applyPricing preserves an option\'s struck "was" anchor w
 
   // The struck anchor survives the stamp, and the live now-price shows next to it.
   await expect(pdfPrice.locator('s.was')).toHaveText('129');
-  await expect(pdfPrice).toContainText('₪79');
+  await expect(pdfPrice).toContainText('79 ₪');
 });
 
 test('owner pay panel is collapsed by default and opens on the summary button', async ({
@@ -549,7 +549,7 @@ test('the pay bar carries the price, sticks to the screen and opens the checkout
   const bar = page.getByTestId('pay-bar');
   await expect(bar).toBeVisible();
   // The amount is the panel's own number, not a second computation of it.
-  await expect(page.getByTestId('pay-bar-amount')).toHaveText('₪199');
+  await expect(page.getByTestId('pay-bar-amount')).toHaveText('199 ₪');
   await expect(page.locator('#payTotal')).toHaveText('199');
 
   // STICKY: still on screen at the foot of a long page, which is the whole point.
@@ -587,8 +587,8 @@ test('the top pay card states the price on arrival and opens the checkout', asyn
   // Visible on arrival WITHOUT scrolling — that is the whole point of the copy.
   await expect(top).toBeInViewport();
   // One price, three places: the panel's total, the bar, and this card.
-  await expect(page.getByTestId('pay-top-amount')).toHaveText('₪199');
-  await expect(page.getByTestId('pay-bar-amount')).toHaveText('₪199');
+  await expect(page.getByTestId('pay-top-amount')).toHaveText('199 ₪');
+  await expect(page.getByTestId('pay-bar-amount')).toHaveText('199 ₪');
   await expect(page.locator('#payTotal')).toHaveText('199');
 
   // It IS the checkout, not a signpost to it.
@@ -607,7 +607,7 @@ test('the top pay card follows a coupon discount', async ({ page }) => {
   await createCollection(page, 'Shira');
 
   // A pdf order starts at ₪79 — quoted at the top before anything is opened.
-  await expect(page.getByTestId('pay-top-amount')).toHaveText('₪79');
+  await expect(page.getByTestId('pay-top-amount')).toHaveText('79 ₪');
 
   await page.locator('#payPanel summary').click();
   await page.fill('#couponInput', 'TEST25');
@@ -615,7 +615,7 @@ test('the top pay card follows a coupon discount', async ({ page }) => {
 
   // 79 → 59 in the checkout, and the headline number at the top moves with it.
   await expect(page.locator('#payTotal')).toHaveText('59');
-  await expect(page.getByTestId('pay-top-amount')).toHaveText('₪59');
+  await expect(page.getByTestId('pay-top-amount')).toHaveText('59 ₪');
 });
 
 // THE OWNER'S CONDITION for accepting the bar, in her words: "the whatsapp
@@ -777,8 +777,8 @@ test('each option price is rendered from the pricing endpoint', async ({ page })
   await createCollection(page, 'Shira');
   await page.locator('#payPanel summary').click();
   // pdf is first + enabled in the stub → ₪79; pickup shows the stubbed ₪149.
-  await expect(page.locator('#payPanel .opt-price').first()).toContainText('₪79');
-  await expect(page.locator('#payPanel')).toContainText('₪149');
+  await expect(page.locator('#payPanel .opt-price').first()).toContainText('79 ₪');
+  await expect(page.locator('#payPanel')).toContainText('149 ₪');
 });
 
 test('launch defaults: checkout offers ONLY self-pickup at ₪199', async ({ page }) => {
@@ -811,7 +811,7 @@ test('launch defaults: checkout offers ONLY self-pickup at ₪199', async ({ pag
   // pickup is auto-selected and the total is its price.
   await expect(page.locator('input[name="payVersion"][value="pickup"]')).toBeChecked();
   await expect(page.locator('#payTotal')).toHaveText('199');
-  await expect(page.locator('#payPanel')).toContainText('₪199');
+  await expect(page.locator('#payPanel')).toContainText('199 ₪');
 });
 
 test('an admin custom order LOCKS checkout to custom @599 — no client downgrade', async ({
@@ -837,7 +837,7 @@ test('an admin custom order LOCKS checkout to custom @599 — no client downgrad
     await expect(label(v)).toBeHidden();
   }
   await expect(page.locator('#payTotal')).toHaveText('599');
-  await expect(page.locator('#payPanel')).toContainText('₪599');
+  await expect(page.locator('#payPanel')).toContainText('599 ₪');
   // The order stays payable (it's a valid persisted order).
   await expect(page.locator('#cardPayBtn')).toBeEnabled();
 });
@@ -1087,10 +1087,10 @@ test('pay panel shows the new version names and prices', async ({ page }) => {
   // shipping fee alone.
   await expect(panel).toContainText('משחק מוכן ומודפס');
   await expect(panel).toContainText('מוכן תוך כ-3 ימי עסקים · איסוף מבית דפוס גלאור, ת״א');
-  await expect(panel).toContainText('₪149');
+  await expect(panel).toContainText('149 ₪');
   await expect(panel).toContainText('שלחו לי עד הבית');
   // The tick is priced at the SHIPPING alone, not at a second full product price.
-  await expect(page.locator('#shipPrice')).toHaveText('₪39');
+  await expect(page.locator('#shipPrice')).toHaveText('39 ₪');
   await expect(panel).not.toContainText('המפונקת');
   await expect(panel).toContainText('מגיע תוך כ-7 ימי עסקים');
   await expect(panel).toContainText('אזורים מרוחקים בתיאום ובתוספת תשלום');
