@@ -9,6 +9,10 @@ const crypto = require('crypto');
 // The word-entry cap + its normalizer live in validate.js so the collection
 // store, the wordlist pools and the routes all measure entries the same way.
 const validate = require('./validate');
+// Pure scheduling rules — including WHEN CHASING STOPS, which the due-queries
+// below apply so a finished order can never be nudged again. reminders.js
+// requires nothing, so this stays cycle-free.
+const reminders = require('./reminders');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DB_FILE = path.join(DATA_DIR, 'dugri-data.json');
@@ -573,6 +577,10 @@ const db = {
       closed_at: null,
       // One-time "you haven't added words yet" nudge timestamp; null until sent.
       reminded_at: null,
+      // Lifetime count of automated reminder EMAILS sent to this buyer, across all
+      // three schedulers. Bounded by settings.reminders.max_emails — see
+      // reminderEmailsSent.
+      reminder_emails_sent: 0,
       // Per-reminder send state for the owner reminder list (server/reminders.js):
       // { <reminderId>: { count, last_at } }. Feeds the engine's max_total cap +
       // every_days spacing. Empty until the first reminder fires (markReminderSent).
@@ -1644,7 +1652,11 @@ const db = {
     const cutoff = now - REMINDER_AFTER_MS;
     return _db.collections.filter((c) => {
       if (!c || !c.owner_email) return false;
-      if (c.cancelled) return false;
+      // Nothing to ask for once the words are in, the deck is at the printer or
+      // the order is ready — see reminders.wordRemindersStopped. `status` is the
+      // STORED one here (this is the raw store), so effectiveStatus is applied
+      // first: an expired list reads as open until it is derived.
+      if (reminders.wordRemindersStopped({ ...c, status: effectiveStatus(c) })) return false;
       if (c.reminded_at) return false;
       const hasWords = _db.words.some((w) => w.collection_id === c.id);
       if (hasWords) return false;
@@ -1664,6 +1676,28 @@ const db = {
     if (!c) return 0;
     if (Number.isInteger(c.payment_reminders_sent)) return c.payment_reminders_sent;
     return c.payment_reminded_at ? 1 : 0;
+  },
+
+  // How many AUTOMATED reminder emails this buyer has already had — the words
+  // nudge, the payment milestones and the owner's reminder list, counted together
+  // because the buyer does not experience them as three systems. It is the number
+  // the ceiling in settings (reminders.max_emails) is spent against; transactional
+  // mail (the confirmation, the receipt, "your order is ready") is NOT counted,
+  // since each of those is the consequence of a thing that actually happened.
+  reminderEmailsSent(c) {
+    if (!c) return 0;
+    return Number.isInteger(c.reminder_emails_sent) ? c.reminder_emails_sent : 0;
+  },
+
+  // Spend one of that budget. Called on every reminder email ATTEMPT (the same
+  // record-on-attempt posture the reminder state itself uses: a send that looks
+  // failed must not become a free retry).
+  markReminderEmailSent(id) {
+    const c = this.getCollection(id);
+    if (!c) return false;
+    c.reminder_emails_sent = this.reminderEmailsSent(c) + 1;
+    saveDb();
+    return true;
   },
 
   // Record that ONE more payment reminder was sent (advances the stage counter).
@@ -1689,7 +1723,11 @@ const db = {
       .filter((d) => d > 0)
       .sort((a, b) => a - b);
     return _db.collections.filter((c) => {
-      if (!c || c.cancelled) return false;
+      if (!c) return false;
+      // A ready order has been handed over; chasing it for money is the owner's
+      // call to make by hand, not an automated nudge — see
+      // reminders.paymentRemindersStopped.
+      if (reminders.paymentRemindersStopped(c)) return false;
       const o = c.order;
       if (!o || o.paid) return false;
       if (!c.owner_email && !c.owner_phone) return false;
