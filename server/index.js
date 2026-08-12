@@ -180,6 +180,7 @@ function orderArgs({
   customTitle,
   wordlist,
   cardOrder,
+  personalCount,
   gender,
   photos,
 }) {
@@ -211,6 +212,13 @@ function orderArgs({
   // ever one of the validated values, and omitted for the default so an old
   // order's argv is byte-for-byte what it always was.
   if (db.CARD_ORDERS.includes(cardOrder)) args.push('--order=' + cardOrder);
+  // Where her own words end in the list being printed. Only meaningful with the
+  // 'personal-first' order, and only knowable HERE: a frozen bank reaches the
+  // generator as one flat list of 412, so the generator's own measurement of the
+  // boundary would be "all of it" and the deck would print blended.
+  if (Number.isInteger(personalCount) && personalCount > 0) {
+    args.push('--personal-count=' + personalCount);
+  }
   // Honoree gender: resolves the title's {feminine|masculine} markers, so a
   // Hebrew birthday title prints בת for a girl and בן for a boy from one
   // template. Only ever the two validated values.
@@ -275,6 +283,7 @@ function runGenerator({
   gender,
   wordlist,
   cardOrder,
+  personalCount,
 }) {
   return new Promise((resolve, reject) => {
     let wordsFile;
@@ -296,6 +305,7 @@ function runGenerator({
       customTitle,
       wordlist,
       cardOrder,
+      personalCount,
       gender,
       photos,
     });
@@ -987,6 +997,8 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       // existed. Read from the STORED collection, like everything else here.
       wordlist: c.wordlist || null,
       cardOrder: c.card_order || null,
+      // Where HER words end in the list above — see personalCountForProduction.
+      personalCount: wordBank.personalCountForProduction(c),
     });
     // The board is a second, separate artifact — recorded on production so the
     // admin UI knows whether to offer it, and left null for a generator run that
@@ -1406,6 +1418,8 @@ app.post('/api/admin/collections/:id/press', (req, res) => {
     customTitle: c.custom_title || null,
     wordlist: c.wordlist || null,
     cardOrder: c.card_order || null,
+    // Same boundary as the customer's deck — the two files are the same deck.
+    personalCount: wordBank.personalCountForProduction(c),
     gender: c.gender || null,
     photos: pawnPhotoFiles(c),
   });

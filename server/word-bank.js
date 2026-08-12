@@ -58,6 +58,23 @@ const TIMEOUT_MS = Number(process.env.WORD_BANK_TIMEOUT_MS || 30000);
 // and lose the one fact the number is there to carry — that this order has been
 // approved before. `pool` is the seed pool the top-up was ASKED for (null = the
 // theme's own), which is what makes a later pool change detectable as staleness.
+// The dedup key topup.py uses (`_norm`): trimmed, inner whitespace collapsed,
+// lowercased. Kept identical on purpose — the two have to agree about what "the
+// same word" means or the boundary lands off by one.
+const normWord = (w) =>
+  String(w == null ? '' : w)
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+
+// How many of `frozen`'s leading words came from `personal`.
+function personalSpan(frozen, personal) {
+  const mine = new Set((personal || []).map(normWord).filter(Boolean));
+  let n = 0;
+  while (n < frozen.length && mine.has(normWord(frozen[n]))) n += 1;
+  return n;
+}
+
 function record({ words, theme, pool, personalCount }) {
   return {
     created_at: new Date().toISOString(),
@@ -104,7 +121,14 @@ function freeze({ personalWords, theme, pool, python }) {
       words: frozen,
       theme,
       pool,
-      personalCount: words.length,
+      // WHERE HER WORDS END in the frozen list — measured on the OUTPUT, not
+      // taken from the input's length. topup dedupes (trimmed, inner whitespace
+      // collapsed, lowercased) before it fills, so a list with two spellings of
+      // one word yields fewer frozen entries than it had; counting the input
+      // would push the boundary into the filler by exactly that many. Her words
+      // come first and a pool word equal to one of hers is skipped as a
+      // duplicate, so walking the prefix while it is still hers is exact.
+      personalCount: personalSpan(frozen, words),
     });
   } catch {
     return null;
@@ -127,6 +151,27 @@ function freeze({ personalWords, theme, pool, python }) {
  * `personalWords` is passed in rather than read here so this module never needs
  * the store.
  */
+/**
+ * Where the buyer's OWN words end in the list production is about to print.
+ *
+ * This is the number the 'personal-first' card order splits on, and it cannot be
+ * recovered downstream: a frozen bank arrives at the generator as one flat list
+ * of 412, so the generator — which measures the boundary itself when it is handed
+ * her raw words — measures 412 and splits nothing. Silently: the deck prints, it
+ * just prints blended, which is exactly how the owner found it ("i try to say to
+ * him first costumer words and then ours and it still comes the pdf not like
+ * this").
+ *
+ * Null when there is nothing to say: no bank (the generator's own measurement is
+ * right then), or a bank frozen before this was recorded.
+ */
+function personalCountForProduction(collection) {
+  const bank = collection && collection.word_bank;
+  if (!bank || !Array.isArray(bank.words) || !bank.words.length) return null;
+  const n = Number(bank.personal_count);
+  return Number.isInteger(n) && n > 0 && n < bank.words.length ? n : null;
+}
+
 function wordsForProduction(collection, personalWords) {
   const bank = collection && collection.word_bank;
   if (bank && Array.isArray(bank.words) && bank.words.length) return bank.words;
@@ -147,4 +192,11 @@ function isStale(collection) {
   return (bank.pool || null) !== pool || (theme && bank.theme !== theme);
 }
 
-module.exports = { freeze, wordsForProduction, isStale, TIMEOUT_MS };
+module.exports = {
+  freeze,
+  wordsForProduction,
+  personalCountForProduction,
+  isStale,
+  personalSpan,
+  TIMEOUT_MS,
+};
