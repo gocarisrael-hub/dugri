@@ -2132,7 +2132,7 @@
       <div class="cfg-head">
         <div class="plan-pill" data-testid="plan-pill">
           החל מ- <span id="planPrice" data-testid="plan-price">199</span> ₪
-          <s class="was" id="planWas">239 ₪</s>
+          <s class="was" id="planWas">239</s>
         </div>
         <div class="wiz-progress">
           <div class="wiz-steplabel">
@@ -3970,7 +3970,7 @@
       function paintPlan() {
         document.getElementById('planPrice').textContent = PLANS[plan].price;
         const wasEl = document.getElementById('planWas');
-        if (wasEl) wasEl.textContent = PLANS[plan].was + ' ₪';
+        if (wasEl) wasEl.textContent = String(PLANS[plan].was);
       }
       paintPlan();
 

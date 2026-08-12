@@ -478,7 +478,8 @@ function renderInfo(d, overrides) {
   const now = document.getElementById('pdpPriceNow');
   if (now) now.textContent = `מ-${PRICE} ₪`;
   const was = document.getElementById('pdpPriceWas');
-  if (was) was.textContent = `${WAS} ₪`;
+  // Digits only — the ₪ stays on the live price beside it (see index.html).
+  if (was) was.textContent = String(WAS);
 
   // About: tag it editable per-design and show the saved override if any.
   const about = document.getElementById('pdpAbout');
@@ -888,7 +889,8 @@ function restampPrices() {
   const now = document.getElementById('pdpPriceNow');
   if (now) now.textContent = `מ-${PRICE} ₪`;
   const was = document.getElementById('pdpPriceWas');
-  if (was) was.textContent = `${WAS} ₪`;
+  // Digits only — the ₪ stays on the live price beside it (see index.html).
+  if (was) was.textContent = String(WAS);
   for (const el of document.querySelectorAll('.pdp-rel-price')) {
     el.textContent = `מ-${PRICE} ₪`;
   }
