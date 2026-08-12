@@ -3390,7 +3390,6 @@
               priceEl.appendChild(document.createTextNode('₪' + priceFor(shown)));
             }
           }
-          syncShipOption({ locked: false });
           // Keep a valid (enabled) radio selected — but only if something is on
           // sale. When every option is off, firstEnabledVersion() is null; leave
           // no disabled option checked so pay is never attempted at a dead price.
@@ -3403,6 +3402,16 @@
             );
             if (el) el.checked = true;
           }
+          // AFTER the selection above, never before: the tick is shown only for a
+          // PRINTED game, and it reads that from the checked radio. Run first and
+          // it reads the loop's leftovers — with the PDF version off, the radio it
+          // ships checked has just been unchecked as disabled and nothing is
+          // selected yet, so the tick decides "not a printed order" and hides. The
+          // default gets selected one line later and nothing re-runs this, so a
+          // buyer arriving at the page finds the printed game selected and NO way
+          // to ask for delivery until she happens to click the radio that already
+          // looks selected. Ordering is the whole fix.
+          syncShipOption({ locked: false });
           syncSalesPaused();
           refreshPay();
         }

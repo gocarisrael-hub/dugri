@@ -2109,6 +2109,56 @@ test('shipping is a tick on the printed game, and it is what the server is told'
   await expect(page.locator('#payTotal')).toHaveText('199');
 });
 
+// THE TICK MUST BE THERE ON ARRIVAL. It is shown only for a PRINTED game, read
+// off the checked version radio — and applyPricing used to decide that BEFORE it
+// selected the default version. With the PDF version switched off (which is how
+// the shop sells today) the radio that ships checked is disabled and unchecked by
+// the loop above, so at that moment nothing is selected, the tick concludes "not
+// a printed order" and hides. The default is selected one line later and nothing
+// re-runs the tick — so a buyer arriving at the page sees the printed game
+// selected and no way to ask for delivery until she clicks the radio that already
+// looks selected. This test does the one thing that catches that: it touches
+// nothing.
+test('the shipping tick is offered on arrival, without touching a radio', async ({ page }) => {
+  await stubPricing(page, {
+    store: { now: 199, was: 239 },
+    sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
+    delivery_fee: 39,
+    versions: {
+      // The live configuration: no PDF, printed game on, delivery on.
+      pdf: { enabled: false, price: 79 },
+      pickup: { enabled: true, price: 199 },
+      delivery: { enabled: true, price: 199 },
+      custom: { enabled: false, price: 599 },
+    },
+  });
+  // The pricing answer arrives LAST, after the collection has rendered. That
+  // ordering is the one that pins the bug: the page re-applies pricing when the
+  // collection loads, so a pricing pass that lands FIRST is repaired by that
+  // second pass and the miss hides itself. Delaying it makes the pricing pass the
+  // final word — which is also the real ordering whenever the pricing endpoint is
+  // the slower of the two.
+  await page.route('**/api/pricing', async (route) => {
+    await new Promise((r) => setTimeout(r, 400));
+    await route.fallback(); // hand it to the stub registered above
+  });
+  await createCollection(page, 'Shira');
+  await page.locator('#payPanel summary').click();
+  await expect(page.locator('html')).toHaveAttribute('data-sale', 'on');
+
+  // No click on any radio between here and the assertion — and a SHORT window,
+  // because the page polls the collection every 5s and each poll re-applies
+  // pricing, which repairs the miss. A buyer does not wait five seconds to find
+  // out whether she can ask for delivery, so "it appears eventually" is not the
+  // behaviour under test: it has to be there when the panel opens.
+  await expect(page.getByTestId('ship-toggle')).toBeVisible({ timeout: 1500 });
+  // …and the printed game really is the selection it was drawn for.
+  const picked = await page.evaluate(
+    () => (document.querySelector('input[name="payVersion"]:checked') || {}).value
+  );
+  expect(picked).toBe('pickup');
+});
+
 // The tick shipped looking like a run-on paragraph: its price ran straight into
 // its label ("שלחו לי עד הבית39₪") and both notes flowed inline, because the
 // title/price/note rules were scoped to .pay-opt and the tick is a .pay-addon.
