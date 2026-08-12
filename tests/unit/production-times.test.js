@@ -28,6 +28,13 @@ const SURFACES = [
   ['the confirmation-email defaults', () => read('server', 'settings.js')],
 ];
 
+// The storefront pages a visitor reads BEFORE ordering. They used to advertise
+// "אספקה תוך 24 שעות" — true of the digital file alone, printed in the meta
+// description that shows up in search results and in the note under the buy
+// button, where it read as the delivery time for whatever she was buying. The
+// printed game is the headline product now, so these quote its time instead.
+const STOREFRONT = ['index.html', 'how.html', 'product.html'];
+
 // Whitespace in HTML wraps: index.html has the answer split across two source
 // lines, so "תוך\n              3 ימי עסקים" is the same sentence. Collapse
 // before matching, or this passes/fails on Prettier's line breaks.
@@ -68,6 +75,14 @@ describe('production times are the same promise on every surface', () => {
     expect(line, 'the trust line is gone entirely').not.toBeNull();
     expect(line[1]).toContain('תשלום מאובטח');
     expect(line[1]).not.toMatch(/\d/);
+  });
+
+  it('no storefront page still advertises a 24-hour delivery', () => {
+    for (const page of STOREFRONT) {
+      const text = flat(read('site', page));
+      expect(text, `${page} still advertises delivery in 24 hours`).not.toContain('24 שעות');
+      expect(text, `${page} quotes no production time at all`).toContain('3 ימי עסקים');
+    }
   });
 
   it('the FAQ answer about timing says 3 business days for pickup', () => {
