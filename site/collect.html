@@ -1749,9 +1749,11 @@
         </div>
         <div class="pay-err" id="payErr"></div>
 
-        <p class="pay-trust" data-edit="collect-pay-trust">
-          🔒 תשלום מאובטח בכרטיס אשראי · הקובץ נשלח עד 24 שעות מקבלת המילים
-        </p>
+        <!-- Security only. The delivery half of this line ("הקובץ נשלח עד 24
+             שעות מקבלת המילים") was dropped: it promised a 24-hour turnaround
+             right beside a printed game quoted at 3 business days, and the
+             option the buyer has selected already states its own time. -->
+        <p class="pay-trust" data-edit="collect-pay-trust">🔒 תשלום מאובטח בכרטיס אשראי</p>
 
         <button
           type="button"
