@@ -603,6 +603,17 @@ const REGISTRY = {
   // reminders.validateReminders (wired into validateValue via kind:'reminders').
   reminders: {
     list: { kind: 'reminders', tokens: ['honoree', 'link'], default: DEFAULT_REMINDERS },
+    // THE CEILING. However the list above is configured, one buyer gets at most
+    // this many AUTOMATED reminder emails for one order — the words nudge, the
+    // payment milestones and every reminder in the list, counted together.
+    //
+    // It exists because nothing else bounds the total: the list holds up to 20
+    // reminders, each with its own max_total and no upper limit on it, so a
+    // reasonable-looking edit ("remind daily until they answer") could put twenty
+    // emails a day into someone's inbox. Per-reminder caps cannot see each other;
+    // this can. Transactional mail is not counted against it — a receipt is not a
+    // reminder. 0 turns automated reminder email off entirely.
+    max_emails: { kind: 'count', min: 0, max: 50, tokens: [], default: 8 },
   },
   // --- The home-page FAQ ----------------------------------------------------
   // Same array-in-one-key shape as `reminders` above: { id, enabled, q, a,

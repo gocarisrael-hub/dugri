@@ -3118,6 +3118,30 @@ async function handleWaEvent(ev, base) {
 // sends. Each due reminder is RECORDED BEFORE the send result (mark-on-attempt),
 // so a failed-looking send can never re-fire it — the fix for the hourly spam
 // loop. Fail-soft per collection; never throws.
+// How many more AUTOMATED reminder emails this buyer may receive for this order.
+// One budget across all three schedulers (the words nudge, the payment milestones
+// and the owner's reminder list), because a buyer does not experience them as
+// three systems — she experiences an inbox. Owner-settable; see
+// settings.reminders.max_emails for why per-reminder caps are not enough.
+// A missing/broken setting falls back to the shipped default rather than to
+// "unlimited": a ceiling that fails open is not a ceiling.
+//
+// Takes an ID and re-reads the collection, deliberately: every scan iterates over
+// listAllCollections(), which hands out COPIES, so a budget computed from the loop
+// variable would still show the count as it was when the pass started. With five
+// reminders due in one pass that is five emails against a ceiling of three — which
+// is exactly what the first version of this did.
+function reminderEmailBudget(id) {
+  let cap = 8;
+  try {
+    const v = settings.get('reminders', 'max_emails');
+    if (Number.isInteger(v) && v >= 0) cap = v;
+  } catch {
+    /* keep the default */
+  }
+  return Math.max(0, cap - db.reminderEmailsSent(db.getCollection(id)));
+}
+
 async function runReminderListScan(now = Date.now()) {
   const emailOn = notify.isConfigured();
   const waOn = whatsapp.isConfigured();
@@ -3139,7 +3163,10 @@ async function runReminderListScan(now = Date.now()) {
   }
   for (const c of collections) {
     try {
-      if (c.status !== 'open') continue; // "add more words" reminders only while open
+      // Words in, at the printer, ready, or cancelled — nothing left to ask for.
+      // (This replaces a plain `status !== 'open'` check, which kept chasing an
+      // order that was already produced whenever the owner reopened the list.)
+      if (reminders.wordRemindersStopped(c)) continue;
       const due = reminders.remindersDue({
         reminders: list,
         nowMs: now,
@@ -3179,9 +3206,18 @@ async function runReminderListScan(now = Date.now()) {
         //
         // Gated on owner_email so a phone-only buyer doesn't count as "delivered".
         // The reminder text is reused as-is — it is channel-neutral.
+        // …and never past the ceiling. WhatsApp above is unaffected: it is a group
+        // the buyer chose to be in, guarded separately (server/wa-guard.js), and
+        // capping it here would silently stop the channel this reminder was
+        // actually written for.
         const wantsEmail = d.channels.email || (d.channels.whatsapp && !waPossible);
         if (wantsEmail && emailOn && c.owner_email) {
-          if (await notify.sendReminderEmail(c, d.text, base)) delivered = true;
+          if (reminderEmailBudget(c.id) > 0) {
+            db.markReminderEmailSent(c.id);
+            if (await notify.sendReminderEmail(c, d.text, base)) delivered = true;
+          } else {
+            console.warn('[reminders] email ceiling reached for collection ' + c.id);
+          }
         }
         if (delivered) sent += 1;
         else {
@@ -5316,6 +5352,13 @@ async function runReminderScan(now = Date.now()) {
     const due = db.collectionsDueForReminder(now);
     for (const c of due) {
       try {
+        // The shared ceiling. Skipped WITHOUT marking, so raising the cap later
+        // still lets the one nudge this collection is owed go out.
+        if (reminderEmailBudget(c.id) <= 0) {
+          console.warn('[reminder] email ceiling reached for collection ' + c.id);
+          continue;
+        }
+        db.markReminderEmailSent(c.id);
         // word_count is 0 for every due collection (the query requires it); pass
         // it so the reminder's body renders a correct count.
         await notify.sendWordsReminder({ ...c, word_count: 0 }, base);
@@ -5381,14 +5424,27 @@ async function runPaymentReminderScan(now = Date.now()) {
     const due = db.collectionsDueForPaymentReminder(now, delays);
     for (const c of due) {
       try {
-        if (emailOn && c.owner_email) await notify.sendPaymentReminder(c, base);
+        // The email half, under the shared ceiling. The WhatsApp DM below is not
+        // counted against it — it is a different medium with its own guard — but
+        // when neither channel can go, the milestone is left UNSPENT rather than
+        // marked, so nothing is silently skipped.
+        const emailAllowed = emailOn && c.owner_email && reminderEmailBudget(c.id) > 0;
+        const waAllowed = waOn && c.owner_phone && whatsapp.groupMode() === 'auto_add';
+        if (!emailAllowed && !waAllowed) {
+          console.warn('[payment-reminder] nothing to send for collection ' + c.id);
+          continue;
+        }
+        if (emailAllowed) {
+          db.markReminderEmailSent(c.id);
+          await notify.sendPaymentReminder(c, base);
+        }
         // The WhatsApp half is a COLD DM to a buyer who never messaged the bot —
         // a reachout, and one of the actions that got the previous number banned.
         // It is therefore skipped entirely in invite_link mode (the safe default),
         // and in auto_add mode it still passes through the breaker + daily cap
         // inside whatsapp.sendMessage. The email above goes either way, so the
         // buyer is still reminded.
-        if (waOn && c.owner_phone && whatsapp.groupMode() === 'auto_add') {
+        if (waAllowed) {
           const buyerWa = ilPhoneToWaId(c.owner_phone);
           if (buyerWa) {
             // The buyer's OWN pay link (their owner token) — safe in a 1:1 DM.
