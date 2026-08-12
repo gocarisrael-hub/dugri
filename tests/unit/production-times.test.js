@@ -57,6 +57,19 @@ describe('production times are the same promise on every surface', () => {
     expect(html).toContain('מגיע תוך כ-7 ימי עסקים');
   });
 
+  // The trust line under the pay button used to carry a second promise —
+  // "the file is sent within 24 hours of the words" — sitting directly beneath a
+  // printed game quoted at 3 business days. Two turnaround times in one panel,
+  // and the faster one was the one in the buyer's eye at the moment she paid.
+  // The line is security reassurance now; each option states its own timing.
+  it('the checkout trust line promises security, not a turnaround time', () => {
+    const html = flat(read('site', 'collect.html'));
+    const line = html.match(/data-edit="collect-pay-trust">([^<]*)</);
+    expect(line, 'the trust line is gone entirely').not.toBeNull();
+    expect(line[1]).toContain('תשלום מאובטח');
+    expect(line[1]).not.toMatch(/\d/);
+  });
+
   it('the FAQ answer about timing says 3 business days for pickup', () => {
     expect(flat(read('server', 'faq.js'))).toContain('איסוף עצמי אפשרי תוך 3 ימי עסקים');
   });
