@@ -16,8 +16,10 @@
 //
 //   1. REFUSED — every pictographic shape, including the ones a computer sees as
 //      several codepoints and a person sees as one (👩‍👩‍👧, 🇮🇱, 👍🏽, 1️⃣, 🏳️‍🌈).
-//   2. ACCEPTED — Hebrew with niqqud, the geresh ׳, an apostrophe, the en dash a
+//   2. ACCEPTED — the geresh ׳, an apostrophe, the en dash a
 //      phone substitutes for a hyphen, digits, ordinary Latin punctuation, and ©.
+//      (Pointed Hebrew is accepted BY THIS RULE — it carries no emoji — but a
+//      word entry is refused for it by its own rule; see tests/unit/niqqud.js.)
 //      A buyer refused for typing a normal name is a lost order, so the accept
 //      list is tested as hard as the refuse list.
 //
@@ -86,6 +88,8 @@ const REFUSE = {
 // order.
 const ACCEPT = {
   'a plain Hebrew name': 'שירה',
+  // Accepted by the EMOJI rule, which is all this file is about. Adding it as a
+  // word is refused separately (the niqqud rule) — hence the filters below.
   'Hebrew with niqqud': 'שָׁלוֹם',
   'a geresh and gershayim': 'מזל טוב ׳לשירה׳ ״40״',
   'an apostrophe in a Latin name': "O'Neil",
@@ -341,7 +345,7 @@ describe('db.addWords', () => {
     const words = Object.values(ACCEPT);
     // (only the entries that also fit the 25-character cap — this test is about
     // the emoji rule, not about length)
-    const short = words.filter((w) => !validate.isWordTooLong(w));
+    const short = words.filter((w) => !validate.isWordTooLong(w) && !validate.hasNiqqud(w));
     const r = db.addWords(c.id, short);
     expect(r.emoji).toBe(0);
     expect(r.added).toBe(short.length);
@@ -551,7 +555,9 @@ describe('POST /api/collections/:id/words — the word list', () => {
 
   it('accepts a whole list of legitimate strings without a single refusal', async () => {
     const c = db.createCollection('רשימה תקינה');
-    const words = Object.values(ACCEPT).filter((w) => !validate.isWordTooLong(w));
+    const words = Object.values(ACCEPT).filter(
+      (w) => !validate.isWordTooLong(w) && !validate.hasNiqqud(w)
+    );
     const r = await req('POST', '/api/collections/' + c.id + '/words', { words });
     expect(r.body.emoji).toBe(0);
     expect(r.body.added).toBe(words.length);

@@ -653,7 +653,8 @@ const db = {
   // freeLimitState): a 50-word paste onto a collection with 5 slots left stores
   // those 5 and reports the rest as `blocked` — partial acceptance beats
   // rejecting the whole list and losing the buyer's typing. Returns
-  // {added, skipped, blocked, tooLong, emoji} or {closed:true} if not open.
+  // {added, skipped, blocked, tooLong, emoji, niqqud} or {closed:true} if not
+  // open.
   //
   // Entries containing an EMOJI are refused outright (counted in `emoji`). The
   // card fonts have no emoji glyphs, so a 🎉 reaches the printed deck as a blank
@@ -662,6 +663,13 @@ const db = {
   // is a word nobody knows was changed. Enforcing it in the STORE (not only in
   // the HTTP route) is what covers the WhatsApp webhook, which funnels straight
   // through here — and WhatsApp is where emoji actually come from.
+  //
+  // Entries carrying NIQQUD are refused the same way (counted in `niqqud`): the
+  // card faces are display fonts drawn for unpointed Hebrew, so the marks print
+  // as boxes or collide with the letter — see validate.hasNiqqud. Refused rather
+  // than stripped for the same reason as the emoji above, and here too the STORE
+  // is the right place for it, because WhatsApp (which funnels through here) is
+  // where a pointed paste actually arrives from.
   //
   // Entries over validate.MAX_WORD_LEN are REFUSED (counted in `tooLong`), not
   // truncated. This used to .slice(0, 80) them, which silently changed the
@@ -686,6 +694,7 @@ const db = {
     let blocked = 0;
     let tooLong = 0;
     let emoji = 0;
+    let niqqud = 0;
     for (const raw of Array.isArray(words) ? words : []) {
       const text = validate.normalizeWordText(raw);
       if (!text) continue;
@@ -693,6 +702,12 @@ const db = {
       // caller can say exactly why it didn't land.
       if (validate.hasEmoji(text)) {
         emoji += 1;
+        continue;
+      }
+      // Pointed Hebrew: refused, never silently unpointed. Counted on its own so
+      // the caller can tell the contributor to retype it without the marks.
+      if (validate.hasNiqqud(text)) {
+        niqqud += 1;
         continue;
       }
       // Over the entry cap: refused outright, never truncated into a different
@@ -726,7 +741,7 @@ const db = {
       added += 1;
     }
     if (added) saveDb();
-    return { added, skipped, blocked, tooLong, emoji };
+    return { added, skipped, blocked, tooLong, emoji, niqqud };
   },
 
   // The free-quota state for a collection, from its live word count. Exposed so
@@ -769,6 +784,8 @@ const db = {
   //   'too_long'   the new text is over validate.MAX_WORD_LEN (carries `len`)
   //   'emoji'      the new text contains an emoji (carries `found`, the emoji
   //                themselves, so the route can name them in the refusal)
+  //   'niqqud'     the new text is pointed (carries `clean`, the unpointed form,
+  //                so the route can show what to type instead)
   //   'duplicate'  another word in the collection already has this normalized text
   // NOTE this gates the NEW text only. A grandfathered over-length word — or one
   // carrying an emoji, stored before that rule existed — is left alone until
@@ -786,6 +803,9 @@ const db = {
     const clean = validate.normalizeWordText(text);
     if (!clean) return { error: 'empty' };
     if (validate.hasEmoji(clean)) return { error: 'emoji', found: validate.findEmoji(clean) };
+    if (validate.hasNiqqud(clean)) {
+      return { error: 'niqqud', clean: validate.normalizeWordText(validate.stripNiqqud(clean)) };
+    }
     if (validate.isWordTooLong(clean)) return { error: 'too_long', len: clean.length };
     const n = norm(clean);
     // Reject a collision with a DIFFERENT word that shares the normalized form.

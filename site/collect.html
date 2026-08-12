@@ -1900,6 +1900,16 @@
       // blank box. Refusing tells the contributor; stripping would change her
       // word and never say so. server/validate.js enforces the same rule.
       import { hasEmoji, wordEmojiMessage, splitByEmoji, batchEmojiMessage } from './js/emoji.js';
+      // Niqqud is refused for the same kind of reason: the card faces are drawn
+      // for unpointed Hebrew, so "שָׁלוֹם" prints with the marks as boxes or
+      // collided onto the letter. Refused rather than silently unpointed — the
+      // message carries the clean word so it can be copied back in.
+      import {
+        hasNiqqud,
+        wordNiqqudMessage,
+        splitByNiqqud,
+        batchNiqqudMessage,
+      } from './js/niqqud.js';
       import { track } from './js/analytics.js';
       import { fetchPricing, applySale, PRICING_FALLBACK } from './js/pricing.js';
 
@@ -2324,13 +2334,22 @@
         // about. Emoji are separated from the over-length ones so each group can
         // be named with its own reason — "too long" and "has an emoji" call for
         // two different fixes.
-        const { ok: clean, withEmoji } = splitByEmoji(byLength);
+        const { ok: unpointed, withEmoji } = splitByEmoji(byLength);
+        // And to the NIQQUD refusal, third and last of the three entry rules, so
+        // a pasted list that is partly pointed still lands its plain words.
+        const { ok: clean, withNiqqud } = splitByNiqqud(unpointed);
         if (!clean.length) {
           // Nothing left to submit — report and return false so the caller KEEPS
           // the text, which is exactly what the customer needs in order to shorten
           // it (or drop the emoji) rather than retype the lot.
           toast(
-            [batchLengthMessage(tooLong), batchEmojiMessage(withEmoji)].filter(Boolean).join(' · ')
+            [
+              batchLengthMessage(tooLong),
+              batchEmojiMessage(withEmoji),
+              batchNiqqudMessage(withNiqqud),
+            ]
+              .filter(Boolean)
+              .join(' · ')
           );
           return false;
         }
@@ -2339,8 +2358,13 @@
         // would be worse. Every outcome toast below carries the note about what
         // was left behind, so a partial add never looks like a clean success.
         const lenNote =
-          [batchLengthMessage(tooLong), batchEmojiMessage(withEmoji)].filter(Boolean).join(' · ') ||
-          null;
+          [
+            batchLengthMessage(tooLong),
+            batchEmojiMessage(withEmoji),
+            batchNiqqudMessage(withNiqqud),
+          ]
+            .filter(Boolean)
+            .join(' · ') || null;
         const say = (msg) => toast(lenNote ? msg + ' · ' + lenNote : msg);
         const added_by = $('#byName').value.trim() || null;
         try {
@@ -2453,7 +2477,10 @@
           // case refresh() below restores the old text, so nothing is lost.
           if (e.status === 409) {
             toast('כבר יש מילה כזאת ברשימה');
-          } else if (e.body && (e.body.error === 'too_long' || e.body.error === 'emoji')) {
+          } else if (
+            e.body &&
+            (e.body.error === 'too_long' || e.body.error === 'emoji' || e.body.error === 'niqqud')
+          ) {
             // Pre-checked on commit, so this is the backstop (a stale tab, or a
             // rule having moved) — still show the server's reason, never a
             // generic failure. Both entry rules land here with a message that
@@ -2516,6 +2543,13 @@
             render();
             return;
           }
+          // Likewise for niqqud, and grandfathered the same way: a pointed word
+          // stored before this rule can be opened and closed untouched.
+          if (hasNiqqud(val)) {
+            toast(wordNiqqudMessage(val));
+            render();
+            return;
+          }
           // A NEW value is held to the cap, even when the word being edited was
           // already over it: this is an entry, and entries are capped. Revert +
           // explain, matching how a duplicate edit is handled.
@@ -2558,17 +2592,20 @@
         // the emoji anyway, so leading with the length would send her to fix the
         // wrong thing.
         const emoji = hasEmoji(input.value);
-        const over = !emoji && isWordTooLong(input.value);
-        const bad = emoji || over;
+        const pointed = !emoji && hasNiqqud(input.value);
+        const over = !emoji && !pointed && isWordTooLong(input.value);
+        const bad = emoji || pointed || over;
         input.classList.toggle('too-long', bad);
         hint.classList.toggle('hidden', !bad);
         hint.textContent = emoji
           ? wordEmojiMessage(input.value)
-          : over
-            ? wordLengthMessage(input.value)
-            : '';
+          : pointed
+            ? wordNiqqudMessage(input.value)
+            : over
+              ? wordLengthMessage(input.value)
+              : '';
         // Block the add outright rather than letting it fail on submit — for
-        // length OR an emoji; an empty box keeps its existing (silent) no-op
+        // length, an emoji OR niqqud; an empty box keeps its existing no-op
         // behaviour. The free-quota lock (applyFreeLimit) also disables this
         // button, and it wins: the word that TIPS the quota over runs refresh()
         // → applyFreeLimit and then returns here, so ignoring the lock would
