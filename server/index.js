@@ -179,6 +179,7 @@ function orderArgs({
   chasers,
   customTitle,
   wordlist,
+  cardOrder,
   gender,
   photos,
 }) {
@@ -205,6 +206,11 @@ function orderArgs({
   // against the real pools before it is stored, and the generator's own path
   // guard bounds it to the two wordlist directories.
   if (wordlist) args.push('--wordlist=' + wordlist);
+  // How the words are laid onto cards for THIS order (pack.py ORDERS): her own
+  // words first, Hebrew and Latin cards kept apart, or the default blend. Only
+  // ever one of the validated values, and omitted for the default so an old
+  // order's argv is byte-for-byte what it always was.
+  if (db.CARD_ORDERS.includes(cardOrder)) args.push('--order=' + cardOrder);
   // Honoree gender: resolves the title's {feminine|masculine} markers, so a
   // Hebrew birthday title prints בת for a girl and בן for a boy from one
   // template. Only ever the two validated values.
@@ -268,6 +274,7 @@ function runGenerator({
   photos,
   gender,
   wordlist,
+  cardOrder,
 }) {
   return new Promise((resolve, reject) => {
     let wordsFile;
@@ -288,6 +295,7 @@ function runGenerator({
       chasers,
       customTitle,
       wordlist,
+      cardOrder,
       gender,
       photos,
     });
@@ -772,6 +780,16 @@ app.patch('/api/admin/collections/:id', (req, res) => {
       return res.status(400).json({ error: 'unknown wordlist' });
     }
   }
+  // Same door, same reason: a card order the generator does not know would be
+  // dropped to the default blend, and a deck that quietly ignores the option the
+  // owner picked is one she has no reason to look at twice. '' / null is the
+  // default and always allowed.
+  if (Object.prototype.hasOwnProperty.call(b, 'card_order')) {
+    const wanted = String(b.card_order == null ? '' : b.card_order).trim();
+    if (wanted && !db.CARD_ORDERS.includes(wanted)) {
+      return res.status(400).json({ error: 'unknown card order' });
+    }
+  }
   // Same emoji rule as the public create route. The admin edit screen is a
   // second door onto the same printed title, and a rule enforced on one door and
   // not the other is not a rule. PATCH semantics: only the keys actually PRESENT
@@ -968,6 +986,7 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       // means "use the theme's own", which is what every order did before this
       // existed. Read from the STORED collection, like everything else here.
       wordlist: c.wordlist || null,
+      cardOrder: c.card_order || null,
     });
     // The board is a second, separate artifact — recorded on production so the
     // admin UI knows whether to offer it, and left null for a generator run that
@@ -1386,6 +1405,7 @@ app.post('/api/admin/collections/:id/press', (req, res) => {
     chasers: !!c.chasers,
     customTitle: c.custom_title || null,
     wordlist: c.wordlist || null,
+    cardOrder: c.card_order || null,
     gender: c.gender || null,
     photos: pawnPhotoFiles(c),
   });

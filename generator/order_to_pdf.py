@@ -23,13 +23,15 @@ import tempfile
 import config
 import pack
 import build as buildmod
+import topup as topupmod
 from topup import topup
 
 
 def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                  word_font=None, workdir=None, progress=False, chasers=False,
                  custom_title=None, photos=None, press_icc=None,
-                 press_bleed=None, press_cmyk=True, gender=None, wordlist=None):
+                 press_bleed=None, press_cmyk=True, gender=None, wordlist=None,
+                 order=pack.ORDER_RANDOM):
     """Render an order and return ``(out_pdf, page_count, board_pdf)``.
 
     ``board_pdf`` is the separate board file a v2 (single-card) template
@@ -60,6 +62,11 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                   buyer's personal words still come first and generic-350 is
                   still the backstop, so an override can neither drop a word nor
                   leave the deck short
+    order         how the words are laid onto cards (see pack.ORDERS), chosen per
+                  order by the owner: 'random' blends everything, 'personal-first'
+                  opens the deck with HER words, 'by-script' keeps Hebrew cards and
+                  Latin cards apart. Whichever is picked, the phrase balance is
+                  unchanged — it applies inside every group.
     gender        the honoree's gender ('male' / 'female' / None), which resolves
                   the title's {feminine|masculine} markers — Hebrew is gendered,
                   so "{NAME} {בת|בן} {AGE}" prints בת for a girl and בן for a
@@ -83,6 +90,10 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
     try:
         # 1) Top up the personal words to a full deck.
         words = topup(personal_words, theme_key, wordlist=wordlist)
+        # Where her own words end and the filler begins — the boundary the
+        # 'personal-first' order splits on. It is a count because the deck is one
+        # flat list; nothing marks a word as filler.
+        personal_count = topupmod.personal_span(personal_words)
 
         # 2) Write the words to a temp file, then pack into the deck CSV (one row
         #    per card in v2, one row per 8-up sheet in v1). The front cycling is
@@ -93,9 +104,10 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
             f.write("\n".join(words) + "\n")
         csv_path = os.path.join(workdir, "order.csv")
         if config.is_single_card(cfg):
-            pack.pack(words, csv_path, fronts=len(config.fronts(cfg)))
+            pack.pack(words, csv_path, fronts=len(config.fronts(cfg)),
+                      order=order, personal_count=personal_count)
         else:
-            pack.pack(words, csv_path)
+            pack.pack(words, csv_path, order=order, personal_count=personal_count)
 
         # 3) Render. A v2 (single-card) template produces TWO artifacts — the
         #    208-page card deck and a separate board file; a v1 template still
@@ -188,6 +200,10 @@ def main():
                     help="the honoree's gender, resolving the title's "
                          "{feminine|masculine} markers (e.g. {בת|בן}). Omitted "
                          "takes the first (feminine) form")
+    ap.add_argument("--order", default=pack.ORDER_RANDOM, choices=list(pack.ORDERS),
+                    help="how the words are laid onto cards: random blends them, "
+                         "personal-first opens with the buyer's own words, by-script "
+                         "keeps Hebrew and Latin cards apart")
     ap.add_argument("--photo", action="append", default=[], metavar="PATH",
                     help="a customer pawn photo for the photo card (repeatable, up to 4)")
     args = ap.parse_args()
@@ -199,7 +215,7 @@ def main():
         chasers=args.chasers, custom_title=args.title, photos=args.photo,
         press_icc=args.press, press_bleed=args.bleed,
         press_cmyk=not args.press_passthrough, gender=args.gender,
-        wordlist=args.wordlist,
+        wordlist=args.wordlist, order=args.order,
     )
     print(f"\nwrote {pdf} ({pages} pages)")
     # Printed on its own line so the server can pick the board artifact out of

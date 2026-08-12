@@ -711,10 +711,19 @@
               ><span>מאגר מילים להשלמה</span
               ><select id="e-wordlist" data-testid="e-wordlist"></select
             ></label>
+            <label class="fld"
+              ><span>סדר המילים על הקלפים</span
+              ><select id="e-card-order" data-testid="e-card-order"></select
+            ></label>
           </div>
           <p class="hint" style="margin: 6px 0 0">
             המאגר שממנו משלימים את החפיסה כשאין מספיק מילים אישיות. ברירת המחדל היא המאגר של התבנית.
             המילים של הלקוח/ה תמיד נשמרות ומופיעות ראשונות.
+          </p>
+          <p class="hint" style="margin: 6px 0 0">
+            סדר הקלפים: "מעורבב" מפזר הכול יחד, "מילים של הלקוח/ה קודם" פותח את החפיסה במילים שלה
+            ואחריהן ההשלמה, "עברית ואנגלית בנפרד" לא מערבב שתי שפות על אותו קלף. בכל מקרה הביטויים
+            מפוזרים שווה בין הקלפים. אפשר לשנות גם אחרי הפקה — צריך רק להפיק מחדש.
           </p>
           <!-- Theme-required extra fields (AGE, or YEARS + NAME1 + NAME2). Rebuilt
                whenever the theme changes; values carry over by key. -->
@@ -1182,6 +1191,14 @@
         return designList;
       }
 
+      // How the words are laid onto cards, per order. The values are the
+      // generator's own (pack.py ORDERS) and travel to it verbatim.
+      const CARD_ORDERS = [
+        { value: '', label: 'מעורבב (ברירת מחדל)' },
+        { value: 'personal-first', label: 'מילים של הלקוח/ה קודם' },
+        { value: 'by-script', label: 'עברית ואנגלית בנפרד' },
+      ];
+
       let wordlistList = null;
       // The seed pools the owner can pick from, loaded once per page. Failing
       // soft matters here: without it the select offers only "the theme's own",
@@ -1366,6 +1383,9 @@
           [{ value: '', label: '— המאגר של התבנית —' }].concat(await loadWordlists()),
           c.wordlist || ''
         );
+        // Same shape as the pool above: '' is the real default (the historical
+        // blend), not a missing value.
+        fillSelect(el('e-card-order'), CARD_ORDERS, c.card_order || '');
         renderExtraInputs(el('e-theme').value, c.extra_fields || {});
 
         const order = c.order || null;
@@ -1722,6 +1742,9 @@
           // '' clears the override back to the theme's own pool. The server
           // refuses a name that doesn't match a real pool.
           wordlist: el('e-wordlist').value,
+          // '' is the default blend. The server refuses anything that isn't one
+          // of the three the generator knows.
+          card_order: el('e-card-order').value,
         };
         if (editing.order) {
           patch.order = { version: el('e-version').value };
