@@ -2347,6 +2347,10 @@ app.post('/api/collections/:id/words', (req, res) => {
     // from a stale tab, or any non-browser caller, still lands here and gets a
     // number it can explain instead of a word that silently never appeared.
     emoji: r.emoji || 0,
+    // Same again for pointed Hebrew ("שָׁלוֹם"): the card faces are drawn for
+    // unpointed text, so the marks would print as boxes. Normally 0 for the same
+    // reason as `emoji` — the page catches it while the word is still on screen.
+    niqqud: r.niqqud || 0,
     count,
     // Locked state, plus the limit ONLY once locked (see the public view for why
     // withholding it past that point buys nothing).
@@ -2459,6 +2463,17 @@ app.patch('/api/collections/:id/words/:wordId', (req, res) => {
       error: 'emoji',
       message: validate.wordEmojiMessage(b.text),
       found: r.found || [],
+    });
+  }
+  // An edit that ADDS niqqud is refused and the stored word is left alone. The
+  // message carries the unpointed form rather than pointing at the marks, which
+  // are invisible on their own — there is nothing to circle, only something to
+  // retype.
+  if (r.error === 'niqqud') {
+    return res.status(400).json({
+      error: 'niqqud',
+      message: validate.wordNiqqudMessage(b.text),
+      clean: r.clean || '',
     });
   }
   if (r.error === 'duplicate') return res.status(409).json({ error: 'duplicate' });

@@ -263,6 +263,74 @@ function batchEmojiMessage(list) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Niqqud: REFUSED on a new word, never stripped.
+// ---------------------------------------------------------------------------
+// The vowel points and cantillation marks are COMBINING marks — they hang off
+// the letter before them, and the card faces are display fonts (Gveret Levin,
+// Comix, Aharoni CLM…) drawn for unpointed Hebrew. A pointed word therefore does
+// not print as a pointed word: the marks land as boxes, or collide with the
+// letter, or vanish — per card, on a deck that was already paid for. They also
+// eat the entry cap, so "שָׁלוֹם" counts as 8 characters for a 5-letter word.
+//
+// Why refuse rather than strip, when stripping loses no meaning (שָׁלוֹם and שלום
+// read the same)? Because the same reason the emoji rule refuses applies here in
+// weaker form — this codebase does not silently rewrite what a person typed —
+// and because a refusal is a one-line correction the contributor makes herself,
+// while a strip is a change nobody is ever told about. The message carries the
+// unpointed form, so the fix is to copy the word back out of it.
+//
+// WHAT COUNTS: the combining marks of the Hebrew block, and only those.
+//   U+0591–U+05AF   te'amim (cantillation)
+//   U+05B0–U+05BD   the points themselves (sheva … meteg)
+//   U+05BF          rafe
+//   U+05C1 U+05C2   shin dot / sin dot
+//   U+05C4 U+05C5   upper/lower dot
+//   U+05C7          qamats qatan
+//
+// WHAT IS DELIBERATELY NOT: the Hebrew block's PUNCTUATION, which is ordinary
+// printable type and is accepted — U+05BE maqaf (־), U+05C0 paseq, U+05C3 sof
+// pasuq, U+05C6 nun hafukha, and the geresh ׳ / gershayim ״ (U+05F3/U+05F4) that
+// abbreviations are written with. A word like ר״ח or בן־גוריון is normal Hebrew
+// and must keep sailing through.
+const NIQQUD_CHARS = '\\u0591-\\u05BD\\u05BF\\u05C1\\u05C2\\u05C4\\u05C5\\u05C7';
+const NIQQUD_RE = new RegExp('[' + NIQQUD_CHARS + ']', 'u');
+
+// True when the string carries any Hebrew combining mark.
+function hasNiqqud(s) {
+  return NIQQUD_RE.test(String(s == null ? '' : s));
+}
+
+// The same string without its marks — the form the contributor should type. Used
+// to SHOW the fix in the refusal, never to store: nothing here rewrites a word.
+function stripNiqqud(s) {
+  return String(s == null ? '' : s).replace(new RegExp('[' + NIQQUD_CHARS + ']', 'gu'), '');
+}
+
+// The Hebrew refusal for one word entry. It names the word AND its unpointed
+// form, because the marks are invisible on their own — "remove the niqqud" with
+// nothing to point at is not actionable, and the clean form can just be copied.
+function wordNiqqudMessage(s) {
+  if (!hasNiqqud(s)) return null;
+  const clean = normalizeWordText(stripNiqqud(s));
+  return 'אי אפשר להדפיס ניקוד על הקלפים - הסירו אותו וכתבו: ' + clean;
+}
+
+// The same refusal for a BATCH — a paste, a file, an inbound WhatsApp message.
+// Names the unpointed words (up to 3) so they can be retyped, not just counted.
+function batchNiqqudMessage(list) {
+  const bad = Array.isArray(list) ? list : [];
+  if (!bad.length) return null;
+  if (bad.length === 1) return wordNiqqudMessage(bad[0]);
+  const shown = bad.slice(0, 3).map((w) => normalizeWordText(stripNiqqud(w)));
+  return (
+    bad.length +
+    ' מילים לא נוספו כי הן מנוקדות (אי אפשר להדפיס ניקוד על הקלפים). כתבו אותן בלי ניקוד: ' +
+    shown.join(', ') +
+    (bad.length > shown.length ? ' ועוד' : '')
+  );
+}
+
 // Hebrew block U+0590–U+05FF; Latin ASCII letters. A name is validated against
 // the theme's expected script: it must contain the expected script and none of
 // the other.
@@ -412,4 +480,12 @@ module.exports = {
   nameEmojiMessage,
   wordEmojiMessage,
   batchEmojiMessage,
+  // Niqqud refusal on a NEW word. NIQQUD_CHARS is exported for the same reason
+  // EMOJI_CHARS is: the browser copy (site/js/niqqud.js) is pinned against it in
+  // tests, so the field and the API can never disagree about what is acceptable.
+  NIQQUD_CHARS,
+  hasNiqqud,
+  stripNiqqud,
+  wordNiqqudMessage,
+  batchNiqqudMessage,
 };
