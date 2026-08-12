@@ -97,7 +97,7 @@ test.describe('store grid (products.html)', () => {
     const now = price.locator('.now');
     const was = price.locator('s');
     await expect(now).toHaveText('מ-199 ₪');
-    await expect(was).toHaveText('239 ₪');
+    await expect(was).toHaveText('239');
 
     const nb = await now.boundingBox();
     const wb = await was.boundingBox();

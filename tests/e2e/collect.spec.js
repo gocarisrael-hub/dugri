@@ -492,7 +492,7 @@ test('owner pay panel: applyPricing preserves an option\'s struck "was" anchor w
   await pdfPrice.evaluate((el) => {
     const s = document.createElement('s');
     s.className = 'was';
-    s.textContent = '₪129';
+    s.textContent = '129';
     el.prepend(s);
   });
 
@@ -500,7 +500,7 @@ test('owner pay panel: applyPricing preserves an option\'s struck "was" anchor w
   release();
 
   // The struck anchor survives the stamp, and the live now-price shows next to it.
-  await expect(pdfPrice.locator('s.was')).toHaveText('₪129');
+  await expect(pdfPrice.locator('s.was')).toHaveText('129');
   await expect(pdfPrice).toContainText('₪79');
 });
 
@@ -1147,10 +1147,11 @@ test('owner applies a valid coupon → discounted total with the struck full pri
   // Discount is confirmed and the total drops 79 → 59 (round(79 * 0.75)).
   await expect(page.locator('#couponMsg')).toContainText('25% הנחה');
   await expect(page.locator('#payTotal')).toHaveText('59');
-  // The full price shows struck-through with the ₪ sign, like other prices.
+  // The full price shows struck-through — digits only, the ₪ stays on the
+  // price actually being charged.
   const was = page.locator('#payWas');
   await expect(was).toBeVisible();
-  await expect(was).toHaveText('₪79');
+  await expect(was).toHaveText('79');
   // Apply is swapped for a remove control; the input is locked while applied.
   await expect(page.locator('#couponApplyBtn')).toBeHidden();
   await expect(page.locator('#couponRemoveBtn')).toBeVisible();
@@ -1174,7 +1175,7 @@ test('the struck full price sits to the LEFT of the discounted total (RTL)', asy
 
   const was = page.locator('#payWas');
   await expect(was).toBeVisible();
-  await expect(was).toHaveText('₪79');
+  await expect(was).toHaveText('79');
 
   const now = page.locator('.pay-total .pay-now');
   const wb = await was.boundingBox();

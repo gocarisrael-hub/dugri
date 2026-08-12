@@ -3138,8 +3138,10 @@
         }
 
         // Render the total for the selected version, applying the coupon discount
-        // when one is active: the full price shows struck-through (₪ on both) next
-        // to the discounted price, matching the site's existing struck-price style.
+        // when one is active: the full price shows struck-through beside the
+        // discounted one. The struck price carries DIGITS ONLY — the ₪ belongs to
+        // the price actually being charged, and repeating it put two signs side by
+        // side with the strike-through cutting through the second glyph.
         function renderTotal() {
           const v = selectedVersion();
           const was = $('#payWas');
@@ -3167,7 +3169,7 @@
           const base = locked ? unit : unit * copies + fee;
           if (appliedCoupon) {
             const discounted = Math.round(base * (1 - appliedCoupon.discount_pct / 100));
-            was.textContent = '₪' + base;
+            was.textContent = String(base);
             was.classList.remove('hidden');
             $('#payTotal').textContent = discounted;
           } else {

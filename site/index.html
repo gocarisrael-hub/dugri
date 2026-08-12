@@ -1163,7 +1163,10 @@
         el.textContent = `${PRICE} ₪`;
         const was = document.createElement('s');
         was.className = 'was';
-        was.textContent = `${WAS} ₪`;
+        // Digits only. The ₪ belongs to the price being charged; repeating it on
+        // the struck one put two signs side by side, and the strike-through runs
+        // straight through the second glyph.
+        was.textContent = String(WAS);
         el.appendChild(was);
       }
 

@@ -55,7 +55,7 @@ test.describe('sale ON', () => {
     await expect(card.locator('.sale-flag')).toBeVisible();
     await expect(card.locator('.sale-flag')).toHaveText('מחיר השקה');
     await expect(card.locator('.home-prod-price s.was')).toBeVisible();
-    await expect(card.locator('.home-prod-price s.was')).toHaveText('239 ₪');
+    await expect(card.locator('.home-prod-price s.was')).toHaveText('239');
   });
 
   test('the store grid shows a flag on each card and the struck price under it', async ({
@@ -67,7 +67,7 @@ test.describe('sale ON', () => {
     const card = page.getByTestId('product-card').first();
     await expect(card.locator('.sale-flag')).toBeVisible();
     await expect(card.locator('.product-price s.was')).toBeVisible();
-    await expect(card.locator('.product-price s.was')).toHaveText('239 ₪');
+    await expect(card.locator('.product-price s.was')).toHaveText('239');
   });
 
   test('the product page shows the flag over the gallery and the struck price', async ({
@@ -78,7 +78,7 @@ test.describe('sale ON', () => {
 
     await expect(page.getByTestId('sale-flag')).toBeVisible();
     await expect(page.locator('#pdpPriceWas')).toBeVisible();
-    await expect(page.locator('#pdpPriceWas')).toHaveText('239 ₪');
+    await expect(page.locator('#pdpPriceWas')).toHaveText('239');
   });
 
   test("the owner's own label text reaches every flag", async ({ page }) => {

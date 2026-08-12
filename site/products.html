@@ -676,7 +676,7 @@
         // .was is what css/tokens.css keys sale mode off — without the class this
         // struck price would keep showing after the owner ends the sale.
         was.className = 'was';
-        was.textContent = `${WAS} ₪`;
+        was.textContent = String(WAS);
         el.appendChild(was);
       }
 
